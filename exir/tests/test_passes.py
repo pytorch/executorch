@@ -609,6 +609,19 @@ class TestPasses(unittest.TestCase):
         new_output = new_gm(test_input)
         self.assertTrue(torch.equal(original_output, new_output))
 
+    def test_scalar_to_tensor_pass_keeps_float64_scalars(self) -> None:
+        class ScalarOps(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x * 0.1 + 0.3) / 0.7
+
+        x = torch.tensor([1.0, 3.0, -7.0, 123456.789], dtype=torch.float64)
+        edge = to_edge(export(ScalarOps(), (x,), strict=True))
+        edge = edge.transform([ScalarToTensorPass(), RemoveMixedTypeOperators()])
+
+        self.assertTrue(
+            torch.equal(edge.exported_program().module()(x), ScalarOps()(x))
+        )
+
     def test_remove_mixed_types_symfloats(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
