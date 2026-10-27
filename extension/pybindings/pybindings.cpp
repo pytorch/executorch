@@ -18,6 +18,8 @@
 #include <numeric>
 #include <stdexcept>
 #include <tuple>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -32,6 +34,7 @@
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/extension/pybindings/pybindings_cuda.h>
 #include <executorch/extension/pybindings/pybindings_data_loader.h>
 #include <executorch/extension/pybindings/pybindings_dlpack.h>
 #include <executorch/extension/pybindings/pybindings_executorch_result.h>
@@ -62,14 +65,15 @@
 #include <torch/python.h>
 #endif
 
-/// Throws a runtime_error with the provided message if `error` is not `Ok`.
+/// Throws a runtime_error with the provided message if `error` is not `Ok`,
+/// followed by the errors the runtime logged during this call.
 #define THROW_IF_ERROR(error, message, ...)                       \
   ({                                                              \
     if ((error) != Error::Ok) {                                   \
       char msg_buf[128];                                          \
       snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
       /* pybind will convert this to a python exception. */       \
-      throw std::runtime_error(msg_buf);                          \
+      throw std::runtime_error(with_runtime_errors(msg_buf));     \
     }                                                             \
   })
 
@@ -79,7 +83,7 @@
       char msg_buf[128];                                          \
       snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
       /* pybind will convert this to a python exception. */       \
-      throw std::out_of_range(msg_buf);                           \
+      throw std::out_of_range(with_runtime_errors(msg_buf));      \
     }                                                             \
   })
 
@@ -123,6 +127,44 @@ namespace pybindings {
 
 namespace {
 
+// The errors the runtime logged on this thread, which RuntimeErrorScope
+// limits to the current binding call. The runtime explains a failure only in
+// its log and returns a bare error code, so the exceptions raised here carry
+// these lines too. Plain arrays, because a log can arrive while thread_local
+// objects with destructors are already destroyed at exit.
+constexpr size_t kRuntimeErrorsCapacity = 1024;
+thread_local char runtime_errors[kRuntimeErrorsCapacity];
+thread_local size_t runtime_errors_size = 0;
+// How many binding calls are running on this thread. Lines logged outside
+// any, such as on worker threads, are not kept, so they never linger.
+thread_local size_t runtime_error_scopes = 0;
+
+std::string with_runtime_errors(const char* message) {
+  std::string result(message);
+  if (runtime_errors_size != 0) {
+    result.append(": ").append(runtime_errors, runtime_errors_size);
+    runtime_errors_size = 0;
+  }
+  return result;
+}
+
+// Starts every binding call with no runtime errors recorded, and gives an
+// outer call its own back when a nested call returns.
+struct RuntimeErrorScope final {
+  RuntimeErrorScope() : outer_(runtime_errors, runtime_errors_size) {
+    runtime_errors_size = 0;
+    ++runtime_error_scopes;
+  }
+  ~RuntimeErrorScope() {
+    --runtime_error_scopes;
+    std::memcpy(runtime_errors, outer_.data(), outer_.size());
+    runtime_errors_size = outer_.size();
+  }
+
+ private:
+  std::string outer_;
+};
+
 #ifndef USE_ATEN_LIB
 constexpr char kTensorOutputEnvironmentVariable[] =
     "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT";
@@ -147,6 +189,7 @@ void configure_portable_tensor_output() {
   }
   try {
     py::module_::import("torch");
+    (void)loaded_torch_module();
     portable_tensor_output() = PortableTensorOutput::Torch;
   } catch (py::error_already_set& error) {
     if (value != nullptr || !error.matches(PyExc_ImportError)) {
@@ -195,39 +238,134 @@ void* mutable_tensor_data_ptr_no_cow(const at::Tensor& tensor) {
 }
 #endif
 
+// Copies dense data into the strides of another dimension order. The source
+// strides must describe a dense layout of `sizes`.
+template <size_t kItemSize>
+void copy_to_layout(
+    const uint8_t* from,
+    const std::vector<int>& source_strides,
+    uint8_t* to,
+    const std::vector<int>& destination_strides,
+    const std::vector<int>& sizes) {
+  const size_t rank = sizes.size();
+  size_t count = 1;
+  for (const auto size : sizes) {
+    count *= static_cast<size_t>(size);
+  }
+  std::vector<int> index(rank, 0);
+  ptrdiff_t from_offset = 0;
+  ptrdiff_t to_offset = 0;
+  for (size_t element = 0; element < count; ++element) {
+    std::memcpy(
+        to + to_offset * static_cast<ptrdiff_t>(kItemSize),
+        from + from_offset * static_cast<ptrdiff_t>(kItemSize),
+        kItemSize);
+    for (size_t dim = rank; dim > 0; --dim) {
+      from_offset += source_strides[dim - 1];
+      to_offset += destination_strides[dim - 1];
+      if (++index[dim - 1] < sizes[dim - 1]) {
+        break;
+      }
+      from_offset -=
+          static_cast<ptrdiff_t>(sizes[dim - 1]) * source_strides[dim - 1];
+      to_offset -=
+          static_cast<ptrdiff_t>(sizes[dim - 1]) * destination_strides[dim - 1];
+      index[dim - 1] = 0;
+    }
+  }
+}
+
+void copy_to_layout(
+    const void* source,
+    const std::vector<int>& source_strides,
+    void* destination,
+    const std::vector<int>& destination_strides,
+    const std::vector<int>& sizes,
+    size_t itemsize) {
+  const auto* from = static_cast<const uint8_t*>(source);
+  auto* to = static_cast<uint8_t*>(destination);
+  switch (itemsize) {
+    case 1:
+      return copy_to_layout<1>(
+          from, source_strides, to, destination_strides, sizes);
+    case 2:
+      return copy_to_layout<2>(
+          from, source_strides, to, destination_strides, sizes);
+    case 4:
+      return copy_to_layout<4>(
+          from, source_strides, to, destination_strides, sizes);
+    case 8:
+      return copy_to_layout<8>(
+          from, source_strides, to, destination_strides, sizes);
+    case 16:
+      return copy_to_layout<16>(
+          from, source_strides, to, destination_strides, sizes);
+    default:
+      throw std::runtime_error(
+          "Unsupported element size " + std::to_string(itemsize));
+  }
+}
+
+// Whether data dense in `strides` is already laid out in `dim_order`. Size-one
+// dimensions can sit anywhere in either order without moving any data.
+bool has_layout(
+    const std::vector<int>& sizes,
+    const std::vector<int>& strides,
+    Span<const uint8_t> dim_order) {
+  std::vector<int> expected(sizes.size());
+  if (runtime::dim_order_to_stride(
+          sizes.data(), dim_order.data(), sizes.size(), expected.data()) !=
+      Error::Ok) {
+    return false;
+  }
+  for (size_t dim = 0; dim < sizes.size(); ++dim) {
+    if (sizes[dim] > 1 && strides[dim] != expected[dim]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Holds a Python buffer export and presents its metadata to ExecuTorch. */
 class BufferTensor final {
  public:
-  explicit BufferTensor(const py::handle& value)
+  BufferTensor(
+      const py::handle& value,
+      const MethodMeta& method_meta,
+      size_t input_index)
       : buffer_(py::reinterpret_borrow<py::buffer>(value)),
         info_(buffer_.request()) {
-    if (info_.ndim < 0 ||
-        static_cast<size_t>(info_.ndim) > runtime::kTensorDimensionLimit) {
-      throw py::buffer_error("Buffer rank is too large for ExecuTorch");
-    }
-    scalar_type_ = scalar_type_from_buffer(info_);
-    sizes_.reserve(info_.shape.size());
-    strides_.reserve(info_.strides.size());
-    for (const auto size : info_.shape) {
-      sizes_.push_back(checked_int(size, "dimension"));
-    }
-    for (const auto byte_stride : info_.strides) {
-      if (byte_stride < 0 || byte_stride % info_.itemsize != 0) {
+    check_rank();
+    const auto input_meta = method_meta.input_tensor_meta(input_index);
+    THROW_IF_ERROR(input_meta.error(), "not a tensor input");
+    const bool raw_bfloat16 =
+        input_meta->scalar_type() == executorch::aten::ScalarType::BFloat16 &&
+        info_.ndim == 1 &&
+        scalar_type_from_buffer(info_) == executorch::aten::ScalarType::Byte;
+    if (raw_bfloat16) {
+      if (info_.strides.size() != 1 || info_.strides[0] != 1) {
         throw py::buffer_error(
-            "ExecuTorch inputs require non-negative, element-aligned strides");
+            "Raw bfloat16 inputs require contiguous byte buffers");
       }
-      strides_.push_back(checked_int(byte_stride / info_.itemsize, "stride"));
+      if (static_cast<size_t>(info_.size) != input_meta->nbytes()) {
+        throw py::value_error(
+            "raw bfloat16 input has " + std::to_string(info_.size) +
+            " bytes, but the method expects " +
+            std::to_string(input_meta->nbytes()));
+      }
+      scalar_type_ = executorch::aten::ScalarType::BFloat16;
+      sizes_.assign(input_meta->sizes().begin(), input_meta->sizes().end());
+      dim_order_.assign(
+          input_meta->dim_order().begin(), input_meta->dim_order().end());
+      strides_.resize(sizes_.size());
+      const auto status = runtime::dim_order_to_stride(
+          sizes_.data(), dim_order_.data(), sizes_.size(), strides_.data());
+      THROW_IF_ERROR(
+          status, "Invalid dimension order for input %zu", input_index);
+    } else {
+      read_layout();
     }
-    dim_order_.resize(sizes_.size());
-    std::iota(dim_order_.begin(), dim_order_.end(), 0);
-    std::stable_sort(
-        dim_order_.begin(), dim_order_.end(), [this](uint8_t a, uint8_t b) {
-          return strides_[a] > strides_[b];
-        });
-    if (!has_empty_dimension()) {
-      validate_dense_layout();
-    }
-    if (info_.readonly && info_.size > 0) {
+    if ((info_.readonly || raw_bfloat16) && info_.size > 0) {
       owned_data_.resize(info_.size * info_.itemsize);
       std::memcpy(owned_data_.data(), info_.ptr, owned_data_.size());
       info_ = py::buffer_info(
@@ -239,6 +377,15 @@ class BufferTensor final {
           info_.strides);
       buffer_ = py::buffer();
     }
+  }
+
+  // A buffer that is not bound to a method input. Its data is borrowed, not
+  // copied.
+  explicit BufferTensor(const py::handle& value)
+      : buffer_(py::reinterpret_borrow<py::buffer>(value)),
+        info_(buffer_.request()) {
+    check_rank();
+    read_layout();
   }
 
   void* data() const {
@@ -262,14 +409,55 @@ class BufferTensor final {
     return scalar_type_;
   }
 
-  void use_layout_for_empty(Span<const uint8_t> dim_order) {
-    if (!has_empty_dimension() || dim_order.size() != sizes_.size()) {
+  // Describes the data in the exported dimension order. Data dense in another
+  // order is copied into that order, since reading it with the exported
+  // strides would permute its values. Empty data needs no copy. ATen builds
+  // keep the data as it is: there the runtime gives each input contiguous
+  // strides when it resizes it, so only contiguous data reads correctly.
+  void use_layout(Span<const uint8_t> dim_order) {
+    // The input check that follows reports a rank mismatch.
+    if (dim_order.size() != sizes_.size()) {
       return;
     }
-    dim_order_.assign(dim_order.begin(), dim_order.end());
+    const bool empty = has_empty_dimension();
+#ifdef USE_ATEN_LIB
+    if (!empty) {
+      return;
+    }
+#endif
+    if (!empty && has_layout(sizes_, strides_, dim_order)) {
+      return;
+    }
+    std::vector<int> strides(sizes_.size());
     const auto status = runtime::dim_order_to_stride(
-        sizes_.data(), dim_order_.data(), sizes_.size(), strides_.data());
-    THROW_IF_ERROR(status, "Invalid dimension order for empty buffer input");
+        sizes_.data(), dim_order.data(), sizes_.size(), strides.data());
+    THROW_IF_ERROR(status, "Invalid dimension order for buffer input");
+    if (!empty) {
+      std::vector<uint8_t> converted(nbytes());
+      copy_to_layout(
+          data(),
+          strides_,
+          converted.data(),
+          strides,
+          sizes_,
+          static_cast<size_t>(info_.itemsize));
+      owned_data_ = std::move(converted);
+      std::vector<py::ssize_t> byte_strides(strides.begin(), strides.end());
+      for (auto& stride : byte_strides) {
+        stride *= info_.itemsize;
+      }
+      // Drop the export too, so the caller's object is released.
+      info_ = py::buffer_info(
+          owned_data_.data(),
+          info_.itemsize,
+          info_.format,
+          info_.ndim,
+          info_.shape,
+          byte_strides);
+      buffer_ = py::buffer();
+    }
+    strides_ = std::move(strides);
+    dim_order_.assign(dim_order.begin(), dim_order.end());
   }
 
   bool borrows_data() const {
@@ -314,6 +502,38 @@ class BufferTensor final {
   }
 
  private:
+  void check_rank() const {
+    if (info_.ndim < 0 ||
+        static_cast<size_t>(info_.ndim) > runtime::kTensorDimensionLimit) {
+      throw py::buffer_error("Buffer rank is too large for ExecuTorch");
+    }
+  }
+
+  void read_layout() {
+    scalar_type_ = scalar_type_from_buffer(info_);
+    sizes_.reserve(info_.shape.size());
+    strides_.reserve(info_.strides.size());
+    for (const auto size : info_.shape) {
+      sizes_.push_back(checked_int(size, "dimension"));
+    }
+    for (const auto byte_stride : info_.strides) {
+      if (byte_stride < 0 || byte_stride % info_.itemsize != 0) {
+        throw py::buffer_error(
+            "ExecuTorch inputs require non-negative, element-aligned strides");
+      }
+      strides_.push_back(checked_int(byte_stride / info_.itemsize, "stride"));
+    }
+    dim_order_.resize(sizes_.size());
+    std::iota(dim_order_.begin(), dim_order_.end(), 0);
+    std::stable_sort(
+        dim_order_.begin(), dim_order_.end(), [this](uint8_t a, uint8_t b) {
+          return strides_[a] > strides_[b];
+        });
+    if (!has_empty_dimension()) {
+      validate_dense_layout();
+    }
+  }
+
   bool has_empty_dimension() const {
     return std::find(sizes_.begin(), sizes_.end(), 0) != sizes_.end();
   }
@@ -326,65 +546,92 @@ class BufferTensor final {
     return static_cast<int>(value);
   }
 
-  template <typename T>
-  static bool has_format(const py::buffer_info& info) {
-    return info.item_type_is_equivalent_to<T>();
-  }
-
-  static bool has_half_format(const py::buffer_info& info) {
-    if (info.itemsize != 2) {
-      return false;
-    }
-    if (info.format == "e" || info.format == "@e" || info.format == "=e") {
-      return true;
-    }
-    const uint16_t one = 1;
-    const bool native_is_little_endian =
-        *reinterpret_cast<const uint8_t*>(&one) == 1;
-    return (native_is_little_endian && info.format == "<e") ||
-        (!native_is_little_endian &&
-         (info.format == ">e" || info.format == "!e"));
-  }
-
+  // PEP 3118 formats: an optional byte-order prefix, then a struct code. The
+  // code gives the kind of number and itemsize gives its width, which also
+  // covers platform-sized codes such as 'l' and 'n'. ctypes spells out the
+  // native byte order with a prefix.
   static executorch::aten::ScalarType scalar_type_from_buffer(
       const py::buffer_info& info) {
-    if (has_format<uint8_t>(info)) {
-      return executorch::aten::ScalarType::Byte;
+    using executorch::aten::ScalarType;
+    const std::string& format = info.format;
+    const uint16_t one = 1;
+    const bool little_endian = *reinterpret_cast<const uint8_t*>(&one) == 1;
+    size_t code_offset = 0;
+    if (!format.empty() &&
+        std::string("@=<>!").find(format[0]) != std::string::npos) {
+      const bool native = format[0] == '@' || format[0] == '=' ||
+          (format[0] == '<' && little_endian) ||
+          (format[0] != '<' && !little_endian);
+      if (!native) {
+        throw py::buffer_error(
+            "Buffer format '" + format +
+            "' is not in this machine's byte order. Convert the data to the "
+            "native byte order before passing it.");
+      }
+      code_offset = 1;
     }
-    if (has_format<int8_t>(info)) {
-      return executorch::aten::ScalarType::Char;
+    const auto type_for_itemsize =
+        [&info](std::initializer_list<std::pair<int, ScalarType>> types)
+        -> std::optional<ScalarType> {
+      for (const auto& [itemsize, type] : types) {
+        if (info.itemsize == itemsize) {
+          return type;
+        }
+      }
+      return std::nullopt;
+    };
+    std::optional<ScalarType> type;
+    if (format.size() == code_offset + 1) {
+      switch (format[code_offset]) {
+        case '?':
+          type = type_for_itemsize({{1, ScalarType::Bool}});
+          break;
+        case 'b':
+        case 'h':
+        case 'i':
+        case 'l':
+        case 'q':
+        case 'n':
+          type = type_for_itemsize(
+              {{1, ScalarType::Char},
+               {2, ScalarType::Short},
+               {4, ScalarType::Int},
+               {8, ScalarType::Long}});
+          break;
+        case 'B':
+        case 'H':
+        case 'I':
+        case 'L':
+        case 'Q':
+        case 'N':
+          type = type_for_itemsize(
+              {{1, ScalarType::Byte},
+               {2, ScalarType::UInt16},
+               {4, ScalarType::UInt32},
+               {8, ScalarType::UInt64}});
+          break;
+        case 'e':
+        case 'f':
+        case 'd':
+          type = type_for_itemsize(
+              {{2, ScalarType::Half},
+               {4, ScalarType::Float},
+               {8, ScalarType::Double}});
+          break;
+      }
+    } else if (format.size() == code_offset + 2 && format[code_offset] == 'Z') {
+      if (format[code_offset + 1] == 'f' || format[code_offset + 1] == 'd') {
+        type = type_for_itemsize(
+            {{8, ScalarType::ComplexFloat}, {16, ScalarType::ComplexDouble}});
+      }
     }
-    if (has_format<int16_t>(info)) {
-      return executorch::aten::ScalarType::Short;
+    if (!type) {
+      throw py::buffer_error(
+          "Unsupported buffer format '" + format + "' with item size " +
+          std::to_string(info.itemsize) +
+          ". Use a buffer of booleans, integers, floats, or complex numbers.");
     }
-    if (has_format<int32_t>(info)) {
-      return executorch::aten::ScalarType::Int;
-    }
-    if (has_format<int64_t>(info)) {
-      return executorch::aten::ScalarType::Long;
-    }
-    if (has_half_format(info)) {
-      return executorch::aten::ScalarType::Half;
-    }
-    if (has_format<float>(info)) {
-      return executorch::aten::ScalarType::Float;
-    }
-    if (has_format<double>(info)) {
-      return executorch::aten::ScalarType::Double;
-    }
-    if (has_format<bool>(info)) {
-      return executorch::aten::ScalarType::Bool;
-    }
-    if (has_format<uint16_t>(info)) {
-      return executorch::aten::ScalarType::UInt16;
-    }
-    if (has_format<uint32_t>(info)) {
-      return executorch::aten::ScalarType::UInt32;
-    }
-    if (has_format<uint64_t>(info)) {
-      return executorch::aten::ScalarType::UInt64;
-    }
-    throw py::buffer_error("Unsupported buffer format: " + info.format);
+    return *type;
   }
 
   void validate_dense_layout() const {
@@ -412,21 +659,6 @@ class BufferTensor final {
   executorch::aten::ScalarType scalar_type_;
 };
 
-PyObject* loaded_torch_module() {
-  // Retain the module for the interpreter's lifetime. This avoids repeated
-  // sys.modules lookups without creating a static py::object whose destructor
-  // could run after Python has finalized.
-  static PyObject* torch_module = nullptr;
-  if (torch_module == nullptr) {
-    PyObject* loaded = PyDict_GetItemString(PyImport_GetModuleDict(), "torch");
-    if (loaded != nullptr) {
-      Py_INCREF(loaded);
-      torch_module = loaded;
-    }
-  }
-  return torch_module;
-}
-
 bool is_torch_tensor(const py::handle& value) {
   static PyObject* tensor_type = nullptr;
   if (tensor_type == nullptr) {
@@ -446,53 +678,71 @@ bool is_torch_tensor(const py::handle& value) {
   return result == 1;
 }
 
+// Runs `read`, which builds one input from a Python object, and names the
+// input and its method in its errors, which the readers cannot see. A Python
+// error keeps its exact type and gets the name as a note; the C++ errors
+// caught below get it in their message. Others, such as std::bad_alloc, pass
+// through unnamed, so pybind11 maps them to their own Python type.
+template <typename Read>
+auto read_input(const MethodMeta& method_meta, size_t index, Read&& read) {
+  const auto name = [&] {
+    return "Input " + std::to_string(index) + " of method '" +
+        method_meta.name() + "'";
+  };
+  const auto named = [&name](const char* message) {
+    return name() + ": " + message;
+  };
+  try {
+    return read();
+  } catch (py::error_already_set& error) {
+    // Rebuilding the exception as type(message) would fail for any exception
+    // whose constructor is not a single string.
+    if (error.value()) {
+      try {
+        error.value().attr("add_note")(name());
+      } catch (...) {
+        // add_note is best effort; never hide the original error.
+      }
+    }
+    throw;
+  } catch (const py::buffer_error& error) {
+    throw py::buffer_error(named(error.what()));
+  } catch (const py::value_error& error) {
+    throw py::value_error(named(error.what()));
+  } catch (const py::type_error& error) {
+    throw py::type_error(named(error.what()));
+  } catch (const std::invalid_argument& error) {
+    throw py::value_error(named(error.what()));
+  } catch (const std::runtime_error& error) {
+    throw std::runtime_error(named(error.what()));
+  }
+}
+
 void validate_tensor_input(
     const MethodMeta& method_meta,
     size_t index,
     executorch::aten::ScalarType scalar_type,
-    const std::vector<int>& sizes,
-    const std::vector<int>& strides,
-    bool check_strides = true) {
+    const std::vector<int>& sizes) {
   const auto input_meta = method_meta.input_tensor_meta(index);
-  THROW_IF_ERROR(input_meta.error(), "Input %zu is not a tensor input", index);
+  THROW_IF_ERROR(
+      input_meta.error(),
+      "Input %zu of method '%s' is not a tensor input",
+      index,
+      method_meta.name());
+  const std::string input_name = "Input " + std::to_string(index) +
+      " of method '" + method_meta.name() + "'";
   if (input_meta->scalar_type() != scalar_type) {
     throw py::value_error(
-        "Input " + std::to_string(index) + " has dtype " +
+        input_name + " has dtype " +
         std::string(runtime::toString(scalar_type)) +
         " but the method expects " +
         std::string(runtime::toString(input_meta->scalar_type())));
   }
-  const auto expected_order = input_meta->dim_order();
-  if (expected_order.size() != sizes.size()) {
+  const auto expected_rank = input_meta->sizes().size();
+  if (expected_rank != sizes.size()) {
     throw py::value_error(
-        "Input " + std::to_string(index) + " has rank " +
-        std::to_string(sizes.size()) + ", but the method expects rank " +
-        std::to_string(expected_order.size()));
-  }
-  if (!check_strides) {
-    return;
-  }
-  if (strides.size() != sizes.size()) {
-    throw py::value_error(
-        "Input " + std::to_string(index) +
-        " has inconsistent shape and stride ranks");
-  }
-  std::vector<int> expected_strides(sizes.size());
-  const auto status = runtime::dim_order_to_stride(
-      sizes.data(),
-      expected_order.data(),
-      sizes.size(),
-      expected_strides.data());
-  THROW_IF_ERROR(status, "Invalid dimension order for input %zu", index);
-  const bool is_empty = std::find(sizes.begin(), sizes.end(), 0) != sizes.end();
-  for (size_t dim = 0; dim < sizes.size(); ++dim) {
-    if ((sizes[dim] > 1 || is_empty) && strides[dim] != expected_strides[dim]) {
-      throw py::value_error(
-          "Input " + std::to_string(index) + " has stride " +
-          std::to_string(strides[dim]) + " at dimension " +
-          std::to_string(dim) + ", but the method expects stride " +
-          std::to_string(expected_strides[dim]));
-    }
+        input_name + " has rank " + std::to_string(sizes.size()) +
+        ", but the method expects rank " + std::to_string(expected_rank));
   }
 }
 
@@ -502,22 +752,45 @@ void validate_buffer_input(
     BufferTensor& buffer) {
   const auto input_meta = method_meta.input_tensor_meta(index);
   if (input_meta.ok()) {
-    buffer.use_layout_for_empty(input_meta->dim_order());
+    buffer.use_layout(input_meta->dim_order());
   }
   validate_tensor_input(
-      method_meta,
-      index,
-      buffer.scalar_type(),
-      buffer.sizes(),
-      buffer.strides());
+      method_meta, index, buffer.scalar_type(), buffer.sizes());
 }
 
 #ifndef USE_ATEN_LIB
-/** A zero-copy view built only from torch.Tensor's public Python API. */
+void validate_input_device(
+    const Method& method,
+    size_t index,
+    executorch::aten::Device device,
+    size_t nbytes) {
+  if (nbytes == 0) {
+    return;
+  }
+  const auto expected = method.get_input(index).toTensor().device();
+  if (device != expected) {
+    const auto name = [](executorch::aten::Device value) {
+      return value.is_cpu() ? std::string("cpu")
+                            : "cuda:" + std::to_string(value.index());
+    };
+    std::string message = "Input " + std::to_string(index) + " of method '" +
+        method.method_meta().name() + "' is on device " + name(device) +
+        ", but the method expects " + name(expected);
+    if (device.is_cpu()) {
+      message +=
+          ". Pass device memory instead, such as "
+          "ExecuTorchResult.from_host(...) or a CUDA tensor";
+    }
+    throw py::value_error(message);
+  }
+}
+
+/** A torch.Tensor input read through its public Python API, copied only to
+ * change its layout. */
 class TorchTensorView final {
  public:
-  explicit TorchTensorView(const py::handle& value)
-      : owner_(py::reinterpret_borrow<py::object>(value)) {
+  TorchTensorView(const py::handle& value, size_t index)
+      : owner_(py::reinterpret_borrow<py::object>(value)), index_(index) {
     if (owner_.attr("is_neg")().cast<bool>() ||
         owner_.attr("is_conj")().cast<bool>()) {
       throw py::value_error(
@@ -555,13 +828,19 @@ class TorchTensorView final {
         dim_order_.begin(), dim_order_.end(), [this](uint8_t a, uint8_t b) {
           return strides_[a] > strides_[b];
         });
-    validate_dense_layout();
+    if (numel != 0) {
+      validate_dense_layout();
+    }
     const auto address =
         numel == 0 ? 0 : owner_.attr("data_ptr")().cast<uintptr_t>();
     if (address == 0 && numel != 0) {
       throw py::value_error("Torch tensor data is not allocated");
     }
     data_ = reinterpret_cast<void*>(address);
+  }
+
+  size_t index() const {
+    return index_;
   }
 
   void* data() const {
@@ -596,29 +875,43 @@ class TorchTensorView final {
     return owner_;
   }
 
+  // Describes the tensor in the exported dimension order. A tensor dense in
+  // another order is first copied by torch into that order on its own device,
+  // since reading it with the exported strides would permute its values.
+  // owner() is then the copy.
   void use_layout(Span<const uint8_t> dim_order) {
-    dim_order_.assign(dim_order.begin(), dim_order.end());
-    // Singleton dimensions can have arbitrary strides. After validation,
-    // describe the same storage using the exported layout's canonical strides.
-    const auto status = runtime::dim_order_to_stride(
-        sizes_.data(), dim_order_.data(), sizes_.size(), strides_.data());
-    THROW_IF_ERROR(status, "Invalid dimension order for torch tensor input");
-  }
-
-  void validate_device(const Method& method, size_t index) const {
-    if (nbytes_ == 0) {
-      return;
+    // The exported strides are computed as int. The input's own strides fit
+    // in int already, so only a conversion can need a larger one.
+    int64_t outer_stride = 1;
+    for (size_t i = 1; i < dim_order.size(); ++i) {
+      outer_stride *= std::max(sizes_[dim_order[i]], 1);
     }
-    const auto expected = method.get_input(index).toTensor().device();
-    if (device_ != expected) {
-      const auto name = [](executorch::aten::Device device) {
-        return device.is_cpu() ? std::string("cpu")
-                               : "cuda:" + std::to_string(device.index());
-      };
+    if (outer_stride > std::numeric_limits<int>::max()) {
       throw py::value_error(
-          "Input " + std::to_string(index) + " is on device " + name(device_) +
-          ", but the method expects " + name(expected));
+          "Torch tensor is too large to convert to the exported layout");
     }
+    std::vector<int> strides(sizes_.size());
+    const auto status = runtime::dim_order_to_stride(
+        sizes_.data(), dim_order.data(), sizes_.size(), strides.data());
+    THROW_IF_ERROR(status, "Invalid dimension order for torch tensor input");
+    if (nbytes_ != 0 && !has_layout(sizes_, strides_, dim_order)) {
+      // torch copies on its current stream, which may run before a write the
+      // producer queued on another stream, so wait for the device first.
+      if (device_.type() == executorch::aten::DeviceType::CUDA) {
+        synchronize_torch_cuda_device(device_.index());
+      }
+      owner_ = py::reinterpret_borrow<py::object>(loaded_torch_module())
+                   .attr("empty_strided")(
+                       sizes_,
+                       strides,
+                       py::arg("dtype") = owner_.attr("dtype"),
+                       py::arg("device") = owner_.attr("device"))
+                   .attr("copy_")(owner_);
+      data_ =
+          reinterpret_cast<void*>(owner_.attr("data_ptr")().cast<uintptr_t>());
+    }
+    strides_ = std::move(strides);
+    dim_order_.assign(dim_order.begin(), dim_order.end());
   }
 
  private:
@@ -652,6 +945,7 @@ class TorchTensorView final {
   }
 
   py::object owner_;
+  size_t index_;
   void* data_ = nullptr;
   std::vector<int> sizes_;
   std::vector<int> strides_;
@@ -676,13 +970,13 @@ class BorrowedInput final {
         data_(buffer_->data()),
         nbytes_(buffer_->nbytes()) {}
 
-  void validate() const {
+  void validate(const char* method_name) const {
     const auto [current_data, current_nbytes] =
         buffer_ ? buffer_->current_storage() : torch_storage();
     if (current_data != data_ || current_nbytes != nbytes_) {
       throw py::value_error(
-          "Input " + std::to_string(index_) +
-          " storage changed after set_inputs(); call set_inputs() again");
+          "Input " + std::to_string(index_) + " of method '" + method_name +
+          "': its storage changed after it was passed in; pass it again");
     }
   }
 
@@ -703,8 +997,645 @@ class BorrowedInput final {
   size_t nbytes_;
 };
 
+#ifndef USE_ATEN_LIB
+// Asks for a DLPack 1.0 capsule, which can mark memory read-only, and falls
+// back to a legacy capsule for producers that predate it.
+py::object dlpack_capsule(
+    const py::object& producer,
+    const py::object& stream) {
+  const auto request = [&](bool versioned) {
+    py::dict arguments;
+    if (!stream.is_none()) {
+      arguments["stream"] = stream;
+    }
+    if (versioned) {
+      arguments["max_version"] = py::make_tuple(1, 0);
+    }
+    return producer.attr("__dlpack__")(**arguments);
+  };
+  try {
+    return request(/*versioned=*/true);
+  } catch (py::error_already_set& error) {
+    if (!error.matches(PyExc_TypeError)) {
+      throw;
+    }
+  }
+  return request(/*versioned=*/false);
+}
+
+// Asks a producer for a capsule of CUDA memory on device `index`. Producers
+// such as torch export a CUDA tensor only while its device is the current one,
+// and torch reads that from its own state, so a torch that can use CUDA is
+// asked to switch.
+py::object cuda_dlpack_capsule(const py::object& producer, int index) {
+  const auto request = [&producer] {
+    return dlpack_capsule(producer, py::int_(1));
+  };
+  PyObject* torch = loaded_torch_module();
+  const auto torch_cuda = torch == nullptr
+      ? py::object(py::none())
+      : py::reinterpret_borrow<py::object>(torch).attr("cuda");
+  if (torch_cuda.is_none() || !torch_cuda.attr("is_available")().cast<bool>()) {
+    return with_cuda_device(index, request);
+  }
+  const auto device = torch_cuda.attr("device")(index);
+  device.attr("__enter__")();
+  try {
+    auto capsule = request();
+    device.attr("__exit__")(py::none(), py::none(), py::none());
+    return capsule;
+  } catch (...) {
+    device.attr("__exit__")(py::none(), py::none(), py::none());
+    throw;
+  }
+}
+
+/** A borrowed tensor view obtained through the producer's DLPack protocol,
+ * or from a DLPack capsule passed directly. */
+class DLPackTensorView final {
+ public:
+  explicit DLPackTensorView(const py::handle& value)
+      : owner_(py::reinterpret_borrow<py::object>(value)) {
+    if (PyCapsule_CheckExact(owner_.ptr())) {
+      // A capsule carries its device in the tensor it holds, and has no
+      // producer to negotiate a stream with.
+      capsule_ = owner_;
+      const auto& tensor = take_capsule();
+      advertised_device_ = {
+          static_cast<int>(tensor.device.device_type), tensor.device.device_id};
+      validate_advertised_device();
+      read(tensor);
+      mark_used();
+      return;
+    }
+    advertised_device_ =
+        owner_.attr("__dlpack_device__")().cast<std::pair<int, int>>();
+    validate_advertised_device();
+    // A result of these bindings gives its capsule without the wait in
+    // __dlpack__, since the call waits for every CUDA input before it runs.
+    if (py::isinstance<PyExecuTorchResult>(owner_)) {
+      const auto result = owner_.cast<std::shared_ptr<PyExecuTorchResult>>();
+      // A method may write its inputs, so read-only memory is read from a
+      // copy.
+      capsule_ = result->read_only()
+          ? result->to_dlpack(
+                py::none(), py::none(), py::none(), py::bool_(true))
+          : result->capsule();
+    } else {
+      capsule_ = advertised_device_.first == dlpack::CUDA
+          ? cuda_dlpack_capsule(owner_, advertised_device_.second)
+          : dlpack_capsule(owner_, py::none());
+    }
+    read(take_capsule());
+    mark_used();
+  }
+
+  ~DLPackTensorView() {
+    if (managed_ != nullptr && managed_->deleter != nullptr) {
+      managed_->deleter(managed_);
+    }
+    if (versioned_ != nullptr && versioned_->deleter != nullptr) {
+      versioned_->deleter(versioned_);
+    }
+  }
+
+  DLPackTensorView(const DLPackTensorView&) = delete;
+  DLPackTensorView& operator=(const DLPackTensorView&) = delete;
+
+  void* data() const {
+    return data_;
+  }
+
+  const std::vector<int>& sizes() const {
+    return sizes_;
+  }
+
+  const std::vector<int>& strides() const {
+    return strides_;
+  }
+
+  const std::vector<uint8_t>& dim_order() const {
+    return dim_order_;
+  }
+
+  executorch::aten::ScalarType scalar_type() const {
+    return scalar_type_;
+  }
+
+  executorch::aten::Device device() const {
+    return device_;
+  }
+
+  size_t nbytes() const {
+    return nbytes_;
+  }
+
+  // Describes the tensor in the exported dimension order. A CPU tensor dense
+  // in another order is copied into that order, since reading it with the
+  // exported strides would permute its values. A device tensor would need a
+  // device copy, so it must already be in the exported order.
+  void use_layout(Span<const uint8_t> dim_order) {
+    std::vector<int> strides(sizes_.size());
+    const auto status = runtime::dim_order_to_stride(
+        sizes_.data(), dim_order.data(), sizes_.size(), strides.data());
+    THROW_IF_ERROR(status, "Invalid dimension order for DLPack tensor input");
+    if (nbytes_ != 0 && !has_layout(sizes_, strides_, dim_order)) {
+      if (!device_.is_cpu()) {
+        throw py::value_error(
+            "DLPack device input is laid out differently from the exported "
+            "method. Pass the input in the layout the method was exported "
+            "with.");
+      }
+      converted_.resize(nbytes_);
+      copy_to_layout(
+          data_,
+          strides_,
+          converted_.data(),
+          strides,
+          sizes_,
+          runtime::elementSize(scalar_type_));
+      data_ = converted_.data();
+    }
+    strides_ = std::move(strides);
+    dim_order_.assign(dim_order.begin(), dim_order.end());
+  }
+
+  py::object result_backing_owner() const {
+    if (!converted_.empty()) {
+      return py::none();
+    }
+    auto capsule_owner = versioned_ != nullptr
+        ? PyExecuTorchResult::dlpack_backing_owner(versioned_)
+        : PyExecuTorchResult::dlpack_backing_owner(managed_);
+    if (!capsule_owner.is_none()) {
+      return capsule_owner;
+    }
+    if (py::isinstance<PyExecuTorchResult>(owner_)) {
+      return owner_.cast<std::shared_ptr<PyExecuTorchResult>>()->backing_owner(
+          owner_);
+    }
+    return py::none();
+  }
+
+ private:
+  // The tensor in capsule_, legacy or DLPack 1.0. The capsule keeps owning it
+  // until mark_used(), so a failure before then lets the capsule free it.
+  const dlpack::Tensor& take_capsule() {
+    if (PyCapsule_IsValid(capsule_.ptr(), "dltensor")) {
+      managed_ = static_cast<dlpack::ManagedTensor*>(
+          PyCapsule_GetPointer(capsule_.ptr(), "dltensor"));
+      if (managed_ == nullptr) {
+        throw py::error_already_set();
+      }
+      return managed_->dl_tensor;
+    }
+    if (PyCapsule_IsValid(capsule_.ptr(), "dltensor_versioned")) {
+      auto* versioned = static_cast<dlpack::ManagedTensorVersioned*>(
+          PyCapsule_GetPointer(capsule_.ptr(), "dltensor_versioned"));
+      if (versioned == nullptr) {
+        throw py::error_already_set();
+      }
+      if (versioned->version.major != 1) {
+        throw py::value_error(
+            "DLPack version " + std::to_string(versioned->version.major) +
+            " is not supported");
+      }
+      versioned_ = versioned;
+      return versioned_->dl_tensor;
+    }
+    if (PyCapsule_IsValid(capsule_.ptr(), "used_dltensor") ||
+        PyCapsule_IsValid(capsule_.ptr(), "used_dltensor_versioned")) {
+      throw py::value_error("This DLPack capsule was already consumed");
+    }
+    throw py::value_error("Expected a dltensor or dltensor_versioned capsule");
+  }
+
+  // Takes the tensor over from the capsule, so nothing else can take it again.
+  void mark_used() {
+    const auto* name =
+        versioned_ != nullptr ? "used_dltensor_versioned" : "used_dltensor";
+    if (PyCapsule_SetName(capsule_.ptr(), name) != 0) {
+      managed_ = nullptr;
+      versioned_ = nullptr;
+      throw py::error_already_set();
+    }
+  }
+
+  void read(const dlpack::Tensor& tensor) {
+    initialize(tensor);
+    if (versioned_ == nullptr ||
+        (versioned_->flags & dlpack::kFlagReadOnly) == 0 || nbytes_ == 0) {
+      return;
+    }
+    // A method may write its inputs, so read-only memory is read from a copy.
+    if (!device_.is_cpu()) {
+      throw py::value_error("Read-only DLPack device inputs are not supported");
+    }
+    converted_.assign(
+        static_cast<const uint8_t*>(data_),
+        static_cast<const uint8_t*>(data_) + nbytes_);
+    data_ = converted_.data();
+  }
+
+  static executorch::aten::ScalarType scalar_type_from_dlpack(
+      const dlpack::DataType& dtype) {
+    if (dtype.lanes != 1) {
+      throw py::value_error("DLPack vector dtypes are not supported");
+    }
+    using executorch::aten::ScalarType;
+    if (dtype.code == dlpack::DataTypeCode::Int && dtype.bits == 8) {
+      return ScalarType::Char;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Int && dtype.bits == 16) {
+      return ScalarType::Short;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Int && dtype.bits == 32) {
+      return ScalarType::Int;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Int && dtype.bits == 64) {
+      return ScalarType::Long;
+    }
+    if (dtype.code == dlpack::DataTypeCode::UInt && dtype.bits == 8) {
+      return ScalarType::Byte;
+    }
+    if (dtype.code == dlpack::DataTypeCode::UInt && dtype.bits == 16) {
+      return ScalarType::UInt16;
+    }
+    if (dtype.code == dlpack::DataTypeCode::UInt && dtype.bits == 32) {
+      return ScalarType::UInt32;
+    }
+    if (dtype.code == dlpack::DataTypeCode::UInt && dtype.bits == 64) {
+      return ScalarType::UInt64;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Float && dtype.bits == 16) {
+      return ScalarType::Half;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Float && dtype.bits == 32) {
+      return ScalarType::Float;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Float && dtype.bits == 64) {
+      return ScalarType::Double;
+    }
+    if (dtype.code == dlpack::DataTypeCode::BFloat && dtype.bits == 16) {
+      return ScalarType::BFloat16;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Complex && dtype.bits == 32) {
+      return ScalarType::ComplexHalf;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Complex && dtype.bits == 64) {
+      return ScalarType::ComplexFloat;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Complex && dtype.bits == 128) {
+      return ScalarType::ComplexDouble;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Bool && dtype.bits == 8) {
+      return ScalarType::Bool;
+    }
+    throw py::value_error("Unsupported DLPack dtype");
+  }
+
+  void validate_advertised_device() const {
+    if (advertised_device_.first != dlpack::CPU &&
+        advertised_device_.first != dlpack::CUDA) {
+      throw py::value_error("Only CPU and CUDA DLPack tensors are supported");
+    }
+    if (advertised_device_.second < 0 ||
+        advertised_device_.second >
+            std::numeric_limits<runtime::etensor::DeviceIndex>::max()) {
+      throw py::value_error("DLPack device index is too large for ExecuTorch");
+    }
+  }
+
+  void initialize(const dlpack::Tensor& tensor) {
+    if (static_cast<int>(tensor.device.device_type) !=
+            advertised_device_.first ||
+        tensor.device.device_id != advertised_device_.second) {
+      throw py::value_error(
+          "DLPack capsule device disagrees with __dlpack_device__()");
+    }
+    if (tensor.ndim > 0 && tensor.shape == nullptr) {
+      throw py::value_error("DLPack tensor shape is missing");
+    }
+    if (tensor.ndim < 0 ||
+        static_cast<size_t>(tensor.ndim) > runtime::kTensorDimensionLimit) {
+      throw py::value_error("DLPack tensor rank is too large for ExecuTorch");
+    }
+    if (tensor.device.device_type == dlpack::DeviceType::CPU) {
+      device_ = executorch::aten::Device(
+          executorch::aten::DeviceType::CPU,
+          static_cast<runtime::etensor::DeviceIndex>(tensor.device.device_id));
+    } else if (tensor.device.device_type == dlpack::DeviceType::CUDA) {
+      device_ = executorch::aten::Device(
+          executorch::aten::DeviceType::CUDA,
+          static_cast<runtime::etensor::DeviceIndex>(tensor.device.device_id));
+    } else {
+      throw py::value_error("Only CPU and CUDA DLPack tensors are supported");
+    }
+    scalar_type_ = scalar_type_from_dlpack(tensor.dtype);
+    if (tensor.byte_offset > std::numeric_limits<uintptr_t>::max() -
+                reinterpret_cast<uintptr_t>(tensor.data) ||
+        (tensor.data == nullptr && tensor.byte_offset != 0)) {
+      throw py::value_error("Invalid DLPack tensor data pointer");
+    }
+    data_ = tensor.data == nullptr
+        ? nullptr
+        : static_cast<uint8_t*>(tensor.data) + tensor.byte_offset;
+    sizes_.reserve(tensor.ndim);
+    strides_.resize(tensor.ndim);
+    for (int32_t i = 0; i < tensor.ndim; ++i) {
+      if (tensor.shape[i] < 0 ||
+          tensor.shape[i] > std::numeric_limits<int>::max()) {
+        throw py::value_error("Invalid DLPack tensor shape");
+      }
+      sizes_.push_back(static_cast<int>(tensor.shape[i]));
+    }
+    const bool empty =
+        std::find(sizes_.begin(), sizes_.end(), 0) != sizes_.end();
+    size_t count = empty ? 0 : 1;
+    if (!empty) {
+      for (const auto size : sizes_) {
+        if (count >
+            std::numeric_limits<size_t>::max() / static_cast<size_t>(size)) {
+          throw py::value_error("DLPack tensor is too large for ExecuTorch");
+        }
+        count *= size;
+      }
+    }
+    const auto itemsize = runtime::elementSize(scalar_type_);
+    if (count > std::numeric_limits<size_t>::max() / itemsize) {
+      throw py::value_error("DLPack tensor is too large for ExecuTorch");
+    }
+    nbytes_ = count * itemsize;
+    if (nbytes_ != 0 && data_ == nullptr) {
+      throw py::value_error("DLPack tensor data is not allocated");
+    }
+    if (tensor.strides == nullptr) {
+      int64_t stride = 1;
+      for (int32_t i = tensor.ndim; i > 0; --i) {
+        if (stride > std::numeric_limits<int>::max()) {
+          throw py::value_error(
+              "DLPack tensor stride is too large for ExecuTorch");
+        }
+        strides_[i - 1] = static_cast<int>(stride);
+        stride *= std::max(sizes_[i - 1], 1);
+      }
+    } else {
+      for (int32_t i = 0; i < tensor.ndim; ++i) {
+        if (tensor.strides[i] < 0 ||
+            tensor.strides[i] > std::numeric_limits<int>::max()) {
+          throw py::value_error("Invalid DLPack tensor stride");
+        }
+        strides_[i] = static_cast<int>(tensor.strides[i]);
+      }
+    }
+    dim_order_.resize(sizes_.size());
+    std::iota(dim_order_.begin(), dim_order_.end(), 0);
+    std::stable_sort(
+        dim_order_.begin(), dim_order_.end(), [this](uint8_t a, uint8_t b) {
+          return strides_[a] > strides_[b];
+        });
+    if (empty) {
+      return;
+    }
+    int64_t expected_stride = 1;
+    for (size_t i = dim_order_.size(); i > 0; --i) {
+      const auto dim = dim_order_[i - 1];
+      if (sizes_[dim] > 1 && strides_[dim] != expected_stride) {
+        throw py::value_error(
+            "ExecuTorch inputs require dense DLPack tensor storage");
+      }
+      if (expected_stride >
+          std::numeric_limits<int>::max() / std::max(sizes_[dim], 1)) {
+        throw py::value_error("DLPack tensor is too large for ExecuTorch");
+      }
+      expected_stride *= std::max(sizes_[dim], 1);
+    }
+  }
+
+  py::object owner_;
+  std::pair<int, int> advertised_device_;
+  size_t nbytes_ = 0;
+  py::object capsule_;
+  dlpack::ManagedTensor* managed_ = nullptr;
+  dlpack::ManagedTensorVersioned* versioned_ = nullptr;
+  void* data_ = nullptr;
+  std::vector<uint8_t> converted_;
+  std::vector<int> sizes_;
+  std::vector<int> strides_;
+  std::vector<uint8_t> dim_order_;
+  executorch::aten::ScalarType scalar_type_;
+  executorch::aten::Device device_{executorch::aten::DeviceType::CPU};
+};
+
+py::object dlpack_output_owner(
+    const executorch::aten::Tensor& output,
+    const std::vector<std::shared_ptr<DLPackTensorView>>& inputs,
+    const std::vector<std::shared_ptr<BufferTensor>>& buffers,
+    const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs,
+    const std::vector<std::optional<TensorPtr>>& output_tensors,
+    py::object storage_owner) {
+  py::list owners;
+  std::unordered_set<PyObject*> seen;
+  const auto append_owner = [&owners, &seen](py::object owner) {
+    // Result feedback should retain allocation roots without nesting the
+    // previous call's owner list or duplicating its records.
+    std::vector<py::object> pending;
+    pending.push_back(std::move(owner));
+    while (!pending.empty()) {
+      auto current = std::move(pending.back());
+      pending.pop_back();
+      if (current.is_none() || !seen.insert(current.ptr()).second) {
+        continue;
+      }
+      if (PyList_CheckExact(current.ptr())) {
+        for (const auto item : py::reinterpret_borrow<py::list>(current)) {
+          pending.emplace_back(py::reinterpret_borrow<py::object>(item));
+        }
+      } else {
+        owners.append(std::move(current));
+      }
+    }
+  };
+  append_owner(std::move(storage_owner));
+  const auto aliases_output = [&output](const void* data, size_t nbytes) {
+    const auto start = reinterpret_cast<uintptr_t>(data);
+    const auto address = reinterpret_cast<uintptr_t>(output.const_data_ptr());
+    return address != 0 && address >= start && address - start <= nbytes &&
+        output.nbytes() <= nbytes - (address - start);
+  };
+  // Each result pins only its own output allocation. An aliased result must
+  // not accumulate allocations belonging to discarded sibling outputs.
+  for (const auto& tensor : output_tensors) {
+    if (tensor.has_value() &&
+        aliases_output((*tensor)->const_data_ptr(), (*tensor)->nbytes())) {
+      auto* allocation = new TensorPtr(*tensor);
+      append_owner(py::capsule(allocation, [](void* pointer) {
+        delete static_cast<TensorPtr*>(pointer);
+      }));
+    }
+  }
+  for (const auto& input : inputs) {
+    if (!aliases_output(input->data(), input->nbytes())) {
+      continue;
+    }
+    auto backing_owner = input->result_backing_owner();
+    if (!backing_owner.is_none()) {
+      append_owner(std::move(backing_owner));
+    } else {
+      auto* retained = new std::shared_ptr<DLPackTensorView>(input);
+      append_owner(py::capsule(retained, [](void* pointer) {
+        delete static_cast<std::shared_ptr<DLPackTensorView>*>(pointer);
+      }));
+    }
+  }
+  for (const auto& buffer : buffers) {
+    if (!aliases_output(buffer->data(), buffer->nbytes())) {
+      continue;
+    }
+    auto backing_owner = buffer->result_backing_owner();
+    if (!backing_owner.is_none()) {
+      append_owner(std::move(backing_owner));
+    } else {
+      auto* retained = new std::shared_ptr<BufferTensor>(buffer);
+      append_owner(py::capsule(retained, [](void* pointer) {
+        delete static_cast<std::shared_ptr<BufferTensor>*>(pointer);
+      }));
+    }
+  }
+  for (const auto& input : torch_inputs) {
+    if (aliases_output(input->data(), input->nbytes())) {
+      auto* retained = new std::shared_ptr<TorchTensorView>(input);
+      append_owner(py::capsule(retained, [](void* pointer) {
+        delete static_cast<std::shared_ptr<TorchTensorView>*>(pointer);
+      }));
+    }
+  }
+  return owners;
+}
+
+py::object module_aliased_torch_output(
+    const executorch::aten::Tensor& tensor,
+    const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs,
+    const std::string& method_name) {
+  if (torch_inputs.empty() ||
+      portable_tensor_output() != PortableTensorOutput::Torch ||
+      tensor.nbytes() == 0) {
+    return py::none();
+  }
+  const auto address = reinterpret_cast<uintptr_t>(tensor.const_data_ptr());
+  const auto tensor_type =
+      py::reinterpret_borrow<py::object>(loaded_torch_module()).attr("Tensor");
+  for (const auto& input : torch_inputs) {
+    const auto start = reinterpret_cast<uintptr_t>(input->data());
+    if (Py_TYPE(input->owner().ptr()) !=
+            reinterpret_cast<PyTypeObject*>(tensor_type.ptr()) ||
+        tensor.device() != input->device() ||
+        tensor.scalar_type() != input->scalar_type() || address < start ||
+        address - start > input->nbytes() ||
+        tensor.nbytes() > input->nbytes() - (address - start)) {
+      continue;
+    }
+    const auto itemsize = runtime::elementSize(tensor.scalar_type());
+    if ((address - start) % itemsize != 0) {
+      continue;
+    }
+    auto source = input->owner().attr("detach")();
+    if (source.attr("data_ptr")().cast<uintptr_t>() != start ||
+        scalar_type_from_torch_dtype(
+            py::str(source.attr("dtype")).cast<std::string>()) !=
+            tensor.scalar_type()) {
+      throw py::value_error(
+          "Input " + std::to_string(input->index()) + " of method '" +
+          method_name +
+          "': its storage changed before the output was read; pass it again");
+    }
+    const auto offset = source.attr("storage_offset")().cast<int64_t>() +
+        static_cast<int64_t>((address - start) / itemsize);
+    return source.attr("as_strided")(
+        std::vector<int64_t>(tensor.sizes().begin(), tensor.sizes().end()),
+        std::vector<int64_t>(tensor.strides().begin(), tensor.strides().end()),
+        offset);
+  }
+  return py::none();
+}
+#endif
+
+// The value for an input the method declares as a number. Python numbers and
+// NumPy scalars or 0-d arrays must match the declared kind, except that an
+// integer is accepted for a float input. NumPy numbers also export a
+// buffer, so without this they would be read as tensors. Returns an empty
+// optional for inputs the method does not declare as numbers, and raises for
+// anything else passed where a number is expected.
+std::optional<EValue> scalar_input(
+    const MethodMeta& method_meta,
+    size_t index,
+    const py::handle& value) {
+  const auto tag = method_meta.input_tag(index);
+  if (!tag.ok() ||
+      (tag.get() != Tag::Double && tag.get() != Tag::Int &&
+       tag.get() != Tag::Bool)) {
+    return std::nullopt;
+  }
+  py::object number;
+  PyObject* numpy = PyDict_GetItemString(PyImport_GetModuleDict(), "numpy");
+  if (py::isinstance<py::bool_>(value) || py::isinstance<py::int_>(value) ||
+      py::isinstance<py::float_>(value)) {
+    number = py::reinterpret_borrow<py::object>(value);
+  } else if (numpy != nullptr) {
+    const auto module = py::reinterpret_borrow<py::object>(numpy);
+    if (py::isinstance(value, module.attr("generic")) ||
+        (py::isinstance(value, module.attr("ndarray")) &&
+         value.attr("ndim").cast<int>() == 0)) {
+      number = value.attr("item")();
+    }
+  }
+  const bool is_bool = number && py::isinstance<py::bool_>(number);
+  // Python's bool is a subclass of int.
+  const bool is_int = number && !is_bool && py::isinstance<py::int_>(number);
+  const bool is_float = number && py::isinstance<py::float_>(number);
+  if (tag.get() == Tag::Double && (is_int || is_float)) {
+    return EValue(number.cast<double>());
+  }
+  if (tag.get() == Tag::Int && is_int) {
+    return EValue(number.cast<int64_t>());
+  }
+  if (tag.get() == Tag::Bool && is_bool) {
+    return EValue(number.cast<bool>());
+  }
+  throw std::runtime_error(
+      std::string("the method expects ") + runtime::tag_to_string(tag.get()) +
+      ", but got " + std::string(py::str(value.get_type())));
+}
+
+bool prefer_dlpack_input(const py::handle& value) {
+  if (PyCapsule_CheckExact(value.ptr())) {
+    return true;
+  }
+  if (!py::hasattr(value, "__dlpack__")) {
+    return false;
+  }
+  if (!PyObject_CheckBuffer(value.ptr())) {
+    return true;
+  }
+  // A result of these bindings always takes the DLPack path, which keeps its
+  // real dtype, shape, and strides. Its buffer view of a dtype such as bfloat16
+  // is an unsigned integer, which a bfloat16 input would refuse.
+  if (py::isinstance<PyExecuTorchResult>(value)) {
+    return true;
+  }
+  // NumPy and other host buffers keep the buffer path, including its
+  // read-only copy behavior. CUDA results expose only their DLPack storage.
+  if (py::hasattr(value, "__dlpack_device__")) {
+    const auto device =
+        value.attr("__dlpack_device__")().cast<std::pair<int, int>>();
+    return device.first == dlpack::CUDA;
+  }
+  return false;
+}
+
 py::sequence normalize_inputs(const py::object& inputs) {
-  if (PyObject_CheckBuffer(inputs.ptr()) || is_torch_tensor(inputs)) {
+  if (PyObject_CheckBuffer(inputs.ptr()) || is_torch_tensor(inputs) ||
+      py::hasattr(inputs, "__dlpack__") || PyCapsule_CheckExact(inputs.ptr())) {
     py::list result;
     result.append(inputs);
     return result;
@@ -716,6 +1647,48 @@ py::sequence normalize_inputs(const py::object& inputs) {
 }
 
 #ifndef USE_ATEN_LIB
+std::shared_ptr<DeviceMemoryBuffer> allocate_device_output(
+    size_t index,
+    size_t nbytes,
+    executorch::aten::Device device) {
+  auto buffer =
+      DeviceMemoryBuffer::create(nbytes, device.type(), device.index());
+  THROW_IF_ERROR(buffer.error(), "Failed to allocate device output %zu", index);
+  return std::make_shared<DeviceMemoryBuffer>(std::move(buffer.get()));
+}
+
+// The Python boundary is synchronous, and each wait is for the whole device,
+// so one wait per device covers every tensor of a run. Before the run, another
+// library may still be writing a CUDA input on its own streams: a torch tensor,
+// a DLPack tensor, or a result of these bindings, which can share memory a
+// caller gave to that library. It may also still be reading the memory of an
+// output from an earlier run, such as a dropped result's buffer or a
+// memory-planned output, which this run writes again. After the run, its
+// outputs, and any input it updated in place, are ready on every stream.
+void synchronize_tensor_devices(const Method& method) {
+  std::vector<int> devices;
+  const auto add = [&devices](const EValue& value) {
+    if (!value.isTensor() || value.toTensor().nbytes() == 0) {
+      return;
+    }
+    const auto device = value.toTensor().device();
+    if (!device.is_cpu() &&
+        std::find(devices.begin(), devices.end(), device.index()) ==
+            devices.end()) {
+      devices.push_back(device.index());
+    }
+  };
+  for (size_t i = 0; i < method.inputs_size(); ++i) {
+    add(method.get_input(i));
+  }
+  for (size_t i = 0; i < method.outputs_size(); ++i) {
+    add(method.get_output(i));
+  }
+  for (const auto index : devices) {
+    synchronize_device(index);
+  }
+}
+
 py::object portable_tensor_result(
     const executorch::aten::Tensor& tensor,
     bool clone = true,
@@ -760,7 +1733,13 @@ py::object portable_tensor_result(
                           TorchDLPackBuffer::create(tensor, std::move(owner)))
                       .attr("view")(dtype)
                       .attr("as_strided")(shape, strides);
-    return clone ? output.attr("clone")() : output;
+    if (clone) {
+      // Torch copies on its current stream; the copy must finish before the
+      // method's next execution writes the memory it reads.
+      output = output.attr("clone")();
+      synchronize_torch_cuda_device(tensor.device().index());
+    }
+    return output;
   }
   auto result = std::make_shared<PyExecuTorchResult>(
       tensor, clone, clone ? py::none() : std::move(owner));
@@ -837,7 +1816,7 @@ inline std::unique_ptr<DataLoader> loader_from_file(const std::string& path) {
       path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
   THROW_IF_ERROR(
       res.error(),
-      "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
+      "Failed to create MmapDataLoader from file %s, error: 0x%" PRIx32,
       path.c_str(),
       static_cast<uint32_t>(res.error()));
 
@@ -871,6 +1850,23 @@ inline std::unique_ptr<Module> load_module_from_buffer(
       nullptr, // temp_allocator
       std::move(event_tracer), // event_tracer
       nullptr); // data_map_loader
+}
+
+// BufferDataLoader borrows the Python bytes, and results and method metadata
+// can share the module after its Python wrapper is gone. Owning the bytes
+// through the shared module keeps them alive for every holder.
+inline std::shared_ptr<Module> share_module_with_buffers(
+    std::unique_ptr<Module> module,
+    py::bytes program,
+    std::optional<py::bytes> data_map) {
+  struct Owner final {
+    py::bytes program;
+    std::optional<py::bytes> data_map;
+    std::unique_ptr<Module> module;
+  };
+  auto owner = std::make_shared<Owner>(
+      Owner{std::move(program), std::move(data_map), std::move(module)});
+  return std::shared_ptr<Module>(owner, owner->module.get());
 }
 
 inline std::unique_ptr<Module> load_module_from_file(
@@ -940,7 +1936,9 @@ inline std::unique_ptr<Module> load_module_from_data_loader(
 inline py::list get_outputs_as_py_list(
     const std::vector<EValue>& outputs,
     bool clone_outputs = true,
-    py::object owner = py::none()) {
+    py::object owner = py::none(),
+    const std::vector<py::object>& output_owners = {},
+    const std::vector<py::object>& handed_over = {}) {
   const auto outputs_size = outputs.size();
   py::list list(outputs_size);
   for (size_t i = 0; i < outputs_size; ++i) {
@@ -965,7 +1963,15 @@ inline py::list get_outputs_as_py_list(
         list[i] = py::cast(v.toTensor());
       }
 #else
-      list[i] = portable_tensor_result(v.toTensor(), clone_outputs, owner);
+      const bool returns_without_copy =
+          i < handed_over.size() && handed_over[i];
+      list[i] = returns_without_copy
+          ? portable_tensor_result(
+                v.toTensor(), /*clone=*/false, handed_over[i])
+          : portable_tensor_result(
+                v.toTensor(),
+                clone_outputs,
+                output_owners.empty() ? owner : output_owners[i]);
 #endif
     } else {
       ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
@@ -1002,6 +2008,10 @@ struct PyBundledModule : public BundledModule {
     return bundled_program_ptr_.cast<std::string_view>().data();
   }
 
+  const py::bytes& get_bundled_program_bytes() const {
+    return bundled_program_ptr_;
+  }
+
   const void* get_program_ptr() {
     return program_ptr_;
   }
@@ -1023,6 +2033,16 @@ struct PyBundledModule : public BundledModule {
           "Method execution failed with status 0x%" PRIx32,
           static_cast<uint32_t>(result.error()));
     }
+#ifndef USE_ATEN_LIB
+    {
+      const auto method = this->method(method_name);
+      THROW_IF_ERROR(
+          method.error(),
+          "Method execution failed with status 0x%" PRIx32,
+          static_cast<uint32_t>(method.error()));
+      synchronize_tensor_devices(*method.get());
+    }
+#endif
 
     // Convert outputs to py::list
     const auto& outputs = result.get();
@@ -1062,6 +2082,10 @@ struct ProgramState final {
   // the storage.
   std::vector<std::vector<BackendOption>> backend_option_storage_;
   LoadBackendOptionsMap backend_options_;
+  // A method keeps a pointer to the tracer, which logs into the debug buffer,
+  // so both stay alive as long as any method does. The tracer goes first.
+  std::unique_ptr<uint8_t[]> debug_buffer_;
+  std::unique_ptr<ETDumpGen> event_tracer_;
 
   explicit ProgramState(
       std::unique_ptr<DataLoader> loader,
@@ -1107,12 +2131,29 @@ struct PyTensorInfo final {
         info_.scalar_type());
   }
 
+  const char* dtype_name() const {
+    return python_dtype(info_.scalar_type()).torch_name;
+  }
+
   bool is_memory_planned() const {
     return info_.is_memory_planned();
   }
 
   size_t nbytes() const {
     return info_.nbytes();
+  }
+
+  std::string device() const {
+    const auto device = info_.device();
+    switch (device.type()) {
+      case runtime::etensor::DeviceType::CPU:
+        return "cpu";
+      case runtime::etensor::DeviceType::CUDA:
+        return "cuda:" + std::to_string(device.index());
+    }
+    throw std::runtime_error(
+        "Unknown device type " +
+        std::to_string(static_cast<int>(device.type())));
   }
 
   std::string repr() const {
@@ -1127,11 +2168,11 @@ struct PyTensorInfo final {
       size_str.pop_back();
     }
     size_str.append("]");
-    return "TensorInfo(sizes=" + size_str + ", dtype=" +
-        std::string(executorch::runtime::toString(info_.scalar_type())) +
+    return "TensorInfo(sizes=" + size_str + ", dtype=" + dtype_name() +
         ", is_memory_planned=" +
         (info_.is_memory_planned() ? "True" : "False") +
-        ", nbytes=" + std::to_string(info_.nbytes()) + ")";
+        ", nbytes=" + std::to_string(info_.nbytes()) + ", device=" + device() +
+        ")";
   }
 
  private:
@@ -1246,39 +2287,46 @@ struct PyModule final {
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
           Program::Verification::InternalConsistency)
-      : debug_buffer_size_(debug_buffer_size),
-        module_(load_module_from_buffer(
+      : PyModule(
+            buffer,
             buffer.cast<std::string_view>().data(),
             py::len(buffer),
-            data_map_buffer.has_value()
-                ? std::optional<const void*>(
-                      data_map_buffer.value().cast<std::string_view>().data())
-                : std::nullopt,
-            data_map_buffer.has_value()
-                ? std::optional<size_t>(py::len(data_map_buffer.value()))
-                : std::nullopt,
-            setup_event_tracer(enable_etdump, debug_buffer_size),
-            program_verification)) {}
+            std::move(data_map_buffer),
+            enable_etdump,
+            debug_buffer_size,
+            program_verification) {}
 
+  // The program is read from `program_owner`, which the module keeps alive.
   explicit PyModule(
+      const py::bytes& program_owner,
       const void* ptr,
       size_t ptr_len,
-      std::optional<const void*> data_map_ptr,
-      std::optional<size_t> data_map_ptr_len,
+      std::optional<const py::bytes> data_map_buffer,
       bool enable_etdump,
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
           Program::Verification::InternalConsistency)
       : debug_buffer_size_(debug_buffer_size),
-        module_(load_module_from_buffer(
-            ptr,
-            ptr_len,
-            data_map_ptr,
-            data_map_ptr_len,
-            setup_event_tracer(enable_etdump, debug_buffer_size),
-            program_verification)) {}
+        module_(share_module_with_buffers(
+            load_module_from_buffer(
+                ptr,
+                ptr_len,
+                data_map_buffer.has_value()
+                    ? std::optional<const void*>(data_map_buffer.value()
+                                                     .cast<std::string_view>()
+                                                     .data())
+                    : std::nullopt,
+                data_map_buffer.has_value()
+                    ? std::optional<size_t>(py::len(data_map_buffer.value()))
+                    : std::nullopt,
+                setup_event_tracer(enable_etdump, debug_buffer_size),
+                program_verification),
+            program_owner,
+            data_map_buffer)) {}
 
+  // The program is read from `program_owner`, which the module keeps alive.
   explicit PyModule(
+      const py::bytes& program_owner,
       const void* ptr,
       size_t ptr_len,
       const std::string& data_path,
@@ -1287,12 +2335,15 @@ struct PyModule final {
       Program::Verification program_verification =
           Program::Verification::InternalConsistency)
       : debug_buffer_size_(debug_buffer_size),
-        module_(load_module_from_buffer_with_data_file(
-            ptr,
-            ptr_len,
-            data_path,
-            setup_event_tracer(enable_etdump, debug_buffer_size),
-            program_verification)) {}
+        module_(share_module_with_buffers(
+            load_module_from_buffer_with_data_file(
+                ptr,
+                ptr_len,
+                data_path,
+                setup_event_tracer(enable_etdump, debug_buffer_size),
+                program_verification),
+            program_owner,
+            std::nullopt)) {}
 
   explicit PyModule(
       const std::string& program_path,
@@ -1324,7 +2375,6 @@ struct PyModule final {
   PyModule(PyModule&&) = delete;
   PyModule& operator=(PyModule&&) = delete;
 
-  // Module is only valid as long as the python buffer is alive.
   static std::unique_ptr<PyModule> load_from_buffer(
       const py::bytes& buffer,
       std::optional<const py::bytes> data_map_buffer,
@@ -1361,19 +2411,11 @@ struct PyModule final {
       std::optional<const py::bytes> data_map_buffer,
       bool enable_etdump,
       size_t debug_buffer_size = 0) {
-    std::optional<const void*> data_map_ptr = std::nullopt;
-    std::optional<size_t> data_map_len = std::nullopt;
-
-    if (data_map_buffer.has_value()) {
-      data_map_ptr = data_map_buffer.value().cast<std::string_view>().data();
-      data_map_len = py::len(data_map_buffer.value());
-    }
-
     return std::make_unique<PyModule>(
+        m.get_bundled_program_bytes(),
         m.get_program_ptr(),
         m.get_program_len(),
-        data_map_ptr,
-        data_map_len,
+        data_map_buffer,
         enable_etdump,
         debug_buffer_size,
         Program::Verification::InternalConsistency);
@@ -1386,6 +2428,7 @@ struct PyModule final {
       bool enable_etdump,
       size_t debug_buffer_size = 0) {
     return std::make_unique<PyModule>(
+        m.get_bundled_program_bytes(),
         m.get_program_ptr(),
         m.get_program_len(),
         data_path,
@@ -1405,6 +2448,31 @@ struct PyModule final {
         std::move(loader), data_path, enable_etdump, debug_buffer_size);
   }
 
+  struct InputOwner final {
+    std::shared_ptr<BufferTensor> buffer;
+#ifndef USE_ATEN_LIB
+    std::shared_ptr<TorchTensorView> torch;
+    std::shared_ptr<DLPackTensorView> dlpack;
+#else
+    py::object torch;
+#endif
+    std::optional<BorrowedInput> validation;
+    // Set for a memory-planned input. A run may give that memory to other
+    // values or write the input in place, so a later call that omits the
+    // input installs it again from here.
+    TensorPtr planned;
+  };
+
+  py::object native_output_owner() {
+    if (!native_output_owner_) {
+      auto* module = new std::shared_ptr<Module>(module_);
+      native_output_owner_ = py::capsule(module, [](void* pointer) {
+        delete static_cast<std::shared_ptr<Module>*>(pointer);
+      });
+    }
+    return native_output_owner_;
+  }
+
   py::list run_method(
       const std::string& method_name,
       const py::object& python_inputs,
@@ -1418,6 +2486,31 @@ struct PyModule final {
         "Failed to get metadata for method %s",
         method_name.c_str());
     const auto method_meta = method_meta_result.get();
+    // Checked before anything is installed: an extra input would otherwise
+    // install every real one and then fail, blocking later partial calls.
+    if (inputs_size > method_meta.num_inputs()) {
+      throw std::runtime_error(
+          "Method '" + method_name + "' takes " +
+          std::to_string(method_meta.num_inputs()) + " inputs, but got " +
+          std::to_string(inputs_size));
+    }
+    if (inputs_size < method_meta.num_inputs() &&
+        failed_methods_.count(method_name) != 0) {
+      throw std::runtime_error(
+          "The last call to method '" + method_name +
+          "' failed while setting its inputs, so the inputs it would reuse "
+          "may be a mix of two calls. Pass every input on the next call.");
+    }
+#ifndef USE_ATEN_LIB
+    const auto loaded_method = module_->method(method_name);
+    THROW_IF_ERROR(
+        loaded_method.error(),
+        "Failed to execute method %s, error: 0x%" PRIx32,
+        method_name.c_str(),
+        static_cast<uint32_t>(loaded_method.error()));
+    const Method& method = *loaded_method.get();
+#endif
+    std::vector<InputOwner> new_input_owners(inputs_size);
     std::vector<EValue> cpp_inputs;
     cpp_inputs.reserve(inputs_size);
     std::vector<std::shared_ptr<BufferTensor>> buffer_inputs;
@@ -1425,9 +2518,11 @@ struct PyModule final {
 #ifndef USE_ATEN_LIB
     std::vector<std::shared_ptr<TorchTensorView>> torch_inputs;
     torch_inputs.reserve(inputs_size);
+    std::vector<std::shared_ptr<DLPackTensorView>> dlpack_inputs;
+    dlpack_inputs.reserve(inputs_size);
+    std::vector<TensorPtr> dlpack_tensor_ptrs;
+    dlpack_tensor_ptrs.reserve(inputs_size);
 #endif
-    bool saw_buffer = false;
-    bool saw_torch = false;
 
 #ifndef USE_ATEN_LIB // Portable mode
     // So the ETensors and their metadata stay in scope for
@@ -1449,44 +2544,36 @@ struct PyModule final {
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
       const std::string& type_str = py::str(python_input.get_type());
-      if (is_torch_tensor(python_input)) {
-        if (saw_buffer) {
-          throw py::type_error(
-              "A call cannot mix buffer and torch tensor inputs");
-        }
-        saw_torch = true;
+      if (auto scalar = read_input(method_meta, i, [&] {
+            return scalar_input(method_meta, i, python_input);
+          })) {
+        cpp_inputs.push_back(*scalar);
+      } else if (read_input(method_meta, i, [&] {
+                   return is_torch_tensor(python_input);
+                 })) {
 #ifdef USE_ATEN_LIB
         auto at_tensor = python_input.cast<at::Tensor>();
+        new_input_owners[i].torch =
+            py::reinterpret_borrow<py::object>(python_input);
         std::vector<int> tensor_sizes(
             at_tensor.sizes().begin(), at_tensor.sizes().end());
-        std::vector<int> tensor_strides(
-            at_tensor.strides().begin(), at_tensor.strides().end());
         validate_tensor_input(
-            method_meta,
-            i,
-            at_tensor.scalar_type(),
-            tensor_sizes,
-            tensor_strides,
-            /*check_strides=*/false);
+            method_meta, i, at_tensor.scalar_type(), tensor_sizes);
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         cpp_inputs.emplace_back(at_tensor);
+        new_input_owners[i].validation.emplace(i, python_input);
 #else
-        torch_inputs.push_back(std::make_shared<TorchTensorView>(python_input));
+        torch_inputs.push_back(read_input(method_meta, i, [&] {
+          return std::make_shared<TorchTensorView>(python_input, i);
+        }));
         const auto& tensor = torch_inputs.back();
+        new_input_owners[i].torch = tensor;
         validate_tensor_input(
-            method_meta,
-            i,
-            tensor->scalar_type(),
-            tensor->sizes(),
-            tensor->strides());
-        const auto method = module_->method(method_name);
-        THROW_IF_ERROR(
-            method.error(),
-            "Failed to load method %s, error: 0x%" PRIx32,
-            method_name.c_str(),
-            static_cast<uint32_t>(method.error()));
-        tensor->validate_device(*method.get(), i);
-        tensor->use_layout(method_meta.input_tensor_meta(i)->dim_order());
+            method_meta, i, tensor->scalar_type(), tensor->sizes());
+        validate_input_device(method, i, tensor->device(), tensor->nbytes());
+        read_input(method_meta, i, [&] {
+          tensor->use_layout(method_meta.input_tensor_meta(i)->dim_order());
+        });
         input_sizes.emplace_back(
             tensor->sizes().begin(), tensor->sizes().end());
         input_strides.emplace_back(
@@ -1504,6 +2591,7 @@ struct PyModule final {
             tensor->device().type(),
             tensor->device().index());
         cpp_inputs.emplace_back(torch::executor::Tensor(&input_tensors.back()));
+        new_input_owners[i].validation.emplace(i, tensor->owner());
 #endif
       } else if (py::isinstance<py::none>(python_input)) {
         cpp_inputs.push_back(EValue());
@@ -1513,15 +2601,59 @@ struct PyModule final {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
       } else if (py::isinstance<py::float_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
+      } else if (read_input(method_meta, i, [&] {
+                   return prefer_dlpack_input(python_input);
+                 })) {
+#ifdef USE_ATEN_LIB
+        auto python_tensor = py::module_::import("torch.utils.dlpack")
+                                 .attr("from_dlpack")(python_input);
+        auto at_tensor = python_tensor.cast<at::Tensor>();
+        new_input_owners[i].torch = python_tensor;
+        validate_tensor_input(
+            method_meta,
+            i,
+            at_tensor.scalar_type(),
+            std::vector<int>(
+                at_tensor.sizes().begin(), at_tensor.sizes().end()));
+        cpp_inputs.emplace_back(at_tensor);
+#else
+        dlpack_inputs.push_back(read_input(method_meta, i, [&] {
+          return std::make_shared<DLPackTensorView>(python_input);
+        }));
+        const auto& view = dlpack_inputs.back();
+        new_input_owners[i].dlpack = view;
+        validate_tensor_input(
+            method_meta, i, view->scalar_type(), view->sizes());
+        validate_input_device(method, i, view->device(), view->nbytes());
+        read_input(method_meta, i, [&] {
+          view->use_layout(method_meta.input_tensor_meta(i)->dim_order());
+        });
+        auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
+                          .strides(view->strides())
+                          .dim_order(view->dim_order())
+                          .dynamism(aten::TensorShapeDynamism::STATIC)
+                          .device(view->device())
+                          .make_tensor_ptr();
+        dlpack_tensor_ptrs.push_back(std::move(tensor));
+        cpp_inputs.emplace_back(dlpack_tensor_ptrs.back());
+#endif
       } else if (PyObject_CheckBuffer(python_input.ptr())) {
-        if (saw_torch) {
-          throw py::type_error(
-              "A call cannot mix buffer and torch tensor inputs");
-        }
-        saw_buffer = true;
-        buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
+        buffer_inputs.push_back(read_input(method_meta, i, [&] {
+          return std::make_shared<BufferTensor>(python_input, method_meta, i);
+        }));
         const auto& buffer = buffer_inputs.back();
+        new_input_owners[i].buffer = buffer;
+#ifndef USE_ATEN_LIB
+        validate_input_device(
+            method,
+            i,
+            executorch::aten::Device(executorch::aten::DeviceType::CPU),
+            buffer->nbytes());
+#endif
         validate_buffer_input(method_meta, i, *buffer);
+        if (buffer->borrows_data()) {
+          new_input_owners[i].validation.emplace(i, buffer);
+        }
 #ifdef USE_ATEN_LIB
         auto at_tensor = at::from_blob(
             buffer->data(),
@@ -1550,25 +2682,161 @@ struct PyModule final {
 #endif
       } else {
         throw std::runtime_error(
-            "Unsupported python type " + type_str +
+            "Input " + std::to_string(i) + " of method '" + method_meta.name() +
+            "': unsupported python type " + type_str +
             ". Ensure that inputs are passed as a flat list of tensors.");
       }
     }
 
-    // Set up output storage before execution.
+    for (size_t i = 0; i < inputs_size; ++i) {
+      if (!cpp_inputs[i].isTensor()) {
+        continue;
+      }
+      const auto input_meta = method_meta.input_tensor_meta(i);
+      if (input_meta.ok() && input_meta->is_memory_planned()) {
+#ifdef USE_ATEN_LIB
+        // Shares the caller's tensor, because the aliasing make_tensor_ptr
+        // aborts on the non-dense layouts an ATen input may have.
+        new_input_owners[i].planned =
+            std::make_shared<at::Tensor>(cpp_inputs[i].toTensor());
+#else
+        new_input_owners[i].planned = make_tensor_ptr(cpp_inputs[i].toTensor());
+#endif
+      }
+    }
+    // Module keeps installed inputs for calls with an omitted or partial
+    // input list, so their owners stay alive with it. A call that fails while
+    // installing keeps nothing: it may have installed a prefix, but later
+    // calls must pass every input again, so nothing reads that prefix.
+    auto& retained = retained_inputs_[method_name];
+    for (size_t i = inputs_size; i < retained.size(); ++i) {
+      if (retained[i].validation) {
+        retained[i].validation->validate(method_name.c_str());
+      }
+    }
+    // A load error is the real cause, so it wins over the checks below.
+    const auto load_status = module_->load_method(method_name);
+    THROW_IF_ERROR(
+        load_status,
+        "Failed to execute method %s, error: 0x%" PRIx32,
+        method_name.c_str(),
+        static_cast<uint32_t>(load_status));
+    // allocate_output_tensors() reads inputs through Method::get_input(),
+    // which marks every input as set and hides the runtime's own check for
+    // inputs that were never passed.
+    const auto passed_inputs =
+        std::max(retained.size(), static_cast<size_t>(inputs_size));
+    if (passed_inputs < method_meta.num_inputs()) {
+      throw std::runtime_error(
+          "Method '" + method_name + "' takes " +
+          std::to_string(method_meta.num_inputs()) + " inputs, but only " +
+          std::to_string(passed_inputs) +
+          " were ever passed. Pass every input.");
+    }
     allocate_output_tensors(method_name);
-    auto outputs = module_->execute(method_name, cpp_inputs);
+    // Install the inputs first: only a failure there can leave a mix of two
+    // calls installed, since the runtime does not roll back a prefix.
+    for (size_t i = 0; i < inputs_size; ++i) {
+      const auto status = module_->set_input(method_name, cpp_inputs[i], i);
+      if (status != Error::Ok) {
+        failed_methods_.insert(method_name);
+        THROW_IF_ERROR(
+            status,
+            "Failed to set input %zu of method %s, error: 0x%" PRIx32,
+            i,
+            method_name.c_str(),
+            static_cast<uint32_t>(status));
+      }
+    }
+    for (size_t i = inputs_size; i < retained.size(); ++i) {
+      if (!retained[i].planned) {
+        continue;
+      }
+      const auto status =
+          module_->set_input(method_name, retained[i].planned, i);
+      if (status != Error::Ok) {
+        failed_methods_.insert(method_name);
+        THROW_IF_ERROR(
+            status,
+            "Failed to set input %zu of method %s, error: 0x%" PRIx32,
+            i,
+            method_name.c_str(),
+            static_cast<uint32_t>(status));
+      }
+    }
+    failed_methods_.erase(method_name);
+    retained.resize(passed_inputs);
+    for (size_t i = 0; i < inputs_size; ++i) {
+      retained[i] = std::move(new_input_owners[i]);
+    }
+#ifndef USE_ATEN_LIB
+    // The run reads inputs kept from earlier calls too, so the wait and the
+    // output owners below cover every installed input, not only this call's.
+    buffer_inputs.clear();
+    torch_inputs.clear();
+    dlpack_inputs.clear();
+    for (const auto& owner : retained) {
+      if (owner.buffer) {
+        buffer_inputs.push_back(owner.buffer);
+      }
+      if (owner.torch) {
+        torch_inputs.push_back(owner.torch);
+      }
+      if (owner.dlpack) {
+        dlpack_inputs.push_back(owner.dlpack);
+      }
+    }
+    synchronize_tensor_devices(method);
+#endif
+    auto outputs = module_->execute(method_name);
     THROW_IF_ERROR(
         outputs.error(),
         "Failed to execute method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(outputs.error()));
-
-    // Retrieve outputs
-    return get_outputs_as_py_list(
+#ifndef USE_ATEN_LIB
+    synchronize_tensor_devices(method);
+#endif
+    // DLPack producers may supply storage returned directly by the graph.
+    // Keep each output's allocation alive after local adapters go out of scope.
+    py::object output_owner = native_output_owner();
+    std::vector<py::object> output_owners;
+#ifndef USE_ATEN_LIB
+    output_owners.reserve(outputs->size());
+    for (const auto& output : outputs.get()) {
+      output_owners.push_back(
+          output.isTensor() ? dlpack_output_owner(
+                                  output.toTensor(),
+                                  dlpack_inputs,
+                                  buffer_inputs,
+                                  torch_inputs,
+                                  output_tensors_,
+                                  output_owner)
+                            : py::none());
+    }
+#endif
+    auto result = get_outputs_as_py_list(
         outputs.get(),
         clone_outputs,
-        py::cast(this, py::return_value_policy::reference));
+        std::move(output_owner),
+        output_owners,
+        clone_outputs ? handed_over_device_outputs(outputs.get())
+                      : std::vector<py::object>());
+#ifndef USE_ATEN_LIB
+    if (!clone_outputs) {
+      for (size_t i = 0; i < outputs->size(); ++i) {
+        const auto& output = (*outputs)[i];
+        if (output.isTensor()) {
+          auto alias = module_aliased_torch_output(
+              output.toTensor(), torch_inputs, method_name);
+          if (!alias.is_none()) {
+            result[i] = std::move(alias);
+          }
+        }
+      }
+    }
+#endif
+    return result;
   }
 
   py::list forward(const py::object& inputs, bool clone_outputs = true) {
@@ -1615,21 +2883,7 @@ struct PyModule final {
       const std::string method_name,
       bool clone_outputs = true) {
     ObjectLock lock(mutex_);
-    auto status = module_->load_method(method_name);
-
-    THROW_IF_ERROR(
-        status,
-        "executing execution plan for method 'load' failed with error: 0x%" PRIx32,
-        static_cast<uint32_t>(status));
-    auto output = module_->execute(method_name.c_str());
-    THROW_IF_ERROR(
-        output.error(),
-        "executing execution plan for method 'forward' failed with error: 0x%" PRIx32,
-        static_cast<uint32_t>(output.error()));
-    return get_outputs_as_py_list(
-        output.get(),
-        clone_outputs,
-        py::cast(this, py::return_value_policy::reference));
+    return run_method(method_name, py::list(), clone_outputs);
   }
 
   std::unique_ptr<PyMethodMeta> method_meta(const std::string method_name) {
@@ -1661,6 +2915,10 @@ struct PyModule final {
   size_t debug_buffer_size_;
 
   std::shared_ptr<Module> module_;
+  std::unordered_map<std::string, std::vector<InputOwner>> retained_inputs_;
+  // Methods whose last call failed while installing its inputs.
+  std::unordered_set<std::string> failed_methods_;
+  py::object native_output_owner_;
   // Need to keep-alive output tensors until they can be compared in case of
   // bundled programs.
   std::vector<std::optional<TensorPtr>> output_tensors_;
@@ -1681,6 +2939,31 @@ struct PyModule final {
           EventTracerDebugLogLevel::kIntermediateOutputs);
     }
     return event_tracer;
+  }
+
+  // allocate_output_tensors() gives each call new device memory, so a result
+  // can keep it instead of a copy.
+  std::vector<py::object> handed_over_device_outputs(
+      const std::vector<EValue>& outputs) {
+    std::vector<py::object> owned(outputs.size());
+#ifndef USE_ATEN_LIB
+    for (size_t i = 0; i < outputs.size() && i < output_tensors_.size(); ++i) {
+      if (!outputs[i].isTensor() || !output_tensors_[i].has_value()) {
+        continue;
+      }
+      const auto& tensor = outputs[i].toTensor();
+      const auto& allocation = *output_tensors_[i];
+      if (!tensor.device().is_cpu() && tensor.nbytes() != 0 &&
+          allocation->const_data_ptr() == tensor.const_data_ptr() &&
+          allocation->nbytes() == tensor.nbytes()) {
+        auto* retained = new TensorPtr(allocation);
+        owned[i] = py::capsule(retained, [](void* pointer) {
+          delete static_cast<TensorPtr*>(pointer);
+        });
+      }
+    }
+#endif
+    return owned;
   }
 
   // Allocate output tensors when they are not memory planned.
@@ -1718,6 +3001,48 @@ struct PyModule final {
         output_tensors_.emplace_back(std::nullopt);
         continue;
       }
+      const auto method = module_->method(method_name);
+      THROW_IF_ERROR(
+          method.error(),
+          "Failed to load method %s, error: 0x%" PRIx32,
+          method_name.c_str(),
+          static_cast<uint32_t>(method.error()));
+      const auto& output = method.get()->get_output(i);
+      bool is_input = false;
+      for (size_t input = 0; input < method.get()->inputs_size(); ++input) {
+        is_input |= &output == &method.get()->get_input(input);
+      }
+      if (is_input) {
+        // The shared value receives its storage from set_inputs().
+        output_tensors_.emplace_back(std::nullopt);
+        continue;
+      }
+#ifndef USE_ATEN_LIB
+      const auto device = output.toTensor().device();
+      if (!device.is_cpu()) {
+        std::shared_ptr<DeviceMemoryBuffer> allocation;
+        const auto nbytes = output_tensor_meta->nbytes();
+        if (nbytes != 0) {
+          allocation = allocate_device_output(i, nbytes, device);
+        }
+        std::vector<executorch::aten::SizesType> sizes(
+            output_tensor_meta->sizes().begin(),
+            output_tensor_meta->sizes().end());
+        std::vector<executorch::aten::DimOrderType> order(
+            output_tensor_meta->dim_order().begin(),
+            output_tensor_meta->dim_order().end());
+        auto tensor = for_blob(
+                          allocation ? allocation->data() : nullptr,
+                          std::move(sizes),
+                          output_tensor_meta->scalar_type())
+                          .dim_order(std::move(order))
+                          .device(device)
+                          .deleter([allocation](void*) {})
+                          .make_tensor_ptr();
+        output_tensors_.emplace_back(std::move(tensor));
+        continue;
+      }
+#endif
       TensorPtr tensor_ptr = make_tensor_ptr(
           std::vector<executorch::aten::SizesType>(
               output_tensor_meta->sizes().begin(),
@@ -1790,7 +3115,7 @@ inline std::shared_ptr<ProgramState> load_program(
   Result<Program> res = Program::load(loader.get(), program_verification);
   THROW_IF_ERROR(
       res.error(),
-      "Failed to load program, error: 0x:%" PRIx32,
+      "Failed to load program, error: 0x%" PRIx32,
       static_cast<uint32_t>(res.error()));
   // A program whose weights live outside the pte names them through a data
   // map. The CUDA delegate emits exactly that: a pte holding the compiled
@@ -1805,7 +3130,7 @@ inline std::shared_ptr<ProgramState> load_program(
         FlatTensorDataMap::load(data_map_loader.get());
     THROW_IF_ERROR(
         map_res.error(),
-        "Failed to load data map from %s, error: 0x:%" PRIx32,
+        "Failed to load data map from %s, error: 0x%" PRIx32,
         data_path.value().c_str(),
         static_cast<uint32_t>(map_res.error()));
     data_map = std::make_unique<FlatTensorDataMap>(std::move(map_res.get()));
@@ -2035,12 +3360,26 @@ struct PyMethod final {
       : storage_(std::make_shared<Storage>(
             std::move(memory),
             std::move(state),
-            std::move(method))) {}
+            std::move(method))) {
+    inputs_set_ = storage_->method->inputs_size() == 0;
+    const auto& meta = storage_->method->method_meta();
+    for (size_t i = 0; i < meta.num_inputs(); ++i) {
+      const auto tag = meta.input_tag(i);
+      has_planned_inputs_ |= tag.ok() && tag.get() == Tag::Tensor &&
+          meta.input_tensor_meta(i)->is_memory_planned();
+    }
+  }
 
   void set_inputs(const py::object& python_inputs) {
     ObjectLock lock(mutex_);
     const auto inputs = normalize_inputs(python_inputs);
     const auto inputs_size = py::len(inputs);
+    if (inputs_size != storage_->method->inputs_size()) {
+      throw std::runtime_error(
+          "Method '" + std::string(storage_->method->method_meta().name()) +
+          "' takes " + std::to_string(storage_->method->inputs_size()) +
+          " inputs, but got " + std::to_string(inputs_size));
+    }
     std::vector<EValue> cpp_inputs;
     cpp_inputs.reserve(inputs_size);
     std::vector<std::shared_ptr<BufferTensor>> buffer_inputs;
@@ -2052,9 +3391,11 @@ struct PyMethod final {
 #ifndef USE_ATEN_LIB
     std::vector<std::shared_ptr<TorchTensorView>> torch_inputs;
     torch_inputs.reserve(inputs_size);
+    std::vector<std::shared_ptr<DLPackTensorView>> dlpack_inputs;
+    dlpack_inputs.reserve(inputs_size);
+    std::vector<TensorPtr> dlpack_tensor_ptrs;
+    dlpack_tensor_ptrs.reserve(inputs_size);
 #endif
-    bool saw_buffer = false;
-    bool saw_torch = false;
 
 #ifndef USE_ATEN_LIB // Portable mode
     // So the ETensors and their metadata stay in scope for
@@ -2070,50 +3411,50 @@ struct PyMethod final {
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
       const std::string& type_str = py::str(python_input.get_type());
-      if (is_torch_tensor(python_input)) {
-        if (saw_buffer) {
-          throw py::type_error(
-              "A call cannot mix buffer and torch tensor inputs");
-        }
-        saw_torch = true;
-        fed_inputs[i] = py::reinterpret_borrow<py::object>(python_input);
+      if (auto scalar = read_input(storage_->method->method_meta(), i, [&] {
+            return scalar_input(
+                storage_->method->method_meta(), i, python_input);
+          })) {
+        cpp_inputs.push_back(*scalar);
+      } else if (read_input(storage_->method->method_meta(), i, [&] {
+                   return is_torch_tensor(python_input);
+                 })) {
 #ifdef USE_ATEN_LIB
         auto at_tensor = python_input.cast<at::Tensor>();
         std::vector<int> tensor_sizes(
             at_tensor.sizes().begin(), at_tensor.sizes().end());
-        std::vector<int> tensor_strides(
-            at_tensor.strides().begin(), at_tensor.strides().end());
         validate_tensor_input(
             storage_->method->method_meta(),
             i,
             at_tensor.scalar_type(),
-            tensor_sizes,
-            tensor_strides,
-            /*check_strides=*/false);
-        const auto input_meta =
-            storage_->method->method_meta().input_tensor_meta(i).get();
-        if (!input_meta.is_memory_planned()) {
-          borrowed_inputs.emplace_back(i, python_input);
-        }
+            tensor_sizes);
+        borrowed_inputs.emplace_back(i, python_input);
+        fed_inputs[i] = py::reinterpret_borrow<py::object>(python_input);
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         cpp_inputs.emplace_back(at_tensor);
 #else
-        torch_inputs.push_back(std::make_shared<TorchTensorView>(python_input));
+        torch_inputs.push_back(
+            read_input(storage_->method->method_meta(), i, [&] {
+              return std::make_shared<TorchTensorView>(python_input, i);
+            }));
         const auto& view = torch_inputs.back();
         validate_tensor_input(
             storage_->method->method_meta(),
             i,
             view->scalar_type(),
-            view->sizes(),
-            view->strides());
-        view->validate_device(*storage_->method, i);
-        view->use_layout(
-            storage_->method->method_meta().input_tensor_meta(i)->dim_order());
-        const auto input_meta =
-            storage_->method->method_meta().input_tensor_meta(i).get();
-        if (!input_meta.is_memory_planned()) {
-          borrowed_inputs.emplace_back(i, python_input);
-        }
+            view->sizes());
+        validate_input_device(
+            *storage_->method, i, view->device(), view->nbytes());
+        read_input(storage_->method->method_meta(), i, [&] {
+          view->use_layout(storage_->method->method_meta()
+                               .input_tensor_meta(i)
+                               ->dim_order());
+        });
+        // Watch the tensor the method reads: after a layout conversion that
+        // is the copy, which an output aliasing the input can expose.
+        borrowed_inputs.emplace_back(i, view->owner());
+        // An output aliasing this input returns the tensor the method writes.
+        fed_inputs[i] = view->owner();
         auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
                           .strides(view->strides())
                           .dim_order(view->dim_order())
@@ -2131,19 +3472,64 @@ struct PyMethod final {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
       } else if (py::isinstance<py::float_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
+      } else if (read_input(storage_->method->method_meta(), i, [&] {
+                   return prefer_dlpack_input(python_input);
+                 })) {
+#ifdef USE_ATEN_LIB
+        auto python_tensor = py::module_::import("torch.utils.dlpack")
+                                 .attr("from_dlpack")(python_input);
+        auto at_tensor = python_tensor.cast<at::Tensor>();
+        validate_tensor_input(
+            storage_->method->method_meta(),
+            i,
+            at_tensor.scalar_type(),
+            std::vector<int>(
+                at_tensor.sizes().begin(), at_tensor.sizes().end()));
+        borrowed_inputs.emplace_back(i, python_tensor);
+        cpp_inputs.emplace_back(at_tensor);
+#else
+        dlpack_inputs.push_back(
+            read_input(storage_->method->method_meta(), i, [&] {
+              return std::make_shared<DLPackTensorView>(python_input);
+            }));
+        const auto& view = dlpack_inputs.back();
+        validate_tensor_input(
+            storage_->method->method_meta(),
+            i,
+            view->scalar_type(),
+            view->sizes());
+        validate_input_device(
+            *storage_->method, i, view->device(), view->nbytes());
+        read_input(storage_->method->method_meta(), i, [&] {
+          view->use_layout(storage_->method->method_meta()
+                               .input_tensor_meta(i)
+                               ->dim_order());
+        });
+        auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
+                          .strides(view->strides())
+                          .dim_order(view->dim_order())
+                          .dynamism(aten::TensorShapeDynamism::STATIC)
+                          .device(view->device())
+                          .make_tensor_ptr();
+        dlpack_tensor_ptrs.push_back(std::move(tensor));
+        cpp_inputs.emplace_back(dlpack_tensor_ptrs.back());
+#endif
       } else if (PyObject_CheckBuffer(python_input.ptr())) {
-        if (saw_torch) {
-          throw py::type_error(
-              "A call cannot mix buffer and torch tensor inputs");
-        }
-        saw_buffer = true;
-        buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
+        buffer_inputs.push_back(
+            read_input(storage_->method->method_meta(), i, [&] {
+              return std::make_shared<BufferTensor>(
+                  python_input, storage_->method->method_meta(), i);
+            }));
         const auto& buffer = buffer_inputs.back();
+#ifndef USE_ATEN_LIB
+        validate_input_device(
+            *storage_->method,
+            i,
+            executorch::aten::Device(executorch::aten::DeviceType::CPU),
+            buffer->nbytes());
+#endif
         validate_buffer_input(storage_->method->method_meta(), i, *buffer);
-        const auto input_meta =
-            storage_->method->method_meta().input_tensor_meta(i);
-        if (input_meta.ok() && !input_meta->is_memory_planned() &&
-            buffer->borrows_data()) {
+        if (buffer->borrows_data()) {
           borrowed_inputs.emplace_back(i, buffer);
         }
 #ifdef USE_ATEN_LIB
@@ -2167,7 +3553,9 @@ struct PyMethod final {
 #endif
       } else {
         throw std::runtime_error(
-            "Unsupported python type " + type_str +
+            "Input " + std::to_string(i) + " of method '" +
+            storage_->method->method_meta().name() +
+            "': unsupported python type " + type_str +
             ". Ensure that inputs are passed as a flat list of tensors.");
       }
     }
@@ -2178,37 +3566,29 @@ struct PyMethod final {
     Error set_inputs_status = storage_->method->set_inputs(input_evalue_list);
     if (set_inputs_status != Error::Ok) {
       // set_inputs() installs values one at a time and does not roll back a
-      // prefix when a later value is rejected. Retain both generations so any
-      // partially installed input continues to point at live memory.
-      buffer_inputs_.insert(
-          buffer_inputs_.end(), buffer_inputs.begin(), buffer_inputs.end());
-      buffer_tensor_ptrs_.insert(
-          buffer_tensor_ptrs_.end(),
-          buffer_tensor_ptrs.begin(),
-          buffer_tensor_ptrs.end());
-      borrowed_inputs_.insert(
-          borrowed_inputs_.end(),
-          borrowed_inputs.begin(),
-          borrowed_inputs.end());
-      // Which generation an input that is also an output now points at is
-      // unknown, so such outputs are returned from the method's own value.
-      fed_inputs_.assign(fed_inputs_.size(), py::object());
-#ifndef USE_ATEN_LIB
-      torch_inputs_.insert(
-          torch_inputs_.end(), torch_inputs.begin(), torch_inputs.end());
-      torch_tensor_ptrs_.insert(
-          torch_tensor_ptrs_.end(), input_tensors.begin(), input_tensors.end());
-#endif
+      // prefix when a later value fails, so refuse to execute or read
+      // outputs until a later call installs a full set. Nothing reads the
+      // prefix before then, so this call's inputs need not stay alive.
+      inputs_failed_ = true;
+      outputs_valid_ = false;
       THROW_IF_ERROR(
           set_inputs_status,
           "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
           storage_->method->method_meta().name(),
           static_cast<uint32_t>(set_inputs_status));
     }
+    inputs_failed_ = false;
+    inputs_set_ = true;
+    inputs_ = std::move(cpp_inputs);
+    // An output can share memory with an input, by value or through memory
+    // planning, so it would now show data no execute() produced.
+    outputs_valid_ = false;
     buffer_inputs_ = std::move(buffer_inputs);
     buffer_tensor_ptrs_ = std::move(buffer_tensor_ptrs);
     borrowed_inputs_ = std::move(borrowed_inputs);
 #ifndef USE_ATEN_LIB
+    dlpack_inputs_ = std::move(dlpack_inputs);
+    dlpack_tensor_ptrs_ = std::move(dlpack_tensor_ptrs);
     torch_inputs_ = std::move(torch_inputs);
     torch_tensor_ptrs_ = std::move(input_tensors);
 #endif
@@ -2266,7 +3646,7 @@ struct PyMethod final {
     const bool matches = at_tensor.scalar_type() == meta->scalar_type() &&
         at_tensor.device() == output.toTensor().device();
 #else
-    const TorchTensorView view(tensor);
+    const TorchTensorView view(tensor, index);
     const bool matches = view.scalar_type() == meta->scalar_type() &&
         view.device() == output.toTensor().device();
 #endif
@@ -2294,9 +3674,45 @@ struct PyMethod final {
   }
 
   void execute() {
+    execute_installed(/*inputs_just_installed=*/false);
+  }
+
+  void execute_installed(bool inputs_just_installed) {
     ObjectLock lock(mutex_);
+    // The output setup below reads inputs through Method::get_input(), which
+    // marks them as set and so hides the runtime's own check for unset inputs.
+    if (!inputs_set_) {
+      throw std::runtime_error(
+          "Method '" + std::string(storage_->method->method_meta().name()) +
+          "' has no inputs yet. Call set_inputs() before executing.");
+    }
+    if (inputs_failed_) {
+      throw std::runtime_error(
+          "The last set_inputs() for method '" +
+          std::string(storage_->method->method_meta().name()) +
+          "' failed partway, so the method may hold a mix of new and "
+          "old inputs. Call set_inputs() again with every input before "
+          "executing.");
+    }
+    outputs_valid_ = false;
+    handed_outputs_.clear();
     for (const auto& input : borrowed_inputs_) {
-      input.validate();
+      input.validate(storage_->method->method_meta().name());
+    }
+    // Each run reads the caller's inputs, like inputs that are not memory
+    // planned, since an earlier run may have reused or written their planned
+    // copy.
+    if (has_planned_inputs_ && !inputs_just_installed) {
+      const Error status = storage_->method->set_inputs(
+          executorch::aten::ArrayRef<EValue>(inputs_.data(), inputs_.size()));
+      if (status != Error::Ok) {
+        inputs_failed_ = true;
+        THROW_IF_ERROR(
+            status,
+            "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
+            storage_->method->method_meta().name(),
+            static_cast<uint32_t>(status));
+      }
     }
     const auto num_outputs = storage_->method->outputs_size();
     allocate_output_storages();
@@ -2312,7 +3728,7 @@ struct PyMethod final {
             static_cast<uint8_t*>(mutable_tensor_data_ptr_no_cow(at_tensor));
         const auto nbytes = at_tensor.nbytes();
 #else
-        const TorchTensorView view(bound);
+        const TorchTensorView view(bound, i);
         auto* data = static_cast<uint8_t*>(view.data());
         const auto nbytes = view.nbytes();
 #endif
@@ -2327,8 +3743,9 @@ struct PyMethod final {
         caller_outputs_[i] = fed_inputs_[*input];
         continue;
       }
-      output_storage_spans[i] = storage_->device_output_storages[i].size() > 0
-          ? storage_->device_output_storages[i].as_span()
+      const auto& device_buffer = storage_->device_output_storages[i];
+      output_storage_spans[i] = device_buffer
+          ? device_buffer->as_span()
           : Span<uint8_t>(
                 storage_->output_storages[i].data(),
                 storage_->output_storages[i].size());
@@ -2347,15 +3764,28 @@ struct PyMethod final {
         c10::autograd_dispatch_keyset);
 #endif
     setup_output_storage(*storage_->method, output_storage_spans);
+#ifndef USE_ATEN_LIB
+    synchronize_tensor_devices(*storage_->method);
+#endif
     Error execute_status = storage_->method->execute();
     THROW_IF_ERROR(
         execute_status,
         "method->execute() failed with error 0x%" PRIx32,
         static_cast<uint32_t>(execute_status));
+#ifndef USE_ATEN_LIB
+    synchronize_tensor_devices(*storage_->method);
+#endif
+    outputs_valid_ = true;
   }
 
   py::list get_outputs(bool clone_outputs = true) {
     ObjectLock lock(mutex_);
+    if (!outputs_valid_) {
+      throw std::runtime_error(
+          "Method '" + std::string(storage_->method->method_meta().name()) +
+          "' has no outputs to return: it has not executed since its last "
+          "set_inputs(), or that execution failed. Call execute() first.");
+    }
     std::vector<EValue> result(storage_->method->outputs_size());
 
     Error get_outputs_status = storage_->method->get_outputs(
@@ -2431,7 +3861,7 @@ struct PyMethod final {
   py::list call(const py::object& inputs, bool clone_outputs = true) {
     ObjectLock lock(mutex_);
     set_inputs(inputs);
-    execute();
+    execute_installed(/*inputs_just_installed=*/true);
     return get_outputs(clone_outputs);
   }
 
@@ -2441,17 +3871,33 @@ struct PyMethod final {
         storage_->method->get_attribute(name);
     THROW_IF_ERROR(
         attr.error(),
-        "Failed to get attribute '%s' for method '%s', error: 0x:%" PRIx32,
+        "Failed to get attribute '%s' for method '%s', error: 0x%" PRIx32,
         name.c_str(),
         storage_->method->method_meta().name(),
         static_cast<uint32_t>(attr.error()));
 #ifdef USE_ATEN_LIB
     return py::cast(attr.get());
 #else
-    return portable_tensor_result(
+    // No execute() in this call has waited for the work that last wrote it.
+    if (!attr->device().is_cpu() && attr->nbytes() != 0) {
+      synchronize_device(attr->device().index());
+    }
+    // Mutable state lives in the method's planned memory. Anything else is a
+    // constant, which can sit in read-only pages, so it is never returned as
+    // writable: a torch tensor cannot be read-only, so torch gets a copy.
+    const bool constant = attr->nbytes() != 0 &&
+        !storage_->memory->owns_data(attr->const_data_ptr());
+    if (constant && portable_tensor_output() == PortableTensorOutput::Torch) {
+      return portable_tensor_result(attr.get(), /*clone=*/true);
+    }
+    auto result = portable_tensor_result(
         attr.get(),
         /*clone=*/false,
         borrowed_output_owner(attr.get()));
+    if (constant) {
+      result.cast<PyExecuTorchResult&>().mark_read_only();
+    }
+    return result;
 #endif
   }
 
@@ -2462,13 +3908,26 @@ struct PyMethod final {
 
  private:
   std::recursive_mutex mutex_;
+  // False until a set_inputs() succeeds. A method without inputs needs none.
+  bool inputs_set_ = false;
+  // True after a failed set_inputs() left a mix of new and old inputs
+  // installed. A method whose inputs were never set keeps its loaded state.
+  bool inputs_failed_ = false;
+  // True only after the last execute() succeeded.
+  bool outputs_valid_ = false;
+  // True if any input is memory planned, so its planned memory holds a copy
+  // that each run installs again from inputs_.
+  bool has_planned_inputs_ = false;
+  // What the last successful set_inputs() installed. The tensors point at
+  // memory the members below keep alive.
+  std::vector<EValue> inputs_;
   // Borrowed results retain native storage without retaining this wrapper's
   // Python input owners, which could point back to those same results.
   struct Storage final {
     std::shared_ptr<ProgramMemory> memory;
     std::shared_ptr<ProgramState> state;
     std::vector<std::vector<uint8_t>> output_storages;
-    std::vector<DeviceMemoryBuffer> device_output_storages;
+    std::vector<std::shared_ptr<DeviceMemoryBuffer>> device_output_storages;
     std::unique_ptr<Method> method;
 
     Storage(
@@ -2555,13 +4014,30 @@ struct PyMethod final {
         ", which is returned as the tensor passed in for it";
   }
 #ifndef USE_ATEN_LIB
+  std::vector<std::shared_ptr<DLPackTensorView>> dlpack_inputs_;
+  std::vector<TensorPtr> dlpack_tensor_ptrs_;
   std::vector<std::shared_ptr<TorchTensorView>> torch_inputs_;
   std::vector<TensorPtr> torch_tensor_ptrs_;
+#endif
+  // What get_outputs() handed back without a copy in this execution.
+  std::vector<py::object> handed_outputs_;
+  // Per device output buffer, alive while such a result still uses it.
+  std::vector<std::weak_ptr<void>> handed_buffers_;
+  // Per device output, the buffer a still-alive earlier result uses, kept so
+  // it can be reused once that result is dropped.
+  struct SpareDeviceOutput final {
+    std::shared_ptr<DeviceMemoryBuffer> buffer;
+    std::weak_ptr<void> handed;
+  };
+  std::vector<SpareDeviceOutput> spare_device_outputs_;
+#ifndef USE_ATEN_LIB
 
   struct BorrowedOutputOwner final {
     std::shared_ptr<Storage> storage;
+    std::vector<std::shared_ptr<DeviceMemoryBuffer>> device_buffers;
     std::vector<std::shared_ptr<BufferTensor>> buffers;
     std::vector<std::shared_ptr<TorchTensorView>> torch_inputs;
+    std::vector<std::shared_ptr<DLPackTensorView>> dlpack_inputs;
   };
 
   py::object aliased_torch_output(const executorch::aten::Tensor& tensor) {
@@ -2594,7 +4070,10 @@ struct PyMethod final {
               py::str(source.attr("dtype")).cast<std::string>()) !=
               tensor.scalar_type()) {
         throw py::value_error(
-            "Input storage changed before get_outputs(); call set_inputs() again");
+            "Input " + std::to_string(input->index()) + " of method '" +
+            storage_->method->method_meta().name() +
+            "': its storage changed before the output was read; pass it "
+            "again");
       }
       const auto offset = source.attr("storage_offset")().cast<int64_t>() +
           static_cast<int64_t>((address - start) / itemsize);
@@ -2605,6 +4084,59 @@ struct PyMethod final {
           offset);
     }
     return py::none();
+  }
+
+  // The result for output `index` when it fills a device buffer these bindings
+  // allocated and nothing else uses: the result shares the buffer instead of
+  // copying it, and the next execution writes into a new buffer while the
+  // result is alive. A buffer that another result already uses, a borrowed
+  // one or an earlier output of the same read, is copied instead, so every
+  // result stays independent.
+  std::optional<py::object> hand_over_device_output(
+      size_t index,
+      const executorch::aten::Tensor& tensor) {
+    const auto slot = device_buffer_slot(tensor);
+    if (!slot) {
+      return std::nullopt;
+    }
+    auto& buffer = storage_->device_output_storages[*slot];
+    if (buffer.use_count() > 1) {
+      return std::nullopt;
+    }
+    // Results share the buffer through a holder of their own, so
+    // handed_buffers_ sees the last of them go even though the slot keeps
+    // the buffer.
+    const auto holder =
+        std::make_shared<std::shared_ptr<DeviceMemoryBuffer>>(buffer);
+    const std::shared_ptr<void> memory(holder, buffer->data());
+    py::object result;
+    if (portable_tensor_output() == PortableTensorOutput::Torch) {
+      auto* retained = new std::shared_ptr<void>(memory);
+      result = portable_tensor_result(
+          tensor,
+          /*clone=*/false,
+          py::capsule(retained, [](void* pointer) {
+            delete static_cast<std::shared_ptr<void>*>(pointer);
+          }));
+    } else {
+      result = py::cast(PyExecuTorchResult::hand_over(tensor, memory));
+    }
+    handed_buffers_[*slot] = holder;
+    handed_outputs_.resize(storage_->method->outputs_size());
+    handed_outputs_[index] = result;
+    return result;
+  }
+
+  std::optional<size_t> device_buffer_slot(
+      const executorch::aten::Tensor& tensor) const {
+    const auto& buffers = storage_->device_output_storages;
+    for (size_t i = 0; i < buffers.size(); ++i) {
+      if (buffers[i] && buffers[i]->data() == tensor.const_data_ptr() &&
+          buffers[i]->size() == tensor.nbytes()) {
+        return i;
+      }
+    }
+    return std::nullopt;
   }
 
   py::object borrowed_output_owner(const executorch::aten::Tensor& tensor) {
@@ -2623,7 +4155,12 @@ struct PyMethod final {
       owns_data |= aliases(buffer.data(), buffer.size());
     }
     for (const auto& buffer : storage_->device_output_storages) {
-      owns_data |= aliases(buffer.as_span().data(), buffer.size());
+      if (buffer && aliases(buffer->data(), buffer->size())) {
+        // The method may write the next execution into a new buffer, so the
+        // result keeps the one it reads.
+        owner->device_buffers.push_back(buffer);
+        owns_data = true;
+      }
     }
     if (!owns_data) {
       for (const auto& buffer : buffer_inputs_) {
@@ -2643,6 +4180,18 @@ struct PyMethod final {
           owner->torch_inputs.push_back(input);
         }
       }
+      for (const auto& input : dlpack_inputs_) {
+        if (aliases(input->data(), input->nbytes())) {
+          const auto start = reinterpret_cast<uintptr_t>(input->data());
+          if (tensor.nbytes() <= input->nbytes() - (address - start)) {
+            auto backing_owner = input->result_backing_owner();
+            if (!backing_owner.is_none()) {
+              return backing_owner;
+            }
+          }
+          owner->dlpack_inputs.push_back(input);
+        }
+      }
     }
     py::capsule capsule(owner.get(), [](void* data) {
       delete static_cast<BorrowedOutputOwner*>(data);
@@ -2654,15 +4203,16 @@ struct PyMethod final {
 
   void allocate_output_storages() {
     const auto num_outputs = storage_->method->outputs_size();
-    // Skip if we already have the right number of storages.
     if (storage_->output_storages.size() == num_outputs) {
+      replace_held_device_outputs();
       return;
     }
     // Built in locals and moved in only once every output has its buffer, so
     // an allocation that throws partway leaves nothing behind for the next
     // call to append to.
     std::vector<std::vector<uint8_t>> output_storages;
-    std::vector<DeviceMemoryBuffer> device_output_storages(num_outputs);
+    std::vector<std::shared_ptr<DeviceMemoryBuffer>> device_output_storages(
+        num_outputs);
     // Create a buffer for each output tensor. Memory planned outputs and non
     // tensor outputs get an empty buffer in this list which is ignored later.
     output_storages.reserve(num_outputs);
@@ -2700,16 +4250,8 @@ struct PyMethod final {
       // which setup_output_storage skips.
       const auto device = storage_->method->get_output(i).toTensor().device();
       if (!device.is_cpu() && output_size > 0) {
-        auto buffer = DeviceMemoryBuffer::create(
-            output_size, device.type(), device.index());
-        THROW_IF_ERROR(
-            buffer.error(),
-            "Failed to allocate %zu bytes on device %d:%d for output %zu",
-            output_size,
-            static_cast<int>(device.type()),
-            static_cast<int>(device.index()),
-            i);
-        device_output_storages[i] = std::move(buffer.get());
+        device_output_storages[i] =
+            allocate_device_output(i, output_size, device);
         output_storages.emplace_back();
         continue;
       }
@@ -2718,6 +4260,36 @@ struct PyMethod final {
     }
     storage_->output_storages = std::move(output_storages);
     storage_->device_output_storages = std::move(device_output_storages);
+    handed_buffers_.assign(num_outputs, std::weak_ptr<void>());
+    spare_device_outputs_.assign(num_outputs, SpareDeviceOutput());
+  }
+
+  // A handed-over result still uses its buffer, so the method writes into
+  // its spare instead, and the two take turns. Borrowed results keep their
+  // buffer alive themselves, as they always could see the next execution's
+  // values.
+  void replace_held_device_outputs() {
+#ifndef USE_ATEN_LIB
+    for (size_t i = 0; i < storage_->device_output_storages.size(); ++i) {
+      auto& buffer = storage_->device_output_storages[i];
+      if (!buffer || handed_buffers_[i].expired()) {
+        continue;
+      }
+      const auto device = storage_->method->get_output(i).toTensor().device();
+      auto& spare = spare_device_outputs_[i];
+      if (spare.buffer && spare.handed.expired()) {
+        std::swap(buffer, spare.buffer);
+        std::swap(handed_buffers_[i], spare.handed);
+      } else {
+        // Allocated into a local first, so a failed allocation leaves the slot
+        // and the spare untouched.
+        auto fresh = allocate_device_output(i, buffer->size(), device);
+        spare = {std::move(buffer), handed_buffers_[i]};
+        buffer = std::move(fresh);
+        handed_buffers_[i].reset();
+      }
+    }
+#endif
   }
 
   py::list get_outputs_as_py_list(
@@ -2747,6 +4319,20 @@ struct PyMethod final {
           list[i] = py::cast(v.toTensor());
         }
 #else
+        // Within one execution, repeated default reads return the same handed
+        // over object, so a caller sees stable identity and the buffer is not
+        // handed over twice. A clone_outputs=False read is a separate borrowed
+        // view and never returns that cached object.
+        if (clone_outputs && i < handed_outputs_.size() && handed_outputs_[i]) {
+          list[i] = handed_outputs_[i];
+          continue;
+        }
+        if (clone_outputs) {
+          if (const auto handed = hand_over_device_output(i, v.toTensor())) {
+            list[i] = *handed;
+            continue;
+          }
+        }
         if (!clone_outputs) {
           auto alias = aliased_torch_output(v.toTensor());
           if (!alias.is_none()) {
@@ -2785,8 +4371,8 @@ struct PyProgram final {
             data_path,
             std::move(program_buffer),
             backend_options)),
-        event_tracer_(std::move(tracer)),
         debug_buffer_size_(debug_buffer_size) {
+    state_->event_tracer_ = std::move(tracer);
     // Figure out the size of each non_const layer we need to support every
     // method in the program. Map will be easier to use than a list because we
     // dont know how many non_const arenas there will be
@@ -2822,12 +4408,10 @@ struct PyProgram final {
     }
 
     memory_ = std::make_shared<ProgramMemory>(std::move(planned_sizes));
-    if (event_tracer_ && debug_buffer_size > 0) {
-      // If a debug buffer was requested for the ETDump, allocate it and make
-      // sure its lifetime is as long as the event_tracer.
-      debug_buffer_ = std::make_unique<uint8_t[]>(debug_buffer_size);
-      event_tracer_->set_debug_buffer(get_etdump_debug_buffer());
-      event_tracer_->set_event_tracer_debug_level(
+    if (state_->event_tracer_ && debug_buffer_size > 0) {
+      state_->debug_buffer_ = std::make_unique<uint8_t[]>(debug_buffer_size);
+      state_->event_tracer_->set_debug_buffer(get_etdump_debug_buffer());
+      state_->event_tracer_->set_event_tracer_debug_level(
           EventTracerDebugLogLevel::kIntermediateOutputs);
     }
   }
@@ -2886,7 +4470,7 @@ struct PyProgram final {
     Result<const char*> res = state_->program_->get_method_name(method_index);
     THROW_IF_ERROR(
         res.error(),
-        "Failed get method name, error: 0x:%" PRIx32,
+        "Failed get method name, error: 0x%" PRIx32,
         static_cast<uint32_t>(res.error()));
     return std::string(res.get());
   }
@@ -2896,7 +4480,7 @@ struct PyProgram final {
         state_->program_->method_meta(method_name.c_str());
     THROW_IF_ERROR(
         meta.error(),
-        "Failed to get method meta for method %s, error: 0x:%" PRIx32,
+        "Failed to get method meta for method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(meta.error()));
     // Device memory is claimed here rather than at program load so that one
@@ -2908,12 +4492,12 @@ struct PyProgram final {
     Result<Method> res = state_->program_->load_method(
         method_name.c_str(),
         memory->mem_manager(),
-        event_tracer_.get(),
+        state_->event_tracer_.get(),
         state_->data_map_.get(),
         &state_->backend_options_);
     THROW_IF_ERROR(
         res.error(),
-        "Failed to load method %s, error: 0x:%" PRIx32,
+        "Failed to load method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(res.error()));
     return std::make_unique<PyMethod>(
@@ -2923,7 +4507,7 @@ struct PyProgram final {
   }
 
   Span<uint8_t> get_etdump_debug_buffer() {
-    return Span<uint8_t>(debug_buffer_.get(), debug_buffer_size_);
+    return Span<uint8_t>(state_->debug_buffer_.get(), debug_buffer_size_);
   }
 
   std::unique_ptr<PyMethodMeta> method_meta(const std::string& method_name) {
@@ -2931,14 +4515,14 @@ struct PyProgram final {
         state_->program_->method_meta(method_name.c_str());
     THROW_IF_ERROR(
         res.error(),
-        "Failed to get method meta for method %s, error: 0x:%" PRIx32,
+        "Failed to get method meta for method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(res.error()));
     return std::make_unique<PyMethodMeta>(state_, std::move(res.get()));
   }
 
   bool has_etdump() {
-    return static_cast<bool>(event_tracer_);
+    return static_cast<bool>(state_->event_tracer_);
   }
 
   void write_etdump_result_to_file(
@@ -2947,7 +4531,7 @@ struct PyProgram final {
     if (!has_etdump()) {
       throw std::runtime_error("No etdump found");
     }
-    auto& etdump = *event_tracer_;
+    auto& etdump = *state_->event_tracer_;
     etdump_result result = etdump.get_etdump_data();
     if (result.buf != nullptr && result.size > 0) {
       write_data_to_file(path, result.buf, result.size);
@@ -2973,8 +4557,6 @@ struct PyProgram final {
  private:
   std::shared_ptr<ProgramMemory> memory_;
   std::shared_ptr<ProgramState> state_;
-  std::unique_ptr<ETDumpGen> event_tracer_;
-  std::unique_ptr<uint8_t[]> debug_buffer_;
   size_t debug_buffer_size_;
 };
 
@@ -3053,9 +4635,11 @@ py::dict get_option(const std::string& backend_name, const py::dict& options) {
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
-  // scoped_ostream_redirect mutates process-wide stream buffers and is not
-  // thread-safe when Python operations inside a binding release the GIL.
-  auto call_guard = py::call_guard<>();
+  // Gives each call its own record of runtime errors for its exceptions.
+  // Runtime logs reach Python through emit_log_message below rather than
+  // scoped_ostream_redirect, which mutates process-wide stream buffers and is
+  // not thread-safe when Python operations inside a binding release the GIL.
+  auto call_guard = py::call_guard<RuntimeErrorScope>();
 
 #ifdef USE_ATEN_LIB
   m.attr("_uses_aten") = true;
@@ -3067,11 +4651,32 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
                                                               : "executorch";
 #endif
   py::class_<PyExecuTorchResult, std::shared_ptr<PyExecuTorchResult>>(
-      m, "ExecuTorchResult", py::buffer_protocol(), py::module_local())
-      .def_property_readonly("shape", &PyExecuTorchResult::shape)
-      .def_property_readonly("strides", &PyExecuTorchResult::strides)
-      .def_property_readonly("dtype", &PyExecuTorchResult::dtype)
-      .def_property_readonly("nbytes", &PyExecuTorchResult::nbytes)
+      m,
+      "ExecuTorchResult",
+      py::buffer_protocol(),
+      py::module_local(),
+      "A tensor result of an ExecuTorch method, returned when PyTorch is not "
+      "used. Read a CPU result through the buffer protocol, NumPy, or DLPack, "
+      "and a CUDA result through DLPack or to_host().\n\n"
+      ".. warning::\n\n"
+      "    This API is experimental and subject to change without notice.")
+      .def_property_readonly(
+          "shape", &PyExecuTorchResult::shape, "Size of each dimension.")
+      .def_property_readonly(
+          "strides",
+          &PyExecuTorchResult::strides,
+          "Byte step of each dimension.")
+      .def_property_readonly(
+          "dtype",
+          &PyExecuTorchResult::dtype,
+          "Name of the dtype, such as \"float32\" or \"bfloat16\", as "
+          "torch spells it.")
+      .def_property_readonly(
+          "nbytes", &PyExecuTorchResult::nbytes, "Size of the data in bytes.")
+      .def_property_readonly(
+          "device",
+          &PyExecuTorchResult::device_name,
+          "Where the data lives: \"cpu\" or \"cuda:N\".")
       .def(
           "__array__",
           [](const std::shared_ptr<PyExecuTorchResult>& result,
@@ -3093,7 +4698,43 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           },
           py::arg("dtype") = py::none(),
           py::arg("copy") = py::none())
-      .def_buffer(&PyExecuTorchResult::buffer);
+      .def_buffer(&PyExecuTorchResult::buffer)
+      .def(
+          "__dlpack__",
+          &PyExecuTorchResult::to_dlpack,
+          py::arg("stream") = py::none(),
+          py::kw_only(),
+          py::arg("max_version") = py::none(),
+          py::arg("dl_device") = py::none(),
+          py::arg("copy") = py::none())
+      .def("__dlpack_device__", &PyExecuTorchResult::dlpack_device)
+      .def(
+          "to_host",
+          &PyExecuTorchResult::to_host,
+          "Return a copy of this result in CPU memory.")
+      .def_static(
+          "from_host",
+          [](const py::object& source, int device_index) {
+            if (py::isinstance<PyExecuTorchResult>(source)) {
+              return source.cast<std::shared_ptr<PyExecuTorchResult>>()
+                  ->to_device(device_index);
+            }
+            const BufferTensor host(source);
+            return PyExecuTorchResult::from_host(
+                host.data(),
+                std::vector<executorch::aten::SizesType>(
+                    host.sizes().begin(), host.sizes().end()),
+                std::vector<executorch::aten::StridesType>(
+                    host.strides().begin(), host.strides().end()),
+                host.scalar_type(),
+                device_index);
+          },
+          py::arg("source"),
+          py::arg("device_index") = 0,
+          "Copy a dense CPU buffer, or a CPU ExecuTorchResult, to a CUDA "
+          "device, for use as a method input. Requires bindings built with "
+          "CUDA support.")
+      .def("__repr__", &PyExecuTorchResult::repr);
 #ifndef USE_ATEN_LIB
   py::class_<
       PyExecuTorchResultFlatBuffer,
@@ -3106,7 +4747,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 #endif
 
   // Bind the verification enum to python.
-  py::enum_<Program::Verification>(m, "Verification")
+  py::enum_<Program::Verification>(m, "Verification", py::module_local())
       .value("Minimal", Program::Verification::Minimal)
       .value("InternalConsistency", Program::Verification::InternalConsistency);
 
@@ -3236,7 +4877,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       },
       call_guard);
 
-  py::class_<PyModule>(m, "ExecuTorchModule")
+  py::class_<PyModule>(m, "ExecuTorchModule", py::module_local())
       .def(
           "plan_execute",
           &PyModule::plan_execute,
@@ -3276,7 +4917,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("clone_outputs") = true,
           call_guard);
 
-  py::class_<PyBundledModule>(m, "BundledModule")
+  py::class_<PyBundledModule>(m, "BundledModule", py::module_local())
       .def(
           "verify_result_with_bundled_expected_output",
           &PyBundledModule::verify_result_with_bundled_expected_output,
@@ -3286,13 +4927,15 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("atol") = 1e-8,
           call_guard);
 
-  py::class_<PyTensorInfo>(m, "TensorInfo")
+  py::class_<PyTensorInfo>(m, "TensorInfo", py::module_local())
       .def("sizes", &PyTensorInfo::sizes, call_guard)
       .def("dtype", &PyTensorInfo::dtype, call_guard)
+      .def("dtype_name", &PyTensorInfo::dtype_name, call_guard)
       .def("is_memory_planned", &PyTensorInfo::is_memory_planned, call_guard)
       .def("nbytes", &PyTensorInfo::nbytes, call_guard)
+      .def("device", &PyTensorInfo::device, call_guard)
       .def("__repr__", &PyTensorInfo::repr, call_guard);
-  py::class_<PyMethodMeta>(m, "MethodMeta")
+  py::class_<PyMethodMeta>(m, "MethodMeta", py::module_local())
       .def("name", &PyMethodMeta::name, call_guard)
       .def("num_inputs", &PyMethodMeta::num_inputs, call_guard)
       .def("num_outputs", &PyMethodMeta::num_outputs, call_guard)
@@ -3334,7 +4977,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("data_path") = std::nullopt,
       py::arg("backend_options") = py::dict(),
       call_guard);
-  py::class_<PyProgram>(m, "ExecuTorchProgram")
+  py::class_<PyProgram>(m, "ExecuTorchProgram", py::module_local())
       .def("num_methods", &PyProgram::num_methods, call_guard)
       .def(
           "get_method_name",
@@ -3358,7 +5001,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("path"),
           py::arg("debug_buffer_path") = py::none(),
           call_guard);
-  py::class_<PyMethod>(m, "ExecuTorchMethod")
+  py::class_<PyMethod>(m, "ExecuTorchMethod", py::module_local())
       .def("set_inputs", &PyMethod::set_inputs, py::arg("inputs"), call_guard)
       .def("execute", &PyMethod::execute, call_guard)
       .def(
@@ -3398,7 +5041,7 @@ namespace {
 // stream buffer.
 void emit_log_message(
     ET_UNUSED et_timestamp_t timestamp,
-    ET_UNUSED et_pal_log_level_t level,
+    et_pal_log_level_t level,
     const char* filename,
     ET_UNUSED const char* function,
     size_t line,
@@ -3406,7 +5049,20 @@ void emit_log_message(
     size_t length) {
   const std::string formatted_message = "[" + std::string(filename) + ":" +
       std::to_string(line) + "] " + std::string(message, length) + "\n";
-  if (Py_IsInitialized()) {
+  if (level == kError && runtime_error_scopes != 0) {
+    // Keeps the first lines, which usually name the cause.
+    const char separator[] = "; ";
+    const size_t prefix = runtime_errors_size == 0 ? 0 : sizeof(separator) - 1;
+    const size_t room = kRuntimeErrorsCapacity - runtime_errors_size;
+    if (room > prefix) {
+      std::memcpy(runtime_errors + runtime_errors_size, separator, prefix);
+      const size_t copied = std::min(length, room - prefix);
+      std::memcpy(
+          runtime_errors + runtime_errors_size + prefix, message, copied);
+      runtime_errors_size += prefix + copied;
+    }
+  }
+  if (Py_IsInitialized() && PyGILState_Check()) {
     try {
       py::gil_scoped_acquire gil;
       py::module_::import("sys").attr("stderr").attr("write")(

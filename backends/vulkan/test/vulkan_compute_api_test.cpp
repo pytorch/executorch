@@ -292,7 +292,6 @@ std::vector<int64_t> get_reference_strides(
         default:
           return {};
       }
-      break;
     case utils::kHeightPacked:
       switch (sizes.size()) {
         case 1:

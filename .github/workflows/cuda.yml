@@ -34,9 +34,19 @@ on:
       - .ci/scripts/cuda_benchmark.py
       - .ci/scripts/cuda_benchmark_from_e2e.sh
       - .ci/scripts/cuda_perf_prompts/**
+      - .ci/scripts/build_muse_glimmer_batching_smoke.sh
+      - .ci/scripts/muse_glimmer_batching_smoke.cpp
+      - .ci/scripts/muse_glimmer_batching_workload.h
+      - .ci/scripts/tests/test_muse_glimmer_batching_ci.py
+      - .ci/scripts/tests/test_muse_glimmer_batching_workload.py
+      - .ci/scripts/tests/muse_glimmer_batching_workload_test.cpp
       - examples/models/muse-glimmer/**
       - extension/pybindings/**
       - runtime/__init__.py
+      - exir/passes/convert_constant_dim_order_pass.py
+      - exir/passes/insert_write_back_for_buffers_pass.py
+      - exir/passes/propagate_device_config.py
+      - exir/passes/propagate_device_pass.py
   workflow_dispatch:
     inputs:
       models:
@@ -120,6 +130,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -145,10 +156,10 @@ jobs:
       script: |
         set -eux
 
-        if [ "${{ matrix.cuda-version }}" = "13.4" ]; then
-          # The image's older Conda runtime aborts during CUDA thread-local cleanup.
-          conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
-        fi
+        # AOTI model libraries need a newer C++ runtime than the 12.6 image's
+        # system library; the 13.4 image also needs the thread-local cleanup fix.
+        conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
+        export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
   # This job will fail if any of the CUDA versions fail
@@ -164,6 +175,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -459,10 +471,11 @@ jobs:
           "${RUNNER_ARTIFACT_DIR}/native-sm86-on-sm80.log"
 
   unittest-cuda:
-    name: unittest-cuda
+    name: unittest-cuda (${{ matrix.shard }})
     needs: [changed-files, run-decision]
-    # This job runs the pybindings device test, so it also has to fire on the
-    # two pybindings paths the workflow filter lists.
+    # This job runs the pybindings device test and the device placement test,
+    # so it also has to fire on the pybindings and device pass paths the
+    # workflow filter lists.
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
@@ -473,7 +486,18 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
       contains(needs.changed-files.outputs.changed-files, 'runtime/__init__.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/convert_constant_dim_order_pass.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/insert_write_back_for_buffers_pass.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/propagate_device_config.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/propagate_device_pass.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
+    # kernel: Triton kernels and their autotuning. system: lowering passes, op
+    # dispatch, export/runtime, and model tests. Together they do not fit the
+    # timeout.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [kernel, system]
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
@@ -487,6 +511,37 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
+        SHARD="${{ matrix.shard }}"
+
+        # The system shard runs everything under backends/cuda/tests that is not
+        # listed here, so a new test lands there unless it is added to this list.
+        KERNEL_TESTS=(
+          backends/cuda/tests/test_triton_sdpa.py
+          backends/cuda/tests/test_triton_sdpa_splitk.py
+          backends/cuda/tests/test_triton_sdpa_nan.py
+          backends/cuda/tests/test_tq4_sdpa.py
+          backends/cuda/tests/test_int4_matmul.py
+          backends/cuda/tests/test_int5_large_quantized_gemm.py
+          backends/cuda/tests/test_quantized_gemm_family.py
+          backends/cuda/tests/test_fused_moe.py
+          backends/cuda/tests/test_fused_deltanet_decode.py
+          backends/cuda/tests/test_chunk_gated_delta_rule.py
+          backends/cuda/tests/test_topk.py
+          backends/cuda/tests/test_autotune_inputs.py
+          backends/cuda/tests/test_autotune_launch_params.py
+          backends/cuda/tests/test_triton_mutation_cache.py
+        )
+        # These run in unittest-cuda-quantized-gemm.
+        QUANTIZED_GEMM_TESTS=(
+          backends/cuda/tests/test_int4_quantized_gemm.py
+          backends/cuda/tests/test_int4_large_quantized_gemm.py
+          backends/cuda/tests/test_int5_quantized_gemm.py
+          backends/cuda/tests/test_int6_quantized_gemm.py
+          backends/cuda/tests/test_int6_large_quantized_gemm.py
+          backends/cuda/tests/test_int8_quantized_gemm.py
+          backends/cuda/tests/test_cuda_graph_timing.py
+        )
+
         # Install executorch in editable mode so custom op libs land in-tree
         bash ./install_executorch.sh
 
@@ -495,64 +550,157 @@ jobs:
         conda install -y -c conda-forge 'libstdcxx-ng>=12'
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
-        # The pybindings loader only asks for device memory on a build that has
-        # a device allocator registered, so these tests cannot run in the CPU
-        # jobs. They need the install above and nothing built below, so run them
-        # here and fail before the long builds.
-        #
-        # unittest exits 0 when a test skips, and these tests skip when the CUDA
-        # backend is missing or no GPU is visible. Both are the prerequisites
-        # this job exists to provide, so treat a skip as a failure rather than
-        # let a packaging regression pass silently. `tee` would otherwise hide
-        # the real exit status behind its own, so read it back explicitly.
-        set +e
-        python -m unittest -v \
-          executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device \
-          executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_unplanned_device_output_is_device_memory \
-          2>&1 | tee /tmp/pybindings_device_test.log
-        pybindings_device_status=${PIPESTATUS[0]}
-        set -e
-        if [ "${pybindings_device_status}" -ne 0 ]; then
-          echo "::error::a pybindings device test failed"
-          exit "${pybindings_device_status}"
-        fi
-        if grep -qE "^OK \(skipped=|skipped=[1-9]" /tmp/pybindings_device_test.log; then
-          echo "::error::a pybindings device test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
-          exit 1
+        if [ "${SHARD}" = "system" ]; then
+          # The pybindings loader only asks for device memory on a build that has
+          # a device allocator registered, so these tests cannot run in the CPU
+          # jobs. They need the install above and nothing built below, so run them
+          # here and fail before the long builds.
+          #
+          # unittest exits 0 when a test skips, and these tests skip when the CUDA
+          # backend is missing or no GPU is visible. Both are the prerequisites
+          # this job exists to provide, so treat a skip as a failure rather than
+          # let a packaging regression pass silently. `tee` would otherwise hide
+          # the real exit status behind its own, so read it back explicitly.
+          set +e
+          python -m unittest -v \
+            executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device \
+            executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_unplanned_device_output_is_device_memory \
+            2>&1 | tee /tmp/pybindings_device_test.log
+          pybindings_device_status=${PIPESTATUS[0]}
+          set -e
+          if [ "${pybindings_device_status}" -ne 0 ]; then
+            echo "::error::a pybindings device test failed"
+            exit "${pybindings_device_status}"
+          fi
+          if grep -qE "^OK \(skipped=|skipped=[1-9]" /tmp/pybindings_device_test.log; then
+            echo "::error::a pybindings device test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
+            exit 1
+          fi
+
+          # Same for the device placement test, which skips without a GPU.
+          set +e
+          python -m pytest backends/cuda/tests/test_device_placement.py -v -rs -o "addopts=" \
+            2>&1 | tee /tmp/device_placement_test.log
+          device_placement_status=${PIPESTATUS[0]}
+          set -e
+          if [ "${device_placement_status}" -ne 0 ]; then
+            echo "::error::a device placement test failed"
+            exit "${device_placement_status}"
+          fi
+          if grep -qE "[0-9]+ skipped" /tmp/device_placement_test.log; then
+            echo "::error::a device placement test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
+            exit 1
+          fi
         fi
 
         # Build ExecuTorch with CUDA support
         cmake --workflow --preset llm-release-cuda
 
-        # Build and run CUDA shim tests (C++)
-        pushd backends/cuda/runtime/shims/tests
-        cmake --workflow --preset default
-        popd
+        if [ "${SHARD}" = "system" ]; then
+          # Build and run CUDA shim tests (C++)
+          pushd backends/cuda/runtime/shims/tests
+          cmake --workflow --preset default
+          popd
+        fi
 
         # Install flash-linear-attention for chunk_gated_delta_rule triton kernel tests
         pip install "flash-linear-attention==0.4.2"
 
-        # Build executor_runner (needed by CUDA backend e2e tests)
+        # Build executor_runner (needed by CUDA backend e2e tests in both shards)
         cmake --build cmake-out --target executor_runner
 
-        # Run CUDA backend Python tests. The quantized GEMM kernel suites run
-        # in unittest-cuda-quantized-gemm; together they do not fit this
-        # job's timeout.
-        python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts=" \
-          --ignore=backends/cuda/tests/test_int4_quantized_gemm.py \
-          --ignore=backends/cuda/tests/test_int4_large_quantized_gemm.py \
-          --ignore=backends/cuda/tests/test_int5_quantized_gemm.py \
-          --ignore=backends/cuda/tests/test_int6_quantized_gemm.py \
-          --ignore=backends/cuda/tests/test_int6_large_quantized_gemm.py \
-          --ignore=backends/cuda/tests/test_int8_quantized_gemm.py \
-          --ignore=backends/cuda/tests/test_cuda_graph_timing.py
+        if [ "${SHARD}" = "kernel" ]; then
+          python -m pytest "${KERNEL_TESTS[@]}" -v -o "addopts=" --durations=20
+        else
+          IGNORES=()
+          for t in "${KERNEL_TESTS[@]}" "${QUANTIZED_GEMM_TESTS[@]}" backends/cuda/tests/test_device_placement.py; do
+            IGNORES+=("--ignore=${t}")
+          done
+          python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts=" --durations=20 \
+            "${IGNORES[@]}"
 
-        # Run Qwen 3.5 MoE tests (quantize roundtrip + TurboQuant KV cache + sampler)
-        python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py examples/models/qwen3_5_moe/test_turboquant.py examples/models/qwen3_5_moe/test_sampler.py -v -o "addopts="
+          # Run Qwen 3.5 MoE tests (quantize roundtrip + TurboQuant KV cache + sampler)
+          python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py examples/models/qwen3_5_moe/test_turboquant.py examples/models/qwen3_5_moe/test_sampler.py -v -o "addopts="
 
-        # Run Gemma 4 31B tests (quant unit tests + pipeline integration tests)
+          # Run Gemma 4 31B tests (quant unit tests + pipeline integration tests)
+          pip install gguf
+          python -m pytest examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
+        fi
+
+  unittest-cuda-muse-glimmer-batching:
+    name: unittest-cuda-muse-glimmer-batching
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/batching') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/serving') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/llm_server/cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_workload.h') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_ci.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_workload.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching_workload_test.cpp') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 120
+      runner: mt-l-x86aavx2-11-41-a10g
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        python -m unittest discover -s .ci/scripts/tests -p 'test_muse_glimmer_batching_ci.py' -v
+        python -m unittest discover -s .ci/scripts/tests -p 'test_muse_glimmer_batching_workload.py' -v
+
+        # The normal serving binaries and the opt-in correctness tool share
+        # CudaExecutor; MG preparation tests also run on Linux.
+        make muse-glimmer-batching-cuda
+        BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
+        cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
+          -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
+        bash .ci/scripts/build_muse_glimmer_batching_smoke.sh "${BATCHING_BIN_DIR}"
+        cmake --build "${BATCHING_BIN_DIR}" \
+          --target muse_glimmer_batching_test muse_glimmer_cuda_dflash_test --parallel
+        ctest --test-dir "${BATCHING_BIN_DIR}" \
+          -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_worker"
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_smoke"
+
+        # The batching export on a tiny model, and the CLI's backend dispatch.
         pip install gguf
-        python -m pytest examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
+        python -m pytest -v -o "addopts=" \
+          examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py \
+          examples/models/muse-glimmer/tests/test_cuda_dflash_packed.py \
+          examples/models/muse-glimmer/tests/test_dflash_token_sampler.py \
+          examples/models/muse-glimmer/tests/test_checkpoint_context.py
+
+        # CUDA DFlash executor on a tiny exported target + draft. The native
+        # tests skip without the artifact, so fail if any skipped.
+        export ET_MUSE_DFLASH_TINY_DIR="${RUNNER_TEMP:-/tmp}/muse_glimmer_dflash_tiny"
+        python examples/models/muse-glimmer/tests/export_cuda_dflash_tiny.py \
+          --output-dir "${ET_MUSE_DFLASH_TINY_DIR}"
+        ctest --test-dir "${BATCHING_BIN_DIR}" -R '^muse_glimmer_cuda_dflash$' \
+          --output-on-failure --no-tests=error -V > /tmp/muse_glimmer_cuda_dflash.log 2>&1 \
+          || { cat /tmp/muse_glimmer_cuda_dflash.log; exit 1; }
+        cat /tmp/muse_glimmer_cuda_dflash.log
+        if grep -q "SKIPPED" /tmp/muse_glimmer_cuda_dflash.log; then
+          echo "::error::muse_glimmer_cuda_dflash_test skipped"
+          exit 1
+        fi
 
   unittest-cuda-quantized-gemm:
     name: unittest-cuda-quantized-gemm (${{ matrix.shard }})
@@ -631,10 +779,11 @@ jobs:
           -v -o "addopts="
 
         cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
-        cmake --build cmake-out --target test_cuda_allocator test_cuda_allocator_exit test_cuda_mutable_state test_cuda_weight_cache test_cuda_sort_rand test_cuda_kv_cache test_cuda_guard test_cuda_stream_guard test_step_plan test_cuda_executor -j$(nproc)
+        cmake --build cmake-out --target test_cuda_allocator test_cuda_allocator_exit test_cuda_mutable_state test_cuda_weight_cache test_cuda_output_copy test_cuda_sort_rand test_cuda_kv_cache test_cuda_guard test_cuda_stream_guard test_step_plan test_cuda_executor -j$(nproc)
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_weight_cache --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_output_copy --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_sort_rand --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_kv_cache --output-on-failure -V
         ctest --test-dir cmake-out -R test_step_plan --output-on-failure -V
@@ -1042,6 +1191,12 @@ jobs:
     name: test-muse-glimmer-cuda-e2e-${{ matrix.variant }}-${{ matrix.mode }}
     needs: [changed-files, run-decision]
     if: |
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_workload.h') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_ci.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_workload.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching_workload_test.cpp') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
@@ -1062,7 +1217,7 @@ jobs:
           - variant: kquant-17gb
             mode: solo-text
           - variant: kquant-17gb
-            mode: solo-text-offgraph
+            mode: solo-text-batching
           - variant: kquant-17gb
             mode: dflash-image
           - variant: kquant-dynamic

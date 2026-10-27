@@ -5,6 +5,17 @@ oncall("executorch")
 
 fbcode_target(
     _kind = runtime.python_test,
+    name = "test_fuse_conv_batch_norm",
+    srcs = ["test_fuse_conv_batch_norm.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
     name = "test_serialize",
     srcs = ["test_serialize.py"],
     deps = [

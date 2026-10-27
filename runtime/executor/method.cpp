@@ -116,6 +116,7 @@ class BackendDelegate final {
     out->backend_ = backend;
     out->handle_ = nullptr;
     out->scratch_ = Span<const Span<uint8_t>>();
+    out->has_call_site_ = false;
     // Pass a pointer to this buffer to the backend. It's safe for the backend
     // to point its handle to this object, since it will outlive the backend.
     new (&out->segment_) FreeableBuffer(std::move(processed_data.get()));
@@ -152,6 +153,15 @@ class BackendDelegate final {
 
   void set_scratch(Span<const Span<uint8_t>> scratch) {
     scratch_ = scratch;
+  }
+
+  /// Whether an instruction already calls this delegate.
+  bool has_call_site() const {
+    return has_call_site_;
+  }
+
+  void add_call_site() {
+    has_call_site_ = true;
   }
 
   Error Execute(
@@ -240,6 +250,7 @@ class BackendDelegate final {
   const BackendInterface* backend_;
   DelegateHandle* handle_;
   Span<const Span<uint8_t>> scratch_;
+  bool has_call_site_;
 };
 
 /**
@@ -1143,19 +1154,27 @@ Error Method::init(
             }
             chain_instruction_arg_lists[instr_idx] = res.get();
 
+            const auto delegate_index = delegate_call->delegate_index();
+            ET_CHECK_OR_RETURN_ERROR(
+                delegate_index >= 0 &&
+                    static_cast<size_t>(delegate_index) < n_delegate_,
+                InvalidProgram,
+                "Delegate index %" PRId32 " >= num delegates %" ET_PRIsize_t,
+                delegate_index,
+                n_delegate_);
+            BackendDelegate& delegate = delegates_[delegate_index];
             const auto scratch = delegate_call->scratch();
-            if (scratch != nullptr && scratch->size() > 0) {
-              // The emitter appends one BackendDelegate per delegate call, so
-              // the index identifies the call site and the buffers can hang
-              // off the delegate itself.
-              const auto delegate_index = delegate_call->delegate_index();
-              ET_CHECK_OR_RETURN_ERROR(
-                  delegate_index >= 0 &&
-                      static_cast<size_t>(delegate_index) < n_delegate_,
-                  InvalidProgram,
-                  "Delegate index %" PRId32 " >= num delegates %" ET_PRIsize_t,
-                  delegate_index,
-                  n_delegate_);
+            const bool has_scratch = scratch != nullptr && scratch->size() > 0;
+            // Scratch is planned for one call site and kept on the delegate, so
+            // a delegate with scratch must not serve any other call site.
+            ET_CHECK_OR_RETURN_ERROR(
+                !delegate.has_call_site() ||
+                    (!has_scratch && delegate.scratch().empty()),
+                InvalidProgram,
+                "Delegate %" PRId32 " has scratch and more than one call site",
+                delegate_index);
+            delegate.add_call_site();
+            if (has_scratch) {
               Result<Span<const Span<uint8_t>>> buffers = gen_delegate_scratch(
                   method_allocator, memory_manager_->planned_memory(), scratch);
               if (!buffers.ok()) {
@@ -1167,7 +1186,7 @@ Error Method::init(
                     instr_idx);
                 return buffers.error();
               }
-              delegates_[delegate_index].set_scratch(buffers.get());
+              delegate.set_scratch(buffers.get());
             }
           } break;
           case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {

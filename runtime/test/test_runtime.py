@@ -93,6 +93,14 @@ class RuntimeTest(unittest.TestCase):
         )
         self.assertEqual(result.stdout.strip(), "[]")
 
+    def test_runtime_exports_the_result_type(self):
+        import executorch.runtime
+        from executorch.extension.pybindings import portable_lib
+
+        self.assertIs(
+            executorch.runtime.ExecuTorchResult, portable_lib.ExecuTorchResult
+        )
+
     def test_smoke(self):
         ep, inputs = create_program(ModuleAdd())
         runtime = Runtime.get()
@@ -192,18 +200,21 @@ class RuntimeTest(unittest.TestCase):
         self.assertTrue(torch.equal(second, torch.ones(1, 4)))
         self.assertTrue(torch.equal(first, torch.zeros(1, 4)))
 
-    def test_failed_set_inputs_returns_installed_input(self):
+    def test_failed_set_inputs_then_full_set_aliases_new_input(self):
         x, cache, pos = _cache_inputs()
         method, _buffer = _load_cache_update_method()
         method._method.set_inputs((x, cache, pos))
-        # Fails on the position, after the new cache was already set.
+        # Fails on the position, after the new cache was already set: the
+        # method refuses to run until a full set is installed, and the mutated
+        # input it then writes is the new one.
         new_cache = torch.zeros(3, 4)
         with self.assertRaises(RuntimeError):
             method._method.set_inputs((x, new_cache, 1))
-        method._method.execute()
-        outputs = method._method.get_outputs()
-        self.assertIsNot(outputs[0], cache)
-        self.assertTrue(torch.equal(outputs[0], new_cache))
+        with self.assertRaises(RuntimeError):
+            method._method.execute()
+        outputs = method._method((x, new_cache, pos), clone_outputs=False)
+        self.assertIs(outputs[0], new_cache)
+        self.assertTrue(torch.equal(new_cache[1], torch.ones(4)))
         self.assertTrue(torch.equal(cache, torch.zeros(3, 4)))
 
     def test_failed_input_prevalidation_preserves_previous_inputs(self):
@@ -319,6 +330,23 @@ class RuntimeTest(unittest.TestCase):
         outputs = method._method((x, cache, pos), clone_outputs=False)
         self.assertIs(outputs[0], cache)
         self.assertTrue(torch.equal(cache[1], torch.ones(4)))
+
+    def test_execute_can_borrow_outputs(self):
+        ep, inputs = create_program(ModuleAdd())
+        method = Runtime.get().load_program(ep.buffer).load_method("forward")
+
+        def address(output):
+            return torch.from_dlpack(output).data_ptr()
+
+        # Borrowed outputs are views of the method's own memory, so each
+        # execution writes the same place. Cloned outputs are copies.
+        borrowed = [method.execute(inputs, clone_outputs=False)[0] for _ in range(2)]
+        self.assertEqual(address(borrowed[0]), address(borrowed[1]))
+        cloned = [method.execute(inputs)[0] for _ in range(2)]
+        self.assertNotEqual(address(cloned[0]), address(cloned[1]))
+        torch.testing.assert_close(
+            torch.from_dlpack(borrowed[1]), inputs[0] + inputs[1]
+        )
 
     def test_module_with_multiple_method_names(self):
         ep, inputs = create_program(ModuleMulti())
