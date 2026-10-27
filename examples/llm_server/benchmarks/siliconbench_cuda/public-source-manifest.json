@@ -315,6 +315,10 @@
       "sha256": "8bab1919e62e0090b54a8d1ac1757b1c8622d0015d06592bfa51dd208df7f322",
       "bytes": 10360
     },
+    "diagnose_roofline_w4a16_arithmetic.py": {
+      "sha256": "a87fcd59a6e34ab398cec96a48a25ebdf88d6cb7ec96b43e3eda04dda7737eeb",
+      "bytes": 13672
+    },
     "diagnose_v9_aoti_repeats.py": {
       "sha256": "9af2bcff914736147eadff8f98725e31df3771601f5c12ef6a0ddc8b5cc9409b",
       "bytes": 9928
