@@ -17,14 +17,17 @@ TestDirectory::TestDirectory() {
     ADD_FAILURE() << "mkdtemp: " << strerror(errno);
     return;
   }
-  url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:pattern] isDirectory:YES]
+  url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:pattern]
+                   isDirectory:YES]
             .URLByResolvingSymlinksInPath;
 }
 
 TestDirectory::~TestDirectory() {
-  if (url == nil) return;
+  if (url == nil)
+    return;
   EXPECT_TRUE([url.lastPathComponent hasPrefix:@"coreai-host-test-"]);
-  if (![url.lastPathComponent hasPrefix:@"coreai-host-test-"]) return;
+  if (![url.lastPathComponent hasPrefix:@"coreai-host-test-"])
+    return;
   EXPECT_TRUE([NSFileManager.defaultManager removeItemAtURL:url error:nil]);
 }
 
@@ -33,13 +36,16 @@ TestDirectory::~TestDirectory() {
   [fresh removeAllCachedResourceValues];
   NSNumber* value = nil;
   NSError* error = nil;
-  if (![fresh getResourceValue:&value forKey:NSURLIsExcludedFromBackupKey error:&error] ||
+  if (![fresh getResourceValue:&value
+                        forKey:NSURLIsExcludedFromBackupKey
+                         error:&error] ||
       error != nil || value == nil) {
     ADD_FAILURE() << "Cannot read backup flag: " << url.path.UTF8String;
     return ::testing::AssertionFailure() << "Backup flag unavailable";
   }
   return value.boolValue ? ::testing::AssertionSuccess()
-                         : ::testing::AssertionFailure() << "Not excluded: " << url.path.UTF8String;
+                         : ::testing::AssertionFailure()
+          << "Not excluded: " << url.path.UTF8String;
 }
 
 ::testing::AssertionResult set_backup_excluded(NSURL* url, bool excluded) {
@@ -47,15 +53,19 @@ TestDirectory::~TestDirectory() {
   for (int attempt = 0; attempt < 50; ++attempt) {
     NSURL* fresh = [NSURL fileURLWithPath:url.path];
     [fresh removeAllCachedResourceValues];
-    if (![fresh setResourceValue:@(excluded) forKey:NSURLIsExcludedFromBackupKey error:nil]) {
-      return ::testing::AssertionFailure() << "Cannot set backup flag: " << url.path.UTF8String;
+    if (![fresh setResourceValue:@(excluded)
+                          forKey:NSURLIsExcludedFromBackupKey
+                           error:nil]) {
+      return ::testing::AssertionFailure()
+          << "Cannot set backup flag: " << url.path.UTF8String;
     }
     usleep(20000);
     if (static_cast<bool>(backup_excluded(url)) == excluded) {
       return ::testing::AssertionSuccess();
     }
   }
-  return ::testing::AssertionFailure() << "Backup flag did not settle: " << url.path.UTF8String;
+  return ::testing::AssertionFailure()
+      << "Backup flag did not settle: " << url.path.UTF8String;
 }
 
-}  // namespace executorch::backends::coreai::testing
+} // namespace executorch::backends::coreai::testing

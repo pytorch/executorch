@@ -59,7 +59,8 @@ processes of the same user rebinding paths. Written files and changed directorie
 are synced with `fsync`. Atomic publication uses `F_FULLFSYNC` on the temporary
 file before rename and on the directory afterward. A failure before rename
 preserves the old contents; a failure of the final flush reports an error even
-though the new complete contents are already visible.
+though the new complete contents are already visible. Use a local APFS volume;
+unsupported full-device flushes are reported as errors, not downgraded to `fsync`.
 
 Preparing the assets root sets `NSURLIsExcludedFromBackupKey` on it, which covers
 everything beneath it. Ancestors are not modified. This is backup exclusion, not

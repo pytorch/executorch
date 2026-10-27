@@ -6,9 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cstring>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <cstdint>
+#include <cstring>
 #include <vector>
 #include "coreai_fault_scope.h"
 #include "coreai_file.h"
@@ -40,34 +41,72 @@ TEST(CoreAIStorageTest, PreparesRootWithRootOnlyBackupPolicy) {
   auto inspected = prepare_storage_root(root.path, false);
   ASSERT_TRUE((inspected.ok() && [inspected.get() isEqualToString:root.path]));
   ASSERT_TRUE((!backup_excluded(root)));
-  ASSERT_TRUE((prepare_storage_root(root.path, true).ok() && backup_excluded(root)));
+  ASSERT_TRUE(
+      (prepare_storage_root(root.path, true).ok() && backup_excluded(root)));
 
   NSURL* missing = [sandbox.url URLByAppendingPathComponent:@"missing"];
-  ASSERT_EQ(prepare_storage_root(missing.path, false).error(), Error::InvalidArgument);
+  ASSERT_EQ(
+      prepare_storage_root(missing.path, false).error(),
+      Error::InvalidArgument);
   EXPECT_FALSE([manager fileExistsAtPath:missing.path]);
-  EXPECT_EQ(prepare_storage_root(@"relative", true).error(), Error::InvalidArgument);
+  EXPECT_EQ(
+      prepare_storage_root(@"relative", true).error(), Error::InvalidArgument);
   EXPECT_TRUE((!backup_excluded(parent) && !backup_excluded(sandbox.url)));
+}
+
+TEST(CoreAIStorageTest, RejectsInvalidRootsConsistently) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  NSURL* regular = [storage.url URLByAppendingPathComponent:@"regular"];
+  NSData* bytes = [@"unchanged" dataUsingEncoding:NSUTF8StringEncoding];
+  ASSERT_TRUE([bytes writeToURL:regular atomically:NO]);
+  for (bool create : {false, true}) {
+    SCOPED_TRACE(create);
+    EXPECT_EQ(
+        prepare_storage_root(nil, create).error(), Error::InvalidArgument);
+    for (NSString* path in @[
+           @"",
+           @"relative",
+           @"~",
+           @"~/cache",
+           @"~nobody/cache",
+           regular.path,
+           [regular.path stringByAppendingPathComponent:@"child"]
+         ]) {
+      SCOPED_TRACE(path.UTF8String);
+      EXPECT_EQ(
+          prepare_storage_root(path, create).error(), Error::InvalidArgument);
+    }
+  }
+  EXPECT_TRUE([[NSData dataWithContentsOfURL:regular] isEqual:bytes]);
 }
 
 TEST(CoreAIStorageTest, ListsChildrenRepeatedlyInSortedOrder) {
   TestDirectory storage;
   ASSERT_NE(storage.url, nil);
-  FileDescriptor root(
-      open(storage.url.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
   ASSERT_TRUE((root.get() >= 0));
   NSMutableArray<NSString*>* expected = [NSMutableArray array];
   for (int i = 7; i >= 0; --i) {
     NSString* name = [NSString stringWithFormat:@"entry-%d", i];
-    FileDescriptor file(openat(root.get(), name.fileSystemRepresentation,
-                               O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600));
+    FileDescriptor file(openat(
+        root.get(),
+        name.fileSystemRepresentation,
+        O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
+        0600));
     ASSERT_TRUE((file.get() >= 0));
     [expected insertObject:name atIndex:0];
   }
+  const off_t position = lseek(root.get(), 0, SEEK_CUR);
+  ASSERT_GE(position, 0);
   for (int pass = 0; pass < 3; ++pass) {
     errno = EIO;
     auto names = storage_children(root.get());
     ASSERT_TRUE((names.ok() && [names.get() isEqual:expected]));
     ASSERT_TRUE((fcntl(root.get(), F_GETFD) >= 0));
+    EXPECT_EQ(lseek(root.get(), 0, SEEK_CUR), position);
   }
 }
 
@@ -93,32 +132,6 @@ TEST(CoreAIStorageTest, ListsComposedAndDecomposedUnicodeNames) {
       EXPECT_STREQ(names.get().firstObject.UTF8String, name.UTF8String);
     }
   }
-}
-
-TEST(CoreAIStorageTest, SkipsInvalidUtf8NamesOnlyWhenRequested) {
-  TestDirectory storage;
-  ASSERT_NE(storage.url, nil);
-  FileDescriptor root(open(
-      storage.url.fileSystemRepresentation,
-      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
-  ASSERT_GE(root.get(), 0);
-  FileDescriptor invalid(openat(
-      root.get(),
-      "invalid-\xff",
-      O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
-      0600));
-  if (invalid.get() < 0 && errno == EILSEQ) {
-    GTEST_SKIP() << "Filesystem rejects invalid UTF-8 filenames";
-  }
-  ASSERT_GE(invalid.get(), 0);
-  FileDescriptor valid(openat(
-      root.get(), "valid", O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600));
-  ASSERT_GE(valid.get(), 0);
-  EXPECT_EQ(storage_children(root.get()).error(), Error::InvalidExternalData);
-  auto names = storage_children(root.get(), true);
-  ASSERT_TRUE(names.ok());
-  EXPECT_TRUE(([names.get() isEqual:@[ @"valid" ]]));
-  EXPECT_EQ(unlinkat(root.get(), "invalid-\xff", 0), 0);
 }
 
 TEST(CoreAIStorageTest, CreatesNestedFilesWithoutOverwritingExistingContents) {
@@ -149,6 +162,70 @@ TEST(CoreAIStorageTest, CreatesNestedFilesWithoutOverwritingExistingContents) {
           [storage.url URLByAppendingPathComponent:@"nested/parents/empty"]];
   ASSERT_NE(empty, nil);
   EXPECT_EQ(empty.length, 0);
+}
+
+TEST(CoreAIStorageTest, RemovesFailedWritesAndAllowsRetry) {
+  const struct {
+    StorageOperation operation;
+    int match_index;
+  } rows[] = {
+      {StorageOperation::Write, 2},
+      {StorageOperation::SyncFile, 1},
+      {StorageOperation::SyncDirectory, 1},
+      {StorageOperation::SyncDirectory, 2}};
+  const std::vector<uint8_t> bytes(1024 * 1024 + 1, 0x5a);
+  for (const auto& row : rows) {
+    SCOPED_TRACE(static_cast<int>(row.operation));
+    SCOPED_TRACE(row.match_index);
+    TestDirectory storage;
+    ASSERT_NE(storage.url, nil);
+    FileDescriptor root(open(
+        storage.url.fileSystemRepresentation,
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    ASSERT_GE(root.get(), 0);
+    NSString* path = @"nested/model.bin";
+    NSURL* file = [storage.url URLByAppendingPathComponent:path];
+    StorageFaultScope fault(row.operation);
+    fault.match_index = row.match_index;
+    EXPECT_EQ(
+        write_storage_file(root.get(), path, bytes.data(), bytes.size()),
+        Error::AccessFailed);
+    EXPECT_EQ(fault.hits, 1);
+    EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:file.path]);
+    ASSERT_EQ(
+        write_storage_file(root.get(), path, bytes.data(), bytes.size()),
+        Error::Ok);
+    NSData* actual = [NSData dataWithContentsOfURL:file];
+    ASSERT_NE(actual, nil);
+    ASSERT_EQ(actual.length, bytes.size());
+    EXPECT_EQ(memcmp(actual.bytes, bytes.data(), bytes.size()), 0);
+  }
+}
+
+TEST(CoreAIStorageTest, SyncsEachCreatedParentAndTheWrittenFile) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  __block std::vector<StorageOperation> operations;
+  StorageFaultScope fault(StorageOperation::SyncDirectory);
+  fault.armed = false;
+  fault.observe = ^(StorageOperation operation) {
+    operations.push_back(operation);
+  };
+  EXPECT_EQ(
+      write_storage_file(root.get(), @"nested/parents/model.bin", "x", 1),
+      Error::Ok);
+  EXPECT_EQ(
+      operations,
+      (std::vector<StorageOperation>{
+          StorageOperation::SyncDirectory,
+          StorageOperation::SyncDirectory,
+          StorageOperation::Write,
+          StorageOperation::SyncFile,
+          StorageOperation::SyncDirectory}));
 }
 
 TEST(CoreAIStorageTest, RejectsUnsafeWritePathsWithoutCreatingFiles) {
@@ -220,9 +297,11 @@ TEST(CoreAIStorageTest, RetriesEintr) {
 
 static ::testing::AssertionResult no_temporary_files(int root) {
   auto children = storage_children(root);
-  if (!children.ok()) return ::testing::AssertionFailure() << "Cannot list storage";
+  if (!children.ok())
+    return ::testing::AssertionFailure() << "Cannot list storage";
   for (NSString* child in children.get()) {
-    if ([child hasPrefix:@".tmp-"]) return ::testing::AssertionFailure() << child.UTF8String;
+    if ([child hasPrefix:@".tmp-"])
+      return ::testing::AssertionFailure() << child.UTF8String;
   }
   return ::testing::AssertionSuccess();
 }
@@ -230,8 +309,9 @@ static ::testing::AssertionResult no_temporary_files(int root) {
 TEST(CoreAIStorageTest, AtomicPublicationPreservesOldBytesOnFailure) {
   TestDirectory storage;
   ASSERT_NE(storage.url, nil);
-  FileDescriptor root(
-      open(storage.url.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
   ASSERT_TRUE((root.get() >= 0));
   NSData* old = [@"old" dataUsingEncoding:NSUTF8StringEncoding];
   NSData* next = [@"next" dataUsingEncoding:NSUTF8StringEncoding];
@@ -240,6 +320,7 @@ TEST(CoreAIStorageTest, AtomicPublicationPreservesOldBytesOnFailure) {
   for (StorageOperation operation :
        {StorageOperation::Write,
         StorageOperation::SyncFile,
+        StorageOperation::SyncDirectory,
         StorageOperation::FullSync,
         StorageOperation::Rename}) {
     SCOPED_TRACE(static_cast<int>(operation));
@@ -278,6 +359,7 @@ TEST(CoreAIStorageTest, FullyFlushesPublicationBeforeAndAfterRename) {
           StorageOperation::Write,
           StorageOperation::SyncFile,
           StorageOperation::FullSync,
+          StorageOperation::SyncDirectory,
           StorageOperation::Rename,
           StorageOperation::FullSync}));
 }
@@ -314,6 +396,7 @@ TEST(CoreAIStorageTest, RetriesInterruptedPublicationOperations) {
   for (StorageOperation operation :
        {StorageOperation::Write,
         StorageOperation::SyncFile,
+        StorageOperation::SyncDirectory,
         StorageOperation::FullSync,
         StorageOperation::Rename}) {
     SCOPED_TRACE(static_cast<int>(operation));

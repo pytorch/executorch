@@ -25,6 +25,7 @@ runtime::Error sync_storage_directory(int fd);
 // Returns an independently owned descriptor for a stable coordination file.
 int open_storage_shared_file(int parent_fd, const char* name);
 // Creates a new file and missing parents, then syncs the file and its parent.
+// On failure, attempts to remove the new file; created parents may remain.
 runtime::Error write_storage_file(
     int root_fd,
     NSString* relative_path,
@@ -33,6 +34,7 @@ runtime::Error write_storage_file(
 // Atomically replaces name with data and fully flushes the file and renamed
 // entry. On error, readers see either the old or the new complete bytes.
 runtime::Error publish_storage_data(int root_fd, NSString* name, NSData* data);
+// Lists sorted names without changing fd's enumeration offset.
 runtime::Result<NSArray<NSString*>*> storage_children(
     int fd,
     bool skip_invalid_names = false);
@@ -40,6 +42,7 @@ runtime::Result<NSArray<NSString*>*> storage_children(
 enum class StorageOperation {
   Write,
   SyncFile,
+  SyncDirectory,
   FullSync,
   Rename,
   BeforeSDK,
