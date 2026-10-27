@@ -290,6 +290,171 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             x = torch.mean(x, (-1, -2), keepdim=True)
             return x
 
+    class ConvScalarMulConv(torch.nn.Module):
+        """conv -> x * scalar -> clamp -> conv: the scalar must not pull the
+        activation back to NCHW between the two convolutions."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = torch.clamp(x * 1.4142, -256.0, 256.0)
+            return self.conv2(x)
+
+    def test_fp32_channels_last_tagged_reshape_pass_scalar_operand_stays_nhwc(self):
+        (
+            Tester(self.ConvScalarMulConv().eval(), (torch.randn(1, 3, 8, 8),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # input -> NHWC and output -> NCHW only
+            .check_count({self.to_copy_name: 2})
+            .run_method_and_compare_outputs()
+        )
+
+    class ConvNoiseAddConv(torch.nn.Module):
+        """conv -> x + noise[H, W] -> conv: the rank-2 operand is reshaped to
+        [1, 1, H, W] and converted, instead of converting the activation."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("noise", torch.randn(8, 8))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = x + self.noise
+            return self.conv2(x)
+
+    class ConvChannelScaleConv(torch.nn.Module):
+        """conv -> x * scale[C, 1, 1] -> conv: a per-channel operand is
+        reshaped to [1, C, 1, 1] and converted."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("scale", torch.randn(8, 1, 1))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = x * self.scale
+            return self.conv2(x)
+
+    class ConvNoiseSubConv(torch.nn.Module):
+        """conv -> noise[H, W] - x -> conv: the lower-rank operand is the
+        left argument."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("noise", torch.randn(8, 8))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = self.noise - x
+            return self.conv2(x)
+
+    def _test_lower_rank_operand_stays_nhwc(self, module):
+        (
+            Tester(module.eval(), (torch.randn(1, 3, 8, 8),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # input -> NHWC, the 4D view of the operand -> NHWC, output -> NCHW
+            .check_count(
+                {
+                    self.to_copy_name: 3,
+                    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
+                }
+            )
+            .run_method_and_compare_outputs()
+        )
+
+    def test_fp32_channels_last_tagged_reshape_pass_lower_rank_operand_stays_nhwc(self):
+        self._test_lower_rank_operand_stays_nhwc(self.ConvNoiseAddConv())
+
+    def test_fp32_channels_last_tagged_reshape_pass_per_channel_operand_stays_nhwc(
+        self,
+    ):
+        self._test_lower_rank_operand_stays_nhwc(self.ConvChannelScaleConv())
+
+    def test_fp32_channels_last_tagged_reshape_pass_lower_rank_left_operand_stays_nhwc(
+        self,
+    ):
+        self._test_lower_rank_operand_stays_nhwc(self.ConvNoiseSubConv())
+
+    def test_qs8_channels_last_tagged_reshape_pass_lower_rank_operand(self):
+        # The dequantized operand is left at its own rank: a view between
+        # dequantize and the op would carry no quant params and fail at load.
+        for module in (self.ConvNoiseAddConv(), self.ConvChannelScaleConv()):
+            (
+                Tester(module.eval(), (torch.randn(1, 3, 8, 8),))
+                .quantize()
+                .export()
+                .to_edge()
+                .run_passes(self.PassStage)
+                .check_not(
+                    ["executorch_exir_dialects_edge__ops_aten_view_copy_default"]
+                )
+                .run_method_and_compare_outputs()
+            )
+
+    class ConvDynamicNoiseAddConv(torch.nn.Module):
+        """conv -> x + noise[H, W] -> conv with dynamic H and W: the operand
+        cannot be reshaped by XNNStaticReshape, so the add takes the NCHW path."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+
+        def forward(self, x, noise):
+            x = self.conv1(x)
+            x = x + noise
+            return self.conv2(x)
+
+    def test_fp32_channels_last_tagged_reshape_pass_dynamic_lower_rank_operand(self):
+        height = torch.export.Dim("height", min=4, max=32)
+        width = torch.export.Dim("width", min=4, max=32)
+        dynamic_shapes = ({2: height, 3: width}, {0: height, 1: width})
+        inputs = (torch.randn(1, 3, 8, 8), torch.randn(8, 8))
+        (
+            Tester(
+                self.ConvDynamicNoiseAddConv().eval(),
+                inputs,
+                dynamic_shapes=dynamic_shapes,
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # input -> NHWC, conv1 output -> NCHW, add output -> NHWC,
+            # output -> NCHW
+            .check_count({self.to_copy_name: 4})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_view_copy_default"])
+            .run_method_and_compare_outputs()
+        )
+        (
+            Tester(
+                self.ConvDynamicNoiseAddConv().eval(),
+                inputs,
+                dynamic_shapes=dynamic_shapes,
+            )
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(
+                inputs=(torch.randn(1, 3, 12, 6), torch.randn(12, 6))
+            )
+        )
+
     def test_fp32_channels_last_tagged_reshape_pass_conv_bn_hardtanh_mean_seq(self):
         # Copy #1 is for input to conv, nchw -> nhwc
         # Copy #2 is for conv to _native_batch_norm_legit_no_training, nhwc -> nchw
