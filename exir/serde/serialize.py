@@ -314,6 +314,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
                 SerdeDelegateScratchSpec(nbytes=spec.nbytes, label=spec.label)
                 for spec in lowered_module.scratch_specs
             ],
+            share_handle_across_calls=lowered_module.share_handle_across_calls,
         )
 
         json_lowered_module = json.dumps(
@@ -636,6 +637,7 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
                 DelegateScratchSpec(nbytes=spec.nbytes, label=spec.label)
                 for spec in (serialized_lowered_module.scratch_specs or [])
             ],
+            serialized_lowered_module.share_handle_across_calls,
         )
         self.module.register_module(serialized_lowered_module_arg.name, lowered_module)
         return self.graph.get_attr(serialized_lowered_module_arg.name)
