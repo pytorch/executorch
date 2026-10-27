@@ -32,7 +32,17 @@ def sha(path):
     return h.hexdigest()
 
 
-def download_model(model):
+def download_model(model, reuse=False):
+    if reuse:
+        proof = json.loads((model / 'download-audit.json').read_text())
+        assert proof['repo'] == REPO and proof['revision'] == REVISION
+        for name, record in proof['files'].items():
+            path = model / name
+            assert path.stat().st_size == record['bytes'] and sha(path) == record['SHA256'], name
+            if path.suffix == '.safetensors':
+                assert record['SHA256'] == record['public_LFS_SHA256']
+        assert proof['original_downloaded_weight_bytes_unchanged'] and proof['no_requantization']
+        return proof
     from huggingface_hub import HfApi, snapshot_download
     model.mkdir(parents=True, exist_ok=False)
     info = HfApi().model_info(REPO, revision=REVISION, files_metadata=True)
@@ -80,8 +90,12 @@ def main():
     p.add_argument('--port', type=int, required=True)
     p.add_argument('--expected-GPU-UUID', required=True)
     p.add_argument('--target-power-W', type=int, default=575)
+    p.add_argument('--reuse-prepared-native', action='store_true')
+    p.add_argument('--reuse-verified-model', action='store_true')
     a = p.parse_args()
-    assert not a.output.exists() and not a.native_venv.exists() and not a.model_path.exists()
+    assert not a.output.exists()
+    assert a.native_venv.is_dir() if a.reuse_prepared_native else not a.native_venv.exists()
+    assert a.model_path.is_dir() if a.reuse_verified_model else not a.model_path.exists()
     a.output.mkdir(parents=True)
     package = Path(__file__).resolve().parent
     started = time.monotonic()
@@ -110,16 +124,17 @@ def main():
         env = dict(os.environ, UV_CACHE_DIR=str(cache), UV_LINK_MODE='copy', PYTHONDONTWRITEBYTECODE='1',
                    CUDA_VISIBLE_DEVICES='', MAX_JOBS='4')
         def install():
-            run('native-venv', [uv, 'venv', '--python', '3.12', a.native_venv], 300, env)
             native = a.native_venv / 'bin/python'
             requirements = ['vllm==0.32.0', 'torch==2.13.0', 'transformers==5.19.0'] if a.backend == 'vllm' else ['sglang==0.5.22', 'torch==2.14.1', 'transformers==5.19.0']
-            run('official-native-packages', [uv, 'pip', 'install', '--python', native, *requirements], 1800, env)
+            if not a.reuse_prepared_native:
+                run('native-venv', [uv, 'venv', '--python', '3.12', a.native_venv], 300, env)
+                run('official-native-packages', [uv, 'pip', 'install', '--python', native, *requirements], 1800, env)
             run('native-version-and-CUDA', [native, '-B', '-c',
-                "import importlib.metadata as m,json,torch;print(json.dumps({'versions':{n:m.version(n) for n in ['torch','transformers','" + a.backend + "']},'CUDA':torch.version.cuda}));assert torch.version.cuda.startswith('13.')"], 120, env)
+                "import importlib.metadata as m,json,torch;v={n:m.version(n) for n in ['torch','transformers','" + a.backend + "']};print(json.dumps({'versions':v,'CUDA':torch.version.cuda}));assert torch.version.cuda.startswith('13.');assert v==" + repr({'torch':'2.13.0' if a.backend=='vllm' else '2.14.1','transformers':'5.19.0',a.backend:'0.32.0' if a.backend=='vllm' else '0.5.22'})], 120, env)
             run('official-package-freeze', [uv, 'pip', 'freeze', '--python', native], 120, env)
             return native
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            model_future = pool.submit(download_model, a.model_path)
+            model_future = pool.submit(download_model, a.model_path, a.reuse_verified_model)
             install_future = pool.submit(install)
             native = install_future.result()
             model_proof = model_future.result()
