@@ -1,5 +1,7 @@
 # ESP-NN backend for Espressif chips
 
+This backend is a **prototype under active development**.
+
 This backend runs int8-quantized PyTorch models on Espressif microcontrollers.
 It is tuned for the **ESP32-S3** and also runs on the original ESP32. It
 delegates quantized subgraphs to [ESP-NN](https://github.com/espressif/esp-nn),
