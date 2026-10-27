@@ -30,8 +30,12 @@ struct CoreAIPteData {
   CoreAIPteData& operator=(CoreAIPteData&&) = delete;
 };
 
-// The loader and its data must remain stable until the returned owner is
-// released.
+// Inspects verified CoreAIBackend processed data in method/delegate order,
+// without loading methods, external constants or named assets, or calling the
+// SDK. Inline data borrows program_storage; selected segments retain their
+// loader callbacks and must match their declared size. Payload contents are not
+// parsed. Keep the returned owner and loader alive, and the loader's data
+// stable, while using any processed buffer.
 runtime::Result<CoreAIPteData> inspect_coreai_pte(runtime::DataLoader& loader);
 
 } // namespace executorch::backends::coreai

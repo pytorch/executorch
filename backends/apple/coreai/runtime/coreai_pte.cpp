@@ -15,9 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <limits>
-#include <set>
 #include <string_view>
 
 namespace executorch::backends::coreai {
@@ -35,7 +33,7 @@ Result<const void*> cpu_data(const FreeableBuffer& buffer, size_t size) {
   if (!data.ok()) {
     return data.error();
   }
-  if (data.get() == nullptr || buffer.size() < size) {
+  if ((data.get() == nullptr && size != 0) || buffer.size() < size) {
     return Error::InvalidProgram;
   }
   return data.get();
@@ -104,22 +102,7 @@ Result<CoreAIPteData> inspect_coreai_pte(DataLoader& loader) {
   }
   if (reinterpret_cast<uintptr_t>(data.get()) % alignof(std::max_align_t) !=
       0) {
-    return Error::InvalidProgram;
-  }
-  if (program_size >= ExtendedHeader::kNumHeadBytes) {
-    auto retained_header =
-        ExtendedHeader::Parse(data.get(), ExtendedHeader::kNumHeadBytes);
-    if (has_header) {
-      if (!retained_header.ok() ||
-          retained_header->program_size != header.program_size ||
-          retained_header->segment_base_offset != header.segment_base_offset ||
-          retained_header->segment_data_size != header.segment_data_size) {
-        return Error::InvalidProgram;
-      }
-    } else if (
-        retained_header.ok() || retained_header.error() != Error::NotFound) {
-      return Error::InvalidProgram;
-    }
+    return Error::InvalidArgument;
   }
   flatbuffers::Verifier verifier(
       static_cast<const uint8_t*>(data.get()), program_size);
@@ -133,19 +116,12 @@ Result<CoreAIPteData> inspect_coreai_pte(DataLoader& loader) {
   }
 
   CoreAIPteData result(std::move(loaded.get()));
-  std::set<std::string_view> method_names;
   for (const auto* plan : *program->execution_plan()) {
-    if (plan->name() == nullptr || plan->non_const_buffer_sizes() == nullptr ||
-        plan->inputs() == nullptr || plan->outputs() == nullptr ||
-        !method_names.emplace(plan->name()->c_str(), plan->name()->size())
-             .second) {
-      return Error::InvalidProgram;
-    }
     if (plan->delegates() == nullptr) {
       continue;
     }
     for (const auto* delegate : *plan->delegates()) {
-      if (delegate == nullptr || delegate->id() == nullptr) {
+      if (delegate->id() == nullptr) {
         return Error::InvalidProgram;
       }
       constexpr std::string_view backend = "CoreAIBackend";
@@ -161,12 +137,11 @@ Result<CoreAIPteData> inspect_coreai_pte(DataLoader& loader) {
       const uint32_t index = reference->index();
       if (reference->location() == fb::DataLocation::INLINE) {
         const auto* buffers = program->backend_delegate_data();
-        if (buffers == nullptr || index >= buffers->size() ||
-            buffers->Get(index) == nullptr) {
+        if (buffers == nullptr || index >= buffers->size()) {
           return Error::InvalidProgram;
         }
         const auto* bytes = buffers->Get(index)->data();
-        if (bytes == nullptr || bytes->size() == 0) {
+        if (bytes == nullptr) {
           return Error::InvalidProgram;
         }
         result.processed.emplace_back(
@@ -174,14 +149,12 @@ Result<CoreAIPteData> inspect_coreai_pte(DataLoader& loader) {
       } else if (reference->location() == fb::DataLocation::SEGMENT) {
         const auto* segments = program->segments();
         if (!has_header || header.segment_base_offset == 0 ||
-            segments == nullptr || index >= segments->size() ||
-            segments->Get(index) == nullptr) {
+            segments == nullptr || index >= segments->size()) {
           return Error::InvalidProgram;
         }
         const auto* segment = segments->Get(index);
         if (segment->offset() > std::numeric_limits<size_t>::max() ||
-            segment->size() > std::numeric_limits<size_t>::max() ||
-            segment->size() == 0) {
+            segment->size() > std::numeric_limits<size_t>::max()) {
           return Error::InvalidProgram;
         }
         const size_t base = static_cast<size_t>(header.segment_base_offset);

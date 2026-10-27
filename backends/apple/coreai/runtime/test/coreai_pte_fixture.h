@@ -21,7 +21,7 @@
 
 namespace executorch::backends::coreai::testing {
 
-struct CacheDelegateSpec {
+struct PteDelegateSpec {
   const char* backend;
   NSData* data;
   bool segmented = false;
@@ -30,14 +30,14 @@ struct CacheDelegateSpec {
   std::optional<size_t> backend_length = std::nullopt;
 };
 
-struct CacheMethodSpec {
+struct PteMethodSpec {
   const char* name;
-  std::vector<CacheDelegateSpec> delegates;
+  std::vector<PteDelegateSpec> delegates;
 };
 
 class FBSyntheticPTE final : public executorch::runtime::DataLoader {
  public:
-  enum class LoadFault { None, Error };
+  enum class LoadFault { None, Error, Misaligned, Short, Oversized };
   struct Request {
     size_t offset;
     size_t size;
@@ -62,10 +62,9 @@ class FBSyntheticPTE final : public executorch::runtime::DataLoader {
   mutable std::atomic<int> backend_releases{0};
   mutable std::vector<size_t> backend_indices;
   mutable std::vector<std::string> backend_descriptors;
-  int fail_backend_index = -1;
 
   explicit FBSyntheticPTE(
-      const std::vector<CacheMethodSpec>& methods,
+      const std::vector<PteMethodSpec>& methods,
       bool extended_header = true);
 
   executorch::runtime::Result<size_t> size() const override;

@@ -22,7 +22,9 @@ using executorch::runtime::ExtendedHeader;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 
-FBSyntheticPTE::FBSyntheticPTE(const std::vector<CacheMethodSpec>& methods, bool extended_header) {
+FBSyntheticPTE::FBSyntheticPTE(
+    const std::vector<PteMethodSpec>& methods,
+    bool extended_header) {
   flatbuffers::FlatBufferBuilder builder;
   builder.ForceDefaults(true);
   // Malformed-field tests must mutate only the selected table's vtable.
@@ -159,22 +161,29 @@ Result<FreeableBuffer> FBSyntheticPTE::load(size_t offset, size_t size,
     }
     backend_indices.push_back(info.segment_index);
     backend_descriptors.emplace_back(info.descriptor);
-    if (static_cast<int>(info.segment_index) == fail_backend_index) {
-      return Error::AccessFailed;
-    }
   } else if (info.descriptor != nullptr) {
     ADD_FAILURE() << "Program segment has a backend descriptor";
     return Error::InvalidArgument;
   }
   auto* loads = backend ? &backend_loads : &program_loads;
-  void* allocation = std::malloc(std::max(size, size_t(1)));
+  const bool misaligned = fault && load_fault == LoadFault::Misaligned;
+  size_t loaded_size = size;
+  if (fault && load_fault == LoadFault::Short && size != 0) {
+    --loaded_size;
+  } else if (fault && load_fault == LoadFault::Oversized) {
+    ++loaded_size;
+  }
+  void* allocation = std::malloc(std::max(loaded_size, size_t(1)) + misaligned);
   if (allocation == nullptr) {
     ADD_FAILURE() << "Could not allocate " << size << " bytes";
     return Error::MemoryAllocationFailed;
   }
-  auto* data = static_cast<uint8_t*>(allocation);
-  if (size != 0) {
-    std::memcpy(data, bytes.data() + offset, size);
+  auto* data = static_cast<uint8_t*>(allocation) + misaligned;
+  if (loaded_size != 0) {
+    std::memcpy(data, bytes.data() + offset, std::min(size, loaded_size));
+    if (loaded_size > size) {
+      data[size] = 0;
+    }
   }
   struct Allocation {
     const FBSyntheticPTE* loader;
@@ -185,7 +194,8 @@ Result<FreeableBuffer> FBSyntheticPTE::load(size_t offset, size_t size,
   requests.back().data = data;
   ++*loads;
   return FreeableBuffer(
-      data, size,
+      data,
+      loaded_size,
       [](void* opaque, void*, size_t) {
         auto* context = static_cast<Allocation*>(opaque);
         const auto* loader = context->loader;

@@ -85,7 +85,7 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     runtime/test/coreai_acquisition_fixture.mm
     runtime/test/coreai_delegate_fixture.mm
     runtime/test/coreai_delegate_test.mm
-    runtime/test/coreai_program_data_test.mm
+    runtime/test/coreai_pte_test.mm
     runtime/test/coreai_pte_fixture.mm
     runtime/ETCoreAITensor.mm
     ${_coreai_runtime_sources}

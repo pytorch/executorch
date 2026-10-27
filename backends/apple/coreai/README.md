@@ -341,23 +341,9 @@ model inference. Do not execute SDK27 binaries on an older host.
 
 ## Backend-local PTE Inspection
 
-The private `inspect_coreai_pte(DataLoader&)` reader returns Core AI processed
-buffers in method/delegate order without loading a Program or Method, registering
-backends, or calling the SDK. It always verifies the program structure, supported
-schema version, and existing runtime semantic invariants, even when generic
-runtime verification is disabled (`ET_ENABLE_PROGRAM_VERIFICATION=0`). It also
-validates method metadata, unique method names, and selected processed-data
-references.
-
-The reader first reads a 64-byte prefix when the input is long enough, then
-loads and verifies the program region, including inline constants and unrelated
-inline blobs. Only external processed-data segments selected by exact
-`CoreAIBackend` IDs are requested; unselected external payloads, the external
-constants segment and external named assets are not loaded. Inline buffers
-borrow the retained program image. Selected segment buffers retain their
-original DataLoader callbacks. Keep the returned `CoreAIPteData` owner and loader
-alive while using the buffers, and keep the loader's data stable throughout
-inspection and use. The reader does not derive cache keys or mutate cache state.
+The private `inspect_coreai_pte(DataLoader&)` reader extracts Core AI processed
+buffers without loading methods, external assets, or SDK models. Inspection does
+not derive cache keys or mutate cache state.
 
 ## Host Tests
 
