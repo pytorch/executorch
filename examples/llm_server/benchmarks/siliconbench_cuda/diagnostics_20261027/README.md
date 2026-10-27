@@ -7,3 +7,5 @@ These isolated scripts preserve the paused full campaigns and accepted main resu
 - `run_marlin_campaign.py`: downloads and hashes the exact public Gemma Q4_0 and MG Q4_K_M GGUFs; adds only an isolated gguf dependency directory, without modifying the preserved vLLM environment.
 
 No KA tuning, new static methods, main result replacement, GitHub deletion, or public server exposure is performed.
+
+`run_existing_wrapper_scaling.py` uses a hash-pinned existing local Gemma P2048 wrapper and local frozen inputs. It waits for an owned mini export to exit, then collects c8/c16 chat-prefix-on and agent-prefix-off unprofiled controls and separate Nsight traces. No artifact transfer or framework edits are required. Profiling data are excluded from accepted main performance results; a fixed-output control is still required for causal attribution.
