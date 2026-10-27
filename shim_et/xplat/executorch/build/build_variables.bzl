@@ -94,6 +94,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_atan2.cpp",
     "kernels/portable/cpu/op_atanh.cpp",
     "kernels/portable/cpu/op_avg_pool2d.cpp",
+    "kernels/portable/cpu/op_avg_pool3d.cpp",
     "kernels/portable/cpu/op_bitwise_and.cpp",
     "kernels/portable/cpu/op_bitwise_not.cpp",
     "kernels/portable/cpu/op_bitwise_or.cpp",
