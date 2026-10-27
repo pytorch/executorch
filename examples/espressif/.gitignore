@@ -5,6 +5,4 @@ dependencies.lock
 sdkconfig
 sdkconfig.old
 __pycache__/
-espnn_runner/bundles/
 camera_stream/models/
-benchmarks/work/
