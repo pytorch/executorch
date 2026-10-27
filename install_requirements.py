@@ -13,22 +13,17 @@ import sys
 
 from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
 
-# The pip repository that hosts nightly torch packages.
+# The pip repository that hosts released torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
-TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
-TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"
-TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
-CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
-# Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
-# are py3-none-any only, and none are published after 0.19.0.dev20260831.
-ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
-# torchvision 0.30.0.dev20260922 requires exactly torch 2.15.0.dev20260921.
-# download.pytorch.org keeps about 60 days of nightlies, so this pin expires; 2026-09-22
-# is the newest date whose torch, torchvision and torchaudio still all carry cp310.
+TORCH_URL_BASE = "https://download.pytorch.org/whl"
+TORCHAO_URL_BASE = "https://download.pytorch.org/whl"
+TORCHAO_NIGHTLY_VERSION = "0.19.0"
+CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0"
+ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0"
 CU134_TORCH_PACKAGES = [
-    "torch==2.15.0.dev20260921+cu134",
-    "torchvision==0.30.0.dev20260922+cu134",
-    "torchaudio==2.11.0.dev20260922+cu134",
+    "torch==2.15.0+cu134",
+    "torchvision==0.29.2+cu134",
+    "torchaudio==2.11.1+cu134",
 ]
 
 
@@ -53,16 +48,7 @@ def cu134_requirements(torch_url, include_domains=False):
     return packages
 
 
-# Since ExecuTorch often uses main-branch features of pytorch, only the nightly
-# pip versions will have the required features.
-#
-# NOTE: If a newly-fetched version of the executorch repo changes the value of
-# NIGHTLY_VERSION, you should re-run this script to install the necessary
-# package versions.
-#
-# NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
-# by picking the hash from the same date in
-# https://hud.pytorch.org/hud/pytorch/pytorch/nightly/ @lint-ignore
+# Keep the release packages aligned with .ci/docker/ci_commit_pins/pytorch.txt.
 #
 # NOTE: If you're changing, make the corresponding supported CUDA versions in
 # SUPPORTED_CUDA_VERSIONS in install_utils.py if needed.
@@ -88,7 +74,7 @@ def install_requirements(use_pytorch_nightly):
     # torchao's CUDA channel publishes x86_64 only, so asking for a CUDA build makes the pin
     # unsatisfiable on aarch64. Only that case is special-cased: falling back everywhere would
     # change which torchao a CPU x86_64 install resolves, and the CUDA build is genuinely wanted
-    # where it exists. This nightly is what a development checkout is tested against, and the
+    # where it exists. This release is what the checkout is tested against, and the
     # wheel's own torchao lower bound is this same version so that installing the package
     # afterwards leaves this pin in place rather than replacing it.
     if platform.machine().lower() in ("aarch64", "arm64"):
@@ -105,7 +91,7 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        ("torch==2.14.0" if use_pytorch_nightly else "torch"),
+        ("torch==2.15.0" if use_pytorch_nightly else "torch"),
         f"torchao=={TORCHAO_NIGHTLY_VERSION}",
     ]
 
@@ -206,9 +192,9 @@ def install_optional_example_requirements(use_pytorch_nightly):
     )
 
     print("Installing torch domain libraries")
-    torchaudio_version = "2.11.1" if sys.version_info >= (3, 15) else "2.11.0"
+    torchaudio_version = "2.11.1"
     DOMAIN_LIBRARIES = cu134_packages or [
-        ("torchvision==0.29.0" if use_pytorch_nightly else "torchvision"),
+        ("torchvision==0.29.2" if use_pytorch_nightly else "torchvision"),
         (f"torchaudio=={torchaudio_version}" if use_pytorch_nightly else "torchaudio"),
     ]
     # Then install domain libraries
