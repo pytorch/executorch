@@ -22,6 +22,8 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/native:lib",
+        "//executorch/backends/transforms:fuse_batch_norm_with_conv",
+        "//executorch/backends/transforms:fuse_batch_norm_with_linear",
         "//executorch/exir:lib",
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_details",

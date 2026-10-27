@@ -12,6 +12,12 @@ from executorch.backends.cpu.partitioner import (
     CPU_SUPPORTED_DTYPES,
 )
 from executorch.backends.native.serialization import serialize_graph
+from executorch.backends.transforms.fuse_batch_norm_with_conv import (
+    FuseBatchNormWithConvPass,
+)
+from executorch.backends.transforms.fuse_batch_norm_with_linear import (
+    FuseBatchNormWithLinearPass,
+)
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -19,7 +25,19 @@ from executorch.exir.backend.backend_details import (
     ExportedProgram,
     PreprocessResult,
 )
+from executorch.exir.program._program import (
+    _transform,
+    _update_exported_program_graph_module,
+    lift_constant_tensor_pass,
+)
+from torch.export.graph_signature import InputKind
 from torch.utils._pytree import tree_leaves, tree_map
+
+_CONSTANT_INPUT_KINDS = (
+    InputKind.PARAMETER,
+    InputKind.BUFFER,
+    InputKind.CONSTANT_TENSOR,
+)
 
 
 def _validate_boundary_layouts(graph_module: torch.fx.GraphModule) -> None:
@@ -35,6 +53,39 @@ def _validate_boundary_layouts(graph_module: torch.fx.GraphModule) -> None:
             raise ValueError(
                 f"CpuBackend requires contiguous boundary tensor {node.name}"
             )
+
+
+def _remove_unused_constants(edge_program: ExportedProgram) -> None:
+    signature = edge_program.graph_signature
+    mutated = set(signature.buffers_to_mutate.values())
+    placeholders = {
+        node.name: node for node in edge_program.graph.nodes if node.op == "placeholder"
+    }
+    kept_specs = []
+    for spec in signature.input_specs:
+        node = placeholders.get(spec.arg.name)
+        if (
+            node is not None
+            and spec.kind in _CONSTANT_INPUT_KINDS
+            and spec.target not in mutated
+            and not node.users
+        ):
+            edge_program.graph.erase_node(node)
+            edge_program.state_dict.pop(spec.target, None)
+            edge_program.constants.pop(spec.target, None)
+        else:
+            kept_specs.append(spec)
+    signature.input_specs = kept_specs
+    edge_program.graph_module.recompile()
+
+
+# Ordered passes applied to every program in preprocess, mirroring
+# XNNPACKPassManager.passes. Each entry takes the current program, so later
+# passes observe earlier passes' rewrites; extend by appending new pass types.
+CPU_PREPROCESS_PASSES = [
+    FuseBatchNormWithConvPass,
+    FuseBatchNormWithLinearPass,
+]
 
 
 class CpuBackend(BackendDetails):
@@ -59,7 +110,17 @@ class CpuBackend(BackendDetails):
                 f"expected exactly {expected_specs!r}, got {specs!r}"
             )
         _validate_boundary_layouts(edge_program.graph_module)
-        graph_module = deepcopy(edge_program.graph_module)
+        edge_program = deepcopy(edge_program)
+        edge_program = _update_exported_program_graph_module(
+            edge_program, edge_program.graph_module
+        )
+        for pass_type in CPU_PREPROCESS_PASSES:
+            edge_program = _transform(edge_program, pass_type(edge_program))
+        # Passes can introduce tensor attributes that must become program inputs.
+        edge_program = lift_constant_tensor_pass(edge_program)
+        # Fusion leaves the original weights and batch norm stats unused.
+        _remove_unused_constants(edge_program)
+        graph_module = edge_program.graph_module
         for node in graph_module.graph.nodes:
             if "val" in node.meta:
                 node.meta["val"] = tree_map(

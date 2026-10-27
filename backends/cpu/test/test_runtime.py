@@ -116,3 +116,29 @@ class CPURuntimeTest(unittest.TestCase):
                     actual = runtime.forward(inputs)
                     for output, expected in zip(actual, model(*inputs), strict=True):
                         torch.testing.assert_close(output, expected, rtol=0, atol=0)
+
+    def test_batch_norm_fused_into_conv_and_linear(self):
+        class ConvBnLinearBn(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(4, 4, 3, padding=1)
+                self.bn1 = torch.nn.BatchNorm2d(4)
+                self.linear = torch.nn.Linear(4, 8)
+                self.bn2 = torch.nn.BatchNorm1d(8)
+
+            def forward(self, x):
+                y = self.bn1(self.conv(x))
+                return self.bn2(self.linear(y.mean(dim=(2, 3))))
+
+        torch.manual_seed(0)
+        model = ConvBnLinearBn().eval()
+        for bn in (model.bn1, model.bn2):
+            bn.running_mean.uniform_(-1, 1)
+            bn.running_var.uniform_(0.5, 2)
+            bn.weight.data.uniform_(0.5, 2)
+            bn.bias.data.uniform_(-1, 1)
+        inputs = (torch.randn(2, 4, 8, 8),)
+        with self._lower(model, inputs) as runtime:
+            torch.testing.assert_close(
+                runtime.forward(inputs)[0], model(*inputs), rtol=1e-5, atol=1e-5
+            )
