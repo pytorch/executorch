@@ -45,9 +45,8 @@ class ConvertMemoryFormat(NodeVisitor):
     ) -> None:
         input_node = get_input_node(node, 0)
         if node.meta["val"].dtype != input_node.meta["val"].dtype:
-            # fp32 <-> fp16 cast (the partitioner admits no other dtype
-            # conversion and no dim-order change on the same node): an XNNPACK
-            # convert node, the layout follows the tags on the two tensors.
+            # dtype cast: an XNNPACK convert node, the layout follows the tags
+            # on the two tensors.
             self.define_tensor(input_node, xnn_graph, vals_to_ids)
             self.define_tensor(node, xnn_graph, vals_to_ids)
             xnn_graph.xnodes.append(

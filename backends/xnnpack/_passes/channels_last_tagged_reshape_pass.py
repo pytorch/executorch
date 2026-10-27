@@ -175,8 +175,8 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
 
     @staticmethod
     def is_dtype_cast(node: torch.fx.Node) -> bool:
-        """A _to_copy that changes dtype (fp32 <-> fp16) keeps the layout of
-        its input and is serialized as a convert node, not a transpose."""
+        """A _to_copy that changes dtype keeps the layout of its input and is
+        serialized as a convert node, not a transpose."""
         src = node.args[0]
         return (
             isinstance(src, torch.fx.Node)

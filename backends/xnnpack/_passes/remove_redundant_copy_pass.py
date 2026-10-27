@@ -25,8 +25,8 @@ class RemoveRedundantCopyPass(XNNPACKPass):
         """
         input_node = node.args[0]
 
-        # A dtype cast (fp32 <-> fp16) is not a layout copy: it is serialized
-        # as a convert node and must stay, whatever the tags around it say.
+        # A dtype cast is not a layout copy: it is serialized as a convert node
+        # and must stay, whatever the tags around it say.
         if ChannelsLastTaggedReshapePass.is_dtype_cast(node):
             return False
 
