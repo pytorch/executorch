@@ -65,14 +65,17 @@ def _topk_node(shape=(2, 8), dtype=torch.float32, args=(2,), kwargs=None):
     "dtype",
     (torch.bool, torch.uint8, torch.int32, torch.int64),
 )
-def test_fp_comparison_rejects_unsupported_inputs(target, dtype) -> None:
+def test_fp_comparison_input_support(target, dtype) -> None:
     graph = torch.fx.Graph()
     x = _placeholder(graph, "x", (3, 4), dtype)
     y = _placeholder(graph, "y", (3, 4), dtype)
     node = graph.call_function(target, (x, y))
     node.meta["val"] = _fake_tensor((3, 4), torch.bool)
 
-    assert not _fp_comparison_checker().is_node_supported({}, node)
+    assert _fp_comparison_checker().is_node_supported({}, node) == (
+        target in {exir_ops.edge.aten.eq.Tensor, exir_ops.edge.aten.ne.Tensor}
+        and dtype == torch.bool
+    )
 
 
 @pytest.mark.parametrize(
