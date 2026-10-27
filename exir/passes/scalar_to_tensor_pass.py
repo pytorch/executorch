@@ -7,7 +7,7 @@
 # pyre-strict
 
 import torch
-from executorch.exir.pass_base import ExportPass, map_args, PassResult
+from executorch.exir.pass_base import ExportPass, map_args, PassResult, ProxyValue
 
 
 class ScalarToTensorPass(ExportPass):
@@ -17,6 +17,15 @@ class ScalarToTensorPass(ExportPass):
 
     # pyre-ignore
     def call_operator(self, op, args, kwargs, meta):
+        # A float scalar next to a float64 tensor must not be rounded to float32
+        # before the op promotes it back to float64.
+        has_float64_tensor = any(
+            isinstance(a, ProxyValue)
+            and a.is_tensor()
+            and a.to_tensor().dtype == torch.float64
+            for a in (*args, *kwargs.values())
+        )
+
         # pyre-ignore
         def try_coerce(value, arg):
             # Note: we want to create tensor constants instead of
@@ -29,7 +38,12 @@ class ScalarToTensorPass(ExportPass):
                     arg.type, torch.TensorType
                 ):
                     self._modified = True
-                    return torch.tensor(value)
+                    dtype = (
+                        torch.float64
+                        if isinstance(value, float) and has_float64_tensor
+                        else None
+                    )
+                    return torch.tensor(value, dtype=dtype)
 
                 return value
 
