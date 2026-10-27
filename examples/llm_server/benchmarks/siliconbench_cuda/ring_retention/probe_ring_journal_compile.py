@@ -15,6 +15,8 @@ p.add_argument('--candidate-execution',choices=['eager','compiled'],default='com
 p.add_argument('--generic-bm',type=int,default=0)
 p.add_argument('--generic-bn',type=int,default=0)
 p.add_argument('--generic-stages',type=int,default=0)
+p.add_argument('--decode-max-tokens',type=int,default=0)
+p.add_argument('--include-d8',action='store_true')
 a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
 assert torch.cuda.is_available()
 torch.manual_seed(49027)
@@ -28,7 +30,7 @@ results=[]
 
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def record(status,**extra):
- v=dict(status=status,model=a.model,profile=profile,baseline_execution=a.baseline_execution,candidate_execution=a.candidate_execution,generic_tile=dict(block_m=a.generic_bm,block_n=a.generic_bn,pipeline_stages=a.generic_stages),kernel_source_SHA256=sha(Path(__file__).with_name('two_source_ring.py')),baseline_source_SHA256=sha(a.baseline),results=results,**extra)
+ v=dict(status=status,model=a.model,profile=profile,baseline_execution=a.baseline_execution,candidate_execution=a.candidate_execution,generic_tile=dict(block_m=a.generic_bm,block_n=a.generic_bn,pipeline_stages=a.generic_stages),decode_max_tokens=a.decode_max_tokens,kernel_source_SHA256=sha(Path(__file__).with_name('two_source_ring.py')),baseline_source_SHA256=sha(a.baseline),results=results,**extra)
  (a.output/'progress.json').write_text(json.dumps(v,indent=2)+'\n')
 
 
@@ -95,7 +97,7 @@ def baseline(f):
 
 
 def compiled_tensor_step(q,sk,sv,k,v,info,stage):
- out=sdpa_ring_current(q,sk,sv,k,v,info,W,1*SCALE,a.generic_bm,a.generic_bn,a.generic_stages)
+ out=sdpa_ring_current(q,sk,sv,k,v,info,W,1*SCALE,a.generic_bm,a.generic_bn,a.generic_stages,a.decode_max_tokens)
  ring_commit_journal(sk,sv,k,v,info,W,stage,1)
  return out
 compiled_step=torch.compile(compiled_tensor_step,fullgraph=True,dynamic=False) if a.candidate_execution=='compiled' else compiled_tensor_step
@@ -176,7 +178,7 @@ cases=[('empty-d1',[1],[0],0),('history-d1',[1],[W*3+7],0),('d8',[1]*8,[W*2+i*13
 try:
  record('running-kernel-prerequisite')
  for name,lengths,hist,pad in cases:
-  if name not in ['empty-d1','history-d1','d16','p64','max-prefill','unequal-tail-pad']:continue
+  if name not in ['empty-d1','history-d1','d16','p64','max-prefill','unequal-tail-pad'] and not (a.include_d8 and name=='d8'):continue
   assert sum(lengths)<=P
   owners=[0,1,0] if name.startswith('repeated-owner') else None
   f=fixture(lengths,hist,pad,owners);ref=oracle(f)

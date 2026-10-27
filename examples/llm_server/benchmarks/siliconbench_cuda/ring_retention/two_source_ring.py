@@ -342,13 +342,14 @@ def sdpa_ring_current(query: torch.Tensor, history_key: torch.Tensor,
                       history_value: torch.Tensor, current_key: torch.Tensor,
                       current_value: torch.Tensor, seq_info: torch.Tensor,
                       window: int, scale: float, block_m: int = 0,
-                      block_n: int = 0, pipeline_stages: int = 0) -> torch.Tensor:
+                      block_n: int = 0, pipeline_stages: int = 0,
+                      decode_max_tokens: int = 0) -> torch.Tensor:
     heads, total, dim = query.shape[1:]
     kvheads = current_key.shape[1]
     groups = heads // kvheads
     # Keep the existing row-complete split-K route for native small decode.
     # The wrapper uses only static shapes; graph replay still reads device metadata.
-    use_decode = isinstance(total, int) and total <= (16 if dim <= 128 else 4)
+    use_decode = isinstance(total, int) and total <= (decode_max_tokens or (16 if dim <= 128 else 4))
     if use_decode:
         splits = min(16, triton.cdiv(window, 256))
         out = torch.empty_like(query)
