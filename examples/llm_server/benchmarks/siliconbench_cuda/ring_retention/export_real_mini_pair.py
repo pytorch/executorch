@@ -11,7 +11,7 @@ def digest(p):
 def main():
  a=argparse.ArgumentParser(description=__doc__)
  for n in ['native-preparation','gguf','output','lock']:a.add_argument('--'+n,type=Path,required=True)
- a.add_argument('--model',choices=['MG','Gemma'],required=True);a.add_argument('--reuse-baseline-audit',type=Path);args=a.parse_args()
+ a.add_argument('--model',choices=['MG','Gemma'],required=True);a.add_argument('--reuse-baseline-audit',type=Path);a.add_argument('--only-arm',choices=['baseline','ring']);args=a.parse_args()
  assert not args.output.exists();args.output.mkdir(parents=True)
  gate=json.loads((args.native_preparation/'native-gate.json').read_text())
  assert gate['native_tests_passed'] and gate['legacy_test_count']>=74 and gate['allocator_policy_test_count']==4
@@ -104,7 +104,7 @@ def main():
    from executorch.exir._serialize._program import deserialize_pte_binary
    from executorch.exir.schema import Int,String
    records=[]
-   for arm in ['baseline','ring']:
+   for arm in ([args.only_arm] if args.only_arm else ['baseline','ring']):
     if arm=='baseline' and args.reuse_baseline_audit:
      row=json.loads(args.reuse_baseline_audit.read_text());assert row['arm']=='baseline' and row['model']==args.model and row['prefill_budget']==budget and row['GGUF_SHA256']==expected
      for n,v in row['artifacts'].items():assert digest(Path(row['artifact'])/n)==v['SHA256']
@@ -135,6 +135,6 @@ def main():
     (current/'artifact-audit.json').write_text(json.dumps(row,indent=2)+'\n');records.append(row)
     torch.cuda.synchronize();torch.cuda.empty_cache()
    result=dict(model=args.model,arms=records,native_gate_SHA256=digest(args.native_preparation/'native-gate.json'),real_mini_qualified=False,model_numerics_memory_latency_gates_pending=True)
-   (args.output/'result.json').write_text(json.dumps(result,indent=2)+'\n');state('real-mini-artifacts-exported',arms=records)
+   (args.output/'result.json').write_text(json.dumps(result,indent=2)+'\n');state('real-mini-artifacts-exported',arms=records,only_arm=args.only_arm)
  except BaseException as e:state('failed-real-mini-export',error=repr(e),traceback=traceback.format_exc());raise
 if __name__=='__main__':main()

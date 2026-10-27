@@ -22,7 +22,7 @@ def main():
  for n in ['et-source','gguf','output','lock']:p.add_argument('--'+n,type=Path,required=True)
  p.add_argument('--model',choices=['MG','Gemma'],required=True);p.add_argument('--max-seconds',type=int,default=7200)
  a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
- report=dict(scope=__doc__,model=a.model,cases=[],packing=[],new_KA=False,new_static_methods=False,ET_source_modified=False,ET_server_integration_qualified=False)
+ report=dict(scope=__doc__,model=a.model,cases=[],packing=[],unsupported_GGUF_tensors=[],new_KA=False,new_static_methods=False,ET_source_modified=False,ET_server_integration_qualified=False)
  def state(s,**kw):
   (a.output/'results.json').write_text(json.dumps(report,indent=2)+'\n')
   t=a.output/'progress.pending.json';t.write_text(json.dumps(dict(status=s,PID=os.getpid(),UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),**kw),indent=2)+'\n');t.replace(a.output/'progress.json')
@@ -90,6 +90,12 @@ def main():
    with torch.inference_mode(),torch.cuda.stream(torch.cuda.Stream()),set_wrap_triton_enabled(False):
     for role in ['ffn_gate_up','ffn_down']:
      bounded();state('packing-exact-GGUF-codes',role=role)
+     names=['ffn_gate','ffn_up'] if role=='ffn_gate_up' else [role]
+     raw_tensors=[next(t for t in reader.tensors if t.name=='blk.0.'+name+'.weight') for name in names]
+     supported_type=GGMLQuantizationType.Q4_0 if a.model=='Gemma' else GGMLQuantizationType.Q4_K
+     unsupported=[dict(name=t.name,type=t.tensor_type.name,shape=list(map(int,t.shape)),action='Keep existing ET path; do not requantize') for t in raw_tensors if t.tensor_type!=supported_type]
+     if unsupported:
+      report['unsupported_GGUF_tensors'].extend(unsupported);state('recorded-mixed-GGUF-uncovered-route',role=role);continue
      if role=='ffn_gate_up':
       values=[unpack(n) for n in ['ffn_gate','ffn_up']];ps=[v[0] for v in values]
       obj=portable(torch.cat([p.qdata for p in ps],0),torch.cat([p.scale for p in ps],1),torch.cat([p.zero_point for p in ps],1),32,torch.bfloat16);source=[v[1] for v in values]
@@ -121,13 +127,26 @@ def main():
       scale=marlin.marlin_permute_scales(scales.t().to(dtype).contiguous(),k,n,32)
       zero=marlin.marlin_permute_scales(zeros.t().to(dtype).contiguous(),k,n,32) if floating else marlin.marlin_zero_points(zeros.round().t().to(torch.int32).contiguous(),k//32,n,4)
       methods[name]=(dtype,scale,zero,floating)
+     # Preserve the fractional zero offset using an explicit group-sum
+     # correction. Marlin still rounds scales to BF16; this is a numerical
+     # candidate, never an assertion of bit-identical ET arithmetic.
+     # x @ ((q-z)*s) = Marlin(x,q,round(z),s)
+     #                  + sum_group(x) @ ((round(z)-z)*s).
+     zero_residual=((zeros.round()-zeros)*scales.to(torch.bfloat16).float()).t().contiguous()
+     def compensate(x,y,residual):
+      grouped=x.float().reshape(x.shape[0],x.shape[1]//32,32).sum(dim=2)
+      return (y.float()+torch.mm(grouped,residual)).to(x.dtype)
+     compensation=torch.compile(compensate,fullgraph=True,dynamic=False,options={'triton.cudagraphs':False})
+     packing['zero_correction_bytes']=zero_residual.numel()*zero_residual.element_size()
+     packing['BF16_scale_rounding_retained']=True
      sizes=[8,16,64,128,512,2048]+([4096] if a.model=='MG' else [])
      for m in sizes:
       bounded();state('validating-and-timing',role=role,M=m)
       x=torch.randn((m,k),device='cuda',dtype=torch.bfloat16,generator=torch.Generator(device='cuda').manual_seed(27000+m+k))
       oracle=torch.nn.functional.linear(x.float(),fp32dense.float()).bfloat16()
       calls={'dense-BF16-linear-control':lambda x=x:torch.nn.functional.linear(x,fp32dense)}
-      record=dict(role=role,M=m,N=n,K=k,checks={},timings={},ET_actual_static_route=('W4A16' if m<=64 else 'DQ-BF16-linear'),activation_BF16_source=True,ET_source_methods_unchanged=True)
+      record=dict(role=role,M=m,N=n,K=k,checks={},timings={},ET_control_kernel_route=('W4A16' if m<=64 else 'DQ-BF16-linear'),activation_BF16_source=True,ET_source_methods_unchanged=True)
+      if a.model=='Gemma' and m in [128,512]:record['control_limitation']='Generic fallback only; does not measure selected prepared Gemma prefill port at this M'
       if m<=64:
        with autotune_launch_params() as selection:base._launch_w4a16(m,x,*w,32)
        assert len(selection.picks)==1
@@ -145,7 +164,16 @@ def main():
         check['numeric_screen_pass']=check['finite'] and check['relative_rms']<.005 and check['deterministic']
         record['checks'][name]=check
         if check['numeric_screen_pass']:calls[name]=call
-       except Exception as e:record['checks'][name]=dict(supported=False,error_type=type(e).__name__,detail=str(e)[-1000:])
+        if not floating:
+         corrected=lambda call=call,x=x:compensation(x,call(),zero_residual)
+         cy=corrected();ca=corrected();torch.cuda.synchronize();cs=stats(cy,oracle)
+         cs.update(deterministic=bool(torch.equal(cy,ca)),integer_zero_rounding_compensated=True,scale_BF16_rounding_retained=True,extra_FP32_group_sum_and_matmul=True)
+         cs['numeric_screen_pass']=cs['finite'] and cs['relative_rms']<.005 and cs['deterministic']
+         record['checks']['Marlin-BF16-zero-compensated']=cs
+         if cs['numeric_screen_pass']:calls['Marlin-BF16-zero-compensated']=corrected
+       except Exception as e:
+        failed_name='Marlin-BF16-zero-compensated' if name in record['checks'] else name
+        record['checks'][failed_name]=dict(supported=False,error_type=type(e).__name__,detail=str(e)[-1000:])
       for name,fn in calls.items():
        y=fn();torch.cuda.synchronize();record['checks'].setdefault(name,stats(y,oracle))
       report['cases'].append(record);state('timing-screened-candidates',role=role,M=m)
@@ -156,7 +184,7 @@ def main():
        for name in names:bounded();samples[name].append(graph_time(calls[name]))
       record['timings']={name:dict(samples_us=v,mean_last3_us=statistics.mean(v[1:]),SD_last3_us=statistics.stdev(v[1:])) for name,v in samples.items()}
       state('case-collected',role=role,M=m)
-     del w,q,sc,ss,zc,zs,codes,scales,zeros,fp32dense,packed,marlinq,workspace,calls,methods,obj;torch.cuda.empty_cache()
+     del w,q,sc,ss,zc,zs,codes,scales,zeros,fp32dense,packed,marlinq,workspace,calls,methods,obj,zero_residual,compensation;torch.cuda.empty_cache()
    state('collected-pending-equivalence-and-ET-integration-review',cases=len(report['cases']),ET_server_integration_qualified=False)
  except Exception as e:
   (a.output/'exception.txt').write_text(traceback.format_exc());state('failed-preserve-evidence',error_type=type(e).__name__,detail=str(e)[-1500:]);raise
