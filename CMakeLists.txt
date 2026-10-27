@@ -1439,7 +1439,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
     )
     add_library(
-      aten_bridge
+      aten_bridge STATIC
       ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
     )
     set_target_properties(aten_bridge PROPERTIES CXX_STANDARD 20)
@@ -1450,11 +1450,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       aten_bridge PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
     )
     target_compile_options(aten_bridge PUBLIC ${_pybind_compile_options})
+    # aten_bridge is static, so _training_lib gets this link. torch would record
+    # libtorch_cuda with a CUDA build of PyTorch; torch_cpu_library does not.
     if(EXECUTORCH_BUILD_SHARED)
-      target_link_libraries(aten_bridge PRIVATE torch c10 executorch_shared)
+      target_link_libraries(
+        aten_bridge PRIVATE torch_cpu_library c10 executorch_shared
+      )
     else()
       target_link_libraries(
-        aten_bridge PRIVATE torch c10 executorch extension_tensor
+        aten_bridge PRIVATE torch_cpu_library c10 executorch extension_tensor
       )
     endif()
   endif()

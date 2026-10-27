@@ -327,7 +327,9 @@ class ComputeConstantOpsAOTPass(ArmPass):
         output_qparams = node.meta.get("output_qparams", None)
         if output_qparams:
             # If we have output_qparams, compute data in fp and quantize
-            data = node.target(*node.args)  #  type: ignore
+            data = node.target(  #  type: ignore
+                *node.args, **{**node.kwargs, "dtype": torch.float32}
+            )
             output_qparams = output_qparams[0]
             data = output_qparams.quantize_value(data)
         else:

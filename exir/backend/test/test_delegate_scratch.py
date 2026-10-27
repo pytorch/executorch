@@ -98,6 +98,21 @@ assert TWO_BUFFER_SIZES[1] % ALIGNMENT != 0
 
 
 @final
+class SharedHandleScratchTestBackend(BackendDetails):
+    """Asks for one handle across calls and for scratch, which cannot be shared."""
+
+    @staticmethod
+    def preprocess(
+        edge_program: ExportedProgram, compile_specs: List[CompileSpec]
+    ) -> PreprocessResult:
+        return PreprocessResult(
+            processed_bytes=b"shared-handle-scratch-backend-blob",
+            scratch_specs=[DelegateScratchSpec(nbytes=TWO_BUFFER_SIZES[0])],
+            share_handle_across_calls=True,
+        )
+
+
+@final
 class TwoBufferScratchTestBackend(BackendDetails):
     """Declares two buffers, to pin down ordering and independent sizing."""
 
@@ -584,14 +599,14 @@ class TestDelegateScratch(unittest.TestCase):
         (delegate_call,) = _delegate_calls(plan)
         self.assertEqual(_scratch_sizes(delegate_call), [12 * BYTES_PER_ELEMENT])
 
-    def _lowered_single_delegate(self):
+    def _lowered_single_delegate(self, backend_id="DelegateScratchTestBackend"):
         exported = torch.export.export(
             SingleDelegateModule().eval(), (torch.randn(3, 4), torch.randn(3, 4))
         )
         edge = to_edge_transform_and_lower(
             exported, compile_config=EdgeCompileConfig(_check_ir_validity=False)
         )
-        return to_backend("DelegateScratchTestBackend", edge.exported_program(), [])
+        return to_backend(backend_id, edge.exported_program(), [])
 
     def test_lowered_module_emits_its_own_program_with_scratch(self):
         # program() and buffer() run their own small pipeline rather than
@@ -601,6 +616,33 @@ class TestDelegateScratch(unittest.TestCase):
         (delegate_call,) = _delegate_calls(lowered.program().execution_plan[0])
         self.assertEqual(_scratch_sizes(delegate_call), [12 * BYTES_PER_ELEMENT])
         self.assertTrue(lowered.buffer())
+
+    def test_a_delegate_with_scratch_is_not_shared_across_calls(self):
+        # The runtime resolves scratch onto delegates_[delegate_index], so each
+        # call site that declares scratch needs its own entry even when the
+        # backend allows one handle across calls.
+        lowered = self._lowered_single_delegate("SharedHandleScratchTestBackend")
+
+        class TwoCalls(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered
+
+            def forward(self, x, y):
+                return self.lowered(self.lowered(x, y), y)
+
+        inputs = (torch.randn(3, 4), torch.randn(3, 4))
+        plan = (
+            exir.to_edge(torch.export.export(TwoCalls(), inputs))
+            .to_executorch()
+            .executorch_program.execution_plan[0]
+        )
+
+        first, second = _delegate_calls(plan)
+        self.assertEqual(len(plan.delegates), 2)
+        self.assertNotEqual(first.delegate_index, second.delegate_index)
+        self.assertEqual(_scratch_sizes(first), [TWO_BUFFER_SIZES[0]])
+        self.assertEqual(_scratch_sizes(second), [TWO_BUFFER_SIZES[0]])
 
     def test_emitting_without_the_pass_is_an_error_not_a_silent_drop(self):
         # Any emit path that skips the pass must fail. The count comes from the

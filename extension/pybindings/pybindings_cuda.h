@@ -32,7 +32,7 @@ inline std::shared_ptr<void> allocate_cuda_result(size_t nbytes, int index) {
   auto allocation = allocator->allocate(nbytes, index);
   if (!allocation.ok()) {
     throw std::runtime_error(
-        "Failed to allocate a CUDA ExecuTorchResult clone");
+        "Failed to allocate CUDA memory for an ExecuTorchResult");
   }
   return std::shared_ptr<void>(
       allocation.get(),
@@ -45,8 +45,8 @@ inline std::shared_ptr<void> allocate_cuda_result(size_t nbytes, int index) {
 #endif
 }
 
-// The Python boundary is synchronous until the runtime exposes readiness
-// events for inputs, output allocations, and caller-selected execution streams.
+// The Python API has no way to pass a stream or a readiness event, so the
+// Python boundary is synchronous and waits for the whole device.
 inline void synchronize_cuda_device(int index) {
 #ifdef EXECUTORCH_PYBINDINGS_CUDA
   auto guard = executorch::extension::cuda::CUDAGuard::create(index);
@@ -67,25 +67,79 @@ inline void synchronize_cuda_device(int index) {
 #endif
 }
 
+// Checked before selecting the device: a failed selection leaves an error
+// pending that the next CUDA call, even in another library, would report.
+inline void require_cuda_device(int index) {
+#ifdef EXECUTORCH_PYBINDINGS_CUDA
+  int count = 0;
+  const auto status = cudaGetDeviceCount(&count);
+  if (status != cudaSuccess) {
+    (void)cudaGetLastError();
+    throw std::runtime_error(
+        std::string("Failed to query CUDA devices: ") +
+        cudaGetErrorString(status));
+  }
+  if (index < 0 || index >= count) {
+    throw std::invalid_argument(
+        "CUDA device " + std::to_string(index) + " is not available; " +
+        std::to_string(count) + " CUDA devices are visible");
+  }
+#else
+  (void)index;
+  throw std::runtime_error(
+      "CUDA tensor interchange requires bindings built with CUDA support");
+#endif
+}
+
+// Values match cudaMemcpyKind, so a direction converts to it directly.
+enum class CudaCopy {
+  HostToDevice = 1,
+  DeviceToHost = 2,
+  DeviceToDevice = 3,
+};
+
+// Runs `function` with CUDA device `index` current, then restores the previous
+// device. Some DLPack producers export a CUDA tensor only while its device is
+// the current one.
+template <typename Function>
+auto with_cuda_device(int index, Function&& function) {
+#ifdef EXECUTORCH_PYBINDINGS_CUDA
+  require_cuda_device(index);
+  auto guard = executorch::extension::cuda::CUDAGuard::create(index);
+  if (!guard.ok()) {
+    throw std::runtime_error(
+        "Failed to select CUDA device " + std::to_string(index));
+  }
+  return function();
+#else
+  // Without CUDA support, using the capsule fails later with a clear error.
+  (void)index;
+  return function();
+#endif
+}
+
+// Copies on the legacy default stream. A copy to the host returns once it has
+// finished. A copy to the device may still be in flight when this returns, but
+// it runs before anything queued afterwards on a blocking stream, including the
+// delegates' cudaStreamPerThread; a result holding such memory still waits for
+// the device before another library or a call reads it.
 inline void copy_cuda_storage(
     void* destination,
     const void* source,
     size_t nbytes,
-    int index) {
+    int index,
+    CudaCopy direction = CudaCopy::DeviceToDevice) {
 #ifdef EXECUTORCH_PYBINDINGS_CUDA
   auto guard = executorch::extension::cuda::CUDAGuard::create(index);
   if (!guard.ok()) {
     throw std::runtime_error(
         "Failed to select CUDA device " + std::to_string(index));
   }
-  auto status =
-      cudaMemcpy(destination, source, nbytes, cudaMemcpyDeviceToDevice);
-  if (status == cudaSuccess) {
-    status = cudaDeviceSynchronize();
-  }
+  const auto status = cudaMemcpy(
+      destination, source, nbytes, static_cast<cudaMemcpyKind>(direction));
   if (status != cudaSuccess) {
     throw std::runtime_error(
-        std::string("Failed to clone CUDA tensor storage: ") +
+        std::string("Failed to copy CUDA tensor storage: ") +
         cudaGetErrorString(status));
   }
 #else
@@ -93,6 +147,7 @@ inline void copy_cuda_storage(
   (void)source;
   (void)nbytes;
   (void)index;
+  (void)direction;
   throw std::runtime_error(
       "CUDA tensor interchange requires bindings built with CUDA support");
 #endif

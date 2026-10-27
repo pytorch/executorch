@@ -139,4 +139,6 @@ class BackendWithCompilerDemo(BackendDetails):
             ),
             debug_handle_map=debug_handle_map,
             _delegate_info_meta="test",
+            # The runtime keeps no state and reads its arguments on every call.
+            share_handle_across_calls=True,
         )
