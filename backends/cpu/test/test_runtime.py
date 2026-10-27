@@ -95,6 +95,29 @@ class CPURuntimeTest(unittest.TestCase):
                 for output, expected in zip(actual, model(x, current), strict=True):
                     torch.testing.assert_close(output, expected, rtol=0, atol=0)
 
+    def test_neg_view_copy_routes_to_neg(self):
+        class NegView(torch.nn.Module):
+            def forward(self, x):
+                return torch.ops.aten._neg_view_copy.default(x)
+
+        model = NegView()
+        x = torch.randn(2, 3)
+        with self._lower(model, (x,)) as runtime:
+            actual = runtime.forward((x,))[0]
+            torch.testing.assert_close(actual, model(x))
+
+    def test_neg_view_copy_empty_bool(self):
+        class NegView(torch.nn.Module):
+            def forward(self, x):
+                return torch.ops.aten._neg_view_copy.default(x)
+
+        model = NegView()
+        x = torch.empty(0, dtype=torch.bool)
+        expected = model(x)
+        with self._lower(model, (x,)) as runtime:
+            actual = runtime.forward((x,))[0]
+            torch.testing.assert_close(actual, expected)
+
     def test_optional_integer_index_lists(self):
         class Index(torch.nn.Module):
             def __init__(self, accumulate):
