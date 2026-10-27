@@ -34,9 +34,11 @@ to run ExecuTorch `.pte` files, with some restrictions:
 * \[macOS only] [Core ML](docs/source/backends/coreml/coreml-overview.md) and MLX backends are
   also linked into the prebuilt module.
 * \[Linux x86_64] [QNN](docs/source/backends-qualcomm.md) backend is linked into the prebuilt module.
-* \[Linux] [OpenVINO](docs/source/build-run-openvino.md) backend is also linked into the
+* \[Linux and Windows] [OpenVINO](docs/source/build-run-openvino.md) backend is also linked into the
   prebuilt module. OpenVINO requires the runtime to be installed separately:
-  `pip install executorch[openvino]`
+  `pip install executorch[openvino]`. For now the extra installs no runtime on Python 3.15,
+  or on Linux aarch64 with Python 3.14. OpenVINO publishes no build for Python 3.15, and its
+  aarch64 builds for Python 3.14 need glibc 2.35 or newer.
 
 On Linux, macOS and Windows the runtime, kernels and backends also ship as shared libraries
 with headers and a CMake package, so a C++ application can link them without building

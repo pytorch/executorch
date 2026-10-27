@@ -6,8 +6,11 @@
 The initial workload is pretrained ConvNeXt-Tiny in FP32 on a Linux server.
 The registered `CPURecipeType.FP32` (`cpu_fp32`) Recipe retains a semantic Native
 graph inside one `CpuBackend` delegate in a regular ExecuTorch `.pte`.
-This first delegate version supports pure operations on statically shaped,
-contiguous FP32 tensors.
+The partitioner supports pure operations on statically shaped, contiguous FP32,
+uint8, int8, int16, int32, int64 and boolean tensors. Integer and boolean operations
+use the existing ET kernel routes, subject to each kernel's operator and dtype
+support. Runtime-computed scalar arguments and symbolic tensor shapes remain
+unsupported. Ordinary integer tensors do not imply quantized execution support.
 
 The `cpu_delegate_version` compile spec stores `CPU_DELEGATE_VERSION` as a
 four-byte little-endian unsigned integer. The loader accepts explicitly
@@ -18,8 +21,8 @@ is separate.
 
 
 The C++ runtime selects implementations from linked `KernelProvider` factories.
-XNNPACK is the linked provider; other providers can supply fallback when no
-XNNPACK implementation accepts an operation. Selection precedes XNNPACK region
+XNNPACK is the primary provider; the Reference provider supplies fallback
+through existing ET kernels when no XNNPACK implementation accepts an operation. Selection precedes XNNPACK region
 compilation, so compiled regions execute within one CPU schedule and share
 boundary buffers. Provider choices are absent from
 the serialized graph.
@@ -27,23 +30,24 @@ the serialized graph.
 Provider implementations live under `runtime/providers/`:
 
 - [`xnnpack/`](runtime/providers/xnnpack/README.md): XNNPACK subgraph compilation.
+- [`reference/`](runtime/providers/reference/README.md): registered ET kernels.
 
 The shared `KernelProvider` contract, `CPUPlan`, and `CpuBackend` remain in
 `runtime/`. Provider targets and application compositions are defined in
 [`targets.bzl`](targets.bzl).
 
-The Buck `cpu_backend` target links the XNNPACK provider.
+The Buck `cpu_backend` target links the baseline XNNPACK and Reference providers.
 Applications compose providers with [`cpu_backend()`](cpu_backend.bzl).
 
 `CPUPlan` retains selection, regions, storage requirements and prepared executables
 separately from the loader's Native graph and current buffer bindings. Providers
-receive Native metadata and explicit buffer extents. Requirements are queried
-before constant preparation and arena
+receive Native metadata and explicit buffer extents; Reference creates its
+boxed call frames privately. Requirements are queried before constant preparation and arena
 allocation. Sequential steps share the maximum declared scratch capacity. XNNPACK
 shares compatible convolution-weight conversions within a plan and borrows weights
 whose physical order already matches.
 
-For a loaded method, shapes, FP32 dtype, contiguous layout, threadpool identity,
+For a loaded method, shapes, tensor dtypes, contiguous layout, threadpool identity,
 thread count and ISA capabilities remain fixed. Input/output pointers may change
 and are validated on every invocation. Changing an execution property requires
 reloading the method; failed validation executes no provider. The trace includes
@@ -51,6 +55,9 @@ candidate eligibility/rejection reasons and the captured execution properties.
 Priority selection still has unknown cost. Dynamic shape inference, transactional
 plan replacement, resource bindings and memory budgets remain future work.
 
+Reference's current routes declare no temporary storage and receive a bounded,
+empty instruction allocator. Adding a route that needs temporary allocation requires a
+storage declaration and an instruction-local allocator over planned scratch.
 XNNPACK workspace and packed-cache capacities remain unknown. These are separate
 from the reported boundary arena, shared scratch and converted constants.
 
@@ -123,13 +130,14 @@ Per-model `CpuBackend` load options can replace the entire list: set integer
 `preference_count`, then string `preferred_provider_0`,
 `preferred_implementation_0`, and so on in preference order. Implementation keys
 are optional; a count of zero clears the list. For example, these options prefer
-the XNNPACK subgraph implementation:
+the XNNPACK subgraph implementation, then Reference:
 
 ```cpp
 BackendOptions<4> options;
-options.set_option("preference_count", 1);
+options.set_option("preference_count", 2);
 options.set_option("preferred_provider_0", "XNNPACK");
 options.set_option("preferred_implementation_0", "subgraph");
+options.set_option("preferred_provider_1", "Reference");
 ```
 
 Check each `set_option` result, attach the options under `"CpuBackend"` in a

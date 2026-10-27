@@ -21,3 +21,8 @@ pytest-xdist
 pytest-rerunfailures==15.1
 pytest-json-report
 gguf  # For extension/llm/export/test/test_gguf.py (GGUF Q4_K/Q6_K dequant tests).
+# Needed only by tests and development tools, so the executorch package does not depend on them.
+expecttest
+hypothesis
+kgb
+parameterized

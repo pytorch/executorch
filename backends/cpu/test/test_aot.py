@@ -14,11 +14,16 @@ from executorch.backends.cpu.partitioner import (
     CPUPartitioner,
     CPUSemanticOperators,
 )
-from executorch.backends.cpu.preprocess import CpuBackend
+from executorch.backends.cpu.preprocess import _remove_unused_constants, CpuBackend
 from executorch.backends.cpu.recipes import CPURecipeType
 from executorch.backends.native.serialization import deserialize_graph, serialize_graph
-from executorch.exir import to_edge_transform_and_lower
+from executorch.backends.transforms.fuse_batch_norm_with_linear import (
+    FuseBatchNormWithLinearPass,
+)
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.program._program import _transform, lift_constant_tensor_pass
 from executorch.exir.schema import DelegateCall, Tensor
 from executorch.export import export, ExportRecipe
 
@@ -141,6 +146,57 @@ class CPUAOTTest(unittest.TestCase):
                             "CPU payload layout must match the tensor passed to the delegate",
                         )
 
+    def test_linear_preservation_is_selective_in_mixed_shape_graph(self):
+        class MixedLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(4, 3)
+
+            def forward(self, dynamic, static):
+                return self.linear(dynamic), self.linear(static)
+
+        model = MixedLinear().eval()
+        static = torch.randn(1, 4)
+        ep = torch.export.export(
+            model,
+            (torch.randn(2, 4), static),
+            dynamic_shapes=({0: torch.export.Dim("batch", min=1, max=4)}, None),
+        )
+        edge = to_edge_transform_and_lower(ep, partitioner=[CPUPartitioner()])
+        exported = edge.exported_program()
+        targets = [node.target for node in exported.graph.nodes]
+        self.assertNotIn(exir_ops.edge.aten.linear.default, targets)
+        self.assertIn(exir_ops.edge.aten.addmm.default, targets)
+
+        for batch in (1, 2, 4):
+            inputs = (torch.randn(batch, 4), static)
+            torch.testing.assert_close(exported.module()(*inputs), model(*inputs))
+
+        program = edge.to_executorch()
+        delegate_targets = [
+            node.target
+            for data in program.executorch_program.backend_delegate_data
+            for node in deserialize_graph(bytes(data.data)).nodes
+        ]
+        self.assertEqual(delegate_targets.count("torch.ops.aten.linear.default"), 1)
+        self.assertGreater(len(program.buffer), 0)
+
+    def test_non_fp32_linear_decomposes(self):
+        model = torch.nn.Linear(4, 3, bias=False).double().eval()
+        inputs = (torch.randn(2, 4, dtype=torch.float64),)
+        edge = to_edge_transform_and_lower(
+            torch.export.export(model, inputs), partitioner=[CPUPartitioner()]
+        )
+        targets = [node.target for node in edge.exported_program().graph.nodes]
+        self.assertNotIn(exir_ops.edge.aten.linear.default, targets)
+        self.assertIn(exir_ops.edge.aten.mm.default, targets)
+        torch.testing.assert_close(
+            edge.exported_program().module()(*inputs), model(*inputs)
+        )
+        program = edge.to_executorch()
+        self.assertEqual(program.executorch_program.execution_plan[0].delegates, [])
+        self.assertGreater(len(program.buffer), 0)
+
     def test_constants_have_recorded_readable_tail(self):
         model = torch.nn.Linear(2, 3).eval()
         result = CpuBackend.preprocess(
@@ -160,6 +216,64 @@ class CPUAOTTest(unittest.TestCase):
             self.assertEqual(entry.alignment, 64)
             self.assertEqual(len(buffer), tensor.numel() * tensor.element_size() + 64)
             self.assertEqual(buffer[-64:], bytes(64))
+
+    def test_preprocess_fuses_batch_norm_into_conv_and_linear(self):
+        class ConvBnLinearBn(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(4, 4, 3, padding=1)
+                self.bn1 = torch.nn.BatchNorm2d(4)
+                self.linear = torch.nn.Linear(4, 4)
+                self.bn2 = torch.nn.BatchNorm1d(4)
+
+            def forward(self, x):
+                y = self.bn1(self.conv(x))
+                return self.bn2(self.linear(y.mean(dim=(2, 3))))
+
+        model = ConvBnLinearBn().eval()
+        edge = to_edge(
+            torch.export.export(model, (torch.randn(1, 4, 8, 8),)),
+            compile_config=EdgeCompileConfig(
+                preserve_ops=[torch.ops.aten.linear.default]
+            ),
+        ).exported_program()
+        self.assertTrue(
+            any("batch_norm" in str(node.target) for node in edge.graph.nodes)
+        )
+        result = CpuBackend.preprocess(
+            edge,
+            [
+                CompileSpec(
+                    "cpu_delegate_version",
+                    CPU_DELEGATE_VERSION.to_bytes(4, "little"),
+                )
+            ],
+        )
+        graph = deserialize_graph(bytes(result.processed_bytes))
+        targets = [node.target for node in graph.nodes]
+        self.assertNotIn(
+            "torch.ops.aten._native_batch_norm_legit_no_training.default", targets
+        )
+        self.assertIn("torch.ops.aten.convolution.default", targets)
+        self.assertIn("torch.ops.aten.linear.default", targets)
+        # Only the fused conv and linear weights and biases remain.
+        self.assertEqual(len(result.data_store_output.pte_data), 4)
+
+    def test_remove_unused_constants_prunes_backing_store(self):
+        model = torch.nn.Sequential(torch.nn.Linear(4, 4), torch.nn.BatchNorm1d(4))
+        ep = to_edge(
+            torch.export.export(model.eval(), (torch.randn(2, 4),)),
+            compile_config=EdgeCompileConfig(
+                preserve_ops=[torch.ops.aten.linear.default]
+            ),
+        ).exported_program()
+        ep = _transform(ep, FuseBatchNormWithLinearPass(ep))
+        ep = lift_constant_tensor_pass(ep)
+        self.assertIn("0.weight", ep.state_dict)
+        _remove_unused_constants(ep)
+        targets = {spec.target for spec in ep.graph_signature.input_specs}
+        self.assertNotIn("0.weight", ep.state_dict)
+        self.assertLessEqual(set(ep.state_dict) | set(ep.constants), targets)
 
     def test_preprocess_rejects_compile_spec_mismatch(self):
         ep = torch.export.export(torch.nn.Linear(2, 3), (torch.ones(1, 2),))
@@ -222,7 +336,7 @@ class CPUAOTTest(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(
                     ValueError,
-                    f"CpuBackend requires FP32 CPU constant weight, "
+                    f"CpuBackend requires supported CPU constant weight, "
                     f"got dtype {dtype} on {device}",
                 ):
                     CpuBackend.preprocess(
@@ -352,7 +466,7 @@ class CPUAOTTest(unittest.TestCase):
         node.meta["val"] = producer.meta["val"][0]
         support = CPUSemanticOperators()
         self.assertTrue(support.is_node_supported({}, node))
-        for val in (None, 1, (), torch.ones(2, dtype=torch.int32)):
+        for val in (None, 1, (), torch.ones(2, dtype=torch.float64)):
             with self.subTest(val=val):
                 node.meta["val"] = val
                 self.assertFalse(support.is_node_supported({}, node))
@@ -362,7 +476,7 @@ class CPUAOTTest(unittest.TestCase):
             def forward(self, x):
                 return x + x
 
-        ep = torch.export.export(Add(), (torch.ones(2, dtype=torch.int32),))
+        ep = torch.export.export(Add(), (torch.ones(2, dtype=torch.float64),))
         edge = to_edge_transform_and_lower(ep, partitioner=[CPUPartitioner()])
         self.assertEqual(
             len(edge.to_executorch().executorch_program.execution_plan[0].delegates), 0
