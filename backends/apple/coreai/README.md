@@ -63,6 +63,10 @@ outputs after inference, so output/input aliases are not written during the
 borrow. This does not guarantee that Core AI itself avoids device transfers or
 internal copies.
 
+After an execution error, do not use the outputs as inference results. Output
+shapes may already have changed, but no result bytes are copied unless every
+output passes validation and resizing.
+
 ### Calling from Swift
 
 When using the Core AI backend, run ExecuTorch model loading, inference and

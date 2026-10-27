@@ -115,6 +115,13 @@ struct FloatTensors {
   EValue* args[2] = {&in, &out};
 };
 
+NSMutableDictionary* multiple_io_manifest() {
+  NSMutableDictionary* manifest = manifest_dict();
+  manifest[@"input_names"] = @[ @"input_1", @"input_0" ];
+  manifest[@"output_names"] = @[ @"output_1", @"output_0" ];
+  return manifest;
+}
+
 template <typename T>
 struct RangeTensors {
   static constexpr ScalarType dtype =
@@ -299,6 +306,71 @@ TEST_F(CoreAIDelegateTest, OrderedIoBindingUsesManifestFunctionAndNames) {
   }
 }
 
+TEST_F(CoreAIDelegateTest, MultipleInputsAndOutputsPreserveManifestOrder) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    second.input[0] = 11;
+    second.input[1] = 13;
+    EValue* args[] = {&first.in, &second.in, &first.out, &second.out};
+    ASSERT_EQ(fixture.execute({args, 4}), Error::Ok);
+    EXPECT_EQ(first.output[0], 3);
+    EXPECT_EQ(first.output[1], 7);
+    EXPECT_EQ(second.output[0], 11);
+    EXPECT_EQ(second.output[1], 13);
+    EXPECT_EQ(bridge.state().binding_mismatches.load(), 0);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, LaterOutputResizeFailureLeavesResultBytesUntouched) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    float larger[] = {11, 13, 17};
+    TensorImpl::SizesType one[] = {1}, three[] = {3};
+    TensorImpl first_input(
+        ScalarType::Float,
+        1,
+        one,
+        first.input,
+        first.order,
+        first.input_stride);
+    TensorImpl second_input(
+        ScalarType::Float, 1, three, larger, second.order, second.input_stride);
+    EValue first_in{Tensor(&first_input)}, second_in{Tensor(&second_input)};
+    EValue* args[] = {&first_in, &second_in, &first.out, &second.out};
+    EXPECT_EQ(fixture.execute({args, 4}), Error::NotSupported);
+    EXPECT_EQ(first.out.toTensor().size(0), 1);
+    EXPECT_EQ(second.out.toTensor().size(0), 2);
+    for (size_t i = 0; i < 2; ++i) {
+      EXPECT_EQ(first.output[i], -1);
+      EXPECT_EQ(second.output[i], -1);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, WrongOutputCountDoesNotWriteCallerStorage) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    bridge.state().bad_output = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    EValue* args[] = {&first.in, &second.in, &first.out, &second.out};
+    EXPECT_EQ(fixture.execute({args, 4}), Error::Internal);
+    EXPECT_EQ(first.out.toTensor().size(0), 2);
+    EXPECT_EQ(second.out.toTensor().size(0), 2);
+    for (size_t i = 0; i < 2; ++i) {
+      EXPECT_EQ(first.output[i], -1);
+      EXPECT_EQ(second.output[i], -1);
+    }
+  }
+}
+
 TEST_F(CoreAIDelegateTest, ArgumentValidationRejectsBeforeSdkExecution) {
   @autoreleasepool {
     DelegateFixture fixture(backend, bridge);
@@ -423,7 +495,7 @@ TEST_F(CoreAIDelegateTest, MalformedOutputDoesNotWriteCallerStorage) {
     ASSERT_EQ(fixture.init(), Error::Ok);
     FloatTensors tensors;
     bridge.state().bad_output = true;
-    EXPECT_EQ(fixture.execute({tensors.args, 2}), Error::InvalidExternalData);
+    EXPECT_EQ(fixture.execute({tensors.args, 2}), Error::Internal);
     EXPECT_EQ(tensors.output[0], -1);
     EXPECT_EQ(tensors.output[1], -1);
   }
@@ -500,7 +572,7 @@ TEST_F(CoreAIDelegateTest, HalfDtypePreservesBitsAndRejectsMixedOutputDtype) {
     EXPECT_EQ(output[1], input[1]);
     EXPECT_EQ(bridge.state().last_input_bytes.load(), input);
     EValue* mixed[] = {&in, &tensors.out};
-    EXPECT_EQ(fixture.execute({mixed, 2}), Error::InvalidExternalData);
+    EXPECT_EQ(fixture.execute({mixed, 2}), Error::InvalidArgument);
   }
 }
 
@@ -517,7 +589,7 @@ TEST_F(CoreAIDelegateTest, ScalarTensorsExecuteAndRejectOutputRankMismatch) {
     EXPECT_EQ(tensors.output[0], tensors.input[0]);
     EXPECT_EQ(bridge.state().last_input_bytes.load(), tensors.input);
     EValue* wrong_rank[] = {&tensors.in, &out};
-    EXPECT_EQ(fixture.execute({wrong_rank, 2}), Error::InvalidExternalData);
+    EXPECT_EQ(fixture.execute({wrong_rank, 2}), Error::InvalidArgument);
   }
 }
 

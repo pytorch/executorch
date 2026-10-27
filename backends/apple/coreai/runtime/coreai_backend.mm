@@ -167,42 +167,47 @@ Error copy_outputs(
     size_t output_count) {
   ET_CHECK_OR_RETURN_ERROR(
       outputs != nil && outputs.count == output_count,
-      InvalidExternalData,
+      Internal,
       "Core AI output count mismatch");
   std::vector<std::vector<SizesType>> shapes(output_count);
   for (size_t i = 0; i < output_count; ++i) {
     ETCoreAITensor* output = outputs[i];
     const auto& tensor = args[input_count + i]->toTensor();
     ET_CHECK_OR_RETURN_ERROR(
-        [output isKindOfClass:ETCoreAITensor.class] &&
-            output.scalarType == scalar_type(tensor.scalar_type()).get() &&
-            output.shape.count == static_cast<size_t>(tensor.dim()),
-        InvalidExternalData,
-        "Core AI output type or rank mismatch");
-    size_t bytes = tensor.element_size();
+        [output isKindOfClass:ETCoreAITensor.class],
+        Internal,
+        "Invalid Core AI output tensor");
+    ET_CHECK_OR_RETURN_ERROR(
+        output.scalarType == ETCoreAIScalarTypeFloat16 ||
+            output.scalarType == ETCoreAIScalarTypeFloat32,
+        Internal,
+        "Invalid Core AI output scalar type");
+    size_t bytes = output.scalarType == ETCoreAIScalarTypeFloat16 ? 2 : 4;
     for (id size in output.shape) {
       ET_CHECK_OR_RETURN_ERROR(
-          [size isKindOfClass:NSNumber.class] &&
-              [size longLongValue] >= 0 &&
-              [size longLongValue] <=
-                  std::numeric_limits<SizesType>::max() &&
+          [size isKindOfClass:NSNumber.class] && [size longLongValue] >= 0 &&
+              [size longLongValue] <= std::numeric_limits<SizesType>::max() &&
               [size isEqualToNumber:@([size longLongValue])],
-          InvalidExternalData,
+          Internal,
           "Invalid Core AI output dimension");
       const auto dimension = static_cast<SizesType>([size longLongValue]);
       shapes[i].push_back(dimension);
       ET_CHECK_OR_RETURN_ERROR(
-          !c10::mul_overflows(
-              bytes, static_cast<size_t>(dimension), &bytes),
-          InvalidExternalData,
+          !c10::mul_overflows(bytes, static_cast<size_t>(dimension), &bytes),
+          Internal,
           "Core AI output size overflow");
     }
     ET_CHECK_OR_RETURN_ERROR(
         output.data != nil && bytes == output.data.length,
-        InvalidExternalData,
+        Internal,
         "Core AI output byte count mismatch");
+    ET_CHECK_OR_RETURN_ERROR(
+        output.scalarType == scalar_type(tensor.scalar_type()).get() &&
+            output.shape.count == static_cast<size_t>(tensor.dim()),
+        InvalidArgument,
+        "Core AI output type or rank mismatch");
   }
-  // Check all resized outputs before copying to avoid partial result writes.
+  // Validate all resized outputs before copying; shapes may change on failure.
   for (size_t i = 0; i < output_count; ++i) {
     auto& tensor = args[input_count + i]->toTensor();
     ET_CHECK_OK_OR_RETURN_ERROR(resize_tensor(

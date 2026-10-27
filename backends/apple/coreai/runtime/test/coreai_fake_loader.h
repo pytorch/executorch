@@ -27,6 +27,7 @@ struct FakeBridgeState {
   bool fail_load = false;
   bool fail_execute = false;
   bool bad_output = false;
+  bool multiple_io = false;
   NSString* last_bundle = nil;
   dispatch_semaphore_t input_ready = nil;
   dispatch_semaphore_t allow_input_read = nil;

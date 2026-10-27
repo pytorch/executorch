@@ -36,9 +36,16 @@ NSError* fake_error(ETCoreAIErrorCode code) {
 
 bool valid_binding(CoreAIFakeBridgeContext* context, NSString* function, NSArray<NSString*>* inputs,
                    NSArray<NSString*>* outputs) {
+  // Reversed names make accidental sorting observable in multi-I/O tests.
+  NSArray<NSString*>* expected_inputs = context->state.multiple_io
+      ? @[ @"input_1", @"input_0" ]
+      : @[ @"input_0" ];
+  NSArray<NSString*>* expected_outputs = context->state.multiple_io
+      ? @[ @"output_1", @"output_0" ]
+      : @[ @"output_0" ];
   const bool valid = [function isEqualToString:@"main"] &&
-                     [inputs isEqualToArray:@[ @"input_0" ]] &&
-                     [outputs isEqualToArray:@[ @"output_0" ]];
+      [inputs isEqualToArray:expected_inputs] &&
+      [outputs isEqualToArray:expected_outputs];
   if (!valid) {
     ++context->state.binding_mismatches;
   }
@@ -131,11 +138,16 @@ dispatch_time_t cleanup_deadline() {
                  nil);
       return;
     }
-    NSData* data = [NSData dataWithBytes:input.bytes length:input.byteCount];
-    ETCoreAITensor* output = [[ETCoreAITensor alloc] initWithData:data
-                                                            shape:input.shape
-                                                       scalarType:input.scalarType];
-    completion(@[ output ], nil);
+    NSMutableArray<ETCoreAITensor*>* outputs =
+        [NSMutableArray arrayWithCapacity:inputs.count];
+    for (ETCoreAIInputTensor* value in inputs) {
+      NSData* data = [NSData dataWithBytes:value.bytes length:value.byteCount];
+      [outputs
+          addObject:[[ETCoreAITensor alloc] initWithData:data
+                                                   shape:value.shape
+                                              scalarType:value.scalarType]];
+    }
+    completion(outputs, nil);
   });
 }
 @end
