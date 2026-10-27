@@ -8,10 +8,15 @@ def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def main():
  a=argparse.ArgumentParser(description=__doc__)
  for n in ['baseline-native','baseline-export','output','python','lock']:a.add_argument('--'+n,type=Path,required=True)
- a.add_argument('--jobs',type=int,default=4);a.add_argument('--recover-terminal-job',type=Path);args=a.parse_args()
+ a.add_argument('--jobs',type=int,default=4);a.add_argument('--recover-terminal-job',type=Path);a.add_argument('--recover-storage-test-job',type=Path);args=a.parse_args()
+ assert not (args.recover_terminal_job and args.recover_storage_test_job)
  assert not args.output.exists();args.output.mkdir(parents=True)
  package=Path(__file__).parent;prepared=args.recover_terminal_job or args.output
  source=prepared/'native/executorch';export=prepared/'export-source/executorch'
+ if args.recover_storage_test_job:
+  prior=json.loads((args.recover_storage_test_job/'progress.json').read_text())
+  assert prior['status']=='failed-native-mini-candidate' and not (Path('/proc')/str(prior['PID'])).exists()
+  source=Path(prior['source']);export=Path(prior['export_source'])
  def state(status,**extra):
   d=dict(status=status,UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),PID=os.getpid(),source=str(source),export_source=str(export),mini_model_qualified=False,original_campaign_paused=True,**extra)
   p=args.output/'progress.pending.json';p.write_text(json.dumps(d,indent=2)+'\n');p.replace(args.output/'progress.json')
@@ -24,7 +29,14 @@ def main():
    subprocess.run([str(x) for x in argv],stdout=f,stderr=subprocess.STDOUT,env=e,check=True,timeout=timeout)
  try:
   state('copying-and-patching-isolated-native-export-sources')
-  if args.recover_terminal_job:
+  if args.recover_storage_test_job:
+   recovery=json.loads((args.recover_storage_test_job/'source-recovery.json').read_text())
+   cpp=source/'backends/cuda/runtime/cuda_kv_cache.cpp';assert sha(cpp)==recovery['after_SHA256']
+   target=source/'backends/cuda/runtime/test/ring_retention_native_tests.inc'
+   before=target.read_bytes();(args.output/'failed-ring-storage-test.inc').write_bytes(before)
+   shutil.copy2(package/'ring_retention_native_tests.inc',target)
+   (args.output/'source-recovery.json').write_text(json.dumps(dict(prior_job=str(args.recover_storage_test_job),prior_recovery_SHA256=sha(args.recover_storage_test_job/'source-recovery.json'),before_test_SHA256=hashlib.sha256(before).hexdigest(),after_test_SHA256=sha(target),actual_native_Cpp_SHA256=sha(cpp),prior_crash_logs_preserved=True,change='rebind test delegate after column compaction before direct storage inspection'),indent=2)+'\n')
+  elif args.recover_terminal_job:
    prior=json.loads((prepared/'progress.json').read_text())
    assert prior['status']=='failed-native-mini-candidate' and not (Path('/proc')/str(prior['PID'])).exists()
    audit=json.loads((source/'ring-retention-source-audit.json').read_text())
@@ -77,7 +89,7 @@ def main():
   run([cmake,'-S',parent/'rewind_kv_probe_project','-B',pb,'-DCMAKE_BUILD_TYPE=Release','-DET_SOURCE='+str(source),'-DREWIND_PROBE_SOURCE='+str(cpp),'-DCMAKE_PREFIX_PATH='+str(build)+';'+prefix])
   run([cmake,'--build',pb,'--parallel',str(args.jobs),'--target','rewind_kv_probe'])
   binary=pb/'rewind_kv_probe'
-  receipt=dict(native_tests_passed=True,legacy_test_count=len(tests)-4,new_ring_test_names=names,allocator_policy_test_count=len(policy),source=str(source),export_source=str(export),probe=str(binary),probe_SHA256=sha(binary),native_baseline_policy_XML_SHA256=sha(xml),allocator_policy_XML_SHA256=sha(xml2),native_source_audit_SHA256=sha(source/'ring-retention-source-audit.json'),export_source_audit_SHA256=sha(export/'ring-retention-source-audit.json'),kernel_qualification_pending_until_model_export=True,real_mini_model_qualified=False,actual_native_Cpp_SHA256=sha(source/'backends/cuda/runtime/cuda_kv_cache.cpp'),source_recovery_SHA256=sha(args.output/'source-recovery.json') if args.recover_terminal_job else None)
+  receipt=dict(native_tests_passed=True,legacy_test_count=len(tests)-4,new_ring_test_names=names,allocator_policy_test_count=len(policy),source=str(source),export_source=str(export),probe=str(binary),probe_SHA256=sha(binary),native_baseline_policy_XML_SHA256=sha(xml),allocator_policy_XML_SHA256=sha(xml2),native_source_audit_SHA256=sha(source/'ring-retention-source-audit.json'),export_source_audit_SHA256=sha(export/'ring-retention-source-audit.json'),kernel_qualification_pending_until_model_export=True,real_mini_model_qualified=False,actual_native_Cpp_SHA256=sha(source/'backends/cuda/runtime/cuda_kv_cache.cpp'),source_recovery_SHA256=sha(args.output/'source-recovery.json') if (args.recover_terminal_job or args.recover_storage_test_job) else None)
   (args.output/'native-gate.json').write_text(json.dumps(receipt,indent=2)+'\n');state('native-mini-candidate-ready',native_gate=str(args.output/'native-gate.json'),probe=str(binary))
  except BaseException as e:
   state('failed-native-mini-candidate',error=repr(e),traceback=traceback.format_exc());raise

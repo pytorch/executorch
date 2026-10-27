@@ -69,7 +69,11 @@ TEST_F(CudaSplitRingCacheTest, PackedStagingKeepsMaximumRewindAndCloneContract) 
  ASSERT_EQ(write(*object,h,fake,{*clone}),Error::Ok);
  auto m=info(fake);check_last(fake,m[2],m[4],*clone,33);
  ASSERT_TRUE(c->seq_rm(a));ASSERT_EQ(kv->compact_columns(0),Error::Ok);
- ASSERT_TRUE(c->rewind(*clone,32));check_last(fake,0,2,a,32);
+ ASSERT_TRUE(c->rewind(*clone,32));
+ // Physical column compaction invalidates old delegate bindings. Runtime
+ // rebinds before execution; this direct storage inspection must do the same.
+ ASSERT_EQ(kv->rebind_for_execute(&h),Error::Ok);
+ check_last(fake,0,kv->metrics().physical_columns,a,32);
  kv->forget_handle(&h);
 }
 
