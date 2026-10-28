@@ -85,6 +85,53 @@ class CPUPlanTest : public ::testing::Test {
 
 // Cppcheck cannot expand GTest fixture macros without build headers.
 // cppcheck-suppress-begin syntaxError
+TEST_F(CPUPlanTest, MaxPool2dPreservesReferenceFallbackAndSkipsUnusedIndices) {
+  graph.values.emplace_back(
+      "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 1, 4, 4});
+  graph.values[0].role = ptn::ValueRole::UserInput;
+  graph.values.emplace_back(
+      "output", ptn::ScalarType::Float, std::vector<int64_t>{1, 1, 2, 2});
+  graph.values.emplace_back(
+      "indices", ptn::ScalarType::Long, std::vector<int64_t>{1, 1, 2, 2});
+  ptn::Node node;
+  node.name = "pool";
+  node.target = "torch.ops.aten.max_pool2d_with_indices.default";
+  node.inputs = {
+      {"self", ptn::TensorArg{0}},
+      {"kernel_size", ptn::IntListArg{{2, 2}, {}}},
+      {"stride", ptn::IntListArg{{2, 2}, {}}},
+      {"padding", ptn::IntListArg{{0, 0}, {}}},
+      {"dilation", ptn::IntListArg{{1, 1}, {}}},
+      {"ceil_mode", ptn::BoolArg{false}}};
+  node.outputs = {
+      {ptn::OutputValueKind::Tensor, 1}, {ptn::OutputValueKind::Tensor, 2}};
+  graph.nodes.push_back(std::move(node));
+  graph.input_ids = {0};
+  finish({1});
+  for (const bool reference_only : {false, true}) {
+    if (reference_only) {
+      configuration.providers = {factories.data() + 1, 1};
+    }
+    buffers.assign(graph.values.size(), Buffer{});
+    CPUPlan plan(graph, buffers, configuration, execution);
+    ASSERT_EQ(plan.select(), Error::Ok);
+    ASSERT_EQ(plan.steps().size(), 1);
+    EXPECT_EQ(
+        plan.steps()[0].provider->name(),
+        reference_only ? "Reference" : "XNNPACK");
+    ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+    EXPECT_EQ(buffers[2].data != nullptr, reference_only);
+    for (int i = 0; i < 16; ++i) {
+      static_cast<float*>(buffers[0].data)[i] = i;
+    }
+    ASSERT_EQ(plan.execute(execution), Error::Ok);
+    const std::array<float, 4> expected{5, 7, 13, 15};
+    for (size_t i = 0; i < expected.size(); ++i) {
+      EXPECT_FLOAT_EQ(static_cast<float*>(buffers[1].data)[i], expected[i]);
+    }
+  }
+}
+
 TEST_F(
     CPUPlanTest,
     MixedRegionsPreserveFanoutOutputsAndReuseArenaAcrossInvocations) {
