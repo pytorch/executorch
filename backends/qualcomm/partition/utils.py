@@ -148,6 +148,11 @@ def filter_fn(node: torch.fx.Node) -> bool:
         torch.int64,
     ]:
         return False
+    # HTP Pack takes inputs of rank 1 to 4, so its output has 2 to 5 dims.
+    if node.target == torch.ops.aten.stack.default and not (
+        2 <= node.meta["val"].dim() <= 5
+    ):
+        return False
     # QNN Stft only produces the real-valued spectrum and has no normalization.
     # ConvertComplexStft rewrites the supported complex cases into this form.
     # Without a window, QNN's rectangular default spans n_fft rather than

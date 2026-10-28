@@ -828,6 +828,28 @@ class TestPasses(unittest.TestCase):
             if "QNN" in str(e) or "qnn" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
 
+    def test_stack_outside_pack_ranks_is_decomposed(self):
+        class Stack(torch.nn.Module):
+            def forward(self, x):
+                return torch.stack([x, x]) + 1
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        # HTP Pack takes inputs of rank 1 to 4. Lowering must not fail with
+        # "aten.stack ... was not decomposed or delegated".
+        for shape in [(), (1, 2, 3, 4, 5)]:
+            with self.subTest(input_rank=len(shape)):
+                try:
+                    to_edge_transform_and_lower_to_qnn(
+                        Stack().eval(), (torch.randn(shape),), compiler_specs
+                    )
+                except RuntimeError as e:
+                    if "Failed to initialize QNN backend" in str(e):
+                        self.skipTest(f"QNN SDK not available: {e}")
+                    raise
+
     def _assert_cpu_conv_keeps_its_weight_dequantize(
         self, quant_dtype, use_fp16, skip_node_id_set=None, emit=True
     ):
