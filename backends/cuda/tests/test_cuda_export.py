@@ -558,6 +558,44 @@ class TestCudaExport(unittest.TestCase):
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Conv1d operation export failed")
 
+    def test_conv_transpose(self):
+        """Test CUDA export for transposed convolution."""
+        module = torch.nn.ConvTranspose1d(4, 6, kernel_size=4, stride=2, padding=1)
+        module.eval()
+        inputs = (torch.randn(1, 4, 10),)
+
+        edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
+        self.assertIsNotNone(
+            edge_program_manager, "ConvTranspose1d operation export failed"
+        )
+
+        # Unbatched input, a crop larger than the input, and uneven 2D options.
+        cases = [
+            (
+                torch.ops.aten.conv_transpose1d.default,
+                torch.nn.functional.conv_transpose1d,
+                (torch.randn(4, 1), torch.randn(4, 3, 1), torch.randn(6)),
+                ([10], [4], [9], 2, [1]),
+            ),
+            (
+                torch.ops.aten.conv_transpose2d.input,
+                torch.nn.functional.conv_transpose2d,
+                (torch.randn(2, 4, 5, 6), torch.randn(4, 3, 3, 2), torch.randn(6)),
+                ([3, 2], [2, 0], [1, 1], 2, [2, 1]),
+            ),
+        ]
+        table = CudaBackend.get_decomposition_table()
+        for op, reference, tensors, options in cases:
+            # ROCm leaves transposed conv2d to Inductor's own template.
+            if (
+                torch.version.hip is not None
+                and op == torch.ops.aten.conv_transpose2d.input
+            ):
+                continue
+            torch.testing.assert_close(
+                table[op](*tensors, *options), reference(*tensors, *options)
+            )
+
     def test_sdpa_single_kernel(self):
         """
         Test CUDA export for model containing single SDPA kernel.

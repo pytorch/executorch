@@ -482,6 +482,72 @@ def _moved_program_tensors() -> List[torch.Tensor]:
     return [t for t in live if t is not None]
 
 
+def _conv_transpose_as_conv(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: Optional[torch.Tensor] = None,
+    stride=1,
+    padding=0,
+    output_padding=0,
+    groups: int = 1,
+    dilation=1,
+) -> torch.Tensor:
+    """
+    Rewrite a 1-D or 2-D transposed convolution as a stride 1 convolution with
+    the flipped kernel, over the input with stride - 1 zeros inserted between
+    elements and padded on each side. Inductor has no Triton template for
+    transposed convolution on CUDA, so it would call ATen's convolution, which
+    this backend does not ship.
+    """
+    n = weight.dim() - 2
+    if input.dim() == n + 1:
+        return _conv_transpose_as_conv(
+            input.unsqueeze(0),
+            weight,
+            bias,
+            stride,
+            padding,
+            output_padding,
+            groups,
+            dilation,
+        ).squeeze(0)
+    options = []
+    for v in (stride, padding, output_padding, dilation):
+        v = [v] if isinstance(v, int) else list(v)
+        options.append(v * n if len(v) == 1 else v)
+    stride, padding, output_padding, dilation = options
+    x = input
+    pad = []
+    crops = []
+    for i, dim in enumerate(range(2, 2 + n)):
+        if stride[i] > 1:
+            length = x.shape[dim]
+            zeros = x.new_zeros(*x.shape[: dim + 1], stride[i] - 1, *x.shape[dim + 1 :])
+            x = torch.cat([x.unsqueeze(dim + 1), zeros], dim + 1).flatten(dim, dim + 1)
+            x = x.narrow(dim, 0, (length - 1) * stride[i] + 1)
+        before = dilation[i] * (weight.shape[dim] - 1) - padding[i]
+        after = before + output_padding[i]
+        # constant_pad_nd takes the last dimension first. Negative padding is
+        # applied as a crop after padding, since cropping first can need more
+        # elements than the input has.
+        pad = [max(before, 0), max(after, 0)] + pad
+        if before < 0 or after < 0:
+            crops.append((dim, max(-before, 0), x.shape[dim] + before + after))
+    if any(pad):
+        x = torch.ops.aten.constant_pad_nd.default(x, pad)
+    for dim, start, length in crops:
+        x = x.narrow(dim, start, length)
+    # (in, out / groups, *kernel) -> (out, in / groups, *kernel)
+    weight = (
+        weight.unflatten(0, (groups, -1))
+        .transpose(1, 2)
+        .flatten(0, 1)
+        .flip(list(range(2, 2 + n)))
+    )
+    conv = conv1d_to_conv2d if n == 1 else torch.ops.aten.conv2d.default
+    return conv(x, weight, bias, [1] * n, [0] * n, dilation, groups)
+
+
 @final
 @experimental(
     "This API and all of cuda backend related functionality are experimental."
@@ -777,9 +843,15 @@ class CudaBackend(AotiBackend, BackendDetails):
 
     @classmethod
     def get_decomposition_table(cls) -> Dict[Any, Any]:
-        return {
+        table = {
             torch.ops.aten.conv1d.default: conv1d_to_conv2d,
+            torch.ops.aten.conv_transpose1d.default: _conv_transpose_as_conv,
         }
+        # Inductor disables its transposed conv2d Triton template only on CUDA
+        # (https://github.com/pytorch/pytorch/issues/187081).
+        if torch.version.hip is None:
+            table[torch.ops.aten.conv_transpose2d.input] = _conv_transpose_as_conv
+        return table
 
     @classmethod
     def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
