@@ -32,7 +32,29 @@ def main(args):
             assert int(fields[19]) == handle["start_ticks"] and fields[0] != "Z"
             assert hashlib.sha256((proc / "cmdline").read_bytes()).hexdigest() == handle["command_SHA256"]
             time.sleep(15)
-        assert json.loads((args.export_job / "exit-receipt.json").read_text())["returncode"] == 0
+        export_rc = json.loads((args.export_job / "exit-receipt.json").read_text())["returncode"]
+        control_diagnostic = None
+        if args.diagnostic_unmatched_export_controls:
+            assert export_rc == 1
+            failure = (args.export_job / "failure.txt").read_text()
+            assert 'assert all(item["function_AST_SHA256"] in matched for item in controls[:4])' in failure
+            required = json.loads((args.export_job / "input-RMS-control-required.json").read_text())["control"]
+            receipts = [json.loads(line) for line in
+                (args.export_job / "reduction-layout-actual-control-receipt.jsonl").read_text().splitlines()]
+            assert any(all(item[key] == required[key] for key in
+                ["function_AST_SHA256", "kwargs", "num_warps", "num_stages"]) for item in receipts)
+            controls = json.loads((args.export_job / "Gemma-reference-reduction-layouts.json").read_text())
+            matched = {item["function_AST_SHA256"] for item in receipts}
+            control_diagnostic = dict(export_returncode=export_rc,
+                export_control_gate_passed=False, original_failure=failure,
+                input_RMS_control_verified=True,
+                unmatched_reference_ASTs=[item["function_AST_SHA256"] for item in controls
+                    if item["function_AST_SHA256"] not in matched],
+                strict_numerical_thresholds_unchanged=True,
+                cannot_qualify_full_export=True)
+            (job / "export-control-diagnostic.json").write_text(json.dumps(control_diagnostic, indent=2))
+        else:
+            assert export_rc == 0
         exported = json.loads((args.export_job / "data/exports/result.json").read_text())
         artifact = exported["arms"][0]
         cfg = json.loads((args.template / "effective-config.json").read_text())
@@ -70,6 +92,8 @@ def main(args):
         (job / "result.json").write_text(json.dumps(dict(strict_result=result,
             original_numeric_gate_pass=result["original_numeric_gate_pass"],
             lifecycle_returncode=child.returncode, mini_only=True,
+            export_control_diagnostic=control_diagnostic,
+            export_control_gate_passed=control_diagnostic is None,
             performance_qualification_passed=False, full_model_unchanged=True), indent=2))
         state("mini-original-numerical-and-lifecycle-results-ready",
             numeric_pass=result["original_numeric_gate_pass"], lifecycle_returncode=child.returncode)
@@ -88,4 +112,6 @@ if __name__ == "__main__":
     parser.add_argument("--export-job", type=Path, required=True)
     parser.add_argument("--template", type=Path, required=True)
     parser.add_argument("--python", required=True)
+    parser.add_argument("--diagnostic-unmatched-export-controls", action="store_true",
+        help="Run unchanged numerical checks on a saved export whose control audit failed; cannot qualify the export")
     main(parser.parse_args())
