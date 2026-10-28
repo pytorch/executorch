@@ -244,6 +244,7 @@ set(all_test_sources
     "op_logit_test.cpp"
     "op_lt_test.cpp"
     "op_masked_fill_test.cpp"
+    "op_masked_select_test.cpp"
     "op_max_test.cpp"
     "op_max_pool2d_with_indices_test.cpp"
     "op_maximum_test.cpp"
