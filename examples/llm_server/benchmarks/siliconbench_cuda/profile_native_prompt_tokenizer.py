@@ -12,7 +12,7 @@ def main(args):
         cfg=json.loads((HTTP/'effective-config.json').read_text())
         prompt=previous/'rendered-prompt.txt';commands=json.loads((previous/'build-commands.json').read_text())
         compile_cmd=commands[0][:];compile_cmd[compile_cmd.index('-c')+1]=str(job/'profile_native_prompt_tokenizer.cpp');compile_cmd[compile_cmd.index('-o')+1]=str(job/'profile-tokenizer.o')
-        libraries=[x for x in commands[-1] if any(x.endswith('/'+name) for name in ['libtokenizers.a','libre2.a','libpcre2-8.a']) or Path(x).name.startswith('libabsl_')];assert len(libraries)>3
+        libraries=[x for x in commands[-1] if any(x.endswith('/'+name) for name in ['libtokenizers.a','libre2.a','libpcre2-8.a','libregex_lookahead.a']) or Path(x).name.startswith('libabsl_')];assert len(libraries)>3
         link=['/usr/bin/c++',str(job/'profile-tokenizer.o'),*libraries,'-pthread','-o',str(job/'profile-tokenizer')]
         (job/'build-commands.json').write_text(json.dumps([compile_cmd,link],indent=2))
         (job/'bindings.json').write_text(json.dumps(dict(prompt=str(prompt),prompt_SHA256=hashlib.sha256(prompt.read_bytes()).hexdigest(),CPU_only=True,model_execution=False),indent=2))
