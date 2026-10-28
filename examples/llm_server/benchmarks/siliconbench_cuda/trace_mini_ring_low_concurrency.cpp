@@ -40,10 +40,12 @@ extern "C" CUresult CUDAAPI cuLaunchKernel(CUfunction fn,unsigned gx,unsigned gy
    if(gx<1 || gx>4 || gz!=12 || pending!=-1)std::abort();
    checked(cudaStreamSynchronize(stream));
    int h=ring?14:8; if(integer(args,h)!=16)std::abort();
+   // Exported T=1 is constexpr; T>1 is an i32 launch argument.
+   int delta=gx==1?0:1; if(delta && integer(args,h+1)!=int(gx))std::abort();
    int id=capture_ordinal++;pending=id;pending_tokens=gx;
-   pending_oh=integer(args,ring?23:17);pending_ot=integer(args,ring?24:18);
+   pending_oh=integer(args,(ring?23:17)+delta);pending_ot=integer(args,(ring?24:18)+delta);
    auto prefix=std::to_string(id)+"-";
-   packed(prefix+"Q.bf16",pointer(args,0),gx,16,integer(args,h+1),integer(args,h+2));
+   packed(prefix+"Q.bf16",pointer(args,0),gx,16,integer(args,h+1+delta),integer(args,h+2+delta));
    std::vector<int> info(162*7);checked(cudaMemcpy(info.data(),pointer(args,ring?13:7),info.size()*4,cudaMemcpyDeviceToHost));
    write(prefix+"info.i32",reinterpret_cast<char*>(info.data()),info.size()*4);
    for(int kind=0;kind<2;++kind) {
@@ -54,7 +56,7 @@ extern "C" CUresult CUDAAPI cuLaunchKernel(CUfunction fn,unsigned gx,unsigned gy
       int found=-1;for(int s=0;s<162;++s)if(t>=unsigned(info[s*7]) && t<unsigned(info[s*7]+info[s*7+1]) && info[s*7+1]>0){if(found!=-1)std::abort();found=s;}
       if(found<0)std::abort();int s=found*7;if(info[s+1]!=1 || info[s+3]<1025 || info[s+3]>1090)std::abort();
       int col=info[s+2];if(col<0 || col>=cols)std::abort();int row=(info[s+3]-1)%3071;
-      int cs=integer(args,kind?15:12),hs=integer(args,kind?16:13);if(cs!=2048 || hs!=256)std::abort();
+      int cs=integer(args,(kind?15:12)+delta),hs=integer(args,(kind?16:13)+delta);if(cs!=2048 || hs!=256)std::abort();
       const char* p=pointer(args,kind?2:1)+(size_t(row)*cols+col)*cs*2;
       checked(cudaMemcpy(out.data()+size_t(t)*4096,p,4096,cudaMemcpyDeviceToHost));
      }
