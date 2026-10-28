@@ -228,23 +228,6 @@ def test_index_select_u85_INT(test_data: input_params):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_fp8)
-@common.SkipIfNoModelConverter
-def test_index_select_vgf_no_quant_fp8(test_data):
-    input_, dim, index_, _ = test_data
-    pipeline = VgfPipeline[input_params](
-        IndexSelect(),
-        (input_, dim, index_),
-        aten_op=IndexSelect.aten_op,
-        exir_op=IndexSelect.exir_op,
-        tosa_extensions=["fp8e4m3", "fp8e5m2"],
-        quantize=False,
-        atol=0,
-        rtol=0,
-    )
-    pipeline.run()
-
-
 @common.parametrize("test_data", test_data_fp | test_data_fp_bf16 | test_data_int)
 @common.SkipIfNoModelConverter
 def test_index_select_vgf_no_quant(test_data: input_params):

@@ -16,7 +16,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
-    VgfPipelineFP8,
 )
 
 aten_op_mm = "torch.ops.aten.matmul.default"
@@ -353,6 +352,14 @@ test_suite_fp8 = {
         ),
         EXIR_OPS_MM,
     ),
+    "double_input_rand_rand_3d_fp8e5m2": lambda: _make_test_case(
+        MatMulDoubleInput(),
+        lambda: (
+            torch.rand(2, 4, 4, dtype=torch.float32).to(torch.float8_e5m2),
+            torch.rand(2, 4, 3, dtype=torch.float32).to(torch.float8_e5m2),
+        ),
+        EXIR_OPS_BMM,
+    ),
     "single_input_rand_2d_fp8e4m3": lambda: _make_test_case(
         MatMulSingleInput(),
         lambda: (torch.rand(4, 4, dtype=torch.float32).to(torch.float8_e4m3fn),),
@@ -366,16 +373,6 @@ test_suite_fp8 = {
             torch.rand(3, 4, dtype=torch.float32).to(torch.float8_e5m2),
         ),
         (exir_op_mm_2d, exir_op_mm_2d),
-    ),
-}
-test_suite_fp8_no_comparing = {
-    "double_input_rand_rand_3d_fp8e5m2": lambda: _make_test_case(
-        MatMulDoubleInput(),
-        lambda: (
-            torch.rand(2, 4, 4, dtype=torch.float32).to(torch.float8_e5m2),
-            torch.rand(2, 4, 3, dtype=torch.float32).to(torch.float8_e5m2),
-        ),
-        EXIR_OPS_BMM,
     ),
 }
 xfails = {
@@ -409,7 +406,7 @@ def test_matmul_tosa_FP(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite_fp8 | test_suite_fp8_no_comparing)
+@common.parametrize("test_case", test_suite_fp8)
 def test_matmul_tosa_FP_fp8(test_case: test_case_t):
     test_data = test_case()
     input_dtype = test_data.input_factory()[0].dtype
@@ -481,16 +478,26 @@ def test_matmul_vgf_no_quant(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite_fp8 | test_suite_fp8_no_comparing)
+@common.parametrize(
+    "test_case",
+    test_suite_fp8,
+    xfails={
+        "double_input_rand_rand_3d_fp8e5m2": (
+            "PyTorch lacks the required FP8 CPU kernels for bmm.",
+            NotImplementedError,
+        ),
+    },
+)
 @common.SkipIfNoModelConverter
 def test_matmul_vgf_no_quant_fp8(test_case: test_case_t):
     test_data = test_case()
-    pipeline = VgfPipelineFP8[input_t](
+    pipeline = VgfPipeline[input_t](
         test_data.module,
         test_data.input_factory(),
         aten_op_mm,
         list(test_data.exir_ops),
-        expect_missing_reference=test_case in test_suite_fp8_no_comparing.values(),
+        quantize=False,
+        tosa_extensions=["fp8e4m3", "fp8e5m2"],
     )
     pipeline.run()
 

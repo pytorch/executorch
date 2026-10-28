@@ -160,9 +160,9 @@ Total supported PyTorch APIs: **163**.
 | `torch.Tensor.__setitem__` / `tensor indexing assignment` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.Tensor.copy_` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.Tensor.expand` | FP, INT | `FP32`, `INT8` | 8x8 |
-| `torch.Tensor.repeat` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16`, `BOOL` | 8x8, 16x8 |
+| `torch.Tensor.repeat` | FP, INT | `FP16`, `BF16`, `INT8`, `INT16`, `BOOL` | 8x8, 16x8 |
 | `torch.Tensor.unfold` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `BOOL` | 8x8 |
-| `torch.Tensor.view` | FP, INT | `FP32`, `FP16`, `INT8` | 8x8 |
+| `torch.Tensor.view` | FP, INT | `FP16`, `INT8` | 8x8 |
 | `torch.topk` | FP | `FP32`, `FP16` | - |
 | `torch.transpose` / `torch.Tensor.transpose` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.tril` | FP | `FP32` | - |
