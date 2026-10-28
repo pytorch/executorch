@@ -116,7 +116,7 @@ def _encode(value: object, key: str, tensors: dict[str, torch.Tensor]) -> object
                 f"write_samples: safetensors cannot represent dtype {value.dtype} "
                 f"at {key}"
             )
-        tensors[key] = value.detach().cpu().contiguous()
+        tensors[key] = value.detach().resolve_conj().resolve_neg().cpu().contiguous()
         return key
     if isinstance(value, (list, tuple)):
         return [_encode(v, f"{key}[{i}]", tensors) for i, v in enumerate(value)]
@@ -213,6 +213,7 @@ def write_samples(path: str, name: str, samples: SampleSet) -> None:
         raise ValueError(f"write_samples: set name {name!r} must match {_NAME.pattern}")
     if not samples.samples:
         raise ValueError("write_samples: a set needs at least one sample")
+    path = os.path.realpath(path)
 
     tensors: dict[str, torch.Tensor] = {}
     encoded = json.dumps(_encode_set(samples, tensors), indent=1, allow_nan=False)
@@ -224,9 +225,7 @@ def write_samples(path: str, name: str, samples: SampleSet) -> None:
         raise ValueError(f"write_samples: {path} has no {PTG_ENTRY}")
     if any(n.startswith(prefix) for n in names):
         raise ValueError(f"write_samples: {prefix} already exists in {path}")
-    fd, staging = tempfile.mkstemp(
-        dir=os.path.dirname(os.path.abspath(path)), suffix=".ptn.tmp"
-    )
+    fd, staging = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".ptn.tmp")
     os.close(fd)
     try:
         shutil.copyfile(path, staging)
@@ -342,7 +341,8 @@ def _decode_set(
             raise decoder.fail(f"{field} must be a string")
 
     samples = [decoder.sample(e, f"samples[{i}]") for i, e in enumerate(entries)]
-    if decoder.unreferenced:
+    newer_minor = int(match[2]) > int(_VERSION.split(".")[1])
+    if decoder.unreferenced and not newer_minor:
         raise decoder.fail(f"unreferenced tensors {sorted(decoder.unreferenced)}")
     return SampleSet(
         samples=samples,
@@ -378,14 +378,28 @@ def read_samples(path: str) -> dict[str, SampleSet]:
                 raise ValueError(f"read_samples: unexpected member {info.filename!r}")
             if info.compress_type != zipfile.ZIP_STORED:
                 raise ValueError(f"read_samples: {info.filename!r} is compressed")
-            found.setdefault(parts[0], {})[parts[1]] = info
+            members = found.setdefault(parts[0], {})
+            if parts[1] in members:
+                raise ValueError(f"read_samples: duplicate member {info.filename!r}")
+            members[parts[1]] = info
 
         for name, members in sorted(found.items()):
             where = f"read_samples: {_SAMPLES_DIR}{name}"
             for entry in (_INDEX_ENTRY, _DATA_ENTRY):
                 if entry not in members:
                     raise ValueError(f"{where}: missing {entry}")
-            data = pkg.read(members[_DATA_ENTRY])
+            try:
+                data = pkg.read(members[_DATA_ENTRY])
+                index = json.loads(pkg.read(members[_INDEX_ENTRY]))
+                tensors = safetensors_load(data)
+            except (
+                ValueError,
+                KeyError,
+                RecursionError,
+                SafetensorError,
+                zipfile.BadZipFile,
+            ) as e:
+                raise ValueError(f"{where}: {e}") from e
             header_size = int.from_bytes(data[:8], "little")
             start = _data_offset(path, members[_DATA_ENTRY]) + 8 + header_size
             if start % _DATA_ALIGNMENT:
@@ -393,11 +407,9 @@ def read_samples(path: str) -> dict[str, SampleSet]:
                     f"{where}: tensor data is not {_DATA_ALIGNMENT}-byte aligned"
                 )
             try:
-                index = json.loads(pkg.read(members[_INDEX_ENTRY]))
-                tensors = safetensors_load(data)
-            except (ValueError, RecursionError, SafetensorError) as e:
+                sets[name] = _decode_set(index, tensors, where)
+            except (RecursionError, OverflowError) as e:
                 raise ValueError(f"{where}: {e}") from e
-            sets[name] = _decode_set(index, tensors, where)
     return sets
 
 
