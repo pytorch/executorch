@@ -5,11 +5,11 @@ from pathlib import Path
 def patch(source):
     source = source.replace('#include <cmath>', '#include <cmath>\n#include <cstdio>\n#include <vector>', 1)
     source = source.replace('  void generate(const Request& request) {',
-                            '  void generate(const Request& request, bool prepared = false) {', 1)
-    old = '  void generate(const Request& request, bool prepared = false) {\n    if (request->text) {'
-    assert source.count(old) == 1
-    source = source.replace(old, old.replace('if (request->text)', 'if (request->text && !prepared)'))
-    anchor = '  void generate(const Request& request, bool prepared = false) {'
+                            '  void generate(const Request& request, bool reserved = false) {', 1)
+    anchor = '  void generate(const Request& request, bool reserved = false) {'
+    old_claim = 'if (it != sessions_.end() && it->second.active_request) {'
+    assert source.count(old_claim) == 1
+    source = source.replace(old_claim, 'if (it != sessions_.end() && it->second.active_request &&\n          it->second.active_request != request->id) {', 1)
     helper = '''  void generate_ready_group(std::vector<Command>& group) {
     struct Pending {
       Request request;
@@ -20,18 +20,8 @@ def patch(source):
     std::fprintf(stderr, "ET_HTTP_READY_OPEN_GROUP %zu\\n", group.size());
     for (const auto& command : group) {
       const auto& request = command.request;
-      LifecycleResult error;
-#if ET_HAS_EXCEPTIONS
-      try {
-#endif
-        error = prepare_text(request);
-#if ET_HAS_EXCEPTIONS
-      } catch (...) {
-        error = ServingError{ErrorCode::Internal, "prompt preparation failed"};
-      }
-#endif
-      if (error || request->cancelled.load()) {
-        request->reject(std::move(error));
+      if (request->cancelled.load()) {
+        request->reject();
         schedule(request);
         continue;
       }
@@ -117,7 +107,7 @@ def patch(source):
     source = source.replace(anchor, helper + anchor, 1)
     old_busy = '(it->second.phase != SessionPhase::Open || it->second.active_request))'
     assert source.count(old_busy) == 1
-    source = source.replace(old_busy, '(it->second.phase != SessionPhase::Open ||\n         (it->second.active_request &&\n          !(prepared && it->second.active_request == request->id))))', 1)
+    source = source.replace(old_busy, '(it->second.phase != SessionPhase::Open ||\n         (it->second.active_request &&\n          !(reserved && it->second.active_request == request->id))))', 1)
     source = source.replace('      Command command;\n      std::size_t command_index = 0;',
                             '      Command command;\n      std::vector<Command> ready_group;\n      std::size_t command_index = 0;', 1)
     old = '          command = std::move(*it);\n          inbox_.erase(it);'
