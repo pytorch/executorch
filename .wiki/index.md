@@ -32,9 +32,12 @@ This knowledge base captures tribal knowledge — debugging steps, backend quirk
 ### CoreML
 - [Overview](backends/coreml/overview.md) — Apple hardware targets, MPS integration, iOS/macOS deployment, dim_order issues
 
-### Arm (Ethos-U)
-- [Overview](backends/arm/overview.md) — Ethos-U55/U85, TOSA, Vela compiler, Cortex-M deployment, FVP setup
-- [Known Issues](backends/arm/known-issues.md) — Dynamic shapes, submodule issues, NHWC conversion, build problems
+### Arm (TOSA, VGF, Ethos-U)
+- [Reference Map](backends/arm/overview.md) — Maintained backend docs, examples, operator support, and development guidance
+- [Debugging Guardrails](rules/arm-backend.md) — Target-specific shape support, delegation, quantization, and hardware diagnosis
+
+Arm entries were refreshed against this checkout on 2026-10-23; this does not
+revalidate the rest of the April corpus.
 
 ### Cadence (Xtensa)
 - [Overview](backends/cadence/overview.md) — No-delegation architecture, preserved_ops pattern
