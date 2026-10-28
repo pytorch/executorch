@@ -33,6 +33,11 @@ quantize/dequantize ops. TorchAO int4 group-wise weights of `linear` and
 stored packed with their scheme in tensor metadata. Each method must lower wholly
 to one delegate; `to_native` raises otherwise.
 
+Immutable constant keys are namespaced as `<method>/<key>`, even for a single
+method. A key mutated by any method becomes `state/<key>` in every method, so
+methods share its runtime state. Method names may not be `state` or start with
+`state/`. `to_native` raises if namespaced keys collide.
+
 A `.ptn` is an uncompressed zip with fixed entry names:
 
 | Entry | Contents |
