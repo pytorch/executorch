@@ -37,6 +37,7 @@ from executorch.backends.qualcomm.export_utils import (
 )
 from executorch.backends.qualcomm.quantizer.rules import Q_ANNOTATION_KEY
 from executorch.backends.qualcomm.serialization.qc_schema import (
+    HtpArch,
     QcomChipset,
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
@@ -603,6 +604,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv_backward(self):
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kHtpBackend:
+            self.skipTest("convolution_backward is only supported on HTP")
+        option = flatbuffer_to_option(self.compiler_specs[0].value)
+        if option.soc_info.htp_info.htp_arch < HtpArch.V69:
+            self.skipTest("convolution_backward requires HTP V69 or later")
+        module = ConvBackward()  # noqa: F405
+        sample_input = (torch.randn(1, 4, 4, 4), torch.randn(1, 3, 8, 8))
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_channel_last(self):
         modules = [
