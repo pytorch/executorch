@@ -36,7 +36,7 @@ extern "C" CUresult CUDAAPI cuLaunchKernel(CUfunction fn,unsigned gx,unsigned gy
  if(directory() && args && cuFuncGetName(&name,fn)==CUDA_SUCCESS && name) {
   bool ring=std::strcmp(name,"_decode_reference_order")==0;
   bool base=std::strcmp(name,"_sdpa_varlen_decode_kernel")==0;
-  bool full=base && gy==1 && gz==128;
+  bool full=base && gy==1 && (gz==4 || gz==8 || gz==16 || gz==32 || gz==64 || gz==128);
   if((ring||base) && (gy==8 || full)) {
    if(gx<1 || gx>4 || (!full && gz!=12) || pending!=-1)std::abort();
    checked(cudaStreamSynchronize(stream));
