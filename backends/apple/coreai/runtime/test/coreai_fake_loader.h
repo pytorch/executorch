@@ -33,6 +33,8 @@ struct FakeBridgeState {
   dispatch_semaphore_t allow_input_read = nil;
   std::atomic<int> architecture_queries{0};
   std::atomic<int> executions{0};
+  std::atomic<int> output_copies{0};
+  std::atomic<const void*> last_output_destination{nullptr};
   std::atomic<int> sessions{0};
   std::atomic<int> prepared_models{0};
   std::atomic<int> loaders{0};

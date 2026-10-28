@@ -15,6 +15,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -159,11 +160,25 @@ Result<NSArray<ETCoreAIInputTensor*>*> borrow_inputs(
   return inputs;
 }
 
+bool storage_overlaps(
+    const void* left,
+    size_t left_size,
+    const void* right,
+    size_t right_size) {
+  if (left_size == 0 || right_size == 0) {
+    return false;
+  }
+  const auto a = reinterpret_cast<uintptr_t>(left);
+  const auto b = reinterpret_cast<uintptr_t>(right);
+  return a <= b ? b - a < left_size : a - b < right_size;
+}
+
 Error copy_outputs(
     NSArray<ETCoreAITensor*>* outputs,
     Span<EValue*> args,
-    size_t input_count,
+    NSArray<ETCoreAIInputTensor*>* inputs,
     size_t output_count) {
+  const size_t input_count = inputs.count;
   ET_CHECK_OR_RETURN_ERROR(
       outputs != nil && outputs.count == output_count,
       Internal,
@@ -197,7 +212,7 @@ Error copy_outputs(
           "Core AI output size overflow");
     }
     ET_CHECK_OR_RETURN_ERROR(
-        output.data != nil && bytes == output.data.length,
+        bytes == output.byteCount,
         Internal,
         "Core AI output byte count mismatch");
     ET_CHECK_OR_RETURN_ERROR(
@@ -219,19 +234,67 @@ Error copy_outputs(
       return bytes.error();
     }
     ET_CHECK_OR_RETURN_ERROR(
-        bytes.get() == outputs[i].data.length &&
+        bytes.get() == outputs[i].byteCount &&
             (bytes.get() == 0 || tensor.mutable_data_ptr() != nullptr),
         InvalidArgument,
         "Core AI output has insufficient storage");
   }
+  bool needs_staging = false;
   for (size_t i = 0; i < output_count; ++i) {
-    NSData* data = outputs[i].data;
-    if (data.length > 0) {
+    const auto& destination = args[input_count + i]->toTensor();
+    for (ETCoreAIInputTensor* input in inputs) {
+      needs_staging |= storage_overlaps(
+          destination.const_data_ptr(),
+          destination.nbytes(),
+          input.bytes,
+          input.byteCount);
+    }
+    for (size_t j = 0; j < i; ++j) {
+      const auto& other = args[input_count + j]->toTensor();
+      needs_staging |= storage_overlaps(
+          destination.const_data_ptr(),
+          destination.nbytes(),
+          other.const_data_ptr(),
+          other.nbytes());
+    }
+  }
+  if (!needs_staging) {
+    for (size_t i = 0; i < output_count; ++i) {
+      [outputs[i]
+          copyBytesTo:args[input_count + i]->toTensor().mutable_data_ptr()];
+    }
+    return Error::Ok;
+  }
+
+  // Finish every source read before aliasing destinations can overwrite inputs.
+  size_t total_bytes = 0;
+  for (ETCoreAITensor* output in outputs) {
+    ET_CHECK_OR_RETURN_ERROR(
+        output.byteCount <= std::numeric_limits<size_t>::max() - total_bytes,
+        MemoryAllocationFailed,
+        "Core AI output staging size overflow");
+    total_bytes += output.byteCount;
+  }
+  std::unique_ptr<uint8_t[]> staging(new (std::nothrow) uint8_t[total_bytes]);
+  ET_CHECK_OR_RETURN_ERROR(
+      staging != nullptr,
+      MemoryAllocationFailed,
+      "Cannot stage Core AI outputs");
+  size_t offset = 0;
+  for (ETCoreAITensor* output in outputs) {
+    [output copyBytesTo:staging.get() + offset];
+    offset += output.byteCount;
+  }
+  offset = 0;
+  for (size_t i = 0; i < output_count; ++i) {
+    const size_t bytes = outputs[i].byteCount;
+    if (bytes > 0) {
       memcpy(
           args[input_count + i]->toTensor().mutable_data_ptr(),
-          data.bytes,
-          data.length);
+          staging.get() + offset,
+          bytes);
     }
+    offset += bytes;
   }
   return Error::Ok;
 }
@@ -386,7 +449,7 @@ class CoreAIBackend final : public BackendInterface {
       if (execution_error != nil) {
         return bridge_error(execution_error);
       }
-      return copy_outputs(outputs, args, input_count, output_count);
+      return copy_outputs(outputs, args, inputs.get(), output_count);
     }
   }
 

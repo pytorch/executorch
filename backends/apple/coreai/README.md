@@ -58,10 +58,13 @@ result bytes. Unused capacity is neither wrapped as input nor written as output.
 The backend waits for inference and all input access to finish before returning
 from `execute`, including on errors. This uses ExecuTorch's normal input-lifetime
 contract; callers must not concurrently mutate, release, or rebind the input
-storage. Output data remains owned and is copied into validated ExecuTorch
-outputs after inference, so output/input aliases are not written during the
-borrow. This does not guarantee that Core AI itself avoids device transfers or
-internal copies.
+storage. Output copiers retain the SDK arrays and copy directly into validated
+ExecuTorch destinations, without an intermediate `Data` allocation or payload
+copy. If any destination overlaps an input or another destination, all outputs
+are staged before writing destinations in order. This preserves input/output
+aliasing and overlapping-output semantics. Staging is not zero-initialized.
+This does not guarantee that Core AI itself avoids device transfers or internal
+copies.
 
 After an execution error, do not use the outputs as inference results. Output
 shapes may already have changed, but no result bytes are copied unless every

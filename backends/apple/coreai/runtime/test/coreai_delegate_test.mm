@@ -361,6 +361,89 @@ TEST_F(CoreAIDelegateTest, OrderedIoBindingUsesManifestFunctionAndNames) {
     EXPECT_EQ(tensors.output[1], 7);
     EXPECT_EQ(bridge.state().last_input_bytes.load(), tensors.input);
     EXPECT_EQ(bridge.state().executions.load(), 1);
+    EXPECT_EQ(bridge.state().output_copies.load(), 1);
+    EXPECT_EQ(bridge.state().last_output_destination.load(), tensors.output);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, AdjacentInputAndOutputStorageCopiesDirectly) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    float storage[] = {3, 7, -1, -1};
+    tensors.input_impl.set_data(storage);
+    tensors.output_impl.set_data(storage + 2);
+    ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+    EXPECT_EQ(storage[2], 3);
+    EXPECT_EQ(storage[3], 7);
+    EXPECT_EQ(bridge.state().output_copies.load(), 1);
+    EXPECT_EQ(bridge.state().last_output_destination.load(), storage + 2);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, PartialInputOutputOverlapStagesBeforeWriting) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    for (bool destination_first : {false, true}) {
+      SCOPED_TRACE(destination_first);
+      FloatTensors tensors;
+      float storage[] = {3, 7, 11};
+      float* source = storage + (destination_first ? 1 : 0);
+      float* destination = storage + (destination_first ? 0 : 1);
+      const float expected[] = {source[0], source[1]};
+      tensors.input_impl.set_data(source);
+      tensors.output_impl.set_data(destination);
+      const int copies = bridge.state().output_copies.load();
+      ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+      EXPECT_EQ(destination[0], expected[0]);
+      EXPECT_EQ(destination[1], expected[1]);
+      EXPECT_EQ(bridge.state().output_copies.load(), copies + 1);
+      EXPECT_NE(bridge.state().last_output_destination.load(), destination);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, CrossOutputInputAliasesPreserveEverySource) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    second.input[0] = 11;
+    second.input[1] = 13;
+    first.output_impl.set_data(second.input);
+    second.output_impl.set_data(first.input);
+    EValue* args[] = {&first.in, &second.in, &first.out, &second.out};
+    ASSERT_EQ(fixture.execute({args, 4}), Error::Ok);
+    EXPECT_EQ(first.input[0], 11);
+    EXPECT_EQ(first.input[1], 13);
+    EXPECT_EQ(second.input[0], 3);
+    EXPECT_EQ(second.input[1], 7);
+    EXPECT_EQ(bridge.state().output_copies.load(), 2);
+    EXPECT_NE(bridge.state().last_output_destination.load(), first.input);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, OverlappingOutputDestinationsPreserveWriteOrder) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    second.input[0] = 11;
+    second.input[1] = 13;
+    float storage[] = {-1, -1, -1};
+    first.output_impl.set_data(storage);
+    second.output_impl.set_data(storage + 1);
+    EValue* args[] = {&first.in, &second.in, &first.out, &second.out};
+    ASSERT_EQ(fixture.execute({args, 4}), Error::Ok);
+    EXPECT_EQ(storage[0], 3);
+    EXPECT_EQ(storage[1], 11);
+    EXPECT_EQ(storage[2], 13);
+    EXPECT_EQ(bridge.state().output_copies.load(), 2);
+    EXPECT_NE(bridge.state().last_output_destination.load(), storage + 1);
   }
 }
 
@@ -402,6 +485,7 @@ TEST_F(CoreAIDelegateTest, LaterOutputResizeFailureLeavesResultBytesUntouched) {
     EValue first_in{Tensor(&first_input)}, second_in{Tensor(&second_input)};
     EValue* args[] = {&first_in, &second_in, &first.out, &second.out};
     EXPECT_EQ(fixture.execute({args, 4}), Error::InvalidArgument);
+    EXPECT_EQ(bridge.state().output_copies.load(), 0);
     EXPECT_EQ(first.out.toTensor().size(0), 1);
     EXPECT_EQ(second.out.toTensor().size(0), 2);
     for (size_t i = 0; i < 2; ++i) {
@@ -420,6 +504,7 @@ TEST_F(CoreAIDelegateTest, WrongOutputCountDoesNotWriteCallerStorage) {
     FloatTensors first, second;
     EValue* args[] = {&first.in, &second.in, &first.out, &second.out};
     EXPECT_EQ(fixture.execute({args, 4}), Error::Internal);
+    EXPECT_EQ(bridge.state().output_copies.load(), 0);
     EXPECT_EQ(first.out.toTensor().size(0), 2);
     EXPECT_EQ(second.out.toTensor().size(0), 2);
     for (size_t i = 0; i < 2; ++i) {
@@ -740,6 +825,7 @@ TEST_F(CoreAIDelegateTest, EmptyVectorAndMatrixBorrowNullStorage) {
       EXPECT_EQ(bridge.state().executions.load(), executions + 1);
       EXPECT_EQ(bridge.state().last_input_bytes.load(), nullptr);
       EXPECT_EQ(bridge.state().last_input_byte_count.load(), 0);
+      EXPECT_EQ(bridge.state().output_copies.load(), 0);
     }
   }
 }

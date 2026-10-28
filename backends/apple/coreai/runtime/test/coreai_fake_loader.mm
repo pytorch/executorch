@@ -7,6 +7,7 @@
  */
 
 #import "coreai_fake_loader.h"
+#include <cstring>
 
 using executorch::backends::coreai::testing::FakeBridgeState;
 
@@ -148,11 +149,19 @@ dispatch_time_t cleanup_deadline() {
     NSMutableArray<ETCoreAITensor*>* outputs =
         [NSMutableArray arrayWithCapacity:inputs.count];
     for (ETCoreAIInputTensor* value in inputs) {
-      NSData* data = [NSData dataWithBytes:value.bytes length:value.byteCount];
-      [outputs
-          addObject:[[ETCoreAITensor alloc] initWithData:data
-                                                   shape:value.shape
-                                              scalarType:value.scalarType]];
+      [outputs addObject:[[ETCoreAITensor alloc]
+                             initWithByteCount:value.byteCount
+                                         shape:value.shape
+                                    scalarType:value.scalarType
+                                     copyBytes:^(void* destination) {
+                                       ++context->state.output_copies;
+                                       context->state.last_output_destination =
+                                           destination;
+                                       std::memcpy(
+                                           destination,
+                                           value.bytes,
+                                           value.byteCount);
+                                     }]];
     }
     completion(outputs, nil);
   });
