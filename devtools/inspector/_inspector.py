@@ -1132,15 +1132,28 @@ class Inspector:
             return
 
         # (1) Debug Handle Symbolification
+        # These maps are keyed by instruction id: ints on an ETRecord object
+        # from get_etrecord(), strs once it went through save() and
+        # parse_etrecord() (JSON). _gen_resolve_debug_handles looks up strs.
+        def with_str_keys(mapping: Optional[Dict]) -> Optional[Dict]:
+            if mapping is None:
+                return None
+            return {str(key): value for key, value in mapping.items()}
+
+        debug_handle_map = with_str_keys(self._etrecord._debug_handle_map[FORWARD])
+        delegate_map = (
+            with_str_keys(self._etrecord._delegate_map[FORWARD])
+            if self._etrecord._delegate_map is not None
+            else None
+        )
+        instruction_id_to_num_outs_map = with_str_keys(
+            self._etrecord._instruction_id_to_num_outs_map[FORWARD]
+        )
         for event_block in self.event_blocks:
             event_block._gen_resolve_debug_handles(
-                self._etrecord._debug_handle_map[FORWARD],
-                (
-                    self._etrecord._delegate_map[FORWARD]
-                    if self._etrecord._delegate_map is not None
-                    else None
-                ),
-                self._etrecord._instruction_id_to_num_outs_map[FORWARD],
+                debug_handle_map,
+                delegate_map,
+                instruction_id_to_num_outs_map,
             )
 
         # (2) Event Metadata Association
