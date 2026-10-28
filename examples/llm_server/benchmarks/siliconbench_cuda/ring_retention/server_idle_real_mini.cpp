@@ -8,7 +8,7 @@
 #include <gflags/gflags.h>
 #include <nlohmann/json.hpp>
 #if SB_SERVER_IDLE_HOOK
-#include "idle_shared_workset.h"
+#include "idle_shared_quiet_policy.h"
 #endif
 #include <unistd.h>
 #include <atomic>
@@ -23,6 +23,7 @@ DEFINE_string(data_path,"","Identical original PTD");
 DEFINE_int32(concurrency,1,"Named sessions in each request group");
 DEFINE_int32(budget,4096,"Original exported bulk token budget");
 DEFINE_bool(shared_idle_refresh,false,"Enable optional idle shared-pool refresh");
+DEFINE_bool(idle_keep_high_water,true,"Preserve historical prefill working set");
 namespace cb=executorch::backends::cuda::batching;
 namespace b=executorch::extension::llm::batching;
 namespace s=executorch::extension::llm::serving;
@@ -74,7 +75,7 @@ int main(int argc,char** argv){
 #if SB_SERVER_IDLE_HOOK
     serving.idle_maintenance_delay=std::chrono::milliseconds(100);
     if(FLAGS_shared_idle_refresh)serving.idle_maintenance=[&]{
-      const auto begin=now();auto refresh=siliconbench::refresh_idle_shared_workset();const auto end=now();
+      const auto begin=now();auto refresh=siliconbench::refresh_idle_shared_selected_workset(FLAGS_idle_keep_high_water);const auto end=now();
       {std::lock_guard<std::mutex> lock(idle_mutex);
        idle_events.push_back({{"begin_ns",begin},{"end_ns",end},{"used",refresh.used},{"used_high",refresh.used_high},
          {"reserved_before",refresh.reserved_before},{"reserved_after",refresh.reserved_after},{"keep",refresh.keep},{"cuda_error",int(refresh.error)}});}
@@ -86,7 +87,7 @@ int main(int argc,char** argv){
     while(!runtime.info().ready){require(Clock::now()<ready_deadline,"runtime initialization timeout");std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     for(int i=0;i<FLAGS_concurrency;++i)require(!runtime.open_session_async("owner"+std::to_string(i)).get(),"named owner open");
     Json result={{"new_runtime",bool(SB_SERVER_IDLE_HOOK)},{"idle_refresh_enabled",FLAGS_shared_idle_refresh},
-      {"concurrency",FLAGS_concurrency},{"budget",FLAGS_budget},{"initial_memory",memory()},
+      {"concurrency",FLAGS_concurrency},{"budget",FLAGS_budget},{"initial_memory",memory()},{"idle_keep_high_water",FLAGS_idle_keep_high_water},
       {"decoder_is_deterministic_diagnostic_text",true},{"native_serving_API",true},{"groups",Json::array()}};
     std::vector<std::vector<uint64_t>> histories(FLAGS_concurrency);
     for(int burst=0;burst<3;++burst){

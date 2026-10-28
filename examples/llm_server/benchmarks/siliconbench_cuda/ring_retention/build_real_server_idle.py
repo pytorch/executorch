@@ -45,7 +45,7 @@ def main():
     with (args.output/'build.log').open('x') as log:
         for argv in commands:subprocess.run(argv,cwd=cwd,check=True,stdout=log,stderr=subprocess.STDOUT)
     for meta in gate.values():meta['SHA256']=sha(meta['binary'])
-    gate.update(source_CPP_SHA256=sha(pkg/'server_idle_real_mini.cpp'),idle_helper_SHA256=sha(pkg/'idle_shared_workset.h'),
+    gate.update(source_CPP_SHA256=sha(pkg/'server_idle_real_mini.cpp'),idle_helper_SHA256=sha(pkg/'idle_shared_workset.h'),quiet_policy_SHA256=sha(pkg/'idle_shared_quiet_policy.h'),
                 overlay_tests_SHA256=sha(args.overlay/'result.json'),overlay_objects={n:sha(args.overlay/n) for n in ('runner.o','serving_runtime.o')},
                 original_SDK_modified=False,PTE_reexported=False)
     (args.output/'native-gate.json').write_text(json.dumps(gate,indent=2)+'\n');print(json.dumps(gate,indent=2))

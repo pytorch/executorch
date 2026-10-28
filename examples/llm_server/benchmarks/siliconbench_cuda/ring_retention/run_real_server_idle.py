@@ -16,7 +16,9 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('parent','overlay','source-scripts','mg-audit','gemma-audit','output','data-output','lock','python'):
         p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--arms',nargs='+',choices=['old','disabled','enabled','enabled-tight'],default=['old','disabled','enabled'])
     args=p.parse_args();args.output.mkdir(parents=True,exist_ok=False);args.data_output.mkdir(parents=True,exist_ok=False)
+    assert args.arms[0]=='old' and len(set(args.arms))==len(args.arms)
     def state(status,**extra):
         q=args.output/'progress.pending.json';q.write_text(json.dumps(dict(status=status,PID=os.getpid(),UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),full_models_tested=False,qualified=False,**extra),indent=2)+'\n');q.replace(args.output/'progress.json')
     try:
@@ -42,16 +44,18 @@ def main():
                 for model,a in audits.items():
                     for number in range(1,2 if stage=='graph' else 5):
                         for c in ([16] if stage=='graph' else [1,16]):
-                            order={1:['old','disabled','enabled'],2:['enabled','disabled','old'],3:['disabled','old','enabled'],4:['enabled','old','disabled']}[number]
+                            order=args.arms[number%len(args.arms):]+args.arms[:number%len(args.arms)]
+                            if number%2==0:order=order[::-1]
                             for arm in order:
                                 state('running-real-native-serving-mini',stage=stage,model=model,round=number,concurrency=c,arm=arm)
                                 directory=args.data_output/stage/model/('round-'+str(number))/('c'+str(c))/arm;directory.mkdir(parents=True,exist_ok=False)
                                 binary=gate['old' if arm=='old' else 'new']['binary']
-                                argv=[binary,'--pte='+str(Path(a['artifact'])/'model.pte'),'--data_path='+str(Path(a['artifact'])/'aoti_cuda_blob.ptd'),'--concurrency='+str(c),'--budget='+str(a['prefill_budget']),'--shared_idle_refresh='+('true' if arm=='enabled' else 'false')]
+                                active=arm.startswith('enabled')
+                                argv=[binary,'--pte='+str(Path(a['artifact'])/'model.pte'),'--data_path='+str(Path(a['artifact'])/'aoti_cuda_blob.ptd'),'--concurrency='+str(c),'--budget='+str(a['prefill_budget']),'--shared_idle_refresh='+('true' if active else 'false'),'--idle_keep_high_water='+('false' if arm=='enabled-tight' else 'true')]
                                 if stage=='graph':argv=['/usr/local/bin/nsys','profile','--trace=cuda,nvtx','--sample=none','--cpuctxsw=none','--cuda-graph-trace=node','--force-overwrite=false','-o',str(directory/'graphs'),*argv]
                                 env=dict(os.environ)
                                 for key in ('ET_CUDA_IDLE_SPARE_BYTES','ET_CUDA_IDLE_KEEP_PREFILL_WORKING_SET','CUDA_LAUNCH_BLOCKING'):env.pop(key,None)
-                                env['ET_CUDA_SHARED_IDLE_REFRESH']='1' if arm=='enabled' else '0'
+                                env['ET_CUDA_SHARED_IDLE_REFRESH']='1' if active else '0'
                                 sampler=DeviceSampler(directory) if stage=='memory' else None
                                 try:
                                     with (directory/'stdout.jsonl').open('x') as out,(directory/'stderr.log').open('x') as err:
@@ -60,7 +64,8 @@ def main():
                                     lines=(directory/'stdout.jsonl').read_text().splitlines()
                                     record=json.loads(next(x for x in reversed(lines) if x.startswith('{')))
                                     assert not record.get('failed') and record['native_serving_API']
-                                    assert record['new_runtime']==(arm!='old') and record['idle_refresh_enabled']==(arm=='enabled')
+                                    assert record['new_runtime']==(arm!='old') and record['idle_refresh_enabled']==active
+                                    assert record['idle_keep_high_water']==(arm!='enabled-tight')
                                     assert len(record['groups'])==3
                                     rows.append(dict(stage=stage,model=model,round=number,concurrency=c,arm=arm,directory=str(directory),result=record))
                                 finally:
@@ -71,16 +76,17 @@ def main():
             for model in audits:
                 for n in range(1,2 if stage=='graph' else 5):
                     for c in ([16] if stage=='graph' else [1,16]):
-                        arms={a:next(r for r in rows if (r['stage'],r['model'],r['round'],r['concurrency'],r['arm'])==(stage,model,n,c,a))['result'] for a in ('old','disabled','enabled')}
+                        arms={a:next(r for r in rows if (r['stage'],r['model'],r['round'],r['concurrency'],r['arm'])==(stage,model,n,c,a))['result'] for a in args.arms}
                         for i in range(3):
                             old=arms['old']['groups'][i]
                             assert len(old['output_tokens'])==c and all(len(s)==64 for s in old['output_tokens'])
-                            for a in ('disabled','enabled'):
+                            for a in args.arms[1:]:
                                 new=arms[a]['groups'][i]
                                 assert old['input_tokens']==new['input_tokens'] and old['output_tokens']==new['output_tokens']
                                 assert [x['prefilled_prompt_tokens'] for x in old['requests']]==[x['prefilled_prompt_tokens'] for x in new['requests']]
                             paired+=1
         result=dict(records=rows,paired_original_disabled_enabled_groups=paired,all_actual_input_and_output_tokens_equal=True,
+                    selected_arms=args.arms,
                     original_SDK_modified=False,full_models_tested=False,performance_acceptance_pending=True,
                     deterministic_diagnostic_decoder=True,HTTP_pipeline_tested=False)
         (args.output/'result.json').write_text(json.dumps(result,indent=2)+'\n');state('complete-independent-review-required',result_SHA256=sha(args.output/'result.json'))
