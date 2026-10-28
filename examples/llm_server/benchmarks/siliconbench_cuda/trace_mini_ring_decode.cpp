@@ -13,6 +13,7 @@
 namespace {
 int next_index = 0;
 int pending_index = -1;
+int prefill_index = 0;
 
 const char* directory() {
   return std::getenv("ET_DIAGNOSTIC_ATTENTION_OUTPUT");
@@ -41,6 +42,25 @@ void copy(const std::string& name, const void* data, size_t bytes) {
   checked(cudaMemcpy(host.data(), data, bytes, cudaMemcpyDeviceToHost));
   write(name, host.data(), host.size());
 }
+
+void packed(const std::string& name, const char* data, int tokens,
+            int heads, int head_stride, int token_stride) {
+  const size_t elements = (heads - 1) * size_t(head_stride) +
+      (tokens - 1) * size_t(token_stride) + 256;
+  if (head_stride < 1 || token_stride < 1 ||
+      elements > size_t(tokens) * heads * 256 * 2) std::abort();
+  std::vector<char> original(elements * 2);
+  checked(cudaMemcpy(original.data(), data, original.size(), cudaMemcpyDeviceToHost));
+  std::vector<char> result(size_t(tokens) * heads * 512);
+  for (int t = 0; t < tokens; ++t) {
+    for (int h = 0; h < heads; ++h) {
+      std::memcpy(result.data() + (size_t(t) * heads + h) * 512,
+          original.data() + (size_t(h) * head_stride + size_t(t) * token_stride) * 2,
+          512);
+    }
+  }
+  write(name, result.data(), result.size());
+}
 } // namespace
 
 extern "C" CUresult CUDAAPI cuLaunchKernel(
@@ -52,7 +72,47 @@ extern "C" CUresult CUDAAPI cuLaunchKernel(
   static auto real = reinterpret_cast<Launch>(dlsym(RTLD_NEXT, "cuLaunchKernel"));
   if (!real) std::abort();
   const char* name = nullptr;
+  int captured_prefill = -1;
+  int prefill_tokens = 0;
+  bool ring_prefill = false;
   if (directory() && args && cuFuncGetName(&name, function) == CUDA_SUCCESS && name) {
+    if (std::getenv("ET_DIAGNOSTIC_PREFILL_CAPTURE")) {
+      std::ofstream launches(std::string(directory()) + "/kernel-launches.jsonl", std::ios::app);
+      launches << "{\"kernel\":\"" << name << "\",\"grid\":["
+               << gx << "," << gy << "," << gz << "]}\n";
+      ring_prefill = std::strcmp(name, "_attention") == 0;
+      const bool base_prefill = std::strcmp(name, "_sdpa_varlen_kernel") == 0 &&
+          integer(args, 13) == 2048 && integer(args, 14) == 256;
+      if (ring_prefill || base_prefill) {
+        checked(cudaStreamSynchronize(stream));
+        std::vector<int> info(162 * 7);
+        checked(cudaMemcpy(info.data(), pointer(args, ring_prefill ? 5 : 7),
+            info.size() * sizeof(int), cudaMemcpyDeviceToHost));
+        prefill_tokens = info[1];
+        if (info[0] != 0 || prefill_tokens < 5 || prefill_tokens > 2048 ||
+            info[2] != 0 || info[3] != prefill_tokens || info[4] != 2 || gz != 1)
+          std::abort();
+        for (int segment = 1; segment < 162; ++segment)
+          if (info[segment * 7 + 1] != 0) std::abort();
+        captured_prefill = prefill_index++;
+        const std::string prefix = "prefill-" + std::to_string(captured_prefill) + "-";
+        packed(prefix + "Q.bf16", pointer(args, 0), prefill_tokens, 16,
+            integer(args, ring_prefill ? 7 : 10), integer(args, ring_prefill ? 8 : 11));
+        for (int kind = 0; kind < 2; ++kind) {
+          if (ring_prefill) {
+            packed(prefix + (kind ? "V.bf16" : "K.bf16"), pointer(args, kind ? 4 : 3),
+                prefill_tokens, 8, integer(args, kind ? 17 : 15), integer(args, kind ? 18 : 16));
+          } else {
+            // Fresh prefill has already scattered baseline K/V into its own column.
+            packed(prefix + (kind ? "V.bf16" : "K.bf16"), pointer(args, kind ? 2 : 1),
+                prefill_tokens, 8, integer(args, kind ? 17 : 14), 4096);
+          }
+        }
+        std::ofstream metadata(std::string(directory()) + "/" + prefix + "metadata.json");
+        metadata << "{\"kernel\":\"" << name << "\",\"tokens\":" << prefill_tokens
+                 << ",\"sliding_layer_ordinal\":" << captured_prefill << "}\n";
+      }
+    }
     const bool ring = std::strcmp(name, "_decode_reference_order") == 0;
     const bool baseline = std::strcmp(name, "_sdpa_varlen_decode_kernel") == 0;
     if ((ring || baseline) && gy == 8) {
@@ -111,6 +171,12 @@ extern "C" CUresult CUDAAPI cuLaunchKernel(
     }
   }
   const CUresult result = real(function, gx, gy, gz, bx, by, bz, shared, stream, args, extra);
+  if (result == CUDA_SUCCESS && captured_prefill >= 0) {
+    checked(cudaStreamSynchronize(stream));
+    packed("prefill-" + std::to_string(captured_prefill) + "-attention-out.bf16",
+        pointer(args, ring_prefill ? 6 : 3), prefill_tokens, 16,
+        integer(args, ring_prefill ? 19 : 18), integer(args, ring_prefill ? 20 : 19));
+  }
   if (result == CUDA_SUCCESS && directory() && args && name && pending_index >= 0 &&
       (std::strcmp(name, "_reduce") == 0 ||
        std::strcmp(name, "_sdpa_varlen_reduce_kernel") == 0)) {

@@ -41,6 +41,8 @@ def main(config, output):
                            LD_LIBRARY_PATH=cfg["native_lib"],
                            ET_DIAGNOSTIC_ATTENTION_OUTPUT=str(trace),
                            ET_CUDA_RING_JOURNAL_BUFFERS="0", ET_CUDA_RING_ARCHIVE_BATCH_ROWS="64")
+                if cfg.get("capture_prefill", False):
+                    env["ET_DIAGNOSTIC_PREFILL_CAPTURE"] = "1"
                 model = cfg["baseline_PTE"] if arm == "baseline" else cfg["PTE"]
                 command = [cfg["probe"], "--pte=" + model, "--data_path=" + cfg["PTD"],
                            "--max_sessions=81", "--max_context=131072", "--initial_kv_capacity=512",
@@ -74,10 +76,14 @@ def main(config, output):
                         if child.poll() is None:
                             child.terminate()
                             child.wait(timeout=120)
-                metadata = list(trace.glob("*-metadata.json"))
+                metadata = [p for p in trace.glob("*-metadata.json") if not p.name.startswith("prefill-")]
                 assert len(metadata) == 5, (size, arm, "expected five real sliding-attention captures", len(metadata))
                 for i in range(5):
                     assert (trace / (str(i) + "-attention-out.bf16")).stat().st_size == 8192
+                if cfg.get("capture_prefill", False):
+                    assert len(list(trace.glob("prefill-*-metadata.json"))) == 5
+                    for i in range(5):
+                        assert (trace / ("prefill-" + str(i) + "-attention-out.bf16")).stat().st_size == size * 8192
                 records.append(dict(size=size, arm=arm, directory=str(folder), sliding_layers=5))
                 (output / "progress.json").write_text(json.dumps(dict(completed=records, diagnostic_only=True)))
     (output / "result.json").write_text(json.dumps(dict(
