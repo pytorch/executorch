@@ -433,6 +433,39 @@ class TestCoreMLPartitioner(unittest.TestCase):
         self.assertIn("executorch_call_delegate", op_names)
         self.assertNotIn("aten.argmax.default", op_names)
 
+    def test_bfloat16_ops_are_skipped(self):
+        """
+        coremltools has no bfloat16 type and raises on ops that use it.  The
+        partitioner must leave those ops to the portable backend and still
+        delegate the rest, also when the same op has a float32 call that Core
+        ML takes (as under bfloat16 autocast).
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, q):
+                a = torch.nn.functional.scaled_dot_product_attention(q, q, q)
+                b = q.to(torch.bfloat16)
+                c = torch.nn.functional.scaled_dot_product_attention(b, b, b)
+                return a + c.float()
+
+        model = Model().eval()
+        x = torch.randn(1, 2, 4, 8)
+        ep = torch.export.export(model, (x,), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("executorch_call_delegate", op_names)
+        self.assertNotIn("aten.scaled_dot_product_attention.default", op_names)
+        if _TEST_RUNTIME:
+            program = Runtime.get().load_program(edge.to_executorch().buffer)
+            out = program.load_method("forward").execute((x,))[0]
+            self.assertTrue(torch.allclose(out, model(x), atol=5e-2, rtol=5e-2))
+
     def test_tied_embedding_is_quantized_with_its_linear(self):
         """A weight that is both an embedding table and an output projection lowers.
 
