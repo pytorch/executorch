@@ -65,13 +65,39 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "test_vulkan_passes.py",
             ],
+            preload_deps = [
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+            ],
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/vulkan/_passes:vulkan_passes",
+                "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+                "//executorch/backends/vulkan/serialization:lib",
                 "//executorch/backends/vulkan:vulkan_preprocess",
                 "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+                "//executorch/exir:lib",
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+                "//executorch/extension/pybindings:portable_lib",  # @manual
+                "//executorch/kernels/portable:custom_ops_generated_lib",
                 "//pytorch/ao:torchao",  # @manual
             ]
+        )
+
+        python_unittest(
+            name = "test_sdpa_patterns",
+            srcs = ["test_sdpa_patterns.py"],
+            preload_deps = [
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+            ],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/vulkan/patterns:vulkan_patterns",
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+                "//executorch/extension/pybindings:portable_lib",  # @manual
+                "//executorch/kernels/portable:custom_ops_generated_lib",
+            ],
         )
 
         python_unittest(
@@ -95,6 +121,16 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
                 "//executorch/exir/_serialize:lib",
                 "//executorch/exir:lib",
+            ],
+        )
+
+        python_unittest(
+            name = "test_gen_vulkan_spv",
+            srcs = [
+                "spv_codegen/test_gen_vulkan_spv.py",
+            ],
+            deps = [
+                "//executorch/backends/vulkan:gen_vulkan_spv_lib",
             ],
         )
 
@@ -164,7 +200,7 @@ def define_common_targets(is_fbcode = False):
         fb_native.filegroup(
             name = "test_shaders",
             srcs = glob([
-                "glsl/*",
+                "glsl/**/*",
             ]),
             visibility = [
                 "PUBLIC",

@@ -1154,15 +1154,11 @@ def _base_dependencies() -> List[str]:
     project's runtime needs.
     """
     return [
-        "expecttest",
         "flatbuffers",
-        "hypothesis",
-        "kgb",
         "mpmath==1.3.0",
         "numpy>=2.0.0; python_version >= '3.10'",
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
-        "parameterized",
         # The Qualcomm backend needs both, on different paths. Any lowering reads the CPU vendor
         # to disable an mkldnn path that crashes on AMD, whether or not an SDK is already set up.
         # Fetching an SDK additionally needs requests, which its downloader imports at module
@@ -1410,6 +1406,12 @@ def _windows_import_libraries() -> List["BuiltFile"]:
             "executorch_extension_cuda",
             None,
             ["EXECUTORCH_BUILD_CUDA"],
+        ),
+        (
+            "backends/openvino/",
+            "executorch_backend_openvino",
+            None,
+            ["EXECUTORCH_BUILD_OPENVINO"],
         ),
     ]
     return [
@@ -2341,6 +2343,12 @@ class CustomBuildPy(build_py):
                     "tools/cmake/executorch-wheel-config.cmake",
                     "lib/cmake/executorch/executorch-config.cmake",
                 ),
+                # Type checkers find a stub only under the module's own name, so
+                # the extension's stub ships as _C.pyi, as the Buck build names it.
+                (
+                    "extension/pybindings/pybindings.pyi",
+                    "extension/pybindings/_C.pyi",
+                ),
             ]
             # The headers the package installs. Two audiences now: a custom-operator
             # build, which needs the kernel and tensor helpers, and a C++ application
@@ -2814,11 +2822,12 @@ class CustomBuild(build):
                 f"-DQNN_SDK_ROOT={qnn_sdk_root}",
             ]
 
-        # Enable OpenVINO backend on Linux. The backend uses dlopen at
-        # runtime so it has no build-time SDK dependency.
+        # Enable the OpenVINO backend on Linux and Windows. The backend loads
+        # the OpenVINO runtime at run time, so it has no build-time SDK
+        # dependency.
         if (
             not minimal_build
-            and sys.platform == "linux"
+            and sys.platform in ("linux", "win32")
             and install_utils.is_cmake_option_on(
                 cmake_configuration_args,
                 "EXECUTORCH_BUILD_OPENVINO",

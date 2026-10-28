@@ -24,10 +24,16 @@ from executorch.backends.native.serialization.schema import (
     Graph,
     Method,
     MutableBufferSpec,
+    OutputKind,
     Program,
 )
 from executorch.exir import to_edge_transform_and_lower
-from executorch.exir._serialize._ptn import ALIASES_ENTRY, PTG_ENTRY, SAFETENSORS_ENTRY
+from executorch.exir._serialize._ptn import (
+    ALIASES_ENTRY,
+    PTG_ENTRY,
+    read_ptn,
+    SAFETENSORS_ENTRY,
+)
 from executorch.exir.lowered_backend_module import (
     executorch_call_delegate,
     get_lowered_submodules,
@@ -60,7 +66,7 @@ class ToNativeEquivalenceTest(unittest.TestCase):
         flow keeps one single-method delegate blob per method and would ship the
         same constants in a .ptd. The graphs are compared modulo that wrapping,
         and the full key sets (safetensors owners + aliases) must match the
-        delegates' named-data keys.
+        delegates' named-data keys after namespacing immutable constants.
         """
         method_programs = (
             programs if isinstance(programs, dict) else {"forward": programs}
@@ -87,6 +93,12 @@ class ToNativeEquivalenceTest(unittest.TestCase):
                 )
 
         native_program = deserialize_program(ptg_blob)
+        mutated_keys = {
+            c.data_key
+            for method in native_program.methods
+            for c in method.constants or []
+            if c.mutated
+        }
         native_graphs = {m.name: m.graph for m in native_program.methods}
         native_keys = st_keys | set(aliases.keys())
 
@@ -113,9 +125,17 @@ class ToNativeEquivalenceTest(unittest.TestCase):
                 # Constants may be embedded in the .pte (pte_data) or shipped to a
                 # .ptd (external_data) depending on external_constants_tag; collect
                 # both so the key set matches to_native's .ptn/.safetensors.
-                et_keys |= set(nds.pte_data.keys())
+                method_keys = set(nds.pte_data.keys())
                 for key_to_entry in nds.external_data.values():
-                    et_keys |= set(key_to_entry.keys())
+                    method_keys |= set(key_to_entry.keys())
+                et_keys |= {
+                    (
+                        f"state/{key}"
+                        if f"state/{key}" in mutated_keys
+                        else f"{name}/{key}"
+                    )
+                    for key in method_keys
+                }
 
         # Emission is outside the comparison, but keep proving the ExecuTorch path
         # still completes end to end through the unchanged NamedDataStore branch.
@@ -172,10 +192,17 @@ class ToNativeEquivalenceTest(unittest.TestCase):
             "prefill": torch.export.export(model, (torch.randn(2, 8),)),
             "decode": torch.export.export(model, (torch.randn(1, 8),)),
         }
-        # Shared weights resolve to the same fqns across methods, so the key sets
-        # still line up between the two paths.
-        _, st_keys, _ = self._test_equivalence(programs)
-        self.assertEqual(len(st_keys), 2)  # one weight + bias, shared by fqn
+        native_keys, st_keys, aliases = self._test_equivalence(programs)
+        self.assertEqual(
+            native_keys,
+            {"prefill/weight", "prefill/bias", "decode/weight", "decode/bias"},
+        )
+        self.assertEqual(len(st_keys), 2)
+        for key in ("weight", "bias"):
+            self.assertEqual(
+                aliases.get(f"prefill/{key}", f"prefill/{key}"),
+                aliases.get(f"decode/{key}", f"decode/{key}"),
+            )
 
     def test_conv_relu(self):
         model = nn.Sequential(
@@ -185,6 +212,18 @@ class ToNativeEquivalenceTest(unittest.TestCase):
         ep = torch.export.export(model, (torch.randn(1, 3, 16, 16),))
         _, st_keys, _ = self._test_equivalence(ep)
         self.assertEqual(len(st_keys), 2)  # conv weight + bias
+
+    def test_conv_batch_norm(self):
+        for inplace in (False, True):
+            with self.subTest(inplace=inplace):
+                model = nn.Sequential(
+                    nn.Conv2d(3, 4, 3, bias=False),
+                    nn.BatchNorm2d(4),
+                    nn.ReLU(inplace=inplace),
+                ).eval()
+                ep = torch.export.export(model, (torch.randn(1, 3, 8, 8),))
+                _, st_keys, _ = self._test_equivalence(ep)
+                self.assertEqual(len(st_keys), 2)
 
     def test_tied_weights(self):
         class Tied(nn.Module):
@@ -239,7 +278,7 @@ class ToNativeEquivalenceTest(unittest.TestCase):
 
         ep = torch.export.export(ConstAdd(), (torch.randn(2, 4),))
         _, st_keys, _ = self._test_equivalence(ep)
-        self.assertTrue(any("lifted" in k for k in st_keys))
+        self.assertEqual(st_keys, {"forward/_lifted_tensor_constant0"})
 
 
 class ToNativeInputValidationTest(unittest.TestCase):
@@ -258,6 +297,12 @@ class ToNativeInputValidationTest(unittest.TestCase):
     def test_empty_method_name_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "non-empty"):
             to_native({"": object()})
+
+    def test_state_namespace_method_name_is_rejected(self):
+        for name in ("state", "state/a"):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "reserved"):
+                    to_native({name: object()})
 
     def test_wrong_method_value_is_rejected(self):
         with self.assertRaisesRegex(TypeError, "must map to an ExportedProgram"):
@@ -393,7 +438,219 @@ class DelegateContractTest(unittest.TestCase):
             self._check(self._graph_module(drop_input=True))
 
 
+class ConstantNamespaceTest(unittest.TestCase):
+    def _scalar_shift(self, offset: float):
+        class Shift(nn.Module):
+            def forward(self, x):
+                return x + offset
+
+        return torch.export.export(Shift(), (torch.randn(2, 4),))
+
+    def _read(self, native) -> tuple[Program, dict[str, torch.Tensor]]:
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "m.ptn")
+            native.save(path)
+            ptg, constants = read_ptn(path)
+        return deserialize_program(ptg), constants
+
+    def _lifted_keys(self, program: Program, method_name: str) -> list[str]:
+        (method,) = [m for m in program.methods if m.name == method_name]
+        return [c.data_key for c in method.constants or [] if "lifted" in c.data_key]
+
+    def test_distinct_lifted_constants_are_namespaced(self):
+        programs = {"a": self._scalar_shift(1.0), "b": self._scalar_shift(2.0)}
+        native = to_native(programs)
+        self.assertEqual(native.methods, {"a", "b"})
+        program, constants = self._read(native)
+        (a_key,) = self._lifted_keys(program, "a")
+        (b_key,) = self._lifted_keys(program, "b")
+        self.assertEqual(a_key, "a/_lifted_tensor_constant0")
+        self.assertEqual(b_key, "b/_lifted_tensor_constant0")
+        torch.testing.assert_close(
+            constants[a_key], torch.full_like(constants[a_key], 1.0), rtol=0, atol=0
+        )
+        torch.testing.assert_close(
+            constants[b_key], torch.full_like(constants[b_key], 2.0), rtol=0, atol=0
+        )
+
+    def test_identical_lifted_constants_dedup_on_save(self):
+        programs = {"a": self._scalar_shift(1.0), "b": self._scalar_shift(1.0)}
+        native = to_native(programs)
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "m.ptn")
+            native.save(path)
+            ptg, constants = read_ptn(path)
+            with zipfile.ZipFile(path) as pkg:
+                owners = _safetensors_keys(pkg.read(SAFETENSORS_ENTRY))
+                aliases = json.loads(pkg.read(ALIASES_ENTRY))
+
+        program = deserialize_program(ptg)
+        (a_key,) = self._lifted_keys(program, "a")
+        (b_key,) = self._lifted_keys(program, "b")
+        self.assertEqual(a_key, "a/_lifted_tensor_constant0")
+        self.assertEqual(b_key, "b/_lifted_tensor_constant0")
+        self.assertEqual(owners, {a_key})
+        self.assertEqual(aliases, {b_key: a_key})
+        self.assertIs(constants[a_key], constants[b_key])
+
+    def test_distinct_parameters_are_namespaced(self):
+        programs = {
+            "a": torch.export.export(nn.Linear(4, 4), (torch.randn(1, 4),)),
+            "b": torch.export.export(nn.Linear(4, 4), (torch.randn(1, 4),)),
+        }
+        program, constants = self._read(to_native(programs))
+        self.assertEqual(set(constants), {"a/weight", "a/bias", "b/weight", "b/bias"})
+        for method in program.methods:
+            self.assertEqual(
+                {c.data_key for c in method.constants},
+                {f"{method.name}/weight", f"{method.name}/bias"},
+            )
+            for key, tensor in programs[method.name].state_dict.items():
+                torch.testing.assert_close(constants[f"{method.name}/{key}"], tensor)
+
+    def test_existing_immutable_key_is_also_namespaced(self):
+        class ConstWithBuffer(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.ones(4))
+                self.register_buffer("forward/weight", torch.zeros(4))
+
+            def forward(self, x):
+                return x + self.weight + self.get_buffer("forward/weight")
+
+        ep = torch.export.export(ConstWithBuffer(), (torch.randn(4),))
+        program, constants = self._read(to_native(ep))
+        self.assertEqual(set(constants), {"forward/weight", "forward/forward/weight"})
+        self.assertEqual(
+            {c.data_key for c in program.methods[0].constants}, set(constants)
+        )
+        torch.testing.assert_close(constants["forward/weight"], torch.ones(4))
+        torch.testing.assert_close(constants["forward/forward/weight"], torch.zeros(4))
+
+    def test_mutable_key_is_namespaced_as_state(self):
+        class ConstWithMutableBuffer(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.ones(4))
+                self.register_buffer("forward/weight", torch.zeros(4))
+
+            def forward(self, x):
+                buffer = self.get_buffer("forward/weight")
+                buffer.add_(x)
+                return buffer + self.weight
+
+        ep = torch.export.export(ConstWithMutableBuffer(), (torch.randn(4),))
+        _, constants = self._read(to_native(ep))
+        self.assertEqual(set(constants), {"forward/weight", "state/forward/weight"})
+        torch.testing.assert_close(constants["forward/weight"], torch.ones(4))
+        torch.testing.assert_close(constants["state/forward/weight"], torch.zeros(4))
+
+    def test_zero_initialized_mutable_buffer_is_namespaced_as_state(self):
+        program, constants = self._read(
+            to_native(
+                self._buffer_program(torch.zeros(4), mutate=True, persistent=False)
+            )
+        )
+        self.assertEqual(constants, {})
+        (method,) = program.methods
+        self.assertEqual([b.fqn for b in method.mutable_buffers], ["state/shared"])
+        self.assertEqual(self._mutation_targets(method), ["state/shared"])
+
+    def _mutation_targets(self, method: Method) -> list[str]:
+        return [
+            spec.target
+            for spec in method.output_specs or []
+            if spec.kind == OutputKind.BUFFER_MUTATION
+        ]
+
+    def _buffer_program(self, buffer, mutate, key="shared", persistent=True):
+        class Buffer(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(key, buffer, persistent=persistent)
+
+            def forward(self, x):
+                value = self.get_buffer(key)
+                if mutate:
+                    value.add_(x)
+                return x + value
+
+        return torch.export.export(Buffer(), (torch.ones(4),))
+
+    def test_namespaced_keys_from_different_methods_must_not_collide(self):
+        programs = {
+            "a": self._buffer_program(torch.ones(4), mutate=False, key="b/shared"),
+            "a/b": self._buffer_program(torch.ones(4), mutate=False),
+        }
+        with self.assertRaisesRegex(ValueError, "namespaced constant keys"):
+            to_native(programs)
+
+    def test_mutable_buffer_stays_shared_with_read_only_method(self):
+        shared = torch.zeros(4)
+        programs = {
+            "read": self._buffer_program(shared, mutate=False),
+            "update": self._buffer_program(shared, mutate=True),
+        }
+        program, constants = self._read(to_native(programs))
+        self.assertEqual(set(constants), {"state/shared"})
+        torch.testing.assert_close(constants["state/shared"], shared)
+        for method in program.methods:
+            (constant,) = method.constants
+            self.assertEqual(constant.data_key, "state/shared")
+            self.assertEqual(constant.mutated, method.name == "update")
+            self.assertEqual(
+                self._mutation_targets(method),
+                ["state/shared"] if method.name == "update" else [],
+            )
+
+    def test_conflicting_mutable_buffer_values_are_rejected(self):
+        programs = {
+            "read": self._buffer_program(torch.ones(4), mutate=False),
+            "update": self._buffer_program(torch.zeros(4), mutate=True),
+        }
+        with self.assertRaisesRegex(
+            ValueError, "constant 'state/shared' differs between methods"
+        ):
+            to_native(programs)
+
+
 class MutableBufferDedupTest(unittest.TestCase):
+    def test_batch_norm_statistics_mutated_by_another_method(self):
+        class Classifier(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = nn.Conv2d(3, 4, 3)
+                self.bn = nn.BatchNorm2d(4)
+
+            def forward(self, x):
+                return self.bn(self.conv(x))
+
+        class Update(nn.Module):
+            def __init__(self, bn):
+                super().__init__()
+                self.bn = bn
+
+            def forward(self, x):
+                self.bn.running_mean.add_(x)
+                return self.bn.running_mean + 1
+
+        model = Classifier().eval()
+        native = to_native(
+            {
+                "predict": torch.export.export(model, (torch.randn(1, 3, 8, 8),)),
+                "update": torch.export.export(Update(model.bn), (torch.ones(4),)),
+            }
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "model.ptn")
+            native.save(path)
+            with zipfile.ZipFile(path) as package:
+                program = deserialize_program(package.read(PTG_ENTRY))
+        predict = next(method for method in program.methods if method.name == "predict")
+        self.assertTrue(
+            any("batch_norm" in (node.target or "") for node in predict.graph.nodes)
+        )
+
     def test_identical_mutable_buffers_stay_separate(self):
         """Equal bytes must not make two independently mutable buffers one.
 

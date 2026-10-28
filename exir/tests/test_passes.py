@@ -2119,13 +2119,217 @@ class TestPasses(unittest.TestCase):
         #     %b_direct_copy_from_input : [num_users=1] = placeholder[target=b_direct_copy_from_input]
         #     %_lifted_tensor_constant2 : [num_users=1] = placeholder[target=_lifted_tensor_constant2]
         #     %x : [num_users=2] = placeholder[target=x]
+        #     %copy__default_1 : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%b_direct_copy_from_input, %x), kwargs = {})
         #     %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%x, %b_state), kwargs = {})
         #     %dim_order_ops__to_dim_order_copy_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.dim_order_ops._to_dim_order_copy.default](args = (%_lifted_tensor_constant2,), kwargs = {dtype: torch.float32, dim_order: []})
         #     %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%b_state, %dim_order_ops__to_dim_order_copy_default), kwargs = {})
         #     %copy__default : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%b_state, %aten_add_tensor_1), kwargs = {})
-        #     %copy__default_1 : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%b_direct_copy_from_input, %x), kwargs = {})
         #     return (copy__default, copy__default_1, aten_add_tensor)
         self.assertEqual(count_copies(gm), 2)
+
+    def test_mutable_buffers_write_back_is_inserted_early(self) -> None:
+        class EarlyMutationModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                # The buffer's new value is computed at the very start, so its
+                # write-back can happen immediately, letting the memory
+                # planner reuse the space during the rest of the graph.
+                self.state.add_(1)
+                y = x + 1
+                y = y + 1
+                y = y + 1
+                return y
+
+        model = to_edge(export(EarlyMutationModule(), (torch.zeros(1),), strict=True))
+        gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
+
+        node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
+        copies = [
+            node
+            for node in gm.graph.nodes
+            if node.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copies), 1)
+        copy = copies[0]
+        # The copy_ comes right after the value it writes back, not at the end
+        # of the graph: every user computation (the adds on x) is after it.
+        self.assertEqual(node_order[copy], node_order[copy.args[1]] + 1)
+        output_node = gm.graph.output_node()
+        user_return = output_node.args[0][1]
+        self.assertLess(node_order[copy], node_order[user_return])
+
+    def test_mutable_buffers_write_back_after_old_value_reads(self) -> None:
+        class ReadOldValueModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                # The buffer's new value is computed before the old value is
+                # read, so the write-back must not simply follow the value it
+                # writes: it must wait for the read of the old value.
+                new_state = x * 2
+                old_plus = self.state + x
+                self.state.copy_(new_state)
+                return old_plus
+
+        model = to_edge(export(ReadOldValueModule(), (torch.zeros(1),), strict=True))
+        gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
+
+        node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
+        copies = [
+            node
+            for node in gm.graph.nodes
+            if node.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copies), 1)
+        copy = copies[0]
+        buffer_placeholder = copy.args[0]
+        self.assertEqual(buffer_placeholder.op, "placeholder")
+        # Every read of the buffer's old value stays before the write-back.
+        for user in buffer_placeholder.users:
+            if user is not copy and user.op != "output":
+                self.assertLess(node_order[user], node_order[copy])
+
+    def test_mutable_buffers_write_back_after_view_reads(self) -> None:
+        class ViewReadModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x):
+                # The buffer's old value is read through a view. view_copy is
+                # a copy here, but ReplaceViewCopyWithViewPass later turns it
+                # into a true alias, so the write-back must still come after
+                # the read.
+                new_state = x * 2
+                old_through_view = self.state.view(2, 2).sum()
+                self.state.copy_(new_state)
+                return old_through_view
+
+        model = to_edge(export(ViewReadModule(), (torch.zeros(4),), strict=True))
+        gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
+
+        node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
+        copies = [
+            node
+            for node in gm.graph.nodes
+            if node.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copies), 1)
+        copy = copies[0]
+        views = [node for node in gm.graph.nodes if "view_copy" in str(node.target)]
+        self.assertTrue(len(views) >= 1)
+        # Every reader through the view stays before the write-back.
+        for view in views:
+            for user in view.users:
+                if user is not copy and user.op != "output":
+                    self.assertLess(node_order[user], node_order[copy])
+
+    def test_mutable_buffers_write_back_aliased_fallback(self) -> None:
+        class AliasedWriteBacksModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("a", torch.zeros(4))
+                self.register_buffer("b", torch.zeros(2, 2))
+
+            def forward(self, x):
+                # b's new value is a view of a, and a is mutated as well, so
+                # the two write-backs are not independent: after the view
+                # rewrite the value written into b aliases the buffer the
+                # other copy_ mutates. The pass must fall back to inserting
+                # both copies at the end of the graph in their original
+                # order.
+                self.b.copy_(self.a.view(2, 2))
+                self.a.add_(x)
+                return x + 1
+
+        model = to_edge(
+            export(AliasedWriteBacksModule(), (torch.zeros(4),), strict=True)
+        )
+        gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
+
+        node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
+        copies = [
+            node
+            for node in gm.graph.nodes
+            if node.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copies), 2)
+        # Both copies sit at the end of the graph, after all other compute.
+        last_compute = max(
+            node_order[node]
+            for node in gm.graph.nodes
+            if node.op == "call_function" and node not in copies
+        )
+        for copy_node in copies:
+            self.assertGreater(node_order[copy_node], last_compute)
+        # The copies keep their original (output-spec) order.
+        output_args = gm.graph.output_node().args[0]
+        self.assertEqual([output_args[0], output_args[1]], copies)
+
+    def test_mutable_buffers_write_back_after_storage_sharing_reads(self) -> None:
+        class StorageSharingReadModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x):
+                # maximum's schema says its output aliases nothing, but a
+                # _share_alloc_with_arg_idx annotation (the mark reinplace_pass
+                # leaves on an annotation-only rewrite) makes the memory
+                # planner place that output on the buffer's storage. The
+                # write-back must then wait for the read of that output, not
+                # just for the reads the schema can see.
+                shared = torch.maximum(self.state, x)
+                self.state.add_(x)
+                return shared.sum() + x
+
+        model = to_edge(
+            export(StorageSharingReadModule(), (torch.zeros(4),), strict=True)
+        )
+        ep = model.exported_program()
+        shared = [
+            node
+            for node in ep.graph.nodes
+            if node.op == "call_function" and "maximum" in str(node.target)
+        ]
+        self.assertEqual(len(shared), 1)
+        self.assertEqual(shared[0].args[0].op, "placeholder")
+        shared[0].meta["_share_alloc_with_arg_idx"] = 0
+        gm, _ = insert_write_back_for_buffers_pass(ep)
+
+        node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
+        copies = [
+            node
+            for node in gm.graph.nodes
+            if node.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copies), 1)
+        copy = copies[0]
+        # Every reader of the storage-sharing output stays before the
+        # write-back.
+        readers = [
+            user for user in shared[0].users if user is not copy and user.op != "output"
+        ]
+        self.assertTrue(readers)
+        for user in readers:
+            self.assertLess(node_order[user], node_order[copy])
+
+    def test_mutable_buffers_write_back_no_inputs(self) -> None:
+        class NoInputModule(torch.nn.Module):
+            def forward(self):
+                return torch.ones(3) * 2
+
+        model = to_edge(export(NoInputModule(), (), strict=True))
+        gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
+
+        # A graph with no placeholders has nothing to write back; the pass
+        # must complete cleanly rather than assume an input exists.
+        self.assertEqual(sum(node.op == "placeholder" for node in gm.graph.nodes), 0)
 
     def test_remove_quantized_op_noop_pass(self) -> None:
         class TestAddSliceNoop(torch.nn.Module):
@@ -2698,6 +2902,66 @@ class TestPasses(unittest.TestCase):
         module = new_ep.module()
         self.assertFalse(torch.equal(module(x), module(x)))
 
+    def test_constant_prop_pass_detaches_folded_parameters(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(4, 4))
+
+            def forward(self, x):
+                # `to` with the same dtype returns the parameter itself.
+                return x + self.w.t() + self.w.to(torch.float32)
+
+        m = M()
+        x = torch.randn(4, 4)
+        new_ep = constant_prop_pass(export(m, (x,), strict=True))
+
+        targets = [node.target for node in new_ep.graph.nodes]
+        self.assertNotIn(torch.ops.aten.t.default, targets)
+        self.assertNotIn(torch.ops.aten.to.dtype, targets)
+        self.assertTrue(torch.allclose(new_ep.module()(x), m(x)))
+        copy.deepcopy(to_edge(new_ep).exported_program())
+
+    def test_constant_prop_pass_keeps_scalar_read_at_runtime(self) -> None:
+        """
+        A non-tensor value cannot become a constant placeholder. When a node
+        outside the fold or the program output reads one, it stays in the
+        graph, while the tensors computed from it still fold. A non-tensor
+        value read only by folded nodes folds away.
+        """
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("n", torch.tensor(1))
+                self.register_buffer("s", torch.tensor(2.0))
+                self.register_buffer("k", torch.tensor(3))
+                self.w = torch.nn.Parameter(torch.randn(4, 3))
+
+            def forward(self, x):
+                n = (self.n * 2).item() + 1
+                torch._check(n >= 1)
+                torch._check(n <= x.shape[0])
+                # The first reader of `n` is folded, a later one is not.
+                w = (self.w * self.s.item())[:n]
+                return x[:n] * w, self.k.item()
+
+        m = M()
+        x = torch.randn(4, 3)
+        new_ep = constant_prop_pass(export(m, (x,), strict=True))
+
+        targets = [node.target for node in new_ep.graph.nodes]
+        self.assertEqual(targets.count(torch.ops.aten.item.default), 2)
+        self.assertIn(torch.ops.aten._assert_scalar.default, targets)
+        self.assertEqual(targets.count(torch.ops.aten.mul.Tensor), 1)
+        self.assertEqual(targets.count(torch.ops.aten.slice.Tensor), 1)
+        self.assertNotIn("s", new_ep.state_dict)
+        out, k = new_ep.module()(x)
+        expected_out, expected_k = m(x)
+        self.assertTrue(torch.allclose(out, expected_out))
+        self.assertEqual(k, expected_k)
+        to_edge(new_ep).to_executorch()
+
     def test_constant_prop_pass_zero_stride_tensors(self) -> None:
         """
         Test that constant propagation correctly handles tensors with zero strides
@@ -2910,6 +3174,115 @@ class TestPasses(unittest.TestCase):
                         modified_const.is_contiguous(),
                         f"Constant should be contiguous after pass, got strides {modified_const.stride()}",
                     )
+
+    def test_convert_constant_dim_order_parameter(self):
+        """
+        Verify that the convert_constant_dim_order_pass converts a parameter
+        outside the allowed dim orders to contiguous, keeps it a parameter, and
+        leaves a channels-last parameter as it is.
+        """
+
+        class AddParameter(torch.nn.Module):
+            def __init__(self, weight: torch.Tensor):
+                super().__init__()
+                self.weight = torch.nn.Parameter(weight)
+
+            def forward(self, x):
+                return x + self.weight
+
+        weights = {
+            "transposed": (torch.randn(5, 4).t(), True),
+            "channels_last": (
+                torch.randn(2, 3, 4, 5).to(memory_format=torch.channels_last),
+                False,
+            ),
+        }
+        for description, (weight, converted) in weights.items():
+            with self.subTest(description=description):
+                inputs = (torch.randn(weight.shape),)
+                ep = torch.export.export(AddParameter(weight), inputs)
+                logs = (
+                    self.assertLogs(convert_constant_dim_order_pass.logger, "WARNING")
+                    if converted
+                    else self.assertNoLogs(convert_constant_dim_order_pass.logger)
+                )
+                with logs as captured:
+                    modified_ep = (
+                        convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                            copy.deepcopy(ep)
+                        )
+                    )
+                if converted:
+                    self.assertIn(
+                        "Parameter 'weight' has strides (1, 4)", captured.output[0]
+                    )
+
+                torch.testing.assert_close(
+                    ep.module()(*inputs), modified_ep.module()(*inputs)
+                )
+                param = modified_ep.state_dict["weight"]
+                self.assertIsInstance(param, torch.nn.Parameter)
+                self.assertEqual(param.is_contiguous(), converted)
+                placeholder = next(
+                    n for n in modified_ep.graph.nodes if n.name == "p_weight"
+                )
+                self.assertEqual(placeholder.meta["val"].stride(), param.stride())
+
+    def test_to_edge_makes_transposed_parameter_contiguous(self):
+        """
+        Verify that to_edge stores a transposed parameter contiguous with and
+        without _skip_dim_order, so a partitioner sees the stored layout.
+        """
+
+        class AddParameter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(5, 4).t())
+
+            def forward(self, x):
+                return self.weight + x
+
+        model = AddParameter()
+        inputs = (torch.randn(4, 5),)
+        for skip_dim_order in (False, True):
+            with self.subTest(skip_dim_order=skip_dim_order):
+                with self.assertLogs(
+                    convert_constant_dim_order_pass.logger, "WARNING"
+                ) as captured:
+                    ep = to_edge(
+                        torch.export.export(model, inputs),
+                        compile_config=EdgeCompileConfig(
+                            _skip_dim_order=skip_dim_order
+                        ),
+                    ).exported_program()
+                # Only one run of the pass converts: the first, or with
+                # _skip_dim_order the only one.
+                self.assertEqual(len(captured.output), 1)
+                self.assertIn("Parameter 'weight'", captured.output[0])
+                self.assertTrue(ep.state_dict["weight"].is_contiguous())
+                placeholder = next(n for n in ep.graph.nodes if n.name == "p_weight")
+                self.assertTrue(placeholder.meta["val"].is_contiguous())
+                torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+
+    def test_convert_constant_dim_order_missing_placeholder(self):
+        """
+        Verify that the convert_constant_dim_order_pass names the placeholder it
+        cannot find for a lifted tensor it converts.
+        """
+
+        class AddParameter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(5, 4).t())
+
+            def forward(self, x):
+                return x + self.weight
+
+        ep = torch.export.export(AddParameter(), (torch.randn(4, 5),))
+        spec = next(s for s in ep.graph_signature.input_specs if s.target == "weight")
+        spec.arg = TensorArgument(name="missing")
+        with self.assertRaisesRegex(RuntimeError, "Missing placeholder for missing"):
+            convert_constant_dim_order_pass.convert_constant_dim_order_pass(ep)
 
 
 class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):

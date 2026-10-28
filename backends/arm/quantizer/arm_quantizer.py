@@ -1256,7 +1256,14 @@ class _TOSAQuantizerV2(ComposableQuantizer):
             )
 
         self.pattern_matcher = PatternMatcher(support_dict)
-        self.shared_qspec_quantizer = SharedQspecQuantizer()
+        excluded_targets = TOSAQuantizationConfig.SHARED_INPUT_ACT_QSPEC_PATTERNS
+        self.shared_qspec_quantizer = SharedQspecQuantizer(
+            targets=[
+                target
+                for target in SharedQspecQuantizer.SHARED_QSPEC_OPS_DEFAULT
+                if target not in excluded_targets
+            ]
+        )
         self.global_quantizer: Quantizer | None = None
         self.global_config: Optional[QuantizationConfig] = None
         self._quantizers: List[Quantizer] = []

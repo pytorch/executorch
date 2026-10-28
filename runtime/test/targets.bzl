@@ -11,6 +11,8 @@ def define_common_targets(is_fbcode = False):
             "//executorch/extension/pybindings/test:make_test",
             "//executorch/runtime:runtime",
             "//executorch/devtools/etdump:serialize",
+            "//executorch/exir:lib",
+            "//executorch/exir/passes:lib",
         ],
     )
 

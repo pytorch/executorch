@@ -38,6 +38,7 @@ from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,
+    get_samsung_partitioner,
     get_tosa_partitioner,
     get_vgf_partitioner,
     get_vulkan_partitioner,
@@ -670,6 +671,19 @@ def build_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="If true, stops right after torch.export() and saves the exported model.",
     )
+
+    parser.add_argument(
+        "--samsung",
+        action="store_true",
+        help="Delegate llama3_2 to enn backend (Samsung Exynos), please use it --kv_cache=True",
+    )
+
+    parser.add_argument(
+        "--samsung_chipset",
+        default="E9965",
+        help="Samsung chipset, i.e. E9955, E9965, etc",
+        type=str,
+    )
     return parser
 
 
@@ -970,6 +984,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             coreml_ios=llm_config.backend.coreml.ios,
             vulkan=llm_config.backend.vulkan.enabled,
             mlx=llm_config.backend.mlx.enabled,
+            samsung=llm_config.backend.samsung.enabled,
             use_qat=llm_config.quantization.use_qat,
             use_lora=llm_config.base.use_lora,
             preq_mode=(
@@ -1446,6 +1461,31 @@ def _to_edge_and_lower_llama_coreml(
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
     )
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
+def _to_edge_and_lower_llama_samsung(
+    builder_exported,
+    modelname,
+    additional_passes,
+    samsung_chipset: str = "E9965",
+    use_kv_cache: bool = False,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+    partitioners = []
+
+    partitioners.append(get_samsung_partitioner(samsung_chipset, use_kv_cache))
+
+    modelname = f"samsung_{modelname}"
+
+    logging.info("Lowering model using following partitioner(s): ")
+    for partitioner in partitioners:
+        logging.info(f"--> {partitioner.__class__.__name__}")
+
+    builder = builder_exported.to_edge_transform_and_lower(partitioners)
 
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
@@ -1879,6 +1919,15 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             generate_etrecord=llm_config.debug.generate_etrecord,
             verbose=llm_config.debug.verbose,
         )
+    elif llm_config.backend.samsung.enabled:
+        builder = _to_edge_and_lower_llama_samsung(
+            builder_exported,
+            modelname,
+            additional_passes,
+            samsung_chipset=llm_config.backend.samsung.samsung_chipset,
+            use_kv_cache=llm_config.model.use_kv_cache,
+            verbose=llm_config.debug.verbose,
+        )
     else:
         builder = _to_edge_and_lower_llama(
             builder_exported,
@@ -2068,6 +2117,7 @@ def _get_source_transforms(  # noqa
     coreml_ios: int = 15,
     vulkan: bool = False,
     mlx: bool = False,
+    samsung: bool = False,
     use_qat: bool = False,
     use_lora: int = 0,
     preq_mode: Optional[str] = None,
@@ -2284,6 +2334,10 @@ def _get_source_transforms(  # noqa
             transforms.append(transform_attention_mha_to_mlx)
             transforms.append(replace_et_kv_cache_with_mlx)
             transforms.append(replace_rms_norm_with_native_rms_norm)
+
+        elif samsung:
+            transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_causal_mask)
 
     if local_global_attention:
         transforms.append(

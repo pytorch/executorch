@@ -288,6 +288,10 @@ class NodeVisitor:
             if quant_params.per_channel_group:
                 scale = scale.to(torch.bfloat16)
 
+            # The bytes are read from the start of the storage in memory order.
+            # Scales are small, so always copy them into storage of their own.
+            scale = scale.clone(memory_format=torch.contiguous_format)
+
             num_bytes = scale.untyped_storage().nbytes()
             scale_array = ctypes.cast(
                 scale.untyped_storage().data_ptr(),
@@ -475,7 +479,10 @@ class NodeVisitor:
             elif quant_params.axis == 1:
                 quant_params.axis = 0
             else:
-                assert f"Unsupported weight per channel quantization axis for depthwise conv2d / conv_transpose2d : {quant_params.axis}, expecting 0 / 1."
+                check_or_raise(
+                    False,
+                    f"Unsupported weight per channel quantization axis for depthwise conv2d / conv_transpose2d : {quant_params.axis}, expecting 0 / 1.",
+                )
 
         # Serialize tensor value
         custom_meta = tensor.meta.get("custom", None)
@@ -615,6 +622,11 @@ class NodeVisitor:
 
         if quant_params is not None and quant_params.is_qc4w:
             const_val = self.convert_to_qc4w(const_val)
+
+        # The bytes are read from the start of the storage, so a view of a
+        # larger tensor needs its own copy.
+        if const_val.nbytes != const_val.untyped_storage().nbytes():
+            const_val = const_val.clone()
 
         size = const_val.untyped_storage().nbytes()
         array_type = ctypes.c_char * size
