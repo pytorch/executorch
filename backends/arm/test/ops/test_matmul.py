@@ -385,14 +385,13 @@ xfails = {
     "double_input_randn_rand_4d_1d": "aten.mv.default is not supported",
     "single_input_randn_1d": "aten.dot.default is not supported",
 }
-vgf_quant_xfails = {
+vgf_a16w8_xfails = {
     name: reason
     for name, reason in xfails.items()
     if name
     not in {
-        "double_input_randn_rand_1d_1d",
-        "double_input_randn_rand_2d_1d",
-        "single_input_randn_1d",
+        "double_input_randn_rand_3d_1d",
+        "double_input_randn_rand_4d_1d",
     }
 }
 
@@ -496,7 +495,7 @@ def test_matmul_vgf_no_quant_fp8(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite, xfails=vgf_quant_xfails)
+@common.parametrize("test_case", test_suite)
 @common.SkipIfNoModelConverter
 def test_matmul_vgf_quant(test_case: test_case_t):
     test_data = test_case()
@@ -511,7 +510,7 @@ def test_matmul_vgf_quant(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite, xfails=xfails)
+@common.parametrize("test_case", test_suite, xfails=vgf_a16w8_xfails)
 @common.SkipIfNoModelConverter
 def test_matmul_vgf_quant_a16w8(test_case: test_case_t):
     test_data = test_case()

@@ -82,6 +82,16 @@ sub2_test_data_bf16 = {
         torch.rand(2, 3, dtype=torch.bfloat16),
     ),
 }
+sub2_test_data_mixed = {
+    "int32_float32": lambda: (
+        torch.tensor([1, 2], dtype=torch.int32),
+        torch.tensor([0.5, 1.5]),
+    ),
+    "float32_int32": lambda: (
+        torch.tensor([0.5, 1.5]),
+        torch.tensor([1, 2], dtype=torch.int32),
+    ),
+}
 
 # Sub and tan - the tan has a really steep curve just before Pi/2 and a point of discontinuity at Pi/2
 # so if the sub result is inaccurate, the error will be amplified by the tan
@@ -142,7 +152,8 @@ def test_sub_tensor_tosa_FP(test_data):
 
 
 @common.parametrize(
-    "test_data", sub2_test_data | sub2_test_data_fp16 | sub2_test_data_bf16
+    "test_data",
+    sub2_test_data | sub2_test_data_fp16 | sub2_test_data_bf16 | sub2_test_data_mixed,
 )
 def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA FP)"""
@@ -286,7 +297,8 @@ def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
 
 
 @common.parametrize(
-    "test_data", sub2_test_data | sub2_test_data_bf16 | sub2_test_data_fp16
+    "test_data",
+    sub2_test_data | sub2_test_data_bf16 | sub2_test_data_fp16 | sub2_test_data_mixed,
 )
 @common.SkipIfNoModelConverter
 def test_sub_tensor_vgf_no_quant_2(test_data: Tuple[torch.Tensor, torch.Tensor]):

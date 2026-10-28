@@ -652,7 +652,7 @@ class ArmPassManager(ExportedProgramPassManager):
             ]
         )
 
-        # Scalars -> tensors, match tensor dtypes and ranks.
+        # Scalars -> tensors, match comparison dtypes and tensor ranks.
         self.add_passes(
             [
                 ReplaceScalarWithTensorByProfilePass(),
@@ -661,7 +661,6 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
                 DecomposePReLUPass(),
                 ConvertFullLikeToFullPass(),
-                MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
                 MatchArgRanksPass(exported_program),
             ]
@@ -700,6 +699,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteAvgPool2dPass(),
                 ComputeConstantOpsAOTPass(exported_program),
                 FuseConstantArgsPass(exported_program),
+                MatchArgDtypePass(),
                 CastInt64BuffersToInt32Pass(exported_program),
                 DecomposeSelectPass(),
                 ConvertSqueezesToViewPass(),
