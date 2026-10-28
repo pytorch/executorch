@@ -18,7 +18,7 @@ For detailed information on how APIs evolve and the deprecation process, please 
     :members: method_names, load_method
 
 .. autoclass:: Method
-    :members: execute, metadata
+    :members: execute, set_output, metadata
 
 .. autoclass:: ExecuTorchResult
     :members: shape, strides, dtype, device, nbytes, to_host, from_host
