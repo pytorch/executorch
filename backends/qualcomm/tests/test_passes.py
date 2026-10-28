@@ -503,6 +503,26 @@ class TestPasses(unittest.TestCase):
                 RecomposeRmsNorm()(ep.graph_module)
                 torch.testing.assert_close(ep.module()(x), model(x))
 
+    def test_i64_to_i32_casts_a_top_of_graph_constant_after_placeholders(self):
+        # DecomposeRemainder puts the int64 constant 3 at the top of the graph.
+        class IntRemainder(torch.nn.Module):
+            def forward(self, x, i):
+                return x * (i % 3).to(x.dtype)
+
+        sample_input = (torch.randn(2, 4), torch.randint(0, 9, (2, 4)))
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        try:
+            to_edge_transform_and_lower_to_qnn(
+                IntRemainder().eval(), sample_input, compiler_specs
+            )
+        except RuntimeError as e:
+            if "Failed to initialize QNN backend" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
+
     def test_mha_to_sha(self):
         from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
         from executorch.examples.models.llama.model_args import ModelArgs
