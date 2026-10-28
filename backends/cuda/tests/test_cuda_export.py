@@ -562,6 +562,24 @@ class TestCudaExport(unittest.TestCase):
             "SDPA kernel export with triton_kernel_mode=OFF failed",
         )
 
+    def test_missing_scatter_and_index_put_kernels_fail_at_export(self):
+        """Inductor leaves these int64 ops to ATen kernels the CUDA shim lacks."""
+
+        class Int64Accumulate(torch.nn.Module):
+            def forward(self, counts: torch.Tensor, idx: torch.Tensor):
+                ones = torch.ones_like(idx)
+                return (
+                    counts.scatter_add(0, idx, ones),
+                    counts.index_put((idx,), ones, accumulate=True),
+                )
+
+        inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
+        with self.assertRaises(RuntimeError) as context:
+            self._export_to_cuda_with_lower(Int64Accumulate(), inputs)
+        message = str(context.exception)
+        self.assertIn("aoti_torch_cuda_scatter_reduce_two_out", message)
+        self.assertIn("aoti_torch_index_put_out", message)
+
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """
         Verify that, for a CUDA-delegated graph, every memory-planned tensor's
