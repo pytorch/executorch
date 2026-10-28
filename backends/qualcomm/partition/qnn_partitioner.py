@@ -60,6 +60,7 @@ from .utils import (
     filter_fn,
     generate_qnn_executorch_option,
     get_skip_decomp_table,
+    has_unsupported_dtype,
     warn_if_dilated_conv_may_not_fit_vtcm,
 )
 
@@ -125,7 +126,7 @@ class QnnOperatorSupport(OperatorSupportBase):
             for soc_model in target_socs
         ]
 
-    def is_node_supported(self, _, node: torch.fx.Node) -> bool:
+    def is_node_supported(self, _, node: torch.fx.Node) -> bool:  # noqa: C901
         if node.op != "call_function" or node.target in not_supported_operator:
             return False
 
@@ -170,6 +171,12 @@ class QnnOperatorSupport(OperatorSupportBase):
             or node.target.__name__ in self.skip_node_op_set
         ):
             logger.info(f"[{self.phase}] {node.target.__name__} | Skipped")
+            return False
+
+        if has_unsupported_dtype(node):
+            logger.info(
+                f"[{self.phase}] {node.target.__name__} | Skipped, unsupported dtype"
+            )
             return False
 
         # TODO: workaround for https://github.com/pytorch/executorch/issues/23096.

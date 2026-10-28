@@ -62,6 +62,7 @@ from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import OutputKind
 from torch.library import Library
+from torchao.quantization import IntxWeightOnlyConfig, PerAxis, quantize_
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -947,6 +948,74 @@ class TestPasses(unittest.TestCase):
                 self.skipTest(f"QNN SDK not available: {e}")
             raise
         edge.to_executorch()
+
+    def test_partitioner_falls_back_on_bfloat16(self):
+        class Bf16Region(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(16, 16).to(torch.bfloat16)
+
+            def forward(self, x):
+                return self.linear(x.to(torch.bfloat16)).to(torch.float32) + 1
+
+        sample_input = (torch.randn(4, 16),)
+        # Quantized first: some QNN SDKs crash on a quantized lowering that
+        # follows an fp16 one in the same process.
+        for quant_dtype, weight_only in (
+            (QuantDtype.use_8a8w, False),
+            (None, False),
+            (None, True),
+        ):
+            with self.subTest(quant_dtype=quant_dtype, weight_only=weight_only):
+                module = Bf16Region().eval()
+                if weight_only:
+                    quantize_(
+                        module,
+                        IntxWeightOnlyConfig(
+                            weight_dtype=torch.int8, granularity=PerAxis(0)
+                        ),
+                    )
+                if quant_dtype is not None:
+                    quantizer = QnnQuantizer()
+                    quantizer.set_default_quant_config(quant_dtype=quant_dtype)
+                    module = prepare_pt2e(
+                        torch.export.export(module, sample_input).module(), quantizer
+                    )
+                    module(*sample_input)
+                    module = convert_pt2e(module)
+                compiler_specs = generate_qnn_executorch_compiler_spec(
+                    soc_model=QcomChipset.SM8650,
+                    backend_options=generate_htp_compiler_spec(
+                        use_fp16=quant_dtype is None
+                    ),
+                )
+                try:
+                    edge = to_edge_transform_and_lower_to_qnn(
+                        module, sample_input, compiler_specs
+                    )
+                except RuntimeError as e:
+                    if "Failed to initialize QNN backend" in str(e):
+                        self.skipTest(f"QNN SDK not available: {e}")
+                    raise
+                cpu_nodes = [
+                    node
+                    for node in edge.exported_program().graph.nodes
+                    if node.op == "call_function" and "delegate" not in str(node.target)
+                ]
+                cpu_dtypes = {
+                    node.meta["val"].dtype
+                    for node in cpu_nodes
+                    if isinstance(node.meta.get("val"), torch.Tensor)
+                }
+                # Unquantized bfloat16 stays on CPU; quantized bfloat16 has a
+                # QNN type and is delegated.
+                self.assertEqual(torch.bfloat16 in cpu_dtypes, quant_dtype is None)
+                # Portable kernels have no linear, so one left on CPU must be
+                # decomposed.
+                self.assertNotIn(
+                    exir_ops.edge.aten.linear.default,
+                    [node.target for node in cpu_nodes],
+                )
 
     def _assert_cpu_conv_keeps_its_weight_dequantize(
         self, quant_dtype, use_fp16, skip_node_id_set=None, emit=True
