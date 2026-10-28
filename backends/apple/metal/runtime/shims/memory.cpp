@@ -63,6 +63,12 @@ std::unordered_map<void*, int32_t> not_own_handles;
 // one only drops the handle.
 std::unordered_set<Tensor*> retired_handles;
 
+// The address an empty view stands for, where that is not the address it is
+// bound at (aoti_torch__reinterpret_tensor binds empty views at their
+// parent's start). Views of it are offset from here, so they are checked
+// against the memory they really reach.
+std::unordered_map<Tensor*, void*> empty_view_address;
+
 // Size of each CPU allocation the runtime owns, so that views of it can be
 // bound into one Metal buffer over all of it (metal_register_cpu_view).
 std::unordered_map<void*, size_t> cpu_allocation_bytes;
@@ -762,6 +768,7 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
 
   if (retired_handles.erase(tensor) != 0) {
     // Its memory is gone, and its address may be another allocation's now.
+    empty_view_address.erase(tensor);
     tensors.erase(it);
     return Error::Ok;
   }
@@ -770,6 +777,7 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   void* data_ptr = tensor_ptr->mutable_data_ptr();
   if (data_ptr == nullptr) {
     // A tensor with no memory (make_memoryless_tensor).
+    empty_view_address.erase(tensor);
     tensors.erase(it);
     return Error::Ok;
   }
@@ -800,6 +808,7 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
       }
       memory_to_n_tensor.erase(data_ptr);
     }
+    empty_view_address.erase(tensor);
     tensors.erase(it);
     ET_LOG(
         Debug,
@@ -808,6 +817,7 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   }
   ET_CHECK_OK_OR_RETURN_ERROR(release_memory(data_ptr));
 
+  empty_view_address.erase(tensor);
   tensors.erase(it);
   ET_LOG(Debug, "aoti_torch_delete_tensor_object: successful");
   return Error::Ok;
@@ -1109,11 +1119,17 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       InvalidArgument,
       "aoti_torch__reinterpret_tensor: sizes and strides must fit a tensor");
 
-  // Handle storage offset by adjusting the data pointer
+  // Handle storage offset by adjusting the data pointer. An empty `self` is
+  // offset from the address it stands for, not the one it is bound at.
+  void* origin = data_ptr;
+  auto empty_origin = empty_view_address.find(self);
+  if (empty_origin != empty_view_address.end()) {
+    origin = empty_origin->second;
+  }
   size_t element_size = dtype_to_element_size(dtype);
   void* adjusted_data = nullptr;
   ET_CHECK_OR_RETURN_ERROR(
-      offset_pointer(data_ptr, storage_offset, element_size, &adjusted_data),
+      offset_pointer(origin, storage_offset, element_size, &adjusted_data),
       InvalidArgument,
       "aoti_torch__reinterpret_tensor: storage_offset overflows");
 
@@ -1127,8 +1143,9 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       "aoti_torch__reinterpret_tensor: sizes must not be negative");
 
   // An empty view reads nothing. Its offset can put it at the very end of its
-  // buffer, which may be where the next allocation starts; point it at the
-  // start of its parent instead, so that it is not taken for a view there.
+  // buffer, which may be where the next allocation starts; bind it at the
+  // start of its parent instead, so that it is not taken for a view there,
+  // and remember the address it stands for (empty_view_address).
   int64_t view_numel = 1;
   for (auto size : sizes) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -1136,7 +1153,9 @@ AOTITorchError aoti_torch__reinterpret_tensor(
         InvalidArgument,
         "aoti_torch__reinterpret_tensor: the number of elements overflows");
   }
-  if (view_numel == 0) {
+  const bool empty_view = view_numel == 0;
+  void* empty_address = adjusted_data;
+  if (empty_view) {
     adjusted_data = data_ptr;
   }
 
@@ -1315,6 +1334,9 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   // not be left behind for cleanup to unregister.
   tensors[tensor.get()] = tensor;
   *ret_new_tensor = tensor.get();
+  if (empty_view && empty_address != adjusted_data) {
+    empty_view_address[tensor.get()] = empty_address;
+  }
   if (registered) {
     view_handles.insert(tensor.get());
   }
@@ -1411,6 +1433,12 @@ AOTITorchError aoti_torch_new_tensor_handle(
 
   *new_handle = tensor.get();
 
+  // A copy of an empty view stands for the same address.
+  auto empty_origin = empty_view_address.find(orig_handle);
+  if (empty_origin != empty_view_address.end()) {
+    empty_view_address[tensor.get()] = empty_origin->second;
+  }
+
   // If the original is a view into a Metal buffer, the new handle is one too,
   // and deleting either must leave the view registered for the other one.
   if (metal_retain_view(data_ptr)) {
@@ -1444,6 +1472,7 @@ void retire_handles_within(void* ptr, size_t nbytes) {
       // views and blobs are refused outside their allocation, and CPU
       // regions do not overlap Metal buffers.
       view_owner.erase(entry.first);
+      empty_view_address.erase(entry.first);
       retired_handles.insert(entry.first);
     }
   }
@@ -1491,6 +1520,7 @@ void cleanup_memory() {
   view_owner.clear();
   view_handles.clear();
   retired_handles.clear();
+  empty_view_address.clear();
   cpu_allocation_bytes.clear();
 
   // Clean up Metal resources
