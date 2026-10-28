@@ -83,6 +83,41 @@ def _is_arg_min_max_over_flattened_input(node: torch.fx.Node) -> bool:
     return dim is None
 
 
+_PAD_TARGETS = (
+    torch.ops.aten.pad.default,
+    exir_ops.edge.aten.pad.default,
+)
+
+_PAD_3D_TARGETS = (
+    torch.ops.aten.reflection_pad3d.default,
+    torch.ops.aten.replication_pad3d.default,
+    exir_ops.edge.aten.reflection_pad3d.default,
+    exir_ops.edge.aten.replication_pad3d.default,
+)
+
+
+def _is_pad_unsupported_by_coreml(node: torch.fx.Node) -> bool:
+    """Non-constant padding that Core ML cannot load.
+
+    Core ML only supports ``reflect`` / ``replicate`` padding on the last two
+    dimensions; anything further out (e.g. ``ReflectionPad3d``, or padding
+    just the depth dimension of a 5D input) lowers, then fails to load with
+    "Padding for more than two dimensions only supports `constant` mode".
+    Rejecting the op lets it decompose into ops Core ML does run.  See
+    pytorch/executorch#11708 and pytorch/executorch#11709.
+    """
+    if node.target in _PAD_3D_TARGETS:
+        return True
+    if node.target not in _PAD_TARGETS:
+        return False
+    mode = node.args[2] if len(node.args) >= 3 else node.kwargs.get("mode", "constant")
+    if mode not in ("reflect", "replicate"):
+        return False
+    # ``pad`` lists (before, after) pairs starting from the last dimension.
+    pad = node.args[1]
+    return any(p != 0 for p in pad[4:])
+
+
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
     if len(schema.arguments) == 0:
@@ -156,6 +191,13 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             self.log_once(
                 "torch.ops.aten.{argmax, argmin}.default with dim=None is "
                 "not supported by CoreML.  Overriding op support."
+            )
+            return True
+
+        if _is_pad_unsupported_by_coreml(node):
+            self.log_once(
+                "Non-constant padding outside the last two dimensions is not "
+                "supported by CoreML.  Overriding op support."
             )
             return True
 
