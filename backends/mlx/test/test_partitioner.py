@@ -337,6 +337,23 @@ class TestMLXPartitionerSdpaShapes(unittest.TestCase):
             self.assertEqual(get_mlx_node_counts(path).get("SdpaNode", 0), 0)
 
 
+class TestMLXPartitionerSharedConstants(unittest.TestCase):
+    def test_weight_used_twice_in_one_delegate_and_once_in_another(self):
+        class SharedLinear(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(4, 4)
+
+            def forward(self, x):
+                y = self.linear(x) + self.linear(x * 2)
+                # elu is not lowered, so the last use lands in a second delegate.
+                return self.linear(torch.nn.functional.elu(y))
+
+        _, delegates, err = _run(SharedLinear().eval(), (torch.randn(2, 4),))
+        self.assertGreater(delegates, 1)
+        self.assertLess(err, 1e-5)
+
+
 class TestMLXPartitionerGroupedKeys(unittest.TestCase):
     """Repeated KV heads are fused only when the caller enables the shared passes."""
 

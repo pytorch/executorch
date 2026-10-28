@@ -462,7 +462,7 @@ class MLXProgramBuilder:
         )
 
         output_kind_targets = defaultdict(set)
-        constant_tensors = []
+        constant_tensors = {}
         user_inputs = []
         user_outputs = []
         mutable_buffers = []
@@ -491,17 +491,17 @@ class MLXProgramBuilder:
             if isinstance(arg, TensorArgument):
                 if kind == InputKind.PARAMETER:
                     # Parameters are treated as constants (not mutated)
-                    constant_tensors.append(name)
+                    constant_tensors[name] = target
                 elif kind == InputKind.BUFFER:
                     if target in output_kind_targets[OutputKind.BUFFER_MUTATION]:
                         mutable_buffers.append(name)
                     else:
                         # Non-mutated buffers (like lifted tensor constants) are constants
-                        constant_tensors.append(name)
+                        constant_tensors[name] = target
                 elif kind == InputKind.USER_INPUT:
                     user_inputs.append(name)
                 elif kind == InputKind.CONSTANT_TENSOR:
-                    constant_tensors.append(name)
+                    constant_tensors[name] = target
                 else:
                     raise NotImplementedError(
                         f"Support for input {arg} is not implemented"
@@ -520,12 +520,21 @@ class MLXProgramBuilder:
             else:
                 raise NotImplementedError(f"Support for input {arg} is not implemented")
 
+        target_to_constant_slot = {}
         for node in self.ep.graph.nodes:
             if node.op == "placeholder":
                 if node.users == {}:
                     continue
                 if node.name in constant_tensors:
-                    self.make_or_get_slot(node, id_space=IdSpace.Constant)
+                    # A constant shared with other partitions is duplicated once per
+                    # user, so several placeholders here can name the same target.
+                    target = constant_tensors[node.name]
+                    if target in target_to_constant_slot:
+                        self.set_slot(node, target_to_constant_slot[target])
+                    else:
+                        target_to_constant_slot[target] = self.make_or_get_slot(
+                            node, id_space=IdSpace.Constant
+                        )
                 elif node.name in user_inputs:
                     val = node.meta.get("val", None)
                     if isinstance(val, torch.Tensor) and not val.is_contiguous():
