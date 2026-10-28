@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import random
 import unittest
 from typing import List
 
@@ -13,7 +14,8 @@ from executorch.exir.backend.canonical_partitioners.group_partitioner import (
 )
 
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
-from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.fx.passes.operator_support import create_op_support, OperatorSupportBase
+from torch.fx.passes.utils.fuser_utils import validate_partition
 
 
 class TestGroupPartitioner(unittest.TestCase):
@@ -1768,3 +1770,175 @@ class TestGroupPartitioner(unittest.TestCase):
             re_exported,
             partitioner=[XnnpackDynamicallyQuantizedPartitioner()],
         )
+
+    def test_dependency_tracking_memory(self):
+        """
+        Test that the partitioner keeps node dependencies compactly. A set of
+        all downstream nodes for every node grows with the square of the graph
+        size, so such sets run out of memory on large models.
+        """
+        import tracemalloc
+
+        def peak_memory(function, *args):
+            # Tracing may already be on, for example with PYTHONTRACEMALLOC.
+            started = not tracemalloc.is_tracing()
+            if started:
+                tracemalloc.start()
+            tracemalloc.reset_peak()
+            before = tracemalloc.get_traced_memory()[0]
+            try:
+                result = function(*args)
+                return result, tracemalloc.get_traced_memory()[1] - before
+            finally:
+                if started:
+                    tracemalloc.stop()
+
+        chain = torch.fx.Graph()
+        x = chain.placeholder("x")
+        for i in range(1000):
+            op = (
+                torch.ops.aten.sub.Tensor if i % 100 == 0 else torch.ops.aten.add.Tensor
+            )
+            x = chain.call_function(op, (x, x))
+        chain.output(x)
+
+        # Two supported nodes among many independent ones joined at the end.
+        wide = torch.fx.Graph()
+        x = wide.placeholder("x")
+        branches = [
+            wide.call_function(torch.ops.aten.add.Tensor, (x, x)) for _ in range(2)
+        ]
+        branches += [
+            wide.call_function(torch.ops.aten.sin.default, (x,)) for _ in range(10000)
+        ]
+        wide.output(wide.call_function(torch.ops.aten.cat.default, (branches,)))
+
+        # One supported node after a long unsupported chain.
+        single = torch.fx.Graph()
+        x = single.placeholder("x")
+        for _ in range(5000):
+            x = single.call_function(torch.ops.aten.sin.default, (x,))
+        single.output(single.call_function(torch.ops.aten.add.Tensor, (x, x)))
+
+        support = create_op_support(
+            lambda _, node: node.target == torch.ops.aten.add.Tensor
+        )
+
+        def partition(graph_module):
+            return GroupBasedPartitioner(graph_module, support).propose_partitions()
+
+        # The old sets alone took about 40 MB on the chains.
+        cases = {
+            # Each run of adds between two subs becomes one partition.
+            "chain": (chain, [99] * 10, 8 * 2**20),
+            "wide": (wide, [2], 8 * 2**20),
+            # Nothing to merge, so nothing is built.
+            "single": (single, [], 2**20),
+        }
+        for name, (graph, partition_sizes, budget) in cases.items():
+            with self.subTest(name):
+                graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+                partitions, peak = peak_memory(partition, graph_module)
+                self.assertEqual(
+                    sorted(len(p.nodes) for p in partitions), partition_sizes
+                )
+                # The parent class builds dependency sets that this class does
+                # not use. Only what this class adds counts.
+                _, parent = peak_memory(
+                    CapabilityBasedPartitioner, graph_module, support
+                )
+                self.assertLess(peak - parent, budget)
+
+    def test_group_merges_with_supported_user(self):
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        a = graph.call_function(torch.ops.aten.add.Tensor, (x, x))
+        b = graph.call_function(torch.ops.aten.add.Tensor, (a, a))
+        c = graph.call_function(torch.ops.aten.add.Tensor, (b, b))
+        graph.output(c)
+        partitioner = GroupBasedPartitioner(
+            torch.fx.GraphModule(torch.nn.Module(), graph),
+            create_op_support(lambda _, node: node.op == "call_function"),
+            node_groups=[[a, b]],
+        )
+        partitions = partitioner.propose_partitions()
+        self.assertEqual([set(p.nodes) for p in partitions], [{a, b, c}])
+
+    def test_partitions_follow_graph_changes(self):
+        """
+        Test that proposing partitions again after the graph changed checks
+        cycles in the changed graph.
+        """
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        a = graph.call_function(torch.ops.aten.add.Tensor, (x, x))
+        b = graph.call_function(torch.ops.aten.add.Tensor, (a, a))
+        graph.output(b)
+        partitioner = GroupBasedPartitioner(
+            torch.fx.GraphModule(torch.nn.Module(), graph),
+            create_op_support(lambda _, node: node.target == torch.ops.aten.add.Tensor),
+            allows_single_node_partition=True,
+        )
+        partitions = partitioner.propose_partitions()
+        self.assertEqual([set(p.nodes) for p in partitions], [{a, b}])
+
+        with graph.inserting_after(a):
+            sin = graph.call_function(torch.ops.aten.sin.default, (a,))
+        b.args = (sin, sin)
+        partitions = partitioner.propose_partitions()
+        # Merging a and b now would make a cycle through the unsupported sin.
+        self.assertCountEqual([set(p.nodes) for p in partitions], [{a}, {b}])
+
+    def test_random_graphs_give_partitions_without_cycles(self):
+        """
+        Test that no proposed partition has a dependency cycle, on random
+        graphs with random operator support and random node groups.
+        """
+
+        def reachable(node, next_nodes):
+            seen, stack = set(), [node]
+            while stack:
+                for other in next_nodes(stack.pop()):
+                    if other not in seen:
+                        seen.add(other)
+                        stack.append(other)
+            return seen
+
+        def supports(nodes):
+            return create_op_support(lambda _, node: node in nodes)
+
+        rng = random.Random(0)
+        for _ in range(300):
+            graph = torch.fx.Graph()
+            nodes = [graph.placeholder("x"), graph.placeholder("y")]
+            for _ in range(rng.randint(2, 40)):
+                inputs = (rng.choice(nodes), rng.choice(nodes))
+                nodes.append(graph.call_function(torch.ops.aten.add.Tensor, inputs))
+            graph.output(nodes[-1])
+            graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+            compute_nodes = nodes[2:]
+
+            node_groups, grouped = [], set()
+            for _ in range(rng.randint(0, 3)):
+                first, last = sorted(
+                    rng.sample(compute_nodes, 2), key=compute_nodes.index
+                )
+                # Every node on a path between the two ends, so that the group
+                # alone has no cycle.
+                group = {first, last} | (
+                    reachable(first, lambda n: n.users)
+                    & reachable(last, lambda n: n.all_input_nodes)
+                )
+                if not group & grouped:
+                    node_groups.append(list(group))
+                    grouped |= group
+            supported = grouped | {n for n in compute_nodes if rng.random() < 0.7}
+
+            partitioner = GroupBasedPartitioner(
+                graph_module,
+                supports(supported),
+                allows_single_node_partition=rng.random() < 0.5,
+                node_groups=node_groups,
+            )
+            for partition in partitioner.propose_partitions():
+                self.assertTrue(validate_partition(list(partition.nodes)))
