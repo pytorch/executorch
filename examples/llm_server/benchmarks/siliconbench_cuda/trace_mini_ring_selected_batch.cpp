@@ -34,30 +34,35 @@ extern "C" CUresult CUDAAPI cuLaunchKernel(CUfunction fn,unsigned gx,unsigned gy
  using Launch=CUresult(CUDAAPI*)(CUfunction,unsigned,unsigned,unsigned,unsigned,unsigned,unsigned,unsigned,CUstream,void**,void**);
  static auto real=reinterpret_cast<Launch>(dlsym(RTLD_NEXT,"cuLaunchKernel"));if(!real)std::abort();
  const char* name=nullptr;
+ bool direct_output=false;
  if(directory() && args && cuFuncGetName(&name,fn)==CUDA_SUCCESS && name) {
   bool ring=std::strcmp(name,"_decode_reference_order")==0;
   bool base=std::strcmp(name,"_sdpa_varlen_decode_kernel")==0;
+  bool generic=std::strcmp(name,"_sdpa_varlen_kernel")==0;
+  unsigned tensor_tokens=gx;
+  if(generic){int t=integer(args,9);generic=t>4 && t<=64 && gy==8 && gz==1;if(generic)tensor_tokens=unsigned(t);}
   bool full=base && gy==1 && (gz==4 || gz==8 || gz==16 || gz==32 || gz==64 || gz==128);
-  if((ring||base) && (gy==8 || full)) {
-   if(gx<1 || gx>64 || (!full && gz!=12) || pending!=-1)std::abort();
+  if((ring||base||generic) && (gy==8 || full)) {
+   if(tensor_tokens<1 || tensor_tokens>64 || (!full && gz!=12 && !generic) || pending!=-1)std::abort();
    checked(cudaStreamSynchronize(stream));
    int h=ring?14:8; if(integer(args,h)!=16)std::abort();
    // Exported T=1 is constexpr; T>1 is an i32 launch argument.
-   int delta=gx==1?0:1; if(delta && integer(args,h+1)!=int(gx))std::abort();
-   int id=capture_ordinal++;pending=id;pending_tokens=gx;pending_dimension=full?512:256;
+   int delta=generic?1:(tensor_tokens==1?0:1); if(delta && integer(args,h+1)!=int(tensor_tokens))std::abort();
+   direct_output=generic;
+   int id=capture_ordinal++;pending=id;pending_tokens=tensor_tokens;pending_dimension=full?512:256;
    pending_oh=integer(args,(ring?23:17)+delta);pending_ot=integer(args,(ring?24:18)+delta);
    auto prefix=std::to_string(id)+"-";
-   packed(prefix+"Q.bf16",pointer(args,0),gx,16,integer(args,h+1+delta),integer(args,h+2+delta),pending_dimension);
+   packed(prefix+"Q.bf16",pointer(args,0),tensor_tokens,16,integer(args,h+1+delta),integer(args,h+2+delta),pending_dimension);
    std::vector<int> info(162*7);checked(cudaMemcpy(info.data(),pointer(args,ring?13:7),info.size()*4,cudaMemcpyDeviceToHost));
    write(prefix+"info.i32",reinterpret_cast<char*>(info.data()),info.size()*4);
    const bool capture_history=full && !full_history_captured;
    for(int kind=0;kind<2;++kind) {
-    if(ring) packed(prefix+(kind?"V.bf16":"K.bf16"),pointer(args,kind?4:3),gx,8,integer(args,kind?7:5),integer(args,kind?8:6));
+    if(ring) packed(prefix+(kind?"V.bf16":"K.bf16"),pointer(args,kind?4:3),tensor_tokens,8,integer(args,kind?7:5),integer(args,kind?8:6));
     else {
      const int kv_dimension=full?512:2048;
-     std::vector<char> out(size_t(gx)*kv_dimension*2);
-     std::vector<char> history(capture_history?size_t(gx)*1025*512*2:0);int cols=info[4];if(cols<1 || cols>82)std::abort();
-     for(unsigned t=0;t<gx;++t) {
+     std::vector<char> out(size_t(tensor_tokens)*kv_dimension*2);
+     std::vector<char> history(capture_history?size_t(tensor_tokens)*1025*512*2:0);int cols=info[4];if(cols<1 || cols>82)std::abort();
+     for(unsigned t=0;t<tensor_tokens;++t) {
       int found=-1;for(int s=0;s<162;++s)if(t>=unsigned(info[s*7]) && t<unsigned(info[s*7]+info[s*7+1]) && info[s*7+1]>0){if(found!=-1)std::abort();found=s;}
       if(found<0)std::abort();int s=found*7;if(info[s+1]!=1 || info[s+3]<1025 || info[s+3]>1090)std::abort();
       int col=info[s+2];if(col<0 || col>=cols)std::abort();int row=(info[s+3]-1)%3071;
@@ -77,12 +82,12 @@ extern "C" CUresult CUDAAPI cuLaunchKernel(CUfunction fn,unsigned gx,unsigned gy
    }
    if(capture_history)full_history_captured=true;
    std::ofstream m(std::string(directory())+"/"+prefix+"metadata.json");
-   m<<"{\"kernel\":\""<<name<<"\",\"ordinal\":"<<id<<",\"tokens\":"<<gx<<",\"logical_end\":"<<info[3]<<",\"columns\":"<<info[4]<<",\"head_dimension\":"<<pending_dimension<<"}";
+   m<<"{\"kernel\":\""<<name<<"\",\"ordinal\":"<<id<<",\"tokens\":"<<tensor_tokens<<",\"logical_end\":"<<info[3]<<",\"columns\":"<<info[4]<<",\"head_dimension\":"<<pending_dimension<<"}";
   }
  }
  CUresult result=real(fn,gx,gy,gz,bx,by,bz,shared,stream,args,extra);
  if(result==CUDA_SUCCESS && directory() && name && pending>=0 &&
-  (std::strcmp(name,"_reduce")==0 || std::strcmp(name,"_sdpa_varlen_reduce_kernel")==0)) {
+  (direct_output || std::strcmp(name,"_reduce")==0 || std::strcmp(name,"_sdpa_varlen_reduce_kernel")==0)) {
   checked(cudaStreamSynchronize(stream));packed(std::to_string(pending)+"-attention-out.bf16",pointer(args,3),pending_tokens,16,pending_oh,pending_ot,pending_dimension);pending=-1;
  }
  return result;
