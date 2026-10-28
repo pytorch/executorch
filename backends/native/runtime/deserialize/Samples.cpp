@@ -32,9 +32,8 @@ bool is_ssa_name(std::string_view name) {
 
 bool is_set_name(std::string_view name) {
   return !name.empty() && std::all_of(name.begin(), name.end(), [](char c) {
-           return std::isalnum(static_cast<unsigned char>(c)) || c == '_' ||
-               c == '-';
-         });
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-';
+  });
 }
 
 bool is_digits(std::string_view text) {
@@ -55,7 +54,8 @@ bool is_supported_version(const Json& version) {
       is_digits(text.substr(dot + 1));
 }
 
-// A newer minor may add fields that reference tensors this reader does not know.
+// A newer minor may add fields that reference tensors this reader does not
+// know.
 bool is_newer_minor(const Json& version) {
   const std::string_view text = version.get_ref<const std::string&>();
   return text.substr(text.find('.') + 1) != "0";
@@ -171,11 +171,10 @@ class SetDecoder {
       const std::string key_prefix = at + ".intermediates.";
       for (const auto& [name, key] : intermediates.items()) {
         if (!is_ssa_name(name)) {
-          fail(
-              std::string("bad intermediate ")
-                  .append(name)
-                  .append(" in ")
-                  .append(at));
+          fail(std::string("bad intermediate ")
+                   .append(name)
+                   .append(" in ")
+                   .append(at));
         }
         result.intermediates.emplace(name, tensor(key, key_prefix + name));
       }
