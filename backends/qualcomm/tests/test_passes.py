@@ -7,6 +7,7 @@ from executorch.backends.qualcomm._passes import (
     ConvertBmmToMatmul,
     ConvertMhaToSha,
     DecomposeColIm,
+    DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FoldQDQ,
     InsertIOQDQ,
@@ -139,6 +140,50 @@ class TestPasses(unittest.TestCase):
 
         # Must not raise.
         LiftConstantScalarOperands().call(gm)
+
+    def test_decompose_wrap_with_autocast_nested_regions(self):
+        # A region that reads inputs and parameters names its placeholders
+        # like arg2_1, arg0_1, arg1_1, not after the operands passed to it.
+        # Both nested submodules are named submod_1, each in its own module.
+        # The second linear runs in bfloat16 only because of the outer region.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(16, 16)
+
+            def forward(self, x):
+                with torch.autocast("cpu", dtype=torch.bfloat16):
+                    with torch.autocast("cpu", enabled=False):
+                        y = self.linear(x)
+                    z = self.linear(y * 2)
+                return y + 1, z
+
+        # A disabled region is copied, not retraced, so its nested region
+        # is inlined on its own.
+        class DisabledOuterModel(Model):
+            def forward(self, x):
+                with torch.autocast("cpu", enabled=False):
+                    y = x * 2
+                    with torch.autocast("cpu", dtype=torch.bfloat16):
+                        z = self.linear(y)
+                return y + 1, z
+
+        x = torch.randn(4, 16)
+        for model in (Model().eval(), DisabledOuterModel().eval()):
+            with self.subTest(model=type(model).__name__):
+                gm = torch.export.export(model, (x,)).module()
+
+                DecomposeWrapWithAutocast()(gm)
+
+                self.assertFalse(
+                    any(
+                        isinstance(
+                            n.target, torch._higher_order_ops.wrap.WrapWithAutocast
+                        )
+                        for n in gm.graph.nodes
+                    )
+                )
+                torch.testing.assert_close(gm(x), model(x))
 
     def test_build_op_wrappers_returns_context_binary(self):
         op_name = "ctx_loader_build"
