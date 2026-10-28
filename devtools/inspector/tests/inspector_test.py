@@ -1293,6 +1293,53 @@ class TestInspector(unittest.TestCase):
                 )
             self.assertIn("Invalid runtime debug handle", str(context.exception))
 
+    def test_inspector_with_multi_method_etrecord(self):
+        class AddOne(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        class TimesTwo(torch.nn.Module):
+            def forward(self, x):
+                return x * 2
+
+        example_inputs = (torch.randn(2, 2),)
+        et_program_manager = to_edge(
+            {
+                "forward": export(AddOne(), example_inputs),
+                "times_two": export(TimesTwo(), example_inputs),
+            },
+            generate_etrecord=True,
+        ).to_executorch()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            etrecord_path = os.path.join(tmp_dir, "etrecord.bin")
+            et_program_manager.get_etrecord().save(etrecord_path)
+
+            with patch.object(
+                _inspector, "gen_etdump_object", return_value=None
+            ), patch.object(EventBlock, "_gen_from_etdump", return_value=[]):
+                # Used to raise AttributeError: 'dict' object has no attribute 'graph_module'
+                inspector_instance = Inspector(
+                    etdump_path=ETDUMP_PATH,
+                    etrecord=etrecord_path,
+                )
+
+        # Multi-method ETRecords store the edge dialect programs as a dict
+        self.assertIsInstance(inspector_instance._etrecord.edge_dialect_program, dict)
+
+        # The forward method's edge dialect program is used as the reference graph
+        graph_module, graph_name = inspector_instance._resolve_reference_graph(
+            "edge_dialect_exported_program"
+        )
+        self.assertEqual(graph_name, "edge_dialect_exported_program")
+        targets = [
+            str(node.target)
+            for node in graph_module.graph.nodes
+            if node.op == "call_function"
+        ]
+        self.assertTrue(any("add" in target for target in targets))
+        self.assertFalse(any("mul" in target for target in targets))
+
     def test_calculate_numeric_gap_with_reference_graph_name(self):
         """Test calculate_numeric_gap with the reference_graph parameter using a custom graph from graph_map."""
         # Create a context manager to patch functions called by Inspector.__init__

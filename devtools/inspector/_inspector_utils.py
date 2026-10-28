@@ -296,6 +296,18 @@ def is_debug_output(value: Value) -> bool:
     return value.output is not None and value.output.bool_val
 
 
+def get_forward_edge_dialect_program(etrecord: ETRecord) -> Optional[ExportedProgram]:
+    """
+    Return the edge dialect program of the forward method. For multi-method
+    models, ETRecord stores a dict of method name -> edge dialect program, and
+    the Inspector only correlates the forward method.
+    """
+    edge_dialect_program = etrecord.edge_dialect_program
+    if isinstance(edge_dialect_program, dict):
+        return edge_dialect_program.get(FORWARD)
+    return edge_dialect_program
+
+
 def gen_graphs_from_etrecord(
     etrecord: ETRecord, enable_module_hierarchy: bool = False
 ) -> Mapping[str, OperatorGraph]:
@@ -308,9 +320,10 @@ def gen_graphs_from_etrecord(
             )
             for name, exported_program in etrecord.graph_map.items()
         }
-    if etrecord.edge_dialect_program is not None:
+    edge_dialect_program = get_forward_edge_dialect_program(etrecord)
+    if edge_dialect_program is not None:
         op_graph_map[EDGE_DIALECT_GRAPH_KEY] = FXOperatorGraph.gen_operator_graph(
-            etrecord.edge_dialect_program.graph_module,
+            edge_dialect_program.graph_module,
             enable_module_hierarchy=enable_module_hierarchy,
         )
 
