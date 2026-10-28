@@ -148,9 +148,7 @@ void cache_entry_removed(NSURL* root, const CacheEntry& entry) {
   EXPECT_FALSE(cache_exists(cache_identity_url(root, entry.key)));
   EXPECT_FALSE(cache_exists(test_bookmark_url(root, entry.key)));
   EXPECT_FALSE(cache_exists(entry.stage));
-  EXPECT_TRUE(cache_exists([[root URLByAppendingPathComponent:@"locks"]
-      URLByAppendingPathComponent:[entry.key
-                                      stringByAppendingString:@".lock"]]));
+  EXPECT_TRUE(cache_exists(test_bookmark_lock_url(root, entry.key)));
 }
 
 NSMutableDictionary* cache_manifest(char identity) {

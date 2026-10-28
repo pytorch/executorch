@@ -221,6 +221,7 @@ Error clear_bookmark_assets(
     return locked.error();
   if (locked.get() == nullptr)
     return Error::Ok;
+  ET_LOG(Info, "Core AI cache clear started: key=%s", key.UTF8String);
   auto bookmark = read_bookmark(*locked.get(), /*maintenance=*/true);
   if (!bookmark.ok() && bookmark.error() != Error::InvalidExternalData) {
     return bookmark.error();
@@ -246,14 +247,21 @@ Error clear_bookmark_assets(
       ET_CHECK_OR_RETURN_ERROR(
           loader != nil, Internal, "Cannot create Core AI model loader");
     }
+    ET_LOG(Info, "Core AI SDK eviction requested: key=%s", key.UTF8String);
     ET_CHECK_OK_OR_RETURN_ERROR(evict_one(loader, bytes));
+    ET_LOG(
+        Info,
+        "Core AI SDK cache entry absence confirmed: key=%s",
+        key.UTF8String);
   }
   ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark_staging(
       *locked.get(), true, StorageRemovalMode::Maintenance));
   if (!bookmark.ok() || bytes != nil) {
     ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark(*locked.get()));
   }
-  return remove_bookmark_identity(*locked.get());
+  ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark_identity(*locked.get()));
+  ET_LOG(Info, "Core AI local cache entry cleared: key=%s", key.UTF8String);
+  return Error::Ok;
 }
 
 } // namespace executorch::backends::coreai

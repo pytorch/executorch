@@ -229,6 +229,24 @@ clearing or after process exit, so waiters and future openers keep using the
 same inode. Removing the assets root externally requires all loads, sessions
 and maintenance to stop.
 
+### Lifecycle logging
+
+Build with `EXECUTORCH_ENABLE_LOGGING=ON` and `EXECUTORCH_LOG_LEVEL=Info` to
+observe cache lookup, bookmark restoration hits, missing-bookmark versus
+SDK-confirmed misses, specialization start/success, durable bookmark saves, and
+cache-clearing milestones. Each message carries the cache key so events from
+multiple partitions can be correlated. These messages do not include bookmark
+contents, model data, or per-inference logs.
+
+A cache hit means that the SDK successfully restored a model from its bookmark.
+Specialization start means a request to the SDK's persistent default cache; the
+SDK does not report whether that request compiled afresh or reused an internal
+artifact. The durable-save message confirms local bookmark publication,
+including its final directory flush, not independent verification of SDK-private
+artifact storage. During clearing, SDK entry absence and successful local
+cleanup are reported separately. Failed operations do not emit their success
+messages, and clearing an absent entry remains quiet.
+
 ### Clearing cached assets
 
 The public C++ maintenance APIs are in `executorch::backends::coreai`:
@@ -256,7 +274,7 @@ not load models or materialize assets. Actual SDK eviction still requires a
 usable bookmark and an available loader.
 
 These synchronous calls require callers to unload affected models and prevent
-concurrent loads, inference and maintenance across processes. Per-key locks are
+concurrent loads, inference and maintenance across processes. Stripe locks are
 not a whole-root barrier. Clearing first deletes the recorded SDK entry, then
 staging, then its bookmark. Busy or unknown SDK errors preserve the files;
 SDK-confirmed absence permits cleanup. Filesystem errors may leave partial
@@ -374,21 +392,6 @@ OS 27 minimum; unrelated runtime targets keep the configured deployment target.
 Ninja builds use one architecture per build directory. Current runtime support
 covers arm64 macOS and iOS device builds. x86_64 builds are blocked by Swift
 `Float16` availability, and the tested iOS simulator SDKs do not contain Core AI.
-
-### Lifecycle logging
-
-Build with `EXECUTORCH_ENABLE_LOGGING=ON` and `EXECUTORCH_LOG_LEVEL=Info` to
-observe cache lookup, bookmark restoration hits, missing-bookmark versus
-SDK-confirmed misses, specialization start/success, and durable bookmark saves. Each message carries the cache key so events from
-multiple partitions can be correlated. These messages do not include bookmark
-contents, model data, or per-inference logs.
-
-A cache hit means that the SDK successfully restored a model from its bookmark.
-Specialization start means a request to the SDK's persistent default cache; the
-SDK does not report whether that request compiled afresh or reused an internal
-artifact. The durable-save message confirms local bookmark publication,
-including its final directory flush, not independent verification of SDK-private
-artifact storage. Failed operations do not emit their success messages.
 
 Enable `EXECUTORCH_BUILD_EXTENSION_DATA_LOADER` for the public PTE-file
 maintenance API and consumers such as `Module`.

@@ -803,4 +803,103 @@ TEST_F(CoreAILifecycleLogTest, BeforeSdkFaultDoesNotLogSpecializationStart) {
   EXPECT_EQ(logs.find("Core AI cache bookmark saved"), std::string::npos);
 }
 
+TEST_F(CoreAILifecycleLogTest, FinalBookmarkFlushFailureDoesNotLogDurableSave) {
+  BookmarkLoaderScope fake;
+  {
+    auto locked = lock_bookmark(root.url.path, key);
+    ASSERT_TRUE(locked.ok());
+    ASSERT_EQ(
+        ensure_bookmark_identity(*locked.get(), manifest, @"macOS", @"arch_b"),
+        Error::Ok);
+  }
+  StorageFaultScope fault(StorageOperation::FullSync);
+  fault.match_index = 5;
+  const auto logs =
+      capture([&] { return acquire(fake.loader, &data); }, Error::AccessFailed);
+  EXPECT_EQ(fault.hits, 1);
+  EXPECT_NE(logs.find("Core AI specialization succeeded:"), std::string::npos);
+  EXPECT_EQ(logs.find("Core AI cache bookmark saved"), std::string::npos);
+  EXPECT_TRUE([saved() isEqual:fake.loader.lastAcquired.bookmark]);
+}
+
+TEST_F(CoreAILifecycleLogTest, ClearLogsConfirmedAbsenceBeforeLocalCompletion) {
+  BookmarkLoaderScope fake;
+  ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  const auto logs = capture(
+      [&] { return clear_bookmark_assets(root.url.path, key, fake.loader); });
+  expect_order(
+      logs,
+      {
+          "Core AI cache clear started:",
+          "Core AI SDK eviction requested:",
+          "Core AI SDK cache entry absence confirmed:",
+          "Core AI local cache entry cleared:",
+      });
+  EXPECT_EQ(saved(), nil);
+}
+
+TEST_F(CoreAILifecycleLogTest, FailedEvictionWithConfirmedMissLogsAbsence) {
+  BookmarkLoaderScope fake;
+  ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  fake.loader.evictError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                               code:ENOENT
+                                           userInfo:nil];
+  fake.loader.restoreMiss = YES;
+  const auto logs = capture(
+      [&] { return clear_bookmark_assets(root.url.path, key, fake.loader); });
+  expect_order(
+      logs,
+      {
+          "Core AI SDK eviction requested:",
+          "Core AI SDK cache entry absence confirmed:",
+          "Core AI local cache entry cleared:",
+      });
+}
+
+TEST_F(CoreAILifecycleLogTest, EvictionErrorDoesNotLogAbsenceOrCompletion) {
+  BookmarkLoaderScope fake;
+  ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  fake.loader.evictError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                               code:EBUSY
+                                           userInfo:nil];
+  const auto logs = capture(
+      [&] { return clear_bookmark_assets(root.url.path, key, fake.loader); },
+      Error::Internal);
+  EXPECT_NE(logs.find("Core AI SDK eviction requested:"), std::string::npos);
+  EXPECT_EQ(
+      logs.find("Core AI SDK cache entry absence confirmed:"),
+      std::string::npos);
+  EXPECT_EQ(logs.find("Core AI local cache entry cleared:"), std::string::npos);
+  EXPECT_NE(saved(), nil);
+}
+
+TEST_F(
+    CoreAILifecycleLogTest,
+    IdentityRemovalFailureDoesNotLogLocalCompletion) {
+  BookmarkLoaderScope fake;
+  ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  StorageFaultScope fault(StorageOperation::Remove);
+  fault.match_index = 2;
+  const auto logs = capture(
+      [&] { return clear_bookmark_assets(root.url.path, key, fake.loader); },
+      Error::AccessFailed);
+  EXPECT_EQ(fault.hits, 1);
+  EXPECT_NE(
+      logs.find("Core AI SDK cache entry absence confirmed:"),
+      std::string::npos);
+  EXPECT_EQ(logs.find("Core AI local cache entry cleared:"), std::string::npos);
+  auto locked = lock_bookmark(root.url.path, key, false);
+  ASSERT_TRUE(locked.ok());
+  ASSERT_NE(locked.get(), nullptr);
+  auto identity = read_bookmark_identity(*locked.get());
+  ASSERT_TRUE(identity.ok());
+  EXPECT_NE(identity.get(), nil);
+}
+
+TEST_F(CoreAILifecycleLogTest, AbsentEntryClearRemainsQuiet) {
+  const auto logs =
+      capture([&] { return clear_bookmark_assets(root.url.path, key, nil); });
+  EXPECT_TRUE(logs.empty()) << logs;
+}
+
 } // namespace
