@@ -42,20 +42,29 @@ INT_T floor_divide(INT_T a, INT_T b) {
 }
 
 /**
- * std::fmod for integers, without rounding through double. Like std::fmod, %
- * keeps the sign of a. a % -1 overflows for the most negative signed value,
- * and the result is 0 for every a.
+ * std::fmod, with integers computed as integers so that int64 values above
+ * 2^53 are not rounded through double. Like std::fmod, % keeps the sign of a.
+ * a % -1 overflows for the most negative signed value, and the result is 0
+ * for every a.
  */
 template <
-    typename INT_T,
-    typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
-INT_T integer_fmod(INT_T a, INT_T b) {
-  if constexpr (std::is_signed<INT_T>::value) {
+    typename CTYPE,
+    typename std::enable_if<std::is_floating_point<CTYPE>::value, int>::type =
+        0>
+CTYPE fmod_override(CTYPE a, CTYPE b) {
+  return std::fmod(a, b);
+}
+
+template <
+    typename CTYPE,
+    typename std::enable_if<std::is_integral<CTYPE>::value, int>::type = 0>
+CTYPE fmod_override(CTYPE a, CTYPE b) {
+  if constexpr (std::is_signed<CTYPE>::value) {
     if (b == -1) {
       return 0;
     }
   }
-  return static_cast<INT_T>(a % b);
+  return static_cast<CTYPE>(a % b);
 }
 
 template <

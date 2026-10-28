@@ -249,15 +249,6 @@ Tensor& div_scalar_mode_out(
       InvalidArgument,
       out);
 
-  // Check for intergral division by zero
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      !(executorch::runtime::isIntegralType(common_type, true) &&
-        utils::scalar_to<double>(b) == 0),
-      InvalidArgument,
-      out,
-      "Div mode operation encountered integer division by zero");
-
   // Check Dim Order
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
@@ -274,8 +265,18 @@ Tensor& div_scalar_mode_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   ET_DEFINE_OPERATOR_NAME(op_name, "div.Scalar_mode_out");
 
+  bool div_by_zero_error = false;
+
   ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    // Like ATen, the scalar takes the compute dtype first, so a scalar such as
+    // 256 for an int8 tensor becomes 0.
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+    if constexpr (std::is_integral_v<CTYPE_COMPUTE>) {
+      if (val_b == 0) {
+        div_by_zero_error = true;
+        return;
+      }
+    }
     utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [val_b, mode_is_trunc](const CTYPE_COMPUTE val_a) {
           CTYPE_COMPUTE value = val_a / val_b;
@@ -294,6 +295,13 @@ Tensor& div_scalar_mode_out(
         out,
         utils::SupportedTensorDtypes::REALHBF16);
   });
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      !div_by_zero_error,
+      InvalidArgument,
+      out,
+      "Div mode operation encountered integer division by zero");
 
   return out;
 }
