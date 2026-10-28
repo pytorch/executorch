@@ -79,3 +79,22 @@ if(TARGET native_runner_utils)
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
   )
 endif()
+
+if(TARGET native_llm_runner_utils)
+  add_executable(
+    native_llm_runner_utils_test
+    ../examples/hf_llm/runtime/LlmRunnerUtilsTest.cpp
+  )
+  target_link_libraries(
+    native_llm_runner_utils_test PRIVATE native_llm_runner_utils
+                                         GTest::gtest_main
+  )
+  add_test(NAME native_llm_runner_utils_test
+           COMMAND native_llm_runner_utils_test
+  )
+  target_compile_options(
+    native_llm_runner_utils_test
+    PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  )
+endif()
