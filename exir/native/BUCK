@@ -20,5 +20,6 @@ fbcode_target(
         "//executorch/backends/native:lib",
         "//executorch/exir:lib",
         "//executorch/exir/_serialize:ptn",
+        "//executorch/exir/_serialize:ptn_samples",
     ],
 )
