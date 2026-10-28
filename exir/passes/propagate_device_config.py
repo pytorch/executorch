@@ -27,9 +27,9 @@ from torch.fx._compatibility import compatibility
 class PropagateDeviceConfig:
     """Controls whether the runtime copies method inputs and outputs across the device boundary.
 
-    Skipping a copy also means the runtime must not reserve its own buffer for the tensor, or it
-    would fill that buffer from the caller's memory and the copy would come back. Memory planning
-    allocates graph inputs and outputs by default, so a program using either skip below needs::
+    Memory planning reserves buffers for graph inputs and outputs by default. A program that skips
+    the input copy must use ``alloc_graph_input=False``. Unplanning the outputs as well, as below,
+    copies the least::
 
         ExecutorchBackendConfig(
             propagate_device_config=PropagateDeviceConfig(
@@ -43,7 +43,9 @@ class PropagateDeviceConfig:
         )
 
     Without ``alloc_graph_input=False`` the runtime reserves device memory for an input the caller
-    already owns, then copies into it with a host memcpy, which is undefined for device memory.
+    already owns and refuses to copy into it, so every call fails with ``NotSupported``. Planned
+    outputs work, but they live in the method's memory, which the next run overwrites, and the
+    Python ``execute()`` copies them unless it gets ``clone_outputs=False``.
     """
 
     # When True, method-level input tensors that feed directly into a device
@@ -52,8 +54,9 @@ class PropagateDeviceConfig:
     # pre-staged on GPU.
     #
     # Pair with MemoryPlanningPass(alloc_graph_input=False), or the runtime reserves its own buffer
-    # for the input and copies the caller's memory into it, which is what this exists to avoid.
-    # A dict can be used to set per-method values, keyed by method name.
+    # for the input and refuses the caller's tensor.
+    # For per-method values, pass a dict of PropagateDeviceConfig, keyed by method name, as the
+    # propagate_device_config of ExecutorchBackendConfig.
     skip_h2d_for_method_inputs: Union[bool, Dict[str, bool]] = False
 
     # When True, device delegate outputs that are directly method outputs
@@ -61,8 +64,11 @@ class PropagateDeviceConfig:
     # Useful for cross-method GPU pipelines where the next method consumes
     # GPU tensors directly.
     #
-    # Pair with MemoryPlanningPass(alloc_graph_output=False) for the same reason as the input flag.
-    # A dict can be used to set per-method values, keyed by method name.
+    # Planned outputs work, but they live in the method's memory, which the next run overwrites,
+    # and the Python runtime copies them. MemoryPlanningPass(alloc_graph_output=False) avoids
+    # that copy, and then a C++ caller must set each output with Module::set_output.
+    # For per-method values, pass a dict of PropagateDeviceConfig, keyed by method name, as the
+    # propagate_device_config of ExecutorchBackendConfig.
     skip_d2h_for_method_outputs: Union[bool, Dict[str, bool]] = False
 
     def __hash__(self) -> int:

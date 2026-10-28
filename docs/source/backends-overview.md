@@ -22,7 +22,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 |--------------------------------------------------------------|---------------|---------------|---------------------------------|
 | [XNNPACK](backends/xnnpack/xnnpack-overview.md)              | All           | CPU           | General-purpose, fallback       |
 | [CUDA](backends/cuda/cuda-overview.md)                       | Linux/Windows | GPU           | NVIDIA GPU acceleration         |
-| [TensorRT](backends/tensorrt/tensorrt-overview.md)           | Linux         | GPU           | NVIDIA GPU acceleration via TensorRT |
+| [TensorRT](backends/tensorrt/tensorrt-overview.md)           | Linux/Windows | GPU           | NVIDIA GPU acceleration via TensorRT |
 | [Core ML](backends/coreml/coreml-overview.md)                | iOS, macOS    | NPU/GPU/CPU   | Apple devices, high performance |
 | [MLX](/backends/mlx/mlx-overview.md)                         | iOS (experimental), macOS | GPU | Apple Silicon GPU (MLX)         |
 | [Vulkan](backends/vulkan/vulkan-overview.md)                 | Android, Linux, Windows | GPU  | Android devices (mature); Desktops (experimental) |
