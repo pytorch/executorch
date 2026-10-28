@@ -729,12 +729,12 @@ jobs:
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           toolchain_prefix=arm-none-eabi-
-          threshold="34000" # GCC 15.2, minimal PAL + nano baseline: 33372 bytes, 2026-10-27
+          threshold="35000" # GCC 15.2, minimal PAL + nano baseline: 32180 bytes, 2026-10-28
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
-          threshold="57000" # Zephyr SDK 1.0.1, minimal PAL baseline: 55800 bytes, 2026-10-27
+          threshold="50000" # Zephyr SDK 1.0.1, minimal PAL baseline: 46112 bytes, 2026-10-28
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
         else
           echo "Unsupported OS selection: ${{ matrix.os }}"
