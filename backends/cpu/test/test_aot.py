@@ -214,6 +214,44 @@ class CPUAOTTest(unittest.TestCase):
         ]
         self.assertEqual(delegate_targets.count("torch.ops.aten.linear.default"), 1)
 
+    def test_hard_activation_constant_casts_are_folded_into_delegate(self):
+        for activation in (
+            torch.nn.functional.hardsigmoid,
+            torch.nn.functional.hardswish,
+        ):
+
+            class Model(torch.nn.Module):
+                def forward(self, x):
+                    return activation(x)
+
+            inputs = (torch.randn(2, 3, 4, 5),)
+            edge = to_edge_transform_and_lower(
+                torch.export.export(Model(), inputs),
+                partitioner=[CPUPartitioner()],
+            )
+            exported = edge.exported_program()
+            # The lifted int64->FP32 casts must be pulled into the delegate,
+            # leaving no copy boundaries in the top-level graph.
+            self.assertEqual(
+                [
+                    node
+                    for node in exported.graph.nodes
+                    if node.op == "call_function"
+                    and "to_dim_order_copy" in str(node.target)
+                ],
+                [],
+            )
+            program = edge.to_executorch().executorch_program
+            self.assertEqual(
+                [d.id for d in program.execution_plan[0].delegates], ["CpuBackend"]
+            )
+            graph = deserialize_graph(bytes(program.backend_delegate_data[0].data))
+            self.assertNotIn(
+                "torch.ops.dim_order_ops._to_dim_order_copy.default",
+                [node.target for node in graph.nodes],
+            )
+            torch.testing.assert_close(exported.module()(*inputs), Model()(*inputs))
+
     def test_constants_have_recorded_readable_tail(self):
         model = torch.nn.Linear(2, 3).eval()
         result = CpuBackend.preprocess(
