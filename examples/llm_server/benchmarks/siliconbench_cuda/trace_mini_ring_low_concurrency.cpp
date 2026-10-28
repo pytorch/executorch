@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 namespace {
-int index = 0, pending = -1, pending_tokens = 0, pending_oh = 0, pending_ot = 0;
+int capture_ordinal = 0, pending = -1, pending_tokens = 0, pending_oh = 0, pending_ot = 0;
 const char* directory() { return std::getenv("ET_DIAGNOSTIC_ATTENTION_OUTPUT"); }
 void checked(cudaError_t e) { if (e != cudaSuccess) std::abort(); }
 int integer(void** a, int i) { return *static_cast<int*>(a[i]); }
@@ -40,7 +40,7 @@ extern "C" CUresult CUDAAPI cuLaunchKernel(CUfunction fn,unsigned gx,unsigned gy
    if(gx<1 || gx>4 || gz!=12 || pending!=-1)std::abort();
    checked(cudaStreamSynchronize(stream));
    int h=ring?14:8; if(integer(args,h)!=16)std::abort();
-   int id=index++;pending=id;pending_tokens=gx;
+   int id=capture_ordinal++;pending=id;pending_tokens=gx;
    pending_oh=integer(args,ring?23:17);pending_ot=integer(args,ring?24:18);
    auto prefix=std::to_string(id)+"-";
    packed(prefix+"Q.bf16",pointer(args,0),gx,16,integer(args,h+1),integer(args,h+2));
