@@ -83,6 +83,29 @@ def _is_arg_min_max_over_flattened_input(node: torch.fx.Node) -> bool:
     return dim is None
 
 
+_INSTANCE_NORM_TARGETS = (
+    torch.ops.aten.instance_norm.default,
+    exir_ops.edge.aten.instance_norm.default,
+)
+
+
+def _is_instance_norm_over_rank_5_input(node: torch.fx.Node) -> bool:
+    """Core ML's ``instance_norm`` only accepts rank 3 and 4 inputs.
+
+    ``InstanceNorm3d`` lowers fine, then fails to load with "parameter x[0]
+    has invalid rank 5".  Rejecting it lets the op decompose into ops Core ML
+    does run.  See pytorch/executorch#11702.
+    """
+    if node.target not in _INSTANCE_NORM_TARGETS:
+        return False
+    val = (
+        node.args[0].meta.get("val")
+        if isinstance(node.args[0], torch.fx.Node)
+        else None
+    )
+    return isinstance(val, torch.Tensor) and val.dim() == 5
+
+
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
     if len(schema.arguments) == 0:
@@ -155,6 +178,13 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         if _is_arg_min_max_over_flattened_input(node):
             self.log_once(
                 "torch.ops.aten.{argmax, argmin}.default with dim=None is "
+                "not supported by CoreML.  Overriding op support."
+            )
+            return True
+
+        if _is_instance_norm_over_rank_5_input(node):
+            self.log_once(
+                "torch.ops.aten.instance_norm.default with a rank 5 input is "
                 "not supported by CoreML.  Overriding op support."
             )
             return True
