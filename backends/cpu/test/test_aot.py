@@ -485,3 +485,106 @@ class CPUAOTTest(unittest.TestCase):
     def test_recipe_rejects_unknown_options(self):
         with self.assertRaisesRegex(ValueError, "Unexpected CPU recipe options"):
             ExportRecipe.get_recipe(CPURecipeType.FP32, precision="fp16")
+
+    def _lower_cpu(self, module, inputs):
+        edge = to_edge_transform_and_lower(
+            torch.export.export(module, inputs),
+            partitioner=[CPUPartitioner()],
+        )
+        program = edge.to_executorch().executorch_program
+        delegates = program.execution_plan[0].delegates
+        graphs = [
+            deserialize_graph(bytes(program.backend_delegate_data[i].data))
+            for i in range(len(delegates))
+        ]
+        targets = [node.target for graph in graphs for node in graph.nodes]
+        return edge, delegates, targets
+
+    def test_maxpool2d_dead_indices_preserve_semantic_operator(self):
+        model = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1).eval()
+        inputs = (torch.randn(1, 8, 20, 20),)
+        edge, delegates, targets = self._lower_cpu(model, inputs)
+        self.assertEqual([d.id for d in delegates], ["CpuBackend"])
+        self.assertNotIn("torch.ops.aten.max_pool2d.default", targets)
+        self.assertIn("torch.ops.aten.max_pool2d_with_indices.default", targets)
+        torch.testing.assert_close(
+            edge.exported_program().module()(*inputs), model(*inputs)
+        )
+
+    def test_maxpool2d_ceil_dilation_delegates(self):
+        model = torch.nn.MaxPool2d(
+            kernel_size=(2, 3),
+            stride=(2, 1),
+            padding=(1, 0),
+            dilation=2,
+            ceil_mode=True,
+        ).eval()
+        inputs = (torch.randn(1, 8, 20, 20),)
+        edge, delegates, targets = self._lower_cpu(model, inputs)
+        self.assertEqual([d.id for d in delegates], ["CpuBackend"])
+        self.assertIn("torch.ops.aten.max_pool2d_with_indices.default", targets)
+        torch.testing.assert_close(
+            edge.exported_program().module()(*inputs), model(*inputs)
+        )
+
+    def test_maxpool2d_consumed_indices_preserve_semantic_operator(self):
+        class IndicesOnly(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.pool = torch.nn.MaxPool2d(
+                    kernel_size=3, stride=2, padding=1, return_indices=True
+                )
+
+            def forward(self, x):
+                return self.pool(x)[1]
+
+        class ValuesAndIndices(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.pool = torch.nn.MaxPool2d(
+                    kernel_size=3, stride=2, padding=1, return_indices=True
+                )
+
+            def forward(self, x):
+                values, indices = self.pool(x)
+                return values, indices
+
+        for module in (IndicesOnly(), ValuesAndIndices()):
+            with self.subTest(module=type(module).__name__):
+                inputs = (torch.randn(1, 8, 20, 20),)
+                edge, delegates, targets = self._lower_cpu(module.eval(), inputs)
+                self.assertEqual([d.id for d in delegates], ["CpuBackend"])
+                self.assertNotIn("torch.ops.aten.max_pool2d.default", targets)
+                self.assertIn("torch.ops.aten.max_pool2d_with_indices.default", targets)
+                torch.testing.assert_close(
+                    edge.exported_program().module()(*inputs), module(*inputs)
+                )
+
+    def test_maxpool1d_delegates_through_2d_form(self):
+        model = torch.nn.MaxPool1d(kernel_size=3, stride=2, padding=1).eval()
+        inputs = (torch.randn(1, 8, 100),)
+        edge, delegates, targets = self._lower_cpu(model, inputs)
+        self.assertEqual([d.id for d in delegates], ["CpuBackend"])
+        self.assertNotIn("torch.ops.aten.max_pool2d.default", targets)
+        self.assertIn("torch.ops.aten.max_pool2d_with_indices.default", targets)
+        torch.testing.assert_close(
+            edge.exported_program().module()(*inputs), model(*inputs)
+        )
+
+    def test_maxpool3d_preserves_semantic_operator(self):
+        model = torch.nn.MaxPool3d(kernel_size=3, stride=2, padding=1).eval()
+        _, delegates, targets = self._lower_cpu(model, (torch.randn(1, 4, 8, 8, 8),))
+        self.assertEqual([d.id for d in delegates], ["CpuBackend"])
+        self.assertNotIn("torch.ops.aten.max_pool3d.default", targets)
+        self.assertIn("torch.ops.aten.max_pool3d_with_indices.default", targets)
+
+    def test_maxpool2d_unbatched_keeps_indices_form(self):
+        model = torch.nn.MaxPool2d(kernel_size=2, stride=2).eval()
+        inputs = (torch.randn(2, 4, 4),)
+        edge, delegates, targets = self._lower_cpu(model, inputs)
+        self.assertEqual([d.id for d in delegates], ["CpuBackend"])
+        self.assertIn("torch.ops.aten.max_pool2d_with_indices.default", targets)
+        self.assertNotIn("torch.ops.aten.max_pool2d.default", targets)
+        torch.testing.assert_close(
+            edge.exported_program().module()(*inputs), model(*inputs)
+        )
