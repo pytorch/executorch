@@ -95,12 +95,13 @@ def _check_input_dtypes(node: Node) -> Optional[str]:
         None if all input dtypes are supported, otherwise an error message string
         describing which input (arg position or kwarg name) has an unsupported dtype
     """
-    # Check positional args
+    # Check positional args, including tensor lists such as aten.cat's
     for i, arg in enumerate(node.args):
-        if isinstance(arg, Node):
-            dtype_error = _check_dtype(arg)
-            if dtype_error is not None:
-                return f"arg[{i}] ({arg.name}) {dtype_error}"
+        for a in pytree.tree_leaves(arg):
+            if isinstance(a, Node):
+                dtype_error = _check_dtype(a)
+                if dtype_error is not None:
+                    return f"arg[{i}] ({a.name}) {dtype_error}"
 
     # Check kwargs
     for kwarg_name, kwarg_val in node.kwargs.items():

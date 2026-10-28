@@ -150,6 +150,20 @@ class TestMLXPartitionerConstantInputs(unittest.TestCase):
                         builder.build()
 
 
+class TestMLXPartitionerUnsupportedDtypes(unittest.TestCase):
+    def test_float64_tensor_list_stays_off_the_delegate(self):
+        class Float64Cat(nn.Module):
+            def forward(self, x, y):
+                return x + torch.cat([y.sin(), y.cos()]).float()
+
+        _, delegates, err = _run(
+            Float64Cat().eval(),
+            (torch.randn(8), torch.randn(4, dtype=torch.float64)),
+        )
+        self.assertGreater(delegates, 0)
+        self.assertLess(err, 1e-6)
+
+
 class Sdpa(nn.Module):
     def __init__(self, is_causal: bool = False):
         super().__init__()
