@@ -139,9 +139,17 @@ class DecomposeGroupNormPass(ArmPass):
                     from_node=node,
                 )
                 mean = create_node(
-                    graph_module.graph, mean_op, args=(x_reshaped, dims, keepdim)
+                    graph_module.graph,
+                    mean_op,
+                    args=(x_reshaped, dims, keepdim),
+                    from_node=node,
                 )
-                sub = create_node(graph_module.graph, sub_op, args=(x_reshaped, mean))
+                sub = create_node(
+                    graph_module.graph,
+                    sub_op,
+                    args=(x_reshaped, mean),
+                    from_node=node,
+                )
                 var = create_node(
                     graph_module.graph,
                     var_op,
