@@ -29,6 +29,9 @@ pip install executorch==1.6.0 torch==2.15.0 \
   --extra-index-url https://pypi.org/simple
 ```
 
+For a nightly build, replace `executorch==1.6.0 torch==2.15.0` with
+`executorch torch` and follow the nightly index instructions below.
+
 | Machine you export on | Variant |
 | --- | --- |
 | CPU only | `cpu` |
@@ -51,9 +54,8 @@ the `cpu` variant to skip them.
 To get a change that has landed on the `main` branch but is not in a release
 yet, use a nightly build. These are rebuilt every day. Put `nightly/` in front
 of the variant name, for example `nightly/cu132`, and add `--pre` to the
-command, otherwise pip skips development versions. Replace the exact release
-versions above with `executorch torch` to select development versions. Nightly
-builds cover the same variants.
+command, otherwise pip skips development versions. Nightly builds cover the same
+variants.
 
 The second index is needed because a bare `--index-url` replaces PyPI instead of
 adding to it, and some dependencies are published only on PyPI.
