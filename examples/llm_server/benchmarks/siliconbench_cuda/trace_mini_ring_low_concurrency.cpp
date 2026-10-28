@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 namespace {
+bool full_history_captured = false;
 int capture_ordinal = 0, pending = -1, pending_tokens = 0, pending_oh = 0, pending_ot = 0, pending_dimension = 256;
 const char* directory() { return std::getenv("ET_DIAGNOSTIC_ATTENTION_OUTPUT"); }
 void checked(cudaError_t e) { if (e != cudaSuccess) std::abort(); }
@@ -49,11 +50,13 @@ extern "C" CUresult CUDAAPI cuLaunchKernel(CUfunction fn,unsigned gx,unsigned gy
    packed(prefix+"Q.bf16",pointer(args,0),gx,16,integer(args,h+1+delta),integer(args,h+2+delta),pending_dimension);
    std::vector<int> info(162*7);checked(cudaMemcpy(info.data(),pointer(args,ring?13:7),info.size()*4,cudaMemcpyDeviceToHost));
    write(prefix+"info.i32",reinterpret_cast<char*>(info.data()),info.size()*4);
+   const bool capture_history=full && !full_history_captured;
    for(int kind=0;kind<2;++kind) {
     if(ring) packed(prefix+(kind?"V.bf16":"K.bf16"),pointer(args,kind?4:3),gx,8,integer(args,kind?7:5),integer(args,kind?8:6));
     else {
      const int kv_dimension=full?512:2048;
-     std::vector<char> out(size_t(gx)*kv_dimension*2);int cols=info[4];if(cols<1 || cols>82)std::abort();
+     std::vector<char> out(size_t(gx)*kv_dimension*2);
+     std::vector<char> history(capture_history?size_t(gx)*1025*512*2:0);int cols=info[4];if(cols<1 || cols>82)std::abort();
      for(unsigned t=0;t<gx;++t) {
       int found=-1;for(int s=0;s<162;++s)if(t>=unsigned(info[s*7]) && t<unsigned(info[s*7]+info[s*7+1]) && info[s*7+1]>0){if(found!=-1)std::abort();found=s;}
       if(found<0)std::abort();int s=found*7;if(info[s+1]!=1 || info[s+3]<1025 || info[s+3]>1090)std::abort();
@@ -62,10 +65,17 @@ extern "C" CUresult CUDAAPI cuLaunchKernel(CUfunction fn,unsigned gx,unsigned gy
       size_t address_row=full?size_t(info[s+5]+info[s+3]-1):(size_t(row)*cols+col);
       const char* p=pointer(args,kind?2:1)+address_row*cs*2;
       checked(cudaMemcpy(out.data()+size_t(t)*kv_dimension*2,p,kv_dimension*2,cudaMemcpyDeviceToHost));
+      if(capture_history) {
+       if(info[s+3]!=1025)std::abort();
+       const char* first=pointer(args,kind?2:1)+size_t(info[s+5])*cs*2;
+       checked(cudaMemcpy(history.data()+size_t(t)*1025*512*2,first,1025*512*2,cudaMemcpyDeviceToHost));
+      }
      }
      write(prefix+(kind?"V.bf16":"K.bf16"),out.data(),out.size());
+     if(capture_history)write(prefix+(kind?"V-history.bf16":"K-history.bf16"),history.data(),history.size());
     }
    }
+   if(capture_history)full_history_captured=true;
    std::ofstream m(std::string(directory())+"/"+prefix+"metadata.json");
    m<<"{\"kernel\":\""<<name<<"\",\"ordinal\":"<<id<<",\"tokens\":"<<gx<<",\"logical_end\":"<<info[3]<<",\"columns\":"<<info[4]<<",\"head_dimension\":"<<pending_dimension<<"}";
   }

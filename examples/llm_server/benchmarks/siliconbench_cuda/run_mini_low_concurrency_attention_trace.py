@@ -5,7 +5,7 @@ from pathlib import Path
 def main(config,output):
  cfg=json.loads(config.read_text());output.mkdir(exist_ok=False);(output/'configuration.json').write_text(json.dumps(cfg,indent=2))
  for k,want in cfg['SHA256'].items():assert hashlib.sha256(Path(cfg[k]).read_bytes()).hexdigest()==want,k
- lib=output/'trace.so';cmd=['/usr/bin/c++','-O2','-std=c++17','-fPIC','-shared',cfg['interposer_source'],'-I'+cfg['cuda_include'],'-L'+cfg['cuda_lib'],'-Wl,-rpath,'+cfg['cuda_lib'],'-lcuda','-lcudart','-ldl','-o',str(lib)]
+ lib=Path(cfg.get('trace_library',str(output/'trace.so')));assert not lib.exists();cmd=['/usr/bin/c++','-O2','-std=c++17','-fPIC','-shared',cfg['interposer_source'],'-I'+cfg['cuda_include'],'-L'+cfg['cuda_lib'],'-Wl,-rpath,'+cfg['cuda_lib'],'-lcuda','-lcudart','-ldl','-o',str(lib)]
  (output/'build-command.json').write_text(json.dumps(cmd))
  with (output/'build.log').open('x') as log:subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT,check=True)
  rows=[]
