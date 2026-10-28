@@ -551,6 +551,27 @@ TEST_F(CoreAISourceTest, RejectsMalformedStoredBundlesWithoutReplacement) {
   }
 }
 
+TEST_F(CoreAISourceTest, PublishedDirectoriesUseDefaultPermissions) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  NSURL* reference = [storage.url URLByAppendingPathComponent:@"reference"];
+  ASSERT_EQ(mkdir(reference.fileSystemRepresentation, 0777), 0);
+  struct stat expected;
+  ASSERT_EQ(stat(reference.fileSystemRepresentation, &expected), 0);
+  TestData data;
+  auto manifest = source_manifest();
+  ASSERT_TRUE(manifest.ok());
+  auto source = prepare_source_bundle(manifest.get(), &data, storage.url.path);
+  ASSERT_TRUE(source.ok());
+  for (NSURL* directory in
+       @[ source.get().URLByDeletingLastPathComponent, source.get() ]) {
+    SCOPED_TRACE(directory.path.UTF8String);
+    struct stat actual;
+    ASSERT_EQ(stat(directory.fileSystemRepresentation, &actual), 0);
+    EXPECT_EQ(actual.st_mode & 0777, expected.st_mode & 0777);
+  }
+}
+
 TEST_F(CoreAISourceTest, PermissionErrorsRemainDistinctFromCorruptEntries) {
   if (geteuid() == 0) {
     GTEST_SKIP() << "Root can bypass directory read permissions";
@@ -567,10 +588,13 @@ TEST_F(CoreAISourceTest, PermissionErrorsRemainDistinctFromCorruptEntries) {
   for (NSURL* directory in
        @[ source.get().URLByDeletingLastPathComponent, source.get() ]) {
     SCOPED_TRACE(directory.path.UTF8String);
+    struct stat original;
+    ASSERT_EQ(stat(directory.fileSystemRepresentation, &original), 0);
     ASSERT_EQ(chmod(directory.fileSystemRepresentation, 0000), 0);
     auto denied =
         prepare_source_bundle(manifest.get(), &data, storage.url.path);
-    EXPECT_EQ(chmod(directory.fileSystemRepresentation, 0700), 0);
+    EXPECT_EQ(
+        chmod(directory.fileSystemRepresentation, original.st_mode & 07777), 0);
     EXPECT_EQ(denied.error(), Error::AccessFailed);
     EXPECT_TRUE(snapshot_matches(storage.url, snapshot));
     EXPECT_EQ(data.attempts, 1);
