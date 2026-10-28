@@ -256,6 +256,22 @@ class TestOutputStrideRearrange(unittest.TestCase):
             "simple add should match exactly",
         )
 
+    def test_detached_output(self):
+        """A method that returns y and y.detach() gets two separate outputs."""
+
+        class DetachedOutputModule(nn.Module):
+            def forward(self, x):
+                y = x * 2
+                return y, y.detach()
+
+        x = torch.randn(4, 64, device="cuda")
+        module = DetachedOutputModule().eval()
+        outputs = _run_et_aoti(module, (x,))
+        expected = module(x)
+        self.assertEqual(len(outputs), len(expected))
+        for output, reference in zip(outputs, expected):
+            torch.testing.assert_close(output.cpu(), reference.cpu())
+
 
 if __name__ == "__main__":
     unittest.main()

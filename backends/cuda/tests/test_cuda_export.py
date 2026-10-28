@@ -328,6 +328,44 @@ class TestCudaExport(unittest.TestCase):
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Simple add operation export failed")
 
+    def test_detach(self):
+        """Edge turns detach into detach_copy, which has no CUDA kernel of its own."""
+
+        class DetachModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x * 2).detach() + 1
+
+        class DetachedOutputModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                y = x * 2
+                return y, y.detach()
+
+        class DetachInCondModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.cond(x.sum() > 0, lambda t: t.sin().detach(), torch.cos, (x,))
+                # Without this detach, Edge decomposes the branch's detach.
+                return y.detach() + 1
+
+        x = torch.randn(4, 8)
+        for module in (DetachModule(), DetachedOutputModule(), DetachInCondModule()):
+            with self.subTest(module=type(module).__name__):
+                # The default config also verifies the program the backend rewrites.
+                edge_program_manager = to_edge_transform_and_lower(
+                    export(module, (x,), strict=True),
+                    partitioner=[
+                        CudaPartitioner(
+                            [CudaBackend.generate_method_name_compile_spec("forward")]
+                        )
+                    ],
+                )
+                self.assertTrue(
+                    any(
+                        "executorch_call_delegate" in str(node.target)
+                        for node in edge_program_manager.exported_program().graph.nodes
+                    )
+                )
+                edge_program_manager.to_executorch()
+
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""
 
