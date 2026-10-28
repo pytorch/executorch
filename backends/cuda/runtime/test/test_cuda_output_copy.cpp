@@ -84,12 +84,31 @@ TEST_F(
   EXPECT_EQ(copied(), (std::vector<float>{4, 5, 6, 7}));
 }
 
+// AOTInductor can return a slice of a larger buffer, which is not contiguous.
+TEST_F(CudaOutputCopyTest, CopiesAStridedView) {
+  slim::SlimTensor columns = slim::from_blob(
+      source_, {2, 4}, slim::c10::ScalarType::Float, slim::DEFAULT_CUDA_DEVICE);
+  columns.as_strided_({2, 2}, {4, 1}, /*storage_offset=*/1);
+  ASSERT_EQ(copy(columns), Error::Ok);
+  EXPECT_EQ(copied(), (std::vector<float>{1, 2, 5, 6}));
+}
+
 TEST_F(CudaOutputCopyTest, RejectsAViewOutsideItsStorage) {
   // from_blob sizes the storage to fit its view, so moving the view past the
   // end takes as_strided_. The moved view is still inside the allocation.
   slim::SlimTensor past_end = view(source_, /*storage_offset=*/2);
   past_end.as_strided_({2, 2}, {2, 1}, /*storage_offset=*/4);
   EXPECT_EQ(copy(past_end), Error::InvalidArgument);
+
+  // Its nbytes() would fit after the offset, but its last element would not.
+  slim::SlimTensor columns = slim::from_blob(
+      source_, {2, 4}, slim::c10::ScalarType::Float, slim::DEFAULT_CUDA_DEVICE);
+  columns.as_strided_({2, 2}, {4, 1}, /*storage_offset=*/3);
+  EXPECT_EQ(copy(columns), Error::InvalidArgument);
+
+  // Its extent in bytes does not fit in size_t.
+  columns.as_strided_({2, 2}, {(int64_t{1} << 62) - 1, 1}, 0);
+  EXPECT_EQ(copy(columns), Error::InvalidArgument);
 
   EXPECT_EQ(
       copy(view(static_cast<float*>(source_) + 4, /*storage_offset=*/-4)),
