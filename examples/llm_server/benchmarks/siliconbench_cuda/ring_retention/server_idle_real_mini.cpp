@@ -25,6 +25,7 @@ DEFINE_int32(concurrency,1,"Named sessions in each request group");
 DEFINE_int32(budget,4096,"Original exported bulk token budget");
 DEFINE_bool(shared_idle_refresh,false,"Enable optional idle shared-pool refresh");
 DEFINE_bool(idle_keep_high_water,true,"Preserve historical prefill working set");
+DEFINE_uint64(idle_spare_bytes,256ULL<<20,"Extra retained shared pool capacity above selected floor");
 DEFINE_bool(diagnostic_admission_barrier,false,"Test-only: admit the whole request group before scheduling");
 namespace cb=executorch::backends::cuda::batching;
 namespace b=executorch::extension::llm::batching;
@@ -137,7 +138,7 @@ int main(int argc,char** argv){
 #if SB_SERVER_IDLE_HOOK
     serving.idle_maintenance_delay=std::chrono::milliseconds(100);
     if(FLAGS_shared_idle_refresh)serving.idle_maintenance=[&]{
-      const auto begin=now();auto refresh=siliconbench::refresh_idle_shared_selected_workset(FLAGS_idle_keep_high_water);const auto end=now();
+      const auto begin=now();auto refresh=siliconbench::refresh_idle_shared_selected_workset(FLAGS_idle_keep_high_water,FLAGS_idle_spare_bytes);const auto end=now();
       {std::lock_guard<std::mutex> lock(idle_mutex);
        idle_events.push_back({{"begin_ns",begin},{"end_ns",end},{"used",refresh.used},{"used_high",refresh.used_high},
          {"reserved_before",refresh.reserved_before},{"reserved_after",refresh.reserved_after},{"keep",refresh.keep},{"cuda_error",int(refresh.error)}});}
@@ -154,6 +155,7 @@ int main(int argc,char** argv){
       {"concurrency",FLAGS_concurrency},{"budget",FLAGS_budget},{"initial_memory",memory()},{"idle_keep_high_water",FLAGS_idle_keep_high_water},
       {"decoder_is_deterministic_diagnostic_text",true},{"native_serving_API",true},{"groups",Json::array()}};
     result["test_only_admission_barrier"]=FLAGS_diagnostic_admission_barrier;
+    result["idle_spare_bytes"]=FLAGS_idle_spare_bytes;
     std::vector<std::vector<uint64_t>> histories(FLAGS_concurrency);
     for(int burst=0;burst<3;++burst){
       Json inputs=Json::array();

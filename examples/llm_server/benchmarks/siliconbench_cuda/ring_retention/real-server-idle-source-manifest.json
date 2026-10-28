@@ -1,6 +1,6 @@
 {
-  "server_idle_real_mini.cpp": "18229ab5d41b8388ef9d3c3a21b0f09a4788c7d53330531b8fdf3c1801ab8f5f",
+  "server_idle_real_mini.cpp": "430cdee7166618269ff2ebc76e70c1ba1b258123c8ace2fe9f63ebdaea48d19a",
   "build_real_server_idle.py": "c32d7af7e49708474e4b439b959f48b8113dc4df519afe10f5aecdd23ebf6835",
-  "run_real_server_idle.py": "c4bff0c1042a9a9f0588a32f3bfd68eb70a00ef2376746f50a87dff7b594ec95",
-  "idle_shared_quiet_policy.h": "e398ef4468327a96ce26cfca680e70d8e21678f451be77a5e973a5356e6367f4"
+  "run_real_server_idle.py": "8f3713bcbdd51eb4dd6c166a212de2b32842e0f0f1f8bb98e02d16f48d9cd0b2",
+  "idle_shared_quiet_policy.h": "e66fc4d3d236dd4bc5036d23d9c44d2299a50d37df5831e91cfcdf75ab43873c"
 }

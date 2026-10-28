@@ -16,7 +16,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('parent','overlay','source-scripts','mg-audit','gemma-audit','output','data-output','lock','python'):
         p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--arms',nargs='+',choices=['old','disabled','enabled','enabled-tight'],default=['old','disabled','enabled'])
+    p.add_argument('--arms',nargs='+',choices=['old','disabled','enabled','enabled-tight','enabled-floor'],default=['old','disabled','enabled'])
     p.add_argument('--admission-barrier',action='store_true',help='Test-only controlled batch admission, not production scheduling')
     args=p.parse_args();args.output.mkdir(parents=True,exist_ok=False);args.data_output.mkdir(parents=True,exist_ok=False)
     assert args.arms[0]=='old' and len(set(args.arms))==len(args.arms)
@@ -53,6 +53,7 @@ def main():
                                 binary=gate['old' if arm=='old' else 'new']['binary']
                                 active=arm.startswith('enabled')
                                 argv=[binary,'--pte='+str(Path(a['artifact'])/'model.pte'),'--data_path='+str(Path(a['artifact'])/'aoti_cuda_blob.ptd'),'--concurrency='+str(c),'--budget='+str(a['prefill_budget']),'--shared_idle_refresh='+('true' if active else 'false'),'--idle_keep_high_water='+('false' if arm=='enabled-tight' else 'true'),'--diagnostic_admission_barrier='+('true' if args.admission_barrier else 'false')]
+                                argv.append('--idle_spare_bytes='+str(0 if arm=='enabled-floor' else 256<<20))
                                 if stage=='graph':argv=['/usr/local/bin/nsys','profile','--trace=cuda,nvtx','--sample=none','--cpuctxsw=none','--cuda-graph-trace=node','--force-overwrite=false','-o',str(directory/'graphs'),*argv]
                                 env=dict(os.environ)
                                 for key in ('ET_CUDA_IDLE_SPARE_BYTES','ET_CUDA_IDLE_KEEP_PREFILL_WORKING_SET','CUDA_LAUNCH_BLOCKING'):env.pop(key,None)
@@ -68,6 +69,7 @@ def main():
                                     assert record['new_runtime']==(arm!='old') and record['idle_refresh_enabled']==active
                                     assert record['idle_keep_high_water']==(arm!='enabled-tight')
                                     assert record['test_only_admission_barrier']==args.admission_barrier
+                                    assert record['idle_spare_bytes']==(0 if arm=='enabled-floor' else 256<<20)
                                     assert len(record['groups'])==3
                                     rows.append(dict(stage=stage,model=model,round=number,concurrency=c,arm=arm,directory=str(directory),result=record))
                                 finally:
