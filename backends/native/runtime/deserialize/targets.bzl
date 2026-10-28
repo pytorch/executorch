@@ -105,6 +105,24 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
     )
+    # Recorded method calls bundled under samples/ in a .ptn package.
+    runtime.cxx_library(
+        name = "samples",
+        srcs = ["Samples.cpp"],
+        exported_headers = ["Samples.h"],
+        exported_deps = [
+            ":zip_reader",
+            "//executorch/backends/native/runtime/graph:scalar_type",
+        ],
+        deps = [
+            ":byte_span",
+            ":deserialize_error",
+            ":json",
+            ":limits",
+            ":safetensors_reader",
+        ],
+        visibility = ["PUBLIC"],
+    )
     runtime.cxx_test(
         name = "reader_bounds_test",
         srcs = ["test/ReaderBoundsTest.cpp"],
