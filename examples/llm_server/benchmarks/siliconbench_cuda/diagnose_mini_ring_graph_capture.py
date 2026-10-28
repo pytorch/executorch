@@ -40,7 +40,7 @@ def main(config, output):
     old_objects = [arg for arg in link_command if arg.endswith("mini_probe.cpp.o")]
     assert len(old_objects) == 1
     old_backend = cfg["old_backend_archive"]
-    assert link_command.count(old_backend) == 1
+    assert link_command.count(old_backend) == cfg["backend_archive_occurrences"]
     link_command = [str(obj) if arg == old_objects[0] else
                     cfg["backend_archive"] if arg == old_backend else arg
                     for arg in link_command if not arg.startswith("-Wl,--dependency-file=")]
