@@ -182,7 +182,7 @@ class TensorSpec:
         # convert to list making it easier to handle type checking
         self.shape: List[int] = list(shape)
         self.stride: Tuple[int] = contiguous_stride_from_shape(shape)
-        self.dim_order: Tuple[bytes] = dim_order_from_stride(self.stride)
+        self.dim_order: Tuple[int, ...] = dim_order_from_stride(self.stride)
         self.requires_grad = requires_grad
         self.layout = layout
         self.is_sparse = is_sparse
