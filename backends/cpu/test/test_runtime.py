@@ -132,6 +132,45 @@ class CPURuntimeTest(unittest.TestCase):
             actual = runtime.forward((x,))[0]
             torch.testing.assert_close(actual, model(x))
 
+    def test_maxpool2d_reference_fallback(self):
+        model = torch.nn.MaxPool2d(2)
+        for x in (
+            torch.arange(16, dtype=torch.int64).reshape(1, 1, 4, 4) + 2**40,
+            torch.empty(0, 1, 4, 4),
+            torch.randn(2, 4, 4),
+        ):
+            with self.subTest(dtype=x.dtype, shape=x.shape):
+                with self._lower(model, (x,)) as runtime:
+                    torch.testing.assert_close(
+                        runtime.forward((x,))[0], model(x), rtol=0, atol=0
+                    )
+
+    def test_maxpool2d_consumed_indices(self):
+        model = torch.nn.MaxPool2d(3, stride=2, padding=1, return_indices=True)
+        x = torch.randn(1, 2, 8, 8)
+        with self._lower(model, (x,)) as runtime:
+            for actual, expected in zip(runtime.forward((x,)), model(x), strict=True):
+                torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+    def test_maxpool2d_dilated_padding(self):
+        for shape, stride, dilation, ceil_mode in (
+            ((1, 1, 1, 1), 1, 2, False),
+            ((2, 3, 1, 4), 1, 2, False),
+            ((2, 3, 4, 1), 1, 2, False),
+            ((1, 2, 1, 1), 2, 3, True),
+        ):
+            with self.subTest(
+                shape=shape, stride=stride, dilation=dilation, ceil_mode=ceil_mode
+            ):
+                model = torch.nn.MaxPool2d(
+                    2, stride=stride, padding=1, dilation=dilation, ceil_mode=ceil_mode
+                )
+                x = torch.randn(shape)
+                with self._lower(model, (x,)) as runtime:
+                    torch.testing.assert_close(
+                        runtime.forward((x,))[0], model(x), rtol=0, atol=0
+                    )
+
     def test_neg_view_copy_routes_to_neg(self):
         class NegView(torch.nn.Module):
             def forward(self, x):
