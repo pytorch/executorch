@@ -25,6 +25,11 @@ from executorch.exir.backend.backend_details import (
     ExportedProgram,
     PreprocessResult,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes.constant_prop_pass import (
+    _DEFAULT_SKIP_TARGETS,
+    constant_prop_pass,
+)
 from executorch.exir.program._program import (
     _transform,
     _update_exported_program_graph_module,
@@ -87,6 +92,15 @@ CPU_PREPROCESS_PASSES = [
     FuseBatchNormWithLinearPass,
 ]
 
+# Constant folding must not materialize uninitialized allocations: an
+# `empty` node's bytes are undefined, so it stays a runtime allocation
+# instead of becoming a serialized constant.
+_CONSTANT_PROP_SKIP_TARGETS = _DEFAULT_SKIP_TARGETS | {
+    exir_ops.edge.aten.empty.memory_format,
+    exir_ops.edge.aten.empty_strided.default,
+    exir_ops.edge.dim_order_ops._empty_dim_order.default,
+}
+
 
 class CpuBackend(BackendDetails):
     """Serialize provider-neutral Native semantics with contiguous tensor storage.
@@ -118,6 +132,15 @@ class CpuBackend(BackendDetails):
             edge_program = _transform(edge_program, pass_type(edge_program))
         # Passes can introduce tensor attributes that must become program inputs.
         edge_program = lift_constant_tensor_pass(edge_program)
+        # Fold pure constant casts the partitioner pulled in (e.g. the int64->FP32
+        # scalars from hard-activation decomposition) to FP32 constants before
+        # serialization. This runs on the program ahead of the graph-module
+        # rewrites below, which derive the serialization graph from it.
+        constant_prop_pass(
+            edge_program,
+            custom_skip_targets=_CONSTANT_PROP_SKIP_TARGETS,
+            _skip_dim_order=False,
+        )
         # Fusion leaves the original weights and batch norm stats unused.
         _remove_unused_constants(edge_program)
         graph_module = edge_program.graph_module
