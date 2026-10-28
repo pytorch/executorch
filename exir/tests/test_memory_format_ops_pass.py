@@ -8,11 +8,13 @@ import copy
 import unittest
 
 from typing import Union
+from unittest.mock import patch
 
 import torch
 
 import torchvision
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
@@ -41,8 +43,16 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 
-from torch.export import Dim, export
+from torch._export.verifier import SpecViolationError
+from torch.export import Dim, export, ExportedProgram
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.operator_support import create_op_support
 from torch.testing import FileCheck
+
+
+class NoOpPartitioner(Partitioner):
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        return PartitionResult(exported_program, {})
 
 
 class TestMemoryFormatOpsPass(unittest.TestCase):
@@ -126,6 +136,232 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         for size in (2, 5):
             output = module.run_method("forward", (torch.tensor(size), y))[0]
             self.assertTrue(torch.equal(output, y.expand(size, 3)))
+
+    def test_op_empty_like_follows_layout_of_input(self) -> None:
+        class EmptyLikeCopy(torch.nn.Module):
+            def __init__(self, transform=lambda x: x, **kwargs):
+                super().__init__()
+                self.transform = transform
+                self.kwargs = kwargs
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = self.transform(x)
+                out = torch.empty_like(y, **self.kwargs)
+                out.copy_(y)
+                return out
+
+        channels_last = torch.arange(144, dtype=torch.float32).reshape(2, 3, 4, 6)
+        channels_last = channels_last.contiguous(memory_format=torch.channels_last)
+        permuted = torch.arange(144, dtype=torch.float32).reshape(2, 4, 6, 3)
+        cases = {
+            "channels_last_input": (EmptyLikeCopy(), [channels_last], None),
+            # With one channel the strides alone do not say channels last.
+            "single_channel": (
+                EmptyLikeCopy(),
+                [torch.randn(2, 1, 4, 6).to(memory_format=torch.channels_last)],
+                None,
+            ),
+            # A no-op slice is removed, so the buffer follows the input.
+            "noop_slice": (EmptyLikeCopy(lambda x: x[:]), [channels_last], None),
+            # Channels last strides in eager, a contiguous copy in Edge.
+            "permuted_view": (
+                EmptyLikeCopy(lambda x: x.permute(0, 3, 1, 2)),
+                [permuted],
+                None,
+            ),
+            "explicit_preserve_format": (
+                EmptyLikeCopy(
+                    lambda x: x.permute(0, 3, 1, 2), memory_format=torch.preserve_format
+                ),
+                [permuted],
+                None,
+            ),
+            # Channels last in Edge, made contiguous later by to_executorch.
+            "avg_pool2d": (
+                EmptyLikeCopy(lambda x: torch.nn.functional.avg_pool2d(x, 2)),
+                [channels_last],
+                None,
+            ),
+            "dynamic_batch": (
+                EmptyLikeCopy(),
+                [torch.randn(2, 3), torch.randn(5, 3)],
+                ({0: Dim("batch", max=8)},),
+            ),
+            "integer_input": (EmptyLikeCopy(), [torch.arange(6).reshape(2, 3)], None),
+            "dtype_argument": (
+                EmptyLikeCopy(dtype=torch.int32),
+                [torch.arange(6.0).reshape(2, 3)],
+                None,
+            ),
+        }
+        for name, (model, inputs, dynamic_shapes) in cases.items():
+            with self.subTest(name):
+                ep = export(model, (inputs[0],), dynamic_shapes=dynamic_shapes)
+                edge = to_edge(ep)
+                (copy_node,) = [
+                    node
+                    for node in edge.exported_program().graph_module.graph.nodes
+                    if node.target == exir_ops.edge.aten.copy.default
+                ]
+                buffer, source = copy_node.args[:2]
+                self.assertEqual(
+                    buffer.meta["val"].stride(), source.meta["val"].stride()
+                )
+                program = edge.to_executorch()
+                module = _load_for_executorch_from_buffer(program.buffer)
+                for x in inputs:
+                    output = module.run_method("forward", (x,))[0]
+                    torch.testing.assert_close(output, model(x), rtol=0, atol=0)
+
+    def test_op_empty_like_does_not_depend_on_input(self) -> None:
+        class EmptyLikeCopy(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = x + x
+                out = torch.empty_like(y)
+                out.copy_(y)
+                return out * y
+
+        edge = to_edge(export(EmptyLikeCopy(), (torch.randn(2, 3),)))
+        graph_module = edge.exported_program().graph_module
+        empty = exir_ops.edge.dim_order_ops._empty_dim_order.default
+        support = create_op_support(
+            lambda _, node: node.op == "call_function" and node.target != empty
+        )
+        partitions = CapabilityBasedPartitioner(
+            graph_module, support
+        ).propose_partitions()
+        # One partition holds the add, the copy and the mul around it.
+        self.assertEqual([len(p.nodes) for p in partitions], [3])
+
+    def test_op_empty_like_with_explicit_memory_format(self) -> None:
+        class EmptyLike(torch.nn.Module):
+            def __init__(self, memory_format):
+                super().__init__()
+                self.memory_format = memory_format
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.empty_like(x, memory_format=self.memory_format)
+
+        lowerings = {
+            "to_edge": to_edge,
+            # Keeps empty_like until ReplaceEmptyLikePass.
+            "to_edge_transform_and_lower": lambda ep: to_edge_transform_and_lower(
+                ep, partitioner=[NoOpPartitioner()]
+            ),
+            # With partitioners the config's preserve_ops is not applied, as on main.
+            "config_preserve_ops": lambda ep: to_edge_transform_and_lower(
+                ep,
+                partitioner=[NoOpPartitioner()],
+                compile_config=EdgeCompileConfig(
+                    preserve_ops=[torch.ops.aten.empty_like.default]
+                ),
+            ),
+        }
+        x = torch.randn(2, 3, 4, 5)
+        for memory_format in (torch.contiguous_format, torch.channels_last):
+            for source in (x, x.to(memory_format=torch.channels_last)):
+                for name, lower in lowerings.items():
+                    with self.subTest(
+                        name, format=memory_format, source=source.stride()
+                    ):
+                        edge = lower(export(EmptyLike(memory_format), (source,)))
+                        (node,) = [
+                            n
+                            for n in edge.exported_program().graph.nodes
+                            if n.target
+                            == exir_ops.edge.dim_order_ops._empty_dim_order.default
+                        ]
+                        self.assertEqual(
+                            node.kwargs["dim_order"], get_dim_order(memory_format, 4)
+                        )
+
+    def test_op_empty_like_does_not_force_decomposition(self) -> None:
+        class EmptyLike(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.empty_like(x)
+
+        ep = export(EmptyLike(), (torch.randn(2, 3),))
+        with patch.object(
+            ExportedProgram,
+            "run_decompositions",
+            autospec=True,
+            side_effect=ExportedProgram.run_decompositions,
+        ) as run_decompositions:
+            to_edge_transform_and_lower(
+                ep, partitioner=[NoOpPartitioner(), NoOpPartitioner()]
+            )
+        # Only the first call, which functionalizes the graph.
+        self.assertEqual(run_decompositions.call_count, 1)
+
+    def test_op_empty_like_layout_without_memory_format(self) -> None:
+        class EmptyLike(torch.nn.Module):
+            def __init__(self, **kwargs):
+                super().__init__()
+                self.kwargs = kwargs
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.empty_like(x, **self.kwargs)
+
+        cases = {
+            "transposed": (torch.randn(4, 3).t(), [1, 0]),
+            "channels_last_3d": (
+                torch.randn(1, 2, 3, 4, 5).to(memory_format=torch.channels_last_3d),
+                [0, 2, 3, 4, 1],
+            ),
+        }
+        config = EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True)
+        for name, (x, layout) in cases.items():
+            for kwargs in ({}, {"memory_format": torch.preserve_format}):
+                with self.subTest(name, **kwargs):
+                    model = EmptyLike(**kwargs)
+                    edge = to_edge(export(model, (x,)), compile_config=config)
+                    (node,) = [
+                        n
+                        for n in edge.exported_program().graph.nodes
+                        if n.target == exir_ops.edge.aten.empty_permuted.default
+                    ]
+                    self.assertEqual(node.args[1], layout)
+
+                    with self.assertRaises(SpecViolationError):
+                        to_edge(export(model, (x,)))
+
+    def test_op_empty_like_kept_when_preserved(self) -> None:
+        class EmptyLike(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.empty_like(x)
+
+        config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.empty_like.default])
+        lowerings = {
+            "to_edge": to_edge,
+            "to_edge_transform_and_lower": to_edge_transform_and_lower,
+        }
+        for name, lower in lowerings.items():
+            with self.subTest(name):
+                edge = lower(
+                    export(EmptyLike(), (torch.randn(2, 3),)), compile_config=config
+                )
+                targets = [n.target for n in edge.exported_program().graph.nodes]
+                self.assertIn(exir_ops.edge.aten.empty_like.default, targets)
+
+    def test_op_empty_permuted_after_pytorch_decompositions(self) -> None:
+        class EmptyLikeCopy(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                out = torch.empty_like(x)
+                out.copy_(x)
+                return out
+
+        model = EmptyLikeCopy()
+        x = torch.randn(2, 3)
+        program = to_edge(export(model, (x,)).run_decompositions()).to_executorch()
+        output = _load_for_executorch_from_buffer(program.buffer).run_method(
+            "forward", (x,)
+        )[0]
+        self.assertTrue(torch.equal(output, model(x)))
+
+        # Its eager channels last layout may not match the layout in Edge.
+        x = torch.randn(2, 3, 4, 5).to(memory_format=torch.channels_last)
+        with self.assertRaises(SpecViolationError):
+            to_edge(export(model, (x,)).run_decompositions())
 
     def test_op_clone_replacement_contiguous(self) -> None:
         model = SimpleCloneContiguousModule()

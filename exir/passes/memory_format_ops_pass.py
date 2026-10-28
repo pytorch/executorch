@@ -16,9 +16,57 @@ from executorch.exir.passes.dim_order_ops_registry import (
     DimOrderOpsMap,
     MemoryFormatOpsMap,
 )
+from executorch.exir.tensor import dim_order_from_stride
 
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
+
+
+class ReplaceEmptyLikePass(ExportPass):
+    """
+    Replaces aten.empty_like with aten.empty.memory_format.
+
+    It runs after view ops have become copies and no-op views are removed, so
+    a preserve_format buffer gets the layout its input has in the Edge
+    program. The eager strides can differ: a permuted view is a contiguous
+    copy here.
+    The replacement takes only the input's sizes, so with static shapes it
+    does not depend on the input and partitioners can merge around it.
+    Any layout other than contiguous or 4-D channels last becomes
+    aten.empty_permuted, as PyTorch's decomposition does.
+    """
+
+    def call_operator(self, op, args, kwargs, meta):
+        if op != torch.ops.aten.empty_like.default:
+            return super().call_operator(op, args, kwargs, meta)
+
+        source = args[0]
+        tensor = source.to_tensor()
+        sizes = self.call_size_operator_all(source, meta)
+        new_kwargs = dict(kwargs)
+        memory_format = new_kwargs.pop("memory_format", None)
+        new_kwargs["dtype"] = kwargs.get("dtype") or tensor.dtype
+        new_kwargs["layout"] = kwargs.get("layout") or tensor.layout
+        new_kwargs["device"] = kwargs.get("device") or tensor.device
+
+        if memory_format in (None, torch.preserve_format):
+            dim_order = [
+                int(d)
+                for d in dim_order_from_stride(tensor.stride(), tuple(tensor.shape))
+            ]
+            if dim_order not in (list(range(tensor.dim())), [0, 2, 3, 1]):
+                return super().call_operator(
+                    torch.ops.aten.empty_permuted.default,
+                    (sizes, dim_order),
+                    new_kwargs,
+                    meta,
+                )
+            memory_format = get_memory_format(dim_order)
+        new_kwargs["memory_format"] = memory_format
+
+        return super().call_operator(
+            torch.ops.aten.empty.memory_format, (sizes,), new_kwargs, meta
+        )
 
 
 class MemoryFormatOpsPass(ExportPass):
