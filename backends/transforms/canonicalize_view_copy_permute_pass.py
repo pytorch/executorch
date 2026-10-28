@@ -9,6 +9,7 @@ from collections import deque
 from typing import Any, cast, Iterable, Sequence, Set, Type
 
 import torch
+
 from executorch.backends.transforms.dim_maps import (
     _dim_equals,
     _is_permutation,
@@ -17,7 +18,10 @@ from executorch.backends.transforms.dim_maps import (
     normalize_view_shape,
     ViewMap,
 )
-from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
+from executorch.backends.transforms.symbolic_shape_utils import (
+    can_materialize_symints,
+    materialize_symints,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.fx import GraphModule, Node
@@ -169,7 +173,6 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
                     continue
 
                 if self._is_permute(node):
-
                     dims = self._permute_dims(node)
 
                     # Normalize dims
@@ -233,9 +236,13 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
 
         if node.target == self._VIEW_TARGET and next_node.target == self._VIEW_TARGET:
             shape = self._shape(next_node)
-            if any(isinstance(dim, Node) for dim in next_node.args[1]) or any(
-                isinstance(dim, torch.SymInt) and free_unbacked_symbols(dim)
-                for dim in shape
+            if (
+                any(isinstance(dim, Node) for dim in next_node.args[1])
+                or any(
+                    isinstance(dim, torch.SymInt) and free_unbacked_symbols(dim)
+                    for dim in shape
+                )
+                or not can_materialize_symints(graph_module.graph, shape, node)
             ):
                 return False
             # Fuse consecutive views
@@ -282,7 +289,9 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
             return False
 
         swapped_args = self._view_permute_swap(view_node, permute_node)
-        if swapped_args is None:
+        if swapped_args is None or not can_materialize_symints(
+            view_node.graph, swapped_args[1], permute_node
+        ):
             return False
 
         self._set_node_op(view_node, self._PERMUTE_TARGET, input_node, swapped_args[0])
@@ -300,12 +309,21 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         input_val = input_node.meta["val"]
 
         if self._is_permute(op1) and op2.target == self._VIEW_TARGET:
-            return self._permute_view_swap(input_val, op1, op2)
+            swapped_args = self._permute_view_swap(input_val, op1, op2)
+            view_node = op1
+            view_arg_index = 0
+        elif op1.target == self._VIEW_TARGET and self._is_permute(op2):
+            swapped_args = self._view_permute_swap(op1, op2)
+            view_node = op2
+            view_arg_index = 1
+        else:
+            return None
 
-        if op1.target == self._VIEW_TARGET and self._is_permute(op2):
-            return self._view_permute_swap(op1, op2)
-
-        return None
+        if swapped_args is None or not can_materialize_symints(
+            view_node.graph, swapped_args[view_arg_index], view_node
+        ):
+            return None
+        return swapped_args
 
     def _permute_view_swap(
         self, input_val: torch.Tensor, permute_node: Node, view_node: Node

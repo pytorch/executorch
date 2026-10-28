@@ -205,6 +205,14 @@ def normalize_view_shape(
     return normalized_shape
 
 
+def view_shape_values(view_node: Node) -> list[_Dim]:
+    """Read view dimensions, including materialized FX shape arguments."""
+    return [
+        cast(_Dim, dim.meta["val"]) if isinstance(dim, Node) else dim
+        for dim in view_node.args[1]
+    ]
+
+
 class _UnionFind:
     def __init__(self, size: int) -> None:
         self.parents = list(range(size))
@@ -266,7 +274,7 @@ class ViewMap:
 
         self.source_shape = _simplify_shape(cast(Sequence[_Dim], input_val.shape))
         self.target_shape = normalize_view_shape(
-            self.source_shape, cast(Sequence[_Dim], view_node.args[1])
+            self.source_shape, view_shape_values(view_node)
         )
         self._groups = self._build_groups(self.source_shape, self.target_shape)
 

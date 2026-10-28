@@ -9,6 +9,7 @@ from typing import cast
 import pytest
 import sympy  # type: ignore[import-untyped]
 import torch
+
 from executorch.backends.arm._passes import CanonicalizeViewCopyPermutePass
 from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -793,3 +794,61 @@ def test_canonicalize_keeps_symbolic_view_before_permute(
     assert not result.modified
     result.graph_module.graph.lint()
     assert permute.args[0] is view
+
+
+def test_canonicalize_keeps_affine_input_views_when_symbol_has_no_producer() -> None:
+    shape_env = ShapeEnv()
+    batch = _make_symint(shape_env, "batch", hint=2)
+
+    with FakeTensorMode(shape_env=shape_env, allow_non_fake_inputs=True):
+        graph = Graph()
+        x = graph.placeholder("x")
+        x.meta["val"] = torch.empty((batch + 1, 2))
+        first_view = graph.call_function(
+            exir_ops.edge.aten.view_copy.default, (x, [batch + 1, 1, 2])
+        )
+        first_view.meta["val"] = torch.empty((batch + 1, 1, 2))
+        second_view = graph.call_function(
+            exir_ops.edge.aten.view_copy.default, (first_view, [batch + 1, 2])
+        )
+        second_view.meta["val"] = torch.empty((batch + 1, 2))
+        graph.output(second_view)
+
+        result = CanonicalizeViewCopyPermutePass().call(GraphModule({}, graph))
+
+    assert not result.modified
+    result.graph_module.graph.lint()
+    assert second_view.args[0] is first_view
+
+
+@pytest.mark.parametrize("view_first", (False, True))
+def test_canonicalize_does_not_swap_affine_views_without_symbol_producer(
+    view_first: bool,
+) -> None:
+    shape_env = ShapeEnv()
+    batch = _make_symint(shape_env, "batch", hint=2)
+
+    with FakeTensorMode(shape_env=shape_env, allow_non_fake_inputs=True):
+        graph = Graph()
+        x = graph.placeholder("x")
+        x.meta["val"] = torch.empty((batch + 1, 2))
+        if view_first:
+            first = graph.call_function(
+                exir_ops.edge.aten.view_copy.default, (x, [batch + 1, 1, 2])
+            )
+            first.meta["val"] = torch.empty((batch + 1, 1, 2))
+            second = graph.call_function(
+                exir_ops.edge.aten.permute_copy.default, (first, [0, 2, 1])
+            )
+            second.meta["val"] = torch.empty((batch + 1, 2, 1))
+        else:
+            first = graph.call_function(
+                exir_ops.edge.aten.permute_copy.default, (x, [1, 0])
+            )
+            first.meta["val"] = torch.empty((2, batch + 1))
+            second = graph.call_function(
+                exir_ops.edge.aten.view_copy.default, (first, [2, 1, batch + 1])
+            )
+            second.meta["val"] = torch.empty((2, 1, batch + 1))
+
+        assert CanonicalizeViewCopyPermutePass()._maybe_swap_args(first, second) is None
