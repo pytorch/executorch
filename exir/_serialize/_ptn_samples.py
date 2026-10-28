@@ -352,7 +352,7 @@ def _decode_set(
     )
 
 
-def read_samples(path: str) -> dict[str, SampleSet]:
+def read_samples(path: str) -> dict[str, SampleSet]:  # noqa: C901
     """Every sample set in a .ptn, keyed by set name, validated as read.
 
     A package without samples returns an empty dict.
