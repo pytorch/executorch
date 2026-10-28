@@ -33,7 +33,14 @@ class TestCu134Dependencies(unittest.TestCase):
         self.addCleanup(self.modules.stop)
         self.installer = load_module("install_requirements")
 
-    def install_commands(self, cuda, machine="x86_64", nightly=True, system="Linux"):
+    def install_commands(
+        self,
+        cuda,
+        machine="x86_64",
+        nightly=True,
+        system="Linux",
+        python_version=(3, 14),
+    ):
         self.utils.determine_torch_url.cache_clear()
         with (
             patch.dict(os.environ, {}, clear=True),
@@ -46,6 +53,7 @@ class TestCu134Dependencies(unittest.TestCase):
             patch.object(self.installer.platform, "machine", return_value=machine),
             patch.object(self.installer.platform, "system", return_value=system),
             patch.object(self.installer.sys, "platform", "linux"),
+            patch.object(self.installer.sys, "version_info", python_version),
             patch.object(self.installer.subprocess, "run") as run,
         ):
             self.installer.install_requirements(nightly)
@@ -130,6 +138,63 @@ class TestCu134Dependencies(unittest.TestCase):
         self.assertIn("torch==2.14.0", core)
         self.assertIn("torchvision==0.29.0", domains)
         self.assertIn("https://download.pytorch.org/whl/test/cpu", core)
+
+    def test_python315_cpu_domains_use_available_torchaudio(self):
+        for system in ("Linux", "Darwin", "Windows"):
+            for version in ((3, 14), (3, 15)):
+                with self.subTest(system=system, version=version):
+                    _, _, domains, _ = self.install_commands(
+                        None, machine="arm64", system=system, python_version=version
+                    )
+                    audio = "2.11.1" if version >= (3, 15) else "2.11.0"
+                    self.assertIn(f"torchaudio=={audio}", domains)
+                    self.assertIn("torchvision==0.29.0", domains)
+
+    def test_python315_cuda_domains_use_available_torchaudio(self):
+        for machine in ("x86_64", "aarch64"):
+            with self.subTest(machine=machine):
+                _, _, domains, _ = self.install_commands(
+                    (13, 2), machine=machine, python_version=(3, 15)
+                )
+                self.assertIn("torchaudio==2.11.1", domains)
+                self.assertIn("torchvision==0.29.0", domains)
+                self.assertIn("https://download.pytorch.org/whl/test/cu132", domains)
+
+    def test_python315_preserves_cu134_and_source_pins(self):
+        for cuda in ((13, 2), (13, 4)):
+            for nightly in (True, False):
+                with self.subTest(cuda=cuda, nightly=nightly):
+                    _, _, domains, _ = self.install_commands(
+                        cuda, nightly=nightly, python_version=(3, 15)
+                    )
+                    audio = (
+                        "torchaudio==2.11.0.dev20260922+cu134"
+                        if nightly and cuda == (13, 4)
+                        else "torchaudio==2.11.1" if nightly else "torchaudio"
+                    )
+                    self.assertIn(audio, domains)
+
+    def test_macos_availability_workaround_is_scoped_to_sentencepiece(self):
+        for version in ((3, 14), (3, 15)):
+            with (
+                self.subTest(version=version),
+                patch.dict(os.environ, {"CXXFLAGS": "-O2"}, clear=True),
+                patch.object(self.installer, "determine_torch_url", return_value="cpu"),
+                patch.object(self.installer.sys, "platform", "darwin"),
+                patch.object(self.installer.sys, "version_info", version),
+                patch.object(self.installer.subprocess, "run") as run,
+            ):
+                self.installer.install_requirements(False)
+                calls = run.call_args_list
+                self.assertEqual(len(calls), 3 if version >= (3, 15) else 2)
+                if version >= (3, 15):
+                    self.assertIn("sentencepiece==0.2.2", calls[1].args[0])
+                    self.assertEqual(
+                        calls[1].kwargs["env"]["CXXFLAGS"],
+                        "-O2 -D_LIBCPP_DISABLE_AVAILABILITY",
+                    )
+                self.assertIn("extension/llm/tokenizers", calls[-1].args[0])
+                self.assertEqual(calls[-1].kwargs["env"]["CXXFLAGS"], "-O2")
 
     def test_failure_is_not_retried_with_another_cuda_train(self):
         with (

@@ -176,6 +176,7 @@ fbcode_target(
         "triton/kernels/sdpa.py",
         "triton/kernels/topk.py",
         "triton/kernels/tq4_sdpa.py",
+        "triton/kernels/triton_mutation_cache.py",
     ],
     visibility = [
         "//executorch/backends/cuda/...",

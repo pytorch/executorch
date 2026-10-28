@@ -854,7 +854,13 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     for (const auto& r :
          compute_graph->context()->querypool().get_shader_timestamp_data()) {
       std::string event_name = "{" + r.kernel_name +
-          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) + "}";
+          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) +
+          ", \"global_workgroup\": [" + std::to_string(r.metadata.gwg[0]) +
+          ", " + std::to_string(r.metadata.gwg[1]) + ", " +
+          std::to_string(r.metadata.gwg[2]) + "], \"local_workgroup\": [" +
+          std::to_string(r.metadata.lwg[0]) + ", " +
+          std::to_string(r.metadata.lwg[1]) + ", " +
+          std::to_string(r.metadata.lwg[2]) + "]}";
       event_tracer_log_profiling_delegate(
           event_tracer,
           event_name.c_str(),

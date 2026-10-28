@@ -19,6 +19,7 @@
 #include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
+#include <executorch/extension/llm/batching/prefix_cache.h>
 #include <executorch/extension/llm/batching/scheduler.h>
 #include <executorch/extension/llm/serving/request_handle.h>
 #include <executorch/extension/llm/serving/types.h>
@@ -51,12 +52,24 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::vector<batching::Token> default_stop_tokens = {};
   // Used only for an unset request limit when max_context_length is unknown.
   std::int32_t default_max_new_tokens = 256;
-  // Opt-in prefix reuse for new sessions; zero disables caching.
-  // Explicit open, reset, and same-session replay bypass the cache. Snapshots
-  // may outlive their source; misses/refusals fall back to full prefill.
-  // Provision max_sessions + prefix_cache_capacity + 1 physical executor rows
-  // when enabled. Backend numerical parity requires model-specific validation.
+  // Snapshots for new sessions and clean replacements; zero disables reuse.
+  // Explicit open/reset bypass reuse. When enabled, provision
+  // max_sessions + prefix_cache_capacity + 1 executor rows.
   std::size_t prefix_cache_capacity = 0;
+  // Capture at absolute interval multiples and the initial prompt end.
+  // Requires cache capacity; zero captures only the initial prompt.
+  std::size_t prefix_checkpoint_interval = 0;
+  // Override the interval with increasing checkpoints in (start,
+  // prompt.size()]. Invalid or throwing policies skip capture. Requires cache
+  // capacity. Runs on control; must not block or reenter the runtime.
+  std::function<std::vector<batching::PrefixCheckpoint>(
+      const batching::PrefixIdentity& prompt,
+      batching::Position start,
+      bool opening)>
+      prefix_checkpoint_policy = {};
+  // Empty uses global LRU without protected early checkpoints.
+  // Runs on control; must not block or reenter the runtime.
+  batching::PrefixCache::RetentionPolicy prefix_cache_retention = {};
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its
@@ -139,8 +152,9 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Same-key execution overlap is Busy. Work admitted after close/reset waits
   // for its acknowledgement before preparation or execution. That fence covers
   // earlier rendered text (including final flush), terminal delivery, and sink
-  // capture cleanup. Exact strict prefixes continue; other histories
-  // cold-replay without caching. Sinks share one delivery thread and must do
+  // capture cleanup. Exact strict prefixes continue; clean replacements may
+  // clone a common committed prefix when prefix caching is enabled. Other
+  // histories cold-replay. Sinks share one delivery thread and must do
   // short, bounded work: no blocking I/O, waits for runtime work, or
   // synchronous shutdown/destruction of the runtime. A text/flush sink throw
   // disables output and selects a failure. A terminal sink throw is logged;

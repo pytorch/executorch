@@ -156,6 +156,11 @@ def _validate_conv2d_block_scaled_params(
             f"but got {len(pad)}/{len(stride)}/{len(dilation)}",
             op="CONV2D_BLOCK_SCALED",
         )
+    if any(value <= 0 for value in stride):
+        raise TosaValueError(
+            f"stride values must be positive, but got {stride}",
+            op="CONV2D_BLOCK_SCALED",
+        )
 
 
 @register_fake_tosa_op(

@@ -202,6 +202,60 @@ TEST(OpaqueInputTest, WarmOpaqueChunksAndOrdinaryRawText) {
   }
 }
 
+TEST(OpaqueInputTest, BreakpointsFencePendingTokenAndOpaqueSuffix) {
+  for (bool cancel : {false, true}) {
+    SCOPED_TRACE(cancel);
+    Harness h;
+    auto session = h.session();
+    std::vector<Token> first_output;
+    session
+        .generate_async(
+            std::vector<Token>{1},
+            config(),
+            [&](const GenerationUpdate& update) {
+              first_output = update.tokens;
+            })
+        .wait();
+    ASSERT_EQ(first_output.size(), 1u);
+    auto full = std::make_shared<Payload>();
+    auto view = full->suffix(1);
+    std::weak_ptr<const PreparedInput> owner = view;
+    full.reset();
+    auto options = config();
+    options.prefill_breakpoints = {2, 3, 6};
+    std::vector<Position> observed;
+    auto handle = session.generate_async(
+        std::move(view), options, {}, {}, [&](Position position) {
+          observed.push_back(position);
+          if (cancel && position == 3) {
+            session = Session{};
+          }
+        });
+    handle.wait();
+    h.runner.shutdown();
+    EXPECT_EQ(
+        handle.finish_reason(),
+        cancel ? FinishReason::Cancelled : FinishReason::NewTokenLimit);
+    EXPECT_EQ(
+        observed,
+        cancel ? (std::vector<Position>{2, 3})
+               : (std::vector<Position>{2, 3, 6}));
+    std::vector<std::vector<Token>> expected{{1}, {first_output[0]}, {7}};
+    if (!cancel) {
+      expected.insert(expected.end(), {{7, 7}, {22}});
+    }
+    EXPECT_EQ(h.executor.values, expected);
+    ASSERT_EQ(h.executor.slices.size(), expected.size());
+    Position next = 0;
+    for (const auto& slice : h.executor.slices) {
+      EXPECT_EQ(slice.position + slice.offset, next);
+      next += slice.size;
+    }
+    EXPECT_EQ(next, cancel ? 3 : 6);
+    EXPECT_TRUE(owner.expired());
+  }
+}
+
 TEST(OpaqueInputTest, SuffixSharesBackingAndUsesViewRelativeOffsets) {
   Harness h;
   auto session = h.session();

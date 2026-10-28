@@ -72,10 +72,8 @@ if(ESP_PLATFORM)
       "0.01"
       CACHE STRING "Relative tolerance for BundleIO testing"
   )
-  option(ET_DUMP_OUTPUTS "Collect and print outputs as base64 in log" OFF)
-  option(ET_DUMP_INTERMEDIATE_OUTPUTS "Collect and print intermediate outputs"
-         OFF
-  )
+  option(ET_DUMP_OUTPUTS "Capture the latest inference's outputs" OFF)
+  option(ET_DUMP_INTERMEDIATE_OUTPUTS "Capture its intermediate outputs" OFF)
   set(ET_DEBUG_BUFFER_SIZE
       "65536"
       CACHE STRING "Size of ETDump debug buffer"
@@ -147,6 +145,11 @@ if(ESP_PLATFORM)
 
   if(TARGET xnnpack_backend)
     list(APPEND esp_runner_libs xnnpack_backend)
+  endif()
+
+  # quantize/dequantize kernels for quantized models with CPU regions
+  if(TARGET quantized_ops_lib)
+    list(APPEND esp_runner_libs quantized_ops_lib)
   endif()
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)

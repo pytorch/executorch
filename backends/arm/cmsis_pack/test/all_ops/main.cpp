@@ -158,7 +158,7 @@ class BufferLoader final : public DataLoader {
       size_t offset,
       size_t size,
       const DataLoader::SegmentInfo&) const override {
-    if (offset + size > size_) {
+    if (offset > size_ || size > size_ - offset) {
       return Error::InvalidArgument;
     }
     return FreeableBuffer(

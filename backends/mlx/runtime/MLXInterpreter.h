@@ -338,8 +338,8 @@ inline void exec_update_and_attend(
   // The cache places the step and attends over whatever storage its layout
   // uses; the handler reads the query side off the graph.
   const array& q = st.const_tensor_ref(n.q);
-  // One position per query token, read host-side so the cache stays pure graph
-  // + integer bookkeeping. Every layer of a step reads the same position
+  // Read positions host-side so the cache stays pure graph + integer
+  // bookkeeping. Every layer of a step reads the same position
   // tensor, so evaluating it in place costs one sync for the first layer and
   // nothing for the rest.
   auto pos = st.const_tensor_ref(n.position);
@@ -350,10 +350,6 @@ inline void exec_update_and_attend(
     throw std::runtime_error("update_and_attend: position must be contiguous");
   }
   const int length = static_cast<int>(pos.size());
-  if (length != static_cast<int>(q.shape(2))) {
-    throw std::runtime_error(
-        "update_and_attend: position must hold one entry per query token");
-  }
   std::vector<int32_t> positions(static_cast<size_t>(length));
   switch (pos.dtype()) {
     case ::mlx::core::int32:

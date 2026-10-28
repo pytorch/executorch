@@ -14,19 +14,32 @@
 #include <string>
 #include <utility>
 
-DEFINE_string(pte, "", "Muse Glimmer solo off-graph program");
+DEFINE_string(pte, "", "Muse Glimmer off-graph program");
+DEFINE_bool(dflash, false, "Enable DFlash with an off-graph DFlash program");
+DEFINE_int32(dflash_n_draft, 0, "DFlash proposals; zero uses exported maximum");
 DEFINE_string(tokenizer, "", "Matching Hugging Face tokenizer JSON");
 DEFINE_string(data_path, "", "Optional external weights file");
 DEFINE_string(pos_embed_path, "", "Optional vision positional table path");
+#if defined(EXECUTORCH_BUILD_CUDA)
+DEFINE_string(backend, "cuda", "Executor backend");
+#else
 DEFINE_string(backend, "mlx", "Executor backend");
+#endif
 DEFINE_int32(max_sessions, 4, "Maximum logical sessions");
-DEFINE_int32(max_session_tokens, 0, "Context cap; zero uses model metadata");
+DEFINE_int32(
+    max_session_tokens,
+    0,
+    "Context cap; zero uses model metadata (CUDA: the cell pool shared evenly)");
 DEFINE_int32(max_decode_sequences, 4, "Maximum decodes in a batch");
 DEFINE_int32(max_inflight_requests, 4, "Maximum admitted requests");
 DEFINE_int32(
     prefix_cache_entries,
     0,
     "Text/image prefix snapshots; zero disables");
+DEFINE_int32(
+    prefix_checkpoint_interval,
+    0,
+    "Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.");
 DEFINE_uint64(max_image_bytes, 20 * 1024 * 1024, "Maximum encoded image bytes");
 DEFINE_uint64(
     max_input_frame_bytes,
@@ -49,6 +62,9 @@ create_muse_glimmer_batching_runtime() {
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_max_decode_sequences <= 0 ||
       FLAGS_prefix_cache_entries < 0 || FLAGS_max_image_bytes == 0 ||
+      FLAGS_prefix_checkpoint_interval < 0 ||
+      (FLAGS_prefix_checkpoint_interval > 0 &&
+       FLAGS_prefix_cache_entries == 0) ||
       FLAGS_max_image_bytes > 20 * 1024 * 1024 ||
       FLAGS_max_input_frame_bytes == 0 ||
       FLAGS_max_input_frame_bytes > 32 * 1024 * 1024 ||
@@ -81,6 +97,8 @@ create_muse_glimmer_batching_runtime() {
   backend.image_limits.max_encoded_bytes = FLAGS_max_image_bytes;
   backend.image_limits.max_image_pixels = FLAGS_max_image_pixels;
   backend.bos_id = FLAGS_bos_id;
+  backend.use_dflash = FLAGS_dflash;
+  backend.dflash_n_draft = FLAGS_dflash_n_draft;
   auto created = create_muse_glimmer_backend(backend);
   if (!created.ok())
     throw std::runtime_error(
@@ -102,6 +120,7 @@ create_muse_glimmer_batching_runtime() {
   serving.max_requests = FLAGS_max_inflight_requests;
   serving.max_pending_operations = FLAGS_max_inflight_requests;
   serving.prefix_cache_capacity = FLAGS_prefix_cache_entries;
+  serving.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
   serving.default_stop_tokens = {FLAGS_eos_id};
   for (const char* name : {"<|eot|>", "<|end_of_text|>"}) {
     auto encoded = result->tokenizer->encode(name, 0, 0);

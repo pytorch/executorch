@@ -163,6 +163,108 @@ This first visualization intentionally stops at the exported/PT2E graph. It
 does not claim provenance through TOSA, Model Converter, or VGF runtime
 operations; those correlations require the later stable debug/provenance work.
 
+## Investigate quantization-sensitive modules
+
+The Model Explorer quantization heatmap shows **where** FP32 and quantized
+intermediates disagree. A low-SNR node is useful for locating numerical error,
+but it does not necessarily mean that quantizing that module is responsible
+for the final model-output degradation.
+
+The VGF quantization sensitivity analyzer provides a complementary experiment.
+It rebuilds the quantized model with a selected source module left in floating
+point and measures whether that change improves the local tensor and the final
+model output.
+
+A small end-to-end example is available in:
+
+```text
+examples/arm/vgf_quantization_sensitivity_toy_example.py
+```
+
+Run it from the ExecuTorch repository root:
+
+```bash
+python -m examples.arm.vgf_quantization_sensitivity_toy_example
+```
+
+The example:
+
+1. Creates a small two-layer model.
+2. Exports the FP32 model.
+3. Uses `VgfQuantizer` to create and calibrate an INT8 PT2E graph.
+4. Runs graph-wide FP32-vs-INT8 quantization assessment.
+5. Rebuilds the model with `fc1` and `fc2` independently kept in FP32.
+6. Prints a JSON sensitivity report.
+
+The example intentionally stops at the exported/PT2E graph and does not
+compile or execute a VGF binary.
+
+A typical workflow for a larger model is:
+
+```text
+Model Explorer heatmap
+        |
+        v
+Find modules with low SNR
+        |
+        v
+Run FP32 rescue experiment
+        |
+        v
+Check final-output SNR / MSE improvement
+```
+
+For example, a caller can explicitly request candidate modules:
+
+```python
+report = analyze_vgf_quantization_sensitivity(
+    source_model=model,
+    fp32_model=fp32_export,
+    baseline_quantized_model=int8_model,
+    baseline_assessment=assessment,
+    representative_inputs=assessment_inputs,
+    build_mixed_quantized_model=build_mixed,
+    candidate_module_fqns=("blocks.3.norm1",),
+)
+```
+
+The mixed-model builder should rebuild and calibrate the same quantized model
+while excluding the requested module from quantization, for example with:
+
+```python
+quantizer.set_module_name(module_fqn, None)
+```
+
+The report includes:
+
+- local SNR, MSE, and cosine similarity for the candidate;
+- local numerical rescue after the FP32 intervention;
+- final-output SNR, MSE, and cosine changes;
+- Q/DQ input-edge counts;
+- whether the requested intervention was observed in the graph.
+
+Explicit candidate module FQNs are validated against the source model before
+parent expansion. Invalid names therefore fail with `ValueError` instead of
+being silently ignored or interpreted as another module.
+
+### Interpreting the result
+
+The heatmap and sensitivity analysis answer different questions:
+
+- **Low SNR in Model Explorer** means that a tensor differs substantially
+  between FP32 and quantized execution.
+- **High SNR rescue after an FP32 intervention** means that removing
+  quantization from that source module improves downstream numerical quality.
+
+A module can have poor local SNR but little downstream effect, so the
+sensitivity result should be used before deciding that a layer should remain
+in floating point.
+
+The sensitivity experiment is a counterfactual mixed-precision experiment:
+the model is rebuilt and recalibrated after changing the quantization policy.
+It should therefore be interpreted as the effect of that mixed-precision
+configuration, not as an isolated contribution of one fixed Q/DQ node.
+
 ## Current limitations
 
 - Performance overlays are supported for the TOSA view, not the PTE view.

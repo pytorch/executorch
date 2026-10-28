@@ -5,14 +5,14 @@
 # LICENSE file in the root directory of this source tree.
 # Optimized by KernelAgent-Oink(https://github.com/meta-pytorch/KernelAgent)
 
-"""Decode-sized (M <= 4) INT5 GEMM on planar Q5_K weights.
+"""INT5 GEMM on planar Q5_K weights for M <= 64.
 
 ``ql`` stores even/odd low nibbles and ``qh`` stores one high bit per weight:
 each K32 block has four ``qh`` bytes whose low/high nibbles describe the four
 even/odd bytes of one DP4A word. Scale and zero codes use K/group_size groups;
 their FP16 steps use K256 super-blocks.
 
-Activations are quantized to signed INT8 in even/odd K32 order. The kernels
+For M <= 4, activations are quantized to signed INT8 in even/odd K32 order. The kernels
 reconstruct unsigned five-bit weights and accumulate
 ``(dot - activation_sum * wz) * activation_scale * ws`` in FP32, where
 ``ws = scale_code * scale_step`` and ``wz = zero_code * zero_point_step``.
@@ -22,6 +22,12 @@ Each M bucket independently autotunes a generic row-blocked implementation and
 explicit-row implementations for the bucket and its next bucket. Dynamic M
 branches uniformly to exactly the runtime row count; static extra rows are
 masked.
+
+Buckets 8, 16, 32, and 64 keep BF16 activations and unpack Q5_K tiles inside
+the GEMM. They decode K256 super-blocks in K256 tiles, plus one measured K64
+M64 candidate, and use an exact exponent-pattern INT5-to-BF16 conversion. These
+buckets require group_size=32 and preserve BF16 dequant rounding before FP32
+accumulation, without a full BF16 weight buffer.
 """
 
 from typing import Optional
@@ -29,8 +35,10 @@ from typing import Optional
 import torch
 import triton
 import triton.language as tl
+
 from executorch.backends.cuda.autotune.launch_params import autotune_launch_param
 from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
+    _compile_every_candidate_at_once,
     launch_split_k_gemm,
     QuantizedGemmFamily,
 )
@@ -38,6 +46,7 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import (
     _dp4a_u8_s8,
     _warp_sum_f32,
     autotune_configs,
+    autotune_do_bench,
     check_contiguous,
     check_device,
     check_dtypes,
@@ -48,13 +57,18 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import (
     prune_by_main_loop_trips,
     quantize_activations_q8,
     SPLIT_K_CANDIDATES,
+    tile_autotune_configs,
 )
 
 _GROUP_SIZE = 32
 _SUPER_BLOCK = 256
 _TL_GROUP_SIZE = tl.constexpr(32)
 
-SUPPORTED_BUCKETS = (1, 2, 3, 4)
+_SMALL_BUCKETS = (1, 2, 3, 4)
+_LARGE_BUCKETS = (8, 16, 32, 64)
+TILE_SPLIT_K_CANDIDATES = (1, 2, 4, 8, 16)
+SUPPORTED_BUCKETS = _SMALL_BUCKETS + _LARGE_BUCKETS
+_TL_SUPER_BLOCK = tl.constexpr(256)
 
 
 @triton.jit
@@ -986,9 +1000,337 @@ def _main_loop_trips(args) -> int:
     return triton.cdiv(groups_per_split, 32)
 
 
+@triton.jit
+def _decode_w5a16_tile(
+    ql,
+    qh,
+    scale,
+    scale_step,
+    zero,
+    zero_point_step,
+    offs_n,
+    n_mask,
+    k_start,
+    stride_qn: tl.constexpr,
+    stride_qk: tl.constexpr,
+    stride_hn: tl.constexpr,
+    stride_hk: tl.constexpr,
+    stride_sn: tl.constexpr,
+    stride_sk: tl.constexpr,
+    stride_ssn: tl.constexpr,
+    stride_ssk: tl.constexpr,
+    stride_zn: tl.constexpr,
+    stride_zk: tl.constexpr,
+    stride_zsn: tl.constexpr,
+    stride_zsk: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+):
+    """Decode one aligned BLOCK_K tile, expanding each metadata code once."""
+    offs_packed = tl.arange(0, BLOCK_K // 2)
+    packed = tl.load(
+        ql
+        + offs_n[:, None] * stride_qn
+        + (k_start // 2 + offs_packed[None, :]) * stride_qk,
+        mask=n_mask[:, None],
+        other=0,
+    ).to(tl.uint32)
+    high = tl.load(
+        qh
+        + offs_n[:, None] * stride_hn
+        + (k_start // 8 + offs_packed[None, :] // 4) * stride_hk,
+        mask=n_mask[:, None],
+        other=0,
+    ).to(tl.uint32)
+    shift = offs_packed[None, :] % 4
+    even = (packed & 0xF) | (((high >> shift) & 1) << 4)
+    odd = ((packed >> 4) & 0xF) | (((high >> (shift + 4)) & 1) << 4)
+    q = tl.interleave(even, odd)
+    # BF16 represents every integer in [128, 159] exactly at unit spacing.
+    q = (q.to(tl.uint16) | 0x4300).to(tl.bfloat16, bitcast=True) - 128.0
+    q = q.to(tl.bfloat16)
+
+    offs_group = tl.arange(0, BLOCK_K // 32)
+    group = k_start // 32 + offs_group
+    scale_code = (
+        tl.load(
+            scale + offs_n[:, None] * stride_sn + group[None, :] * stride_sk,
+            mask=n_mask[:, None],
+            other=0,
+        )
+        .to(tl.float32)
+        .to(tl.bfloat16)
+    )
+    zero_code = (
+        tl.load(
+            zero + offs_n[:, None] * stride_zn + group[None, :] * stride_zk,
+            mask=n_mask[:, None],
+            other=0,
+        )
+        .to(tl.float32)
+        .to(tl.bfloat16)
+    )
+    step = k_start // 256
+    scale_step_value = tl.load(
+        scale_step + offs_n * stride_ssn + step * stride_ssk,
+        mask=n_mask,
+        other=0.0,
+    ).to(tl.bfloat16)
+    zero_step_value = tl.load(
+        zero_point_step + offs_n * stride_zsn + step * stride_zsk,
+        mask=n_mask,
+        other=0.0,
+    ).to(tl.bfloat16)
+    scale_group = (scale_code * scale_step_value[:, None]).to(tl.bfloat16)
+    zero_group = (zero_code * zero_step_value[:, None]).to(tl.bfloat16)
+    scale_expanded = tl.reshape(
+        tl.broadcast_to(scale_group[:, :, None], (BLOCK_N, BLOCK_K // 32, 32)),
+        (BLOCK_N, BLOCK_K),
+        can_reorder=False,
+    )
+    zero_expanded = tl.reshape(
+        tl.broadcast_to(zero_group[:, :, None], (BLOCK_N, BLOCK_K // 32, 32)),
+        (BLOCK_N, BLOCK_K),
+        can_reorder=False,
+    )
+    return ((q - zero_expanded).to(tl.bfloat16) * scale_expanded).to(tl.bfloat16)
+
+
+@triton.jit
+def _int5_w5a16_direct_kernel(
+    x,
+    ql,
+    qh,
+    scale,
+    scale_step,
+    zero,
+    zero_point_step,
+    out,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    stride_xm: tl.constexpr,
+    stride_xk: tl.constexpr,
+    stride_qn: tl.constexpr,
+    stride_qk: tl.constexpr,
+    stride_hn: tl.constexpr,
+    stride_hk: tl.constexpr,
+    stride_sn: tl.constexpr,
+    stride_sk: tl.constexpr,
+    stride_ssn: tl.constexpr,
+    stride_ssk: tl.constexpr,
+    stride_zn: tl.constexpr,
+    stride_zk: tl.constexpr,
+    stride_zsn: tl.constexpr,
+    stride_zsk: tl.constexpr,
+    stride_os: tl.constexpr,
+    stride_om: tl.constexpr,
+    stride_on: tl.constexpr,
+    STATIC_M: tl.constexpr,
+    BUCKET: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    SPLIT_K: tl.constexpr,
+    PIPELINE_STAGES: tl.constexpr,
+):
+    """Direct W5A16 producer without split-range or workspace arithmetic."""
+    pid_n = tl.program_id(0)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    if BLOCK_M >= BUCKET:
+        offs_m = tl.arange(0, BLOCK_M)
+    else:
+        offs_m = tl.program_id(1) * BLOCK_M + tl.arange(0, BLOCK_M)
+    n_mask = offs_n < N
+    if STATIC_M > 0:
+        m_mask = offs_m < STATIC_M
+    else:
+        m_mask = offs_m < M
+    offs_k = tl.arange(0, BLOCK_K)
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+    for super_block in tl.range(0, K // _TL_SUPER_BLOCK, num_stages=PIPELINE_STAGES):
+        for tile in tl.static_range(0, 256 // BLOCK_K):
+            k_start = super_block * 256 + tile * BLOCK_K
+            weight = _decode_w5a16_tile(
+                ql,
+                qh,
+                scale,
+                scale_step,
+                zero,
+                zero_point_step,
+                offs_n,
+                n_mask,
+                k_start,
+                stride_qn,
+                stride_qk,
+                stride_hn,
+                stride_hk,
+                stride_sn,
+                stride_sk,
+                stride_ssn,
+                stride_ssk,
+                stride_zn,
+                stride_zk,
+                stride_zsn,
+                stride_zsk,
+                BLOCK_N,
+                BLOCK_K,
+            )
+            activation = tl.load(
+                x
+                + offs_m[:, None] * stride_xm
+                + (k_start + offs_k[None, :]) * stride_xk,
+                mask=m_mask[:, None],
+                other=0.0,
+            ).to(tl.bfloat16)
+            acc += tl.dot(activation, tl.trans(weight), out_dtype=tl.float32)
+    tl.store(
+        out + offs_m[:, None] * stride_om + offs_n[None, :] * stride_on,
+        acc.to(tl.bfloat16),
+        mask=m_mask[:, None] & n_mask[None, :],
+    )
+
+
+@triton.jit
+def _int5_w5a16_splitk_kernel(
+    x,
+    ql,
+    qh,
+    scale,
+    scale_step,
+    zero,
+    zero_point_step,
+    out,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    stride_xm: tl.constexpr,
+    stride_xk: tl.constexpr,
+    stride_qn: tl.constexpr,
+    stride_qk: tl.constexpr,
+    stride_hn: tl.constexpr,
+    stride_hk: tl.constexpr,
+    stride_sn: tl.constexpr,
+    stride_sk: tl.constexpr,
+    stride_ssn: tl.constexpr,
+    stride_ssk: tl.constexpr,
+    stride_zn: tl.constexpr,
+    stride_zk: tl.constexpr,
+    stride_zsn: tl.constexpr,
+    stride_zsk: tl.constexpr,
+    stride_os: tl.constexpr,
+    stride_om: tl.constexpr,
+    stride_on: tl.constexpr,
+    STATIC_M: tl.constexpr,
+    BUCKET: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    SPLIT_K: tl.constexpr,
+    PIPELINE_STAGES: tl.constexpr,
+):
+    """Produce disjoint FP32 W5A16 K-partials for fixed-order reduction."""
+    pid_n = tl.program_id(0)
+    split_id = tl.program_id(1)
+    if BLOCK_M >= BUCKET:
+        offs_m = tl.arange(0, BLOCK_M)
+    else:
+        offs_m = tl.program_id(2) * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    n_mask = offs_n < N
+    if STATIC_M > 0:
+        m_mask = offs_m < STATIC_M
+    else:
+        m_mask = offs_m < M
+    offs_k = tl.arange(0, BLOCK_K)
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+
+    num_super_blocks: tl.constexpr = K // _TL_SUPER_BLOCK
+    super_blocks_per_split: tl.constexpr = num_super_blocks // SPLIT_K
+    extra_super_blocks: tl.constexpr = num_super_blocks % SPLIT_K
+    first_super = split_id * super_blocks_per_split + tl.minimum(
+        split_id, extra_super_blocks
+    )
+    split_super_blocks = super_blocks_per_split + (split_id < extra_super_blocks)
+    last_super = first_super + split_super_blocks
+    for super_block in tl.range(first_super, last_super, num_stages=PIPELINE_STAGES):
+        for tile in tl.static_range(0, 256 // BLOCK_K):
+            k_start = super_block * 256 + tile * BLOCK_K
+            weight = _decode_w5a16_tile(
+                ql,
+                qh,
+                scale,
+                scale_step,
+                zero,
+                zero_point_step,
+                offs_n,
+                n_mask,
+                k_start,
+                stride_qn,
+                stride_qk,
+                stride_hn,
+                stride_hk,
+                stride_sn,
+                stride_sk,
+                stride_ssn,
+                stride_ssk,
+                stride_zn,
+                stride_zk,
+                stride_zsn,
+                stride_zsk,
+                BLOCK_N,
+                BLOCK_K,
+            )
+            activation = tl.load(
+                x
+                + offs_m[:, None] * stride_xm
+                + (k_start + offs_k[None, :]) * stride_xk,
+                mask=m_mask[:, None],
+                other=0.0,
+            ).to(tl.bfloat16)
+            acc += tl.dot(activation, tl.trans(weight), out_dtype=tl.float32)
+
+    tl.store(
+        out
+        + split_id * stride_os
+        + offs_m[:, None] * stride_om
+        + offs_n[None, :] * stride_on,
+        acc,
+        mask=m_mask[:, None] & n_mask[None, :],
+    )
+
+
+def _int5_large_autotune_configs(bucket: int) -> list[triton.Config]:
+    """Default K256 tiles plus the measured bucket-64 K64 specialization."""
+    configs = [
+        triton.Config(
+            {**config.kwargs, "BLOCK_K": _SUPER_BLOCK},
+            num_warps=config.num_warps,
+            num_stages=config.num_stages,
+        )
+        for config in tile_autotune_configs(bucket)
+    ]
+    if bucket == 64:
+        configs.append(
+            triton.Config(
+                {
+                    "BLOCK_M": 64,
+                    "BLOCK_N": 64,
+                    "BLOCK_K": 64,
+                    "PIPELINE_STAGES": 1,
+                },
+                num_warps=4,
+                num_stages=1,
+            )
+        )
+    return configs
+
+
 def int5_autotune_configs(bucket: int) -> list[triton.Config]:
-    """Generic, bucket-row, and deduplicated next-bucket implementations."""
-    rows = sorted({bucket, min(bucket + 1, max(SUPPORTED_BUCKETS))})
+    """DP4A row implementations for small M, BF16 tiles for larger M."""
+    if bucket in _LARGE_BUCKETS:
+        return _int5_large_autotune_configs(bucket)
+    rows = sorted({bucket, min(bucket + 1, max(_SMALL_BUCKETS))})
     return autotune_configs(
         implementations=[{"ROWS": 0}] + [{"ROWS": row} for row in rows]
     )
@@ -1003,8 +1345,37 @@ _BUCKET_KERNELS = {
         configs=int5_autotune_configs(bucket),
         key=["N", "K", "SPLIT_K", "DYNAMIC_M"],
         prune_configs_by={"early_config_prune": _prune},
+        do_bench=autotune_do_bench,
     )(_int5_w5a8_bucket_kernel)
-    for bucket in SUPPORTED_BUCKETS
+    for bucket in _SMALL_BUCKETS
+}
+
+
+def _tile_loop_trips(args):
+    return max(1, triton.cdiv(int(args["K"]) // _SUPER_BLOCK, int(args["SPLIT_K"])))
+
+
+def _prune_tiles(configs, named_args, **kwargs):
+    return prune_by_main_loop_trips(_tile_loop_trips, configs, named_args, **kwargs)
+
+
+_W5A16_DIRECT_KERNELS = {
+    b: triton.autotune(
+        configs=_int5_large_autotune_configs(b),
+        key=["M", "N", "K", "SPLIT_K"],
+        prune_configs_by={"early_config_prune": _prune_tiles},
+        do_bench=autotune_do_bench,
+    )(_int5_w5a16_direct_kernel)
+    for b in _LARGE_BUCKETS
+}
+_W5A16_SPLIT_KERNELS = {
+    b: triton.autotune(
+        configs=_int5_large_autotune_configs(b),
+        key=["M", "N", "K", "SPLIT_K"],
+        prune_configs_by={"early_config_prune": _prune_tiles},
+        do_bench=autotune_do_bench,
+    )(_int5_w5a16_splitk_kernel)
+    for b in _LARGE_BUCKETS
 }
 
 
@@ -1019,6 +1390,8 @@ def _unsupported_reason(
     zero_point_step: torch.Tensor,
     group_size: int,
 ) -> Optional[str]:
+    if bucket in _LARGE_BUCKETS and group_size != _GROUP_SIZE:
+        return "large INT5 buckets require group_size=32"
     weights = (ql, qh, scale, scale_step, zero, zero_point_step)
     if any(tensor.dim() != 2 for tensor in (x, *weights)):
         return "expects rank-2 activation and weight tensors"
@@ -1088,6 +1461,75 @@ def _unsupported_reason(
     return None
 
 
+@autotune_launch_param("split_k", TILE_SPLIT_K_CANDIDATES)
+def _launch_w5a16(
+    bucket: int,
+    x: torch.Tensor,
+    ql: torch.Tensor,
+    qh: torch.Tensor,
+    scale: torch.Tensor,
+    scale_step: torch.Tensor,
+    zero: torch.Tensor,
+    zero_point_step: torch.Tensor,
+    group_size: int,
+    *,
+    split_k: int,
+    config: Optional[triton.Config] = None,
+) -> torch.Tensor:
+    del group_size
+    M, K = x.shape
+    N = ql.shape[0]
+    check_split_k(split_k, int(K), _SUPER_BLOCK)
+    if config is None:
+        kernels = _W5A16_DIRECT_KERNELS if split_k == 1 else _W5A16_SPLIT_KERNELS
+        kernel = kernels[bucket]
+        launch_options = {}
+    else:
+        kernel = (
+            _int5_w5a16_direct_kernel if split_k == 1 else _int5_w5a16_splitk_kernel
+        )
+        launch_options = {
+            **config.kwargs,
+            "num_warps": config.num_warps,
+            "num_stages": config.num_stages,
+        }
+        launch_options.setdefault("BLOCK_K", _SUPER_BLOCK)
+    launch_options["STATIC_M"] = M if isinstance(M, int) and M < bucket else 0
+    return launch_split_k_gemm(
+        kernel,
+        bucket=bucket,
+        m=M,
+        n=N,
+        device=x.device,
+        split_k=split_k,
+        block_m=bucket,
+        reduce_block_n=32 if bucket >= 32 else 64,
+        inputs=(x, ql, qh, scale, scale_step, zero, zero_point_step),
+        split_k_on_axis_1=True,
+        BUCKET=bucket,
+        shape_args=(
+            M,
+            N,
+            K,
+            x.stride(0),
+            x.stride(1),
+            ql.stride(0),
+            ql.stride(1),
+            qh.stride(0),
+            qh.stride(1),
+            scale.stride(0),
+            scale.stride(1),
+            scale_step.stride(0),
+            scale_step.stride(1),
+            zero.stride(0),
+            zero.stride(1),
+            zero_point_step.stride(0),
+            zero_point_step.stride(1),
+        ),
+        **launch_options,
+    )
+
+
 def _launch(
     bucket: int,
     x: torch.Tensor,
@@ -1103,6 +1545,19 @@ def _launch(
     """Runs the bucket kernel. Whether M is dynamic is read here, before
     split-K timing replaces ``x`` with a concrete tensor, so a dynamic-M call
     is timed on the dynamic path and cached apart from a static M."""
+    if bucket in _LARGE_BUCKETS:
+        return _launch_w5a16(
+            bucket,
+            x,
+            ql,
+            qh,
+            scale,
+            scale_step,
+            zero,
+            zero_point_step,
+            group_size,
+            **launch_params,
+        )
     return _launch_rows(
         bucket,
         x,
@@ -1118,7 +1573,11 @@ def _launch(
     )
 
 
-@autotune_launch_param("split_k", SPLIT_K_CANDIDATES)
+@autotune_launch_param(
+    "split_k",
+    SPLIT_K_CANDIDATES,
+    candidate_prepass=_compile_every_candidate_at_once,
+)
 def _launch_rows(
     bucket: int,
     x: torch.Tensor,
@@ -1200,7 +1659,7 @@ def _fake(bucket: int, x: torch.Tensor, ql: torch.Tensor, *args) -> torch.Tensor
 
 INT5_QUANTIZED_GEMM = QuantizedGemmFamily(
     "int5_quantized_gemm",
-    (1, 2, 3, 4),
+    SUPPORTED_BUCKETS,
     _prototype,
     _launch,
     _fake,
@@ -1208,4 +1667,9 @@ INT5_QUANTIZED_GEMM = QuantizedGemmFamily(
 )
 
 
-__all__ = ["INT5_QUANTIZED_GEMM", "SUPPORTED_BUCKETS", "int5_autotune_configs"]
+__all__ = [
+    "INT5_QUANTIZED_GEMM",
+    "SUPPORTED_BUCKETS",
+    "TILE_SPLIT_K_CANDIDATES",
+    "int5_autotune_configs",
+]

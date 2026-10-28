@@ -12,6 +12,7 @@ from .annotate_unbind import AnnotateUnbind
 from .build_quant_io import BuildQuantIo
 from .canonicalize_conv import CanonicalizeConv
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
+from .convert_complex_stft import ConvertComplexStft
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
@@ -85,6 +86,7 @@ __all__ = [
     BuildQuantIo,
     CanonicalizeConv,
     ConvertBmmToMatmul,
+    ConvertComplexStft,
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,

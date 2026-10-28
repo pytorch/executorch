@@ -38,7 +38,9 @@ def define_common_targets(is_fbcode = False):
         ],
         deps = [
             "//executorch/extension/cuda:caller_stream",
+            "//executorch/extension/llm/batching:executor_utils",
             "//executorch/extension/llm/runner:stats",
+            "//executorch/extension/llm/sampler:sampler",
             "//executorch/extension/tensor:tensor",
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/platform:platform",

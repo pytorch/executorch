@@ -163,12 +163,7 @@ bool check_special_case_in_place_args(
     Tensor& in,
     TensorOptList indices,
     const Tensor& values,
-    const bool accumulate,
     size_t* dim) {
-  ET_CHECK_OR_RETURN_FALSE(
-      !accumulate,
-      "Special case in-place index_put does not support accumulate");
-
   ET_CHECK_OR_RETURN_FALSE(
       static_cast<ssize_t>(indices.size()) <= in.dim(),
       "Indexing too many dimensions");
@@ -205,7 +200,7 @@ bool check_special_case_in_place_args(
       Long, Int, index.scalar_type(), ctx, "index_put_", CTYPE, [&]() {
         const CTYPE* const index_arr = index.const_data_ptr<CTYPE>();
         for (const auto i : c10::irange(index.numel())) {
-          if (index_arr[i] < 0 ||
+          if (index_arr[i] < -static_cast<CTYPE>(in.size(*dim)) ||
               index_arr[i] >= static_cast<CTYPE>(in.size(*dim))) {
             ET_LOG(
                 Error,
@@ -225,14 +220,6 @@ bool check_special_case_in_place_args(
       is_valid_index,
       "Some index values are not within bounds of input tensor at indexed dim");
 
-  ET_CHECK_OR_RETURN_FALSE(
-      values.size(*dim) == index.size(0),
-      "Special case in-place index_put requires values to match index length at the indexed dim; values.size(%zu) = %" ET_PRI_TENSOR_SIZE
-      ", index_length = %zd",
-      *dim,
-      values.size(*dim),
-      index.size(0));
-
   Tensor::SizesType expected_values_size[kTensorDimensionLimit] = {};
   size_t in_ndim = static_cast<size_t>(in.dim());
   for (const auto i : c10::irange(in_ndim)) {
@@ -241,6 +228,15 @@ bool check_special_case_in_place_args(
     }
   }
   expected_values_size[*dim] = static_cast<Tensor::SizesType>(index.size(0));
+
+  size_t leading_unit_dims = 0;
+  while (in_ndim - leading_unit_dims > static_cast<size_t>(values.dim()) &&
+         expected_values_size[leading_unit_dims] == 1) {
+    ++leading_unit_dims;
+  }
+  const bool values_shape_matches = tensor_has_expected_size(
+      values,
+      {expected_values_size + leading_unit_dims, in_ndim - leading_unit_dims});
 
 #if ET_LOG_ENABLED
   auto in_shape_str = executorch::runtime::tensor_shape_to_c_string(
@@ -251,14 +247,14 @@ bool check_special_case_in_place_args(
           values.sizes().data(), values.sizes().size()));
 
   ET_CHECK_OR_RETURN_FALSE(
-      tensor_has_expected_size(values, {expected_values_size, in_ndim}),
-      "Special case in-place index_put requires values to match input shape except for indexed dim; got input shape %s and values shape %s",
+      values_shape_matches,
+      "Special case in-place index_put requires values to match input shape except for indexed dim, allowing omitted leading unit dimensions; got input shape %s and values shape %s",
       in_shape_str.data(),
       values_shape_str.data());
 #else
   ET_CHECK_OR_RETURN_FALSE(
-      tensor_has_expected_size(values, {expected_values_size, in_ndim}),
-      "Special case in-place index_put requires values to match input shape except for indexed dim");
+      values_shape_matches,
+      "Special case in-place index_put requires values to match input shape except for indexed dim, allowing omitted leading unit dimensions");
 #endif // ET_LOG_ENABLED
 
   return true;
@@ -285,8 +281,7 @@ Tensor& index_put_(
   size_t dim = 0;
   ET_KERNEL_CHECK(
       ctx,
-      check_special_case_in_place_args(
-          ctx, in, indices, values, accumulate, &dim),
+      check_special_case_in_place_args(ctx, in, indices, values, &dim),
       InvalidArgument,
       in);
 
@@ -305,7 +300,7 @@ Tensor& index_put_(
     return in;
   }
 
-  size_t values_dim_length = values.size(dim);
+  size_t values_dim_length = index.size(0);
   size_t in_dim_length = in.size(dim);
 
   size_t length_per_step = trailing_dims * in.element_size();
@@ -315,13 +310,38 @@ Tensor& index_put_(
 
   ET_SWITCH_TWO_TYPES(Long, Int, index_type, ctx, "index_put_", CTYPE, [&]() {
     const CTYPE* const index_arr = index.const_data_ptr<CTYPE>();
-    for (const auto i : c10::irange(leading_dims)) {
-      const char* src = values_data + i * values_dim_length * length_per_step;
-      char* dest = in_data + i * in_dim_length * length_per_step;
-      for (const auto j : c10::irange(values_dim_length)) {
-        const char* copy_src = src + j * length_per_step;
-        char* copy_dest = dest + index_arr[j] * length_per_step;
-        memcpy(copy_dest, copy_src, length_per_step);
+    if (accumulate) {
+      ET_SWITCH_REALHBBF16_TYPES(
+          in.scalar_type(), ctx, "index_put_", VALUE_T, [&]() {
+            const VALUE_T* src = values.const_data_ptr<VALUE_T>();
+            VALUE_T* dest = in.mutable_data_ptr<VALUE_T>();
+            for (const auto i : c10::irange(leading_dims)) {
+              for (const auto j : c10::irange(values_dim_length)) {
+                const auto ix = index_arr[j] < 0
+                    ? index_arr[j] + static_cast<CTYPE>(in_dim_length)
+                    : index_arr[j];
+                const size_t src_offset =
+                    (i * values_dim_length + j) * trailing_dims;
+                const size_t dest_offset =
+                    (i * in_dim_length + ix) * trailing_dims;
+                for (const auto k : c10::irange(trailing_dims)) {
+                  dest[dest_offset + k] += src[src_offset + k];
+                }
+              }
+            }
+          });
+    } else {
+      for (const auto i : c10::irange(leading_dims)) {
+        const char* src = values_data + i * values_dim_length * length_per_step;
+        char* dest = in_data + i * in_dim_length * length_per_step;
+        for (const auto j : c10::irange(values_dim_length)) {
+          const auto ix = index_arr[j] < 0
+              ? index_arr[j] + static_cast<CTYPE>(in_dim_length)
+              : index_arr[j];
+          const char* copy_src = src + j * length_per_step;
+          char* copy_dest = dest + ix * length_per_step;
+          memcpy(copy_dest, copy_src, length_per_step);
+        }
       }
     }
   });

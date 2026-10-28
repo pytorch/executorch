@@ -98,6 +98,9 @@ class ET_EXPERIMENTAL Executor {
   // with a lifetime-unique id and no sampling policy. Called between forwards;
   // source may have an active generation or hold speculative state past upto.
   // The caller owns the returned session until close_session().
+  // Includes all continuation state (attention KV, convolution, recurrent/SSM)
+  // at the same boundary. A current recurrent state cannot stand in for an
+  // earlier one: refuse unless the complete state at upto is recoverable.
   //
   // nullopt = unsupported, unavailable retained history, or insufficient
   // capacity. An empty prefix may also be refused. Failure, including an

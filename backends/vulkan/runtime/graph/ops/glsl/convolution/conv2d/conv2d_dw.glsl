@@ -54,21 +54,28 @@ void main() {
   // indices indicate that the top-left element is in a region added by padding.
   const ivec2 ipos = pos.xy * stride - padding;
 
-  // Compute the start and end of the input indices to load. Padding is assumed
-  // to be constant 0 padding, so reads from the padding region are skipped.
-  const ivec2 start = ipos;
-  const ivec2 end = min(ipos + overlay_region.xy, in_sizes.xy);
-
+  // Padding is constant 0, so taps that fall outside the input contribute
+  // nothing and are skipped. The loops still cover the full kernel extent so
+  // that kx (the tap index into the flattened filter row) stays aligned with
+  // the tap being read: clipping the loop bounds to in_sizes instead leaves kx
+  // short by the clipped taps, and every following row of the filter then
+  // reads the wrong weights for any output whose window crosses the right or
+  // bottom edge.
   VEC4_T sum = texelFetch(t_bias, ivec2(pos.z, 0), 0);
   int kx = 0;
-  for (int y = start.y; y < end.y; y += dilation.y) {
-    for (int x = start.x; x < end.x; x += dilation.x) {
+  for (int ky = 0; ky < kernel_size.y; ++ky) {
+    const int y = ipos.y + ky * dilation.y;
+    for (int i = 0; i < kernel_size.x; ++i, ++kx) {
+      const int x = ipos.x + i * dilation.x;
+      if (any(lessThan(ivec2(x, y), ivec2(0))) ||
+          any(greaterThanEqual(ivec2(x, y), in_sizes.xy))) {
+        continue;
+      }
       // The weight kernel was rearranged such that every NxN filter is
       // flattened to fit in one row. Each filter was then stacked on top of
       // each other vertically.
       const VEC4_T in_texel = texelFetch(t_in, ivec3(x, y, pos.z), 0);
       sum = fma(in_texel, texelFetch(t_kernel, ivec2(kx, pos.z), 0), sum);
-      ++kx;
     }
   }
 

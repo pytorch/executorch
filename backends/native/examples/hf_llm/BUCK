@@ -4,18 +4,66 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 oncall("executorch")
 
 fbcode_target(
-    _kind = runtime.python_binary,
-    name = "export_hf_llm",
-    srcs = ["export_hf_llm.py"],
-    main_function = "executorch.backends.native.examples.hf_llm.export_hf_llm.main",
+    _kind = runtime.python_library,
+    name = "hf_utils",
+    srcs = ["hf_utils.py"],
+    visibility = ["//executorch/backends/native/examples/audio/..."],
     deps = [
         "//caffe2:torch",
         "//executorch/backends/native:lib",
         "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "export_hf_llm_lib",
+    srcs = ["export_hf_llm.py"],
+    deps = [
+        ":gguf_hf",
+        ":hf_utils",
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
         "//executorch/exir/native:native",
+        "//executorch/extension/llm/export:load",
         "fbsource//third-party/pypi/safetensors:safetensors",
         "fbsource//third-party/pypi/transformers:transformers",
         "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_binary,
+    name = "export_hf_llm",
+    main_function = "executorch.backends.native.examples.hf_llm.export_hf_llm.main",
+    deps = [":export_hf_llm_lib"],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_export_hf_llm",
+    srcs = ["test_export_hf_llm.py"],
+    deps = [
+        ":export_hf_llm_lib",
+        "//caffe2:torch",
+        "fbsource//third-party/pypi/gguf:gguf",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_verify_samples",
+    srcs = ["test_verify_samples.py"],
+    env = {
+        "RUN_HF_LLM": "$(location //executorch/backends/native/examples/hf_llm/runtime:run_hf_llm_ggml_cpu)",
+    },
+    deps = [
+        ":export_hf_llm_lib",
+        "//caffe2:torch",
+        "//executorch/exir/native:native",
+        "fbsource//third-party/pypi/transformers:transformers",
     ],
 )
 
@@ -28,5 +76,17 @@ fbcode_target(
         "//caffe2:torch",
         "fbsource//third-party/pypi/safetensors:safetensors",
         "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "gguf_hf",
+    srcs = ["gguf_hf.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:gguf",
+        "//executorch/extension/llm/export:quant",
+        "fbsource//third-party/pypi/gguf:gguf",
     ],
 )

@@ -91,6 +91,7 @@ fbcode_target(
         ":arm_vela",
         "//executorch/backends/arm/tosa:specification",
         "//executorch/backends/arm/tosa:partitioner",
+        "//executorch/exir:_warnings",
         "//executorch/exir/_serialize:lib",
     ],
 )
@@ -102,6 +103,7 @@ fbcode_target(
         "vgf/__init__.py",
         "vgf/_passes/__init__.py",
         "vgf/_passes/fuse_grid_sampler_flow_offset.py",
+        "vgf/_passes/group_independent_custom_shaders.py",
         "vgf/_passes/insert_grid_sampler_grid_dequant_pass.py",
         "vgf/_passes/rewrite_grid_sampler_to_tosa_custom.py",
         "vgf/backend.py",
@@ -110,6 +112,7 @@ fbcode_target(
         "vgf/model_converter.py",
         "vgf/quantization_quality.py",
         "vgf/quantization_assessment.py",
+        "vgf/quantization_sensitivity.py",
         "vgf/quantization_visualization.py",
         "vgf/partitioner.py",
         "vgf/shaders/__init__.py",

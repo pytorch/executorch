@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WebGPU · ExecuTorch Playground</title>
+  <meta name="description" content="Run PyTorch models locally in your browser with ExecuTorch on WebGPU.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" type="image/svg+xml" href="./assets/executorch-chip-logo.svg">
+  <link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23e5532d'/%3E%3Cpath d='M9 10h14M9 16h10M9 22h14' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <script>
+    // Resolve the theme before first paint so dark-mode visitors never see a light flash.
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem('etwg-theme'); } catch (e) {}
+      var dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    })();
+  </script>
+  <link rel="stylesheet" href="./styles/app.css">
+  <link rel="stylesheet" href="./styles/vision.css">
+  <link rel="stylesheet" href="./styles/stt.css">
+  <link rel="stylesheet" href="./styles/vlm.css">
+  <link rel="stylesheet" href="./styles/segment.css">
+  <link rel="stylesheet" href="./styles/effects.css">
+</head>
+<body>
+  <header class="sitebar">
+    <div class="sitebar__inner">
+      <a class="sitebar__brand" href="../../index.html">
+        <img class="sitebar__logo" src="./assets/executorch-chip-logo.svg" alt="" width="40" height="40">
+        <span class="sitebar__name">ExecuTorch</span>
+      </a>
+      <nav class="sitebar__links" aria-label="executorch.ai">
+        <a class="sitebar__link sitebar__link--wide" href="../../index.html#why-ondevice">Why On-Device</a>
+        <a class="sitebar__link sitebar__link--wide" href="../../index.html#challenges">Challenges</a>
+        <a class="sitebar__link sitebar__link--wide" href="../../index.html#features">Solution</a>
+        <a class="sitebar__link sitebar__link--wide" href="../../index.html#performance">Backends</a>
+        <a class="sitebar__link sitebar__link--wide" href="../../index.html#partners">Partners</a>
+        <a class="sitebar__link" href="https://github.com/pytorch/executorch">GitHub</a>
+        <a class="sitebar__pill" href="../" aria-current="page">Playground</a>
+      </nav>
+      <form class="sitebar__search" action="https://docs.pytorch.org/executorch/1.0/search.html" method="get">
+        <input class="sitebar__search-input" type="text" name="q" placeholder="Search docs…" aria-label="Search docs">
+      </form>
+    </div>
+  </header>
+  <div id="app" class="app">
+    <noscript><p class="noscript">This playground needs JavaScript to run demos on your GPU.</p></noscript>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

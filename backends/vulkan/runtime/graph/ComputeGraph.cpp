@@ -701,6 +701,10 @@ ValueRef ComputeGraph::set_input_tensor(
   // For texture storage, the buffer size needs to account for the zero
   // padding applied by unused texel elements.
   size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  if (dtype_of(idx) == vkapi::kInt8x4 &&
+      vkapi::element_size(staging_dtype) == 1) {
+    buf_numel *= 4;
+  }
   ValueRef staging_idx = add_staging(
       staging_dtype, buf_numel, vkapi::CopyDirection::HOST_TO_DEVICE);
   add_staging_to_tensor_node(*this, staging_idx, idx);
@@ -726,6 +730,10 @@ ValueRef ComputeGraph::set_output_tensor(
   // For texture storage, the buffer size needs to account for the zero
   // padding applied by unused texel elements.
   size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  if (dtype_of(idx) == vkapi::kInt8x4 &&
+      vkapi::element_size(staging_dtype) == 1) {
+    buf_numel *= 4;
+  }
   ValueRef staging_idx = add_staging(
       staging_dtype, buf_numel, vkapi::CopyDirection::DEVICE_TO_HOST);
   // We only run this when the tensor is non-empty.  When the underlying

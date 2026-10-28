@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -53,21 +54,39 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& w = graph.get_tensor(w_id);
   const auto& out = graph.get_tensor(out_id);
 
-  if (in.dims.size() != 2 || w.dims.size() != 2) {
-    throw std::runtime_error("WebGPU linear: input/weight must be 2D");
+  if (in.dims.empty() || w.dims.size() != 2) {
+    throw std::runtime_error(
+        "WebGPU linear: input must have rank >= 1 and weight must be 2D");
   }
-  const uint32_t M = static_cast<uint32_t>(in.dims[0]);
-  const uint32_t K = static_cast<uint32_t>(in.dims[1]);
-  const uint32_t N = static_cast<uint32_t>(w.dims[0]);
-  if (static_cast<uint32_t>(w.dims[1]) != K) {
-    throw std::runtime_error("WebGPU linear: weight.dims[1] != input.dims[1]");
+  const int64_t k_dim = in.dims.back();
+  const int64_t n_dim = w.dims[0];
+  if (k_dim <= 0 || n_dim <= 0 || w.dims[1] != k_dim) {
+    throw std::runtime_error(
+        "WebGPU linear: invalid weight or input K dimension");
   }
-  if (M == 0 || N == 0 || K == 0) {
-    throw std::runtime_error("WebGPU linear: M, N, or K == 0");
+  const uint64_t input_numel = utils::numel_of(in.dims);
+  if (input_numel % static_cast<uint64_t>(k_dim) != 0u) {
+    throw std::runtime_error(
+        "WebGPU linear: input numel is not a multiple of K");
+  }
+  const uint64_t m_dim = input_numel / static_cast<uint64_t>(k_dim);
+  if (m_dim == 0u || m_dim > std::numeric_limits<uint32_t>::max() ||
+      static_cast<uint64_t>(n_dim) > std::numeric_limits<uint32_t>::max() ||
+      static_cast<uint64_t>(k_dim) > std::numeric_limits<uint32_t>::max()) {
+    throw std::runtime_error("WebGPU linear: M, N, or K exceeds uint32 range");
+  }
+  const uint32_t M = static_cast<uint32_t>(m_dim);
+  const uint32_t K = static_cast<uint32_t>(k_dim);
+  const uint32_t N = static_cast<uint32_t>(n_dim);
+
+  std::vector<int64_t> expected_out_dims = in.dims;
+  expected_out_dims.back() = n_dim;
+  if (out.dims != expected_out_dims) {
+    throw std::runtime_error("WebGPU linear: output shape mismatch");
   }
 
-  const uint64_t outputs = static_cast<uint64_t>(M) * static_cast<uint64_t>(N);
-  if (in.nbytes != static_cast<uint64_t>(M) * K * sizeof(float) ||
+  const uint64_t outputs = static_cast<uint64_t>(M) * N;
+  if (in.nbytes != input_numel * sizeof(float) ||
       w.nbytes != static_cast<uint64_t>(N) * K * sizeof(float) ||
       out.nbytes != outputs * sizeof(float)) {
     throw std::runtime_error("WebGPU linear: fp32-only (byte-size mismatch)");
@@ -142,6 +161,9 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       [in_id, out_id, M, N, K, has_bias, dispatch_x, dispatch_idx, params_buf](
           WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
+        if (d.empty() || d.back() != static_cast<int64_t>(K)) {
+          throw std::runtime_error("WebGPU linear: live K changed");
+        }
         const uint64_t numel = utils::numel_of(d);
         if (numel % static_cast<uint64_t>(K) != 0u) {
           throw std::runtime_error(
@@ -158,8 +180,9 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         g.dispatch_at(dispatch_idx).workgroup_count_x = dispatch_x;
         g.dispatch_at(dispatch_idx).workgroup_count_y =
             (m + kTile - 1u) / kTile;
-        g.set_cur_dims(
-            out_id, {static_cast<int64_t>(m), static_cast<int64_t>(N)});
+        std::vector<int64_t> output_dims = d;
+        output_dims.back() = static_cast<int64_t>(N);
+        g.set_cur_dims(out_id, output_dims);
       });
 
   graph.own_uniform_buffer(uniform_buffer);

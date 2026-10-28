@@ -72,7 +72,7 @@ vgf = [
   # Python 3.12 is the reference/recommended minimum for the VGF
   # flow. ExecuTorch supports a broader Python range, so older versions are
   # surfaced as a VGF preflight warning instead of a package-level restriction.
-  "ai_ml_emulation_layer_for_vulkan==0.10.0",
+  "ai_ml_emulation_layer_for_vulkan==0.11.0",
   "ai_ml_sdk_model_converter==0.11.0",
   "ml_dtypes==0.5.1",
   "tosa-tools==2026.5.0",
@@ -86,7 +86,10 @@ ethos_u = [
   "tosa-tools==2026.5.0",
 ]
 openvino = [
-  "openvino>=2025.1.0,<2026.0.0; platform_system == 'Linux'",
+  # OpenVINO publishes no build for Python 3.15, and its Linux aarch64 builds for Python
+  # 3.14 need glibc 2.35 while the wheel needs only 2.28. Without these bounds pip fails to
+  # install the extra on Python 3.15 and on those older aarch64 systems.
+  "openvino>=2025.1.0,<2027.0.0; (platform_system == 'Linux' or (platform_system == 'Windows' and platform_machine == 'AMD64')) and python_version < '3.15' and (platform_machine != 'aarch64' or python_version < '3.14')",
 ]
 
 [project.urls]
@@ -129,6 +132,10 @@ license-files = ["LICENSE"]
 "executorch.backends.arm.vgf.shaders" = [
   "*.glsl",
   "*.spirv.b64",
+]
+# Marks the Python bindings as typed, so type checkers read their stubs.
+"executorch.extension.pybindings" = [
+  "py.typed",
 ]
 
 [tool.setuptools.exclude-package-data]

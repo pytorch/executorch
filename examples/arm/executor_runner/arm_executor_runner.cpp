@@ -264,9 +264,10 @@ const float et_rtol = 0.01;
 #endif
 
 #if defined(ET_NUM_INFERENCES)
-const int num_inferences = ET_NUM_INFERENCES;
+static_assert(ET_NUM_INFERENCES > 0, "ET_NUM_INFERENCES must be positive");
+const size_t num_inferences = static_cast<size_t>(ET_NUM_INFERENCES);
 #else
-const int num_inferences = 1;
+const size_t num_inferences = 1;
 #endif
 
 /**
@@ -1334,11 +1335,15 @@ bool verify_result(RunnerContext& ctx, const void* model_data) {
 
 bool run_model(RunnerContext& ctx, const void* model_data) {
   Error status;
-  ET_LOG(Info, "Starting running %d inferences...", num_inferences);
-  int n = 0;
+  ET_LOG(
+      Info,
+      "Starting running %lu inferences...",
+      static_cast<printf_size_t>(num_inferences));
+  size_t n = 0;
   StartMeasurements();
   for (n = 0; n < num_inferences; n++) {
-    ET_LOG(Debug, "Running inference number %d", n);
+    ET_LOG(
+        Debug, "Running inference number %lu", static_cast<printf_size_t>(n));
     // Run the model.
     status = ctx.method.value()->execute();
     if (status != Error::Ok) {
@@ -1358,7 +1363,10 @@ bool run_model(RunnerContext& ctx, const void* model_data) {
       ctx.method_name,
       status);
 
-  ET_LOG(Info, "%d inferences finished", num_inferences);
+  ET_LOG(
+      Info,
+      "%lu inferences finished",
+      static_cast<printf_size_t>(num_inferences));
   print_outputs(ctx);
   bool model_ok = verify_result(ctx, model_data);
   ET_LOG(Info, "Model run: %d", model_ok);

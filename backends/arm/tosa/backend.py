@@ -353,7 +353,7 @@ class TOSABackend(BackendDetails):
                         tosa_spec,
                     )
                 elif node.op == "output":
-                    process_output(node, tosa_graph, tosa_spec)
+                    process_output(node, tosa_graph, tosa_spec, edge_program)
                 elif node.op == "get_attr":
                     attr = getattr(graph_module, str(node.target), None)
                     if attr is None:

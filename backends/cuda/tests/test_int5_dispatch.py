@@ -13,7 +13,7 @@ themselves are covered by test_int5_quantized_gemm.py.
 
 The API contract: after importing int5_dispatch, F.linear / nn.Linear with a
 CudaDp4aPlanarInt5Tensor weight produce numerically correct results, routed by
-batch size (decode M<=4 -> ``triton::int5_quantized_gemm_m{M}``, everything
+batch size (M<=64 -> the smallest ``triton::int5_quantized_gemm_m{M}`` bucket, everything
 else -> inline dequant, never an error). Q5_K is
 asymmetric (has a zero point, like INT4): ``w = scale * (u - zero)`` with u in
 [0, 31]. Both scale and zero are stored as per-group uint8 codes with a per-256
@@ -28,6 +28,7 @@ import unittest
 from unittest import mock
 
 import executorch.backends.cuda.quantize_op_dispatch.int5_dispatch  # noqa: F401
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -376,12 +377,21 @@ class TestDecodeDispatch(unittest.TestCase):
             {"triton.int5_quantized_gemm_m3.default"},
         )
 
-    def test_prefill_and_unbounded_dynamic_m_use_dequant(self):
+    def test_large_and_unbounded_dynamic_m_routing(self):
         module, _ = self._module()
         x8 = torch.randn(8, 512, dtype=torch.bfloat16, device="cuda")
-        self.assertFalse(self._bucket_ops(module, x8))
-        self.assertFalse(self._bucket_ops(module, x8, (5, 64)))
-        self.assertFalse(self._bucket_ops(module, x8, (1, 64)))
+        self.assertEqual(
+            self._bucket_ops(module, x8), {"triton.int5_quantized_gemm_m8.default"}
+        )
+        self.assertEqual(
+            self._bucket_ops(module, x8, (5, 64)),
+            {"triton.int5_quantized_gemm_m64.default"},
+        )
+        self.assertEqual(
+            self._bucket_ops(module, x8, (1, 64)),
+            {"triton.int5_quantized_gemm_m64.default"},
+        )
+        self.assertFalse(self._bucket_ops(module, x8, (1, 128)))
 
 
 class TestFallbacks(unittest.TestCase):
@@ -412,9 +422,9 @@ class TestFallbacks(unittest.TestCase):
             64, 512, GS, torch.randn(512, 2, dtype=torch.bfloat16, device="cuda").t()
         )
 
-    def test_more_than_four_rows(self):
+    def test_more_than_sixty_four_rows(self):
         self._check(
-            64, 512, GS, torch.randn(5, 512, dtype=torch.bfloat16, device="cuda")
+            64, 512, GS, torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
         )
 
 

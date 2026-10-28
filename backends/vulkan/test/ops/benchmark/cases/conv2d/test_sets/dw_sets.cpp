@@ -63,6 +63,35 @@ REGISTER_TEST_CASE_SET("conv2d", "dw_correctness") {
        Padding(1, 1),
        Dilation(1, 1),
        false},
+      // Neither 3x3 nor 5x5 with stride != dilation: the generic conv2d_dw
+      // shader, which has no _sned variant
+      {InputDims(1, 8, 16, 16),
+       KernelSize(4, 4),
+       Stride(2, 2),
+       Padding(1, 1),
+       Dilation(1, 1),
+       false},
+      // dilation > 1 on the generic shader, with stride != dilation and
+      // with stride == dilation
+      {InputDims(1, 8, 32, 32),
+       KernelSize(7, 7),
+       Stride(1, 1),
+       Padding(6, 6),
+       Dilation(2, 2),
+       true},
+      {InputDims(1, 8, 32, 32),
+       KernelSize(6, 6),
+       Stride(3, 3),
+       Padding(2, 2),
+       Dilation(3, 3),
+       false},
+      // Non-square kernel, stride, padding and input (catches x/y swaps)
+      {InputDims(1, 8, 31, 37),
+       KernelSize(3, 5),
+       Stride(2, 1),
+       Padding(1, 2),
+       Dilation(1, 1),
+       true},
       // Non-multiple-of-4 channels
       {InputDims(1, 11, 16, 16),
        KernelSize(3, 3),

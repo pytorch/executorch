@@ -49,3 +49,29 @@ TEST_F(OpRemainderOutTest, SmokeTest) {
   op_remainder_tensor_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
+
+TEST_F(OpRemainderOutTest, IntegerResultHasSignOfDivisor) {
+  TensorFactory<ScalarType::Long> tf;
+
+  Tensor self = tf.make({6}, {7, -7, 7, -7, 6, -6});
+  Tensor other = tf.make({6}, {3, 3, -3, -3, 3, -3});
+  Tensor out = tf.zeros({6});
+  op_remainder_tensor_out(self, other, out);
+  EXPECT_TENSOR_EQ(out, tf.make({6}, {1, 2, -2, -1, 0, 0}));
+
+  Tensor scalar_out = tf.zeros({6});
+  op_remainder_scalar_out(self, 3, scalar_out);
+  EXPECT_TENSOR_EQ(scalar_out, tf.make({6}, {1, 2, 1, 2, 0, 0}));
+}
+
+TEST_F(OpRemainderOutTest, DoubleKeepsDoublePrecision) {
+  TensorFactory<ScalarType::Double> tf;
+
+  Tensor self = tf.make({2}, {123456789.123456789, -123456789.123456789});
+  Tensor other = tf.make({2}, {1000.0, 1000.0});
+  Tensor out = tf.zeros({2});
+  op_remainder_tensor_out(self, other, out);
+  // Rounding to float would be off by about 1.7e-5
+  EXPECT_TENSOR_CLOSE_WITH_TOL(
+      out, tf.make({2}, {789.123456789, 210.876543211}), 0, 1e-6);
+}

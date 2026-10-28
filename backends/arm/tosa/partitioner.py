@@ -66,6 +66,36 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 logger = logging.getLogger(__name__)
 
 
+def _tag_delegate_owned_buffers(exported_program: ExportedProgram) -> None:
+    """Tag each mutable buffer into the partition that reads and updates it.
+
+    The partition takes the buffer only when it holds every reader and the
+    update. A buffer shared with another partition or with ops left outside the
+    delegate is left untagged, so it stays a program buffer passed in and out of
+    the delegate.
+
+    """
+    signature = exported_program.graph_signature
+    writer_names = {
+        target: name for name, target in signature.buffers_to_mutate.items()
+    }
+    nodes = {node.name: node for node in exported_program.graph.nodes}
+    for node in exported_program.graph.find_nodes(op="placeholder"):
+        target = signature.inputs_to_buffers.get(node.name)
+        if target not in writer_names:
+            continue
+        accesses = [*node.users, nodes[writer_names[target]]]
+        tags = {access.meta.get("delegation_tag") for access in accesses}
+        if len(tags) == 1 and None not in tags:
+            node.meta["delegation_tag"] = tags.pop()
+        elif tags != {None}:
+            logger.warning(
+                f"Mutable buffer {target} is accessed outside a single delegate "
+                "partition, so it stays a program buffer instead of being "
+                "owned by the delegate."
+            )
+
+
 def _is_custom_partition_op(
     custom_ops: set[torch._ops.OpOverload], target: object
 ) -> bool:
@@ -453,6 +483,8 @@ class TOSAPartitioner(Partitioner):
     """
 
     compile_spec: ArmCompileSpec
+    # Only backends whose runtime keeps a persistent region can own mutable buffers.
+    delegate_mutable_buffers: bool = False
 
     def __init__(
         self,
@@ -836,6 +868,8 @@ class TOSAPartitioner(Partitioner):
         partition_tags = {tag: self.delegation_spec for tag in tags}
 
         tag_constant_data(exported_program)
+        if self.delegate_mutable_buffers:
+            _tag_delegate_owned_buffers(exported_program)
         if (
             self.intermediate_path is not None
             and logger.getEffectiveLevel() <= logging.INFO

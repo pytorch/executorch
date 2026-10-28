@@ -62,11 +62,13 @@ class _ArmFactoTester(ArmTester):
         compile_spec: ArmCompileSpec,
         quantize_before_export: bool = False,
         qtol: int = 0,
+        use_portable_ops: bool = False,
     ):
         super().__init__(
             model,
             example_inputs=example_inputs,
             compile_spec=compile_spec,
+            use_portable_ops=use_portable_ops,
         )
         self._quantize_before_export = quantize_before_export
         self._qtol = qtol
@@ -130,6 +132,34 @@ def _vgf_serialized_runner_available() -> bool:
         arm_common.model_converter_installed()
         and arm_common.vkml_emulation_layer_installed()
         and arm_common.arm_executor_runner_exists("vkml_emulation_layer")
+    )
+
+
+def _make_arm_u55_int_tester(
+    model: torch.nn.Module, example_inputs: tuple[Any, ...]
+) -> BackendTester:
+    return _ArmFactoTester(
+        model,
+        example_inputs,
+        compile_spec=arm_common.get_u55_compile_spec(),
+        quantize_before_export=True,
+        qtol=1,
+        use_portable_ops=True,
+    )
+
+
+def _make_arm_u85_int_tester(
+    model: torch.nn.Module, example_inputs: tuple[Any, ...]
+) -> BackendTester:
+    return _ArmFactoTester(
+        model,
+        example_inputs,
+        compile_spec=arm_common.get_u85_compile_spec(
+            memory_mode="Dedicated_Sram_384KB"
+        ),
+        quantize_before_export=True,
+        qtol=1,
+        use_portable_ops=True,
     )
 
 
@@ -205,6 +235,32 @@ class FactoTestsArmVGF_INT(_FactoTestsArmSerializedRunnerMixin, FactoTestsBase):
 
     def __init__(self, *args, **kwargs):
         super().__init__(_make_arm_vgf_int_tester, *args, **kwargs)
+
+
+@unittest.skipUnless(
+    arm_common.corstone300_installed()
+    and arm_common.arm_executor_runner_exists("corstone-300", use_portable_ops=True),
+    "Did not find Corstone-300 FVP or executor_runner",
+)
+class FactoTestsArmU55_INT(_FactoTestsArmSerializedRunnerMixin, FactoTestsBase):
+    __test__ = True
+    _tensor_constraints = ARM_TOSA_INT_TENSOR_CONSTRAINTS
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(_make_arm_u55_int_tester, *args, **kwargs)
+
+
+@unittest.skipUnless(
+    arm_common.corstone320_installed()
+    and arm_common.arm_executor_runner_exists("corstone-320", use_portable_ops=True),
+    "Did not find Corstone-320 FVP or executor_runner",
+)
+class FactoTestsArmU85_INT(_FactoTestsArmSerializedRunnerMixin, FactoTestsBase):
+    __test__ = True
+    _tensor_constraints = ARM_TOSA_INT_TENSOR_CONSTRAINTS
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(_make_arm_u85_int_tester, *args, **kwargs)
 
 
 class TestArmFactoTensorConstraintSelection(unittest.TestCase):
@@ -307,6 +363,8 @@ for op_name in _ARM_SELECTED_OP_NAMES:
     FactoTestsArmTOSA_INT._generate_test(op_name)
     FactoTestsArmVGF_FP._generate_test(op_name)
     FactoTestsArmVGF_INT._generate_test(op_name)
+    FactoTestsArmU55_INT._generate_test(op_name)
+    FactoTestsArmU85_INT._generate_test(op_name)
 
 if _generated_facto_tests_enabled():
     if not FACTO_AVAILABLE:

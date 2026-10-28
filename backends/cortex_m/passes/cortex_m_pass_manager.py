@@ -111,13 +111,15 @@ class CortexMPassManager(ExportedProgramPassManager):
     legacy_pass_list: list[PassClass] = [
         # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
         RemoveGetItemPass,
-        FoldAndAnnotateQParamsPass,
+        # Retrace scalar ops while the graph still has floating-point Q/DQ inputs.
         ReplaceScalarWithTensorArgPass,
-        ReplaceQuantNodesPass,
+        FoldAndAnnotateQParamsPass,
         ActivationFusionPass,
         QuantizedClampActivationPass,
         DecomposeHardswishPass,
         AtenToCortexMPass,
+        # Retrace only after quantized ATen ops have become Cortex-M kernels.
+        ReplaceQuantNodesPass,
         FuseConvPaddingPass,
         InitializeScratchBuffersPass,
         LiftConstantTensorsPass,

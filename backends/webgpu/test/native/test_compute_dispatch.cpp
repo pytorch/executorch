@@ -591,6 +591,22 @@ void resize_cascade_output(WebGPUGraph& graph, const CascadeContext& context) {
   graph.set_cur_dims(context.output_id, graph.cur_dims(context.source_id));
 }
 
+struct BroadcastCheckContext {
+  int lhs_id;
+  int rhs_id;
+  int* calls;
+};
+
+// Mirrors a binary op's resize hook: both operands must already agree.
+void check_operands_match(
+    WebGPUGraph& graph,
+    const BroadcastCheckContext& context) {
+  ++*context.calls;
+  if (graph.cur_dims(context.lhs_id) != graph.cur_dims(context.rhs_id)) {
+    throw std::runtime_error("operands are not broadcast-compatible");
+  }
+}
+
 void expect_dispatch_grid(
     WebGPUGraph& graph,
     size_t dispatch_index,
@@ -789,6 +805,37 @@ TEST(WebGPUDynamicDispatch, HandlesCascadesAndStagesPickerFailures) {
   EXPECT_NO_THROW(graph.propagate_resize());
   expect_dispatch_grid(graph, first, 5u, 5u);
   expect_dispatch_grid(graph, second, 7u, 7u);
+}
+
+// A residual add whose operands sit at different depths from the resized
+// input (Q directly, Output two hooks downstream) must see both operands at
+// the new shape, as in a multi-token LLM prefill.
+TEST(WebGPUResizeHooks, ResizesUnevenDepthOperandsBeforeTheirConsumer) {
+  WebGPUGraph graph;
+  build_resize_test_graph(graph);
+  int add_calls = 0;
+  graph.add_tensor_resize_hook(
+      kResizeQ,
+      resize_cascade_output,
+      CascadeContext{kResizeQ, kResizeCascade});
+  graph.add_tensor_resize_hook(
+      kResizeCascade,
+      resize_cascade_output,
+      CascadeContext{kResizeCascade, kResizeOutput});
+  const BroadcastCheckContext add_context = {
+      kResizeQ, kResizeOutput, &add_calls};
+  graph.add_tensor_resize_hook(kResizeQ, check_operands_match, add_context);
+  graph.add_tensor_resize_hook(
+      kResizeOutput, check_operands_match, add_context);
+
+  graph.resize_input(kResizeQ, {4, 6});
+  EXPECT_NO_THROW(graph.propagate_resize());
+  EXPECT_EQ(graph.cur_dims(kResizeOutput), graph.cur_dims(kResizeQ));
+  EXPECT_GE(add_calls, 1);
+
+  graph.resize_input(kResizeQ, {8, 8});
+  EXPECT_NO_THROW(graph.propagate_resize());
+  EXPECT_EQ(graph.cur_dims(kResizeOutput), graph.cur_dims(kResizeQ));
 }
 
 TEST(WebGPUDynamicDispatch, RejectsRouteOverlapWithoutPoisoningRegistry) {

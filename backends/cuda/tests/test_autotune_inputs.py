@@ -149,14 +149,14 @@ def _config_key(config) -> tuple:
 
 
 @contextlib.contextmanager
-def _record_decode_pick(picks: list):
+def _record_pick(kernel_name: str, picks: list):
     from torch._inductor.runtime.triton_heuristics import CachingAutotuner
 
     original = CachingAutotuner.benchmark_all_configs
 
     def record(self, *args, **kwargs):
         timings = original(self, *args, **kwargs)
-        if getattr(self.fn, "__name__", "") == "_sdpa_decode_splitk_kernel":
+        if getattr(self.fn, "__name__", "") == kernel_name:
             picks.append(_config_key(min(timings, key=timings.get).config))
         return timings
 
@@ -165,6 +165,29 @@ def _record_decode_pick(picks: list):
         yield
     finally:
         CachingAutotuner.benchmark_all_configs = original
+
+
+def _compile_picks(module, inputs, kernel_name: str) -> list:
+    from executorch.backends.cuda.cuda_backend import CudaBackend
+    from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+    from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+
+    with torch.no_grad():
+        program = torch.export.export(module, inputs, strict=True)
+    picks = []
+    with torch.compiler.config.patch(force_disable_caches=True), _record_pick(
+        kernel_name, picks
+    ):
+        to_edge_transform_and_lower(
+            program,
+            partitioner=[
+                CudaPartitioner(
+                    [CudaBackend.generate_method_name_compile_spec("forward")]
+                )
+            ],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+    return picks
 
 
 def _decode_inputs():
@@ -178,27 +201,9 @@ def _decode_inputs():
 
 
 def _compiled_decode_pick() -> tuple:
-    from executorch.backends.cuda.cuda_backend import CudaBackend
-    from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-    from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-
     q, k, v = _decode_inputs()
     kv_len = torch.tensor([_RUNTIME_KV_LENS[0]], dtype=torch.int64, device="cuda")
-    with torch.no_grad():
-        program = torch.export.export(_Decode(), (q, k, v, kv_len), strict=True)
-    picks = []
-    with torch.compiler.config.patch(force_disable_caches=True), _record_decode_pick(
-        picks
-    ):
-        to_edge_transform_and_lower(
-            program,
-            partitioner=[
-                CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("forward")]
-                )
-            ],
-            compile_config=EdgeCompileConfig(_check_ir_validity=False),
-        )
+    picks = _compile_picks(_Decode(), (q, k, v, kv_len), "_sdpa_decode_splitk_kernel")
     assert len(picks) == 1, picks
     return picks[0]
 
@@ -247,6 +252,14 @@ class SdpaKvLenAutotuneTest(unittest.TestCase):
             "_sdpa_small_query_splitk_kernel",
         ):
             self.assertIn("KV_LEN_ptr", ai._REGISTRY[name].providers, name)
+            self.assertIn("Mask_ptr", ai._REGISTRY[name].providers, name)
+
+    def test_visible_mask_pairs_with_every_kv_length(self) -> None:
+        args = {"Lk": 65536, "Lq": 32}
+        self.assertEqual(
+            _SDPA._visible_mask_scenarios(args),
+            [True] * len(_SDPA._kv_len_scenarios(args)),
+        )
 
     def test_compiled_pick_is_fastest_at_runtime_kv_lengths(self) -> None:
         pick = _compiled_decode_pick()
@@ -256,6 +269,88 @@ class SdpaKvLenAutotuneTest(unittest.TestCase):
             regret = times[pick] / best
             print(f"kv_len={kv_len}: compiled pick {regret:.2f}x of the best")
             self.assertLessEqual(regret, self.MAX_REGRET, (kv_len, pick, times))
+
+
+# A cell-layout step: T queries of T sequences over one pool, an explicit
+# visibility mask and the live extent as kv_len (lower_offgraph_kv.cell_step).
+_CELL_T, _CELL_H_Q, _CELL_POOL = 32, 32, 65536
+_CELL_LIVE = (4650, 9300)
+
+
+class _CellStep(torch.nn.Module):
+    def forward(self, q, k, v, mask, kv_len):
+        return torch.ops.triton.sdpa(q, k, v, mask, 0.0, False, 0.0, True, kv_len)
+
+
+def _cell_inputs(live: int):
+    """Each sequence's 128-cell prompt, then decode cells interleaved across
+    the sequences, filling ``live`` cells."""
+    torch.manual_seed(0)
+    q = torch.randn(
+        1, _CELL_H_Q, _CELL_T, _HEAD_DIM, dtype=torch.bfloat16, device="cuda"
+    )
+    k = torch.randn(
+        1, _CELL_POOL, _H_KV, _HEAD_DIM, dtype=torch.bfloat16, device="cuda"
+    ).transpose(1, 2)
+    v = torch.randn_like(k)
+    mask = torch.zeros(1, 1, _CELL_T, _CELL_POOL, dtype=torch.bool, device="cuda")
+    prompt = 128
+    for i in range(_CELL_T):
+        mask[0, 0, i, i * prompt : (i + 1) * prompt] = True
+    tail = torch.arange(_CELL_T * prompt, live, device="cuda")
+    mask[0, 0, (tail - _CELL_T * prompt) % _CELL_T, tail] = True
+    kv_len = torch.tensor([live], dtype=torch.int64, device="cuda")
+    return q, k, v, mask, kv_len
+
+
+def _time_every_cell_config(live: int) -> dict:
+    import triton
+    from executorch.backends.cuda.autotune.cuda_graph_timing import (
+        time_with_cuda_graph_us,
+    )
+
+    q, k, v, mask, kv_len = _cell_inputs(live)
+    kernel = _SDPA._sdpa_fwd_kernel
+    configs = _SDPA._sdpa_fwd_prune(
+        kernel.configs, None, HEAD_DIM=_HEAD_DIM, NUM_GROUPS=_CELL_H_Q // _H_KV
+    )
+    times = {}
+    with torch.cuda.stream(torch.cuda.Stream()):
+        for config in configs:
+            single = triton.autotune(configs=[config], key=kernel.keys)(kernel.fn)
+            with mock.patch.object(_SDPA, "_sdpa_fwd_kernel", single):
+                try:
+                    times[_config_key(config)] = time_with_cuda_graph_us(
+                        lambda: _CellStep()(q, k, v, mask, kv_len)
+                    )
+                except Exception:  # noqa: BLE001 - configs that do not fit are skipped
+                    continue
+    return times
+
+
+class SdpaCellStepAutotuneTest(unittest.TestCase):
+    """The standard SDPA config (tile and pack GQA) compiled for a masked
+    cell step is the fastest at live extents, not at the all-False mask
+    autotuning would otherwise time."""
+
+    MAX_REGRET = 1.10
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if not torch.cuda.is_available():
+            raise unittest.SkipTest("CUDA required")
+
+    def test_compiled_pick_is_fastest_at_live_extents(self) -> None:
+        picks = _compile_picks(
+            _CellStep(), _cell_inputs(_CELL_LIVE[0]), "_sdpa_fwd_kernel"
+        )
+        self.assertEqual(len(picks), 1, picks)
+        for live in _CELL_LIVE:
+            times = _time_every_cell_config(live)
+            best = min(times.values())
+            regret = times[picks[0]] / best
+            print(f"live={live}: compiled pick {regret:.2f}x of the best")
+            self.assertLessEqual(regret, self.MAX_REGRET, (live, picks[0], times))
 
 
 if __name__ == "__main__":

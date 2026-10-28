@@ -20,6 +20,7 @@ target_link_libraries(
   cuda_batching
   PUBLIC aoti_cuda_backend extension_llm_batching extension_llm_batching_util
          extension_llm_cache extension_module extension_tensor
+  PRIVATE extension_llm_batching_executor_utils extension_llm_sampler
 )
 
 install(

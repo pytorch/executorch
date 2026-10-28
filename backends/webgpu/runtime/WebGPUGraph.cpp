@@ -641,8 +641,12 @@ void WebGPUGraph::propagate_resize() {
     processing.swap(dirty_tensors_);
     pending_dynamic_dispatch_grids_.clear();
     try {
+      // Hooks run in topological order, so firing on tensors dirtied earlier
+      // in this pass resizes every operand of a multi-input op before the
+      // op's own hook runs.
       for (auto& hook : tensor_resize_hooks_) {
-        if (processing.count(hook.trigger_tensor_id) != 0) {
+        if (processing.count(hook.trigger_tensor_id) != 0 ||
+            dirty_tensors_.count(hook.trigger_tensor_id) != 0) {
           hook.fn(*this);
         }
       }

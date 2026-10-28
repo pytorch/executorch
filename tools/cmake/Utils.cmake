@@ -278,6 +278,36 @@ macro(find_package_torch)
     add_torch_to_cmake_prefix_path()
     find_package(Torch CONFIG REQUIRED)
   endif()
+  # TorchConfig gives its include dirs, compile flags and C++ standard to torch
+  # only. Our targets link torch_cpu_library instead, so copy them there once,
+  # also when the project found torch before calling this. This affects every
+  # target in the build that links torch_cpu_library.
+  if(TARGET torch_cpu_library)
+    get_target_property(
+      _torch_settings_copied torch_cpu_library EXECUTORCH_TORCH_SETTINGS_COPIED
+    )
+    if(NOT _torch_settings_copied)
+      foreach(_torch_property
+              INTERFACE_INCLUDE_DIRECTORIES INTERFACE_COMPILE_OPTIONS
+              INTERFACE_COMPILE_FEATURES
+      )
+        get_target_property(_torch_value torch ${_torch_property})
+        if(_torch_value)
+          set_property(
+            TARGET torch_cpu_library
+            APPEND
+            PROPERTY ${_torch_property} ${_torch_value}
+          )
+        endif()
+      endforeach()
+      set_property(
+        TARGET torch_cpu_library PROPERTY EXECUTORCH_TORCH_SETTINGS_COPIED TRUE
+      )
+    endif()
+    unset(_torch_settings_copied)
+    unset(_torch_property)
+    unset(_torch_value)
+  endif()
 endmacro()
 
 # Modify ${targetName}'s INTERFACE_INCLUDE_DIRECTORIES by wrapping each entry in
@@ -725,4 +755,38 @@ function(executorch_add_shared_library target_name)
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
+endfunction()
+
+# These Python extensions remain SHARED because other ET targets link them. On
+# Unix, create them without the embedding library required by
+# pybind11_add_module(SHARED): Python symbols resolve from the loading
+# interpreter.
+function(executorch_add_pybind_module target)
+  if(MSVC)
+    pybind11_add_module(${target} SHARED ${ARGN})
+    return()
+  endif()
+
+  add_library(${target} SHARED ${ARGN})
+  target_link_libraries(${target} PRIVATE pybind11::module)
+  pybind11_extension(${target})
+
+  if(NOT DEFINED CMAKE_CXX_VISIBILITY_PRESET)
+    set_target_properties(${target} PROPERTIES CXX_VISIBILITY_PRESET hidden)
+  endif()
+  if(NOT DEFINED CMAKE_CUDA_VISIBILITY_PRESET)
+    set_target_properties(${target} PROPERTIES CUDA_VISIBILITY_PRESET hidden)
+  endif()
+  if(NOT DEFINED CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+    target_link_libraries(${target} PRIVATE pybind11::lto)
+  endif()
+  if(DEFINED CMAKE_BUILD_TYPE)
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" _build_type)
+    if(NOT _build_type MATCHES "DEBUG|RELWITHDEBINFO|NONE")
+      pybind11_strip(${target})
+    endif()
+  endif()
+  if(APPLE)
+    target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
+  endif()
 endfunction()

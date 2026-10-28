@@ -76,6 +76,8 @@ def write_selected_op_variants(yaml_file_path: str, output_dir: str) -> None:
         selected_operators_dict = yaml.safe_load(selected_operators_file)
         et_kernel_metadata = selected_operators_dict.get("et_kernel_metadata", {})
         assert isinstance(et_kernel_metadata, dict)
+        if selected_operators_dict.get("include_all_operators", False):
+            et_kernel_metadata = {}
         body = "true"
         body_parts = []
         for operator_name, kernel_metadata_str in et_kernel_metadata.items():

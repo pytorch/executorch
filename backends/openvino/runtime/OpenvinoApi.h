@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <dlfcn.h>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -96,12 +95,9 @@ using ov_shape_create_fn =
     ov_status_e (*)(int64_t, const int64_t*, ov_shape_t*);
 using ov_shape_free_fn = ov_status_e (*)(ov_shape_t*);
 
+// Defined in OpenvinoBackend.cpp, where the platform's loader API is included.
 struct DlCloser {
-  void operator()(void* handle) {
-    if (handle) {
-      dlclose(handle);
-    }
-  }
+  void operator()(void* handle);
 };
 using DlHandle = std::unique_ptr<void, DlCloser>;
 

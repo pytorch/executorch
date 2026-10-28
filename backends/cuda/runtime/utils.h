@@ -34,18 +34,33 @@ inline executorch::runtime::Error _check_tensor_metadata(
   ET_CHECK_OR_RETURN_ERROR(
       etensor != nullptr, InvalidArgument, "etensor pointer cannot be nullptr");
 
-  // Check storage_offset is 0 (ETensor does not support storage offset)
-  ET_CHECK_OR_RETURN_ERROR(
-      slim_tensor->storage_offset() == 0,
-      InvalidArgument,
-      "SlimTensor storage_offset must be 0, got %ld",
-      static_cast<long>(slim_tensor->storage_offset()));
-
   // Check that SlimTensor is contiguous
   ET_CHECK_OR_RETURN_ERROR(
       slim_tensor->is_contiguous(),
       InvalidArgument,
       "SlimTensor must be contiguous");
+
+  // The copy reads nbytes() from data_ptr(), which adds the offset, so the
+  // view has to start and end inside its storage.
+  const int64_t storage_offset = slim_tensor->storage_offset();
+  ET_CHECK_OR_RETURN_ERROR(
+      storage_offset >= 0,
+      InvalidArgument,
+      "SlimTensor storage_offset must not be negative, got %ld",
+      static_cast<long>(storage_offset));
+  const size_t nbytes = slim_tensor->nbytes();
+  if (nbytes > 0) {
+    const size_t storage_nbytes = slim_tensor->storage()->nbytes();
+    ET_CHECK_OR_RETURN_ERROR(
+        nbytes <= storage_nbytes &&
+            static_cast<size_t>(storage_offset) <=
+                (storage_nbytes - nbytes) / slim_tensor->itemsize(),
+        InvalidArgument,
+        "SlimTensor view of %zu bytes at storage_offset %ld runs past its %zu byte storage",
+        nbytes,
+        static_cast<long>(storage_offset),
+        storage_nbytes);
+  }
 
   // Check dtype matches
   executorch::backends::aoti::slim::c10::ScalarType slim_dtype =

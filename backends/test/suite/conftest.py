@@ -30,7 +30,7 @@ def pytest_collection_modifyitems(config, items):
                 should_skip, reason = flow.should_skip_test(test_name, callspec.params)
                 if should_skip:
                     item.add_marker(pytest.mark.skip(reason))
-                elif flow.should_xfail_test(test_name):
+                elif flow.should_xfail_test(item.name):
                     item.add_marker(
                         pytest.mark.xfail(
                             reason=f"Expected to fail by {flow.name} xfail_patterns",
