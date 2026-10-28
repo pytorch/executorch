@@ -83,6 +83,97 @@ def _is_arg_min_max_over_flattened_input(node: torch.fx.Node) -> bool:
     return dim is None
 
 
+_MM_TARGETS = (
+    torch.ops.aten.mm.default,
+    exir_ops.edge.aten.mm.default,
+)
+
+
+def _constant_input_names(ep: Optional[ExportedProgram]) -> frozenset:
+    """Names of the placeholders that hold parameters, buffers and constants."""
+    if ep is None:
+        return frozenset()
+    sig = ep.graph_signature
+    return frozenset(
+        [
+            *sig.inputs_to_parameters,
+            *sig.inputs_to_buffers,
+            *sig.inputs_to_lifted_tensor_constants,
+        ]
+    )
+
+
+def _is_integer_tensor(node: torch.fx.Node) -> bool:
+    val = node.meta.get("val")
+    return (
+        isinstance(val, torch.Tensor)
+        and not val.dtype.is_floating_point
+        and not val.dtype.is_complex
+        and val.dtype != torch.bool
+    )
+
+
+def _constant_nodes(graph: torch.fx.Graph, constant_names: frozenset) -> set:
+    """Nodes whose value only depends on parameters, buffers and constants."""
+    constant = set()
+    for node in graph.nodes:
+        if node.op == "get_attr" or (
+            node.op == "placeholder" and node.name in constant_names
+        ):
+            constant.add(node)
+        elif node.op == "call_function" and node.all_input_nodes:
+            if all(n in constant for n in node.all_input_nodes):
+                constant.add(node)
+    return constant
+
+
+def _is_integer_mm_with_constant_weight(node: torch.fx.Node, constant: set) -> bool:
+    if node.op != "call_function" or node.target not in _MM_TARGETS:
+        return False
+    if len(node.args) < 2 or not isinstance(node.args[1], torch.fx.Node):
+        return False
+    weight = node.args[1]
+    return weight in constant and _is_integer_tensor(weight)
+
+
+def _integer_mm_with_constant_weight_nodes(
+    graph: torch.fx.Graph, constant_names: frozenset
+) -> set:
+    """``mm`` nodes coremltools 9.0 cannot load, plus their constant-only feeders.
+
+    coremltools 9.0 lowers ``mm`` with a constant weight to ``linear``, which
+    only takes floating point inputs, so an integer ``mm`` against a constant
+    lowers fine and then fails to load.  An integer ``mm`` of two runtime
+    inputs becomes ``matmul`` and runs.  See pytorch/executorch#11691.
+
+    A constant-only op that only feeds such weights (e.g. a transpose of a
+    buffer) falls back too: left delegated on its own it would give Core ML a
+    partition with no runtime inputs.
+
+    TODO: remove once ExecuTorch consumes a coremltools release that includes
+    apple/coremltools#2719, which keeps integer ``mm`` on ``matmul``.
+    """
+    constant = _constant_nodes(graph, constant_names)
+    rejected = {
+        node
+        for node in graph.nodes
+        if _is_integer_mm_with_constant_weight(node, constant)
+    }
+    if not rejected:
+        return rejected
+
+    for node in reversed(graph.nodes):
+        if node.op != "call_function" or node not in constant or not node.users:
+            continue
+        if all(
+            user in rejected
+            and (user.target not in _MM_TARGETS or user.args[0] is not node)
+            for user in node.users
+        ):
+            rejected.add(node)
+    return rejected
+
+
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
     if len(schema.arguments) == 0:
@@ -97,12 +188,15 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         skip_ops_for_coreml_delegation: Optional[List[str]] = None,
         lower_full_graph: bool = False,
         log: bool = False,
+        exported_program: Optional[ExportedProgram] = None,
     ) -> None:
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
         super().__init__()
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
         self.lower_full_graph = lower_full_graph
+        self._constant_names = _constant_input_names(exported_program)
+        self._integer_mm_fallback_cache = {}
         self._logged_msgs = set()
         self._log = log
 
@@ -110,6 +204,13 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         if self._log and msg not in self._logged_msgs:
             logger.info(msg)
             self._logged_msgs.add(msg)
+
+    def _integer_mm_fallback_nodes(self, graph: torch.fx.Graph) -> set:
+        if graph not in self._integer_mm_fallback_cache:
+            self._integer_mm_fallback_cache[graph] = (
+                _integer_mm_with_constant_weight_nodes(graph, self._constant_names)
+            )
+        return self._integer_mm_fallback_cache[graph]
 
     def should_skip_op_for_delegation(self, node_target_name: str) -> bool:
         skipped_ops = self.skip_ops_for_coreml_delegation or []
@@ -155,6 +256,13 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         if _is_arg_min_max_over_flattened_input(node):
             self.log_once(
                 "torch.ops.aten.{argmax, argmin}.default with dim=None is "
+                "not supported by CoreML.  Overriding op support."
+            )
+            return True
+
+        if node in self._integer_mm_fallback_nodes(node.graph):
+            self.log_once(
+                "torch.ops.aten.mm.default with an integer constant weight is "
                 "not supported by CoreML.  Overriding op support."
             )
             return True
@@ -309,6 +417,7 @@ class CoreMLPartitioner(Partitioner):
                 self.skip_ops_for_coreml_delegation,
                 self.lower_full_graph,
                 log=True,
+                exported_program=exported_program,
             ),
             allows_single_node_partition=True,
         )
@@ -348,6 +457,7 @@ class CoreMLPartitioner(Partitioner):
             self.skip_ops_for_coreml_delegation,
             self.lower_full_graph,
             log=False,
+            exported_program=ep,
         )
 
         # CoreML prevents certain ops (like triu) from lowering to CoreML when put in the ExecuTorch op namespace
