@@ -17,6 +17,7 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 from executorch.exir.sym_util import eval_shape
 
 
@@ -337,7 +338,43 @@ class LayoutTransform(ExportPass):
                 return True
         return False
 
+    def bypass_view_copy_for_rms_norm(self, gm):
+        # RecomposeRmsNorm may reshape gamma for broadcasting, but QNN cannot
+        # partition a view_copy directly feeding the RMSNorm weight. Bypass it
+        # only when the source parameter already matches normalized_shape.
+        graph = gm.graph
+        changed = False
+        for node in graph.nodes:
+            if node.op != "call_function":
+                continue
+            if node.target != exir_ops.edge.aten.rms_norm.default:
+                continue
+
+            if len(node.args) < 2:
+                continue
+            normalized_shape = node.args[1]
+            weight = node.args[2] if len(node.args) > 2 else node.kwargs.get("weight")
+            if (
+                weight is not None
+                and weight.op == "call_function"
+                and weight.target == exir_ops.edge.aten.view_copy.default
+            ):
+                source_weight = weight.args[0]
+                if not is_parameter(source_weight, self.edge_program):
+                    continue
+                if tuple(source_weight.meta["val"].shape) != tuple(normalized_shape):
+                    continue
+                if len(node.args) > 2:
+                    node.args = (*node.args[:2], source_weight, *node.args[3:])
+                else:
+                    node.kwargs = {**node.kwargs, "weight": source_weight}
+                changed = True
+
+        return changed
+
     def call(self, graph_module: torch.fx.GraphModule):
+        if self.bypass_view_copy_for_rms_norm(graph_module):
+            dead_code_elimination_pass(graph_module)
         graph = graph_module.graph
         sensitive_nodes = [
             node
