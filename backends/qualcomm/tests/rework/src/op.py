@@ -3078,6 +3078,42 @@ class Linear(torch.nn.Module):
                         )
 
 
+class LinearLargeBias(torch.nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_features, out_features)
+        # Default init keeps |bias| <= 1/sqrt(in_features), so a bias dropped by
+        # the HTP FullyConnected block-scale over-read (pytorch/executorch#23746)
+        # still passes a loose tolerance.
+        with torch.no_grad():
+            self.linear.bias.uniform_(-2.0, 2.0)
+
+    def forward(self, x):
+        return self.linear(x)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        # The over-read depends on heap layout, so each case is lowered twice.
+        repeats = 2
+        with torch.random.fork_rng():
+            torch.manual_seed(0)
+            for (in_f, out_f), rank, it in itertools.product(
+                [(512, 32), (1024, 512), (64, 128)], [2, 4], range(repeats)
+            ):
+                input_shape = (3,) * (rank - 1) + (in_f,)
+                with subtests.test(msg=f"in:{in_f}, out:{out_f}, rank:{rank}, it:{it}"):
+                    with expected as metrics:
+                        export_and_verify(
+                            module=__class__(in_f, out_f),
+                            inputs=(torch.randn(input_shape),),
+                            qnn_config=qnn_config,
+                            quantizer=quantizer,
+                            compile_specs=compile_spec,
+                            metrics=metrics,
+                        )
+
+
 class LinearNonConstantWeight(torch.nn.Module):
     def __init__(self, use_bias):
         super().__init__()
