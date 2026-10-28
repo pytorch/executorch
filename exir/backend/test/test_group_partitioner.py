@@ -1802,6 +1802,12 @@ class TestGroupPartitioner(unittest.TestCase):
             x = chain.call_function(op, (x, x))
         chain.output(x)
 
+        long_chain = torch.fx.Graph()
+        x = long_chain.placeholder("x")
+        for _ in range(1000):
+            x = long_chain.call_function(torch.ops.aten.add.Tensor, (x, x))
+        long_chain.output(x)
+
         # Two supported nodes among many independent ones joined at the end.
         wide = torch.fx.Graph()
         x = wide.placeholder("x")
@@ -1831,6 +1837,7 @@ class TestGroupPartitioner(unittest.TestCase):
         cases = {
             # Each run of adds between two subs becomes one partition.
             "chain": (chain, [99] * 10, 8 * 2**20),
+            "long_chain": (long_chain, [1000], 8 * 2**20),
             "wide": (wide, [2], 8 * 2**20),
             # Nothing to merge, so nothing is built.
             "single": (single, [], 2**20),

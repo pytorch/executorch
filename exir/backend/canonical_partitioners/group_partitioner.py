@@ -139,10 +139,6 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
         new_partition_id,
         partitions_by_id,
         assignment,
-        nodes_order,
-        partitions_order,
-        partition_users,
-        partition_map,
     ):
         """Process nodes into a partition."""
         for node in reversed(self.graph_module.graph.nodes):
@@ -157,55 +153,20 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
                 partition_id = next(new_partition_id)
                 partition = Partition(id=partition_id, nodes=set())
                 partitions_by_id[partition_id] = partition
-                partitions_order[partition_id] = partition_id
 
                 # Add all supported nodes from the group to the partition
                 for node in group:
                     if self._is_node_supported(node):
                         partition.add_node(node)
                         assignment[node] = partition_id
-                        nodes_order[node] = partition_id
-
-                # Set partition users
-                partition_users[partition_id] = {
-                    user
-                    for node in partition.nodes
-                    for user in node.users
-                    if user not in partition.nodes
-                }
-
-                # Update partition map
-                for node in partition.nodes:
-                    for user in node.users:
-                        target_id = assignment.get(user, None)
-                        if target_id is not None and target_id != partition_id:
-                            partition_map[partition_id].add(target_id)
-                            partition_map[partition_id].update(partition_map[target_id])
             else:
                 partition_id = next(new_partition_id)
-                nodes_order[node] = partition_id
-                partitions_order[partition_id] = partition_id
                 partitions_by_id[partition_id] = Partition(
                     id=partition_id, nodes=[node]
                 )
                 assignment[node] = partition_id
-                partition_users[partition_id] = set(node.users)
 
-                # Update partition map
-                for user in node.users:
-                    target_id = assignment.get(user)
-                    if target_id is not None:
-                        partition_map[partition_id].add(target_id)
-                        partition_map[partition_id].update(partition_map[target_id])
-
-    def _merge_partitions(
-        self,
-        partitions_by_id,
-        assignment,
-        partition_users,
-        partition_map,
-        partitions_order,
-    ):
+    def _merge_partitions(self, partitions_by_id, assignment):
         """Merge partitions when possible."""
         # Get current partition IDs
         partition_ids = list(partitions_by_id.keys())
@@ -241,15 +202,7 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
 
                 # Try to merge partitions if it doesn't create cycles
                 if self._can_merge_partitions(partition_masks[p1], partition_masks[p2]):
-                    self._perform_partition_merge(
-                        p1,
-                        p2,
-                        partitions_by_id,
-                        assignment,
-                        partition_users,
-                        partition_map,
-                        partitions_order,
-                    )
+                    self._perform_partition_merge(p1, p2, partitions_by_id, assignment)
                     partition_masks[p1] = tuple(
                         m1 | m2
                         for m1, m2 in zip(partition_masks[p1], partition_masks.pop(p2))
@@ -258,39 +211,15 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
                     # Mark p2 as merged
                     already_merged.add(p2)
 
-    def _perform_partition_merge(
-        self,
-        p1,
-        p2,
-        partitions_by_id,
-        assignment,
-        partition_users,
-        partition_map,
-        partitions_order,
-    ):
+    def _perform_partition_merge(self, p1, p2, partitions_by_id, assignment):
         """Merge partition p2 into p1."""
         # Merge p2 into p1
         partitions_by_id[p1].nodes.update(partitions_by_id[p2].nodes)
         for node in partitions_by_id[p2].nodes:
             assignment[node] = p1
 
-        # Update partition users
-        all_users = partition_users[p1] | partition_users[p2]
-        all_users.difference_update(partitions_by_id[p1].nodes)
-        partition_users[p1] = all_users
-
-        # Update partition map
-        partition_map[p1].update(partition_map[p2])
-
-        # Update partition order
-        partitions_order[p1] = min(partitions_order[p1], partitions_order[p2])
-
         # Remove p2
         del partitions_by_id[p2]
-        del partition_users[p2]
-        del partitions_order[p2]
-        if p2 in partition_map:
-            del partition_map[p2]
 
     def _process_getitem_nodes(self, partitions_by_id, assignment):
         """Post-process getitem nodes."""
@@ -362,35 +291,15 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
             A list of proposed partitions.
         """
         # Initialize data structures
-        partition_map = collections.defaultdict(
-            set
-        )  # Maps partition IDs to reachable partition IDs
         assignment = {}  # Maps nodes to partition IDs
         partitions_by_id = {}  # Maps partition IDs to partitions
-        nodes_order = {}  # Maps nodes to topological order
-        partitions_order = {}  # Maps partition IDs to minimum topological order
-        partition_users = {}  # Maps partition IDs to partition users
         new_partition_id = itertools.count()
 
         # Process all nodes into partitions
-        self._process_all_nodes(
-            new_partition_id,
-            partitions_by_id,
-            assignment,
-            nodes_order,
-            partitions_order,
-            partition_users,
-            partition_map,
-        )
+        self._process_all_nodes(new_partition_id, partitions_by_id, assignment)
 
         # Merge partitions when possible
-        self._merge_partitions(
-            partitions_by_id,
-            assignment,
-            partition_users,
-            partition_map,
-            partitions_order,
-        )
+        self._merge_partitions(partitions_by_id, assignment)
 
         # Post-process getitem nodes
         self._process_getitem_nodes(partitions_by_id, assignment)
