@@ -298,7 +298,8 @@ def _(
     num_embeddings, packed_embedding_dim = weight.shape
     embedding_dim = packed_embedding_dim * 4
     embedding = torch.nn.Embedding(num_embeddings, embedding_dim, device=weight.device)
-    return embedding(indices)
+    # As in the reference op, the variant without dtype returns the scales' dtype.
+    return embedding(indices).to(weight_scales.dtype)
 
 
 @register_fake("quantized_decomposed::embedding_2bit.out")
@@ -473,7 +474,8 @@ def _(
     num_embeddings, packed_embedding_dim = weight.shape
     embedding_dim = packed_embedding_dim * 2
     embedding = torch.nn.Embedding(num_embeddings, embedding_dim, device=weight.device)
-    return embedding(indices)
+    # As in the reference op, the variant without dtype returns the scales' dtype.
+    return embedding(indices).to(weight_scales.dtype)
 
 
 @register_fake("quantized_decomposed::embedding_4bit.out")

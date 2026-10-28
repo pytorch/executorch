@@ -68,3 +68,6 @@
 	path = backends/mlx/third-party/mlx
 	url = https://github.com/ml-explore/mlx.git
 	shallow = true
+[submodule "backends/native/third-party/llama.cpp"]
+	path = backends/native/third-party/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp.git

@@ -109,6 +109,61 @@ Error commit_offgraph_kv_step(CudaDelegateHandle* handle, int64_t width) {
   return handle->kv_cache->commit_step(width);
 }
 
+// A per-method actual key overrides the artifact's logical role. Without that
+// override, the logical role names a load-time option containing the actual
+// key; it is never itself used as a process-global registry ID.
+Result<std::string> resolve_cuda_cache_key(
+    const BackendInitContext& context,
+    ArrayRef<CompileSpec> compile_specs) {
+  constexpr const char* option =
+      ::executorch::extension::llm::cache::kCacheKeyOption;
+  std::optional<std::string> logical;
+  for (const CompileSpec& spec : compile_specs) {
+    if (std::strcmp(spec.key, option) != 0) {
+      continue;
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        !logical && spec.value.buffer != nullptr && spec.value.nbytes > 0,
+        InvalidArgument,
+        "init: duplicate or empty logical CUDA cache key");
+    std::string_view value(
+        static_cast<const char*>(spec.value.buffer), spec.value.nbytes);
+    if (value.back() == '\0') {
+      value.remove_suffix(1);
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        !value.empty() && value.size() < runtime::kMaxOptionKeyLength &&
+            value.find('\0') == std::string_view::npos && value != option,
+        InvalidArgument,
+        "init: invalid logical CUDA cache key");
+    logical = std::string(value);
+  }
+  const auto actual = context.get_runtime_spec<const char*>(option);
+  ET_CHECK_OR_RETURN_ERROR(
+      actual.ok() || actual.error() == Error::NotFound || !logical,
+      InvalidArgument,
+      "init: CUDA cache runtime override must be a string");
+  if (actual.ok() && actual.get() != nullptr && *actual.get() != '\0') {
+    return std::string(actual.get());
+  }
+  if (!logical) {
+    return std::string{};
+  }
+  const auto mapped = context.get_runtime_spec<const char*>(logical->c_str());
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      mapped.error(),
+      "init: logical CUDA cache '%s' requires a string runtime mapping to an "
+      "installed cache key, or a per-method '%s' override",
+      logical->c_str(),
+      option);
+  ET_CHECK_OR_RETURN_ERROR(
+      mapped.get() != nullptr && *mapped.get() != '\0',
+      InvalidArgument,
+      "init: logical CUDA cache '%s' has an empty runtime mapping",
+      logical->c_str());
+  return std::string(mapped.get());
+}
+
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
@@ -234,6 +289,11 @@ class ET_EXPERIMENTAL CudaBackend final
     LOAD_OPTIONAL_SYMBOL(
         get_constant_data_size, AOTInductorModelContainerGetConstantDataSize);
     LOAD_OPTIONAL_SYMBOL(
+        get_constant_type, AOTInductorModelContainerGetConstantType);
+    LOAD_OPTIONAL_SYMBOL(
+        get_constant_from_folded,
+        AOTInductorModelContainerGetConstantFromFolded);
+    LOAD_OPTIONAL_SYMBOL(
         extract_constants_map, AOTInductorModelContainerExtractConstantsMap);
     LOAD_OPTIONAL_SYMBOL(
         update_user_managed_constant_buffer_pairs,
@@ -349,6 +409,10 @@ class ET_EXPERIMENTAL CudaBackend final
             spec.value.nbytes); // no nullptr guarantee, so pass size
       }
     }
+
+    const auto resolved_cache_key =
+        resolve_cuda_cache_key(context, compile_specs);
+    ET_CHECK_OK_OR_RETURN_ERROR(resolved_cache_key.error());
 
     std::string so_blob_key;
     std::string weights_blob_key;
@@ -486,21 +550,16 @@ class ET_EXPERIMENTAL CudaBackend final
     // Runtime-owned off-graph buffers must capture their AOTI names before
     // the serialized constants update installs the ordinary weight set.
     //
-    // The cache is found by the key the runner published as a runtime spec.
-    // No key means an in-graph model, whose KV state is ordinary mutable
-    // buffers -- that is the whole of the off-graph/in-graph detection, and it
-    // needs nothing from the user.
+    // Resolve each delegate's logical cache role through this method's load
+    // options. The explicit actual-key override retains the ordinary runner
+    // contract; a logical name is never used directly as a registry ID.
     //
     // The key alone does not decide it, though: a program whose storage was
     // lowered off-graph carries no bytes for it, so running one without a cache
     // would hand its kernels unbound memory. That requirement is read from the
     // program's own constants and checked whether or not a key was passed.
-    const char* cache_key = nullptr;
-    if (auto spec = context.get_runtime_spec<const char*>(
-            ::executorch::extension::llm::cache::kCacheKeyOption);
-        spec.ok() && spec.get() != nullptr && *spec.get() != '\0') {
-      cache_key = spec.get();
-    }
+    const char* cache_key =
+        resolved_cache_key->empty() ? nullptr : resolved_cache_key->c_str();
     const auto needs_offgraph_kv = requires_offgraph_kv_storage(*handle);
     ET_CHECK_OK_OR_RETURN_ERROR(needs_offgraph_kv.error());
     if (cache_key != nullptr) {

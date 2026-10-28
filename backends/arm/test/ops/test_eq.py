@@ -71,6 +71,12 @@ test_data_tensor = {
     "eq_tensor_rank3_randn": lambda: op_eq_tensor_rank3_randn,
     "eq_tensor_rank4_randn": lambda: op_eq_tensor_rank4_randn,
 }
+test_data_tensor_bool = {
+    "eq_bool": lambda: Equal(
+        torch.tensor([[True], [False], [True]]),
+        torch.tensor([[True, False, True]]),
+    ),
+}
 
 test_data_tensor_bf16 = {
     "eq_tensor_rank2_rand_bf16": lambda: Equal(
@@ -115,7 +121,11 @@ test_data_scalar_fp16 = {
 
 
 @common.parametrize(
-    "test_module", test_data_tensor | test_data_tensor_bf16 | test_data_tensor_fp16
+    "test_module",
+    test_data_tensor
+    | test_data_tensor_bool
+    | test_data_tensor_bf16
+    | test_data_tensor_fp16,
 )
 def test_eq_scalar_tosa_FP_tensor(test_module):
     pipeline = TosaPipelineFP[input_t](

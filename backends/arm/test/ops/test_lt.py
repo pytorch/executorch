@@ -72,6 +72,16 @@ test_data_tensor = {
     "lt_tensor_rank3_randn": lambda: op_lt_tensor_rank3_randn,
     "lt_tensor_rank4_randn": lambda: op_lt_tensor_rank4_randn,
 }
+test_data_tensor_mixed = {
+    "lt_tensor_float_int": lambda: LessThan(
+        torch.tensor([-1.5, -0.25, 0.25, 1.5]),
+        torch.tensor([-2, 0, 1, 2], dtype=torch.int32),
+    ),
+    "lt_tensor_int_float": lambda: LessThan(
+        torch.tensor([-2, 0, 1, 2], dtype=torch.int32),
+        torch.tensor([-1.5, -0.25, 0.25, 1.5]),
+    ),
+}
 test_data_tensor_fp16 = {
     "lt_tensor_rank2_rand_fp16": lambda: LessThan(
         torch.rand(4, 5, dtype=torch.float16),
@@ -130,6 +140,17 @@ def test_lt_tensor_tosa_INT(test_module):
         LessThan.exir_op,
         frobenius_threshold=None,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
         cosine_threshold=None,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor_mixed)
+def test_lt_tensor_tosa_INT_mixed_not_delegated(test_module):
+    pipeline = OpNotSupportedPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        {LessThan.exir_op: 1},
+        quantize=True,
     )
     pipeline.run()
 

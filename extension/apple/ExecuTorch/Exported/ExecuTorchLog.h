@@ -58,12 +58,20 @@ __attribute__((objc_subclassing_restricted))
 /**
  * Adds a log sink to receive log messages.
  *
+ * The log holds the sink weakly and tells sinks apart by identity. A new sink
+ * first receives the recent buffered logs.
+ *
  * @param sink The log sink to add.
  */
 - (void)addSink:(id<ExecuTorchLogSink>)sink NS_SWIFT_NAME(add(sink:));
 
 /**
  * Removes a previously added log sink.
+ *
+ * Logs emitted after this method returns do not reach the sink. Logs emitted
+ * before it returns may still reach it, including the buffered logs that
+ * `addSink:` replays. Safe to call from the sink's `dealloc` or `deinit`, and
+ * from its log callback.
  *
  * @param sink The log sink to remove.
  */

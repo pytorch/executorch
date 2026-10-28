@@ -10,6 +10,12 @@
 #include <cstring>
 #include <string>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -23,7 +29,140 @@ namespace openvino {
 
 namespace {
 
+#ifdef _WIN32
+constexpr const wchar_t* kDefaultLibName = L"openvino_c.dll";
+constexpr const char* kLibrarySearchPathHint =
+    "set OPENVINO_LIB_PATH to its full path, with its dependencies such as "
+    "tbb12.dll beside it or in a folder added with AddDllDirectory";
+
+// A path with a character outside the active code page has no faithful narrow
+// form, so read and load through the wide APIs and convert to UTF-8 only for
+// logging. Unlike _wgetenv, which reads the C runtime's copy of the
+// environment, GetEnvironmentVariableW also sees a value set with
+// SetEnvironmentVariableW after startup.
+std::wstring configured_lib_path() {
+  DWORD length = GetEnvironmentVariableW(L"OPENVINO_LIB_PATH", nullptr, 0);
+  if (length == 0) {
+    return std::wstring(kDefaultLibName);
+  }
+  std::wstring lib_path;
+  // Loop, since the value may grow between asking for its size and reading it.
+  while (length > lib_path.size()) {
+    lib_path.resize(length);
+    length =
+        GetEnvironmentVariableW(L"OPENVINO_LIB_PATH", lib_path.data(), length);
+  }
+  lib_path.resize(length);
+  return lib_path;
+}
+
+// The standard search order includes the current folder, so a bare name would
+// load an openvino_c.dll planted there. The LOAD_LIBRARY_SEARCH_* flags leave
+// out the current folder and PATH. For a path they also search the library's
+// own folder for its dependencies, such as openvino.dll and tbb12.dll, and
+// they need the path to be absolute.
+void* open_library(const std::wstring& path) {
+  if (path.find_first_of(L"\\/") == std::wstring::npos) {
+    return LoadLibraryExW(
+        path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+  }
+  const DWORD size = GetFullPathNameW(path.c_str(), 0, nullptr, nullptr);
+  std::wstring full(size, L'\0');
+  const DWORD length =
+      GetFullPathNameW(path.c_str(), size, full.data(), nullptr);
+  if (length == 0 || length >= size) {
+    return nullptr;
+  }
+  full.resize(length);
+  return LoadLibraryExW(
+      full.c_str(),
+      nullptr,
+      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+}
+
+std::string to_utf8(const std::wstring& wide) {
+  if (wide.empty()) {
+    return std::string();
+  }
+  int size = WideCharToMultiByte(
+      CP_UTF8, 0, wide.data(), (int)wide.size(), nullptr, 0, nullptr, nullptr);
+  std::string out(size, '\0');
+  WideCharToMultiByte(
+      CP_UTF8,
+      0,
+      wide.data(),
+      (int)wide.size(),
+      out.data(),
+      size,
+      nullptr,
+      nullptr);
+  return out;
+}
+
+// The system's message for the calling thread's last error, with its code,
+// since a code alone is hard to act on. Call it right after the failing call:
+// later calls, logging included, may overwrite the last error.
+std::string last_error() {
+  const DWORD err = GetLastError();
+  LPSTR buffer = nullptr;
+  const DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER |
+      FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
+  const DWORD size = FormatMessageA(
+      flags,
+      nullptr,
+      err,
+      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      reinterpret_cast<LPSTR>(&buffer),
+      0,
+      nullptr);
+  if (size == 0 || buffer == nullptr) {
+    return "error " + std::to_string(err);
+  }
+  std::string message(buffer, size);
+  LocalFree(buffer);
+  while (!message.empty() &&
+         (message.back() == '\n' || message.back() == '\r')) {
+    message.pop_back();
+  }
+  return message + " (error " + std::to_string(err) + ")";
+}
+
+template <typename FuncPtr>
+FuncPtr load_symbol(void* handle, const char* name) {
+  FARPROC sym = GetProcAddress(static_cast<HMODULE>(handle), name);
+  if (!sym) {
+    const std::string error = last_error();
+    ET_LOG(
+        Error,
+        "OpenVINO: failed to resolve symbol '%s': %s",
+        name,
+        error.c_str());
+    return nullptr;
+  }
+  return reinterpret_cast<FuncPtr>(sym);
+}
+#else
 constexpr const char* kDefaultLibName = "libopenvino_c.so";
+constexpr const char* kLibrarySearchPathHint =
+    "set OPENVINO_LIB_PATH or LD_LIBRARY_PATH";
+
+std::string configured_lib_path() {
+  const char* lib_path = std::getenv("OPENVINO_LIB_PATH");
+  return lib_path ? std::string(lib_path) : std::string(kDefaultLibName);
+}
+
+void* open_library(const std::string& path) {
+  return dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+}
+
+std::string to_utf8(const std::string& path) {
+  return path;
+}
+
+std::string last_error() {
+  const char* err = dlerror();
+  return err ? err : "unknown error";
+}
 
 template <typename FuncPtr>
 FuncPtr load_symbol(void* handle, const char* name) {
@@ -36,26 +175,48 @@ FuncPtr load_symbol(void* handle, const char* name) {
   }
   return reinterpret_cast<FuncPtr>(sym);
 }
+#endif
 
 } // namespace
 
+void DlCloser::operator()(void* handle) {
+  if (!handle) {
+    return;
+  }
+#ifdef _WIN32
+  FreeLibrary(static_cast<HMODULE>(handle));
+#else
+  dlclose(handle);
+#endif
+}
+
+OpenvinoBackend::~OpenvinoBackend() {
+#ifdef _WIN32
+  // The backend is a global, so in a DLL this runs inside DllMain when the DLL
+  // unloads, where FreeLibrary is not safe to call. Keep the runtime loaded.
+  (void)lib_handle_.release();
+#endif
+}
+
 // Loading is attempted exactly once via std::call_once.  If the first attempt
-// fails (e.g. library not on LD_LIBRARY_PATH), subsequent calls return false
+// fails (e.g. library not on the search path), subsequent calls return false
 // without retrying.  Users must fix their environment and restart the process.
 bool OpenvinoBackend::ensure_loaded() const {
   std::call_once(load_flag_, [this]() {
-    const char* lib_path = std::getenv("OPENVINO_LIB_PATH");
-    const char* effective_path = lib_path ? lib_path : kDefaultLibName;
+    auto effective_path = configured_lib_path();
 
-    void* handle = dlopen(effective_path, RTLD_NOW | RTLD_LOCAL);
+    void* handle = open_library(effective_path);
     if (!handle) {
+      const std::string error = last_error();
       ET_LOG(
           Error,
-          "OpenVINO runtime not found (dlopen failed: %s). "
-          "Ensure 'libopenvino_c.so' is on your library search path "
-          "(set OPENVINO_LIB_PATH or LD_LIBRARY_PATH), or install with: "
-          "pip install \"openvino>=2025.1.0,<2026.0.0\"",
-          dlerror());
+          "OpenVINO runtime not found (loading '%s' failed: %s). "
+          "Ensure '%s' can be found (%s), or install with: "
+          "pip install \"openvino>=2025.1.0,<2027.0.0\"",
+          to_utf8(effective_path).c_str(),
+          error.c_str(),
+          to_utf8(kDefaultLibName).c_str(),
+          kLibrarySearchPathHint);
       return;
     }
     lib_handle_.reset(handle);
@@ -98,7 +259,7 @@ bool OpenvinoBackend::ensure_loaded() const {
     ET_LOG(
         Info,
         "OpenVINO: runtime loaded successfully from '%s'",
-        effective_path);
+        to_utf8(effective_path).c_str());
   });
   return loaded_;
 }

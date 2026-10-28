@@ -67,6 +67,7 @@ export class ExecuTorchLLM {
       } catch {
         ids = null;
       }
+      if (!ids?.length) throw new Error('The chat template could not render this conversation.');
     }
     if (!ids?.length) {
       // ChatML, the format of the Qwen family. "nothink" pre-closes Qwen 3's

@@ -634,6 +634,25 @@ def _var_mean_correction(
     )
 
 
+def _empty_like(self: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+    # With preserve_format the buffer must get the layout its input has in the
+    # Edge program, not its eager strides: a view becomes a contiguous copy. So
+    # keep the op until ReplaceEmptyLikePass, which runs once views are copies.
+    if kwargs.get("memory_format") in (None, torch.preserve_format):
+        return NotImplemented  # pyre-ignore[7]: keeps the op undecomposed.
+    return torch._refs.empty_like(self, **kwargs)
+
+
+def _empty_permuted(
+    size: List[int], physical_layout: List[int], **kwargs: Any
+) -> torch.Tensor:
+    # Only the identity layout is safe here, for the reason in _empty_like.
+    # Other layouts stay and fail the core ATen check.
+    if list(physical_layout) != list(range(len(physical_layout))):
+        return NotImplemented  # pyre-ignore[7]: keeps the op undecomposed.
+    return torch.ops.aten.empty.memory_format(size, **kwargs)
+
+
 def _default_decomposition_table(
     _use_old_decomp_table=False,
 ) -> Dict[torch._ops.OpOverload, Callable[..., Value]]:
@@ -659,6 +678,10 @@ def _default_decomposition_table(
     # torch.var_mean and torch.std_mean export to this op, which is not in the core
     # ATen opset nor in the core decomposition table.
     decomps[torch.ops.aten.var_mean.correction] = _var_mean_correction
+    decomps[torch.ops.aten.empty_like.default] = _empty_like
+    # A program already decomposed with PyTorch's table has aten.empty_permuted
+    # where it had aten.empty_like.
+    decomps[torch.ops.aten.empty_permuted.default] = _empty_permuted
     # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
 
     never_decompose = []

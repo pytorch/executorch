@@ -85,6 +85,9 @@ class CudaKVPool final {
   // follow if it runs on another.
   runtime::Error mark_step_done();
 
+  // Host fence on the pool's device before cells can be reclaimed or reset.
+  runtime::Error synchronize(bool all_streams = false);
+
   // Points `handle`'s constants at the current storage. Cached until storage
   // moves. Precondition: allocated().
   runtime::Error bind(CudaDelegateHandle* handle);

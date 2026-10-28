@@ -206,13 +206,15 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
                 graph.erase_node(quant_node)
                 continue
 
-            # Otherwise we have the quant descendents. Cluster them into sets
-            # that have the same scale, zero_point, and dtype. We use quant_dict
-            # for the clustering
-            quant_dict: DefaultDict[Tuple, int] = defaultdict(int)
-            for quant_node in descendent_quant_ops:
-                quant_dict[quant_node.args[1:]] += 1
-            rep_args = sorted(quant_dict.keys(), key=lambda x: x[1]).pop()
+            # Otherwise we have multiple quant descendents. Requantizing them from
+            # one hoisted quantize is only lossless if they all share qparams, so
+            # skip when they differ.
+            quant_args = {
+                tuple(quant_node.args[1:]) for quant_node in descendent_quant_ops
+            }
+            if len(quant_args) > 1:
+                continue
+            (rep_args,) = quant_args
 
             # Create a new quant node that dominates all the nodes in
             # descendent_quant_ops. Make sure that the insertion is after

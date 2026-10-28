@@ -7,7 +7,10 @@
 # pyre-strict
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Enum, List, Optional, Tuple, TypeVar, Union
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+
+import torch
 
 _T = TypeVar("_T")
 
@@ -21,8 +24,8 @@ class Verification(Enum):
         This API is experimental and subject to change without notice.
     """
 
-    Minimal: ...
-    InternalConsistency: ...
+    Minimal = 0
+    InternalConsistency = 1
 
 @experimental("This API is experimental and subject to change without notice.")
 class ExecuTorchResult:
@@ -41,16 +44,26 @@ class ExecuTorchResult:
     @property
     def strides(self) -> Tuple[int, ...]: ...
     @property
-    def dtype(self) -> Any: ...
-    @property
-    def dtype_name(self) -> str:
-        """The dtype's name, such as ``"bfloat16"``, including dtypes NumPy lacks."""
+    def dtype(self) -> str:
+        """Name of the dtype, such as ``"float32"`` or ``"bfloat16"``, as torch spells it."""
         ...
 
     @property
     def nbytes(self) -> int: ...
+    @property
+    def device(self) -> str:
+        """Where the data lives: ``"cpu"`` or ``"cuda:N"``."""
+        ...
+
     def __array__(self, dtype: Any = None, copy: Any = None) -> Any: ...
-    def __dlpack__(self, stream: Optional[int] = None) -> Any: ...
+    def __dlpack__(
+        self,
+        stream: Optional[int] = None,
+        *,
+        max_version: Optional[Tuple[int, int]] = None,
+        dl_device: Optional[Tuple[int, int]] = None,
+        copy: Optional[bool] = None,
+    ) -> Any: ...
     def __dlpack_device__(self) -> Tuple[int, int]: ...
     def to_host(self) -> ExecuTorchResult:
         """Return a copy of this result in CPU memory."""
@@ -77,36 +90,23 @@ class ExecuTorchModule:
     """
 
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
-    def __call__(self, inputs: Any, clone_outputs: bool = True) -> List[Any]: ...
+    def __call__(self, inputs: Any = ..., clone_outputs: bool = True) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def run_method(
         self,
         method_name: str,
-        inputs: Any,
+        inputs: Any = ...,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def forward(
         self,
-        inputs: Any,
+        inputs: Any = ...,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def plan_execute(
         self, method_name: str, clone_outputs: bool = True
-    ) -> List[Any]: ...
-    # Bundled program methods.
-    def load_bundled_input(
-        self, bundle: BundledModule, method_name: str, testset_idx: int
-    ) -> None: ...
-    # pyre-ignore[3]: "Any" in return type annotations.
-    def verify_result_with_bundled_expected_output(
-        self,
-        bundle: BundledModule,
-        method_name: str,
-        testset_idx: int,
-        rtol: float = 1e-5,
-        atol: float = 1e-8,
     ) -> List[Any]: ...
     def has_etdump(self) -> bool: ...
     def write_etdump_result_to_file(
@@ -137,6 +137,19 @@ class ExecuTorchProgram:
 class ExecuTorchMethod:
     """ExecuTorchMethod is a Python wrapper around a loaded C++ method.
 
+    Outputs are cloned when ``clone_outputs`` is True, except for an output
+    bound with ``set_output``, which is returned as the bound tensor and
+    overwritten by later calls.
+
+    An input that is not memory planned (e.g. exported with
+    ``alloc_graph_input=False``) is used in place, so a mutation of it is
+    written into the tensor passed in for it. When such an input is also an
+    output (e.g. the write-back of a mutated input, or an input returned
+    unchanged), that output is a clone like any other by default, and shares
+    the storage of the tensor passed in with ``clone_outputs=False``. A memory
+    planned input is copied into the method, so the tensor passed in for it is
+    not updated.
+
     .. warning::
 
         This API is experimental and subject to change without notice.
@@ -145,6 +158,7 @@ class ExecuTorchMethod:
     # pyre-ignore[2]: "Any" in parameter type annotations.
     def set_inputs(self, inputs: Any) -> None: ...
     def execute(self) -> None: ...
+    def set_output(self, tensor: torch.Tensor, index: int) -> None: ...
     # pyre-ignore[3]: "Any" in return type annotations.
     def get_outputs(self, clone_outputs: bool = True) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
@@ -171,7 +185,14 @@ class BundledModule:
         This API is experimental and subject to change without notice.
     """
 
-    ...
+    # pyre-ignore[3]: "Any" in return type annotations.
+    def verify_result_with_bundled_expected_output(
+        self,
+        method_name: str,
+        testset_idx: int,
+        rtol: float = 1e-5,
+        atol: float = 1e-8,
+    ) -> List[Any]: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class TensorInfo:
@@ -192,9 +213,18 @@ class TensorInfo:
         for the values these integers can take."""
         ...
 
+    def dtype_name(self) -> str:
+        """Name of the data type, such as ``"float32"`` or ``"bfloat16"``, the
+        same name ``ExecuTorchResult.dtype`` gives."""
+        ...
+
     def is_memory_planned(self) -> bool:
         """True if the tensor is already memory planned, meaning no allocation
         needs to be provided. False otherwise"""
+        ...
+
+    def device(self) -> str:
+        """Where the program places the tensor: ``"cpu"`` or ``"cuda:N"``."""
         ...
 
     def nbytes(self) -> int:

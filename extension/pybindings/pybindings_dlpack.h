@@ -60,6 +60,23 @@ struct ManagedTensor {
   void (*deleter)(ManagedTensor* self);
 };
 
+struct Version {
+  uint32_t major;
+  uint32_t minor;
+};
+
+// DLPack 1.0 capsules carry this struct, named "dltensor_versioned".
+struct ManagedTensorVersioned {
+  Version version;
+  void* manager_ctx;
+  void (*deleter)(ManagedTensorVersioned* self);
+  uint64_t flags;
+  Tensor dl_tensor;
+};
+
+constexpr uint64_t kFlagReadOnly = 1ULL << 0;
+constexpr uint64_t kFlagIsCopied = 1ULL << 1;
+
 } // namespace executorch::extension::pybindings::dlpack
 
 namespace executorch::extension::pybindings {

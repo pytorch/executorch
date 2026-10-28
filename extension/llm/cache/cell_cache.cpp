@@ -18,6 +18,7 @@ namespace cache {
 
 CellCache::CellCache(const CacheGeometry& geometry, const CacheConfig& cfg)
     : capacity_(cfg.capacity),
+      dflash_block_size_(geometry.dflash_block_size),
       pos_(cfg.capacity, -1),
       owners_(cfg.capacity, 0) {
   assert(valid(geometry, cfg));
@@ -57,6 +58,22 @@ bool CellCache::declare_step(const std::vector<int32_t>& seq_ids) {
   for (int32_t seq_id : seq_ids) {
     if (!valid_seq(seq_id) || !live(seq_id)) {
       return false;
+    }
+  }
+  if (dflash_block_size_) {
+    uint64_t seen = 0;
+    for (size_t begin = 0; begin < seq_ids.size();) {
+      const int32_t owner = seq_ids[begin];
+      size_t end = begin + 1;
+      while (end < seq_ids.size() && seq_ids[end] == owner) {
+        ++end;
+      }
+      if ((seen & bit(owner)) ||
+          end - begin < static_cast<size_t>(*dflash_block_size_)) {
+        return false;
+      }
+      seen |= bit(owner);
+      begin = end;
     }
   }
   step_seq_ids_ = seq_ids;
@@ -161,7 +178,8 @@ int CellCache::used_end() const {
 
 const CellStep*
 CellCache::place_step(int layer, const int32_t* positions, int length) {
-  if (layer < 0 || layer >= static_cast<int>(windows_.size())) {
+  if (positions == nullptr || length <= 0 || layer < 0 ||
+      layer >= static_cast<int>(windows_.size())) {
     return nullptr; // layer out of range
   }
   if (placed_) {
@@ -281,6 +299,19 @@ const CellStep& CellCache::step_for(int window) {
   step.read_len = used_end_;
   step.cells = cells_;
   step.mask_bits = build_mask(window);
+  if (dflash_block_size_) {
+    const int queries = std::max(1, *dflash_block_size_);
+    for (int begin = 0; begin < step.length;) {
+      int end = begin + 1;
+      while (end < step.length && step_seq_ids_[end] == step_seq_ids_[begin]) {
+        ++end;
+      }
+      for (int row = end - queries; row < end; ++row) {
+        step.query_rows.push_back(row);
+      }
+      begin = end;
+    }
+  }
   return steps_.emplace(window, std::move(step)).first->second;
 }
 
@@ -291,14 +322,18 @@ std::vector<uint8_t> CellCache::build_mask(int window) const {
   for (int i = 0; i < length; ++i) {
     const uint64_t tok_bit = bit(step_seq_ids_[i]);
     const int32_t tok_pos = step_pos_[i];
-    // A flat layer reaches back to the start; a windowed one to its window.
-    const int32_t oldest = window > 0 ? tok_pos - window + 1 : 0;
+    // Draft history is anchored at context end, shared by all block queries.
+    const int32_t context_end =
+        info_[step_seq_ids_[i]].max_pos + 1 - dflash_block_size_.value_or(0);
+    const int32_t oldest = window > 0
+        ? (dflash_block_size_ ? context_end - window : tok_pos - window + 1)
+        : 0;
     uint8_t* row = bits.data() + static_cast<size_t>(i) * used_end_;
     for (int j = 0; j < used_end_; ++j) {
       row[j] = static_cast<uint8_t>(
           pos_[j] >= 0 && // occupied: a freed cell holds nothing
           (owners_[j] & tok_bit) && // one of this query's sequences
-          pos_[j] <= tok_pos && // not the future; <= so a query sees itself
+          (dflash_block_size_ || pos_[j] <= tok_pos) && // full draft block
           pos_[j] >= oldest); // within the window
     }
   }

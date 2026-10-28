@@ -11,6 +11,7 @@ import { appIcon } from './app-icons.js';
 import { hfBadge } from './hf-badge.js';
 import { icon } from './icons.js';
 import { onDeviceNote } from './on-device.js';
+import { confirmModelMemory } from './memory-guard.js';
 
 const QUICK = ['Describe this image', 'What text can you read?', 'How many people are there?', 'What’s unusual here?'];
 const MAX_NEW_TOKENS = 192;
@@ -213,6 +214,7 @@ export function mountVlm(root, demo) {
 
   async function load() {
     if (state.phase === 'loading' || !state.source || state.source.kind === 'unavailable') return;
+    if (!(await confirmModelMemory(model))) return;
     const controller = new AbortController();
     Object.assign(state, { phase: 'loading', loadError: null, loadAbort: controller, load: { stage: 'runtime', fractions: {}, detail: '' } });
     loaderEls = null;

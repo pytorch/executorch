@@ -2500,6 +2500,43 @@ class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
             "chained_regions_absorb_into_last_permute",
         )
 
+    def test_permute_bypassed_by_one_region_is_kept_by_another(self) -> None:
+        """Region A bypasses pb as an incoming permute, so mul reads tanh
+        directly. Region B would remove pb as its outgoing permute and change
+        tanh's layout, so it must be skipped."""
+        builder = GraphBuilder()
+        x_data = torch.randn(2, 3, 4)
+        y_data = torch.randn(2, 4, 3)
+        x = builder.placeholder("x", x_data)
+        y = builder.placeholder("y", y_data)
+        pa = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        pc = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(y, [0, 2, 1])
+        )
+        tanh = builder.call_operator(op=exir_ops.edge.aten.tanh.default, args=(pc,))
+        pb = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(tanh, [0, 2, 1])
+        )
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(pa, pb))
+        out = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(mul, [0, 2, 1])
+        )
+        builder.output([out])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+
+        self.assertTrue(result.modified)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, y_data],
+            "permute_bypassed_by_one_region_is_kept_by_another",
+        )
+
 
 class LayoutPermuteVisibilityTest(unittest.TestCase):
     """The data-movement passes must see both permute dialects.

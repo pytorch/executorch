@@ -89,8 +89,8 @@
 #                                CUDAToolkit_ROOT or CMake's standard toolkit
 #                                search. A program that calls the CUDA runtime
 #                                itself links CUDA::cudart.
-# executorch::backend_openvino   The OpenVINO delegate. Linux only. Opens the
-#                                OpenVINO runtime by name, which a C++ program
+# executorch::backend_openvino   The OpenVINO delegate. Linux and Windows. Opens
+#                                the OpenVINO runtime by name, which a C++ program
 #                                installs and points OPENVINO_LIB_PATH at.
 # executorch::threadpool         The shared thread pool.
 # executorch::etdump             The profiler. Not on Windows.

@@ -23,5 +23,13 @@ set(EXECUTORCH_ROOT
 # Add the executor_runner as an extra component
 set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/../executor_runner")
 
+# Register the ESP-NN delegate (backends/espressif) with the runtime
+option(ET_ESPNN_BACKEND "Build in the ESP-NN ExecuTorch backend" OFF)
+if(ET_ESPNN_BACKEND)
+  list(APPEND EXTRA_COMPONENT_DIRS
+       "${EXECUTORCH_ROOT}/backends/espressif/espnn_runtime"
+  )
+endif()
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(executorch_esp_runner)

@@ -120,10 +120,13 @@ if(EXECUTORCH_BUILD_PYBIND)
   find_library(
     TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
   )
-  # Link with the extension_llm_runner library and its dependencies
+  # Link with the extension_llm_runner library and its dependencies.
+  #
+  # torch would record libtorch_cuda with a CUDA build of PyTorch, so a CPU-only
+  # torch could not load this. torch_cpu_library does not.
   target_link_libraries(
     _llm_runner PRIVATE extension_llm_runner tokenizers::tokenizers
-                        portable_lib ${TORCH_PYTHON_LIBRARY} ${TORCH_LIBRARIES}
+                        portable_lib ${TORCH_PYTHON_LIBRARY} torch_cpu_library
   )
   executorch_target_link_shared_runtime(_llm_runner)
 

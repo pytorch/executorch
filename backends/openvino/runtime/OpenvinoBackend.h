@@ -33,7 +33,7 @@ struct ExecutionHandle {
 class OpenvinoBackend final : public ::exr::BackendInterface {
  public:
   OpenvinoBackend() = default;
-  ~OpenvinoBackend() override = default;
+  ~OpenvinoBackend() override;
 
   bool is_available() const override;
   exr::Result<exr::DelegateHandle*> init(
