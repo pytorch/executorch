@@ -12,7 +12,7 @@ def main(config,output):
  with Path(cfg['lock']).open('a') as lock:
   fcntl.flock(lock,fcntl.LOCK_EX)
   assert not subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
-  for c in [1,2,4]:
+  for c in cfg.get("concurrencies",[1,2,4]):
    for arm in ['baseline','ring']:
     folder=output/str(c)/arm;folder.mkdir(parents=True);trace=folder/'trace';trace.mkdir()
     env=dict(os.environ,LD_PRELOAD=str(lib),LD_LIBRARY_PATH=cfg['native_lib'],ET_DIAGNOSTIC_ATTENTION_OUTPUT=str(trace),ET_CUDA_RING_JOURNAL_BUFFERS='0',ET_CUDA_RING_ARCHIVE_BATCH_ROWS='64',ET_CUDA_RING_ASYNC_DMA='0')
@@ -36,7 +36,7 @@ def main(config,output):
       child.stdin.close();assert child.wait(timeout=120)==0
      finally:
       if child.poll() is None:child.terminate();child.wait(timeout=120)
-    meta=list(trace.glob('*-metadata.json'));assert len(meta)==66*5,(c,arm,len(meta))
+    meta=list(trace.glob('*-metadata.json'));assert len(meta)==66*6,(c,arm,len(meta))
     rows.append(dict(c=c,arm=arm,captures=len(meta),directory=str(folder)));(output/'progress.json').write_text(json.dumps(rows))
  (output/'result.json').write_text(json.dumps(dict(cases=rows,graphs_disabled=True,unchanged_launches=True,diagnostic_only=True,full_model_qualified=False),indent=2))
 if __name__=='__main__':
