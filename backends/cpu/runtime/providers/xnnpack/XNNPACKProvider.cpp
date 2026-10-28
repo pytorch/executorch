@@ -944,6 +944,41 @@ class XNNImplementation final : public KernelImplementation {
         op->supports(node, graph);
   }
 
+  Result<StorageRequirements> requirements(
+      const KernelRegion& region,
+      const ptn::Graph& graph,
+      const ExecutionContext& context) const override {
+    auto storage = KernelImplementation::requirements(region, graph, context);
+    if (!storage.ok()) {
+      return storage.error();
+    }
+    for (auto& value : storage->values) {
+      if (!constant(graph.value(value.id))) {
+        continue;
+      }
+      bool packed = false;
+      bool retained = false;
+      for (auto id : region.nodes) {
+        const auto& node = graph.node(id);
+        const auto inputs = node.input_value_ids();
+        if (std::find(inputs.begin(), inputs.end(), value.id) == inputs.end()) {
+          continue;
+        }
+        // A constant can also feed an unpacked operation in this region.
+        const bool packed_use =
+            node.target == "torch.ops.aten.linear.default" &&
+            arg(node, 0).as_tensor().id != value.id &&
+            (arg(node, 1).as_tensor().id == value.id ||
+             (arg(node, 2).kind() == ptn::ArgKind::Tensor &&
+              arg(node, 2).as_tensor().id == value.id));
+        packed |= packed_use;
+        retained |= !packed_use;
+      }
+      value.preparation_only = packed && !retained;
+    }
+    return storage;
+  }
+
   Result<std::unique_ptr<Executable>> compile(
       const KernelRegion& region,
       PreparationContext& context) override {

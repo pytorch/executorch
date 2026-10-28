@@ -41,6 +41,9 @@ class CPUPlan {
   runtime::Error prepare(runtime::MemoryAllocator& allocator);
   runtime::Error execute(const ExecutionContext& context);
   std::string describe(double preparation_ms) const;
+  /// True only after preparation, when no selected region or graph output
+  /// needs the original constant. The caller owns and releases its storage.
+  bool can_release_constant(ptn::ValueId id) const;
 
   const std::vector<PlanStep>& steps() const {
     return steps_;
