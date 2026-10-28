@@ -503,6 +503,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_cummin",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
+        ],
+    ),
+    op_target(
         name = "op_cumsum",
         deps = [
             "//executorch/kernels/portable/cpu/util:dtype_util",
