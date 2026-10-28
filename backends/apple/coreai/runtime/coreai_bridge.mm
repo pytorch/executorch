@@ -17,7 +17,7 @@ BOOL ETCoreAIIsAvailable(void) {
   return NO;
 }
 
-NSString *ETCoreAIDeviceArchitectureName(void) {
+NSString* ETCoreAIDeviceArchitectureName(void) {
   if (@available(macOS 27.0, iOS 27.0, *)) {
     return ETCoreAISwiftModelLoader.deviceArchitectureName;
   }
