@@ -202,7 +202,10 @@ jobs:
       timeout: 240
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      # The Windows runner image carries only the toolkits the CUDA wheels are built for,
+      # 13.2 and 13.4, so this cannot match the export's 13.0. The exported program loads
+      # cudart64_13.dll, which every CUDA 13 toolkit provides.
+      gpu-arch-version: "13.2"
       download-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -214,7 +217,7 @@ jobs:
           \$ErrorActionPreference = 'Stop'
           \$PSNativeCommandUseErrorActionPreference = \$true
 
-          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0'
+          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2'
           \$env:CUDA_PATH = \$env:CUDA_HOME
           \$env:PATH = \"\$env:CUDA_HOME\bin;\$env:PATH\"
           nvcc --version
@@ -225,7 +228,7 @@ jobs:
             throw 'RUNNER_ARTIFACT_DIR is empty. Ensure download-artifact is configured for windows_job.yml.'
           }
 
-          .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.0'
+          .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.2'
         }"
 
   # The counterpart of cuda.yml's unittest-cuda-runtime on Windows. The Windows GPU runners
@@ -248,7 +251,8 @@ jobs:
       timeout: 120
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      # The same toolkit as test-model-cuda-windows-e2e, for the same reason.
+      gpu-arch-version: "13.2"
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         git config --global http.sslBackend openssl
@@ -257,7 +261,7 @@ jobs:
         powershell -Command "& {
           Set-PSDebug -Trace 1
           \$ErrorActionPreference = 'Stop'
-          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0'
+          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2'
           \$env:CUDA_PATH = \$env:CUDA_HOME
           .ci/scripts/setup-windows.ps1
           .ci/scripts/test_cuda_runtime_windows.ps1
