@@ -305,6 +305,14 @@ class PtnSamplesTest(unittest.TestCase):
         self.assertEqual(ptg, _PTG)
         self.assertTrue(torch.equal(constants["w"], torch.ones(4)))
 
+    def test_append_through_symlink_updates_target(self):
+        link = os.path.join(self._tmp.name, "link.ptn")
+        os.symlink(self.path, link)
+        write_samples(link, "golden", _golden())
+
+        self.assertTrue(os.path.islink(link))
+        self.assertEqual(list(read_samples(self.path)), ["golden"])
+
     def test_members_are_stored_and_data_aligned(self):
         # Vary the preceding index.json size so the data member starts at every
         # offset modulo the alignment.
@@ -511,6 +519,16 @@ class PtnSamplesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "is compressed"):
             read_samples(self.path)
 
+    def test_reader_rejects_duplicate_member(self):
+        write_samples(self.path, "golden", _golden())
+        index = _members(self.path)[_INDEX]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with zipfile.ZipFile(self.path, "a") as pkg:
+                pkg.writestr(_INDEX, index)
+        with self.assertRaisesRegex(ValueError, "duplicate member"):
+            read_samples(self.path)
+
     def test_reader_rejects_bad_index(self):
         def set_field(field, value):
             return lambda index: index.__setitem__(field, value)
@@ -530,6 +548,7 @@ class PtnSamplesTest(unittest.TestCase):
         cases = [
             (lambda index: index.clear(), "unsupported version"),
             (set_field("version", "2.0"), "unsupported version"),
+            (set_field("tol", [10**400, 0.0]), "too large"),
             (set_field("version", 1), "unsupported version"),
             (set_field("version", "1"), "unsupported version"),
             (set_field("version", "1.01"), "unsupported version"),
@@ -575,6 +594,16 @@ class PtnSamplesTest(unittest.TestCase):
         cases = [
             ({_INDEX: b'{"version": '}, "Expecting value"),
             ({_INDEX: b"[" * 100_000}, ""),
+            (
+                {
+                    _INDEX: b'{"version": "1.0", "samples": [{"calls": [{"method": '
+                    + b'"forward", "in": '
+                    + b"[" * 600
+                    + b"]" * 600
+                    + b"}]}]}"
+                },
+                "recursion",
+            ),
             ({_DATA: b"\x08" + bytes(7) + b"not json"}, ""),
         ]
         for overrides, message in cases:
@@ -597,3 +626,17 @@ class PtnSamplesTest(unittest.TestCase):
 
         _edit_index(self.path, add_fields)
         self.assertSetsEqual(read_samples(self.path)["golden"], golden)
+
+    def test_newer_minor_may_reference_tensors_from_unknown_fields(self):
+        write_samples(self.path, "golden", _golden())
+
+        def move_outputs_to_unknown_field(index):
+            index["version"] = "1.1"
+            call = index["samples"][0]["calls"][0]
+            call["future"] = call.pop("out")
+
+        _edit_index(self.path, move_outputs_to_unknown_field)
+        self.assertIsNone(read_samples(self.path)["golden"].samples[0].calls[0].outputs)
+        _edit_index(self.path, lambda index: index.__setitem__("version", "1.0"))
+        with self.assertRaisesRegex(ValueError, "unreferenced tensors"):
+            read_samples(self.path)

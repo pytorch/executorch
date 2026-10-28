@@ -5,6 +5,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -97,13 +98,17 @@ size_t kv_cache_length(const ptn::Method& method) {
 
 // The values of an [n] or [1, n] Int or Long sample tensor.
 std::vector<int64_t> integer_values(const ptn::SampleTensor& tensor) {
-  const bool row = tensor.sizes.size() == 1 ||
-      (tensor.sizes.size() == 2 && tensor.sizes[0] == 1);
-  if ((tensor.dtype != ptn::kLong && tensor.dtype != ptn::kInt) || !row) {
+  int64_t n = -1;
+  if (tensor.sizes.size() == 1) {
+    n = tensor.sizes[0];
+  } else if (tensor.sizes.size() == 2 && tensor.sizes[0] == 1) {
+    n = tensor.sizes[1];
+  }
+  if ((tensor.dtype != ptn::kLong && tensor.dtype != ptn::kInt) || n < 0) {
     throw std::runtime_error(
         "sample token and position inputs must be [n] or [1, n] Int or Long");
   }
-  std::vector<int64_t> values(static_cast<size_t>(tensor.sizes.back()));
+  std::vector<int64_t> values(static_cast<size_t>(n));
   for (size_t i = 0; i < values.size(); ++i) {
     if (tensor.dtype == ptn::kLong) {
       std::memcpy(&values[i], tensor.bytes.data() + 8 * i, 8);
@@ -505,10 +510,10 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
               tol.atol,
               tol.rtol);
           failed_calls += result.close ? 0 : 1;
-          char line[160];
+          std::array<char, 160> line{};
           std::snprintf(
-              line,
-              sizeof(line),
+              line.data(),
+              line.size(),
               "sample %zu call %zu: max_abs_error=%.6g nan=%zu (atol %g, rtol %g) "
               "%s\n",
               i,
@@ -518,7 +523,7 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
               tol.atol,
               tol.rtol,
               result.close ? "ok" : "FAIL");
-          report += line;
+          report += line.data();
           ++call;
           return call < calls.size()
               ? forced[call - 1]

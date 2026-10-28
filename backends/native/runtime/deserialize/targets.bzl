@@ -116,7 +116,9 @@ def define_common_targets():
         ],
         deps = [
             ":byte_span",
+            ":deserialize_error",
             ":json",
+            ":limits",
             ":safetensors_reader",
         ],
         visibility = ["PUBLIC"],

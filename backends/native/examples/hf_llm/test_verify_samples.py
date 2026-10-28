@@ -117,6 +117,15 @@ class VerifySamplesTest(unittest.TestCase):
         self.assertEqual(result.stdout.count(" ok\n"), 8)
         self.assertIn("verify:    replay, 0 calls failed", result.stdout)
 
+    def test_replays_a_sample_that_fills_the_cache(self) -> None:
+        prompt = list(range(_MAX_TOKENS))
+        samples = golden_samples(self.wrapper, [prompt], _CACHE - _MAX_TOKENS)
+
+        result = self._verify("full", samples)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count(" ok\n"), _CACHE - _MAX_TOKENS + 1)
+
     def test_forces_recorded_tokens_over_its_own_choice(self) -> None:
         forced = [17, 42, 99]
         sample = _forced(self.wrapper, [3, 4, 5], forced)
@@ -148,10 +157,26 @@ class VerifySamplesTest(unittest.TestCase):
         def other_method(calls: list[Call]) -> None:
             calls[1].method = "decode"
 
+        logits = torch.zeros(1, 1, _VOCAB)
+        prompt = list(range(_MAX_TOKENS))
+        one_call_too_many = [
+            Call(
+                "forward", [torch.tensor([prompt]), torch.arange(len(prompt))], [logits]
+            )
+        ] + [
+            Call(
+                "forward",
+                [torch.tensor([[1]]), torch.tensor([len(prompt) + step])],
+                [logits],
+            )
+            for step in range(_CACHE + 1 - len(prompt))
+        ]
+
         cases = [
             (self._modified_golden(out_of_vocabulary), "outside the vocabulary"),
             (self._modified_golden(wrong_position), "not a prefill or the next decode"),
             (self._modified_golden(other_method), "call 1 runs method decode"),
+            (SampleSet([Sample(one_call_too_many)]), "does not fit the method"),
             (
                 golden_samples(self.wrapper, [list(range(_MAX_TOKENS + 1))], 0),
                 "prefill exceeds",

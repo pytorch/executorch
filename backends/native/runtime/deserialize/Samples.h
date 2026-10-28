@@ -52,8 +52,10 @@ struct SampleSet {
 };
 
 // Reads samples/<set>/, specified in backends/native/README.md. Every in and
-// out value must be a tensor; scalar and list values are not supported. Throws
-// std::runtime_error if the set is absent or violates the format.
+// out value must be a real-valued tensor; scalar, list and complex values are
+// not supported. Throws std::runtime_error if the set is absent or violates the
+// format: UnsupportedVersionError for another major version, and
+// ResourceLimitError when it exceeds a reader limit.
 SampleSet read_sample_set(const ZipReader& zip, const std::string& set);
 
 } // namespace ptn
