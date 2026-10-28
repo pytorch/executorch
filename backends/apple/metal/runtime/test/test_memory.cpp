@@ -1991,6 +1991,46 @@ TEST_F(MetalGraphViewTest, FreeingABufferForgetsTheStridedViewsInIt) {
   ASSERT_EQ(aoti_torch_delete_tensor_object(weight), Error::Ok);
 }
 
+// An empty view is bound at its parent's start but stands for its own offset:
+// views of it are offset from there, so one past the end of the allocation is
+// refused, and one inside it lands where it belongs, also through a copy.
+TEST_F(MetalGraphViewTest, ViewsOfAnEmptyViewKeepItsOffset) {
+  const int64_t base_size = 8;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  auto* memory = static_cast<float*>(base->mutable_data_ptr());
+  const int64_t zero = 0;
+  const int64_t four = 4;
+
+  AOTITensorHandle at_end = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &zero, &kStride, /*storage_offset=*/8, &at_end),
+      Error::Ok);
+  AOTITensorHandle past_end = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          at_end, 1, &four, &kStride, /*storage_offset=*/0, &past_end),
+      Error::Ok);
+
+  AOTITensorHandle middle = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &zero, &kStride, /*storage_offset=*/4, &middle),
+      Error::Ok);
+  AOTITensorHandle copy = nullptr;
+  ASSERT_EQ(aoti_torch_new_tensor_handle(middle, &copy), Error::Ok);
+  AOTITensorHandle back_half = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          copy, 1, &four, &kStride, /*storage_offset=*/0, &back_half),
+      Error::Ok);
+  EXPECT_EQ(back_half->const_data_ptr(), memory + 4);
+}
+
 // Memory a tensor owns goes with the tensor, not with aoti_torch_mps_free.
 TEST_F(MetalGraphViewTest, FreeingATensorsMemoryIsRefused) {
   const int64_t size = 4;
