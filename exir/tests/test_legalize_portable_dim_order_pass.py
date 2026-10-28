@@ -9,6 +9,7 @@ import unittest
 import torch
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes import LegalizePortableDimOrderPass
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
@@ -49,6 +50,11 @@ class LinearIssueReproModule(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.linear(x)
+
+
+class ClonePoolModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.avg_pool2d(torch.relu(x).clone(), 2)
 
 
 class TestLegalizePortableDimOrderPass(unittest.TestCase):
@@ -226,3 +232,25 @@ class TestLegalizePortableDimOrderPass(unittest.TestCase):
 
         runtime_graph = self._assert_runtime_matches_eager(module, sample_input)
         FileCheck().check_not("aten.expand_copy.out").run(runtime_graph.code)
+
+    def test_reinplaced_program_matches_eager(self) -> None:
+        channels_last = torch.randn(2, 3, 4, 6).to(memory_format=torch.channels_last)
+        cases = (("avg_pool2d", ClonePoolModule(), (channels_last,)),)
+        config = ExecutorchBackendConfig(
+            extract_delegate_segments=False,
+            # Lets the clone reuse the memory of its input.
+            reinplace_extra_ops=frozenset(
+                {exir_ops.edge.dim_order_ops._clone_dim_order.default}
+            ),
+        )
+
+        for name, module, sample_input in cases:
+            with self.subTest(name=name):
+                edge = self._build_edge(module, sample_input)
+                executorch_module = _load_for_executorch_from_buffer(
+                    edge.to_executorch(config).buffer
+                )
+                torch.testing.assert_close(
+                    executorch_module.run_method("forward", sample_input)[0],
+                    module(*sample_input),
+                )

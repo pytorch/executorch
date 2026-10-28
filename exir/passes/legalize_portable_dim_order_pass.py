@@ -14,6 +14,15 @@ from executorch.exir.dim_order_utils import get_dim_order
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 
 
+def _meta_with_own_memory(value: ProxyValue) -> NodeMetadata:
+    # reinplace_pass may let a node reuse the memory of its input. A copy of the
+    # node's output into another layout needs memory of its own.
+    meta = NodeMetadata(value.node.meta)
+    meta.data.pop("_share_alloc_with_arg_idx", None)
+    meta.data.pop("_shared_alloc_offset", None)
+    return meta
+
+
 class LegalizePortableDimOrderPass(ExportPass):
     """Insert contiguous dim-order copies before portable default-layout ops.
 
@@ -37,7 +46,7 @@ class LegalizePortableDimOrderPass(ExportPass):
         input_arg = args[0]
         if isinstance(input_arg, ProxyValue) and input_arg.is_tensor():
             input_tensor: Optional[torch.Tensor] = input_arg.to_tensor()
-            input_meta = NodeMetadata(input_arg.node.meta)
+            input_meta = _meta_with_own_memory(input_arg)
         elif isinstance(input_arg, torch.Tensor):
             input_tensor = input_arg
             input_meta = meta.copy()
