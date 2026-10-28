@@ -15,7 +15,9 @@
 #include <utility>
 
 #include <executorch/backends/native/runtime/deserialize/ByteSpan.h>
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
 #include <executorch/backends/native/runtime/deserialize/Json.h>
+#include <executorch/backends/native/runtime/deserialize/Limits.h>
 #include <executorch/backends/native/runtime/deserialize/SafeTensorsReader.h>
 
 namespace ptn {
@@ -26,6 +28,13 @@ bool is_ssa_name(std::string_view name) {
       std::all_of(name.begin(), name.end(), [](char c) {
         return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
       });
+}
+
+bool is_set_name(std::string_view name) {
+  return !name.empty() && std::all_of(name.begin(), name.end(), [](char c) {
+           return std::isalnum(static_cast<unsigned char>(c)) || c == '_' ||
+               c == '-';
+         });
 }
 
 bool is_digits(std::string_view text) {
@@ -44,6 +53,24 @@ bool is_supported_version(const Json& version) {
   const size_t dot = text.find('.');
   return dot != std::string_view::npos && text.substr(0, dot) == "1" &&
       is_digits(text.substr(dot + 1));
+}
+
+// A newer minor may add fields that reference tensors this reader does not know.
+bool is_newer_minor(const Json& version) {
+  const std::string_view text = version.get_ref<const std::string&>();
+  return text.substr(text.find('.') + 1) != "0";
+}
+
+// Rethrows the active exception prefixed with `where`, keeping the type of
+// limit errors.
+[[noreturn]] void rethrow_in(const std::string& where) {
+  try {
+    throw;
+  } catch (const ResourceLimitError& error) {
+    throw ResourceLimitError(where + ": " + error.what());
+  } catch (const std::exception& error) {
+    throw std::runtime_error(where + ": " + error.what());
+  }
 }
 
 class SetDecoder {
@@ -141,12 +168,16 @@ class SetDecoder {
       if (!intermediates.is_object()) {
         fail(at + ".intermediates must be an object");
       }
+      const std::string key_prefix = at + ".intermediates.";
       for (const auto& [name, key] : intermediates.items()) {
         if (!is_ssa_name(name)) {
-          fail("bad intermediate " + name + " in " + at);
+          fail(
+              std::string("bad intermediate ")
+                  .append(name)
+                  .append(" in ")
+                  .append(at));
         }
-        result.intermediates.emplace(
-            name, tensor(key, at + ".intermediates." + name));
+        result.intermediates.emplace(name, tensor(key, key_prefix + name));
       }
     }
     result.tol = tol(entry, fallback);
@@ -166,63 +197,78 @@ class SetDecoder {
 
 // cppcheck-suppress unusedFunction
 SampleSet read_sample_set(const ZipReader& zip, const std::string& set) {
+  if (!is_set_name(set)) {
+    throw std::runtime_error(
+        "samples: set name '" + set + "' must match [A-Za-z0-9_-]+");
+  }
   const std::string prefix = "samples/" + set + "/";
   const std::string where = "samples: " + prefix;
-  if (!zip.member_size(prefix + "index.json") ||
-      !zip.member_size(prefix + "data.safetensors")) {
+  const std::optional<size_t> index_size =
+      zip.member_size(prefix + "index.json");
+  if (!index_size || !zip.member_size(prefix + "data.safetensors")) {
     throw std::runtime_error(
         where + ": missing index.json or data.safetensors");
+  }
+  if (*index_size > detail::kMaxJsonBytes) {
+    throw ResourceLimitError(where + ": index.json exceeds size limit");
   }
   const std::vector<uint8_t> index_bytes = zip.read(prefix + "index.json");
   Json index;
   try {
     index = parse_json(std::string_view(
         reinterpret_cast<const char*>(index_bytes.data()), index_bytes.size()));
-  } catch (const Json::exception& error) {
-    throw std::runtime_error(
-        where + ": invalid index.json: " + std::string(error.what()));
+  } catch (...) {
+    rethrow_in(where + ": invalid index.json");
   }
-  SetDecoder decoder(where, zip.read(prefix + "data.safetensors"));
-
   if (!index.is_object()) {
-    decoder.fail("index.json must contain a JSON object");
+    throw std::runtime_error(where + ": index.json must contain a JSON object");
   }
   const auto version = index.find("version");
   if (version == index.end() || !is_supported_version(*version)) {
-    decoder.fail("unsupported version, expected 1.0");
+    throw UnsupportedVersionError(
+        where + ": unsupported version, expected 1.0");
   }
+  std::optional<SetDecoder> decoder;
+  try {
+    decoder.emplace(where, zip.read(prefix + "data.safetensors"));
+  } catch (...) {
+    rethrow_in(where);
+  }
+
   SampleSet result;
   for (const auto& [field, value] :
        {std::pair{"description", &result.description},
         std::pair{"source", &result.source}}) {
     if (index.contains(field)) {
       if (!index[field].is_string()) {
-        decoder.fail(std::string(field) + " must be a string");
+        decoder->fail(std::string(field) + " must be a string");
       }
       *value = index[field].get<std::string>();
     }
   }
   const auto entries = index.find("samples");
   if (entries == index.end() || !entries->is_array() || entries->empty()) {
-    decoder.fail("samples must be a non-empty list");
+    decoder->fail("samples must be a non-empty list");
   }
-  const std::optional<Tolerance> set_tol = decoder.tol(index, std::nullopt);
+  const std::optional<Tolerance> set_tol = decoder->tol(index, std::nullopt);
   for (size_t i = 0; i < entries->size(); ++i) {
     const Json& entry = (*entries)[i];
     const std::string at = "samples[" + std::to_string(i) + "]";
     if (!entry.is_object() || !entry.contains("calls") ||
         !entry["calls"].is_array() || entry["calls"].empty()) {
-      decoder.fail(at + " must be an object with a non-empty 'calls' list");
+      decoder->fail(at + " must be an object with a non-empty 'calls' list");
     }
-    const std::optional<Tolerance> sample_tol = decoder.tol(entry, set_tol);
+    const std::optional<Tolerance> sample_tol = decoder->tol(entry, set_tol);
     Sample& sample = result.samples.emplace_back();
     const Json& calls = entry["calls"];
     for (size_t j = 0; j < calls.size(); ++j) {
-      sample.calls.push_back(decoder.call(
+      sample.calls.push_back(decoder->call(
           calls[j], at + ".calls[" + std::to_string(j) + "]", sample_tol));
     }
   }
-  decoder.check_all_referenced();
+  if (!is_newer_minor(*version)) {
+    decoder->check_all_referenced();
+  }
   return result;
 }
 
