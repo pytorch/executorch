@@ -76,6 +76,14 @@ fb_native.constraint_value(
 )
 
 fb_native.config_setting(
+    name = "executorch-lto-enabled",
+    values = {
+        "executorch.enable_lto": "true",
+    },
+    visibility = ["PUBLIC"],
+)
+
+fb_native.config_setting(
     name = "executorch-program-verification-disabled",
     constraint_values = [
         ":program-verification-disabled",
