@@ -40,6 +40,21 @@ fbcode_target(
 )
 
 fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_verify_samples",
+    srcs = ["test_verify_samples.py"],
+    env = {
+        "RUN_HF_LLM": "$(location //executorch/backends/native/examples/hf_llm/runtime:run_hf_llm_ggml_cpu)",
+    },
+    deps = [
+        ":export_hf_llm_lib",
+        "//caffe2:torch",
+        "//executorch/exir/native:native",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
+fbcode_target(
     _kind = runtime.python_binary,
     name = "convert_meta_llama",
     srcs = ["convert_meta_llama.py"],
