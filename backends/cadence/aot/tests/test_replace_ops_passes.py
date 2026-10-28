@@ -2375,6 +2375,53 @@ class TestReplaceWhereWithFullArgsWithWhereScalar(unittest.TestCase):
             0,
         )
 
+    @expand([[2.0], [3.0]])
+    def test_replace_pow_with_mul_not_applied_on_type_promotion(
+        self, exponent: float
+    ) -> None:
+        # int32 ** float promotes to float32, but int32 * int32 stays int32.
+        x = torch.randint(0, 8, (2, 1, 64), dtype=torch.int32)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.pow.Tensor_Scalar,
+            args=(x, exponent),
+        )
+        p = ReplacePowWithMulPass()
+        result = cast(PassResult, p(original_gm))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.pow.Tensor_Scalar),
+            1,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.mul.Tensor), 0
+        )
+
+    @expand([[2], [3]])
+    def test_replace_pow_with_mul_int_input_int_exponent(self, exponent: int) -> None:
+        # int32 ** int stays int32, so the dtype guard still allows the rewrite.
+        x = torch.randint(0, 8, (2, 1, 64), dtype=torch.int32)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.pow.Tensor_Scalar,
+            args=(x, exponent),
+        )
+        gm_before = copy.deepcopy(original_gm)
+        p = ReplacePowWithMulPass()
+        result = cast(PassResult, p(original_gm))
+
+        self.assertTrue(result.modified)
+        validate(gm_before, result.graph_module, [x], "ReplacePowWithMulPass")
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.pow.Tensor_Scalar),
+            0,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.mul.Tensor),
+            exponent - 1,
+        )
+
 
 class TestReplaceIm2rowWithViewPass(unittest.TestCase):
     def test_no_replacement_for_conv(self) -> None:
