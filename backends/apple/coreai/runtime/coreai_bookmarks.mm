@@ -79,6 +79,13 @@ Result<NSString*> bookmark_key(
   return [key copy];
 }
 
+Result<NSString*> bookmark_lock_name(NSString* key) {
+  ET_CHECK_OR_RETURN_ERROR(
+      digest(key), InvalidArgument, "Invalid Core AI bookmark key");
+  return [NSString
+      stringWithFormat:@"stripe-v1-%@.lock", [key substringToIndex:2]];
+}
+
 namespace {
 // Returns -1 when the root does not exist.
 Result<int> open_root(NSString* root) {
@@ -183,8 +190,9 @@ BookmarkLock::BookmarkLock(
 
 Result<std::unique_ptr<BookmarkLock>>
 lock_bookmark(NSString* root, NSString* key, bool create) {
-  ET_CHECK_OR_RETURN_ERROR(
-      digest(key), InvalidArgument, "Invalid Core AI bookmark key");
+  auto name = bookmark_lock_name(key);
+  if (!name.ok())
+    return name.error();
   auto resolved = resolve_bookmark_root(root, create);
   if (!resolved.ok())
     return resolved.error();
@@ -209,9 +217,8 @@ lock_bookmark(NSString* root, NSString* key, bool create) {
   if (!lock_result.ok())
     return lock_result.error();
   FileDescriptor locks(lock_result.get());
-  NSString* name = [key stringByAppendingString:@".lock"];
-  FileDescriptor file(
-      open_storage_shared_file(locks.get(), name.fileSystemRepresentation));
+  FileDescriptor file(open_storage_shared_file(
+      locks.get(), name.get().fileSystemRepresentation));
   struct stat info;
   ET_CHECK_OR_RETURN_ERROR(
       file.get() >= 0 && fstat(file.get(), &info) == 0 && S_ISREG(info.st_mode),

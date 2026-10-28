@@ -83,6 +83,15 @@ NSURL* test_bookmark_url(NSURL* root, NSString* key) {
       URLByAppendingPathComponent:[key stringByAppendingString:@".bookmark"]];
 }
 
+NSURL* test_bookmark_lock_url(NSURL* root, NSString* key) {
+  auto name = bookmark_lock_name(key);
+  EXPECT_TRUE(name.ok());
+  if (!name.ok())
+    return nil;
+  return [[root URLByAppendingPathComponent:@"locks"]
+      URLByAppendingPathComponent:name.get()];
+}
+
 Result<NSData*> saved_bookmark(NSURL* root, NSString* key) {
   auto locked = lock_bookmark(root.path, key);
   if (!locked.ok())
@@ -113,7 +122,8 @@ int bookmark_child_mode(int argc, char** argv) {
   const bool lock = std::strcmp(argv[1], "--bookmark-lock") == 0;
   const bool other = std::strcmp(argv[3], "other") == 0;
   const bool same = std::strcmp(argv[3], "same") == 0;
-  if ((!hold && !lock) || (!other && !same))
+  const bool collision = std::strcmp(argv[3], "collision") == 0;
+  if ((!hold && !lock) || (!other && !same && !collision))
     return 2;
   char* end = nullptr;
   errno = 0;
@@ -131,23 +141,29 @@ int bookmark_child_mode(int argc, char** argv) {
   auto manifest = bookmark_manifest();
   if (!manifest.ok())
     return 6;
-  if (other) {
-    manifest->bundle_digests =
-        @{manifest->path.lastPathComponent : fixture_identity('2')};
-  }
   auto key = test_bookmark_key(manifest.get());
   if (!key.ok())
     return 7;
+  NSMutableString* selected_key = [key.get() mutableCopy];
+  if (other || collision) {
+    const NSUInteger index = other ? 0 : 63;
+    [selected_key
+        replaceCharactersInRange:NSMakeRange(index, 1)
+                      withString:[selected_key characterAtIndex:index] == '0'
+                          ? @"1"
+                          : @"0"];
+  }
   StorageFaultScope scope(StorageOperation::BeforeBookmarkLock);
   scope.armed = false;
   const int notify_fd = signal_fd.get();
   scope.observe = ^(StorageOperation operation) {
-    if (lock && same && operation == StorageOperation::BeforeBookmarkLock &&
+    if (lock && (same || collision) &&
+        operation == StorageOperation::BeforeBookmarkLock &&
         !send_signal_byte(notify_fd, 'B')) {
       _exit(11);
     }
   };
-  auto locked = lock_bookmark(root, key.get());
+  auto locked = lock_bookmark(root, selected_key);
   if (!locked.ok())
     return 8;
   if (!send_signal_byte(signal_fd.get(), 'L'))

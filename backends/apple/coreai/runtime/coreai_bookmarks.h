@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #import "coreai_assets.h"
 #include "coreai_file.h"
@@ -17,6 +18,9 @@ runtime::Result<NSString*> bookmark_key(
     const Manifest& selected,
     NSString* platform,
     NSString* architecture);
+// The first key byte selects a stripe in a fixed, versioned lock namespace.
+constexpr size_t kBookmarkLockStripeCount = 256;
+runtime::Result<NSString*> bookmark_lock_name(NSString* key);
 // With create=false, a missing root is returned unchanged for no-op
 // maintenance.
 runtime::Result<NSString*> resolve_bookmark_root(
@@ -48,10 +52,12 @@ class BookmarkLock final {
   NSString* key_;
 };
 
-// Each acquisition opens an independent descriptor; the backend never removes
-// lock files. With create=false, missing roots or entries return a null lock.
-// Existing entries may require creating coordination files, so the root must
-// be writable even with create=false.
+// Each acquisition opens an independent descriptor on one of 256 stable
+// stripes. Different keys can share a stripe; do not hold multiple
+// BookmarkLocks at once. The backend never removes lock files. With
+// create=false, missing roots or entries return a null lock. Existing entries
+// may require creating coordination files, so the root must be writable even
+// with create=false.
 runtime::Result<std::unique_ptr<BookmarkLock>>
 lock_bookmark(NSString* root, NSString* key, bool create = true);
 // Missing is nil. Empty, oversized, inaccessible or nonregular files fail

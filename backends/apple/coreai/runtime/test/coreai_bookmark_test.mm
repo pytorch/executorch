@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <array>
 #include <chrono>
 #include <future>
 #include <thread>
@@ -25,6 +26,15 @@ using namespace executorch::backends::coreai::testing;
 namespace {
 constexpr size_t kMiB = 1024 * 1024;
 constexpr auto kWaitTimeout = std::chrono::seconds(5);
+
+NSString* changed_key(NSString* key, bool same_stripe) {
+  NSMutableString* changed = [key mutableCopy];
+  const NSUInteger index = same_stripe ? 63 : 0;
+  [changed replaceCharactersInRange:NSMakeRange(index, 1)
+                         withString:[key characterAtIndex:index] == '0' ? @"1"
+                                                                        : @"0"];
+  return changed;
+}
 
 struct BookmarkWaiter {
   std::future<void> attempting;
@@ -82,8 +92,7 @@ class CoreAIBookmarkPathTest : public CoreAIBookmarkIdentityTest {
     ASSERT_NE(root.url, nil);
   }
   NSURL* lock_url() {
-    return [[root.url URLByAppendingPathComponent:@"locks"]
-        URLByAppendingPathComponent:[key stringByAppendingString:@".lock"]];
+    return test_bookmark_lock_url(root.url, key);
   }
 };
 
@@ -352,7 +361,7 @@ TEST_F(
 }
 
 TEST_F(CoreAIBookmarkPathTest, NoncreatingLookupIgnoresOtherEntries) {
-  NSString* other_key = fixture_identity('f');
+  NSString* other_key = changed_key(key, false);
   auto other = lock_bookmark(root.url.path, other_key);
   ASSERT_TRUE(other.ok());
   ASSERT_NE(other.get(), nullptr);
@@ -421,7 +430,7 @@ TEST_F(CoreAIBookmarkPathTest, RejectsInvalidResolvedRoots) {
 
 TEST_F(
     CoreAIBookmarkPathTest,
-    ThreadContentionSerializesSameKeyButNotDifferentKeys) {
+    ThreadContentionSerializesSameKeyButNotDifferentStripes) {
   auto holder = lock_bookmark(root.url.path, key);
   ASSERT_TRUE(holder.ok());
   ASSERT_NE(holder.get(), nullptr);
@@ -432,7 +441,7 @@ TEST_F(
       waiter.result.wait_for(std::chrono::milliseconds(100)),
       std::future_status::timeout);
   auto independent =
-      start_bookmark_waiter(root.url.path, fixture_identity('f'));
+      start_bookmark_waiter(root.url.path, changed_key(key, false));
   ASSERT_EQ(
       independent.result.wait_for(kWaitTimeout), std::future_status::ready);
   auto other = independent.result.get();
@@ -506,6 +515,162 @@ TEST_F(
   ASSERT_EQ(stat(file.fileSystemRepresentation, &after), 0);
   EXPECT_EQ(before.st_dev, after.st_dev);
   EXPECT_EQ(before.st_ino, after.st_ino);
+}
+
+TEST_F(CoreAIBookmarkPathTest, LockNamesUseOnlyValidatedFirstByte) {
+  EXPECT_EQ(bookmark_lock_name(nil).error(), Error::InvalidArgument);
+  for (NSString* invalid in
+       @[ @"", @"../escape", @"00", [fixture_identity('a') uppercaseString] ]) {
+    EXPECT_EQ(bookmark_lock_name(invalid).error(), Error::InvalidArgument);
+  }
+  auto first = bookmark_lock_name(fixture_identity('0'));
+  auto last = bookmark_lock_name(fixture_identity('f'));
+  ASSERT_TRUE(first.ok());
+  ASSERT_TRUE(last.ok());
+  EXPECT_TRUE([first.get() isEqual:@"stripe-v1-00.lock"]);
+  EXPECT_TRUE([last.get() isEqual:@"stripe-v1-ff.lock"]);
+  EXPECT_TRUE([test_bookmark_lock_url(root.url, key)
+      isEqual:test_bookmark_lock_url(root.url, changed_key(key, true))]);
+}
+
+TEST_F(CoreAIBookmarkPathTest, CollidingKeysSerializeAcrossThreads) {
+  auto holder = lock_bookmark(root.url.path, key);
+  ASSERT_TRUE(holder.ok());
+  NSString* collision = changed_key(key, true);
+  ASSERT_FALSE([collision isEqual:key]);
+  auto waiter = start_bookmark_waiter(root.url.path, collision);
+  ASSERT_EQ(
+      waiter.attempting.wait_for(kWaitTimeout), std::future_status::ready);
+  EXPECT_EQ(
+      waiter.result.wait_for(std::chrono::milliseconds(100)),
+      std::future_status::timeout);
+  holder.get().reset();
+  ASSERT_EQ(waiter.result.wait_for(kWaitTimeout), std::future_status::ready);
+  auto acquired = waiter.result.get();
+  ASSERT_TRUE(acquired.ok());
+  EXPECT_NE(acquired.get(), nullptr);
+}
+
+TEST_F(
+    CoreAIBookmarkPathTest,
+    NoncreatingCollisionMissDoesNotWaitOrCreateFiles) {
+  auto holder = lock_bookmark(root.url.path, key);
+  ASSERT_TRUE(holder.ok());
+  auto waiter =
+      start_bookmark_waiter(root.url.path, changed_key(key, true), false);
+  EXPECT_EQ(waiter.result.wait_for(kWaitTimeout), std::future_status::ready);
+  holder.get().reset();
+  ASSERT_EQ(waiter.result.wait_for(kWaitTimeout), std::future_status::ready);
+  auto absent = waiter.result.get();
+  ASSERT_TRUE(absent.ok());
+  EXPECT_EQ(absent.get(), nullptr);
+  NSArray* names = [NSFileManager.defaultManager
+      contentsOfDirectoryAtPath:[root.url URLByAppendingPathComponent:@"locks"]
+                                    .path
+                          error:nil];
+  ASSERT_NE(names, nil);
+  EXPECT_EQ(names.count, 1u);
+}
+
+TEST_F(CoreAIBookmarkPathTest, RejectsSymlinkDirectoryAndFifoStripeFiles) {
+  NSData* bytes = [@"untouched target" dataUsingEncoding:NSUTF8StringEncoding];
+  NSURL* target = [root.url URLByAppendingPathComponent:@"target"];
+  ASSERT_TRUE([bytes writeToURL:target atomically:NO]);
+  for (int kind = 0; kind < 3; ++kind) {
+    TestDirectory isolated;
+    ASSERT_NE(isolated.url, nil);
+    NSURL* locks = [isolated.url URLByAppendingPathComponent:@"locks"];
+    ASSERT_EQ(mkdir(locks.fileSystemRepresentation, 0700), 0);
+    NSURL* stripe = test_bookmark_lock_url(isolated.url, key);
+    if (kind == 0)
+      ASSERT_EQ(
+          symlink(
+              target.fileSystemRepresentation, stripe.fileSystemRepresentation),
+          0);
+    else if (kind == 1)
+      ASSERT_EQ(mkdir(stripe.fileSystemRepresentation, 0700), 0);
+    else
+      ASSERT_EQ(mkfifo(stripe.fileSystemRepresentation, 0600), 0);
+    EXPECT_EQ(
+        lock_bookmark(isolated.url.path, key).error(), Error::AccessFailed);
+    EXPECT_TRUE([[NSData dataWithContentsOfURL:target] isEqual:bytes]);
+  }
+}
+
+TEST_F(CoreAIBookmarkPathTest, LegacyLockFilesAreLeftUntouched) {
+  NSURL* locks = [root.url URLByAppendingPathComponent:@"locks"];
+  ASSERT_EQ(mkdir(locks.fileSystemRepresentation, 0700), 0);
+  NSURL* legacy = [locks
+      URLByAppendingPathComponent:[key stringByAppendingString:@".lock"]];
+  NSData* bytes = [@"legacy" dataUsingEncoding:NSUTF8StringEncoding];
+  ASSERT_TRUE([bytes writeToURL:legacy atomically:NO]);
+  struct stat before {};
+  ASSERT_EQ(lstat(legacy.fileSystemRepresentation, &before), 0);
+  auto locked = lock_bookmark(root.url.path, key);
+  ASSERT_TRUE(locked.ok());
+  locked.get().reset();
+  struct stat after {};
+  ASSERT_EQ(lstat(legacy.fileSystemRepresentation, &after), 0);
+  EXPECT_EQ(before.st_ino, after.st_ino);
+  EXPECT_TRUE([[NSData dataWithContentsOfURL:legacy] isEqual:bytes]);
+  EXPECT_TRUE([NSFileManager.defaultManager fileExistsAtPath:lock_url().path]);
+}
+
+TEST_F(CoreAIBookmarkPathTest, CollidingProcessWaiterRecoversAfterHolderDeath) {
+  BookmarkChild holder;
+  ASSERT_TRUE(holder.spawn(@"--bookmark-hold", root.url.path, @"same"));
+  ASSERT_TRUE(holder.receive('L'));
+  struct stat before {};
+  ASSERT_EQ(lstat(lock_url().fileSystemRepresentation, &before), 0);
+  BookmarkChild waiter;
+  ASSERT_TRUE(waiter.spawn(@"--bookmark-lock", root.url.path, @"collision"));
+  ASSERT_TRUE(waiter.receive('B'));
+  ASSERT_TRUE(waiter.expect_blocked());
+  ASSERT_TRUE(holder.kill_and_reap());
+  ASSERT_TRUE(waiter.receive('L'));
+  ASSERT_TRUE(waiter.expect_exit(0));
+  struct stat after {};
+  ASSERT_EQ(lstat(lock_url().fileSystemRepresentation, &after), 0);
+  EXPECT_EQ(before.st_dev, after.st_dev);
+  EXPECT_EQ(before.st_ino, after.st_ino);
+}
+
+TEST_F(CoreAIBookmarkPathTest, LockPoolIsBoundedAcrossManyKeys) {
+  std::array<ino_t, kBookmarkLockStripeCount> inodes{};
+  NSURL* locks = [root.url URLByAppendingPathComponent:@"locks"];
+  for (size_t generation = 0; generation < 4; ++generation) {
+    for (size_t stripe = 0; stripe < kBookmarkLockStripeCount; ++stripe) {
+      @autoreleasepool {
+        NSString* entry =
+            [NSString stringWithFormat:@"%02zx%062zx", stripe, generation];
+        auto locked = lock_bookmark(root.url.path, entry);
+        ASSERT_TRUE(locked.ok());
+        struct stat info {};
+        NSURL* file = test_bookmark_lock_url(root.url, entry);
+        ASSERT_EQ(lstat(file.fileSystemRepresentation, &info), 0);
+        ASSERT_TRUE(S_ISREG(info.st_mode));
+        EXPECT_EQ(info.st_size, 0);
+        if (generation == 0)
+          inodes[stripe] = info.st_ino;
+        else
+          EXPECT_EQ(info.st_ino, inodes[stripe]);
+        locked.get().reset();
+        auto reused = lock_bookmark(root.url.path, entry);
+        ASSERT_TRUE(reused.ok());
+        ASSERT_EQ(lstat(file.fileSystemRepresentation, &info), 0);
+        EXPECT_EQ(info.st_ino, inodes[stripe]);
+      }
+    }
+    NSArray* children =
+        [NSFileManager.defaultManager contentsOfDirectoryAtPath:locks.path
+                                                          error:nil];
+    ASSERT_NE(children, nil);
+    ASSERT_EQ(children.count, kBookmarkLockStripeCount);
+    for (NSString* name in children) {
+      EXPECT_TRUE([name hasPrefix:@"stripe-v1-"]);
+      EXPECT_EQ(name.length, 17u);
+    }
+  }
 }
 
 } // namespace

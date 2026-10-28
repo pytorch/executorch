@@ -19,6 +19,7 @@ namespace executorch::backends::coreai::testing {
 runtime::Result<Manifest> bookmark_manifest(bool aot = false);
 runtime::Result<NSString*> test_bookmark_key(const Manifest& manifest);
 NSURL* test_bookmark_url(NSURL* root, NSString* key);
+NSURL* test_bookmark_lock_url(NSURL* root, NSString* key);
 runtime::Result<NSData*> saved_bookmark(NSURL* root, NSString* key);
 runtime::Result<NSData*> sized_bookmark(size_t size, uint32_t tag = 1);
 

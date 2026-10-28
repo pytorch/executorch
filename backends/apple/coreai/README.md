@@ -86,17 +86,34 @@ Each partition derives a key from its selected export digest/bundle, source/AOT
 mode, platform, Core AI device architecture, default SDK cache namespace,
 versioned default options and persistent policy. Function bindings and delivery
 location are excluded. No model bytes are hashed at runtime. Each key determines
-a raw bookmark in `bookmarks`, a bundle directory in `staging`, and an empty
-coordination file in `locks`. There is no PTE-wide bookmark list or serialized
-lifecycle record.
+a raw bookmark in `bookmarks`, a bundle directory in `staging`, and one of
+256 shared coordination files in `locks`. There is no PTE-wide bookmark list or
+serialized lifecycle record.
+
 
 Raw bookmarks have an 8 MiB backend allocation limit, not an asserted SDK format
 maximum, and are published atomically because losing one orphans an SDK entry.
-Per-key disk locks coordinate loading and eviction across threads and processes;
-different keys remain independent. Lock ownership is maintained by the OS, and
-acquiring a lock does not flush its file or directory. Lock files are not
-removed by the backend, including after process exit. Removing the assets root
-externally requires all loads, sessions and maintenance to stop.
+A fixed pool of at most 256 disk locks coordinates loading and eviction across
+threads and processes. The first byte of the validated cache key selects
+`stripe-v1-00.lock` through `stripe-v1-ff.lock` within the lock directory. Files
+are created on demand, so new model versions do not grow the pool beyond 256.
+The mapping is part of the on-disk format and is not configurable. Different
+keys on the same stripe serialize; different stripes remain independent.
+Bookmarks and staging remain separate for every key. Runtime
+operations hold only one stripe at a time.
+
+Lock ownership is maintained by the OS, and acquiring a lock does not flush its
+file or directory. Stripe files are never removed, including during cache
+clearing or after process exit, so waiters and future openers keep using the
+same inode. Removing the assets root externally requires all loads, sessions
+and maintenance to stop.
+
+Upgrading from per-key lock files requires stopping all processes using the
+root and upgrading them together. Old and new locking schemes must not run
+concurrently against the same root. Legacy per-key lock files are ignored and
+left untouched; they can be removed separately during a fully quiescent offline
+cleanup. The 256-file bound applies to the new stripe pool, not pre-existing
+legacy files. Bookmarks and staged bundles need no migration.
 
 ## Host Tests
 
