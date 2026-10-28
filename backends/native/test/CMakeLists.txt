@@ -11,6 +11,7 @@ add_executable(
   ../runtime/deserialize/test/ValidationTest.cpp
   ../runtime/test/MethodMetaTest.cpp
   ../runtime/test/ProgramVersionTest.cpp
+  runtime/deserialize/test_samples.cpp
   runtime/graph/test_graph.cpp
   runtime/graph/test_graph_utils.cpp
   runtime/graph/test_memory_planning.cpp

@@ -16,6 +16,7 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     CheckFPComparisonInputs,
     CheckKnownUnsupportedTOSASemantics,
 )
+from executorch.backends.arm.operator_support.where_support import WhereSupported
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -48,6 +49,25 @@ def _topk_node(shape=(2, 8), dtype=torch.float32, args=(2,), kwargs=None):
     return graph.call_function(
         exir_ops.edge.aten.topk.default, (scores, *args), kwargs or {}
     )
+
+
+@pytest.mark.parametrize(
+    "x_dtype,y_dtype",
+    ((torch.bfloat16, torch.bfloat16), (torch.int32, torch.bfloat16)),
+)
+@pytest.mark.parametrize("bf16_enabled", (False, True))
+def test_where_bf16_requires_extension(x_dtype, y_dtype, bf16_enabled) -> None:
+    graph = torch.fx.Graph()
+    condition = _placeholder(graph, "condition", (3,), torch.bool)
+    x = _placeholder(graph, "x", (3,), x_dtype)
+    y = _placeholder(graph, "y", (3,), y_dtype)
+    node = graph.call_function(exir_ops.edge.aten.where.self, (condition, x, y))
+    spec = "TOSA-1.0+FP+INT+bf16" if bf16_enabled else "TOSA-1.0+FP+INT"
+    checker = WhereSupported(
+        TosaSpecification.create_from_string(spec), WhyNoPartitionReporter()
+    )
+
+    assert checker.is_node_supported({}, node) == bf16_enabled
 
 
 @pytest.mark.parametrize(

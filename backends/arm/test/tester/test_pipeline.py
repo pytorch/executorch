@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import copy
 import logging
 import os
 import warnings as _warnings
@@ -1377,9 +1376,6 @@ class VgfPipeline(BasePipeline, Generic[T]):
        if not using use_edge_to_transform_and_lower.
 
        run_on_vulkan_runtime: Whether to test VGF output on VKML runtime.
-       compare_outputs: Whether to compare VKML runtime outputs with reference
-           outputs. If False, skip reference execution and output comparison.
-           Defaults to True.
 
        vgf_compiler_flags: Optional compiler flags.
        is_qat: Whether to prepare the model for quantization-aware training instead of PTQ.
@@ -1423,7 +1419,6 @@ class VgfPipeline(BasePipeline, Generic[T]):
         alias_buffer_mutations: bool = False,
         n_expected_delegates: int = 1,
         is_qat: bool = False,
-        compare_outputs: bool = True,
     ):
         if is_qat and not quantize:
             raise ValueError("QAT requires quantize=True.")
@@ -1542,69 +1537,5 @@ class VgfPipeline(BasePipeline, Generic[T]):
                 rtol=rtol,
                 qtol=qtol,
                 inputs=self.test_data,
-                compare_outputs=compare_outputs,
             )
         self.run_on_vulkan_runtime = run_on_vulkan_runtime
-
-
-class VgfPipelineFP8(VgfPipeline[T]):
-    """Test FP8 VGF execution and the expected CPU reference availability.
-
-    Cases with a CPU reference compare outputs normally. Cases without one
-    execute VGF first, then check the missing CPU kernel separately. Compiler
-    and runtime errors always fail the test. A newly supported CPU reference
-    also fails, prompting the case to enable output comparison.
-
-    """
-
-    def __init__(
-        self,
-        module: torch.nn.Module,
-        test_data: T,
-        aten_op: str | List[str],
-        exir_op: Optional[str | List[str]] = None,
-        *,
-        expect_missing_reference: bool = False,
-        **kwargs: Any,
-    ) -> None:
-        """Configure an unquantized FP8 VGF test.
-
-        Args:
-            module (torch.nn.Module): Module to test.
-            test_data (T): Inputs used for export and execution.
-            aten_op (str | List[str]): Expected ATen operators.
-            exir_op (Optional[str | List[str]]): Expected edge operators.
-            expect_missing_reference (bool): Expect an unsupported FP8 CPU
-                kernel instead of comparing outputs. Defaults to False.
-            **kwargs (Any): Additional VgfPipeline options, excluding runtime
-                enablement, quantization, TOSA extensions, and comparison.
-
-        """
-        super().__init__(
-            module,
-            test_data,
-            aten_op,
-            exir_op,
-            run_on_vulkan_runtime=True,
-            quantize=False,
-            tosa_extensions=["fp8e4m3", "fp8e5m2"],
-            compare_outputs=not expect_missing_reference,
-            **kwargs,
-        )
-        if expect_missing_reference:
-            self.add_stage(self._check_missing_reference)
-
-    def _check_missing_reference(self) -> None:
-        reference_stage = self.tester.stages[StageType.INITIAL_MODEL]
-        assert reference_stage is not None
-        reference_inputs = copy.deepcopy(self.test_data)
-        try:
-            reference_stage.run_artifact(reference_inputs)
-        except NotImplementedError as error:
-            if "not implemented for 'Float8_" not in str(error):
-                raise
-        else:
-            raise AssertionError(
-                "The FP8 CPU reference now succeeds. Set "
-                "expect_missing_reference=False to enable output comparison."
-            )
