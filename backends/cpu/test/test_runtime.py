@@ -6,6 +6,10 @@
 
 from __future__ import annotations
 
+import json
+import os
+import re
+import tempfile
 import unittest
 from contextlib import contextmanager
 
@@ -15,6 +19,28 @@ from executorch.exir import to_edge_transform_and_lower
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
+
+
+def _run_capturing_stderr(fn):
+    with tempfile.TemporaryFile() as capture:
+        saved = os.dup(2)
+        os.dup2(capture.fileno(), 2)
+        try:
+            result = fn()
+        finally:
+            os.dup2(saved, 2)
+            os.close(saved)
+        capture.seek(0)
+        return result, capture.read().decode()
+
+
+def _plan_report(log: str) -> dict:
+    chunks = []
+    for index, _, encoded in re.findall(r"CPU_PLAN_CHUNK (\d+) (\d+) ([0-9a-f]+)", log):
+        if index == "0":
+            chunks = []
+        chunks.append(encoded)
+    return json.loads(bytes.fromhex("".join(chunks)))
 
 
 class CPURuntimeTest(unittest.TestCase):
@@ -176,3 +202,31 @@ class CPURuntimeTest(unittest.TestCase):
             torch.testing.assert_close(
                 runtime.forward(inputs)[0], model(*inputs), rtol=1e-5, atol=1e-5
             )
+
+    def test_plan_report_counts_released_constants(self):
+        class AddParameter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.p = torch.nn.Parameter(torch.randn(16))
+
+            def forward(self, x):
+                return x + self.p
+
+        linear = torch.nn.Linear(16, 8)
+        # Named constants carry a 64-byte readable tail.
+        packed_bytes = sum(
+            t.numel() * t.element_size() + 64 for t in (linear.weight, linear.bias)
+        )
+        inputs = (torch.randn(2, 16),)
+        for model, released in ((linear, packed_bytes), (AddParameter(), 0)):
+            with self.subTest(model=type(model).__name__):
+                model.eval()
+
+                def run(model=model):
+                    with self._lower(model, inputs) as runtime:
+                        return runtime.forward(inputs)[0]
+
+                actual, log = _run_capturing_stderr(run)
+                report = _plan_report(log)
+                self.assertEqual(report["released_constant_bytes"], released)
+                torch.testing.assert_close(actual, model(*inputs), rtol=1e-5, atol=1e-5)

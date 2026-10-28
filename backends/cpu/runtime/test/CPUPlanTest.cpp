@@ -273,6 +273,80 @@ TEST_F(CPUPlanTest, LastDimensionSoftmaxUsesXNNPACKForDynamicInput) {
   }
 }
 
+TEST_F(CPUPlanTest, RetainsConstantsWithRuntimeConsumersOrGraphOutputs) {
+  for (const std::string use : {"add", "gelu", "output"}) {
+    SCOPED_TRACE(use);
+    graph = {};
+    buffers.clear();
+    for (const auto* name : {"input", "weight", "bias", "linear", "out"}) {
+      graph.values.emplace_back(
+          name, ptn::ScalarType::Float, std::vector<int64_t>{1, 3});
+    }
+    graph.values[0].role = ptn::ValueRole::UserInput;
+    graph.values[1] = ptn::Value("weight", ptn::ScalarType::Float, {3, 3});
+    graph.values[1].role = ptn::ValueRole::Parameter;
+    graph.values[2] = ptn::Value("bias", ptn::ScalarType::Float, {3});
+    graph.values[2].role = ptn::ValueRole::ConstantTensor;
+    graph.input_ids = {0};
+    ptn::Node linear;
+    linear.name = "linear";
+    linear.target = "torch.ops.aten.linear.default";
+    linear.inputs = {
+        {"input", ptn::TensorArg{0}},
+        {"weight", ptn::TensorArg{1}},
+        {"bias", ptn::TensorArg{2}}};
+    linear.outputs = {{ptn::OutputValueKind::Tensor, 3}};
+    graph.nodes.push_back(std::move(linear));
+    if (use == "add") {
+      add("out", 3, 2, 4);
+      finish({4});
+    } else if (use == "gelu") {
+      graph.values[4] = ptn::Value("out", ptn::ScalarType::Float, {3});
+      gelu("out", 2, 4);
+      finish({3, 4});
+    } else {
+      finish({3, 1, 2});
+    }
+    for (auto id : {1, 2}) {
+      auto constant =
+          allocate_buffer(allocator, tensor_bytes(graph.value(id)).get());
+      ASSERT_TRUE(constant.ok());
+      buffers[id] = constant.get();
+      std::fill_n(
+          static_cast<float*>(buffers[id].data),
+          id == 1 ? 9 : 3,
+          id == 1 ? 2.0f : 3.0f);
+    }
+    CPUPlan plan(graph, buffers, configuration, execution);
+    ASSERT_EQ(plan.select(), Error::Ok);
+    ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+    EXPECT_EQ(plan.steps().size(), use == "gelu" ? 2 : 1);
+    EXPECT_FALSE(plan.can_release_constant(2));
+    EXPECT_EQ(plan.can_release_constant(1), use != "output");
+    if (plan.can_release_constant(1)) {
+      std::memset(buffers[1].data, 0, buffers[1].readable_bytes);
+      buffers[1] = {};
+    }
+    for (float input : {1.0f, -1.0f}) {
+      std::fill_n(static_cast<float*>(buffers[0].data), 3, input);
+      ASSERT_EQ(plan.execute(execution), Error::Ok);
+      const auto* result =
+          static_cast<const float*>(buffers[use == "add" ? 4 : 3].data);
+      for (size_t index = 0; index < 3; ++index) {
+        EXPECT_FLOAT_EQ(result[index], input * 6 + (use == "add" ? 6 : 3));
+        if (use == "gelu") {
+          EXPECT_NEAR(
+              static_cast<const float*>(buffers[4].data)[index], gelu(3), 1e-5);
+        }
+      }
+    }
+    buffers[2].readable_bytes = 0;
+    if (use != "output") {
+      EXPECT_EQ(plan.execute(execution), Error::InvalidArgument);
+    }
+  }
+}
+
 TEST_F(
     CPUPlanTest,
     DisconnectedBranchesRemainSeparateAndRejectNonTopologicalSchedule) {
