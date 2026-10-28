@@ -130,6 +130,55 @@ The triples list is the reproducibility contract. It should use repository- or
 bundle-relative paths where possible, so another user can unpack the same image
 bundle and run the same command without editing absolute paths.
 
+## 2:4 Weight Sparsity
+
+Add `--prune-2-4` with a quoted module-name pattern to prune selected `Conv2d`
+layers for eager FP32 evaluation, PTQ, or QAT. Repeat the argument to select
+multiple patterns.
+For the two-block model, this selects the 16 residual convolutions used in
+the sparsity experiments:
+
+```sh
+--model-class IFNetTwoBlock \
+--prune-2-4 'flownet.block[01].convblock.*.conv'
+```
+
+Within each group of four input channels, pruning retains the two weights
+with largest absolute values, independently for every output channel and
+kernel position. Selected layers must have a multiple of four input channels
+per convolution group. Unmatched patterns and unsupported layers are errors;
+unselected layers remain unchanged. The pattern above keeps the encoder,
+stems, and output heads dense.
+
+Use `--mode eager` with `--prune-2-4` to evaluate pruning without quantization.
+Reports keep the original dense FP32 reference and include a pruned FP32 copy
+under `eager_pruned` metrics whenever pruning is requested. Both copies use
+the same input frames. Comparing them measures the effect of pruning alone.
+
+PTQ calibrates the pruned weights. QAT selects masks once before preparation
+and restores masked zeros after every optimizer update. Reports also compare
+quantized outputs against the initial pruned FP32 copy using
+`ptq_vs_eager_pruned` and `qat_vs_eager_pruned` metrics.
+The QAT comparison includes training-induced weight changes. Differences
+against the dense eager reference include both pruning and quantization.
+The run report records the requested patterns, and the console lists the
+selected modules.
+
+`TwoOfFourPruner` is a helper in this example that stores fixed masks outside
+the model and zeros masked weights in place. For PyTorch's general pruning
+API, see the [pruning tutorial](https://docs.pytorch.org/tutorials/intermediate/pruning_tutorial.html)
+and [`custom_from_mask`](https://docs.pytorch.org/docs/stable/generated/torch.nn.utils.prune.custom_from_mask.html).
+That API attaches a mask and a forward hook to the module;
+[`remove`](https://docs.pytorch.org/docs/stable/generated/torch.nn.utils.prune.remove.html)
+removes the pruning reparameterization while preserving the pruned weights.
+
+The exported graph contains ordinary sparse weight constants and no runtime
+masking operations. VGF conversion can recognize supported 2:4 weight patterns;
+the speedup depends on the target and graph. Later input-channel reordering
+can break a pruning pattern, so verify sparse constant recognition in the
+converted artifact when selecting layers beyond the example above. Evaluate
+accuracy on representative data; magnitude pruning alone can reduce quality.
+
 ## Reporting Checklist
 
 When sharing accuracy or performance data, include:

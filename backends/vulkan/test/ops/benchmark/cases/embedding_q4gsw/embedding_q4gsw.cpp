@@ -59,10 +59,14 @@ TestCase create_test_case(const EmbeddingConfig& config) {
   weight.set_constant(true);
   test_case.add_input_spec(weight);
 
-  // Weight scales: [vocab_size, groups_per_row]
+  // Weight scales: [vocab_size] for per-row, otherwise
+  // [vocab_size, groups_per_row].
   int64_t groups_per_row = config.embed_dim / config.group_size;
+  std::vector<int64_t> scales_shape = config.per_row_scales_1d
+      ? std::vector<int64_t>{config.vocab_size}
+      : std::vector<int64_t>{config.vocab_size, groups_per_row};
   ValueSpec weight_scales(
-      {config.vocab_size, groups_per_row},
+      scales_shape,
       config.scales_dtype,
       utils::kBuffer,
       utils::kWidthPacked,
@@ -124,7 +128,8 @@ void embedding_4bit_reference(TestCase& tc) {
 
   int64_t packed_dim = weight_spec.sizes[1];
   int64_t embed_dim = packed_dim * 2;
-  int64_t groups_per_row = scales_spec.sizes[1];
+  int64_t groups_per_row =
+      scales_spec.sizes.size() == 1 ? 1 : scales_spec.sizes[1];
 
   int64_t num_indices = 1;
   for (auto s : indices_spec.sizes) {

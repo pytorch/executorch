@@ -781,6 +781,25 @@ class TestLinear(unittest.TestCase):
             uses_bias=True,
         )
 
+    def test_fp32_linear_view_weight(self):
+        class ViewWeightLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.randn(3, 8, 8)[1])
+
+            def forward(self, x):
+                return torch.nn.functional.linear(x, self.weight)
+
+        (
+            Tester(ViewWeightLinear(), (torch.randn(2, 8),))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     def test_fp32_linear_fused_relu(self):
         for use_bias in (True, False):
             for num_batch_dims in range(1, 3):
@@ -897,6 +916,40 @@ class TestLinear(unittest.TestCase):
                 self._test_groupwise_dq_linear(
                     lin_mod, inputs, group_size=30, use_bias=False, atol=1e-2
                 )
+
+    @unittest.skipIf(not torchao_installed, "Requires TorchAO")
+    def test_qd8_linear_transposed_scale(self):
+        mod = torch.nn.Linear(64, 4, bias=False)
+        with torch.no_grad():
+            # Rows with very different scales make a misordered scale obvious.
+            mod.weight.mul_(torch.arange(1.0, 5.0).unsqueeze(1))
+        quantize_(
+            mod,
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=torch.int4, weight_granularity=PerGroup(32)
+            ),
+        )
+        unwrap_tensor_subclass(mod)
+        # XNNPACK stores groupwise scales as bf16, so round them for an exact comparison.
+        scale = mod.weight.scale.to(torch.bfloat16).float()
+        mod.weight.scale = scale.t().contiguous().t()
+        (
+            Tester(mod, (torch.randn(2, 64),))
+            .export()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    [
+                        XnnpackPartitioner(
+                            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT
+                        )
+                    ]
+                )
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
 
     def test_qd8_per_channel_linear_parallel(self):
         in_size = 2

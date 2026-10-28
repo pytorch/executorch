@@ -71,6 +71,7 @@ class LoweredBackendModule(torch.nn.Module):
     _scratch_specs: List[
         DelegateScratchSpec
     ]  # Scratch buffers the backend needs at execute() time
+    _share_handle_across_calls: bool  # Whether all calls may share one handle
     meta: Optional[Dict[str, Any]]  # Metadata for the lowered module
 
     def __init__(
@@ -81,6 +82,7 @@ class LoweredBackendModule(torch.nn.Module):
         compile_specs: List[CompileSpec],
         named_data_store_output: Optional[NamedDataStoreOutput] = None,
         scratch_specs: Optional[List[DelegateScratchSpec]] = None,
+        share_handle_across_calls: bool = False,
     ) -> None:
         super().__init__()
         self._original_exported_program = edge_program
@@ -89,6 +91,7 @@ class LoweredBackendModule(torch.nn.Module):
         self._compile_specs = compile_specs
         self._named_data_store_output = named_data_store_output
         self._scratch_specs = scratch_specs or []
+        self._share_handle_across_calls = share_handle_across_calls
         self.meta = None
 
     # pyre-ignore
@@ -118,6 +121,7 @@ class LoweredBackendModule(torch.nn.Module):
             compile_specs=copy.deepcopy(self._compile_specs, memo),
             named_data_store_output=self._named_data_store_output,
             scratch_specs=copy.deepcopy(self._scratch_specs, memo),
+            share_handle_across_calls=self._share_handle_across_calls,
         )
         res.meta = copy.copy(getattr(self, "meta", {}))
         return res
@@ -163,6 +167,13 @@ class LoweredBackendModule(torch.nn.Module):
         Returns the scratch buffers the backend asked for in preprocess
         """
         return self._scratch_specs
+
+    @property
+    def share_handle_across_calls(self) -> bool:
+        """
+        Returns whether every call of this module in a method may share one delegate handle
+        """
+        return self._share_handle_across_calls
 
     # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
     def buffer(
