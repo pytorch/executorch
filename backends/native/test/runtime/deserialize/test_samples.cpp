@@ -6,6 +6,8 @@
 
 #include <executorch/backends/native/runtime/deserialize/Samples.h>
 
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
+
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -52,6 +54,19 @@ const std::string kTwoCallData =
 
 SampleSet read(const std::vector<uint8_t>& archive) {
   return read_sample_set(ZipReader::open(archive), "golden");
+}
+
+void expect_error(
+    const std::vector<uint8_t>& archive,
+    const std::string& set,
+    const std::string& message) {
+  try {
+    read_sample_set(ZipReader::open(archive), set);
+    ADD_FAILURE() << "expected an exception";
+  } catch (const std::runtime_error& error) {
+    EXPECT_NE(std::string(error.what()).find(message), std::string::npos)
+        << error.what();
+  }
 }
 
 // cppcheck-suppress-begin syntaxError
@@ -133,6 +148,10 @@ TEST(SamplesTest, RejectsMalformedSets) {
        "samples[0] must be an object with a non-empty 'calls' list"},
       {R"({"version":"1.0","samples":[{"in":["samples[0].calls[0].in[0]"]}]})",
        "samples[0] must be an object with a non-empty 'calls' list"},
+      {R"({"version":"1.0","samples":[{"calls":[1]}]})",
+       "samples[0].calls[0] must be an object with an 'in' list"},
+      {R"({"version":"1.0","samples":[{"tol":[1],"calls":[{"method":"forward","in":["samples[0].calls[0].in[0]"]}]}]})",
+       "tol must be [atol, rtol]"},
       {R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":["samples[0].in[0]"]}]}]})",
        "key samples[0].in[0] must be samples[0].calls[0].in[0]"},
       {R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":["samples[0].calls[0].in[0]",1]}]}]})",
@@ -182,6 +201,56 @@ TEST(SamplesTest, RejectsMalformedSets) {
           << error.what();
     }
   }
+}
+
+TEST(SamplesTest, RejectsAbsentOrMisnamedSets) {
+  const std::vector<uint8_t> index_only = make_zip(
+      {{"program.ptg", {}},
+       {"samples/golden/index.json", bytes_of(R"({"version":"1.0"})")}});
+
+  expect_error(index_only, "golden", "missing index.json or data.safetensors");
+  expect_error(index_only, "other", "missing index.json or data.safetensors");
+  expect_error(index_only, "gol/den", "must match [A-Za-z0-9_-]+");
+}
+
+TEST(SamplesTest, ChecksVersionBeforeReadingData) {
+  const std::vector<uint8_t> archive = make_zip(
+      {{"program.ptg", {}},
+       {"samples/golden/index.json", bytes_of(R"({"version":"2.0"})")},
+       {"samples/golden/data.safetensors", bytes_of("not safetensors")}});
+
+  EXPECT_THROW(
+      read_sample_set(ZipReader::open(archive), "golden"),
+      UnsupportedVersionError);
+}
+
+TEST(SamplesTest, PrefixesDataErrorsWithTheSet) {
+  const std::string index =
+      R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":["samples[0].calls[0].in[0]"]}]}]})";
+
+  expect_error(
+      make_set(
+          index,
+          R"({"samples[0].calls[0].in[0]":{"dtype":"C64","shape":[1],"data_offsets":[0,8]}})",
+          std::string(8, '\0')),
+      "golden",
+      "samples: samples/golden/: safetensors:");
+}
+
+TEST(SamplesTest, NewerMinorMayLeaveTensorsUnreferenced) {
+  const std::string header =
+      R"({"samples[0].calls[0].in[0]":{"dtype":"U8","shape":[1],"data_offsets":[0,1]},)"
+      R"("samples[0].calls[0].future":{"dtype":"U8","shape":[1],"data_offsets":[1,2]}})";
+  const auto index = [](const std::string& version) {
+    return R"({"version":")" + version +
+        R"(","samples":[{"calls":[{"method":"forward","in":["samples[0].calls[0].in[0]"],"future":"samples[0].calls[0].future"}]}]})";
+  };
+
+  EXPECT_EQ(read(make_set(index("1.1"), header, "ab")).samples.size(), 1);
+  expect_error(
+      make_set(index("1.0"), header, "ab"),
+      "golden",
+      "unreferenced tensor samples[0].calls[0].future");
 }
 // cppcheck-suppress-end syntaxError
 
