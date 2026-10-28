@@ -25,6 +25,8 @@ If you are already familiar with this delegate, you may want to jump directly to
 
 This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on Arm&reg; Ethos&trade;-U targets. It is based on `ethos_u_minimal_example.ipynb`, provided in Arm’s examples folder.
 
+This should not be here.
+
 ## Prerequisites
 
 ### Hardware
