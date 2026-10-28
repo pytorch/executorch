@@ -18,6 +18,24 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def selected_rows(response, directory, count):
+    rows = {}
+    for part in response["logits"]:
+        path = Path(part["file"])
+        assert path.resolve().parent == directory.resolve()
+        row_count, vocab = part["shape"]
+        indices = part["selected_indices"]
+        assert row_count == len(indices)
+        values = array("f")
+        values.frombytes(path.read_bytes())
+        assert len(values) == row_count * vocab
+        for row, index in enumerate(indices):
+            assert 0 <= index < count and index not in rows
+            rows[index] = values[row * vocab:(row + 1) * vocab]
+    assert set(rows) == set(range(count)), "Missing selected logits"
+    return rows
+
+
 def main(config, output):
     cfg = json.loads(config.read_text())
     assert not output.exists(), "Use a new directory and preserve previous results"
@@ -53,6 +71,7 @@ def main(config, output):
         ).strip(), "Existing GPU work must remain untouched"
         for name, seed_sizes, size in cases:
             selected = sorted({0, min(63, size - 1), min(511, size - 1), size - 1})
+            outputs = {}
             for arm in ("baseline", "ring"):
                 (output / "progress.json").write_text(json.dumps({
                     "status": "diagnosing-mini", "case": name, "arm": arm,
@@ -89,11 +108,13 @@ def main(config, output):
                             send({"op": "step", "tokens": [7 + i % 1000 for i in range(seed_size)],
                                   "seq_ids": [sid] * seed_size, "select": [seed_size - 1],
                                   "tag": "seed-" + str(index)})
-                        send({"op": "step", "tokens": [7 + i % 1000 for i in range(size)],
-                              "seq_ids": [sid] * size, "select": selected,
-                              "save_logits": True, "tag": "prefill"})
-                        send({"op": "step", "tokens": [111], "seq_ids": [sid],
-                              "select": [0], "save_logits": True, "tag": "decode"})
+                        prefill = send({"op": "step", "tokens": [7 + i % 1000 for i in range(size)],
+                                        "seq_ids": [sid] * size, "select": selected,
+                                        "save_logits": True, "tag": "prefill"})
+                        decode = send({"op": "step", "tokens": [111], "seq_ids": [sid],
+                                       "select": [0], "save_logits": True, "tag": "decode"})
+                        outputs[arm] = {"prefill": selected_rows(prefill, directory, len(selected)),
+                                        "decode": selected_rows(decode, directory, 1)}
                         proc.stdin.close()
                         assert proc.wait(timeout=120) == 0
                     finally:
@@ -103,12 +124,8 @@ def main(config, output):
             comparisons = []
             for tag, positions in (("prefill", selected), ("decode", [0])):
                 for index, position in enumerate(positions):
-                    filename = f"{tag}-{index}.f32"
-                    left_path = output / name / "baseline" / filename
-                    right_path = output / name / "ring" / filename
-                    left, right = array("f"), array("f")
-                    left.frombytes(left_path.read_bytes())
-                    right.frombytes(right_path.read_bytes())
+                    left = outputs["baseline"][tag][index]
+                    right = outputs["ring"][tag][index]
                     assert len(left) == len(right) and left
                     assert all(math.isfinite(value) for value in left)
                     assert all(math.isfinite(value) for value in right)
@@ -119,11 +136,12 @@ def main(config, output):
                     comparisons.append({
                         "tag": tag, "selected_position": position, "values": len(left),
                         "normalized_RMS": nrms, "max_abs": absolute,
-                        "byte_exact": left_path.read_bytes() == right_path.read_bytes(),
+                        "byte_exact": left.tobytes() == right.tobytes(),
                         "baseline_argmax": max(range(len(left)), key=left.__getitem__),
                         "ring_argmax": max(range(len(right)), key=right.__getitem__),
                         "original_threshold_pass": nrms <= 0.005 and absolute <= 0.5,
-                        "baseline_SHA256": digest(left_path), "ring_SHA256": digest(right_path),
+                        "baseline_SHA256": hashlib.sha256(left.tobytes()).hexdigest(),
+                        "ring_SHA256": hashlib.sha256(right.tobytes()).hexdigest(),
                     })
             completed.append({"case": name, "seed_steps": seed_sizes,
                               "history": sum(seed_sizes), "step_tokens": size,
