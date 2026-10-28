@@ -80,9 +80,10 @@ def define_common_targets():
             "//executorch/runtime/executor/...",
             "//executorch/backends/native/extension/module/...",
             # Tests have a set up which uses raw flatbuffer.
-            # TODO will refactor these setup steps into 
+            # TODO will refactor these setup steps into
             # testing utils in runtime/executor/... path
             "//executorch/backends/xnnpack/test/...",
+            "//executorch/runtime/backend/test/...",
         ],
         exported_headers = {
             OUTPUT_PROGRAM_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_PROGRAM_HEADER),

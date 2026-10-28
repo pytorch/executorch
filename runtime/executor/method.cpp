@@ -1019,6 +1019,7 @@ Error Method::init(
     // makes it safe for errors to return without updating any state.
     n_delegate_ = 0;
 
+    const auto method_meta = this->method_meta();
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
 
@@ -1035,7 +1036,8 @@ Error Method::init(
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
           /*named_data_map=*/named_data_map,
-          /*runtime_specs=*/delegate_runtime_specs);
+          /*runtime_specs=*/delegate_runtime_specs,
+          /*method_meta=*/&method_meta);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
