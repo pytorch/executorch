@@ -5,10 +5,23 @@ oncall("executorch")
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "hf_utils",
+    srcs = ["hf_utils.py"],
+    visibility = ["//executorch/backends/native/examples/audio/..."],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "export_hf_llm_lib",
     srcs = ["export_hf_llm.py"],
     deps = [
         ":gguf_hf",
+        ":hf_utils",
         "//caffe2:torch",
         "//executorch/backends/native:lib",
         "//executorch/exir:lib",
