@@ -38,7 +38,6 @@ def main():
 
     try:
         assert shutil.disk_usage(base).free >= 3 * 2**30
-        assert shutil.disk_usage("/dev/shm").free >= 8 * 2**30
         state("preparing-isolated-input-RMS-control")
         for name in ["reference_generated_reduction_layout.py", "reuse_exact_ptd_export.py"]:
             (job / name).write_bytes((template / name).read_bytes())
@@ -67,7 +66,7 @@ def main():
         (job / "export_mini81.py").write_text(exporter)
         argv = json.loads((template / "export-command.json").read_text())
         argv = [arg.replace(str(template), str(job)) for arg in argv]
-        cache = Path("/dev/shm") / job.name / "export-cache"
+        cache = job / "export-cache"
         assert not cache.exists()
         cache.mkdir(parents=True)
         argv[argv.index("--cache-root") + 1] = str(cache)
