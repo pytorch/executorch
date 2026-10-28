@@ -30,6 +30,8 @@ runtime.cxx_library(
         "//executorch/backends/native/examples/runner_utils:runner_utils",
         "//executorch/backends/native/runtime:runtime",
         "//executorch/backends/native/runtime/deserialize:package",
+        "//executorch/backends/native/runtime/deserialize:samples",
+        "//executorch/backends/native/runtime/deserialize:zip_reader",
         "//executorch/backends/native/runtime/graph:scalar_type",
         "//executorch/examples/models/llama/tokenizer:tiktoken",
     ],
