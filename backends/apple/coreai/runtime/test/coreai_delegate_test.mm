@@ -495,6 +495,60 @@ TEST_F(CoreAIDelegateTest, LaterOutputResizeFailureLeavesResultBytesUntouched) {
   }
 }
 
+TEST_F(CoreAIDelegateTest, ConflictingSharedOutputShapesDoNotCopyBytes) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    const struct {
+      const char* name;
+      TensorImpl::SizesType shape[2];
+    } cases[] = {
+        {"different byte counts", {2, 2}},
+        {"equal byte counts", {2, 1}},
+    };
+    for (const auto& row : cases) {
+      SCOPED_TRACE(row.name);
+      for (bool separate_value : {false, true}) {
+        SCOPED_TRACE(separate_value);
+        RangeTensors<float> first, second;
+        const TensorImpl::SizesType first_shape[] = {1, 2};
+        ASSERT_EQ(resize_tensor(first.in.toTensor(), first_shape), Error::Ok);
+        ASSERT_EQ(resize_tensor(second.in.toTensor(), row.shape), Error::Ok);
+        EValue alias{Tensor(&first.output_impl)};
+        EValue* args[] = {
+            &first.in,
+            &second.in,
+            &first.out,
+            separate_value ? &alias : &first.out};
+        EXPECT_EQ(fixture.execute({args, 4}), Error::InvalidArgument);
+        EXPECT_EQ(bridge.state().output_copies.load(), 0);
+        for (float value : first.output) {
+          EXPECT_EQ(value, 99);
+        }
+      }
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, MatchingSharedOutputShapesPreserveCopyOrder) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    second.input[0] = 11;
+    second.input[1] = 13;
+    EValue alias{Tensor(&first.output_impl)};
+    EValue* args[] = {&first.in, &second.in, &first.out, &alias};
+    ASSERT_EQ(fixture.execute({args, 4}), Error::Ok);
+    EXPECT_EQ(bridge.state().output_copies.load(), 2);
+    EXPECT_EQ(first.out.toTensor().size(0), 2);
+    EXPECT_EQ(first.output[0], 11);
+    EXPECT_EQ(first.output[1], 13);
+  }
+}
+
 TEST_F(CoreAIDelegateTest, WrongOutputCountDoesNotWriteCallerStorage) {
   @autoreleasepool {
     bridge.state().multiple_io = true;

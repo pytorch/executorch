@@ -229,6 +229,18 @@ Error copy_outputs(
     if (resized != Error::Ok) {
       return resized == Error::NotSupported ? Error::InvalidArgument : resized;
     }
+  }
+  // A later resize can change an earlier output through shared metadata.
+  for (size_t i = 0; i < output_count; ++i) {
+    const auto& tensor = args[input_count + i]->toTensor();
+    ET_CHECK_OR_RETURN_ERROR(
+        std::equal(
+            shapes[i].begin(),
+            shapes[i].end(),
+            tensor.sizes().begin(),
+            tensor.sizes().end()),
+        InvalidArgument,
+        "Core AI output shape changed during resize");
     auto bytes = tensor_bytes(tensor);
     if (!bytes.ok()) {
       return bytes.error();
