@@ -13,6 +13,7 @@ from executorch.backends.qualcomm._passes import (
     InsertIOQDQ,
     InsertReshapeForReduceOps,
     LiftConstantScalarOperands,
+    RecomposeRmsNorm,
     Remove0DTensor,
     RemoveRedundancy,
 )
@@ -473,6 +474,33 @@ class TestPasses(unittest.TestCase):
                     )
                 )
                 self.assertTrue(torch.equal(ep.module()(x), model(x)))
+
+    def test_recompose_rms_norm_only_takes_last_dim_with_weight(self):
+        class ScaledNorm(torch.nn.Module):
+            def __init__(self, dim, scale, keepdim=True):
+                super().__init__()
+                self.dim = dim
+                self.keepdim = keepdim
+                self.register_buffer("scale", scale)
+
+            def forward(self, x):
+                ms = x.pow(2).mean(self.dim, keepdim=self.keepdim)
+                return x * torch.rsqrt(ms + 1e-6) * self.scale
+
+        x = torch.randn(32, 32)
+        # A 0-d scale is not a weight, and a mean over dim 0, over all dims, or
+        # without keepdim is not a last-dim RMSNorm.
+        for model in (
+            ScaledNorm(-1, torch.tensor(2.0)),
+            ScaledNorm(0, torch.randn(32)),
+            ScaledNorm(None, torch.randn(32)),
+            ScaledNorm(-1, torch.randn(32), keepdim=False),
+        ):
+            with self.subTest(dim=model.dim, keepdim=model.keepdim):
+                ep = to_edge(torch.export.export(model, (x,), strict=True))
+                ep = ep.exported_program()
+                RecomposeRmsNorm()(ep.graph_module)
+                torch.testing.assert_close(ep.module()(x), model(x))
 
     def test_mha_to_sha(self):
         from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
