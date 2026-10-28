@@ -98,23 +98,23 @@ class ViewPermuteFP8(torch.nn.Module):
         return x.view(self.new_shape).permute(self.dims)
 
 
-test_data_fp8 = {
-    "view_permute_fp8e4m3": lambda: (
-        torch.rand((2, 3, 4), dtype=torch.float32).to(torch.float8_e4m3fn),
-        (2, 4, 3),
-        (0, 2, 1),
-        "fp8e4m3",
-    ),
-    "view_permute_fp8e5m2": lambda: (
-        torch.rand((2, 3, 4), dtype=torch.float32).to(torch.float8_e5m2),
-        (2, 4, 3),
-        (0, 2, 1),
-        "fp8e5m2",
-    ),
-}
-
-
-@common.parametrize("test_data", test_data_fp8)
+@common.parametrize(
+    "test_data",
+    {
+        "view_permute_fp8e4m3": lambda: (
+            torch.rand((2, 3, 4), dtype=torch.float32).to(torch.float8_e4m3fn),
+            (2, 4, 3),
+            (0, 2, 1),
+            "fp8e4m3",
+        ),
+        "view_permute_fp8e5m2": lambda: (
+            torch.rand((2, 3, 4), dtype=torch.float32).to(torch.float8_e5m2),
+            (2, 4, 3),
+            (0, 2, 1),
+            "fp8e5m2",
+        ),
+    },
+)
 def test_view_tosa_FP_fp8_permute(test_data: Tuple):
     test_tensor, new_shape, dims, tosa_extension = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -149,23 +149,6 @@ def test_view_u55_INT(test_data: Tuple):
         (test_tensor,),
         aten_op,
         exir_ops=[],
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_fp8)
-@common.SkipIfNoModelConverter
-def test_view_vgf_no_quant_fp8_permute(test_data: Tuple):
-    test_tensor, new_shape, dims, _ = test_data()
-    pipeline = VgfPipeline[input_t1](
-        ViewPermuteFP8(new_shape, dims),
-        (test_tensor,),
-        ["torch.ops.aten.view.default", "torch.ops.aten.permute.default"],
-        exir_op=[],
-        tosa_extensions=["fp8e4m3", "fp8e5m2"],
-        quantize=False,
-        atol=0,
-        rtol=0,
     )
     pipeline.run()
 

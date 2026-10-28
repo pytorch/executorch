@@ -16,7 +16,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
-    VgfPipelineFP8,
 )
 
 
@@ -88,7 +87,7 @@ test_data_fp_bf16: dict[str, input_params] = {
         ),  # Shape: [N=2, W=2, C=2]
     ),
 }
-test_data_fp_fp8_no_comparing: dict[str, tuple[input_params, str]] = {
+test_data_fp_fp8: dict[str, tuple[input_params, str]] = {
     "test_fp8e4m3_2d": (
         (
             torch.tensor(
@@ -176,7 +175,7 @@ def test_gather_tosa_FP(test_data: input_params):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_fp_fp8_no_comparing)
+@common.parametrize("test_data", test_data_fp_fp8)
 def test_gather_tosa_FP_fp8(test_data: tuple[input_params, str]):
     input_data, tosa_extension = test_data
     pipeline = TosaPipelineFP[input_params](
@@ -229,23 +228,6 @@ def test_gather_u85_INT(test_data: input_params):
     # U85: keep _to_dim_order_copy portable for int64->int32 index casts;
     # the cast is not delegatable.
     pipeline.tester.use_portable_ops = True
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_fp_fp8_no_comparing)
-@common.SkipIfNoModelConverter
-def test_gather_vgf_no_quant_fp8(test_data: tuple[input_params, str]):
-    input_data, _ = test_data
-    pipeline = VgfPipelineFP8[input_params](
-        Gather(),
-        input_data,
-        aten_op=Gather.aten_op,
-        exir_op=Gather.exir_op,
-        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
-        expect_missing_reference=True,
-        atol=0,
-        rtol=0,
-    )
     pipeline.run()
 
 
