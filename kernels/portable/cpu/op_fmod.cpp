@@ -59,7 +59,7 @@ Tensor& fmod_Tensor_out(
         utils::SupportedTensorDtypes::REALHBF16>(
         [&div_by_zero_error](
             const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          if constexpr (std::is_integral_v<CTYPE_COMPUTE>) {
+          if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value) {
             if (val_b == 0) {
               div_by_zero_error = true;
               return static_cast<CTYPE_COMPUTE>(0);
