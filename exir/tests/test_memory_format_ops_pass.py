@@ -41,7 +41,7 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 
-from torch.export import export
+from torch.export import Dim, export
 from torch.testing import FileCheck
 
 
@@ -93,6 +93,39 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                 _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
             ),
         )
+
+    def test_op_empty_dynamic_size(self) -> None:
+        class EmptyCopy(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                out = torch.empty(x.shape[0], 3)
+                out.copy_(x)
+                return out
+
+        ep = export(
+            EmptyCopy(),
+            (torch.randn(2, 3),),
+            dynamic_shapes=({0: Dim("batch", max=8)},),
+        )
+        program = to_edge(ep).to_executorch()
+        module = _load_for_executorch_from_buffer(program.buffer)
+        for batch in (2, 5):
+            x = torch.randn(batch, 3)
+            self.assertTrue(torch.equal(module.run_method("forward", (x,))[0], x))
+
+    def test_op_empty_data_dependent_size(self) -> None:
+        class EmptyCopy(torch.nn.Module):
+            def forward(self, n: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                size = n.item()
+                torch._check(size >= 2)
+                torch._check(size <= 8)
+                return torch.empty(size, 3).copy_(y)
+
+        y = torch.randn(1, 3)
+        program = to_edge(export(EmptyCopy(), (torch.tensor(5), y))).to_executorch()
+        module = _load_for_executorch_from_buffer(program.buffer)
+        for size in (2, 5):
+            output = module.run_method("forward", (torch.tensor(size), y))[0]
+            self.assertTrue(torch.equal(output, y.expand(size, 3)))
 
     def test_op_clone_replacement_contiguous(self) -> None:
         model = SimpleCloneContiguousModule()
