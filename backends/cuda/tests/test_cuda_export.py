@@ -266,6 +266,7 @@ class TestCudaExport(unittest.TestCase):
         module: torch.nn.Module,
         inputs: Tuple[torch.Tensor, ...],
         compile_specs: list[CompileSpec] | None = None,
+        strict: bool = True,
     ) -> None:
         """Helper method to export a module to CUDA backend using to_edge_transform_and_lower.
 
@@ -274,9 +275,10 @@ class TestCudaExport(unittest.TestCase):
             inputs: The example inputs for the module
             compile_specs: Optional list of compile specs. If not provided, defaults to
                           only the method name compile spec for "forward"
+            strict: Whether to export in strict mode
         """
         # Export the model
-        exported_program = export(module, inputs, strict=True)
+        exported_program = export(module, inputs, strict=strict)
 
         # Create partitioner with compile specs
         if compile_specs is None:
@@ -365,6 +367,19 @@ class TestCudaExport(unittest.TestCase):
                     )
                 )
                 edge_program_manager.to_executorch()
+
+    def test_check_tensor_all(self):
+        """Test CUDA export of a tensor-wide runtime check."""
+
+        class CheckModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                torch._check_tensor_all(x > -1e9)
+                return x * 2
+
+        # A strict export does not keep the check.
+        self._export_to_cuda_with_lower(
+            CheckModule().eval(), (torch.randn(4, 8),), strict=False
+        )
 
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""

@@ -846,6 +846,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         table = {
             torch.ops.aten.conv1d.default: conv1d_to_conv2d,
             torch.ops.aten.conv_transpose1d.default: _conv_transpose_as_conv,
+            # torch._check_tensor_all exports to this op; Inductor has no lowering
+            # for it and the shim no fallback kernel.
+            torch.ops.aten._is_all_true.default: torch.ops.aten.all.default,
         }
         # Inductor disables its transposed conv2d Triton template only on CUDA
         # (https://github.com/pytorch/pytorch/issues/187081).
