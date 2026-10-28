@@ -1,0 +1,11 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+- func: esp_nn::quantized_mul_int8.out(Tensor input1, Tensor input2, int input1_offset, int input2_offset, int output_offset, int output_multiplier, int output_shift, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: espressif::quantized_mul_int8_out
