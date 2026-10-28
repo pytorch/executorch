@@ -13,6 +13,7 @@ from executorch.backends.qualcomm._passes import (
     InsertIOQDQ,
     InsertReshapeForReduceOps,
     LiftConstantScalarOperands,
+    Remove0DTensor,
     RemoveRedundancy,
 )
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
@@ -431,6 +432,47 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(
             torch.equal(*out, ref), f"Output mismatch: got {out}, expected {ref}"
         )
+
+    def test_remove_0d_tensor_keeps_select_it_cannot_replace(self):
+        class TableLookup(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.arange(4.0))
+
+            def forward(self, x):
+                return x * self.table[2]
+
+        class StackSelected(torch.nn.Module):
+            def forward(self, x):
+                return torch.stack([x[0], x[0]])
+
+        class CastSelected(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("scale", torch.tensor([3]))
+
+            def forward(self, x):
+                return x * self.scale[0]
+
+        # A longer input is not the selected element, stacking the one-element
+        # input instead of the 0-d element changes the shape, and a cast keeps
+        # the 0-d layout in its arguments.
+        for model, x in (
+            (TableLookup(), torch.randn(4)),
+            (StackSelected(), torch.randn(1)),
+            (CastSelected(), torch.randn(4)),
+        ):
+            with self.subTest(model=type(model).__name__):
+                ep = to_edge(torch.export.export(model, (x,), strict=True))
+                ep = ep.exported_program()
+                Remove0DTensor()(ep.graph_module)
+                self.assertTrue(
+                    any(
+                        n.target == exir_ops.edge.aten.select_copy.int
+                        for n in ep.graph.nodes
+                    )
+                )
+                self.assertTrue(torch.equal(ep.module()(x), model(x)))
 
     def test_mha_to_sha(self):
         from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
