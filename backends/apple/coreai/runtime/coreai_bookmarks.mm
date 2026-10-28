@@ -102,32 +102,14 @@ Result<int> open_root(NSString* root) {
 
 // Returns -1 when the child does not exist and create is false.
 Result<int> open_child(int root_fd, NSString* name, bool create) {
-  bool created = false;
-  if (create) {
-    const int made = retry_eintr(
-        [&] { return mkdirat(root_fd, name.fileSystemRepresentation, 0700); });
-    ET_CHECK_OR_RETURN_ERROR(
-        made == 0 || errno == EEXIST,
-        AccessFailed,
-        "Cannot create Core AI assets directory");
-    created = made == 0;
-  }
-  const int fd = retry_eintr([&] {
-    return openat(
-        root_fd,
-        name.fileSystemRepresentation,
-        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-  });
-  if (fd < 0 && errno == ENOENT && !create)
-    return -1;
-  ET_CHECK_OR_RETURN_ERROR(
-      fd >= 0, AccessFailed, "Invalid Core AI assets directory");
-  if (created) {
-    FileDescriptor child(fd);
+  auto opened = open_storage_directory(root_fd, name, create);
+  if (!opened.ok())
+    return opened.error();
+  FileDescriptor child(opened.get().fd);
+  if (opened.get().created) {
     ET_CHECK_OK_OR_RETURN_ERROR(sync_storage_directory(root_fd));
-    return child.release();
   }
-  return fd;
+  return child.release();
 }
 
 Result<bool> entry_exists(int root_fd, NSString* key) {

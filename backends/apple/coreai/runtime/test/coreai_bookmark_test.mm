@@ -284,6 +284,64 @@ TEST_F(CoreAIBookmarkRawTest, PreparesSharedStagingParentOnDemand) {
       fileExistsAtPath:[expected stringByAppendingPathComponent:key]]);
 }
 
+TEST_F(CoreAIBookmarkRawTest, CreatesDirectoriesWithDefaultPermissions) {
+  NSURL* reference = [root.url URLByAppendingPathComponent:@"reference"];
+  ASSERT_EQ(mkdir(reference.fileSystemRepresentation, 0777), 0);
+  struct stat expected;
+  ASSERT_EQ(stat(reference.fileSystemRepresentation, &expected), 0);
+  ASSERT_TRUE(prepare_bookmark_staging(*locked).ok());
+  for (NSString* name in @[ @"locks", @"bookmarks", @"staging" ]) {
+    NSURL* directory = [root.url URLByAppendingPathComponent:name];
+    struct stat actual;
+    ASSERT_EQ(stat(directory.fileSystemRepresentation, &actual), 0);
+    EXPECT_EQ(actual.st_mode & 0777, expected.st_mode & 0777);
+  }
+}
+
+TEST_F(CoreAIBookmarkRawTest, ReusesDirectoriesWithoutCreation) {
+  ASSERT_TRUE(prepare_bookmark_staging(*locked).ok());
+  ASSERT_EQ(
+      write_bookmark(
+          *locked, [@"bookmark" dataUsingEncoding:NSUTF8StringEncoding]),
+      Error::Ok);
+  locked.reset();
+  StorageFaultScope fault(StorageOperation::BeforeCreateDirectory);
+  for (bool create : {true, false}) {
+    auto reused = lock_bookmark(root.url.path, key, create);
+    ASSERT_TRUE(reused.ok());
+    ASSERT_NE(reused.get(), nullptr);
+    EXPECT_TRUE(prepare_bookmark_staging(*reused.get()).ok());
+  }
+  EXPECT_EQ(fault.matches, 0);
+}
+
+TEST_F(CoreAIBookmarkRawTest, RecreatesMissingStagingParent) {
+  auto staging = prepare_bookmark_staging(*locked);
+  ASSERT_TRUE(staging.ok());
+  ASSERT_EQ(rmdir(staging.get().fileSystemRepresentation), 0);
+  StorageFaultScope fault(StorageOperation::BeforeCreateDirectory);
+  EXPECT_EQ(prepare_bookmark_staging(*locked).error(), Error::AccessFailed);
+  EXPECT_EQ(fault.hits, 1);
+  auto recreated = prepare_bookmark_staging(*locked);
+  ASSERT_TRUE(recreated.ok());
+  EXPECT_TRUE([recreated.get() isEqual:staging.get()]);
+}
+
+TEST_F(CoreAIBookmarkRawTest, AcceptsConcurrentStagingCreation) {
+  NSURL* staging = [root.url URLByAppendingPathComponent:@"staging"];
+  StorageFaultScope fault(StorageOperation::BeforeCreateDirectory);
+  fault.armed = false;
+  __block int creations = 0;
+  fault.observe = ^(StorageOperation operation) {
+    if (operation == StorageOperation::BeforeCreateDirectory) {
+      ++creations;
+      EXPECT_EQ(mkdir(staging.fileSystemRepresentation, 0700), 0);
+    }
+  };
+  EXPECT_TRUE(prepare_bookmark_staging(*locked).ok());
+  EXPECT_EQ(creations, 1);
+}
+
 TEST_F(CoreAIBookmarkRawTest, RejectsSymlinkedStagingParent) {
   TestDirectory target;
   ASSERT_NE(target.url, nil);
