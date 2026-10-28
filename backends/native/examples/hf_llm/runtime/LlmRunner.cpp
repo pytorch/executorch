@@ -15,6 +15,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -83,6 +84,174 @@ size_t kv_cache_length(const ptn::Method& method) {
     }
   }
   return length;
+}
+
+// Chooses the token after a logits output whose last dimension is the
+// vocabulary.
+using NextToken = std::function<
+    uint64_t(const std::vector<float>& logits, size_t vocabulary_size)>;
+
+struct Generation {
+  double prompt_ms = 0.0;
+  double decode_ms = 0.0;
+  size_t decode_steps = 0;
+};
+
+// Prefills `prompt_tokens` in one call, then decodes one token per call until
+// `limit` tokens or an EOS, streaming the text to stdout.
+Generation generate(
+    ptn::EngineExecutable& executable,
+    size_t logits_output,
+    bool per_token_positions,
+    ::tokenizers::Tiktoken& tokenizer,
+    const std::vector<uint64_t>& prompt_tokens,
+    size_t limit,
+    const std::unordered_set<uint64_t>& eos_ids,
+    const NextToken& next_token_of) {
+  std::vector<float> logits;
+
+  auto set_positions = [&](int64_t start, size_t count) {
+    const size_t n = per_token_positions ? count : 1;
+    if (per_token_positions) {
+      executable.resize_input(1, {static_cast<int64_t>(n)});
+    }
+    std::vector<int64_t> values(n);
+    std::iota(values.begin(), values.end(), start);
+    if (executable.input_dtype(1) == ptn::kInt) {
+      const std::vector<int32_t> narrowed(values.begin(), values.end());
+      executable.set_input(1, narrowed.data(), narrowed.size(), ptn::kInt);
+    } else {
+      executable.set_input(1, values.data(), values.size(), ptn::kLong);
+    }
+  };
+  auto set_tokens = [&](const std::vector<uint64_t>& tokens) {
+    executable.resize_input(0, {1, static_cast<int64_t>(tokens.size())});
+    if (executable.input_dtype(0) == ptn::kInt) {
+      std::vector<int32_t> narrowed;
+      narrowed.reserve(tokens.size());
+      for (const uint64_t token : tokens) {
+        if (token >
+            static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
+          throw std::runtime_error("token ID is outside Int range");
+        }
+        narrowed.push_back(static_cast<int32_t>(token));
+      }
+      executable.set_input(0, narrowed.data(), narrowed.size(), ptn::kInt);
+      return;
+    }
+    std::vector<int64_t> values;
+    values.reserve(tokens.size());
+    for (const uint64_t token : tokens) {
+      if (token > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+        throw std::runtime_error("token ID is outside Long range");
+      }
+      values.push_back(static_cast<int64_t>(token));
+    }
+    executable.set_input(0, values.data(), values.size(), ptn::kLong);
+  };
+  // Runs one call and returns the vocabulary size of the logits it leaves in
+  // `logits`.
+  auto run_tokens = [&](const std::vector<uint64_t>& tokens, int64_t position) {
+    set_tokens(tokens);
+    set_positions(position, tokens.size());
+    executable.execute();
+    const std::vector<int64_t> output_shape =
+        executable.output_sizes(logits_output);
+    if (output_shape.empty() || output_shape.back() <= 0) {
+      throw std::runtime_error("logits output has no vocabulary dimension");
+    }
+    const size_t logits_numel =
+        static_cast<size_t>(ptn::runner_utils::numel_of(output_shape));
+    const size_t vocabulary_size = static_cast<size_t>(output_shape.back());
+    logits.resize(logits_numel);
+    executable.get_output(
+        logits_output, logits.data(), logits.size(), ptn::kFloat);
+    if (position == 0 && !FLAGS_dump_first_logits.empty()) {
+      FILE* output = std::fopen(FLAGS_dump_first_logits.c_str(), "wbx");
+      if (output == nullptr) {
+        throw std::runtime_error(
+            "cannot create new logits dump: " + FLAGS_dump_first_logits);
+      }
+      const float* row = logits.data() + logits_numel - vocabulary_size;
+      const size_t written =
+          std::fwrite(row, sizeof(float), vocabulary_size, output);
+      const int close_status = std::fclose(output);
+      if (written != vocabulary_size || close_status != 0) {
+        std::remove(FLAGS_dump_first_logits.c_str());
+        throw std::runtime_error(
+            "failed to write complete initial logits dump");
+      }
+    }
+    if (FLAGS_print_top_logits) {
+      const float* row = logits.data() + logits_numel - vocabulary_size;
+      const std::vector<size_t> ranks =
+          ptn::top_logit_indices(row, vocabulary_size, 5);
+      std::fprintf(stderr, "top_logits=%lld", static_cast<long long>(position));
+      for (const size_t rank : ranks) {
+        std::fprintf(stderr, ",%zu:%.8g", rank, row[rank]);
+      }
+      std::fprintf(stderr, "\n");
+    }
+    return vocabulary_size;
+  };
+
+  // The same prompt and positions overwrite the same cache rows. Keep this
+  // explicitly opt-in so the normal timing still includes first-use GPU
+  // warmup and can be compared with standalone benchmarks either way.
+  if (FLAGS_warmup_prefill) {
+    if (!FLAGS_dump_first_logits.empty() || FLAGS_print_top_logits) {
+      throw std::invalid_argument(
+          "warmup_prefill cannot be combined with logits diagnostics");
+    }
+    run_tokens(prompt_tokens, 0);
+  }
+
+  Generation generation;
+  const Clock::time_point prompt_start = Clock::now();
+  uint64_t next_token = next_token_of(logits, run_tokens(prompt_tokens, 0));
+  generation.prompt_ms = elapsed_ms(prompt_start, Clock::now());
+
+  size_t generated = 0;
+  std::vector<uint64_t> generated_ids;
+  uint64_t previous_token = prompt_tokens.back();
+  std::printf("text:      ");
+  std::fflush(stdout);
+  while (generated < limit && !eos_ids.contains(next_token)) {
+    auto decoded = tokenizer.decode(previous_token, next_token);
+    if (!decoded.ok()) {
+      throw std::runtime_error(
+          "failed to decode token: tokenizer error " +
+          std::to_string(static_cast<uint32_t>(decoded.error())));
+    }
+    std::printf("%s", decoded.get().c_str());
+    std::fflush(stdout);
+    previous_token = next_token;
+    if (FLAGS_print_token_ids) {
+      generated_ids.push_back(next_token);
+    }
+    ++generated;
+    if (generated < limit) {
+      const Clock::time_point step_start = Clock::now();
+      const size_t vocabulary_size = run_tokens(
+          {previous_token},
+          static_cast<int64_t>(prompt_tokens.size() + generated - 1));
+      next_token = next_token_of(logits, vocabulary_size);
+      generation.decode_ms += elapsed_ms(step_start, Clock::now());
+      ++generation.decode_steps;
+    }
+  }
+  std::printf("\n");
+  if (FLAGS_print_token_ids) {
+    std::printf("token_ids: ");
+    for (size_t i = 0; i < generated_ids.size(); ++i) {
+      std::printf(
+          "%s%llu",
+          i == 0 ? "" : ",",
+          static_cast<unsigned long long>(generated_ids[i]));
+    }
+    std::printf("\n");
+  }
+  return generation;
 }
 
 } // namespace
@@ -206,96 +375,6 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
           "logits must be Float or Half, got " +
           std::string(ptn::scalar_type_name(output_dtype)));
     }
-    std::vector<float> logits;
-
-    auto set_positions = [&](int64_t start, size_t count) {
-      const size_t n = per_token_positions ? count : 1;
-      if (per_token_positions) {
-        executable->resize_input(1, {static_cast<int64_t>(n)});
-      }
-      std::vector<int64_t> values(n);
-      std::iota(values.begin(), values.end(), start);
-      if (executable->input_dtype(1) == ptn::kInt) {
-        const std::vector<int32_t> narrowed(values.begin(), values.end());
-        executable->set_input(1, narrowed.data(), narrowed.size(), ptn::kInt);
-      } else {
-        executable->set_input(1, values.data(), values.size(), ptn::kLong);
-      }
-    };
-    auto set_tokens = [&](const std::vector<uint64_t>& tokens) {
-      executable->resize_input(0, {1, static_cast<int64_t>(tokens.size())});
-      if (executable->input_dtype(0) == ptn::kInt) {
-        std::vector<int32_t> narrowed;
-        narrowed.reserve(tokens.size());
-        for (const uint64_t token : tokens) {
-          if (token >
-              static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
-            throw std::runtime_error("token ID is outside Int range");
-          }
-          narrowed.push_back(static_cast<int32_t>(token));
-        }
-        executable->set_input(0, narrowed.data(), narrowed.size(), ptn::kInt);
-        return;
-      }
-      std::vector<int64_t> values;
-      values.reserve(tokens.size());
-      for (const uint64_t token : tokens) {
-        if (token >
-            static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
-          throw std::runtime_error("token ID is outside Long range");
-        }
-        values.push_back(static_cast<int64_t>(token));
-      }
-      executable->set_input(0, values.data(), values.size(), ptn::kLong);
-    };
-    auto run_tokens = [&](const std::vector<uint64_t>& tokens,
-                          int64_t position) {
-      set_tokens(tokens);
-      set_positions(position, tokens.size());
-      executable->execute();
-      const std::vector<int64_t> output_shape =
-          executable->output_sizes(logits_output);
-      if (output_shape.empty() || output_shape.back() <= 0) {
-        throw std::runtime_error("logits output has no vocabulary dimension");
-      }
-      const size_t logits_numel =
-          static_cast<size_t>(runner_utils::numel_of(output_shape));
-      const size_t vocabulary_size = static_cast<size_t>(output_shape.back());
-      logits.resize(logits_numel);
-      executable->get_output(
-          logits_output, logits.data(), logits.size(), ptn::kFloat);
-      if (position == 0 && !FLAGS_dump_first_logits.empty()) {
-        FILE* output = std::fopen(FLAGS_dump_first_logits.c_str(), "wbx");
-        if (output == nullptr) {
-          throw std::runtime_error(
-              "cannot create new logits dump: " + FLAGS_dump_first_logits);
-        }
-        const float* row = logits.data() + logits_numel - vocabulary_size;
-        const size_t written =
-            std::fwrite(row, sizeof(float), vocabulary_size, output);
-        const int close_status = std::fclose(output);
-        if (written != vocabulary_size || close_status != 0) {
-          std::remove(FLAGS_dump_first_logits.c_str());
-          throw std::runtime_error(
-              "failed to write complete initial logits dump");
-        }
-      }
-      if (FLAGS_print_top_logits) {
-        const float* row = logits.data() + logits_numel - vocabulary_size;
-        const std::vector<size_t> ranks =
-            ptn::top_logit_indices(row, vocabulary_size, 5);
-        std::fprintf(
-            stderr, "top_logits=%lld", static_cast<long long>(position));
-        for (const size_t rank : ranks) {
-          std::fprintf(stderr, ",%zu:%.8g", rank, row[rank]);
-        }
-        std::fprintf(stderr, "\n");
-      }
-      const uint64_t output_token = static_cast<uint64_t>(
-          ptn::greedy_argmax_last_row(logits, vocabulary_size));
-      return output_token;
-    };
-
     const size_t limit = ptn::generation_limit(
         prompt_tokens.size(),
         static_cast<size_t>(FLAGS_max_new_tokens),
@@ -310,79 +389,32 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
           "-token input; chunked prefill is not implemented");
     }
 
-    // The same prompt and positions overwrite the same cache rows. Keep this
-    // explicitly opt-in so the normal timing still includes first-use GPU
-    // warmup and can be compared with standalone benchmarks either way.
-    if (FLAGS_warmup_prefill) {
-      if (!FLAGS_dump_first_logits.empty() || FLAGS_print_top_logits) {
-        throw std::invalid_argument(
-            "warmup_prefill cannot be combined with logits diagnostics");
-      }
-      run_tokens(prompt_tokens, 0);
-    }
+    const Generation generation = generate(
+        *executable,
+        logits_output,
+        per_token_positions,
+        *tokenizer,
+        prompt_tokens,
+        limit,
+        eos_ids,
+        ptn::greedy_argmax_last_row);
 
-    const Clock::time_point prompt_start = Clock::now();
-    uint64_t next_token = run_tokens(prompt_tokens, 0);
-    const Clock::time_point prompt_end = Clock::now();
-
-    size_t generated = 0;
-    std::vector<uint64_t> generated_ids;
-    uint64_t previous_token = prompt_tokens.back();
-    std::printf("text:      ");
-    std::fflush(stdout);
-    double decode_ms = 0.0;
-    size_t decode_steps = 0;
-    while (generated < limit && !eos_ids.contains(next_token)) {
-      auto decoded = tokenizer->decode(previous_token, next_token);
-      if (!decoded.ok()) {
-        throw std::runtime_error(
-            "failed to decode token: tokenizer error " +
-            std::to_string(static_cast<uint32_t>(decoded.error())));
-      }
-      std::printf("%s", decoded.get().c_str());
-      std::fflush(stdout);
-      previous_token = next_token;
-      if (FLAGS_print_token_ids) {
-        generated_ids.push_back(next_token);
-      }
-      ++generated;
-      if (generated < limit) {
-        const Clock::time_point step_start = Clock::now();
-        next_token = run_tokens(
-            {previous_token},
-            static_cast<int64_t>(prompt_tokens.size() + generated - 1));
-        decode_ms += elapsed_ms(step_start, Clock::now());
-        ++decode_steps;
-      }
-    }
-    std::printf("\n");
-    if (FLAGS_print_token_ids) {
-      std::printf("token_ids: ");
-      for (size_t i = 0; i < generated_ids.size(); ++i) {
-        std::printf(
-            "%s%llu",
-            i == 0 ? "" : ",",
-            static_cast<unsigned long long>(generated_ids[i]));
-      }
-      std::printf("\n");
-    }
-
-    const double prompt_ms = elapsed_ms(prompt_start, prompt_end);
-    const double prompt_tokens_per_second = prompt_ms > 0.0
-        ? 1000.0 * static_cast<double>(prompt_tokens.size()) / prompt_ms
+    const double prompt_tokens_per_second = generation.prompt_ms > 0.0
+        ? 1000.0 * static_cast<double>(prompt_tokens.size()) /
+            generation.prompt_ms
         : 0.0;
-    const double tokens_per_second = decode_ms > 0.0
-        ? 1000.0 * static_cast<double>(decode_steps) / decode_ms
-        : 0.0;
+    const double tokens_per_second = generation.decode_ms > 0.0 ? 1000.0 *
+            static_cast<double>(generation.decode_steps) / generation.decode_ms
+                                                                : 0.0;
     std::printf(
         "prompt:    %zu tokens, %.3f ms (%.3f tokens/s)\n",
         prompt_tokens.size(),
-        prompt_ms,
+        generation.prompt_ms,
         prompt_tokens_per_second);
     std::printf(
         "decode:    %zu steps, %.3f ms (%.3f steps/s)\n",
-        decode_steps,
-        decode_ms,
+        generation.decode_steps,
+        generation.decode_ms,
         tokens_per_second);
     return 0;
   } catch (const std::exception& e) {
