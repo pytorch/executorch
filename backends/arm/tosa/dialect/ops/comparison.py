@@ -5,7 +5,10 @@
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops._common import accepts_int64, binary_meta
+from executorch.backends.arm.tosa.dialect.ops._common import (
+    binary_meta,
+    validate_int64_support,
+)
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
@@ -38,7 +41,8 @@ def _validate_comparison_dtype(dtype: torch.dtype, op: str) -> None:
             _raise_unsupported_profile(dtype, op)
         return
 
-    if accepts_int64(dtype, op):
+    if dtype == torch.int64:
+        validate_int64_support(op)
         return
 
     if dtype in FP_DTYPES:

@@ -19,7 +19,6 @@ def binary_operator_factory(
     tosa_op,
     attr_method: str,
     valid_dtypes: List[Any],
-    extension_dtypes: dict[str, List[Any]] | None = None,
 ):
     operator_target = target
 
@@ -33,7 +32,6 @@ def binary_operator_factory(
                 attr_method=attr_method,
                 num_inputs=2,
                 input_dtypes=valid_dtypes,
-                extension_dtypes=extension_dtypes,
             )
 
     register_node_visitor(BinaryOperator)
@@ -43,22 +41,19 @@ binary_operator_factory(
     "tosa.BITWISE_AND.default",
     ts.Op.BITWISE_AND,
     "BitwiseAndAttribute",
-    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
-    {"int64": [ts.DType.INT64]},
+    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.INT64],
 )
 binary_operator_factory(
     "tosa.BITWISE_OR.default",
     ts.Op.BITWISE_OR,
     "BitwiseOrAttribute",
-    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
-    {"int64": [ts.DType.INT64]},
+    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.INT64],
 )
 binary_operator_factory(
     "tosa.BITWISE_XOR.default",
     ts.Op.BITWISE_XOR,
     "BitwiseXorAttribute",
-    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
-    {"int64": [ts.DType.INT64]},
+    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.INT64],
 )
 binary_operator_factory(
     "tosa.INTDIV.default",

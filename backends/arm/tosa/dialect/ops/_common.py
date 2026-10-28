@@ -16,17 +16,13 @@ from torch.types import IntLikeType
 _VALID_NAN_MODES = {"PROPAGATE", "IGNORE"}
 
 
-def accepts_int64(dtype: torch.dtype, op: str) -> bool:
-    """Whether `dtype` is an int64 the active specification carries."""
-    if dtype != torch.int64:
-        return False
+def validate_int64_support(op: str) -> None:
+    """Raise unless the active specification declares the int64 extension."""
     if not get_context_spec().support_extension("int64"):
         raise TosaValueError(
-            f"TOSA spec {get_context_spec()} doesn't support "
-            f"{str(dtype).removeprefix('torch.')} for {op}",
+            f"TOSA spec {get_context_spec()} doesn't support int64 for {op}",
             op=op,
         )
-    return True
 
 
 def broadcast_shape(

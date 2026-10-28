@@ -26,7 +26,6 @@ class SimpleNodeVisitorConfig:
     output_dtypes: List[Any] | None = None
     same_dtype_with_output: bool = True
     dtype_check_inputs_only: bool = False
-    extension_dtypes: dict[str, List[Any]] | None = None
 
 
 class SimpleNodeVisitor(NodeVisitor):
@@ -49,17 +48,12 @@ class SimpleNodeVisitor(NodeVisitor):
     ) -> None:
         cfg = self.get_config()
 
-        input_dtypes = list(cfg.input_dtypes)
-        for extension, dtypes in (cfg.extension_dtypes or {}).items():
-            if self.tosa_spec.support_extension(extension):
-                input_dtypes.extend(dtypes)
-
         self.validate(
             target=self.target,
             inputs=inputs,
             output=output,
             num_inputs=cfg.num_inputs,
-            input_dtypes=input_dtypes,
+            input_dtypes=cfg.input_dtypes,
             output_dtypes=cfg.output_dtypes,
             same_dtype_with_output=cfg.same_dtype_with_output,
             dtype_check_inputs_only=cfg.dtype_check_inputs_only,

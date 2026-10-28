@@ -11,7 +11,13 @@ from executorch.backends.arm.operators.simple_node_visitor import (
     SimpleNodeVisitorConfig,
 )
 
-COMPARE_INPUT_DTYPES = [ts.DType.INT32, ts.DType.FP32, ts.DType.BF16, ts.DType.FP16]
+COMPARE_INPUT_DTYPES = [
+    ts.DType.INT32,
+    ts.DType.FP32,
+    ts.DType.BF16,
+    ts.DType.FP16,
+    ts.DType.INT64,
+]
 
 
 @register_node_visitor
@@ -25,7 +31,6 @@ class GreaterThanVisitor(SimpleNodeVisitor):
             attr_method="GreaterAttribute",
             num_inputs=2,
             input_dtypes=COMPARE_INPUT_DTYPES,
-            extension_dtypes={"int64": [ts.DType.INT64]},
             output_dtypes=[ts.DType.BOOL],
             same_dtype_with_output=False,
             dtype_check_inputs_only=True,

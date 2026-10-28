@@ -33,18 +33,19 @@ class MulVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output])
-        supported_dtypes = [
-            ts.DType.INT8,
-            ts.DType.INT16,
-            ts.DType.INT32,
-            ts.DType.FP32,
-            ts.DType.BF16,
-            ts.DType.FP16,
-        ]
-        if self.tosa_spec.support_extension("int64"):
-            supported_dtypes.append(ts.DType.INT64)
-
-        validate_valid_dtype(self.target, [*inputs, output], supported_dtypes)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.FP32,
+                ts.DType.BF16,
+                ts.DType.INT64,
+                ts.DType.FP16,
+            ],
+        )
 
         shift = tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{output.name}_shift")
         attr = ts.TosaSerializerAttribute()

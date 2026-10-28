@@ -6,9 +6,9 @@
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops._common import (
-    accepts_int64,
     broadcast_shape,
     require_same_dtype,
+    validate_int64_support,
 )
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
@@ -44,7 +44,8 @@ def _validate_select_value_dtype(dtype: torch.dtype) -> None:
             _raise_unsupported_profile(dtype, "SELECT")
         return
 
-    if accepts_int64(dtype, "SELECT"):
+    if dtype == torch.int64:
+        validate_int64_support("SELECT")
         return
 
     if dtype in {torch.float16, torch.float32}:

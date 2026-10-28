@@ -6,8 +6,8 @@
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops._common import (
-    accepts_int64,
     validate_float_dtype,
+    validate_int64_support,
 )
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
@@ -31,7 +31,8 @@ def _validate_integer_dtype(dtype: torch.dtype, op: str) -> None:
             )
         return
 
-    if accepts_int64(dtype, op):
+    if dtype == torch.int64:
+        validate_int64_support(op)
         return
 
     raise TosaValueError(f"Unsupported dtype {dtype} for {op}", op=op)
@@ -48,7 +49,8 @@ def _validate_abs_dtype(dtype: torch.dtype) -> None:
             )
         return
 
-    if accepts_int64(dtype, "ABS"):
+    if dtype == torch.int64:
+        validate_int64_support("ABS")
         return
 
     validate_float_dtype(dtype, "ABS")

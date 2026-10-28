@@ -6,8 +6,8 @@
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops._common import (
-    accepts_int64,
     binary_meta,
+    validate_int64_support,
     validate_nan_mode,
 )
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
@@ -63,7 +63,8 @@ def _validate_int_dtype(dtype: torch.dtype, op: str) -> None:
         _require_int_profile_support(dtype, op)
         return
 
-    if accepts_int64(dtype, op):
+    if dtype == torch.int64:
+        validate_int64_support(op)
         return
 
     _raise_unsupported_dtype(dtype, op)
@@ -91,7 +92,8 @@ def _validate_add_sub_dtype(dtype: torch.dtype, op: str) -> None:
     if dtype == torch.int32:
         return
 
-    if accepts_int64(dtype, op):
+    if dtype == torch.int64:
+        validate_int64_support(op)
         return
 
     _validate_fp_dtype(dtype, op)
@@ -102,7 +104,8 @@ def _validate_profile_int32_or_fp_dtype(dtype: torch.dtype, op: str) -> None:
         _require_int_profile_support(dtype, op)
         return
 
-    if accepts_int64(dtype, op):
+    if dtype == torch.int64:
+        validate_int64_support(op)
         return
 
     _validate_fp_dtype(dtype, op)
@@ -128,7 +131,8 @@ def _validate_and_infer_mul_output_dtype(dtype: torch.dtype) -> torch.dtype:  # 
             _require_int_profile_support(dtype, "MUL")
         return torch.int32
 
-    if accepts_int64(dtype, "MUL"):
+    if dtype == torch.int64:
+        validate_int64_support("MUL")
         return torch.int64
 
     _raise_unsupported_dtype(dtype, "MUL")

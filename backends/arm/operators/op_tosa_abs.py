@@ -22,6 +22,11 @@ class AbsVisitor(SimpleNodeVisitor):
             tosa_op=ts.Op.ABS,
             attr_method="AbsAttribute",
             num_inputs=1,
-            input_dtypes=[ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
-            extension_dtypes={"int64": [ts.DType.INT64]},
+            input_dtypes=[
+                ts.DType.INT32,
+                ts.DType.FP16,
+                ts.DType.FP32,
+                ts.DType.BF16,
+                ts.DType.INT64,
+            ],
         )
