@@ -1,3 +1,5 @@
+load("@fbsource//third-party/llama.cpp:ggml_ci.bzl", "ggml_ci_labels")
+load("@fbsource//tools/build_defs:default_platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 
 # Platform constraints of the ggml backend sets. Targets that link one repeat
@@ -81,6 +83,9 @@ def define_common_targets():
                 "//executorch/backends/native/runtime/graph:value",
                 ggml_dep,
             ],
+            labels = ggml_ci_labels(variant),
+            # The GPU sets have no mobile flavors.
+            platforms = None if variant == "cpu" else [CXX],
             visibility = ["//executorch/backends/native/..."],
             **compat
         )
