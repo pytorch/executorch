@@ -62,7 +62,7 @@ read_samples("model.ptn")       # {"golden": SampleSet(...)}
 `write_samples` appends a set to any existing `.ptn`, not only one this process
 saved, and replaces the file only once the set is complete. `read_samples`
 validates every set against the rules below, except that each call's method
-exists in the program.
+exists in the program and its intermediate names are values of that method.
 
 ### Layout
 
@@ -105,9 +105,9 @@ Key    = str naming a tensor in the set's data.safetensors
   between them, so each sees the state the previous one left, whichever method
   that call ran.
 - A tensor's key is its JSON path in the index, e.g. `samples[0].calls[1].in[2]`.
-  Below a call that is `.in[k]`, `.in[k][l]` for an element of a list argument,
-  `.out[k]` or `.intermediates.<name>`. Every key resolves, and every tensor is
-  referenced exactly once.
+  Below a call that is `.in[k]`, `.out[k]` or `.intermediates.<name>`, with
+  `[l]` appended for each level of list nesting. Every key resolves, and every
+  tensor is referenced exactly once.
 - A JSON integer is an int scalar, any other number a float.
 - Intermediate names are top-level SSA value names of the call's method
   (`[A-Za-z_][A-Za-z0-9_]*`).
@@ -115,7 +115,8 @@ Key    = str naming a tensor in the set's data.safetensors
 - Tolerances are finite and non-negative, and advisory: a consumer may override them.
   `write_samples` warns when atol or rtol is above 1e-3.
 - Readers reject another major `version` and accept any minor one: a minor bump
-  only adds fields, and readers ignore unknown fields.
+  only adds fields, and readers ignore unknown fields and the tensors only those
+  fields reference.
 
 Not in v1:
 
