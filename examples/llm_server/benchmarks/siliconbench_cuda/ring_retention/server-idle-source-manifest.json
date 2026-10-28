@@ -1,0 +1,5 @@
+{
+  "apply_server_idle_patch.py": "e26d83e3ae3fa66d1c84671a4f73725e29d984269e462e09f0f9973385d83c31",
+  "build_and_test_server_idle.py": "02a865414d4b5ad82c7a376a9015d2b4b7fa9c5e52b1ff5e20ebe7583b07e367",
+  "server_idle_lifecycle_test.cpp": "84e5f9dc15c5af623f1a2f031057c7904747947bde39a1cb1ff87c01ec1595ed"
+}
