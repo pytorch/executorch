@@ -306,6 +306,20 @@ cmake --build cmake-out --config Release -j$(( $(nproc 2>/dev/null || sysctl -n 
 
 > **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) below). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
 
+#### Limiting Build Parallelism
+
+The `-j` value above applies only when invoking `cmake --build` directly. The workflow presets (`cmake --workflow --preset llm-release`) and the `Makefile` runner targets that wrap them (`make llama-cpu`, `make whisper-cpu`, and so on) build with unbounded parallelism, so the number of concurrent compiler processes is limited by the build graph rather than by core count.
+
+Set `CMAKE_BUILD_PARALLEL_LEVEL` to cap the job count. It takes precedence over the parallelism configured by a preset, so it works for every build entry point:
+
+```bash
+# Start low on a memory-constrained machine, and raise it if the build
+# stays comfortably within available RAM.
+export CMAKE_BUILD_PARALLEL_LEVEL=2
+
+make llama-cpu
+```
+
 <hr/>
 
 

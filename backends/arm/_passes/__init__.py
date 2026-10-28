@@ -63,6 +63,7 @@ from .decompose_erfinv_pass import DecomposeErfinvPass  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
 from .decompose_flip_pass import DecomposeFlipPass  # noqa
 from .decompose_floor_divide_pass import DecomposeFloorDividePass  # noqa
+from .decompose_gated_delta_rule_pass import DecomposeGatedDeltaRulePass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa

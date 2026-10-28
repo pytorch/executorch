@@ -1,4 +1,6 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//third-party/llama.cpp:ggml_ci.bzl", "ggml_ci_labels")
+load("@fbsource//tools/build_defs:default_platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT", "CUDA_COMPAT", "HIP_COMPAT", "METAL_COMPAT")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
@@ -80,6 +82,7 @@ fbcode_target(
         # ggml's VMM pool calls the driver API, which //third-party/cuda:libcuda does not link on fbcode.
         ("cuda", None, "cuda_driver_api-lazy"),
     ],
+    labels = ggml_ci_labels("cuda"),
     visibility = ["PUBLIC"],
     **CUDA_COMPAT
 )
@@ -93,6 +96,7 @@ fbcode_target(
         "//executorch/backends/native/runtime/engine:ggml_engine_hip",
     ],
     external_deps = ["gflags"],
+    labels = ggml_ci_labels("hip"),
     visibility = ["PUBLIC"],
     **HIP_COMPAT
 )
@@ -108,6 +112,9 @@ non_fbcode_target(
         "//executorch/backends/native/runtime/engine:ggml_engine_metal",
     ],
     external_deps = ["gflags"],
+    labels = ggml_ci_labels("metal"),
+    # ggml-metal has no mobile flavors.
+    platforms = [CXX],
     visibility = ["PUBLIC"],
     **METAL_COMPAT
 )

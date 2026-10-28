@@ -2057,11 +2057,13 @@ class _TopLevelEmitter(_Emitter):
             # overall be considered a mutable buffer if it has already been memory planned. This would
             # suggest that the same abstract buffer is mutable in another entry point so we should
             # compel it to be considered mutable in all entry points at emission just as the user did with
-            # memory planning.
+            # memory planning. A device resident constant is planned too, but
+            # it is not mutable.
             is_mutable_buffer |= (
                 _is_buffer(self.node, self.exported_program.graph_signature)
                 and spec.mem_id is not None
                 and spec.mem_offset is not None
+                and not self.node.meta.get("device_resident_constant", False)
             )
 
             # If the placeholder has a constant_tag, it is external to the PTE file
