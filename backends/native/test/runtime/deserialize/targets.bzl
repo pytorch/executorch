@@ -32,6 +32,7 @@ def define_common_targets():
         name = "samples_test",
         srcs = ["test_samples.cpp"],
         deps = [
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
             "//executorch/backends/native/runtime/deserialize:package_test_data",
             "//executorch/backends/native/runtime/deserialize:samples",
         ],
