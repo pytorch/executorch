@@ -19,7 +19,6 @@ from executorch.backends.arm._passes.aten_to_tosa_reduction import (
     rewrite_reduction_operator,
 )
 from executorch.backends.arm._passes.aten_to_tosa_tensor_operators import (
-    rewrite_argmax,
     rewrite_binary_operator,
     rewrite_rfft2,
     rewrite_unary_operator,
@@ -55,15 +54,6 @@ def register_dialect_substitutions(
         return func
 
     return decorator
-
-
-@register_dialect_substitutions(
-    exir_ops.edge.aten.argmax.default,
-)
-def _get_tensor_operators_replacement(
-    node: Node, pass_: AtenToDialectPass
-) -> DialectNodeSpec | None:
-    return rewrite_argmax(node, pass_)
 
 
 @register_dialect_substitutions(

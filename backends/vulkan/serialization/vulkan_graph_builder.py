@@ -162,6 +162,10 @@ class VkGraphBuilder:
 
             # Serialize tensor data to bytes
             tensor = tensor.contiguous()
+            # The bytes are read from the start of the storage, so a view of a
+            # larger tensor needs its own copy.
+            if tensor.nbytes != tensor.untyped_storage().nbytes():
+                tensor = tensor.clone()
             size = tensor.untyped_storage().nbytes()
 
             if size > 0:
