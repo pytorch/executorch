@@ -60,6 +60,7 @@ from .utils import (
     filter_fn,
     generate_qnn_executorch_option,
     get_skip_decomp_table,
+    has_data_dependent_shape,
     has_unsupported_dtype,
     warn_if_dilated_conv_may_not_fit_vtcm,
 )
@@ -176,6 +177,12 @@ class QnnOperatorSupport(OperatorSupportBase):
         if has_unsupported_dtype(node):
             logger.info(
                 f"[{self.phase}] {node.target.__name__} | Skipped, unsupported dtype"
+            )
+            return False
+
+        if has_data_dependent_shape(node):
+            logger.info(
+                f"[{self.phase}] {node.target.__name__} | Skipped, data-dependent shape"
             )
             return False
 

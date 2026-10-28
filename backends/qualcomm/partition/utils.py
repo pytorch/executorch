@@ -184,10 +184,27 @@ _Q_OPS = {op._op for op in q_ops}
 _DQ_OPS = {op._op for op in dq_ops}
 
 
+def has_data_dependent_shape(node: torch.fx.Node) -> bool:
+    """
+    Whether the node reads or writes a tensor with a data-dependent size (e.g.
+    after boolean mask indexing). QNN needs a size for every dimension, and
+    such a dimension has no hint to give it, so the node has to stay on CPU.
+    """
+    return any(
+        isinstance(dim, torch.SymInt) and dim.node.hint is None
+        for n in (node, *node.all_input_nodes)
+        for val in pytree.tree_leaves(n.meta.get("val"))
+        if isinstance(val, torch.Tensor)
+        for dim in val.shape
+    )
+
+
 # Logic to determine whether to skip decompose and has higher priority than get_skip_decomp_table()
 def filter_fn(node: torch.fx.Node) -> bool:
     # The node will stay on CPU, so it must not be kept from decomposition.
     if has_unsupported_dtype(node) and not _unsupported_dtypes_are_quantized(node):
+        return False
+    if has_data_dependent_shape(node):
         return False
     # QNN does not support int32/int64 IO for the following OPs.
     potential_i32_i64_io_ops = [
