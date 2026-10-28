@@ -3145,7 +3145,7 @@ TEST(WebGPUNative, UnaryOpsRefuseFp16) {
   if (g_unary_fp16_dir.empty()) {
     GTEST_SKIP() << "WEBGPU_TEST_UNARY_FP16_DIR not set";
   }
-  for (const char* op : {"hardsigmoid", "hardswish", "abs"}) {
+  for (const char* op : {"hardsigmoid", "hardswish", "abs", "gelu"}) {
     Module module(g_unary_fp16_dir + "unary_fp16_" + op + ".pte");
     EXPECT_EQ(module.load_forward(), Error::DelegateInvalidCompatibility)
         << op << ": an fp16 program must be refused at load";

@@ -205,6 +205,39 @@ class TestWebGPUPartitioner(unittest.TestCase):
                 ]
                 self.assertEqual(delegated_ops, ["aten.hardsigmoid.default"])
 
+    def test_declined_preserved_op_is_decomposed(self) -> None:
+        # A preserved op the partitioner then declines is decomposed instead of
+        # kept whole, so the export does not fail on a node no backend takes.
+        exported_program = torch.export.export(
+            HardsigmoidModule(), (torch.linspace(-6.0, 6.0, 32).reshape(4, 8),)
+        )
+        hardsigmoid = exir_ops.edge.aten.hardsigmoid.default
+        partitioners: List[Partitioner] = [
+            VulkanPartitioner(operator_blocklist={hardsigmoid}),
+            WebGPUPartitioner(operator_allowlist=[exir_ops.edge.aten.add.Tensor]),
+        ]
+        for partitioner in partitioners:
+            with self.subTest(partitioner=type(partitioner).__name__):
+                graph_module = (
+                    to_edge_transform_and_lower(
+                        exported_program, partitioner=[partitioner]
+                    )
+                    .exported_program()
+                    .graph_module
+                )
+                graphs = [graph_module.graph] + [
+                    module.original_module.graph
+                    for _, module in graph_module.named_children()
+                    if hasattr(module, "original_module")
+                ]
+                ops = [
+                    getattr(node.target, "__name__", str(node.target))
+                    for graph in graphs
+                    for node in graph.nodes
+                    if node.op == "call_function"
+                ]
+                self.assertNotIn("aten.hardsigmoid.default", ops)
+
     def test_webgpu_tester_defaults_to_webgpu_partitioner(self) -> None:
         self.assertIsInstance(Partition().partitioner, WebGPUPartitioner)
         self.assertTrue(

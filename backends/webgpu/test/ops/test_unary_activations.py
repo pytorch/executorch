@@ -113,9 +113,15 @@ UNARY_G1 = {
 # delegated yet; porting needs a partitioner extension (own diff).
 
 
-# Unary ops whose fp16 programs the WebGPU backend must refuse at load: the unary
+# Unary ops whose fp16 programs the WebGPU backend must refuse at load: their
 # shaders read array<f32>, so an fp16 operand would be misread, not computed.
-UNARY_FP16_NEGATIVE = ("hardsigmoid", "hardswish", "abs")
+# gelu has its own handler (Gelu.cpp), the others share add_unary_op.
+UNARY_FP16_NEGATIVE = {
+    "hardsigmoid": F.hardsigmoid,
+    "hardswish": F.hardswish,
+    "abs": torch.abs,
+    "gelu": F.gelu,
+}
 
 
 def export_unary_fp16_negative(out_dir: str) -> None:
@@ -131,8 +137,7 @@ def export_unary_fp16_negative(out_dir: str) -> None:
     from executorch.exir import to_edge_transform_and_lower
 
     os.makedirs(out_dir, exist_ok=True)
-    for name in UNARY_FP16_NEGATIVE:
-        torch_fn, _ = UNARY_G1[name]
+    for name, torch_fn in UNARY_FP16_NEGATIVE.items():
         x = torch.linspace(-6.0, 6.0, 32, dtype=torch.float16).reshape(4, 8)
         ep = torch.export.export(UnaryModule(torch_fn), (x,))
         et_program = to_edge_transform_and_lower(

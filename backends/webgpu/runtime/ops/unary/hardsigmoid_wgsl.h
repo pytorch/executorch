@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from unary.wgsl - DO NOT EDIT.
-// wgsl-sha256: b41e3cd6e6459c614826a1558ece3ef2ef812050f1d16aa34d9a455a73ace8f9
+// wgsl-sha256: ac2cf23e81ffb740f3a52d21cd20c865e602038235e6b78f846c8d6253e096ff
 inline constexpr const char* kHardsigmoidWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -34,7 +34,7 @@ fn main(
         return;
     }
     let x = input[idx];
-    output[idx] = min(max(x + 3.0, 0.0), 6.0) / 6.0;
+    output[idx] = select(select((x + 3.0) / 6.0, 1.0, x >= 3.0), 0.0, x <= -3.0);
 }
 )";
 

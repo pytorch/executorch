@@ -223,7 +223,7 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(len(outputs), 141)
         self.assertEqual(
             digest.hexdigest(),
-            "42560ab30d9e2b2063e1c878c8d9a7a8c4d8fdf11743524606f3912ea106b369",
+            "92aa8962e084e2caa1b286d16f6c399120c6a39ea2c240cb5b5632a4bce5857d",
         )
         self.assertEqual(
             hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
@@ -1126,7 +1126,7 @@ class WgslTemplateEngineTest(unittest.TestCase):
             "abs": "39d3c163fdf6a92286828f4b3217e00294e3ca5634a878ed5fd34e3b1cdf0a27",
             "cos": "9df78873e5fae98d347c26db2a02b047ea3d5d2c93f0761cb9ac6995f9a71ab2",
             "exp": "3171399bc36acf9c1cb2a03c2a31038318203c4c63ab03c4881df7a660346020",
-            "hardsigmoid": "b41e3cd6e6459c614826a1558ece3ef2ef812050f1d16aa34d9a455a73ace8f9",
+            "hardsigmoid": "ac2cf23e81ffb740f3a52d21cd20c865e602038235e6b78f846c8d6253e096ff",
             "hardswish": "c874a15ef6cdaec71187296016cc2a1515f5e7c889b97dfa8fd4b278e6e2c3d5",
             "neg": "8851b9f42d14153f6f04484fee2f8bf67bda26dea892ff48768e09e6ad49cee1",
             "round": "8f3e0edbeb81aa50f35e691c78554e8057fa8d78fe8a86454f4f42e5e8871452",

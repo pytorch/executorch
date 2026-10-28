@@ -169,7 +169,7 @@ export_incache_decode('/tmp')
 require_file "${ROPE_HF_DIR}/rope_hf_dynamic.pte"
 require_file "${ROPE_HF_DIR}/rope_hf_dynamic_sequence.pte"
 require_file "${SYMINT_BLOB}"
-for op in hardsigmoid hardswish abs; do
+for op in hardsigmoid hardswish abs gelu; do
   require_file "${UNARY_FP16_DIR}/unary_fp16_${op}.pte"
 done
 require_file "${OUTPUT_SUPPRESSION_DIR}/input.bin"
