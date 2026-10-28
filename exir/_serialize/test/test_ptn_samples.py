@@ -7,6 +7,7 @@
 import json
 import os
 import struct
+import sys
 import tempfile
 import unittest
 import warnings
@@ -611,8 +612,15 @@ class PtnSamplesTest(unittest.TestCase):
                 write_ptn(self.path, _PTG, {})
                 write_samples(self.path, "golden", _golden())
                 _rewrite(self.path, overrides)
-                with self.assertRaisesRegex(ValueError, f"samples/golden.*{message}"):
-                    read_samples(self.path)
+                limit = sys.getrecursionlimit()
+                sys.setrecursionlimit(1000)
+                try:
+                    with self.assertRaisesRegex(
+                        ValueError, f"samples/golden.*{message}"
+                    ):
+                        read_samples(self.path)
+                finally:
+                    sys.setrecursionlimit(limit)
 
     def test_reader_accepts_newer_minor_version_and_unknown_fields(self):
         golden = _golden()
