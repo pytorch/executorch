@@ -428,6 +428,21 @@ class TestMLXPartitionerSdpaCausal(unittest.TestCase):
         self.assertLess(err, 1e-4)
 
 
+class TestMLXPartitionerConstantBase(unittest.TestCase):
+    def test_slice_scatter_into_a_buffer(self):
+        class ScatterIntoBuffer(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("base", torch.zeros(4, 8))
+
+            def forward(self, x):
+                return torch.slice_scatter(self.base, x, 1, 0, 2) * 2
+
+        counts, _, err = _run(ScatterIntoBuffer().eval(), (torch.randn(4, 2),))
+        self.assertEqual(counts.get("SliceUpdateNode", 0), 1)
+        self.assertLess(err, 1e-6)
+
+
 class TestMLXPartitionerMixedSupport(unittest.TestCase):
     """An operator is preserved from decomposition per operator, not per call."""
 
