@@ -17,6 +17,7 @@ def main():
     for name in ('parent','overlay','source-scripts','mg-audit','gemma-audit','output','data-output','lock','python'):
         p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--arms',nargs='+',choices=['old','disabled','enabled','enabled-tight'],default=['old','disabled','enabled'])
+    p.add_argument('--admission-barrier',action='store_true',help='Test-only controlled batch admission, not production scheduling')
     args=p.parse_args();args.output.mkdir(parents=True,exist_ok=False);args.data_output.mkdir(parents=True,exist_ok=False)
     assert args.arms[0]=='old' and len(set(args.arms))==len(args.arms)
     def state(status,**extra):
@@ -51,7 +52,7 @@ def main():
                                 directory=args.data_output/stage/model/('round-'+str(number))/('c'+str(c))/arm;directory.mkdir(parents=True,exist_ok=False)
                                 binary=gate['old' if arm=='old' else 'new']['binary']
                                 active=arm.startswith('enabled')
-                                argv=[binary,'--pte='+str(Path(a['artifact'])/'model.pte'),'--data_path='+str(Path(a['artifact'])/'aoti_cuda_blob.ptd'),'--concurrency='+str(c),'--budget='+str(a['prefill_budget']),'--shared_idle_refresh='+('true' if active else 'false'),'--idle_keep_high_water='+('false' if arm=='enabled-tight' else 'true')]
+                                argv=[binary,'--pte='+str(Path(a['artifact'])/'model.pte'),'--data_path='+str(Path(a['artifact'])/'aoti_cuda_blob.ptd'),'--concurrency='+str(c),'--budget='+str(a['prefill_budget']),'--shared_idle_refresh='+('true' if active else 'false'),'--idle_keep_high_water='+('false' if arm=='enabled-tight' else 'true'),'--diagnostic_admission_barrier='+('true' if args.admission_barrier else 'false')]
                                 if stage=='graph':argv=['/usr/local/bin/nsys','profile','--trace=cuda,nvtx','--sample=none','--cpuctxsw=none','--cuda-graph-trace=node','--force-overwrite=false','-o',str(directory/'graphs'),*argv]
                                 env=dict(os.environ)
                                 for key in ('ET_CUDA_IDLE_SPARE_BYTES','ET_CUDA_IDLE_KEEP_PREFILL_WORKING_SET','CUDA_LAUNCH_BLOCKING'):env.pop(key,None)
@@ -66,6 +67,7 @@ def main():
                                     assert not record.get('failed') and record['native_serving_API']
                                     assert record['new_runtime']==(arm!='old') and record['idle_refresh_enabled']==active
                                     assert record['idle_keep_high_water']==(arm!='enabled-tight')
+                                    assert record['test_only_admission_barrier']==args.admission_barrier
                                     assert len(record['groups'])==3
                                     rows.append(dict(stage=stage,model=model,round=number,concurrency=c,arm=arm,directory=str(directory),result=record))
                                 finally:
@@ -77,6 +79,8 @@ def main():
                 for n in range(1,2 if stage=='graph' else 5):
                     for c in ([16] if stage=='graph' else [1,16]):
                         arms={a:next(r for r in rows if (r['stage'],r['model'],r['round'],r['concurrency'],r['arm'])==(stage,model,n,c,a))['result'] for a in args.arms}
+                        if args.admission_barrier:
+                            for arm in args.arms[1:]:assert arms['old']['batch_trace']==arms[arm]['batch_trace'],'Controlled batches differ'
                         for i in range(3):
                             old=arms['old']['groups'][i]
                             assert len(old['output_tokens'])==c and all(len(s)==64 for s in old['output_tokens'])
@@ -87,6 +91,7 @@ def main():
                             paired+=1
         result=dict(records=rows,paired_original_disabled_enabled_groups=paired,all_actual_input_and_output_tokens_equal=True,
                     selected_arms=args.arms,
+                    test_only_admission_barrier=args.admission_barrier,
                     original_SDK_modified=False,full_models_tested=False,performance_acceptance_pending=True,
                     deterministic_diagnostic_decoder=True,HTTP_pipeline_tested=False)
         (args.output/'result.json').write_text(json.dumps(result,indent=2)+'\n');state('complete-independent-review-required',result_SHA256=sha(args.output/'result.json'))

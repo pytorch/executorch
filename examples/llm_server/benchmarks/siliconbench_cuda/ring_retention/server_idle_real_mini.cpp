@@ -12,6 +12,7 @@
 #endif
 #include <unistd.h>
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <mutex>
@@ -24,6 +25,7 @@ DEFINE_int32(concurrency,1,"Named sessions in each request group");
 DEFINE_int32(budget,4096,"Original exported bulk token budget");
 DEFINE_bool(shared_idle_refresh,false,"Enable optional idle shared-pool refresh");
 DEFINE_bool(idle_keep_high_water,true,"Preserve historical prefill working set");
+DEFINE_bool(diagnostic_admission_barrier,false,"Test-only: admit the whole request group before scheduling");
 namespace cb=executorch::backends::cuda::batching;
 namespace b=executorch::extension::llm::batching;
 namespace s=executorch::extension::llm::serving;
@@ -54,6 +56,66 @@ Json memory(){
   return r;
 }
 struct Response {std::mutex mutex;int64_t first_text_ns=0;std::optional<s::TerminalEvent> terminal;};
+// This wrapper belongs to this diagnostic executable only. Production uses
+// DecodeFirstScheduler directly. The delegate still chooses every batch.
+class DiagnosticScheduler final:public b::Scheduler {
+ public:
+  explicit DiagnosticScheduler(std::unique_ptr<b::Scheduler> delegate):delegate_(std::move(delegate)){}
+  void arm(size_t expected){
+    std::lock_guard<std::mutex> lock(mutex_);
+    require(!holding_&&pending_.empty()&&!delegate_->has_work(),"diagnostic barrier requires idle scheduler");
+    holding_=true;expected_=expected;
+  }
+  bool submit(std::vector<b::Task> tasks) override{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if(!holding_)return delegate_->submit(std::move(tasks));
+    for(const auto& task:tasks){
+      require(!task.is_decode,"decode before diagnostic group admission");
+      require(task.input.size>0&&task.input.size<=delegate_->max_prefill_chunk_size(),"diagnostic prefill chunk");
+      for(const auto& queued:pending_)require(task.tid!=queued.tid,"duplicate held task");
+    }
+    for(auto& task:tasks)pending_.push_back(std::move(task));
+    std::vector<b::SessionId> owners;
+    for(const auto& task:pending_)owners.push_back(task.input.sid);
+    std::sort(owners.begin(),owners.end());owners.erase(std::unique(owners.begin(),owners.end()),owners.end());
+    require(owners.size()<=expected_,"unexpected diagnostic owner");
+    if(owners.size()==expected_){
+      std::stable_sort(pending_.begin(),pending_.end(),[](const auto& a,const auto& z){
+        return a.input.sid<z.input.sid||(a.input.sid==z.input.sid&&a.input.offset<z.input.offset);
+      });
+      require(delegate_->submit(std::move(pending_)),"delegate rejected diagnostic admission");
+      pending_.clear();holding_=false;
+    }
+    return true;
+  }
+  bool has_work() const override{std::lock_guard<std::mutex> lock(mutex_);return !holding_&&delegate_->has_work();}
+  std::vector<b::Task> get_work() override{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if(holding_)return {};
+    auto tasks=delegate_->get_work();
+    if(!tasks.empty()){
+      Json batch=Json::array();
+      for(const auto& t:tasks)batch.push_back({{"sid",t.input.sid},{"decode",t.is_decode},{"offset",t.input.offset},
+        {"size",t.input.size},{"position",t.input.position},{"produce_output",t.input.produce_output}});
+      trace_.push_back(std::move(batch));
+    }
+    return tasks;
+  }
+  std::vector<b::Task> cancel(b::SessionId sid) override{
+    std::lock_guard<std::mutex> lock(mutex_);auto dropped=delegate_->cancel(sid);
+    for(auto i=pending_.begin();i!=pending_.end();)if(i->input.sid==sid){dropped.push_back(std::move(*i));i=pending_.erase(i);}else ++i;
+    return dropped;
+  }
+  std::vector<b::Task> clear() override{
+    std::lock_guard<std::mutex> lock(mutex_);auto dropped=delegate_->clear();
+    for(auto& t:pending_)dropped.push_back(std::move(t));pending_.clear();holding_=false;return dropped;
+  }
+  size_t max_prefill_chunk_size() const override{return delegate_->max_prefill_chunk_size();}
+  Json trace() const{std::lock_guard<std::mutex> lock(mutex_);return trace_;}
+ private:
+  std::unique_ptr<b::Scheduler> delegate_;mutable std::mutex mutex_;
+  bool holding_=false;size_t expected_=0;std::vector<b::Task> pending_;Json trace_=Json::array();
+};
 int main(int argc,char** argv){
   gflags::ParseCommandLineFlags(&argc,&argv,true);
   const int output=dup(STDOUT_FILENO);require(output>=0,"stdout");
@@ -82,13 +144,16 @@ int main(int argc,char** argv){
       require(refresh.error==cudaSuccess,"idle pool maintenance");++idle_count;
     };
 #endif
-    s::ServingRuntime runtime(*executor,b::DecodeFirstScheduler::create(FLAGS_budget,16,FLAGS_budget-16),tokenizer,serving);
+    auto scheduler=std::make_unique<DiagnosticScheduler>(b::DecodeFirstScheduler::create(FLAGS_budget,16,FLAGS_budget-16));
+    auto* diagnostic_scheduler=scheduler.get();
+    s::ServingRuntime runtime(*executor,std::move(scheduler),tokenizer,serving);
     const auto ready_deadline=Clock::now()+std::chrono::seconds(120);
     while(!runtime.info().ready){require(Clock::now()<ready_deadline,"runtime initialization timeout");std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     for(int i=0;i<FLAGS_concurrency;++i)require(!runtime.open_session_async("owner"+std::to_string(i)).get(),"named owner open");
     Json result={{"new_runtime",bool(SB_SERVER_IDLE_HOOK)},{"idle_refresh_enabled",FLAGS_shared_idle_refresh},
       {"concurrency",FLAGS_concurrency},{"budget",FLAGS_budget},{"initial_memory",memory()},{"idle_keep_high_water",FLAGS_idle_keep_high_water},
       {"decoder_is_deterministic_diagnostic_text",true},{"native_serving_API",true},{"groups",Json::array()}};
+    result["test_only_admission_barrier"]=FLAGS_diagnostic_admission_barrier;
     std::vector<std::vector<uint64_t>> histories(FLAGS_concurrency);
     for(int burst=0;burst<3;++burst){
       Json inputs=Json::array();
@@ -97,6 +162,7 @@ int main(int argc,char** argv){
         inputs.push_back(histories[owner]);
       }
       std::vector<std::shared_ptr<Response>> observations;std::vector<s::RequestHandle> handles;
+      if(FLAGS_diagnostic_admission_barrier)diagnostic_scheduler->arm(FLAGS_concurrency);
       const auto begin=now();
       for(int owner=0;owner<FLAGS_concurrency;++owner){
         auto response=std::make_shared<Response>();observations.push_back(response);
@@ -126,7 +192,7 @@ int main(int argc,char** argv){
         {"new_input_tokens_each",1024},{"actual_output_tokens_each",64},{"input_tokens",inputs},{"output_tokens",outputs},
         {"requests",responses},{"before_idle",before},{"after_idle",after},{"idle_budget_ms",200}});
     }
-    runtime.shutdown();result["after_shutdown_memory"]=memory();
+    runtime.shutdown();result["after_shutdown_memory"]=memory();result["batch_trace"]=diagnostic_scheduler->trace();
     {std::lock_guard<std::mutex> lock(idle_mutex);result["idle_events"]=idle_events;}
     std::fprintf(protocol,"%s\n",result.dump().c_str());std::fflush(protocol);std::fclose(protocol);return 0;
   }catch(const std::exception& e){std::fprintf(protocol,"%s\n",Json{{"failed",true},{"detail",e.what()}}.dump().c_str());std::fflush(protocol);std::fclose(protocol);return 1;}
