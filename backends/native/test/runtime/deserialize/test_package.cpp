@@ -143,7 +143,7 @@ TEST(PackageTest, LoadsConstantsOnDemand) {
 
 TEST(PackageTest, IgnoresSampleMembers) {
   const std::string index =
-      R"({"version":1,"samples":[{"calls":[{"method":"forward","in":["samples[0].calls[0].in[0]"]}]}]})";
+      R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":["samples[0].calls[0].in[0]"]}]}]})";
   const std::vector<uint8_t> data = make_safetensors(
       R"({"samples[0].calls[0].in[0]":{"dtype":"U8","shape":[2],"data_offsets":[0,2]}})",
       "in");
