@@ -12,7 +12,7 @@ ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
 EXPECTED_ROCM_ARCH="${EXPECTED_ROCM_ARCH:-gfx950}"
 EXPECTED_WARP_SIZE="${EXPECTED_WARP_SIZE:-64}"
 PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/rocm${ROCM_VERSION}}"
-TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/rocm${ROCM_VERSION}}"
+TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION}}"
 VOXTRAL_CI_TMP_ROOT="${RUNNER_TEMP:-/tmp}"
 if ! mkdir -p "${VOXTRAL_CI_TMP_ROOT}" 2>/dev/null ||
   [[ ! -w "${VOXTRAL_CI_TMP_ROOT}" ]]; then

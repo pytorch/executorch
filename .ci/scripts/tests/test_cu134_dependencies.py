@@ -90,12 +90,14 @@ class TestCu134Dependencies(unittest.TestCase):
                             )
                         )
                     self.assertIn("https://download.pytorch.org/whl/cu134", command)
+                    self.assertIn(
+                        f"https://download.pytorch.org/whl/nightly/{ao_variant}",
+                        command,
+                    )
                     self.assertNotIn(
                         "https://download.pytorch.org/whl/test/cu134", command
                     )
                     self.assertNotIn("--no-deps", command)
-                    if machine == "aarch64":
-                        self.assertIn("https://download.pytorch.org/whl/cpu", command)
 
     def test_other_cuda_trains_keep_existing_pins(self):
         for cuda in ((12, 6), (13, 0), (13, 2)):

@@ -16,10 +16,12 @@ from install_utils import determine_torch_url, is_intel_mac_os, python_is_compat
 # The pip repository that hosts released torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
 TORCH_URL_BASE = "https://download.pytorch.org/whl"
-TORCHAO_URL_BASE = "https://download.pytorch.org/whl"
-TORCHAO_NIGHTLY_VERSION = "0.19.0"
-CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0"
-ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0"
+TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"
+TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
+CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
+# Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
+# are py3-none-any only, and none are published after 0.19.0.dev20260831.
+ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
 CU134_TORCH_PACKAGES = [
     "torch==2.15.0+cu134",
     "torchvision==0.29.2+cu134",
@@ -67,14 +69,12 @@ def install_requirements(use_pytorch_nightly):
     # Determine the appropriate PyTorch URL based on CUDA delegate status
     torch_url = determine_torch_url(TORCH_URL_BASE)
     cu134_packages = cu134_requirements(torch_url)
-    if cu134_packages:
-        torch_url = determine_torch_url(TORCHAO_URL_BASE)
-        if not use_pytorch_nightly:
-            cu134_packages[0] = "torch"
+    if cu134_packages and not use_pytorch_nightly:
+        cu134_packages[0] = "torch"
     # torchao's CUDA channel publishes x86_64 only, so asking for a CUDA build makes the pin
     # unsatisfiable on aarch64. Only that case is special-cased: falling back everywhere would
     # change which torchao a CPU x86_64 install resolves, and the CUDA build is genuinely wanted
-    # where it exists. This release is what the checkout is tested against, and the
+    # where it exists. This nightly is what a development checkout is tested against, and the
     # wheel's own torchao lower bound is this same version so that installing the package
     # afterwards leaves this pin in place rather than replacing it.
     if platform.machine().lower() in ("aarch64", "arm64"):
@@ -183,11 +183,14 @@ def install_optional_example_requirements(use_pytorch_nightly):
         if use_pytorch_nightly
         else []
     )
-    if cu134_packages:
-        torch_url = determine_torch_url(TORCHAO_URL_BASE)
+    torchao_url = (
+        f"{TORCHAO_URL_BASE}/cpu"
+        if platform.machine().lower() in ("aarch64", "arm64")
+        else determine_torch_url(TORCHAO_URL_BASE)
+    )
     torchao_index = (
-        ["--extra-index-url", f"{TORCHAO_URL_BASE}/cpu"]
-        if cu134_packages and platform.machine().lower() in ("aarch64", "arm64")
+        ["--extra-index-url", torchao_url]
+        if cu134_packages and not torchao_from_source()
         else []
     )
 
