@@ -146,7 +146,7 @@ A healthy bookmark hit does not consult NDS and attempts to clean leftover
 staging. On a missing bookmark or confirmed SDK miss, the coordinator prepares
 the source, specializes it and atomically writes the returned bookmark bytes.
 After durable publication, it attempts to remove the entire keyed staging
-directory while holding the per-key lock. Persistent SDK caching supports
+directory while holding the key's stripe lock. Persistent SDK caching supports
 inference and bookmark restoration without that extracted copy.
 Keep the packaged named data available: a later SDK cache miss requires source
 materialization again. There is no secondary source-URL cache lookup.
@@ -225,6 +225,21 @@ OS 27 minimum; unrelated runtime targets keep the configured deployment target.
 Ninja builds use one architecture per build directory. Current runtime support
 covers arm64 macOS and iOS device builds. x86_64 builds are blocked by Swift
 `Float16` availability, and the tested iOS simulator SDKs do not contain Core AI.
+
+### Lifecycle logging
+
+Build with `EXECUTORCH_ENABLE_LOGGING=ON` and `EXECUTORCH_LOG_LEVEL=Info` to
+observe cache lookup, bookmark restoration hits, missing-bookmark versus
+SDK-confirmed misses, specialization start/success, and durable bookmark saves. Each message carries the cache key so events from
+multiple partitions can be correlated. These messages do not include bookmark
+contents, model data, or per-inference logs.
+
+A cache hit means that the SDK successfully restored a model from its bookmark.
+Specialization start means a request to the SDK's persistent default cache; the
+SDK does not report whether that request compiled afresh or reused an internal
+artifact. The durable-save message confirms local bookmark publication,
+including its final directory flush, not independent verification of SDK-private
+artifact storage. Failed operations do not emit their success messages.
 
 ## Host Tests
 

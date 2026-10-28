@@ -8,8 +8,11 @@
 
 #include "coreai_acquisition_fixture.h"
 
+#include <executorch/runtime/platform/log.h>
 #include <sys/stat.h>
 #include <cerrno>
+#include <initializer_list>
+#include <string>
 #include <vector>
 #include "coreai_fault_scope.h"
 #include "coreai_filesystem_fixture.h"
@@ -85,8 +88,7 @@ class CoreAIAcquisitionTest : public ::testing::Test {
   }
 
   NSURL* lock_url() {
-    return [[root.url URLByAppendingPathComponent:@"locks"]
-        URLByAppendingPathComponent:[key stringByAppendingString:@".lock"]];
+    return test_bookmark_lock_url(root.url, key);
   }
 
   ino_t lock_inode() {
@@ -677,6 +679,120 @@ TEST_F(CoreAIAcquisitionProcessTest, CrashAfterSdkRetainsStagingAndRetries) {
   EXPECT_EQ(data.attempts.load(), 0);
   EXPECT_NE(saved(), nil);
   EXPECT_FALSE(staging_key_exists());
+}
+
+class CoreAILifecycleLogTest : public CoreAIAcquisitionTest {
+ protected:
+  void SetUp() override {
+    CoreAIAcquisitionTest::SetUp();
+    if (!ET_LOG_ENABLED || LogLevel::Info < LogLevel::ET_MIN_LOG_LEVEL) {
+      GTEST_SKIP() << "Info logging is compiled out";
+    }
+  }
+
+  template <typename Operation>
+  std::string capture(Operation operation, Error expected = Error::Ok) {
+    ::testing::internal::CaptureStderr();
+    const auto error = operation();
+    auto logs = ::testing::internal::GetCapturedStderr();
+    EXPECT_EQ(error, expected);
+    return logs;
+  }
+
+  void expect_order(
+      const std::string& logs,
+      std::initializer_list<const char*> events) {
+    size_t position = 0;
+    for (const char* event : events) {
+      const auto found = logs.find(event, position);
+      ASSERT_NE(found, std::string::npos) << event << "\n" << logs;
+      position = found + 1;
+    }
+    EXPECT_NE(logs.find(key.UTF8String), std::string::npos);
+  }
+};
+
+TEST_F(CoreAILifecycleLogTest, ColdAcquisitionLogsValidatedMilestonesInOrder) {
+  BookmarkLoaderScope fake;
+  const auto logs = capture([&] { return acquire(fake.loader, &data); });
+  expect_order(
+      logs,
+      {
+          "Core AI cache lookup:",
+          "Core AI cache miss: no bookmark",
+          "Core AI specialization started:",
+          "Core AI specialization succeeded:",
+          "Core AI cache bookmark saved durably:",
+      });
+  EXPECT_EQ(logs.find("Core AI cache hit:"), std::string::npos);
+  EXPECT_TRUE([saved() isEqual:fake.loader.lastAcquired.bookmark]);
+}
+
+TEST_F(CoreAILifecycleLogTest, WarmHitDoesNotLogSpecializationOrSave) {
+  BookmarkLoaderScope fake;
+  ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  const auto logs = capture([&] { return acquire(fake.loader, nullptr); });
+  expect_order(
+      logs,
+      {
+          "Core AI cache lookup:",
+          "Core AI cache hit: restored model from bookmark",
+      });
+  EXPECT_EQ(logs.find("Core AI cache miss:"), std::string::npos);
+  EXPECT_EQ(logs.find("Core AI specialization"), std::string::npos);
+  EXPECT_EQ(logs.find("Core AI cache bookmark saved"), std::string::npos);
+}
+
+TEST_F(CoreAILifecycleLogTest, ConfirmedMissLogsRespecialization) {
+  BookmarkLoaderScope fake;
+  ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  fake.loader.restoreMiss = YES;
+  const auto logs = capture([&] { return acquire(fake.loader, &data); });
+  expect_order(
+      logs,
+      {
+          "Core AI cache miss: SDK could not restore bookmark",
+          "Core AI specialization started:",
+          "Core AI specialization succeeded:",
+          "Core AI cache bookmark saved durably:",
+      });
+  EXPECT_EQ(logs.find("Core AI cache hit:"), std::string::npos);
+}
+
+TEST_F(CoreAILifecycleLogTest, RestoreErrorIsNotReportedAsHitOrMiss) {
+  BookmarkLoaderScope fake;
+  ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  fake.loader.restoreError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                                 code:EIO
+                                             userInfo:nil];
+  const auto logs =
+      capture([&] { return acquire(fake.loader, &data); }, Error::Internal);
+  EXPECT_EQ(logs.find("Core AI cache hit:"), std::string::npos);
+  EXPECT_EQ(logs.find("Core AI cache miss:"), std::string::npos);
+  EXPECT_EQ(logs.find("Core AI specialization"), std::string::npos);
+  EXPECT_EQ(logs.find("Core AI cache bookmark saved"), std::string::npos);
+}
+
+TEST_F(CoreAILifecycleLogTest, SpecializationErrorDoesNotLogSuccessOrSave) {
+  BookmarkLoaderScope fake;
+  fake.loader.specializeError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                                    code:EIO
+                                                userInfo:nil];
+  const auto logs =
+      capture([&] { return acquire(fake.loader, &data); }, Error::Internal);
+  EXPECT_NE(logs.find("Core AI specialization started:"), std::string::npos);
+  EXPECT_EQ(logs.find("Core AI specialization succeeded:"), std::string::npos);
+  EXPECT_EQ(logs.find("Core AI cache bookmark saved"), std::string::npos);
+}
+
+TEST_F(CoreAILifecycleLogTest, BeforeSdkFaultDoesNotLogSpecializationStart) {
+  BookmarkLoaderScope fake;
+  StorageFaultScope fault(StorageOperation::BeforeSDK);
+  const auto logs =
+      capture([&] { return acquire(fake.loader, &data); }, Error::AccessFailed);
+  EXPECT_EQ(fake.loader->specializations.load(), 0);
+  EXPECT_EQ(logs.find("Core AI specialization"), std::string::npos);
+  EXPECT_EQ(logs.find("Core AI cache bookmark saved"), std::string::npos);
 }
 
 } // namespace

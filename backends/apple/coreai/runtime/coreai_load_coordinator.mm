@@ -92,7 +92,9 @@ Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
   auto key = bookmark_key(selected, platform, architecture);
   if (!key.ok())
     return key.error();
-  auto locked = lock_bookmark(root, key.get());
+  NSString* cache_key = key.get();
+  ET_LOG(Info, "Core AI cache lookup: key=%s", cache_key.UTF8String);
+  auto locked = lock_bookmark(root, cache_key);
   if (!locked.ok())
     return locked.error();
   auto bookmark = read_bookmark(*locked.get());
@@ -103,9 +105,20 @@ Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
     if (!model.ok())
       return model.error();
     if (model.get() != nil) {
+      ET_LOG(
+          Info,
+          "Core AI cache hit: restored model from bookmark, key=%s",
+          key.get().UTF8String);
       cleanup_source(*locked.get());
       return model;
     }
+    ET_LOG(
+        Info,
+        "Core AI cache miss: SDK could not restore bookmark, key=%s",
+        key.get().UTF8String);
+  } else {
+    ET_LOG(
+        Info, "Core AI cache miss: no bookmark, key=%s", key.get().UTF8String);
   }
   auto staging = prepare_bookmark_staging(*locked.get());
   if (!staging.ok())
@@ -120,14 +133,25 @@ Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
     return source.error();
   NSURL* url = source.get();
   auto model = acquire(^(ETCoreAIAcquisitionCompletion completion) {
+    ET_LOG(
+        Info,
+        "Core AI specialization started: kind=%s, key=%s",
+        selected.aot_compiled ? "aot" : "source",
+        cache_key.UTF8String);
     [loader specializeModelAtURL:url completion:completion];
   });
   if (!model.ok())
     return model.error();
   ET_CHECK_OR_RETURN_ERROR(
       model.get() != nil, Internal, "Core AI specialization returned no model");
+  ET_LOG(
+      Info, "Core AI specialization succeeded: key=%s", key.get().UTF8String);
   ET_CHECK_OK_OR_RETURN_ERROR(
       write_bookmark(*locked.get(), [model.get() copyBookmarkData]));
+  ET_LOG(
+      Info,
+      "Core AI cache bookmark saved durably: key=%s",
+      key.get().UTF8String);
   cleanup_source(*locked.get());
   return model;
 }
