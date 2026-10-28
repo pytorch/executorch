@@ -932,32 +932,19 @@ class TOSAQuantizer(Quantizer):
             if node.op != "call_function":
                 continue
 
-            devices = set()
+            devices: set[str] = set()
             for arg_node in node.all_input_nodes:
                 meta_val = arg_node.meta.get("val", None)
                 if meta_val is None:
                     continue
-                if isinstance(meta_val, (tuple, list)):
-                    for tensor in meta_val:
-                        devices.add(
-                            str(
-                                getattr(
-                                    tensor,
-                                    "device",
-                                    f"Could not get device from {tensor}",
-                                )
-                            )
-                        )
-                else:
-                    devices.add(
-                        str(
-                            getattr(
-                                meta_val,
-                                "device",
-                                f"Could not get device from {meta_val}",
-                            )
-                        )
-                    )
+                values = (
+                    meta_val if isinstance(meta_val, (tuple, list)) else (meta_val,)
+                )
+                devices.update(
+                    str(value.device)
+                    for value in values
+                    if isinstance(value, torch.Tensor)
+                )
 
                 if len(devices) > 1:
                     raise ValueError(
