@@ -2721,7 +2721,7 @@ class CustomBuild(build):
                     ]
             else:
                 if windows_cuda_home:
-                    log.warning(
+                    log.warn(
                         "building the CUDA backend with the Visual Studio generator, "
                         "because ninja, clang-cl and cl are not all on PATH; run from "
                         "a Visual Studio developer prompt with ninja for the Ninja "
