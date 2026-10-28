@@ -54,6 +54,172 @@ TEST(CoreAIStorageTest, PreparesRootWithRootOnlyBackupPolicy) {
   EXPECT_TRUE((!backup_excluded(parent) && !backup_excluded(sandbox.url)));
 }
 
+TEST(CoreAIStorageTest, OpensDirectoriesAndReportsCreation) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  auto missing = open_storage_directory(root.get(), @"child", false);
+  ASSERT_TRUE(missing.ok());
+  EXPECT_EQ(missing.get().fd, -1);
+  EXPECT_FALSE(missing.get().created);
+
+  StorageFaultScope sync_fault(StorageOperation::SyncDirectory);
+  auto created = open_storage_directory(root.get(), @"child", true);
+  ASSERT_TRUE(created.ok());
+  FileDescriptor first(created.get().fd);
+  ASSERT_GE(first.get(), 0);
+  EXPECT_TRUE(created.get().created);
+  EXPECT_NE(fcntl(first.get(), F_GETFD) & FD_CLOEXEC, 0);
+  EXPECT_EQ(sync_fault.matches, 0);
+  struct stat original;
+  ASSERT_EQ(fstat(first.get(), &original), 0);
+  EXPECT_TRUE(S_ISDIR(original.st_mode));
+
+  StorageFaultScope create_fault(StorageOperation::BeforeCreateDirectory);
+  for (bool create : {false, true}) {
+    auto reopened = open_storage_directory(root.get(), @"child", create);
+    ASSERT_TRUE(reopened.ok());
+    FileDescriptor next(reopened.get().fd);
+    ASSERT_GE(next.get(), 0);
+    EXPECT_FALSE(reopened.get().created);
+    struct stat current;
+    ASSERT_EQ(fstat(next.get(), &current), 0);
+    EXPECT_EQ(current.st_ino, original.st_ino);
+  }
+  EXPECT_EQ(create_fault.matches, 0);
+}
+
+TEST(CoreAIStorageTest, ConcurrentDirectoryCreationIsNotReportedAsOwnCreation) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  NSURL* child = [storage.url URLByAppendingPathComponent:@"child"];
+  StorageFaultScope fault(StorageOperation::BeforeCreateDirectory);
+  fault.armed = false;
+  fault.observe = ^(StorageOperation operation) {
+    if (operation == StorageOperation::BeforeCreateDirectory)
+      EXPECT_EQ(mkdir(child.fileSystemRepresentation, 0777), 0);
+  };
+  auto opened = open_storage_directory(root.get(), @"child", true);
+  ASSERT_TRUE(opened.ok());
+  FileDescriptor directory(opened.get().fd);
+  EXPECT_GE(directory.get(), 0);
+  EXPECT_FALSE(opened.get().created);
+}
+
+TEST(CoreAIStorageTest, RejectsInvalidDirectoryComponents) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  EXPECT_EQ(
+      open_storage_directory(root.get(), nil, false).error(),
+      Error::InvalidArgument);
+  for (NSString* name in @[ @"", @".", @"..", @"nested/child" ]) {
+    EXPECT_EQ(
+        open_storage_directory(root.get(), name, false).error(),
+        Error::InvalidArgument);
+  }
+}
+
+TEST(CoreAIStorageTest, SkipsCreationForExistingRoots) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  NSURL* root = [storage.url URLByAppendingPathComponent:@"cache"];
+  ASSERT_TRUE(prepare_storage_root(root.path, true).ok());
+  StorageFaultScope fault(StorageOperation::BeforeCreateDirectory);
+  EXPECT_TRUE(prepare_storage_root(root.path, true).ok());
+  EXPECT_TRUE(prepare_storage_root(root.path, false).ok());
+  EXPECT_EQ(fault.matches, 0);
+  EXPECT_TRUE(backup_excluded(root));
+
+  NSURL* missing = [storage.url URLByAppendingPathComponent:@"missing"];
+  EXPECT_EQ(
+      prepare_storage_root(missing.path, false).error(),
+      Error::InvalidArgument);
+  EXPECT_EQ(fault.matches, 0);
+  EXPECT_EQ(
+      prepare_storage_root(missing.path, true).error(), Error::AccessFailed);
+  EXPECT_EQ(fault.hits, 1);
+  EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:missing.path]);
+  EXPECT_TRUE(prepare_storage_root(missing.path, true).ok());
+}
+
+TEST(CoreAIStorageTest, CreatesDirectoriesWithDefaultPermissions) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  NSURL* reference = [storage.url URLByAppendingPathComponent:@"reference"];
+  ASSERT_EQ(mkdir(reference.fileSystemRepresentation, 0777), 0);
+  struct stat expected;
+  ASSERT_EQ(stat(reference.fileSystemRepresentation, &expected), 0);
+  NSURL* root = [storage.url URLByAppendingPathComponent:@"cache"];
+  ASSERT_TRUE(prepare_storage_root(root.path, true).ok());
+  FileDescriptor directory(open(
+      root.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(directory.get(), 0);
+  ASSERT_EQ(
+      write_storage_file(directory.get(), @"nested/file", "x", 1), Error::Ok);
+  for (NSURL* entry in @[ root, [root URLByAppendingPathComponent:@"nested"] ]) {
+    struct stat actual;
+    ASSERT_EQ(stat(entry.fileSystemRepresentation, &actual), 0);
+    EXPECT_EQ(actual.st_mode & 0777, expected.st_mode & 0777);
+  }
+}
+
+TEST(CoreAIStorageTest, RecreatesRemovedRoot) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  NSURL* root = [storage.url URLByAppendingPathComponent:@"cache"];
+  ASSERT_TRUE(prepare_storage_root(root.path, true).ok());
+  ASSERT_EQ(rmdir(root.fileSystemRepresentation), 0);
+  ASSERT_TRUE(prepare_storage_root(root.path, true).ok());
+  EXPECT_TRUE(backup_excluded(root));
+}
+
+TEST(CoreAIStorageTest, NewRootAndDescendantsUseFirstUnlockProtection) {
+  NSFileManager* manager = NSFileManager.defaultManager;
+  NSURL* root = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
+      URLByAppendingPathComponent:NSUUID.UUID.UUIDString
+                      isDirectory:YES];
+  auto prepared = prepare_storage_root(root.path, true);
+  EXPECT_TRUE(prepared.ok());
+  if (prepared.ok()) {
+    FileDescriptor directory(open(
+        root.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    EXPECT_GE(directory.get(), 0);
+    if (directory.get() >= 0) {
+      EXPECT_EQ(
+          write_storage_file(directory.get(), @"nested/model.bin", "x", 1),
+          Error::Ok);
+      for (NSURL* entry in @[
+             root,
+             [root URLByAppendingPathComponent:@"nested"],
+             [root URLByAppendingPathComponent:@"nested/model.bin"]
+           ]) {
+        NSDictionary* attributes = [manager attributesOfItemAtPath:entry.path
+                                                             error:nil];
+        EXPECT_TRUE([attributes[NSFileProtectionKey]
+            isEqual:NSFileProtectionCompleteUntilFirstUserAuthentication]);
+      }
+    }
+    EXPECT_TRUE([manager
+        setAttributes:@{NSFileProtectionKey : NSFileProtectionComplete}
+         ofItemAtPath:root.path
+                error:nil]);
+    EXPECT_TRUE(prepare_storage_root(root.path, true).ok());
+    NSDictionary* existing = [manager attributesOfItemAtPath:root.path
+                                                       error:nil];
+    EXPECT_TRUE(
+        [existing[NSFileProtectionKey] isEqual:NSFileProtectionComplete]);
+    EXPECT_TRUE([manager removeItemAtURL:root error:nil]);
+  }
+}
+
 TEST(CoreAIStorageTest, RejectsInvalidRootsConsistently) {
   TestDirectory storage;
   ASSERT_NE(storage.url, nil);
@@ -164,6 +330,75 @@ TEST(CoreAIStorageTest, CreatesNestedFilesWithoutOverwritingExistingContents) {
   EXPECT_EQ(empty.length, 0);
 }
 
+TEST(CoreAIStorageTest, ReusesSourceParentsWithoutCreation) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  ASSERT_EQ(
+      write_storage_file(root.get(), @"nested/parents/first", "x", 1),
+      Error::Ok);
+  StorageFaultScope fault(StorageOperation::BeforeCreateDirectory);
+  EXPECT_EQ(
+      write_storage_file(root.get(), @"nested/parents/second", "x", 1),
+      Error::Ok);
+  EXPECT_EQ(fault.matches, 0);
+  EXPECT_EQ(
+      write_storage_file(root.get(), @"missing/file", "x", 1),
+      Error::AccessFailed);
+  EXPECT_EQ(fault.hits, 1);
+  EXPECT_EQ(write_storage_file(root.get(), @"missing/file", "x", 1), Error::Ok);
+}
+
+TEST(CoreAIStorageTest, AcceptsConcurrentSourceParentCreation) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  NSURL* nested = [storage.url URLByAppendingPathComponent:@"nested"];
+  StorageFaultScope fault(StorageOperation::BeforeCreateDirectory);
+  fault.armed = false;
+  __block int creations = 0;
+  fault.observe = ^(StorageOperation operation) {
+    if (operation == StorageOperation::BeforeCreateDirectory) {
+      ++creations;
+      EXPECT_EQ(mkdir(nested.fileSystemRepresentation, 0700), 0);
+    }
+  };
+  EXPECT_EQ(write_storage_file(root.get(), @"nested/file", "x", 1), Error::Ok);
+  EXPECT_EQ(creations, 1);
+}
+
+TEST(CoreAIStorageTest, RejectsUnsafeSourceParentsWithoutCreation) {
+  TestDirectory storage;
+  TestDirectory target;
+  ASSERT_NE(storage.url, nil);
+  ASSERT_NE(target.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  NSURL* link = [storage.url URLByAppendingPathComponent:@"link"];
+  ASSERT_EQ(
+      symlink(
+          target.url.fileSystemRepresentation, link.fileSystemRepresentation),
+      0);
+  NSURL* regular = [storage.url URLByAppendingPathComponent:@"regular"];
+  ASSERT_TRUE([[NSData data] writeToURL:regular atomically:NO]);
+  StorageFaultScope fault(StorageOperation::BeforeCreateDirectory);
+  for (NSString* path in @[ @"link/file", @"regular/file" ]) {
+    EXPECT_EQ(
+        write_storage_file(root.get(), path, "x", 1), Error::AccessFailed);
+  }
+  EXPECT_EQ(fault.matches, 0);
+  EXPECT_FALSE([NSFileManager.defaultManager
+      fileExistsAtPath:[target.url URLByAppendingPathComponent:@"file"].path]);
+}
+
 TEST(CoreAIStorageTest, RemovesFailedWritesAndAllowsRetry) {
   const struct {
     StorageOperation operation;
@@ -221,7 +456,9 @@ TEST(CoreAIStorageTest, SyncsEachCreatedParentAndTheWrittenFile) {
   EXPECT_EQ(
       operations,
       (std::vector<StorageOperation>{
+          StorageOperation::BeforeCreateDirectory,
           StorageOperation::SyncDirectory,
+          StorageOperation::BeforeCreateDirectory,
           StorageOperation::SyncDirectory,
           StorageOperation::Write,
           StorageOperation::SyncFile,

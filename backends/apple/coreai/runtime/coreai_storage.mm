@@ -75,19 +75,26 @@ Result<NSString*> prepare_storage_root(NSString* path, bool create) {
       result == 0 ? S_ISDIR(info.st_mode) : create && errno == ENOENT,
       InvalidArgument,
       "Core AI storage must be a directory");
-  if (create) {
+  if (create && result != 0) {
+    NSDictionary* attributes = @{
+      NSFileProtectionKey :
+          NSFileProtectionCompleteUntilFirstUserAuthentication,
+    };
+    ET_CHECK_OR_RETURN_ERROR(
+        storage_fault(StorageOperation::BeforeCreateDirectory) == 0,
+        AccessFailed,
+        "Cannot begin Core AI directory creation");
     NSError* error = nil;
     ET_CHECK_OR_RETURN_ERROR(
-        [NSFileManager.defaultManager
-                  createDirectoryAtPath:path
-            withIntermediateDirectories:YES
-                             attributes:@{
-                               NSFilePosixPermissions : @0700
-                             }
-                                  error:&error],
+        [NSFileManager.defaultManager createDirectoryAtPath:path
+                                withIntermediateDirectories:YES
+                                                 attributes:attributes
+                                                      error:&error],
         AccessFailed,
         "Cannot create Core AI storage directory: %s",
         error.localizedDescription.UTF8String);
+  }
+  if (create) {
     ET_CHECK_OK_OR_RETURN_ERROR(ensure_excluded_from_backup(
         [NSURL fileURLWithPath:path isDirectory:YES]));
   }
@@ -146,21 +153,10 @@ Error write_file(
   ET_CHECK_OR_RETURN_ERROR(
       parent.get() >= 0, AccessFailed, "Cannot open storage parent");
   for (NSUInteger i = 0; i + 1 < components.count; ++i) {
-    const char* component = components[i].fileSystemRepresentation;
-    ET_CHECK_OR_RETURN_ERROR(
-        retry_eintr([&] { return mkdirat(parent.get(), component, 0700); }) ==
-                0 ||
-            errno == EEXIST,
-        AccessFailed,
-        "Cannot create Core AI source directory");
-    FileDescriptor next(retry_eintr([&] {
-      return openat(
-          parent.get(),
-          component,
-          O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    }));
-    ET_CHECK_OR_RETURN_ERROR(
-        next.get() >= 0, AccessFailed, "Cannot open source directory");
+    auto opened = open_storage_directory(parent.get(), components[i], true);
+    if (!opened.ok())
+      return opened.error();
+    FileDescriptor next(opened.get().fd);
     ET_CHECK_OK_OR_RETURN_ERROR(sync_storage_directory(parent.get()));
     parent.reset(next.release());
   }
@@ -214,6 +210,41 @@ Error write_file(
   return result;
 }
 } // namespace
+
+Result<StorageDirectory>
+open_storage_directory(int parent_fd, NSString* name, bool create) {
+  ET_CHECK_OR_RETURN_ERROR(
+      storage_component(name), InvalidArgument, "Invalid storage directory name");
+  const auto open_directory = [&] {
+    return retry_eintr([&] {
+      return openat(
+          parent_fd,
+          name.fileSystemRepresentation,
+          O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    });
+  };
+  int fd = open_directory();
+  bool created = false;
+  if (fd < 0 && errno == ENOENT && create) {
+    ET_CHECK_OR_RETURN_ERROR(
+        storage_fault(StorageOperation::BeforeCreateDirectory) == 0,
+        AccessFailed,
+        "Cannot begin Core AI directory creation");
+    const int made = retry_eintr(
+        [&] { return mkdirat(parent_fd, name.fileSystemRepresentation, 0777); });
+    ET_CHECK_OR_RETURN_ERROR(
+        made == 0 || errno == EEXIST,
+        AccessFailed,
+        "Cannot create Core AI storage directory");
+    created = made == 0;
+    fd = open_directory();
+  }
+  if (fd < 0 && errno == ENOENT && !create)
+    return StorageDirectory{-1, false};
+  ET_CHECK_OR_RETURN_ERROR(
+      fd >= 0, AccessFailed, "Cannot open Core AI storage directory");
+  return StorageDirectory{fd, created};
+}
 
 Result<NSArray<NSString*>*> storage_children(int fd, bool skip_invalid_names) {
   // Reopening avoids sharing the caller's directory offset.

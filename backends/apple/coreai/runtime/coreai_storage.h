@@ -22,6 +22,14 @@ runtime::Result<NSString*> prepare_storage_root(NSString* path, bool create);
 runtime::Error ensure_excluded_from_backup(NSURL* directory);
 
 runtime::Error sync_storage_directory(int fd);
+struct StorageDirectory {
+  int fd;
+  bool created;
+};
+// Opens one child component without following symlinks. The caller owns fd;
+// missing with create=false returns {-1, false}. Does not flush directories.
+runtime::Result<StorageDirectory>
+open_storage_directory(int parent_fd, NSString* name, bool create);
 // Returns an independently owned descriptor for a stable coordination file.
 int open_storage_shared_file(int parent_fd, const char* name);
 // Creates a new file and missing parents, then syncs the file and its parent.
@@ -45,6 +53,7 @@ enum class StorageOperation {
   SyncDirectory,
   FullSync,
   Rename,
+  BeforeCreateDirectory,
   BeforeSDK,
   AfterSDK,
   BeforeEvict,

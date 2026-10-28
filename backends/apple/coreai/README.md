@@ -66,6 +66,16 @@ Preparing the assets root sets `NSURLIsExcludedFromBackupKey` on it, which cover
 everything beneath it. Ancestors are not modified. This is backup exclusion, not
 a control for iCloud Drive synchronization.
 
+Newly created roots request
+`NSFileProtectionCompleteUntilFirstUserAuthentication`. On iOS, this allows cache
+access while the device is locked after its first unlock following a reboot. New
+subdirectories and files inherit their parent's protection. Existing cache
+contents are not migrated. Directory preparation skips creation when the root
+already exists; child directories are opened first and created only when missing.
+Directory creation uses default permissions filtered by the process umask, without
+an explicit owner-only restriction. Existing permissions are not changed.
+Backup exclusion and required durability flushes still apply on reused paths.
+
 ## Host Tests
 
 On macOS, `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON`
