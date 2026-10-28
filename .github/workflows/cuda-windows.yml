@@ -17,8 +17,8 @@ on:
       - backends/cuda/**
       - backends/aoti/**
       - extension/cuda/**
-      # Read only by unittest-cuda-runtime-windows; the other jobs filter on
-      # their own paths and stay skipped.
+      # Only unittest-cuda-runtime-windows runs for these alone; the other jobs
+      # filter on their own paths and stay skipped.
       - .ci/scripts/test_cuda_runtime_windows.ps1
       - .ci/scripts/install_nvidia_driver_windows.ps1
       - tools/cmake/Test.cmake
