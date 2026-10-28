@@ -850,6 +850,34 @@ class TestPasses(unittest.TestCase):
                         self.skipTest(f"QNN SDK not available: {e}")
                     raise
 
+    def test_partitioner_keeps_constant_only_subgraph_on_cpu(self):
+        class ConstantBranch(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.randn(4, 16))
+
+            def forward(self, x):
+                return x + torch.relu(self.table * 2 - 1)
+
+        sample_input = (torch.randn(4, 16),)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        # With relu on CPU, table * 2 - 1 reads nothing at runtime.
+        try:
+            edge = to_edge_transform_and_lower_to_qnn(
+                ConstantBranch().eval(),
+                sample_input,
+                compiler_specs,
+                skip_node_op_set={"aten.relu.default"},
+            )
+        except RuntimeError as e:
+            if "Failed to initialize QNN backend" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
+        edge.to_executorch()
+
     def _assert_cpu_conv_keeps_its_weight_dequantize(
         self, quant_dtype, use_fp16, skip_node_id_set=None, emit=True
     ):

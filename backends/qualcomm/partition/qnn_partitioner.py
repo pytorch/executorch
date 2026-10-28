@@ -14,7 +14,10 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     PER_CHANNEL_GROUP_ENCODING,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.builders.utils import (
+    is_mutable_buffer_input,
+    is_parameter,
+)
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.serialization.qc_schema import (
     HtpArch,
@@ -253,7 +256,14 @@ class QnnPartitioner(Partitioner):
             edge_program.graph_module,
             op_support=self.op_support_checker,
         )
-        return self._drop_orphaned_parameter_dequants(partitions, edge_program)
+        partitions = self._drop_orphaned_parameter_dequants(partitions, edge_program)
+        # LPAI places its CPU fallback boundaries before partitioning, and GPU
+        # accepts graphs without inputs, so only HTP partitions are dropped.
+        if self.backend == QnnExecuTorchBackendType.kHtpBackend:
+            partitions = self._drop_partitions_without_runtime_inputs(
+                partitions, edge_program
+            )
+        return partitions
 
     @staticmethod
     def _drop_orphaned_parameter_dequants(
@@ -286,6 +296,32 @@ class QnnPartitioner(Partitioner):
                 )
         return [partition for partition in partitions if partition.nodes]
 
+    @staticmethod
+    def _drop_partitions_without_runtime_inputs(
+        partitions: List[Partition], edge_program: torch.export.ExportedProgram
+    ) -> List[Partition]:
+        """
+        HTP refuses a graph that reads nothing at runtime, e.g. a subgraph fed
+        only by constants once a CPU op splits it from the rest. Such a
+        partition stays on CPU.
+        """
+
+        def is_runtime_input(node: torch.fx.Node) -> bool:
+            return not is_parameter(node, edge_program) or is_mutable_buffer_input(
+                node, edge_program
+            )
+
+        return [
+            partition
+            for partition in partitions
+            if any(
+                is_runtime_input(arg)
+                for node in partition.nodes
+                for arg in node.all_input_nodes
+                if arg not in partition.nodes
+            )
+        ]
+
     def tag_nodes(
         self, partitions: List[Partition], edge_program: torch.export.ExportedProgram
     ) -> None:
@@ -297,6 +333,10 @@ class QnnPartitioner(Partitioner):
                 delegation_tag = f"qnn_{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
                 self.partition_tags[delegation_tag] = self.delegation_spec
+
+        # Dropping partitions can leave none, and there is no tag to reuse.
+        if not partitions:
+            return
 
         # need to take care of consumed constants
         consumed_constants = (
