@@ -386,6 +386,61 @@ class TestCoreMLPartitioner(unittest.TestCase):
         self.assertIn("executorch_call_delegate", op_names)
         self.assertNotIn("aten.randn.default", op_names)
 
+    def test_ops_above_rank_5_are_skipped(self):
+        """
+        Core ML tensors have at most rank 5.  coremltools only rewrites an
+        unbranched view, permute, view chain through a higher rank (a window
+        partition), and raises on any other op above rank 5.  The partitioner
+        must leave those ops to the portable backend and keep such a layout
+        chain delegated.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                windows = x.view(2, 2, 2, 2, 2, 8).permute(0, 1, 3, 2, 4, 5)
+                windows = windows.reshape(-1, 4, 8).relu()
+                branched = x.view(2, 2, 2, 2, 2, 8).permute(0, 1, 3, 2, 4, 5)
+                branched = (
+                    branched.reshape(-1, 4, 8).sum() + branched.reshape(32, 8).sum()
+                )
+                stacked = torch.stack([x.unsqueeze(0), x.unsqueeze(0) * 2])
+                return windows.sum() + branched + stacked.sum(0).relu().sum()
+
+        model = Model().eval()
+        x = torch.randn(2, 4, 4, 8)
+        ep = torch.export.export(model, (x,), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("executorch_call_delegate", op_names)
+        self.assertIn("aten.sum.dim_IntList", op_names)
+        self.assertEqual(op_names.count("aten.permute_copy.default"), 1)
+        if _TEST_RUNTIME:
+            program = Runtime.get().load_program(edge.to_executorch().buffer)
+            out = program.load_method("forward").execute((x,))[0]
+            self.assertTrue(torch.allclose(out, model(x), atol=5e-2, rtol=5e-2))
+
+        # A skipped permute leaves the chain's views with no rank 6 rewrite.
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep,
+            partitioner=[
+                CoreMLPartitioner(
+                    skip_ops_for_coreml_delegation=["aten.permute_copy.default"]
+                )
+            ],
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertEqual(op_names.count("aten.permute_copy.default"), 2)
+
     def test_argmax_argmin_dim_none_is_skipped(self):
         """
         Regression test for https://github.com/pytorch/executorch/issues/11715.
