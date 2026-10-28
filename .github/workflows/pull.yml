@@ -934,6 +934,66 @@ jobs:
         # Build QNN backend with Buck
         buck2 build //backends/qualcomm/...
 
+  test-arm-backend-docgen:
+    needs: [docker-image, changed-files]
+    if: |
+      needs.changed-files.outputs.changed-files == '*' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/arm/') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arm/') ||
+      contains(needs.changed-files.outputs.changed-files, 'docs/source/backends/arm-ethos-u/') ||
+      contains(needs.changed-files.outputs.changed-files, 'docs/source/backends/arm-vgf/') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/backend/partitioner.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/docker/') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_executorch.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_executorch.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'pyproject.toml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_get-changed-files.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml')
+    name: test-arm-backend-docgen
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -e
+
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
+
+        docgen_outputs=(
+          docs/source/backends/arm-ethos-u/arm-ethos-u-overview.md
+          docs/source/backends/arm-ethos-u/arm-ethos-u-partitioner.md
+          docs/source/backends/arm-ethos-u/arm-ethos-u-quantization.md
+          docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md
+          docs/source/backends/arm-vgf/arm-vgf-overview.md
+          docs/source/backends/arm-vgf/arm-vgf-partitioner.md
+          docs/source/backends/arm-vgf/arm-vgf-quantization.md
+          docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md
+        )
+
+        python backends/arm/scripts/docgen/docgen.py
+        if [[ -n "$(git status --porcelain -- "${docgen_outputs[@]}")" ]]; then
+          git diff HEAD -- "${docgen_outputs[@]}"
+          git status --short -- "${docgen_outputs[@]}"
+          echo "::error::Arm documentation is outdated. Run docgen.py and commit the generated changes."
+          exit 1
+        fi
+
   test-arm-backend-no-driver:
     needs: docker-image
     name: test-arm-backend-no-driver

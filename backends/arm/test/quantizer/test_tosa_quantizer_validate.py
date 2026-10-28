@@ -9,6 +9,7 @@ import torch
 from executorch.backends.arm.quantizer import TOSAQuantizer
 from executorch.backends.arm.tosa import TosaSpecification
 from torch.fx import symbolic_trace
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 
 def _annotate_placeholders_with_devices(gm, device_map):
@@ -53,3 +54,18 @@ def test_validate_rejects_mixed_devices_within_operator():
     quantizer = _get_quantizer()
     with pytest.raises(ValueError, match="Quantizer detected operator"):
         quantizer.validate(gm)
+
+
+def test_validate_ignores_symbolic_scalar_inputs():
+    graph = torch.fx.Graph()
+    lhs = graph.placeholder("lhs")
+    rhs = graph.placeholder("rhs")
+    result = graph.call_function(torch.ops.aten.mul.Scalar, (lhs, rhs))
+    graph.output(result)
+    gm = torch.fx.GraphModule({}, graph)
+
+    shape_env = ShapeEnv()
+    lhs.meta["val"] = shape_env.create_unbacked_symint()
+    rhs.meta["val"] = shape_env.create_unbacked_symint()
+
+    _get_quantizer().validate(gm)
