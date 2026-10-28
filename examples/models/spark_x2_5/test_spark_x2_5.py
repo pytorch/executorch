@@ -115,6 +115,37 @@ def test_spark_x2_5_architecture_configs_match_expected_shapes() -> None:
         )
 
 
+def test_sanitize_tokenizer_replaces_noop_normalizer(tmp_path) -> None:
+    from executorch.examples.models.spark_x2_5.convert_weights import sanitize_tokenizer
+
+    tokenizer = {
+        "normalizer": {"type": "Sequence", "normalizers": []},
+        "model": {"type": "BPE"},
+    }
+    tokenizer_path = tmp_path / "tokenizer.json"
+    tokenizer_path.write_text(json.dumps(tokenizer))
+
+    sanitize_tokenizer(str(tmp_path))
+
+    sanitized = json.loads(tokenizer_path.read_text())
+    assert sanitized["normalizer"] is None
+    assert sanitized["model"] == {"type": "BPE"}
+
+
+def test_sanitize_tokenizer_keeps_meaningful_normalizer(tmp_path) -> None:
+    from executorch.examples.models.spark_x2_5.convert_weights import sanitize_tokenizer
+
+    normalizer = {"type": "Sequence", "normalizers": [{"type": "NFC"}]}
+    tokenizer = {"normalizer": normalizer, "model": {"type": "BPE"}}
+    tokenizer_path = tmp_path / "tokenizer.json"
+    tokenizer_path.write_text(json.dumps(tokenizer))
+
+    sanitize_tokenizer(str(tmp_path))
+
+    sanitized = json.loads(tokenizer_path.read_text())
+    assert sanitized["normalizer"] == normalizer
+
+
 def test_spark_x2_5_xnnpack_q8da4w_config_enables_xnnpack_backend() -> None:
     cfg = OmegaConf.load(CONFIG_DIR / "spark_x2_5_xnnpack_q8da4w.yaml")
     assert cfg.base.metadata == '{"get_bos_id": 0, "get_eos_ids":[1]}'

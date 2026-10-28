@@ -11,7 +11,7 @@ MODEL_NAME=""
 # Parse args
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <model_name> [--test_with_runner]"
-  echo "Supported model_name values: qwen3_4b, phi_4_mini, lfm2_5_1_2b"
+  echo "Supported model_name values: qwen3_4b, phi_4_mini, lfm2_5_1_2b, spark_x2_5_1_7b, spark_x2_5_4b"
   exit 1
 fi
 
@@ -28,7 +28,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       echo "Usage: $0 <model_name> [--test_with_runner] [--use_torchao_kernels]"
-      echo "  model_name: qwen3_4b | phi_4_mini | lfm2_5_1_2b"
+      echo "  model_name: qwen3_4b | phi_4_mini | lfm2_5_1_2b | spark_x2_5_1_7b | spark_x2_5_4b"
       echo "  --test_with_runner: build ET + run llama_main to sanity-check the export"
       echo "  --use_torchao_kernels: use torchao kernels for linear and tied embedding"
       exit 0
@@ -125,9 +125,61 @@ case "$MODEL_NAME" in
       ${BACKEND_ARGS}
     ;;
 
+  spark_x2_5_1_7b)
+    echo "Running Spark-X2.5-1.7B export..."
+    HF_MODEL_DIR="${RUNNER_TEMP:-/tmp}/hf_cache/spark_x2_5_1_7b"
+    mkdir -p "${HF_MODEL_DIR}"
+    hf download --local-dir "${HF_MODEL_DIR}" XHToken/Spark-X2.5-1.7B
+    EXPECTED_MODEL_SIZE_UPPER_BOUND=$((2 * 1024 * 1024 * 1024)) # 2GB
+    $PYTHON_EXECUTABLE -m executorch.examples.models.spark_x2_5.convert_weights \
+      $HF_MODEL_DIR \
+      pytorch_model_converted.bin
+
+    $PYTHON_EXECUTABLE -m executorch.examples.models.llama.export_llama \
+      --model "spark_x2_5_1_7b" \
+      --checkpoint pytorch_model_converted.bin \
+      --params examples/models/spark_x2_5/config/spark_x2_5_1_7b_config.json \
+      --output_name $MODEL_OUT \
+      -kv \
+      --use_sdpa_with_kv_cache \
+      --max_context_length 1024 \
+      --max_seq_length 1024 \
+      --metadata '{"get_bos_id":0, "get_eos_ids":[1]}' \
+      --verbose \
+      --dtype fp32 \
+      -qmode 8da4w \
+      ${BACKEND_ARGS}
+    ;;
+
+  spark_x2_5_4b)
+    echo "Running Spark-X2.5-4B export..."
+    HF_MODEL_DIR="${RUNNER_TEMP:-/tmp}/hf_cache/spark_x2_5_4b"
+    mkdir -p "${HF_MODEL_DIR}"
+    hf download --local-dir "${HF_MODEL_DIR}" XHToken/Spark-X2.5-4B
+    EXPECTED_MODEL_SIZE_UPPER_BOUND=$((5 * 1024 * 1024 * 1024)) # 5GB
+    $PYTHON_EXECUTABLE -m executorch.examples.models.spark_x2_5.convert_weights \
+      $HF_MODEL_DIR \
+      pytorch_model_converted.bin
+
+    $PYTHON_EXECUTABLE -m executorch.examples.models.llama.export_llama \
+      --model "spark_x2_5_4b" \
+      --checkpoint pytorch_model_converted.bin \
+      --params examples/models/spark_x2_5/config/spark_x2_5_4b_config.json \
+      --output_name $MODEL_OUT \
+      -kv \
+      --use_sdpa_with_kv_cache \
+      --max_context_length 1024 \
+      --max_seq_length 1024 \
+      --metadata '{"get_bos_id":0, "get_eos_ids":[1]}' \
+      --verbose \
+      --dtype fp32 \
+      -qmode 8da4w \
+      ${BACKEND_ARGS}
+    ;;
+
   *)
     echo "Error: unsupported model_name '$MODEL_NAME'"
-    echo "Supported values: qwen3_4b, phi_4_mini, lfm2_5_1_2b"
+    echo "Supported values: qwen3_4b, phi_4_mini, lfm2_5_1_2b, spark_x2_5_1_7b, spark_x2_5_4b"
     exit 1
     ;;
 esac
