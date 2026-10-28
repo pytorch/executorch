@@ -79,9 +79,11 @@ def main(args):
         compile_runner = json.loads((observed / "build-commands.json").read_text())[0]
         compile_runner = [item.replace(str(observed / "0-runner.o"), str(job / "routing-runner.o")).replace(str(observed / "observed_runner.cpp"), str(job / "routing_runner.cpp")) for item in compile_runner]
         link = commands[1]
-        link = [str(job / "routing-runner.o") if item.endswith('/libextension_llm_runner.a') else item for item in link]
+        link = [item for item in link if not item.endswith('/libextension_llm_runner.a')]
+        link = [str(job / "routing-runner.o") if item.endswith('/runner.o') else item for item in link]
         link = [str(stable / "libaoti_cuda_backend.a") if item.endswith('/libaoti_cuda_backend.a') else item for item in link]
         link = [item.replace(str(mini / "admission64.cpp.o"), str(job / "routing-mini.o")).replace(str(mini / "admission64-mini"), str(job / "routing-mini")) for item in link]
+        link.append('/usr/lib/x86_64-linux-gnu/libcuda.so.1')
         (job / "build-commands.json").write_text(json.dumps([compile_mini, compile_runner, link], indent=2))
         state("building-isolated-native-routing-profiler")
         with (job / "build.log").open("x") as log:
