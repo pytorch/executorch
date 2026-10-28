@@ -875,6 +875,8 @@ def get_native_group_norm_inputs():
             ((3, 7, 13, 11), (7), (7), 3, 7, 13 * 11, 1, 0.001),
             # Each channel is it's own group and prime number sizes
             ((1, 7, 13, 11), (7), (7), 1, 7, 13 * 11, 7, 0.001),
+            # One group per channel at the scale instance norm models reach
+            ((1, 64, 32, 32), (64), (64), 1, 64, 32 * 32, 64, 0.001),
         ]
     )
     test_suite.layouts = [
@@ -894,7 +896,27 @@ def get_native_group_norm_inputs():
     test_suite.prepacked_args = ["weight", "bias"]
     test_suite.requires_prepack = True
 
-    return test_suite
+    # A mean far from zero relative to the standard deviation, which computing the
+    # variance as E[x^2] - E[x]^2 in fp32 cannot resolve. The mean of values near
+    # 1000 is only representable to ~3e-5 in fp32, hence the looser tolerance.
+    large_offset_suite = VkTestSuite(
+        [
+            ((1, 8, 16, 16), (8), (8), 1, 8, 16 * 16, 8, 1e-5),
+            ((2, 8, 7, 9), (8), (8), 2, 8, 7 * 9, 2, 1e-5),
+        ]
+    )
+    large_offset_suite.layouts = test_suite.layouts
+    large_offset_suite.storage_types = test_suite.storage_types
+    large_offset_suite.dtypes = ["at::kFloat"]
+    large_offset_suite.arg_storage_types = test_suite.arg_storage_types
+    large_offset_suite.prepacked_args = test_suite.prepacked_args
+    large_offset_suite.requires_prepack = True
+    large_offset_suite.arg_data_range["input"] = (1000, 1001)
+    large_offset_suite.atol = "2e-3"
+    large_offset_suite.rtol = "1e-3"
+    large_offset_suite.test_name_suffix = "large_offset"
+
+    return [test_suite, large_offset_suite]
 
 
 def get_upsample_inputs():

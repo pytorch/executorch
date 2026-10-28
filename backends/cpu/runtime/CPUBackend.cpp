@@ -19,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <utility>
 
 namespace executorch::backends::cpu {
 namespace {
@@ -67,7 +68,7 @@ class CPUExecution {
       ET_CHECK_OR_RETURN_ERROR(
           spec.kind == ptn::OutputKind::UserOutput,
           NotSupported,
-          "CpuBackend static FP32 delegate does not support mutation");
+          "CpuBackend static delegate does not support mutation");
     }
     buffers_.resize(graph.values.size());
     bytes_.reserve(graph.values.size());
@@ -140,11 +141,18 @@ class CPUExecution {
         copied_constant_bytes_ += buffer.readable_bytes;
       }
       buffers_[id] = buffer;
-      constants_.push_back(std::move(data.get()));
+      constants_.emplace_back(id, std::move(data.get()));
     }
     error = plan_->prepare(allocator);
     if (error != Error::Ok) {
       return error;
+    }
+    for (auto& [id, constant] : constants_) {
+      if (plan_->can_release_constant(id)) {
+        released_constant_bytes_ += constant.size();
+        buffers_[id] = {};
+        constant.Free();
+      }
     }
     const double milliseconds = std::chrono::duration<double, std::milli>(
                                     std::chrono::steady_clock::now() - start)
@@ -171,7 +179,8 @@ class CPUExecution {
       const auto& tensor = args[index]->toTensor();
       const auto& expected = method_->graph.value(id).tensor_meta();
       ET_CHECK_OR_RETURN_ERROR(
-          tensor.scalar_type() == aten::ScalarType::Float &&
+          tensor.scalar_type() ==
+                  static_cast<aten::ScalarType>(expected.dtype) &&
               tensor.dim() == expected.sizes.size() &&
               std::equal(
                   expected.sizes.begin(),
@@ -182,15 +191,20 @@ class CPUExecution {
           InvalidArgument,
           "CPU static shape/dtype/layout/storage mismatch: %s",
           method_->graph.value(id).name.c_str());
-      int64_t stride = 1;
-      for (size_t reverse = expected.sizes.size(); reverse > 0; --reverse) {
-        const size_t dim = reverse - 1;
-        ET_CHECK_OR_RETURN_ERROR(
-            tensor.dim_order()[dim] == dim && tensor.strides()[dim] == stride,
-            InvalidArgument,
-            "CPU binding must be contiguous: %s",
-            method_->graph.value(id).name.c_str());
-        stride *= expected.sizes[dim];
+      // Empty bindings carry no data, so their strides and dim order are
+      // meaningless (PyTorch does not canonicalize them); skip the contiguity
+      // check rather than rejecting valid empty tensors.
+      if (tensor.nbytes() != 0) {
+        int64_t stride = 1;
+        for (size_t reverse = expected.sizes.size(); reverse > 0; --reverse) {
+          const size_t dim = reverse - 1;
+          ET_CHECK_OR_RETURN_ERROR(
+              tensor.dim_order()[dim] == dim && tensor.strides()[dim] == stride,
+              InvalidArgument,
+              "CPU binding must be contiguous: %s",
+              method_->graph.value(id).name.c_str());
+          stride *= expected.sizes[dim];
+        }
       }
     }
     // EValue exposes the logical span, but no backing capacity or readable
@@ -227,7 +241,8 @@ class CPUExecution {
     report.pop_back();
     report +=
         ",\"copied_constant_bytes\":" + std::to_string(copied_constant_bytes_) +
-        "}";
+        ",\"released_constant_bytes\":" +
+        std::to_string(released_constant_bytes_) + "}";
     constexpr size_t chunk_bytes = 80;
     constexpr std::string_view hex = "0123456789abcdef";
     const size_t chunks = (report.size() + chunk_bytes - 1) / chunk_bytes;
@@ -246,12 +261,13 @@ class CPUExecution {
 
   ptn::Program program_;
   const ptn::Method* method_ = nullptr;
-  std::vector<FreeableBuffer> constants_;
+  std::vector<std::pair<ptn::ValueId, FreeableBuffer>> constants_;
   std::vector<size_t> bytes_;
   std::vector<Buffer> buffers_;
   std::vector<ptn::ValueId> input_ids_;
   std::unique_ptr<CPUPlan> plan_;
   size_t copied_constant_bytes_ = 0;
+  size_t released_constant_bytes_ = 0;
   std::mutex mutex_;
 };
 

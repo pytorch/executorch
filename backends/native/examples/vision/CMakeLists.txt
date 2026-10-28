@@ -4,19 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-if(NOT TARGET gflags AND NOT TARGET gflags::gflags)
-  find_package(gflags REQUIRED)
-endif()
-if(TARGET gflags::gflags)
-  set(_native_vision_gflags gflags::gflags)
-else()
-  set(_native_vision_gflags gflags)
-endif()
-
 add_executable(run_classification run_classification.cpp)
 target_link_libraries(
   run_classification
-  PRIVATE ${_native_vision_gflags} native_engine native_package
+  PRIVATE ${_native_runner_gflags} native_engine native_package
           native_runner_utils native_runtime native_vulkan_engine
 )
 target_compile_options(
