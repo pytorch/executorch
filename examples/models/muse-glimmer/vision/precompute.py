@@ -101,8 +101,10 @@ def interpolate_pos_emb(
     gh, gw = config.pos_emb_grid_h, config.pos_emb_grid_w
     latent = config.latent_dim
     dtype = pos_embed_table.dtype
+    # Contiguous on purpose: for 16-bit dtypes the CPU grid_sample kernel uses
+    # int16 gather offsets, which overflow on the permuted view's strides.
     pos_emb = (
-        pos_embed_table.view(gh, gw, latent).permute(2, 0, 1).unsqueeze(0)
+        pos_embed_table.view(gh, gw, latent).permute(2, 0, 1).unsqueeze(0).contiguous()
     )  # [1, latent, gh, gw]
     inv_h = 1.0 / grid_h
     inv_w = 1.0 / grid_w

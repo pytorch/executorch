@@ -25,11 +25,11 @@ from torch.fx._compatibility import compatibility
 @compatibility(is_backward_compatible=False)
 @dataclass
 class PropagateDeviceConfig:
-    """Controls whether the runtime copies method inputs and outputs across the device boundary.
+    """Controls whether the runtime copies method inputs, outputs and constants across the device boundary.
 
-    Skipping a copy also means the runtime must not reserve its own buffer for the tensor, or it
-    would fill that buffer from the caller's memory and the copy would come back. Memory planning
-    allocates graph inputs and outputs by default, so a program using either skip below needs::
+    Memory planning reserves buffers for graph inputs and outputs by default. A program that skips
+    the input copy must use ``alloc_graph_input=False``. Unplanning the outputs as well, as below,
+    copies the least::
 
         ExecutorchBackendConfig(
             propagate_device_config=PropagateDeviceConfig(
@@ -43,33 +43,82 @@ class PropagateDeviceConfig:
         )
 
     Without ``alloc_graph_input=False`` the runtime reserves device memory for an input the caller
-    already owns, then copies into it with a host memcpy, which is undefined for device memory.
+    already owns and refuses to copy into it, so every call fails with ``NotSupported``. Planned
+    outputs work, but they live in the method's memory, which the next run overwrites, and the
+    Python ``execute()`` copies them unless it gets ``clone_outputs=False``.
+
+    ``skip_h2d_for_constants`` does not need ``alloc_graph_input=False``: it works with planned inputs.
     """
 
     # When True, method-level input tensors that feed directly into a device
     # delegate are NOT wrapped with _h2d_copy. The user must provide tensors
-    # already on the target device. Useful for pipelines where inputs are
-    # pre-staged on GPU.
+    # already on the target device: the device of the first delegate that
+    # reads the input, in graph order. Any other reader of such an input, such
+    # as a host op, a delegate on another device, or the method output without
+    # skip_d2h_for_method_outputs, reads a copy of it in host memory, made on
+    # every call, and the pass logs a warning. A delegate on another device
+    # then gets a second copy, from the host. An input that an op writes in
+    # place on the host makes to_executorch raise. Useful for pipelines where
+    # inputs are pre-staged on GPU. Constants are not passed
+    # by the caller, so they are still copied: their data stays on the host,
+    # in the program or in its external data file. That copy runs on every
+    # call, once for each device that reads the constant, and stays in device
+    # memory until the last delegate there has read it. Set
+    # skip_h2d_for_constants to keep constants on the device instead.
     #
     # Pair with MemoryPlanningPass(alloc_graph_input=False), or the runtime reserves its own buffer
-    # for the input and copies the caller's memory into it, which is what this exists to avoid.
-    # A dict can be used to set per-method values, keyed by method name.
+    # for the input and refuses the caller's tensor.
+    # For per-method values, pass a dict of PropagateDeviceConfig, keyed by method name, as the
+    # propagate_device_config of ExecutorchBackendConfig.
     skip_h2d_for_method_inputs: Union[bool, Dict[str, bool]] = False
 
-    # When True, device delegate outputs that are directly method outputs
-    # are NOT wrapped with _d2h_copy. The method outputs stay on device.
-    # Useful for cross-method GPU pipelines where the next method consumes
-    # GPU tensors directly.
+    # When True, device delegate outputs that the method returns stay on
+    # device, with one exception: when an op outside the delegate, such as a
+    # mutable custom op left on the host, writes the host copy of such an
+    # output in place, the method returns that host copy, since the device
+    # tensor never sees the write. The copy to the host runs on every call, and the pass logs a
+    # warning about it.
+    # Useful for cross-method GPU pipelines where the next method consumes GPU
+    # tensors directly.
     #
-    # Pair with MemoryPlanningPass(alloc_graph_output=False) for the same reason as the input flag.
-    # A dict can be used to set per-method values, keyed by method name.
+    # Planned outputs work, but they live in the method's memory, which the next run overwrites,
+    # and the Python runtime copies them. MemoryPlanningPass(alloc_graph_output=False) avoids
+    # that copy, and then a C++ caller must set each output with Module::set_output.
+    # For per-method values, pass a dict of PropagateDeviceConfig, keyed by method name, as the
+    # propagate_device_config of ExecutorchBackendConfig.
     skip_d2h_for_method_outputs: Union[bool, Dict[str, bool]] = False
+
+    # When True, the copies that the skip flags cannot remove make
+    # to_executorch raise instead of logging a warning: with
+    # skip_h2d_for_method_inputs or skip_h2d_for_constants, a constant copied
+    # to the device; with skip_h2d_for_method_inputs, a method input copied to
+    # the host for a reader off its device; and with
+    # skip_d2h_for_method_outputs, a returned output copied to the host for a
+    # host op that writes it. Each runs on every call. Use it to make sure a
+    # program that skips its boundary copies has none left.
+    error_on_per_call_copies: bool = False
+
+    # When True, a constant that only delegates on one device read is kept in
+    # that device's memory instead of being copied there on every call. The
+    # runtime loads its data there once, when it loads the method, through
+    # host memory. The constant then uses device memory for as long as the
+    # method is loaded, and each method that reads it keeps its own copy. A
+    # constant that anything else reads is still copied on every call. Only a
+    # constant that a delegate reads directly is kept: one changed on the host
+    # first, such as by a view, a transpose or a clone, is copied on every
+    # call, and error_on_per_call_copies does not catch that copy. To keep
+    # it, have the partitioner take that change into the delegate too.
+    # MemoryPlanningPass(share_mutable_buffers=True) needs every planned tensor
+    # in host memory, so it does not work with this option.
+    skip_h2d_for_constants: bool = False
 
     def __hash__(self) -> int:
         return hash(
             (
                 str(self.skip_h2d_for_method_inputs),
                 str(self.skip_d2h_for_method_outputs),
+                self.error_on_per_call_copies,
+                self.skip_h2d_for_constants,
             )
         )
 
@@ -79,4 +128,6 @@ class PropagateDeviceConfig:
         return (
             self.skip_h2d_for_method_inputs == other.skip_h2d_for_method_inputs
             and self.skip_d2h_for_method_outputs == other.skip_d2h_for_method_outputs
+            and self.error_on_per_call_copies == other.error_on_per_call_copies
+            and self.skip_h2d_for_constants == other.skip_h2d_for_constants
         )

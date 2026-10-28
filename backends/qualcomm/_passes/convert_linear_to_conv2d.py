@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional
+from typing import Optional, Set
 
 import torch
 
@@ -14,6 +14,7 @@ from executorch.backends.qualcomm.builders.utils import (
     get_attr_from_target,
     get_parameter,
 )
+from executorch.backends.qualcomm.utils.constants import QCOM_CONVERTED_LINEAR
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -34,12 +35,17 @@ class ConvertLinearToConv2d(ExportPass):
     """
 
     def __init__(
-        self, edge_program: Optional[torch.export.ExportedProgram] = None
+        self,
+        edge_program: Optional[torch.export.ExportedProgram] = None,
+        linear_node_names: Optional[Set[str]] = None,
     ) -> None:
         super().__init__()
         self.edge_program = edge_program
+        # None converts every linear; otherwise only the named ones.
+        self.linear_node_names = linear_node_names
         self.aten_linear_target = torch.ops.aten.linear.default
         self.edge_linear_target = exir_ops.edge.aten.linear.default
+        self._linear_targets = {self.aten_linear_target, self.edge_linear_target}
         self._op_table = {
             # (is_edge) -> {role: target}
             True: {
@@ -71,6 +77,22 @@ class ConvertLinearToConv2d(ExportPass):
         path, qualname = stack[last_key]
         stack[last_key] = (path + suffix, qualname)
         node.meta["nn_module_stack"] = stack
+
+    def _set_parent_module_stack(self, helper: torch.fx.Node, linear: torch.fx.Node):
+        """
+        Give a layout helper node the linear's parent module stack, so a quant
+        recipe scope that matched the linear matches only the converted conv.
+        """
+        stack = linear.meta.get("nn_module_stack")
+        if not stack:
+            return
+        entries = list(stack.items())
+        if len(entries) > 1:
+            helper.meta["nn_module_stack"] = dict(entries[:-1])
+        else:
+            # The linear is the only scope; an empty dict would break
+            # consumers that read the deepest entry, so drop the key.
+            helper.meta.pop("nn_module_stack", None)
 
     def _register_tensor(
         self,
@@ -133,12 +155,21 @@ class ConvertLinearToConv2d(ExportPass):
             graph_module, weight_placeholder_node, weight_val
         )
         for user in list(weight_placeholder_node.users):
-            if user.target is not ops["linear"]:
-                # Add a safety check to prevent replacing weights of non-linear nodes with updated weights.
+            if user.target is not ops["linear"] or not self._is_selected(user):
+                # Only rewrite the weight for linears that this pass converts.
                 continue
             user.replace_input_with(weight_placeholder_node, get_attr_node)
 
         return get_attr_node
+
+    def _is_selected(self, node: torch.fx.Node) -> bool:
+        if self.linear_node_names is None:
+            return True
+        # Only ranks 2-4 have a conv2d layout mapping.
+        return (
+            node.name in self.linear_node_names
+            and 2 <= node.args[0].meta["val"].ndim <= 4
+        )
 
     def call(self, graph_module: GraphModule):
         graph = graph_module.graph
@@ -146,8 +177,8 @@ class ConvertLinearToConv2d(ExportPass):
         # and is used in cases where multiple linear nodes share the same weights.
         preprocessed_linear_weights_set = set()
 
-        for node in graph.nodes:
-            if node.target in {self.aten_linear_target, self.edge_linear_target}:
+        for node in list(graph.nodes):
+            if node.target in self._linear_targets and self._is_selected(node):
                 is_edge = node.target == self.edge_linear_target
                 ops = self._op_table[is_edge]
                 input_node = node.args[0]
@@ -166,6 +197,7 @@ class ConvertLinearToConv2d(ExportPass):
                 rank = input_meta_val.ndim
                 cur_meta_val = input_meta_val
 
+                helpers = []
                 # Step 1: calibrate input
                 # rank = 2: Reshape (dim, C) to (1, dim, C, 1), and permute to (1, C, 1, dim)
                 # rank = 3: Reshape (N, dim, C) to (N, dim, C, 1), and permute to (N, C, 1, dim)
@@ -183,6 +215,7 @@ class ConvertLinearToConv2d(ExportPass):
                         (input_node, shape),
                         cur_meta_val,
                     )
+                    helpers.append(reshape_node)
 
                 order = (0, 3, 1, 2) if rank == 4 else (0, 2, 3, 1)
                 cur_meta_val = cur_meta_val.permute(order)
@@ -192,6 +225,7 @@ class ConvertLinearToConv2d(ExportPass):
                     (reshape_node, order) if rank <= 3 else (input_node, order),
                     cur_meta_val,
                 )
+                helpers.append(permute_node)
 
                 # Step 2: reshape weight
                 if weight_placeholder_node.name not in preprocessed_linear_weights_set:
@@ -281,6 +315,7 @@ class ConvertLinearToConv2d(ExportPass):
                     (conv_node, order),
                     cur_meta_val,
                 )
+                helpers.append(permute_node)
                 if rank <= 3:
                     target_shape = output_meta_val.shape
                     cur_meta_val = cur_meta_val.reshape(target_shape)
@@ -290,10 +325,14 @@ class ConvertLinearToConv2d(ExportPass):
                         (permute_node, target_shape),
                         cur_meta_val,
                     )
+                    helpers.append(reshape_node)
                     node.replace_all_uses_with(reshape_node)
                 else:
                     node.replace_all_uses_with(permute_node)
 
+                for helper in helpers:
+                    self._set_parent_module_stack(helper, node)
+                conv_node.meta[QCOM_CONVERTED_LINEAR] = node.name
                 graph.erase_node(node)
                 self._rewrite_module_stack(conv_node, ".conv")
 

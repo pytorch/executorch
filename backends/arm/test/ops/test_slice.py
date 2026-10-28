@@ -145,6 +145,23 @@ def test_slice_tensor_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_suite_fp8)
+@common.SkipIfNoModelConverter
+def test_slice_tensor_vgf_no_quant_fp8(test_data):
+    input_data, slices, _ = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Slice(),
+        (input_data, slices),
+        aten_op,
+        exir_op,
+        tosa_extensions=["fp8e4m3", "fp8e5m2"],
+        quantize=False,
+        atol=0,
+        rtol=0,
+    )
+    pipeline.run()
+
+
 @common.parametrize(
     "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
 )

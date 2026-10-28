@@ -43,6 +43,7 @@ from .decompose_atan_pass import DecomposeAtanPass  # noqa
 from .decompose_atanh_pass import DecomposeAtanhPass  # noqa
 from .decompose_avg_pool2d_pass import DecomposeAvgPool2dPass  # noqa
 from .decompose_batch_norm_no_stats import DecomposeBatchNormNoStatsPass  # noqa
+from .decompose_bool_equality_pass import DecomposeBoolEqualityPass  # noqa
 from .decompose_choose_qparams_symmetric_pass import (  # noqa
     DecomposeChooseQParamsSymmetricPass,
 )
@@ -62,6 +63,7 @@ from .decompose_erfinv_pass import DecomposeErfinvPass  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
 from .decompose_flip_pass import DecomposeFlipPass  # noqa
 from .decompose_floor_divide_pass import DecomposeFloorDividePass  # noqa
+from .decompose_gated_delta_rule_pass import DecomposeGatedDeltaRulePass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa
@@ -206,6 +208,7 @@ from .replace_scalar_with_tensor_pass import (  # noqa
 )
 from .resolve_view_copy_inferred_dim_pass import ResolveViewCopyInferredDimPass  # noqa
 from .rewrite_adaptive_avg_pool2d import RewriteAdaptiveAvgPool2dPass  # noqa
+from .rewrite_argmax_pass import RewriteArgmaxPass  # noqa
 from .rewrite_avg_pool2d_pass import RewriteAvgPool2dPass  # noqa
 from .rewrite_bool_bitwise_to_logical_pass import (  # noqa
     RewriteBoolBitwiseToLogicalPass,

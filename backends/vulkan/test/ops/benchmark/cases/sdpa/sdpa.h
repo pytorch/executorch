@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/test/ops/benchmark/framework/registry.h>
 #include <executorch/backends/vulkan/test/ops/benchmark/framework/utils.h>
 
+#include <optional>
 #include <string>
 
 namespace executorch {
@@ -32,6 +33,8 @@ struct SDPAConfig {
   int64_t context_len; // total KV length (kv_len)
   std::string model; // label only
   std::string regime; // "decode" / "prefill", label only
+  std::optional<float> scale = std::nullopt;
+  int64_t input_pos = -1;
 };
 
 TestCase create_sdpa_test_case(

@@ -67,7 +67,7 @@ class CPUExecution {
       ET_CHECK_OR_RETURN_ERROR(
           spec.kind == ptn::OutputKind::UserOutput,
           NotSupported,
-          "CpuBackend static FP32 delegate does not support mutation");
+          "CpuBackend static delegate does not support mutation");
     }
     buffers_.resize(graph.values.size());
     bytes_.reserve(graph.values.size());
@@ -171,7 +171,8 @@ class CPUExecution {
       const auto& tensor = args[index]->toTensor();
       const auto& expected = method_->graph.value(id).tensor_meta();
       ET_CHECK_OR_RETURN_ERROR(
-          tensor.scalar_type() == aten::ScalarType::Float &&
+          tensor.scalar_type() ==
+                  static_cast<aten::ScalarType>(expected.dtype) &&
               tensor.dim() == expected.sizes.size() &&
               std::equal(
                   expected.sizes.begin(),
@@ -182,15 +183,20 @@ class CPUExecution {
           InvalidArgument,
           "CPU static shape/dtype/layout/storage mismatch: %s",
           method_->graph.value(id).name.c_str());
-      int64_t stride = 1;
-      for (size_t reverse = expected.sizes.size(); reverse > 0; --reverse) {
-        const size_t dim = reverse - 1;
-        ET_CHECK_OR_RETURN_ERROR(
-            tensor.dim_order()[dim] == dim && tensor.strides()[dim] == stride,
-            InvalidArgument,
-            "CPU binding must be contiguous: %s",
-            method_->graph.value(id).name.c_str());
-        stride *= expected.sizes[dim];
+      // Empty bindings carry no data, so their strides and dim order are
+      // meaningless (PyTorch does not canonicalize them); skip the contiguity
+      // check rather than rejecting valid empty tensors.
+      if (tensor.nbytes() != 0) {
+        int64_t stride = 1;
+        for (size_t reverse = expected.sizes.size(); reverse > 0; --reverse) {
+          const size_t dim = reverse - 1;
+          ET_CHECK_OR_RETURN_ERROR(
+              tensor.dim_order()[dim] == dim && tensor.strides()[dim] == stride,
+              InvalidArgument,
+              "CPU binding must be contiguous: %s",
+              method_->graph.value(id).name.c_str());
+          stride *= expected.sizes[dim];
+        }
       }
     }
     // EValue exposes the logical span, but no backing capacity or readable
