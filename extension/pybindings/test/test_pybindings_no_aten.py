@@ -134,7 +134,7 @@ else:
     import os
 
     assert Path(runtime.__file__).resolve() == Path(sys.argv[1]).resolve()
-    assert runtime._tensor_output == "executorch"
+    assert runtime._tensor_output is None
     with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as source:
         data = source.read()
     module = runtime._load_for_executorch_from_buffer(data)
