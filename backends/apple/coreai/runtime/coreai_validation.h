@@ -16,6 +16,9 @@ namespace executorch::backends::coreai {
 bool nonempty_string(id value);
 // Relative bundle path without escapes, backslashes, or empty components.
 bool relative_path(NSString* path);
+// Single path component for an fd-relative open: no slashes, ".", or "..".
+// Unlike relative_path, backslashes are ordinary bytes on this filesystem.
+bool storage_component(NSString* name);
 // Lowercase hex of any positive length, as in the exporter model hash.
 bool lowercase_hex(NSString* value);
 // Lowercase hex of exactly length characters, as in bundle digests.

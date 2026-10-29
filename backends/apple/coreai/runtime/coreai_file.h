@@ -8,10 +8,17 @@
 
 #pragma once
 
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <cerrno>
 
 namespace executorch::backends::coreai {
+
+enum class StorageCreationMode {
+  OpenExisting,
+  Create,
+};
 
 class FileDescriptor {
  public:
@@ -48,6 +55,21 @@ auto retry_eintr(F call) {
     result = call();
   } while (result == -1 && errno == EINTR);
   return result;
+}
+
+// Opens a child directory without following symlinks. Returns -1 with errno
+// set, including ENOENT when the child is missing.
+inline int open_directory_at(int parent_fd, const char* name) {
+  return retry_eintr([&] {
+    return openat(
+        parent_fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  });
+}
+
+// Reads type and permission metadata for a child without following symlinks.
+inline int lstat_at(int parent_fd, const char* name, struct stat* info) {
+  return retry_eintr(
+      [&] { return fstatat(parent_fd, name, info, AT_SYMLINK_NOFOLLOW); });
 }
 
 } // namespace executorch::backends::coreai

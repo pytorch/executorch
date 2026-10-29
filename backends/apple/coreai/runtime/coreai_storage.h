@@ -11,15 +11,9 @@
 #import <Foundation/Foundation.h>
 #include <executorch/runtime/core/result.h>
 #include <cstddef>
+#include "coreai_file.h"
 
 namespace executorch::backends::coreai {
-
-// Resolves the default location without creating or modifying storage.
-runtime::Result<NSString*> default_coreai_assets_root();
-// Requires an absolute directory path. With create, makes the directory and
-// excludes it from backup; otherwise a missing directory is InvalidArgument.
-runtime::Result<NSString*> prepare_storage_root(NSString* path, bool create);
-runtime::Error ensure_excluded_from_backup(NSURL* directory);
 
 runtime::Error sync_storage_directory(int fd);
 struct StorageDirectory {
@@ -27,9 +21,10 @@ struct StorageDirectory {
   bool created;
 };
 // Opens one child component without following symlinks. The caller owns fd;
-// missing with create=false returns {-1, false}. Does not flush directories.
+// a missing child with OpenExisting returns {-1, false}. Does not flush
+// directories.
 runtime::Result<StorageDirectory>
-open_storage_directory(int parent_fd, NSString* name, bool create);
+open_storage_directory(int parent_fd, NSString* name, StorageCreationMode mode);
 // Returns an independently owned descriptor for a stable coordination file.
 int open_storage_shared_file(int parent_fd, const char* name);
 // Creates a new file and missing parents, then syncs the file and its parent.
@@ -42,34 +37,14 @@ runtime::Error write_storage_file(
 // Atomically replaces name with data and fully flushes the file and renamed
 // entry. On error, readers see either the old or the new complete bytes.
 runtime::Error publish_storage_data(int root_fd, NSString* name, NSData* data);
+
+enum class StorageNamePolicy {
+  Strict,
+  SkipInvalid,
+};
 // Lists sorted names without changing fd's enumeration offset.
 runtime::Result<NSArray<NSString*>*> storage_children(
     int fd,
-    bool skip_invalid_names = false);
-
-enum class StorageOperation {
-  Write,
-  SyncFile,
-  SyncDirectory,
-  FullSync,
-  Rename,
-  BeforeCreateDirectory,
-  BeforeSDK,
-  AfterSDK,
-  BeforeEvict,
-  AfterEvict,
-  Remove,
-};
-#if defined(COREAI_ASSETS_TESTING) && COREAI_ASSETS_TESTING
-int storage_fault(StorageOperation operation);
-namespace testing {
-using StorageFaultCallback = int (*)(StorageOperation);
-extern thread_local StorageFaultCallback storage_fault_callback;
-} // namespace testing
-#else
-constexpr int storage_fault(StorageOperation) {
-  return 0;
-}
-#endif
+    StorageNamePolicy policy = StorageNamePolicy::Strict);
 
 } // namespace executorch::backends::coreai

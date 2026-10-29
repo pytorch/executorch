@@ -76,6 +76,12 @@ Directory creation uses default permissions filtered by the process umask, witho
 an explicit owner-only restriction. Existing permissions are not changed.
 Backup exclusion and required durability flushes still apply on reused paths.
 
+Cache-root preparation owns location and backup/protection policy; descriptor
+storage owns no-follow operations, publication, and synchronization. Creation
+and enumeration use explicit policies, with a missing child distinguishable
+from an error. Fault injection is a separate, thread-local test interface and
+compiles away in production.
+
 ## Host Tests
 
 On macOS, `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON`

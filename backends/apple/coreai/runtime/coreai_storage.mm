@@ -7,7 +7,9 @@
  */
 
 #import "coreai_storage.h"
+#include "coreai_fault_injection.h"
 #include "coreai_file.h"
+#include "coreai_validation.h"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -22,102 +24,11 @@ namespace executorch::backends::coreai {
 namespace {
 using runtime::Error;
 using runtime::Result;
-} // namespace
 
-Error ensure_excluded_from_backup(NSURL* directory) {
-  NSURL* fresh = [NSURL fileURLWithPath:directory.path isDirectory:YES];
-  NSNumber* excluded = nil;
-  NSError* error = nil;
-  ET_CHECK_OR_RETURN_ERROR(
-      [fresh getResourceValue:&excluded
-                       forKey:NSURLIsExcludedFromBackupKey
-                        error:&error],
-      AccessFailed,
-      "Cannot read Core AI backup exclusion: %s",
-      error.localizedDescription.UTF8String);
-  if (excluded.boolValue) {
-    return Error::Ok;
-  }
-  ET_CHECK_OR_RETURN_ERROR(
-      [fresh setResourceValue:@YES
-                       forKey:NSURLIsExcludedFromBackupKey
-                        error:&error],
-      AccessFailed,
-      "Cannot exclude Core AI storage from backup: %s",
-      error.localizedDescription.UTF8String);
-  return Error::Ok;
-}
-
-Result<NSString*> default_coreai_assets_root() {
-  NSURL* caches =
-      [NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory
-                                           inDomains:NSUserDomainMask]
-          .firstObject;
-  ET_CHECK_OR_RETURN_ERROR(
-      caches.isFileURL, AccessFailed, "Cannot resolve Core AI cache directory");
-  return [caches.path stringByAppendingPathComponent:@"executorch_coreai"];
-}
-
-Result<NSString*> prepare_storage_root(NSString* path, bool create) {
-  ET_CHECK_OR_RETURN_ERROR(
-      [path isKindOfClass:NSString.class] && [path hasPrefix:@"/"] &&
-          [path rangeOfString:@"\0"].location == NSNotFound,
-      InvalidArgument,
-      "Core AI storage requires an absolute path");
-  struct stat info;
-  const int result =
-      retry_eintr([&] { return stat(path.fileSystemRepresentation, &info); });
-  ET_CHECK_OR_RETURN_ERROR(
-      result == 0 || errno == ENOENT || errno == ENOTDIR,
-      AccessFailed,
-      "Cannot inspect Core AI storage directory");
-  ET_CHECK_OR_RETURN_ERROR(
-      result == 0 ? S_ISDIR(info.st_mode) : create && errno == ENOENT,
-      InvalidArgument,
-      "Core AI storage must be a directory");
-  if (create && result != 0) {
-    NSDictionary* attributes = @{
-      NSFileProtectionKey :
-          NSFileProtectionCompleteUntilFirstUserAuthentication,
-    };
-    ET_CHECK_OR_RETURN_ERROR(
-        storage_fault(StorageOperation::BeforeCreateDirectory) == 0,
-        AccessFailed,
-        "Cannot begin Core AI directory creation");
-    NSError* error = nil;
-    ET_CHECK_OR_RETURN_ERROR(
-        [NSFileManager.defaultManager createDirectoryAtPath:path
-                                withIntermediateDirectories:YES
-                                                 attributes:attributes
-                                                      error:&error],
-        AccessFailed,
-        "Cannot create Core AI storage directory: %s",
-        error.localizedDescription.UTF8String);
-  }
-  if (create) {
-    ET_CHECK_OK_OR_RETURN_ERROR(ensure_excluded_from_backup(
-        [NSURL fileURLWithPath:path isDirectory:YES]));
-  }
-  return path;
-}
-
-#if defined(COREAI_ASSETS_TESTING) && COREAI_ASSETS_TESTING
-namespace testing {
-thread_local StorageFaultCallback storage_fault_callback = nullptr;
-}
-
-int storage_fault(StorageOperation operation) {
-  return testing::storage_fault_callback == nullptr
-      ? 0
-      : testing::storage_fault_callback(operation);
-}
-#endif
-
-namespace {
 template <typename F>
-auto storage_call(StorageOperation operation, F call) {
+auto storage_call(FaultPoint point, F call) {
   return retry_eintr([&]() -> decltype(call()) {
-    const int fault = storage_fault(operation);
+    const int fault = fault_point(point);
     if (fault != 0) {
       errno = fault;
       return -1;
@@ -126,18 +37,17 @@ auto storage_call(StorageOperation operation, F call) {
   });
 }
 
-bool storage_component(NSString* name) {
-  return [name isKindOfClass:NSString.class] && name.length > 0 &&
-      ![name isEqualToString:@"."] && ![name isEqualToString:@".."] &&
-      ![name containsString:@"/"] && ![name containsString:@"\0"];
-}
+enum class StorageSyncMode {
+  Normal,
+  Full,
+};
 
 Error write_file(
     int root_fd,
     NSString* relative_path,
     const void* data,
     size_t size,
-    bool full_sync) {
+    StorageSyncMode sync_mode) {
   NSArray<NSString*>* components =
       [relative_path componentsSeparatedByString:@"/"];
   ET_CHECK_OR_RETURN_ERROR(
@@ -153,7 +63,8 @@ Error write_file(
   ET_CHECK_OR_RETURN_ERROR(
       parent.get() >= 0, AccessFailed, "Cannot open storage parent");
   for (NSUInteger i = 0; i + 1 < components.count; ++i) {
-    auto opened = open_storage_directory(parent.get(), components[i], true);
+    auto opened = open_storage_directory(
+        parent.get(), components[i], StorageCreationMode::Create);
     if (!opened.ok())
       return opened.error();
     FileDescriptor next(opened.get().fd);
@@ -172,7 +83,7 @@ Error write_file(
   const auto result = [&]() -> Error {
     const auto* bytes = static_cast<const uint8_t*>(data);
     while (size > 0) {
-      const ssize_t count = storage_call(StorageOperation::Write, [&] {
+      const ssize_t count = storage_call(FaultPoint::Write, [&] {
         return write(file.get(), bytes, std::min(size, size_t(1024 * 1024)));
       });
       ET_CHECK_OR_RETURN_ERROR(
@@ -181,12 +92,11 @@ Error write_file(
       size -= count;
     }
     ET_CHECK_OR_RETURN_ERROR(
-        storage_call(
-            StorageOperation::SyncFile, [&] { return fsync(file.get()); }) ==
+        storage_call(FaultPoint::SyncFile, [&] { return fsync(file.get()); }) ==
                 0 &&
-            (!full_sync ||
+            (sync_mode != StorageSyncMode::Full ||
              storage_call(
-                 StorageOperation::FullSync,
+                 FaultPoint::FullSync,
                  [&] { return fcntl(file.get(), F_FULLFSYNC); }) == 0),
         AccessFailed,
         "Cannot synchronize Core AI file");
@@ -211,27 +121,28 @@ Error write_file(
 }
 } // namespace
 
-Result<StorageDirectory>
-open_storage_directory(int parent_fd, NSString* name, bool create) {
+Result<StorageDirectory> open_storage_directory(
+    int parent_fd,
+    NSString* name,
+    StorageCreationMode mode) {
   ET_CHECK_OR_RETURN_ERROR(
-      storage_component(name), InvalidArgument, "Invalid storage directory name");
+      storage_component(name),
+      InvalidArgument,
+      "Invalid storage directory name");
   const auto open_directory = [&] {
-    return retry_eintr([&] {
-      return openat(
-          parent_fd,
-          name.fileSystemRepresentation,
-          O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    });
+    return open_directory_at(parent_fd, name.fileSystemRepresentation);
   };
+  const bool create = mode == StorageCreationMode::Create;
   int fd = open_directory();
   bool created = false;
   if (fd < 0 && errno == ENOENT && create) {
     ET_CHECK_OR_RETURN_ERROR(
-        storage_fault(StorageOperation::BeforeCreateDirectory) == 0,
+        fault_point(FaultPoint::BeforeCreateDirectory) == 0,
         AccessFailed,
         "Cannot begin Core AI directory creation");
-    const int made = retry_eintr(
-        [&] { return mkdirat(parent_fd, name.fileSystemRepresentation, 0777); });
+    const int made = retry_eintr([&] {
+      return mkdirat(parent_fd, name.fileSystemRepresentation, 0777);
+    });
     ET_CHECK_OR_RETURN_ERROR(
         made == 0 || errno == EEXIST,
         AccessFailed,
@@ -246,7 +157,7 @@ open_storage_directory(int parent_fd, NSString* name, bool create) {
   return StorageDirectory{fd, created};
 }
 
-Result<NSArray<NSString*>*> storage_children(int fd, bool skip_invalid_names) {
+Result<NSArray<NSString*>*> storage_children(int fd, StorageNamePolicy policy) {
   // Reopening avoids sharing the caller's directory offset.
   FileDescriptor copy(retry_eintr(
       [&] { return openat(fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC); }));
@@ -277,7 +188,7 @@ Result<NSArray<NSString*>*> storage_children(int fd, bool skip_invalid_names) {
                                               length:strlen(entry->d_name)
                                             encoding:NSUTF8StringEncoding];
     if (name == nil) {
-      if (skip_invalid_names) {
+      if (policy == StorageNamePolicy::SkipInvalid) {
         continue;
       }
       result = Error::InvalidExternalData;
@@ -311,8 +222,7 @@ int open_storage_shared_file(int parent_fd, const char* name) {
 
 Error sync_storage_directory(int fd) {
   ET_CHECK_OR_RETURN_ERROR(
-      storage_call(
-          StorageOperation::SyncDirectory, [&] { return fsync(fd); }) == 0,
+      storage_call(FaultPoint::SyncDirectory, [&] { return fsync(fd); }) == 0,
       AccessFailed,
       "Cannot synchronize Core AI directory");
   return Error::Ok;
@@ -323,7 +233,8 @@ Error write_storage_file(
     NSString* relative_path,
     const void* data,
     size_t size) {
-  return write_file(root_fd, relative_path, data, size, false);
+  return write_file(
+      root_fd, relative_path, data, size, StorageSyncMode::Normal);
 }
 
 Error publish_storage_data(int root_fd, NSString* name, NSData* data) {
@@ -334,8 +245,9 @@ Error publish_storage_data(int root_fd, NSString* name, NSData* data) {
   NSString* temporary =
       [@".tmp-" stringByAppendingString:NSUUID.UUID.UUIDString];
   // Bookmarks are small and costly to lose, so they get a full device flush.
-  auto result = write_file(root_fd, temporary, data.bytes, data.length, true);
-  if (result == Error::Ok && storage_call(StorageOperation::Rename, [&] {
+  auto result = write_file(
+      root_fd, temporary, data.bytes, data.length, StorageSyncMode::Full);
+  if (result == Error::Ok && storage_call(FaultPoint::Rename, [&] {
                                return renameat(
                                    root_fd,
                                    temporary.fileSystemRepresentation,
@@ -349,7 +261,7 @@ Error publish_storage_data(int root_fd, NSString* name, NSData* data) {
     // Flush the renamed entry as well as the file's pre-rename contents.
     ET_CHECK_OR_RETURN_ERROR(
         storage_call(
-            StorageOperation::FullSync,
+            FaultPoint::FullSync,
             [&] { return fcntl(root_fd, F_FULLFSYNC); }) == 0,
         AccessFailed,
         "Cannot fully synchronize Core AI publication directory");

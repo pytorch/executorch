@@ -38,6 +38,11 @@ bool relative_path(NSString* path) {
   return true;
 }
 
+bool storage_component(NSString* name) {
+  return nonempty_string(name) && ![name isEqualToString:@"."] &&
+      ![name isEqualToString:@".."] && ![name containsString:@"/"];
+}
+
 bool lowercase_hex(NSString* value) {
   return nonempty_string(value) &&
       [value rangeOfCharacterFromSet:invalid_hex_characters()].location ==

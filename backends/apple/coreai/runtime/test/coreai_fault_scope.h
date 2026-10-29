@@ -8,29 +8,28 @@
 
 #pragma once
 
+#import <Foundation/Foundation.h>
 #include <cerrno>
-#include "coreai_storage.h"
+#include "coreai_fault_injection.h"
 
 namespace executorch::backends::coreai::testing {
 
 struct StorageFaultScope {
-  StorageOperation operation;
+  FaultPoint operation;
   int error = EIO;
   int match_index = 1;
   int matches = 0;
   int hits = 0;
   bool armed = true;
-  void (^observe)(StorageOperation) = nil;
+  void (^observe)(FaultPoint) = nil;
 
-  explicit StorageFaultScope(StorageOperation op)
-      : operation(op),
-        previous_(current_),
-        previous_callback_(storage_fault_callback) {
+  explicit StorageFaultScope(FaultPoint op)
+      : operation(op), previous_(current_), previous_callback_(fault_callback) {
     current_ = this;
-    storage_fault_callback = inject;
+    fault_callback = inject;
   }
   ~StorageFaultScope() {
-    storage_fault_callback = previous_callback_;
+    fault_callback = previous_callback_;
     current_ = previous_;
   }
   StorageFaultScope(const StorageFaultScope&) = delete;
@@ -39,9 +38,9 @@ struct StorageFaultScope {
  private:
   inline static thread_local StorageFaultScope* current_ = nullptr;
   StorageFaultScope* previous_;
-  StorageFaultCallback previous_callback_;
+  FaultCallback previous_callback_;
 
-  static int inject(StorageOperation operation) {
+  static int inject(FaultPoint operation) {
     auto& scope = *current_;
     if (scope.observe != nil)
       scope.observe(operation);
