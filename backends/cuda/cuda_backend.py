@@ -9,6 +9,7 @@ import contextlib
 import copy
 import functools
 import logging
+import math
 import os
 import shutil
 import threading
@@ -50,7 +51,9 @@ from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from torch._decomp import decomposition_table
 from torch._inductor.decomposition import conv1d_to_conv2d
+from torch._prims_common import suggest_memory_format
 from torch.nn.attention import SDPBackend
 
 # ---------------------------------------------------------------------------
@@ -548,6 +551,117 @@ def _conv_transpose_as_conv(
     return conv(x, weight, bias, [1] * n, [0] * n, dilation, groups)
 
 
+def _linear_kernel(x: torch.Tensor) -> torch.Tensor:
+    return torch.clamp(1 - x.abs(), min=0)
+
+
+def _cubic_kernel(x: torch.Tensor) -> torch.Tensor:
+    # Keys' cubic with a = -0.5, the one ATen's antialiased bicubic uses.
+    a = -0.5
+    x = x.abs()
+    near = ((a + 2) * x - (a + 3)) * x * x + 1
+    far = (((x - 5) * x + 8) * x - 4) * a
+    return torch.where(x < 1, near, torch.where(x < 2, far, torch.zeros_like(x)))
+
+
+def _antialias_taps(
+    in_size: int,
+    out_size: int,
+    align_corners: bool,
+    scale: Optional[float],
+    support: int,
+    kernel: typing.Callable[[torch.Tensor], torch.Tensor],
+    device: torch.device,
+) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Taps of an antialiased resize along one dim, computed as ATen does:
+    output o reads input index[o, k] with weight[o, k], and inside[o, k]
+    marks the taps in its window. The window is the kernel's support widened
+    by the downscale factor, and the weights in it are normalized.
+    """
+    if align_corners or scale is None or scale <= 0:
+        if align_corners:
+            # ATen uses a ratio of 0 for an output size of 1. min and max give
+            # that without a conditional, which torch.compile cannot handle for
+            # dynamic sizes.
+            num = (in_size - 1) * torch.sym_min(out_size - 1, 1)
+            den = torch.sym_max(out_size - 1, 1)
+        else:
+            num, den = in_size, out_size
+        ratio = num / den
+        # The tap count is a shape that both the host and the kernel work out.
+        # In float32 the kernel can round num / den just past a whole number
+        # and count more taps than the host allocated, so use integers.
+        reach = torch.sym_max((support * num + den - 1) // den, support)
+    else:
+        ratio = 1.0 / scale
+        reach = math.ceil(support * max(ratio, 1.0))
+    widen = torch.sym_max(ratio, 1.0)
+    dtype = torch.float32
+    center = ratio * (torch.arange(out_size, dtype=dtype, device=device) + 0.5)
+    first = torch.clamp(torch.trunc(center - support * widen + 0.5), min=0)
+    end = torch.clamp(torch.trunc(center + support * widen + 0.5), max=in_size)
+    taps = 2 * reach + 1
+    tap = torch.arange(taps, dtype=dtype, device=device)
+    position = first[:, None] + tap
+    inside = position < end[:, None]
+    weights = kernel((tap + (first - center)[:, None] + 0.5) * (1.0 / widen))
+    weights = torch.where(inside, weights, 0)
+    total = weights.sum(1, keepdim=True)
+    weights = torch.where(total != 0, weights / total, weights)
+    # Clamp after the cast: in float32, in_size - 1 rounds up to in_size for
+    # very long axes.
+    index = position.to(torch.int64).clamp(max=in_size - 1)
+    return index, weights, inside
+
+
+def _antialiased_resize(
+    support: int,
+    kernel: typing.Callable[[torch.Tensor], torch.Tensor],
+    input: torch.Tensor,
+    output_size: List[int],
+    align_corners: bool,
+    scales_h: Optional[float] = None,
+    scales_w: Optional[float] = None,
+) -> torch.Tensor:
+    """
+    Rewrite an antialiased bilinear or bicubic resize as a weighted sum over
+    each output's taps, one dim at a time. Inductor has no lowering for these
+    resizes, so it would call ATen's kernel, which this backend does not ship.
+    """
+    # The backend's tensors have no float64, and ATen's CUDA kernel has no
+    # integer version.
+    if input.dtype not in (torch.float32, torch.float16, torch.bfloat16):
+        return NotImplemented
+    # Half types are computed in float and rounded once, so they can differ
+    # slightly from ATen, which keeps its weights in the input type.
+    result = input.float()
+    for dim, scale in ((3, scales_w), (2, scales_h)):
+        index, weights, inside = _antialias_taps(
+            input.shape[dim],
+            output_size[dim - 2],
+            align_corners,
+            scale,
+            support,
+            kernel,
+            input.device,
+        )
+        rows, taps = index.shape
+        trailing = [1] * (3 - dim)
+        # Plain indexing lets Inductor fold the gather into the sum instead of
+        # keeping every tap of every row in memory.
+        gathered = result[(slice(None),) * dim + (index,)]
+        # Taps outside the window already have zero weight, but NaN * 0 is NaN,
+        # so mask them out to keep a NaN or inf local.
+        weighted = torch.where(
+            inside.view(rows, taps, *trailing),
+            gathered * weights.view(rows, taps, *trailing),
+            0,
+        )
+        result = weighted.sum(dim + 1)
+    return result.to(input.dtype).contiguous(memory_format=suggest_memory_format(input))
+
+
 @final
 @experimental(
     "This API and all of cuda backend related functionality are experimental."
@@ -864,6 +978,15 @@ class CudaBackend(AotiBackend, BackendDetails):
             # for it and the shim no fallback kernel.
             torch.ops.aten._is_all_true.default: torch.ops.aten.all.default,
         }
+        for resize, support, kernel in (
+            (torch.ops.aten._upsample_bilinear2d_aa, 1, _linear_kernel),
+            (torch.ops.aten._upsample_bicubic2d_aa, 2, _cubic_kernel),
+        ):
+            table[resize.default] = functools.partial(
+                _antialiased_resize, support, kernel
+            )
+            # The vec form works out the output size and calls the default form.
+            table[resize.vec] = decomposition_table[resize.vec]
         # Inductor disables its transposed conv2d Triton template only on CUDA
         # (https://github.com/pytorch/pytorch/issues/187081).
         if torch.version.hip is None:
