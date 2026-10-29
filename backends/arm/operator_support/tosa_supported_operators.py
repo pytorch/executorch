@@ -1211,8 +1211,8 @@ def _int64_operands_agree(node: fx.Node) -> bool:
     """Whether no operand is int64 beside a narrower integer, bool aside."""
     dtypes = {
         get_first_fake_tensor(arg).dtype
-        for arg in node.args
-        if isinstance(arg, fx.Node) and "val" in arg.meta
+        for arg in node.all_input_nodes
+        if "val" in arg.meta
     } - {torch.bool}
     return torch.int64 not in dtypes or dtypes == {torch.int64}
 
