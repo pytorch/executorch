@@ -132,6 +132,25 @@ class CPURuntimeTest(unittest.TestCase):
             actual = runtime.forward((x,))[0]
             torch.testing.assert_close(actual, model(x))
 
+    def test_1d_linear_reference_fallback(self):
+        class Linear(torch.nn.Module):
+            def forward(self, *args):
+                return torch.nn.functional.linear(*args)
+
+        model = Linear()
+        for inputs in (
+            (torch.randn(4), torch.randn(3, 4), torch.randn(3)),
+            (torch.randn(4), torch.randn(4)),
+            (torch.randn(2, 4), torch.randn(4)),
+            (torch.randn(4), torch.randn(4), torch.randn(())),
+            (torch.randn(2, 3, 4), torch.randn(4), torch.randn(())),
+        ):
+            with self.subTest(shapes=[x.shape for x in inputs]):
+                with self._lower(model, inputs) as runtime:
+                    torch.testing.assert_close(
+                        runtime.forward(inputs)[0], model(*inputs)
+                    )
+
     def test_maxpool2d_reference_fallback(self):
         model = torch.nn.MaxPool2d(2)
         for x in (

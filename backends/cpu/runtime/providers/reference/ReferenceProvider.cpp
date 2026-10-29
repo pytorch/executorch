@@ -884,6 +884,46 @@ std::string_view check_node(
   return {};
 }
 
+using Sizes = std::vector<aten::SizesType>;
+
+struct LinearViews {
+  std::array<Sizes, 3> inputs;
+  Sizes output;
+};
+
+// aten::linear.out requires an input of rank >= 2, a 2D weight and a 1D bias.
+std::optional<LinearViews> linear_views(
+    const Kernel& node,
+    const ptn::Graph& graph) {
+  if (node.target != "torch.ops.aten.linear.default" ||
+      node.inputs.size() < 2 ||
+      node.inputs[0].arg.kind() != ptn::ArgKind::Tensor ||
+      node.inputs[1].arg.kind() != ptn::ArgKind::Tensor) {
+    return std::nullopt;
+  }
+  const auto& input =
+      graph.value(node.inputs[0].arg.as_tensor().id).tensor_meta().sizes;
+  const auto& weight =
+      graph.value(node.inputs[1].arg.as_tensor().id).tensor_meta().sizes;
+  if (input.empty() || (input.size() >= 2 && weight.size() == 2)) {
+    return std::nullopt;
+  }
+  const auto row = [](const auto& sizes) {
+    return sizes.size() == 1 ? Sizes{1, static_cast<aten::SizesType>(sizes[0])}
+                             : Sizes(sizes.begin(), sizes.end());
+  };
+  LinearViews views{{row(input), row(weight), {}}, {}};
+  if (node.inputs.size() > 2 &&
+      node.inputs[2].arg.kind() == ptn::ArgKind::Tensor) {
+    const auto& bias =
+        graph.value(node.inputs[2].arg.as_tensor().id).tensor_meta().sizes;
+    views.inputs[2] = bias.empty() ? Sizes{1} : Sizes(bias.begin(), bias.end());
+  }
+  views.output.assign(views.inputs[0].begin(), views.inputs[0].end() - 1);
+  views.output.push_back(views.inputs[1][0]);
+  return views;
+}
+
 struct Instruction {
   const ptn::Node* node = nullptr;
   OpFunction kernel = nullptr;
@@ -908,9 +948,16 @@ class ReferenceExecutable final : public Executable {
   };
 
   Result<EValue*> tensor_value(ptn::ValueId id, bool writable) {
+    const auto& shape = context_.graph.value(id).tensor_meta().sizes;
+    return tensor_value(id, writable, Sizes(shape.begin(), shape.end()));
+  }
+
+  // Views of one value share its buffer but keep separate tensor metadata.
+  Result<EValue*>
+  tensor_value(ptn::ValueId id, bool writable, const Sizes& sizes) {
     const auto existing = std::find_if(
-        tensors_.begin(), tensors_.end(), [id](const auto& storage) {
-          return storage->id == id;
+        tensors_.begin(), tensors_.end(), [id, &sizes](const auto& storage) {
+          return storage->id == id && storage->sizes == sizes;
         });
     if (existing != tensors_.end()) {
       (*existing)->writable |= writable;
@@ -921,23 +968,22 @@ class ReferenceExecutable final : public Executable {
       return bytes.error();
     }
     const auto& meta = context_.graph.value(id).tensor_meta();
-    const auto& shape = meta.sizes;
     auto storage = std::make_unique<TensorStorage>();
     storage->id = id;
     storage->writable = writable;
-    storage->sizes.assign(shape.begin(), shape.end());
-    storage->order.resize(shape.size());
-    storage->strides.resize(shape.size());
+    storage->sizes = sizes;
+    storage->order.resize(sizes.size());
+    storage->strides.resize(sizes.size());
     int64_t stride = 1;
-    for (size_t reverse = shape.size(); reverse > 0; --reverse) {
+    for (size_t reverse = sizes.size(); reverse > 0; --reverse) {
       const auto dim = reverse - 1;
       storage->order[dim] = dim;
       storage->strides[dim] = static_cast<aten::StridesType>(stride);
-      stride *= shape[dim];
+      stride *= sizes[dim];
     }
     storage->tensor = std::make_unique<aten::TensorImpl>(
         to_aten(meta.dtype),
-        shape.size(),
+        sizes.size(),
         storage->sizes.data(),
         nullptr,
         storage->order.data(),
@@ -1036,6 +1082,7 @@ class ReferenceExecutable final : public Executable {
             "Empty negative view copy requires matching input/output metadata");
         continue;
       }
+      const auto views = linear_views(node, context_.graph);
       auto instruction = std::make_unique<Instruction>();
       instruction->node = &node;
       instruction->kernel = route->kernel;
@@ -1059,7 +1106,9 @@ class ReferenceExecutable final : public Executable {
         const auto& input = node.inputs[index];
         if (input.arg.kind() == ptn::ArgKind::Tensor) {
           const auto value_id = input.arg.as_tensor().id;
-          auto value = tensor_value(value_id, false);
+          auto value = views && index < views->inputs.size()
+              ? tensor_value(value_id, false, views->inputs[index])
+              : tensor_value(value_id, false);
           if (!value.ok()) {
             return value.error();
           }
@@ -1114,7 +1163,8 @@ class ReferenceExecutable final : public Executable {
             InvalidProgram,
             "Reference provider requires tensor outputs: %s",
             node.target.c_str());
-        auto value = tensor_value(output.value_id, true);
+        auto value = views ? tensor_value(output.value_id, true, views->output)
+                           : tensor_value(output.value_id, true);
         if (!value.ok()) {
           return value.error();
         }
