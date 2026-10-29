@@ -4,7 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import executorch.backends.cortex_m.quantizer.node_finders as node_finders
+import pytest
 import torch
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
 from torch.export import export
 
 
@@ -230,3 +234,87 @@ def test_module_type_finder_missing_type():
     nodes = list(node_finder.find_nodes(graph_module))
     assert nodes == []
     assert str(node_finder) == "ModuleTypeNodeFinder targeting module types: Conv2d"
+
+
+class AttentionAndUnrelatedMatmul(torch.nn.Module):
+    def forward(self, q, k, v):
+        first = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+        second = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+        return first, second, torch.matmul(q, k.transpose(-2, -1))
+
+
+def _attention_graph():
+    inputs = tuple(torch.randn(1, 2, 4, 8) for _ in range(3))
+    return export(AttentionAndUnrelatedMatmul(), inputs).module()
+
+
+def test_sdpa_finders_match_native_calls_without_arm_metadata():
+    graph_module = _attention_graph()
+    found = list(node_finders.SDPAFinder().find_nodes(graph_module))
+    assert len(found) == 2
+    assert all(
+        node.target == torch.ops.aten.scaled_dot_product_attention.default
+        for node in found
+    )
+    for role in (None, "qk", "av"):
+        assert not list(node_finders.SDPAMatmulFinder(role).find_nodes(graph_module))
+
+
+def test_sdpa_finders_use_standard_provenance_and_dependencies():
+    graph_module = DecomposeScaledDotProductAttention()(_attention_graph()).graph_module
+    for index, node in enumerate(graph_module.graph.nodes):
+        node.name = f"opaque_{index}"
+    metadata = {node: dict(node.meta) for node in graph_module.graph.nodes}
+    attention_nodes = set(node_finders.SDPAFinder().find_nodes(graph_module))
+    products = set(node_finders.SDPAMatmulFinder().find_nodes(graph_module))
+    scores = set(node_finders.SDPAMatmulFinder("qk").find_nodes(graph_module))
+    values = set(node_finders.SDPAMatmulFinder("av").find_nodes(graph_module))
+    assert len(products) == 4
+    assert len(scores) == len(values) == 2
+    assert not scores & values
+    assert products == scores | values
+    assert products <= attention_nodes
+    unrelated = {
+        node
+        for node in graph_module.graph.nodes
+        if node.target == torch.ops.aten.matmul.default
+    }
+    assert len(unrelated) == 1
+    assert not unrelated & attention_nodes
+    for node in graph_module.graph.nodes:
+        assert node.meta == metadata[node]
+        assert not any(key.startswith("_arm_sdpa") for key in node.meta)
+
+
+def test_sdpa_finders_do_not_guess_missing_provenance():
+    graph_module = DecomposeScaledDotProductAttention()(_attention_graph()).graph_module
+    for node in graph_module.graph.nodes:
+        node.meta.pop("source_fn_stack", None)
+    assert not list(node_finders.SDPAFinder().find_nodes(graph_module))
+    assert not list(node_finders.SDPAMatmulFinder("qk").find_nodes(graph_module))
+
+
+def test_sdpa_matmul_finder_rejects_ambiguous_decomposition():
+    graph_module = DecomposeScaledDotProductAttention()(_attention_graph()).graph_module
+    score = next(node_finders.SDPAMatmulFinder("qk").find_nodes(graph_module))
+    with graph_module.graph.inserting_after(score):
+        extra = graph_module.graph.call_function(score.target, score.args)
+        extra.meta = dict(score.meta)
+    with pytest.raises(ValueError, match="Cannot identify QK and AV"):
+        list(node_finders.SDPAMatmulFinder("qk").find_nodes(graph_module))
+
+
+def test_sdpa_matmul_finder_rejects_unknown_role():
+    with pytest.raises(ValueError, match="role must be"):
+        node_finders.SDPAMatmulFinder("projection")
+
+
+def test_sdpa_score_finder_keeps_operand_and_accumulator_policy_separate():
+    graph_module = DecomposeScaledDotProductAttention()(_attention_graph()).graph_module
+    scores = set(node_finders.SDPAScoreFinder().find_nodes(graph_module))
+    matmuls = set(node_finders.SDPAMatmulFinder().find_nodes(graph_module))
+    assert scores
+    assert not scores & matmuls
+    assert {node.target for node in scores} >= {torch.ops.aten._safe_softmax.default}
+    for matmul in node_finders.SDPAMatmulFinder("qk").find_nodes(graph_module):
+        assert not scores & set(matmul.all_input_nodes)

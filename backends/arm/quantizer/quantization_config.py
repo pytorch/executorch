@@ -154,14 +154,18 @@ class QuantizationConfig:
 
     Attributes:
         input_activation (Optional[QuantizationSpec]): Spec for input activations.
-        output_activation (Optional[QuantizationSpec]): Spec for output activations.
+        output_activation: Output activation spec, or a factory that takes a node
+            and returns its spec. Factories must not mutate the configuration.
         weight (Optional[QuantizationSpec]): Spec for weights.
         bias (Optional[QuantizationSpec]): Spec for bias values.
 
     """
 
     input_activation: Optional[QuantizationSpecBase]
-    output_activation: Optional[QuantizationSpecBase]
+    output_activation: (
+        Optional[QuantizationSpecBase]
+        | Callable[[Node], Optional[QuantizationSpecBase]]
+    )
     weight: Optional[QuantizationSpecBase]
     bias: Optional[QuantizationSpecBase] | Callable[[Any], Any]
     label: Optional[str] = None  # Optional label for debugging/visualization purposes
@@ -204,28 +208,36 @@ class QuantizationConfig:
         Validate that the output activation qscheme is supported before
         returning the spec.
 
+        Args:
+            node: Node passed to an output activation factory, when configured.
+
         Returns:
             Optional[QuantizationSpecBase]: Output activation spec, or ``None`` when
-                unset. The ``node`` argument is currently unused and kept for
-                API parity.
+                unset or returned by the factory.
 
         Raises:
-            ValueError: If the qscheme is not per-tensor affine or symmetric.
+            ValueError: If a factory requires a missing node, or the resulting
+                qscheme is not per-tensor affine or symmetric.
 
         """
-        if self.output_activation is None:
+        output_activation = self.output_activation
+        if callable(output_activation):
+            if node is None:
+                raise ValueError("Output activation factory requires a node")
+            output_activation = output_activation(node)
+        if output_activation is None:
             return None
         # Validate that output_activation uses a supported qscheme
         if not hasattr(
-            self.output_activation, "qscheme"
-        ) or self.output_activation.qscheme not in [
+            output_activation, "qscheme"
+        ) or output_activation.qscheme not in [
             torch.per_tensor_affine,
             torch.per_tensor_symmetric,
         ]:
             raise ValueError(
-                f"Unsupported quantization_spec {self.output_activation} for output_activation."
+                f"Unsupported quantization_spec {output_activation} for output_activation."
             )
-        return self.output_activation
+        return output_activation
 
     def get_weight_qspec(
         self, node: Optional[Node] = None
@@ -491,10 +503,11 @@ class TOSAQuantizationConfig(QuantizationConfig):
         If node is a pooling or upsample operator, returns a shared quantization spec.
         If no weight spec is configured, return ``None``.
         If node is a `to.dtype` operator, returns a fixed quantization spec if the input is integer and the output is float32.
+        An explicit output activation factory takes precedence over these rules.
 
         """
-        if node is None:
-            return super().get_output_act_qspec()
+        if node is None or callable(self.output_activation):
+            return super().get_output_act_qspec(node)
         # MLETORCH-1853: Fix lazy import when moving files around
         from executorch.backends.arm.quantizer.quantization_annotator import (
             _fixed_output_qspec_ops,
@@ -543,10 +556,81 @@ class TOSAQuantizationConfig(QuantizationConfig):
                 return SharedQuantizationSpec((input_node, node))
             return super().get_output_act_qspec(node)
         if node.target not in self.SHARED_OUTPUT_ACT_QSPEC_PATTERNS:
-            return super().get_output_act_qspec()
+            return super().get_output_act_qspec(node)
         if len(node.args) == 0:
-            return super().get_output_act_qspec()
+            return super().get_output_act_qspec(node)
         return SharedQuantizationSpec((cast(Node, node.args[0]), node))
+
+
+def _derive_matmul_accumulator_qparams(
+    observers: list[ObserverOrFakeQuantize],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if len(observers) != 2:
+        raise ValueError("Matmul accumulation requires two input observers")
+    lhs_scale, lhs_zero = observers[0].calculate_qparams()
+    rhs_scale, rhs_zero = observers[1].calculate_qparams()
+    scale = (lhs_scale * rhs_scale).to(torch.float32)
+    if (
+        torch.any(lhs_zero != 0)
+        or torch.any(rhs_zero != 0)
+        or not torch.all(torch.isfinite(lhs_scale) & (lhs_scale > 0))
+        or not torch.all(torch.isfinite(rhs_scale) & (rhs_scale > 0))
+        or not torch.all(torch.isfinite(scale) & (scale > 0))
+    ):
+        raise ValueError(
+            "Matmul accumulation requires zero-centered inputs and finite positive scales"
+        )
+    return scale, torch.zeros_like(scale, dtype=torch.int32)
+
+
+def get_int8_matmul_accumulator_qspec(
+    node: Node, *, input_qspec: QuantizationSpecBase
+) -> DerivedQuantizationSpec:
+    """Derive an INT32 output spec from the two INT8 matmul input edges.
+
+    Args:
+        node: Matmul node selected by the caller's node finder.
+        input_qspec: Static symmetric INT8 spec configured for both operands.
+
+    Returns:
+        DerivedQuantizationSpec: Accumulator spec with the product input scale.
+
+    Raises:
+        ValueError: If the node or input spec is unsupported, or its reduction
+            can overflow INT32 accumulation.
+
+    """
+    if node.target not in (
+        torch.ops.aten.bmm.default,
+        torch.ops.aten.matmul.default,
+    ):
+        raise ValueError("INT8 accumulation requires a matmul node")
+    if (
+        not isinstance(input_qspec, QuantizationSpec)
+        or input_qspec.dtype != torch.int8
+        or input_qspec.is_dynamic
+        or input_qspec.qscheme != torch.per_tensor_symmetric
+        or input_qspec.quant_min is None
+        or input_qspec.quant_max is None
+    ):
+        raise ValueError("INT8 accumulation requires static symmetric INT8 inputs")
+    if len(node.args) < 2:
+        raise ValueError("INT8 accumulation requires two tensor input nodes")
+    lhs, rhs = node.args[:2]
+    if not isinstance(lhs, Node) or not isinstance(rhs, Node):
+        raise ValueError("INT8 accumulation requires two tensor input nodes")
+    reduction = int(lhs.meta["val"].shape[-1])
+    max_operand = max(abs(input_qspec.quant_min), abs(input_qspec.quant_max))
+    if reduction * max_operand**2 > torch.iinfo(torch.int32).max:
+        raise ValueError("Matmul reduction can overflow INT32 accumulation")
+    return DerivedQuantizationSpec(
+        derived_from=[(lhs, node), (rhs, node)],
+        derive_qparams_fn=_derive_matmul_accumulator_qparams,
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min + 1,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+    )
 
 
 class VGFQuantizationConfig(TOSAQuantizationConfig):
