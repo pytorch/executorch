@@ -38,6 +38,7 @@ add_library(
   graph/Scalar.cpp
   graph/TensorMeta.cpp
   graph/Value.cpp
+  graph/utils/Aliases.cpp
   graph/utils/GraphUtils.cpp
 )
 
