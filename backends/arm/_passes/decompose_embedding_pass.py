@@ -97,6 +97,7 @@ class DecomposeEmbeddingPass(ArmPass):
                     graph=graph,
                     op_target=view_copy_op,
                     args=(indices, reshaped_indices),
+                    from_node=node,
                 )
                 node.replace_input_with(indices, flattened_indices)
 
@@ -104,6 +105,7 @@ class DecomposeEmbeddingPass(ArmPass):
                     graph=graph,
                     op_target=index_select_op,
                     args=(weights, 0, flattened_indices),
+                    from_node=node,
                 )
                 node.replace_all_uses_with(index_select)
                 graph.erase_node(node)
@@ -112,6 +114,7 @@ class DecomposeEmbeddingPass(ArmPass):
                 restored_output = create_node(
                     graph,
                     view_copy_op,
+                    from_node=node,
                 )
                 restored_output.args = (
                     index_select,
