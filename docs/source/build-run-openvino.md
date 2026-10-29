@@ -102,6 +102,41 @@ Follow the steps below to setup your build environment:
    ./openvino_build.sh
    ```
 
+## Precision
+
+On a CPU, a program computes in float32 by default. Without this default,
+OpenVINO would compute in bfloat16 on x86 CPUs with bfloat16 units, which keeps only two to
+three significant digits, and in float16 on ARM CPUs, which keeps about three.
+Both are faster. To trade accuracy for speed, ask for the faster precision when
+lowering:
+
+```python
+from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+OpenvinoPartitioner(
+    [CompileSpec("device", b"CPU"), CompileSpec("inference_precision", b"bf16")]
+)
+```
+
+On an ARM CPU, ask for `f16` instead: there float32 is about 1.8x slower than
+float16, as measured on an Orin Nano.
+
+The value is OpenVINO's `INFERENCE_PRECISION_HINT`: `f32`, `f16` or `bf16`. An
+empty value means the default, and any other value fails at lowering. A CPU
+without float16 support computes an `f16` program in float32. With `bf16`, x86
+CPUs that have AVX-512 (F, BW, DQ and VL) or AVX2-VNNI-2 compute in bfloat16,
+simulating it with the same lower accuracy if they have no bfloat16 units, and
+other x86 CPUs compute in float32. OpenVINO has no bfloat16 on ARM CPUs, so
+there `bf16` keeps OpenVINO's ARM default: float16 if the CPU supports it,
+float32 otherwise. Other devices, such as GPUs, keep OpenVINO's default unless
+the option is set.
+
+On x86 CPUs, OpenVINO applies the precision when the runtime loads a program.
+So a program exported before this default also computes in float32 with this
+runtime, which is slower and can use more memory. Export it again with
+`inference_precision` to get the old speed.
+
 ## Build Instructions for Examples
 
 ### AOT step:
