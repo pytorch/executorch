@@ -32,6 +32,8 @@ class TestAddMMOperator(BaseOpenvinoOpTest):
         self.execute_layer_test(module, sample_input)
 
     def test_addmm_computes_in_float32(self):
+        if not self.device.startswith("CPU"):
+            self.skipTest("only CPUs compute in float32 by default")
         # On CPUs with bfloat16 units, OpenVINO would otherwise compute this in
         # bfloat16 and miss by about 5e-2.
         self.atol = self.rtol = 1e-4
