@@ -292,7 +292,7 @@ def test_tool_choice_default_still_parses(make_client):
 
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("ignore_eos", [False, True])
-def test_ignore_eos_preserves_text_after_template_terminators(
+def test_ignore_eos_hides_text_after_template_terminators(
     make_client, stream, ignore_eos
 ):
     client, runner = make_client(

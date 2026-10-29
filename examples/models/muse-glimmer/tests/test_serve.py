@@ -610,8 +610,11 @@ def _glimmer_serving(raw_texts, template=None):
 @pytest.mark.parametrize("stream", [False, True])
 def test_ignore_eos_consumes_budget_and_preserves_visible_turn(serving_cls, stream):
     class Template(_StubTemplate):
-        def turn_stop_sequences(self):
-            return ["<|eot|>"]
+        _hf = SimpleNamespace(
+            eos_token="<|end_of_text|>",
+            all_special_tokens=["<|end_of_text|>", "<|eot|>", "<|eom|>"],
+        )
+        turn_stop_sequences = chat_template.ChatTemplate.turn_stop_sequences
 
     class Runtime(_FakeRuntime):
         supports_ignore_eos = True

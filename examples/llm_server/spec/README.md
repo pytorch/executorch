@@ -36,7 +36,11 @@ requests are rejected if the template provides no turn terminators. Tokens past 
 recognized terminator contribute to usage but are excluded from parsing. Explicit
 stops still apply to hidden text, and exhausting the budget reports `length` even
 if the visible answer ended earlier. Exact generated-token splicing is disabled
-for these turns; later prompts still use ordinary token-prefix matching. Explicit `max_tokens` is recommended;
+for these turns. A later prompt rebuilt from the visible answer can differ from
+the resident history containing hidden tokens, so direct continuation may reset
+and re-prefill. Enabled prefix caching can recover a matching retained prefix.
+AgentX synthesizes later prompts independently; enable prefix caching when
+benchmarking reuse. Explicit `max_tokens` is recommended;
 without it generation uses the remaining context budget. The worker advertises
 support in its readiness frame. Older and legacy workers reject
 `ignore_eos: true` with `400 unsupported_parameter`. Non-boolean values, including

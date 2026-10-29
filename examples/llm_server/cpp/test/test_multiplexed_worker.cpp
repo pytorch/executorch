@@ -122,7 +122,8 @@ class ProtocolTest : public ::testing::Test {
       MultiplexedWorkerConfig config = {},
       std::size_t max_sessions = 4,
       std::size_t max_requests = 8,
-      std::size_t max_pending_operations = 64) {
+      std::size_t max_pending_operations = 64,
+      std::vector<batching::Token> default_stop_tokens = {}) {
     signal(SIGPIPE, SIG_IGN);
     ASSERT_EQ(pipe(input_), 0);
     ASSERT_EQ(pipe(output_), 0);
@@ -133,6 +134,7 @@ class ProtocolTest : public ::testing::Test {
     runtime_config.max_pending_operations = max_pending_operations;
     runtime_config.max_events_per_request = 128;
     runtime_config.max_tokens_per_request = 8192;
+    runtime_config.default_stop_tokens = std::move(default_stop_tokens);
     runtime_ = std::make_unique<serving::ServingRuntime>(
         executor_,
         batching::DecodeFirstScheduler::create(16, 8, 8),
@@ -1328,9 +1330,11 @@ TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   EXPECT_EQ(finish(), 0);
 }
 TEST_F(ProtocolTest, AcceptsBothIgnoreEosValues) {
-  start();
+  executor_.stop_token = 999;
+  executor_.emit_before_stop = 1;
+  start({}, 4, 8, 64, {999});
   for (uint64_t id = 1; id <= 2; ++id) {
-    auto request = generate(id, 2);
+    auto request = generate(id, 4);
     request["ignore_eos"] = id == 2;
     send(request);
     Json done;
@@ -1339,7 +1343,8 @@ TEST_F(ProtocolTest, AcceptsBothIgnoreEosValues) {
       ASSERT_FALSE(done.contains("error")) << done;
     } while (done.contains("token"));
     EXPECT_TRUE(done.value("done", false));
-    EXPECT_EQ(done.at("completion_tokens"), 2);
+    EXPECT_EQ(done.at("completion_tokens"), id == 1 ? 1 : 4);
+    EXPECT_EQ(done.at("finish_reason"), id == 1 ? "stop" : "length");
   }
   EXPECT_EQ(finish(), 0);
 }
