@@ -75,9 +75,10 @@ The HTTP defaults are `--host 127.0.0.1 --port 8000`.
 
 With prefix caching enabled, complete idle snapshots move into new working sessions
 by default. Use `--no-reuse-prefix-sessions` to clone them instead. Concurrent
-branches can still clone the prefix while its working owner is alive; closed or
-unavailable sources fall back to another snapshot or prefill. Partial and
-equal-prompt matches still clone.
+branches can still clone the prefix while its working owner is alive. Abandoned
+selections return the untouched snapshot; retiring owners return their session
+as a historical clone source. Dead entries are removed before eviction decisions.
+Partial and equal-prompt matches still clone.
 Replacements of existing named sessions also clone to retain fallback checkpoints.
 
 Native worker startup runs inside the ASGI lifespan and awaits readiness before

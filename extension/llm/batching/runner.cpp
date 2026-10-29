@@ -640,6 +640,15 @@ Session::make_clone_request() const {
   };
 }
 
+std::function<bool()> Session::make_valid_check() const {
+  if (!state_) {
+    return {};
+  }
+  return [status = state_->status] {
+    return status->open.load(std::memory_order_acquire);
+  };
+}
+
 GenerationHandle Session::generate_async(
     GenerationInput delta,
     GenConfig config,

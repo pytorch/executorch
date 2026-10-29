@@ -260,6 +260,7 @@ class ET_EXPERIMENTAL Session {
 
   std::function<std::future<std::optional<Session>>(Position)>
   make_clone_request() const;
+  std::function<bool()> make_valid_check() const;
 
   std::unique_ptr<SessionState> state_;
 };

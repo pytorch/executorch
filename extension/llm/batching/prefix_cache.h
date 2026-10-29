@@ -63,7 +63,8 @@ inline std::vector<Position> periodic_prefill_breakpoints(
 }
 
 // Prefix snapshots for one Runner and immutable model configuration. Reused
-// snapshots retain clone access through their new working owner.
+// snapshots retain clone access through their new working owner. Return a
+// transferred session with reclaim() before retiring it to preserve its prefix.
 // Serialize calls; lookup/collect may block and cannot run in Runner callbacks.
 // Reuse may change numerical results as prefill shapes change.
 class ET_EXPERIMENTAL PrefixCache {
@@ -276,7 +277,7 @@ class ET_EXPERIMENTAL PrefixCache {
   }
 
   // Takes an idle clone at exactly tokens.size(); refusal releases it.
-  // Duplicate keys refresh recency and metadata, keeping the existing snapshot.
+  // Duplicate keys refresh recency and metadata and restore borrowed snapshots.
   bool insert(
       const std::vector<Token>& tokens,
       Session snapshot,
@@ -295,12 +296,16 @@ class ET_EXPERIMENTAL PrefixCache {
         snapshot.position() != static_cast<Position>(tokens.size())) {
       return false;
     }
+    prune();
     for (auto it = entries_.begin(); it != entries_.end(); ++it) {
       if (it->tokens.size() == tokens.size() &&
           common_prefix(it->tokens, tokens) == tokens.size()) {
-        if (!it->snapshot.valid()) {
+        if (!it->snapshot.valid() || !it->transferable) {
           it->snapshot = std::move(snapshot);
           it->borrowed_clone = {};
+          it->borrowed_valid = {};
+          it->borrowed_identity = nullptr;
+          it->transferable = true;
         }
         it->metadata = std::move(metadata);
         entries_.splice(entries_.begin(), entries_, it);
@@ -345,6 +350,24 @@ class ET_EXPERIMENTAL PrefixCache {
 #endif
   }
 
+  // Return a transferred session before destroying it. Evicted entries are not
+  // recreated. Only a snapshot returned without generation may transfer again;
+  // a continued session can have pending output and must serve via cloning.
+  void reclaim(Session session, bool pristine = false) {
+    prune();
+    for (auto& entry : entries_) {
+      if (entry.borrowed_identity == session.state_.get() &&
+          !entry.snapshot.valid() && session.valid()) {
+        entry.snapshot = std::move(session);
+        entry.borrowed_clone = {};
+        entry.borrowed_valid = {};
+        entry.borrowed_identity = nullptr;
+        entry.transferable = pristine;
+        return;
+      }
+    }
+  }
+
   // Find the longest reusable prefix, breaking ties by recency. Leave the
   // final token for a forward. Clone by default; an opted-in complete match
   // transfers ownership. The returned session survives cache eviction.
@@ -359,6 +382,7 @@ class ET_EXPERIMENTAL PrefixCache {
   std::optional<PrefixMatch> lookup_identity(
       const PrefixIdentity& request,
       bool reuse_session = false) {
+    prune();
     if (request.size() < 2 || entries_.empty()) {
       return std::nullopt;
     }
@@ -390,10 +414,12 @@ class ET_EXPERIMENTAL PrefixCache {
       for (const auto& candidate : candidates) {
         auto& entry = *candidate.entry;
         const auto position = static_cast<Position>(candidate.matched);
-        if (reuse_session && entry.snapshot.valid() &&
+        if (reuse_session && entry.transferable && entry.snapshot.valid() &&
             candidate.matched == entry.tokens.size() &&
             entry.snapshot.position() == position) {
           entry.borrowed_clone = entry.snapshot.make_clone_request();
+          entry.borrowed_valid = entry.snapshot.make_valid_check();
+          entry.borrowed_identity = entry.snapshot.state_.get();
           auto session = std::move(entry.snapshot);
           entries_.splice(entries_.begin(), entries_, candidate.entry);
           return PrefixMatch{std::move(session), candidate.matched};
@@ -424,10 +450,21 @@ class ET_EXPERIMENTAL PrefixCache {
   }
 
   std::size_t size() const {
-    return entries_.size();
+    return std::count_if(
+        entries_.begin(), entries_.end(), [](const auto& entry) {
+          return entry.snapshot.valid() ||
+              (entry.borrowed_valid && entry.borrowed_valid());
+        });
   }
 
  private:
+  void prune() {
+    entries_.remove_if([](const auto& entry) {
+      return !entry.snapshot.valid() &&
+          (!entry.borrowed_valid || !entry.borrowed_valid());
+    });
+  }
+
   PrefixIdentity copy_tokens(const std::vector<Token>& tokens) const {
     if (!max_entries_ || tokens.empty()) {
       return {};
@@ -450,6 +487,9 @@ class ET_EXPERIMENTAL PrefixCache {
     // Bound to the moved session's original identity. Closure invalidates it,
     // including when the executor later recycles the physical row id.
     std::function<std::future<std::optional<Session>>(Position)> borrowed_clone;
+    std::function<bool()> borrowed_valid;
+    const void* borrowed_identity = nullptr;
+    bool transferable = true;
   };
 
   const std::size_t max_entries_;

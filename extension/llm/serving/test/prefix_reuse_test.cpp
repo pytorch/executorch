@@ -2360,3 +2360,93 @@ TEST_F(
 }
 
 } // namespace
+
+class PrefixOwnershipLifetimeTest : public PrefixReuseTest,
+                                    public ::testing::WithParamInterface<bool> {
+};
+
+TEST_P(PrefixOwnershipLifetimeTest, SequentialAnonymousSibling) {
+  config.reuse_prefix_sessions = GetParam();
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  submit(output(), {1, 2, 3, 4}, std::nullopt).wait();
+  auto sibling = output();
+  submit(sibling, {1, 2, 3, 9}, std::nullopt).wait();
+  ASSERT_TRUE(sibling->terminal);
+  EXPECT_EQ(sibling->terminal->stats.reused_prompt_tokens, 3u);
+}
+
+TEST_P(PrefixOwnershipLifetimeTest, CancelledSelectionPreservesSiblingPrefix) {
+  config.reuse_prefix_sessions = GetParam();
+  executor.accept_prepared = true;
+  model_preparer =
+      [this](const auto&, PromptInput input) -> ModelPreparationResult {
+    auto tokens = input.segments[0].get_tokens();
+    if (tokens == std::vector<Token>{1, 2, 3, 4}) {
+      return batching::PreparedInputPtr{std::make_shared<GatedSuffixInput>(
+          std::move(tokens), replacement_preparation)};
+    }
+    return make_token_prepared_input(std::move(tokens));
+  };
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  replacement_preparation.hold();
+  auto cancelled = output();
+  auto handle = submit(cancelled, {1, 2, 3, 4}, std::nullopt);
+  ASSERT_TRUE(replacement_preparation.wait());
+  handle.cancel();
+  replacement_preparation.release();
+  handle.wait();
+  ASSERT_TRUE(cancelled->terminal);
+  EXPECT_EQ(cancelled->terminal->finish_reason, FinishReason::Cancelled);
+  EXPECT_EQ(cancelled->terminal->stats.prefilled_prompt_tokens, 0u);
+  auto sibling = output();
+  submit(sibling, {1, 2, 3, 9}, std::nullopt).wait();
+  ASSERT_TRUE(sibling->terminal);
+  EXPECT_EQ(sibling->terminal->stats.reused_prompt_tokens, 3u);
+}
+
+INSTANTIATE_TEST_SUITE_P(Reuse, PrefixOwnershipLifetimeTest, ::testing::Bool());
+
+class PrefixOwnerRetirementTest : public PrefixReuseTest,
+                                  public ::testing::WithParamInterface<int> {};
+
+TEST_P(PrefixOwnerRetirementTest, RetirementPreservesPrefixWithoutRecapture) {
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_policy = [](const auto& prompt, auto, bool) {
+    return prompt.size() == 3 ? std::vector<PrefixCheckpoint>{{3, {}}}
+                              : std::vector<PrefixCheckpoint>{};
+  };
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  const auto source = executor.clones().front().destination;
+  auto owner = output();
+  const auto key = GetParam() == 0 ? std::optional<std::string>{}
+                                   : std::optional<std::string>{"owner"};
+  submit(owner, {1, 2, 3, 4}, key).wait();
+  ASSERT_TRUE(owner->terminal);
+  EXPECT_EQ(owner->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clone_calls.load(), 1);
+  if (GetParam() == 1) {
+    ASSERT_FALSE(runtime->close_session_async("owner").get());
+  } else if (GetParam() == 2) {
+    ASSERT_FALSE(runtime->reset_session_async("owner").get());
+  } else if (GetParam() == 3) {
+    submit(output(), {6, 7, 8, 9}, "owner").wait();
+  }
+  auto sibling = output();
+  submit(sibling, {1, 2, 3, 9}, std::nullopt).wait();
+  ASSERT_TRUE(sibling->terminal);
+  EXPECT_EQ(sibling->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(sibling->terminal->stats.prefilled_prompt_tokens, 1u);
+  const auto clones = executor.clones();
+  EXPECT_TRUE(std::any_of(clones.begin(), clones.end(), [&](const auto& clone) {
+    return clone.source == source &&
+        clone.prefix == std::vector<Token>{1, 2, 3};
+  }));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Lifecycle,
+    PrefixOwnerRetirementTest,
+    ::testing::Values(0, 1, 2, 3));

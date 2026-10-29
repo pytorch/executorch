@@ -255,8 +255,11 @@ transient capture; logical `--max_sessions` remains unchanged.
 
 `--reuse_prefix_sessions` defaults to true and transfers complete idle matches
 into new working sessions; set `--reuse_prefix_sessions=false` to clone instead.
-Other requests may clone the transferred prefix while its owner remains alive. Partial and equal-prompt matches still clone; a closed or
-unavailable owner falls back to another snapshot or prefill.
+Other requests may clone the transferred prefix while its owner remains alive.
+Abandoned selections return the untouched snapshot. Retiring owners return their
+session as a historical clone source, without resurrecting evicted entries.
+Dead entries are excluded from capacity and eviction decisions. Partial and
+equal-prompt matches still clone. Unavailable history falls back to prefill.
 Existing named-session replacements still clone to retain fallback checkpoints.
 
 With an existing MLX-enabled ExecuTorch installation and matching gflags package,
