@@ -63,6 +63,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeExpm1Pass,
     DecomposeFlipPass,
     DecomposeFloorDividePass,
+    DecomposeGatedDeltaRulePass,
     DecomposeGeluPass,
     DecomposeGluPass,
     DecomposeGroupedConvPass,
@@ -144,6 +145,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     InsertRescalePass,
     InsertTableOpsPass,
     LowerDynamicW8A8LinearPass,
+    LowerInt16RsqrtPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
     MoveDataMovementOpsToSmallerDtypePass,
@@ -167,6 +169,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     ReplaceScalarWithTensorByProfilePass,
     ResolveViewCopyInferredDimPass,
     RewriteAdaptiveAvgPool2dPass,
+    RewriteArgmaxPass,
     RewriteAvgPool2dPass,
     RewriteBoolBitwiseToLogicalPass,
     RewriteBoolToFp32CastViaInt8Pass,
@@ -650,7 +653,7 @@ class ArmPassManager(ExportedProgramPassManager):
             ]
         )
 
-        # Scalars -> tensors, match tensor dtypes and ranks.
+        # Scalars -> tensors, match comparison dtypes and tensor ranks.
         self.add_passes(
             [
                 ReplaceScalarWithTensorByProfilePass(),
@@ -659,7 +662,6 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
                 DecomposePReLUPass(),
                 ConvertFullLikeToFullPass(),
-                MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
                 MatchArgRanksPass(exported_program),
             ]
@@ -698,6 +700,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteAvgPool2dPass(),
                 ComputeConstantOpsAOTPass(exported_program),
                 FuseConstantArgsPass(exported_program),
+                MatchArgDtypePass(),
                 CastInt64BuffersToInt32Pass(exported_program),
                 DecomposeSelectPass(),
                 ConvertSqueezesToViewPass(),
@@ -711,6 +714,12 @@ class ArmPassManager(ExportedProgramPassManager):
             ]
         )
 
+        if self.tosa_spec.support_extension("int16"):
+            self.insert_passes_before(
+                InsertTableOpsPass,
+                [LowerInt16RsqrtPass(exported_program)],
+            )
+
         # Aten -> TOSA transformation passes
         self.add_passes(
             [
@@ -721,6 +730,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteConvPass(exported_program),
                 RewriteMXFPConv2dPass(exported_program),
                 RewriteMXFPLinearPass(exported_program),
+                RewriteArgmaxPass(),
                 RewriteMatmulPass(),
                 FuseViewCopyTransformPass(),
                 PropagateViewCopyPermuteDownPass(self.compile_spec, exported_program),
@@ -800,6 +810,7 @@ class ArmPassManager(ExportedProgramPassManager):
             # Transformation passes (pre scalar -> tensor)
             self.add_passes(
                 [
+                    DecomposeGatedDeltaRulePass(tfa_pass=True),
                     DecomposeIndexCopyPass(tfa_pass=True),
                     DecomposeSelectScatterPass(tfa_pass=True),
                     DecomposeSliceScatterPass(tfa_pass=True),

@@ -27,6 +27,8 @@ void execute_for_test(size_t in_bytes, size_t out_bytes, bool success = true) {
   char output[128] = {};
   VGF_STATS_MEMCPY_IN(output, input, in_bytes);
   VGF_STATS_MEMCPY_IN(output, input, 7);
+  VGF_STATS_ZERO_COPY_IN(13);
+  VGF_STATS_ZERO_COPY_OUT(17);
   {
     // Two timers in the same scope test expansion of __LINE__.
     VGF_STATS_TIME(submit_wait_ns);
@@ -46,6 +48,8 @@ int main() {
   CHECK(buffer.size == 2);
   CHECK(records[0].stats.in_copy_bytes == 18);
   CHECK(records[0].stats.out_copy_bytes == 23);
+  CHECK(records[0].stats.in_zero_copy_bytes == 13);
+  CHECK(records[0].stats.out_zero_copy_bytes == 17);
   CHECK(records[1].stats.in_copy_bytes == 7);
   CHECK(records[1].stats.out_copy_bytes == 5);
   CHECK(records[0].success && records[1].success);
@@ -77,6 +81,8 @@ int main() {
   VGF_STATS_EXECUTION(++side_effect);
   VGF_STATS_TIME(no_such_field);
   VGF_STATS_SUCCESS();
+  VGF_STATS_ZERO_COPY_IN(++side_effect);
+  VGF_STATS_ZERO_COPY_OUT(++side_effect);
   VGF_STATS_MEMCPY_IN(dst, src, sizeof(src));
   CHECK(std::memcmp(dst, src, sizeof(src)) == 0);
   VGF_STATS_MEMCPY_OUT(dst, src, sizeof(src));

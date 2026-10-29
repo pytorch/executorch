@@ -5,6 +5,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <executorch/backends/cpu/runtime/KernelProvider.h>
+#include <executorch/backends/native/runtime/graph/ScalarType.h>
 
 #include <algorithm>
 #include <cstring>
@@ -90,10 +91,16 @@ Result<size_t> tensor_bytes(const ptn::Value& value) {
       value.name.c_str());
   const auto& meta = value.tensor_meta();
   ET_CHECK_OR_RETURN_ERROR(
-      meta.dtype == ptn::ScalarType::Float && meta.is_contiguous() &&
-          meta.sizes.size() <= 16,
+      (meta.dtype == ptn::ScalarType::Float ||
+       meta.dtype == ptn::ScalarType::Byte ||
+       meta.dtype == ptn::ScalarType::Char ||
+       meta.dtype == ptn::ScalarType::Short ||
+       meta.dtype == ptn::ScalarType::Int ||
+       meta.dtype == ptn::ScalarType::Long ||
+       meta.dtype == ptn::ScalarType::Bool) &&
+          meta.is_contiguous() && meta.sizes.size() <= 16,
       NotSupported,
-      "CPU static delegate requires contiguous FP32 rank <= 16: %s",
+      "CPU static delegate requires supported dtype and contiguous rank <= 16: %s",
       value.name.c_str());
   size_t elements = 1;
   for (auto dimension = meta.sizes.rbegin(); dimension != meta.sizes.rend();
@@ -107,7 +114,13 @@ Result<size_t> tensor_bytes(const ptn::Value& value) {
         value.name.c_str());
     elements *= size;
   }
-  return elements * sizeof(float);
+  const size_t element_size = ptn::element_size(meta.dtype);
+  ET_CHECK_OR_RETURN_ERROR(
+      elements <= SIZE_MAX / element_size,
+      NotSupported,
+      "CPU tensor byte size overflows: %s",
+      value.name.c_str());
+  return elements * element_size;
 }
 
 Result<StorageRequirements> KernelImplementation::requirements(

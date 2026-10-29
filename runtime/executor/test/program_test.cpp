@@ -111,6 +111,15 @@ class ProgramTestFriend final {
         mutable_data_segments_index, offset_index, size, buffer);
   }
 
+  ET_NODISCARD static Result<FreeableBuffer> load_mutable_subsegment(
+      const Program* program,
+      size_t mutable_data_segments_index,
+      size_t offset_index,
+      size_t size) {
+    return program->load_mutable_subsegment(
+        mutable_data_segments_index, offset_index, size);
+  }
+
   const static executorch_flatbuffer::Program* GetInternalProgram(
       const Program* program) {
     return program->internal_program_;
@@ -861,6 +870,13 @@ TEST_F(ProgramTest, LoadFromMutableSegment) {
   EXPECT_EQ(std::memcmp(buffer, buffer2, kWeightSize), 0)
       << "Loading the same segment twice should return identical data";
 
+  // Loading into a new buffer, as for device memory, returns the same data.
+  Result<FreeableBuffer> loaded = ProgramTestFriend::load_mutable_subsegment(
+      &program.get(), 0, 1, kWeightSize);
+  ASSERT_EQ(loaded.error(), Error::Ok);
+  ASSERT_EQ(loaded->size(), kWeightSize);
+  EXPECT_EQ(std::memcmp(loaded->data(), buffer, kWeightSize), 0);
+
   // Verify that the loaded data is non-trivial (not all zeros).
   bool has_nonzero = false;
   for (size_t i = 0; i < kWeightSize; ++i) {
@@ -921,6 +937,16 @@ TEST_F(ProgramTest, LoadFromMutableSegment) {
   err = ProgramTestFriend::load_mutable_subsegment_into(
       &program.get(), 500, 1, 1, buffer);
   EXPECT_NE(err, Error::Ok);
+
+  // The new buffer variant checks the same bounds.
+  EXPECT_NE(
+      ProgramTestFriend::load_mutable_subsegment(&program.get(), 0, 1, 500)
+          .error(),
+      Error::Ok);
+  EXPECT_NE(
+      ProgramTestFriend::load_mutable_subsegment(&program.get(), 0, 500, 1)
+          .error(),
+      Error::Ok);
 }
 
 TEST_F(ProgramTest, LoadAndCheckPTESize) {

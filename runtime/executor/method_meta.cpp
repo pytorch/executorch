@@ -96,22 +96,22 @@ Result<Tag> get_tag(
   switch (serialization_value->val_type()) {
     case executorch_flatbuffer::KernelTypes::Null: {
       return Tag::None;
-    } break;
+    }
     case executorch_flatbuffer::KernelTypes::Int: {
       return Tag::Int;
-    } break;
+    }
     case executorch_flatbuffer::KernelTypes::Double: {
       return Tag::Double;
-    } break;
+    }
     case executorch_flatbuffer::KernelTypes::Bool: {
       return Tag::Bool;
-    } break;
+    }
     case executorch_flatbuffer::KernelTypes::String: {
       return Tag::String;
-    } break;
+    }
     case executorch_flatbuffer::KernelTypes::Tensor: {
       return Tag::Tensor;
-    } break;
+    }
     default:
       ET_LOG(
           Error,

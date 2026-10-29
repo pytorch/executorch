@@ -212,7 +212,7 @@ bool OpenvinoBackend::ensure_loaded() const {
           Error,
           "OpenVINO runtime not found (loading '%s' failed: %s). "
           "Ensure '%s' can be found (%s), or install with: "
-          "pip install \"openvino>=2025.1.0,<2026.0.0\"",
+          "pip install \"openvino>=2025.1.0,<2027.0.0\"",
           to_utf8(effective_path).c_str(),
           error.c_str(),
           to_utf8(kDefaultLibName).c_str(),

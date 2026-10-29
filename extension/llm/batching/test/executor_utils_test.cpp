@@ -10,6 +10,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <new>
@@ -194,17 +195,25 @@ struct RecordingLoader {
       return Error::Internal;
     }
     const auto options = map->get_options(backend.c_str());
-    if (options.size() != 1) {
-      return Error::Internal;
+    option_count = options.size();
+    for (const auto& option : options) {
+      if (std::strcmp(option.key, "extra") == 0) {
+        const auto* extra_value = std::get_if<int>(&option.value);
+        if (!extra_value) {
+          return Error::Internal;
+        }
+        extra = *extra_value;
+        continue;
+      }
+      EXPECT_STREQ(option.key, cache::kCacheKeyOption);
+      const auto* value = std::get_if<
+          std::array<char, executorch::runtime::kMaxOptionValueLength>>(
+          &option.value);
+      if (!value) {
+        return Error::Internal;
+      }
+      key = value->data();
     }
-    EXPECT_STREQ(options[0].key, cache::kCacheKeyOption);
-    const auto* value = std::get_if<
-        std::array<char, executorch::runtime::kMaxOptionValueLength>>(
-        &options[0].value);
-    if (!value) {
-      return Error::Internal;
-    }
-    key = value->data();
     resolved = cache::CacheRegistry::global().get(key);
     return result;
   }
@@ -212,6 +221,8 @@ struct RecordingLoader {
   std::string backend = "RecordingBackend";
   std::string key;
   std::shared_ptr<cache::Cache> resolved;
+  size_t option_count = 0;
+  int extra = 0;
   Error result = Error::Ok;
 };
 
@@ -229,6 +240,35 @@ TEST(LoadMethodWithCacheTest, BindsLiveCacheWithoutTakingGuardOwnership) {
   }
   EXPECT_EQ(cache::CacheRegistry::global().get(loader.key), nullptr);
   EXPECT_EQ(loader.resolved, control);
+  EXPECT_EQ(loader.option_count, 1u);
+}
+
+TEST(LoadMethodWithCacheTest, PassesCallerOptionsAlongsideCacheKey) {
+  auto control = std::make_shared<FakeBatchControl>();
+  const cache::InstallGuard guard(control);
+  RecordingLoader loader;
+  executorch::runtime::BackendOptions<2> options;
+  ASSERT_EQ(options.set_option("extra", 3), Error::Ok);
+  EXPECT_EQ(
+      load_method_with_cache(
+          loader, "forward", loader.backend.c_str(), guard, options),
+      Error::Ok);
+  EXPECT_EQ(loader.option_count, 2u);
+  EXPECT_EQ(loader.extra, 3);
+  EXPECT_EQ(loader.resolved, control);
+}
+
+TEST(LoadMethodWithCacheTest, RejectsCallerOptionsWithoutRoomForCacheKey) {
+  auto control = std::make_shared<FakeBatchControl>();
+  const cache::InstallGuard guard(control);
+  RecordingLoader loader;
+  executorch::runtime::BackendOptions<1> options;
+  ASSERT_EQ(options.set_option("extra", 3), Error::Ok);
+  EXPECT_NE(
+      load_method_with_cache(
+          loader, "forward", loader.backend.c_str(), guard, options),
+      Error::Ok);
+  EXPECT_EQ(loader.option_count, 0u);
 }
 
 TEST(LoadMethodWithCacheTest, PropagatesLoadingErrorWithoutRemovingCache) {

@@ -634,12 +634,10 @@ Result<FreeableBuffer> Program::LoadSegment(
       static_cast<size_t>(absolute_offset), segment->size(), segment_info);
 }
 
-Error Program::load_mutable_subsegment_into(
+Result<Program::MutableSubsegment> Program::locate_mutable_subsegment(
     size_t mutable_data_segments_index,
     size_t offset_index,
-    size_t size,
-    void* buffer) const {
-  EXECUTORCH_SCOPE_PROF("Program::load_subsegment_into");
+    size_t size) const {
   // Check that the program has segments.
   if (loader_ == nullptr || segment_base_offset_ == 0) {
     ET_LOG(Error, "No segments in program");
@@ -744,7 +742,34 @@ Error Program::load_mutable_subsegment_into(
       "segment base+offset %zu + subsegment offset %zu overflows",
       base_plus_seg,
       offset);
-  return loader_->load_into(total_offset, size, info, buffer);
+  return MutableSubsegment{total_offset, info};
+}
+
+Error Program::load_mutable_subsegment_into(
+    size_t mutable_data_segments_index,
+    size_t offset_index,
+    size_t size,
+    void* buffer) const {
+  EXECUTORCH_SCOPE_PROF("Program::load_subsegment_into");
+  Result<MutableSubsegment> subsegment = locate_mutable_subsegment(
+      mutable_data_segments_index, offset_index, size);
+  if (!subsegment.ok()) {
+    return subsegment.error();
+  }
+  return loader_->load_into(subsegment->offset, size, subsegment->info, buffer);
+}
+
+Result<FreeableBuffer> Program::load_mutable_subsegment(
+    size_t mutable_data_segments_index,
+    size_t offset_index,
+    size_t size) const {
+  EXECUTORCH_SCOPE_PROF("Program::load_mutable_subsegment");
+  Result<MutableSubsegment> subsegment = locate_mutable_subsegment(
+      mutable_data_segments_index, offset_index, size);
+  if (!subsegment.ok()) {
+    return subsegment.error();
+  }
+  return loader_->load(subsegment->offset, size, subsegment->info);
 }
 
 } // namespace ET_RUNTIME_NAMESPACE

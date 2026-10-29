@@ -28,7 +28,7 @@ const DEMO_CATEGORY = {
   chat: 'language',
   effects: 'vision', segment: 'vision', vlm: 'vision', depth: 'vision', detect: 'vision',
   cppn: 'generative', bgremove: 'generative', superres: 'generative',
-  'speech-to-text': 'audio',
+  'speech-to-text': 'audio', 'text-to-speech': 'audio',
   trainer: 'training', kernels: 'training',
 };
 
@@ -126,6 +126,15 @@ const GLYPHS = {
     <path d="${rr(37, 24, 13, 4.6, 2.3)}" fill="${W}"/>
     <path d="${rr(37, 33, 16, 4.6, 2.3)}" fill="${W}"/>
     <path d="${rr(37, 42, 9, 4.6, 2.3)}" fill="${W}" fill-opacity=".75"/>`,
+
+  'text-to-speech': ({ W, D, t }) => `
+    <path d="${rr(11, 15, 18, 4.6, 2.3)}" fill="${W}"/>
+    <path d="${rr(11, 24, 14, 4.6, 2.3)}" fill="${W}"/>
+    <path d="${rr(11, 33, 18, 4.6, 2.3)}" fill="${W}" fill-opacity=".75"/>
+    <path d="${rr(11, 42, 10, 4.6, 2.3)}" fill="${W}" fill-opacity=".55"/>
+    <path d="M32 27h5l7-6.5v23L37 37h-5z" fill="${W}" stroke="${W}" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M47.5 26a8 8 0 0 1 0 12" stroke="${D}" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+    <path d="M51.5 21.5a14 14 0 0 1 0 21" stroke="${t.deep}" stroke-opacity=".7" stroke-width="2.6" fill="none" stroke-linecap="round"/>`,
 
   cppn: ({ id }) => {
     const colors = ['#FDE7A8', '#F9B9A4', '#F28B82', '#D7AEF5', '#B590EE', '#FDD663', '#F6AEA9'];
