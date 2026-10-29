@@ -8,7 +8,10 @@
 
 from typing import final, List
 
-from executorch.backends.openvino._passes import DecomposeFloorDividePass
+from executorch.backends.openvino._passes import (
+    DecomposeBooleanReductionPass,
+    DecomposeFloorDividePass,
+)
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -39,7 +42,11 @@ class OpenvinoBackend(BackendDetails):
         Returns:
             PreprocessResult: The result of preprocessing, including the compiled model bytes.
         """
-        for pass_cls in [DimOrderOpsRevertPass, DecomposeFloorDividePass]:
+        for pass_cls in [
+            DimOrderOpsRevertPass,
+            DecomposeFloorDividePass,
+            DecomposeBooleanReductionPass,
+        ]:
             result = pass_cls()(edge_program.graph_module)
             if result and result.graph_module:
                 edge_program._graph_module = result.graph_module
