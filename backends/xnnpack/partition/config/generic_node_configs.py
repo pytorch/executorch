@@ -620,22 +620,13 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
         input_dtype = input_node.meta["val"].dtype
         output_dtype = node.meta["val"].dtype
 
+        # Return False if doing dtype conversion
         if input_dtype != output_dtype:
-            # A dtype cast is lowered to an XNNPACK convert node, as long as
-            # the op does not change the dim order at the same time.
-            supported_cast = {input_dtype, output_dtype} <= {
-                torch.float32,
-                torch.float16,
-            }
-            same_dim_order = list(input_node.meta["val"].dim_order()) == list(
-                node.meta["val"].dim_order()
+            why(
+                node,
+                reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
             )
-            if not (supported_cast and same_dim_order):
-                why(
-                    node,
-                    reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
-                )
-                return False
+            return False
 
         return True
 
