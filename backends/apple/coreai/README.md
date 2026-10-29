@@ -36,6 +36,12 @@ export-time SHA-256 digest. Asset paths, including bundle and directory names,
 must remain distinct under case-insensitive, canonically normalized Unicode
 comparison. Accepted names are preserved, not rewritten.
 
+Parsing returns an immutable `Manifest` covering all exported bundles. Pure
+platform and architecture selection produces an immutable `SelectedBundle`
+with one bundle's path, digest, and files. Neither type can be constructed
+without validation; filesystem materialization and SDK host probing remain
+outside the manifest parser.
+
 ### AOT architecture selection
 
 Configure AOT export with `AOTCompileConfig`, including the target `platform` and

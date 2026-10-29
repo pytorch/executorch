@@ -6,19 +6,52 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "coreai_assets.h"
+#import "coreai_manifest.h"
 #include <cstdint>
 #include <limits>
+#import "coreai_validation.h"
 
 namespace executorch::backends::coreai {
+
+Manifest::Manifest(
+    NSString* model_hash,
+    NSString* function,
+    NSArray<NSString*>* inputs,
+    NSArray<NSString*>* outputs,
+    NSDictionary<NSString*, NSNumber*>* files,
+    NSDictionary<NSString*, NSString*>* bundle_digests,
+    bool aot_compiled,
+    NSString* platform,
+    NSDictionary<NSString*, NSString*>* architectures,
+    NSOperatingSystemVersion minimum_version)
+    : model_hash(model_hash),
+      function(function),
+      inputs(inputs),
+      outputs(outputs),
+      files(files),
+      bundle_digests(bundle_digests),
+      aot_compiled(aot_compiled),
+      platform(platform),
+      architectures(architectures),
+      minimum_version(minimum_version) {}
+
+SelectedBundle::SelectedBundle(
+    const Manifest& manifest,
+    NSString* path,
+    NSDictionary<NSString*, NSNumber*>* files)
+    : model_hash(manifest.model_hash),
+      path(path),
+      bundle_name(path.lastPathComponent),
+      digest(manifest.bundle_digests[bundle_name]),
+      function(manifest.function),
+      inputs(manifest.inputs),
+      outputs(manifest.outputs),
+      files([files copy]),
+      aot_compiled(manifest.aot_compiled) {}
+
 namespace {
 using runtime::Error;
 using runtime::Result;
-
-bool nonempty_string(id value) {
-  return [value isKindOfClass:NSString.class] && [value length] > 0 &&
-      [value rangeOfString:@"\0"].location == NSNotFound;
-}
 
 bool names_array(id value) {
   if (![value isKindOfClass:NSArray.class]) {
@@ -30,20 +63,6 @@ bool names_array(id value) {
       return false;
     }
     [seen addObject:name];
-  }
-  return true;
-}
-
-bool relative_path(NSString* path) {
-  if (!nonempty_string(path) || path.isAbsolutePath ||
-      [path containsString:@"\\"]) {
-    return false;
-  }
-  for (NSString* component in [path componentsSeparatedByString:@"/"]) {
-    if (component.length == 0 || [component isEqualToString:@"."] ||
-        [component isEqualToString:@".."]) {
-      return false;
-    }
   }
   return true;
 }
@@ -159,105 +178,109 @@ Result<Manifest> parse_manifest(NSData* data) {
           [packaging isEqualToString:@"aot_compiled_inline"],
       NotSupported,
       "Unsupported Core AI packaging; expected .aimodel or AOT .aimodelc");
-  Manifest manifest;
-  manifest.aot_compiled = [packaging hasPrefix:@"aot_compiled_"];
-  manifest.hash = dict[@"hash"];
-  manifest.path = dict[@"path"];
-  manifest.function = dict[@"function"];
-  manifest.inputs = dict[@"input_names"];
-  manifest.outputs = dict[@"output_names"];
+  const bool aot_compiled = [packaging hasPrefix:@"aot_compiled_"];
+  NSString* model_hash = dict[@"hash"];
+  NSString* function = dict[@"function"];
+  NSArray<NSString*>* inputs = dict[@"input_names"];
+  NSArray<NSString*>* outputs = dict[@"output_names"];
+  NSString* platform = nil;
+  NSDictionary<NSString*, NSString*>* architectures = nil;
   ET_CHECK_OR_RETURN_ERROR(
-      nonempty_string(manifest.hash) &&
-          [manifest.hash
-              rangeOfCharacterFromSet:[[NSCharacterSet
-                                          characterSetWithCharactersInString:
-                                              @"0123456789abcdef"] invertedSet]]
-                  .location == NSNotFound,
-      InvalidProgram,
-      "Invalid Core AI model hash");
+      lowercase_hex(model_hash), InvalidProgram, "Invalid Core AI model hash");
   NSMutableSet<NSString*>* bundles = [NSMutableSet set];
-  if (manifest.aot_compiled) {
-    manifest.platform = dict[@"platform"];
-    manifest.archs = dict[@"archs"];
+  NSString* source_path = nil;
+  if (aot_compiled) {
+    platform = dict[@"platform"];
+    architectures = dict[@"archs"];
     ET_CHECK_OR_RETURN_ERROR(
-        nonempty_string(manifest.platform),
+        nonempty_string(platform),
         InvalidProgram,
-        "Core AI AOT manifest requires a target platform; re-export the model");
+        "Core AI AOT manifest requires a target platform");
     ET_CHECK_OR_RETURN_ERROR(
-        [manifest.archs isKindOfClass:NSDictionary.class] &&
-            manifest.archs.count > 0,
+        [architectures isKindOfClass:NSDictionary.class] &&
+            architectures.count > 0,
         InvalidProgram,
-        "Core AI AOT manifest requires a nonempty architecture map; "
-        "re-export the model");
-    for (id arch in manifest.archs) {
+        "Core AI AOT manifest requires a nonempty architecture map");
+    for (id arch in architectures) {
       ET_CHECK_OR_RETURN_ERROR(
           relative_path(arch) && ![arch containsString:@"/"] &&
               [arch canBeConvertedToEncoding:NSUTF8StringEncoding],
           InvalidProgram,
           "Invalid Core AI AOT architecture name");
       NSString* bundle = [NSString stringWithFormat:@"model.%@.aimodelc", arch];
-      id path = manifest.archs[arch];
+      id path = architectures[arch];
       ET_CHECK_OR_RETURN_ERROR(
           relative_path(path) &&
-              [path isEqualToString:[manifest.hash
+              [path isEqualToString:[model_hash
                                         stringByAppendingPathComponent:bundle]],
           InvalidProgram,
           "Invalid Core AI AOT bundle path for architecture %s",
           [arch UTF8String]);
       [bundles addObject:bundle];
     }
-    manifest.path = nil;
   } else {
+    source_path = dict[@"path"];
     ET_CHECK_OR_RETURN_ERROR(
-        relative_path(manifest.path) &&
-            [manifest.path
-                isEqualToString:[manifest.hash
+        relative_path(source_path) &&
+            [source_path
+                isEqualToString:[model_hash
                                     stringByAppendingString:@"/model.aimodel"]],
         InvalidProgram,
         "Invalid Core AI source bundle path");
     [bundles addObject:@"model.aimodel"];
   }
   ET_CHECK_OR_RETURN_ERROR(
-      nonempty_string(manifest.function) && names_array(manifest.inputs) &&
-          names_array(manifest.outputs),
+      nonempty_string(function) && names_array(inputs) && names_array(outputs),
       InvalidProgram,
-      "Core AI manifest requires ordered input/output names; re-export the "
-      "model");
+      "Core AI manifest requires ordered input/output names");
+  NSOperatingSystemVersion minimum_version{};
   ET_CHECK_OR_RETURN_ERROR(
-      parse_version(dict[@"min_deployment_version"], manifest.minimum_version),
+      parse_version(dict[@"min_deployment_version"], minimum_version),
       InvalidProgram,
       "Invalid Core AI minimum deployment version");
-  manifest.files = dict[@"files"];
-  ET_CHECK_OK_OR_RETURN_ERROR(validate_files(manifest.files, bundles));
-  manifest.bundle_digests = dict[@"bundle_digests"];
+  NSDictionary<NSString*, NSNumber*>* files = dict[@"files"];
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_files(files, bundles));
+  NSDictionary<NSString*, NSString*>* bundle_digests = dict[@"bundle_digests"];
   ET_CHECK_OR_RETURN_ERROR(
-      [manifest.bundle_digests isKindOfClass:NSDictionary.class] &&
-          [[NSSet setWithArray:manifest.bundle_digests.allKeys]
-              isEqualToSet:bundles],
+      [bundle_digests isKindOfClass:NSDictionary.class] &&
+          [[NSSet setWithArray:bundle_digests.allKeys] isEqualToSet:bundles],
       InvalidProgram,
       "Core AI bundle digests must exactly cover declared bundles");
   for (NSString* bundle in bundles) {
-    id digest = manifest.bundle_digests[bundle];
+    id digest = bundle_digests[bundle];
     ET_CHECK_OR_RETURN_ERROR(
-        nonempty_string(digest) && [digest length] == 64 &&
-            [digest
-                rangeOfCharacterFromSet:
-                    [[NSCharacterSet
-                        characterSetWithCharactersInString:@"0123456789abcdef"]
-                        invertedSet]]
-                    .location == NSNotFound,
+        lowercase_hex(digest, 64),
         InvalidProgram,
         "Invalid Core AI exported bundle digest");
   }
-  return manifest;
+  return Manifest(
+      model_hash,
+      function,
+      inputs,
+      outputs,
+      files,
+      bundle_digests,
+      aot_compiled,
+      platform,
+      architectures,
+      minimum_version);
 }
 
-Result<Manifest> select_assets(
+Result<Manifest> parse_manifest(const void* data, size_t size) {
+  ET_CHECK_OR_RETURN_ERROR(
+      data != nullptr, InvalidProgram, "Missing Core AI manifest JSON");
+  return parse_manifest([NSData dataWithBytes:data length:size]);
+}
+
+Result<SelectedBundle> select_assets(
     const Manifest& manifest,
     NSString* device_architecture,
     NSString* platform) {
   if (!manifest.aot_compiled) {
-    return manifest;
+    return SelectedBundle(
+        manifest,
+        [manifest.model_hash stringByAppendingString:@"/model.aimodel"],
+        manifest.files);
   }
   ET_CHECK_OR_RETURN_ERROR(
       [manifest.platform isEqualToString:platform],
@@ -266,7 +289,7 @@ Result<Manifest> select_assets(
       "re-export the model for this platform",
       manifest.platform.UTF8String,
       platform == nil ? "nil" : platform.UTF8String);
-  NSArray<NSString*>* architectures = [manifest.archs.allKeys
+  NSArray<NSString*>* architectures = [manifest.architectures.allKeys
       sortedArrayUsingComparator:^NSComparisonResult(NSString* a, NSString* b) {
         return [a compare:b options:NSLiteralSearch];
       }];
@@ -278,7 +301,7 @@ Result<Manifest> select_assets(
       "architectures: [%s]; re-export the model as .aimodel or for this device",
       device_architecture == nil ? "nil" : device_architecture.UTF8String,
       available.UTF8String);
-  NSString* path = manifest.archs[device_architecture];
+  NSString* path = manifest.architectures[device_architecture];
   ET_CHECK_OR_RETURN_ERROR(
       path != nil,
       DelegateInvalidCompatibility,
@@ -286,21 +309,15 @@ Result<Manifest> select_assets(
       "architectures: [%s]; re-export the model for this device architecture",
       device_architecture.UTF8String,
       available.UTF8String);
-  Manifest selected = manifest;
-  selected.path = path;
   NSString* prefix = [path.lastPathComponent stringByAppendingString:@"/"];
-  NSMutableDictionary<NSString*, NSNumber*>* files =
+  NSMutableDictionary<NSString*, NSNumber*>* selected_files =
       [NSMutableDictionary dictionary];
   for (NSString* file in manifest.files) {
     if ([file hasPrefix:prefix]) {
-      files[file] = manifest.files[file];
+      selected_files[file] = manifest.files[file];
     }
   }
-  selected.files = files;
-  selected.bundle_digests = @{
-    path.lastPathComponent : manifest.bundle_digests[path.lastPathComponent]
-  };
-  return selected;
+  return SelectedBundle(manifest, path, selected_files);
 }
 
 } // namespace executorch::backends::coreai

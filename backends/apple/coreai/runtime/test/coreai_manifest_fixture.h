@@ -10,7 +10,7 @@
 
 #include <gtest/gtest.h>
 #include <string>
-#import "coreai_assets.h"
+#import "coreai_manifest.h"
 
 namespace executorch::backends::coreai::testing {
 

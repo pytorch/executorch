@@ -10,7 +10,9 @@ endif()
 
 enable_language(OBJCXX)
 
-set(_coreai_runtime_sources runtime/coreai_assets.mm)
+set(_coreai_runtime_sources runtime/coreai_manifest.mm
+                            runtime/coreai_validation.mm
+)
 
 function(coreai_configure_objc_target target)
   target_include_directories(
