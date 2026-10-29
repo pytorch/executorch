@@ -136,6 +136,7 @@ def make_client():
         default_stop_strings=("<|im_end|>",),
         streaming_parser_factory=None,
         content_filter=None,
+        special_tokens=None,
     ):
         fake = FakeRunner(
             tokens,
@@ -151,8 +152,12 @@ def make_client():
         )
         runtime = SessionRuntime(fake)  # one fake worker
         template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
-        if prompt_tokens is not None:
-            template._hf = _FakeTokenizer(prompt_tokens)
+        if prompt_tokens is not None or special_tokens is not None:
+            template._hf = _FakeTokenizer(
+                prompt_tokens if prompt_tokens is not None else 5
+            )
+            if special_tokens is not None:
+                template._hf.all_special_tokens = special_tokens
         serving = ServingChat(
             runtime,
             template,

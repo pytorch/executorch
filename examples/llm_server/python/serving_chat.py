@@ -171,8 +171,6 @@ class ServingChat:
         #    cleanup of already-parsed visible content.
         self._stops = template.turn_stop_sequences()
         self._native_stops = getattr(runtime, "default_stop_strings", None)
-        if self._native_stops is not None:
-            self._stops = list(dict.fromkeys(self._stops + self._native_stops))
         handled = content_filter_specials or set()
         self._content_specials = [
             t for t in template.special_tokens() if t not in handled
@@ -247,15 +245,18 @@ class ServingChat:
             return []
         return [s] if isinstance(s, str) else [x for x in s if x]
 
+    def _visible_stops(self, req: ChatCompletionRequest) -> list[str]:
+        return (
+            self._stops
+            + ((self._native_stops or []) if req.ignore_eos else [])
+            + ([] if self._tools_active(req) else self._content_specials)
+        )
+
     def _generation_stops(self, req: ChatCompletionRequest) -> list[str]:
         stops = self._request_stops(req)
         if req.ignore_eos:
             return stops
-        return (
-            self._stops
-            + ([] if self._tools_active(req) else self._content_specials)
-            + stops
-        )
+        return self._visible_stops(req) + stops
 
     @staticmethod
     def _apply_stop(text: str, stops: list[str]) -> str:
@@ -263,11 +264,34 @@ class ServingChat:
         cut = _earliest_stop(text, stops)
         return text[:cut] if cut is not None else text
 
-    def _truncate_raw(self, text: str, req: ChatCompletionRequest) -> str:
+    def _trim_stop_fragment(self, text: str, req: ChatCompletionRequest) -> str:
+        # A native string stop inside a special token can remove its remainder.
+        # Hide only suffixes that would be completed by a requested stop.
+        cut = len(text)
+        for marker in self._visible_stops(req):
+            for stop in self._request_stops(req):
+                at = marker.find(stop)
+                if at > 0 and text.endswith(marker[:at]):
+                    cut = min(cut, len(text) - at)
+        return text[:cut]
+
+    def _truncate_raw(
+        self, text: str, req: ChatCompletionRequest, stopped: bool = False
+    ) -> str:
         """Cut raw model output at the earliest special token or request stop
         sequence BEFORE tool parsing, so a tool call (or any text) past the stop
         boundary is neither parsed nor emitted."""
-        return self._apply_stop(text, self._stops + self._request_stops(req))
+        visible_cut = _earliest_stop(text, self._visible_stops(req))
+        request_cut = _earliest_stop(text, self._request_stops(req))
+        cuts = [cut for cut in (visible_cut, request_cut) if cut is not None]
+        text = text[: min(cuts)] if cuts else text
+        return (
+            self._trim_stop_fragment(text, req)
+            if req.ignore_eos
+            and stopped
+            and (visible_cut is None or request_cut == min(cuts))
+            else text
+        )
 
     def _cancel_generation(self, generation: AsyncIterator[str]) -> None:
         cancel = getattr(generation, "cancel", None)
@@ -737,7 +761,7 @@ class ServingChat:
         # Bound the raw output at the first stop/special token BEFORE tool
         # parsing, so a call after the stop boundary is not parsed/emitted.
         tool_calls, reasoning, content = self._extract_response(
-            req, self._truncate_raw(text, req)
+            req, self._truncate_raw(text, req, stopped or stats.finish_reason == "stop")
         )
         # Compare future echoes against the finalized client-visible response.
         self._transcript.record_assistant_turn(
@@ -801,27 +825,53 @@ class ServingChat:
         ):
             yield token
 
+    async def _clean_ignored_eos(
+        self,
+        req: ChatCompletionRequest,
+        generation: AsyncIterator[str],
+        stop_hit: list[bool],
+        stats: GenStats,
+    ) -> AsyncIterator[str]:
+        request_stops = self._request_stops(req)
+        visible_stops = self._visible_stops(req) + request_stops
+        hold = max((len(s) for s in visible_stops), default=1) - 1
+        buf = ""
+        visible = True
+        async for token in generation:
+            buf += token
+            request_cut = _earliest_stop(buf, request_stops)
+            if not stop_hit[0] and request_cut is not None:
+                stop_hit[0] = True
+                self._cancel_generation(generation)
+            if visible:
+                cut = _earliest_stop(buf, visible_stops)
+                if cut is not None:
+                    text = buf[:cut]
+                    if cut == request_cut:
+                        text = self._trim_stop_fragment(text, req)
+                    if text:
+                        yield text
+                    visible = False
+                elif len(buf) > hold:
+                    yield buf[: len(buf) - hold] if hold else buf
+            # Continue watching request stops after the visible turn ends.
+            buf = buf[-hold:] if hold else ""
+        if visible and buf:
+            if stats.finish_reason == "stop":
+                buf = self._trim_stop_fragment(buf, req)
+            if buf:
+                yield buf
+
     async def _stream_content_deltas(
         self,
         req: ChatCompletionRequest,
         generation: AsyncIterator[str],
         stops: list[str],
         stop_hit: list[bool],
+        stats: GenStats,
     ) -> AsyncIterator[DeltaMessage]:
         if req.ignore_eos:
-            source = generation
-
-            def on_generation_stop():
-                stop_hit[0] = True
-                self._cancel_generation(source)
-
-            # Drain past a visible turn boundary without cancelling generation.
-            # Explicit request stops still cancel and determine finish_reason.
-            generation = self._clean(source, stops, on_stop=on_generation_stop)
-            visible_stops = self._stops + (
-                [] if self._streaming_parser_factory else self._content_specials
-            )
-            generation = self._clean(generation, visible_stops)
+            generation = self._clean_ignored_eos(req, generation, stop_hit, stats)
             stops = []
         if self._streaming_parser_factory is None:
             async for text in self._stream_plain_content(generation, stops, stop_hit):
@@ -925,7 +975,10 @@ class ServingChat:
                     stops,
                 )
                 tool_calls, reasoning, content = self._extract_response(
-                    req, self._truncate_raw(raw, req)
+                    req,
+                    self._truncate_raw(
+                        raw, req, stop_hit[0] or stats.finish_reason == "stop"
+                    ),
                 )
             elif (
                 self._reasoning_extractor is not None
@@ -936,7 +989,10 @@ class ServingChat:
                     stops,
                 )
                 tool_calls, reasoning, content = self._extract_response(
-                    req, self._truncate_raw(raw, req)
+                    req,
+                    self._truncate_raw(
+                        raw, req, stop_hit[0] or stats.finish_reason == "stop"
+                    ),
                 )
                 if reasoning:
                     yield chunk(DeltaMessage(reasoning_content=reasoning))
@@ -945,7 +1001,7 @@ class ServingChat:
             else:
                 content_parts, reasoning_parts = [], []
                 async for delta in self._stream_content_deltas(
-                    req, generation, stops, stop_hit
+                    req, generation, stops, stop_hit, stats
                 ):
                     content_parts.append(delta.content or "")
                     reasoning_parts.append(delta.reasoning_content or "")

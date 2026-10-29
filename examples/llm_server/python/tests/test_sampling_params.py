@@ -515,3 +515,136 @@ def test_ignore_eos_requires_reported_native_terminators(make_client, stream):
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "unsupported_parameter"
     assert "native EOS markers" in response.json()["error"]["message"]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_reasoning_stops_at_nonterminator_special(make_client, stream):
+    def extract(text):
+        reasoning, _, content = text.partition("</think>")
+        return reasoning.removeprefix("<think>"), content
+
+    client, runner = make_client(
+        tokens=["<think>before", "<|im_start|>", "hidden</think>answer"],
+        special_tokens=["<|im_end|>", "<|im_start|>"],
+        reasoning_extractor=extract,
+        finish_reason="length",
+    )
+    response = client.post(
+        "/v1/chat/completions", json=_body(ignore_eos=True, stream=stream)
+    )
+    assert response.status_code == 200
+    if stream:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        deltas = [c["choices"][0]["delta"] for c in chunks]
+        reasoning = "".join(d.get("reasoning_content", "") for d in deltas)
+        content = "".join(d.get("content", "") for d in deltas)
+    else:
+        message = response.json()["choices"][0]["message"]
+        reasoning, content = message["reasoning_content"], message.get("content")
+    assert reasoning == "before"
+    assert not content
+    assert not runner.stopped
+
+
+@pytest.mark.parametrize("marker", ["<|im_end|>", "<|im_start|>"])
+def test_ignore_eos_parser_stops_at_all_plain_chat_boundaries(make_client, marker):
+    from executorch.examples.llm_server.python.protocol import DeltaMessage
+
+    seen = []
+
+    class Parser:
+        def feed(self, text):
+            seen.append(text)
+            return [DeltaMessage(content=text)]
+
+        def finish(self):
+            return []
+
+    client, runner = make_client(
+        tokens=["answer", marker[:4], marker[4:], "hidden"],
+        special_tokens=["<|im_end|>", "<|im_start|>"],
+        streaming_parser_factory=Parser,
+        finish_reason="length",
+    )
+    response = client.post(
+        "/v1/chat/completions", json=_body(ignore_eos=True, stream=True)
+    )
+    assert response.status_code == 200
+    assert "".join(seen) == "answer"
+    assert not runner.stopped
+
+
+@pytest.mark.parametrize(
+    "mode", ["buffered", "stream", "parser", "filter", "reasoning"]
+)
+@pytest.mark.parametrize(
+    "tokens",
+    [
+        ["answer<|im_end|>hidden"],
+        ["answer<|im_", "end", "|>hidden"],
+        ["answer<|im_"],  # Native string-stop filtering removed the marker's end.
+    ],
+)
+def test_ignore_eos_request_stop_inside_terminator_never_leaks_fragment(
+    make_client, mode, tokens
+):
+    from executorch.examples.llm_server.python.protocol import DeltaMessage
+
+    seen = []
+
+    class Parser:
+        def feed(self, text):
+            seen.append(text)
+            return [DeltaMessage(content=text)]
+
+        def finish(self):
+            return []
+
+    client, _ = make_client(
+        tokens=tokens,
+        finish_reason="stop",
+        streaming_parser_factory=Parser if mode == "parser" else None,
+        content_filter=(lambda text: text) if mode == "filter" else None,
+        reasoning_extractor=(
+            (lambda text: (None, text)) if mode == "reasoning" else None
+        ),
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json=_body(ignore_eos=True, stop="end", stream=mode != "buffered"),
+    )
+    assert response.status_code == 200
+    if mode == "buffered":
+        choice = response.json()["choices"][0]
+        content = choice["message"]["content"]
+        finish = choice["finish_reason"]
+    else:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        content = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
+        finish = chunks[-1]["choices"][0]["finish_reason"]
+    assert content == "answer"
+    assert finish == "stop"
+    if mode == "parser":
+        assert "".join(seen) == "answer"
+
+
+@pytest.mark.parametrize("native_stops", [None, [], ["<|native_eos|>"]])
+def test_normal_generation_does_not_add_native_text_stops(make_client, native_stops):
+    client, runner = make_client(
+        tokens=["literal <|native_eos|> text"], default_stop_strings=native_stops
+    )
+    response = client.post("/v1/chat/completions", json=_body())
+    assert response.status_code == 200
+    assert (
+        response.json()["choices"][0]["message"]["content"]
+        == "literal <|native_eos|> text"
+    )
+    assert "<|native_eos|>" not in runner.captured_config.stop
