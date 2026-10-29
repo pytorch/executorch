@@ -17,6 +17,7 @@ enum class FaultPoint {
   FullSync,
   Rename,
   BeforeCreateDirectory,
+  BeforeCacheEntryLock,
 };
 
 #if defined(COREAI_ASSETS_TESTING) && COREAI_ASSETS_TESTING

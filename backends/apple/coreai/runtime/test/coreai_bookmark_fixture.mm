@@ -49,33 +49,75 @@ bool send_signal_byte(int fd, char byte) {
   while (const int remaining = remaining_ms(deadline)) {
     pollfd entry{fd, POLLOUT, 0};
     const int ready = poll(&entry, 1, remaining);
-    if (ready < 0 && errno == EINTR)
+    if (ready < 0 && errno == EINTR) {
       continue;
-    if (ready <= 0 || !(entry.revents & POLLOUT))
+    }
+    if (ready <= 0 || !(entry.revents & POLLOUT)) {
       return false;
+    }
     const ssize_t written = write(fd, &byte, 1);
-    if (written == 1)
+    if (written == 1) {
       return true;
-    if (written < 0 && (errno == EINTR || errno == EAGAIN))
+    }
+    if (written < 0 && (errno == EINTR || errno == EAGAIN)) {
       continue;
+    }
     return false;
   }
   return false;
 }
 } // namespace
 
-Result<Manifest> bookmark_manifest(bool aot) {
+Result<SelectedBundle> bookmark_bundle(bool aot) {
   NSData* encoded = encode(aot ? aot_manifest_dict() : manifest_dict());
-  if (encoded == nil)
+  if (encoded == nil) {
     return Error::InvalidExternalData;
+  }
   auto parsed = parse_manifest(encoded);
-  if (!parsed.ok())
+  if (!parsed.ok()) {
     return parsed.error();
+  }
   return select_assets(parsed.get(), @"arch_b", @"macOS");
 }
 
-Result<NSString*> test_bookmark_key(const Manifest& manifest) {
-  return bookmark_key(manifest, @"macOS", @"arch_b");
+Result<NSString*> test_cache_key(const SelectedBundle& bundle) {
+  return test_cache_key(bundle, @"default");
+}
+
+Result<NSString*> test_cache_key(
+    const SelectedBundle& bundle,
+    NSString* specialization_identity) {
+  return cache_variant_key(
+      bundle, @"macOS", @"arch_b", specialization_identity);
+}
+
+Result<NSString*> different_cache_key(
+    const SelectedBundle& bundle,
+    NSString* key,
+    bool same_stripe) {
+  auto original_name = cache_entry_lock_name(key);
+  if (!original_name.ok()) {
+    return original_name.error();
+  }
+  for (NSUInteger index = 0; index < 10000; ++index) {
+    NSString* identity =
+        [NSString stringWithFormat:@"specialization-%lu", (unsigned long)index];
+    auto candidate = test_cache_key(bundle, identity);
+    if (!candidate.ok()) {
+      return candidate.error();
+    }
+    if ([candidate.get() isEqual:key]) {
+      continue;
+    }
+    auto candidate_name = cache_entry_lock_name(candidate.get());
+    if (!candidate_name.ok()) {
+      return candidate_name.error();
+    }
+    if ([candidate_name.get() isEqual:original_name.get()] == same_stripe) {
+      return candidate.get();
+    }
+  }
+  return Error::NotFound;
 }
 
 NSURL* test_bookmark_url(NSURL* root, NSString* key) {
@@ -83,28 +125,32 @@ NSURL* test_bookmark_url(NSURL* root, NSString* key) {
       URLByAppendingPathComponent:[key stringByAppendingString:@".bookmark"]];
 }
 
-NSURL* test_bookmark_lock_url(NSURL* root, NSString* key) {
-  auto name = bookmark_lock_name(key);
+NSURL* test_cache_lock_url(NSURL* root, NSString* key) {
+  auto name = cache_entry_lock_name(key);
   EXPECT_TRUE(name.ok());
-  if (!name.ok())
+  if (!name.ok()) {
     return nil;
+  }
   return [[root URLByAppendingPathComponent:@"locks"]
       URLByAppendingPathComponent:name.get()];
 }
 
 Result<NSData*> saved_bookmark(NSURL* root, NSString* key) {
-  auto locked = lock_bookmark(root.path, key);
-  if (!locked.ok())
+  auto locked = lock_cache_entry(root.path, key);
+  if (!locked.ok()) {
     return locked.error();
-  return read_bookmark(*locked.get());
+  }
+  return locked.get()->read_bookmark();
 }
 
 Result<NSData*> sized_bookmark(size_t size, uint32_t tag) {
-  if (size < sizeof(tag))
+  if (size < sizeof(tag)) {
     return Error::InvalidArgument;
+  }
   NSMutableData* bytes = [NSMutableData dataWithLength:size];
-  if (bytes == nil)
+  if (bytes == nil) {
     return Error::MemoryAllocationFailed;
+  }
   std::memcpy(bytes.mutableBytes, &tag, sizeof(tag));
   return [bytes copy];
 }
@@ -114,67 +160,77 @@ void set_bookmark_test_executable(const char* path) {
 }
 
 int bookmark_child_mode(int argc, char** argv) {
-  if (argc < 2 || std::strncmp(argv[1], "--bookmark-", 11) != 0)
+  if (argc < 2 || std::strncmp(argv[1], "--bookmark-", 11) != 0) {
     return -1;
-  if (argc != 5)
+  }
+  if (argc != 5) {
     return 1;
+  }
   const bool hold = std::strcmp(argv[1], "--bookmark-hold") == 0;
   const bool lock = std::strcmp(argv[1], "--bookmark-lock") == 0;
   const bool other = std::strcmp(argv[3], "other") == 0;
   const bool same = std::strcmp(argv[3], "same") == 0;
   const bool collision = std::strcmp(argv[3], "collision") == 0;
-  if ((!hold && !lock) || (!other && !same && !collision))
+  if ((!hold && !lock) || (!other && !same && !collision)) {
     return 2;
+  }
   char* end = nullptr;
   errno = 0;
   const long value = std::strtol(argv[4], &end, 10);
   if (errno != 0 || end == argv[4] || *end != '\0' || value < 0 ||
-      value > INT_MAX)
+      value > INT_MAX) {
     return 3;
+  }
   FileDescriptor signal_fd(static_cast<int>(value));
-  if (fcntl(signal_fd.get(), F_GETFD) < 0)
+  if (fcntl(signal_fd.get(), F_GETFD) < 0) {
     return 4;
+  }
   signal(SIGPIPE, SIG_IGN);
   NSString* root = [NSString stringWithUTF8String:argv[2]];
-  if (root == nil)
+  if (root == nil) {
     return 5;
-  auto manifest = bookmark_manifest();
-  if (!manifest.ok())
-    return 6;
-  auto key = test_bookmark_key(manifest.get());
-  if (!key.ok())
-    return 7;
-  NSMutableString* selected_key = [key.get() mutableCopy];
-  if (other || collision) {
-    const NSUInteger index = other ? 0 : 63;
-    [selected_key
-        replaceCharactersInRange:NSMakeRange(index, 1)
-                      withString:[selected_key characterAtIndex:index] == '0'
-                          ? @"1"
-                          : @"0"];
   }
-  StorageFaultScope scope(StorageOperation::BeforeBookmarkLock);
+  auto bundle = bookmark_bundle();
+  if (!bundle.ok()) {
+    return 6;
+  }
+  auto key = test_cache_key(bundle.get());
+  if (!key.ok()) {
+    return 7;
+  }
+  NSString* selected_key = key.get();
+  if (other || collision) {
+    auto changed = different_cache_key(bundle.get(), key.get(), collision);
+    if (!changed.ok()) {
+      return 8;
+    }
+    selected_key = changed.get();
+  }
+  StorageFaultScope scope(FaultPoint::BeforeCacheEntryLock);
   scope.armed = false;
   const int notify_fd = signal_fd.get();
-  scope.observe = ^(StorageOperation operation) {
+  scope.observe = ^(FaultPoint point) {
     if (lock && (same || collision) &&
-        operation == StorageOperation::BeforeBookmarkLock &&
+        point == FaultPoint::BeforeCacheEntryLock &&
         !send_signal_byte(notify_fd, 'B')) {
-      _exit(11);
+      _exit(12);
     }
   };
-  auto locked = lock_bookmark(root, selected_key);
-  if (!locked.ok())
-    return 8;
-  if (!send_signal_byte(signal_fd.get(), 'L'))
+  auto locked = lock_cache_entry(root, selected_key);
+  if (!locked.ok()) {
     return 9;
-  if (close(signal_fd.release()) != 0)
+  }
+  if (!send_signal_byte(signal_fd.get(), 'L')) {
     return 10;
+  }
+  if (close(signal_fd.release()) != 0) {
+    return 11;
+  }
   if (hold) {
-    // The parent owns this PID and always kills and reaps it, including on
-    // failure.
-    for (;;)
+    // The parent owns this PID and always kills and reaps it.
+    for (;;) {
       pause();
+    }
   }
   return 0;
 }
@@ -182,8 +238,9 @@ int bookmark_child_mode(int argc, char** argv) {
 BookmarkChild::~BookmarkChild() {
   if (pid_ > 0) {
     const auto cleaned = kill_and_reap();
-    if (!cleaned)
+    if (!cleaned) {
       ADD_FAILURE() << cleaned.message();
+    }
   }
   if (signal_fd_ >= 0 && close(signal_fd_) != 0) {
     ADD_FAILURE() << "Cannot close child signal descriptor: " << errno;
@@ -196,8 +253,9 @@ BookmarkChild::spawn(NSString* mode, NSString* root, NSString* argument) {
     return AssertionFailure() << "Invalid bookmark child setup";
   }
   int descriptors[2];
-  if (pipe(descriptors) != 0)
+  if (pipe(descriptors) != 0) {
     return AssertionFailure() << "pipe: " << errno;
+  }
   FileDescriptor reader(descriptors[0]);
   FileDescriptor writer(descriptors[1]);
   for (int fd : descriptors) {
@@ -208,8 +266,9 @@ BookmarkChild::spawn(NSString* mode, NSString* root, NSString* argument) {
   }
   posix_spawn_file_actions_t actions;
   int error = posix_spawn_file_actions_init(&actions);
-  if (error != 0)
+  if (error != 0) {
     return AssertionFailure() << "spawn actions: " << error;
+  }
   error =
       posix_spawn_file_actions_adddup2(&actions, writer.get(), kChildSignalFD);
   std::string descriptor = std::to_string(kChildSignalFD);
@@ -230,8 +289,9 @@ BookmarkChild::spawn(NSString* mode, NSString* root, NSString* argument) {
     return AssertionFailure() << "posix_spawn: " << error;
   }
   signal_fd_ = reader.release();
-  if (destroyed != 0)
+  if (destroyed != 0) {
     return AssertionFailure() << "destroy spawn actions: " << destroyed;
+  }
   return AssertionSuccess();
 }
 
@@ -240,19 +300,24 @@ BookmarkChild::spawn(NSString* mode, NSString* root, NSString* argument) {
   while (const int remaining = remaining_ms(deadline)) {
     pollfd entry{signal_fd_, POLLIN, 0};
     const int ready = poll(&entry, 1, remaining);
-    if (ready < 0 && errno == EINTR)
+    if (ready < 0 && errno == EINTR) {
       continue;
-    if (ready < 0)
+    }
+    if (ready < 0) {
       return AssertionFailure() << "poll: " << errno;
-    if (ready == 0)
+    }
+    if (ready == 0) {
       break;
-    if (!(entry.revents & POLLIN))
+    }
+    if (!(entry.revents & POLLIN)) {
       return AssertionFailure()
           << "Child closed signal pipe before " << expected;
+    }
     char byte = 0;
     const ssize_t count = read(signal_fd_, &byte, 1);
-    if (count < 0 && (errno == EINTR || errno == EAGAIN))
+    if (count < 0 && (errno == EINTR || errno == EAGAIN)) {
       continue;
+    }
     if (count != 1 || byte != expected) {
       return AssertionFailure()
           << "Expected child signal " << expected << ", got " << int(byte);
@@ -268,20 +333,24 @@ BookmarkChild::spawn(NSString* mode, NSString* root, NSString* argument) {
   while (const int remaining = remaining_ms(deadline)) {
     pollfd entry{signal_fd_, POLLIN, 0};
     const int ready = poll(&entry, 1, remaining);
-    if (ready < 0 && errno == EINTR)
+    if (ready < 0 && errno == EINTR) {
       continue;
-    if (ready < 0)
+    }
+    if (ready < 0) {
       return AssertionFailure() << "poll: " << errno;
-    if (ready > 0)
+    }
+    if (ready > 0) {
       return AssertionFailure() << "Child completed while lock was held";
+    }
     return AssertionSuccess();
   }
   return AssertionSuccess();
 }
 
 ::testing::AssertionResult BookmarkChild::reap(int& status) {
-  if (pid_ <= 0)
+  if (pid_ <= 0) {
     return AssertionFailure() << "No owned child to reap";
+  }
   const auto deadline = Clock::now() + kChildTimeout;
   while (const int remaining = remaining_ms(deadline)) {
     const pid_t result = waitpid(pid_, &status, WNOHANG);
@@ -289,10 +358,12 @@ BookmarkChild::spawn(NSString* mode, NSString* root, NSString* argument) {
       pid_ = -1;
       return AssertionSuccess();
     }
-    if (result < 0 && errno == EINTR)
+    if (result < 0 && errno == EINTR) {
       continue;
-    if (result < 0)
+    }
+    if (result < 0) {
       return AssertionFailure() << "waitpid: " << errno;
+    }
     poll(nullptr, 0, std::min(remaining, 10));
   }
   return AssertionFailure() << "Timed out reaping child " << pid_;
@@ -301,8 +372,9 @@ BookmarkChild::spawn(NSString* mode, NSString* root, NSString* argument) {
 ::testing::AssertionResult BookmarkChild::expect_exit(int expected) {
   int status = 0;
   auto result = reap(status);
-  if (!result)
+  if (!result) {
     return result;
+  }
   if (!WIFEXITED(status) || WEXITSTATUS(status) != expected) {
     return AssertionFailure()
         << "Expected child exit " << expected << ", wait status " << status;
@@ -311,14 +383,16 @@ BookmarkChild::spawn(NSString* mode, NSString* root, NSString* argument) {
 }
 
 ::testing::AssertionResult BookmarkChild::kill_and_reap() {
-  if (pid_ <= 0)
+  if (pid_ <= 0) {
     return AssertionFailure() << "No owned child to kill";
+  }
   const int killed = kill(pid_, SIGKILL);
   const int error = errno;
   int status = 0;
   auto result = reap(status);
-  if (!result)
+  if (!result) {
     return result;
+  }
   if (killed != 0 || !WIFSIGNALED(status) || WTERMSIG(status) != SIGKILL) {
     return AssertionFailure()
         << "Expected SIGKILL, kill errno " << (killed == 0 ? 0 : error)

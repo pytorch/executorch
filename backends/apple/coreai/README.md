@@ -82,25 +82,24 @@ and enumeration use explicit policies, with a missing child distinguishable
 from an error. Fault injection is a separate, thread-local test interface and
 compiles away in production.
 
-Each partition derives a key from its selected export digest/bundle, source/AOT
-mode, platform, Core AI device architecture, default SDK cache namespace,
-versioned default options and persistent policy. Function bindings and delivery
-location are excluded. No model bytes are hashed at runtime. Each key determines
-a raw bookmark in `bookmarks`, a bundle directory in `staging`, and one of
-256 shared coordination files in `locks`. There is no PTE-wide bookmark list or
-serialized lifecycle record.
-
+Each selected bundle has a model key derived from its export digest, bundle
+name, and source/AOT mode. A readable variant key combines that model key with
+the platform and Core AI device architecture, plus a hash of a versioned
+specialization identity supplied as plain data by the SDK boundary. Function
+bindings and delivery location are excluded, and no model bytes are hashed at
+runtime. Each variant key determines a raw bookmark in `bookmarks`, a bundle
+directory in `staging`, and one of 256 shared coordination files in `locks`.
+There is no PTE-wide bookmark list or serialized lifecycle record.
 
 Raw bookmarks have an 8 MiB backend allocation limit, not an asserted SDK format
 maximum, and are published atomically because losing one orphans an SDK entry.
 A fixed pool of at most 256 disk locks coordinates loading and eviction across
-threads and processes. The first byte of the validated cache key selects
-`stripe-v1-00.lock` through `stripe-v1-ff.lock` within the lock directory. Files
-are created on demand, so new model versions do not grow the pool beyond 256.
-The mapping is part of the on-disk format and is not configurable. Different
-keys on the same stripe serialize; different stripes remain independent.
-Bookmarks and staging remain separate for every key. Runtime
-operations hold only one stripe at a time.
+threads and processes. A SHA-256 hash of the full validated cache key selects a
+stripe modulo the configured pool size. Files are created on demand, so new
+model versions do not grow the pool beyond 256. Different keys on the same
+stripe serialize; different stripes remain independent. Bookmarks and staging
+remain separate for every key. Runtime operations hold only one stripe at a
+time.
 
 Lock ownership is maintained by the OS, and acquiring a lock does not flush its
 file or directory. Stripe files are never removed, including during cache
@@ -108,20 +107,13 @@ clearing or after process exit, so waiters and future openers keep using the
 same inode. Removing the assets root externally requires all loads, sessions
 and maintenance to stop.
 
-Upgrading from per-key lock files requires stopping all processes using the
-root and upgrading them together. Old and new locking schemes must not run
-concurrently against the same root. Legacy per-key lock files are ignored and
-left untouched; they can be removed separately during a fully quiescent offline
-cleanup. The 256-file bound applies to the new stripe pool, not pre-existing
-legacy files. Bookmarks and staged bundles need no migration.
-
 ## Host Tests
 
 On macOS, `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON`
 registers the standalone `coreai_host_test` executable with CTest. It tests
-manifest parsing, AOT asset selection, and filesystem storage using Foundation,
-without Swift or CoreAI SDK calls. The host test target is omitted for Apple
-cross-builds.
+manifest parsing, AOT asset selection, cache identity, bookmark I/O, lock
+contention, and filesystem storage using Foundation, without Swift or CoreAI SDK
+calls. The host test target is omitted for Apple cross-builds.
 
 CI builds and runs these tests on macOS 27. To use the same configuration from
 the repository root:

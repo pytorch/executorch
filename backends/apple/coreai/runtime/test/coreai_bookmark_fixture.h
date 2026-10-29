@@ -13,13 +13,22 @@
 #include <cstddef>
 #include <cstdint>
 #include "coreai_bookmarks.h"
+#include "coreai_cache_key.h"
+#include "coreai_manifest.h"
 
 namespace executorch::backends::coreai::testing {
 
-runtime::Result<Manifest> bookmark_manifest(bool aot = false);
-runtime::Result<NSString*> test_bookmark_key(const Manifest& manifest);
+runtime::Result<SelectedBundle> bookmark_bundle(bool aot = false);
+runtime::Result<NSString*> test_cache_key(const SelectedBundle& bundle);
+runtime::Result<NSString*> test_cache_key(
+    const SelectedBundle& bundle,
+    NSString* specialization_identity);
+runtime::Result<NSString*> different_cache_key(
+    const SelectedBundle& bundle,
+    NSString* key,
+    bool same_stripe);
 NSURL* test_bookmark_url(NSURL* root, NSString* key);
-NSURL* test_bookmark_lock_url(NSURL* root, NSString* key);
+NSURL* test_cache_lock_url(NSURL* root, NSString* key);
 runtime::Result<NSData*> saved_bookmark(NSURL* root, NSString* key);
 runtime::Result<NSData*> sized_bookmark(size_t size, uint32_t tag = 1);
 
