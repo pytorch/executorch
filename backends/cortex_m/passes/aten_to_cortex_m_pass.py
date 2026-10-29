@@ -23,6 +23,7 @@ from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 
 from executorch.backends.cortex_m.utils import (
     build_activation_lut,
+    is_channels_last,
     is_foldable_alpha,
     quantize_multiplier_aot,
     quantize_val,
@@ -460,6 +461,16 @@ def _get_convolution_replacement(
         conv_args[7],
         cast(int, conv_args[8]),
     )
+
+    if not explicit_nhwc:
+        input_tensor = get_first_fake_tensor(cast(Node, x))
+        if input_tensor is None or not is_channels_last(input_tensor):
+            # cortex_m::quantized_conv2d / quantized_depthwise_conv2d require
+            # channels-last inputs and outputs; replacing a channels-first conv
+            # produces a graph that fails at runtime with
+            # "input and output must be channels_last" (#23812).
+            # Leave the node un-replaced so it falls back to portable ops.
+            return None
 
     if transposed:
         return _get_transpose_conv2d_replacement(node, dialect_pass)
