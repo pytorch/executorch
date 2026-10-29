@@ -137,11 +137,51 @@ manylinux image for each supported architecture; building on a newer Linux host
 does not establish compatibility with older systems. GGML uses portable CPU
 settings, with native tuning and optional x86 instruction sets disabled, rather
 than assuming the build machine's instruction set is available on every consumer.
-Keep the existing ExecuTorch release version; the wheel reads `version.txt`.
+The wheel reads `version.txt` for local builds. `BUILD_VERSION` overrides it in
+release and nightly builds, just as it does for the `executorch` wheel.
 
 The build reuses existing CMake targets and installs only the Native wheel
 component. Building source distributions from this subdirectory is not supported;
 build wheels directly from the complete checkout.
+
+## Release and nightly CI
+
+Dedicated Linux x86_64 and aarch64 wheel workflows build `executorch-native`
+with the same triggers, Python version matrix, source revision, and reusable
+PyTorch wheel workflow as `executorch`. Native has its own workflows because
+the reusable workflow keys its concurrency group and artifact names by
+repository, so two packages from one repository cannot share a workflow run.
+Native includes both GGML and Vulkan in each wheel; it does not have separate
+CUDA variants. The initial platform coverage is Linux.
+
+The existing wheel builder invokes `setup.py bdist_wheel`. The small `setup.py` in this directory
+forwards that command to the PEP 517 recipe above. The Native hooks build libzip
+and FlatBuffers in the manylinux environment, install the shader compiler, repair
+the wheel, and test it.
+
+The wheels are not published yet. The workflows pass a non-`push` trigger event
+for `executorch-native`, so the reusable workflow keeps the repaired wheels as
+workflow artifacts and does not upload them. Before publishing, the package must
+be registered with the release infrastructure: the PyPI project, the
+download.pytorch.org nightly index, and release promotion. Then pass
+`github.event_name` through as for `executorch`.
+
+The post-build check exports add and Conv/BatchNorm/ReLU models using the source
+revision being released. It then creates a fresh virtual environment and installs
+only the repaired Native wheel with its declared dependencies. It checks GGML
+results against PyTorch, runs the Python binding suite, and rejects an
+environment containing Torch or ExecuTorch. Vulkan hardware is not required
+for this CPU check.
+
+To reproduce the check from the ExecuTorch source root, first export in your
+development environment, then let the test create the clean runtime environment:
+
+```sh
+python .ci/scripts/wheel/export_native.py --output /tmp/native-fixtures
+python .ci/scripts/wheel/test_native.py \
+  --wheel /path/to/repaired/executorch_native-*.whl \
+  --source . --fixtures /tmp/native-fixtures
+```
 
 ## Validate the installed wheel
 
