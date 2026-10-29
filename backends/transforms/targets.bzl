@@ -750,6 +750,7 @@ def define_common_targets():
         ],
         deps = [
             ":channels_last_layout",
+            ":dim_maps",
             "//caffe2:torch",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
