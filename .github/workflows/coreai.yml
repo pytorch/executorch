@@ -13,6 +13,11 @@ on:
       - .clang-format
       - CMakeLists.txt
       - backends/apple/coreai/**
+      - backends/test/**
+      - extension/module/**
+      - extension/pybindings/**
+      - extension/tensor/**
+      - setup.py
       - runtime/**
       - tools/cmake/**
   workflow_dispatch:
@@ -92,7 +97,65 @@ jobs:
           -DCMAKE_OSX_DEPLOYMENT_TARGET=27.0 \
           -DEXECUTORCH_BUILD_COREAI=ON \
           -DEXECUTORCH_BUILD_TESTS=ON \
-          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+          -DEXECUTORCH_BUILD_PORTABLE_OPS=ON
         ${CONDA_RUN} cmake --build cmake-out-coreai --target backends/apple/coreai/all -j$(sysctl -n hw.ncpu)
-        ${CONDA_RUN} ctest --test-dir cmake-out-coreai/backends/apple/coreai --output-on-failure --no-tests=error
+        COREAI_STRESS_THREADS=50 COREAI_STRESS_ITERATIONS=100 \
+          ${CONDA_RUN} ctest --test-dir cmake-out-coreai/backends/apple/coreai --output-on-failure --no-tests=error
+        echo "::endgroup::"
+
+  backend-tester:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        suite: [models, operators]
+        flow: [coreai_fp32, coreai_fp16, coreai_w8a8, coreai_w8, coreai_w4]
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      default-packages: ""
+      job-name: test-${{ matrix.flow }}-${{ matrix.suite }}
+      runner: xcode-27
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -euxo pipefail
+
+        echo "::group::Install the Core AI toolchain and Python runtime"
+        xcodebuild -version
+        xcodebuild -downloadComponent MetalToolchain
+        xcrun --find coreai-build
+        export CMAKE_GENERATOR=Ninja
+        export CMAKE_ARGS="-DEXECUTORCH_BUILD_COREAI=ON -DEXECUTORCH_BUILD_COREML=OFF -DEXECUTORCH_BUILD_MLX=OFF -DCMAKE_OSX_DEPLOYMENT_TARGET=27.0"
+        ${CONDA_RUN} pip install "cmake>=3.31,<4" ninja
+        ${CONDA_RUN} python install_executorch.py --editable > /dev/null
+        ${CONDA_RUN} pip install -r backends/apple/coreai/requirements.txt pytest-xdist pytest-json-report pytest-timeout
+        ${CONDA_RUN} pip list
+        ${CONDA_RUN} python - <<'PY'
+        from executorch.extension.pybindings.portable_lib import _get_registered_backend_names, _is_available
+        assert "CoreAIBackend" in _get_registered_backend_names()
+        assert _is_available("CoreAIBackend")
+        PY
+        echo "::endgroup::"
+
+        echo "::group::Verify tester delegation and quantization"
+        COREAI_TEST_RUNTIME=1 ${CONDA_RUN} python -m pytest \
+          backends/apple/coreai/test/test_tester.py -x -v
+        echo "::endgroup::"
+
+        echo "::group::Run shared backend suite (${{ matrix.flow }} / ${{ matrix.suite }})"
+        export GOLDEN_ARTIFACTS_DIR="${RUNNER_TEMP}/coreai-${{ matrix.flow }}-${{ matrix.suite }}"
+        ${CONDA_RUN} python -m pytest -c /dev/null backends/test/suite/${{ matrix.suite }}/ \
+          -m flow_${{ matrix.flow }} -n 2 -x \
+          --json-report --json-report-file=coreai-results.json \
+          --junitxml=coreai-results.xml 2>&1 | tee coreai-pytest.log
         echo "::endgroup::"
