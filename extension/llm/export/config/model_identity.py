@@ -62,8 +62,10 @@ class ModelType(str, Enum):
 
 @dataclass(frozen=True)
 class ModelSpec:
+    """Model family and optional Hugging Face checkpoint source."""
+
     family: ModelFamily
-    hf_repo_id: str
+    hf_repo_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,9 @@ class ModelIdentity:
 
 
 MODEL_SPECS: Dict[str, ModelSpec] = {
+    "stories110m": ModelSpec(ModelFamily.llama2),
+    "llama3_2_1b_instruct": ModelSpec(ModelFamily.llama3_2),
+    "llama3_2_3b_instruct": ModelSpec(ModelFamily.llama3_2),
     "qwen2_5_0_5b": ModelSpec(ModelFamily.qwen2_5, "Qwen/Qwen2.5-0.5B"),
     "qwen2_5_1_5b": ModelSpec(ModelFamily.qwen2_5, "Qwen/Qwen2.5-1.5B"),
     "qwen2_5_coder_32b": ModelSpec(
@@ -100,20 +105,19 @@ MODEL_SPECS: Dict[str, ModelSpec] = {
     "spark_x2_6_4b": ModelSpec(ModelFamily.spark_x2_5, "XHToken/Spark-X2.6-4B"),
 }
 
-LEGACY_MODEL_CLASS_TO_ID: Dict[str, str] = {
-    model_type.value: model_type.value
-    for model_type in ModelType
-    if model_type.value in MODEL_SPECS
-}
-
 _LEGACY_FAMILY_ONLY_MODEL_CLASSES = {
-    ModelType.stories110m: ModelFamily.llama2,
     ModelType.llama2: ModelFamily.llama2,
     ModelType.llama3: ModelFamily.llama3,
     ModelType.llama3_1: ModelFamily.llama3_1,
     ModelType.llama3_2: ModelFamily.llama3_2,
     ModelType.llama3_2_vision: ModelFamily.llama3_2_vision,
     ModelType.static_llama: ModelFamily.llama3_2,
+}
+
+LEGACY_MODEL_CLASS_TO_ID: Dict[str, str] = {
+    model_type.value: model_type.value
+    for model_type in ModelType
+    if model_type.value in MODEL_SPECS
 }
 
 _unmapped_legacy_model_types = {

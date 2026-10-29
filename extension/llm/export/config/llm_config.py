@@ -107,15 +107,16 @@ class BaseConfig:
         model_class: Deprecated legacy field; supported during migration.
         model_family: Explicit architecture to use for the model implementation.
             Mutually exclusive with model_id, which infers the family.
-        model_id: Specific model id used to download a registered Hugging Face
-            checkpoint, unless checkpoint selects a local override. Requires
-            matching params to construct the model.
+        model_id: Specific registered model id. If it has a linked Hugging Face
+            checkpoint source, weights download unless checkpoint selects a local
+            override. Otherwise, checkpoint is required. Requires matching params
+            to construct the model.
         params: Model parameters, such as n_layers, hidden_size, etc.
             Required to construct a registered model selected by model_id. If left
             empty otherwise, uses defaults specified in model_args.py.
         checkpoint: Path to the checkpoint file.
             If left empty, the model will either be initialized with random weights
-            or downloaded from Hugging Face when model_id is set.
+            or downloaded from Hugging Face when model_id has a linked source.
         lora_config: LoRA adapter configuration.
         tokenizer_path: Path to the tokenizer file.
         metadata: Json string containing metadata information.
