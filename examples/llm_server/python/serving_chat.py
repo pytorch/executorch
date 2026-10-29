@@ -170,6 +170,9 @@ class ServingChat:
         #    never reaches the client, AND it backs _strip_specials for final
         #    cleanup of already-parsed visible content.
         self._stops = template.turn_stop_sequences()
+        self._native_stops = getattr(runtime, "default_stop_strings", None)
+        if self._native_stops is not None:
+            self._stops = list(dict.fromkeys(self._stops + self._native_stops))
         handled = content_filter_specials or set()
         self._content_specials = [
             t for t in template.special_tokens() if t not in handled
@@ -557,12 +560,13 @@ class ServingChat:
         rf = req.response_format
         flags = [
             (
-                req.ignore_eos and not self._runtime.supports_ignore_eos,
+                req.ignore_eos
+                and getattr(self._runtime, "supports_ignore_eos", False) is not True,
                 "ignore_eos (requires an updated multiplexed worker)",
             ),
             (
-                req.ignore_eos and not self._stops,
-                "ignore_eos (requires decoded turn terminators in the chat template)",
+                req.ignore_eos and self._native_stops is None,
+                "ignore_eos (requires decoded native EOS markers from the worker)",
             ),
             (req.n != 1, "n>1"),
             (req.reasoning_effort is not None, "reasoning_effort"),

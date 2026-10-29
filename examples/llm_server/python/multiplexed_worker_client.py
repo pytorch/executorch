@@ -239,6 +239,7 @@ class MultiplexedWorkerClient:
         max_message_bytes: int = _MAX_MESSAGE_BYTES,
         max_request_bytes: int = _MAX_REQUEST_BYTES,
         supports_ignore_eos: bool = False,
+        default_stop_strings: list[str] | None = None,
     ):
         _validate_limits(
             max_named_sessions=max_named_sessions,
@@ -251,6 +252,14 @@ class MultiplexedWorkerClient:
         if proc.stdin is None or proc.stdout is None:
             raise WorkerError("worker requires stdin and stdout pipes")
         self._loop = asyncio.get_running_loop()
+        if default_stop_strings is not None and (
+            not isinstance(default_stop_strings, list)
+            or any(not isinstance(s, str) or not s for s in default_stop_strings)
+        ):
+            raise WorkerError(
+                "default_stop_strings must be null or a list of nonempty strings"
+            )
+        self.default_stop_strings = default_stop_strings
         self.supports_ignore_eos = supports_ignore_eos
         self.max_named_sessions = max_named_sessions
         self.max_inflight_requests = max_inflight_requests
@@ -828,6 +837,7 @@ async def spawn_multiplexed_worker(
             proc,
             max_named_sessions=msg.get("max_named_sessions", 0),
             supports_ignore_eos=msg.get("supports_ignore_eos") is True,
+            default_stop_strings=msg.get("default_stop_strings"),
             max_inflight_requests=msg.get("max_inflight_requests", 64),
             mailbox_capacity=mailbox_capacity,
             max_buffered_chars=max_buffered_chars,

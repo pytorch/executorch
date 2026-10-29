@@ -30,10 +30,11 @@ uses the worker's unset/random value.
 multiplexed batching worker. It disables model EOS and automatic chat-template
 stops, allowing generation through terminator tokens up to the requested budget
 or context limit. Explicit request `stop` strings and cancellation still apply.
-Response parsing ends at the first decoded turn terminator from the chat template.
-Use matching model/tokenizer assets so all model EOS markers are represented;
-requests are rejected if the template provides no turn terminators. Tokens past a
-recognized terminator contribute to usage but are excluded from parsing. Explicit
+Response parsing ends at the first decoded turn terminator from the worker or
+chat template. The worker advertises the decoded strings of all its default EOS
+IDs; HTTP `ignore_eos` is rejected if that metadata is absent or any EOS marker
+cannot decode to a nonempty string. Use matching model/tokenizer assets. Tokens
+past a recognized terminator contribute to usage but are excluded from parsing. Explicit
 stops still apply to hidden text, and exhausting the budget reports `length` even
 if the visible answer ended earlier. Exact generated-token splicing is disabled
 for these turns. A later prompt rebuilt from the visible answer can differ from
@@ -42,7 +43,8 @@ and re-prefill. Enabled prefix caching can recover a matching retained prefix.
 AgentX synthesizes later prompts independently; enable prefix caching when
 benchmarking reuse. Explicit `max_tokens` is recommended;
 without it generation uses the remaining context budget. The worker advertises
-support in its readiness frame. Older and legacy workers reject
+support and `default_stop_strings` in its readiness frame (`null` when unavailable).
+Older and legacy workers reject
 `ignore_eos: true` with `400 unsupported_parameter`. Non-boolean values, including
 null, fail schema validation with HTTP 422.
 

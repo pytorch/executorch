@@ -461,6 +461,7 @@ class SessionRuntime:
         self._worker = worker
         self._native = isinstance(worker, MultiplexedWorkerClient)
         self.supports_ignore_eos = getattr(worker, "supports_ignore_eos", False) is True
+        self.default_stop_strings = getattr(worker, "default_stop_strings", None)
         self.supports_multiplexing = (
             getattr(worker, "supports_multiplexing", False) is True
         )

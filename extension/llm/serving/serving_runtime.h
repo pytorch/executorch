@@ -196,6 +196,9 @@ class ET_EXPERIMENTAL ServingRuntime {
   // opening, reopening, and unavailable keys, but not commands still waiting
   // to reserve a slot.
   ServingInfo info() const;
+  // Decoded default EOS markers for adapters that hide output after EOS while
+  // generation continues. nullopt if no tokenizer or any marker cannot decode.
+  std::optional<std::vector<std::string>> default_stop_strings() const;
 
   // Idempotent, including concurrent callers. Stops admission, completes all
   // accepted operations/requests, and joins control, Runner, and delivery

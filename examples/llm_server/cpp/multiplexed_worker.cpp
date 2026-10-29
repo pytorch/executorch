@@ -275,10 +275,12 @@ class Worker {
     }
     try {
       const auto info = runtime_.info();
+      const auto stops = runtime_.default_stop_strings();
       queue_.push_back(
           {nullptr,
            Json({{"ready", true},
                  {"supports_ignore_eos", true},
+                 {"default_stop_strings", stops ? Json(*stops) : Json(nullptr)},
                  {"multiplexed", true},
                  {"max_named_sessions", info.max_sessions},
                  {"max_inflight_requests", config_.max_inflight_requests}})

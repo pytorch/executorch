@@ -133,6 +133,7 @@ def make_client():
         reuse=0,
         reasoning_extractor=None,
         supports_ignore_eos=True,
+        default_stop_strings=("<|im_end|>",),
         streaming_parser_factory=None,
         content_filter=None,
     ):
@@ -145,6 +146,9 @@ def make_client():
             reuse=reuse,
         )
         fake.supports_ignore_eos = supports_ignore_eos
+        fake.default_stop_strings = (
+            None if default_stop_strings is None else list(default_stop_strings)
+        )
         runtime = SessionRuntime(fake)  # one fake worker
         template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
         if prompt_tokens is not None:

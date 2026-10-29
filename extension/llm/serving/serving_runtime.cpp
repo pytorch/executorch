@@ -1596,6 +1596,31 @@ struct ServingRuntime::Impl {
     prefix_cache_.clear();
   }
 
+  std::optional<std::vector<std::string>> default_stop_strings() const {
+    if (!tokenizer_) {
+      return std::nullopt;
+    }
+    std::vector<std::string> stops;
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      for (const auto token : config_.default_stop_tokens) {
+        const auto decoded = tokenizer_->decode(0, token, false);
+        if (!decoded.ok() || decoded->empty()) {
+          return std::nullopt;
+        }
+        if (std::find(stops.begin(), stops.end(), *decoded) == stops.end()) {
+          stops.push_back(*decoded);
+        }
+      }
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      return std::nullopt;
+    }
+#endif
+    return stops;
+  }
+
   ServingInfo info() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return {
@@ -1801,6 +1826,11 @@ void ServingRuntime::reset_session_async(
 std::future<LifecycleResult> ServingRuntime::reset_session_async(
     std::string key) {
   return impl_->submit(Impl::Operation::Reset, std::move(key));
+}
+
+std::optional<std::vector<std::string>> ServingRuntime::default_stop_strings()
+    const {
+  return impl_->default_stop_strings();
 }
 
 ServingInfo ServingRuntime::info() const {

@@ -134,6 +134,9 @@ class ProtocolTest : public ::testing::Test {
     runtime_config.max_pending_operations = max_pending_operations;
     runtime_config.max_events_per_request = 128;
     runtime_config.max_tokens_per_request = 8192;
+    const Json decoded_stops = default_stop_tokens.empty() ? Json::array()
+        : tokenizer_.piece.empty()                         ? Json(nullptr)
+                                   : Json::array({tokenizer_.piece});
     runtime_config.default_stop_tokens = std::move(default_stop_tokens);
     runtime_ = std::make_unique<serving::ServingRuntime>(
         executor_,
@@ -151,6 +154,7 @@ class ProtocolTest : public ::testing::Test {
     ASSERT_FALSE(ready.contains("request_id"));
     ASSERT_EQ(ready.at("max_named_sessions"), max_sessions);
     ASSERT_EQ(ready.at("max_inflight_requests"), config.max_inflight_requests);
+    EXPECT_EQ(ready.at("default_stop_strings"), decoded_stops);
   }
 
   std::shared_ptr<CheckpointGate> gate() {
@@ -1346,6 +1350,12 @@ TEST_F(ProtocolTest, AcceptsBothIgnoreEosValues) {
     EXPECT_EQ(done.at("completion_tokens"), id == 1 ? 1 : 4);
     EXPECT_EQ(done.at("finish_reason"), id == 1 ? "stop" : "length");
   }
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, UndecodableDefaultStopsAdvertiseNull) {
+  tokenizer_.piece.clear();
+  start({}, 4, 8, 64, {999});
   EXPECT_EQ(finish(), 0);
 }
 

@@ -618,6 +618,7 @@ def test_ignore_eos_consumes_budget_and_preserves_visible_turn(serving_cls, stre
 
     class Runtime(_FakeRuntime):
         supports_ignore_eos = True
+        default_stop_strings = ["<|eot|>", "<|end_of_text|>"]
 
         async def generate_stream(self, session_id, prompt, options, stats=None):
             assert options.ignore_eos is True

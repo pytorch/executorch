@@ -364,12 +364,15 @@ def test_ignore_eos_rejects_unsupported_worker_before_streaming(make_client, str
 
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("tool_before_eos", [False, True])
+@pytest.mark.parametrize("eos", ["<|im_end|>", "<|native_eos|>"])
 def test_ignore_eos_parses_only_first_turn_and_counts_full_generation(
-    make_client, stream, tool_before_eos
+    make_client, stream, tool_before_eos, eos
 ):
     first = CALL if tool_before_eos else "answer"
     client, runner = make_client(
-        tokens=[first, "<|im", "_end|>", CALL], finish_reason="length"
+        tokens=[first, eos[:4], eos[4:], CALL],
+        finish_reason="length",
+        default_stop_strings=[eos],
     )
     response = client.post(
         "/v1/chat/completions",
@@ -407,13 +410,15 @@ def test_ignore_eos_parses_only_first_turn_and_counts_full_generation(
 
 
 @pytest.mark.parametrize("stream", [False, True])
-def test_ignore_eos_reasoning_excludes_later_turns(make_client, stream):
+@pytest.mark.parametrize("eos", ["<|im_end|>", "<|native_eos|>"])
+def test_ignore_eos_reasoning_excludes_later_turns(make_client, stream, eos):
     def extract(text):
         reasoning, _, content = text.partition("</think>")
         return reasoning.removeprefix("<think>"), content
 
     client, runner = make_client(
-        tokens=["<think>reason</think>answer", "<|im_end|>", "hidden"],
+        tokens=["<think>reason</think>answer", eos, "hidden"],
+        default_stop_strings=[eos],
         reasoning_extractor=extract,
         finish_reason="length",
     )
@@ -438,7 +443,8 @@ def test_ignore_eos_reasoning_excludes_later_turns(make_client, stream):
     assert not runner.stopped
 
 
-def test_ignore_eos_streaming_parser_never_receives_later_turn(make_client):
+@pytest.mark.parametrize("eos", ["<|im_end|>", "<|native_eos|>"])
+def test_ignore_eos_streaming_parser_never_receives_later_turn(make_client, eos):
     from executorch.examples.llm_server.python.protocol import DeltaMessage
 
     seen = []
@@ -452,7 +458,8 @@ def test_ignore_eos_streaming_parser_never_receives_later_turn(make_client):
             return []
 
     client, runner = make_client(
-        tokens=["answer", "<|im", "_end|>", "hidden"],
+        tokens=["answer", eos[:4], eos[4:], "hidden"],
+        default_stop_strings=[eos],
         streaming_parser_factory=Parser,
         finish_reason="length",
     )
@@ -500,12 +507,11 @@ def test_ignore_eos_content_filter_preserves_explicit_stop_reason(make_client):
 
 
 @pytest.mark.parametrize("stream", [False, True])
-def test_ignore_eos_requires_visible_turn_terminators(make_client, stream):
-    client, runner = make_client()
-    client.app.state.serving._stops = []
+def test_ignore_eos_requires_reported_native_terminators(make_client, stream):
+    client, runner = make_client(default_stop_strings=None)
     response = client.post(
         "/v1/chat/completions", json=_body(ignore_eos=True, stream=stream)
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "unsupported_parameter"
-    assert "turn terminators" in response.json()["error"]["message"]
+    assert "native EOS markers" in response.json()["error"]["message"]
