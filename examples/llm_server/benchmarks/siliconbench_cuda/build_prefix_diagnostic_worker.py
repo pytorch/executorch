@@ -60,6 +60,29 @@ def main(args):
                  for flag in compile if flag.startswith('-I')]
         header=next(path for path in headers if path.is_file())
         source=instrument(original)
+        marker='    text.prompt = text.prepared->prefix_identity();'
+        assert source.count(marker)==1
+        source=source.replace(marker,marker+r'''
+    if (text.prompt) {
+      std::uint64_t hash = 14695981039346656037ull;
+      bool opaque = false;
+      for (const auto& span : text.prompt->spans) {
+        const auto* token_span = std::get_if<batching::TokenSpan>(&span);
+        if (!token_span) { opaque = true; break; }
+        for (std::size_t i = 0; i < token_span->size; ++i) {
+          const auto token = static_cast<std::uint64_t>(
+              (*token_span->tokens)[token_span->offset + i]);
+          for (unsigned int byte = 0; byte < 8; ++byte) {
+            hash ^= (token >> (byte * 8)) & 255;
+            hash *= 1099511628211ull;
+          }
+        }
+      }
+      std::fprintf(stderr,"ET_PREPARED_TOKEN_ID_HASH %llu %zu %llu %d\n",
+          static_cast<unsigned long long>(request->id),text.prompt->size(),
+          static_cast<unsigned long long>(hash),opaque ? 1 : 0);
+    }
+''',1)
         marker='#include <executorch/extension/llm/batching/prefix_cache.h>'
         assert source.count(marker)==1
         before='      return prefix_cache_.lookup_identity(*request->text->prompt);'
