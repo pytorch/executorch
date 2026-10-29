@@ -902,13 +902,12 @@ class TestPasses(unittest.TestCase):
         convs = [
             node
             for node in program.graph.nodes
-            if node.op == "call_function"
-            and getattr(node.target, "__name__", "") == "aten.convolution.default"
+            if node.target == exir_ops.edge.aten.convolution.default
         ]
         self.assertEqual([conv.name for conv in convs], ["aten_convolution_default_1"])
         weight, bias = convs[0].args[1], convs[0].args[2]
         self.assertEqual(weight.kwargs.get("out_dtype"), torch.float16)
-        bias_name = program.graph_signature.inputs_to_parameters[bias.name]
+        bias_name = program.graph_signature.inputs_to_buffers[bias.name]
         self.assertEqual(program.state_dict[bias_name].dtype, torch.float16)
         # the cast must not reach back into the caller's module
         self.assertEqual(

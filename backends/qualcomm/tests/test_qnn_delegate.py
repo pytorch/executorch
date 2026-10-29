@@ -1144,6 +1144,21 @@ class TestQNNFloatingPointOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_fp16a8w_conv2d_cpu_fallback(self):
+        # the HTP rejects the fp16a8w 3x3 conv, which then runs in fp16 on CPU
+        module = torch.nn.Sequential(
+            torch.nn.Conv2d(8, 16, 1),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(16, 16, 3, padding=1),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(16, 8, 1),
+        ).eval()
+        sample_input = (torch.randn([1, 8, 16, 16]),)
+        module = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_fp16a8w
+        )
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=2)
+
     def test_qnn_backend_fp16a8w_conv2d_qat(self):
         # fp16a8w QAT: FP16 activation + INT8 weight; weight kernel must be [1,1]
         # QAT fake quantize (FusedMovingAvgObsFakeQuantize) requires float32 tensors,
