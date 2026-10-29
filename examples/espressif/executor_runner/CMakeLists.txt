@@ -147,6 +147,11 @@ if(ESP_PLATFORM)
     list(APPEND esp_runner_libs xnnpack_backend)
   endif()
 
+  # quantize/dequantize kernels for quantized models with CPU regions
+  if(TARGET quantized_ops_lib)
+    list(APPEND esp_runner_libs quantized_ops_lib)
+  endif()
+
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
     target_compile_definitions(${COMPONENT_LIB} PUBLIC ET_EVENT_TRACER_ENABLED)
     list(APPEND esp_runner_libs etdump flatccrt)

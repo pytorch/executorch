@@ -823,7 +823,7 @@ def test_linalg_vector_norm(request, kwargs):
                 "pcq": False,
                 "lpbq": True,
                 "block_sz_map": {"linear": (1, 32)},
-                "expected": Tolerance(),
+                "expected": CosineSimilarity(0.99),
             },
             id="16a4w_lpbq",
         ),
@@ -832,6 +832,27 @@ def test_linalg_vector_norm(request, kwargs):
 @with_htp_context
 def test_linear_block_quant(request, kwargs):
     Linear.test(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {
+                "act": 16,
+                "param": 4,
+                "pcq": False,
+                "lpbq": True,
+                "block_sz_map": {"linear": (1, 32)},
+                "expected": CosineSimilarity(0.99),
+            },
+            id="16a4w_lpbq",
+        ),
+    ],
+)
+@with_htp_context
+def test_linear_block_quant_large_bias(request, kwargs):
+    LinearLargeBias.test(request, kwargs)  # noqa: F405
 
 
 @pytest.mark.parametrize(

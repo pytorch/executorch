@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import itertools
 import operator
 import unittest
 from copy import deepcopy
@@ -238,6 +239,19 @@ def _host_writer_config(write_view: bool, **kwargs) -> ExecutorchBackendConfig:
         # to_executorch makes for it, which has no out variant.
         to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure=write_view),
         **kwargs,
+    )
+
+
+def _skip_h2d_for_constants_config(
+    alloc_graph_input: bool, skip_constants: bool = True
+) -> ExecutorchBackendConfig:
+    return ExecutorchBackendConfig(
+        emit_stacktrace=False,
+        propagate_device_config=PropagateDeviceConfig(
+            skip_h2d_for_method_inputs=True, skip_h2d_for_constants=skip_constants
+        ),
+        enable_non_cpu_memory_planning=True,
+        memory_planning_pass=MemoryPlanningPass(alloc_graph_input=alloc_graph_input),
     )
 
 
@@ -1881,9 +1895,10 @@ class TestPropagateDevicePass(unittest.TestCase):
                 )
 
     def test_constant_feeding_device_delegate_is_copied(self):
-        """A constant feeding a device delegate gets an _h2d_copy into planned device
-        memory, with or without skip_h2d_for_method_inputs: its data lives in the
-        program on the host, so it is not a method input the caller can place."""
+        """Without skip_h2d_for_constants, a constant feeding a device delegate
+        gets an _h2d_copy into planned device memory, with or without
+        skip_h2d_for_method_inputs: its data lives in the program on the host,
+        so it is not a method input the caller can place."""
 
         class Model(torch.nn.Module):
             def __init__(self):
@@ -1921,6 +1936,199 @@ class TestPropagateDevicePass(unittest.TestCase):
                     self._assert_nodes_buffer_device(
                         nodes.h2d_nodes, program, DeviceType.CUDA, pipeline, "H2D copy"
                     )
+
+    def test_skip_h2d_for_constants_keeps_constant_in_device_memory(self):
+        """With skip_h2d_for_constants=True, a buffer or parameter that only
+        delegates on one device read, one or several, is planned in that
+        device's memory for the whole method, with its data as the initial
+        state, so it needs no copy and no warning. Graph inputs being
+        unplanned does not change that."""
+
+        class Buffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("offset", torch.randn(2, 2))
+
+            def forward(self, a):
+                return torch.add(torch.add(a, self.offset), a)
+
+        class Parameter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.offset = torch.nn.Parameter(torch.randn(2, 2))
+
+            def forward(self, a):
+                return torch.add(a, self.offset)
+
+        class TwoDelegates(Buffer):
+            def forward(self, a):
+                return torch.add(torch.add(a, self.offset), self.offset)
+
+        for alloc_graph_input, model in itertools.product(
+            (True, False), (Buffer(), Parameter(), TwoDelegates())
+        ):
+            with self.assertNoLogs(propagate_device_pass.logger, "WARNING"):
+                results = self._get_executorch_program(
+                    model,
+                    (torch.randn(2, 2),),
+                    PerAddDeviceDelegatePartitioner(["cuda:0"]),
+                    _skip_h2d_for_constants_config(alloc_graph_input),
+                )
+            for pipeline, program, gm in results:
+                with self.subTest(
+                    pipeline=pipeline,
+                    alloc_input=alloc_graph_input,
+                    model=type(model).__name__,
+                ):
+                    self.assertEqual(_collect_device_copy_nodes(gm).h2d_nodes, [])
+                    (offset,) = [
+                        n
+                        for n in gm.graph.nodes
+                        if n.op == "placeholder" and n.name != "a"
+                    ]
+                    spec = offset.meta["spec"]
+                    self.assertTrue(spec.const)
+                    self.assertEqual(spec.lifetime, [0, len(gm.graph.nodes) - 1])
+                    self._assert_buffer_device(
+                        spec, program, DeviceType.CUDA, "device resident constant"
+                    )
+                    (tensor,) = [
+                        value.val
+                        for value in program.execution_plan[0].values
+                        if getattr(value.val, "allocation_info", None) is not None
+                        and value.val.data_buffer_idx > 0
+                    ]
+                    self.assertEqual(
+                        tensor.extra_tensor_info.device_type, DeviceType.CUDA
+                    )
+
+    def test_skip_h2d_for_constants_copies_constants_read_elsewhere(self):
+        """A constant that a host op, or a delegate on another device, reads
+        too is still copied with skip_h2d_for_constants=True, and so is every
+        constant without the option. The warning says why the option did not
+        keep it, or suggests the option when it is off."""
+
+        class Buffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("offset", torch.randn(2, 2))
+
+            def forward(self, a):
+                return torch.add(a, self.offset)
+
+        class AlsoReadOnHost(Buffer):
+            def forward(self, a):
+                return torch.add(a, self.offset), self.offset * 2
+
+        class ReadByTwoDelegates(Buffer):
+            def forward(self, a):
+                return torch.add(a, self.offset), torch.add(a * 2, self.offset)
+
+        class EmptyBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("offset", torch.zeros(2, 0))
+
+            def forward(self, a):
+                return torch.add(a[:, :0], self.offset)
+
+        kept_elsewhere = "skip_h2d_for_constants cannot keep it on the device"
+        cases = {
+            "host reader": (AlsoReadOnHost(), ["cuda:0"], True, [0], kept_elsewhere),
+            "two devices": (
+                ReadByTwoDelegates(),
+                ["cuda:0", "cuda:1"],
+                True,
+                [0, 1],
+                kept_elsewhere,
+            ),
+            "without the option": (
+                Buffer(),
+                ["cuda:0"],
+                False,
+                [0],
+                "or set PropagateDeviceConfig(skip_h2d_for_constants=True)",
+            ),
+            # The option would not help, so it is not suggested.
+            "host reader without the option": (
+                AlsoReadOnHost(),
+                ["cuda:0"],
+                False,
+                [0],
+                "take it into the delegate to avoid that copy",
+            ),
+            # Nor for an empty constant, which costs nothing to copy.
+            "empty without the option": (
+                EmptyBuffer(),
+                ["cuda:0"],
+                False,
+                [0],
+                "take it into the delegate to avoid that copy",
+            ),
+        }
+        for case, (model, devices, skip_constants, copied_to, hint) in cases.items():
+            with self.assertLogs(propagate_device_pass.logger, "WARNING") as logs:
+                results = self._get_executorch_program(
+                    model,
+                    (torch.randn(2, 2),),
+                    PerAddDeviceDelegatePartitioner(devices),
+                    _skip_h2d_for_constants_config(False, skip_constants),
+                )
+            warnings = [w for w in logs.output if "Constant 'b_offset'" in w]
+            self.assertTrue(warnings)
+            for warning in warnings:
+                self.assertIn(hint, warning)
+                self.assertNotIn("_h2d_copy", warning)
+            for pipeline, _program, gm in results:
+                with self.subTest(pipeline=pipeline, case=case):
+                    copies = [
+                        n.meta["spec"].device_index
+                        for n in _collect_device_copy_nodes(gm).h2d_nodes
+                        if n.args[0].name == "b_offset"
+                    ]
+                    self.assertEqual(sorted(copies), copied_to)
+
+    def test_skip_h2d_for_constants_on_its_own(self):
+        """skip_h2d_for_constants works without skip_h2d_for_method_inputs:
+        the method input is still copied to the device and the constant is
+        not. A constant that is still copied raises with
+        error_on_per_call_copies."""
+
+        class Buffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("offset", torch.randn(2, 2))
+
+            def forward(self, a):
+                return torch.add(a, self.offset)
+
+        class AlsoReadOnHost(Buffer):
+            def forward(self, a):
+                return torch.add(a, self.offset), self.offset * 2
+
+        def config(error_on_per_call_copies):
+            return ExecutorchBackendConfig(
+                emit_stacktrace=False,
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_constants=True,
+                    error_on_per_call_copies=error_on_per_call_copies,
+                ),
+                enable_non_cpu_memory_planning=True,
+            )
+
+        inputs = (torch.randn(2, 2),)
+        for pipeline, _program, gm in self._get_executorch_program(
+            Buffer(), inputs, DeviceAwarePartitioner("cuda:0"), config(False)
+        ):
+            with self.subTest(pipeline=pipeline):
+                (copy,) = _collect_device_copy_nodes(gm).h2d_nodes
+                self.assertEqual(copy.args[0].name, "a")
+        with self.assertRaisesRegex(
+            RuntimeError, "Constant 'b_offset'.*error_on_per_call_copies=True"
+        ):
+            self._get_executorch_program(
+                AlsoReadOnHost(), inputs, DeviceAwarePartitioner("cuda:0"), config(True)
+            )
 
     def test_error_on_per_call_copies(self):
         """error_on_per_call_copies turns the warning about a copy that a skip

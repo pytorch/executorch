@@ -19,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <utility>
 
 namespace executorch::backends::cpu {
 namespace {
@@ -140,11 +141,18 @@ class CPUExecution {
         copied_constant_bytes_ += buffer.readable_bytes;
       }
       buffers_[id] = buffer;
-      constants_.push_back(std::move(data.get()));
+      constants_.emplace_back(id, std::move(data.get()));
     }
     error = plan_->prepare(allocator);
     if (error != Error::Ok) {
       return error;
+    }
+    for (auto& [id, constant] : constants_) {
+      if (plan_->can_release_constant(id)) {
+        released_constant_bytes_ += constant.size();
+        buffers_[id] = {};
+        constant.Free();
+      }
     }
     const double milliseconds = std::chrono::duration<double, std::milli>(
                                     std::chrono::steady_clock::now() - start)
@@ -233,7 +241,8 @@ class CPUExecution {
     report.pop_back();
     report +=
         ",\"copied_constant_bytes\":" + std::to_string(copied_constant_bytes_) +
-        "}";
+        ",\"released_constant_bytes\":" +
+        std::to_string(released_constant_bytes_) + "}";
     constexpr size_t chunk_bytes = 80;
     constexpr std::string_view hex = "0123456789abcdef";
     const size_t chunks = (report.size() + chunk_bytes - 1) / chunk_bytes;
@@ -252,12 +261,13 @@ class CPUExecution {
 
   ptn::Program program_;
   const ptn::Method* method_ = nullptr;
-  std::vector<FreeableBuffer> constants_;
+  std::vector<std::pair<ptn::ValueId, FreeableBuffer>> constants_;
   std::vector<size_t> bytes_;
   std::vector<Buffer> buffers_;
   std::vector<ptn::ValueId> input_ids_;
   std::unique_ptr<CPUPlan> plan_;
   size_t copied_constant_bytes_ = 0;
+  size_t released_constant_bytes_ = 0;
   std::mutex mutex_;
 };
 

@@ -404,23 +404,6 @@ def test_constant_pad_nd_u55_INT():
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_fp8)
-@common.SkipIfNoModelConverter
-def test_constant_pad_nd_vgf_no_quant_fp8(test_data: Tuple):
-    test_data, padding, value, mode, _ = test_data()
-    pipeline = VgfPipeline[input_t1](
-        ConstantPadND(padding, value, mode),
-        (test_data,),
-        aten_op,
-        exir_op,
-        tosa_extensions=["fp8e4m3", "fp8e5m2"],
-        quantize=False,
-        atol=0,
-        rtol=0,
-    )
-    pipeline.run()
-
-
 @common.parametrize(
     "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
 )

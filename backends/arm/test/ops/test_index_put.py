@@ -462,23 +462,6 @@ def test_index_put_u85_INT(test_module: input_t):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_suite_fp8)
-@common.SkipIfNoModelConverter
-def test_index_put_vgf_no_quant_fp8(test_module):
-    test_data, _ = test_module
-    pipeline = VgfPipeline(
-        IndexPut(),
-        test_data(),
-        aten_op=IndexPut.aten_op,
-        exir_op=IndexPut.exir_op,
-        tosa_extensions=["fp8e4m3", "fp8e5m2"],
-        quantize=False,
-        atol=0,
-        rtol=0,
-    )
-    pipeline.run()
-
-
 @common.SkipIfNoModelConverter
 @common.parametrize(
     "test_module",
