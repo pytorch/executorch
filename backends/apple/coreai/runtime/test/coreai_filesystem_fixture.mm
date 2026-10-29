@@ -142,6 +142,11 @@ NSArray<NSURL*>* staging_directories(NSURL* root) {
     ADD_FAILURE() << "Missing staging root";
     return nil;
   }
+  NSURL* cache_staging = [root URLByAppendingPathComponent:@"staging"
+                                               isDirectory:YES];
+  if ([NSFileManager.defaultManager fileExistsAtPath:cache_staging.path]) {
+    root = cache_staging;
+  }
   NSError* error = nil;
   NSArray<NSURL*>* children =
       [NSFileManager.defaultManager contentsOfDirectoryAtURL:root

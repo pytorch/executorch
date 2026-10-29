@@ -22,13 +22,12 @@ enum class CorruptBundlePolicy {
   Replace,
 };
 
-// The cache entry remains locked for this call. Reuse validates the exact tree
+// cache_entry remains locked for this call. Reuse validates the exact tree
 // structure and sizes, not file contents.
 runtime::Result<NSURL*> prepare_source_bundle(
     const SelectedBundle& bundle,
     const runtime::NamedDataMap* named_data,
     const CacheEntryLock& cache_entry,
-    NSString* key,
     CorruptBundlePolicy corrupt_policy = CorruptBundlePolicy::Reject);
 
 } // namespace executorch::backends::coreai

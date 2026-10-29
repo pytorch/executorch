@@ -13,6 +13,7 @@
 #include <string>
 #include "coreai_filesystem_fixture.h"
 #include "coreai_manifest_fixture.h"
+#include "coreai_source_bundle.h"
 
 namespace executorch::backends::coreai::testing {
 
@@ -40,15 +41,12 @@ void aot_data(TestData& data, NSString* arch);
 
 class CoreAISourceTest : public ::testing::Test {
  protected:
-  void SetUp() override;
   void check_concurrent_source();
   runtime::Result<NSURL*> prepare_source_bundle(
-      const Manifest& manifest,
+      const SelectedBundle& bundle,
       const runtime::NamedDataMap* data,
-      NSString* source_root);
-
- private:
-  TestDirectory locks_;
+      NSString* cache_root,
+      CorruptBundlePolicy corrupt_policy = CorruptBundlePolicy::Reject);
 };
 
 } // namespace executorch::backends::coreai::testing

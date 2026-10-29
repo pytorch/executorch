@@ -82,11 +82,14 @@ Missing bundles are written to a staging directory and published with an
 exclusive rename; each selected NDS payload is fetched once and checked for size
 before writing. If another loader publishes first, its bundle is validated and
 used. Incomplete, size-mismatched or otherwise malformed existing bundles fail
-loading without replacement, since an SDK model may still be using them.
-Only interrupted system calls are retried; other failures are returned to the
-caller without automatic retries or repair. Temporary bundles are removed on
-ordinary failures before publication; a caller can explicitly retry after
-addressing the failure.
+normal loading without replacement, since an SDK model may still be using them.
+A cache-maintenance caller holding the same entry lock can explicitly replace a
+damaged bundle. Replacement preflights the full descriptor-bound tree, then
+revalidates entries while removing them without following links. Only
+interrupted system calls are retried; other failures are returned to the caller
+without automatic retries or repair. Temporary bundles are removed on ordinary
+failures before publication; a caller can explicitly retry after addressing the
+failure.
 
 These are completeness checks, not full content-integrity verification. Same-size
 content changes are not detected, and a complete stored bundle does not cause its

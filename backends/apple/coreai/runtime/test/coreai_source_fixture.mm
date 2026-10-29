@@ -7,14 +7,10 @@
  */
 
 #include "coreai_source_fixture.h"
-#include <fcntl.h>
-#include <sys/file.h>
-#include <sys/stat.h>
-#include <cerrno>
-#include <cstring>
+
 #include <iterator>
-#include "coreai_file.h"
-#include "coreai_storage.h"
+#include "coreai_bookmarks.h"
+#include "coreai_cache_key.h"
 
 namespace executorch::backends::coreai::testing {
 using runtime::Error;
@@ -24,6 +20,7 @@ Result<const runtime::TensorLayout> TestData::get_tensor_layout(
     std::string_view) const {
   return Error::NotSupported;
 }
+
 Result<runtime::FreeableBuffer> TestData::get_data(std::string_view key) const {
   if (!required_prefix.empty() &&
       key.substr(0, required_prefix.size()) != required_prefix) {
@@ -31,11 +28,13 @@ Result<runtime::FreeableBuffer> TestData::get_data(std::string_view key) const {
                   << " is outside selected prefix " << required_prefix;
     return Error::InvalidArgument;
   }
-  if (++attempts == fail_at)
+  if (++attempts == fail_at) {
     return failure_error;
+  }
   auto found = files.find(std::string(key));
-  if (found == files.end())
+  if (found == files.end()) {
     return Error::NotFound;
+  }
   ++requests;
   return runtime::FreeableBuffer(
       found->second.data(),
@@ -45,17 +44,21 @@ Result<runtime::FreeableBuffer> TestData::get_data(std::string_view key) const {
       },
       const_cast<TestData*>(this));
 }
+
 Error TestData::load_data_into(std::string_view, void*, size_t) const {
   return Error::NotSupported;
 }
+
 Result<uint32_t> TestData::get_num_keys() const {
   ++metadata_requests;
   return static_cast<uint32_t>(files.size());
 }
+
 Result<const char*> TestData::get_key(uint32_t i) const {
   ++metadata_requests;
-  if (i >= files.size())
+  if (i >= files.size()) {
     return Error::NotFound;
+  }
   auto found = files.begin();
   std::advance(found, i);
   return found->first.c_str();
@@ -71,42 +74,23 @@ void aot_data(TestData& data, NSString* arch) {
   data.files[data.required_prefix + "nested/weights.bin"] = "weights";
 }
 
-void CoreAISourceTest::SetUp() {
-  ASSERT_NE(locks_.url, nil);
-  struct stat info;
-  ASSERT_EQ(lstat(locks_.url.fileSystemRepresentation, &info), 0);
-  ASSERT_TRUE(S_ISDIR(info.st_mode));
-}
-
 Result<NSURL*> CoreAISourceTest::prepare_source_bundle(
-    const Manifest& manifest,
+    const SelectedBundle& bundle,
     const runtime::NamedDataMap* data,
-    NSString* source_root) {
-  NSString* key = manifest.path == nil
-      ? nil
-      : manifest.bundle_digests[manifest.path.lastPathComponent];
-  FileDescriptor lock(-1);
-  if (key != nil) {
-    FileDescriptor parent(open(
-        locks_.url.fileSystemRepresentation,
-        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
-    if (parent.get() < 0) {
-      ADD_FAILURE() << "Cannot open source fixture lock root: "
-                    << strerror(errno);
-      return Error::AccessFailed;
-    }
-    NSString* name = [key stringByAppendingString:@".lock"];
-    lock.reset(
-        open_storage_shared_file(parent.get(), name.fileSystemRepresentation));
-    if (lock.get() < 0 ||
-        retry_eintr([&] { return flock(lock.get(), LOCK_EX); }) != 0) {
-      ADD_FAILURE() << "Cannot acquire source fixture lock: "
-                    << strerror(errno);
-      return Error::AccessFailed;
-    }
+    NSString* cache_root,
+    CorruptBundlePolicy corrupt_policy) {
+  auto key = cache_variant_key(bundle, @"macOS", @"arch_b", @"default");
+  if (!key.ok()) {
+    ADD_FAILURE() << "Cannot compute source fixture key";
+    return key.error();
+  }
+  auto lock = lock_cache_entry(cache_root, key.get());
+  if (!lock.ok()) {
+    ADD_FAILURE() << "Cannot acquire source fixture lock";
+    return lock.error();
   }
   return executorch::backends::coreai::prepare_source_bundle(
-      manifest, data, source_root, key);
+      bundle, data, *lock.get(), corrupt_policy);
 }
 
 } // namespace executorch::backends::coreai::testing

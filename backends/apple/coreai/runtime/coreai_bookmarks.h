@@ -33,6 +33,10 @@ class CacheEntryLock final {
   CacheEntryPersistence persistence() const {
     return persistence_;
   }
+  NSString* key() const {
+    return key_;
+  }
+  // Missing is nil.
   // Missing is nil. Empty, oversized, inaccessible, or nonregular files fail
   // closed.
   runtime::Result<NSData*> read_bookmark() const;

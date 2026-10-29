@@ -198,6 +198,7 @@ TEST_F(CoreAIBookmarkIOTest, ExistingLookupReadsWithoutPreparingStaging) {
 }
 
 TEST_F(CoreAIBookmarkIOTest, PreparesSharedStagingParentOnDemand) {
+  EXPECT_TRUE([locked->key() isEqual:key]);
   NSString* expected = [root.url URLByAppendingPathComponent:@"staging"].path;
   EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:expected]);
   auto staging = locked->prepare_staging_root();

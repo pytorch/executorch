@@ -9,7 +9,6 @@
 #import "coreai_source_bundle.h"
 
 #import "coreai_bookmarks.h"
-#import "coreai_cache_key.h"
 #import "coreai_fault_injection.h"
 #import "coreai_manifest.h"
 #import "coreai_storage.h"
@@ -107,8 +106,8 @@ Error validate_tree(
     }
   }
   NSMutableSet<NSString*>* actual_files = [NSMutableSet set];
-  ET_CHECK_OK_OR_RETURN_ERROR(validate_directory(
-      fd, @"", files, expected_directories, actual_files));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      validate_directory(fd, @"", files, expected_directories, actual_files));
   ET_CHECK_OR_RETURN_ERROR(
       [actual_files isEqualToSet:[NSSet setWithArray:files.allKeys]],
       InvalidExternalData,
@@ -120,7 +119,8 @@ Result<EntryState> inspect_source_bundle(
     int root_fd,
     NSString* key,
     NSDictionary<NSString*, NSNumber*>* files) {
-  FileDescriptor entry(open_directory_at(root_fd, key.fileSystemRepresentation));
+  FileDescriptor entry(
+      open_directory_at(root_fd, key.fileSystemRepresentation));
   if (entry.get() < 0) {
     if (errno == ENOENT) {
       return EntryState::Missing;
@@ -177,8 +177,8 @@ struct StagingDirectory {
     if (published) {
       return;
     }
-    const Error error = remove_storage_directory(
-        parent_fd, name, StorageRemovalPolicy::Strict);
+    const Error error =
+        remove_storage_directory(parent_fd, name, StorageRemovalPolicy::Strict);
     if (error != Error::Ok) {
       ET_LOG(Error, "Cannot remove Core AI staging directory");
     }
@@ -238,8 +238,8 @@ Error write_staging_bundle(
               (buffer->size() == 0 || buffer->data() != nullptr),
           InvalidExternalData,
           "Invalid Core AI named data buffer");
-      ET_CHECK_OK_OR_RETURN_ERROR(write_storage_file(
-          staging_fd, file, buffer->data(), buffer->size()));
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          write_storage_file(staging_fd, file, buffer->data(), buffer->size()));
     }
   }
   ET_CHECK_OK_OR_RETURN_ERROR(validate_tree(staging_fd, bundle.files));
@@ -294,10 +294,8 @@ Result<NSURL*> prepare_source_bundle(
     const SelectedBundle& bundle,
     const runtime::NamedDataMap* named_data,
     const CacheEntryLock& cache_entry,
-    NSString* key,
     CorruptBundlePolicy corrupt_policy) {
-  ET_CHECK_OR_RETURN_ERROR(
-      is_cache_key(key), InvalidArgument, "Invalid Core AI cache key");
+  NSString* key = cache_entry.key();
   auto prepared = cache_entry.prepare_staging_root();
   if (!prepared.ok()) {
     return prepared.error();
@@ -308,7 +306,8 @@ Result<NSURL*> prepare_source_bundle(
                       isDirectory:YES];
   FileDescriptor root_fd(retry_eintr([&] {
     return open(
-        root.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        root.fileSystemRepresentation,
+        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
   }));
   ET_CHECK_OR_RETURN_ERROR(
       root_fd.get() >= 0, AccessFailed, "Cannot open Core AI source root");
@@ -327,7 +326,7 @@ Result<NSURL*> prepare_source_bundle(
         InvalidExternalData,
         "Cannot replace a damaged Core AI stored bundle");
     ET_CHECK_OK_OR_RETURN_ERROR(remove_storage_directory(
-        root_fd.get(), key, StorageRemovalPolicy::Strict));
+        root_fd.get(), key, StorageRemovalPolicy::Maintenance));
   }
   ET_CHECK_OR_RETURN_ERROR(
       named_data != nullptr,
@@ -339,8 +338,7 @@ Result<NSURL*> prepare_source_bundle(
     return staging_result.error();
   }
   StagingDirectory staging = std::move(staging_result.get());
-  auto staging_fd_result =
-      open_staging_directory(root_fd.get(), staging.name);
+  auto staging_fd_result = open_staging_directory(root_fd.get(), staging.name);
   if (!staging_fd_result.ok()) {
     return staging_fd_result.error();
   }

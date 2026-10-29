@@ -398,6 +398,162 @@ TEST(CoreAIStorageTest, CreatesAndReopensSharedFileWithoutTruncation) {
   EXPECT_EQ(lseek(created.get(), 0, SEEK_CUR), 4);
 }
 
+TEST(CoreAIStorageTest, StrictRemovalPreflightsBeforeMutation) {
+  TestDirectory storage;
+  TestDirectory target;
+  ASSERT_NE(storage.url, nil);
+  ASSERT_NE(target.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  ASSERT_EQ(mkdirat(root.get(), "entry", 0777), 0);
+  FileDescriptor entry(open_directory_at(root.get(), "entry"));
+  ASSERT_GE(entry.get(), 0);
+  ASSERT_EQ(write_storage_file(entry.get(), @"a/file", "x", 1), Error::Ok);
+  ASSERT_EQ(
+      symlinkat(target.url.fileSystemRepresentation, entry.get(), "z-link"), 0);
+  NSDictionary* snapshot = nil;
+  ASSERT_TRUE(asset_tree_snapshot(
+      [storage.url URLByAppendingPathComponent:@"entry"], snapshot));
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Strict),
+      Error::InvalidExternalData);
+  EXPECT_TRUE(snapshot_matches(
+      [storage.url URLByAppendingPathComponent:@"entry"], snapshot));
+}
+
+TEST(CoreAIStorageTest, StrictRemovalRevalidatesDuringRemoval) {
+  TestDirectory storage;
+  TestDirectory target;
+  ASSERT_NE(storage.url, nil);
+  ASSERT_NE(target.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  ASSERT_EQ(mkdirat(root.get(), "entry", 0777), 0);
+  FileDescriptor entry(open_directory_at(root.get(), "entry"));
+  ASSERT_GE(entry.get(), 0);
+  ASSERT_EQ(write_storage_file(entry.get(), @"a", "x", 1), Error::Ok);
+  ASSERT_EQ(write_storage_file(entry.get(), @"z", "x", 1), Error::Ok);
+  __block int removals = 0;
+  const int entry_fd = entry.get();
+  NSString* target_path = target.url.path;
+  StorageFaultScope fault(FaultPoint::Remove);
+  fault.armed = false;
+  fault.observe = ^(FaultPoint operation) {
+    if (operation != FaultPoint::Remove || ++removals != 1) {
+      return;
+    }
+    EXPECT_EQ(unlinkat(entry_fd, "z", 0), 0);
+    EXPECT_EQ(
+        symlinkat(target_path.fileSystemRepresentation, entry_fd, "z"), 0);
+  };
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Strict),
+      Error::InvalidExternalData);
+  EXPECT_EQ(removals, 1);
+  struct stat info;
+  EXPECT_EQ(lstat_at(entry.get(), "a", &info), -1);
+  ASSERT_EQ(lstat_at(entry.get(), "z", &info), 0);
+  EXPECT_TRUE(S_ISLNK(info.st_mode));
+  EXPECT_TRUE([NSFileManager.defaultManager fileExistsAtPath:target.url.path]);
+}
+
+TEST(CoreAIStorageTest, MaintenanceRemovalDoesNotFollowMalformedEntries) {
+  TestDirectory storage;
+  TestDirectory target;
+  ASSERT_NE(storage.url, nil);
+  ASSERT_NE(target.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  ASSERT_EQ(mkdirat(root.get(), "entry", 0777), 0);
+  FileDescriptor entry(open_directory_at(root.get(), "entry"));
+  ASSERT_GE(entry.get(), 0);
+  ASSERT_EQ(write_storage_file(entry.get(), @"nested/file", "x", 1), Error::Ok);
+  ASSERT_EQ(
+      symlinkat(target.url.fileSystemRepresentation, entry.get(), "link"), 0);
+  ASSERT_EQ(mkfifoat(entry.get(), "fifo", 0600), 0);
+  NSDictionary* target_snapshot = nil;
+  ASSERT_TRUE(asset_tree_snapshot(target.url, target_snapshot));
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Maintenance),
+      Error::Ok);
+  struct stat info;
+  EXPECT_EQ(lstat_at(root.get(), "entry", &info), -1);
+  EXPECT_EQ(errno, ENOENT);
+  EXPECT_TRUE(snapshot_matches(target.url, target_snapshot));
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Maintenance),
+      Error::Ok);
+}
+
+TEST(CoreAIStorageTest, EntriesMissingDuringRemovalAreAlreadyRemoved) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  ASSERT_EQ(mkdirat(root.get(), "entry", 0777), 0);
+  FileDescriptor entry(open_directory_at(root.get(), "entry"));
+  ASSERT_GE(entry.get(), 0);
+  ASSERT_EQ(write_storage_file(entry.get(), @"a", "x", 1), Error::Ok);
+  ASSERT_EQ(write_storage_file(entry.get(), @"z", "x", 1), Error::Ok);
+  const int entry_fd = entry.get();
+  __block int removals = 0;
+  StorageFaultScope fault(FaultPoint::Remove);
+  fault.armed = false;
+  fault.observe = ^(FaultPoint operation) {
+    if (operation == FaultPoint::Remove && ++removals == 1) {
+      EXPECT_EQ(unlinkat(entry_fd, "z", 0), 0);
+    }
+  };
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Strict),
+      Error::Ok);
+  EXPECT_EQ(removals, 2);
+  struct stat info;
+  EXPECT_EQ(lstat_at(root.get(), "entry", &info), -1);
+  EXPECT_EQ(errno, ENOENT);
+}
+
+TEST(CoreAIStorageTest, RemovalFailuresCanBeRetried) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  ASSERT_EQ(mkdirat(root.get(), "entry", 0777), 0);
+  FileDescriptor entry(open_directory_at(root.get(), "entry"));
+  ASSERT_GE(entry.get(), 0);
+  ASSERT_EQ(write_storage_file(entry.get(), @"nested/file", "x", 1), Error::Ok);
+  {
+    StorageFaultScope fault(FaultPoint::Remove);
+    EXPECT_EQ(
+        remove_storage_directory(
+            root.get(), @"entry", StorageRemovalPolicy::Strict),
+        Error::AccessFailed);
+    EXPECT_EQ(fault.hits, 1);
+  }
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Strict),
+      Error::Ok);
+  struct stat info;
+  EXPECT_EQ(lstat_at(root.get(), "entry", &info), -1);
+  EXPECT_EQ(errno, ENOENT);
+}
+
 TEST(CoreAIStorageTest, RetriesEintr) {
   int calls = 0;
   const ssize_t count = retry_eintr([&]() -> ssize_t {
