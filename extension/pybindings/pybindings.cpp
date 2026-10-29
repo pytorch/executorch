@@ -7,6 +7,7 @@
  */
 
 #include <algorithm>
+#include <atomic>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
@@ -35,6 +36,9 @@
 #include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/pybindings/pybindings_cuda.h>
+#ifdef EXECUTORCH_PYBINDINGS_CUDA
+#include <executorch/extension/cuda/caller_stream.h>
+#endif
 #include <executorch/extension/pybindings/pybindings_data_loader.h>
 #include <executorch/extension/pybindings/pybindings_dlpack.h>
 #include <executorch/extension/pybindings/pybindings_executorch_result.h>
@@ -1688,6 +1692,207 @@ void synchronize_tensor_devices(const Method& method) {
     synchronize_device(index);
   }
 }
+
+#ifdef EXECUTORCH_PYBINDINGS_CUDA
+// A stream made by executorch.runtime.cuda.Stream. Selection and destruction
+// share one lock, so no thread can destroy it while any thread has it selected.
+class OwnedCudaStream final {
+ public:
+  explicit OwnedCudaStream(int device) {
+    const auto create = [this] {
+      auto status = cudaGetDevice(&device_);
+      if (status == cudaSuccess) {
+        status = cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking);
+      }
+      if (status != cudaSuccess) {
+        throw std::runtime_error(
+            std::string("Failed to create a CUDA stream: ") +
+            cudaGetErrorString(status));
+      }
+    };
+    device < 0 ? create() : with_cuda_device(device, create);
+  }
+
+  ~OwnedCudaStream() {
+    try {
+      close();
+    } catch (const std::exception&) {
+    }
+  }
+
+  uintptr_t handle() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return reinterpret_cast<uintptr_t>(stream_);
+  }
+
+  int device() const {
+    return device_;
+  }
+
+  cudaStream_t select() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (stream_ == nullptr) {
+      throw std::runtime_error("This CUDA stream is closed");
+    }
+    // The CUDA delegate installs a caller stream for device 0 only.
+    if (device_ != 0) {
+      throw std::runtime_error(
+          "Only a stream on CUDA device 0 can be selected for now");
+    }
+    ++selected_;
+    return stream_;
+  }
+
+  void deselect() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    --selected_;
+  }
+
+  void close() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (selected_ != 0) {
+      throw std::runtime_error(
+          "Cannot close a CUDA stream while it is selected");
+    }
+    if (stream_ != nullptr) {
+      // A stream is destroyed on its own device, which another thread may not
+      // have current.
+      const auto status = with_cuda_device(
+          device_, [this] { return cudaStreamDestroy(stream_); });
+      if (status != cudaSuccess) {
+        throw std::runtime_error(
+            std::string("Failed to destroy a CUDA stream: ") +
+            cudaGetErrorString(status));
+      }
+      stream_ = nullptr;
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  cudaStream_t stream_ = nullptr;
+  int device_ = 0;
+  int selected_ = 0;
+};
+
+// A thread's active stream scopes, innermost last. They live here rather than
+// in the scope objects, so a scope that ends on another thread or out of order
+// is refused without restoring the wrong selection.
+struct CallerStreamScopes {
+  struct Entry {
+    uint64_t id;
+    std::shared_ptr<OwnedCudaStream> owner;
+    std::unique_ptr<executorch::extension::cuda::CallerStreamGuard> guard;
+    // Refused or abandoned; ends as soon as every scope above it has ended.
+    bool retired = false;
+  };
+  std::vector<Entry> active;
+
+  // A guard restores the selection it replaced, so scopes end innermost first.
+  void pop_finished() {
+    do {
+      Entry entry = std::move(active.back());
+      active.pop_back();
+      entry.guard.reset();
+      if (entry.owner) {
+        entry.owner->deselect();
+      }
+    } while (!active.empty() && active.back().retired);
+  }
+
+  ~CallerStreamScopes() {
+    for (auto& entry : active) {
+      entry.retired = true;
+    }
+    if (!active.empty()) {
+      pop_finished();
+    }
+  }
+};
+thread_local CallerStreamScopes caller_stream_scopes;
+
+// Selects a CUDA stream for the delegates of a Python with-block. Scopes are
+// told apart by a number that is never reused, unlike a guard's address.
+class CallerStreamScope final {
+ public:
+  explicit CallerStreamScope(std::shared_ptr<OwnedCudaStream> owner)
+      : owner_(std::move(owner)) {}
+  explicit CallerStreamScope(uintptr_t stream)
+      : stream_(reinterpret_cast<cudaStream_t>(stream)) {}
+
+  // Losing the scope without an exit, for example to an exception raised
+  // right after enter() returned, ends it like a refused exit.
+  ~CallerStreamScope() {
+    if (id_ != 0 && home_ == &caller_stream_scopes) {
+      end(/*refuse_out_of_order=*/false);
+    }
+  }
+
+  void enter() {
+    if (id_ != 0) {
+      throw std::runtime_error("This CUDA stream scope is already active");
+    }
+    static std::atomic<uint64_t> next_id{1};
+    const cudaStream_t stream = owner_ ? owner_->select() : stream_;
+    try {
+      auto guard =
+          std::make_unique<executorch::extension::cuda::CallerStreamGuard>(
+              stream);
+      const uint64_t id = next_id++;
+      caller_stream_scopes.active.push_back({id, owner_, std::move(guard)});
+      id_ = id;
+      home_ = &caller_stream_scopes;
+    } catch (...) {
+      if (owner_) {
+        owner_->deselect();
+      }
+      throw;
+    }
+  }
+
+  void exit() {
+    if (id_ == 0) {
+      return;
+    }
+    // Compared, never dereferenced: the starting thread may have ended.
+    if (home_ != &caller_stream_scopes) {
+      throw std::runtime_error(
+          "A CUDA stream scope must end on the thread that started it");
+    }
+    end(/*refuse_out_of_order=*/true);
+  }
+
+ private:
+  void end(bool refuse_out_of_order) {
+    auto& scopes = caller_stream_scopes;
+    const auto it = std::find_if(
+        scopes.active.begin(), scopes.active.end(), [this](const auto& e) {
+          return e.id == id_;
+        });
+    if (it == scopes.active.end()) {
+      id_ = 0; // Already ended after an earlier refused exit.
+      return;
+    }
+    if (it + 1 != scopes.active.end()) {
+      it->retired = true;
+      if (refuse_out_of_order) {
+        throw std::runtime_error(
+            "CUDA stream scopes must end innermost first; this one ends "
+            "when the scopes started after it end");
+      }
+      id_ = 0;
+      return;
+    }
+    scopes.pop_finished();
+    id_ = 0;
+  }
+
+  std::shared_ptr<OwnedCudaStream> owner_;
+  cudaStream_t stream_ = nullptr;
+  uint64_t id_ = 0;
+  const CallerStreamScopes* home_ = nullptr;
+};
+#endif
 
 py::object portable_tensor_result(
     const executorch::aten::Tensor& tensor,
@@ -4631,6 +4836,26 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   // scoped_ostream_redirect, which mutates process-wide stream buffers and is
   // not thread-safe when Python operations inside a binding release the GIL.
   auto call_guard = py::call_guard<RuntimeErrorScope>();
+
+#if defined(EXECUTORCH_PYBINDINGS_CUDA) && !defined(USE_ATEN_LIB)
+  // Back executorch.runtime.cuda, which keeps the runtime free of PyTorch.
+  py::class_<OwnedCudaStream, std::shared_ptr<OwnedCudaStream>>(
+      m, "_CudaStream", py::module_local())
+      .def(py::init<int>(), py::arg("device"))
+      .def_property_readonly("handle", &OwnedCudaStream::handle)
+      .def_property_readonly("device", &OwnedCudaStream::device)
+      .def("close", &OwnedCudaStream::close);
+  py::class_<CallerStreamScope>(m, "_CallerStreamScope", py::module_local())
+      .def(py::init<std::shared_ptr<OwnedCudaStream>>(), py::arg("stream"))
+      .def(py::init<uintptr_t>(), py::arg("stream"))
+      .def("__enter__", &CallerStreamScope::enter)
+      .def(
+          "__exit__",
+          [](CallerStreamScope& scope,
+             const py::object&,
+             const py::object&,
+             const py::object&) { scope.exit(); });
+#endif
 
 #ifdef USE_ATEN_LIB
   m.attr("_uses_aten") = true;
