@@ -188,6 +188,34 @@ class TestPasses(unittest.TestCase):
                 )
                 torch.testing.assert_close(gm(x), model(x))
 
+    def test_export_pipeline_keeps_node_names_unique(self):
+        # torch.export names the inputs t_1 and mul, which the autocast and
+        # attention decompositions would otherwise give to new nodes too.
+        class Autocast(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(8, 8))
+
+            def forward(self, x, t_1):
+                with torch.autocast("cpu", dtype=torch.bfloat16):
+                    y = x @ self.w.t() @ self.w.t()
+                return y.float() + t_1
+
+        class Attention(torch.nn.Module):
+            def forward(self, q, k, v, mul):
+                attention = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+                return attention + mul
+
+        cases = (
+            (Autocast(), (torch.randn(4, 8), torch.randn(4, 8))),
+            (Attention(), tuple(torch.randn(1, 2, 4, 8) for _ in range(4))),
+        )
+        for model, inputs in cases:
+            with self.subTest(model=type(model).__name__):
+                ep = torch.export.export(model.eval(), inputs)
+                ep = get_qnn_pass_manager_cls()().transform_for_export_pipeline(ep)
+                torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+
     def test_build_op_wrappers_returns_context_binary(self):
         op_name = "ctx_loader_build"
         ctx_bin = b"qnn_context_binary"

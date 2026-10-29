@@ -100,6 +100,12 @@ from torch.fx.passes.infra.pass_manager import this_before_that_pass_constraint
 class QnnPassManager(PassManager):
 
     def _transform(self, graph_module: GraphModule):
+        # torch.export names placeholders after the user's arguments without
+        # recording those names in the graph's namespace, so a pass that adds
+        # nodes could hand one of them out again.
+        namespace = graph_module.graph._graph_namespace
+        for node in graph_module.graph.nodes:
+            namespace._used_names.add(node.name)
         return self(graph_module).graph_module
 
     def _reset(self):
