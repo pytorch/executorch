@@ -1788,6 +1788,80 @@ TEST_F(
   EXPECT_EQ(executor.clone_calls.load(), 3);
 }
 
+TEST_F(PrefixReuseTest, ReusedPrefixTransfersOwnershipAndRecaptures) {
+  config.reuse_prefix_sessions = true;
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  ASSERT_EQ(executor.clone_calls.load(), 1);
+  const auto snapshot = executor.clones().front().destination;
+  auto continuation = output();
+  submit(continuation, {1, 2, 3, 4}, std::nullopt).wait();
+  ASSERT_TRUE(continuation->terminal);
+  EXPECT_EQ(continuation->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clone_calls.load(), 2); // Only the new capture.
+  EXPECT_EQ(executor.feeds().back().session, snapshot);
+  EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{4}));
+  auto equal = output();
+  submit(equal, {1, 2, 3, 4}, std::nullopt).wait();
+  ASSERT_TRUE(equal->terminal);
+  EXPECT_EQ(equal->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clone_calls.load(), 4); // Equal prompts still clone.
+  auto divergent = output();
+  submit(divergent, {1, 2, 8, 9}, std::nullopt).wait();
+  ASSERT_TRUE(divergent->terminal);
+  EXPECT_EQ(divergent->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(divergent->terminal->stats.prefilled_prompt_tokens, 2u);
+}
+
+TEST_F(PrefixReuseTest, ReusedPrefixRemainsAvailableToOverlappingBranch) {
+  watch_callbacks();
+  config.reuse_prefix_sessions = true;
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  const auto moved = executor.clones().front().destination;
+  auto parent = output();
+  parent->block_first = true;
+  parent->blocked.hold();
+  auto parent_handle = submit(parent, {1, 2, 3, 4}, std::nullopt, 2);
+  ASSERT_TRUE(parent->blocked.wait());
+  auto branch = output();
+  auto branch_handle = submit(branch, {1, 2, 3, 9}, std::nullopt);
+  ASSERT_TRUE(wait_until([&] { return executor.clone_calls.load() >= 3; }));
+  parent->blocked.release();
+  parent_handle.wait();
+  branch_handle.wait();
+  ASSERT_TRUE(branch->terminal);
+  EXPECT_EQ(branch->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(branch->terminal->stats.prefilled_prompt_tokens, 1u);
+  EXPECT_FALSE(branch->terminal->error);
+  const auto clones = executor.clones();
+  EXPECT_TRUE(std::any_of(clones.begin(), clones.end(), [&](const auto& clone) {
+    return clone.source == moved && clone.prefix == std::vector<Token>{1, 2, 3};
+  }));
+}
+
+TEST_F(PrefixReuseTest, ReusedPrefixAppliesCurrentSamplingAndSeed) {
+  config.reuse_prefix_sessions = true;
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  GenerationOptions options;
+  options.max_new_tokens = 1;
+  options.sampling.temperature = 0.8f;
+  options.sampling.top_p = 0.7f;
+  options.sampling.top_k = 11;
+  options.seed = 99;
+  auto continuation = output();
+  submit(continuation, {1, 2, 3, 4}, std::nullopt, options).wait();
+  ASSERT_TRUE(continuation->terminal);
+  EXPECT_EQ(continuation->terminal->stats.reused_prompt_tokens, 3u);
+  const auto feed = executor.feeds().back();
+  ASSERT_TRUE(feed.sampling);
+  EXPECT_FLOAT_EQ(feed.sampling->temperature, 0.8f);
+  EXPECT_FLOAT_EQ(feed.sampling->top_p, 0.7f);
+  EXPECT_EQ(feed.sampling->top_k, 11);
+  EXPECT_EQ(feed.seed, 99u);
+}
+
 TEST_F(
     PrefixReuseTest,
     BusyCaptureLaneAllowsWarmLookupsWithoutLosingCaptureOwnership) {

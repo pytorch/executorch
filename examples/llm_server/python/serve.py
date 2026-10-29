@@ -87,6 +87,11 @@ def _parse_args(argv=None):
         default=0,
         help="Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.",
     )
+    parser.add_argument(
+        "--reuse-prefix-sessions",
+        action="store_true",
+        help="Move complete cached prefixes into working sessions instead of cloning",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
@@ -153,6 +158,7 @@ def main(argv=None) -> None:
                 "--prefix_cache_entries",
                 str(args.prefix_cache_entries),
             ]
+            + (["--reuse_prefix_sessions=true"] if args.reuse_prefix_sessions else [])
             + (
                 ["--prefix_checkpoint_interval", str(args.prefix_checkpoint_interval)]
                 if args.prefix_checkpoint_interval

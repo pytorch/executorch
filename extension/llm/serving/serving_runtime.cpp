@@ -957,7 +957,8 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      return prefix_cache_.lookup_identity(*request->text->prompt);
+      return prefix_cache_.lookup_identity(
+          *request->text->prompt, config_.reuse_prefix_sessions);
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
       return std::nullopt;
