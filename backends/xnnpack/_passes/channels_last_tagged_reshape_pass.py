@@ -19,7 +19,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_tagged_as_implicit_q_dq,
     tag_as_implicit_q_dq,
 )
-from executorch.backends.xnnpack.utils.utils import is_param_node
+from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 from torch.fx.experimental.symbolic_shapes import has_free_symbols
@@ -187,8 +187,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
 
     @staticmethod
     def is_single_element(node: torch.fx.Node) -> bool:
+        # A rank > 4 operand makes the op output rank > 4, which cannot be
+        # NHWC, so such an operand must still take part in the layout decision.
         val = ChannelsLastTaggedReshapePass.static_tensor_val(node)
-        return val is not None and val.numel() == 1
+        return val is not None and val.numel() == 1 and val.dim() <= 4
 
     @staticmethod
     def is_lower_rank_broadcast_operand(node: torch.fx.Node) -> bool:
@@ -204,6 +206,44 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             and not is_dequant(node)
         )
 
+    def is_foldable_constant(self, node: torch.fx.Node) -> bool:
+        """
+        A lifted constant with a single user can be reshaped and laid out as
+        NHWC ahead of time instead of at every inference.
+        """
+        return (
+            node.op == "placeholder"
+            and is_param_node(self.exported_program, node)
+            and len(node.users) == 1
+        )
+
+    def constant_to_4d_nhwc(self, input_node: torch.fx.Node) -> torch.fx.Node:
+        """
+        Reshape a rank < 4 constant operand to 4D in place and tag it NHWC, so
+        the serializer writes its data in channels_last and the graph carries
+        no reshape or transpose for it.
+        """
+        val = input_node.meta["val"]
+        new_shape = [1] * (4 - val.dim()) + list(val.shape)
+        data = get_param_tensor(self.exported_program, input_node)
+        assert data is not None
+        data_4d = data.reshape(new_shape).contiguous()
+        signature = self.exported_program.graph_signature
+        if torch._export.utils.is_param(self.exported_program, input_node):
+            name = signature.inputs_to_parameters[input_node.name]
+            self.exported_program.state_dict[name] = torch.nn.Parameter(
+                data_4d, requires_grad=False
+            )
+        elif torch._export.utils.is_buffer(self.exported_program, input_node):
+            name = signature.inputs_to_buffers[input_node.name]
+            self.exported_program.state_dict[name] = data_4d
+        else:
+            name = signature.inputs_to_lifted_tensor_constants[input_node.name]
+            self.exported_program.constants[name] = data_4d
+        input_node.meta["val"] = val.reshape(new_shape)
+        self.mark_as_nhwc_node(input_node)
+        return input_node
+
     def unsqueeze_to_4d(
         self,
         graph_module: torch.fx.GraphModule,
@@ -214,6 +254,8 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         Reshape a rank < 4 operand of `target_node` to 4D by prepending ones,
         which is how broadcasting aligns it, so it can be converted to NHWC.
         """
+        if self.is_foldable_constant(input_node):
+            return self.constant_to_4d_nhwc(input_node)
         val = input_node.meta["val"]
         new_shape = [1] * (4 - val.dim()) + list(val.shape)
         with graph_module.graph.inserting_before(target_node):
@@ -668,7 +710,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                         for input_node in layout_inputs
                     ):
                         for input_node in layout_inputs:
-                            self.input_to_nhwc(graph_module, input_node, node)
+                            # A constant folded to NHWC above needs no copy.
+                            if not ChannelsLastTaggedReshapePass.is_nhwc_node(
+                                input_node
+                            ):
+                                self.input_to_nhwc(graph_module, input_node, node)
                         self.mark_as_nhwc_node(node)
                     else:
                         for input_node in layout_inputs:
