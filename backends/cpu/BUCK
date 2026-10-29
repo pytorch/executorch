@@ -48,6 +48,23 @@ fbcode_target(
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
         "//executorch/export:lib",
+        "//executorch/exir/native:native",
+        "//pytorch/ao:torchao",
+        "//pytorch/vision:torchvision", # @manual
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_workflow_export",
+    srcs = ["test/test_workflow_export.py", "workflows/export.py"],
+    deps = [
+        ":lib",
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/_passes:xnnpack_passes",
+        "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
+        "//executorch/export:lib",
+        "//executorch/exir/native:native",
         "//pytorch/ao:torchao",
         "//pytorch/vision:torchvision", # @manual
     ],
