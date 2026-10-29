@@ -144,3 +144,4 @@ if __name__ == "__main__":
         args.mean_atol,
         args.max_threshold_mismatches,
     )
+    print("Validation passed")

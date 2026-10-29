@@ -143,25 +143,79 @@ def test_cuda_libraries_resolve_relatively() -> None:
         print(f"✓ {name} resolves the CUDA runtime relatively ({relative[0]})")
 
 
-def test_no_library_needs_cuda_torch() -> None:
-    """No shipped library may record a dependency on PyTorch's own CUDA libraries.
+# The torch libraries a shipped library may link. A CUDA build of torch adds libtorch_cuda,
+# libc10_cuda and more, which a CPU-only torch does not have.
+_ALLOWED_TORCH_LIBRARIES = frozenset(
+    {"libtorch.so", "libtorch_cpu.so", "libtorch_python.so", "libc10.so"}
+)
 
-    The CUDA delegate needs only the CUDA runtime. A library that names libtorch_cuda or
-    libc10_cuda cannot load next to a CPU-only torch, so the whole wheel then fails to import
-    there even though nothing in it calls into those libraries.
+# The system libraries the manylinux policy lets a wheel record, and the loader.
+# libatomic is one of them; the aarch64 build links it for sentencepiece.
+_SYSTEM_LIBRARIES = frozenset(
+    {
+        "libatomic.so.1",
+        "libc.so.6",
+        "libm.so.6",
+        "libdl.so.2",
+        "libpthread.so.0",
+        "librt.so.1",
+        "libstdc++.so.6",
+        "libgcc_s.so.1",
+        "ld-linux-x86-64.so.2",
+        "ld-linux-aarch64.so.1",
+    }
+)
+
+
+def _declared_requirement_libraries() -> Set[str]:
+    """The shared library file names installed by the packages a plain install requires."""
+    import importlib.metadata as metadata
+
+    from packaging.requirements import Requirement
+
+    names: Set[str] = set()
+    for line in metadata.requires("executorch") or []:
+        requirement = Requirement(line)
+        # Skip extras and requirements for other platforms, which a plain install does not get.
+        if requirement.marker and not requirement.marker.evaluate({"extra": ""}):
+            continue
+        try:
+            files = metadata.files(requirement.name) or []
+        except metadata.PackageNotFoundError:
+            continue
+        names.update(Path(file).name for file in files if ".so" in Path(file).name)
+    return names
+
+
+def test_recorded_dependencies_are_allowed() -> None:
+    """Every library a shipped library records must be on an allow list.
+
+    The list is: shipped in the wheel, a torch library a CPU-only torch also has, the system
+    C and C++ runtime, or installed by a package a plain install requires. A name outside
+    it, such as libtorch_cuda or libnvrtc, may be missing next to a CPU-only torch, and
+    then the library that records it fails to load there.
     """
     package_dir = _package_dir()
-    cuda_torch = {"libtorch_cuda.so", "libc10_cuda.so"}
-    offenders = {}
-    for library in test_shared_libraries._shipped_shared_objects(package_dir):
-        needed = test_shared_libraries._recorded_dependencies(library) & cuda_torch
-        if needed:
-            offenders[str(library.relative_to(package_dir))] = sorted(needed)
-    assert not offenders, (
-        f"these libraries depend on PyTorch's CUDA libraries, so the wheel cannot be imported "
-        f"with a CPU-only torch: {offenders}"
+    libraries = test_shared_libraries._shipped_shared_objects(package_dir)
+    allowed = (
+        {library.name for library in libraries}
+        | _ALLOWED_TORCH_LIBRARIES
+        | _SYSTEM_LIBRARIES
+        | _declared_requirement_libraries()
     )
-    print("✓ no shipped library depends on PyTorch's CUDA libraries")
+    offenders = {}
+    for library in libraries:
+        unexpected = test_shared_libraries._recorded_dependencies(library) - allowed
+        if unexpected:
+            offenders[str(library.relative_to(package_dir))] = sorted(unexpected)
+    assert not offenders, (
+        f"these libraries record dependencies outside the allow list, so they may fail to "
+        f"load next to a CPU-only torch: {offenders}"
+    )
+    print(
+        f"✓ every dependency recorded by the {len(libraries)} shipped libraries is on the "
+        f"allow list"
+    )
 
 
 def _row_architectures() -> list[str]:
@@ -607,7 +661,7 @@ if __name__ == "__main__":
     test_cuda_libraries_are_shipped()
     test_cuda_runtime_is_declared()
     test_cuda_libraries_resolve_relatively()
-    test_no_library_needs_cuda_torch()
+    test_recorded_dependencies_are_allowed()
     test_device_code_covers_the_row()
     test_portable_device_code_is_present()
     test_the_delegate_registers()

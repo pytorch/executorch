@@ -411,6 +411,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:dim_order_utils",
             "//executorch/exir:lib",
             "//executorch/exir:pass_base",
+            "//executorch/exir/backend:partitioner",
             "//executorch/exir/dialects:lib",
             "//executorch/exir/dialects/edge:lib",
             "//executorch/extension/pybindings:portable_lib",  # @manual

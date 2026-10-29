@@ -215,10 +215,10 @@ def run_tests(work_dir: Path) -> None:
 
 
 # Reads its arguments from stdin, blocks the named modules, then imports. A blocked module
-# raises ModuleNotFoundError exactly as it would be absent, so the traceback shows the import
-# chain that wanted it.
+# behaves like a missing one to import and find_spec, so the traceback shows the import chain
+# that wanted it.
 _IMPORT_PROBE = """
-import importlib.abc, importlib.util, json, os, sys
+import importlib, json, os, sys
 
 # Drop the working directory, which `python -c` puts first. The equivalent flag, -P, is only
 # available from 3.11.
@@ -229,19 +229,23 @@ for entry in ('', '.', os.getcwd()):
 request = json.load(sys.stdin)
 blocked = set(request["blocked"])
 
+# A None entry in sys.modules makes an import raise ModuleNotFoundError while
+# importlib.util.find_spec returns None, which is how a missing package behaves. A finder that
+# raises from find_spec instead breaks code that probes for optional packages, such as
+# torch._dynamo, which looks up hypothesis that way.
+for name in blocked:
+    sys.modules[name] = None
 
-class _Blocker(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname.split(".")[0] in blocked:
-            raise ModuleNotFoundError(
-                f"No module named {fullname!r} (not declared by the executorch wheel)",
-                name=fullname,
-            )
-        return None
-
-
-sys.meta_path.insert(0, _Blocker())
-importlib.import_module(request["module"])
+try:
+    importlib.import_module(request["module"])
+except ModuleNotFoundError as error:
+    package = (error.name or "").split(".")[0]
+    if package in blocked:
+        raise ModuleNotFoundError(
+            f"No module named {package!r} (not declared by the executorch wheel)",
+            name=package,
+        ) from error
+    raise
 """
 
 
