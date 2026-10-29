@@ -102,7 +102,7 @@ Calibrate on a few hundred real samples; random data gives useless scales.
 
 ## Running on the ESP32-S3
 
-You need ESP-IDF (CI uses v6.1) and an activated ESP-IDF shell.
+You need ESP-IDF and an activated ESP-IDF shell.
 [`examples/espressif/setup.sh`](../../examples/espressif/setup.sh) installs a
 matching ESP-IDF and the emulator.
 
@@ -160,6 +160,10 @@ against the ExecuTorch targets that `executor_runner` imports, and registers
 `EspNNBackend` at startup. It defines no platform layer; the runner's
 `esp_pal.cpp` provides it.
 
+ESP-NN defaults to `CONFIG_NN_OPTIMIZED=y` and selects its implementation from
+ESP-IDF's `IDF_TARGET`. For `esp32s3`, this enables the S3 assembly kernels.
+`CONFIG_NN_ANSI_C=y` selects reference C kernels for verification and debugging.
+
 For a BundleIO program (`.bpte`), add `-DET_BUNDLE_IO=ON` and the tolerances
 `-DET_ATOL=... -DET_RTOL=...`. The runner then checks the outputs against the
 bundled reference and logs `Test_result: PASS` or `FAIL`.
@@ -197,8 +201,10 @@ BundleIO program with the host reference's outputs. CI builds the runner with
 `-DET_ESPNN_BACKEND=ON` for each program and runs it in `esp-emu`. Fully
 delegated programs must match to float precision, which means bit-exact int8
 results. Programs with CPU regions get a tolerance for the portable kernels'
-float rounding. The emulator does not implement the S3 SIMD instructions, so
-this build uses ESP-NN's ANSI C kernels (`CONFIG_NN_ANSI_C=y`).
+float rounding. Separate CI jobs run ESP-NN's optimized S3 kernels and its
+ANSI C reference kernels against the same bundled outputs. Both jobs target
+ESP32-S3. Logs include the kernel configuration in their filenames; artifacts
+retain the bundled fixtures, SDK configuration, and resolved component versions.
 
 The code follows the ExecuTorch coding style and passes the repository's
 `lintrunner` checks:
