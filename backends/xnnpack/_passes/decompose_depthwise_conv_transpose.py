@@ -166,13 +166,20 @@ class DecomposeDepthwiseConvTransposePass(XNNPACKPass):
                     ]
                 )
                 phase_weight = weight[:, :, iy][:, :, :, ix].contiguous()
+                # The phase taps depend on s and padding too, so a weight
+                # shared by differently configured deconvs must not reuse
+                # the placeholders create_constant_placeholder finds by name.
+                phase_name = (
+                    f"{weight_node.name}_s{s}_p{padding[0]}x{padding[1]}"
+                    f"_phase_{ay}_{ax}"
+                )
                 with graph.inserting_before(weight_node):
                     phase_weight_node = create_constant_placeholder(
                         exp_program=self.exported_program,
                         graph=graph,
                         kind=weight_spec.kind,
                         persistent_buffer=weight_spec.persistent,
-                        name=f"{weight_node.name}_phase_{ay}_{ax}",
+                        name=phase_name,
                         data=phase_weight,
                     )
                 # (left, right, top, bottom)

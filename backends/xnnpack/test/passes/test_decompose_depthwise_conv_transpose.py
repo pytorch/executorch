@@ -163,6 +163,63 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
         )
         self._check_lowered(module, inputs)
 
+    class SharedWeightDeconvs(torch.nn.Module):
+        def __init__(self, kernel, stride, paddings, output_paddings):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(8, 1, kernel, kernel))
+            self.stride = stride
+            self.configs = list(zip(paddings, output_paddings))
+
+        def forward(self, x):
+            return sum(
+                torch.nn.functional.conv_transpose2d(
+                    x,
+                    self.weight,
+                    stride=self.stride,
+                    padding=padding,
+                    output_padding=output_padding,
+                    groups=8,
+                )
+                for padding, output_padding in self.configs
+            )
+
+    def _count_phase_placeholders(self, tester):
+        graph = (
+            tester.get_artifact(StageType.RUN_PASSES)
+            .exported_program()
+            .graph_module.graph
+        )
+        return sum(
+            1
+            for node in graph.nodes
+            if node.op == "placeholder" and "_phase_" in node.name
+        )
+
+    def test_shared_weight_different_padding(self):
+        # Both deconvs are clean x3 upscales of the same weight, but their
+        # phase taps differ, so they must not share the phase placeholders.
+        module = self.SharedWeightDeconvs(
+            kernel=9, stride=3, paddings=(3, 4), output_paddings=(0, 2)
+        )
+        inputs = (torch.randn(1, 8, 5, 6),)
+        tester = self._check_pass(
+            module, inputs, {self.conv: 18, self.cat: 2, self.d2s: 2}
+        )
+        self.assertEqual(self._count_phase_placeholders(tester), 18)
+        self._check_lowered(module, inputs)
+
+    def test_shared_weight_same_params(self):
+        # Identical deconvs on one weight share one set of phase placeholders.
+        module = self.SharedWeightDeconvs(
+            kernel=9, stride=3, paddings=(3, 3), output_paddings=(0, 0)
+        )
+        inputs = (torch.randn(1, 8, 5, 6),)
+        tester = self._check_pass(
+            module, inputs, {self.conv: 18, self.cat: 2, self.d2s: 2}
+        )
+        self.assertEqual(self._count_phase_placeholders(tester), 9)
+        self._check_lowered(module, inputs)
+
     def test_batch_gt_1(self):
         module = self.DwDeconv(kernel=4, stride=2, padding=1)
         inputs = (torch.randn(3, 8, 6, 10),)
