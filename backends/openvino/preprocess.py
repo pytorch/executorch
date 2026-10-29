@@ -86,7 +86,14 @@ class OpenvinoBackend(BackendDetails):
         for i in int_inputs:
             ppp.input(i).tensor().set_shape([1])
             ppp.input(i).preprocess().custom(lambda x: opset13.squeeze(x, 0).output(0))
-        compiled = compile_model(ppp.build(), compile_options.get("device", "CPU"))
+        device = compile_options.get("device", "CPU")
+        # On ARM CPUs OpenVINO fixes the precision here, not when the runtime
+        # imports the model, so this must follow the same rule as the runtime.
+        precision = compile_options.get("inference_precision") or (
+            "f32" if device.startswith("CPU") else None
+        )
+        config = {"INFERENCE_PRECISION_HINT": precision} if precision else {}
+        compiled = compile_model(ppp.build(), device, config)
         model_bytes = compiled.export_model()
 
         return PreprocessResult(processed_bytes=model_bytes.getvalue())

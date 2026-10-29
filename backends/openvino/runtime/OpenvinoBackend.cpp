@@ -340,9 +340,8 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
     }
   }
 
-  // OpenVINO picks the precision when it imports the model, and on CPUs with
-  // bfloat16 units it picks bfloat16. So on a CPU a program computes in
-  // float32 unless it asks for less. Other devices keep their own default.
+  // The same rule as preprocess.py, because on x86 CPUs OpenVINO applies the
+  // precision here, on import.
   if (precision.empty() && device.rfind("CPU", 0) == 0) {
     precision = "f32";
   }

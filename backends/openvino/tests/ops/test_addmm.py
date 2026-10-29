@@ -1,4 +1,7 @@
+from unittest import mock
+
 import torch
+from executorch.backends.openvino import preprocess
 from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
     BaseOpenvinoOpTest,
 )
@@ -34,6 +37,24 @@ class TestAddMMOperator(BaseOpenvinoOpTest):
         self.atol = self.rtol = 1e-4
         sample_input = tuple(torch.randn(256, 256) for _ in range(3))
         self.execute_layer_test(self.create_model(), sample_input)
+
+    def test_addmm_passes_the_precision_to_openvino(self):
+        if not self.device.startswith("CPU"):
+            self.skipTest("only CPUs compute in float32 by default")
+        # Checks the lowering half too: on x86 the runtime half alone decides.
+        self.atol = self.rtol = 0.05
+        sample_input = tuple(torch.randn(4, 4) for _ in range(3))
+        bf16 = (CompileSpec("inference_precision", b"bf16"),)
+        for compile_specs, hint in (((), "f32"), (bf16, "bf16")):
+            with self.subTest(hint=hint), mock.patch.object(
+                preprocess, "compile_model", wraps=preprocess.compile_model
+            ) as compile_model:
+                self.execute_layer_test(
+                    self.create_model(), sample_input, compile_specs=compile_specs
+                )
+                self.assertEqual(
+                    compile_model.call_args.args[2], {"INFERENCE_PRECISION_HINT": hint}
+                )
 
     def test_addmm_refuses_an_unknown_inference_precision(self):
         sample_input = tuple(torch.randn(4, 4) for _ in range(3))
