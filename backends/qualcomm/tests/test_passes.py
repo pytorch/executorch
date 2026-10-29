@@ -967,6 +967,13 @@ class TestPasses(unittest.TestCase):
             if "Failed to initialize QNN backend" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
             raise
+        top_level_ops = {
+            node.target
+            for node in edge.exported_program().graph.nodes
+            if node.op == "call_function"
+        }
+        self.assertIn(exir_ops.edge.aten.mul.Tensor, top_level_ops)
+        self.assertIn(torch.ops.higher_order.executorch_call_delegate, top_level_ops)
         edge.to_executorch()
 
     def test_partitioner_falls_back_on_bfloat16(self):
