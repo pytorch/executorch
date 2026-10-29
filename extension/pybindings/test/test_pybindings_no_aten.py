@@ -474,10 +474,12 @@ else:
 
         output = module((torch.tensor([1.0]), torch.tensor([2.0])))[0]
 
+        # torch is imported here, so only an explicit "executorch" setting keeps
+        # ExecuTorchResult outputs.
         expected_type = (
-            torch.Tensor
-            if runtime._tensor_output == "torch"
-            else runtime.ExecuTorchResult
+            runtime.ExecuTorchResult
+            if runtime._tensor_output == "executorch"
+            else torch.Tensor
         )
         self.assertIsInstance(output, expected_type)
         np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))

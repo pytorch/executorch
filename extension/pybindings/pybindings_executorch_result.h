@@ -97,10 +97,17 @@ inline PyObject* loaded_torch_module() {
   static PyObject* torch_module = nullptr;
   if (torch_module == nullptr) {
     PyObject* loaded = PyDict_GetItemString(PyImport_GetModuleDict(), "torch");
-    if (loaded != nullptr) {
-      Py_INCREF(loaded);
-      torch_module = loaded;
+    if (loaded == nullptr || loaded == Py_None) {
+      return nullptr;
     }
+    // A torch that another thread is still importing is not usable yet.
+    const auto spec = py::getattr(py::handle(loaded), "__spec__", py::none());
+    if (!spec.is_none() &&
+        py::getattr(spec, "_initializing", py::bool_(false)).cast<bool>()) {
+      return nullptr;
+    }
+    Py_INCREF(loaded);
+    torch_module = loaded;
   }
   return torch_module;
 }
