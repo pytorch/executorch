@@ -9,7 +9,11 @@
 from typing import final, List
 
 import torch
-from executorch.backends.openvino._passes import DecomposeFloorDividePass
+from executorch.backends.openvino._passes import (
+    CastReductionInputPass,
+    DecomposeFloorDividePass,
+    FoldConstantCumsumPass,
+)
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -47,7 +51,11 @@ class OpenvinoBackend(BackendDetails):
         Returns:
             PreprocessResult: The result of preprocessing, including the compiled model bytes.
         """
-        for pass_cls in [DimOrderOpsRevertPass, DecomposeFloorDividePass]:
+        for pass_cls in [
+            DimOrderOpsRevertPass,
+            DecomposeFloorDividePass,
+            CastReductionInputPass,
+        ]:
             result = pass_cls()(edge_program.graph_module)
             if result and result.graph_module:
                 edge_program._graph_module = result.graph_module
@@ -80,8 +88,10 @@ class OpenvinoBackend(BackendDetails):
 
         # The converter chooses some lowerings (e.g. boolean-mask indexing) from
         # the input types, so they must be known before conversion starts.
+        module = edge_program.module()
+        FoldConstantCumsumPass()(module)
         decoder = TorchFXPythonDecoder(
-            edge_program.module(), input_shapes=input_shapes, input_types=input_types
+            module, input_shapes=input_shapes, input_types=input_types
         )
         frontend = FrontEndManager().load_by_framework("pytorch")
         ppp = PrePostProcessor(frontend.convert(frontend.load(decoder)))
