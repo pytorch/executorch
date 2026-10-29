@@ -1068,6 +1068,21 @@ class ET_EXPERIMENTAL CudaBackend final
               handle->method_name.c_str());
           return Error::NotSupported;
         }
+        // Replay copies raw bytes and never resizes, so the ETensor takes the
+        // captured shape here and keeps it for every replay.
+        const Error resize_err =
+            executorch::ET_RUNTIME_NAMESPACE::resize_tensor(
+                args[i + n_inputs]->toTensor(), slim_outputs[i]->sizes());
+        if (resize_err != Error::Ok) {
+          std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
+          ET_LOG(
+              Error,
+              "CUDA graph: cannot resize output %zu of '%s' to its captured "
+              "shape; this call fails and later calls run without a graph",
+              i,
+              handle->method_name.c_str());
+          return resize_err;
+        }
       }
 
       gerr = cudaGraphInstantiate(
