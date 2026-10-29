@@ -1065,6 +1065,8 @@ def _annotate_cat(
     for cat_node in gm.graph.nodes:
         if cat_node.target != torch.ops.aten.cat.default:
             continue
+        if filter_fn and not filter_fn(cat_node):
+            continue
 
         if _is_annotated([cat_node]):
             continue

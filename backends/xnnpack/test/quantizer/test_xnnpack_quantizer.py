@@ -566,6 +566,28 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
         ]
         self._test_quantizer(m, example_inputs, quantizer, node_occurrence, node_list)
 
+    def test_set_module_type_skips_cat_outside_the_module(self):
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(5, 5)
+
+            def forward(self, x):
+                return torch.cat([self.linear(x), x], 1)
+
+        quantizer = XNNPACKQuantizer().set_module_type(
+            torch.nn.Linear, get_symmetric_quantization_config()
+        )
+        m = export(M().eval(), (torch.randn(3, 5),), strict=True).module()
+        m = quantizer.annotate(m)
+        annotated = {
+            node.target
+            for node in m.graph.nodes
+            if node.meta.get("quantization_annotation") is not None
+        }
+        self.assertIn(torch.ops.aten.linear.default, annotated)
+        self.assertNotIn(torch.ops.aten.cat.default, annotated)
+
     def test_set_module_type_case_2(self):
         class M(torch.nn.Module):
             def __init__(self) -> None:
