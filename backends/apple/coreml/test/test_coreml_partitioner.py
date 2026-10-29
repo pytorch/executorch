@@ -521,6 +521,101 @@ class TestCoreMLPartitioner(unittest.TestCase):
             out = program.load_method("forward").execute((x,))[0]
             self.assertTrue(torch.allclose(out, model(x), atol=5e-2, rtol=5e-2))
 
+    def test_uint8_camera_frame_is_read_outside_the_delegate(self):
+        """
+        Core ML cannot take a uint8 or int8 input, so the ops that read such a
+        camera frame stay on the CPU up to its conversion to float, and the
+        float ops after it are still delegated.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, image):
+                return torch.relu(image.permute(2, 0, 1).float() / 255.0 - 0.5)
+
+        model = Model().eval()
+        for dtype in (torch.uint8, torch.int8):
+            with self.subTest(dtype=dtype):
+                x = torch.randint(0, 100, (8, 8, 3), dtype=dtype)
+                ep = torch.export.export(model, (x,), strict=True)
+                edge = executorch.exir.to_edge_transform_and_lower(
+                    ep, partitioner=[CoreMLPartitioner()]
+                )
+                op_names = [
+                    n.target.__name__
+                    for n in edge.exported_program().graph.nodes
+                    if n.op == "call_function"
+                ]
+                self.assertIn("aten.permute_copy.default", op_names)
+                self.assertIn("dim_order_ops._to_dim_order_copy.default", op_names)
+                self.assertIn("executorch_call_delegate", op_names)
+                for name in ("aten.div.Tensor", "aten.sub.Tensor", "aten.relu.default"):
+                    self.assertNotIn(name, op_names)
+                if _TEST_RUNTIME:
+                    program = Runtime.get().load_program(edge.to_executorch().buffer)
+                    out = program.load_method("forward").execute((x,))[0]
+                    self.assertTrue(torch.allclose(out, model(x), atol=1e-3))
+
+        with self.assertRaisesRegex(NotImplementedError, "dtype CoreML cannot take"):
+            executorch.exir.to_edge_transform_and_lower(
+                ep, partitioner=[CoreMLPartitioner(lower_full_graph=True)]
+            )
+
+    def test_uint8_input_read_by_ops_with_and_without_cpu_kernels(self):
+        """
+        An op that reads a uint8 input runs on the CPU.  Pad and max pooling
+        have no CPU kernel of their own, so they are decomposed.  Roll has one,
+        so it stays whole, since its decomposition would leave Core ML a
+        partition with no inputs.
+        """
+
+        class Model(torch.nn.Module):
+            def __init__(self, op):
+                super().__init__()
+                self.op = op
+
+            def forward(self, image):
+                return self.op(image).float() / 255.0
+
+        ops = {
+            "pad": lambda x: torch.nn.functional.pad(x, (1, 1, 1, 1)),
+            "max_pool2d": lambda x: torch.nn.functional.max_pool2d(x, 2),
+            "roll": lambda x: torch.roll(x, 1, 2),
+        }
+        x = torch.randint(0, 256, (1, 3, 8, 8), dtype=torch.uint8)
+        for name, op in ops.items():
+            with self.subTest(op=name):
+                model = Model(op).eval()
+                ep = torch.export.export(model, (x,), strict=True)
+                edge = executorch.exir.to_edge_transform_and_lower(
+                    ep, partitioner=[CoreMLPartitioner()]
+                )
+                buffer = edge.to_executorch().buffer
+                if _TEST_RUNTIME:
+                    program = Runtime.get().load_program(buffer)
+                    out = program.load_method("forward").execute((x,))[0]
+                    self.assertTrue(torch.allclose(out, model(x), atol=1e-3))
+
+    def test_uint8_made_inside_the_delegate_keeps_ops_whole(self):
+        """
+        A uint8 tensor made inside the delegate is not an input, so a pad that
+        reads it does not make the float reflect pad decompose.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                image = torch.nn.functional.pad((x * 255).to(torch.uint8), (1, 1))
+                return torch.nn.functional.pad(
+                    image.float() / 255.0, (1, 1), mode="reflect"
+                )
+
+        ep = torch.export.export(Model().eval(), (torch.rand(1, 3, 8),), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        delegated = format_delegated_graph(edge.exported_program().graph_module)
+        self.assertIn("aten.pad.default", delegated)
+        self.assertNotIn("aten.index.Tensor", delegated)
+
     def test_tied_embedding_is_quantized_with_its_linear(self):
         """A weight that is both an embedding table and an output projection lowers.
 

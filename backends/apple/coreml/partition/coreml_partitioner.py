@@ -4,11 +4,12 @@
 
 import inspect
 import logging
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Collection, List, Optional, Set, Tuple
 
 import coremltools as ct
 
 import torch
+from coremltools.converters.mil.frontend.torch.utils import TORCH_DTYPE_TO_MIL_DTYPE
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.compiler.coreml_preprocess import (
@@ -25,8 +26,9 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.operator.convert import to_out_variant
 from torch.export.exported_program import ExportedProgram
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
@@ -154,6 +156,51 @@ def _reads_or_produces_bfloat16(node: torch.fx.Node) -> bool:
     return any(isinstance(v, torch.Tensor) and v.dtype == torch.bfloat16 for v in vals)
 
 
+def _cannot_be_coreml_input(node: torch.fx.Node) -> bool:
+    """Whether node makes a tensor that Core ML cannot take as a program input.
+
+    coremltools types each program input through ``TORCH_DTYPE_TO_MIL_DTYPE``
+    and raises ``KeyError`` for a dtype missing from it, such as uint8 or int8,
+    instead of reporting the op as unsupported.
+    """
+    val = node.meta.get("val")
+    vals = val if isinstance(val, (list, tuple)) else [val]
+    return any(
+        isinstance(v, torch.Tensor) and v.dtype not in TORCH_DTYPE_TO_MIL_DTYPE
+        for v in vals
+    )
+
+
+def _find_readers_of_unsupported_inputs(
+    partitions: List[Partition], kept_inside: Collection[str]
+) -> Set[torch.fx.Node]:
+    """The nodes that read a tensor Core ML cannot take as an input from outside
+    their partition.
+
+    A tensor made inside the partition, or a weight, constant or state the
+    partitioner moves into Core ML, is not an input.
+    """
+    return {
+        node
+        for partition in partitions
+        for node in partition.nodes
+        if any(
+            arg not in partition.nodes
+            and arg.name not in kept_inside
+            and _cannot_be_coreml_input(arg)
+            for arg in node.all_input_nodes
+        )
+    }
+
+
+def _has_out_variant(op: torch._ops.OpOverload) -> bool:
+    try:
+        to_out_variant(op)
+    except RuntimeError:
+        return False
+    return True
+
+
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
     if len(schema.arguments) == 0:
@@ -176,6 +223,7 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         self.lower_full_graph = lower_full_graph
         self._logged_msgs = set()
         self._log = log
+        self.unsupported_input_readers: Set[torch.fx.Node] = set()
 
     def log_once(self, msg: str) -> None:
         if self._log and msg not in self._logged_msgs:
@@ -286,6 +334,20 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             )
             if self.should_override_support(node):
                 is_supported = False
+            elif node in self.unsupported_input_readers:
+                msg = (
+                    f"{node_target_name} reads a tensor whose dtype CoreML cannot "
+                    "take as an input, such as uint8 or int8, from outside its "
+                    "CoreML partition."
+                )
+                if self.lower_full_graph:
+                    raise NotImplementedError(
+                        f"{msg}  Convert the tensor to a supported dtype before "
+                        "it enters the model, or set lower_full_graph=False in the "
+                        "CoreMLPartitioner to run this op outside of CoreML."
+                    )
+                self.log_once(f"{msg}  Overriding op support.")
+                is_supported = False
 
             if not is_supported:
                 if self.lower_full_graph:
@@ -393,16 +455,24 @@ class CoreMLPartitioner(Partitioner):
         logger.info("CoreMLPartitioner::partition")
         partition_tags = {}
 
-        capability_partitioner = CapabilityBasedPartitioner(
-            exported_program.graph_module,
-            _OperatorsSupportedForCoreMLBackend(
-                self.skip_ops_for_coreml_delegation,
-                self.lower_full_graph,
-                log=True,
-            ),
-            allows_single_node_partition=True,
+        op_support = _OperatorsSupportedForCoreMLBackend(
+            self.skip_ops_for_coreml_delegation,
+            self.lower_full_graph,
+            log=True,
         )
-        partition_list = capability_partitioner.propose_partitions()
+        kept_inside = self._placeholders_kept_inside(exported_program)
+        # Each op moved out of Core ML can hand a tensor Core ML cannot take as
+        # an input to the next op, so repeat until no partition reads one.
+        while True:
+            partition_list = CapabilityBasedPartitioner(
+                exported_program.graph_module,
+                op_support,
+                allows_single_node_partition=True,
+            ).propose_partitions()
+            readers = _find_readers_of_unsupported_inputs(partition_list, kept_inside)
+            if not readers:
+                break
+            op_support.unsupported_input_readers |= readers
         for partition in partition_list:
             for node in partition.nodes:
                 tag = f"tag{partition.id}"
@@ -430,6 +500,21 @@ class CoreMLPartitioner(Partitioner):
             logging.info(msg)
             self._logged_msgs.add(msg)
 
+    def _placeholders_kept_inside(self, ep: ExportedProgram) -> Set[str]:
+        """The weights, constants and state this partitioner moves into Core ML."""
+        signature = ep.graph_signature
+        mutated = set(signature.buffers_to_mutate.values())
+        kept = set()
+        if self.take_over_constant_data:
+            kept |= set(signature.inputs_to_parameters)
+            kept |= set(signature.inputs_to_lifted_tensor_constants)
+        for name, buffer in signature.inputs_to_buffers.items():
+            if (buffer in mutated and self.take_over_mutable_buffer) or (
+                buffer not in mutated and self.take_over_constant_data
+            ):
+                kept.add(name)
+        return kept
+
     def ops_to_not_decompose(
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
@@ -453,6 +538,13 @@ class CoreMLPartitioner(Partitioner):
             torch.ops.aten.repeat_interleave.self_Tensor,
         ]
         rejected = set()
+        kept_inside = self._placeholders_kept_inside(ep)
+        # The nodes whose output stays outside Core ML.
+        outside = {
+            node
+            for node in ep.graph.nodes
+            if node.op == "placeholder" and node.name not in kept_inside
+        }
         for node in ep.graph.nodes:
             if node.op == "call_function" and isinstance(
                 node.target, torch._ops.OpOverload
@@ -466,7 +558,18 @@ class CoreMLPartitioner(Partitioner):
                         f"Encountered exception when checking node support, treating node as unsupported: {e}"
                     )
                     supported = False
-                if not supported:
+                # partition() keeps an op that reads a tensor Core ML cannot take
+                # as an input on the CPU, where it stays whole only if it has an
+                # out variant.
+                reads_unsupported_input = any(
+                    arg in outside and _cannot_be_coreml_input(arg)
+                    for arg in node.all_input_nodes
+                )
+                if not supported or reads_unsupported_input:
+                    outside.add(node)
+                if not supported or (
+                    reads_unsupported_input and not _has_out_variant(node.target)
+                ):
                     rejected.add(node.target)
                 elif node.target not in do_not_decompose_blocklist and not _is_view_op(
                     node.target
