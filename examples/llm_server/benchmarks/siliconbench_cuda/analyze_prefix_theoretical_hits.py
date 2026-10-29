@@ -52,8 +52,9 @@ def main(job):
             assert len(rows)==100 and len({row['request_idx'] for row in rows})==100
             for name in tokenized[split]['primer']:
                 tokens=pool[name];all_available.append(tokens);all_submitted.append(tokens)
-                if name in four_lru:four_lru.remove(name)
-                four_lru.insert(0,name);four_lru=four_lru[:4]
+                key=tuple(tokens)
+                if key in four_lru:four_lru.remove(key)
+                four_lru.insert(0,key);four_lru=four_lru[:4]
             events=[]
             for row in rows:
                 events += [(row['request_started_monotonic_s'],1,row),(row['request_finished_monotonic_s'],0,row)]
@@ -62,15 +63,15 @@ def main(job):
                 tokens=pool[row['prompt_name']]
                 if kind==0:
                     all_available.append(tokens)
-                    name=row['prompt_name']
-                    if name in four_lru:four_lru.remove(name)
-                    four_lru.insert(0,name);four_lru=four_lru[:4]
+                    key=tuple(tokens)
+                    if key in four_lru:four_lru.remove(key)
+                    four_lru.insert(0,key);four_lru=four_lru[:4]
                     continue
                 assert len(tokens)==row['prompt_tokens'],(case.name,row['request_idx'],len(tokens),row['prompt_tokens'])
                 cap=max(0,len(tokens)-1)
                 available=min(cap,max((common_prefix(tokens,old) for old in all_available),default=0))
                 submitted=min(cap,max((common_prefix(tokens,old) for old in all_submitted),default=0))
-                lru=min(cap,max((common_prefix(tokens,pool[name]) for name in four_lru),default=0))
+                lru=min(cap,max((common_prefix(tokens,old) for old in four_lru),default=0))
                 assert row['cached_prompt_tokens'] is not None,'Require explicit server cached-token usage'
                 actual=row['cached_prompt_tokens'];actual_total+=actual;demand_total+=len(tokens)
                 available_total+=available;submission_total+=submitted;lru_total+=lru
@@ -90,9 +91,9 @@ def main(job):
         final_token_left_for_forward=True,input_proof=input_proof,results=results,
         unlimited_completed_reference='All completed prompt prefixes plus the three sequential warmups, including previous rounds on the same server. Inflight checkpoint capture may provide reuse sooner; this reference alone does not prove implementation misses.',
         unlimited_submitted_reference='Optimistic upper bound; earlier submitted but unfinished requests may not yet have reusable KV.',
-        four_entry_reference='Simplified whole-prompt LRU after completion; does not model periodic checkpoints, capture-lane skips or clone failure. Exact currently retained-candidate theory must be measured by the diagnostic native trace.',
+        four_entry_reference='Simplified whole-prompt LRU after completion, deduplicated by the complete token ID sequence rather than prompt name; does not model periodic checkpoints, capture-lane skips or clone failure. Exact currently retained-candidate theory must be measured by the diagnostic native trace.',
         no_framework_or_kernel_changed=True)
-    (job/'theoretical-hit-review.json').write_text(json.dumps(document,indent=2))
+    (job/'theoretical-hit-review-token-dedup-v2.json').write_text(json.dumps(document,indent=2))
     print(json.dumps(dict(reviewed_rounds=len(results),usage_token_counts_match=True)))
 
 
