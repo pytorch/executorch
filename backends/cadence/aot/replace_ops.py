@@ -2280,6 +2280,11 @@ class ReplacePowWithMulPass(RemoveOrReplacePassInterface):
         x = node.args[0]
         assert isinstance(x, torch.fx.Node)
 
+        # mul keeps the input dtype, so it can't express a promoting pow
+        # (e.g. int32 ** 2.0 -> float32).
+        if x.meta["val"].dtype != node.meta["val"].dtype:
+            return False
+
         graph = node.graph
         result_node = x
 

@@ -17,71 +17,9 @@ logger = logging.getLogger(__name__)
 class DefaultQuantizerAdapter:
     """Default adapter delegating to real ExecuTorch/QNN quantization APIs.
 
-    Wraps ``export_utils.make_quantizer``, ``torchao.quantization.pt2e.prepare_pt2e``,
-    and ``torchao.quantization.pt2e.convert_pt2e`` for production use.
+    Wraps ``torchao.quantization.pt2e.prepare_pt2e`` and
+    ``torchao.quantization.pt2e.convert_pt2e`` for production use.
     """
-
-    def make_quantizer(
-        self,
-        quant_dtype: Any = None,
-        backend: Any = None,
-        soc_model: Any = None,
-        quant_recipe: Any = None,
-        **kwargs: Any,
-    ) -> Any:
-        """Create a QNN quantizer via ``export_utils.make_quantizer``.
-
-        ``quant_dtype`` defaults to ``None`` and is only forwarded when set, so
-        ``export_utils.make_quantizer`` remains the single owner of the default
-        (``QuantDtype.use_8a8w``) rather than this wrapper duplicating it.
-
-        ``quant_recipe`` is **not** an argument of
-        ``export_utils.make_quantizer``; a recipe is applied to the constructed
-        quantizer via ``QnnQuantizer.set_recipe``, so it is consumed here and
-        never forwarded.
-
-        Args:
-            quant_dtype: Quantization data type. ``None`` leaves the default to
-                ``export_utils.make_quantizer``.
-            backend: QNN backend type enum.
-            soc_model: Target SoC (string name like "SM8750" or QcomChipset enum).
-            quant_recipe: Optional recipe applied via ``set_recipe`` after the
-                quantizer is constructed.
-            **kwargs: Forwarded to ``make_quantizer``.
-
-        Returns:
-            A configured ``QnnQuantizer`` instance.
-        """
-        from executorch.backends.qualcomm.export_utils import (
-            make_quantizer as _make_quantizer,
-        )
-
-        # export_utils.make_quantizer expects soc_model as a string for
-        # getattr(QcomChipset, soc_model) lookup. Normalize enum → string.
-        soc_model_str = soc_model.name if hasattr(soc_model, "name") else str(soc_model)
-
-        logger.debug(
-            "Creating quantizer: dtype=%s, backend=%s, soc=%s, recipe=%s",
-            quant_dtype,
-            backend,
-            soc_model_str,
-            quant_recipe,
-        )
-        make_quantizer_kwargs = {
-            "backend": backend,
-            "soc_model": soc_model_str,
-            **kwargs,
-        }
-        if quant_dtype is not None:
-            make_quantizer_kwargs["quant_dtype"] = quant_dtype
-
-        quantizer = _make_quantizer(**make_quantizer_kwargs)
-
-        if quant_recipe is not None:
-            logger.debug("Applying quantization recipe via set_recipe")
-            quantizer.set_recipe(quant_recipe)
-
-        return quantizer
 
     def export_model(
         self,
@@ -98,7 +36,7 @@ class DefaultQuantizerAdapter:
             The exported module (``ExportedProgram.module()``).
         """
         logger.debug("Exporting model via torch.export.export")
-        return torch.export.export(model, sample_input, strict=False).module()
+        return torch.export.export(model, sample_input, strict=True).module()
 
     def prepare_pt2e(
         self,
@@ -121,27 +59,63 @@ class DefaultQuantizerAdapter:
         logger.debug("Preparing model for PT2E quantization")
         return _prepare_pt2e(model, quantizer)
 
+    def init_encodings(
+        self,
+        module: Any,
+        example_inputs: Any,
+    ) -> Any:
+        """Initialize a graph's observers with one dummy forward.
+
+        Args:
+            module: The annotated graph module.
+            example_inputs: This graph's positional example-input tuple.
+
+        Returns:
+            The module after the dummy forward.
+        """
+        logger.debug("Initializing encodings with a dummy forward")
+        with torch.no_grad():
+            module(*example_inputs)
+        return module
+
     def calibrate(
         self,
         model: Any,
         calibration_data: Iterable[Any],
+        **kwargs: Any,
     ) -> Any:
         """Run calibration data through the annotated model.
 
-        One forward pass per sample. Adapters needing a stateful procedure --
-        e.g. autoregressive LLM calibration, where each step's input depends on
-        the previous step's output and the KV cache mutates across steps --
-        should override this method rather than passing a callable as data.
+        One forward pass per sample. The default adapter supports both the
+        legacy single-module shape and the strategy's component-map shape:
+        ``{component: module}`` is paired with ``{component: iterable}``, and
+        components without calibration data are left untouched. Adapters needing
+        a stateful procedure -- e.g. autoregressive LLM calibration, where each
+        step's input depends on the previous step's output and the KV cache
+        mutates across steps -- should override this method.
 
         Args:
-            model: The annotated model with observers.
-            calibration_data: Any ``Iterable[Tuple[Tensor, ...]]``, including a
-                plain list or a ``DataLoader``.
+            model: The annotated model with observers, or a component-keyed map
+                of selected calibration graph modules.
+            calibration_data: Any ``Iterable[Tuple[Tensor, ...]]`` for a single
+                module, or a component-keyed map of such iterables. Plain lists
+                and ``DataLoader`` instances are both accepted.
+            **kwargs: Extra adapter-specific options. Ignored by the default
+                adapter; model-specific adapters may read keys such as
+                ``inference``.
 
         Returns:
-            The calibrated model.
+            The calibrated model or component map.
         """
         logger.debug("Running calibration")
+        if isinstance(model, dict):
+            with torch.no_grad():
+                for component, module in model.items():
+                    component_data = calibration_data.get(component, ())
+                    for data in component_data:
+                        module(*data)
+            return model
+
         with torch.no_grad():
             for data in calibration_data:
                 model(*data)

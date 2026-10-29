@@ -43,6 +43,10 @@ on:
       - examples/models/muse-glimmer/**
       - extension/pybindings/**
       - runtime/__init__.py
+      - exir/passes/convert_constant_dim_order_pass.py
+      - exir/passes/insert_write_back_for_buffers_pass.py
+      - exir/passes/propagate_device_config.py
+      - exir/passes/propagate_device_pass.py
   workflow_dispatch:
     inputs:
       models:
@@ -469,8 +473,9 @@ jobs:
   unittest-cuda:
     name: unittest-cuda (${{ matrix.shard }})
     needs: [changed-files, run-decision]
-    # This job runs the pybindings device test, so it also has to fire on the
-    # two pybindings paths the workflow filter lists.
+    # This job runs the pybindings device test and the device placement test,
+    # so it also has to fire on the pybindings and device pass paths the
+    # workflow filter lists.
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
@@ -481,6 +486,10 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
       contains(needs.changed-files.outputs.changed-files, 'runtime/__init__.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/convert_constant_dim_order_pass.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/insert_write_back_for_buffers_pass.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/propagate_device_config.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/propagate_device_pass.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     # kernel: Triton kernels and their autotuning. system: lowering passes, op
     # dispatch, export/runtime, and model tests. Together they do not fit the
@@ -567,6 +576,21 @@ jobs:
             echo "::error::a pybindings device test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
             exit 1
           fi
+
+          # Same for the device placement test, which skips without a GPU.
+          set +e
+          python -m pytest backends/cuda/tests/test_device_placement.py -v -rs -o "addopts=" \
+            2>&1 | tee /tmp/device_placement_test.log
+          device_placement_status=${PIPESTATUS[0]}
+          set -e
+          if [ "${device_placement_status}" -ne 0 ]; then
+            echo "::error::a device placement test failed"
+            exit "${device_placement_status}"
+          fi
+          if grep -qE "[0-9]+ skipped" /tmp/device_placement_test.log; then
+            echo "::error::a device placement test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
+            exit 1
+          fi
         fi
 
         # Build ExecuTorch with CUDA support
@@ -589,7 +613,7 @@ jobs:
           python -m pytest "${KERNEL_TESTS[@]}" -v -o "addopts=" --durations=20
         else
           IGNORES=()
-          for t in "${KERNEL_TESTS[@]}" "${QUANTIZED_GEMM_TESTS[@]}"; do
+          for t in "${KERNEL_TESTS[@]}" "${QUANTIZED_GEMM_TESTS[@]}" backends/cuda/tests/test_device_placement.py; do
             IGNORES+=("--ignore=${t}")
           done
           python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts=" --durations=20 \

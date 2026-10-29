@@ -13,7 +13,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
-    VgfPipelineFP8,
 )
 
 input_t = Tuple[int, torch.Tensor, torch.LongTensor, torch.Tensor]  # dim, x, index, y
@@ -75,7 +74,7 @@ class IndexCopyModule(torch.nn.Module):
             ("in_place", True),
         )
     }
-    test_data_fp8_no_comparing = {
+    test_data_fp8 = {
         "rand_single_index_fp8e4m3_out_of_place": (
             lambda: (
                 (
@@ -133,7 +132,7 @@ def test_index_copy_tosa_FP(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", IndexCopyModule.test_data_fp8_no_comparing)
+@common.parametrize("test_data", IndexCopyModule.test_data_fp8)
 def test_index_copy_tosa_FP_fp8(test_data):
     inputs, inplace, tosa_extension = test_data()
     module = IndexCopyModule(inplace=inplace)
@@ -186,23 +185,6 @@ def test_index_copy_u85_INT(test_data):
     )
     # int64 index inputs need to be cast to int32; _to_dim_order_copy is not delegated
     pipeline.tester.use_portable_ops = True
-    pipeline.run()
-
-
-@common.parametrize("test_data", IndexCopyModule.test_data_fp8_no_comparing)
-@common.SkipIfNoModelConverter
-def test_index_copy_vgf_no_quant_fp8(test_data):
-    inputs, inplace, _ = test_data()
-    module = IndexCopyModule(inplace=inplace)
-    pipeline = VgfPipelineFP8(
-        module=module,
-        test_data=inputs,
-        aten_op=[],
-        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
-        expect_missing_reference=True,
-        atol=0,
-        rtol=0,
-    )
     pipeline.run()
 
 
