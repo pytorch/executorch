@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Check the emulator log from the ESP32-S3 add/multiply smoke test."""
+"""Check an ESP32-S3 emulator log from a BundleIO (.bpte) runner build."""
 
 import argparse
 import re
@@ -33,7 +33,7 @@ def main() -> None:
         if marker not in output:
             raise SystemExit(f"FAIL: Missing {marker!r}; see {args.log}")
     print(
-        f"PASS: ESP32-S3 ran {finished[1]} inferences and matched both PyTorch outputs."
+        f"PASS: ESP32-S3 ran {finished[1]} inferences and matched the bundled reference outputs."
     )
 
 

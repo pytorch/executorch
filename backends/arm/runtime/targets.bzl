@@ -70,6 +70,7 @@ def define_common_targets():
         ],
         exported_headers = [
             "VGFExecutionStats.h",
+            "VGFMutableAlias.h",
             "VGFNeuralStatistics.h",
             "VGFSetup.h",
             "VGFShapeUtils.h",

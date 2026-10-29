@@ -328,6 +328,33 @@ class TestReplaceOpsPasses(unittest.TestCase):
 
     @expand(
         [
+            ["add", exir_ops.edge.aten.add.Scalar, exir_ops.edge.aten.add.Tensor],
+            ["sub", exir_ops.edge.aten.sub.Scalar, exir_ops.edge.aten.sub.Tensor],
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_scalar_with_tensor_arg_positional_alpha(
+        self,
+        _,
+        scalar_op: torch._ops.OpOverload,
+        tensor_op: torch._ops.OpOverload,
+    ) -> None:
+        x = torch.randn(7, 5)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=scalar_op,
+            args=(x, 1.5, 2),
+        )
+        gm_before = copy.deepcopy(original_gm)
+        p = ReplaceScalarWithTensorArgPass()
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+
+        validate(gm_before, graph_after_passes, [x], "ReplaceScalarWithTensorArgPass")
+        self.assertEqual(count_node(graph_after_passes, tensor_op), 1)
+        self.assertEqual(count_node(graph_after_passes, scalar_op), 0)
+
+    @expand(
+        [
             ["3d", (7, 5, 6), 1.23],
             ["2d", (7, 5), 2],
             ["1d", (10,), 42949],
@@ -2346,6 +2373,53 @@ class TestReplaceWhereWithFullArgsWithWhereScalar(unittest.TestCase):
                 exir_ops.edge.aten.mul.Tensor,
             ),
             0,
+        )
+
+    @expand([[2.0], [3.0]])
+    def test_replace_pow_with_mul_not_applied_on_type_promotion(
+        self, exponent: float
+    ) -> None:
+        # int32 ** float promotes to float32, but int32 * int32 stays int32.
+        x = torch.randint(0, 8, (2, 1, 64), dtype=torch.int32)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.pow.Tensor_Scalar,
+            args=(x, exponent),
+        )
+        p = ReplacePowWithMulPass()
+        result = cast(PassResult, p(original_gm))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.pow.Tensor_Scalar),
+            1,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.mul.Tensor), 0
+        )
+
+    @expand([[2], [3]])
+    def test_replace_pow_with_mul_int_input_int_exponent(self, exponent: int) -> None:
+        # int32 ** int stays int32, so the dtype guard still allows the rewrite.
+        x = torch.randint(0, 8, (2, 1, 64), dtype=torch.int32)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.pow.Tensor_Scalar,
+            args=(x, exponent),
+        )
+        gm_before = copy.deepcopy(original_gm)
+        p = ReplacePowWithMulPass()
+        result = cast(PassResult, p(original_gm))
+
+        self.assertTrue(result.modified)
+        validate(gm_before, result.graph_module, [x], "ReplacePowWithMulPass")
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.pow.Tensor_Scalar),
+            0,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.mul.Tensor),
+            exponent - 1,
         )
 
 

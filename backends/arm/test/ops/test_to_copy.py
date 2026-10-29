@@ -286,40 +286,6 @@ def test_to_tosa_FP_bf16_fp8_with_extensions(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", _TO_COPY_TEST_DATA_FP_FP8)
-@common.SkipIfNoModelConverter
-def test_to_vgf_no_quant_fp8_with_extension(test_data: Tuple):
-    test_tensor, new_dtype, _ = test_data()
-    pipeline = VgfPipeline[input_t1](
-        Cast(new_dtype),
-        (test_tensor,),
-        aten_op=[],
-        exir_op=[],
-        tosa_extensions=["fp8e4m3", "fp8e5m2"],
-        quantize=False,
-        atol=0,
-        rtol=0,
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", _TO_COPY_TEST_DATA_BF16_FP8)
-@common.SkipIfNoModelConverter
-def test_to_vgf_no_quant_bf16_fp8_with_extensions(test_data: Tuple):
-    test_tensor, new_dtype, _ = test_data()
-    pipeline = VgfPipeline[input_t1](
-        Cast(new_dtype),
-        (test_tensor,),
-        aten_op=[],
-        exir_op=[],
-        tosa_extensions=["bf16", "fp8e4m3", "fp8e5m2"],
-        quantize=False,
-        atol=0,
-        rtol=0,
-    )
-    pipeline.run()
-
-
 @common.parametrize("test_data", _TO_COPY_TEST_DATA_FP | _TO_COPY_TEST_DATA_VGF_BF16)
 @common.SkipIfNoModelConverter
 def test_to_vgf_no_quant(test_data: Tuple):

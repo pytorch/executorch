@@ -15,7 +15,6 @@ from dataclasses import asdict
 
 import torch
 import torch.nn as nn
-
 from executorch.backends.native import get_default_compile_config
 from executorch.backends.native.partitioner import NativePartitioner
 from executorch.backends.native.passes import get_default_passes
@@ -38,7 +37,14 @@ from executorch.exir.lowered_backend_module import (
     executorch_call_delegate,
     get_lowered_submodules,
 )
-from executorch.exir.native import to_native
+from executorch.exir.native import (
+    Call,
+    read_samples,
+    Sample,
+    SampleSet,
+    to_native,
+    write_samples,
+)
 from executorch.exir.native.native import (
     _check_delegate_contract,
     _validate_merged_program,
@@ -688,6 +694,54 @@ class MutableBufferDedupTest(unittest.TestCase):
         self.assertFalse(
             set(aliases) & mutable, f"a mutable buffer was aliased: {aliases}"
         )
+
+
+class SamplesTest(unittest.TestCase):
+    def test_samples_round_trip_on_saved_package(self):
+        model = nn.Linear(8, 4)
+        prefill_x, decode_x = torch.randn(2, 8), torch.randn(1, 8)
+        native = to_native(
+            {
+                "prefill": torch.export.export(model, (prefill_x,)),
+                "decode": torch.export.export(model, (decode_x,)),
+            }
+        )
+        golden = {
+            "golden": SampleSet(
+                [
+                    Sample(
+                        [
+                            Call("prefill", [prefill_x], [model(prefill_x).detach()]),
+                            Call("decode", [decode_x], [model(decode_x).detach()]),
+                        ]
+                    )
+                ],
+                tol=(1e-5, 1e-5),
+            ),
+            "calib": SampleSet([Sample([Call("prefill", [prefill_x])])]),
+        }
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "m.ptn")
+            native.save(path)
+            with zipfile.ZipFile(path) as pkg:
+                program = {n: pkg.read(n) for n in pkg.namelist()}
+            for name, samples in golden.items():
+                write_samples(path, name, samples)
+            with zipfile.ZipFile(path) as pkg:
+                self.assertEqual({n: pkg.read(n) for n in program}, program)
+            read = read_samples(path)
+        self.assertEqual(read.keys(), golden.keys())
+        for key, expected in golden.items():
+            self.assertEqual(read[key].tol, expected.tol)
+            for got, want in zip(read[key].samples, expected.samples, strict=True):
+                for got_call, want_call in zip(got.calls, want.calls, strict=True):
+                    self.assertEqual(got_call.method, want_call.method)
+                    torch.testing.assert_close(
+                        got_call.inputs, want_call.inputs, rtol=0, atol=0
+                    )
+                    torch.testing.assert_close(
+                        got_call.outputs, want_call.outputs, rtol=0, atol=0
+                    )
 
 
 if __name__ == "__main__":
