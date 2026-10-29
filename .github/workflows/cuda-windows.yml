@@ -92,6 +92,7 @@ jobs:
           - model_repo: "mistralai"
             model_name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "quantized-int4-tile-packed"
+            mode: "vr-offline"
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
@@ -147,11 +148,7 @@ jobs:
           echo "::endgroup::"
         fi
 
-        VR_MODE=""
-        if [ "${{ matrix.model_name }}" = "Voxtral-Mini-4B-Realtime-2602" ]; then
-          VR_MODE="vr-offline"
-        fi
-        source .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model_repo }}/${{ matrix.model_name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${VR_MODE}"
+        source .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model_repo }}/${{ matrix.model_name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${{ matrix.mode }}"
 
   test-model-cuda-windows-e2e:
     name: test-model-cuda-windows-e2e
@@ -195,6 +192,7 @@ jobs:
           - model_repo: "mistralai"
             model_name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "quantized-int4-tile-packed"
+            mode: "vr-offline"
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
@@ -228,7 +226,7 @@ jobs:
             throw 'RUNNER_ARTIFACT_DIR is empty. Ensure download-artifact is configured for windows_job.yml.'
           }
 
-          .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.2'
+          .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.2' -Mode '${{ matrix.mode }}'
         }"
 
   # The counterpart of cuda.yml's unittest-cuda-runtime on Windows. The Windows GPU runners
