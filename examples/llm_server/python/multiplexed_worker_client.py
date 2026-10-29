@@ -227,6 +227,7 @@ class MultiplexedWorkerClient:
     """
 
     supports_multiplexing = True
+    supports_ignore_eos = True
     supports_cancel = True
 
     def __init__(
@@ -717,6 +718,8 @@ class MultiplexedWorkerClient:
                 "seed": getattr(config, "seed", 0),
                 "stop": list(getattr(config, "stop", []) or []),
             }
+            if getattr(config, "ignore_eos", False):
+                request["ignore_eos"] = config.ignore_eos
             segments = getattr(config, "prompt_segments", None)
             request["prompt_segments" if segments is not None else "prompt"] = (
                 segments if segments is not None else prompt

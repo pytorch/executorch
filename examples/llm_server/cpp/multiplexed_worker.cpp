@@ -134,6 +134,13 @@ serving::PromptInput prompt_input(const Json& request) {
 
 serving::GenerationOptions generation_options(const Json& request) {
   serving::GenerationOptions options;
+  if (request.contains("ignore_eos")) {
+    const auto& value = request.at("ignore_eos");
+    if (!value.is_boolean()) {
+      throw std::invalid_argument("ignore_eos must be a boolean");
+    }
+    options.ignore_eos = value.get<bool>();
+  }
   if (request.contains("max_new_tokens")) {
     const auto& value = request.at("max_new_tokens");
     const bool in_range = value.is_number_unsigned()
@@ -413,7 +420,8 @@ class Worker {
              "top_p",
              "top_k",
              "seed",
-             "stop"});
+             "stop",
+             "ignore_eos"});
         std::optional<std::string> key;
         if (message.contains("session_id"))
           key = session_key(message);

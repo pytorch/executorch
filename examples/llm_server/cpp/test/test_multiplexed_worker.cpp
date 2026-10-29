@@ -575,6 +575,12 @@ TEST_F(ProtocolTest, StrictFieldsAndUnsupportedModalitiesAreIsolated) {
     request["max_new_tokens"] = value;
     invalid.push_back(request);
   }
+  for (const auto& value :
+       {Json(), Json(0), Json(1), Json("true"), Json::array()}) {
+    auto request = generate(id++);
+    request["ignore_eos"] = value;
+    invalid.push_back(request);
+  }
   auto image = generate(id++);
   image["image"] = "ignored?";
   invalid.push_back(image);

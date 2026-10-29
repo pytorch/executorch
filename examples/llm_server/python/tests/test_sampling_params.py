@@ -11,6 +11,8 @@ These exercise the real server over the HTTP boundary with a FakeRunner.
 
 import json
 
+import pytest
+
 CALL = (
     '<tool_call>\n{"name": "get_weather", "arguments": {"city": "Paris"}}\n</tool_call>'
 )
@@ -286,3 +288,75 @@ def test_tool_choice_default_still_parses(make_client):
     )
     calls = r.json()["choices"][0]["message"].get("tool_calls")
     assert calls and calls[0]["function"]["name"] == "get_weather"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("ignore_eos", [False, True])
+def test_ignore_eos_preserves_text_after_template_terminators(
+    make_client, stream, ignore_eos
+):
+    client, runner = make_client(
+        tokens=["before", "<|im_end|>", "after"], finish_reason="length"
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json=_body(ignore_eos=ignore_eos, stream=stream, max_tokens=3),
+    )
+    assert response.status_code == 200
+    if stream:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        content = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
+        finish = chunks[-1]["choices"][0]["finish_reason"]
+    else:
+        content = response.json()["choices"][0]["message"]["content"]
+        finish = response.json()["choices"][0]["finish_reason"]
+    assert content == ("before<|im_end|>after" if ignore_eos else "before")
+    assert finish == ("length" if ignore_eos else "stop")
+    assert runner.captured_config.ignore_eos is ignore_eos
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_still_honors_explicit_stop(make_client, stream):
+    client, runner = make_client(tokens=["before<|im_end|>after", "ST", "OP", "hidden"])
+    response = client.post(
+        "/v1/chat/completions",
+        json=_body(ignore_eos=True, stop="STOP", stream=stream, max_tokens=32),
+    )
+    assert response.status_code == 200
+    if stream:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        content = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
+        finish = chunks[-1]["choices"][0]["finish_reason"]
+    else:
+        content = response.json()["choices"][0]["message"]["content"]
+        finish = response.json()["choices"][0]["finish_reason"]
+    assert content == "before<|im_end|>after"
+    assert finish == "stop"
+    assert runner.captured_config.stop == ["STOP"]
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true", "false", [], {}])
+def test_ignore_eos_requires_a_boolean(make_client, value):
+    client, runner = make_client()
+    response = client.post("/v1/chat/completions", json=_body(ignore_eos=value))
+    assert response.status_code == 422
+    assert runner.captured_config is None
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_rejects_unsupported_worker_before_streaming(make_client, stream):
+    client, runner = make_client(supports_ignore_eos=False)
+    response = client.post(
+        "/v1/chat/completions", json=_body(ignore_eos=True, stream=stream)
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "unsupported_parameter"
+    assert runner.captured_config is None

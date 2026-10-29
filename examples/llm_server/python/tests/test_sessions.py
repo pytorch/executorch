@@ -14,7 +14,6 @@ These assert the HTTP/wire contract only.
 import asyncio
 
 import pytest
-
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.errors import GenerationError
 from executorch.examples.llm_server.python.serving_chat import ServingChat
@@ -391,7 +390,9 @@ def test_stop_set_narrow_but_strip_set_broad():
         "sure<tool_call>\n<function=f>\n<parameter=x>\n1\n"
         "</parameter>\n</function>\n</tool_call>"
     )
-    assert serving._truncate_raw(raw, SimpleNamespace(stop=None)) == raw
+    assert (
+        serving._truncate_raw(raw, SimpleNamespace(stop=None, ignore_eos=False)) == raw
+    )
 
 
 def test_injected_assistant_exemplar_falls_back_to_text():

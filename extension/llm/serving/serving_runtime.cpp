@@ -870,7 +870,9 @@ struct ServingRuntime::Impl {
         std::min(available, static_cast<std::size_t>(wanted)));
     config.sampling = options.sampling;
     config.seed = options.seed;
-    config.stop_tokens = config_.default_stop_tokens;
+    if (!options.ignore_eos) {
+      config.stop_tokens = config_.default_stop_tokens;
+    }
     config.stop_tokens.insert(
         config.stop_tokens.end(),
         options.stop_tokens.begin(),

@@ -208,10 +208,10 @@ class ServingChat:
         cut = _earliest_stop(text, self._content_specials)
         return text[:cut] if cut is not None else text
 
-    def _visible_content(self, text: str) -> str:
+    def _visible_content(self, text: str, ignore_eos: bool = False) -> str:
         if self._content_filter is not None:
             text = self._content_filter(text)
-        return self._strip_specials(text)
+        return text if ignore_eos else self._strip_specials(text)
 
     def _split_reasoning(self, text: str) -> tuple[Optional[str], str]:
         if self._reasoning_extractor is None:
@@ -254,7 +254,10 @@ class ServingChat:
         """Cut raw model output at the earliest special token or request stop
         sequence BEFORE tool parsing, so a tool call (or any text) past the stop
         boundary is neither parsed nor emitted."""
-        return self._apply_stop(text, self._stops + self._request_stops(req))
+        stops = self._request_stops(req)
+        if not req.ignore_eos:
+            stops = self._stops + stops
+        return self._apply_stop(text, stops)
 
     def _cancel_generation(self, generation: AsyncIterator[str]) -> None:
         cancel = getattr(generation, "cancel", None)
@@ -302,7 +305,11 @@ class ServingChat:
             text = parsed.normal_text
         if not self._return_reasoning(req):
             reasoning = None
-        return tool_calls, reasoning, self._visible_content(text) or None
+        return (
+            tool_calls,
+            reasoning,
+            self._visible_content(text, req.ignore_eos) or None,
+        )
 
     @staticmethod
     def _log_generation_stats(
@@ -376,6 +383,7 @@ class ServingChat:
             # Worker stop set, chosen per path in create() (see __init__ for the
             # two sets); the server re-applies it in _clean/_collect_until_stop.
             stop=stops,
+            ignore_eos=req.ignore_eos,
         )
 
     @staticmethod
@@ -397,6 +405,7 @@ class ServingChat:
                     "session_busy": 409,
                     "not_ready": 503,
                     "invalid_argument": 400,
+                    "unsupported_parameter": 400,
                 }.get(error.code, 500)
                 return APIError(
                     status,
@@ -650,10 +659,19 @@ class ServingChat:
                     raise ContextLengthExceeded(count, self._max_context, requested)
         # Per-path worker stop set (see __init__ for the two sets and why): tool
         # turns use the narrow set; plain chat adds the broad content specials.
-        if self._tools_active(req):
+        if req.ignore_eos:
+            gen_stops = self._request_stops(req)
+        elif self._tools_active(req):
             gen_stops = self._stops + self._request_stops(req)
         else:
             gen_stops = self._stops + self._content_specials + self._request_stops(req)
+        if req.ignore_eos and not getattr(self._runtime, "supports_ignore_eos", False):
+            raise APIError(
+                400,
+                "ignore_eos requires a multiplexed batching worker",
+                "invalid_request_error",
+                "unsupported_parameter",
+            )
         options = self._options(req, gen_stops)
         # The generation scaffold the worker will prefill ahead of this turn's
         # tokens (e.g. Qwen3 <think> block), resolved with the same per-request
@@ -702,7 +720,7 @@ class ServingChat:
         stops = (
             gen_stops
             if gen_stops is not None
-            else self._stops + self._request_stops(req)
+            else ([] if req.ignore_eos else self._stops) + self._request_stops(req)
         )
         stats = GenStats()
         try:
@@ -760,10 +778,11 @@ class ServingChat:
         generation: AsyncIterator[str],
         stops: list[str],
         stop_hit: list[bool],
+        ignore_eos: bool = False,
     ) -> AsyncIterator[str]:
         if self._content_filter is not None:
             raw, stop_hit[0] = await self._collect_until_stop(generation, stops)
-            content = self._visible_content(self._apply_stop(raw, stops))
+            content = self._visible_content(self._apply_stop(raw, stops), ignore_eos)
             if content:
                 yield content
             return
@@ -787,7 +806,9 @@ class ServingChat:
         stop_hit: list[bool],
     ) -> AsyncIterator[DeltaMessage]:
         if self._streaming_parser_factory is None:
-            async for text in self._stream_plain_content(generation, stops, stop_hit):
+            async for text in self._stream_plain_content(
+                generation, stops, stop_hit, req.ignore_eos
+            ):
                 yield DeltaMessage(content=text)
             return
         parser = self._streaming_parser_factory()

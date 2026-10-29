@@ -26,6 +26,13 @@ uses the worker's unset/random value.
 `model` must match the id returned by `/v1/models`; unknown ids return
 `404 model_not_found`.
 
+`ignore_eos` is an optional JSON boolean (default `false`) supported by the
+multiplexed batching worker. It disables model EOS and automatic chat-template
+stops, allowing generation through terminator tokens up to the requested budget
+or context limit. Explicit request `stop` strings and cancellation still apply.
+Raw special-token text can appear in the response. The legacy worker rejects
+`ignore_eos: true` with `400 unsupported_parameter`; normal requests are unchanged.
+
 `chat_template_kwargs.return_reasoning` is an ExecuTorch response-visibility
 control and defaults to `true`. For models with a reasoning extractor, set it
 to `false` to omit reasoning from the response; the model still computes reasoning.
@@ -161,7 +168,8 @@ integer in `[-1, INT32_MAX]`; omitted or `-1` selects the runtime's automatic
 budget. Sampling fields must be numeric, never booleans: temperature is finite
 and nonnegative, top_p is in `(0, 1]`, top_k is a nonnegative int32, and seed is a
 uint64 (zero preserves the existing unset/random sentinel). `stop` is an array
-of strings. Unknown
+of strings. `ignore_eos` is a JSON boolean, default `false`; it suppresses
+service-default stop tokens while preserving explicit stop strings. Unknown
 fields and segment types, including images or image payload fields on otherwise
 valid text segments, fail explicitly instead of silently dropping modalities.
 

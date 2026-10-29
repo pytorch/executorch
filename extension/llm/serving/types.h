@@ -57,6 +57,8 @@ struct ET_EXPERIMENTAL GenerationOptions {
   std::vector<std::string> stop_strings;
   // Forwarded to the executor for this generation, together with sampling.
   std::optional<std::uint64_t> seed;
+  // Suppress service default EOS stops, preserving explicit request stops.
+  bool ignore_eos = false;
 };
 
 enum class ET_EXPERIMENTAL FinishReason {
