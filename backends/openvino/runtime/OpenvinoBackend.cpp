@@ -333,8 +333,6 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
     return exr::Error::Internal;
   }
 
-  processed->Free();
-
   ov_infer_request_t* infer_request = nullptr;
   status =
       ov_.compiled_model_create_infer_request(compiled_model, &infer_request);
