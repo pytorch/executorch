@@ -253,8 +253,9 @@ Glimmer's legacy session implementation. Prefix caching is disabled by default.
 sampled requests. With `--prefix_capture_slots=C`, it adds `N + C` physical rows
 for retained snapshots and transient captures; logical `--max_sessions` remains
 unchanged. `--prefix_capture_slots` defaults to 1. Increase it for overlapping
-requests that should each retain a reusable prompt. Checkpoint collection remains
-serialized.
+requests that should each retain a reusable prompt with checkpoints disabled.
+With checkpoints enabled, checkpoint capture remains serialized; values above 2
+add unused row capacity (one checkpoint and one replacement can overlap).
 
 With an existing MLX-enabled ExecuTorch installation and matching gflags package,
 configure the MLX LLM examples and build `llm_worker`. Launch with `--pte`,

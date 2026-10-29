@@ -177,8 +177,6 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
             "64",
             "--prefix_cache_entries",
             "0",
-            "--prefix_capture_slots",
-            "1",
         ]
     )
     launch.stages["template"].assert_called_once_with(

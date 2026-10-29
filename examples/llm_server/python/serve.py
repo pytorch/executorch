@@ -24,13 +24,13 @@ from .tool_parsers import HermesDetector
 _MAX_INT32 = (1 << 31) - 1
 
 
-def _validate_limits(parser, args) -> None:
+def _validate_limits(parser, args, *, prefix_capture_slots=1) -> None:
     for flag, value in (
         ("--max-context", args.max_context),
         ("--max-sessions", args.max_sessions),
         ("--max-decode-sequences", args.max_decode_sequences),
         ("--max-inflight-requests", args.max_inflight_requests),
-        ("--prefix-capture-slots", args.prefix_capture_slots),
+        ("--prefix-capture-slots", prefix_capture_slots),
     ):
         if not 1 <= value <= _MAX_INT32:
             parser.error(f"{flag} must be between 1 and {_MAX_INT32}")
@@ -43,7 +43,7 @@ def _validate_limits(parser, args) -> None:
     physical_sessions = (
         args.max_sessions
         + args.prefix_cache_entries
-        + (args.prefix_capture_slots if args.prefix_cache_entries else 0)
+        + (prefix_capture_slots if args.prefix_cache_entries else 0)
     )
     if physical_sessions > _MAX_INT32:
         parser.error("session and prefix-cache capacity exceeds the row limit")
@@ -98,7 +98,7 @@ def _parse_args(argv=None):
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
 
-    _validate_limits(parser, args)
+    _validate_limits(parser, args, prefix_capture_slots=args.prefix_capture_slots)
 
     args.worker_bin = os.path.expanduser(args.worker_bin)
     if shutil.which(args.worker_bin) is None:
@@ -159,9 +159,12 @@ def main(argv=None) -> None:
                 str(args.max_inflight_requests),
                 "--prefix_cache_entries",
                 str(args.prefix_cache_entries),
-                "--prefix_capture_slots",
-                str(args.prefix_capture_slots),
             ]
+            + (
+                ["--prefix_capture_slots", str(args.prefix_capture_slots)]
+                if args.prefix_cache_entries and args.prefix_capture_slots != 1
+                else []
+            )
             + (
                 ["--prefix_checkpoint_interval", str(args.prefix_checkpoint_interval)]
                 if args.prefix_checkpoint_interval

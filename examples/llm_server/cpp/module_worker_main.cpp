@@ -56,7 +56,8 @@ int main(int argc, char** argv) {
        FLAGS_prefix_cache_entries == 0)) {
     std::cerr
         << "--pte and --tokenizer are required; capacity limits must be positive "
-           "and prefix-cache limits nonnegative; checkpoints require prefix_cache_entries > 0\n";
+           "(including prefix_capture_slots); cache entries and checkpoint interval must be "
+           "nonnegative; checkpoints require prefix_cache_entries > 0\n";
     return 1;
   }
   const auto physical_sessions = static_cast<std::int64_t>(FLAGS_max_sessions) +
