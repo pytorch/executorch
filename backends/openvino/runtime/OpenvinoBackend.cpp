@@ -345,6 +345,19 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
   if (precision.empty() && device.rfind("CPU", 0) == 0) {
     precision = "f32";
   }
+  // The same values as in preprocess.py. Some OpenVINO releases accept an
+  // unknown value, and others only reject it on import, with a generic
+  // error.
+  if (!precision.empty() && precision != "f32" && precision != "f16" &&
+      precision != "bf16") {
+    ET_LOG(
+        Error,
+        "OpenVINO: unsupported inference_precision '%s', expected one of "
+        "f32, f16, bf16",
+        precision.c_str());
+    ov_.core_free(core);
+    return exr::Error::InvalidArgument;
+  }
   if (!precision.empty()) {
     status = ov_.core_set_property(
         core, device.c_str(), "INFERENCE_PRECISION_HINT", precision.c_str());

@@ -25,6 +25,10 @@ from openvino.frontend.pytorch.fx_decoder import (  # type: ignore[import-untype
 )
 from openvino.preprocess import PrePostProcessor  # type: ignore[import-untyped]
 
+# The values of the inference_precision compile spec. The runtime
+# (OpenvinoBackend.cpp) accepts the same ones.
+_PRECISIONS = ("f32", "f16", "bf16")
+
 
 @final
 class OpenvinoBackend(BackendDetails):
@@ -92,6 +96,13 @@ class OpenvinoBackend(BackendDetails):
         precision = compile_options.get("inference_precision") or (
             "f32" if device.startswith("CPU") else None
         )
+        # Some OpenVINO releases accept an unknown value here. Checking now keeps
+        # it out of the program, where the runtime would only fail at load.
+        if precision and precision not in _PRECISIONS:
+            raise ValueError(
+                f"OpenVINO backend: unsupported inference_precision '{precision}', "
+                f"expected one of {', '.join(_PRECISIONS)}"
+            )
         config = {"INFERENCE_PRECISION_HINT": precision} if precision else {}
         compiled = compile_model(ppp.build(), device, config)
         model_bytes = compiled.export_model()
