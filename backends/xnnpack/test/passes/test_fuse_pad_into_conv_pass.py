@@ -43,19 +43,31 @@ class TestFusePadIntoConvPass(unittest.TestCase):
         leading conv puts the activation in NHWC so the pad reaches the second
         conv without a layout copy in between."""
 
-        def __init__(self, value=0.0, depthwise=False):
+        def __init__(
+            self,
+            value=0.0,
+            depthwise=False,
+            pad=(2, 1, 2, 1),
+            conv2=None,
+            return_pad=False,
+        ):
             super().__init__()
             self.value = value
+            self.pad = pad
+            self.return_pad = return_pad
             self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
-            self.conv2 = (
-                torch.nn.Conv2d(8, 8, 4, groups=8, bias=False)
-                if depthwise
-                else torch.nn.Conv2d(8, 4, 4, padding=1)
-            )
+            if conv2 is not None:
+                self.conv2 = conv2
+            elif depthwise:
+                self.conv2 = torch.nn.Conv2d(8, 8, 4, groups=8, bias=False)
+            else:
+                self.conv2 = torch.nn.Conv2d(8, 4, 4, padding=1)
 
         def forward(self, x):
             x = self.conv1(x)
-            x = torch.nn.functional.pad(x, (2, 1, 2, 1), value=self.value)
+            x = torch.nn.functional.pad(x, self.pad, value=self.value)
+            if self.return_pad:
+                return self.conv2(x), x
             return self.conv2(x)
 
     class ConvPadConvTranspose(torch.nn.Module):
@@ -79,8 +91,8 @@ class TestFusePadIntoConvPass(unittest.TestCase):
         def forward(self, x):
             return self.conv(torch.nn.functional.pad(x, (2, 1, 2, 1)))
 
-    def _run_passes(self, module, inputs, quantize=False):
-        tester = Tester(module.eval(), inputs)
+    def _run_passes(self, module, inputs, quantize=False, dynamic_shapes=None):
+        tester = Tester(module.eval(), inputs, dynamic_shapes=dynamic_shapes)
         if quantize:
             tester.quantize()
         tester.export().to_edge().run_passes(self.PassStage)
@@ -102,8 +114,8 @@ class TestFusePadIntoConvPass(unittest.TestCase):
             and FusePadIntoConvPass.is_folded_pad(n)
         ]
 
-    def _assert_folded(self, module, inputs, expected_trbl):
-        graph_module = self._run_passes(module, inputs)
+    def _assert_folded(self, module, inputs, expected_trbl, dynamic_shapes=None):
+        graph_module = self._run_passes(module, inputs, dynamic_shapes=dynamic_shapes)
         self.assertEqual(len(self._folded_pads(graph_module)), 1)
         self.assertEqual(self._fused_paddings(graph_module), [expected_trbl])
 
@@ -112,8 +124,17 @@ class TestFusePadIntoConvPass(unittest.TestCase):
         self.assertEqual(self._folded_pads(graph_module), [])
         self.assertEqual(self._fused_paddings(graph_module), [])
 
-    def _run(self, module, inputs, atol=1e-03, rtol=1e-03, quantize=False):
-        tester = Tester(module.eval(), inputs)
+    def _run(
+        self,
+        module,
+        inputs,
+        atol=1e-03,
+        rtol=1e-03,
+        quantize=False,
+        dynamic_shapes=None,
+        num_runs=1,
+    ):
+        tester = Tester(module.eval(), inputs, dynamic_shapes=dynamic_shapes)
         if quantize:
             tester.quantize()
         (
@@ -122,7 +143,9 @@ class TestFusePadIntoConvPass(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
-            .run_method_and_compare_outputs(atol=atol, rtol=rtol, qtol=1)
+            .run_method_and_compare_outputs(
+                num_runs=num_runs, atol=atol, rtol=rtol, qtol=1
+            )
         )
 
     def test_fp32_conv_pad_conv(self):
@@ -139,6 +162,40 @@ class TestFusePadIntoConvPass(unittest.TestCase):
         inputs = (torch.randn(1, 3, 10, 12).half(),)
         self._assert_folded(self.ConvPadConv().half(), inputs, (3, 2, 2, 3))
         self._run(self.ConvPadConv().half(), inputs, atol=2e-2, rtol=2e-2)
+
+    def test_fp32_width_only_pad(self):
+        module = self.ConvPadConv(pad=(2, 1))
+        inputs = (torch.randn(1, 3, 10, 12),)
+        self._assert_folded(module, inputs, (1, 2, 1, 3))
+        self._run(module, inputs)
+
+    def test_fp32_dilated_conv(self):
+        module = self.ConvPadConv(
+            pad=(2, 2, 2, 2), conv2=torch.nn.Conv2d(8, 4, 3, dilation=2)
+        )
+        inputs = (torch.randn(1, 3, 10, 12),)
+        self._assert_folded(module, inputs, (2, 2, 2, 2))
+        self._run(module, inputs)
+
+    def test_fp32_dynamic_shapes(self):
+        # The folded pad stays in the graph with symbolic spatial dims.
+        inputs = (torch.randn(1, 3, 10, 12),)
+        dynamic_shapes = (
+            {
+                2: torch.export.Dim("height", min=8, max=32),
+                3: torch.export.Dim("width", min=8, max=32),
+            },
+        )
+        self._assert_folded(
+            self.ConvPadConv(), inputs, (3, 2, 2, 3), dynamic_shapes=dynamic_shapes
+        )
+        self._run(self.ConvPadConv(), inputs, dynamic_shapes=dynamic_shapes, num_runs=3)
+
+    def test_fp32_pad_with_two_users_not_fused_still_correct(self):
+        module = self.ConvPadConv(return_pad=True)
+        inputs = (torch.randn(1, 3, 10, 12),)
+        self._assert_not_folded(module, inputs)
+        self._run(module, inputs)
 
     def test_fp32_nonzero_pad_value_not_fused_still_correct(self):
         inputs = (torch.randn(1, 3, 10, 12),)
