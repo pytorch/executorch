@@ -237,6 +237,60 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 [CompileSpec(key="cuda_include_ptx", value=b"MAYBE")]
             )
 
+    def test_invalid_data_name_compile_spec(self):
+        for name in (
+            "",
+            "..",
+            ".hidden",
+            "../outside",
+            "a/b",
+            "a\\b",
+            "a/../../outside",
+            "C:model",
+            "model?",
+            "nul",
+            "COM1.txt",
+            "a" * 201,
+            # Non-ASCII letters that IGNORECASE alone would let through.
+            "\u212a" * 200,
+            "\u017fizes",
+            "\u0130d",
+            "\u0131d",
+            "-enc",
+            # One writer turns "encoder.ptd" into the same file as "encoder".
+            # The check ignores case, like the rest of the pattern.
+            "encoder.ptd",
+            "encoder.PTD",
+        ):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "Invalid data name"):
+                    CudaBackend.generate_data_name_compile_spec(name)
+                with self.assertRaisesRegex(ValueError, "Invalid data name"):
+                    CudaBackend.data_name_from_compile_specs(
+                        [CompileSpec(key="data_name", value=name.encode())]
+                    )
+        # A backend that keeps its data in the .pte would ignore the name.
+        with patch.object(CudaBackend, "save_data_externally", return_value=False):
+            with self.assertRaisesRegex(ValueError, "takes no data name"):
+                CudaBackend.generate_data_name_compile_spec("encoder")
+
+    def test_valid_data_name_compile_spec(self):
+        self.assertEqual(CudaBackend.data_name_from_compile_specs([]), "aoti_cuda_blob")
+        for name in ("encoder", "model_sm80", "v1.2-final", "a" * 200, "x.ptd.bak"):
+            with self.subTest(name=name):
+                spec = CudaBackend.generate_data_name_compile_spec(name)
+                self.assertEqual(CudaBackend.data_name_from_compile_specs([spec]), name)
+
+    def test_methods_of_one_program_must_share_a_data_name(self):
+        def specs(name):
+            return [[CudaBackend.generate_data_name_compile_spec(name)]]
+
+        with self.assertRaisesRegex(ValueError, "same data name"):
+            CudaBackend.preprocess_multimethod(
+                {"forward": [None], "second": [None]},
+                {"forward": specs("first"), "second": specs("second")},
+            )
+
 
 class TestCudaExport(unittest.TestCase):
     """Test CUDA export functionality for various operations using to_edge_transform_and_lower."""

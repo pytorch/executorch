@@ -704,6 +704,7 @@ class CudaBackend(AotiBackend, BackendDetails):
             cls.get_device_name(),
             target_sm=target_sm,
             ptx_compute=ptx_compute,
+            external_tag=cls.data_name_from_compile_specs(compile_specs),
         )
         return result
 
@@ -726,6 +727,17 @@ class CudaBackend(AotiBackend, BackendDetails):
         compile_specs: Dict[str, List[List[CompileSpec]]],
     ) -> Dict[str, List[PreprocessResult]]:
         """Compile every method against one global ``(device, FQN)`` store."""
+        # The methods share one weights file, so they must agree on its name.
+        data_names = {
+            cls.data_name_from_compile_specs(specs)
+            for method_specs in compile_specs.values()
+            for specs in method_specs
+        }
+        if len(data_names) > 1:
+            raise ValueError(
+                "Every method of a program must use the same data name, got "
+                f"{sorted(data_names)}"
+            )
         collector = CudaWeightCollector()
         results: Dict[str, List[PreprocessResult]] = {}
         for method_name, programs in edge_programs.items():
