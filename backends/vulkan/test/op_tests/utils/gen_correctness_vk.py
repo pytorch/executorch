@@ -59,6 +59,20 @@ class VkCorrectnessTestGen(CorrectnessTestGen):
         self.op_reg_name = op_reg_name
         self.generator = ComputeGraphGen(self.op_reg_name, self.f, self.suite_def)
 
+    def gen_create_ref_data(self, inputs) -> str:
+        ref_data = super().gen_create_ref_data(inputs)
+        case_index = self.suite_def.input_cases.index(inputs)
+        for dtype, (rtol, atol) in self.suite_def.case_tolerances.get(
+            case_index, {}
+        ).items():
+            ref_data += f"""
+  if (test_dtype == {dtype}) {{
+    rtol = {rtol};
+    atol = {atol};
+  }}
+"""
+        return ref_data
+
     def generate_fixture_cpp(self) -> str:
         check_fn = ""
         if not self.suite_def.requires_prepack:
