@@ -137,6 +137,7 @@ def define_arm_tests():
                 "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
                 "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
+                "EMULATION_LAYER_VERSION": "0.9.0",
             })
 
         python_pytest(
