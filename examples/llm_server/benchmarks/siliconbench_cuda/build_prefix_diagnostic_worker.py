@@ -62,7 +62,6 @@ def main(args):
         source=instrument(original)
         marker='#include <executorch/extension/llm/batching/prefix_cache.h>'
         assert source.count(marker)==1
-        source=source.replace(marker,'#include "'+str(args.job/'prefix_cache.h')+'"',1)
         before='      return prefix_cache_.lookup_identity(*request->text->prompt);'
         assert source.count(before)==1
         source=source.replace(before,'      const auto lookup_begin = batching::MetricsClock::now();\n      auto match = prefix_cache_.lookup_identity(*request->text->prompt);\n      trace_phase(request, "prefix_lookup_inclusive", lookup_begin);\n      return match;',1)
@@ -76,6 +75,10 @@ def main(args):
         (args.job/'original-prefix_cache.h').open('x').write(header.read_text())
         (args.job/'serving_runtime.cpp').open('x').write(source)
         (args.job/'prefix_cache.h').open('x').write(header_trace(header.read_text()))
+        override=args.job/'include/executorch/extension/llm/batching/prefix_cache.h'
+        override.parent.mkdir(parents=True)
+        override.symlink_to(args.job/'prefix_cache.h')
+        compile.insert(1,'-I'+str(args.job/'include'))
         compile[compile.index('-c')+1]=str(args.job/'serving_runtime.cpp')
         compile[compile.index('-o')+1]=str(args.job/'serving_runtime.o')
         assert '-DNDEBUG' in compile
