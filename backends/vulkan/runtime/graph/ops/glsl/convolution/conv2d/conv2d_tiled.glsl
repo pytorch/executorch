@@ -183,13 +183,23 @@ void load_inputs(
 #endif
 }
 
+// Branches once, outside the unrolled loops. Implementations that do not fold
+// specialization constants (e.g. SwiftShader) would otherwise keep a branch
+// per multiply-add, and SwiftShader's pipeline creation time grows
+// exponentially with the number of branches in a loop.
 void accumulate() {
-  [[unroll]] for (int lane = 0; lane < 4; ++lane) {
-    [[unroll]] for (int i = 0; i < TILE_PIXELS; ++i) {
-      [[unroll]] for (int s = 0; s < OUT_N4; ++s) {
-        if (ngroups > 1) {
+  if (ngroups > 1) {
+    [[unroll]] for (int lane = 0; lane < 4; ++lane) {
+      [[unroll]] for (int i = 0; i < TILE_PIXELS; ++i) {
+        [[unroll]] for (int s = 0; s < OUT_N4; ++s) {
           sums[i][s] = fma(weights[s][lane], VEC4_T(inputs[i][lane]), sums[i][s]);
-        } else {
+        }
+      }
+    }
+  } else {
+    [[unroll]] for (int lane = 0; lane < 4; ++lane) {
+      [[unroll]] for (int i = 0; i < TILE_PIXELS; ++i) {
+        [[unroll]] for (int s = 0; s < OUT_N4; ++s) {
           sums[i][s] += weights[s][lane] * inputs[i][lane];
         }
       }
