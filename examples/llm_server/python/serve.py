@@ -158,8 +158,12 @@ def main(argv=None) -> None:
                 str(args.max_inflight_requests),
                 "--prefix_cache_entries",
                 str(args.prefix_cache_entries),
-                f"--reuse_prefix_sessions={str(args.reuse_prefix_sessions).lower()}",
             ]
+            + (
+                ["--reuse_prefix_sessions=false"]
+                if args.prefix_cache_entries and not args.reuse_prefix_sessions
+                else []
+            )
             + (
                 ["--prefix_checkpoint_interval", str(args.prefix_checkpoint_interval)]
                 if args.prefix_checkpoint_interval

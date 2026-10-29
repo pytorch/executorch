@@ -300,7 +300,7 @@ class ET_EXPERIMENTAL PrefixCache {
     for (auto it = entries_.begin(); it != entries_.end(); ++it) {
       if (it->tokens.size() == tokens.size() &&
           common_prefix(it->tokens, tokens) == tokens.size()) {
-        if (!it->snapshot.valid() || !it->transferable) {
+        if (!it->snapshot.can_clone() || !it->transferable) {
           it->snapshot = std::move(snapshot);
           it->borrowed_clone = {};
           it->borrowed_valid = {};
@@ -357,7 +357,7 @@ class ET_EXPERIMENTAL PrefixCache {
     prune();
     for (auto& entry : entries_) {
       if (entry.borrowed_identity == session.state_.get() &&
-          !entry.snapshot.valid() && session.valid()) {
+          !entry.snapshot.can_clone() && session.can_clone()) {
         entry.snapshot = std::move(session);
         entry.borrowed_clone = {};
         entry.borrowed_valid = {};
@@ -414,7 +414,8 @@ class ET_EXPERIMENTAL PrefixCache {
       for (const auto& candidate : candidates) {
         auto& entry = *candidate.entry;
         const auto position = static_cast<Position>(candidate.matched);
-        if (reuse_session && entry.transferable && entry.snapshot.valid() &&
+        if (reuse_session && entry.transferable &&
+            entry.snapshot.retains_prefixes() &&
             candidate.matched == entry.tokens.size() &&
             entry.snapshot.position() == position) {
           entry.borrowed_clone = entry.snapshot.make_clone_request();
@@ -425,7 +426,7 @@ class ET_EXPERIMENTAL PrefixCache {
           return PrefixMatch{std::move(session), candidate.matched};
         }
         std::optional<Session> session;
-        if (entry.snapshot.valid()) {
+        if (entry.snapshot.can_clone()) {
           session = entry.snapshot.clone_async(position).get();
         } else if (entry.borrowed_clone) {
           session = entry.borrowed_clone(position).get();
@@ -452,7 +453,7 @@ class ET_EXPERIMENTAL PrefixCache {
   std::size_t size() const {
     return std::count_if(
         entries_.begin(), entries_.end(), [](const auto& entry) {
-          return entry.snapshot.valid() ||
+          return entry.snapshot.can_clone() ||
               (entry.borrowed_valid && entry.borrowed_valid());
         });
   }
@@ -460,7 +461,7 @@ class ET_EXPERIMENTAL PrefixCache {
  private:
   void prune() {
     entries_.remove_if([](const auto& entry) {
-      return !entry.snapshot.valid() &&
+      return !entry.snapshot.can_clone() &&
           (!entry.borrowed_valid || !entry.borrowed_valid());
     });
   }

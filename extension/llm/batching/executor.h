@@ -111,6 +111,13 @@ class ET_EXPERIMENTAL Executor {
     return std::nullopt;
   }
 
+  // Appending to a healthy session preserves every committed prefix for clone.
+  // False for evicting or recurrent state without historical snapshots. Stable
+  // after initialize(); capacity may still cause clone to fail.
+  virtual bool retains_prefixes() const {
+    return false;
+  }
+
   // Installs the session's sampling policy, immediately before the generation's
   // tasks are submitted, and holds until the next generation replaces it, so it
   // does not ride on each input.

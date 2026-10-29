@@ -81,6 +81,12 @@ as a historical clone source. Dead entries are removed before eviction decisions
 Partial and equal-prompt matches still clone.
 Replacements of existing named sessions also clone to retain fallback checkpoints.
 
+Prefix-session transfer requires the executor to guarantee that appending tokens
+preserves earlier prefixes. Ordinary full-attention MLX caches support this;
+evicting windows and executors without that guarantee keep an idle snapshot and
+clone it for each branch. Failed owners are discarded. Reclaimed full-history
+owners may retain their continuation until replaced or evicted from the cache.
+
 Native worker startup runs inside the ASGI lifespan and awaits readiness before
 accepting requests. Startup, generation, and awaited shutdown share the server's
 event loop. Post-spawn startup failures also await worker cleanup. CLI validation

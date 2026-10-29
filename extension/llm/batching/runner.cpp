@@ -74,6 +74,8 @@ struct GenerationHandleState {
 
 struct SessionStatus {
   std::atomic<bool> open{true};
+  std::atomic<bool> poisoned{false};
+  bool retains_prefixes = false;
   // The session's executor-committed position. It lives here rather than on
   // the engine thread's SessionRecord so that Session::position() can read it
   // without touching sessions_, which only the engine thread may. The engine
@@ -395,7 +397,6 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     SessionRecord& operator=(SessionRecord&&) = default;
 
     std::shared_ptr<SessionStatus> status;
-    bool poisoned = false;
     // The last prediction delivered to the caller but not yet fed back to the
     // executor. It belongs to the logical context but is not included in the
     // executor-committed `position`. A continuation carries it immediately;
@@ -640,12 +641,21 @@ Session::make_clone_request() const {
   };
 }
 
+bool Session::can_clone() const {
+  return valid() && !state_->status->poisoned.load(std::memory_order_acquire);
+}
+
+bool Session::retains_prefixes() const {
+  return can_clone() && state_->status->retains_prefixes;
+}
+
 std::function<bool()> Session::make_valid_check() const {
   if (!state_) {
     return {};
   }
   return [status = state_->status] {
-    return status->open.load(std::memory_order_acquire);
+    return status->open.load(std::memory_order_acquire) &&
+        !status->poisoned.load(std::memory_order_acquire);
   };
 }
 
@@ -905,6 +915,7 @@ void RunnerImpl::process_command_(OpenCommand command) {
       std::lock_guard<std::mutex> lock(control_mutex_);
       if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
         auto status = std::make_shared<SessionStatus>();
+        status->retains_prefixes = executor_.retains_prefixes();
         SessionRecord record;
         record.status = status;
         sessions_.emplace(*sid, std::move(record));
@@ -940,8 +951,9 @@ void RunnerImpl::process_command_(CloneCommand command) {
   const auto source = sessions_.find(command.source);
   // A later CloseCommand may already have cleared the public open flag. FIFO
   // admission still gives this clone access until that command retires source.
-  if (!is_running_() || source == sessions_.end() || source->second.poisoned ||
-      command.upto < 0 || command.upto > source->second.position()) {
+  if (!is_running_() || source == sessions_.end() ||
+      source->second.status->poisoned || command.upto < 0 ||
+      command.upto > source->second.position()) {
     command.ack->set_value(std::nullopt);
     return;
   }
@@ -962,6 +974,7 @@ void RunnerImpl::process_command_(CloneCommand command) {
         std::lock_guard<std::mutex> lock(control_mutex_);
         if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
           auto status = std::make_shared<SessionStatus>();
+          status->retains_prefixes = executor_.retains_prefixes();
           status->position.store(command.upto, std::memory_order_relaxed);
           SessionRecord record;
           record.status = status;
@@ -1239,7 +1252,7 @@ bool RunnerImpl::execute_one_batch_() {
     for (const Input& in : batch.inputs) {
       auto session = sessions_.find(in.sid);
       if (session != sessions_.end()) {
-        session->second.poisoned = true;
+        session->second.status->poisoned = true;
         failed_sessions.insert(in.sid);
       }
     }
@@ -1280,7 +1293,7 @@ bool RunnerImpl::execute_one_batch_() {
     if (malformed_sessions.count(input.sid) != 0) {
       // Output presence is part of the executor contract. A mismatch leaves
       // its committed state unknowable, just like a malformed Output.
-      session->second.poisoned = true;
+      session->second.status->poisoned = true;
       complete_active_generation_(
           input.sid,
           TerminalOutcome::failed("executor returned an invalid output"));
@@ -1505,7 +1518,7 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
     }
     previous = breakpoint;
   }
-  if (record.poisoned) {
+  if (record.status->poisoned) {
     return TerminalOutcome::failed(
         "session cannot continue after an executor failure");
   }
@@ -1794,7 +1807,7 @@ std::optional<RunnerImpl::PreparedOutput> RunnerImpl::prepare_output_(
   if (!output || !valid_output(*output, session_id, room)) {
     // The forward ran, so what the executor holds no longer matches anything
     // the runner can name. Same standing as a batch that failed outright.
-    record.poisoned = true;
+    record.status->poisoned = true;
     return PreparedCompletion{
         TerminalOutcome::failed("executor returned an invalid output")};
   }

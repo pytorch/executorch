@@ -73,6 +73,7 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Move complete idle cache matches into new sessions instead of cloning.
   // Concurrent branches can still clone while that working session is alive.
   // Existing named-session replacements retain cloned checkpoints.
+  // Transfer only when the executor guarantees prefix retention across appends.
   bool reuse_prefix_sessions = true;
 };
 

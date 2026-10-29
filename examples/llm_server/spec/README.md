@@ -262,6 +262,12 @@ Dead entries are excluded from capacity and eviction decisions. Partial and
 equal-prompt matches still clone. Unavailable history falls back to prefill.
 Existing named-session replacements still clone to retain fallback checkpoints.
 
+Prefix-session transfer requires the executor to guarantee that appending tokens
+preserves earlier prefixes. Ordinary full-attention MLX caches support this;
+evicting windows and executors without that guarantee keep an idle snapshot and
+clone it for each branch. Failed owners are discarded. Reclaimed full-history
+owners may retain their continuation until replaced or evicted from the cache.
+
 With an existing MLX-enabled ExecuTorch installation and matching gflags package,
 configure the MLX LLM examples and build `llm_worker`. Launch with `--pte`,
 `--tokenizer`, `--max_sessions=4`, `--max_session_tokens=2048`, and

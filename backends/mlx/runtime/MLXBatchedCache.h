@@ -147,6 +147,16 @@ class MLXBatchedCache : public cache::Cache,
     return dst;
   }
 
+  bool retains_prefixes() const override {
+    return !geometry_.dflash_block_size &&
+        std::all_of(
+            geometry_.layers.begin(),
+            geometry_.layers.end(),
+            [](const auto& layer) {
+              return layer.policy.kind == cache::LayerPolicy::Kind::Flat;
+            });
+  }
+
   bool seq_rm(int32_t seq_id) override {
     if (rows_.erase(seq_id) == 0) {
       return false;

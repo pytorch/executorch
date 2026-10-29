@@ -36,6 +36,10 @@ constexpr std::chrono::seconds kTimeout{5};
 // changes outputs even if the runner submits the expected suffix and position.
 class HistoryExecutor final : public Executor {
  public:
+  bool retains_prefixes() const override {
+    return retained_tail.load() == std::numeric_limits<Position>::max();
+  }
+
   struct Seen {
     Position position;
     Tokens tokens;
@@ -1527,8 +1531,6 @@ TEST_F(
   EXPECT_EQ(cache.size(), 1u);
 }
 
-} // namespace
-
 TEST_F(
     PrefixCacheTest,
     ReclaimContinuedOwnerRetainsHistoricalPrefixWithoutPendingToken) {
@@ -1598,3 +1600,20 @@ TEST_F(PrefixCacheTest, FreshCaptureReplacesReclaimedHistory) {
   EXPECT_EQ(executor.clones().size(), before);
   expect_cold_match(*next, {1, 2, 3, 9});
 }
+
+TEST_F(PrefixCacheTest, NonretainingBackendForksInsteadOfTransferring) {
+  executor.retained_tail = 0;
+  PrefixCache cache(1);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  const auto before = executor.clones().size();
+  for (Token suffix : {4, 9, 10}) {
+    auto branch = cache.lookup({1, 2, 3, suffix}, true);
+    ASSERT_TRUE(branch);
+    expect_cold_match(*branch, {1, 2, 3, suffix});
+    cache.reclaim(std::move(branch->session));
+  }
+  EXPECT_EQ(executor.clones().size(), before + 3);
+  EXPECT_EQ(cache.size(), 1u);
+}
+
+} // namespace

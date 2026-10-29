@@ -174,6 +174,10 @@ class Executor : public batching::testing::FakeExecutor {
   mutable std::size_t full_accepts = 0;
   std::size_t burst = 1;
 
+  bool retains_prefixes() const override {
+    return retained_tail == std::numeric_limits<Position>::max() &&
+        !reject_after_decode;
+  }
   bool accepts(const batching::PreparedInput& input) const override {
     if (input.kind() == &TestPreparedInput::tag &&
         !static_cast<const TestPreparedInput&>(input).offset) {
@@ -1823,6 +1827,16 @@ TEST_F(PrefixReuseTest, ReusedPrefixRemainsAvailableToOverlappingBranch) {
   parent->blocked.hold();
   auto parent_handle = submit(parent, {1, 2, 3, 4}, std::nullopt, 2);
   ASSERT_TRUE(parent->blocked.wait());
+  const auto feeds = executor.feeds();
+  EXPECT_TRUE(std::any_of(feeds.begin(), feeds.end(), [&](const auto& feed) {
+    return feed.session == moved && feed.tokens == std::vector<Token>{4};
+  }));
+  const auto before_branch = executor.clones();
+  EXPECT_FALSE(std::any_of(
+      before_branch.begin(), before_branch.end(), [&](const auto& clone) {
+        return clone.source == moved &&
+            clone.prefix == std::vector<Token>{1, 2, 3};
+      }));
   auto branch = output();
   auto branch_handle = submit(branch, {1, 2, 3, 9}, std::nullopt);
   ASSERT_TRUE(wait_until([&] { return executor.clone_calls.load() >= 3; }));
@@ -2359,8 +2373,6 @@ TEST_F(
   EXPECT_EQ(executor.clone_calls.load(), 1);
 }
 
-} // namespace
-
 class PrefixOwnershipLifetimeTest : public PrefixReuseTest,
                                     public ::testing::WithParamInterface<bool> {
 };
@@ -2450,3 +2462,50 @@ INSTANTIATE_TEST_SUITE_P(
     Lifecycle,
     PrefixOwnerRetirementTest,
     ::testing::Values(0, 1, 2, 3));
+
+TEST_F(PrefixReuseTest, EvictingBackendKeepsSnapshotForSequentialBranches) {
+  executor.retained_tail = 0;
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_policy = [](const auto& prompt, auto, bool) {
+    return prompt.size() == 3 ? std::vector<PrefixCheckpoint>{{3, {}}}
+                              : std::vector<PrefixCheckpoint>{};
+  };
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  const auto snapshot = executor.clones().front().destination;
+  for (Token suffix : {4, 9, 10}) {
+    auto branch = output();
+    submit(branch, {1, 2, 3, suffix}, std::nullopt, 3).wait();
+    ASSERT_TRUE(branch->terminal);
+    ASSERT_FALSE(branch->terminal->error);
+    EXPECT_EQ(branch->terminal->stats.reused_prompt_tokens, 3u);
+    EXPECT_EQ(branch->terminal->stats.prefilled_prompt_tokens, 1u);
+    EXPECT_EQ(executor.clones().back().source, snapshot);
+  }
+}
+
+TEST_F(PrefixReuseTest, FailedTransferredOwnerReleasesCacheEntryAndRow) {
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_policy = [](const auto& prompt, auto, bool) {
+    return prompt.size() == 3 ? std::vector<PrefixCheckpoint>{{3, {}}}
+                              : std::vector<PrefixCheckpoint>{};
+  };
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  executor.fail_batches_from = 0;
+  auto failed = output();
+  submit(failed, {1, 2, 3, 4}, std::nullopt).wait();
+  ASSERT_TRUE(failed->terminal);
+  EXPECT_EQ(failed->terminal->finish_reason, FinishReason::Failed);
+  EXPECT_EQ(executor.clone_calls.load(), 1);
+  ASSERT_TRUE(wait_until([&] { return executor.open_count() == 0; }));
+  executor.fail_batches_from = -1;
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  auto recovered = output();
+  submit(recovered, {1, 2, 3, 9}, std::nullopt).wait();
+  ASSERT_TRUE(recovered->terminal);
+  EXPECT_FALSE(recovered->terminal->error);
+  EXPECT_EQ(recovered->terminal->stats.reused_prompt_tokens, 3u);
+}
+
+} // namespace
