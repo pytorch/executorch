@@ -7,19 +7,26 @@
  */
 #pragma once
 
+#include <executorch/runtime/core/named_data_map.h>
 #import "ETCoreAIBridge.h"
-#import "coreai_bookmarks.h"
+#import "coreai_manifest.h"
 
 namespace executorch::backends::coreai {
 
-// The key lock outlives all SDK callbacks and raw bookmark publication.
+struct RuntimeAssets final {
+  SelectedBundle bundle;
+  NSString* const platform;
+  NSString* const architecture;
+};
+
+runtime::Result<RuntimeAssets> select_runtime_assets(const Manifest& manifest);
+
+// The cache entry lock outlives all SDK callbacks and bookmark publication.
 // Cleanup after a restore hit or durable publication is best-effort.
 runtime::Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
-    const Manifest& selected,
+    const RuntimeAssets& assets,
     const runtime::NamedDataMap* named_data,
     NSString* root,
-    NSString* platform,
-    NSString* architecture,
     id<ETCoreAIModelLoading> loader);
 
 } // namespace executorch::backends::coreai

@@ -10,14 +10,14 @@
 
 #include "coreai_bookmark_fixture.h"
 #include "coreai_fake_loader.h"
+#include "coreai_fault_injection.h"
 #include "coreai_source_fixture.h"
-#include "coreai_storage.h"
 
 namespace executorch::backends::coreai::testing {
 
 runtime::Result<NSURL*> acquisition_staged_url(
     NSURL* root,
-    const Manifest& manifest);
+    const SelectedBundle& bundle);
 
 struct ParallelAcquisitionObservation {
   int creation[2] = {-1, -1};
@@ -36,15 +36,15 @@ ParallelAcquisitionObservation parallel_acquisitions(
     ScopedFakeBridgeState& bridge,
     BookmarkFakeLoader* loader,
     NSURL* root,
-    const Manifest& first,
-    const Manifest& second,
+    const SelectedBundle& first,
+    const SelectedBundle& second,
     TestData& data,
     bool same_key);
 
 ::testing::AssertionResult spawn_acquisition_crash(
     BookmarkChild& child,
     NSURL* root,
-    StorageOperation boundary,
+    FaultPoint boundary,
     NSDictionary* manifest);
 ::testing::AssertionResult spawn_parallel_acquisition(
     BookmarkChild& child,

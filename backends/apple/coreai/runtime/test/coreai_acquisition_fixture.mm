@@ -31,7 +31,7 @@ dispatch_time_t deadline() {
 }
 
 struct AcquisitionWorker {
-  Manifest manifest;
+  const SelectedBundle* bundle = nullptr;
   TestData* data = nullptr;
   NSString* root = nil;
   BookmarkFakeLoader* loader = nil;
@@ -44,13 +44,9 @@ struct AcquisitionWorker {
     auto* worker = static_cast<AcquisitionWorker*>(opaque);
     dispatch_semaphore_signal(worker->started);
     @autoreleasepool {
+      RuntimeAssets assets{*worker->bundle, @"macOS", @"arch_b"};
       auto acquired = acquire_bookmark_model(
-          worker->manifest,
-          worker->data,
-          worker->root,
-          @"macOS",
-          @"arch_b",
-          worker->loader);
+          assets, worker->data, worker->root, worker->loader);
       worker->error = acquired.ok() ? Error::Ok : acquired.error();
       worker->model = acquired.ok() && acquired.get() != nil;
     }
@@ -124,21 +120,23 @@ bool send_child_byte(int fd, char value) {
 }
 } // namespace
 
-Result<NSURL*> acquisition_staged_url(NSURL* root, const Manifest& manifest) {
-  auto key = test_bookmark_key(manifest);
+Result<NSURL*> acquisition_staged_url(
+    NSURL* root,
+    const SelectedBundle& bundle) {
+  auto key = test_cache_key(bundle);
   if (!key.ok())
     return key.error();
   return [[[root URLByAppendingPathComponent:@"staging"]
       URLByAppendingPathComponent:key.get()]
-      URLByAppendingPathComponent:manifest.path.lastPathComponent];
+      URLByAppendingPathComponent:bundle.bundle_name];
 }
 
 ParallelAcquisitionObservation parallel_acquisitions(
     ScopedFakeBridgeState& bridge,
     BookmarkFakeLoader* loader,
     NSURL* root,
-    const Manifest& first,
-    const Manifest& second,
+    const SelectedBundle& first,
+    const SelectedBundle& second,
     TestData& data,
     bool same_key) {
   ParallelAcquisitionObservation observation;
@@ -153,7 +151,7 @@ ParallelAcquisitionObservation parallel_acquisitions(
   };
   for (int i = 0; i < 2; ++i) {
     auto& worker = group.workers[i];
-    worker.manifest = i == 0 ? first : second;
+    worker.bundle = i == 0 ? &first : &second;
     worker.data = &data;
     worker.root = root.path;
     worker.loader = loader;
@@ -187,7 +185,7 @@ ParallelAcquisitionObservation parallel_acquisitions(
 ::testing::AssertionResult spawn_acquisition_crash(
     BookmarkChild& child,
     NSURL* root,
-    StorageOperation boundary,
+    FaultPoint boundary,
     NSDictionary* manifest) {
   // Serialize the shared fixture in the parent; its builders contain GTest
   // checks.
@@ -222,8 +220,8 @@ ParallelAcquisitionObservation parallel_acquisitions(
 namespace {
 [[noreturn]] void parallel_child(
     NSString* root,
-    const Manifest& first,
-    const Manifest& second,
+    const SelectedBundle& first,
+    const SelectedBundle& second,
     bool same_key,
     int fd) {
   ScopedFakeBridgeState bridge;
@@ -303,13 +301,12 @@ int acquisition_child_mode(int argc, char** argv) {
   id dictionary = payload[@"manifest"];
   if (![dictionary isKindOfClass:NSDictionary.class])
     return 3;
-  StorageOperation boundary = StorageOperation::AfterSDK;
+  FaultPoint boundary = FaultPoint::AfterSDK;
   if (crash) {
     if (![number isKindOfClass:NSNumber.class])
       return 3;
-    boundary = static_cast<StorageOperation>([number intValue]);
-    if (boundary != StorageOperation::BeforeSDK &&
-        boundary != StorageOperation::AfterSDK)
+    boundary = static_cast<FaultPoint>([number intValue]);
+    if (boundary != FaultPoint::BeforeSDK && boundary != FaultPoint::AfterSDK)
       return 4;
   }
   auto parsed = parse_manifest(encode(dictionary));
@@ -359,12 +356,12 @@ int acquisition_child_mode(int argc, char** argv) {
     TestData data;
     StorageFaultScope fault(boundary);
     fault.armed = false;
-    fault.observe = ^(StorageOperation event) {
+    fault.observe = ^(FaultPoint event) {
       if (event == boundary)
         _exit(73);
     };
-    auto result = acquire_bookmark_model(
-        selected.get(), &data, root, @"macOS", @"arch_b", loader);
+    RuntimeAssets assets{selected.get(), @"macOS", @"arch_b"};
+    auto result = acquire_bookmark_model(assets, &data, root, loader);
     _exit(result.ok() ? 9 : 10);
   }
 }

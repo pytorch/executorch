@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <cerrno>
 #include <initializer_list>
+#include <optional>
 #include <string>
 #include <vector>
 #include "coreai_fault_scope.h"
@@ -42,29 +43,40 @@ using namespace executorch::backends::coreai::testing;
 
 namespace {
 
+TEST(CoreAIRuntimeAssetsTest, ProbesHostAndSelectsImmutableBundle) {
+  auto parsed = parse_manifest(encode(aot_manifest_dict()));
+  ASSERT_TRUE(parsed.ok());
+  auto assets = select_runtime_assets(parsed.get());
+  ASSERT_TRUE(assets.ok());
+  EXPECT_TRUE([assets->platform isEqual:@"macOS"]);
+  EXPECT_TRUE([assets->architecture isEqual:@"arch_b"]);
+  EXPECT_TRUE([assets->bundle.bundle_name isEqual:@"model.arch_b.aimodelc"]);
+  EXPECT_TRUE([assets->bundle.model_hash isEqual:parsed->model_hash]);
+}
+
 class CoreAIAcquisitionTest : public ::testing::Test {
  protected:
   // Declared first so each case's loader, models and data die before it.
   ScopedFakeBridgeState bridge;
   TestDirectory root;
   TestData data;
-  Manifest manifest;
+  std::optional<RuntimeAssets> assets;
   NSString* key = nil;
 
   void SetUp() override {
     ASSERT_NE(root.url, nil);
-    auto selected = bookmark_manifest();
+    auto selected = bookmark_bundle();
     ASSERT_TRUE(selected.ok());
-    manifest = selected.get();
-    auto identity = test_bookmark_key(manifest);
+    assets.emplace(RuntimeAssets{selected.get(), @"macOS", @"arch_b"});
+    auto identity = test_cache_key(assets->bundle);
     ASSERT_TRUE(identity.ok());
     key = identity.get();
   }
 
   Error acquire(BookmarkFakeLoader* loader, const NamedDataMap* named_data) {
     @autoreleasepool {
-      auto model = acquire_bookmark_model(
-          manifest, named_data, root.url.path, @"macOS", @"arch_b", loader);
+      auto model =
+          acquire_bookmark_model(*assets, named_data, root.url.path, loader);
       if (!model.ok())
         return model.error();
       return model.get() != nil ? Error::Ok : Error::Internal;
@@ -88,7 +100,7 @@ class CoreAIAcquisitionTest : public ::testing::Test {
   }
 
   NSURL* lock_url() {
-    return test_bookmark_lock_url(root.url, key);
+    return test_cache_lock_url(root.url, key);
   }
 
   ino_t lock_inode() {
@@ -105,7 +117,7 @@ TEST_F(CoreAIAcquisitionTest, ColdSpecializesStagedSourceAndPersistsBookmark) {
   EXPECT_EQ(fake.loader->specializations.load(), 1);
   EXPECT_EQ(fake.loader->restores.load(), 0);
   EXPECT_EQ(data.attempts.load(), 1);
-  auto staged = acquisition_staged_url(root.url, manifest);
+  auto staged = acquisition_staged_url(root.url, assets->bundle);
   ASSERT_TRUE(staged.ok());
   EXPECT_TRUE([fake.loader.lastSpecializeURL isEqual:staged.get().path]);
   EXPECT_TRUE([saved() isEqual:fake.loader.lastAcquired.bookmark]);
@@ -203,8 +215,7 @@ TEST_F(CoreAIAcquisitionTest, NilLoaderRejectsWithoutFilesystemEffects) {
   ASSERT_TRUE(asset_tree_snapshot(root.url, before));
   Error error = Error::Ok;
   @autoreleasepool {
-    auto result = acquire_bookmark_model(
-        manifest, &data, root.url.path, @"macOS", @"arch_b", nil);
+    auto result = acquire_bookmark_model(*assets, &data, root.url.path, nil);
     ASSERT_FALSE(result.ok());
     error = result.error();
   }
@@ -227,8 +238,7 @@ TEST_F(CoreAIAcquisitionTest, RestoreHitWithoutModelFailsClosed) {
   loader.restoreStatus = ETCoreAIAcquisitionStatusHit;
   Error error = Error::Ok;
   @autoreleasepool {
-    auto result = acquire_bookmark_model(
-        manifest, &data, root.url.path, @"macOS", @"arch_b", loader);
+    auto result = acquire_bookmark_model(*assets, &data, root.url.path, loader);
     ASSERT_FALSE(result.ok());
     error = result.error();
   }
@@ -253,8 +263,7 @@ TEST_F(CoreAIAcquisitionTest, RestoreMissWithModelFailsClosed) {
   loader.restoreModel = model;
   Error error = Error::Ok;
   @autoreleasepool {
-    auto result = acquire_bookmark_model(
-        manifest, &data, root.url.path, @"macOS", @"arch_b", loader);
+    auto result = acquire_bookmark_model(*assets, &data, root.url.path, loader);
     ASSERT_FALSE(result.ok());
     error = result.error();
   }
@@ -277,8 +286,7 @@ TEST_F(CoreAIAcquisitionTest, RestoreErrorWithoutErrorFailsClosed) {
   loader.restoreStatus = ETCoreAIAcquisitionStatusError;
   Error error = Error::Ok;
   @autoreleasepool {
-    auto result = acquire_bookmark_model(
-        manifest, &data, root.url.path, @"macOS", @"arch_b", loader);
+    auto result = acquire_bookmark_model(*assets, &data, root.url.path, loader);
     ASSERT_FALSE(result.ok());
     error = result.error();
   }
@@ -292,8 +300,7 @@ TEST_F(CoreAIAcquisitionTest, SpecializeMissFailsClosed) {
   ASSERT_NE(loader, nil);
   Error error = Error::Ok;
   @autoreleasepool {
-    auto result = acquire_bookmark_model(
-        manifest, &data, root.url.path, @"macOS", @"arch_b", loader);
+    auto result = acquire_bookmark_model(*assets, &data, root.url.path, loader);
     ASSERT_FALSE(result.ok());
     error = result.error();
   }
@@ -308,12 +315,12 @@ TEST_F(
     CoreAIAcquisitionTest,
     ColdSuccessRemovesWholeStagingAfterBookmarkFlush) {
   BookmarkLoaderScope fake;
-  __block std::vector<StorageOperation> ops;
+  __block std::vector<FaultPoint> ops;
   Error error = Error::Internal;
   {
-    StorageFaultScope fault(StorageOperation::Remove);
+    StorageFaultScope fault(FaultPoint::Remove);
     fault.armed = false;
-    fault.observe = ^(StorageOperation operation) {
+    fault.observe = ^(FaultPoint operation) {
       ops.push_back(operation);
     };
     error = acquire(fake.loader, &data);
@@ -321,7 +328,7 @@ TEST_F(
   ASSERT_EQ(error, Error::Ok);
   EXPECT_TRUE([saved() isEqual:fake.loader.lastAcquired.bookmark]);
   EXPECT_FALSE(staging_key_exists());
-  auto staged = acquisition_staged_url(root.url, manifest);
+  auto staged = acquisition_staged_url(root.url, assets->bundle);
   ASSERT_TRUE(staged.ok());
   EXPECT_FALSE(
       [NSFileManager.defaultManager fileExistsAtPath:staged.get().path]);
@@ -329,9 +336,9 @@ TEST_F(
   size_t removes = 0;
   size_t first_remove = ops.size();
   for (size_t i = 0; i < ops.size(); ++i) {
-    if (ops[i] == StorageOperation::FullSync)
+    if (ops[i] == FaultPoint::FullSync)
       last_flush = i;
-    if (ops[i] == StorageOperation::Remove) {
+    if (ops[i] == FaultPoint::Remove) {
       ++removes;
       if (first_remove == ops.size())
         first_remove = i;
@@ -343,10 +350,10 @@ TEST_F(
 
 TEST_F(CoreAIAcquisitionTest, SpecializeErrorPerformsNoCleanup) {
   BookmarkLoaderScope fake;
-  __block std::vector<StorageOperation> ops;
-  StorageFaultScope fault(StorageOperation::Remove);
+  __block std::vector<FaultPoint> ops;
+  StorageFaultScope fault(FaultPoint::Remove);
   fault.armed = false;
-  fault.observe = ^(StorageOperation operation) {
+  fault.observe = ^(FaultPoint operation) {
     ops.push_back(operation);
   };
   fake.loader.specializeError = [NSError errorWithDomain:NSPOSIXErrorDomain
@@ -355,7 +362,7 @@ TEST_F(CoreAIAcquisitionTest, SpecializeErrorPerformsNoCleanup) {
   EXPECT_EQ(acquire(fake.loader, &data), Error::Internal);
   size_t removes = 0;
   for (auto operation : ops) {
-    if (operation == StorageOperation::Remove)
+    if (operation == FaultPoint::Remove)
       ++removes;
   }
   EXPECT_EQ(removes, 0u);
@@ -365,14 +372,14 @@ TEST_F(CoreAIAcquisitionTest, SpecializeErrorPerformsNoCleanup) {
 
 TEST_F(CoreAIAcquisitionTest, BookmarkFinalFlushFailurePerformsNoCleanup) {
   BookmarkLoaderScope fake;
-  __block std::vector<StorageOperation> ops;
+  __block std::vector<FaultPoint> ops;
   Error error = Error::Internal;
   {
     // Cold source contributes two FullSyncs and the bookmark two more, so
     // index four is the post-rename bookmark flush.
-    StorageFaultScope fault(StorageOperation::FullSync);
+    StorageFaultScope fault(FaultPoint::FullSync);
     fault.match_index = 4;
-    fault.observe = ^(StorageOperation operation) {
+    fault.observe = ^(FaultPoint operation) {
       ops.push_back(operation);
     };
     error = acquire(fake.loader, &data);
@@ -381,11 +388,11 @@ TEST_F(CoreAIAcquisitionTest, BookmarkFinalFlushFailurePerformsNoCleanup) {
   EXPECT_TRUE([saved() isEqual:fake.loader.lastAcquired.bookmark]);
   size_t removes = 0;
   for (auto operation : ops) {
-    if (operation == StorageOperation::Remove)
+    if (operation == FaultPoint::Remove)
       ++removes;
   }
   EXPECT_EQ(removes, 0u);
-  auto staged = acquisition_staged_url(root.url, manifest);
+  auto staged = acquisition_staged_url(root.url, assets->bundle);
   ASSERT_TRUE(staged.ok());
   EXPECT_TRUE(
       [NSFileManager.defaultManager fileExistsAtPath:staged.get().path]);
@@ -398,7 +405,7 @@ TEST_F(
   NSData* bookmark = nil;
   int specializations = 0;
   {
-    StorageFaultScope fault(StorageOperation::Remove);
+    StorageFaultScope fault(FaultPoint::Remove);
     fault.match_index = 1;
     EXPECT_EQ(acquire(fake.loader, &data), Error::Ok);
     EXPECT_EQ(fault.hits, 1);
@@ -429,7 +436,7 @@ TEST_F(
   NSData* bookmark = nil;
   int specializations = 0;
   {
-    StorageFaultScope fault(StorageOperation::Remove);
+    StorageFaultScope fault(FaultPoint::Remove);
     fault.match_index = 2;
     EXPECT_EQ(acquire(fake.loader, &data), Error::Ok);
     EXPECT_EQ(fault.hits, 1);
@@ -459,11 +466,11 @@ TEST_F(
   NSData* bookmark = nil;
   int specializations = 0;
   {
-    StorageFaultScope scope(StorageOperation::SyncDirectory);
+    StorageFaultScope scope(FaultPoint::SyncDirectory);
     scope.armed = false;
     StorageFaultScope* arming = &scope;
-    scope.observe = ^(StorageOperation operation) {
-      if (operation == StorageOperation::Remove)
+    scope.observe = ^(FaultPoint operation) {
+      if (operation == FaultPoint::Remove)
         arming->armed = true;
     };
     EXPECT_EQ(acquire(fake.loader, &data), Error::Ok);
@@ -489,11 +496,11 @@ TEST_F(
 TEST_F(CoreAIAcquisitionTest, WarmHitCleanupFailureStillReturnsModel) {
   BookmarkLoaderScope fake;
   {
-    StorageFaultScope fault(StorageOperation::Remove);
+    StorageFaultScope fault(FaultPoint::Remove);
     ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
   }
   NSData* original = saved();
-  StorageFaultScope fault(StorageOperation::Remove);
+  StorageFaultScope fault(FaultPoint::Remove);
   EXPECT_EQ(acquire(fake.loader, nullptr), Error::Ok);
   EXPECT_EQ(fault.hits, 1);
   EXPECT_EQ(fake.loader->restores.load(), 1);
@@ -506,7 +513,7 @@ TEST_F(CoreAIAcquisitionTest, WarmHitCleanupFailureStillReturnsModel) {
 TEST_F(CoreAIAcquisitionTest, PartialCleanupThenMissRebuildsSource) {
   BookmarkLoaderScope fake;
   {
-    StorageFaultScope fault(StorageOperation::Remove);
+    StorageFaultScope fault(FaultPoint::Remove);
     fault.match_index = 2;
     ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
     EXPECT_EQ(fault.hits, 1);
@@ -528,14 +535,14 @@ TEST_F(
     DamagedSourceCleanupFailureDoesNotReadOrSpecialize) {
   BookmarkLoaderScope fake;
   {
-    StorageFaultScope fault(StorageOperation::Remove);
+    StorageFaultScope fault(FaultPoint::Remove);
     fault.match_index = 2;
     ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
   }
   NSData* original = saved();
   fake.loader.restoreMiss = YES;
   {
-    StorageFaultScope fault(StorageOperation::Remove);
+    StorageFaultScope fault(FaultPoint::Remove);
     EXPECT_EQ(acquire(fake.loader, &data), Error::AccessFailed);
     EXPECT_EQ(fault.hits, 1);
   }
@@ -558,7 +565,7 @@ TEST_F(CoreAIAcquisitionTest, MissingNamedDataIsNotRetried) {
 
 TEST_F(CoreAIAcquisitionTest, BeforeSdkFaultNeverInvokesLoader) {
   BookmarkLoaderScope fake;
-  StorageFaultScope fault(StorageOperation::BeforeSDK);
+  StorageFaultScope fault(FaultPoint::BeforeSDK);
   EXPECT_EQ(acquire(fake.loader, &data), Error::AccessFailed);
   EXPECT_EQ(fake.loader->specializations.load(), 0);
   EXPECT_EQ(fake.loader->restores.load(), 0);
@@ -593,7 +600,7 @@ TEST_P(CoreAIAcquisitionSaveFailureTest, PreservesBookmarkAndRetries) {
     // Cold and rematerialized sources publish before the bookmark, so the
     // bookmark rename is the second rename once the first success has
     // cleaned the source.
-    StorageFaultScope fault(StorageOperation::Rename);
+    StorageFaultScope fault(FaultPoint::Rename);
     fault.match_index = 2;
     EXPECT_EQ(acquire(fake.loader, &data), Error::AccessFailed);
     EXPECT_EQ(fault.hits, 1);
@@ -649,7 +656,7 @@ TEST_F(CoreAIAcquisitionProcessTest, IndependentKeysSpecializeInParallel) {
 TEST_F(CoreAIAcquisitionProcessTest, CrashBeforeSdkRetainsStagingAndRetries) {
   BookmarkChild child;
   ASSERT_TRUE(spawn_acquisition_crash(
-      child, root.url, StorageOperation::BeforeSDK, manifest_dict()));
+      child, root.url, FaultPoint::BeforeSDK, manifest_dict()));
   ASSERT_TRUE(child.receive('C'));
   ASSERT_TRUE(child.expect_exit(73));
   EXPECT_EQ(saved(), nil);
@@ -664,11 +671,11 @@ TEST_F(CoreAIAcquisitionProcessTest, CrashBeforeSdkRetainsStagingAndRetries) {
 TEST_F(CoreAIAcquisitionProcessTest, CrashAfterSdkRetainsStagingAndRetries) {
   BookmarkChild child;
   ASSERT_TRUE(spawn_acquisition_crash(
-      child, root.url, StorageOperation::AfterSDK, manifest_dict()));
+      child, root.url, FaultPoint::AfterSDK, manifest_dict()));
   ASSERT_TRUE(child.receive('C'));
   ASSERT_TRUE(child.expect_exit(73));
   EXPECT_EQ(saved(), nil);
-  auto staged = acquisition_staged_url(root.url, manifest);
+  auto staged = acquisition_staged_url(root.url, assets->bundle);
   ASSERT_TRUE(staged.ok());
   EXPECT_TRUE(
       [NSFileManager.defaultManager fileExistsAtPath:staged.get().path]);
@@ -787,7 +794,7 @@ TEST_F(CoreAILifecycleLogTest, SpecializationErrorDoesNotLogSuccessOrSave) {
 
 TEST_F(CoreAILifecycleLogTest, BeforeSdkFaultDoesNotLogSpecializationStart) {
   BookmarkLoaderScope fake;
-  StorageFaultScope fault(StorageOperation::BeforeSDK);
+  StorageFaultScope fault(FaultPoint::BeforeSDK);
   const auto logs =
       capture([&] { return acquire(fake.loader, &data); }, Error::AccessFailed);
   EXPECT_EQ(fake.loader->specializations.load(), 0);

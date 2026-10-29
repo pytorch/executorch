@@ -214,6 +214,58 @@ TEST_F(CoreAIBookmarkIOTest, PreparesSharedStagingParentOnDemand) {
       fileExistsAtPath:[expected stringByAppendingPathComponent:key]]);
 }
 
+TEST_F(CoreAIBookmarkIOTest, CleanupDoesNotCreateMissingStaging) {
+  StorageFaultScope fault(FaultPoint::BeforeCreateDirectory);
+  EXPECT_EQ(locked->remove_staging(), Error::Ok);
+  EXPECT_EQ(fault.matches, 0);
+  EXPECT_FALSE([NSFileManager.defaultManager
+      fileExistsAtPath:[root.url URLByAppendingPathComponent:@"staging"].path]);
+}
+
+TEST_F(CoreAIBookmarkIOTest, CleanupRejectsUnexpectedTypesBeforeDeletingFiles) {
+  auto staging = locked->prepare_staging_root();
+  ASSERT_TRUE(staging.ok());
+  NSString* entry = [staging.get() stringByAppendingPathComponent:key];
+  ASSERT_EQ(mkdir(entry.fileSystemRepresentation, 0700), 0);
+  NSString* file = [entry stringByAppendingPathComponent:@"data"];
+  NSData* bytes = [@"preserved" dataUsingEncoding:NSUTF8StringEncoding];
+  ASSERT_TRUE([bytes writeToFile:file atomically:NO]);
+  NSString* pipe = [entry stringByAppendingPathComponent:@"pipe"];
+  ASSERT_EQ(mkfifo(pipe.fileSystemRepresentation, 0600), 0);
+
+  EXPECT_EQ(locked->remove_staging(), Error::InvalidExternalData);
+  EXPECT_TRUE([[NSData dataWithContentsOfFile:file] isEqual:bytes]);
+  struct stat info;
+  ASSERT_EQ(lstat(pipe.fileSystemRepresentation, &info), 0);
+  EXPECT_TRUE(S_ISFIFO(info.st_mode));
+}
+
+TEST_F(CoreAIBookmarkIOTest, CleanupUsesLockedRootAfterPathReplacement) {
+  auto staging = locked->prepare_staging_root();
+  ASSERT_TRUE(staging.ok());
+  NSString* entry = [staging.get() stringByAppendingPathComponent:key];
+  ASSERT_EQ(mkdir(entry.fileSystemRepresentation, 0700), 0);
+  TestDirectory moved;
+  ASSERT_NE(moved.url, nil);
+  ASSERT_EQ(
+      rename(
+          root.url.fileSystemRepresentation,
+          moved.url.fileSystemRepresentation),
+      0);
+  NSURL* replacement = [[root.url URLByAppendingPathComponent:@"staging"]
+      URLByAppendingPathComponent:key];
+  ASSERT_TRUE([NSFileManager.defaultManager createDirectoryAtURL:replacement
+                                     withIntermediateDirectories:YES
+                                                      attributes:nil
+                                                           error:nil]);
+
+  EXPECT_EQ(locked->remove_staging(), Error::Ok);
+  NSURL* original = [[moved.url URLByAppendingPathComponent:@"staging"]
+      URLByAppendingPathComponent:key];
+  EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:original.path]);
+  EXPECT_TRUE([NSFileManager.defaultManager fileExistsAtPath:replacement.path]);
+}
+
 TEST_F(CoreAIBookmarkIOTest, CreatesDirectoriesWithDefaultPermissions) {
   NSURL* reference = [root.url URLByAppendingPathComponent:@"reference"];
   ASSERT_EQ(mkdir(reference.fileSystemRepresentation, 0777), 0);

@@ -268,6 +268,20 @@ Result<NSString*> CacheEntryLock::prepare_staging_root() const {
   return [root_path_ stringByAppendingPathComponent:kStagingDirectory];
 }
 
+Error CacheEntryLock::remove_staging() const {
+  auto opened = open_child(
+      root_.get(), kStagingDirectory, StorageCreationMode::OpenExisting);
+  if (!opened.ok()) {
+    return opened.error();
+  }
+  FileDescriptor staging(opened.get());
+  if (staging.get() < 0) {
+    return Error::Ok;
+  }
+  return remove_storage_directory(
+      staging.get(), key_, StorageRemovalPolicy::Strict);
+}
+
 Result<std::unique_ptr<CacheEntryLock>> lock_cache_entry(
     NSString* root,
     NSString* key) {

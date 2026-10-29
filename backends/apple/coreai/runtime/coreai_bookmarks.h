@@ -36,13 +36,14 @@ class CacheEntryLock final {
   NSString* key() const {
     return key_;
   }
-  // Missing is nil.
   // Missing is nil. Empty, oversized, inaccessible, or nonregular files fail
   // closed.
   runtime::Result<NSData*> read_bookmark() const;
   runtime::Error write_bookmark(NSData* data) const;
   // Returns the staging parent. Source preparation appends key and bundle.
   runtime::Result<NSString*> prepare_staging_root() const;
+  // Missing staging is a no-op; unexpected entry types fail before deletion.
+  runtime::Error remove_staging() const;
 
  private:
   friend runtime::Result<std::unique_ptr<CacheEntryLock>>

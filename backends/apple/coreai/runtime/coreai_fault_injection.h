@@ -21,6 +21,8 @@ enum class FaultPoint {
   OpenStagingDirectory,
   BeforeCreateDirectory,
   BeforeCacheEntryLock,
+  BeforeSDK,
+  AfterSDK,
 };
 
 #if defined(COREAI_ASSETS_TESTING) && COREAI_ASSETS_TESTING

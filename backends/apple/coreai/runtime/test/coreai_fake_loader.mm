@@ -122,6 +122,9 @@ dispatch_time_t cleanup_deadline() {
     --_context->state.loaders;
   }
 }
+- (NSString*)specializationIdentifier {
+  return @"default";
+}
 - (void)restoreModelFromBookmark:(NSData*)bookmark
                       completion:(ETCoreAIAcquisitionCompletion)completion {
   ++restores;
@@ -186,6 +189,18 @@ dispatch_time_t cleanup_deadline() {
   [self.models removeAllObjects];
 }
 @end
+
+BOOL ETCoreAIIsAvailable(void) {
+  return YES;
+}
+
+NSString* ETCoreAIDeviceArchitectureName(void) {
+  return @"arch_b";
+}
+
+id<ETCoreAIModelLoading> ETCoreAICreateModelLoader(void) {
+  return current_context == nil ? nil : current_context->state.bookmark_loader;
+}
 
 namespace executorch::backends::coreai::testing {
 

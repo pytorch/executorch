@@ -86,8 +86,8 @@ private func checkInference(_ model: any ETCoreAIPreparedModel, fixture: Fixture
     ETCoreAIInputTensor(
       bytes: $0.bytes, byteCount: UInt($0.length), shape: [2], scalarType: .float32)
   }
-  let outputs: [ETCoreAITensor] = try withExtendedLifetime(storage) {
-    try waitForResult { completed in
+  try withExtendedLifetime(storage) {
+    let outputs: [ETCoreAITensor] = try waitForResult { completed in
       session.executeInputs(inputs) { outputs, error in
         if let error {
           completed(.failure(error))
@@ -98,20 +98,19 @@ private func checkInference(_ model: any ETCoreAIPreparedModel, fixture: Fixture
         }
       }
     }
-  }
-  guard outputs.count == fixture.outputs.count else {
-    throw Failure.incorrectOutput("count")
-  }
-  for (index, output) in outputs.enumerated() {
-    let name = fixture.outputs[index]
-    guard output.shape == [2], output.scalarType == .float32,
-      output.data.count == 8, fixture.expected[index].count == 2
-    else { throw Failure.incorrectOutput(name) }
-    let values = output.data.withUnsafeBytes {
-      [$0.loadUnaligned(as: Float.self), $0.loadUnaligned(fromByteOffset: 4, as: Float.self)]
+    guard outputs.count == fixture.outputs.count else {
+      throw Failure.incorrectOutput("count")
     }
-    guard zip(values, fixture.expected[index]).allSatisfy({ abs($0 - $1) < 0.001 }) else {
-      throw Failure.incorrectOutput("\(name): \(values), expected \(fixture.expected[index])")
+    for (index, output) in outputs.enumerated() {
+      let name = fixture.outputs[index]
+      guard output.shape == [2], output.scalarType == .float32,
+        output.byteCount == 8, fixture.expected[index].count == 2
+      else { throw Failure.incorrectOutput(name) }
+      var values = [Float](repeating: 0, count: 2)
+      values.withUnsafeMutableBytes { output.copyBytes(to: $0.baseAddress) }
+      guard zip(values, fixture.expected[index]).allSatisfy({ abs($0 - $1) < 0.001 }) else {
+        throw Failure.incorrectOutput("\(name): \(values), expected \(fixture.expected[index])")
+      }
     }
   }
 }
