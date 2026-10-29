@@ -110,3 +110,43 @@ def test_int64_tosa_INT(test_data: Tuple):
         .to_executorch()
         .run_method_and_compare_outputs(inputs)
     )
+
+
+class Int64Op(torch.nn.Module):
+    def __init__(self, op):
+        super().__init__()
+        self.op = op
+
+    def forward(self, *args):
+        return self.op(*args)
+
+
+_WIDE = torch.tensor([2**40, -(2**38), 2**31, -1], dtype=torch.int64)
+_WIDE_2 = torch.tensor([2**39, 2**37, 1, -(2**40)], dtype=torch.int64)
+_NARROW = torch.tensor([1, 2, 3, 4], dtype=torch.int32)
+_COND = torch.tensor([True, False, True, False])
+
+# A listed operator on matched int64 operands delegates; an unlisted operator or
+# a pair mixing widths falls back instead.
+int64_extension_partition_suite = {
+    "add": (lambda x, y: x + y, (_WIDE, _WIDE_2), 1),
+    "where_int64": (torch.where, (_COND, _WIDE, _WIDE_2), 1),
+    "where_x_narrow": (torch.where, (_COND, _NARROW, _WIDE), 0),
+    "where_y_narrow": (torch.where, (_COND, _WIDE, _NARROW), 0),
+    "cumsum": (lambda x: torch.cumsum(x, 0), (_WIDE,), 0),
+}
+
+
+@common.parametrize("test_data", int64_extension_partition_suite)
+def test_int64_extension_partition_tosa_INT(test_data: Tuple):
+    op, inputs, delegates = test_data
+    (
+        ArmTester(
+            Int64Op(op),
+            inputs,
+            common.get_tosa_compile_spec("TOSA-1.1+INT+int64"),
+        )
+        .export()
+        .to_edge_transform_and_lower()
+        .check_count({"torch.ops.higher_order.executorch_call_delegate": delegates})
+    )
