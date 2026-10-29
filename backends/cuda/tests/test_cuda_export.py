@@ -266,6 +266,7 @@ class TestCudaExport(unittest.TestCase):
         module: torch.nn.Module,
         inputs: Tuple[torch.Tensor, ...],
         compile_specs: list[CompileSpec] | None = None,
+        strict: bool = True,
     ) -> None:
         """Helper method to export a module to CUDA backend using to_edge_transform_and_lower.
 
@@ -274,9 +275,10 @@ class TestCudaExport(unittest.TestCase):
             inputs: The example inputs for the module
             compile_specs: Optional list of compile specs. If not provided, defaults to
                           only the method name compile spec for "forward"
+            strict: Whether to export in strict mode
         """
         # Export the model
-        exported_program = export(module, inputs, strict=True)
+        exported_program = export(module, inputs, strict=strict)
 
         # Create partitioner with compile specs
         if compile_specs is None:
@@ -327,6 +329,57 @@ class TestCudaExport(unittest.TestCase):
         # Test export
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Simple add operation export failed")
+
+    def test_detach(self):
+        """Edge turns detach into detach_copy, which has no CUDA kernel of its own."""
+
+        class DetachModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x * 2).detach() + 1
+
+        class DetachedOutputModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                y = x * 2
+                return y, y.detach()
+
+        class DetachInCondModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.cond(x.sum() > 0, lambda t: t.sin().detach(), torch.cos, (x,))
+                # Without this detach, Edge decomposes the branch's detach.
+                return y.detach() + 1
+
+        x = torch.randn(4, 8)
+        for module in (DetachModule(), DetachedOutputModule(), DetachInCondModule()):
+            with self.subTest(module=type(module).__name__):
+                # The default config also verifies the program the backend rewrites.
+                edge_program_manager = to_edge_transform_and_lower(
+                    export(module, (x,), strict=True),
+                    partitioner=[
+                        CudaPartitioner(
+                            [CudaBackend.generate_method_name_compile_spec("forward")]
+                        )
+                    ],
+                )
+                self.assertTrue(
+                    any(
+                        "executorch_call_delegate" in str(node.target)
+                        for node in edge_program_manager.exported_program().graph.nodes
+                    )
+                )
+                edge_program_manager.to_executorch()
+
+    def test_check_tensor_all(self):
+        """Test CUDA export of a tensor-wide runtime check."""
+
+        class CheckModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                torch._check_tensor_all(x > -1e9)
+                return x * 2
+
+        # A strict export does not keep the check.
+        self._export_to_cuda_with_lower(
+            CheckModule().eval(), (torch.randn(4, 8),), strict=False
+        )
 
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""
@@ -520,6 +573,44 @@ class TestCudaExport(unittest.TestCase):
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Conv1d operation export failed")
 
+    def test_conv_transpose(self):
+        """Test CUDA export for transposed convolution."""
+        module = torch.nn.ConvTranspose1d(4, 6, kernel_size=4, stride=2, padding=1)
+        module.eval()
+        inputs = (torch.randn(1, 4, 10),)
+
+        edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
+        self.assertIsNotNone(
+            edge_program_manager, "ConvTranspose1d operation export failed"
+        )
+
+        # Unbatched input, a crop larger than the input, and uneven 2D options.
+        cases = [
+            (
+                torch.ops.aten.conv_transpose1d.default,
+                torch.nn.functional.conv_transpose1d,
+                (torch.randn(4, 1), torch.randn(4, 3, 1), torch.randn(6)),
+                ([10], [4], [9], 2, [1]),
+            ),
+            (
+                torch.ops.aten.conv_transpose2d.input,
+                torch.nn.functional.conv_transpose2d,
+                (torch.randn(2, 4, 5, 6), torch.randn(4, 3, 3, 2), torch.randn(6)),
+                ([3, 2], [2, 0], [1, 1], 2, [2, 1]),
+            ),
+        ]
+        table = CudaBackend.get_decomposition_table()
+        for op, reference, tensors, options in cases:
+            # ROCm leaves transposed conv2d to Inductor's own template.
+            if (
+                torch.version.hip is not None
+                and op == torch.ops.aten.conv_transpose2d.input
+            ):
+                continue
+            torch.testing.assert_close(
+                table[op](*tensors, *options), reference(*tensors, *options)
+            )
+
     def test_sdpa_single_kernel(self):
         """
         Test CUDA export for model containing single SDPA kernel.
@@ -561,6 +652,24 @@ class TestCudaExport(unittest.TestCase):
             edge_program_manager,
             "SDPA kernel export with triton_kernel_mode=OFF failed",
         )
+
+    def test_missing_scatter_and_index_put_kernels_fail_at_export(self):
+        """Inductor leaves these int64 ops to ATen kernels the CUDA shim lacks."""
+
+        class Int64Accumulate(torch.nn.Module):
+            def forward(self, counts: torch.Tensor, idx: torch.Tensor):
+                ones = torch.ones_like(idx)
+                return (
+                    counts.scatter_add(0, idx, ones),
+                    counts.index_put((idx,), ones, accumulate=True),
+                )
+
+        inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
+        with self.assertRaises(RuntimeError) as context:
+            self._export_to_cuda_with_lower(Int64Accumulate(), inputs)
+        message = str(context.exception)
+        self.assertIn("aoti_torch_cuda_scatter_reduce_two_out", message)
+        self.assertIn("aoti_torch_index_put_out", message)
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """
