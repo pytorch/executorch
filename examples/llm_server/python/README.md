@@ -84,7 +84,8 @@ Replacements of existing named sessions also clone to retain fallback checkpoint
 Prefix-session transfer requires the executor to guarantee that appending tokens
 preserves earlier prefixes. Ordinary full-attention MLX caches support this;
 evicting windows and executors without that guarantee keep an idle snapshot and
-clone it for each branch. Failed owners are discarded. Reclaimed full-history
+clone it for each branch. If a transferred owner fails, its cached prefix is
+discarded and a later request may need prefill. Reclaimed full-history
 owners may retain their continuation until replaced or evicted from the cache.
 
 Native worker startup runs inside the ASGI lifespan and awaits readiness before

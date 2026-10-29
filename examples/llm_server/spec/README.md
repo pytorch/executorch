@@ -265,7 +265,8 @@ Existing named-session replacements still clone to retain fallback checkpoints.
 Prefix-session transfer requires the executor to guarantee that appending tokens
 preserves earlier prefixes. Ordinary full-attention MLX caches support this;
 evicting windows and executors without that guarantee keep an idle snapshot and
-clone it for each branch. Failed owners are discarded. Reclaimed full-history
+clone it for each branch. If a transferred owner fails, its cached prefix is
+discarded and a later request may need prefill. Reclaimed full-history
 owners may retain their continuation until replaced or evicted from the cache.
 
 With an existing MLX-enabled ExecuTorch installation and matching gflags package,
