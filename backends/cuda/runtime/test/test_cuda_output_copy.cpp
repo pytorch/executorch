@@ -12,7 +12,7 @@
 
 namespace slim = ::executorch::backends::aoti::slim;
 using namespace ::executorch::runtime;
-using ::executorch::backends::cuda::copy_slimtensor_to_device_etensor_async;
+using namespace ::executorch::backends::cuda;
 
 namespace {
 
@@ -113,6 +113,76 @@ TEST_F(CudaOutputCopyTest, RejectsAViewOutsideItsStorage) {
   EXPECT_EQ(
       copy(view(static_cast<float*>(source_) + 4, /*storage_offset=*/-4)),
       Error::InvalidArgument);
+}
+
+// Whether an output with these sizes and strides can be raw-copied into an
+// ETensor that has this shape, dim order and strides from an earlier call.
+bool raw_copyable(
+    std::initializer_list<int64_t> output_sizes,
+    std::initializer_list<int64_t> output_strides,
+    std::vector<etensor::TensorImpl::SizesType> sizes,
+    std::vector<etensor::TensorImpl::DimOrderType> dim_order,
+    std::vector<etensor::TensorImpl::StridesType> strides) {
+  std::vector<float> data(192);
+  slim::SlimTensor output = slim::from_blob(
+      data.data(), output_sizes, output_strides, slim::c10::ScalarType::Float);
+  etensor::TensorImpl impl(
+      etensor::ScalarType::Float,
+      static_cast<ssize_t>(sizes.size()),
+      sizes.data(),
+      data.data(),
+      dim_order.data(),
+      strides.data());
+  etensor::Tensor etensor(&impl);
+  return output_is_raw_copyable(&output, &etensor);
+}
+
+TEST(CudaOutputRawCopyTest, AcceptsAnOutputLaidOutLikeItsETensor) {
+  EXPECT_TRUE(raw_copyable(
+      {2, 3, 4, 4},
+      {48, 1, 12, 3},
+      {2, 3, 4, 4},
+      {0, 2, 3, 1},
+      {48, 1, 12, 3}));
+  // The ETensor's strides are stale from a smaller shape.
+  EXPECT_TRUE(raw_copyable(
+      {2, 3, 4, 4}, {48, 1, 12, 3}, {1, 3, 2, 2}, {0, 2, 3, 1}, {12, 1, 6, 3}));
+  EXPECT_TRUE(raw_copyable(
+      {2, 3, 4, 4}, {48, 16, 4, 1}, {1, 3, 2, 2}, {0, 1, 2, 3}, {12, 4, 2, 1}));
+  // A size-1 dim may have any stride, as with a batch of one.
+  EXPECT_TRUE(raw_copyable(
+      {1, 3, 4, 4}, {1, 1, 12, 3}, {1, 3, 4, 4}, {0, 2, 3, 1}, {48, 1, 12, 3}));
+  // An empty output has nothing to copy, whatever its strides.
+  EXPECT_TRUE(raw_copyable(
+      {2, 0, 4, 4},
+      {16, 16, 4, 1},
+      {2, 3, 4, 4},
+      {0, 1, 2, 3},
+      {48, 16, 4, 1}));
+}
+
+TEST(CudaOutputRawCopyTest, RejectsAnOutputLaidOutUnlikeItsETensor) {
+  EXPECT_FALSE(raw_copyable(
+      {2, 3, 4, 4},
+      {48, 16, 4, 1},
+      {2, 3, 4, 4},
+      {0, 2, 3, 1},
+      {48, 1, 12, 3}));
+  EXPECT_FALSE(raw_copyable(
+      {2, 3, 4, 4},
+      {48, 1, 12, 3},
+      {2, 3, 4, 4},
+      {0, 1, 2, 3},
+      {48, 16, 4, 1}));
+  // Every row is followed by a gap, as in a slice of a wider tensor.
+  EXPECT_FALSE(raw_copyable(
+      {2, 3, 4, 4},
+      {96, 32, 8, 1},
+      {2, 3, 4, 4},
+      {0, 1, 2, 3},
+      {48, 16, 4, 1}));
+  EXPECT_FALSE(raw_copyable(
+      {3, 4, 4}, {16, 4, 1}, {1, 3, 4, 4}, {0, 1, 2, 3}, {48, 16, 4, 1}));
 }
 
 } // namespace
