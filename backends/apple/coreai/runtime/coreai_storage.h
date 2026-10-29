@@ -52,6 +52,14 @@ enum class StorageRemovalPolicy {
   Maintenance,
 };
 
+// Checks one child tree without following links or changing storage. Missing
+// entries are already removed. Maintenance accepts malformed backend-owned
+// non-directory entries.
+runtime::Error preflight_storage_directory(
+    int parent_fd,
+    NSString* name,
+    StorageRemovalPolicy policy = StorageRemovalPolicy::Strict);
+
 // Removes one child directory without following links. The complete tree is
 // checked before removal and every entry is checked again during removal.
 // Missing entries are already removed. Maintenance also removes malformed

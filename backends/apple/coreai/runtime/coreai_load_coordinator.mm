@@ -82,7 +82,7 @@ void cleanup_source(const CacheEntryLock& cache_entry) {
 
 Error evict_one(id<ETCoreAIModelLoading> loader, NSData* bookmark) {
   ET_CHECK_OR_RETURN_ERROR(
-      storage_fault(StorageOperation::BeforeEvict) == 0,
+      fault_point(FaultPoint::BeforeEvict) == 0,
       AccessFailed,
       "Core AI eviction interrupted");
   dispatch_semaphore_t ready = dispatch_semaphore_create(0);
@@ -93,17 +93,21 @@ Error evict_one(id<ETCoreAIModelLoading> loader, NSData* bookmark) {
                         dispatch_semaphore_signal(ready);
                       }];
   dispatch_semaphore_wait(ready, DISPATCH_TIME_FOREVER);
-  if (failure != nil) {
-    // Probe after failed deletion so our own probe cannot make the entry busy.
+  NSError* eviction_failure = failure;
+  // A loader may retain the completion block after invoking it.
+  failure = nil;
+  if (eviction_failure != nil) {
+    // A confirmed restore miss proves that a failed eviction is already done.
     @autoreleasepool {
       auto probe = restore(loader, bookmark);
-      if (probe.ok() && probe.get() == nil)
+      if (probe.ok() && probe.get() == nil) {
         return Error::Ok;
+      }
     }
-    return sdk_error(failure);
+    return acquisition_error(eviction_failure);
   }
   ET_CHECK_OR_RETURN_ERROR(
-      storage_fault(StorageOperation::AfterEvict) == 0,
+      fault_point(FaultPoint::AfterEvict) == 0,
       AccessFailed,
       "Core AI eviction interrupted");
   return Error::Ok;
@@ -216,28 +220,27 @@ Error clear_bookmark_assets(
     NSString* root,
     NSString* key,
     id<ETCoreAIModelLoading> loader) {
-  auto locked = lock_bookmark(root, key, false);
-  if (!locked.ok())
+  auto locked = lock_existing_cache_entry(root, key);
+  if (!locked.ok()) {
     return locked.error();
-  if (locked.get() == nullptr)
+  }
+  if (locked.get() == nullptr) {
     return Error::Ok;
+  }
   ET_LOG(Info, "Core AI cache clear started: key=%s", key.UTF8String);
-  auto bookmark = read_bookmark(*locked.get(), /*maintenance=*/true);
-  if (!bookmark.ok() && bookmark.error() != Error::InvalidExternalData) {
+  auto bookmark = locked.get()->inspect_bookmark_for_maintenance();
+  if (!bookmark.ok()) {
     return bookmark.error();
   }
-  NSData* bytes = bookmark.ok() ? bookmark.get() : nil;
-  if (bytes == nil) {
+  ET_CHECK_OK_OR_RETURN_ERROR(locked.get()->preflight_maintenance());
+  if (bookmark->state != CacheBookmarkState::Present) {
     ET_LOG(
         Info,
         "Core AI cache key %s has a %s bookmark; SDK eviction could not be "
         "confirmed; attempting local cleanup",
         key.UTF8String,
-        bookmark.ok() ? "missing" : "corrupt");
-  }
-  ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark_staging(
-      *locked.get(), false, StorageRemovalMode::Maintenance));
-  if (bytes != nil) {
+        bookmark->state == CacheBookmarkState::Missing ? "missing" : "corrupt");
+  } else {
     if (loader == nil) {
       ET_CHECK_OR_RETURN_ERROR(
           ETCoreAIIsAvailable(),
@@ -248,18 +251,14 @@ Error clear_bookmark_assets(
           loader != nil, Internal, "Cannot create Core AI model loader");
     }
     ET_LOG(Info, "Core AI SDK eviction requested: key=%s", key.UTF8String);
-    ET_CHECK_OK_OR_RETURN_ERROR(evict_one(loader, bytes));
+    ET_CHECK_OK_OR_RETURN_ERROR(evict_one(loader, bookmark->data));
     ET_LOG(
         Info,
         "Core AI SDK cache entry absence confirmed: key=%s",
         key.UTF8String);
   }
-  ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark_staging(
-      *locked.get(), true, StorageRemovalMode::Maintenance));
-  if (!bookmark.ok() || bytes != nil) {
-    ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark(*locked.get()));
-  }
-  ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark_identity(*locked.get()));
+  ET_CHECK_OK_OR_RETURN_ERROR(locked.get()->remove_staging_for_maintenance());
+  ET_CHECK_OK_OR_RETURN_ERROR(locked.get()->remove_bookmark_for_maintenance());
   ET_LOG(Info, "Core AI local cache entry cleared: key=%s", key.UTF8String);
   return Error::Ok;
 }

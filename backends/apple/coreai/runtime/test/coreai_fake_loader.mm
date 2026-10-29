@@ -368,6 +368,7 @@ dispatch_time_t cleanup_deadline() {
     specializations = 0;
     bindings = 0;
     evictions = 0;
+    specializationQueries = 0;
     ++_context->state.loaders;
   }
   return self;
@@ -378,6 +379,7 @@ dispatch_time_t cleanup_deadline() {
   }
 }
 - (NSString*)specializationIdentifier {
+  ++specializationQueries;
   return @"default";
 }
 - (void)restoreModelFromBookmark:(NSData*)bookmark

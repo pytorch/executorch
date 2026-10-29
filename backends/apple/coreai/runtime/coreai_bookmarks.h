@@ -19,6 +19,20 @@ namespace executorch::backends::coreai {
 runtime::Result<NSString*> resolve_bookmark_root(
     NSString* path,
     StorageCreationMode mode);
+// Missing roots produce an empty inventory. Invalid or unowned names are
+// ignored.
+runtime::Result<NSArray<NSString*>*> inventory_cache_keys(NSString* root);
+
+enum class CacheBookmarkState {
+  Missing,
+  Corrupt,
+  Present,
+};
+
+struct CacheBookmarkInspection final {
+  CacheBookmarkState state;
+  NSData* data;
+};
 
 enum class CacheEntryPersistence {
   BookmarkCapable,
@@ -44,6 +58,14 @@ class CacheEntryLock final {
   runtime::Result<NSString*> prepare_staging_root() const;
   // Missing staging is a no-op; unexpected entry types fail before deletion.
   runtime::Error remove_staging() const;
+
+  // Maintenance accepts malformed backend-owned entries but never follows
+  // them. The Strict runtime cleanup above is intentionally separate.
+  runtime::Result<CacheBookmarkInspection> inspect_bookmark_for_maintenance()
+      const;
+  runtime::Error preflight_maintenance() const;
+  runtime::Error remove_staging_for_maintenance() const;
+  runtime::Error remove_bookmark_for_maintenance() const;
 
  private:
   friend runtime::Result<std::unique_ptr<CacheEntryLock>>

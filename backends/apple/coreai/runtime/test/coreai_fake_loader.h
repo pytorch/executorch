@@ -91,6 +91,7 @@ class ScopedFakeBridgeState final {
   std::atomic<int> specializations;
   std::atomic<int> bindings;
   std::atomic<int> evictions;
+  std::atomic<int> specializationQueries;
 }
 @property(nonatomic, strong)
     NSMutableDictionary<NSData*, BookmarkFakeModel*>* models;

@@ -31,9 +31,11 @@ enable_language(OBJCXX)
 if(EXECUTORCH_BUILD_SHARED)
   set(_coreai_library_type SHARED)
   set(_coreai_runtime executorch_shared)
+  set(_coreai_data_loader "")
 else()
   set(_coreai_library_type STATIC)
   set(_coreai_runtime executorch)
+  set(_coreai_data_loader extension_data_loader)
 endif()
 
 set(_coreai_runtime_sources
@@ -97,8 +99,9 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   target_compile_definitions(coreai_host_test PRIVATE COREAI_ASSETS_TESTING=1)
   find_library(COREAI_FOUNDATION_FRAMEWORK Foundation REQUIRED)
   target_link_libraries(
-    coreai_host_test PRIVATE ${_coreai_runtime} program_schema GTest::gtest
-                             ${COREAI_FOUNDATION_FRAMEWORK}
+    coreai_host_test
+    PRIVATE ${_coreai_runtime} ${_coreai_data_loader} program_schema
+            GTest::gtest ${COREAI_FOUNDATION_FRAMEWORK}
   )
   add_test(NAME coreai_host_test COMMAND coreai_host_test)
   set_tests_properties(coreai_host_test PROPERTIES TIMEOUT 120)

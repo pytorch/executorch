@@ -68,7 +68,7 @@ AssertionResult seed_cache(
     bool stage = true,
     NSString* architecture = @"arch_b",
     NSString* platform = @"macOS",
-    bool metadata = true) {
+    NSString* specialization = @"default") {
   if (root == nil || loader == nil) {
     return AssertionFailure() << "Cache seed requires a root and fake loader";
   }
@@ -80,7 +80,8 @@ AssertionResult seed_cache(
   if (!selected.ok()) {
     return AssertionFailure() << "Cannot select cache seed assets";
   }
-  auto key = bookmark_key(selected.get(), platform, architecture);
+  auto key =
+      cache_variant_key(selected.get(), platform, architecture, specialization);
   if (!key.ok()) {
     return AssertionFailure() << "Cannot compute cache seed key";
   }
@@ -89,26 +90,17 @@ AssertionResult seed_cache(
       nil,
       [[root URLByAppendingPathComponent:@"staging"]
           URLByAppendingPathComponent:key.get()]};
-  auto lock = lock_bookmark(root.path, entry.key);
+  auto lock = lock_cache_entry(root.path, entry.key);
   if (!lock.ok()) {
     return AssertionFailure() << "Cannot lock cache seed bookmark";
   }
-  if (metadata &&
-      ensure_bookmark_identity(
-          *lock.get(), selected.get(), platform, architecture) != Error::Ok) {
-    return AssertionFailure() << "Cannot attribute cache seed";
-  }
   if (stage) {
-    auto staging = prepare_bookmark_staging(*lock.get());
-    if (!staging.ok()) {
-      return AssertionFailure() << "Cannot prepare cache seed staging";
-    }
     TestData data;
     if (selected->aot_compiled) {
       aot_data(data, architecture);
     }
     auto staged = executorch::backends::coreai::prepare_source_bundle(
-        selected.get(), &data, staging.get(), entry.key);
+        selected.get(), &data, *lock.get(), CorruptBundlePolicy::Reject);
     if (data.requests != data.releases) {
       return AssertionFailure()
           << "Cache seed source buffers were not released";
@@ -127,7 +119,7 @@ AssertionResult seed_cache(
     model.owner = loader;
     model.bookmark = entry.bookmark;
     loader.models[entry.bookmark] = model;
-    if (write_bookmark(*lock.get(), entry.bookmark) != Error::Ok) {
+    if (lock.get()->write_bookmark(entry.bookmark) != Error::Ok) {
       return AssertionFailure() << "Cannot write cache seed bookmark";
     }
   }
@@ -139,16 +131,10 @@ bool cache_exists(NSURL* url) {
   return [NSFileManager.defaultManager fileExistsAtPath:url.path];
 }
 
-NSURL* cache_identity_url(NSURL* root, NSString* key) {
-  return [[test_bookmark_url(root, key) URLByDeletingPathExtension]
-      URLByAppendingPathExtension:@"metadata"];
-}
-
 void cache_entry_removed(NSURL* root, const CacheEntry& entry) {
-  EXPECT_FALSE(cache_exists(cache_identity_url(root, entry.key)));
   EXPECT_FALSE(cache_exists(test_bookmark_url(root, entry.key)));
   EXPECT_FALSE(cache_exists(entry.stage));
-  EXPECT_TRUE(cache_exists(test_bookmark_lock_url(root, entry.key)));
+  EXPECT_TRUE(cache_exists(test_cache_lock_url(root, entry.key)));
 }
 
 NSMutableDictionary* cache_manifest(char identity) {
@@ -384,7 +370,7 @@ TEST_F(CoreAICacheTest, ClearsWarmVariantsWithoutHostCompatibility) {
   }
 }
 
-TEST_F(CoreAICacheTest, ClearsLegacyAotWithoutAttribution) {
+TEST_F(CoreAICacheTest, ClearsAotBundles) {
   @autoreleasepool {
     TestDirectory root;
     BookmarkLoaderScope fake;
@@ -399,7 +385,7 @@ TEST_F(CoreAICacheTest, ClearsLegacyAotWithoutAttribution) {
         false,
         @"arch_a",
         @"macOS",
-        false));
+        @"default"));
     ASSERT_TRUE(seed_cache(
         root.url,
         dict,
@@ -409,7 +395,7 @@ TEST_F(CoreAICacheTest, ClearsLegacyAotWithoutAttribution) {
         false,
         @"arch_b",
         @"macOS",
-        false));
+        @"default"));
     FBSyntheticPTE pte({{"forward", {{"CoreAIBackend", encode(dict)}}}});
     EXPECT_EQ(clear_cache_for_pte(pte, root.url.path.UTF8String), Error::Ok);
     EXPECT_EQ(fake.loader->evictions.load(), 2);
@@ -418,60 +404,56 @@ TEST_F(CoreAICacheTest, ClearsLegacyAotWithoutAttribution) {
   }
 }
 
-TEST_F(
-    CoreAICacheTest,
-    UnattributedEntriesReportIncompleteButClearKnownMatches) {
-  for (bool corrupt : {false, true}) {
-    SCOPED_TRACE(corrupt);
-    @autoreleasepool {
-      TestDirectory root;
-      BookmarkLoaderScope fake;
-      CacheEntry unknown, known;
-      ASSERT_TRUE(seed_cache(
-          root.url,
-          manifest_dict(),
-          fake.loader,
-          unknown,
-          true,
-          false,
-          @"old_arch",
-          @"macOS",
-          corrupt));
-      ASSERT_TRUE(seed_cache(root.url, manifest_dict(), fake.loader, known));
-      if (corrupt) {
-        ASSERT_TRUE([[@"{}" dataUsingEncoding:NSUTF8StringEncoding]
-            writeToURL:cache_identity_url(root.url, unknown.key)
-               options:0
-                 error:nil]);
-      }
-      FBSyntheticPTE pte(
-          {{"forward", {{"CoreAIBackend", encode(manifest_dict())}}}});
-      EXPECT_EQ(
-          clear_cache_for_pte(pte, root.url.path.UTF8String),
-          Error::InvalidExternalData);
-      EXPECT_EQ(fake.loader->evictions.load(), 1);
-      cache_entry_removed(root.url, known);
-      EXPECT_TRUE(cache_exists(test_bookmark_url(root.url, unknown.key)));
-      EXPECT_NE(fake.loader.models[unknown.bookmark], nil);
-      EXPECT_EQ(clear_cache(root.url.path.UTF8String), Error::Ok);
-      cache_entry_removed(root.url, unknown);
-    }
-  }
-}
-
-TEST_F(CoreAICacheTest, ClearsAttributionOnlyAndStagingEntriesWithoutSdk) {
+TEST_F(CoreAICacheTest, ClearsOptionAndDeviceVariantsPreservingUnrelatedModel) {
   @autoreleasepool {
     TestDirectory root;
     BookmarkLoaderScope fake;
-    CacheEntry metadata_only, staged;
+    CacheEntry base, specialized, device, unrelated;
+    ASSERT_TRUE(seed_cache(root.url, manifest_dict(), fake.loader, base));
     ASSERT_TRUE(seed_cache(
         root.url,
         manifest_dict(),
         fake.loader,
-        metadata_only,
-        false,
-        false,
+        specialized,
+        true,
+        true,
+        @"arch_b",
+        @"macOS",
+        @"tuned"));
+    ASSERT_TRUE(seed_cache(
+        root.url,
+        manifest_dict(),
+        fake.loader,
+        device,
+        true,
+        true,
         @"other_arch"));
+    ASSERT_TRUE(
+        seed_cache(root.url, cache_manifest('3'), fake.loader, unrelated));
+    FBSyntheticPTE pte(
+        {{"forward", {{"CoreAIBackend", encode(manifest_dict())}}}});
+    EXPECT_EQ(clear_cache_for_pte(pte, root.url.path.UTF8String), Error::Ok);
+    drain_callbacks();
+    EXPECT_EQ(fake.loader->evictions.load(), 3);
+    EXPECT_EQ(fake.loader->specializationQueries.load(), 0);
+    cache_entry_removed(root.url, base);
+    cache_entry_removed(root.url, specialized);
+    cache_entry_removed(root.url, device);
+    EXPECT_TRUE(cache_exists(test_bookmark_url(root.url, unrelated.key)));
+    EXPECT_TRUE(cache_exists(unrelated.stage));
+    EXPECT_NE(fake.loader.models[unrelated.bookmark], nil);
+    EXPECT_EQ(fake.loader.models[base.bookmark], nil);
+    EXPECT_EQ(fake.loader.models[specialized.bookmark], nil);
+    EXPECT_EQ(fake.loader.models[device.bookmark], nil);
+    EXPECT_TRUE(pte.check_released());
+  }
+}
+
+TEST_F(CoreAICacheTest, ClearsStagingOnlyEntriesWithoutSdk) {
+  @autoreleasepool {
+    TestDirectory root;
+    BookmarkLoaderScope fake;
+    CacheEntry staged;
     ASSERT_TRUE(seed_cache(
         root.url, manifest_dict(), fake.loader, staged, false, true));
     bridge.state().available = false;
@@ -479,7 +461,6 @@ TEST_F(CoreAICacheTest, ClearsAttributionOnlyAndStagingEntriesWithoutSdk) {
         {{"forward", {{"CoreAIBackend", encode(manifest_dict())}}}});
     EXPECT_EQ(clear_cache_for_pte(pte, root.url.path.UTF8String), Error::Ok);
     EXPECT_EQ(fake.loader->evictions.load(), 0);
-    cache_entry_removed(root.url, metadata_only);
     cache_entry_removed(root.url, staged);
   }
 }
@@ -726,7 +707,7 @@ TEST_F(CoreAICacheTest, CorruptBookmarkCleanupDoesNotRequireSdkAndCanRetry) {
     ASSERT_TRUE([NSData.data writeToURL:path options:0 error:nil]);
     bridge.state().available = false;
     {
-      StorageFaultScope fault(StorageOperation::Remove);
+      StorageFaultScope fault(FaultPoint::Remove);
       EXPECT_EQ(clear_cache(root.url.path.UTF8String), Error::AccessFailed);
       EXPECT_EQ(fault.hits, 1);
       EXPECT_TRUE(cache_exists(path));
@@ -798,7 +779,7 @@ TEST_F(CoreAICacheTest, SourceRemovalFailuresKeepBookmarkForRetry) {
       ASSERT_TRUE(
           seed_cache(root.url, aot_manifest_dict(), fake.loader, entry));
       {
-        StorageFaultScope fault(StorageOperation::Remove);
+        StorageFaultScope fault(FaultPoint::Remove);
         fault.match_index = row.match_index;
         EXPECT_EQ(clear_cache(root.url.path.UTF8String), Error::AccessFailed);
         EXPECT_EQ(fault.hits, 1);
@@ -816,33 +797,6 @@ TEST_F(CoreAICacheTest, SourceRemovalFailuresKeepBookmarkForRetry) {
       EXPECT_EQ(clear_cache(root.url.path.UTF8String), Error::Ok);
       cache_entry_removed(root.url, entry);
     }
-  }
-}
-
-TEST_F(CoreAICacheTest, AttributionRemovalFailureLeavesDiscoverableRetry) {
-  @autoreleasepool {
-    TestDirectory root;
-    BookmarkLoaderScope fake;
-    CacheEntry entry;
-    ASSERT_TRUE(
-        seed_cache(root.url, manifest_dict(), fake.loader, entry, true, false));
-    FBSyntheticPTE pte(
-        {{"forward", {{"CoreAIBackend", encode(manifest_dict())}}}});
-    {
-      StorageFaultScope fault(StorageOperation::Remove);
-      fault.match_index = 2;
-      EXPECT_EQ(
-          clear_cache_for_pte(pte, root.url.path.UTF8String),
-          Error::AccessFailed);
-      EXPECT_EQ(fault.hits, 1);
-    }
-    EXPECT_FALSE(cache_exists(test_bookmark_url(root.url, entry.key)));
-    EXPECT_TRUE(cache_exists(cache_identity_url(root.url, entry.key)));
-    EXPECT_EQ(fake.loader->evictions.load(), 1);
-    bridge.state().available = false;
-    EXPECT_EQ(clear_cache_for_pte(pte, root.url.path.UTF8String), Error::Ok);
-    EXPECT_EQ(fake.loader->evictions.load(), 1);
-    cache_entry_removed(root.url, entry);
   }
 }
 
@@ -869,7 +823,7 @@ TEST_F(CoreAICacheTest, IndependentKeysContinueInSortedOrderAfterFailures) {
           ? [NSError errorWithDomain:NSPOSIXErrorDomain code:EBUSY userInfo:nil]
           : nil;
     };
-    StorageFaultScope fault(StorageOperation::BeforeEvict);
+    StorageFaultScope fault(FaultPoint::BeforeEvict);
     EXPECT_EQ(clear_cache(root.url.path.UTF8String), Error::AccessFailed);
     drain_callbacks();
     EXPECT_EQ(fault.hits, 1);

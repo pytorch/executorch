@@ -259,6 +259,37 @@ Result<NSArray<NSString*>*> storage_children(int fd, StorageNamePolicy policy) {
   return [names sortedArrayUsingSelector:@selector(compare:)];
 }
 
+Error preflight_storage_directory(
+    int parent_fd,
+    NSString* name,
+    StorageRemovalPolicy policy) {
+  ET_CHECK_OR_RETURN_ERROR(
+      storage_component(name), InvalidArgument, "Invalid Core AI entry name");
+  struct stat info;
+  const int inspected =
+      lstat_at(parent_fd, name.fileSystemRepresentation, &info);
+  if (inspected < 0 && errno == ENOENT) {
+    return Error::Ok;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      inspected == 0, AccessFailed, "Cannot inspect Core AI storage entry");
+  if (!S_ISDIR(info.st_mode)) {
+    ET_CHECK_OR_RETURN_ERROR(
+        policy == StorageRemovalPolicy::Maintenance,
+        InvalidExternalData,
+        "Core AI storage entry is not a directory");
+    return Error::Ok;
+  }
+  FileDescriptor entry(
+      open_directory_at(parent_fd, name.fileSystemRepresentation));
+  if (entry.get() < 0 && errno == ENOENT) {
+    return Error::Ok;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      entry.get() >= 0, AccessFailed, "Cannot open Core AI storage directory");
+  return walk_storage_tree(entry.get(), StorageTreePass::Preflight, policy);
+}
+
 Error remove_storage_directory(
     int parent_fd,
     NSString* name,

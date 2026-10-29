@@ -23,6 +23,8 @@ enum class FaultPoint {
   BeforeCacheEntryLock,
   BeforeSDK,
   AfterSDK,
+  BeforeEvict,
+  AfterEvict,
 };
 
 #if defined(COREAI_ASSETS_TESTING) && COREAI_ASSETS_TESTING

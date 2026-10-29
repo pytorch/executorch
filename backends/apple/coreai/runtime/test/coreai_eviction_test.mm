@@ -184,9 +184,9 @@ TEST_F(CoreAIEvictionTest, ConfirmedMissRecoveryEvictsOnlyCurrentBookmark) {
     BookmarkLoaderScope fake;
     ASSERT_NE(fake.loader, nil);
     TestData data;
-    auto selected = bookmark_manifest();
+    auto selected = bookmark_bundle();
     ASSERT_TRUE(selected.ok());
-    auto key_result = test_bookmark_key(selected.get());
+    auto key_result = test_cache_key(selected.get());
     ASSERT_TRUE(key_result.ok());
     NSString* key = key_result.get();
     NSMutableDictionary* dict = manifest_dict();
@@ -249,9 +249,9 @@ TEST_F(
     BookmarkLoaderScope fake;
     ASSERT_NE(fake.loader, nil);
     TestData data;
-    auto selected = bookmark_manifest();
+    auto selected = bookmark_bundle();
     ASSERT_TRUE(selected.ok());
-    auto key_result = test_bookmark_key(selected.get());
+    auto key_result = test_cache_key(selected.get());
     ASSERT_TRUE(key_result.ok());
     NSString* key = key_result.get();
     EXPECT_EQ(
@@ -259,7 +259,7 @@ TEST_F(
     EXPECT_EQ(fake.loader->evictions.load(), 0);
     // Retain staging after publication to exercise clearing's failure paths.
     {
-      StorageFaultScope fault(StorageOperation::Remove);
+      StorageFaultScope fault(FaultPoint::Remove);
       ASSERT_EQ(
           initialize_and_destroy(manifest_dict(), &data, root.url.path),
           Error::Ok);
@@ -290,7 +290,7 @@ TEST_F(
     fake.loader.restoreError = nil;
     fake.loader.evictError = nil;
     {
-      StorageFaultScope fault(StorageOperation::AfterEvict);
+      StorageFaultScope fault(FaultPoint::AfterEvict);
       EXPECT_NE(
           clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
       EXPECT_EQ(fault.hits, 1);
@@ -311,7 +311,7 @@ TEST_F(
         initialize_and_destroy(manifest_dict(), &data, root.url.path),
         Error::Ok);
     {
-      StorageFaultScope fault(StorageOperation::Remove);
+      StorageFaultScope fault(FaultPoint::Remove);
       EXPECT_NE(
           clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
       EXPECT_EQ(fault.hits, 1);
@@ -337,9 +337,9 @@ TEST_F(
     TestDirectory root;
     ASSERT_NE(root.url, nil);
     TestData data;
-    auto selected = bookmark_manifest();
+    auto selected = bookmark_bundle();
     ASSERT_TRUE(selected.ok());
-    auto key_result = test_bookmark_key(selected.get());
+    auto key_result = test_cache_key(selected.get());
     ASSERT_TRUE(key_result.ok());
     NSString* key = key_result.get();
     PinBookmarkLoader* loader = [[PinBookmarkLoader alloc] init];
@@ -347,9 +347,10 @@ TEST_F(
     // Scope teardown clears retained completions even after fatal test
     // failures.
     bridge.state().bookmark_loader = loader;
+    RuntimeAssets assets{selected.get(), @"macOS", @"arch_b"};
     @autoreleasepool {
-      auto pinned = acquire_bookmark_model(
-          selected.get(), &data, root.url.path, @"macOS", @"arch_b", loader);
+      auto pinned =
+          acquire_bookmark_model(assets, &data, root.url.path, loader);
       ASSERT_TRUE(pinned.ok());
       EXPECT_NE(loader.temporary, nil);
       EXPECT_NE(clear_bookmark_assets(root.url.path, key, loader), Error::Ok);
@@ -381,9 +382,9 @@ TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
     BookmarkLoaderScope fake;
     ASSERT_NE(fake.loader, nil);
     TestData data;
-    auto selected = bookmark_manifest();
+    auto selected = bookmark_bundle();
     ASSERT_TRUE(selected.ok());
-    auto key_result = test_bookmark_key(selected.get());
+    auto key_result = test_cache_key(selected.get());
     ASSERT_TRUE(key_result.ok());
     NSString* key = key_result.get();
     ASSERT_EQ(
@@ -407,15 +408,11 @@ TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
       }
       dispatch_semaphore_signal(eviction_done);
     };
+    RuntimeAssets assets{selected.get(), @"macOS", @"arch_b"};
     auto load = [&] {
       @autoreleasepool {
-        auto acquired = acquire_bookmark_model(
-            selected.get(),
-            &data,
-            root.url.path,
-            @"macOS",
-            @"arch_b",
-            fake.loader);
+        auto acquired =
+            acquire_bookmark_model(assets, &data, root.url.path, fake.loader);
         load_ok = acquired.ok() && acquired.get() != nil;
       }
       dispatch_semaphore_signal(loading_observed);

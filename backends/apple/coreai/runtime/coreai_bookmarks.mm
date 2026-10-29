@@ -38,7 +38,8 @@ NSString* bookmark_name(NSString* key) {
 Result<int> open_root(NSString* root) {
   const int fd = retry_eintr([&] {
     return open(
-        root.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        root.fileSystemRepresentation,
+        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
   });
   if (fd < 0 && errno == ENOENT) {
     return -1;
@@ -190,6 +191,53 @@ Result<NSString*> resolve_bookmark_root(
   return path;
 }
 
+Result<NSArray<NSString*>*> inventory_cache_keys(NSString* root) {
+  auto resolved =
+      resolve_bookmark_root(root, StorageCreationMode::OpenExisting);
+  if (!resolved.ok()) {
+    return resolved.error();
+  }
+  auto opened = open_root(resolved.get());
+  if (!opened.ok()) {
+    return opened.error();
+  }
+  FileDescriptor directory(opened.get());
+  if (directory.get() < 0) {
+    return @[];
+  }
+  NSMutableSet<NSString*>* keys = [NSMutableSet set];
+  for (NSString* child_name in @[ kBookmarksDirectory, kStagingDirectory ]) {
+    auto child = open_child(
+        directory.get(), child_name, StorageCreationMode::OpenExisting);
+    if (!child.ok()) {
+      return child.error();
+    }
+    FileDescriptor child_directory(child.get());
+    if (child_directory.get() < 0) {
+      continue;
+    }
+    auto names =
+        storage_children(child_directory.get(), StorageNamePolicy::SkipInvalid);
+    if (!names.ok()) {
+      return names.error();
+    }
+    for (NSString* name in names.get()) {
+      NSString* key = name;
+      if ([child_name isEqual:kBookmarksDirectory]) {
+        if (![name hasSuffix:kBookmarkExtension] ||
+            name.length <= kBookmarkExtension.length) {
+          continue;
+        }
+        key = [name substringToIndex:name.length - kBookmarkExtension.length];
+      }
+      if (is_cache_key(key)) {
+        [keys addObject:key];
+      }
+    }
+  }
+  return [[keys allObjects] sortedArrayUsingSelector:@selector(compare:)];
+}
+
 CacheEntryLock::CacheEntryLock(
     int root,
     int bookmarks,
@@ -280,6 +328,77 @@ Error CacheEntryLock::remove_staging() const {
   }
   return remove_storage_directory(
       staging.get(), key_, StorageRemovalPolicy::Strict);
+}
+
+Result<CacheBookmarkInspection>
+CacheEntryLock::inspect_bookmark_for_maintenance() const {
+  if (persistence_ == CacheEntryPersistence::StagingOnly) {
+    return CacheBookmarkInspection{CacheBookmarkState::Missing, nil};
+  }
+  struct stat info;
+  const int inspected = lstat_at(
+      bookmarks_.get(), bookmark_name(key_).fileSystemRepresentation, &info);
+  if (inspected < 0 && errno == ENOENT) {
+    return CacheBookmarkInspection{CacheBookmarkState::Missing, nil};
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      inspected == 0, AccessFailed, "Cannot inspect Core AI bookmark");
+  if (!S_ISREG(info.st_mode)) {
+    return CacheBookmarkInspection{CacheBookmarkState::Corrupt, nil};
+  }
+  auto bookmark = read_bookmark();
+  if (!bookmark.ok()) {
+    if (bookmark.error() == Error::InvalidExternalData) {
+      return CacheBookmarkInspection{CacheBookmarkState::Corrupt, nil};
+    }
+    return bookmark.error();
+  }
+  return CacheBookmarkInspection{
+      bookmark.get() == nil ? CacheBookmarkState::Missing
+                            : CacheBookmarkState::Present,
+      bookmark.get()};
+}
+
+Error CacheEntryLock::preflight_maintenance() const {
+  if (persistence_ == CacheEntryPersistence::BookmarkCapable) {
+    ET_CHECK_OK_OR_RETURN_ERROR(preflight_storage_directory(
+        bookmarks_.get(),
+        bookmark_name(key_),
+        StorageRemovalPolicy::Maintenance));
+  }
+  auto opened = open_child(
+      root_.get(), kStagingDirectory, StorageCreationMode::OpenExisting);
+  if (!opened.ok()) {
+    return opened.error();
+  }
+  FileDescriptor staging(opened.get());
+  if (staging.get() < 0) {
+    return Error::Ok;
+  }
+  return preflight_storage_directory(
+      staging.get(), key_, StorageRemovalPolicy::Maintenance);
+}
+
+Error CacheEntryLock::remove_staging_for_maintenance() const {
+  auto opened = open_child(
+      root_.get(), kStagingDirectory, StorageCreationMode::OpenExisting);
+  if (!opened.ok()) {
+    return opened.error();
+  }
+  FileDescriptor staging(opened.get());
+  if (staging.get() < 0) {
+    return Error::Ok;
+  }
+  return remove_storage_directory(
+      staging.get(), key_, StorageRemovalPolicy::Maintenance);
+}
+
+Error CacheEntryLock::remove_bookmark_for_maintenance() const {
+  if (persistence_ == CacheEntryPersistence::StagingOnly) {
+    return Error::Ok;
+  }
+  return remove_storage_directory(
+      bookmarks_.get(), bookmark_name(key_), StorageRemovalPolicy::Maintenance);
 }
 
 Result<std::unique_ptr<CacheEntryLock>> lock_cache_entry(

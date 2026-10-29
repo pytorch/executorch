@@ -264,14 +264,14 @@ when the directory is omitted or null. A supplied path must be absolute; invalid
 paths fail without falling back to the default. If loading used a custom root,
 pass that same root when clearing; the PTE does not store runtime overrides.
 
-Root-wide clearing visits keyed bookmarks, identity records, and staged
-directories. PTE clearing finds every Core AI delegate in every method and clears
-all recorded variants of its bundles, including other platforms and SDK
-architectures. Manifests must be structurally valid before any entry is cleared;
-their minimum OS and runtime compatibility do not restrict maintenance.
-Discovery requires neither SDK availability nor an architecture query, and does
-not load models or materialize assets. Actual SDK eviction still requires a
-usable bookmark and an available loader.
+Root-wide clearing inventories keyed bookmarks and staged directories. PTE
+clearing finds every Core AI delegate in every method and derives each bundle's
+model prefix. Matching that validated prefix clears every recorded platform,
+device, and specialization variant without querying the host or SDK. All
+manifests are validated before any entry is cleared; their minimum OS and runtime
+compatibility do not restrict maintenance. Discovery does not load models or
+materialize assets. Actual SDK eviction still requires a usable bookmark and an
+available loader.
 
 These synchronous calls require callers to unload affected models and prevent
 concurrent loads, inference and maintenance across processes. Stripe locks are
@@ -296,15 +296,6 @@ that these APIs cannot target. No history of removed entries is retained.
 Copied or reused exported artifacts can share keys; clearing them also removes
 the other copy's warm-cache benefit. Subsequent loads can specialize again.
 
-Identity records are small JSON sidecars beside bookmarks. They retain bundle
-identity and cache context, and are checked against their hashed key. Loading
-publishes the record before staging or SDK acquisition, and clearing removes it
-last. Existing keys and opaque bookmark bytes are unchanged. Older AOT entries
-can be found directly from the PTE's architecture list. Older source entries
-without attribution cannot always be identified: PTE clearing removes known
-matches, logs unresolved keys, and reports incomplete cleanup rather than
-removing unrelated entries. A one-time root-wide `clear_cache` handles these
-older entries. Missing or corrupt attribution has the same conservative behavior.
 
 ### Persistent SDK Rejection
 
@@ -312,9 +303,9 @@ SDK errors are not classified as transient or permanent.
 Busy errors and all unclassified eviction/restore errors retain the local
 bookmark for retry; only successful eviction or a confirmed SDK miss permits
 normal removal. If retries keep failing, first stop every process using the
-assets root. Back up or quarantine only the affected key's bookmark, identity
-sidecar, and keyed staging outside that root, leaving the stable lock files in
-place. A later load can attempt cold acquisition and create new tracking data.
+assets root. Back up or quarantine only the affected key's bookmark and keyed
+staging outside that root, leaving the stable lock files in place. A later load
+can attempt cold acquisition and publish a new bookmark.
 This manual recovery does not confirm SDK eviction or guarantee disk-space
 reclamation: keep the backup because it may contain the only remaining eviction
 handle. Do not perform manual recovery while loading, inference, or maintenance
