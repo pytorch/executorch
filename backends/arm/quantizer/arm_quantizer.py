@@ -1240,7 +1240,7 @@ class _TOSAQuantizerV1(Quantizer):
             if node.op == "placeholder" and len(node.users) > 0:
                 annotate_output_qspec(
                     node,
-                    quantization_config.get_output_act_qspec(),
+                    quantization_config.get_output_act_qspec(node),
                 )
                 mark_node_as_annotated(node)
             if node.op == "output":
