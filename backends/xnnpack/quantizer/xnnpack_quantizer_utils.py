@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from executorch.backends.xnnpack.utils.utils import (
     get_groups_from_conv,
     is_depthwise_conv,
+    why_not_x2_nearest_upsample,
 )
 from torch._subclasses import FakeTensor
 from torch.fx import Node
@@ -734,12 +735,15 @@ def _annotate_upsample_nearest2d(
     filter_fn: Optional[Callable[[Node], bool]] = None,
 ) -> Optional[list[list[Node]]]:
     """Nearest upsampling only copies values, so its output shares the
-    input's quantization parameters."""
+    input's quantization parameters. Only the x2 case XNNPACK lowers is
+    annotated; any other stays a float op outside the delegate."""
     annotated_partitions = []
     for node in gm.graph.nodes:
         if node.target != torch.ops.aten.upsample_nearest2d.vec:
             continue
         if _is_annotated([node]) or (filter_fn and not filter_fn(node)):
+            continue
+        if why_not_x2_nearest_upsample(node) is not None:
             continue
 
         input_act = node.args[0]

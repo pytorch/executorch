@@ -27,6 +27,7 @@ from executorch.backends.xnnpack.utils.utils import (
     is_param_node,
     normalize_mean_dims,
     normalize_pool2d_args,
+    why_not_x2_nearest_upsample,
 )
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
@@ -507,30 +508,12 @@ class UpsampleNearest2dConfig(GenericNodePartitionerConfig):
     target_name = "upsample_nearest2d.vec"
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
-        """
-        Lowered as concatenate4 + depth_to_space_2d, which only expresses
-        exact x2 scaling of a static 4D tensor.
-        """
         if not self.check_common_constraints(node, ep):
             return False
 
-        if is_shape_dynamic(node):
-            why(node, reason="dynamic output sizes are not supported")
-            return False
-
-        in_shape = get_input_node(node, 0).meta["val"].shape
-        out_shape = node.meta["val"].shape
-        if len(in_shape) != 4:
-            why(node, reason="only 4D inputs are supported")
-            return False
-        if out_shape[-2] != 2 * in_shape[-2] or out_shape[-1] != 2 * in_shape[-1]:
-            why(node, reason="only x2 nearest upsampling is supported")
-            return False
-        # PyTorch indexes with an explicit scale as given, so e.g. 2.004
-        # doubles the size but picks different source pixels than x2.
-        scale_factors = node.args[2] if len(node.args) > 2 else None
-        if scale_factors is not None and any(s != 2.0 for s in scale_factors):
-            why(node, reason="only an exact x2 scale factor is supported")
+        reason = why_not_x2_nearest_upsample(node)
+        if reason is not None:
+            why(node, reason=reason)
             return False
         return True
 
