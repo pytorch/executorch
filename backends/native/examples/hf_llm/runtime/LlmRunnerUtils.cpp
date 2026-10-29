@@ -175,4 +175,30 @@ size_t generation_limit(
   return std::min(max_new_tokens, max_total_tokens - prompt_length);
 }
 
+// cppcheck-suppress unusedFunction
+Closeness compare_close(
+    const float* got,
+    const float* want,
+    size_t n,
+    double atol,
+    double rtol) {
+  Closeness result;
+  for (size_t i = 0; i < n; ++i) {
+    if (got[i] == want[i]) {
+      continue;
+    }
+    const double error =
+        std::abs(static_cast<double>(got[i]) - static_cast<double>(want[i]));
+    if (std::isnan(error)) {
+      ++result.nan_count;
+      result.close = false;
+      continue;
+    }
+    result.close &= std::isfinite(error) &&
+        error <= atol + rtol * std::abs(static_cast<double>(want[i]));
+    result.max_abs_error = std::max(result.max_abs_error, error);
+  }
+  return result;
+}
+
 } // namespace ptn

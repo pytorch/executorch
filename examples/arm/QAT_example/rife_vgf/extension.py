@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Iterator
+
 import torch
 
 from executorch.backends.arm._passes import EnsureUniqueOutputNodesPass, RewriteConvPass
@@ -11,6 +13,8 @@ from executorch.backends.arm._passes.arm_pass_manager import (
     register_pass_insertions_before,
 )
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
+from executorch.backends.arm.quantizer.arm_quantizer_utils import NodeFinder
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.arm.vgf import VgfPartitioner
 from executorch.backends.cortex_m.quantizer_reporter import (
     QuantizerInfo,
@@ -26,8 +30,10 @@ from torchao.quantization.pt2e.quantizer import (
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 from .passes import (
+    FuseRifeFinalWarpsPass,
     GroupWarpSamplerInputsPass,
     PackRifeWarpsAndConcatPass,
+    PadRifeBlock0ConcatPass,
     RewriteWarpDownsampleToTosaCustomPass,
 )
 
@@ -167,6 +173,37 @@ class _WarpDownsampleQuantizer(Quantizer, QuantizerReporterUser):
         return None
 
 
+class _SamplingCoordinates(NodeFinder):
+    """Keep grid arithmetic in FP32, leaving the flow-slice input quantized."""
+
+    def find_nodes(self, model: torch.fx.GraphModule) -> Iterator[torch.fx.Node]:
+        coordinates: set[torch.fx.Node] = set()
+        for sampler in model.graph.nodes:
+            if sampler.target != torch.ops.aten.grid_sampler.default:
+                continue
+            pending = [sampler.args[1]]
+            while pending:
+                node = pending.pop()
+                if node in coordinates:
+                    continue
+                coordinates.add(node)
+                if node.target not in (
+                    torch.ops.aten.slice.Tensor,
+                    torch.ops.aten.slice_copy.Tensor,
+                ):
+                    pending.extend(node.all_input_nodes)
+        return (node for node in model.graph.nodes if node in coordinates)
+
+
+class _SamplerQuantizationConfig(QuantizationConfig):
+    """Observe image and output tensors, leaving sampling grids in FP32."""
+
+    def get_input_act_qspec(self, node=None, input_node=None):
+        if node is not None and input_node is node.args[1]:
+            return None
+        return super().get_input_act_qspec(node, input_node)
+
+
 def _register_pass_before(target_pass_type: type, pass_: ExportPass) -> None:
     existing_insertions = _registered_pass_insertions.get(target_pass_type)
     if existing_insertions is not None and any(
@@ -186,10 +223,32 @@ def configure_rife_vgf(partitioner: VgfPartitioner | None = None) -> None:
 
     _register_pass_before(RewriteConvPass, RewriteWarpDownsampleToTosaCustomPass())
     _register_pass_before(EnsureUniqueOutputNodesPass, PackRifeWarpsAndConcatPass())
+    _register_pass_before(EnsureUniqueOutputNodesPass, FuseRifeFinalWarpsPass())
+    _register_pass_before(EnsureUniqueOutputNodesPass, PadRifeBlock0ConcatPass())
     _register_pass_before(EnsureUniqueOutputNodesPass, GroupWarpSamplerInputsPass())
 
 
 def configure_rife_vgf_quantizer(quantizer) -> None:
-    """Quantize RIFE warp-downsample image input/output as int8 SNORM."""
+    """Quantize RIFE warp-downsample image input/output as int8 SNORM.
+
+    Keep regular sampler coordinates in FP32 so normalization can be fused
+    after flow dequantization without removing quantization rounding.
+
+    Args:
+        quantizer (VgfQuantizer): Composable quantizer with a global config.
+
+    """
     _ensure_warp_downsample_ops_registered()
     quantizer.add_quantizer(_WarpDownsampleQuantizer())
+    config = quantizer.global_config
+    quantizer.set_node_target(
+        torch.ops.aten.grid_sampler.default,
+        _SamplerQuantizationConfig(
+            config.input_activation,
+            config.output_activation,
+            config.weight,
+            config.bias,
+            config.label,
+        ),
+    )
+    quantizer.set_node_finder(None, _SamplingCoordinates())

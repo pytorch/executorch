@@ -41,6 +41,7 @@ from torch.export import ExportedProgram
 from torch.export.graph_signature import ConstantArgument
 from torch.fx import traceback as fx_traceback
 from torch.fx.experimental.proxy_tensor import PythonKeyTracer
+from torch.fx.experimental.symbolic_shapes import compute_unbacked_bindings
 from torch.fx.graph import CodeGen
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.fx.passes.shape_prop import _extract_tensor_metadata, TensorMetadata
@@ -686,6 +687,9 @@ class _ExportPassBase(PassBase):
             kind, target, args_proxy, kwargs_proxy, name=name
         )
         res_proxy.node.meta.update(meta.data)
+        if self.fake_tensor_mode and (shape_env := self.fake_tensor_mode.shape_env):
+            if symbol_to_path := compute_unbacked_bindings(shape_env, res_data):
+                res_proxy.node.meta["unbacked_bindings"] = symbol_to_path
         self.tracer.set_metadata(res_proxy.node, res_data)
         return ProxyValue(res_data, res_proxy)
 
@@ -961,8 +965,25 @@ class _ExportPassBase(PassBase):
         self.tracer.fake_tensor_mode = fake_tensor_mode
         self.fake_tensor_mode = fake_tensor_mode
 
-        with fake_tensor_mode, dispatcher_mode:  # type: ignore[assignment, union-attr]
-            result = self.call_submodule(graph_module, tuple(inputs))
+        shape_env = fake_tensor_mode.shape_env
+        outer_pending = None
+        outer_ignorable = None
+        if shape_env is not None:
+            # Replay may be nested inside an operator that owns pending symbols.
+            outer_pending = list(shape_env.pending_fresh_unbacked_symbols)
+            outer_ignorable = list(shape_env.ignorable_fresh_unbacked_symbols)
+            shape_env.pending_fresh_unbacked_symbols.clear()
+            shape_env.ignorable_fresh_unbacked_symbols.clear()
+
+        try:
+            with fake_tensor_mode, dispatcher_mode:  # type: ignore[assignment, union-attr]
+                result = self.call_submodule(graph_module, tuple(inputs))
+        finally:
+            if shape_env is not None:
+                shape_env.pending_fresh_unbacked_symbols.clear()
+                shape_env.ignorable_fresh_unbacked_symbols.clear()
+                shape_env.pending_fresh_unbacked_symbols.extend(outer_pending)
+                shape_env.ignorable_fresh_unbacked_symbols.extend(outer_ignorable)
 
         return result
 

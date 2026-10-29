@@ -133,6 +133,8 @@ function Download-IfNeeded {
 Push-Location $executorchRoot
 try {
     Write-Host "::group::Check CUDA toolchain"
+    # The GPU runners come without a driver, and every CUDA call fails without one.
+    & (Join-Path -Path $scriptDir -ChildPath "install_nvidia_driver_windows.ps1")
     $nvccOutput = nvcc --version | Out-String
     Write-Host $nvccOutput
     $nvidiaSmiCmd = Get-Command nvidia-smi -ErrorAction SilentlyContinue
@@ -299,7 +301,8 @@ try {
             -RedirectStandardOutput $stdoutFile `
             -RedirectStandardError $stderrFile
 
-        $stdout = if (Test-Path -Path $stdoutFile -PathType Leaf) { Get-Content -Path $stdoutFile -Raw } else { "" }
+        # [string] because Get-Content returns nothing for an empty file, and matching against nothing never fails.
+        $stdout = if (Test-Path -Path $stdoutFile -PathType Leaf) { [string](Get-Content -Path $stdoutFile -Raw) } else { "" }
         $stderr = if (Test-Path -Path $stderrFile -PathType Leaf) { Get-Content -Path $stderrFile -Raw } else { "" }
         $exitCode = $proc.ExitCode
     }
@@ -313,7 +316,7 @@ try {
     Write-Host $stderr
 
     if ($exitCode -ne 0) {
-        Write-Warning "Runner exited with code $exitCode (may be benign)"
+        throw "Runner exited with code $exitCode"
     }
 
     if ($expectedOutput -ne "") {

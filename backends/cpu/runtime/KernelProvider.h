@@ -40,7 +40,8 @@ runtime::Result<BufferRequirements> tensor_requirements(
 enum class StorageOwner { Borrowed, ConstantCopy, Activation, Scratch };
 
 /// Capacities are measured from data. Readable bytes are initialized; writes
-/// require their own declared extent. The owner retains storage through run.
+/// require their own declared extent. The owner retains storage for its
+/// declared lifetime.
 struct Buffer {
   void* data = nullptr;
   size_t readable_bytes = 0;
@@ -86,6 +87,9 @@ struct KernelRegion {
 struct ValueRequirement {
   ptn::ValueId id = ptn::kInvalid;
   BufferRequirements buffer;
+  /// Immutable constant needed only through successful plan preparation.
+  /// bind/run must not read it; other regions may still require the original.
+  bool preparation_only = false;
 };
 
 /// Scratch is invocation-local and reusable immediately after run returns.
@@ -131,7 +135,7 @@ class KernelImplementation {
     return false;
   }
   /// Pure metadata query, before compile can read constants or allocate
-  /// storage. The default declares contiguous FP32 storage for every region
+  /// storage. The default declares contiguous tensor storage for every region
   /// boundary.
   virtual runtime::Result<StorageRequirements> requirements(
       const KernelRegion& region,
