@@ -539,12 +539,20 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
   for (int64_t d = 0; d < rank; d++) {
     dims[d] = sizes[d];
   }
-  // shape is zero-initialized; shape_free is only needed after a successful
-  // shape_create (the zero state is safe to skip).
+  // shape_create refuses rank 0, so a 0-d tensor keeps the zero-initialized
+  // shape, which describes a scalar.
   ov_shape_t shape = {};
-  ov_status_e status = ov_.shape_create(rank, dims, &shape);
+  ov_status_e status = OV_STATUS_OK;
+  if (rank > 0) {
+    status = ov_.shape_create(rank, dims, &shape);
+  }
   dims_heap.reset(); // Release heap dims (no-op if stack was used).
   if (status != OV_STATUS_OK) {
+    ET_LOG(
+        Error,
+        "OpenVINO: failed to create a shape of rank %" PRId64 " (status=%d)",
+        rank,
+        status);
     return exr::Error::Internal;
   }
 
@@ -553,6 +561,7 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
       ov_type, shape, tensor.mutable_data_ptr(), &ov_tensor);
   ov_.shape_free(&shape);
   if (status != OV_STATUS_OK || !ov_tensor) {
+    ET_LOG(Error, "OpenVINO: failed to create a tensor (status=%d)", status);
     return exr::Error::Internal;
   }
   return ov_tensor;
