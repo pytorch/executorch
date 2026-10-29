@@ -76,7 +76,6 @@ from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists im
 )
 from executorch.backends.arm.tosa.specification import (
     get_context_shape_env,
-    keeps_int64,
     TosaSpecification,
     TosaSpecMapping,
 )
@@ -1208,12 +1207,15 @@ class CheckProperQuantization(OperatorSupportBase):
 
 
 def _int64_operands_agree(node: fx.Node) -> bool:
-    """Whether no operand is int64 beside a narrower integer, bool aside."""
+    """Whether int64 operands appear only beside other int64 operands."""
+    operands = node.all_input_nodes
+    if node.target == exir_ops.edge.aten.where.self:
+        operands = [arg for arg in node.args[1:] if isinstance(arg, fx.Node)]
     dtypes = {
         arg.meta["val"].dtype
-        for arg in node.all_input_nodes
+        for arg in operands
         if isinstance(arg.meta.get("val"), torch.Tensor)
-    } - {torch.bool}
+    }
     return torch.int64 not in dtypes or dtypes == {torch.int64}
 
 
@@ -1443,7 +1445,8 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         if is_submodule_node(node):
             return True
         if (
-            keeps_int64(self.tosa_spec)
+            self.tosa_spec.support_integer()
+            and self.tosa_spec.support_extension("int64")
             and node.target in TOSA_EXT_INT64_SupportList
             and _int64_operands_agree(node)
         ):

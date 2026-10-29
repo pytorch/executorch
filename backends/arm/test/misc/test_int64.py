@@ -134,10 +134,13 @@ int64_extension_partition_suite = {
     "where_int64": (torch.where, (_COND, _WIDE, _WIDE_2), 1),
     "where_x_narrow": (torch.where, (_COND, _NARROW, _WIDE), 0),
     "where_y_narrow": (torch.where, (_COND, _WIDE, _NARROW), 0),
+    "pad": (lambda x: torch.nn.functional.pad(x, (1, 1)), (_WIDE,), 1),
     "cumsum": (lambda x: torch.cumsum(x, 0), (_WIDE,), 0),
     "cat_narrow": (lambda x, y: torch.cat([x, y]), (_WIDE, _NARROW), 0),
     "where_x_bool": (torch.where, (_COND, _FLAGS, _WIDE), 0),
     "where_y_bool": (torch.where, (_COND, _WIDE, _FLAGS), 0),
+    "eq_bool": (lambda x, y: x == y, (_WIDE, _FLAGS), 0),
+    "cat_bool": (lambda x, y: torch.cat([x, y]), (_FLAGS, _WIDE), 0),
 }
 
 

@@ -22,7 +22,6 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     SupportedTOSAOperatorCheck,
 )
 from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.arm.tosa.specification import keeps_int64
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -82,9 +81,9 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
 
         values_dtype = node.args[0].meta["val"].dtype  # type: ignore[union-attr]
 
-        SUPPORTED_INT_DTYPES = (torch.int8, torch.int16, torch.int32) + (
-            (torch.int64,) if keeps_int64(tosa_spec) else ()
-        )
+        SUPPORTED_INT_DTYPES = (torch.int8, torch.int16, torch.int32)
+        if tosa_spec.support_extension("int64"):
+            SUPPORTED_INT_DTYPES += (torch.int64,)
         SUPPORTED_FLOAT_DTYPES = (
             torch.float16,
             torch.float32,
