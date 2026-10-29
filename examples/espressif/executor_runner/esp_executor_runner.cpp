@@ -1028,6 +1028,19 @@ static const size_t kMaxInputOutputs = 16;
 bool et_runner_init(void) {
   executorch::runtime::runtime_init();
 
+#if defined(ESP_PLATFORM)
+  ET_LOG(
+      Info,
+      "ESP32 ExecuTorch runner initialized. Free heap: %lu bytes.",
+      static_cast<unsigned long>(esp_get_free_heap_size()));
+#if defined(CONFIG_SPIRAM)
+  ET_LOG(
+      Info,
+      "PSRAM available. Free PSRAM: %lu bytes.",
+      static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+#endif
+#endif
+
   g_runner_ctx.method_allocator.reset(
       method_allocation_pool_size, method_allocation_pool);
   size_t pte_size;
