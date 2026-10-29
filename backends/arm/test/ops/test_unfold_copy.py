@@ -299,6 +299,23 @@ def test_unfold_copy_u85_INT(test_data: input_params):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_fp8)
+@common.SkipIfNoModelConverter
+def test_unfold_copy_vgf_no_quant_fp8(test_data):
+    input_, dim_, size_, step_, _ = test_data
+    pipeline = VgfPipeline[input_params](
+        UnfoldCopy(),
+        (input_, dim_, size_, step_),
+        aten_op=UnfoldCopy.aten_op,
+        exir_op=UnfoldCopy.exir_op,
+        tosa_extensions=["fp8e4m3", "fp8e5m2"],
+        quantize=False,
+        atol=0,
+        rtol=0,
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_fp | test_data_bf16 | test_data_int)
 @common.SkipIfNoModelConverter
 def test_unfold_copy_vgf_no_quant(test_data: input_params):
