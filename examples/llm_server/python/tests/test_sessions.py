@@ -425,3 +425,34 @@ def test_injected_assistant_exemplar_falls_back_to_text():
         template_kwargs=None,
     )
     assert out.text == "X" and out.segments is None  # safe text fallback
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_hidden_tokens_are_not_spliced_into_next_turn(make_client, stream):
+    client, fake = make_client(
+        tokens=["answer", "<|im_end|>", "hidden"],
+        max_named_sessions=2,
+        gen_ids=[7, 8, 9],
+        finish_reason="length",
+    )
+    messages = [{"role": "user", "content": "hi"}]
+    first = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": messages,
+            "session_id": "s",
+            "ignore_eos": True,
+            "stream": stream,
+            "max_tokens": 3,
+        },
+    )
+    assert first.status_code == 200
+    messages.extend(
+        [
+            {"role": "assistant", "content": "answer"},
+            {"role": "user", "content": "more"},
+        ]
+    )
+    assert _chat_msgs(client, messages, "s").status_code == 200
+    assert fake.captured_config.prompt_segments is None

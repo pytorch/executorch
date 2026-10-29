@@ -1679,3 +1679,17 @@ def test_client_and_generation_reject_cross_loop_use():
     finally:
         owner.run_until_complete(client.close())
         owner.close()
+
+
+@pytest.mark.parametrize("advertised", [None, False, True])
+def test_ignore_eos_capability_comes_from_native_readiness(advertised):
+    async def scenario():
+        frame = {"ready": True, "multiplexed": True}
+        if advertised is not None:
+            frame["supports_ignore_eos"] = advertised
+        async with _real_client(
+            f"print({json.dumps(frame)!r}, flush=True)", negotiate=True
+        ) as client:
+            assert client.supports_ignore_eos is (advertised is True)
+
+    _run(scenario())

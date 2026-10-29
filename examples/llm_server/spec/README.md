@@ -30,8 +30,13 @@ uses the worker's unset/random value.
 multiplexed batching worker. It disables model EOS and automatic chat-template
 stops, allowing generation through terminator tokens up to the requested budget
 or context limit. Explicit request `stop` strings and cancellation still apply.
-Raw special-token text can appear in the response. The legacy worker rejects
-`ignore_eos: true` with `400 unsupported_parameter`; normal requests are unchanged.
+Response parsing and visible content still end at the first turn terminator;
+post-terminator tokens contribute to usage but cannot become tool calls or be
+spliced into a later conversation turn. Explicit `max_tokens` is recommended;
+without it generation uses the remaining context budget. The worker advertises
+support in its readiness frame. Older and legacy workers reject
+`ignore_eos: true` with `400 unsupported_parameter`. Non-boolean values, including
+null, fail schema validation with HTTP 422.
 
 `chat_template_kwargs.return_reasoning` is an ExecuTorch response-visibility
 control and defaults to `true`. For models with a reasoning extractor, set it

@@ -133,6 +133,8 @@ def make_client():
         reuse=0,
         reasoning_extractor=None,
         supports_ignore_eos=True,
+        streaming_parser_factory=None,
+        content_filter=None,
     ):
         fake = FakeRunner(
             tokens,
@@ -154,6 +156,8 @@ def make_client():
             max_context=max_context,
             tool_detector_cls=HermesDetector,
             reasoning_extractor=reasoning_extractor,
+            streaming_parser_factory=streaming_parser_factory,
+            content_filter=content_filter,
         )
         return TestClient(build_app(serving, "test-model")), fake
 

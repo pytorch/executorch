@@ -208,10 +208,10 @@ class ServingChat:
         cut = _earliest_stop(text, self._content_specials)
         return text[:cut] if cut is not None else text
 
-    def _visible_content(self, text: str, ignore_eos: bool = False) -> str:
+    def _visible_content(self, text: str) -> str:
         if self._content_filter is not None:
             text = self._content_filter(text)
-        return text if ignore_eos else self._strip_specials(text)
+        return self._strip_specials(text)
 
     def _split_reasoning(self, text: str) -> tuple[Optional[str], str]:
         if self._reasoning_extractor is None:
@@ -254,10 +254,7 @@ class ServingChat:
         """Cut raw model output at the earliest special token or request stop
         sequence BEFORE tool parsing, so a tool call (or any text) past the stop
         boundary is neither parsed nor emitted."""
-        stops = self._request_stops(req)
-        if not req.ignore_eos:
-            stops = self._stops + stops
-        return self._apply_stop(text, stops)
+        return self._apply_stop(text, self._stops + self._request_stops(req))
 
     def _cancel_generation(self, generation: AsyncIterator[str]) -> None:
         cancel = getattr(generation, "cancel", None)
@@ -308,7 +305,7 @@ class ServingChat:
         return (
             tool_calls,
             reasoning,
-            self._visible_content(text, req.ignore_eos) or None,
+            self._visible_content(text) or None,
         )
 
     @staticmethod
@@ -540,8 +537,7 @@ class ServingChat:
                     "invalid_value",
                 )
 
-    @staticmethod
-    def _reject_unsupported_params(req: ChatCompletionRequest) -> None:
+    def _reject_unsupported_params(self, req: ChatCompletionRequest) -> None:
         """Reject params we don't honor rather than silently ignoring them (a
         client relying on e.g. penalties/logprobs would otherwise get wrong
         behavior). Only the no-op/default value of each passes: penalties 0;
@@ -550,6 +546,10 @@ class ServingChat:
         constraining); logprobs are not returned at all."""
         rf = req.response_format
         flags = [
+            (
+                req.ignore_eos and not self._runtime.supports_ignore_eos,
+                "ignore_eos (requires an updated multiplexed worker)",
+            ),
             (req.n != 1, "n>1"),
             (req.reasoning_effort is not None, "reasoning_effort"),
             (bool(req.frequency_penalty), "frequency_penalty"),
@@ -665,13 +665,6 @@ class ServingChat:
             gen_stops = self._stops + self._request_stops(req)
         else:
             gen_stops = self._stops + self._content_specials + self._request_stops(req)
-        if req.ignore_eos and not getattr(self._runtime, "supports_ignore_eos", False):
-            raise APIError(
-                400,
-                "ignore_eos requires a multiplexed batching worker",
-                "invalid_request_error",
-                "unsupported_parameter",
-            )
         options = self._options(req, gen_stops)
         # The generation scaffold the worker will prefill ahead of this turn's
         # tokens (e.g. Qwen3 <think> block), resolved with the same per-request
@@ -743,7 +736,8 @@ class ServingChat:
             content=content,
             tool_calls=tool_calls,
             reasoning_content=reasoning,
-            generated_token_ids=stats.generated_token_ids,
+            # Hidden post-EOS tokens must not be spliced into a later echo.
+            generated_token_ids=None if req.ignore_eos else stats.generated_token_ids,
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
         )
@@ -778,11 +772,11 @@ class ServingChat:
         generation: AsyncIterator[str],
         stops: list[str],
         stop_hit: list[bool],
-        ignore_eos: bool = False,
     ) -> AsyncIterator[str]:
         if self._content_filter is not None:
-            raw, stop_hit[0] = await self._collect_until_stop(generation, stops)
-            content = self._visible_content(self._apply_stop(raw, stops), ignore_eos)
+            raw, stopped = await self._collect_until_stop(generation, stops)
+            stop_hit[0] = stop_hit[0] or stopped
+            content = self._visible_content(self._apply_stop(raw, stops))
             if content:
                 yield content
             return
@@ -805,10 +799,23 @@ class ServingChat:
         stops: list[str],
         stop_hit: list[bool],
     ) -> AsyncIterator[DeltaMessage]:
+        if req.ignore_eos:
+            source = generation
+
+            def on_generation_stop():
+                stop_hit[0] = True
+                self._cancel_generation(source)
+
+            # Drain past a visible turn boundary without cancelling generation.
+            # Explicit request stops still cancel and determine finish_reason.
+            generation = self._clean(source, stops, on_stop=on_generation_stop)
+            visible_stops = self._stops + (
+                [] if self._streaming_parser_factory else self._content_specials
+            )
+            generation = self._clean(generation, visible_stops)
+            stops = []
         if self._streaming_parser_factory is None:
-            async for text in self._stream_plain_content(
-                generation, stops, stop_hit, req.ignore_eos
-            ):
+            async for text in self._stream_plain_content(generation, stops, stop_hit):
                 yield DeltaMessage(content=text)
             return
         parser = self._streaming_parser_factory()
@@ -920,7 +927,7 @@ class ServingChat:
                     stops,
                 )
                 tool_calls, reasoning, content = self._extract_response(
-                    req, self._apply_stop(raw, stops)
+                    req, self._truncate_raw(raw, req)
                 )
                 if reasoning:
                     yield chunk(DeltaMessage(reasoning_content=reasoning))
@@ -953,7 +960,8 @@ class ServingChat:
             content=content,
             tool_calls=tool_calls,
             reasoning_content=reasoning or None,
-            generated_token_ids=stats.generated_token_ids,
+            # Hidden post-EOS tokens must not be spliced into a later echo.
+            generated_token_ids=None if req.ignore_eos else stats.generated_token_ids,
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
         )

@@ -140,5 +140,7 @@ subagents within a session overlap. Run `agentx profile --config benchmark.yaml`
 using the dataset README's configuration.
 
 `ignore_eos` is per request: normal chat requests still stop at EOS, and explicit
-request stop strings remain active. The benchmark does not require a modified
-worker binary or chat template.
+request stop strings remain active. Rebuild the multiplexed worker to include this
+support; no chat-template changes are needed. Generation continues after EOS, but
+the HTTP response only parses and displays the first assistant turn. Usage counts
+include all generated tokens.

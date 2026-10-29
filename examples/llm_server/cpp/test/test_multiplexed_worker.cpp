@@ -145,6 +145,7 @@ class ProtocolTest : public ::testing::Test {
     auto ready = receive();
     ASSERT_TRUE(ready.value("ready", false));
     ASSERT_TRUE(ready.value("multiplexed", false));
+    ASSERT_TRUE(ready.value("supports_ignore_eos", false));
     ASSERT_FALSE(ready.contains("request_id"));
     ASSERT_EQ(ready.at("max_named_sessions"), max_sessions);
     ASSERT_EQ(ready.at("max_inflight_requests"), config.max_inflight_requests);
@@ -1361,4 +1362,21 @@ int main(int argc, char** argv) {
   }
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
+}
+
+TEST_F(ProtocolTest, AcceptsBothIgnoreEosValues) {
+  start();
+  for (uint64_t id = 1; id <= 2; ++id) {
+    auto request = generate(id, 2);
+    request["ignore_eos"] = id == 2;
+    send(request);
+    Json done;
+    do {
+      done = receive();
+      ASSERT_FALSE(done.contains("error")) << done;
+    } while (done.contains("token"));
+    EXPECT_TRUE(done.value("done", false));
+    EXPECT_EQ(done.at("completion_tokens"), 2);
+  }
+  EXPECT_EQ(finish(), 0);
 }

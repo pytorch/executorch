@@ -278,6 +278,7 @@ class Worker {
       queue_.push_back(
           {nullptr,
            Json({{"ready", true},
+                 {"supports_ignore_eos", true},
                  {"multiplexed", true},
                  {"max_named_sessions", info.max_sessions},
                  {"max_inflight_requests", config_.max_inflight_requests}})
