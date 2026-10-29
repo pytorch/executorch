@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 import uvicorn
-
 from executorch.examples.llm_server.python import serve
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
@@ -178,6 +177,8 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
             "64",
             "--prefix_cache_entries",
             "0",
+            "--prefix_capture_slots",
+            "1",
         ]
     )
     launch.stages["template"].assert_called_once_with(
@@ -355,6 +356,8 @@ def test_overrides_and_capability_based_concurrency(argv, native_launch):
             "23",
             "--prefix-cache-entries",
             "5",
+            "--prefix-capture-slots",
+            "8",
             "--hf-tokenizer",
             "organization/model",
             "--assistant-header",
@@ -379,6 +382,8 @@ def test_overrides_and_capability_based_concurrency(argv, native_launch):
         "23",
         "--prefix_cache_entries",
         "5",
+        "--prefix_capture_slots",
+        "8",
     ]
     launch.stages["template"].assert_called_once_with(
         hf_tokenizer_path="organization/model", assistant_header=header
@@ -425,6 +430,7 @@ def test_file_without_sibling_config_requires_explicit_template(
         "--max-sessions",
         "--max-decode-sequences",
         "--max-inflight-requests",
+        "--prefix-capture-slots",
     ],
 )
 @pytest.mark.parametrize("value", ["0", "-1", str(1 << 31)])
@@ -445,6 +451,14 @@ def test_invalid_positive_capacities_fail_before_template_or_spawn(
         ["--prefix-cache-entries", str(1 << 31)],
         ["--max-sessions", str((1 << 31) - 1), "--prefix-cache-entries", "1"],
         ["--max-sessions", "1", "--prefix-cache-entries", str((1 << 31) - 2)],
+        [
+            "--max-sessions",
+            str((1 << 31) - 3),
+            "--prefix-cache-entries",
+            "1",
+            "--prefix-capture-slots",
+            "2",
+        ],
         ["--port", "0"],
         ["--port", "65536"],
     ],

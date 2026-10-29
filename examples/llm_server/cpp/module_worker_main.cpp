@@ -35,6 +35,10 @@ DEFINE_int32(
     prefix_checkpoint_interval,
     0,
     "Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.");
+DEFINE_int32(
+    prefix_capture_slots,
+    1,
+    "Transient rows for concurrent prompt capture");
 DEFINE_int32(max_session_tokens, 2048, "Maximum retained tokens per session");
 DEFINE_int32(max_decode_sequences, 2, "Decode slots in one packed forward");
 DEFINE_int32(
@@ -47,7 +51,7 @@ int main(int argc, char** argv) {
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_session_tokens <= 0 || FLAGS_max_decode_sequences <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_prefix_cache_entries < 0 ||
-      FLAGS_prefix_checkpoint_interval < 0 ||
+      FLAGS_prefix_capture_slots <= 0 || FLAGS_prefix_checkpoint_interval < 0 ||
       (FLAGS_prefix_checkpoint_interval > 0 &&
        FLAGS_prefix_cache_entries == 0)) {
     std::cerr
@@ -56,7 +60,8 @@ int main(int argc, char** argv) {
     return 1;
   }
   const auto physical_sessions = static_cast<std::int64_t>(FLAGS_max_sessions) +
-      FLAGS_prefix_cache_entries + (FLAGS_prefix_cache_entries > 0 ? 1 : 0);
+      FLAGS_prefix_cache_entries +
+      (FLAGS_prefix_cache_entries > 0 ? FLAGS_prefix_capture_slots : 0);
   if (physical_sessions > std::numeric_limits<int>::max()) {
     std::cerr
         << "session and prefix-cache capacity exceeds executor row limit\n";
@@ -109,6 +114,7 @@ int main(int argc, char** argv) {
     llm::serving::ServingRuntimeConfig config;
     config.max_sessions = FLAGS_max_sessions;
     config.prefix_cache_capacity = FLAGS_prefix_cache_entries;
+    config.max_prefix_captures = FLAGS_prefix_capture_slots;
     config.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
     config.max_context_length = FLAGS_max_session_tokens;
     config.max_requests = FLAGS_max_inflight_requests;

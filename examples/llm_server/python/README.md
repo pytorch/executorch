@@ -63,8 +63,10 @@ fallback is not enabled by this launcher.
 `--max-context` is required and sets both the HTTP limit and native session-token
 limit; choose a value supported by the export. Capacity defaults are
 `--max-sessions 16`, `--max-decode-sequences 8`, `--max-inflight-requests 64`, and
-`--prefix-cache-entries 0`. Logical sessions, packed decode width, and in-flight
-request capacity are independent limits. Python concurrency follows advertised
+`--prefix-cache-entries 0`. With prefix caching enabled, `--prefix-capture-slots`
+(default 1) bounds concurrent prompt captures; increasing it reserves extra native
+rows so overlapping requests can each retain a reusable prefix. Logical sessions,
+packed decode width, and in-flight request capacity are independent limits. Python concurrency follows advertised
 request capacity, not the single native delivery thread. Python reads native
 async streams directly through bounded per-request mailboxes, without a thread
 pool or a second token queue. A paused consumer does not stall peers, but consumers

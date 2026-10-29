@@ -30,6 +30,7 @@ def _validate_limits(parser, args) -> None:
         ("--max-sessions", args.max_sessions),
         ("--max-decode-sequences", args.max_decode_sequences),
         ("--max-inflight-requests", args.max_inflight_requests),
+        ("--prefix-capture-slots", args.prefix_capture_slots),
     ):
         if not 1 <= value <= _MAX_INT32:
             parser.error(f"{flag} must be between 1 and {_MAX_INT32}")
@@ -42,7 +43,7 @@ def _validate_limits(parser, args) -> None:
     physical_sessions = (
         args.max_sessions
         + args.prefix_cache_entries
-        + (1 if args.prefix_cache_entries else 0)
+        + (args.prefix_capture_slots if args.prefix_cache_entries else 0)
     )
     if physical_sessions > _MAX_INT32:
         parser.error("session and prefix-cache capacity exceeds the row limit")
@@ -81,6 +82,12 @@ def _parse_args(argv=None):
     parser.add_argument("--max-decode-sequences", type=int, default=8)
     parser.add_argument("--max-inflight-requests", type=int, default=64)
     parser.add_argument("--prefix-cache-entries", type=int, default=0)
+    parser.add_argument(
+        "--prefix-capture-slots",
+        type=int,
+        default=1,
+        help="Transient rows for concurrent prompt snapshots when prefix caching is enabled",
+    )
     parser.add_argument(
         "--prefix-checkpoint-interval",
         type=int,
@@ -152,6 +159,8 @@ def main(argv=None) -> None:
                 str(args.max_inflight_requests),
                 "--prefix_cache_entries",
                 str(args.prefix_cache_entries),
+                "--prefix_capture_slots",
+                str(args.prefix_capture_slots),
             ]
             + (
                 ["--prefix_checkpoint_interval", str(args.prefix_checkpoint_interval)]

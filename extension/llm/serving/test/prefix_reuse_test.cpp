@@ -402,8 +402,9 @@ class PrefixReuseTest : public ::testing::Test {
     if (provision) {
       executor.capacity = static_cast<int>(
           config.max_sessions +
-          (config.prefix_cache_capacity ? config.prefix_cache_capacity + 1
-                                        : 0));
+          (config.prefix_cache_capacity
+               ? config.prefix_cache_capacity + config.max_prefix_captures
+               : 0));
     }
     runtime = std::make_unique<ServingRuntime>(
         executor, std::move(scheduler), tokenizer, config, model_preparer);
@@ -435,8 +436,9 @@ class PrefixReuseTest : public ::testing::Test {
     EXPECT_LE(
         static_cast<std::size_t>(executor.peak_rows.load()),
         config.max_sessions +
-            (config.prefix_cache_capacity ? config.prefix_cache_capacity + 1
-                                          : 0));
+            (config.prefix_cache_capacity
+                 ? config.prefix_cache_capacity + config.max_prefix_captures
+                 : 0));
   }
   std::shared_ptr<Events> output() {
     auto event = std::make_shared<Events>();
@@ -1569,7 +1571,12 @@ TEST_F(PrefixReuseTest, PeriodicCaptureRefusalDoesNotFailGeneration) {
   EXPECT_EQ(replaced->terminal->stats.reused_prompt_tokens, 0u);
 }
 
-TEST_F(PrefixReuseTest, CancellationDuringPeriodicCaptureReleasesCaptureLane) {
+class CaptureCheckpointLimitTest
+    : public PrefixReuseTest,
+      public ::testing::WithParamInterface<std::size_t> {};
+
+TEST_P(CaptureCheckpointLimitTest, CancellationReleasesCaptureLane) {
+  config.max_prefix_captures = GetParam();
   watch_callbacks();
   config.prefix_checkpoint_interval = 8;
   executor.cloning.hold();
@@ -1587,6 +1594,11 @@ TEST_F(PrefixReuseTest, CancellationDuringPeriodicCaptureReleasesCaptureLane) {
   ASSERT_FALSE(next->terminal->error);
   EXPECT_GT(executor.clone_calls.load(), before);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    Capacity,
+    CaptureCheckpointLimitTest,
+    ::testing::Values(1u, 4u));
 
 TEST_F(PrefixReuseTest, PeriodicCaptureMakesAnotherSessionsReplacementCold) {
   watch_callbacks();
@@ -1787,6 +1799,57 @@ TEST_F(
   EXPECT_EQ(hit->terminal->stats.prefilled_prompt_tokens, 1u);
   EXPECT_EQ(executor.clone_calls.load(), 3);
 }
+
+class ConcurrentPrefixCaptureTest
+    : public PrefixReuseTest,
+      public ::testing::WithParamInterface<std::size_t> {};
+
+TEST_P(
+    ConcurrentPrefixCaptureTest,
+    ConcurrentCapturesRespectCapacityAndRemainReusable) {
+  watch_callbacks();
+  config.max_prefix_captures = GetParam();
+  config.prefix_cache_capacity = 8;
+  start();
+  auto slow = output();
+  slow->block_first = true;
+  slow->blocked.hold();
+  auto first = submit(slow, {1, 2, 3}, "seed");
+  ASSERT_TRUE(slow->blocked.wait());
+  std::vector<RequestHandle> others;
+  for (Token token = 4; token <= 6; ++token) {
+    others.push_back(submit(output(), {1, 2, token}, std::nullopt));
+  }
+  // Dispatch is blocked, so none of the captures can be collected yet.
+  ASSERT_FALSE(runtime->open_session_async("seed").get());
+  ASSERT_TRUE(wait_until([&] {
+    return executor.clone_calls.load() == static_cast<int>(GetParam());
+  }));
+  EXPECT_FALSE(first.done());
+  slow->blocked.release();
+  first.wait();
+  for (auto& other : others) {
+    other.wait();
+  }
+  EXPECT_EQ(executor.clone_calls.load(), static_cast<int>(GetParam()));
+  for (Token token = 3; token < 3 + GetParam(); ++token) {
+    auto hit = output();
+    submit(hit, {1, 2, token, 9}, std::nullopt).wait();
+    ASSERT_TRUE(hit->terminal);
+    EXPECT_EQ(hit->terminal->stats.reused_prompt_tokens, 3u);
+    EXPECT_EQ(hit->terminal->stats.prefilled_prompt_tokens, 1u);
+  }
+  // A new capture after all initial lanes retire proves capacity is released.
+  submit(output(), {7, 8, 9}, std::nullopt).wait();
+  auto hit = output();
+  submit(hit, {7, 8, 9, 10}, std::nullopt).wait();
+  EXPECT_EQ(hit->terminal->stats.reused_prompt_tokens, 3u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Capacity,
+    ConcurrentPrefixCaptureTest,
+    ::testing::Values(1u, 2u, 4u));
 
 TEST_F(
     PrefixReuseTest,

@@ -959,8 +959,12 @@ TEST_F(ServingRuntimeTest, InvalidKeysAndMissingResetDoNotAllocateSlots) {
 }
 
 TEST_F(ServingRuntimeTest, InvalidConfigurationIsInertWithoutExceptions) {
+  ServingRuntimeConfig no_captures;
+  no_captures.max_prefix_captures = 0;
   for (const auto& config :
-       {ServingRuntimeConfig{0, 128, 4}, ServingRuntimeConfig{1, 128, 0}}) {
+       {ServingRuntimeConfig{0, 128, 4},
+        ServingRuntimeConfig{1, 128, 0},
+        no_captures}) {
     start(config);
     EXPECT_FALSE(runtime->info().ready);
     expect_error(

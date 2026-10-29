@@ -54,7 +54,7 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::int32_t default_max_new_tokens = 256;
   // Snapshots for new sessions and clean replacements; zero disables reuse.
   // Explicit open/reset bypass reuse. When enabled, provision
-  // max_sessions + prefix_cache_capacity + 1 executor rows.
+  // max_sessions + prefix_cache_capacity + max_prefix_captures executor rows.
   std::size_t prefix_cache_capacity = 0;
   // Capture at absolute interval multiples and the initial prompt end.
   // Requires cache capacity; zero captures only the initial prompt.
@@ -70,6 +70,9 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Empty uses global LRU without protected early checkpoints.
   // Runs on control; must not block or reenter the runtime.
   batching::PrefixCache::RetentionPolicy prefix_cache_retention = {};
+  // Transient rows shared by prompt capture and named-session replacement.
+  // Must be positive. Checkpoint collection remains serialized.
+  std::size_t max_prefix_captures = 1;
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its
