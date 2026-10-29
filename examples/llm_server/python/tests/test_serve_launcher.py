@@ -168,7 +168,7 @@ def test_checkpoint_options_reach_worker(argv, launch):
         (16, 8, 64, 3, 3),
     ],
 )
-def test_capture_capacity_is_resolved_before_worker_launch(
+def test_capture_capacity_validation_and_worker_override(
     argv, launch, sessions, requests, interval, override, expected
 ):
     serve.main(
@@ -187,13 +187,25 @@ def test_capture_capacity_is_resolved_before_worker_launch(
         ]
     )
     command = launch.stages["spawn"].call_args.args[0]
-    assert command[command.index("--prefix_capture_slots") + 1] == str(expected)
+    assert command[command.index("--prefix_capture_slots") + 1] == str(override)
+    args = SimpleNamespace(
+        max_context=1024,
+        max_sessions=sessions,
+        max_decode_sequences=8,
+        max_inflight_requests=requests,
+        prefix_cache_entries=1,
+        prefix_checkpoint_interval=interval,
+        port=8000,
+    )
+    assert (
+        serve._validate_limits(Mock(), args, prefix_capture_slots=override) == expected
+    )
 
 
 def test_capture_capacity_defaults_to_automatic(argv, launch):
     serve.main(argv + ["--prefix-cache-entries", "4"])
     command = launch.stages["spawn"].call_args.args[0]
-    assert command[command.index("--prefix_capture_slots") + 1] == "16"
+    assert command[command.index("--prefix_capture_slots") + 1] == "0"
 
 
 def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):

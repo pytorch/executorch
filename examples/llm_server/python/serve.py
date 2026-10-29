@@ -41,6 +41,7 @@ def _validate_limits(parser, args, *, prefix_capture_slots=0) -> int:
         parser.error("--prefix-checkpoint-interval requires --prefix-cache-entries > 0")
     if not 0 <= prefix_capture_slots <= _MAX_INT32:
         parser.error(f"--prefix-capture-slots must be between 0 and {_MAX_INT32}")
+    # Mirrors ServingRuntimeConfig::resolved_prefix_captures for row validation.
     if prefix_capture_slots == 0:
         prefix_capture_slots = min(args.max_sessions, args.max_inflight_requests)
         if args.prefix_checkpoint_interval:
@@ -104,9 +105,7 @@ def _parse_args(argv=None):
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
 
-    args.prefix_capture_slots = _validate_limits(
-        parser, args, prefix_capture_slots=args.prefix_capture_slots
-    )
+    _validate_limits(parser, args, prefix_capture_slots=args.prefix_capture_slots)
 
     args.worker_bin = os.path.expanduser(args.worker_bin)
     if shutil.which(args.worker_bin) is None:

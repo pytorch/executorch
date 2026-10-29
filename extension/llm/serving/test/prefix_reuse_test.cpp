@@ -1604,9 +1604,11 @@ INSTANTIATE_TEST_SUITE_P(
     CaptureCheckpointLimitTest,
     ::testing::Values(1u, 4u));
 
-TEST_F(PrefixReuseTest, ConcurrentCheckpointsShareOnePendingSlot) {
+TEST_F(PrefixReuseTest, AutomaticConcurrentCheckpointsShareOnePendingSlot) {
   watch_callbacks();
-  config.max_prefix_captures = 2;
+  config = ServingRuntimeConfig{};
+  config.max_sessions = 4;
+  config.max_context_length = 64;
   config.prefix_cache_capacity = 8;
   config.prefix_checkpoint_interval = 8;
   model_preparer =
