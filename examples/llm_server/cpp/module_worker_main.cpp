@@ -37,8 +37,8 @@ DEFINE_int32(
     "Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.");
 DEFINE_int32(
     prefix_capture_slots,
-    1,
-    "Transient rows for concurrent prompt capture");
+    0,
+    "Transient capture rows; 0: size automatically from session/request limits");
 DEFINE_int32(max_session_tokens, 2048, "Maximum retained tokens per session");
 DEFINE_int32(max_decode_sequences, 2, "Decode slots in one packed forward");
 DEFINE_int32(
@@ -51,18 +51,26 @@ int main(int argc, char** argv) {
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_session_tokens <= 0 || FLAGS_max_decode_sequences <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_prefix_cache_entries < 0 ||
-      FLAGS_prefix_capture_slots <= 0 || FLAGS_prefix_checkpoint_interval < 0 ||
+      FLAGS_prefix_capture_slots < 0 || FLAGS_prefix_checkpoint_interval < 0 ||
       (FLAGS_prefix_checkpoint_interval > 0 &&
        FLAGS_prefix_cache_entries == 0)) {
     std::cerr
-        << "--pte and --tokenizer are required; capacity limits must be positive "
-           "(including prefix_capture_slots); cache entries and checkpoint interval must be "
-           "nonnegative; checkpoints require prefix_cache_entries > 0\n";
+        << "--pte and --tokenizer are required; capacity limits must be positive"
+           "; prefix-cache limits must be nonnegative; "
+           "checkpoints require prefix_cache_entries > 0\n";
     return 1;
   }
+  executorch::extension::llm::serving::ServingRuntimeConfig config;
+  config.max_sessions = FLAGS_max_sessions;
+  config.prefix_cache_capacity = FLAGS_prefix_cache_entries;
+  config.max_prefix_captures = FLAGS_prefix_capture_slots;
+  config.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
+  config.max_context_length = FLAGS_max_session_tokens;
+  config.max_requests = FLAGS_max_inflight_requests;
+  config.max_pending_operations = FLAGS_max_inflight_requests;
   const auto physical_sessions = static_cast<std::int64_t>(FLAGS_max_sessions) +
       FLAGS_prefix_cache_entries +
-      (FLAGS_prefix_cache_entries > 0 ? FLAGS_prefix_capture_slots : 0);
+      static_cast<int64_t>(config.resolved_prefix_captures());
   if (physical_sessions > std::numeric_limits<int>::max()) {
     std::cerr
         << "session and prefix-cache capacity exceeds executor row limit\n";
@@ -112,14 +120,6 @@ int main(int argc, char** argv) {
         width, decode_slots, width - decode_slots);
     if (!scheduler)
       throw std::runtime_error("invalid scheduler limits");
-    llm::serving::ServingRuntimeConfig config;
-    config.max_sessions = FLAGS_max_sessions;
-    config.prefix_cache_capacity = FLAGS_prefix_cache_entries;
-    config.max_prefix_captures = FLAGS_prefix_capture_slots;
-    config.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
-    config.max_context_length = FLAGS_max_session_tokens;
-    config.max_requests = FLAGS_max_inflight_requests;
-    config.max_pending_operations = FLAGS_max_inflight_requests;
     config.default_stop_tokens.assign(eos.begin(), eos.end());
     llm::serving::ServingRuntime runtime(
         **executor, std::move(scheduler), *tokenizer, config);

@@ -24,13 +24,12 @@ from .tool_parsers import HermesDetector
 _MAX_INT32 = (1 << 31) - 1
 
 
-def _validate_limits(parser, args, *, prefix_capture_slots=1) -> None:
+def _validate_limits(parser, args, *, prefix_capture_slots=0) -> int:
     for flag, value in (
         ("--max-context", args.max_context),
         ("--max-sessions", args.max_sessions),
         ("--max-decode-sequences", args.max_decode_sequences),
         ("--max-inflight-requests", args.max_inflight_requests),
-        ("--prefix-capture-slots", prefix_capture_slots),
     ):
         if not 1 <= value <= _MAX_INT32:
             parser.error(f"{flag} must be between 1 and {_MAX_INT32}")
@@ -40,15 +39,22 @@ def _validate_limits(parser, args, *, prefix_capture_slots=1) -> None:
         parser.error(f"--prefix-checkpoint-interval must be between 0 and {_MAX_INT32}")
     if args.prefix_checkpoint_interval and not args.prefix_cache_entries:
         parser.error("--prefix-checkpoint-interval requires --prefix-cache-entries > 0")
+    if not 0 <= prefix_capture_slots <= _MAX_INT32:
+        parser.error(f"--prefix-capture-slots must be between 0 and {_MAX_INT32}")
+    if prefix_capture_slots == 0:
+        prefix_capture_slots = min(args.max_sessions, args.max_inflight_requests)
+        if args.prefix_checkpoint_interval:
+            prefix_capture_slots = min(prefix_capture_slots, 2)
+    if not args.prefix_cache_entries:
+        prefix_capture_slots = 0
     physical_sessions = (
-        args.max_sessions
-        + args.prefix_cache_entries
-        + (prefix_capture_slots if args.prefix_cache_entries else 0)
+        args.max_sessions + args.prefix_cache_entries + prefix_capture_slots
     )
     if physical_sessions > _MAX_INT32:
         parser.error("session and prefix-cache capacity exceeds the row limit")
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535")
+    return prefix_capture_slots
 
 
 def _parse_args(argv=None):
@@ -85,8 +91,8 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--prefix-capture-slots",
         type=int,
-        default=1,
-        help="Transient rows for concurrent prompt snapshots when prefix caching is enabled",
+        default=0,
+        help="Transient capture rows; 0 (default): size from session/request limits",
     )
     parser.add_argument(
         "--prefix-checkpoint-interval",
@@ -98,7 +104,9 @@ def _parse_args(argv=None):
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
 
-    _validate_limits(parser, args, prefix_capture_slots=args.prefix_capture_slots)
+    args.prefix_capture_slots = _validate_limits(
+        parser, args, prefix_capture_slots=args.prefix_capture_slots
+    )
 
     args.worker_bin = os.path.expanduser(args.worker_bin)
     if shutil.which(args.worker_bin) is None:
@@ -162,7 +170,7 @@ def main(argv=None) -> None:
             ]
             + (
                 ["--prefix_capture_slots", str(args.prefix_capture_slots)]
-                if args.prefix_cache_entries and args.prefix_capture_slots != 1
+                if args.prefix_cache_entries
                 else []
             )
             + (

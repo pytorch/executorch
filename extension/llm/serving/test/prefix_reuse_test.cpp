@@ -394,6 +394,7 @@ class PrefixReuseTest : public ::testing::Test {
     config.max_sessions = 4;
     config.max_context_length = 64;
     config.prefix_cache_capacity = 2;
+    config.max_prefix_captures = 1;
   }
   void start(
       bool provision = true,
@@ -402,9 +403,9 @@ class PrefixReuseTest : public ::testing::Test {
     if (provision) {
       executor.capacity = static_cast<int>(
           config.max_sessions +
-          (config.prefix_cache_capacity
-               ? config.prefix_cache_capacity + config.max_prefix_captures
-               : 0));
+          (config.prefix_cache_capacity ? config.prefix_cache_capacity +
+                   config.resolved_prefix_captures()
+                                        : 0));
     }
     runtime = std::make_unique<ServingRuntime>(
         executor, std::move(scheduler), tokenizer, config, model_preparer);
@@ -436,9 +437,9 @@ class PrefixReuseTest : public ::testing::Test {
     EXPECT_LE(
         static_cast<std::size_t>(executor.peak_rows.load()),
         config.max_sessions +
-            (config.prefix_cache_capacity
-                 ? config.prefix_cache_capacity + config.max_prefix_captures
-                 : 0));
+            (config.prefix_cache_capacity ? config.prefix_cache_capacity +
+                     config.resolved_prefix_captures()
+                                          : 0));
   }
   std::shared_ptr<Events> output() {
     auto event = std::make_shared<Events>();
@@ -1603,6 +1604,57 @@ INSTANTIATE_TEST_SUITE_P(
     CaptureCheckpointLimitTest,
     ::testing::Values(1u, 4u));
 
+TEST_F(PrefixReuseTest, ConcurrentCheckpointsShareOnePendingSlot) {
+  watch_callbacks();
+  config.max_prefix_captures = 2;
+  config.prefix_cache_capacity = 8;
+  config.prefix_checkpoint_interval = 8;
+  model_preparer =
+      [this](const auto&, PromptInput input) -> ModelPreparationResult {
+    auto tokens = input.segments[0].get_tokens();
+    if (tokens == std::vector<Token>{99}) {
+      replacement_preparation.enter();
+    }
+    return make_token_prepared_input(std::move(tokens));
+  };
+  auto scheduler = std::make_unique<PausableScheduler>();
+  auto* paused = scheduler.get();
+  start(true, std::move(scheduler));
+  for (Token round = 0; round < 3; ++round) {
+    paused->paused = true;
+    const auto before = executor.clone_calls.load();
+    auto first_event = output();
+    auto second_event = output();
+    first_event->on_text = [this] { delivery_checkpoint.enter(); };
+    second_event->on_text = [this] { later_delivery_checkpoint.enter(); };
+    delivery_checkpoint.hold();
+    later_delivery_checkpoint.hold();
+    auto first = submit(first_event, std::vector<Token>(8, 10 + round), "a");
+    auto second = submit(second_event, std::vector<Token>(8, 20 + round), "b");
+    ASSERT_FALSE(runtime->open_session_async("a").get());
+    replacement_preparation.hold();
+    auto blocked = submit(output(), {99}, "c");
+    ASSERT_TRUE(replacement_preparation.wait());
+    // Both prefills run while control cannot collect the first checkpoint.
+    paused->paused = false;
+    ASSERT_TRUE(delivery_checkpoint.wait());
+    delivery_checkpoint.release();
+    ASSERT_TRUE(later_delivery_checkpoint.wait());
+    later_delivery_checkpoint.release();
+    ASSERT_TRUE(
+        wait_until([&] { return executor.clone_calls.load() >= before + 1; }));
+    blocked.cancel();
+    replacement_preparation.release();
+    first.wait();
+    second.wait();
+    blocked.wait();
+    EXPECT_EQ(executor.clone_calls.load(), before + 1);
+    for (const auto* key : {"a", "b", "c"}) {
+      ASSERT_FALSE(runtime->close_session_async(key).get());
+    }
+  }
+}
+
 TEST_F(PrefixReuseTest, PeriodicCaptureMakesAnotherSessionsReplacementCold) {
   watch_callbacks();
   config.max_sessions = 2;
@@ -1812,8 +1864,10 @@ TEST_P(
     ConcurrentCapturesRespectCapacityAndRemainReusable) {
   watch_callbacks();
   config.max_prefix_captures = GetParam();
-  config.max_sessions = GetParam() + 1;
+  config.max_sessions = GetParam() ? GetParam() + 1 : 4;
   config.prefix_cache_capacity = 8;
+  const auto captures = config.resolved_prefix_captures();
+  const auto requests = std::min(config.max_sessions, captures + 1);
   start();
   for (Token round = 0; round < 2; ++round) {
     const auto before = executor.clone_calls.load();
@@ -1823,23 +1877,21 @@ TEST_P(
     auto first = submit(slow, {10 + round, 2, 3}, "seed");
     ASSERT_TRUE(slow->blocked.wait());
     std::vector<RequestHandle> others;
-    for (Token i = 1; i <= GetParam(); ++i) {
+    for (Token i = 1; i < requests; ++i) {
       others.push_back(submit(output(), {10 + round, 2, 3 + i}, std::nullopt));
     }
     ASSERT_FALSE(runtime->open_session_async("seed").get());
     ASSERT_TRUE(wait_until([&] {
-      return executor.clone_calls.load() ==
-          before + static_cast<int>(GetParam());
+      return executor.clone_calls.load() == before + static_cast<int>(captures);
     }));
     slow->blocked.release();
     first.wait();
     for (auto& other : others) {
       other.wait();
     }
-    EXPECT_EQ(
-        executor.clone_calls.load(), before + static_cast<int>(GetParam()));
+    EXPECT_EQ(executor.clone_calls.load(), before + static_cast<int>(captures));
     ASSERT_FALSE(runtime->close_session_async("seed").get());
-    for (Token i = 0; i < GetParam(); ++i) {
+    for (Token i = 0; i < captures; ++i) {
       auto hit = output();
       submit(hit, {10 + round, 2, 3 + i, 9}, std::nullopt).wait();
       ASSERT_TRUE(hit->terminal);
@@ -1852,7 +1904,7 @@ TEST_P(
 INSTANTIATE_TEST_SUITE_P(
     Capacity,
     ConcurrentPrefixCaptureTest,
-    ::testing::Values(1u, 2u, 4u));
+    ::testing::Values(0u, 1u, 2u, 4u));
 
 TEST_F(
     PrefixReuseTest,
@@ -2337,8 +2389,6 @@ TEST_F(
   EXPECT_EQ(executor.clone_calls.load(), 1);
 }
 
-} // namespace
-
 class ReplacementCaptureBudgetTest
     : public PrefixReuseTest,
       public ::testing::WithParamInterface<bool> {};
@@ -2382,3 +2432,5 @@ INSTANTIATE_TEST_SUITE_P(
     Capacity,
     ReplacementCaptureBudgetTest,
     ::testing::Bool());
+
+} // namespace

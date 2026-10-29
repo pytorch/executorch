@@ -157,6 +157,45 @@ def test_checkpoint_options_reach_worker(argv, launch):
     assert command[command.index("--prefix_checkpoint_interval") + 1] == "512"
 
 
+@pytest.mark.parametrize(
+    "sessions,requests,interval,override,expected",
+    [
+        (16, 8, 0, 0, 8),
+        (4, 8, 0, 0, 4),
+        (16, 8, 64, 0, 2),
+        (1, 8, 64, 0, 1),
+        (16, 8, 0, 1, 1),
+        (16, 8, 64, 3, 3),
+    ],
+)
+def test_capture_capacity_is_resolved_before_worker_launch(
+    argv, launch, sessions, requests, interval, override, expected
+):
+    serve.main(
+        argv
+        + [
+            "--max-sessions",
+            str(sessions),
+            "--max-inflight-requests",
+            str(requests),
+            "--prefix-cache-entries",
+            "1",
+            "--prefix-checkpoint-interval",
+            str(interval),
+            "--prefix-capture-slots",
+            str(override),
+        ]
+    )
+    command = launch.stages["spawn"].call_args.args[0]
+    assert command[command.index("--prefix_capture_slots") + 1] == str(expected)
+
+
+def test_capture_capacity_defaults_to_automatic(argv, launch):
+    serve.main(argv + ["--prefix-cache-entries", "4"])
+    command = launch.stages["spawn"].call_args.args[0]
+    assert command[command.index("--prefix_capture_slots") + 1] == "16"
+
+
 def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
     args = serve._parse_args(argv)
     serve.main(argv)
@@ -428,7 +467,6 @@ def test_file_without_sibling_config_requires_explicit_template(
         "--max-sessions",
         "--max-decode-sequences",
         "--max-inflight-requests",
-        "--prefix-capture-slots",
     ],
 )
 @pytest.mark.parametrize("value", ["0", "-1", str(1 << 31)])
@@ -445,10 +483,12 @@ def test_invalid_positive_capacities_fail_before_template_or_spawn(
 @pytest.mark.parametrize(
     "options",
     [
+        ["--prefix-capture-slots", "-1"],
+        ["--prefix-capture-slots", str(1 << 31)],
         ["--prefix-cache-entries", "-1"],
         ["--prefix-cache-entries", str(1 << 31)],
         ["--max-sessions", str((1 << 31) - 1), "--prefix-cache-entries", "1"],
-        ["--max-sessions", "1", "--prefix-cache-entries", str((1 << 31) - 2)],
+        ["--max-sessions", "1", "--prefix-cache-entries", str((1 << 31) - 1)],
         [
             "--max-sessions",
             str((1 << 31) - 3),
@@ -482,6 +522,8 @@ def test_numeric_limit_boundaries_are_inclusive(argv, port):
             "--max-inflight-requests",
             str(max_int32),
             "--prefix-cache-entries",
+            "1",
+            "--prefix-capture-slots",
             "1",
             "--port",
             str(port),

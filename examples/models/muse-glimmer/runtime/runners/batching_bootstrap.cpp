@@ -73,8 +73,15 @@ create_muse_glimmer_batching_runtime() {
     throw std::invalid_argument(
         "required model/tokenizer or bounded batching limits are invalid");
   }
+  serving::ServingRuntimeConfig serving;
+  serving.max_sessions = FLAGS_max_sessions;
+  serving.max_requests = FLAGS_max_inflight_requests;
+  serving.max_pending_operations = FLAGS_max_inflight_requests;
+  serving.prefix_cache_capacity = FLAGS_prefix_cache_entries;
+  serving.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
   const int64_t physical = static_cast<int64_t>(FLAGS_max_sessions) +
-      FLAGS_prefix_cache_entries + (FLAGS_prefix_cache_entries > 0 ? 1 : 0);
+      FLAGS_prefix_cache_entries +
+      static_cast<int64_t>(serving.resolved_prefix_captures());
   if (physical > std::numeric_limits<int>::max())
     throw std::invalid_argument("too many physical sessions");
   auto result = std::make_unique<MuseGlimmerBatchingRuntime>();
@@ -114,13 +121,7 @@ create_muse_glimmer_batching_runtime() {
       batching::DecodeFirstScheduler::create(budget, decodes, budget - decodes);
   if (!scheduler)
     throw std::runtime_error("invalid scheduler limits");
-  serving::ServingRuntimeConfig serving;
-  serving.max_sessions = FLAGS_max_sessions;
   serving.max_context_length = result->backend.preparation->max_context_length;
-  serving.max_requests = FLAGS_max_inflight_requests;
-  serving.max_pending_operations = FLAGS_max_inflight_requests;
-  serving.prefix_cache_capacity = FLAGS_prefix_cache_entries;
-  serving.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
   serving.default_stop_tokens = {FLAGS_eos_id};
   for (const char* name : {"<|eot|>", "<|end_of_text|>"}) {
     auto encoded = result->tokenizer->encode(name, 0, 0);

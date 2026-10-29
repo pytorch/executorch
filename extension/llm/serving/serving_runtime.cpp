@@ -258,7 +258,6 @@ struct ServingRuntime::Impl {
             config.max_pending_operations > 0 && config.max_requests > 0 &&
             config.max_events_per_request > 0 &&
             config.max_tokens_per_request > 0 &&
-            config.max_prefix_captures > 0 &&
             config.prefix_checkpoint_interval <=
                 static_cast<std::size_t>(
                     std::numeric_limits<batching::Position>::max()) &&
@@ -720,7 +719,7 @@ struct ServingRuntime::Impl {
 
   bool try_acquire_capture_lane() {
     auto used = capture_lanes_used_.load();
-    while (used < config_.max_prefix_captures) {
+    while (used < config_.resolved_prefix_captures()) {
       if (capture_lanes_used_.compare_exchange_weak(used, used + 1)) {
         return true;
       }
