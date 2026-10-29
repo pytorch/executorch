@@ -44,6 +44,13 @@ class WhereSupported(SupportedTOSAOperatorCheck):
             return False
 
         x_dtype, y_dtype = x.meta["val"].dtype, y.meta["val"].dtype
+        if torch.int64 in (x_dtype, y_dtype) and x_dtype != y_dtype:
+            self.reporter.report_reject(
+                node,
+                f"Mixed {x_dtype} and {y_dtype} values in {node.target} are not supported",
+            )
+            return False
+
         supported_float = [torch.bool, torch.float16, torch.float32]
         if tosa_spec.support_extension("bf16"):
             supported_float.append(torch.bfloat16)

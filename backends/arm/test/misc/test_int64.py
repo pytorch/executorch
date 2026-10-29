@@ -125,6 +125,7 @@ _WIDE = torch.tensor([2**40, -(2**38), 2**31, -1], dtype=torch.int64)
 _WIDE_2 = torch.tensor([2**39, 2**37, 1, -(2**40)], dtype=torch.int64)
 _NARROW = torch.tensor([1, 2, 3, 4], dtype=torch.int32)
 _COND = torch.tensor([True, False, True, False])
+_FLAGS = torch.tensor([False, True, True, False])
 
 # A listed operator on matched int64 operands delegates; an unlisted operator or
 # a pair mixing widths falls back instead.
@@ -135,8 +136,8 @@ int64_extension_partition_suite = {
     "where_y_narrow": (torch.where, (_COND, _WIDE, _NARROW), 0),
     "cumsum": (lambda x: torch.cumsum(x, 0), (_WIDE,), 0),
     "cat_narrow": (lambda x, y: torch.cat([x, y]), (_WIDE, _NARROW), 0),
-    "where_x_bool": (torch.where, (_COND, _COND, _WIDE), 0),
-    "where_y_bool": (torch.where, (_COND, _WIDE, _COND), 0),
+    "where_x_bool": (torch.where, (_COND, _FLAGS, _WIDE), 0),
+    "where_y_bool": (torch.where, (_COND, _WIDE, _FLAGS), 0),
 }
 
 
