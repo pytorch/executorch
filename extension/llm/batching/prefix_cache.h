@@ -338,7 +338,7 @@ class ET_EXPERIMENTAL PrefixCache {
         victim = std::prev(entries_.end(), entries_.size() - *index);
       }
       entries_.push_front(
-          Entry{tokens, std::move(snapshot), std::move(metadata), {}});
+          Entry{tokens, std::move(snapshot), std::move(metadata), {}, {}});
       if (victim != entries_.end()) {
         entries_.erase(victim);
       }
