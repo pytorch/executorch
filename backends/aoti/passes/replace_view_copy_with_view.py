@@ -9,7 +9,8 @@
 # because this should only be used in the AOTInductor backend, as it
 # has less restrictions on whether the tensor memory is densely packed,
 
-from typing import Dict, Iterable
+import operator
+from typing import Dict, Iterable, List
 
 import torch
 from executorch.exir.dialects._ops import ops
@@ -40,21 +41,46 @@ class ReplaceViewCopyWithViewPass(ExportPass):
     def call(self, graph_module: fx.GraphModule) -> PassResult:
         graph_changed = False
 
-        for node in graph_module.graph.nodes:
+        for node in list(graph_module.graph.nodes):
             if node.op != "call_function" or node.target not in _VIEW_TARGETS:
                 continue
 
             if self._has_blocking_user(node, node.users.keys()):
                 continue
 
+            edge = isinstance(node.target, EdgeOpOverload)
             node.target = _VIEW_TARGETS[node.target]
             graph_changed = True
+            # Method outputs are contiguous tensors, so a returned view is
+            # copied out as one.
+            for returned in self._returned_values(node):
+                self._clone_contiguous(graph_module.graph, returned, edge)
 
         if graph_changed:
             graph_module.graph.lint()
             graph_module.recompile()
 
         return PassResult(graph_module, graph_changed)
+
+    def _returned_values(self, node: fx.Node) -> List[fx.Node]:
+        values = [node] if any(user.op == "output" for user in node.users) else []
+        for user in node.users:
+            if user.target is operator.getitem and any(
+                getitem_user.op == "output" for getitem_user in user.users
+            ):
+                values.append(user)
+        return values
+
+    def _clone_contiguous(self, graph: fx.Graph, node: fx.Node, edge: bool) -> None:
+        # The returned node becomes the clone, so the outputs keep their names.
+        with graph.inserting_before(node):
+            view = graph.call_function(node.target, node.args, node.kwargs)
+        view.meta = dict(node.meta)
+        node.target = (
+            ops.edge.aten.clone.default if edge else torch.ops.aten.clone.default
+        )
+        node.args = (view,)
+        node.kwargs = {"memory_format": torch.contiguous_format}
 
     def _has_blocking_user(self, node: fx.Node, users: Iterable[fx.Node]) -> bool:
         for user in users:
