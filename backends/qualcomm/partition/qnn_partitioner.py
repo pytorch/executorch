@@ -45,6 +45,7 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -66,6 +67,13 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+# dequantize ops with a CPU out variant; others cannot fall back
+CPU_DQ_OPS = {
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+}
 
 
 class QnnOperatorSupport(OperatorSupportBase):
@@ -258,7 +266,7 @@ class QnnPartitioner(Partitioner):
             self.skip_node_id_set,
             self.skip_node_op_set,
         )
-        return generate_partitions_from_list_of_nodes(
+        partitions = generate_partitions_from_list_of_nodes(
             edge_program.graph_module,
             op_support=self.op_support_checker,
         )

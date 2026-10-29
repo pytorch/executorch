@@ -9,6 +9,7 @@
 
 import copy
 import unittest
+from typing import Any
 
 import executorch.exir as exir
 import torch
@@ -25,9 +26,15 @@ from executorch.exir.pass_manager import ExportedProgramPassManager, PassManager
 from executorch.exir.passes import ScalarToTensorPass
 from executorch.exir.passes.pass_registry import PassRegistry
 from executorch.exir.program import to_edge
-from torch._subclasses.fake_tensor import FakeTensor
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.export import Dim, export, ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
+from torch.fx.experimental.proxy_tensor import make_fx
+from torch.fx.experimental.symbolic_shapes import (
+    compute_unbacked_bindings,
+    PendingUnbackedSymbolNotFound,
+    ShapeEnv,
+)
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 
