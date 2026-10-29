@@ -1789,7 +1789,7 @@ TEST_F(
 }
 
 TEST_F(PrefixReuseTest, ReusedPrefixTransfersOwnershipAndRecaptures) {
-  config.reuse_prefix_sessions = true;
+  ASSERT_TRUE(config.reuse_prefix_sessions);
   start();
   submit(output(), {1, 2, 3}, std::nullopt).wait();
   ASSERT_EQ(executor.clone_calls.load(), 1);
@@ -1815,7 +1815,6 @@ TEST_F(PrefixReuseTest, ReusedPrefixTransfersOwnershipAndRecaptures) {
 
 TEST_F(PrefixReuseTest, ReusedPrefixRemainsAvailableToOverlappingBranch) {
   watch_callbacks();
-  config.reuse_prefix_sessions = true;
   start();
   submit(output(), {1, 2, 3}, std::nullopt).wait();
   const auto moved = executor.clones().front().destination;
@@ -1841,7 +1840,6 @@ TEST_F(PrefixReuseTest, ReusedPrefixRemainsAvailableToOverlappingBranch) {
 }
 
 TEST_F(PrefixReuseTest, ReusedPrefixAppliesCurrentSamplingAndSeed) {
-  config.reuse_prefix_sessions = true;
   start();
   submit(output(), {1, 2, 3}, std::nullopt).wait();
   GenerationOptions options;
@@ -1860,6 +1858,22 @@ TEST_F(PrefixReuseTest, ReusedPrefixAppliesCurrentSamplingAndSeed) {
   EXPECT_FLOAT_EQ(feed.sampling->top_p, 0.7f);
   EXPECT_EQ(feed.sampling->top_k, 11);
   EXPECT_EQ(feed.seed, 99u);
+}
+
+TEST_F(PrefixReuseTest, DisablingSessionReuseClonesAndRetainsTheSnapshot) {
+  config.reuse_prefix_sessions = false;
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  ASSERT_EQ(executor.clone_calls.load(), 1);
+  const auto snapshot = executor.clones().front().destination;
+  auto continuation = output();
+  submit(continuation, {1, 2, 3, 4}, std::nullopt).wait();
+  ASSERT_TRUE(continuation->terminal);
+  EXPECT_EQ(continuation->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clone_calls.load(), 3);
+  EXPECT_NE(executor.feeds().back().session, snapshot);
+  const auto closed = executor.closed();
+  EXPECT_EQ(std::count(closed.begin(), closed.end(), snapshot), 0);
 }
 
 TEST_F(

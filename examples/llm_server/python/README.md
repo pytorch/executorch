@@ -73,10 +73,12 @@ nonblocking work. Prefix snapshots require extra native capacity, which the work
 provisions; ordinary continuation needs no prefix cache.
 The HTTP defaults are `--host 127.0.0.1 --port 8000`.
 
-With prefix caching enabled, `--reuse-prefix-sessions` optionally moves complete
-idle snapshots into working sessions. Concurrent branches can still clone the
-prefix while its working owner is alive; closed or unavailable sources fall back
-to another snapshot or prefill. Partial and equal-prompt matches still clone.
+With prefix caching enabled, complete idle snapshots move into new working sessions
+by default. Use `--no-reuse-prefix-sessions` to clone them instead. Concurrent
+branches can still clone the prefix while its working owner is alive; closed or
+unavailable sources fall back to another snapshot or prefill. Partial and
+equal-prompt matches still clone.
+Replacements of existing named sessions also clone to retain fallback checkpoints.
 
 Native worker startup runs inside the ASGI lifespan and awaits readiness before
 accepting requests. Startup, generation, and awaited shutdown share the server's

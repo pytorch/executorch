@@ -149,10 +149,18 @@ def test_invalid_checkpoint_options(argv, entries, interval):
         )
 
 
-def test_prefix_session_reuse_reaches_worker(argv, launch):
-    serve.main(argv + ["--prefix-cache-entries", "8", "--reuse-prefix-sessions"])
+@pytest.mark.parametrize(
+    ("flags", "enabled"),
+    [
+        ([], True),
+        (["--reuse-prefix-sessions"], True),
+        (["--no-reuse-prefix-sessions"], False),
+    ],
+)
+def test_prefix_session_reuse_reaches_worker(argv, launch, flags, enabled):
+    serve.main(argv + ["--prefix-cache-entries", "8"] + flags)
     command = launch.stages["spawn"].call_args.args[0]
-    assert "--reuse_prefix_sessions=true" in command
+    assert f"--reuse_prefix_sessions={str(enabled).lower()}" in command
 
 
 def test_checkpoint_options_reach_worker(argv, launch):
@@ -183,6 +191,7 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
             "64",
             "--prefix_cache_entries",
             "0",
+            "--reuse_prefix_sessions=true",
         ]
     )
     launch.stages["template"].assert_called_once_with(
@@ -384,6 +393,7 @@ def test_overrides_and_capability_based_concurrency(argv, native_launch):
         "23",
         "--prefix_cache_entries",
         "5",
+        "--reuse_prefix_sessions=true",
     ]
     launch.stages["template"].assert_called_once_with(
         hf_tokenizer_path="organization/model", assistant_header=header

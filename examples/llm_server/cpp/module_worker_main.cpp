@@ -37,7 +37,7 @@ DEFINE_int32(
     "Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.");
 DEFINE_bool(
     reuse_prefix_sessions,
-    false,
+    true,
     "Reuse complete idle prefix snapshots without cloning");
 DEFINE_int32(max_session_tokens, 2048, "Maximum retained tokens per session");
 DEFINE_int32(max_decode_sequences, 2, "Decode slots in one packed forward");

@@ -768,7 +768,8 @@ struct ServingRuntime::Impl {
       if (request->cancelled.load()) {
         return Selection::Cancelled;
       }
-      auto match = lookup_prefix(request);
+      // Replacements must retain fallback checkpoints for subsequent edits.
+      auto match = lookup_prefix(request, false);
       if (!match) {
         return Selection::Unavailable;
       }
@@ -948,7 +949,9 @@ struct ServingRuntime::Impl {
     return std::nullopt;
   }
 
-  std::optional<batching::PrefixMatch> lookup_prefix(const Request& request) {
+  std::optional<batching::PrefixMatch> lookup_prefix(
+      const Request& request,
+      bool reuse_session) {
     if (!request->text || !request->text->prompt ||
         config_.prefix_cache_capacity == 0) {
       return std::nullopt;
@@ -958,7 +961,7 @@ struct ServingRuntime::Impl {
     try {
 #endif
       return prefix_cache_.lookup_identity(
-          *request->text->prompt, config_.reuse_prefix_sessions);
+          *request->text->prompt, reuse_session);
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
       return std::nullopt;
@@ -1048,7 +1051,7 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
       try {
 #endif
-        auto match = lookup_prefix(request);
+        auto match = lookup_prefix(request, config_.reuse_prefix_sessions);
         Selection outcome = Selection::Selected;
         if (match) {
           opened = std::move(match->session);
