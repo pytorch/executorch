@@ -123,8 +123,12 @@ class TorchvisionExportTest(unittest.TestCase):
             manifest = json.loads((path / "export.json").read_text())
 
         self.assertEqual("capture", manifest["model"])
-        self.assertEqual({"CpuBackend": 2}, manifest["delegates"])
+        self.assertEqual({"CpuBackend": 1}, manifest["delegates"])
         self.assertEqual(
-            ["aten_convolution_default", "aten_convolution_default_1"],
+            [
+                "aten_convolution_default",
+                "aten_max_pool2d_with_indices_default",
+                "aten_convolution_default_1",
+            ],
             manifest["semantic_nodes"],
         )

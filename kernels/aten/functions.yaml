@@ -84,6 +84,8 @@
 
 - op: atanh.out
 
+- op: avg_pool1d.out
+
 - op: avg_pool2d.out
 
 - op: baddbmm.out
