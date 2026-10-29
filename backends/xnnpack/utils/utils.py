@@ -58,6 +58,18 @@ def get_input_node(node: torch.fx.Node, input_index: int) -> torch.fx.Node:
     return cast(torch.fx.Node, node.args[input_index])
 
 
+def is_dtype_cast(node: torch.fx.Node) -> bool:
+    """A _to_copy that changes dtype keeps the layout of its input and is
+    serialized as a convert node, not a transpose."""
+    src = node.args[0]
+    return (
+        isinstance(src, torch.fx.Node)
+        and "val" in src.meta
+        and "val" in node.meta
+        and node.meta["val"].dtype != src.meta["val"].dtype
+    )
+
+
 def normalize_mean_dims(mean_dims: Sequence[int] | int | None, rank: int) -> List[int]:
     """Return mean dims as non-negative indices for the given rank."""
     if rank <= 0:

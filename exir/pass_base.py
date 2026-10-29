@@ -450,14 +450,11 @@ class _ExportPassBase(PassBase):
 
                     try:
                         assert self.fake_tensor_mode is not None
-                        # TODO we should allocate static shapes
-                        # for param/buffer values
-                        if isinstance(x, torch.nn.Parameter):
-                            fake_tensor = self.fake_tensor_mode.from_tensor(
-                                x, static_shapes=True
-                            )
-                        else:
-                            fake_tensor = self.fake_tensor_mode.from_tensor(x)
+                        # A real tensor here is constant data, so its sizes
+                        # are known and must not become new symbols.
+                        fake_tensor = self.fake_tensor_mode.from_tensor(
+                            x, static_shapes=True
+                        )
                     except UnsupportedFakeTensorException:
                         # TODO: This is just a workaround to get over the
                         # x.as_subclass error

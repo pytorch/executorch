@@ -609,6 +609,19 @@ class TestPasses(unittest.TestCase):
         new_output = new_gm(test_input)
         self.assertTrue(torch.equal(original_output, new_output))
 
+    def test_scalar_to_tensor_pass_keeps_float64_scalars(self) -> None:
+        class ScalarOps(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x * 0.1 + 0.3) / 0.7
+
+        x = torch.tensor([1.0, 3.0, -7.0, 123456.789], dtype=torch.float64)
+        edge = to_edge(export(ScalarOps(), (x,), strict=True))
+        edge = edge.transform([ScalarToTensorPass(), RemoveMixedTypeOperators()])
+
+        self.assertTrue(
+            torch.equal(edge.exported_program().module()(x), ScalarOps()(x))
+        )
+
     def test_remove_mixed_types_symfloats(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -2901,6 +2914,69 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(len(new_ep.constants), 0)
         module = new_ep.module()
         self.assertFalse(torch.equal(module(x), module(x)))
+
+    def test_constant_prop_pass_keeps_tensor_written_in_place(self) -> None:
+        """
+        torch.export keeps in-place ops. A tensor or buffer that one writes,
+        directly, through a view, as an out= argument, in a list or inside a
+        no_grad or autocast block, has to stay a runtime tensor, or the folded
+        value is wrong and decomposing can fail.
+        """
+
+        class WrittenInPlace(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                for name in "bcdef":
+                    self.register_buffer(name, torch.zeros(6))
+
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                t = torch.zeros(2, 6)
+                rows = t.unbind(0)
+                rows[0].add_(x)
+                out = torch.zeros(6)
+                torch.mul(x, 2, out=out)
+                listed = torch.zeros(6)
+                torch._foreach_add_([listed], [x])
+                self.b[1:3].copy_(x[:2])
+                no_grad = torch.zeros(6)
+                with torch.no_grad():
+                    no_grad[1:3] = x[:2]
+                    self.c[1:3].copy_(x[:2])
+                autocast = torch.zeros(6)
+                with torch.autocast("cpu", enabled=False):
+                    autocast[2:4] = x[:2]
+                nested = torch.zeros(6)
+                with torch.no_grad():
+                    with torch.autocast("cpu", enabled=False):
+                        nested[1:3] = x[:2]
+                torch.atleast_2d(self.d)[0].add_(x)
+                torch.meshgrid(self.e, x[:1], indexing="ij")[0][:, 0].add_(x)
+                torch.broadcast_tensors(self.f, x.view(1, 6))[0][0].add_(x)
+                written = rows[0] + rows[1] + out + listed + no_grad + autocast + nested
+                buffers = self.b + self.c + self.d + self.e + self.f
+                return written + buffers * 2, self.b
+
+        x = torch.randn(6)
+        ep = constant_prop_pass(export(WrittenInPlace(), (x,), strict=False))
+        self.assertEqual(len(ep.constants), 0)
+        torch.testing.assert_close(ep.module()(x), WrittenInPlace()(x))
+
+        # A saved and loaded program no longer shares storage between views.
+        class WrittenThroughSlice(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("b", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.b[:2].copy_(x)
+                return self.b * 2
+
+        x = torch.randn(2)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "written.pt2")
+            torch.export.save(export(WrittenThroughSlice(), (x,), strict=False), path)
+            ep = constant_prop_pass(torch.export.load(path))
+        torch.testing.assert_close(ep.module()(x), WrittenThroughSlice()(x))
 
     def test_constant_prop_pass_detaches_folded_parameters(self) -> None:
         class M(torch.nn.Module):

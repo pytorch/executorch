@@ -108,6 +108,28 @@ endif()
 
 include(cmake/Dependencies.cmake)
 
+# The native CPU engine also runs XNNPACK but must not register this delegate.
+# When both are shared, XNNPACK moves into its own library so a process loads
+# one copy of it.
+if(EXECUTORCH_BUILD_SHARED AND EXECUTORCH_BUILD_NATIVE_CPU)
+  executorch_add_shared_library(xnnpack_shared extension_threadpool)
+  set_target_properties(
+    xnnpack_shared PROPERTIES OUTPUT_NAME executorch_xnnpack
+  )
+  executorch_target_whole_archive(xnnpack_shared XNNPACK EXPORTED)
+  executorch_target_whole_archive(
+    xnnpack_shared xnnpack-microkernels-prod EXPORTED
+  )
+  target_include_directories(
+    xnnpack_shared
+    INTERFACE
+      $<BUILD_INTERFACE:$<TARGET_PROPERTY:XNNPACK,INTERFACE_INCLUDE_DIRECTORIES>>
+  )
+  executorch_target_shipped_runtime_path(xnnpack_shared)
+  list(REMOVE_ITEM xnnpack_third_party XNNPACK)
+  list(APPEND xnnpack_third_party xnnpack_shared)
+endif()
+
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 # Build the delegate as a shared library for the wheel so a process has one copy
 # of it, and keep it static everywhere else so no other build changes.
@@ -128,10 +150,12 @@ if(EXECUTORCH_BUILD_SHARED)
     xnnpack_backend PROPERTIES OUTPUT_NAME executorch_backend_xnnpack
   )
   executorch_target_soname_policy(xnnpack_backend)
-  # XNNPACK and its microkernels are forced static, so bundle them inside this
-  # library instead of making every consumer supply them.
-  executorch_target_whole_archive(xnnpack_backend XNNPACK)
-  executorch_target_whole_archive(xnnpack_backend xnnpack-microkernels-prod)
+  if(NOT TARGET xnnpack_shared)
+    # XNNPACK and its microkernels are forced static, so bundle them inside this
+    # library instead of making every consumer supply them.
+    executorch_target_whole_archive(xnnpack_backend XNNPACK)
+    executorch_target_whole_archive(xnnpack_backend xnnpack-microkernels-prod)
+  endif()
   target_link_libraries(xnnpack_backend PUBLIC executorch_shared)
   # Ships beside the runtime in the wheel's lib/ directory.
   executorch_target_shipped_runtime_path(xnnpack_backend)
