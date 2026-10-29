@@ -31,7 +31,11 @@ multiplexed batching worker. It disables model EOS and automatic chat-template
 stops, allowing generation through terminator tokens up to the requested budget
 or context limit. Explicit request `stop` strings and cancellation still apply.
 Response parsing ends at the first decoded turn terminator from the worker or
-chat template. The worker advertises the decoded strings of all its default EOS
+chat template. Plain chat also treats content-special tokens as visible boundaries;
+under `ignore_eos`, these boundaries hide text without stopping generation.
+If a request stop cuts through a special-token spelling, an ambiguous trailing
+fragment is hidden too, even if it came from literal text.
+The worker advertises the decoded strings of all its default EOS
 IDs; HTTP `ignore_eos` is rejected if that metadata is absent or any EOS marker
 cannot decode to a nonempty string. Use matching model/tokenizer assets. Tokens
 past a recognized terminator contribute to usage but are excluded from parsing. Explicit
