@@ -48,21 +48,7 @@ To get ``ExecuTorchResult`` values even when PyTorch is installed, set ``EXECUTO
 CUDA streams
 ~~~~~~~~~~~~
 
-With ExecuTorch built with CUDA support, ``executorch.runtime.cuda`` makes the CUDA and TensorRT delegates of any number of programs run on one stream you choose, for example a CUDA green-context stream. It does not need PyTorch.
-
-.. code-block:: python
-
-    from executorch.runtime import cuda
-
-    stream = cuda.Stream()
-    with cuda.stream(stream):
-        outputs = first.execute(inputs)
-        second.execute(outputs)
-    stream.close()
-
-Inside a block, a program's copies between host and GPU memory also run on the stream, and a call waits only for that stream, so work queued on other streams keeps running. A call with GPU inputs or outputs, and ``to_host()``, still wait for the whole GPU. ``cuda.stream`` also takes a ``torch.cuda.Stream``, or any object with ``__cuda_stream__``. ``cuda.ExternalStream`` wraps a stream created elsewhere.
-
-Limits for now: only streams on CUDA device 0 can be selected, the default stream (handle 0) cannot be selected, and a method that uses CUDA graphs fails inside a block. As in PyTorch, the selection belongs to the thread: a block must end on the thread that started it, which keeps the stream selected until then, so do not ``await`` or ``yield`` inside a block. Keep a stream alive while a block selects it, unless the block selects that very ``cuda.Stream`` object.
+With ExecuTorch built with CUDA support, ``executorch.runtime.cuda`` makes the CUDA and TensorRT delegates of any number of programs run on one stream you choose, for example a CUDA green-context stream. It does not need PyTorch. The module documentation below gives an example and the rules.
 
 .. automodule:: executorch.runtime.cuda
     :members: Stream, ExternalStream, stream

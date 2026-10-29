@@ -1696,9 +1696,9 @@ void synchronize_tensor_devices(const Method& method) {
 #ifdef EXECUTORCH_PYBINDINGS_CUDA
 // A stream made by executorch.runtime.cuda.Stream. Selection and destruction
 // share one lock, so no thread can destroy it while any thread has it selected.
-class OwnedCudaStream final {
+class PyCudaStream final {
  public:
-  explicit OwnedCudaStream(int device) {
+  explicit PyCudaStream(int device) {
     const auto create = [this] {
       auto status = cudaGetDevice(&device_);
       if (status == cudaSuccess) {
@@ -1713,7 +1713,7 @@ class OwnedCudaStream final {
     device < 0 ? create() : with_cuda_device(device, create);
   }
 
-  ~OwnedCudaStream() {
+  ~PyCudaStream() {
     try {
       close();
     } catch (const std::exception&) {
@@ -1776,12 +1776,12 @@ class OwnedCudaStream final {
 };
 
 // A thread's active stream scopes, innermost last. They live here rather than
-// in the scope objects, so a scope that ends on another thread or out of order
-// is refused without restoring the wrong selection.
+// in the scope objects, so a scope that ends out of order, or is dropped on
+// another thread, never restores the wrong selection.
 struct CallerStreamScopes {
   struct Entry {
     uint64_t id;
-    std::shared_ptr<OwnedCudaStream> owner;
+    std::shared_ptr<PyCudaStream> owner;
     std::unique_ptr<executorch::extension::cuda::CallerStreamGuard> guard;
     // Refused or abandoned; ends as soon as every scope above it has ended.
     bool retired = false;
@@ -1813,25 +1813,23 @@ thread_local CallerStreamScopes caller_stream_scopes;
 
 // Selects a CUDA stream for the delegates of a Python with-block. Scopes are
 // told apart by a number that is never reused, unlike a guard's address.
-class CallerStreamScope final {
+class PyCallerStreamScope final {
  public:
-  explicit CallerStreamScope(std::shared_ptr<OwnedCudaStream> owner)
+  explicit PyCallerStreamScope(std::shared_ptr<PyCudaStream> owner)
       : owner_(std::move(owner)) {}
-  explicit CallerStreamScope(uintptr_t stream)
+  explicit PyCallerStreamScope(uintptr_t stream)
       : stream_(reinterpret_cast<cudaStream_t>(stream)) {}
 
-  // Losing the scope without an exit, for example to an exception raised
-  // right after enter() returned, ends it like a refused exit.
-  ~CallerStreamScope() {
+  // Losing the scope without an exit ends it at once, or, if blocks started
+  // after it are still active, when they end. Compared, never dereferenced:
+  // the starting thread may have ended.
+  ~PyCallerStreamScope() {
     if (id_ != 0 && home_ == &caller_stream_scopes) {
       end(/*refuse_out_of_order=*/false);
     }
   }
 
   void enter() {
-    if (id_ != 0) {
-      throw std::runtime_error("This CUDA stream scope is already active");
-    }
     static std::atomic<uint64_t> next_id{1};
     const cudaStream_t stream = owner_ ? owner_->select() : stream_;
     try {
@@ -1850,16 +1848,12 @@ class CallerStreamScope final {
     }
   }
 
+  // executorch.runtime.cuda enters each scope once, and exits it only on the
+  // thread that entered it.
   void exit() {
-    if (id_ == 0) {
-      return;
+    if (id_ != 0) {
+      end(/*refuse_out_of_order=*/true);
     }
-    // Compared, never dereferenced: the starting thread may have ended.
-    if (home_ != &caller_stream_scopes) {
-      throw std::runtime_error(
-          "A CUDA stream scope must end on the thread that started it");
-    }
-    end(/*refuse_out_of_order=*/true);
   }
 
  private:
@@ -1887,7 +1881,7 @@ class CallerStreamScope final {
     id_ = 0;
   }
 
-  std::shared_ptr<OwnedCudaStream> owner_;
+  std::shared_ptr<PyCudaStream> owner_;
   cudaStream_t stream_ = nullptr;
   uint64_t id_ = 0;
   const CallerStreamScopes* home_ = nullptr;
@@ -4839,19 +4833,19 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 
 #if defined(EXECUTORCH_PYBINDINGS_CUDA) && !defined(USE_ATEN_LIB)
   // Back executorch.runtime.cuda, which keeps the runtime free of PyTorch.
-  py::class_<OwnedCudaStream, std::shared_ptr<OwnedCudaStream>>(
+  py::class_<PyCudaStream, std::shared_ptr<PyCudaStream>>(
       m, "_CudaStream", py::module_local())
       .def(py::init<int>(), py::arg("device"))
-      .def_property_readonly("handle", &OwnedCudaStream::handle)
-      .def_property_readonly("device", &OwnedCudaStream::device)
-      .def("close", &OwnedCudaStream::close);
-  py::class_<CallerStreamScope>(m, "_CallerStreamScope", py::module_local())
-      .def(py::init<std::shared_ptr<OwnedCudaStream>>(), py::arg("stream"))
+      .def_property_readonly("handle", &PyCudaStream::handle)
+      .def_property_readonly("device", &PyCudaStream::device)
+      .def("close", &PyCudaStream::close);
+  py::class_<PyCallerStreamScope>(m, "_CallerStreamScope", py::module_local())
+      .def(py::init<std::shared_ptr<PyCudaStream>>(), py::arg("stream"))
       .def(py::init<uintptr_t>(), py::arg("stream"))
-      .def("__enter__", &CallerStreamScope::enter)
+      .def("__enter__", &PyCallerStreamScope::enter)
       .def(
           "__exit__",
-          [](CallerStreamScope& scope,
+          [](PyCallerStreamScope& scope,
              const py::object&,
              const py::object&,
              const py::object&) { scope.exit(); });

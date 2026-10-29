@@ -9,6 +9,7 @@
 """CUDA DLPack integration tests, run in both output modes by cuda.yml."""
 
 import array
+import contextlib
 import copy
 import ctypes
 import functools
@@ -265,9 +266,10 @@ class CudaDLPackTest(unittest.TestCase):
         inside = work_on_stream_ms(True)
         self.assertGreater(inside, 4 * outside + 0.5)
 
-        with cuda.stream(torch.cuda.Stream(device=self.device)):
+        foreign = torch.cuda.Stream(device=self.device)
+        with cuda.stream(foreign):
             method.execute([value])
-        # The CUDA delegate refuses a null stream, so it is refused on entry.
+        # The default stream waits for every other stream, so it is refused.
         for default in (
             cuda.ExternalStream(0),
             torch.cuda.default_stream(self.device),
@@ -278,9 +280,10 @@ class CudaDLPackTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             with cuda.stream(stream.cuda_stream):
                 pass
-        with self.assertRaises(RuntimeError):
-            with cuda.stream(cuda.ExternalStream(stream.cuda_stream, device=1)):
-                pass
+        for device in (1, "cuda:1"):
+            with self.assertRaises(RuntimeError):
+                with cuda.stream(cuda.ExternalStream(foreign.cuda_stream, device)):
+                    pass
 
         class Protocol:  # a cuda.core-style stream: device.device_id
             def __init__(self, version, device_id):
@@ -288,7 +291,7 @@ class CudaDLPackTest(unittest.TestCase):
                 self.device = types.SimpleNamespace(device_id=device_id)
 
             def __cuda_stream__(self):
-                return (self.version, stream.cuda_stream)
+                return (self.version, foreign.cuda_stream)
 
         with cuda.stream(Protocol(0, 0)):
             pass
@@ -299,24 +302,34 @@ class CudaDLPackTest(unittest.TestCase):
             with cuda.stream(Protocol(1, 0)):
                 pass
         cupy_style = types.SimpleNamespace(
-            device_id=1, __cuda_stream__=lambda: (0, stream.cuda_stream)
+            device_id=1, __cuda_stream__=lambda: (0, foreign.cuda_stream)
         )
         with self.assertRaises(RuntimeError):
             with cuda.stream(cupy_style):
                 pass
-        with cuda.stream(stream), self.assertRaises(RuntimeError):
-            stream.close()
+        # A Stream's handle selected through any wrapper keeps it open.
+        for selected in (stream, cuda.ExternalStream(stream.cuda_stream)):
+            with cuda.stream(selected), self.assertRaises(RuntimeError):
+                stream.close()
         second = cuda.Stream()
         outer, inner = cuda.stream(stream), cuda.stream(second)
+
+        def exit_if_active(scope):
+            with contextlib.suppress(RuntimeError):
+                scope.__exit__(None, None, None)
+
         outer.__enter__()
-        self.addCleanup(outer.__exit__, None, None, None)
+        self.addCleanup(exit_if_active, outer)
         inner.__enter__()
-        self.addCleanup(inner.__exit__, None, None, None)
+        self.addCleanup(exit_if_active, inner)
         with self.assertRaises(RuntimeError):
             outer.__exit__(None, None, None)
         with self.assertRaises(RuntimeError):
             stream.close()
         inner.__exit__(None, None, None)
+        # The refused scope ended with the inner one, so it can be used again.
+        with outer:
+            pass
         stream.close()
         second.close()
         stream = cuda.Stream()
@@ -340,19 +353,6 @@ class CudaDLPackTest(unittest.TestCase):
             except RuntimeError:
                 threading.Event().wait(0.05)
         stream.close()
-
-    @staticmethod
-    def _exits_cleanly(scope):
-        import threading
-
-        # A thread's slot may be freed only during its teardown.
-        for _ in range(100):
-            try:
-                scope.__exit__(None, None, None)
-                return True
-            except RuntimeError:
-                threading.Event().wait(0.05)
-        return False
 
     def test_stream_scopes_across_threads(self):
         import threading
@@ -392,7 +392,11 @@ class CudaDLPackTest(unittest.TestCase):
         later.start()
         later.join()
         self.assertEqual(errors, [])
-        self.assertTrue(self._exits_cleanly(shared))
+        # An exit from a thread that is not inside the block is refused.
+        with self.assertRaises(RuntimeError):
+            shared.__exit__(None, None, None)
+        with shared:
+            pass
         self._close_after_teardown(stream)
 
     def test_stream_scopes_on_threads_outside_threading(self):
@@ -419,7 +423,8 @@ class CudaDLPackTest(unittest.TestCase):
             _thread.start_new_thread(enter_and_end, (done,))
             done.wait()
         self.assertEqual(errors, [])
-        self.assertTrue(self._exits_cleanly(shared))
+        with shared:
+            pass
         self._close_after_teardown(stream)
 
     def test_stream_scope_ends_on_its_own_thread(self):
@@ -478,6 +483,22 @@ with cuda.stream(stream):
         )
         for path, data in zip(sys.argv[1::2], sys.argv[2::2])
     ]
+# A delegate that would replay a CUDA graph refuses a caller stream, so the
+# refusal shows that the selection reached both programs.
+Runtime.get().backend_registry.set_option(
+    "CudaBackend", {"enable_cuda_graph_for_method": "forward"}
+)
+graphed = [
+    Runtime.get().load_program(path, data_path=data or None).load_method("forward")
+    for path, data in zip(sys.argv[1::2], sys.argv[2::2])
+]
+with cuda.stream(stream):
+    for method in graphed:
+        try:
+            method.execute([value])
+        except RuntimeError:
+            continue
+        raise AssertionError("A delegate did not see the selected stream")
 stream.close()
 np.testing.assert_allclose(outputs[0], np.maximum(value, 0), atol=1e-6)
 np.testing.assert_allclose(outputs[1], np.tanh(value), atol=1e-6)
