@@ -17,6 +17,8 @@ on:
       - backends/cuda/**
       - backends/aoti/**
       - extension/cuda/**
+      - .ci/scripts/export_model_artifact.sh
+      - .ci/scripts/test_model_e2e_windows.ps1
       # Only unittest-cuda-runtime-windows runs for these alone; the other jobs
       # filter on their own paths and stay skipped.
       - .ci/scripts/test_cuda_runtime_windows.ps1
@@ -61,6 +63,8 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e_windows.ps1') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -165,6 +169,8 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e_windows.ps1') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
