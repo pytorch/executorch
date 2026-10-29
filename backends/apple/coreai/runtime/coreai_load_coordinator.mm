@@ -9,6 +9,7 @@
 
 #import "coreai_bookmarks.h"
 #import "coreai_cache_key.h"
+#import "coreai_error.h"
 #import "coreai_fault_injection.h"
 #import "coreai_source_bundle.h"
 
@@ -19,16 +20,6 @@ namespace executorch::backends::coreai {
 namespace {
 using runtime::Error;
 using runtime::Result;
-
-Error acquisition_error(NSError* error) {
-  ET_LOG(
-      Error,
-      "Core AI acquisition error (%s, %ld): %s",
-      error.domain.UTF8String,
-      static_cast<long>(error.code),
-      error.description.UTF8String);
-  return Error::Internal;
-}
 
 Result<id<ETCoreAIPreparedModel>> wait_for_acquisition(
     void (^operation)(ETCoreAIAcquisitionCompletion)) {
@@ -49,7 +40,7 @@ Result<id<ETCoreAIPreparedModel>> wait_for_acquisition(
         error = failure;
         dispatch_semaphore_signal(ready);
       });
-  // The SDK may still be reading caller-owned source after a bounded timeout.
+  // Wait without a timeout; the SDK may still be reading the staged source.
   dispatch_semaphore_wait(ready, DISPATCH_TIME_FOREVER);
   id<ETCoreAIPreparedModel> acquired = model;
   NSError* failure = error;

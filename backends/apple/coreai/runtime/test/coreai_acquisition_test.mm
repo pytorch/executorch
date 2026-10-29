@@ -44,6 +44,7 @@ using namespace executorch::backends::coreai::testing;
 namespace {
 
 TEST(CoreAIRuntimeAssetsTest, ProbesHostAndSelectsImmutableBundle) {
+  ScopedFakeBridgeState bridge;
   auto parsed = parse_manifest(encode(aot_manifest_dict()));
   ASSERT_TRUE(parsed.ok());
   auto assets = select_runtime_assets(parsed.get());

@@ -17,6 +17,10 @@ using executorch::backends::coreai::testing::FakeBridgeState;
   FakeBridgeState state;
 }
 @property(nonatomic, strong) dispatch_group_t callbacks;
+@property(nonatomic, copy) void (^retainedBindingCompletion)
+    (id<ETCoreAISession>, NSError*);
+@property(nonatomic, copy) void (^retainedExecutionCompletion)
+    (NSArray<ETCoreAITensor*>*, NSError*);
 @end
 
 @implementation CoreAIFakeBridgeContext
@@ -84,6 +88,24 @@ dispatch_time_t cleanup_deadline() {
 }
 } // namespace
 
+@interface FakeOutputOwner : NSObject
+@property(nonatomic, strong) CoreAIFakeBridgeContext* context;
+- (instancetype)initWithContext:(CoreAIFakeBridgeContext*)context;
+@end
+
+@implementation FakeOutputOwner
+- (instancetype)initWithContext:(CoreAIFakeBridgeContext*)context {
+  if ((self = [super init])) {
+    self.context = context;
+    ++context->state.output_owners;
+  }
+  return self;
+}
+- (void)dealloc {
+  --_context->state.output_owners;
+}
+@end
+
 @interface FakeSession ()
 @property(nonatomic, strong) CoreAIFakeBridgeContext* context;
 - (instancetype)initWithContext:(CoreAIFakeBridgeContext*)context;
@@ -117,6 +139,9 @@ dispatch_time_t cleanup_deadline() {
   const bool malformed = context->state.bad_output;
   dispatch_semaphore_t ready = context->state.input_ready;
   dispatch_semaphore_t proceed = context->state.allow_input_read;
+  if (context->state.retain_execution_completion) {
+    context.retainedExecutionCompletion = completion;
+  }
   run_async(context, ^{
     ETCoreAIInputTensor* input = inputs[0];
     context->state.last_input_bytes = input.bytes;
@@ -149,11 +174,14 @@ dispatch_time_t cleanup_deadline() {
     NSMutableArray<ETCoreAITensor*>* outputs =
         [NSMutableArray arrayWithCapacity:inputs.count];
     for (ETCoreAIInputTensor* value in inputs) {
+      FakeOutputOwner* owner =
+          [[FakeOutputOwner alloc] initWithContext:context];
       [outputs addObject:[[ETCoreAITensor alloc]
                              initWithByteCount:value.byteCount
                                          shape:value.shape
                                     scalarType:value.scalarType
                                      copyBytes:^(void* destination) {
+                                       (void)owner;
                                        ++context->state.output_copies;
                                        context->state.last_output_destination =
                                            destination;
@@ -200,14 +228,21 @@ dispatch_time_t cleanup_deadline() {
               outputNames:(NSArray<NSString*>*)outputNames
                completion:(void (^)(id<ETCoreAISession>, NSError*))completion {
   CoreAIFakeBridgeContext* context = self.context;
-  if (!valid_binding(context, functionName, inputNames, outputNames) ||
-      context->state.fail_load) {
-    completion(nil, fake_error(ETCoreAIErrorInvalidModel));
-    return;
+  const bool valid =
+      valid_binding(context, functionName, inputNames, outputNames);
+  const bool should_fail = context->state.fail_load;
+  if (context->state.retain_binding_completion) {
+    context.retainedBindingCompletion = completion;
   }
-  FakeSession* session = [[FakeSession alloc] initWithContext:context];
-  session.preparedPin = self;
-  completion(session, nil);
+  run_async(context, ^{
+    if (!valid || should_fail) {
+      completion(nil, fake_error(ETCoreAIErrorInvalidModel));
+      return;
+    }
+    FakeSession* session = [[FakeSession alloc] initWithContext:context];
+    session.preparedPin = self;
+    completion(session, nil);
+  });
 }
 @end
 
@@ -230,6 +265,9 @@ dispatch_time_t cleanup_deadline() {
   if (_context != nil) {
     --_context->state.loaders;
   }
+}
+- (NSString*)specializationIdentifier {
+  return @"default";
 }
 - (void)restoreModelFromBookmark:(NSData*)bookmark
                       completion:(ETCoreAIAcquisitionCompletion)completion {
@@ -408,18 +446,6 @@ dispatch_time_t cleanup_deadline() {
 }
 @end
 
-BOOL ETCoreAIIsAvailable(void) {
-  return YES;
-}
-
-NSString* ETCoreAIDeviceArchitectureName(void) {
-  return @"arch_b";
-}
-
-id<ETCoreAIModelLoading> ETCoreAICreateModelLoader(void) {
-  return current_context == nil ? nil : current_context->state.bookmark_loader;
-}
-
 namespace executorch::backends::coreai::testing {
 
 ScopedFakeBridgeState::ScopedFakeBridgeState()
@@ -438,11 +464,14 @@ ScopedFakeBridgeState::~ScopedFakeBridgeState() {
     }
     context_->state.bookmark_loader = nil;
     loader = nil;
+    context_.retainedBindingCompletion = nil;
+    context_.retainedExecutionCompletion = nil;
     context_->state.input_ready = nil;
     context_->state.allow_input_read = nil;
     EXPECT_EQ(context_->state.sessions.load(), 0);
     EXPECT_EQ(context_->state.prepared_models.load(), 0);
     EXPECT_EQ(context_->state.loaders.load(), 0);
+    EXPECT_EQ(context_->state.output_owners.load(), 0);
     EXPECT_EQ(context_->state.binding_mismatches.load(), 0);
     EXPECT_EQ(context_->state.missing_bundles.load(), 0);
     EXPECT_EQ(context_->state.input_wait_timeouts.load(), 0);

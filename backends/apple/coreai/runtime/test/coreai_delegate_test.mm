@@ -10,14 +10,11 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <gtest/gtest.h>
 #include <pthread.h>
-#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
-#include <type_traits>
 
 #include "coreai_bookmark_fixture.h"
-#import "coreai_fake_loader.h"
-#include "coreai_source_fixture.h"
+#import "coreai_delegate_fixture.h"
 
 namespace executorch::backends::coreai::testing {
 namespace {
@@ -34,144 +31,6 @@ class CoreAIDelegateTest : public ::testing::Test {
   }
   ScopedFakeBridgeState bridge;
   const BackendInterface* backend = nullptr;
-};
-
-// Keep the caller-owned manifest alive across failed initialization attempts.
-class DelegateFixture final {
- public:
-  DelegateFixture(
-      const BackendInterface* backend,
-      ScopedFakeBridgeState& bridge,
-      NSDictionary* manifest = manifest_dict())
-      : json(encode(manifest)),
-        processed(
-            json.bytes,
-            json.length,
-            [](void* context, void*, size_t) { ++*static_cast<int*>(context); },
-            &freed),
-        backend_(backend),
-        bridge_(bridge) {}
-
-  ~DelegateFixture() {
-    reset();
-    EXPECT_TRUE(bridge_.wait_for_callbacks(
-        dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)));
-    processed.Free();
-    if (json != nil)
-      EXPECT_EQ(freed, 1);
-    EXPECT_EQ(data.requests.load(), data.releases.load());
-  }
-  DelegateFixture(const DelegateFixture&) = delete;
-  DelegateFixture& operator=(const DelegateFixture&) = delete;
-
-  Error init(NSString* root = nil) {
-    if (storage.url == nil || json == nil)
-      return Error::Internal;
-    BackendOptions<1> options;
-    auto error = options.set_option(
-        "coreai_assets_dir", (root ?: storage.url.path).UTF8String);
-    if (error != Error::Ok)
-      return error;
-    return init_with_options({options.view().data(), options.view().size()});
-  }
-
-  Error init_with_options(
-      Span<const BackendOption> options,
-      MemoryAllocator* allocator = nullptr) {
-    reset();
-    BackendInitContext context(allocator, nullptr, "forward", &data, options);
-    auto result = backend_->init(context, &processed, {});
-    if (!result.ok())
-      return result.error();
-    handle = result.get();
-    return Error::Ok;
-  }
-
-  void reset() {
-    if (handle != nullptr)
-      backend_->destroy(handle);
-    handle = nullptr;
-  }
-
-  Error execute(Span<EValue*> args) {
-    BackendExecutionContext context;
-    return backend_->execute(context, handle, args);
-  }
-
-  TestData data;
-  TestDirectory storage;
-  int freed = 0;
-  NSData* json;
-  FreeableBuffer processed;
-  DelegateHandle* handle = nullptr;
-
- private:
-  const BackendInterface* backend_;
-  ScopedFakeBridgeState& bridge_;
-};
-
-struct FloatTensors {
-  float input[2] = {3, 7};
-  float output[2] = {-1, -1};
-  TensorImpl::SizesType input_size[1] = {2}, output_size[1] = {2};
-  TensorImpl::DimOrderType order[1] = {0};
-  TensorImpl::StridesType input_stride[1] = {1}, output_stride[1] = {1};
-  TensorImpl
-      input_impl{ScalarType::Float, 1, input_size, input, order, input_stride};
-  TensorImpl output_impl{
-      ScalarType::Float,
-      1,
-      output_size,
-      output,
-      order,
-      output_stride,
-      TensorShapeDynamism::DYNAMIC_BOUND};
-  EValue in{Tensor(&input_impl)}, out{Tensor(&output_impl)};
-  EValue* args[2] = {&in, &out};
-};
-
-NSMutableDictionary* multiple_io_manifest() {
-  NSMutableDictionary* manifest = manifest_dict();
-  manifest[@"input_names"] = @[ @"input_1", @"input_0" ];
-  manifest[@"output_names"] = @[ @"output_1", @"output_0" ];
-  return manifest;
-}
-
-template <typename T>
-struct RangeTensors {
-  static constexpr ScalarType dtype =
-      std::is_same_v<T, float> ? ScalarType::Float : ScalarType::Half;
-  T input[12] = {}, output[12] = {};
-  TensorImpl::SizesType input_shape[2] = {4, 2}, output_shape[2] = {4, 2};
-  TensorImpl::DimOrderType order[2] = {0, 1};
-  TensorImpl::StridesType input_strides[2] = {2, 1}, output_strides[2] = {2, 1};
-  TensorImpl input_impl{
-      dtype,
-      2,
-      input_shape,
-      input + 2,
-      order,
-      input_strides,
-      TensorShapeDynamism::DYNAMIC_BOUND};
-  TensorImpl output_impl{
-      dtype,
-      2,
-      output_shape,
-      output + 2,
-      order,
-      output_strides,
-      TensorShapeDynamism::DYNAMIC_BOUND};
-  EValue in{Tensor(&input_impl)}, out{Tensor(&output_impl)};
-  EValue* args[2] = {&in, &out};
-
-  RangeTensors() {
-    for (size_t i = 0; i < 12; ++i)
-      input[i] = static_cast<T>(i + 1);
-    fill_output();
-  }
-  void fill_output() {
-    std::fill_n(output, 12, static_cast<T>(99));
-  }
 };
 
 // All preflight rows must fail before reading payloads or creating storage.
@@ -309,7 +168,7 @@ TEST_F(CoreAIDelegateTest, AotInitPassesOnlySelectedArchitectureBundleToSdk) {
     auto selected = select_assets(parsed.get(), arch, @"macOS");
     ASSERT_TRUE(selected.ok());
     ASSERT_EQ(fixture.init(), Error::Ok);
-    auto key = bookmark_key(selected.get(), @"macOS", arch);
+    auto key = cache_variant_key(selected.get(), @"macOS", arch, @"default");
     ASSERT_TRUE(key.ok());
     NSString* expected = [fixture.storage.url.path
         stringByAppendingPathComponent:
@@ -348,6 +207,18 @@ TEST_F(
         hasPrefix:[fixture.storage.url.path stringByAppendingString:@"/"]]);
   }
   EXPECT_EQ(bridge.state().sessions.load(), 0);
+}
+
+TEST_F(CoreAIDelegateTest, RetainedBindingCompletionDoesNotPinSession) {
+  @autoreleasepool {
+    bridge.state().retain_binding_completion = true;
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    EXPECT_EQ(bridge.state().sessions.load(), 1);
+    fixture.reset();
+    EXPECT_EQ(bridge.state().sessions.load(), 0);
+    EXPECT_EQ(bridge.state().prepared_models.load(), 0);
+  }
 }
 
 TEST_F(CoreAIDelegateTest, OrderedIoBindingUsesManifestFunctionAndNames) {
@@ -689,6 +560,20 @@ TEST_F(CoreAIDelegateTest, BorrowedInputStorageStaysLiveUntilSuccessOrError) {
           bridge.state().last_input_first_byte.load(),
           reinterpret_cast<const unsigned char*>(tensors.input)[0]);
     }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, RetainedExecutionCompletionReleasesResults) {
+  @autoreleasepool {
+    bridge.state().retain_execution_completion = true;
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+    EXPECT_EQ(bridge.state().output_owners.load(), 0);
+    bridge.state().fail_execute = true;
+    EXPECT_EQ(fixture.execute({tensors.args, 2}), Error::Internal);
+    EXPECT_EQ(bridge.state().output_owners.load(), 0);
   }
 }
 

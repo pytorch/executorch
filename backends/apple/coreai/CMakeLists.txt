@@ -27,15 +27,26 @@ endforeach()
 
 enable_language(OBJCXX)
 
+# The consolidated shared runtime target is created after this directory.
+if(EXECUTORCH_BUILD_SHARED)
+  set(_coreai_library_type SHARED)
+  set(_coreai_runtime executorch_shared)
+else()
+  set(_coreai_library_type STATIC)
+  set(_coreai_runtime executorch)
+endif()
+
 set(_coreai_runtime_sources
     runtime/coreai_backend.mm
     runtime/coreai_bookmarks.mm
     runtime/coreai_cache_key.mm
     runtime/coreai_cache_root.mm
+    runtime/coreai_error.mm
     runtime/coreai_fault_injection.mm
     runtime/coreai_load_coordinator.mm
     runtime/coreai_manifest.mm
     runtime/coreai_source_bundle.mm
+    runtime/coreai_tensor_io.mm
     runtime/coreai_validation.mm
     runtime/coreai_storage.mm
 )
@@ -71,6 +82,7 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     runtime/test/coreai_fake_loader.mm
     runtime/test/coreai_acquisition_test.mm
     runtime/test/coreai_acquisition_fixture.mm
+    runtime/test/coreai_delegate_fixture.mm
     runtime/test/coreai_delegate_test.mm
     runtime/ETCoreAITensor.mm
     ${_coreai_runtime_sources}
@@ -78,14 +90,8 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   coreai_configure_objc_target(coreai_host_test)
   target_compile_definitions(coreai_host_test PRIVATE COREAI_ASSETS_TESTING=1)
   find_library(COREAI_FOUNDATION_FRAMEWORK Foundation REQUIRED)
-  # The consolidated runtime target is created after this directory.
-  if(EXECUTORCH_BUILD_SHARED)
-    set(_coreai_host_runtime executorch_shared)
-  else()
-    set(_coreai_host_runtime executorch)
-  endif()
   target_link_libraries(
-    coreai_host_test PRIVATE ${_coreai_host_runtime} GTest::gtest
+    coreai_host_test PRIVATE ${_coreai_runtime} GTest::gtest
                              ${COREAI_FOUNDATION_FRAMEWORK}
   )
   add_test(NAME coreai_host_test COMMAND coreai_host_test)
@@ -360,18 +366,13 @@ if(EXECUTORCH_BUILD_TESTS
     runtime/test/SDKSourceLifetimeTest.swift runtime/ETCoreAIModel.swift
     runtime/ETCoreAITensor.mm
   )
-  set_target_properties(
-    coreai_sdk_source_lifetime_test PROPERTIES Swift_LANGUAGE_VERSION 6
-  )
   coreai_configure_objc_target(coreai_sdk_source_lifetime_test)
-  coreai_require_os27(coreai_sdk_source_lifetime_test)
+  coreai_configure_swift_target(
+    coreai_sdk_source_lifetime_test coreai_sdk_source_lifetime_test
+  )
   target_compile_options(
     coreai_sdk_source_lifetime_test
-    PRIVATE
-      "$<$<COMPILE_LANGUAGE:Swift>:-parse-as-library;-import-objc-header;${CMAKE_CURRENT_SOURCE_DIR}/runtime/ETCoreAIBridge.h>"
-  )
-  target_link_libraries(
-    coreai_sdk_source_lifetime_test PRIVATE executorch::coreai_dependencies
+    PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:-parse-as-library>"
   )
   if(_coreai_run_sdk_tests)
     add_test(
@@ -385,13 +386,6 @@ if(EXECUTORCH_BUILD_TESTS
   endif()
 endif()
 
-if(EXECUTORCH_BUILD_SHARED)
-  set(_coreai_library_type SHARED)
-  set(_coreai_runtime executorch_shared)
-else()
-  set(_coreai_library_type STATIC)
-  set(_coreai_runtime executorch)
-endif()
 add_library(
   coreaidelegate ${_coreai_library_type} ${_coreai_runtime_sources}
                  $<TARGET_OBJECTS:coreai_bridge_obj>

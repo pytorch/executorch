@@ -28,12 +28,15 @@ struct FakeBridgeState {
   bool fail_execute = false;
   bool bad_output = false;
   bool multiple_io = false;
+  bool retain_binding_completion = false;
+  bool retain_execution_completion = false;
   NSString* last_bundle = nil;
   dispatch_semaphore_t input_ready = nil;
   dispatch_semaphore_t allow_input_read = nil;
   std::atomic<int> architecture_queries{0};
   std::atomic<int> executions{0};
   std::atomic<int> output_copies{0};
+  std::atomic<int> output_owners{0};
   std::atomic<const void*> last_output_destination{nullptr};
   std::atomic<int> sessions{0};
   std::atomic<int> prepared_models{0};
