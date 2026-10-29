@@ -89,6 +89,8 @@ python -m extension.llm.export.export_llm
 
 For supported Hugging Face models, set `base.model_id` and matching
 `base.params`; weights download automatically unless `base.checkpoint` is set.
+For registered local-only models, set `base.model_id`, `base.params`, and
+`base.checkpoint`.
 For local models, set `base.model_family`, `base.params`, and
 `base.checkpoint`.
 

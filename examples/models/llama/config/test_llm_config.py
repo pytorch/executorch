@@ -185,6 +185,38 @@ class TestValidConstruction(unittest.TestCase):
             ModelIdentity(ModelFamily.spark_x2_5, "spark_x2_5_1_7b"),
         )
 
+    def test_llama3_2_model_ids_infer_family(self):
+        model_ids = ("llama3_2_1b_instruct", "llama3_2_3b_instruct")
+
+        for model_id in model_ids:
+            with self.subTest(model_id=model_id):
+                config = BaseConfig(model_id=model_id)
+
+                self.assertEqual(
+                    LlmConfig(base=config).model_identity,
+                    ModelIdentity(ModelFamily.llama3_2, model_id),
+                )
+                self.assertIsNone(MODEL_SPECS[model_id].hf_repo_id)
+
+    def test_stories_model_id_is_local_only(self):
+        config = BaseConfig(model_id="stories110m")
+
+        self.assertEqual(
+            LlmConfig(base=config).model_identity,
+            ModelIdentity(ModelFamily.llama2, "stories110m"),
+        )
+        self.assertIsNone(MODEL_SPECS["stories110m"].hf_repo_id)
+
+    def test_legacy_stories_model_class_resolves_to_model_id(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            config = BaseConfig(model_class=ModelType.stories110m)
+
+        self.assertEqual(
+            LlmConfig(base=config).model_identity,
+            ModelIdentity(ModelFamily.llama2, "stories110m"),
+        )
+
     def test_model_family_is_used_without_model_id(self):
         config = BaseConfig(model_family="llama3_2")
 
@@ -243,7 +275,7 @@ class TestValidConstruction(unittest.TestCase):
             ):
                 BaseConfig(model_family=model_family, model_id="qwen3_0_6b")
 
-    def test_model_id_must_be_registered_with_an_hf_checkpoint(self):
+    def test_model_id_must_be_registered(self):
         with self.assertRaisesRegex(ValueError, "Unknown model_id"):
             BaseConfig(model_id="future_model")
         with self.assertRaisesRegex(ValueError, "Unknown model_id"):
@@ -252,8 +284,15 @@ class TestValidConstruction(unittest.TestCase):
                 checkpoint="/tmp/custom.pth",
             )
 
-    def test_all_model_specs_have_hf_checkpoint_sources(self):
-        self.assertTrue(all(spec.hf_repo_id for spec in MODEL_SPECS.values()))
+    def test_local_only_model_ids_have_no_hf_checkpoint_source(self):
+        self.assertEqual(
+            {
+                model_id
+                for model_id, spec in MODEL_SPECS.items()
+                if spec.hf_repo_id is None
+            },
+            {"stories110m", "llama3_2_1b_instruct", "llama3_2_3b_instruct"},
+        )
 
     def test_valid_llm_config(self):
         with self.assertWarnsRegex(

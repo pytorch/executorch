@@ -224,8 +224,8 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--model-id",
         choices=list(MODEL_SPECS),
         help=(
-            "Concrete model id for an automatically downloaded Hugging Face "
-            "checkpoint; --checkpoint uses a local override."
+            "Registered concrete model id. Downloads from Hugging Face when a "
+            "source is linked; otherwise requires --checkpoint."
         ),
     )
     parser.add_argument(
@@ -747,19 +747,27 @@ def export_llama(  # noqa: C901
     model_identity = llm_config.model_identity
     model_family = model_identity.family
     model_id = model_identity.model_id
-    if model_id is not None and not llm_config.base.params:
+    if not llm_config.base.checkpoint and model_id is not None:
+        repo_id = MODEL_SPECS[model_id].hf_repo_id
+        if repo_id is None:
+            raise ValueError(
+                f"base.model_id {model_id!r} has no linked Hugging Face repository. "
+                "Provide base.checkpoint."
+            )
+
+        if not llm_config.base.params:
+            raise ValueError(
+                f"base.model_id {model_id!r} requires base.params to construct the model."
+            )
+
+        convert_weights = _get_hf_weight_converter(model_family)
+        checkpoint = download_and_convert_hf_checkpoint(repo_id, convert_weights)
+        llm_config.base.checkpoint = checkpoint
+    elif model_id is not None and not llm_config.base.params:
         raise ValueError(
             f"base.model_id {model_id!r} requires base.params to construct the model."
         )
-
-    if not llm_config.base.checkpoint and model_id is not None:
-        model_spec = MODEL_SPECS[model_id]
-        convert_weights = _get_hf_weight_converter(model_family)
-        checkpoint = download_and_convert_hf_checkpoint(
-            model_spec.hf_repo_id, convert_weights
-        )
-        llm_config.base.checkpoint = checkpoint
-    elif not llm_config.base.checkpoint and model_id is None:
+    elif not llm_config.base.checkpoint:
         warnings.warn(
             "No base.model_id or base.checkpoint was supplied; "
             "exporting randomly initialized weights",

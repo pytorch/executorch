@@ -127,7 +127,7 @@ class ExportLlamaLibTest(unittest.TestCase):
         self.assertEqual(EXECUTORCH_DEFINED_MODELS, expected_executorch_models)
         self.assertEqual(TORCHTUNE_DEFINED_MODELS, expected_torchtune_models)
 
-    def test_registered_model_families_have_eager_and_hf_routes(self):
+    def test_registered_model_families_have_eager_routes(self):
         registered_families = {spec.family for spec in MODEL_SPECS.values()}
         eager_families = set(
             export_llama_lib.EXECUTORCH_DEFINED_MODEL_FAMILIES
@@ -135,7 +135,10 @@ class ExportLlamaLibTest(unittest.TestCase):
         )
 
         self.assertTrue(registered_families <= eager_families)
-        for model_family in registered_families:
+        hf_model_families = {
+            spec.family for spec in MODEL_SPECS.values() if spec.hf_repo_id is not None
+        }
+        for model_family in hf_model_families:
             with self.subTest(model_family=model_family):
                 self.assertTrue(
                     callable(export_llama_lib._get_hf_weight_converter(model_family))
@@ -246,6 +249,76 @@ class ExportLlamaLibTest(unittest.TestCase):
 
         download_checkpoint.assert_not_called()
 
+    def test_hf_model_id_with_local_checkpoint_requires_params(self):
+        llm_config = _llm_config(model_id="qwen2_5_0_5b", checkpoint="/tmp/local.pth")
+
+        with (
+            patch.object(
+                export_llama_lib, "download_and_convert_hf_checkpoint"
+            ) as download_checkpoint,
+            patch.object(export_llama_lib, "_export_llama") as export_model,
+            self.assertRaisesRegex(
+                ValueError,
+                r"base\.model_id 'qwen2_5_0_5b' requires base\.params",
+            ),
+        ):
+            export_llama_lib.export_llama(llm_config)
+
+        download_checkpoint.assert_not_called()
+        export_model.assert_not_called()
+
+    def test_local_only_model_id_requires_checkpoint(self):
+        for model_id in (
+            "stories110m",
+            "llama3_2_1b_instruct",
+            "llama3_2_3b_instruct",
+        ):
+            with self.subTest(model_id=model_id):
+                llm_config = _llm_config(model_id=model_id)
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    rf"base\.model_id {model_id!r} has no linked Hugging Face repository",
+                ):
+                    export_llama_lib.export_llama(llm_config)
+
+    def test_local_only_model_id_uses_checkpoint(self):
+        llm_config = _llm_config(
+            model_id="llama3_2_1b_instruct",
+            checkpoint="/tmp/local.pth",
+            params="/tmp/params.json",
+        )
+
+        with (
+            patch.object(
+                export_llama_lib, "download_and_convert_hf_checkpoint"
+            ) as download_checkpoint,
+            patch.object(
+                export_llama_lib, "_export_llama", return_value=_export_result()
+            ),
+        ):
+            self.assertEqual(export_llama_lib.export_llama(llm_config), "qwen.pte")
+
+        download_checkpoint.assert_not_called()
+
+    def test_local_only_model_id_requires_params(self):
+        for model_id in (
+            "stories110m",
+            "llama3_2_1b_instruct",
+            "llama3_2_3b_instruct",
+        ):
+            with self.subTest(model_id=model_id):
+                llm_config = _llm_config(
+                    model_id=model_id,
+                    checkpoint="/tmp/local.pth",
+                )
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    rf"base\.model_id {model_id!r} requires base\.params",
+                ):
+                    export_llama_lib.export_llama(llm_config)
+
     def test_legacy_hf_model_class_requires_params_before_download(self):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", FutureWarning)
@@ -261,6 +334,24 @@ class ExportLlamaLibTest(unittest.TestCase):
                 export_llama_lib.export_llama(llm_config)
 
         download_checkpoint.assert_not_called()
+
+    def test_legacy_stories_model_class_requires_local_inputs(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            llm_config = _llm_config(model_class=ModelType.stories110m)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"base\.model_id 'stories110m'.*Provide base\.checkpoint",
+        ):
+            export_llama_lib.export_llama(llm_config)
+
+        llm_config.base.checkpoint = "/tmp/local.pth"
+        with self.assertRaisesRegex(
+            ValueError,
+            r"base\.model_id 'stories110m' requires base\.params",
+        ):
+            export_llama_lib.export_llama(llm_config)
 
     def test_checkpoint_overrides_model_id_download(self):
         llm_config = _llm_config(
