@@ -31,13 +31,14 @@ def main(job):
         assert hashlib.sha256(Path(base['PTE']).read_bytes()).hexdigest() == base['PTE_SHA256']
         with Path(base['PTD']).open('rb') as stream:
             assert hashlib.file_digest(stream,'sha256').hexdigest() == base['PTD_SHA256']
-        tasks = [(route,split,prefix) for route in ['current','same-route-control']
-                 for split in ['chat','agent'] for prefix in ['off','on']]
+        tasks = settings.get('tasks',[(route,split,prefix) for route in ['current','same-route-control']
+                 for split in ['chat','agent'] for prefix in ['off','on']])
         for route,split,prefix in tasks:
             name=f'{route}-{split}-{prefix}-c16'
             status('collecting-paired-prefix-performance',current=name)
             cfg=dict(base,split=split,worker=settings['workers'][route]['path'],
                      worker_SHA256=settings['workers'][route]['SHA256'],port=settings['port'])
+            cfg['prefix_checkpoint_interval']=settings.get('prefix_checkpoint_interval',base['prefix_checkpoint_interval'])
             configpath=job/(name+'.configuration.json')
             configpath.open('x').write(json.dumps(cfg,indent=2))
             wrapper=job/(name+'.serve.sh')
