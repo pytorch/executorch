@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -131,6 +132,13 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
 
     ComplexQuantizableModelModule = ComplexQuantizableModel()
 
+    class DtypeChangingCopies(torch.nn.Module):
+        def forward(self, x):
+            y = x.to(dtype=torch.float16, memory_format=torch.channels_last)
+            return y.to(dtype=torch.float32, memory_format=torch.contiguous_format)
+
+    DtypeChangingCopiesModule = DtypeChangingCopies()
+
     def test_implicit_redundant_op_removal(self):
         (
             Tester(self.ImplicitRedundantOpRemovalModule, (torch.randn(1, 3, 3, 3),))
@@ -179,4 +187,18 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                 }
             )
             .run_method_and_compare_outputs(qtol=1)
+        )
+
+    def test_dtype_changing_to_copy_pair_not_removed(self):
+        (
+            Tester(self.DtypeChangingCopiesModule, (torch.randn(1, 3, 3, 3),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten__to_copy_default": 2,
+                }
+            )
+            .run_method_and_compare_outputs()
         )
