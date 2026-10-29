@@ -40,7 +40,11 @@ class TestViewOperator(BaseOpenvinoOpTest):
                 n = n.item()
                 torch._check(n >= 1)
                 torch._check(n <= x.shape[0])
-                return x[:n].view(n, -1).sum(0)
+                return x[:n].view(n, -1)
 
-        # The size reaches the OpenVINO partition as a SymInt input.
-        self.execute_layer_test(View(), (torch.randn(4, 8), torch.tensor(3)))
+        # The size reaches the OpenVINO partition as a SymInt input. The second
+        # call needs a larger output than the first one returned.
+        x = torch.randn(4, 8)
+        self.execute_layer_test(
+            View(), (x, torch.tensor(3)), more_inputs=((x, torch.tensor(4)),)
+        )

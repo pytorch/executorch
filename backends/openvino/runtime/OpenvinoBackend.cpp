@@ -21,6 +21,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 #include "OpenvinoBackend.h"
 
@@ -251,9 +252,13 @@ bool OpenvinoBackend::ensure_loaded() const {
         infer_request_set_output_tensor_by_index,
         ov_infer_request_set_output_tensor_by_index)
     LOAD_SYM(infer_request_infer, ov_infer_request_infer)
+    LOAD_SYM(
+        infer_request_get_output_tensor_by_index,
+        ov_infer_request_get_output_tensor_by_index)
     LOAD_SYM(infer_request_free, ov_infer_request_free)
     LOAD_SYM(tensor_create_from_host_ptr, ov_tensor_create_from_host_ptr)
     LOAD_SYM(tensor_free, ov_tensor_free)
+    LOAD_SYM(tensor_get_shape, ov_tensor_get_shape)
     LOAD_SYM(shape_create, ov_shape_create)
     LOAD_SYM(shape_free, ov_shape_free)
 
@@ -418,9 +423,29 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
     ov_.compiled_model_free(compiled_model);
     return exr::Error::MemoryAllocationFailed;
   }
+  size_t num_outputs = 0;
+  status = ov_.compiled_model_outputs_size(compiled_model, &num_outputs);
+  if (status != OV_STATUS_OK) {
+    ET_LOG(Error, "OpenVINO: failed to get output count (status=%d)", status);
+    ov_.infer_request_free(infer_request);
+    ov_.compiled_model_free(compiled_model);
+    return exr::Error::Internal;
+  }
+  int64_t* output_bound_sizes = nullptr;
+  if (num_outputs > 0) {
+    output_bound_sizes = allocator->allocateList<int64_t>(
+        num_outputs * exr::kTensorDimensionLimit);
+    if (!output_bound_sizes) {
+      ET_LOG(Error, "OpenVINO: failed to allocate output bounds");
+      ov_.infer_request_free(infer_request);
+      ov_.compiled_model_free(compiled_model);
+      return exr::Error::MemoryAllocationFailed;
+    }
+  }
   new (handle) ExecutionHandle;
   handle->compiled_model = compiled_model;
   handle->infer_request = infer_request;
+  handle->output_bound_sizes = output_bound_sizes;
 
   return handle;
 }
@@ -508,6 +533,23 @@ exr::Error OpenvinoBackend::execute(
         "OpenVINO: expected tensor for output %zu",
         i);
     auto output_tensor = args[num_inputs + i]->toTensor();
+    // OpenVINO takes the buffer's shape as its capacity, so an output an
+    // earlier call shrank goes back to its upper bound first.
+    int64_t* bound =
+        execution_handle->output_bound_sizes + i * exr::kTensorDimensionLimit;
+    if (!execution_handle->output_bounds_recorded) {
+      std::copy(
+          output_tensor.sizes().begin(), output_tensor.sizes().end(), bound);
+    } else {
+      exr::Error error = exr::resize_tensor(
+          output_tensor,
+          exa::ArrayRef<int64_t>(
+              bound, static_cast<size_t>(output_tensor.dim())));
+      if (error != exr::Error::Ok) {
+        ET_LOG(Error, "OpenVINO: failed to restore output %zu", i);
+        return error;
+      }
+    }
     auto result = create_ov_tensor(output_tensor);
     if (!result.ok()) {
       return result.error();
@@ -523,10 +565,50 @@ exr::Error OpenvinoBackend::execute(
     }
   }
 
+  execution_handle->output_bounds_recorded = true;
+
   status = ov_.infer_request_infer(execution_handle->infer_request);
   if (status != OV_STATUS_OK) {
     ET_LOG(Error, "OpenVINO: inference failed (status=%d)", status);
     return exr::Error::Internal;
+  }
+
+  // An output with a dynamic size, such as one set by an int input, gets a
+  // buffer at its upper bound and can come back smaller.
+  for (size_t i = 0; i < num_outputs; i++) {
+    auto output_tensor = args[num_inputs + i]->toTensor();
+    // A 0-d output has no size to change, and newer OpenVINO releases cannot
+    // return a rank-0 shape from ov_tensor_get_shape.
+    if (output_tensor.dim() == 0) {
+      continue;
+    }
+    ov_tensor_t* ov_output = nullptr;
+    status = ov_.infer_request_get_output_tensor_by_index(
+        execution_handle->infer_request, i, &ov_output);
+    if (status != OV_STATUS_OK) {
+      ET_LOG(
+          Error, "OpenVINO: failed to get output %zu (status=%d)", i, status);
+      return exr::Error::Internal;
+    }
+    ov_shape_t shape = {};
+    status = ov_.tensor_get_shape(ov_output, &shape);
+    ov_.tensor_free(ov_output);
+    if (status != OV_STATUS_OK) {
+      ET_LOG(
+          Error,
+          "OpenVINO: failed to get the shape of output %zu (status=%d)",
+          i,
+          status);
+      return exr::Error::Internal;
+    }
+    exr::Error error = exr::resize_tensor(
+        output_tensor,
+        exa::ArrayRef<int64_t>(shape.dims, static_cast<size_t>(shape.rank)));
+    ov_.shape_free(&shape);
+    if (error != exr::Error::Ok) {
+      ET_LOG(Error, "OpenVINO: failed to resize output %zu", i);
+      return error;
+    }
   }
 
   return exr::Error::Ok;

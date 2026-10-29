@@ -28,6 +28,10 @@ namespace openvino {
 struct ExecutionHandle {
   ov_compiled_model_t* compiled_model = nullptr;
   ov_infer_request_t* infer_request = nullptr;
+  // The sizes of each output at the first execute, which are its upper bound,
+  // kTensorDimensionLimit entries per output.
+  int64_t* output_bound_sizes = nullptr;
+  bool output_bounds_recorded = false;
 };
 
 class OpenvinoBackend final : public ::exr::BackendInterface {
