@@ -112,6 +112,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_copy.cpp",
     "kernels/portable/cpu/op_cos.cpp",
     "kernels/portable/cpu/op_cosh.cpp",
+    "kernels/portable/cpu/op_cummin.cpp",
     "kernels/portable/cpu/op_cumsum.cpp",
     "kernels/portable/cpu/op_detach_copy.cpp",
     "kernels/portable/cpu/op_diagonal_copy.cpp",

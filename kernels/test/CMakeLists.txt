@@ -197,6 +197,7 @@ set(all_test_sources
     "op_copy_test.cpp"
     "op_cos_test.cpp"
     "op_cosh_test.cpp"
+    "op_cummin_test.cpp"
     "op_cumsum_test.cpp"
     "op_detach_copy_test.cpp"
     "op_diagonal_copy_test.cpp"

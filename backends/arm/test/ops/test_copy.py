@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -55,6 +55,11 @@ class CopyParallelToOtherOp(torch.nn.Module):
         return x * 2 + y.copy_(x)
 
 
+class CopyOverUnusedInput(torch.nn.Module):
+    def forward(self, x, y):
+        return y.clone().copy_(x) + x
+
+
 test_suite = {
     "copy_output": lambda: (
         CopyOutput,
@@ -80,8 +85,23 @@ test_suite = {
         CopyParallelToOtherOp,
         (torch.rand(1, 2, 3, 4, dtype=torch.float32),),
     ),
+    "copy_over_unused_input": lambda: (
+        CopyOverUnusedInput,
+        (
+            torch.rand(1, 2, 3, 4, dtype=torch.float32),
+            torch.rand(1, 2, 3, 4, dtype=torch.float32),
+        ),
+    ),
 }
 
+
+ethos_u_xfails = {
+    "copy_over_unused_input": (
+        "Vela drops unused inputs, but the Ethos-U runtime binds delegate "
+        "inputs by position, so lowering rejects them",
+        RuntimeError,
+    ),
+}
 
 aten_op = "torch.ops.aten.copy_.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_copy_default"
@@ -114,7 +134,7 @@ def test_copy_tosa_INT(input_data):
     pipeline.run()
 
 
-@common.parametrize("input_data", test_suite)
+@common.parametrize("input_data", test_suite, xfails=ethos_u_xfails)
 @common.XfailIfNoCorstone300
 def test_copy_u55_INT(input_data):
     module, input_tensor = input_data()
@@ -128,7 +148,7 @@ def test_copy_u55_INT(input_data):
     pipeline.run()
 
 
-@common.parametrize("input_data", test_suite)
+@common.parametrize("input_data", test_suite, xfails=ethos_u_xfails)
 @common.XfailIfNoCorstone320
 def test_copy_u85_INT(input_data):
     module, input_tensor = input_data()
