@@ -8,12 +8,16 @@
 from collections.abc import Sequence
 
 import pytest
+import sympy  # type: ignore[import-untyped]
 import torch
+
 from executorch.backends.transforms.propagate_view_copy_permute_pass import (
     PropagateViewCopyPermuteDownPass,
     PropagateViewCopyPermuteUpPass,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 PERMUTE = exir_ops.edge.aten.permute_copy.default
 ABS = exir_ops.edge.aten.abs.default
@@ -22,6 +26,37 @@ SIGMOID = exir_ops.edge.aten.sigmoid.default
 ADD = exir_ops.edge.aten.add.Tensor
 SUM = exir_ops.edge.aten.sum.dim_IntList
 WHERE = exir_ops.edge.aten.where.self
+
+
+def test_down_pass_propagates_view_with_materialized_shape() -> None:
+    shape_env = ShapeEnv()
+    batch = shape_env.create_symintnode(sympy.Symbol("batch"), hint=2)
+    assert isinstance(batch, torch.SymInt)
+    shape_env.constrain_symbol_range(batch.node.expr, compiler_min=1, compiler_max=64)
+
+    with FakeTensorMode(shape_env=shape_env, allow_non_fake_inputs=True):
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        x.meta["val"] = torch.empty((batch, 6))
+        size = graph.call_function(torch.ops.aten.sym_size.int, (x, 0))
+        size.meta["val"] = batch
+        view = graph.call_function(
+            exir_ops.edge.aten.view_copy.default, (x, [size, 1, 2, 3])
+        )
+        view.meta["val"] = torch.empty((batch, 1, 2, 3))
+        relu = graph.call_function(exir_ops.edge.aten.relu.default, (view,))
+        relu.meta["val"] = torch.empty((batch, 1, 2, 3))
+        graph.output(relu)
+
+        result = PropagateViewCopyPermuteDownPass().call(
+            torch.fx.GraphModule({}, graph)
+        )
+
+    assert result.modified
+    result.graph_module.graph.lint()
+    assert view.args[0] is relu
+    assert tuple(view.meta["val"].shape) == (batch, 1, 2, 3)
+
 
 SOURCE_SHAPE = (1, 2, 3, 4)
 PERMUTED_SHAPE = (1, 3, 4, 2)
