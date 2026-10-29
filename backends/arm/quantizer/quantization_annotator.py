@@ -688,7 +688,12 @@ def get_quant_properties(  # noqa: C901
 
     input_act_qspec = quantization_config.get_input_act_qspec()
     weight_qspec = quantization_config.get_weight_qspec()
-    output_act_qspec = quantization_config.get_output_act_qspec()
+    if not isinstance(quantization_config, QuantizationConfig) or not callable(
+        quantization_config.output_activation
+    ):
+        output_act_qspec = quantization_config.get_output_act_qspec()
+    else:
+        output_act_qspec = quantization_config.get_output_act_qspec(node)
     bias_qspec = quantization_config.get_bias_qspec(node)
     if output_act_qspec is not None:
         # Check if output activation qspec is symmetric. In that case
