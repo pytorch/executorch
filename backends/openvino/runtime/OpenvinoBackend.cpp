@@ -236,6 +236,7 @@ bool OpenvinoBackend::ensure_loaded() const {
     LOAD_SYM(core_free, ov_core_free)
     LOAD_SYM(core_get_available_devices, ov_core_get_available_devices)
     LOAD_SYM(available_devices_free, ov_available_devices_free)
+    LOAD_SYM(core_set_property, ov_core_set_property)
     LOAD_SYM(core_import_model, ov_core_import_model)
     LOAD_SYM(
         compiled_model_create_infer_request,
@@ -321,17 +322,44 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
   size_t data_size = processed->size();
 
   std::string device = "CPU";
+  std::string inference_precision;
   for (auto& compile_spec : compile_specs) {
+    std::string* target = nullptr;
     if (std::strcmp(compile_spec.key, "device") == 0) {
-      const char* buf = static_cast<const char*>(compile_spec.value.buffer);
-      size_t len = compile_spec.value.nbytes;
-      // Strip trailing null bytes that may be included in nbytes.
-      while (len > 0 && buf[len - 1] == '\0') {
-        --len;
-      }
-      if (len > 0) {
-        device.assign(buf, len);
-      }
+      target = &device;
+    } else if (std::strcmp(compile_spec.key, "inference_precision") == 0) {
+      target = &inference_precision;
+    } else {
+      continue;
+    }
+    const char* buf = static_cast<const char*>(compile_spec.value.buffer);
+    size_t len = compile_spec.value.nbytes;
+    // Strip trailing null bytes that may be included in nbytes.
+    while (len > 0 && buf[len - 1] == '\0') {
+      --len;
+    }
+    if (len > 0) {
+      target->assign(buf, len);
+    }
+  }
+
+  // The device picks its default precision when the model is imported, e.g.
+  // bf16 for f32 models on CPUs with native bf16 support.
+  if (!inference_precision.empty()) {
+    status = ov_.core_set_property(
+        core,
+        device.c_str(),
+        "INFERENCE_PRECISION_HINT",
+        inference_precision.c_str());
+    if (status != OV_STATUS_OK) {
+      ET_LOG(
+          Error,
+          "OpenVINO: failed to set inference precision '%s' for device '%s' (status=%d)",
+          inference_precision.c_str(),
+          device.c_str(),
+          status);
+      ov_.core_free(core);
+      return exr::Error::InvalidArgument;
     }
   }
 
@@ -343,8 +371,10 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
   if (status != OV_STATUS_OK || !compiled_model) {
     ET_LOG(
         Error,
-        "OpenVINO: failed to import model for device '%s' (status=%d)",
+        "OpenVINO: failed to import model for device '%s'%s%s (status=%d)",
         device.c_str(),
+        inference_precision.empty() ? "" : " with inference_precision ",
+        inference_precision.c_str(),
         status);
     return exr::Error::Internal;
   }

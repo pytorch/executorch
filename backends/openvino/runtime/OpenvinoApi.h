@@ -76,6 +76,8 @@ using ov_core_free_fn = void (*)(ov_core_t*);
 using ov_core_get_available_devices_fn =
     ov_status_e (*)(const ov_core_t*, ov_available_devices_t*);
 using ov_available_devices_free_fn = void (*)(ov_available_devices_t*);
+using ov_core_set_property_fn =
+    ov_status_e (*)(const ov_core_t*, const char*, ...);
 using ov_core_import_model_fn = ov_status_e (*)(
     const ov_core_t*,
     const char*,
@@ -115,6 +117,7 @@ struct OpenvinoFunctions {
   ov_core_free_fn core_free = nullptr;
   ov_core_get_available_devices_fn core_get_available_devices = nullptr;
   ov_available_devices_free_fn available_devices_free = nullptr;
+  ov_core_set_property_fn core_set_property = nullptr;
   ov_core_import_model_fn core_import_model = nullptr;
   ov_compiled_model_create_infer_request_fn
       compiled_model_create_infer_request = nullptr;
