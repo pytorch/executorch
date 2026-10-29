@@ -14,16 +14,25 @@
 #import <ETCoreMLModelManager.h>
 #import <ETCoreMLStrings.h>
 #import <Foundation/Foundation.h>
+#import <IOSurface/IOSurfaceRef.h>
 #import <backend_delegate.h>
+#import <coreml_backend/delegate.h>
 #import <inmemory_filesystem_utils.hpp>
 #import <model_logging_options.h>
 #import <multiarray.h>
 
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
+#include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/schema/program_generated.h>
+#include <flatbuffers/flatbuffers.h>
 #include <format/Model.pb.h>
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -31,6 +40,18 @@
 #include <unordered_map>
 #include <vector>
 
+using executorch::backends::coreml::CoreMLBackendDelegate;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::BackendOption;
+using executorch::runtime::BackendOptions;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorchcoreml::BackendDelegate;
 using executorchcoreml::Buffer;
 using executorchcoreml::ModelLoggingOptions;
@@ -68,6 +89,11 @@ void *baseAddress(CVPixelBufferRef pixelBuffer) {
 _Float16 *row(CVPixelBufferRef pixelBuffer, size_t y) {
     auto *base = static_cast<uint8_t *>(CVPixelBufferGetBaseAddress(pixelBuffer));
     return reinterpret_cast<_Float16 *>(base + y * CVPixelBufferGetBytesPerRow(pixelBuffer));
+}
+
+IOSurfaceID surfaceID(CVPixelBufferRef pixelBuffer) {
+    IOSurfaceRef surface = CVPixelBufferGetIOSurface(pixelBuffer);
+    return surface != nullptr ? IOSurfaceGetID(surface) : 0;
 }
 
 MultiArray makeArg(void *data, std::vector<size_t> shape, MultiArray::DataType dataType = MultiArray::DataType::Float16) {
@@ -187,6 +213,101 @@ std::string makeModelBlob(NSURL *directory, bool useFloat16 = true) {
     return stream.str();
 }
 
+namespace fb = executorch_flatbuffer;
+
+/// Describes the serialized ExecutionPlan behind a MethodMeta fixture.
+struct MethodMetaSpec {
+    std::vector<std::string> backendIds;
+    bool extraFreeCall = false;
+    bool plannedInput = false;
+    bool plannedOutput = false;
+    bool constantInput = false;
+    bool constantOutput = false;
+    bool nonTensorInput = false;
+    bool nonTensorOutput = false;
+};
+
+MethodMetaSpec makeSingleCoreMLSpec() {
+    MethodMetaSpec spec;
+    spec.backendIds = {toString(ETCoreMLStrings.delegateIdentifier)};
+    return spec;
+}
+
+flatbuffers::Offset<fb::EValue> makeMetaTensorValue(
+    flatbuffers::FlatBufferBuilder& builder, bool planned, bool constant) {
+    flatbuffers::Offset<fb::AllocationDetails> allocation;
+    if (planned) {
+        allocation = fb::CreateAllocationDetails(builder, /*memory_id=*/1, /*memory_offset_low=*/0);
+    }
+    auto sizes = builder.CreateVector(std::vector<int32_t>(kShape.begin(), kShape.end()));
+    auto dimOrder = builder.CreateVector(std::vector<uint8_t>{0, 1, 2, 3});
+    auto tensor = fb::CreateTensor(
+        builder,
+        fb::ScalarType::HALF,
+        /*storage_offset=*/0,
+        sizes,
+        dimOrder,
+        /*requires_grad=*/false,
+        constant ? 1 : 0,
+        allocation);
+    return fb::CreateEValue(builder, fb::KernelTypes::Tensor, tensor.Union());
+}
+
+flatbuffers::Offset<fb::EValue> makeMetaIntValue(flatbuffers::FlatBufferBuilder& builder) {
+    auto intValue = fb::CreateInt(builder, /*int_val=*/0);
+    return fb::CreateEValue(builder, fb::KernelTypes::Int, intValue.Union());
+}
+
+/// Serializes an ExecutionPlan for MethodMeta::from_serialized_execution_plan.
+/// The returned bytes own the plan; the MethodMeta view borrows them.
+std::vector<uint8_t> makeMethodMetaBytes(const MethodMetaSpec& spec) {
+    flatbuffers::FlatBufferBuilder builder;
+    std::vector<flatbuffers::Offset<fb::EValue>> values;
+    values.push_back(spec.nonTensorInput ? makeMetaIntValue(builder)
+                                          : makeMetaTensorValue(builder, spec.plannedInput, spec.constantInput));
+    values.push_back(spec.nonTensorOutput ? makeMetaIntValue(builder)
+                                           : makeMetaTensorValue(builder, spec.plannedOutput, spec.constantOutput));
+    const std::vector<int32_t> inputs = {0};
+    const std::vector<int32_t> outputs = {1};
+
+    std::vector<flatbuffers::Offset<fb::Instruction>> instructions;
+    auto call = fb::CreateDelegateCall(
+        builder, /*delegate_index=*/0, builder.CreateVector(std::vector<int32_t>{0, 1}));
+    instructions.push_back(
+        fb::CreateInstruction(builder, fb::InstructionArguments::DelegateCall, call.Union()));
+    if (spec.extraFreeCall) {
+        auto freeCall = fb::CreateFreeCall(builder, /*value_index=*/0);
+        instructions.push_back(
+            fb::CreateInstruction(builder, fb::InstructionArguments::FreeCall, freeCall.Union()));
+    }
+
+    std::vector<flatbuffers::Offset<fb::BackendDelegate>> delegates;
+    delegates.reserve(spec.backendIds.size());
+    for (const std::string& backendId : spec.backendIds) {
+        delegates.push_back(fb::CreateBackendDelegate(
+            builder,
+            builder.CreateString(backendId),
+            fb::CreateBackendDelegateDataReference(builder, fb::DataLocation::INLINE, /*index=*/0)));
+    }
+
+    auto chain = fb::CreateChain(
+        builder, builder.CreateVector(inputs), builder.CreateVector(outputs), builder.CreateVector(instructions));
+    auto plan = fb::CreateExecutionPlan(
+        builder,
+        builder.CreateString("forward"),
+        /*container_meta_type=*/0,
+        builder.CreateVector(values),
+        builder.CreateVector(inputs),
+        builder.CreateVector(outputs),
+        builder.CreateVector(std::vector<flatbuffers::Offset<fb::Chain>>{chain}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<fb::Operator>>{}),
+        builder.CreateVector(delegates),
+        // Two entries on purpose: proves the guard does not restrict num_buffers.
+        builder.CreateVector(std::vector<int64_t>{0, 0}));
+    builder.Finish(plan);
+    return std::vector<uint8_t>(builder.GetBufferPointer(), builder.GetBufferPointer() + builder.GetSize());
+}
+
 class PixelBufferBindingTest : public ::testing::Test {
 protected:
     static void SetUpTestSuite() {
@@ -205,18 +326,41 @@ protected:
         [NSFileManager.defaultManager removeItemAtURL:directory_ error:nil];
     }
 
-    BackendDelegate::Handle *load() {
+    BackendDelegate::Handle *load(Span<BackendOption> runtimeSpecs = {}) {
         // In the iOS simulator, Core ML reads pixel buffer inputs as zeros unless it runs on the CPU.
         const std::string computeUnits = toString(ETCoreMLStrings.cpuComputeUnitName);
         const std::unordered_map<std::string, Buffer> specs = {
             {toString(ETCoreMLStrings.computeUnitsKeyName), Buffer(computeUnits.data(), computeUnits.size())},
         };
-        return delegate_->init(Buffer(blob_.data(), blob_.size()), specs);
+        return delegate_->init(Buffer(blob_.data(), blob_.size()),
+                               specs,
+                               nullptr,
+                               nullptr,
+                               Span<const BackendOption>(runtimeSpecs.data(), runtimeSpecs.size()));
+    }
+
+    // Loads the model the way ExecuTorch's runtime does, through the registered backend's init.
+    Result<DelegateHandle*> loadThroughBackend(
+        Span<BackendOption> runtimeSpecs, const MethodMeta* methodMeta = nullptr) {
+        BackendInitContext context(&allocator_,
+                                   /*event_tracer=*/nullptr,
+                                   /*method_name=*/"forward",
+                                   /*named_data_map=*/nullptr,
+                                   Span<const BackendOption>(runtimeSpecs.data(), runtimeSpecs.size()),
+                                   methodMeta);
+        std::string computeUnits = toString(ETCoreMLStrings.cpuComputeUnitName);
+        const std::string computeUnitsKey = toString(ETCoreMLStrings.computeUnitsKeyName);
+        CompileSpec computeUnitsSpec{computeUnitsKey.c_str(), {computeUnits.data(), computeUnits.size()}};
+        FreeableBuffer processed(blob_.data(), blob_.size(), nullptr);
+        return backend_.init(context, &processed, {&computeUnitsSpec, 1});
     }
 
     NSURL *directory_ = nil;
     std::string blob_;
     std::shared_ptr<BackendDelegate> delegate_;
+    CoreMLBackendDelegate backend_;
+    std::vector<uint8_t> allocatorPool_ = std::vector<uint8_t>(4096);
+    MemoryAllocator allocator_{static_cast<uint32_t>(allocatorPool_.size()), allocatorPool_.data()};
 };
 
 TEST_F(PixelBufferBindingTest, BindsOnlyIOSurfaceBackedFp16PixelBuffers) {
@@ -438,6 +582,122 @@ TEST_F(PixelBufferBindingTest, PredictsInPlaceThroughBoundBuffers) {
             }
         }
         CVPixelBufferUnlockBaseAddress(output.get(), kCVPixelBufferLock_ReadOnly);
+    }
+}
+
+TEST_F(PixelBufferBindingTest, BindsIOSurfacesNamedByRuntimeSpecs) {
+    PixelBufferPtr pixelBuffer = makePixelBuffer(kCVPixelFormatType_OneComponent16Half);
+    IOSurfaceRef surface = IOSurfaceLookup(surfaceID(pixelBuffer.get()));
+    if (surface == nullptr) {
+        GTEST_SKIP() << "IOSurfaceLookup can't find this process's surfaces here (iOS simulator).";
+    }
+    CFRelease(surface);
+
+    BackendOptions<1> options;
+    options.set_option("iosurface_0", static_cast<int>(surfaceID(pixelBuffer.get())));
+    ETCoreMLModel *model = (__bridge ETCoreMLModel *)load(options.view());
+    ASSERT_NE(model, nil);
+    MLMultiArray *array = nil;
+    ASSERT_TRUE([model getPixelBufferMultiArray:&array forArg:makeArg(baseAddress(pixelBuffer.get()), kShape) error:nil]);
+    EXPECT_NE(array, nil);
+
+    PixelBufferPtr fp32PixelBuffer = makePixelBuffer(kCVPixelFormatType_OneComponent32Float);
+    BackendOptions<1> fp32Options;
+    fp32Options.set_option("iosurface_0", static_cast<int>(surfaceID(fp32PixelBuffer.get())));
+    EXPECT_EQ(load(fp32Options.view()), nullptr);
+}
+
+TEST_F(PixelBufferBindingTest, FailsToLoadWhenARuntimeSpecDoesntNameAnIOSurface) {
+    BackendOptions<1> unknownSurface;
+    unknownSurface.set_option("iosurface_0", 0);
+    EXPECT_EQ(load(unknownSurface.view()), nullptr);
+
+    BackendOptions<1> notAnID;
+    notAnID.set_option("iosurface_0", true);
+    EXPECT_EQ(load(notAnID.view()), nullptr);
+}
+
+TEST_F(PixelBufferBindingTest, BackendRejectsIOSurfaceSpecsWithoutMethodMeta) {
+    PixelBufferPtr pixelBuffer = makePixelBuffer(kCVPixelFormatType_OneComponent16Half);
+    BackendOptions<1> options;
+    options.set_option("iosurface_0", static_cast<int>(surfaceID(pixelBuffer.get())));
+    EXPECT_EQ(loadThroughBackend(options.view(), /*methodMeta=*/nullptr).error(), Error::NotSupported);
+}
+
+TEST_F(PixelBufferBindingTest, BackendLoadsWithoutIOSurfaceSpecsWithoutMethodMeta) {
+    Result<DelegateHandle*> handle = loadThroughBackend({}, /*methodMeta=*/nullptr);
+    ASSERT_EQ(handle.error(), Error::Ok);
+    backend_.destroy(handle.get());
+}
+
+TEST_F(PixelBufferBindingTest, BackendBindsIOSurfaceSpecsWithSingleDelegateMethodMeta) {
+    PixelBufferPtr pixelBuffer = makePixelBuffer(kCVPixelFormatType_OneComponent16Half);
+    IOSurfaceRef surface = IOSurfaceLookup(surfaceID(pixelBuffer.get()));
+    if (surface == nullptr) {
+        GTEST_SKIP() << "IOSurfaceLookup can't find this process's surfaces here (iOS simulator).";
+    }
+    CFRelease(surface);
+
+    BackendOptions<1> options;
+    options.set_option("iosurface_0", static_cast<int>(surfaceID(pixelBuffer.get())));
+    // Backing bytes own the plan; the MethodMeta view borrows them through init.
+    std::vector<uint8_t> bytes = makeMethodMetaBytes(makeSingleCoreMLSpec());
+    Result<MethodMeta> meta = MethodMeta::from_serialized_execution_plan(bytes.data(), bytes.size());
+    ASSERT_TRUE(meta.ok());
+    Result<DelegateHandle*> handle = loadThroughBackend(options.view(), &meta.get());
+    ASSERT_EQ(handle.error(), Error::Ok);
+    ETCoreMLModel *model = (__bridge ETCoreMLModel *)handle.get();
+    MLMultiArray *array = nil;
+    EXPECT_TRUE([model getPixelBufferMultiArray:&array forArg:makeArg(baseAddress(pixelBuffer.get()), kShape) error:nil]);
+    EXPECT_NE(array, nil);
+    backend_.destroy(handle.get());
+}
+
+TEST_F(PixelBufferBindingTest, BackendRejectsIOSurfaceSpecsWithInvalidMethodMeta) {
+    PixelBufferPtr pixelBuffer = makePixelBuffer(kCVPixelFormatType_OneComponent16Half);
+    BackendOptions<1> options;
+    options.set_option("iosurface_0", static_cast<int>(surfaceID(pixelBuffer.get())));
+
+    const std::string coreMLId = toString(ETCoreMLStrings.delegateIdentifier);
+    const MethodMetaSpec base = makeSingleCoreMLSpec();
+    MethodMetaSpec wrongBackend = base;
+    wrongBackend.backendIds = {"WrongBackend"};
+    MethodMetaSpec multipleDelegates = base;
+    multipleDelegates.backendIds = {coreMLId, coreMLId};
+    MethodMetaSpec extraInstruction = base;
+    extraInstruction.extraFreeCall = true;
+    MethodMetaSpec plannedInput = base;
+    plannedInput.plannedInput = true;
+    MethodMetaSpec plannedOutput = base;
+    plannedOutput.plannedOutput = true;
+    MethodMetaSpec nonTensorInput = base;
+    nonTensorInput.nonTensorInput = true;
+    MethodMetaSpec nonTensorOutput = base;
+    nonTensorOutput.nonTensorOutput = true;
+    MethodMetaSpec constantInput = base;
+    constantInput.constantInput = true;
+    MethodMetaSpec constantOutput = base;
+    constantOutput.constantOutput = true;
+    const struct {
+        const char* name;
+        MethodMetaSpec spec;
+    } cases[] = {
+        {"wrongBackend", wrongBackend},
+        {"multipleDelegates", multipleDelegates},
+        {"extraInstruction", extraInstruction},
+        {"plannedInput", plannedInput},
+        {"plannedOutput", plannedOutput},
+        {"nonTensorInput", nonTensorInput},
+        {"nonTensorOutput", nonTensorOutput},
+        {"constantInput", constantInput},
+        {"constantOutput", constantOutput},
+    };
+    for (const auto& testCase : cases) {
+        std::vector<uint8_t> bytes = makeMethodMetaBytes(testCase.spec);
+        Result<MethodMeta> meta = MethodMeta::from_serialized_execution_plan(bytes.data(), bytes.size());
+        ASSERT_TRUE(meta.ok()) << testCase.name;
+        EXPECT_EQ(loadThroughBackend(options.view(), &meta.get()).error(), Error::NotSupported)
+            << testCase.name;
     }
 }
 

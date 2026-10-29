@@ -84,6 +84,7 @@ def define_common_targets():
             # testing utils in runtime/executor/... path
             "//executorch/backends/xnnpack/test/...",
             "//executorch/runtime/backend/test/...",
+            "//executorch/backends/apple/coreml/...",
         ],
         exported_headers = {
             OUTPUT_PROGRAM_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_PROGRAM_HEADER),

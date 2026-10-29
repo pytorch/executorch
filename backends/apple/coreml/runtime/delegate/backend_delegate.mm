@@ -14,11 +14,59 @@
 #import "ETCoreMLModelCache.h"
 #import "ETCoreMLModelManager.h"
 #import "ETCoreMLStrings.h"
+#import "coreml_backend/coreml_backend_options.h"
 #import "model_event_logger.h"
 #import "multiarray.h"
+#import <IOSurface/IOSurfaceRef.h>
 
 namespace  {
 using namespace executorchcoreml;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+constexpr const char *kIOSurfaceSpecPrefix = executorch::backends::coreml::kIOSurfaceSpecPrefix;
+#pragma clang diagnostic pop
+
+BOOL bind_pixel_buffers(ETCoreMLModel *model,
+                        executorch::runtime::Span<const executorch::runtime::BackendOption> runtime_specs,
+                        NSError * __autoreleasing *error) {
+    const size_t prefix_length = std::strlen(kIOSurfaceSpecPrefix);
+    for (size_t i = 0; i < runtime_specs.size(); ++i) {
+        const auto& opt = runtime_specs[i];
+        if (std::strncmp(opt.key, kIOSurfaceSpecPrefix, prefix_length) != 0) {
+            continue;
+        }
+
+        const int *surface_id = std::get_if<int>(&opt.value);
+        IOSurfaceRef surface = surface_id ? IOSurfaceLookup(static_cast<IOSurfaceID>(*surface_id)) : NULL;
+        if (surface == NULL) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorInternalError,
+                                          "Runtime spec %s doesn't name an IOSurface.",
+                                          opt.key);
+            return NO;
+        }
+
+        CVPixelBufferRef pixel_buffer = NULL;
+        const CVReturn status = CVPixelBufferCreateWithIOSurface(kCFAllocatorDefault, surface, NULL, &pixel_buffer);
+        CFRelease(surface);
+        if (status != kCVReturnSuccess) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorInternalError,
+                                          "The IOSurface runtime spec %s names can't be wrapped in a pixel buffer.",
+                                          opt.key);
+            return NO;
+        }
+
+        const BOOL bound = [model bindPixelBuffer:pixel_buffer error:error];
+        CVPixelBufferRelease(pixel_buffer);
+        if (!bound) {
+            return NO;
+        }
+    }
+
+    return YES;
+}
 
 std::optional<MLComputeUnits> get_compute_units(const Buffer& buffer) {
     std::string value(reinterpret_cast<const char *>(buffer.data()), buffer.size());
@@ -416,6 +464,12 @@ Handle *init(Buffer processed,
                                                                   error:&localError];
         if (localError != nil) {
             ETCoreMLLogError(localError, "Model init failed");
+        }
+        if (modelHandle != nullptr &&
+            !::bind_pixel_buffers([model_manager_ modelWithHandle:modelHandle], runtime_specs, &localError)) {
+            ETCoreMLLogError(localError, "Binding pixel buffers to the model failed");
+            [model_manager_ unloadModelWithHandle:modelHandle];
+            return nullptr;
         }
         return modelHandle;
     }
