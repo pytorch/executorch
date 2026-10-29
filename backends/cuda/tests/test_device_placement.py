@@ -145,3 +145,37 @@ class CudaDevicePlacementTest(unittest.TestCase):
             outputs = method.execute([t.cuda() for t in inputs])
         for output, expected in zip(outputs, model(*inputs), strict=True):
             torch.testing.assert_close(output.cpu(), expected)
+
+    def test_constant_kept_in_device_memory(self):
+        """With skip_h2d_for_constants, a constant that only delegates read is
+        loaded into device memory once, when the method loads, and later
+        delegates must not reuse that memory, so every call reads it.
+        error_on_per_call_copies makes the export fail if the constant is
+        copied on every call instead."""
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.arange(6.0).reshape(2, 3))
+
+            def forward(self, x):
+                a = torch.add(x, self.table)
+                b = torch.add(a, a)
+                return torch.add(b, b)
+
+        config = ExecutorchBackendConfig(
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True,
+                skip_h2d_for_constants=True,
+                error_on_per_call_copies=True,
+            ),
+            enable_non_cpu_memory_planning=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+        )
+        model = Model()
+        x = torch.arange(6.0).reshape(2, 3)
+        with tempfile.TemporaryDirectory() as directory:
+            method = load(model, (x,), directory, config)
+            for scale in (1.0, 10.0):
+                (output,) = method.execute([(x * scale).cuda()])
+                torch.testing.assert_close(output.cpu(), model(x * scale))

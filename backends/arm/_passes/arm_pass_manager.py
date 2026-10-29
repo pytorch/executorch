@@ -63,6 +63,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeExpm1Pass,
     DecomposeFlipPass,
     DecomposeFloorDividePass,
+    DecomposeGatedDeltaRulePass,
     DecomposeGeluPass,
     DecomposeGluPass,
     DecomposeGroupedConvPass,
@@ -651,7 +652,7 @@ class ArmPassManager(ExportedProgramPassManager):
             ]
         )
 
-        # Scalars -> tensors, match tensor dtypes and ranks.
+        # Scalars -> tensors, match comparison dtypes and tensor ranks.
         self.add_passes(
             [
                 ReplaceScalarWithTensorByProfilePass(),
@@ -660,7 +661,6 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
                 DecomposePReLUPass(),
                 ConvertFullLikeToFullPass(),
-                MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
                 MatchArgRanksPass(exported_program),
             ]
@@ -699,6 +699,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteAvgPool2dPass(),
                 ComputeConstantOpsAOTPass(exported_program),
                 FuseConstantArgsPass(exported_program),
+                MatchArgDtypePass(),
                 CastInt64BuffersToInt32Pass(exported_program),
                 DecomposeSelectPass(),
                 ConvertSqueezesToViewPass(),
@@ -802,6 +803,7 @@ class ArmPassManager(ExportedProgramPassManager):
             # Transformation passes (pre scalar -> tensor)
             self.add_passes(
                 [
+                    DecomposeGatedDeltaRulePass(tfa_pass=True),
                     DecomposeIndexCopyPass(tfa_pass=True),
                     DecomposeSelectScatterPass(tfa_pass=True),
                     DecomposeSliceScatterPass(tfa_pass=True),

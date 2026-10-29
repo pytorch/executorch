@@ -2902,6 +2902,66 @@ class TestPasses(unittest.TestCase):
         module = new_ep.module()
         self.assertFalse(torch.equal(module(x), module(x)))
 
+    def test_constant_prop_pass_detaches_folded_parameters(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(4, 4))
+
+            def forward(self, x):
+                # `to` with the same dtype returns the parameter itself.
+                return x + self.w.t() + self.w.to(torch.float32)
+
+        m = M()
+        x = torch.randn(4, 4)
+        new_ep = constant_prop_pass(export(m, (x,), strict=True))
+
+        targets = [node.target for node in new_ep.graph.nodes]
+        self.assertNotIn(torch.ops.aten.t.default, targets)
+        self.assertNotIn(torch.ops.aten.to.dtype, targets)
+        self.assertTrue(torch.allclose(new_ep.module()(x), m(x)))
+        copy.deepcopy(to_edge(new_ep).exported_program())
+
+    def test_constant_prop_pass_keeps_scalar_read_at_runtime(self) -> None:
+        """
+        A non-tensor value cannot become a constant placeholder. When a node
+        outside the fold or the program output reads one, it stays in the
+        graph, while the tensors computed from it still fold. A non-tensor
+        value read only by folded nodes folds away.
+        """
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("n", torch.tensor(1))
+                self.register_buffer("s", torch.tensor(2.0))
+                self.register_buffer("k", torch.tensor(3))
+                self.w = torch.nn.Parameter(torch.randn(4, 3))
+
+            def forward(self, x):
+                n = (self.n * 2).item() + 1
+                torch._check(n >= 1)
+                torch._check(n <= x.shape[0])
+                # The first reader of `n` is folded, a later one is not.
+                w = (self.w * self.s.item())[:n]
+                return x[:n] * w, self.k.item()
+
+        m = M()
+        x = torch.randn(4, 3)
+        new_ep = constant_prop_pass(export(m, (x,), strict=True))
+
+        targets = [node.target for node in new_ep.graph.nodes]
+        self.assertEqual(targets.count(torch.ops.aten.item.default), 2)
+        self.assertIn(torch.ops.aten._assert_scalar.default, targets)
+        self.assertEqual(targets.count(torch.ops.aten.mul.Tensor), 1)
+        self.assertEqual(targets.count(torch.ops.aten.slice.Tensor), 1)
+        self.assertNotIn("s", new_ep.state_dict)
+        out, k = new_ep.module()(x)
+        expected_out, expected_k = m(x)
+        self.assertTrue(torch.allclose(out, expected_out))
+        self.assertEqual(k, expected_k)
+        to_edge(new_ep).to_executorch()
+
     def test_constant_prop_pass_zero_stride_tensors(self) -> None:
         """
         Test that constant propagation correctly handles tensors with zero strides
