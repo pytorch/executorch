@@ -3,6 +3,8 @@
 #  Use of this source code is governed by a BSD-3-clause license that can be
 #  found in the LICENSE.txt file or at https://opensource.org/licenses/BSD-3-Clause
 
+import copy as _copy
+import functools as _functools
 import itertools as _itertools
 from typing import (
     Callable as _Callable,
@@ -283,6 +285,34 @@ def _get_weighted_mod_bn_pattern(
     return _get_aten_graph_module(Pattern(), example_inputs)
 
 
+def _cached_pattern(fn: _Callable) -> _Callable:
+    """
+    Memoize a pattern-graph getter.
+
+    Each getter builds its ``example_inputs`` internally at fixed shapes and takes
+    only hashable arguments, so its result is a pure function of those arguments.
+    Without this, annotation re-exports the same handful of pattern graphs for every
+    model it annotates: a single ``prepare_pt2e`` on a one-conv module performs 405
+    pattern builds of which only 9 are distinct, and that dominates its runtime.
+
+    The cached graph cannot be handed out directly.
+    ``SubgraphMatcherWithNameNodeMap`` splits ``name_node_map`` out of the pattern's
+    return tuple in place, so a second consumer of the same object fails with
+    "Expecting the pattern graph to return a tuple". Callers therefore get a copy,
+    which is far cheaper than rebuilding: roughly 0.7 ms against 62 ms per pattern.
+    """
+    cache = _functools.lru_cache(maxsize=None)(fn)
+
+    @_functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        return _copy.deepcopy(cache(*args, **kwargs))
+
+    wrapper.cache_clear = cache.cache_clear
+    wrapper.cache_info = cache.cache_info
+    return wrapper
+
+
+@_cached_pattern
 def get_binary_op_act_pattern(
     binary_op: _Callable,
     act_fn: _Optional[_Callable] = None,
@@ -322,6 +352,7 @@ def get_binary_op_act_pattern(
     return _get_aten_graph_module(Pattern(), example_inputs)
 
 
+@_cached_pattern
 def get_conv_pattern(
     conv_dim: int, act_fn: _Optional[_Callable] = None, act_in_place: bool = False
 ) -> _torch.nn.Module:
@@ -347,6 +378,7 @@ def get_conv_pattern(
     )
 
 
+@_cached_pattern
 def get_conv_bn_pattern(
     conv_dim: int, act_fn: _Optional[_Callable] = None, act_in_place: bool = False
 ) -> _torch.nn.Module:
@@ -376,6 +408,7 @@ def get_conv_bn_pattern(
     )
 
 
+@_cached_pattern
 def get_linear_pattern(
     act_fn: _Optional[_Callable] = None, act_in_place: bool = False
 ) -> _torch.nn.Module:
@@ -395,6 +428,7 @@ def get_linear_pattern(
     return _get_weighted_mod_pattern(_F.linear, example_inputs, act_fn, act_in_place)
 
 
+@_cached_pattern
 def get_linear_bn_pattern(
     act_fn: _Optional[_Callable] = None, act_in_place: bool = False
 ) -> _torch.nn.Module:
