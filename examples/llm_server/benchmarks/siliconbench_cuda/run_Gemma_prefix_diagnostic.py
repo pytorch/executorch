@@ -7,6 +7,7 @@ import os
 import shlex
 import subprocess
 import sys
+import time
 import traceback
 
 
@@ -23,6 +24,15 @@ def main(job):
         temp.replace(job / 'progress.json')
 
     try:
+        if settings.get('wait_for_exit'):
+            dependency=Path(settings['wait_for_exit'])
+            status('waiting-for-owned-profile-controller',dependency=str(dependency.parent))
+            while not dependency.is_file():
+                receipt=json.loads((dependency.parent/'launch-receipt.json').read_text())
+                proc=Path('/proc')/str(receipt['PID'])
+                assert proc.exists(),'Profile controller missing; preserve and inspect its records'
+                assert int((proc/'stat').read_text().split(') ',1)[1].split()[19])==receipt['start_ticks']
+                time.sleep(30)
         assert base['model'] == 'Gemma' and base['prefix_ON_entries'] == 4
         assert base['active_sessions'] == base['decode_limit'] == 64
         for worker in settings['workers'].values():
