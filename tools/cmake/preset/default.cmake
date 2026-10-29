@@ -175,6 +175,7 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" BOOL OFF
 )
+define_overridable_option(EXECUTORCH_BUILD_CPU "Build the CPU backend" BOOL OFF)
 define_overridable_option(
   EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" BOOL OFF
 )
@@ -501,6 +502,24 @@ check_required_options_on(
   IF_ON EXECUTORCH_BUILD_XNNPACK REQUIRES EXECUTORCH_BUILD_CPUINFO
   EXECUTORCH_BUILD_PTHREADPOOL
 )
+
+# The default composition uses XNNPACK and the full Reference kernel library.
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_CPU REQUIRES EXECUTORCH_BUILD_XNNPACK
+  EXECUTORCH_BUILD_KERNELS_OPTIMIZED
+)
+
+if(EXECUTORCH_BUILD_CPU)
+  if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
+     OR NOT EXECUTORCH_SELECT_OPS_LIST STREQUAL ""
+     OR NOT EXECUTORCH_SELECT_OPS_MODEL STREQUAL ""
+  )
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_CPU does not support selective kernel builds"
+    )
+  endif()
+endif()
 
 check_conflicting_options_on(
   IF_ON EXECUTORCH_BUILD_ARM_BAREMETAL CONFLICTS_WITH
