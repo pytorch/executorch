@@ -33,7 +33,7 @@ typedef NS_ENUM(NSInteger, ETCoreAIErrorCode) {
 
 FOUNDATION_EXPORT NSErrorDomain const ETCoreAIErrorDomain;
 
-// Input storage is borrowed until session completion, never retained or freed.
+// Input storage is borrowed through output copying, never retained or freed.
 @interface ETCoreAIInputTensor : NSObject
 @property(nonatomic, readonly) const void* _Nullable bytes;
 @property(nonatomic, readonly) NSUInteger byteCount;
@@ -48,21 +48,31 @@ FOUNDATION_EXPORT NSErrorDomain const ETCoreAIErrorDomain;
     NS_DESIGNATED_INITIALIZER;
 @end
 
-// Outputs own densely packed bytes, independent of the executor's storage.
+// The copier retains its source storage; SDK pointers never escape their access
+// scope. Construct only after validating the source layout. Copying cannot
+// fail.
 @interface ETCoreAITensor : NSObject
-@property(nonatomic, readonly, copy) NSData* data;
+@property(nonatomic, readonly) NSUInteger byteCount;
 @property(nonatomic, readonly, copy) NSArray<NSNumber*>* shape;
 @property(nonatomic, readonly) ETCoreAIScalarType scalarType;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
+- (instancetype)initWithByteCount:(NSUInteger)byteCount
+                            shape:(NSArray<NSNumber*>*)shape
+                       scalarType:(ETCoreAIScalarType)scalarType
+                        copyBytes:(void (^)(void* bytes))copyBytes
+    NS_DESIGNATED_INITIALIZER;
 - (instancetype)initWithData:(NSData*)data
                        shape:(NSArray<NSNumber*>*)shape
-                  scalarType:(ETCoreAIScalarType)scalarType
-    NS_DESIGNATED_INITIALIZER;
+                  scalarType:(ETCoreAIScalarType)scalarType;
+// Caller supplies byteCount writable bytes, disjoint from live source storage.
+// A null destination is allowed only for an empty output.
+- (void)copyBytesTo:(void* _Nullable)bytes NS_SWIFT_NAME(copyBytes(to:));
 @end
 
-// The caller keeps inputs valid and unmodified until completion. All session
-// input access must finish before completion is invoked, including on failure.
+// The caller keeps inputs valid until all output copies finish, or completion
+// reports failure. Outputs may share input storage; stage copies before writing
+// any destination that aliases an input or another output destination.
 // Completion is called exactly once, possibly before executeInputs returns,
 // with no guarantee of a particular thread or queue.
 @protocol ETCoreAISession<NSObject>
@@ -101,9 +111,13 @@ typedef void (^ETCoreAIAcquisitionCompletion)(
     NSError* _Nullable error);
 
 @protocol ETCoreAIModelLoading<NSObject>
+// Stable for this loader's lifetime; derived from its actual specialization
+// options.
+@property(nonatomic, readonly, copy) NSString* specializationIdentifier;
 - (void)restoreModelFromBookmark:(NSData*)bookmark
                       completion:(ETCoreAIAcquisitionCompletion)completion;
-// Uses only the SDK default cache and persistent policy. Never returns Miss.
+// Uses the SDK default cache with storage-pressure-only purging. Never returns
+// Miss.
 - (void)specializeModelAtURL:(NSURL*)url
                   completion:(ETCoreAIAcquisitionCompletion)completion;
 // Nil error means SDK-confirmed deletion. No busy/absent classification is

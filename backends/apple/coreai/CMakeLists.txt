@@ -86,7 +86,7 @@ if(NOT CMAKE_SYSTEM_NAME MATCHES "^(Darwin|iOS)$")
   message(FATAL_ERROR "Core AI currently supports macOS and iOS only")
 endif()
 
-include(${PROJECT_SOURCE_DIR}/tools/cmake/ExecuTorchCoreAIDependencies.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/coreai-dependencies.cmake)
 executorch_coreai_dependencies()
 set(_coreai_deployment 27.0)
 if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_GREATER _coreai_deployment)
@@ -158,6 +158,30 @@ function(coreai_require_os27 target)
   endif()
 endfunction()
 
+function(coreai_configure_swift_target target module_name)
+  set_target_properties(
+    ${target} PROPERTIES Swift_MODULE_NAME "${module_name}"
+                         Swift_LANGUAGE_VERSION 6
+  )
+  coreai_require_os27(${target})
+  target_link_libraries(${target} PRIVATE executorch::coreai_dependencies)
+  if(CMAKE_GENERATOR STREQUAL "Xcode")
+    set_target_properties(
+      ${target}
+      PROPERTIES XCODE_ATTRIBUTE_PRODUCT_MODULE_NAME "${module_name}"
+                 XCODE_ATTRIBUTE_SWIFT_MODULE_NAME "${module_name}"
+                 XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER
+                 "${CMAKE_CURRENT_SOURCE_DIR}/runtime/ETCoreAIBridge.h"
+    )
+  else()
+    target_compile_options(
+      ${target}
+      PRIVATE
+        "$<$<COMPILE_LANGUAGE:Swift>:-import-objc-header;${CMAKE_CURRENT_SOURCE_DIR}/runtime/ETCoreAIBridge.h>"
+    )
+  endif()
+endfunction()
+
 set(_coreai_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
 if(CMAKE_GENERATOR STREQUAL "Xcode")
   string(APPEND _coreai_generated_dir
@@ -168,22 +192,15 @@ else()
 endif()
 set(_coreai_swift_header "${_coreai_generated_dir}/CoreAIBridge-Swift.h")
 add_library(coreai_swift STATIC runtime/ETCoreAIModel.swift)
+coreai_configure_swift_target(coreai_swift CoreAIBridge)
 set_target_properties(
-  coreai_swift
-  PROPERTIES Swift_MODULE_NAME CoreAIBridge
-             Swift_MODULE_DIRECTORY "${_coreai_generated_dir}"
-             Swift_LANGUAGE_VERSION 6
-             POSITION_INDEPENDENT_CODE ON
+  coreai_swift PROPERTIES Swift_MODULE_DIRECTORY "${_coreai_generated_dir}"
+                          POSITION_INDEPENDENT_CODE ON
 )
 if(CMAKE_GENERATOR STREQUAL "Xcode")
   set_target_properties(
-    coreai_swift
-    PROPERTIES XCODE_ATTRIBUTE_PRODUCT_MODULE_NAME CoreAIBridge
-               XCODE_ATTRIBUTE_SWIFT_MODULE_NAME CoreAIBridge
-               XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER
-               "${CMAKE_CURRENT_SOURCE_DIR}/runtime/ETCoreAIBridge.h"
-               XCODE_ATTRIBUTE_SWIFT_OBJC_INTERFACE_HEADER_NAME
-               CoreAIBridge-Swift.h
+    coreai_swift PROPERTIES XCODE_ATTRIBUTE_SWIFT_OBJC_INTERFACE_HEADER_NAME
+                            CoreAIBridge-Swift.h
   )
   # Xcode merges architecture-specific headers into DERIVED_SOURCES_DIR.
   add_custom_command(
@@ -197,14 +214,10 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
     VERBATIM
   )
 else()
-  set(_coreai_swift_options
-      -import-objc-header
-      "${CMAKE_CURRENT_SOURCE_DIR}/runtime/ETCoreAIBridge.h" -emit-objc-header
-      -emit-objc-header-path "${_coreai_swift_header}"
-  )
   target_compile_options(
     coreai_swift
-    PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:${_coreai_swift_options}>"
+    PRIVATE
+      "$<$<COMPILE_LANGUAGE:Swift>:-emit-objc-header;-emit-objc-header-path;${_coreai_swift_header}>"
   )
   add_custom_command(
     TARGET coreai_swift
@@ -221,8 +234,6 @@ set_property(
   PROPERTY OBJECT_DEPENDS
            "${CMAKE_CURRENT_SOURCE_DIR}/runtime/ETCoreAIBridge.h"
 )
-coreai_require_os27(coreai_swift)
-target_link_libraries(coreai_swift PRIVATE executorch::coreai_dependencies)
 
 # Keep SDK entry points separate so delegate tests can substitute a fake.
 add_library(
@@ -238,6 +249,21 @@ set_property(
   APPEND
   PROPERTY OBJECT_DEPENDS "${_coreai_swift_header}"
 )
+
+set(_coreai_run_sdk_tests FALSE)
+if(EXECUTORCH_BUILD_TESTS
+   AND CMAKE_SYSTEM_NAME STREQUAL "Darwin"
+   AND NOT CMAKE_CROSSCOMPILING
+)
+  execute_process(
+    COMMAND sw_vers -productVersion
+    OUTPUT_VARIABLE _coreai_host_version
+    OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY
+  )
+  if(_coreai_host_version VERSION_GREATER_EQUAL _coreai_deployment)
+    set(_coreai_run_sdk_tests TRUE)
+  endif()
+endif()
 
 # The Swift tests use the bridge's internal declarations, so they compile into
 # one module with it and run under xctest. Ninja on macOS only.
@@ -260,18 +286,14 @@ if(EXECUTORCH_BUILD_TESTS
     runtime/ETCoreAITensor.mm
   )
   set_target_properties(
-    coreai_swift_bridge_test
-    PROPERTIES BUNDLE TRUE
-               BUNDLE_EXTENSION xctest
-               Swift_MODULE_NAME CoreAIBridgeTests
-               Swift_LANGUAGE_VERSION 6
+    coreai_swift_bridge_test PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION xctest
   )
   coreai_configure_objc_target(coreai_swift_bridge_test)
-  coreai_require_os27(coreai_swift_bridge_test)
+  coreai_configure_swift_target(coreai_swift_bridge_test CoreAIBridgeTests)
   target_compile_options(
     coreai_swift_bridge_test
     PRIVATE
-      "$<$<COMPILE_LANGUAGE:Swift>:-import-objc-header;${CMAKE_CURRENT_SOURCE_DIR}/runtime/ETCoreAIBridge.h;-F;${_coreai_xctest_frameworks};-I;${_coreai_xctest_libs}>"
+      "$<$<COMPILE_LANGUAGE:Swift>:-F;${_coreai_xctest_frameworks};-I;${_coreai_xctest_libs}>"
   )
   target_link_options(
     coreai_swift_bridge_test PRIVATE "-F${_coreai_xctest_frameworks}"
@@ -280,7 +302,6 @@ if(EXECUTORCH_BUILD_TESTS
   )
   target_link_libraries(
     coreai_swift_bridge_test PRIVATE "-framework XCTest" XCTestSwiftSupport
-                                     executorch::coreai_dependencies
   )
   file(GLOB_RECURSE _coreai_fixture_sources CONFIGURE_DEPENDS
        "${CMAKE_CURRENT_SOURCE_DIR}/*.py"
@@ -310,14 +331,17 @@ if(EXECUTORCH_BUILD_TESTS
             "${_coreai_fixture_dir}/dynamic/manifest.json"
   )
   add_dependencies(coreai_swift_bridge_test coreai_bridge_fixture)
-  add_test(NAME coreai_swift_bridge_test
-           COMMAND xcrun xctest "$<TARGET_BUNDLE_DIR:coreai_swift_bridge_test>"
-  )
-  set_tests_properties(
-    coreai_swift_bridge_test
-    PROPERTIES TIMEOUT 600 ENVIRONMENT
-               "COREAI_BRIDGE_FIXTURE_DIR=${_coreai_fixture_dir}"
-  )
+  if(_coreai_run_sdk_tests)
+    add_test(NAME coreai_swift_bridge_test
+             COMMAND xcrun xctest
+                     "$<TARGET_BUNDLE_DIR:coreai_swift_bridge_test>"
+    )
+    set_tests_properties(
+      coreai_swift_bridge_test
+      PROPERTIES TIMEOUT 600 ENVIRONMENT
+                 "COREAI_BRIDGE_FIXTURE_DIR=${_coreai_fixture_dir}"
+    )
+  endif()
 endif()
 
 install(

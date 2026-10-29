@@ -801,13 +801,11 @@ if(EXECUTORCH_BUILD_VULKAN)
   string(APPEND _executorch_backend_dependencies "find_dependency(Threads)\n")
 endif()
 if(EXECUTORCH_BUILD_COREAI)
-  string(
-    APPEND
-    _executorch_backend_dependencies
-    "include(\"\${CMAKE_CURRENT_LIST_DIR}/ExecuTorchCoreAIDependencies.cmake\")\n"
-    "executorch_coreai_dependencies()\n"
+  string(APPEND _executorch_backend_dependencies
+         "include(\"\${CMAKE_CURRENT_LIST_DIR}/coreai-dependencies.cmake\")\n"
+         "executorch_coreai_dependencies()\n"
   )
-  install(FILES tools/cmake/ExecuTorchCoreAIDependencies.cmake
+  install(FILES backends/apple/coreai/coreai-dependencies.cmake
           DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
   )
 endif()

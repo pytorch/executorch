@@ -49,8 +49,52 @@ func acquireCoreAIModel(
   }
 }
 
-// ExecuTorch waits synchronously and keeps storage valid and unchanged until completion.
+@available(macOS 27.0, iOS 27.0, *)
+struct CoreAIScalarInfo: Sendable {
+  let sdkType: NDArray.ScalarType
+  let bridgeType: ETCoreAIScalarType
+  let byteWidth: Int
+
+  // Only byte-addressable scalar types belong here; packed types need a separate layout policy.
+  static let supported: [Self] = [
+    Self(sdkType: .float16, bridgeType: .float16, byteWidth: 2),
+    Self(sdkType: .float32, bridgeType: .float32, byteWidth: 4),
+  ]
+
+  static func from(sdkType: NDArray.ScalarType) throws -> Self {
+    guard let info = supported.first(where: { $0.sdkType == sdkType }) else {
+      throw bridgeError(.unsupported, "Unsupported Core AI scalar type: \(sdkType)")
+    }
+    return info
+  }
+
+  static func from(bridgeType: ETCoreAIScalarType) throws -> Self {
+    guard let info = supported.first(where: { $0.bridgeType == bridgeType }) else {
+      throw bridgeError(.unsupported, "Unsupported bridge scalar type: \(bridgeType.rawValue)")
+    }
+    return info
+  }
+
+  func byteCount(shape: [Int], errorCode: ETCoreAIErrorCode = .invalidArgument) throws -> Int {
+    guard shape.allSatisfy({ $0 >= 0 }) else {
+      throw bridgeError(errorCode, "Negative tensor dimension")
+    }
+    // Check suffix products too: SDK dense-stride construction must not overflow on empty tensors.
+    var count = byteWidth
+    for dimension in shape.reversed() {
+      let (next, overflow) = count.multipliedReportingOverflow(by: max(dimension, 1))
+      guard !overflow else {
+        throw bridgeError(errorCode, "Tensor byte count overflows Int")
+      }
+      count = next
+    }
+    return shape.contains(0) ? 0 : count
+  }
+}
+
+// ExecuTorch waits synchronously and keeps input storage live through output copying.
 // This snapshot transfers only metadata and a pointer to the task; it does not own storage.
+@available(macOS 27.0, iOS 27.0, *)
 struct CoreAITensorPayload: @unchecked Sendable {
   let bytes: UnsafeRawPointer?
   let byteCount: Int
@@ -80,34 +124,7 @@ struct CoreAITensorPayload: @unchecked Sendable {
     shape: [Int], scalarType: ETCoreAIScalarType,
     errorCode: ETCoreAIErrorCode = .invalidArgument
   ) throws -> Int {
-    let width: Int
-    switch scalarType {
-    case .float16: width = 2
-    case .float32: width = 4
-    default: throw bridgeError(.unsupported, "Only FP16 and FP32 tensors are supported")
-    }
-    guard shape.allSatisfy({ $0 >= 0 }) else {
-      throw bridgeError(errorCode, "Negative tensor dimension")
-    }
-    // Check suffix products too: SDK dense-stride construction must not overflow on empty tensors.
-    var count = width
-    for dimension in shape.reversed() {
-      let (next, overflow) = count.multipliedReportingOverflow(by: max(dimension, 1))
-      guard !overflow else {
-        throw bridgeError(errorCode, "Tensor byte count overflows Int")
-      }
-      count = next
-    }
-    return shape.contains(0) ? 0 : count
-  }
-}
-
-@available(macOS 27.0, iOS 27.0, *)
-private func bridgeScalarType(_ type: NDArray.ScalarType) throws -> ETCoreAIScalarType {
-  switch type {
-  case .float16: return .float16
-  case .float32: return .float32
-  default: throw bridgeError(.unsupported, "Only FP16 and FP32 NDArrays are supported")
+    try CoreAIScalarInfo.from(bridgeType: scalarType).byteCount(shape: shape, errorCode: errorCode)
   }
 }
 
@@ -117,7 +134,7 @@ private func tensorDescriptor(_ value: InferenceValue.Descriptor?) throws -> NDA
   guard case .ndArray(let descriptor) = value else {
     throw bridgeError(.unsupported, "Image values are not supported")
   }
-  _ = try bridgeScalarType(descriptor.scalarType)
+  _ = try CoreAIScalarInfo.from(sdkType: descriptor.scalarType)
   guard descriptor.interleaveLayout == nil else {
     throw bridgeError(.unsupported, "Interleaved tensor descriptors are not supported")
   }
@@ -196,47 +213,46 @@ struct CoreAITensorLayout {
 }
 
 @available(macOS 27.0, iOS 27.0, *)
-func copyOutput<T: BitwiseCopyable>(_ array: NDArray, as: T.Type) throws -> Data {
-  let type = try bridgeScalarType(array.scalarType)
-  guard (T.self == Float.self && type == .float32) || (T.self == Float16.self && type == .float16)
-  else {
-    throw bridgeError(.runtime, "Output copy dtype mismatch")
-  }
-  let byteCount = try CoreAITensorPayload.byteCount(
-    shape: array.shape, scalarType: type, errorCode: .runtime)
+func prepareOutput(_ array: NDArray) throws -> ETCoreAITensor {
+  let type = try CoreAIScalarInfo.from(sdkType: array.scalarType)
+  let byteCount = try type.byteCount(shape: array.shape, errorCode: .runtime)
   guard array.interleaveLayout == nil else {
     throw bridgeError(.unsupported, "Interleaved output storage is not supported")
   }
+  let view = array.rawView()
   let layout = try CoreAITensorLayout(
-    shape: array.shape, strides: array.strides, width: MemoryLayout<T>.stride,
-    storageByteCount: array.rawView().bytes.byteCount)
-  var data = Data(count: byteCount)
-  let view = array.view(as: T.self)
-  try view.withUnsafePointer { source, shape, strides in
-    guard shape.count == layout.shape.count, strides.count == layout.strides.count else {
+    shape: array.shape, strides: array.strides, width: type.byteWidth,
+    storageByteCount: view.bytes.byteCount)
+  let shape = view.shape
+  let strides = view.strides
+  guard view.scalarType == type.sdkType, view.interleaveLayout == nil,
+    shape.count == layout.shape.count, strides.count == layout.strides.count
+  else {
+    throw bridgeError(.runtime, "Output view layout changed")
+  }
+  for axis in layout.shape.indices {
+    guard shape[axis] == layout.shape[axis], strides[axis] == layout.strides[axis] else {
       throw bridgeError(.runtime, "Output view layout changed")
     }
-    for axis in layout.shape.indices {
-      guard shape[axis] == layout.shape[axis], strides[axis] == layout.strides[axis] else {
-        throw bridgeError(.runtime, "Output view layout changed")
-      }
-    }
-    try data.withUnsafeMutableBytes { destination in
-      guard layout.count > 0 else { return }
-      guard let base = destination.baseAddress else {
-        throw bridgeError(.runtime, "Nonempty output has null data")
-      }
+  }
+  // Retain the immutable array, not its scoped pointer. All fallible work is complete.
+  return ETCoreAITensor(
+    byteCount: UInt(byteCount), shape: layout.shape.map(NSNumber.init(value:)),
+    scalarType: type.bridgeType
+  ) { destination in
+    let view = array.rawView()
+    view.bytes.withUnsafeBytes { source in
       if layout.isDense {
-        base.copyMemory(from: source, byteCount: layout.count * MemoryLayout<T>.stride)
+        destination.copyMemory(from: source.baseAddress!, byteCount: byteCount)
         return
       }
       for index in 0..<layout.count {
-        base.advanced(by: index * MemoryLayout<T>.stride).copyMemory(
-          from: source.advanced(by: layout.offset(for: index)), byteCount: MemoryLayout<T>.stride)
+        destination.advanced(by: index * type.byteWidth).copyMemory(
+          from: source.baseAddress!.advanced(by: layout.offset(for: index) * type.byteWidth),
+          byteCount: type.byteWidth)
       }
     }
   }
-  return data
 }
 
 @available(macOS 27.0, iOS 27.0, *)
@@ -286,7 +302,8 @@ private final class CoreAISwiftSession: NSObject, ETCoreAISession, Sendable {
       let payload = payloads[index]
       let descriptor = inputDescriptors[index]
       try validateShape(payload.shape, descriptor: descriptor)
-      guard payload.scalarType == (try bridgeScalarType(descriptor.scalarType)) else {
+      let expectedType = try CoreAIScalarInfo.from(sdkType: descriptor.scalarType)
+      guard payload.scalarType == expectedType.bridgeType else {
         throw bridgeError(.invalidArgument, "Input dtype does not match the function descriptor")
       }
       // Unsafe boundary: the ET caller, not this metadata snapshot, owns the storage.
@@ -333,13 +350,7 @@ private final class CoreAISwiftSession: NSObject, ETCoreAISession, Sendable {
           guard array.scalarType == descriptor.scalarType else {
             throw bridgeError(.runtime, "Output dtype does not match the function descriptor")
           }
-          let type = try bridgeScalarType(array.scalarType)
-          let data =
-            try type == .float16
-            ? copyOutput(array, as: Float16.self) : copyOutput(array, as: Float.self)
-          tensors.append(
-            ETCoreAITensor(
-              data: data, shape: array.shape.map(NSNumber.init(value:)), scalarType: type))
+          tensors.append(try prepareOutput(array))
         }
         callback.call(tensors, nil)
       } catch {
@@ -394,8 +405,70 @@ private final class CoreAISwiftPreparedModel: NSObject, ETCoreAIPreparedModel, S
 }
 
 @available(macOS 27.0, iOS 27.0, *)
+struct CoreAISpecialization: Sendable {
+  let options: SpecializationOptions
+  let identifier: String
+
+  static let `default` = Self()
+
+  private init() {
+    options = .default
+    identifier = "default"
+  }
+
+  // New SDK option fields require a schema review and versioned identity changes.
+  private struct Descriptor: Encodable {
+    let version: Int
+    let allowedComputeUnits: [String]
+    let preferredComputeUnit: String?
+    let expectFrequentReshapes: Bool
+  }
+
+  init(options: SpecializationOptions) throws {
+    if options == .default {
+      self = Self.default
+      return
+    }
+    let descriptor = Descriptor(
+      version: 1,
+      allowedComputeUnits: try options.allowedComputeUnitKinds.map(Self.name).sorted(),
+      preferredComputeUnit: try options.preferredComputeUnitKind.map(Self.name),
+      expectFrequentReshapes: options.expectFrequentReshapes)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    identifier = String(decoding: try encoder.encode(descriptor), as: UTF8.self)
+    self.options = options
+  }
+
+  private static func name(_ kind: ComputeUnitKind) throws -> String {
+    switch kind {
+    case .cpu: return "cpu"
+    case .gpu: return "gpu"
+    case .neuralEngine: return "neuralEngine"
+    @unknown default:
+      throw bridgeError(.unsupported, "Unknown specialization compute unit")
+    }
+  }
+}
+
+@available(macOS 27.0, iOS 27.0, *)
 @objc(ETCoreAISwiftModelLoader)
 public final class ETCoreAISwiftModelLoader: NSObject, ETCoreAIModelLoading {
+  static let cachePolicy = AIModelCache.Policy(purgeConditions: [.storagePressure])
+  private let specialization: CoreAISpecialization
+
+  public override init() {
+    specialization = .default
+    super.init()
+  }
+
+  init(specialization: CoreAISpecialization) {
+    self.specialization = specialization
+    super.init()
+  }
+
+  public var specializationIdentifier: String { specialization.identifier }
+
   @objc public static var deviceArchitectureName: String { AIModel.deviceArchitectureName }
 
   public func restoreModel(
@@ -407,12 +480,13 @@ public final class ETCoreAISwiftModelLoader: NSObject, ETCoreAIModelLoading {
   }
 
   public func specializeModel(at url: URL, completion: @escaping ETCoreAIAcquisitionCompletion) {
+    let options = specialization.options
     acquireCoreAIModel(context: "Core AI specialization failed", completion: completion) {
       guard url.isFileURL else {
         throw bridgeError(.invalidArgument, "A file URL is required")
       }
       let model = try await AIModel.specialize(
-        contentsOf: url, options: .default, cache: .default, cachePolicy: .persistent)
+        contentsOf: url, options: options, cache: .default, cachePolicy: Self.cachePolicy)
       return CoreAISwiftPreparedModel(model: model)
     }
   }

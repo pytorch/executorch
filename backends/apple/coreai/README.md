@@ -52,8 +52,7 @@ Do not call these synchronous APIs directly inside Swift `Task` or
 From async Swift code, submit the entire ExecuTorch call with
 `DispatchQueue.async` and await its result using a continuation. Do not block
 the Swift task with `DispatchQueue.sync` or a semaphore. Keep input tensors alive
-and unchanged until the ExecuTorch call returns, even if the waiting task is
-cancelled.
+and unchanged through all output copies, even if the waiting task is cancelled.
 
 ### AOT architecture selection
 
@@ -160,21 +159,29 @@ and maintenance to stop.
 The private Swift module `CoreAIBridge` (`runtime/ETCoreAIModel.swift`) wraps
 the `CoreAI` framework behind the Objective-C protocols in
 `runtime/ETCoreAIBridge.h`. It restores models from bookmarks, specializes source
-bundles with the persistent default SDK cache and binds named functions with
-ordered inputs and outputs. Asynchronous SDK calls run in detached tasks and
-report through completion blocks; function binding completes synchronously.
+bundles in the default SDK cache with storage-pressure-only purging, and binds
+named functions with ordered inputs and outputs. Each loader owns an immutable
+snapshot of its actual specialization options and exposes a stable, versioned
+identity derived from that snapshot. Asynchronous SDK calls run in detached
+tasks and report through completion blocks; function binding completes
+synchronously.
 
 Inputs are borrowed from caller storage through Core AI raw views; only shape
-metadata is copied. Dense row-major outputs are copied with one `memcpy`, and
-padded or transposed outputs fall back to strided copies. Only FP16 and FP32
-NDArrays are supported.
+metadata is copied. Outputs retain their SDK storage and expose a copier after
+all fallible layout validation finishes. Dense row-major outputs copy with one
+`memcpy`, while padded or transposed outputs use strided copies. Only FP16 and
+FP32 NDArrays are supported. Callers keep inputs live through output copying and
+stage copies before writing destinations that could alias inputs or other output
+destinations.
 
-The Objective-C half of the bridge builds as the private `coreai_bridge_obj`
-object library for integration with the production delegate. The separate entry
-points allow delegate tests to substitute a fake bridge.
+Bridge-owned Objective-C types live in `runtime/ETCoreAITensor.mm`, separately
+from the production SDK entry points in `runtime/coreai_bridge.mm`. Both build in
+the private `coreai_bridge_obj` object library, while SDK-free tests can link the
+types and substitute fake entry points.
 
 `coreai_swift_bridge_test` runs the bridge's XCTests under `xctest` with
-`EXECUTORCH_BUILD_TESTS=ON`. It links CoreAI, so it runs only on macOS 27.
+`EXECUTORCH_BUILD_TESTS=ON`. It links CoreAI and is registered with CTest only
+when the macOS host meets the configured Core AI deployment target.
 The test build exports static- and dynamic-shape models for real session tests.
 CMake's `PYTHON_EXECUTABLE` must use the Python environment with the pinned Core
 AI requirements above. Backend Python changes regenerate the dedicated fixture

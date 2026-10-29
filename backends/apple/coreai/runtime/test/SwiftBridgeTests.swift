@@ -9,6 +9,17 @@ import Foundation
 import Synchronization
 import XCTest
 
+private func copiedData(_ output: ETCoreAITensor) -> Data {
+  var data = Data(count: Int(output.byteCount))
+  data.withUnsafeMutableBytes { output.copyBytes(to: $0.baseAddress) }
+  return data
+}
+
+@available(macOS 27.0, iOS 27.0, *)
+private func copyOutput(_ array: NDArray) throws -> Data {
+  copiedData(try prepareOutput(array))
+}
+
 private final class ProtocolPreparedModel: NSObject, ETCoreAIPreparedModel, Sendable {
   let released: XCTestExpectation
 
@@ -94,6 +105,71 @@ final class SwiftAcquisitionTests: XCTestCase {
 }
 
 @available(macOS 27.0, iOS 27.0, *)
+final class SwiftSpecializationTests: XCTestCase {
+  func testCachePolicyAllowsOnlyStoragePressure() {
+    XCTAssertEqual(ETCoreAISwiftModelLoader.cachePolicy.purgeConditions, [.storagePressure])
+  }
+  func testDefaultPreservesIdentifier() throws {
+    let snapshot = try CoreAISpecialization(options: .default)
+    XCTAssertEqual(snapshot.options, .default)
+    XCTAssertEqual(snapshot.identifier, "default")
+    XCTAssertEqual(ETCoreAISwiftModelLoader().specializationIdentifier, snapshot.identifier)
+  }
+
+  func testAllOptionFieldsParticipateInIdentity() throws {
+    let choices: [SpecializationOptions] = [
+      .default, .cpuOnly,
+      SpecializationOptions(preferredComputeUnitKind: .cpu),
+      SpecializationOptions(preferredComputeUnitKind: .gpu),
+      SpecializationOptions(preferredComputeUnitKind: .neuralEngine),
+    ]
+    let options =
+      choices
+      + choices.map { original in
+        var changed = original
+        changed.expectFrequentReshapes.toggle()
+        return changed
+      }
+    let snapshots = try options.map { try CoreAISpecialization(options: $0) }
+    for first in snapshots {
+      XCTAssertEqual(first.identifier, try CoreAISpecialization(options: first.options).identifier)
+      XCTAssertEqual(
+        ETCoreAISwiftModelLoader(specialization: first).specializationIdentifier, first.identifier)
+      for second in snapshots {
+        XCTAssertEqual(first.options == second.options, first.identifier == second.identifier)
+      }
+    }
+  }
+
+  func testSnapshotDoesNotFollowSubsequentOptionMutation() throws {
+    var options = SpecializationOptions.cpuOnly
+    let original = options
+    let snapshot = try CoreAISpecialization(options: options)
+    let loader = ETCoreAISwiftModelLoader(specialization: snapshot)
+    options.expectFrequentReshapes.toggle()
+    XCTAssertEqual(snapshot.options, original)
+    XCTAssertEqual(loader.specializationIdentifier, snapshot.identifier)
+    XCTAssertNotEqual(
+      loader.specializationIdentifier, try CoreAISpecialization(options: options).identifier)
+  }
+
+  func testDescriptorIsVersionedAndUsesStableComputeUnitNames() throws {
+    var options = SpecializationOptions(preferredComputeUnitKind: .gpu)
+    options.expectFrequentReshapes = !SpecializationOptions.default.expectFrequentReshapes
+    let snapshot = try CoreAISpecialization(options: options)
+    let json = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(snapshot.identifier.utf8)) as? [String: Any])
+    XCTAssertEqual(json["version"] as? Int, 1)
+    XCTAssertEqual(json["preferredComputeUnit"] as? String, "gpu")
+    XCTAssertEqual(json["expectFrequentReshapes"] as? Bool, options.expectFrequentReshapes)
+    let allowed = try XCTUnwrap(json["allowedComputeUnits"] as? [String])
+    XCTAssertEqual(allowed, allowed.sorted())
+    XCTAssertTrue(Set(allowed).isSubset(of: ["cpu", "gpu", "neuralEngine"]))
+    XCTAssertEqual(allowed.count, options.allowedComputeUnitKinds.count)
+  }
+}
+
+@available(macOS 27.0, iOS 27.0, *)
 final class SwiftSessionTests: XCTestCase {
   private struct Manifest: Decodable {
     let function: String
@@ -123,7 +199,7 @@ final class SwiftSessionTests: XCTestCase {
     }
   }
 
-  private let loader = ETCoreAISwiftModelLoader()
+  private var loader = ETCoreAISwiftModelLoader()
   private var manifest: Manifest!
   private var fixtureDirectory: URL!
   private var model: (any ETCoreAIPreparedModel)?
@@ -143,6 +219,15 @@ final class SwiftSessionTests: XCTestCase {
       Manifest.self, from: Data(contentsOf: directory.appendingPathComponent("manifest.json")))
     XCTAssertEqual(manifest.inputNames.count, 2)
     XCTAssertEqual(manifest.outputNames.count, 2)
+  }
+
+  func testSpecializationUsesTheSnapshotOptions() throws {
+    let snapshot = try CoreAISpecialization(options: .cpuOnly)
+    loader = ETCoreAISwiftModelLoader(specialization: snapshot)
+    try prepareModel()
+    XCTAssertNotNil(
+      try AIModelCache.default.model(
+        for: fixtureDirectory.appendingPathComponent("model.aimodel"), options: snapshot.options))
   }
 
   private func prepareModel() throws {
@@ -206,7 +291,10 @@ final class SwiftSessionTests: XCTestCase {
     completed.assertForOverFulfill = true
     let result = Mutex<(outputs: [ETCoreAITensor]?, error: Error?)>((nil, nil))
     try XCTUnwrap(session).executeInputs(inputs.map(\.tensor)) { tensors, error in
-      result.withLock { $0 = (tensors, error) }
+      let owned = tensors?.map {
+        ETCoreAITensor(data: copiedData($0), shape: $0.shape, scalarType: $0.scalarType)
+      }
+      result.withLock { $0 = (owned, error) }
       // Retain the borrowed allocations even if the XCTest wait times out.
       withExtendedLifetime(inputs) { completed.fulfill() }
     }
@@ -232,7 +320,7 @@ final class SwiftSessionTests: XCTestCase {
       for (output, values) in zip(outputs, expected) {
         XCTAssertEqual(output.scalarType, .float32)
         XCTAssertEqual(output.shape, [2])
-        XCTAssertEqual(output.data, values.withUnsafeBytes { Data($0) })
+        XCTAssertEqual(copiedData(output), values.withUnsafeBytes { Data($0) })
       }
     }
   }
@@ -256,7 +344,7 @@ final class SwiftSessionTests: XCTestCase {
       XCTAssertEqual(outputs.count, 2)
       for (output, values) in zip(outputs, expected) {
         XCTAssertEqual(output.shape, [NSNumber(value: count)])
-        XCTAssertEqual(output.data, values.withUnsafeBytes { Data($0) })
+        XCTAssertEqual(copiedData(output), values.withUnsafeBytes { Data($0) })
       }
     }
   }
@@ -336,6 +424,74 @@ final class SwiftBridgeTests: XCTestCase {
       completed.fulfill()
     }
     wait(for: [completed], timeout: 5)
+  }
+
+  func testScalarDefinitionsRoundTripAndRejectUnsupportedTypes() throws {
+    let supported = CoreAIScalarInfo.supported
+    XCTAssertEqual(Set(supported.map(\.sdkType)).count, supported.count)
+    XCTAssertEqual(Set(supported.map { $0.bridgeType.rawValue }).count, supported.count)
+    for info in supported {
+      XCTAssertGreaterThan(info.byteWidth, 0)
+      XCTAssertEqual(try CoreAIScalarInfo.from(sdkType: info.sdkType).bridgeType, info.bridgeType)
+      XCTAssertEqual(try CoreAIScalarInfo.from(bridgeType: info.bridgeType).sdkType, info.sdkType)
+      XCTAssertEqual(
+        try CoreAITensorPayload.byteCount(shape: [2, 3], scalarType: info.bridgeType),
+        6 * info.byteWidth)
+    }
+    let supportedTypes = Set(supported.map(\.sdkType))
+    for type in NDArray.ScalarType.allCases where !supportedTypes.contains(type) {
+      XCTAssertThrowsError(try CoreAIScalarInfo.from(sdkType: type)) {
+        XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.unsupported.rawValue)
+      }
+    }
+    let unsupported = try XCTUnwrap(ETCoreAIScalarType(rawValue: Int.max))
+    XCTAssertThrowsError(try CoreAITensorPayload.byteCount(shape: [1], scalarType: unsupported)) {
+      XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.unsupported.rawValue)
+    }
+    XCTAssertThrowsError(try prepareOutput(NDArray(shape: [2], scalarType: .int32))) {
+      XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.unsupported.rawValue)
+    }
+  }
+
+  func testRawOutputCopiesPreserveBitsForEverySupportedTypeAndLayout() throws {
+    for info in CoreAIScalarInfo.supported {
+      for (shape, strides) in [
+        ([2, 3], [3, 1]), ([2, 3], [4, 1]), ([2, 3], [1, 2]),
+        ([2, 1, 3], [3, 19, 1]), ([], []), ([2, 0, 3], [3, 3, 1]),
+      ] {
+        let count = shape.reduce(1, *)
+        let expected = (0..<(count * info.byteWidth)).map {
+          UInt8(truncatingIfNeeded: $0 * 73 + 255)
+        }
+        var array = NDArray(shape: shape, scalarType: info.sdkType, strides: strides)
+        do {
+          var view = array.mutableRawView()
+          var bytes = view.mutableBytes
+          bytes.withUnsafeMutableBytes { storage in
+            for index in 0..<count {
+              var remainder = index
+              var offset = 0
+              for axis in shape.indices.reversed() {
+                offset += (remainder % shape[axis]) * strides[axis]
+                remainder /= shape[axis]
+              }
+              for byte in 0..<info.byteWidth {
+                storage[offset * info.byteWidth + byte] = expected[index * info.byteWidth + byte]
+              }
+            }
+          }
+        }
+        let output = try prepareOutput(array)
+        XCTAssertEqual(output.scalarType, info.bridgeType)
+        XCTAssertEqual(output.shape, shape.map(NSNumber.init(value:)))
+        XCTAssertEqual(output.byteCount, UInt(expected.count))
+        var destination = [UInt8](repeating: 0xa5, count: expected.count + 2)
+        destination.withUnsafeMutableBytes { bytes in
+          output.copyBytes(to: bytes.baseAddress!.advanced(by: 1))
+        }
+        XCTAssertEqual(destination, [0xa5] + expected + [0xa5])
+      }
+    }
   }
 
   func testByteCounts() throws {
@@ -419,7 +575,7 @@ final class SwiftBridgeTests: XCTestCase {
     let bytes = RawSpan(
       _unsafeBytes: UnsafeRawBufferPointer(
         start: payload.bytes, count: payload.byteCount))
-    let expectedType: NDArray.ScalarType = scalarType == .float16 ? .float16 : .float32
+    let expectedType = try CoreAIScalarInfo.from(bridgeType: scalarType).sdkType
     let view = NDArray.RawView(
       bytes: bytes, scalarType: expectedType, shape: payload.shape)
     view.bytes.withUnsafeBytes { borrowed in
@@ -432,6 +588,64 @@ final class SwiftBridgeTests: XCTestCase {
       XCTAssertEqual(viewShape[axis], shape[axis], file: file, line: line)
     }
     XCTAssertEqual(view.scalarType, expectedType, file: file, line: line)
+  }
+
+  func testPreparedOutputsRetainSDKStorageAndCopyIntoCallerSubranges() throws {
+    try assertOwnedOutput([Float(3), 7], scalarType: .float32)
+    try assertOwnedOutput([Float16(3), 7], scalarType: .float16)
+  }
+
+  private func assertOwnedOutput<T: BinaryFloatingPoint & BitwiseCopyable>(
+    _ values: [T], scalarType: NDArray.ScalarType
+  ) throws {
+    let output: ETCoreAITensor = try {
+      var array = NDArray(shape: [values.count], scalarType: scalarType)
+      do {
+        var view = array.mutableView(as: T.self)
+        view.withUnsafeMutablePointer { pointer, _, _ in
+          for index in values.indices { pointer[index] = values[index] }
+        }
+      }
+      return try prepareOutput(array)
+    }()
+    XCTAssertEqual(output.byteCount, UInt(values.count * MemoryLayout<T>.stride))
+    for _ in 0..<2 {
+      var destination = [T](repeating: 99, count: values.count + 2)
+      destination.withUnsafeMutableBytes { bytes in
+        output.copyBytes(to: bytes.baseAddress!.advanced(by: MemoryLayout<T>.stride))
+      }
+      XCTAssertEqual(destination, [T(99)] + values + [T(99)])
+    }
+  }
+
+  func testEmptyOutputDoesNotInvokeCopier() {
+    var calls = 0
+    let output = ETCoreAITensor(byteCount: 0, shape: [0], scalarType: .float32) { _ in
+      calls += 1
+    }
+    output.copyBytes(to: nil)
+    XCTAssertEqual(calls, 0)
+  }
+
+  func testOutputCopierIsDeferredUntilCopyAndRetainsItsOwner() {
+    final class Owner { var calls = 0 }
+    weak var observed: Owner?
+    var output: ETCoreAITensor? = {
+      let owner = Owner()
+      observed = owner
+      return ETCoreAITensor(byteCount: 4, shape: [1], scalarType: .float32) { destination in
+        owner.calls += 1
+        var value: Float = 7
+        withUnsafeBytes(of: &value) { source in
+          destination.copyMemory(from: source.baseAddress!, byteCount: source.count)
+        }
+      }
+    }()
+    XCTAssertEqual(observed?.calls, 0)
+    XCTAssertEqual(copiedData(output!), [Float(7)].withUnsafeBytes { Data($0) })
+    XCTAssertEqual(observed?.calls, 1)
+    output = nil
+    XCTAssertNil(observed)
   }
 
   func testOutputCopiesTrackActualShape() throws {
@@ -448,7 +662,7 @@ final class SwiftBridgeTests: XCTestCase {
           }
         }
       }
-      let output = try copyOutput(array, as: Float.self)
+      let output = try copyOutput(array)
       XCTAssertEqual(output, values.withUnsafeBytes { Data($0) })
     }
   }
@@ -509,16 +723,13 @@ final class SwiftBridgeTests: XCTestCase {
         }
       }
     }
-    let output = try copyOutput(strided, as: Float.self)
+    let output = try copyOutput(strided)
     XCTAssertEqual(output, bytes)
     do {
       var view = strided.mutableView(as: Float.self)
       view.withUnsafeMutablePointer { pointer, _, _ in pointer[0] = 99 }
     }
     XCTAssertEqual(output, bytes, "the copy must not alias the SDK array")
-    XCTAssertThrowsError(try copyOutput(strided, as: Float16.self)) {
-      XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.runtime.rawValue)
-    }
 
     var transposed = NDArray(shape: [2, 3], scalarType: .float16, strides: [1, 2])
     do {
@@ -529,14 +740,14 @@ final class SwiftBridgeTests: XCTestCase {
     }
     let expected: [Float16] = [1, 3, 5, 2, 4, 6]
     XCTAssertEqual(
-      try copyOutput(transposed, as: Float16.self), expected.withUnsafeBytes { Data($0) })
+      try copyOutput(transposed), expected.withUnsafeBytes { Data($0) })
   }
 
   func testRejectsInterleavedOutput() {
     let array = NDArray(
       shape: [2, 4], scalarType: .float16, strides: [8, 2],
       interleaveLayout: NDArray.InterleaveLayout(dimension: 1, factor: 2))
-    XCTAssertThrowsError(try copyOutput(array, as: Float16.self)) {
+    XCTAssertThrowsError(try copyOutput(array)) {
       XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.unsupported.rawValue)
     }
   }

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <cstring>
 #import "ETCoreAIBridge.h"
 
 NSErrorDomain const ETCoreAIErrorDomain = @"org.pytorch.executorch.coreai";
@@ -26,16 +27,37 @@ NSErrorDomain const ETCoreAIErrorDomain = @"org.pytorch.executorch.coreai";
 }
 @end
 
-@implementation ETCoreAITensor
+@implementation ETCoreAITensor {
+  void (^_copyBytes)(void*);
+}
+- (instancetype)initWithByteCount:(NSUInteger)byteCount
+                            shape:(NSArray<NSNumber*>*)shape
+                       scalarType:(ETCoreAIScalarType)scalarType
+                        copyBytes:(void (^)(void*))copyBytes {
+  NSParameterAssert(copyBytes != nil);
+  self = [super init];
+  if (self) {
+    _byteCount = byteCount;
+    _shape = [shape copy];
+    _scalarType = scalarType;
+    _copyBytes = [copyBytes copy];
+  }
+  return self;
+}
 - (instancetype)initWithData:(NSData*)data
                        shape:(NSArray<NSNumber*>*)shape
                   scalarType:(ETCoreAIScalarType)scalarType {
-  self = [super init];
-  if (self) {
-    _data = [data copy];
-    _shape = [shape copy];
-    _scalarType = scalarType;
+  NSData* storage = [data copy];
+  return [self initWithByteCount:storage.length
+                           shape:shape
+                      scalarType:scalarType
+                       copyBytes:^(void* bytes) {
+                         std::memcpy(bytes, storage.bytes, storage.length);
+                       }];
+}
+- (void)copyBytesTo:(void*)bytes {
+  if (_byteCount > 0) {
+    _copyBytes(bytes);
   }
-  return self;
 }
 @end
