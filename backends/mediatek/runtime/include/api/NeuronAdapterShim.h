@@ -11,6 +11,9 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include "NeuronAdapter.h"
+#include "NeuronAdapterLibrarySelector.h"
+
+#include <mutex>
 
 #define LOAD_ADAPTER_FUNCTION(name) \
   static name##_fn fn = reinterpret_cast<name##_fn>(loadAdapterFunction(#name));
@@ -26,33 +29,84 @@
 #define EXECUTE_ADAPTER_FUNCTION_RETURN_BOOL(...) \
   return fn != nullptr ? fn(__VA_ARGS__) : false;
 
-static void* sHandle = nullptr;
-inline void* loadAdapterLibrary(const char* name) {
-  sHandle = dlopen(name, RTLD_LAZY | RTLD_LOCAL);
-  if (sHandle == nullptr) {
-    __android_log_print(
-        ANDROID_LOG_ERROR, "AdapterShimApi", "Unable to open library %s", name);
+inline void* openAdapterLibrary(const char* name) {
+  return dlopen(name, RTLD_LAZY | RTLD_LOCAL);
+}
+
+inline std::mutex& adapterLibraryMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+inline executorch::backends::neuron::AdapterLibraryState&
+adapterLibraryState() {
+  static executorch::backends::neuron::AdapterLibraryState state;
+  return state;
+}
+
+inline int getAdapterLibraryMajor(void* handle) {
+  using GetVersion = int (*)(NeuronRuntimeVersion*);
+  auto getVersion =
+      reinterpret_cast<GetVersion>(dlsym(handle, "Neuron_getVersion"));
+  if (getVersion == nullptr) {
+    return -1;
   }
-  return sHandle;
+  NeuronRuntimeVersion version{};
+  if (getVersion(&version) != NEURON_NO_ERROR) {
+    return -1;
+  }
+  return version.major;
+}
+
+inline executorch::backends::neuron::AdapterLibrarySelection
+selectSystemAdapterLibrary(int major) {
+  auto selection = executorch::backends::neuron::selectAdapterLibrary(
+      major,
+      openAdapterLibrary,
+      [](void* handle) { dlclose(handle); },
+      getAdapterLibraryMajor);
+  if (selection.handle == nullptr) {
+    __android_log_print(
+        ANDROID_LOG_ERROR,
+        "AdapterShimApi",
+        "Unable to open a compatible adapter library for major %d",
+        major);
+  }
+  return selection;
+}
+
+inline bool configureAdapterLibraryMajor(int major) {
+  std::lock_guard<std::mutex> lock(adapterLibraryMutex());
+  auto& state = adapterLibraryState();
+  const int selectedMajor = state.major;
+  const bool majorConflict = state.handle != nullptr && selectedMajor != -1 &&
+      !executorch::backends::neuron::isAdapterLibraryMajorCompatible(
+                                 selectedMajor, major);
+  const bool configured =
+      executorch::backends::neuron::configureAdapterLibraryState(
+          state, major, selectSystemAdapterLibrary);
+  if (!configured && majorConflict) {
+    __android_log_print(
+        ANDROID_LOG_ERROR,
+        "AdapterShimApi",
+        "Adapter major %d is already selected; cannot switch to %d",
+        selectedMajor,
+        major);
+  }
+  return configured;
 }
 
 inline void* getAdapterLibraryHandle() {
-  if (sHandle == nullptr) {
-    sHandle = loadAdapterLibrary("libneuronusdk_adapter.mtk.so");
-  }
-  if (sHandle == nullptr) {
-    sHandle = loadAdapterLibrary("libneuron_adapter_mgvi.so");
-  }
-  if (sHandle == nullptr) {
-    sHandle = loadAdapterLibrary("libneuron_adapter.so");
-  }
-  return sHandle;
+  std::lock_guard<std::mutex> lock(adapterLibraryMutex());
+  return executorch::backends::neuron::getOrSelectAdapterLibrary(
+      adapterLibraryState(), selectSystemAdapterLibrary);
 }
 
 inline void* loadAdapterFunction(const char* name) {
   void* fn = nullptr;
-  if (getAdapterLibraryHandle() != nullptr) {
-    fn = dlsym(getAdapterLibraryHandle(), name);
+  void* handle = getAdapterLibraryHandle();
+  if (handle != nullptr) {
+    fn = dlsym(handle, name);
   }
 
   if (fn == nullptr) {
