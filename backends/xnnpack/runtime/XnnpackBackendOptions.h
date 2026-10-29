@@ -37,6 +37,11 @@ class XnnpackBackendOptions {
   bool resolve_weight_cache(
       const ET_RUNTIME_NAMESPACE::BackendInitContext& context) const;
 
+  // Resolve whether packed-LHS graph rewrites are disabled for a delegate,
+  // applying any runtime spec override.
+  bool resolve_disable_packed_lhs(
+      const ET_RUNTIME_NAMESPACE::BackendInitContext& context) const;
+
   // Resolve the effective workspace sharing mode for a delegate, applying
   // any runtime spec override. Returns InvalidArgument for out-of-range values.
   runtime::Result<WorkspaceSharingMode> resolve_sharing_mode(
@@ -94,6 +99,8 @@ class XnnpackBackendOptions {
 #else
   std::atomic<bool> weight_cache_enabled_{false};
 #endif
+
+  std::atomic<bool> disable_packed_lhs_{false};
 
   // The most-recently-set packed cache path. Today's callers (Cria
   // runner) set this via set_option(packed_cache_path_option_key) per
