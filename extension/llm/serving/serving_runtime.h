@@ -72,7 +72,8 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Runs on control; must not block or reenter the runtime.
   batching::PrefixCache::RetentionPolicy prefix_cache_retention = {};
   // Transient rows shared by prompt capture and named-session replacement.
-  // Zero automatically covers admitted requests, bounded by max_sessions.
+  // Zero matches request concurrency, bounded by max_sessions; replacements
+  // compete with prompt captures for these rows.
   // Automatic checkpoint mode needs at most two rows because collection is
   // serialized; one replacement may overlap. Positive values override sizing.
   std::size_t max_prefix_captures = 0;
