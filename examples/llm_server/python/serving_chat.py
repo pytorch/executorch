@@ -244,6 +244,16 @@ class ServingChat:
             return []
         return [s] if isinstance(s, str) else [x for x in s if x]
 
+    def _generation_stops(self, req: ChatCompletionRequest) -> list[str]:
+        stops = self._request_stops(req)
+        if req.ignore_eos:
+            return stops
+        return (
+            self._stops
+            + ([] if self._tools_active(req) else self._content_specials)
+            + stops
+        )
+
     @staticmethod
     def _apply_stop(text: str, stops: list[str]) -> str:
         """Truncate at the earliest stop string (the stop itself is excluded)."""
@@ -550,6 +560,10 @@ class ServingChat:
                 req.ignore_eos and not self._runtime.supports_ignore_eos,
                 "ignore_eos (requires an updated multiplexed worker)",
             ),
+            (
+                req.ignore_eos and not self._stops,
+                "ignore_eos (requires decoded turn terminators in the chat template)",
+            ),
             (req.n != 1, "n>1"),
             (req.reasoning_effort is not None, "reasoning_effort"),
             (bool(req.frequency_penalty), "frequency_penalty"),
@@ -659,12 +673,7 @@ class ServingChat:
                     raise ContextLengthExceeded(count, self._max_context, requested)
         # Per-path worker stop set (see __init__ for the two sets and why): tool
         # turns use the narrow set; plain chat adds the broad content specials.
-        if req.ignore_eos:
-            gen_stops = self._request_stops(req)
-        elif self._tools_active(req):
-            gen_stops = self._stops + self._request_stops(req)
-        else:
-            gen_stops = self._stops + self._content_specials + self._request_stops(req)
+        gen_stops = self._generation_stops(req)
         options = self._options(req, gen_stops)
         # The generation scaffold the worker will prefill ahead of this turn's
         # tokens (e.g. Qwen3 <think> block), resolved with the same per-request
@@ -710,11 +719,7 @@ class ServingChat:
         # Same stop set the worker was given (per-path: narrow for tools, broad
         # content specials added for plain chat); falls back to narrow if a caller
         # didn't supply it.
-        stops = (
-            gen_stops
-            if gen_stops is not None
-            else ([] if req.ignore_eos else self._stops) + self._request_stops(req)
-        )
+        stops = gen_stops if gen_stops is not None else self._generation_stops(req)
         stats = GenStats()
         try:
             # Collect raw text (markers intact for tool parsing), halting early

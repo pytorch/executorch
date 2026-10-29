@@ -58,6 +58,7 @@ struct ET_EXPERIMENTAL GenerationOptions {
   // Forwarded to the executor for this generation, together with sampling.
   std::optional<std::uint64_t> seed;
   // Suppress service default EOS stops, preserving explicit request stops.
+  // EOS then appears in TextOutput and generated_token_ids like other tokens.
   bool ignore_eos = false;
 };
 

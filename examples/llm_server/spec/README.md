@@ -30,9 +30,13 @@ uses the worker's unset/random value.
 multiplexed batching worker. It disables model EOS and automatic chat-template
 stops, allowing generation through terminator tokens up to the requested budget
 or context limit. Explicit request `stop` strings and cancellation still apply.
-Response parsing and visible content still end at the first turn terminator;
-post-terminator tokens contribute to usage but cannot become tool calls or be
-spliced into a later conversation turn. Explicit `max_tokens` is recommended;
+Response parsing ends at the first decoded turn terminator from the chat template.
+Use matching model/tokenizer assets so all model EOS markers are represented;
+requests are rejected if the template provides no turn terminators. Tokens past a
+recognized terminator contribute to usage but are excluded from parsing. Explicit
+stops still apply to hidden text, and exhausting the budget reports `length` even
+if the visible answer ended earlier. Exact generated-token splicing is disabled
+for these turns; later prompts still use ordinary token-prefix matching. Explicit `max_tokens` is recommended;
 without it generation uses the remaining context budget. The worker advertises
 support in its readiness frame. Older and legacy workers reject
 `ignore_eos: true` with `400 unsupported_parameter`. Non-boolean values, including

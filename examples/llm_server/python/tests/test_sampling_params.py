@@ -497,3 +497,15 @@ def test_ignore_eos_content_filter_preserves_explicit_stop_reason(make_client):
     )
     assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
     assert runner.stopped
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_requires_visible_turn_terminators(make_client, stream):
+    client, runner = make_client()
+    client.app.state.serving._stops = []
+    response = client.post(
+        "/v1/chat/completions", json=_body(ignore_eos=True, stream=stream)
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "unsupported_parameter"
+    assert "turn terminators" in response.json()["error"]["message"]

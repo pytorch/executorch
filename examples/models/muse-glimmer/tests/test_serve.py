@@ -608,6 +608,47 @@ def _glimmer_serving(raw_texts, template=None):
 
 @pytest.mark.parametrize("serving_cls", [ServingChat, serve.MuseGlimmerServingChat])
 @pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_consumes_budget_and_preserves_visible_turn(serving_cls, stream):
+    class Template(_StubTemplate):
+        def turn_stop_sequences(self):
+            return ["<|eot|>"]
+
+    class Runtime(_FakeRuntime):
+        supports_ignore_eos = True
+
+        async def generate_stream(self, session_id, prompt, options, stats=None):
+            assert options.ignore_eos is True
+            assert options.stop == ["USER_STOP"]
+            assert options.max_new_tokens == 3
+            yield "answer"
+            yield "<|eot|>"
+            yield "hidden"
+            self.drained = True
+            stats.completion_tokens = 3
+            stats.finish_reason = "length"
+
+    async def scenario():
+        runtime = Runtime([])
+        runtime.drained = False
+        serving = serving_cls(runtime, Template(), "test-model")
+        response = await _create_message(
+            serving,
+            ChatCompletionRequest(
+                messages=[ChatMessage(role="user", content="hi")],
+                stream=stream,
+                ignore_eos=True,
+                max_tokens=3,
+                stop="USER_STOP",
+            ),
+        )
+        assert response["content"] == "answer"
+        assert runtime.drained
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("serving_cls", [ServingChat, serve.MuseGlimmerServingChat])
+@pytest.mark.parametrize("stream", [False, True])
 def test_bare_generator_stop_is_scoped_and_finalizes(serving_cls, stream):
     class Runtime(_FakeRuntime):
         def __init__(self):

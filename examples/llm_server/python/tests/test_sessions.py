@@ -390,9 +390,7 @@ def test_stop_set_narrow_but_strip_set_broad():
         "sure<tool_call>\n<function=f>\n<parameter=x>\n1\n"
         "</parameter>\n</function>\n</tool_call>"
     )
-    assert (
-        serving._truncate_raw(raw, SimpleNamespace(stop=None, ignore_eos=False)) == raw
-    )
+    assert serving._truncate_raw(raw, SimpleNamespace(stop=None)) == raw
 
 
 def test_injected_assistant_exemplar_falls_back_to_text():

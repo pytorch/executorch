@@ -1327,6 +1327,23 @@ TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   EXPECT_TRUE(done.value("cancelled", false));
   EXPECT_EQ(finish(), 0);
 }
+TEST_F(ProtocolTest, AcceptsBothIgnoreEosValues) {
+  start();
+  for (uint64_t id = 1; id <= 2; ++id) {
+    auto request = generate(id, 2);
+    request["ignore_eos"] = id == 2;
+    send(request);
+    Json done;
+    do {
+      done = receive();
+      ASSERT_FALSE(done.contains("error")) << done;
+    } while (done.contains("token"));
+    EXPECT_TRUE(done.value("done", false));
+    EXPECT_EQ(done.at("completion_tokens"), 2);
+  }
+  EXPECT_EQ(finish(), 0);
+}
+
 // Subprocess mode for Python validation regressions. The inherited socket is
 // separate from JSONL: 'A' witnesses active execution, and 'R' releases it.
 int run_validation_worker(int gate_fd) {
@@ -1362,21 +1379,4 @@ int main(int argc, char** argv) {
   }
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
-}
-
-TEST_F(ProtocolTest, AcceptsBothIgnoreEosValues) {
-  start();
-  for (uint64_t id = 1; id <= 2; ++id) {
-    auto request = generate(id, 2);
-    request["ignore_eos"] = id == 2;
-    send(request);
-    Json done;
-    do {
-      done = receive();
-      ASSERT_FALSE(done.contains("error")) << done;
-    } while (done.contains("token"));
-    EXPECT_TRUE(done.value("done", false));
-    EXPECT_EQ(done.at("completion_tokens"), 2);
-  }
-  EXPECT_EQ(finish(), 0);
 }
