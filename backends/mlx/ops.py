@@ -94,6 +94,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     GreaterEqualNode,
     GreaterNode,
     IdCopyNode,
+    IndexCopyNode,
     IntOrVid,
     IntOrVidOrTid,
     ItemIntNode,
@@ -2401,6 +2402,38 @@ def _roll_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             out=P.slot_to_tid(out),
             shift=[P.to_int_or_vid(s) for s in shifts],
             axes=dims,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.index_copy.default])
+def _index_copy_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """index_copy into a new tensor, leaving `dst` as it was.
+
+    The INDEX_COPY pattern writes in place when `dst` is a buffer the method
+    mutates; anything else, a mutated user input included, lands here and the
+    caller writes the result back.
+    """
+    args = P.args(n)
+    require_args(args, 4, 4, "aten.index_copy.default")
+    require_kwargs(P.kwargs(n), set(), "aten.index_copy.default")
+    dst, axis, indices, update = args
+    require_static_int(axis, "dim", "aten.index_copy.default")
+    # The runtime takes a 1-D index into a tensor with at least one dim; ATen also
+    # allows 0-d ones, which stay off the delegate.
+    if n.args[0].meta["val"].dim() == 0 or n.args[2].meta["val"].dim() != 1:
+        raise NotImplementedError(
+            "aten.index_copy.default needs a 1-D index into a tensor of rank >= 1"
+        )
+    out = P.make_or_get_slot(n)
+    P.emit(
+        IndexCopyNode(
+            dst=P.slot_to_tid(dst),
+            update=P.slot_to_tid(update),
+            indices=P.slot_to_tid(indices),
+            out=P.slot_to_tid(out),
+            axis=axis,
         )
     )
     return out

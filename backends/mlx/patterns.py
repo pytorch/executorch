@@ -123,6 +123,10 @@ def _int4_qparams_lower(qdata_node: Node, scale_node: Node, group_size: int) -> 
 class IndexCopyHandler(PatternHandler):
     """
     Pattern for index-based updates on mutable buffers.
+
+    Only a buffer the method mutates is written in place: the delegate owns it
+    across calls. A mutated user input is not the delegate's to keep, so its
+    index_copy is left to the functional handler and written back by the caller.
     """
 
     def __init__(
@@ -148,10 +152,8 @@ class IndexCopyHandler(PatternHandler):
         if not match_target(index_copy_node, torch.ops.aten.index_copy.default):
             return None
 
-        # index_copy should write to a mutable input/buffer to be an index update.
-        if (index_copy_node.name not in ep.graph_signature.buffers_to_mutate) and (
-            index_copy_node.name not in ep.graph_signature.user_inputs_to_mutate
-        ):
+        # index_copy should write to a mutable buffer to be an index update.
+        if index_copy_node.name not in ep.graph_signature.buffers_to_mutate:
             return None
 
         # index_copy(dst, axis, indices, update)
