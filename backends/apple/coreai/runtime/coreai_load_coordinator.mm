@@ -7,8 +7,9 @@
  */
 #import "coreai_load_coordinator.h"
 
-#import "coreai_bookmarks.h"
+#import "coreai_cache_entry.h"
 #import "coreai_cache_key.h"
+#import "coreai_error.h"
 #import "coreai_fault_injection.h"
 #import "coreai_source_bundle.h"
 
@@ -20,14 +21,12 @@ namespace {
 using runtime::Error;
 using runtime::Result;
 
-Error acquisition_error(NSError* error) {
-  ET_LOG(
-      Error,
-      "Core AI acquisition error (%s, %ld): %s",
-      error.domain.UTF8String,
-      static_cast<long>(error.code),
-      error.description.UTF8String);
-  return Error::Internal;
+Error require_coreai_available() {
+  ET_CHECK_OR_RETURN_ERROR(
+      ETCoreAIIsAvailable(),
+      NotSupported,
+      "Core AI requires macOS 27 or iOS 27");
+  return Error::Ok;
 }
 
 Result<id<ETCoreAIPreparedModel>> wait_for_acquisition(
@@ -49,7 +48,7 @@ Result<id<ETCoreAIPreparedModel>> wait_for_acquisition(
         error = failure;
         dispatch_semaphore_signal(ready);
       });
-  // The SDK may still be reading caller-owned source after a bounded timeout.
+  // Wait without a timeout; the SDK may still be reading the staged source.
   dispatch_semaphore_wait(ready, DISPATCH_TIME_FOREVER);
   id<ETCoreAIPreparedModel> acquired = model;
   NSError* failure = error;
@@ -79,27 +78,57 @@ Result<id<ETCoreAIPreparedModel>> restore(
   });
 }
 
-void cleanup_source(const CacheEntryLock& cache_entry) {
-  const Error error = cache_entry.remove_staging();
+void cleanup_source(const LockedCacheEntry& cache_entry) {
+  const Error error = cache_entry.remove_source();
   if (error != Error::Ok) {
     ET_LOG(
         Error,
-        "Cannot clean Core AI staging: error=%u",
+        "Cannot remove Core AI source bundle: error=%u",
         static_cast<unsigned>(error));
   }
 }
+
+Error evict_one(id<ETCoreAIModelLoading> loader, NSData* bookmark) {
+  ET_CHECK_OR_RETURN_ERROR(
+      fault_point(FaultPoint::BeforeEvict) == 0,
+      AccessFailed,
+      "Core AI eviction interrupted");
+  dispatch_semaphore_t ready = dispatch_semaphore_create(0);
+  __block NSError* failure = nil;
+  [loader evictModelWithBookmark:bookmark
+                      completion:^(NSError* error) {
+                        failure = error;
+                        dispatch_semaphore_signal(ready);
+                      }];
+  dispatch_semaphore_wait(ready, DISPATCH_TIME_FOREVER);
+  NSError* eviction_failure = failure;
+  // A loader may retain the completion block after invoking it.
+  failure = nil;
+  if (eviction_failure != nil) {
+    // A confirmed restore miss proves that a failed eviction is already done.
+    @autoreleasepool {
+      auto probe = restore(loader, bookmark);
+      if (probe.ok() && probe.get() == nil) {
+        return Error::Ok;
+      }
+    }
+    return acquisition_error(eviction_failure);
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      fault_point(FaultPoint::AfterEvict) == 0,
+      AccessFailed,
+      "Core AI eviction interrupted");
+  return Error::Ok;
+}
 } // namespace
 
-Result<RuntimeAssets> select_runtime_assets(const Manifest& manifest) {
+Result<SelectedHostBundle> select_host_bundle(const Manifest& manifest) {
   ET_CHECK_OR_RETURN_ERROR(
       [NSProcessInfo.processInfo
           isOperatingSystemAtLeastVersion:manifest.minimum_version],
       DelegateInvalidCompatibility,
       "Core AI model requires a newer operating system");
-  ET_CHECK_OR_RETURN_ERROR(
-      ETCoreAIIsAvailable(),
-      NotSupported,
-      "Core AI requires macOS 27 or iOS 27");
+  ET_CHECK_OK_OR_RETURN_ERROR(require_coreai_available());
 #if TARGET_OS_OSX
   NSString* platform = @"macOS";
 #elif TARGET_OS_IOS
@@ -108,30 +137,33 @@ Result<RuntimeAssets> select_runtime_assets(const Manifest& manifest) {
   NSString* platform = @"unsupported";
 #endif
   NSString* architecture = ETCoreAIDeviceArchitectureName();
-  auto selected = select_assets(manifest, architecture, platform);
+  auto selected = select_bundle(manifest, architecture, platform);
   if (!selected.ok()) {
     return selected.error();
   }
-  return RuntimeAssets{
+  return SelectedHostBundle{
       std::move(selected.get()), [platform copy], [architecture copy]};
 }
 
-Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
-    const RuntimeAssets& assets,
+Result<id<ETCoreAIPreparedModel>> acquire_model(
+    const SelectedHostBundle& host_bundle,
     const runtime::NamedDataMap* named_data,
-    NSString* root,
+    const CacheDirectory& cache_directory,
     id<ETCoreAIModelLoading> loader) {
   ET_CHECK_OR_RETURN_ERROR(
       loader != nil, InvalidArgument, "Missing Core AI model loader");
   NSString* specialization = [loader.specializationIdentifier copy];
   auto key = cache_variant_key(
-      assets.bundle, assets.platform, assets.architecture, specialization);
+      host_bundle.bundle,
+      host_bundle.platform,
+      host_bundle.architecture,
+      specialization);
   if (!key.ok()) {
     return key.error();
   }
   NSString* cache_key = key.get();
   ET_LOG(Info, "Core AI cache lookup: key=%s", cache_key.UTF8String);
-  auto locked = lock_cache_entry(root, cache_key);
+  auto locked = LockedCacheEntry::acquire(cache_directory, cache_key);
   if (!locked.ok()) {
     return locked.error();
   }
@@ -161,7 +193,10 @@ Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
         Info, "Core AI cache miss: no bookmark, key=%s", cache_key.UTF8String);
   }
   auto source = prepare_source_bundle(
-      assets.bundle, named_data, *locked.get(), CorruptBundlePolicy::Replace);
+      host_bundle.bundle,
+      named_data,
+      *locked.get(),
+      CorruptBundlePolicy::Replace);
   if (!source.ok()) {
     return source.error();
   }
@@ -171,7 +206,7 @@ Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
         ET_LOG(
             Info,
             "Core AI specialization started: kind=%s, key=%s",
-            assets.bundle.aot_compiled ? "aot" : "source",
+            host_bundle.bundle.aot_compiled ? "aot" : "source",
             cache_key.UTF8String);
         [loader specializeModelAtURL:url completion:completion];
       });
@@ -190,6 +225,51 @@ Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
       cache_key.UTF8String);
   cleanup_source(*locked.get());
   return model;
+}
+
+Error clear_cache_entry(
+    const CacheDirectory& cache_directory,
+    NSString* key,
+    id<ETCoreAIModelLoading> loader) {
+  auto locked = LockedCacheEntry::acquire_existing(cache_directory, key);
+  if (!locked.ok()) {
+    return locked.error();
+  }
+  if (locked.get() == nullptr) {
+    return Error::Ok;
+  }
+  ET_LOG(Info, "Core AI cache clear started: key=%s", key.UTF8String);
+  auto maintenance = locked.get()->maintenance();
+  auto bookmark = maintenance.inspect_bookmark();
+  if (!bookmark.ok()) {
+    return bookmark.error();
+  }
+  ET_CHECK_OK_OR_RETURN_ERROR(maintenance.preflight());
+  if (bookmark->state != CacheBookmarkState::Present) {
+    ET_LOG(
+        Info,
+        "Core AI cache key %s has a %s bookmark; SDK eviction could not be "
+        "confirmed; attempting local cleanup",
+        key.UTF8String,
+        bookmark->state == CacheBookmarkState::Missing ? "missing" : "corrupt");
+  } else {
+    if (loader == nil) {
+      ET_CHECK_OK_OR_RETURN_ERROR(require_coreai_available());
+      loader = ETCoreAICreateModelLoader();
+      ET_CHECK_OR_RETURN_ERROR(
+          loader != nil, Internal, "Cannot create Core AI model loader");
+    }
+    ET_LOG(Info, "Core AI SDK eviction requested: key=%s", key.UTF8String);
+    ET_CHECK_OK_OR_RETURN_ERROR(evict_one(loader, bookmark->data));
+    ET_LOG(
+        Info,
+        "Core AI SDK cache entry absence confirmed: key=%s",
+        key.UTF8String);
+  }
+  ET_CHECK_OK_OR_RETURN_ERROR(maintenance.remove_source());
+  ET_CHECK_OK_OR_RETURN_ERROR(maintenance.remove_bookmark());
+  ET_LOG(Info, "Core AI local cache entry cleared: key=%s", key.UTF8String);
+  return Error::Ok;
 }
 
 } // namespace executorch::backends::coreai

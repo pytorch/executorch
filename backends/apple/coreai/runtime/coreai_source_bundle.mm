@@ -8,7 +8,7 @@
 
 #import "coreai_source_bundle.h"
 
-#import "coreai_bookmarks.h"
+#import "coreai_cache_entry.h"
 #import "coreai_fault_injection.h"
 #import "coreai_manifest.h"
 #import "coreai_storage.h"
@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <cerrno>
 #include <cstdint>
+#include <utility>
 
 namespace executorch::backends::coreai {
 namespace {
@@ -116,11 +117,11 @@ Error validate_tree(
 }
 
 Result<EntryState> inspect_source_bundle(
-    int root_fd,
+    int sources_fd,
     NSString* key,
     NSDictionary<NSString*, NSNumber*>* files) {
   FileDescriptor entry(
-      open_directory_at(root_fd, key.fileSystemRepresentation));
+      open_directory_at(sources_fd, key.fileSystemRepresentation));
   if (entry.get() < 0) {
     if (errno == ENOENT) {
       return EntryState::Missing;
@@ -141,89 +142,68 @@ Result<EntryState> inspect_source_bundle(
   return error;
 }
 
-Error fully_sync_directory(int fd) {
-  ET_CHECK_OK_OR_RETURN_ERROR(sync_storage_directory(fd));
-  ET_CHECK_OR_RETURN_ERROR(
-      retry_eintr([&] {
-        const int fault = fault_point(FaultPoint::FullSync);
-        if (fault != 0) {
-          errno = fault;
-          return -1;
-        }
-        return fcntl(fd, F_FULLFSYNC);
-      }) == 0,
-      AccessFailed,
-      "Cannot fully synchronize Core AI source directory");
-  return Error::Ok;
-}
-
-struct StagingDirectory {
+// Removes the unpublished build directory on every early return.
+struct PendingDirectory {
   int parent_fd;
   NSString* name;
   bool published = false;
 
-  StagingDirectory(int parent_fd, NSString* name)
+  PendingDirectory(int parent_fd, NSString* name)
       : parent_fd(parent_fd), name(name) {}
-  StagingDirectory(const StagingDirectory&) = delete;
-  StagingDirectory& operator=(const StagingDirectory&) = delete;
-  StagingDirectory(StagingDirectory&& other)
+  PendingDirectory(const PendingDirectory&) = delete;
+  PendingDirectory& operator=(const PendingDirectory&) = delete;
+  PendingDirectory(PendingDirectory&& other)
       : parent_fd(other.parent_fd),
         name(other.name),
         published(other.published) {
     other.published = true;
   }
 
-  ~StagingDirectory() {
+  ~PendingDirectory() {
     if (published) {
       return;
     }
     const Error error =
         remove_storage_directory(parent_fd, name, StorageRemovalPolicy::Strict);
     if (error != Error::Ok) {
-      ET_LOG(Error, "Cannot remove Core AI staging directory");
+      ET_LOG(Error, "Cannot remove pending Core AI source directory");
     }
   }
 };
 
-Result<StagingDirectory> create_staging_directory(int root_fd) {
+Result<PendingDirectory> create_pending_directory(int sources_fd) {
   NSString* name =
-      [@".staging-" stringByAppendingString:NSUUID.UUID.UUIDString];
+      [@".pending-" stringByAppendingString:NSUUID.UUID.UUIDString];
   ET_CHECK_OR_RETURN_ERROR(
-      retry_eintr([&] {
-        const int fault = fault_point(FaultPoint::CreateStagingDirectory);
-        if (fault != 0) {
-          errno = fault;
-          return -1;
-        }
-        return mkdirat(root_fd, name.fileSystemRepresentation, 0777);
-      }) == 0,
+      fault_aware_retry(
+          FaultPoint::CreatePendingDirectory,
+          [&] {
+            return mkdirat(sources_fd, name.fileSystemRepresentation, 0777);
+          }) == 0,
       AccessFailed,
-      "Cannot create Core AI staging directory");
-  return StagingDirectory{root_fd, [name copy]};
+      "Cannot create pending Core AI source directory");
+  return PendingDirectory{sources_fd, [name copy]};
 }
 
-Result<int> open_staging_directory(int root_fd, NSString* name) {
-  const int fd = retry_eintr([&] {
-    const int fault = fault_point(FaultPoint::OpenStagingDirectory);
-    if (fault != 0) {
-      errno = fault;
-      return -1;
-    }
-    return open_directory_at(root_fd, name.fileSystemRepresentation);
-  });
+Result<FileDescriptor> open_pending_directory(int sources_fd, NSString* name) {
+  FileDescriptor fd(fault_aware_retry(FaultPoint::OpenPendingDirectory, [&] {
+    return open_directory_at(sources_fd, name.fileSystemRepresentation);
+  }));
   ET_CHECK_OR_RETURN_ERROR(
-      fd >= 0, AccessFailed, "Cannot open Core AI staging directory");
+      fd.get() >= 0,
+      AccessFailed,
+      "Cannot open pending Core AI source directory");
   return fd;
 }
 
-Error write_staging_bundle(
-    int staging_fd,
+Error write_pending_bundle(
+    int pending_fd,
     const SelectedBundle& bundle,
     const runtime::NamedDataMap& named_data) {
   for (NSString* file in bundle.files) {
     @autoreleasepool {
       NSString* data_key =
-          [NSString stringWithFormat:@"coreai/%@/%@", bundle.model_hash, file];
+          [NSString stringWithFormat:@"coreai/%@/%@", bundle.export_hash, file];
       auto buffer = named_data.get_data(data_key.UTF8String);
       if (!buffer.ok()) {
         ET_CHECK_OR_RETURN_ERROR(
@@ -239,33 +219,28 @@ Error write_staging_bundle(
           InvalidExternalData,
           "Invalid Core AI named data buffer");
       ET_CHECK_OK_OR_RETURN_ERROR(
-          write_storage_file(staging_fd, file, buffer->data(), buffer->size()));
+          write_storage_file(pending_fd, file, buffer->data(), buffer->size()));
     }
   }
-  ET_CHECK_OK_OR_RETURN_ERROR(validate_tree(staging_fd, bundle.files));
-  return fully_sync_directory(staging_fd);
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_tree(pending_fd, bundle.files));
+  return full_sync_storage_directory(pending_fd);
 }
 
-Result<bool> publish_staging_directory(
-    int root_fd,
-    StagingDirectory& staging,
+Result<bool> publish_pending_directory(
+    int sources_fd,
+    PendingDirectory& pending,
     NSString* key) {
-  const int result = retry_eintr([&] {
-    const int fault = fault_point(FaultPoint::Rename);
-    if (fault != 0) {
-      errno = fault;
-      return -1;
-    }
+  const int result = fault_aware_retry(FaultPoint::Rename, [&] {
     return renameatx_np(
-        root_fd,
-        staging.name.fileSystemRepresentation,
-        root_fd,
+        sources_fd,
+        pending.name.fileSystemRepresentation,
+        sources_fd,
         key.fileSystemRepresentation,
         RENAME_EXCL);
   });
   if (result == 0) {
-    staging.published = true;
-    ET_CHECK_OK_OR_RETURN_ERROR(fully_sync_directory(root_fd));
+    pending.published = true;
+    ET_CHECK_OK_OR_RETURN_ERROR(full_sync_storage_directory(sources_fd));
     return true;
   }
   ET_CHECK_OR_RETURN_ERROR(
@@ -274,10 +249,10 @@ Result<bool> publish_staging_directory(
 }
 
 Error recover_lost_publication_race(
-    int root_fd,
+    int sources_fd,
     NSString* key,
     NSDictionary<NSString*, NSNumber*>* files) {
-  auto winner = inspect_source_bundle(root_fd, key, files);
+  auto winner = inspect_source_bundle(sources_fd, key, files);
   if (!winner.ok()) {
     return winner.error();
   }
@@ -285,7 +260,7 @@ Error recover_lost_publication_race(
       winner.get() == EntryState::Valid,
       InvalidExternalData,
       "Concurrently published Core AI source is incomplete");
-  return fully_sync_directory(root_fd);
+  return full_sync_storage_directory(sources_fd);
 }
 
 } // namespace
@@ -293,31 +268,25 @@ Error recover_lost_publication_race(
 Result<NSURL*> prepare_source_bundle(
     const SelectedBundle& bundle,
     const runtime::NamedDataMap* named_data,
-    const CacheEntryLock& cache_entry,
+    const LockedCacheEntry& cache_entry,
     CorruptBundlePolicy corrupt_policy) {
   NSString* key = cache_entry.key();
-  auto prepared = cache_entry.prepare_staging_root();
-  if (!prepared.ok()) {
-    return prepared.error();
+  auto sources = cache_entry.prepare_source_directory();
+  if (!sources.ok()) {
+    return sources.error();
   }
-  NSURL* root = [NSURL fileURLWithPath:prepared.get() isDirectory:YES];
-  NSURL* model_url = [[root URLByAppendingPathComponent:key isDirectory:YES]
+  NSURL* model_url = [[sources->url URLByAppendingPathComponent:key
+                                                    isDirectory:YES]
       URLByAppendingPathComponent:bundle.bundle_name
                       isDirectory:YES];
-  FileDescriptor root_fd(retry_eintr([&] {
-    return open(
-        root.fileSystemRepresentation,
-        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-  }));
-  ET_CHECK_OR_RETURN_ERROR(
-      root_fd.get() >= 0, AccessFailed, "Cannot open Core AI source root");
+  FileDescriptor sources_fd = std::move(sources->descriptor);
 
-  auto state = inspect_source_bundle(root_fd.get(), key, bundle.files);
+  auto state = inspect_source_bundle(sources_fd.get(), key, bundle.files);
   if (!state.ok()) {
     return state.error();
   }
   if (state.get() == EntryState::Valid) {
-    ET_CHECK_OK_OR_RETURN_ERROR(fully_sync_directory(root_fd.get()));
+    ET_CHECK_OK_OR_RETURN_ERROR(full_sync_storage_directory(sources_fd.get()));
     return model_url;
   }
   if (state.get() == EntryState::Corrupt) {
@@ -326,33 +295,32 @@ Result<NSURL*> prepare_source_bundle(
         InvalidExternalData,
         "Cannot replace a damaged Core AI stored bundle");
     ET_CHECK_OK_OR_RETURN_ERROR(remove_storage_directory(
-        root_fd.get(), key, StorageRemovalPolicy::Maintenance));
+        sources_fd.get(), key, StorageRemovalPolicy::Maintenance));
   }
   ET_CHECK_OR_RETURN_ERROR(
       named_data != nullptr,
       InvalidProgram,
       "Missing NamedDataMap for Core AI source recovery");
 
-  auto staging_result = create_staging_directory(root_fd.get());
-  if (!staging_result.ok()) {
-    return staging_result.error();
+  auto created = create_pending_directory(sources_fd.get());
+  if (!created.ok()) {
+    return created.error();
   }
-  StagingDirectory staging = std::move(staging_result.get());
-  auto staging_fd_result = open_staging_directory(root_fd.get(), staging.name);
-  if (!staging_fd_result.ok()) {
-    return staging_fd_result.error();
+  PendingDirectory pending = std::move(created.get());
+  auto pending_fd = open_pending_directory(sources_fd.get(), pending.name);
+  if (!pending_fd.ok()) {
+    return pending_fd.error();
   }
-  FileDescriptor staging_fd(staging_fd_result.get());
   ET_CHECK_OK_OR_RETURN_ERROR(
-      write_staging_bundle(staging_fd.get(), bundle, *named_data));
+      write_pending_bundle(pending_fd->get(), bundle, *named_data));
 
-  auto published = publish_staging_directory(root_fd.get(), staging, key);
+  auto published = publish_pending_directory(sources_fd.get(), pending, key);
   if (!published.ok()) {
     return published.error();
   }
   if (!published.get()) {
     ET_CHECK_OK_OR_RETURN_ERROR(
-        recover_lost_publication_race(root_fd.get(), key, bundle.files));
+        recover_lost_publication_race(sources_fd.get(), key, bundle.files));
   }
   return model_url;
 }

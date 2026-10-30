@@ -23,7 +23,7 @@ inline NSString* fixture_identity(char digit) {
 inline NSMutableDictionary* manifest_dict() {
   return [@{
     @"packaging" : @"inline",
-    @"hash" : @"ab",
+    @"export_hash" : @"ab",
     @"path" : @"ab/model.aimodel",
     @"function" : @"main",
     @"input_names" : @[ @"input_0" ],
@@ -58,6 +58,21 @@ inline NSMutableDictionary* aot_manifest_dict() {
 
 inline NSData* encode(NSDictionary* dict) {
   return [NSJSONSerialization dataWithJSONObject:dict options:0 error:nil];
+}
+
+inline runtime::Result<SelectedBundle> selected_bundle(
+    NSDictionary* dict,
+    NSString* architecture = @"arch_b",
+    NSString* platform = @"macOS") {
+  NSData* encoded = encode(dict);
+  if (encoded == nil) {
+    return runtime::Error::InvalidExternalData;
+  }
+  auto manifest = parse_manifest(encoded);
+  if (!manifest.ok()) {
+    return manifest.error();
+  }
+  return select_bundle(manifest.get(), architecture, platform);
 }
 
 } // namespace executorch::backends::coreai::testing

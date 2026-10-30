@@ -14,7 +14,7 @@
 
 namespace executorch::backends::coreai {
 
-class CacheEntryLock;
+class LockedCacheEntry;
 class SelectedBundle;
 
 enum class CorruptBundlePolicy {
@@ -27,7 +27,7 @@ enum class CorruptBundlePolicy {
 runtime::Result<NSURL*> prepare_source_bundle(
     const SelectedBundle& bundle,
     const runtime::NamedDataMap* named_data,
-    const CacheEntryLock& cache_entry,
+    const LockedCacheEntry& cache_entry,
     CorruptBundlePolicy corrupt_policy = CorruptBundlePolicy::Reject);
 
 } // namespace executorch::backends::coreai

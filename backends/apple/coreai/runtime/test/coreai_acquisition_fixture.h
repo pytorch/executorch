@@ -8,9 +8,10 @@
 
 #pragma once
 
-#include "coreai_bookmark_fixture.h"
+#include "coreai_cache_entry_fixture.h"
 #include "coreai_fake_loader.h"
 #include "coreai_fault_injection.h"
+#include "coreai_load_coordinator.h"
 #include "coreai_source_fixture.h"
 
 namespace executorch::backends::coreai::testing {
@@ -18,6 +19,15 @@ namespace executorch::backends::coreai::testing {
 runtime::Result<NSURL*> acquisition_staged_url(
     NSURL* root,
     const SelectedBundle& bundle);
+runtime::Result<id<ETCoreAIPreparedModel>> acquire_test_model(
+    const SelectedHostBundle& bundle,
+    const runtime::NamedDataMap* data,
+    NSString* cache_path,
+    id<ETCoreAIModelLoading> loader);
+runtime::Error clear_test_cache_entry(
+    NSString* cache_path,
+    NSString* key,
+    id<ETCoreAIModelLoading> loader);
 
 struct ParallelAcquisitionObservation {
   int creation[2] = {-1, -1};
