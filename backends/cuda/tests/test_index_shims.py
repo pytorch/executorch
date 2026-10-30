@@ -4,12 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Mask indexing and index_put in the CUDA backend's index shims.
+"""Mask indexing, index_put and scatter_reduce in the CUDA backend's index shims.
 
 A mask index makes a result size depend on the data, so Inductor leaves it,
-and an index_put with a mask, to the backend's own index shims. These tests
-lower real programs, run them through the Python runtime, and compare with
-eager PyTorch.
+and an index_put with a mask, to the backend's own index shims. Inductor also
+leaves them every scatter_reduce it cannot write with an atomic add. These
+tests lower real programs, run them through the Python runtime, and compare
+with eager PyTorch on CUDA.
 """
 
 import os
@@ -38,7 +39,7 @@ class TestIndexShims(unittest.TestCase):
     def _run(
         self, model: torch.nn.Module, cases: Sequence[Tuple[torch.Tensor, ...]]
     ) -> None:
-        """Lower model for cases[0], then run every case and compare with eager."""
+        """Lower model for cases[0], then compare every case with eager CUDA."""
         spec = CudaBackend.generate_method_name_compile_spec("forward")
         lowered = to_edge_transform_and_lower(
             export(model, cases[0]),
@@ -63,8 +64,11 @@ class TestIndexShims(unittest.TestCase):
             method = Runtime.get().load_program(path).load_method("forward")
             for inputs in cases:
                 outputs = method.execute(list(inputs))
-                for output, expected in zip(outputs, model(*inputs), strict=True):
-                    torch.testing.assert_close(output.cpu(), expected)
+                expected = model(*(t.cuda() for t in inputs))
+                for output, reference in zip(outputs, expected, strict=True):
+                    torch.testing.assert_close(
+                        output.cpu(), reference.cpu(), equal_nan=True
+                    )
 
     def test_mask_index_and_index_put(self):
         """index_put with accumulate goes to the shim too: Inductor has no atomic
@@ -159,3 +163,28 @@ class TestIndexShims(unittest.TestCase):
                     self._run(Put(), [(x, idx, values)])
         finally:
             torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
+
+    def test_scatter_reduce(self):
+        """Inductor adds atomically but has no atomic max, min or product, so
+        those reductions, and the mean, go to the shim."""
+
+        class ScatterReduce(torch.nn.Module):
+            def forward(self, x, index, src):
+                return tuple(
+                    x.scatter_reduce(1, index, src, reduce, include_self=include)
+                    for reduce in ("amax", "amin", "prod", "mean")
+                    for include in (True, False)
+                )
+
+        # Smaller than src, with repeats, and column 4 is never written.
+        index = torch.tensor([[0, 2, 2, 5], [1, 1, 1, 0], [5, 3, 0, 5]])
+        torch.manual_seed(0)
+        for dtype in (torch.float32, torch.float16, torch.bfloat16, torch.int64):
+            with self.subTest(dtype=dtype):
+                # Small integers keep every sum and product exact in any order.
+                x = torch.randint(-4, 5, (5, 6)).to(dtype)
+                src = torch.randint(-4, 5, (4, 5)).to(dtype)
+                if dtype.is_floating_point:
+                    # Lands on x[1, 1]; every reduction keeps the NaN.
+                    src[1, 2] = float("nan")
+                self._run(ScatterReduce(), [(x, index, src)])
