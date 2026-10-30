@@ -178,6 +178,24 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
         return deps + quantized_deps
 
 
+class BroadcastBinaryConfig(GenericNodePartitionerConfig):
+    """
+    A binary op whose constant operands are delegated with it, so they are
+    serialized as constant data and a lower-rank one can be laid out as NHWC
+    ahead of time instead of being reshaped and transposed at every inference.
+    """
+
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        deps = super().get_node_and_deps(node, ep)
+        return deps + [
+            input_node
+            for input_node in node.all_input_nodes
+            if is_param_node(ep, input_node)
+        ]
+
+
 class QuantizedPerTensorConfig(GenericNodePartitionerConfig):
     target_name = "quantize_per_tensor.default"
 
@@ -209,7 +227,7 @@ class HardtanhConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class AddConfig(GenericNodePartitionerConfig):
+class AddConfig(BroadcastBinaryConfig):
     target_name = "add.Tensor"
 
     def __init__(self, **kwargs):
@@ -353,7 +371,7 @@ class ClampConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class DivConfig(GenericNodePartitionerConfig):
+class DivConfig(BroadcastBinaryConfig):
     target_name = "div.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -433,14 +451,14 @@ class SiluConfig(GenericNodePartitionerConfig):
         )
 
 
-class MulConfig(GenericNodePartitionerConfig):
+class MulConfig(BroadcastBinaryConfig):
     target_name = "mul.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class MaximumConfig(GenericNodePartitionerConfig):
+class MaximumConfig(BroadcastBinaryConfig):
     target_name = "maximum.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -683,7 +701,7 @@ class MeanDimConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class MinimumConfig(GenericNodePartitionerConfig):
+class MinimumConfig(BroadcastBinaryConfig):
     target_name = "minimum.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -817,7 +835,7 @@ class ConstantPadConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
-class SubConfig(GenericNodePartitionerConfig):
+class SubConfig(BroadcastBinaryConfig):
     target_name = "sub.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:

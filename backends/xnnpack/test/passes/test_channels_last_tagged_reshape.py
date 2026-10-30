@@ -6,7 +6,11 @@
 
 # pyre-unsafe
 
+import json
+import os
+import tempfile
 import unittest
+from collections import Counter
 
 import torch
 from executorch.backends.test.harness.stages.stage import StageType
@@ -15,6 +19,10 @@ from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass impor
 )
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
+)
+from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
+    _get_schema_bytes,
+    XNNHeader,
 )
 from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
     OpSequencesAddConv2d,
@@ -26,6 +34,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_quant,
     is_tagged_as_implicit_q_dq,
 )
+from executorch.exir._serialize._flatbuffer import _flatc_decompile
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -356,15 +365,14 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                     .check_count({self.to_copy_name: 2})
                     .run_method_and_compare_outputs()
                 )
-                (
+                tester = (
                     Tester(module, inputs)
                     .export()
                     .to_edge_transform_and_lower()
                     .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                    .to_executorch()
-                    .serialize()
-                    .run_method_and_compare_outputs()
                 )
+                self._assert_only_io_transposes(tester)
+                tester.to_executorch().serialize().run_method_and_compare_outputs()
 
     def test_fp32_channels_last_tagged_reshape_pass_lower_rank_operand_all_binary_ops(
         self,
@@ -482,6 +490,43 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             x = x + self.bias
             return self.conv2(x)
 
+    def _xnnpack_node_types(self, tester) -> Counter:
+        """Node types in the serialized XNNPACK graph of the single delegate
+        produced by to_edge_transform_and_lower."""
+        graph_module = (
+            tester.get_artifact(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
+            .exported_program()
+            .graph_module
+        )
+        (delegate,) = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == torch.ops.higher_order.executorch_call_delegate
+        ]
+        payload = getattr(graph_module, delegate.args[0].target).processed_bytes
+        header = XNNHeader.from_bytes(payload[: XNNHeader.EXPECTED_LENGTH])
+        flatbuffer = payload[
+            header.flatbuffer_offset : header.flatbuffer_offset + header.flatbuffer_size
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            schema_path = os.path.join(d, "schema.fbs")
+            with open(schema_path, "wb") as f:
+                f.write(_get_schema_bytes())
+            bin_path = os.path.join(d, "graph.bin")
+            with open(bin_path, "wb") as f:
+                f.write(flatbuffer)
+            _flatc_decompile(d, schema_path, bin_path)
+            with open(os.path.join(d, "graph.json")) as f:
+                graph = json.load(f)
+        return Counter(node["xnode_union_type"] for node in graph["xnodes"])
+
+    def _assert_only_io_transposes(self, tester):
+        """The delegate transposes the input to NHWC and the output back, and
+        nothing else: no reshape or transpose for the operand."""
+        node_types = self._xnnpack_node_types(tester)
+        self.assertEqual(node_types["XNNStaticTranspose"], 2, node_types)
+        self.assertEqual(node_types["XNNStaticReshape"], 0, node_types)
+
     def _test_constant_lower_rank_operand_folded_to_nhwc(self, module):
         inputs = (torch.randn(1, 3, 5, 7),)
         (
@@ -495,15 +540,14 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_view_copy_default"])
             .run_method_and_compare_outputs()
         )
-        (
+        tester = (
             Tester(module.eval(), inputs)
             .export()
             .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
         )
+        self._assert_only_io_transposes(tester)
+        tester.to_executorch().serialize().run_method_and_compare_outputs()
 
     def test_fp32_channels_last_tagged_reshape_pass_lower_rank_operand_stays_nhwc(self):
         # Every kind of constant: state dict buffer and parameter, and the
