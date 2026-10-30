@@ -19,12 +19,20 @@ def define_common_targets():
         cmd = "mkdir -p $OUT && cp $(location fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_so)/libvulkan.so.1 $OUT/libvk_swiftshader.so",
     )
 
+    runtime.cxx_library(
+        name = "vulkan_engine_host",
+        srcs = ["vulkan_ptn_runner.cpp"],
+        link_whole = True,
+        visibility = ["//executorch/backends/native/test/..."],
+        exported_deps = ["//executorch/backends/native/test/runtime:engine_host"],
+        deps = ["//executorch/backends/native/runtime/vulkan:vulkan_engine"],
+    )
+
     runtime.cxx_binary(
         name = "vulkan_ptn_runner",
-        srcs = ["vulkan_ptn_runner.cpp"],
         visibility = ["//executorch/backends/native/test/..."],
         deps = [
-            "//executorch/backends/native/runtime/vulkan:vulkan_engine",
+            ":vulkan_engine_host",
             "//executorch/backends/native/test/runtime:ptn_runner_main",
             "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
         ],
