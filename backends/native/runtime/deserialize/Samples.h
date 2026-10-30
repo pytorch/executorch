@@ -23,6 +23,8 @@ struct SampleTensor {
   ScalarType dtype = kFloat;
   std::vector<int64_t> sizes;
   std::vector<uint8_t> bytes;
+
+  bool operator==(const SampleTensor&) const = default;
 };
 
 struct Tolerance {
