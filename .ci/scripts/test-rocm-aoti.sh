@@ -51,4 +51,4 @@ print("Architectures:", torch.cuda.get_arch_list())
 PY
 
 
-python .ci/scripts/diagnose-int6-rocm.py
+INT6_LARGE_TEST_ALL_CONFIGS=1 python .ci/scripts/diagnose-int6-rocm.py
