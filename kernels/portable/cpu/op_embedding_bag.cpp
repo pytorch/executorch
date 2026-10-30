@@ -79,6 +79,7 @@ bool check_embedding_bag_args(
       "offsets must be Long or Int; offsets.scalar_type() = %s",
       toString(offsets.scalar_type()));
 
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(weight));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(weight, out));
 
   // Like ATen, mixed Int/Long indices and offsets promote to Long.
@@ -233,8 +234,11 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
   // match, including statically allocated export outputs.
   const bool fast_path =
       is_aten_fast_path(weight, per_sample_weights, out, padding_idx);
-  // ATen skips offset2bag only for sum on its fast path.
-  const bool fills_offset2bag = mode != kModeSum || !fast_path;
+  // ATen skips offset2bag only for sum on its fast path, but export sizes it
+  // with meta_embedding_bag, whose fast path differs (e.g. for BFloat16). Sum
+  // never reads it, so keep a caller-allocated num_indices layout and fill it.
+  const bool fills_offset2bag = mode != kModeSum || !fast_path ||
+      offset2bag.numel() == num_indices;
   // With include_last_offset, ATen's fast path stops the last sum/mean bag at
   // the final offset; every other path gives it all remaining indices.
   const bool truncate_last_bag =
@@ -272,6 +276,12 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
   // it into the 1-D max_indices for the mean mode, where that output carries
   // nothing else.
   if (fills_offset2bag) {
+    // With no bags, ATen puts every index before the first bag, in bag -1.
+    if (num_bags == 0) {
+      for (const auto i : c10::irange(num_indices)) {
+        set_index(offset2bag, i, -1);
+      }
+    }
     for (const auto bag : c10::irange(num_bags)) {
       const int64_t end = bag_end(bag);
       int64_t count = 0;

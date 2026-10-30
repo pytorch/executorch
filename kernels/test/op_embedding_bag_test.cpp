@@ -220,6 +220,38 @@ class OpEmbeddingBagOutTest : public OperatorTest {
     }
   }
 
+  template <ScalarType DTYPE>
+  void test_sum_static_offset2bag() {
+    TensorFactory<DTYPE> tf;
+    TensorFactory<ScalarType::Long> ti;
+    auto weight = tf.make({2, 2}, {1, 2, 3, 4});
+    auto indices = ti.make({3}, {0, 1, 1});
+    auto offsets = ti.make({2}, {0, 1});
+    auto out = tf.zeros({2, 2});
+    // Export sizes offset2bag with meta_embedding_bag, which allocates
+    // num_indices even where eager ATen skips it.
+    auto offset2bag = ti.full({3}, -99);
+    auto bag_size = ti.full({2}, -99);
+    auto max_indices = ti.full({2}, -99);
+    op_embedding_bag_out(
+        weight,
+        indices,
+        offsets,
+        0,
+        {},
+        false,
+        -1,
+        out,
+        offset2bag,
+        bag_size,
+        max_indices);
+    ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+    EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {1, 2, 6, 8}));
+    EXPECT_TENSOR_EQ(offset2bag, ti.make({3}, {0, 1, 1}));
+    EXPECT_TENSOR_EQ(bag_size, ti.zeros({2}));
+    EXPECT_TENSOR_EQ(max_indices, ti.zeros({2}));
+  }
+
   // weight[r][c] = r * 3 + c, so a row is identifiable from its values.
   static Tensor ramp_weight(TensorFactory<ScalarType::Float>& tf) {
     std::vector<float> values(15);
@@ -807,4 +839,62 @@ TEST_F(OpEmbeddingBagOutTest, PartialFinalOffsetMaxWithEmptyBag) {
   EXPECT_TENSOR_EQ(offset2bag, ti.make({2}, {1, 1}));
   EXPECT_TENSOR_EQ(bag_size, ti.make({2}, {0, 2}));
   EXPECT_TENSOR_EQ(max_indices, ti.make({2, 1}, {0, 1}));
+}
+
+TEST_F(OpEmbeddingBagOutTest, SumStaticOffset2BagAllDtypes) {
+#define TEST_ENTRY(CTYPE, DTYPE) \
+  test_sum_static_offset2bag<ScalarType::DTYPE>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpEmbeddingBagOutTest, ZeroBagsWithIndicesFillOffset2Bag) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  auto weight = tf.make({2, 2}, {1, 2, 3, 4});
+  auto indices = ti.make({4}, {0, 1, 1, 0});
+  auto offsets = ti.make({1}, {0});
+  auto out = tf.zeros({0, 2});
+  auto offset2bag = ti.full({4}, -99);
+  auto bag_size = ti.zeros({0});
+  auto max_indices = ti.zeros({0});
+  op_embedding_bag_out(
+      weight,
+      indices,
+      offsets,
+      1,
+      {},
+      true,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
+      max_indices);
+  ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+  EXPECT_TENSOR_EQ(offset2bag, ti.full({4}, -1));
+}
+
+TEST_F(OpEmbeddingBagOutTest, NonFloatingWeightRejectedWithEmptyOutput) {
+  TensorFactory<ScalarType::Long> ti;
+  auto weight = ti.ones({2, 1});
+  auto indices = ti.make({1}, {0});
+  auto offsets = ti.make({1}, {0});
+  auto out = ti.zeros({0, 1});
+  auto offset2bag = ti.zeros({1});
+  auto bag_size = ti.zeros({0});
+  auto max_indices = ti.zeros({0});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_embedding_bag_out(
+          weight,
+          indices,
+          offsets,
+          1,
+          {},
+          true,
+          -1,
+          out,
+          offset2bag,
+          bag_size,
+          max_indices));
 }
