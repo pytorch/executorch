@@ -260,3 +260,19 @@ class TestNestedShaderSources(unittest.TestCase):
             generator.generateSPV(output_dir, cache_dir, nthreads=1)
 
             self.assertEqual(compiler_log.read_text().splitlines(), ["compile"])
+
+
+class TestF16ImageStores(unittest.TestCase):
+    def test_writable_rgba16f_images_round_stores(self) -> None:
+        for access in ("w", "rw"):
+            with self.subTest(access=access):
+                declaration = gen_vulkan_spv.layout_declare_image(
+                    0, access, "t_out", "half"
+                )
+                self.assertIn("round_to_f16(texel)", declaration)
+
+    def test_other_images_store_unchanged(self) -> None:
+        for access, dtype in (("r", "half"), ("w", "float"), ("w", "int32")):
+            with self.subTest(access=access, dtype=dtype):
+                declaration = gen_vulkan_spv.layout_declare_image(0, access, "t", dtype)
+                self.assertNotIn("round_to_f16", declaration)
