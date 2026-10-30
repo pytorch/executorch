@@ -46,6 +46,7 @@ ${layout_declare_spec_const(C, "int", "freqs_layout", "CONTIG_LAYOUT_INT")}
 // passthrough region. Resolved at pipeline creation time, so the driver
 // eliminates the dead branch entirely.
 ${layout_declare_spec_const(C, "int", "partial_rotary", "0")}
+${layout_declare_spec_const(C, "int", "tensor_layout_format", "0")}
 
 // Load/store helpers that abstract buffer vs texture access. The `layout`
 // parameter is only used in the texture path; the buffer path ignores it.
@@ -114,9 +115,11 @@ void main() {
   TensorIndex4D pair_tidx = tidx;
   pair_tidx.data.x = is_second_half ? (x - rotary_half) : (x + rotary_half);
 
+  int seq_idx = (tensor_layout_format == 1) ? tidx.data.y : tidx.data.z;
+
   TensorIndex4D freqs_tidx = zero_tensor4d_idx();
   freqs_tidx.data.x = is_second_half ? (x - rotary_half) : x;
-  freqs_tidx.data.y = tidx.data.z + start_pos;
+  freqs_tidx.data.y = seq_idx + start_pos;
 
   const VEC4_T cos_val = LOAD(t_freqs_cos, freqs_cos, freqs_tidx, freqs_layout);
   const VEC4_T sin_val = LOAD(t_freqs_sin, freqs_cos, freqs_tidx, freqs_layout);

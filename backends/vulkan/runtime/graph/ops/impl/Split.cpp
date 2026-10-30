@@ -22,28 +22,30 @@ void resize_split_node(
     const std::vector<ValueRef>& extra_args) {
   const ValueRef out = args.at(0).refs.at(0);
   const ValueRef input = args.at(1).refs.at(0);
-  int64_t dim = graph->extract_scalar<int64_t>(extra_args.at(0));
-  if (dim < 0) {
-    dim += graph->dim_of(input);
-  }
+  const ValueRef split_sizes_ref = extra_args.at(0);
+  const int64_t dim = graph->extract_scalar<int64_t>(extra_args.at(1));
+  const int64_t split_idx = graph->extract_scalar<int64_t>(extra_args.at(2));
 
-  // The split sizes are baked into the shader as specialization constants, so
-  // only the dims that are not split can change.
-  std::vector<int64_t> new_out_sizes = graph->sizes_of(input);
-  new_out_sizes.at(dim) = graph->size_at<int64_t>(dim, out);
+  std::vector<int64_t> split_sizes =
+      graph->extract_int_or_symint_list(split_sizes_ref);
 
-  graph->virtual_resize(out, new_out_sizes);
+  std::vector<int64_t> out_sizes = graph->sizes_of(input);
+  int64_t ndim = static_cast<int64_t>(out_sizes.size());
+  int64_t normalized_dim = (dim % ndim + ndim) % ndim;
+  out_sizes.at(normalized_dim) = split_sizes.at(split_idx);
+
+  graph->virtual_resize(out, out_sizes);
 }
 
 void add_split_node(
     ComputeGraph& graph,
     const ValueRef input,
+    const ValueRef split_sizes_ref,
     const std::vector<int64_t>& split_sizes,
     const ValueRef dim_ref,
+    const int64_t dim,
     const ValueRef out,
     const int split_idx) {
-  const int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
-
   std::string kernel_name = "split";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
@@ -78,7 +80,7 @@ void add_split_node(
        graph.hashed_layout_of(out),
        graph.hashed_layout_of(input)},
       // Resize Args
-      {dim_ref},
+      {split_sizes_ref, dim_ref, graph.add_scalar<int64_t>(split_idx)},
       // Resizing Logic
       resize_split_node));
 }
@@ -86,17 +88,27 @@ void add_split_node(
 void add_split_with_sizes_node(
     ComputeGraph& graph,
     const ValueRef input,
+    const ValueRef split_sizes_ref,
     const std::vector<int64_t>& split_sizes,
     const ValueRef dim_ref,
+    const int64_t dim,
     const ValueRef out_list_ref) {
-  const ValueListPtr out_list = graph.get_value_list(out_list_ref);
+  const std::vector<ValueRef> outs = *graph.get_value_list(out_list_ref);
 
-  VK_CHECK_COND(out_list->size() == split_sizes.size());
+  VK_CHECK_COND(outs.size() == split_sizes.size());
 
   // Dispatch a shader for each output tensor
   for (int split_idx = 0; split_idx < split_sizes.size(); split_idx++) {
-    const ValueRef out_ref = out_list->at(split_idx);
-    add_split_node(graph, input, split_sizes, dim_ref, out_ref, split_idx);
+    const ValueRef out_ref = outs.at(split_idx);
+    add_split_node(
+        graph,
+        input,
+        split_sizes_ref,
+        split_sizes,
+        dim_ref,
+        dim,
+        out_ref,
+        split_idx);
   }
 }
 
@@ -108,10 +120,12 @@ void split_with_sizes_copy_default(
   ValueRef dim_ref = args[2];
   ValueRef out_list_ref = args[3];
 
+  int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
   std::vector<int64_t> split_sizes =
       graph.extract_int_or_symint_list(split_sizes_ref);
 
-  add_split_with_sizes_node(graph, input, split_sizes, dim_ref, out_list_ref);
+  add_split_with_sizes_node(
+      graph, input, split_sizes_ref, split_sizes, dim_ref, dim, out_list_ref);
 }
 
 REGISTER_OPERATORS {

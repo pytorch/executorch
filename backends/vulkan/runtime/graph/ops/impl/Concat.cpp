@@ -253,7 +253,7 @@ void add_concat_node(
       vkapi::ParamsBindList param_buffers;
 
       for (const ValueRef in_ref : batch_inputs) {
-        param_buffers.append(graph.sizes_ubo(in_ref));
+        param_buffers.append(graph.meta_ubo(in_ref));
       }
 
       std::string kernel_name = "update_concat_offset";
@@ -264,6 +264,7 @@ void add_concat_node(
       } else if (current_batch_size == 3) {
         kernel_name += "_3";
       }
+      add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
       add_dtype_suffix(kernel_name, graph.dtype_of(concat_offset));
 
       vkapi::SpecVarList spec_vars = {static_cast<int32_t>(dim_whcn)};
