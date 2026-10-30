@@ -727,6 +727,41 @@ def _annotate_adaptive_avg_pool2d(
     return annotated_partitions
 
 
+@register_annotator("upsample_nearest2d")
+def _annotate_upsample_nearest2d(
+    gm: torch.fx.GraphModule,
+    quantization_config: Optional[QuantizationConfig],
+    filter_fn: Optional[Callable[[Node], bool]] = None,
+) -> Optional[list[list[Node]]]:
+    """Nearest upsampling only copies values, so its output shares the
+    input's quantization parameters."""
+    annotated_partitions = []
+    for node in gm.graph.nodes:
+        if node.target != torch.ops.aten.upsample_nearest2d.vec:
+            continue
+        if _is_annotated([node]) or (filter_fn and not filter_fn(node)):
+            continue
+
+        input_act = node.args[0]
+        assert isinstance(input_act, Node)
+        if (
+            Q_ANNOTATION_KEY not in input_act.meta
+            or not input_act.meta[Q_ANNOTATION_KEY]._annotated
+            or input_act.meta[Q_ANNOTATION_KEY].output_qspec is None
+        ):
+            input_act_qspec = get_input_act_qspec(quantization_config)
+        else:
+            input_act_qspec = SharedQuantizationSpec(input_act)
+
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map={input_act: input_act_qspec},
+            output_qspec=SharedQuantizationSpec((input_act, node)),
+            _annotated=True,
+        )
+        annotated_partitions.append([node])
+    return annotated_partitions
+
+
 def _is_input_large_scalar(node: Node, gm: torch.fx.GraphModule):
     """Check if input is a large scalar value. So that we can skip quantization for the node
     since histc op (in HistogramObserver) only works for values up to certain upper bound
