@@ -269,10 +269,15 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                     CudaBackend.data_name_from_compile_specs(
                         [CompileSpec(key="data_name", value=name.encode())]
                     )
-        # A backend that keeps its data in the .pte would ignore the name.
+        # A backend that keeps its data in the .pte refuses a name, also one
+        # built by hand.
         with patch.object(CudaBackend, "save_data_externally", return_value=False):
             with self.assertRaisesRegex(ValueError, "takes no data name"):
                 CudaBackend.generate_data_name_compile_spec("encoder")
+            with self.assertRaisesRegex(ValueError, "takes no data name"):
+                CudaBackend.data_name_from_compile_specs(
+                    [CompileSpec(key="data_name", value=b"encoder")]
+                )
 
     def test_valid_data_name_compile_spec(self):
         self.assertEqual(CudaBackend.data_name_from_compile_specs([]), "aoti_cuda_blob")

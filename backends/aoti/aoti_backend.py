@@ -390,11 +390,8 @@ class AotiBackend(ABC):
         named_data_store.add_named_data(so_blob_key, so_data, 1, None)
         # Determine whether to save named data externally based on backend setting
         # External: save to separate .ptd file, otherwise merge with .pte file
-        external_tag = (
-            cls.data_name_from_compile_specs(compile_specs)
-            if cls.save_data_externally()
-            else None
-        )
+        data_name = cls.data_name_from_compile_specs(compile_specs)
+        external_tag = data_name if cls.save_data_externally() else None
 
         named_data_store.add_named_data(weights_blob_key, blob_data, 1, external_tag)
 
@@ -435,11 +432,7 @@ class AotiBackend(ABC):
         Generate a CompileSpec that names the external data file, written as
         ``<data_name>.ptd``, so several programs can share a folder.
         """
-        if not cls.save_data_externally():
-            raise ValueError(
-                f"{cls.__name__} keeps its data in the .pte file, so it takes no "
-                "data name"
-            )
+        cls._check_saves_data_externally()
         return CompileSpec(
             COMPILE_SPEC_KEYS.DATA_NAME.value,
             _checked_data_name(data_name).encode("utf-8"),
@@ -453,8 +446,17 @@ class AotiBackend(ABC):
         """
         for spec in compile_specs:
             if spec.key == COMPILE_SPEC_KEYS.DATA_NAME.value:
+                cls._check_saves_data_externally()
                 return _checked_data_name(spec.value.decode("utf-8"))
         return f"aoti_{cls.get_device_name()}_blob"
+
+    @classmethod
+    def _check_saves_data_externally(cls) -> None:
+        if not cls.save_data_externally():
+            raise ValueError(
+                f"{cls.__name__} keeps its data in the .pte file, so it takes no "
+                "data name"
+            )
 
     @classmethod
     def method_name_from_compile_specs(
