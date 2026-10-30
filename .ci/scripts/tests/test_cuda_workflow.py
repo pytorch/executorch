@@ -32,11 +32,9 @@ def _model_quant(entry):
 
 
 class CudaWorkflowTest(unittest.TestCase):
-    def test_build_matrix_preserves_existing_cuda_versions(self):
+    def test_build_matrix_uses_released_torch_cuda_versions(self):
         job = WORKFLOW["jobs"]["test-cuda-builds"]
-        self.assertEqual(
-            job["strategy"]["matrix"]["cuda-version"], ["12.6", "13.0", "13.4"]
-        )
+        self.assertEqual(job["strategy"]["matrix"]["cuda-version"], ["13.2", "13.4"])
         self.assertEqual(job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}")
 
     def test_cuda_builds_take_the_node_driver_on_an_unpinned_v3(self):
@@ -58,9 +56,7 @@ conda() { printf 'CONDA %s\n' "$*"; return "$CONDA_STATUS"; }
 source() { printf 'BUILD %s\n' "$*"; printf 'LIBRARY PATH %s\n' "$LD_LIBRARY_PATH"; }
 """
         for version, conda_status in (
-            (version, status)
-            for version in ("12.6", "13.0", "13.4")
-            for status in (0, 1)
+            (version, status) for version in ("13.2", "13.4") for status in (0, 1)
         ):
             with self.subTest(version=version, conda_status=conda_status):
                 result = subprocess.run(

@@ -63,6 +63,7 @@ requires-python = ">=3.11,<3.16"
 # computed in setup.py, so the EXECUTORCH_BUILD_MINIMAL wheel can ship a slimmer
 # set than the full wheel. See `_base_dependencies()` / `_minimal_dependencies()`
 # in setup.py.
+# The 1.6 full wheel pins torch==2.15.0 and requires torchao>=0.18.0.
 
 [project.optional-dependencies]
 vgf = [
