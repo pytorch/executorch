@@ -65,9 +65,13 @@ class TestIntegerReductions(BaseOpenvinoOpTest):
         class AttentionMasks(torch.nn.Module):
             """Masks and positions from padding, as pi0 builds them."""
 
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
             def forward(self, pad_masks):
                 att_masks = torch.tensor([0] * 765 + [1] * 51, dtype=torch.bool)
-                cumsum = torch.cumsum(att_masks[None, :], dim=1)
+                cumsum = torch.cumsum(att_masks[None, :], dim=1, dtype=self.dtype)
                 att_2d = cumsum[:, None, :] <= cumsum[:, :, None]
                 pad_2d = pad_masks[:, None, :] * pad_masks[:, :, None]
                 return att_2d & pad_2d, torch.cumsum(pad_masks, dim=1) - 1
@@ -75,10 +79,14 @@ class TestIntegerReductions(BaseOpenvinoOpTest):
         def pad_masks(valid):
             return (torch.arange(816) < valid)[None, :]
 
-        # One loaded program, run again with more valid tokens.
-        self.execute_layer_test(
-            AttentionMasks(), (pad_masks(300),), more_inputs=((pad_masks(700),),)
-        )
+        for dtype in (torch.int64, torch.int32):
+            with self.subTest(dtype=dtype):
+                # One loaded program, run again with more valid tokens.
+                self.execute_layer_test(
+                    AttentionMasks(dtype),
+                    (pad_masks(300),),
+                    more_inputs=((pad_masks(700),),),
+                )
 
 
 class TestFoldConstantCumsumPass(unittest.TestCase):

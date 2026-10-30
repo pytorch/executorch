@@ -85,9 +85,9 @@ def _evaluate(graph_module: torch.fx.GraphModule, targets: list) -> dict:
 
 
 class FoldConstantCumsumPass(PassBase):
-    """Replace an int64 cumsum that reads only constants with its result.
+    """Replace an integer cumsum that reads only constants with its result.
 
-    With an int64 cumsum over a constant, OpenVINO's CPU plugin (2025.4 to
+    With an integer cumsum over a constant, OpenVINO's CPU plugin (2025.4 to
     2026.4) gives wrong results from the second inference on: masks built from
     it keep only what earlier calls allowed. pi0 builds its attention masks
     this way. The OpenVINO nightly no longer does this, so the pass can go once
@@ -105,7 +105,8 @@ class FoldConstantCumsumPass(PassBase):
             for n in graph.nodes
             if n in constants
             and n.target == exir_ops.edge.aten.cumsum.default
-            and n.meta["val"].dtype == torch.int64
+            and not n.meta["val"].dtype.is_floating_point
+            and not n.meta["val"].dtype.is_complex
         ]
         modified = False
         # One at a time, so a cumsum that cannot be evaluated does not keep
