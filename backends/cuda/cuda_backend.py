@@ -965,12 +965,18 @@ class CudaBackend(AotiBackend, BackendDetails):
             "at::_ops::sort_stable::call": None,
             "aoti_torch_cuda_sort_stable": None,
             "aoti_torch_cuda_randint_low_out": None,
+            "aoti_torch_cuda_index_Tensor": None,
+            "aoti_torch_index_put_out": None,
         }
 
     @classmethod
     def get_decomposition_table(cls) -> Dict[Any, Any]:
-        return {
+        table = {
             torch.ops.aten.conv1d.default: conv1d_to_conv2d,
+            torch.ops.aten.conv_transpose1d.default: _conv_transpose_as_conv,
+            # torch._check_tensor_all exports to this op; Inductor has no lowering
+            # for it and the shim no fallback kernel.
+            torch.ops.aten._is_all_true.default: torch.ops.aten.all.default,
         }
         for resize, support, kernel in (
             (torch.ops.aten._upsample_bilinear2d_aa, 1, _linear_kernel),

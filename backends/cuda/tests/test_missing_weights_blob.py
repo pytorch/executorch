@@ -73,7 +73,7 @@ class TestMissingWeightsBlob(unittest.TestCase):
             exported, partitioner=[CudaPartitioner(specs)]
         )
         program = lowered.to_executorch()
-        path = os.path.join(outdir, "model.pte")
+        path = os.path.join(outdir, name)
         with open(path, "wb") as f:
             program.write_to_file(f)
         program.write_tensor_data_to_file(outdir)

@@ -389,6 +389,8 @@ class CudaWeightCollector:
         # with the first one on the device and not written again. The weights
         # must not change until finish() releases them.
         self._stored_storages: Dict[str, torch.Tensor] = {}
+        # The key each storage was written under, which ends in its SHA-256.
+        self._content_keys: Dict[str, str] = {}
 
     @contextlib.contextmanager
     def capture(
@@ -615,10 +617,12 @@ class CudaWeightCollector:
                 entry = replace(entry, storage_key=content_key)
                 self._add_weight(entry, data, external_tag)
             elif entry.storage_key in artifact.stored:
-                if entry.storage_key not in self._store.key_to_buffer_idx:
+                content_key = self._content_keys.get(entry.storage_key)
+                if content_key not in self._store.key_to_buffer_idx:
                     raise RuntimeError(
                         f"CUDA FQN weight {entry.fqn!r} was reused but never stored"
                     )
+                entry = replace(entry, storage_key=content_key)
             elif not _is_offgraph_kv_fqn(entry.fqn):
                 raise RuntimeError(f"Missing CUDA FQN weight storage for {entry.fqn!r}")
             serialized_entries.append(entry)
@@ -634,3 +638,4 @@ class CudaWeightCollector:
         for result in self._results:
             result.data_store_output = shared_output
         self._stored_storages.clear()
+        self._content_keys.clear()

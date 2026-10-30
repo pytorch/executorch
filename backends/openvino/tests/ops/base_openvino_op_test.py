@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 
 import executorch
@@ -64,12 +66,18 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                     ref_output,
                 ]
 
-            # Load model from buffer and execute
-            runtime = Runtime.get()
-            program = runtime.load_program(exec_prog.buffer)
-            method = program.load_method("forward")
-            assert method is not None
-            outputs = method.execute(sample_inputs)
+            # Load from a file: unlike a buffer, it really frees the delegate
+            # data when the backend frees it.
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
+                pte_path = os.path.join(tmp_dir, "model.pte")
+                with open(pte_path, "wb") as f:
+                    exec_prog.write_to_file(f)
+                program = Runtime.get().load_program(pte_path)
+                method = program.load_method("forward")
+                assert method is not None
+                outputs = method.execute(sample_inputs)
+                # Windows cannot delete a mapped file, so release it first.
+                del method, program
 
             # Compare the outputs with the reference outputs
             self.assertTrue(len(ref_output) == len(outputs))

@@ -31,6 +31,12 @@ _VIEW_TARGETS: Dict[
     # natively by inductor, so map it here like the other view-copy ops.
     torch.ops.aten.split_copy.Tensor: torch.ops.aten.split.Tensor,
     ops.edge.aten.split_copy.Tensor: ops.edge.aten.split.Tensor,
+    # Edge turns ``detach`` into ``detach_copy``, which has no c-shim either.
+    # Without autograd it is ``alias_copy``, which Inductor can decompose,
+    # unlike ``detach_copy``. A view would let two outputs share one handle,
+    # and ``clone`` fails Edge verification in dim order mode.
+    torch.ops.aten.detach_copy.default: torch.ops.aten.alias_copy.default,
+    ops.edge.aten.detach_copy.default: ops.edge.aten.alias_copy.default,
 }
 
 
@@ -40,19 +46,26 @@ class ReplaceViewCopyWithViewPass(ExportPass):
     def call(self, graph_module: fx.GraphModule) -> PassResult:
         graph_changed = False
 
-        for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in _VIEW_TARGETS:
+        # Control flow branches, such as those of torch.cond, are submodules.
+        for module in graph_module.modules():
+            if not isinstance(module, fx.GraphModule):
                 continue
 
-            if self._has_blocking_user(node, node.users.keys()):
-                continue
+            module_changed = False
+            for node in module.graph.nodes:
+                if node.op != "call_function" or node.target not in _VIEW_TARGETS:
+                    continue
 
-            node.target = _VIEW_TARGETS[node.target]
-            graph_changed = True
+                if self._has_blocking_user(node, node.users.keys()):
+                    continue
 
-        if graph_changed:
-            graph_module.graph.lint()
-            graph_module.recompile()
+                node.target = _VIEW_TARGETS[node.target]
+                module_changed = True
+
+            if module_changed:
+                module.graph.lint()
+                module.recompile()
+                graph_changed = True
 
         return PassResult(graph_module, graph_changed)
 
