@@ -357,23 +357,32 @@ class CudaDLPackTest(unittest.TestCase):
                 pass
 
     def test_stream_on_another_device_is_refused(self):
+        from executorch.runtime import cuda
+
+        can_check_device = cuda._bindings()._CallerStreamScope.can_check_device()
+        # CI builds with the CUDA version of its torch, and runs on one GPU, so
+        # this is where CI notices a CUDA 13 build that cannot check the device.
+        if (
+            os.environ.get("EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA") == "1"
+            and int(torch.version.cuda.split(".")[0]) >= 13
+        ):
+            self.assertTrue(can_check_device)
         if torch.cuda.device_count() < 2:
             self.skipTest("needs two CUDA devices")
-        from executorch.runtime import cuda
 
         owned = cuda.Stream(device=1)
         self.addCleanup(owned.close)
         refused = [owned, cuda.ExternalStream(owned.cuda_stream)]
         # These wrappers report no device or the current one, so only CUDA can
         # tell that the stream is on device 1.
-        if cuda._bindings()._CallerStreamScope.can_check_device():
+        if can_check_device:
             foreign = torch.cuda.Stream(device=1)
             refused += [
                 cuda.ExternalStream(foreign.cuda_stream),
                 torch.cuda.ExternalStream(foreign.cuda_stream),
             ]
         for selected in refused:
-            with self.assertRaises(RuntimeError):
+            with self.assertRaisesRegex(RuntimeError, "on CUDA device 0"):
                 with cuda.stream(selected):
                     pass
 
