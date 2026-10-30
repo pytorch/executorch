@@ -643,18 +643,50 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
     def test_qs8_channels_last_tagged_reshape_pass_lower_rank_operand(self):
         # The dequantized operand is left at its own rank: a view between
         # dequantize and the op would carry no quant params and fail at load.
-        for module in (self.ConvNoiseAddConv(), self.ConvChannelScaleConv()):
-            (
-                Tester(module.eval(), (torch.randn(1, 3, 5, 7),))
-                .quantize()
-                .export()
-                .to_edge()
-                .run_passes(self.PassStage)
-                .check_not(
-                    ["executorch_exir_dialects_edge__ops_aten_view_copy_default"]
+        # The op takes the NCHW path instead.
+        inputs = (torch.randn(1, 3, 5, 7),)
+        for module, op in (
+            (self.ConvNoiseAddConv(), exir_ops.edge.aten.add.Tensor),
+            (self.ConvChannelScaleConv(), exir_ops.edge.aten.mul.Tensor),
+        ):
+            with self.subTest(module=type(module).__name__):
+                tester = (
+                    Tester(module.eval(), inputs)
+                    .quantize()
+                    .export()
+                    .to_edge()
+                    .run_passes(self.PassStage)
+                    # input -> NHWC, conv1 output -> NCHW, op output -> NHWC,
+                    # output -> NCHW
+                    .check_count({self.to_copy_name: 4})
+                    .check_not(
+                        ["executorch_exir_dialects_edge__ops_aten_view_copy_default"]
+                    )
+                    .run_method_and_compare_outputs()
                 )
-                .run_method_and_compare_outputs()
-            )
+                graph_module = (
+                    tester.get_artifact(StageType.RUN_PASSES)
+                    .exported_program()
+                    .graph_module
+                )
+                (binary_op,) = [
+                    node for node in graph_module.graph.nodes if node.target == op
+                ]
+                self.assertFalse(ChannelsLastTaggedReshapePass.is_nhwc_node(binary_op))
+
+                tester = (
+                    Tester(module.eval(), inputs)
+                    .quantize()
+                    .export()
+                    .to_edge_transform_and_lower()
+                    .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                )
+                node_types = self._xnnpack_node_types(tester)
+                self.assertEqual(node_types["XNNStaticTranspose"], 4, node_types)
+                self.assertEqual(node_types["XNNStaticReshape"], 0, node_types)
+                tester.to_executorch().serialize().run_method_and_compare_outputs(
+                    qtol=1
+                )
 
     class ConvDynamicNoiseAddConv(torch.nn.Module):
         """conv -> x + noise[H, W] -> conv with noise as a graph input. With
