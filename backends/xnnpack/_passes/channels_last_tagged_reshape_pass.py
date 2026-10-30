@@ -10,6 +10,7 @@ from enum import Enum
 from typing import List, Optional, Tuple
 
 import torch
+from executorch.backends.transforms.utils import set_param_tensor
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
     extract_qdq_affine_op_args_for_decomposed_ops,
@@ -227,19 +228,9 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         new_shape = [1] * (4 - val.dim()) + list(val.shape)
         data = get_param_tensor(self.exported_program, input_node)
         assert data is not None
-        data_4d = data.reshape(new_shape).contiguous()
-        signature = self.exported_program.graph_signature
-        if torch._export.utils.is_param(self.exported_program, input_node):
-            name = signature.inputs_to_parameters[input_node.name]
-            self.exported_program.state_dict[name] = torch.nn.Parameter(
-                data_4d, requires_grad=False
-            )
-        elif torch._export.utils.is_buffer(self.exported_program, input_node):
-            name = signature.inputs_to_buffers[input_node.name]
-            self.exported_program.state_dict[name] = data_4d
-        else:
-            name = signature.inputs_to_lifted_tensor_constants[input_node.name]
-            self.exported_program.constants[name] = data_4d
+        set_param_tensor(
+            self.exported_program, input_node, data.reshape(new_shape).contiguous()
+        )
         input_node.meta["val"] = val.reshape(new_shape)
         self.mark_as_nhwc_node(input_node)
         return input_node
