@@ -545,6 +545,201 @@ class StaticAttentionTest(unittest.TestCase):
         y, _ = static_attn(x, freqs_cos, freqs_sin, masks={0: mask})
         self.assertTrue(torch.isclose(y, expected, rtol=1e-3).all())
 
+    def test_no_rope_layer_interval(self):
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=16,
+            max_batch_size=1,
+            max_context_len=32,
+            max_seq_len=8,
+            n_layers=8,
+            no_rope_layer_interval=4,
+        )
+        rope = Rope(config)
+
+        expected = [True, True, True, False, True, True, True, False]
+
+        for layer_id, expected_use_rope in enumerate(expected):
+            attn_mha = AttentionMHA(config, layer_id=layer_id, rope=rope)
+            self.assertEqual(
+                attn_mha.use_rope,
+                expected_use_rope,
+                f"Unexpected RoPE setting for layer {layer_id}",
+            )
+
+    def test_invalid_no_rope_layer_interval(self):
+        invalid_values = [0, -1, 2.5, True, False]
+
+        for value in invalid_values:
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "no_rope_layer_interval must be a positive integer",
+                ):
+                    ModelArgs(no_rope_layer_interval=value)
+
+    def test_valid_no_rope_layer_interval(self):
+        for value in [None, 1, 4]:
+            with self.subTest(value=value):
+                config = ModelArgs(no_rope_layer_interval=value)
+                self.assertEqual(config.no_rope_layer_interval, value)
+
+    def test_no_rope_layer_interval_preserved_in_static_attention(self):
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=16,
+            max_batch_size=1,
+            max_context_len=32,
+            max_seq_len=8,
+            n_layers=8,
+            no_rope_layer_interval=4,
+        )
+        rope = Rope(config)
+
+        for layer_id, expected_use_rope in enumerate(
+            [True, True, True, False, True, True, True, False]
+        ):
+            attn_mha = AttentionMHA(config, layer_id=layer_id, rope=rope)
+            static_attn = StaticAttention.from_attention_mha(attn_mha)
+
+            self.assertEqual(attn_mha.use_rope, expected_use_rope)
+            self.assertEqual(static_attn.use_rope, expected_use_rope)
+
+    def test_no_rope_layer_interval_direct_static_attention(self):
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=16,
+            max_batch_size=1,
+            max_context_len=32,
+            max_seq_len=8,
+            n_layers=8,
+            no_rope_layer_interval=4,
+        )
+        rope = Rope(config)
+
+        for layer_id, expected_use_rope in enumerate(
+            [True, True, True, False, True, True, True, False]
+        ):
+            static_attn = StaticAttention(config, layer_id=layer_id, rope=rope)
+
+            self.assertEqual(
+                static_attn.use_rope,
+                expected_use_rope,
+                f"Unexpected RoPE setting for layer {layer_id}",
+            )
+
+    def test_no_rope_layer_interval_skips_rope(self):
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=16,
+            max_batch_size=1,
+            max_context_len=32,
+            max_seq_len=8,
+            n_layers=8,
+            no_rope_layer_interval=4,
+        )
+        rope = Rope(config)
+        attn_mha = AttentionMHA(config, layer_id=3, rope=rope).eval()
+
+        x = torch.rand(1, config.max_seq_len, config.dim)
+        freqs_cos, freqs_sin = rope.get_freqs(None, config.max_seq_len)
+
+        q = attn_mha.wq(x).view(1, config.max_seq_len, config.n_heads, config.head_dim)
+        k = attn_mha.wk(x).view(
+            1, config.max_seq_len, config.n_kv_heads, config.head_dim
+        )
+
+        prepared_q, prepared_k, _ = attn_mha._prepare_qkv(
+            q,
+            x,
+            1,
+            config.max_seq_len,
+            freqs_cos,
+            freqs_sin,
+        )
+
+        expected_q = q.transpose(1, 2)
+        expected_k = k.transpose(1, 2)
+
+        self.assertTrue(torch.equal(prepared_q, expected_q))
+        self.assertTrue(torch.equal(prepared_k, expected_k))
+
+    def test_no_rope_layer_interval_static_attention_forward(self):
+        for split_mha in (True, False):
+            with self.subTest(split_mha=split_mha):
+                config = ModelArgs(
+                    dim=64,
+                    n_heads=4,
+                    n_kv_heads=2,
+                    head_dim=16,
+                    max_batch_size=1,
+                    max_context_len=32,
+                    max_seq_len=8,
+                    n_layers=4,
+                    no_rope_layer_interval=2,
+                )
+                rope = Rope(config)
+                attn_mha = AttentionMHA(config, layer_id=1, rope=rope).eval()
+                static_attn = StaticAttention.from_attention_mha(
+                    attn_mha, split_mha=split_mha
+                ).eval()
+
+                self.assertFalse(attn_mha.use_rope)
+                self.assertFalse(static_attn.use_rope)
+
+                x = torch.rand(1, config.max_seq_len, config.dim)
+                freqs_cos, freqs_sin = rope.get_freqs(None, config.max_seq_len)
+
+                mask = torch.triu(
+                    torch.full(
+                        (1, config.max_seq_len, config.max_seq_len),
+                        float("-inf"),
+                    ),
+                    diagonal=1,
+                )
+
+                # Verify the forward pass with RoPE disabled.
+                expected_without_rope, _ = attn_mha(x, freqs_cos, freqs_sin)
+                output_without_rope, _ = static_attn(
+                    x, freqs_cos, freqs_sin, masks={0: mask}
+                )
+
+                self.assertTrue(
+                    torch.isclose(
+                        output_without_rope,
+                        expected_without_rope,
+                        rtol=1e-3,
+                    ).all()
+                )
+
+                # Enable RoPE in both implementations and compare again.
+                attn_mha.use_rope = True
+                static_attn.use_rope = True
+
+                expected_with_rope, _ = attn_mha(x, freqs_cos, freqs_sin)
+                output_with_rope, _ = static_attn(
+                    x, freqs_cos, freqs_sin, masks={0: mask}
+                )
+
+                self.assertTrue(
+                    torch.isclose(
+                        output_with_rope,
+                        expected_with_rope,
+                        rtol=1e-3,
+                    ).all()
+                )
+
+                # Confirm that enabling RoPE changes the attention output.
+                self.assertFalse(torch.allclose(output_without_rope, output_with_rope))
+
     # --- YOCO tests ---
 
     def _make_yoco_args(self, n_layers=4, num_kv_shared_layers=2):
@@ -612,6 +807,69 @@ class StaticAttentionTest(unittest.TestCase):
 
         self.assertEqual(y.shape, (1, config.max_seq_len, config.dim))
         self.assertIsNone(update["out_cache_state"])
+
+    def test_yoco_shared_layer_skips_rope(self):
+        config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)
+        config.no_rope_layer_interval = 2
+        rope = Rope(config)
+
+        attn_mha = AttentionMHA(config, layer_id=2, rope=rope).eval()
+        self.assertFalse(AttentionMHA(config, layer_id=1, rope=rope).use_rope)
+        self.assertFalse(attn_mha.use_rope)
+
+        rope_attn_mha = AttentionMHA(config, layer_id=0, rope=rope).eval()
+        self.assertTrue(rope_attn_mha.use_rope)
+
+        x = torch.rand(1, config.max_seq_len, config.dim)
+        q = attn_mha.wq(x).view(1, config.max_seq_len, config.n_heads, config.head_dim)
+        freqs_cos, freqs_sin = rope.get_freqs(None, config.max_seq_len)
+
+        shared_kv = (
+            torch.randn(
+                1,
+                config.n_kv_heads,
+                config.max_seq_len,
+                config.head_dim,
+            ),
+            torch.randn(
+                1,
+                config.n_kv_heads,
+                config.max_seq_len,
+                config.head_dim,
+            ),
+        )
+
+        prepared_q, prepared_k, prepared_v = attn_mha._prepare_qkv_shared(
+            q, shared_kv, freqs_cos, freqs_sin
+        )
+
+        expected_q = q.transpose(1, 2)
+
+        self.assertTrue(torch.equal(prepared_q, expected_q))
+        self.assertTrue(torch.equal(prepared_k, shared_kv[0]))
+        self.assertTrue(torch.equal(prepared_v, shared_kv[1]))
+
+    def test_no_rope_layer_interval_direct_static_attention_yoco(self):
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=16,
+            max_batch_size=1,
+            max_context_len=32,
+            max_seq_len=8,
+            n_layers=4,
+            num_kv_shared_layers=2,
+            no_rope_layer_interval=2,
+        )
+        rope = Rope(config)
+
+        expected_use_rope = [True, False, False, False]
+
+        for layer_id, expected in enumerate(expected_use_rope):
+            with self.subTest(layer_id=layer_id):
+                static_attn = StaticAttention(config, layer_id=layer_id, rope=rope)
+                self.assertEqual(static_attn.use_rope, expected)
 
     def test_yoco_lora_with_shared_layer(self):
         config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)
