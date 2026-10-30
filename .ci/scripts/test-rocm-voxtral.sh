@@ -7,12 +7,11 @@
 
 set -euo pipefail
 
-ROCM_VERSION="${ROCM_VERSION:-7.2}"
+ROCM_VERSION="${ROCM_VERSION:-7.14}"
 ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
 EXPECTED_ROCM_ARCH="${EXPECTED_ROCM_ARCH:-gfx950}"
 EXPECTED_WARP_SIZE="${EXPECTED_WARP_SIZE:-64}"
-PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/test/rocm${ROCM_VERSION}}"
-TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION}}"
+PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/rocm${ROCM_VERSION}}"
 VOXTRAL_CI_TMP_ROOT="${RUNNER_TEMP:-/tmp}"
 if ! mkdir -p "${VOXTRAL_CI_TMP_ROOT}" 2>/dev/null ||
   [[ ! -w "${VOXTRAL_CI_TMP_ROOT}" ]]; then
@@ -33,23 +32,8 @@ mkdir -p "${HF_HOME}"
 HF_TOKEN="$(printf '%s' "${SECRET_EXECUTORCH_HF_TOKEN}" | tr -d '\r\n')"
 export HF_TOKEN
 
-read -r TORCH_VERSION TORCHAO_VERSION < <(
-  python - <<'PY'
-from install_requirements import ROCM_TORCHAO_NIGHTLY_VERSION
-from torch_pin import TORCH_VERSION
-
-print(TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
-PY
-)
-# TorchAO ROCm wheels are not exposed by the per-version pip index.
-TORCHAO_WHEEL="${TORCHAO_ROCM_WHEEL_BASE}/torchao-${TORCHAO_VERSION}"
-TORCHAO_WHEEL+="%2Brocm${ROCM_VERSION}-cp310-abi3-manylinux_2_28_x86_64.whl"
-python -m pip install "torch==${TORCH_VERSION}" \
-  --index-url "${PYTORCH_ROCM_INDEX}"
-python -m pip install -r requirements-dev.txt \
-  "${TORCHAO_WHEEL}"
-# ExecuTorch requires torchao>=TORCHAO_NIGHTLY_VERSION, which has no ROCm build, so
-# install its other dependencies separately to keep the ROCm TorchAO wheel in place.
+source .ci/scripts/install-rocm-dependencies.sh
+# Keep the source-built TorchAO extension while installing the remaining dependencies.
 python -m pip install --editable . --no-build-isolation --no-deps
 python - <<'PY' >"${VOXTRAL_CI_TMPDIR}/executorch-deps.txt"
 from importlib.metadata import requires
@@ -65,16 +49,12 @@ for spec in requires("executorch") or []:
 PY
 python -m pip install -r "${VOXTRAL_CI_TMPDIR}/executorch-deps.txt"
 
-if ! command -v conda >/dev/null; then
-  echo "The ROCm CI image must provide conda for its runtime libraries"
-  exit 1
-fi
-conda install -y -c conda-forge ffmpeg 'libstdcxx-ng>=12'
+conda install -y -c conda-forge ffmpeg
 
 python -m pip install 'fsspec[http]<=2025.3.0'
 python -m pip install datasets huggingface_hub librosa mistral-common safetensors soundfile
-python -m pip install torchcodec==0.11.0 \
-  --extra-index-url https://download.pytorch.org/whl/test/cpu
+python -m pip install torchcodec==0.17.0 \
+  --index-url https://download.pytorch.org/whl/cpu
 
 python - <<'PY'
 import os
@@ -85,7 +65,6 @@ import torchao
 assert torch.version.hip is not None, "PyTorch is not a ROCm build"
 assert torch.version.cuda is None, "PyTorch unexpectedly reports a CUDA runtime"
 assert torch.cuda.is_available(), "No AMD GPU is visible through PyTorch"
-assert "+rocm" in torchao.__version__, "TorchAO is not a ROCm build"
 
 device = torch.cuda.get_device_properties(0)
 arch = device.gcnArchName.split(":", 1)[0]

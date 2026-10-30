@@ -768,14 +768,14 @@ class ET_EXPERIMENTAL CudaBackend final
       // Copy new input data (GPU-resident) into static input buffers (D2D)
       for (size_t i = 0; i < n_inputs; i++) {
         auto* et_input = &(args[i]->toTensor());
+        const auto sizes = et_input->sizes();
+        const auto& captured = handle->cuda_graph_state.static_input_sizes[i];
         ET_CHECK_OR_RETURN_ERROR(
-            et_input->nbytes() ==
-                handle->cuda_graph_state.static_input_nbytes[i],
+            std::equal(
+                sizes.begin(), sizes.end(), captured.begin(), captured.end()),
             InvalidArgument,
-            "CUDA graph replay: input %zu size mismatch (expected %zu, got %zu)",
-            i,
-            handle->cuda_graph_state.static_input_nbytes[i],
-            et_input->nbytes());
+            "CUDA graph replay: input %zu has a different shape than at capture",
+            i);
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
             handle->cuda_graph_state.static_input_ptrs[i],
             et_input->const_data_ptr(),
@@ -851,6 +851,7 @@ class ET_EXPERIMENTAL CudaBackend final
         state_->static_output_ptrs.clear();
         state_->static_input_nbytes.clear();
         state_->static_output_nbytes.clear();
+        state_->static_input_sizes.clear();
         // Same order as ~CudaGraphState: the exec depends on the graph.
         if (state_->graph_exec != nullptr) {
           (void)cudaGraphExecDestroy(state_->graph_exec);
@@ -903,6 +904,8 @@ class ET_EXPERIMENTAL CudaBackend final
         // through the guard instead of leaking this allocation.
         handle->cuda_graph_state.static_input_ptrs.push_back(static_ptr);
         handle->cuda_graph_state.static_input_nbytes.push_back(nbytes);
+        handle->cuda_graph_state.static_input_sizes.emplace_back(
+            et_input->sizes().begin(), et_input->sizes().end());
 
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
             static_ptr,

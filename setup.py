@@ -53,6 +53,7 @@ import functools
 
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
+import importlib.metadata
 import importlib.util
 import logging
 import os
@@ -1116,12 +1117,7 @@ def _package_relative_depth(library: Path) -> int:
 
 
 def _torchao_requirement() -> str:
-    """The torchao dependency, pinned to the series install_requirements.py installs.
-
-    Derived from that module rather than written out, so a nightly bump cannot move the
-    pin without moving this bound with it. A bump into the next series would otherwise
-    silently stop satisfying the lower bound, and installing this package over a
-    development checkout would replace the torchao that was just installed.
+    """The TorchAO minimum version, shared with install_requirements.py.
 
     Loaded by path, the way install_utils is above, because setuptools executes this
     file without the project directory on sys.path, so a plain import does not resolve.
@@ -1136,14 +1132,7 @@ def _torchao_requirement() -> str:
     sys.modules.setdefault("install_utils", install_utils)
     spec.loader.exec_module(module)
 
-    version = module.TORCHAO_NIGHTLY_VERSION
-    if (
-        install_utils.determine_torch_url(module.TORCH_URL_BASE).endswith("/cu134")
-        and not module.torchao_from_source()
-    ):
-        version = module.CU134_TORCHAO_NIGHTLY_VERSION
-    major, minor = (int(part) for part in version.split(".")[:2])
-    return f"torchao>={version},<{major}.{minor + 1}"
+    return f"torchao>={module.TORCHAO_MIN_VERSION}"
 
 
 def _base_dependencies() -> List[str]:
@@ -1153,6 +1142,11 @@ def _base_dependencies() -> List[str]:
     dynamic) so the minimal build can ship a slimmer set. Keep in sync with the
     project's runtime needs.
     """
+    torch_requirement = "torch==2.15.0"
+    if os.environ.get("_EXECUTORCH_USE_PT_PINNED_COMMIT") == "1":
+        # CI source builds carry an a0+git version even at the release tag.
+        # Preserve the build that our extension libraries link against.
+        torch_requirement = f"torch=={importlib.metadata.version('torch')}"
     return [
         "flatbuffers",
         "mpmath==1.3.0",
@@ -1166,20 +1160,15 @@ def _base_dependencies() -> List[str]:
         "py-cpuinfo",
         "requests",
         "pytorch-tokenizers",
+        torch_requirement,
         # Shipped code imports torchao at module scope in many places, so a plain install cannot
         # lower a model without it. Among others: the XNNPACK utilities the partitioner uses
         # (backends/xnnpack/utils/utils.py), the Core ML quantizer, and executorch.export itself.
         # The MLX backend needs it too, though indirectly: it registers a torchao operator that
         # only exists once torchao has been imported.
         #
-        # The lower bound is the nightly install_requirements.py pins, so that installing this
-        # package over a development checkout leaves that pin in place. A bound at the stable
-        # release instead would evict it, because a dev release sorts below its own final.
-        #
-        # The upper bound is what makes naming a pre-release safe. A specifier that names one
-        # accepts pre-releases for this requirement, so without the bound pip would resolve a
-        # pre-release of the next series wherever one is published, such as an index carrying
-        # nightlies. Keep both bounds in the same series.
+        # Use the installer's minimum so a compatible preinstalled TorchAO build
+        # satisfies the wheel metadata, including newer nightly and release versions.
         _torchao_requirement(),
         "pyyaml",
         "ruamel.yaml",
@@ -1223,7 +1212,8 @@ def _minimal_dependencies() -> List[str]:
 
     Derived as the subset of _base_dependencies() that executorch.exir needs to
     lower and serialize a .pte, so version pins and markers stay in sync with the
-    full set. torch is intentionally absent from both (consumers bring their own).
+    full set. torch is intentionally absent from the minimal wheel (consumers
+    bring their own).
     mpmath is intentionally dropped too: it is pulled transitively by sympy, whose
     "mpmath<1.4" cap resolves to the same 1.3.0 the full wheel pins. Keep the name
     set below in sync with the `expected` set in .ci/scripts/test_minimal_wheel.sh.
