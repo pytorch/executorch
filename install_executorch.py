@@ -251,7 +251,11 @@ def main(args):
     )
     if args.verbose:
         cmd.append("-v")
-    subprocess.run(cmd, check=True)
+    package_env = os.environ.copy()
+    package_env["_EXECUTORCH_USE_PT_PINNED_COMMIT"] = (
+        "1" if args.use_pt_pinned_commit else "0"
+    )
+    subprocess.run(cmd, check=True, env=package_env)
 
     # Step 3: Extra (optional) packages that is only useful for running examples.
     if not args.minimal:
