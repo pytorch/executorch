@@ -128,6 +128,7 @@ def chunk_gated_delta_rule(
         REVERSE=False,
         HAS_SCALE=True,
         IS_VARLEN=False,
+        USE_GRAPH=False,
     )
 
     # 2. chunk_scaled_dot_kkt: compute beta * K * K^T with gating
