@@ -6,13 +6,19 @@
 
 # pyre-unsafe
 
+import io
 import math
 import os
+import sys
 import tempfile
+import types
 import unittest
+import warnings
 from typing import Dict, Tuple
+from unittest.mock import patch
 
 import executorch.exir.tests.models as models
+import pandas as pd
 
 import torch
 from executorch.devtools import generate_etrecord, parse_etrecord
@@ -35,6 +41,7 @@ from executorch.devtools.inspector._inspector_utils import (
     compare_results,
     convert_to_float_tensor,
     create_debug_handle_to_op_node_mapping,
+    display_or_print_df,
     EDGE_DIALECT_GRAPH_KEY,
     find_op_names,
     find_populated_event,
@@ -278,6 +285,25 @@ class TestInspectorUtils(unittest.TestCase):
                 os.chdir(cwd)
             self.assertEqual(os.listdir(tmp_dir), [])
         self.assertEqual(plt.get_fignums(), [])
+
+    def test_display_or_print_df_in_ipython(self):
+        # In an IPython session the dataframe should be shown as a styled
+        # table via display(), not fall back to a plain-text print.
+        displayed = []
+        fake_display = types.ModuleType("IPython.display")
+        fake_display.display = displayed.append
+        fake_ipython = types.ModuleType("IPython")
+        fake_ipython.get_ipython = lambda: object()
+        fake_ipython.display = fake_display
+        out = io.StringIO()
+        with patch.dict(
+            sys.modules, {"IPython": fake_ipython, "IPython.display": fake_display}
+        ), warnings.catch_warnings():
+            # Styler.applymap is deprecated in pandas 2.1 and removed in 3.0.
+            warnings.simplefilter("error", FutureWarning)
+            display_or_print_df(pd.DataFrame({"a": [1.0]}), out)
+        self.assertEqual(len(displayed), 1)
+        self.assertEqual(out.getvalue(), "")
 
     def test_merge_overlapping_debug_handles_basic(self):
         big_tensor = torch.rand(100, 100)
