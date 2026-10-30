@@ -155,13 +155,17 @@ class TestAntialiasedResizeDecomposition(unittest.TestCase):
 
     def test_align_corners_compiles_with_dynamic_sizes(self):
         from torch._inductor.compile_fx import compile_fx
+        from torch._inductor.decomposition import select_decomp_table
 
         model = Resize("bicubic", align_corners=True)
+        # Lowering keeps Inductor's own decompositions after the backend's.
+        decompositions = {
+            **select_decomp_table(),
+            **CudaBackend.get_decomposition_table(),
+        }
         compiled = torch.compile(
             model,
-            backend=functools.partial(
-                compile_fx, decompositions=CudaBackend.get_decomposition_table()
-            ),
+            backend=functools.partial(compile_fx, decompositions=decompositions),
             dynamic=True,
             fullgraph=True,
         )
