@@ -196,8 +196,8 @@ cmake_dependent_option(
 )
 cmake_dependent_option(
   EXECUTORCH_BUILD_NATIVE_VISION_RUNNER
-  "Build the native vision classification runner (run_classification)" OFF
-  "EXECUTORCH_BUILD_NATIVE_VULKAN" OFF
+  "Build the native vision classification runners" OFF
+  "EXECUTORCH_BUILD_NATIVE_CPU OR EXECUTORCH_BUILD_NATIVE_VULKAN" OFF
 )
 cmake_dependent_option(
   EXECUTORCH_BUILD_NATIVE_LLM_RUNNER "Build the native LLM runners" OFF
