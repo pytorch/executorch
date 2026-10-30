@@ -104,6 +104,19 @@ def _add_multipliers(
     return *multipliers[0], *multipliers[1], left_shift, *multipliers[2]
 
 
+def _activation_kind(node: Node) -> str | None:
+    if node.target == exir_ops.edge.aten.relu.default:
+        return "relu"
+    if node.target == exir_ops.edge.aten.relu6.default:
+        return "relu6"
+    if node.target == exir_ops.edge.aten.hardtanh.default:
+        minimum = node.args[1] if len(node.args) > 1 else node.kwargs.get("min_val", -1)
+        maximum = node.args[2] if len(node.args) > 2 else node.kwargs.get("max_val", 1)
+        if (minimum, maximum) == (0, 6):
+            return "relu6"
+    return None
+
+
 def _binary_args(node: Node, quantize: Node, rescale_fn) -> tuple | None:
     if node.kwargs.get("alpha", 1) != 1:
         return None
@@ -147,7 +160,7 @@ def _binary_args(node: Node, quantize: Node, rescale_fn) -> tuple | None:
     if not all(
         isinstance(arg.meta.get("val"), torch.Tensor)
         and arg.meta["val"].dtype == torch.float32
-        for arg in (*inputs, node)
+        for arg in (*inputs, node, quantize.args[0])
     ):
         return None
     rescale = rescale_fn(*params)
@@ -166,16 +179,34 @@ def _binary_args(node: Node, quantize: Node, rescale_fn) -> tuple | None:
 
 def _lower_binary(node: Node, target, rescale_fn) -> bool:
     quantizers = [
-        user for user in node.users if user.target == _QUANTIZE and user.args[0] is node
+        (user, None)
+        for user in node.users
+        if user.target == _QUANTIZE and user.args[0] is node
     ]
+    for user in node.users:
+        activation = _activation_kind(user)
+        if activation is not None and user.args[0] is node:
+            quantizers.extend(
+                (quantize, activation)
+                for quantize in user.users
+                if quantize.target == _QUANTIZE and quantize.args[0] is user
+            )
     if len(quantizers) != 1:
         return False
-    quantize = quantizers[0]
+    quantize, activation = quantizers[0]
     args = _binary_args(node, quantize, rescale_fn)
     if args is None:
         return False
+    activation_min = quantize.args[2] if activation is not None else -128
+    activation_max = (
+        int(_QUANTIZE(torch.tensor(6.0, dtype=torch.float32), *quantize.args[1:]))
+        if activation == "relu6"
+        else 127
+    )
     with node.graph.inserting_before(quantize):
-        replacement = node.graph.call_function(target, args)
+        replacement = node.graph.call_function(
+            target, (*args, activation_min, activation_max)
+        )
     replacement.meta = quantize.meta.copy()
     # Replace the quantized branch; direct float consumers still need the ATen op.
     quantize.replace_all_uses_with(replacement)

@@ -30,6 +30,8 @@ Tensor& quantized_mul_int8_out(
     int64_t output_offset,
     int64_t output_multiplier,
     int64_t output_shift,
+    int64_t activation_min,
+    int64_t activation_max,
     Tensor& out) {
   const auto numel = input1.numel();
   const auto block_size = input2.numel();
@@ -58,8 +60,8 @@ Tensor& quantized_mul_int8_out(
         static_cast<int32_t>(output_offset),
         static_cast<int32_t>(output_multiplier),
         static_cast<int32_t>(output_shift),
-        std::numeric_limits<int8_t>::min(),
-        std::numeric_limits<int8_t>::max(),
+        static_cast<int32_t>(activation_min),
+        static_cast<int32_t>(activation_max),
         static_cast<int32_t>(numel));
   } else {
     esp_nn_mul_broadcast_channel_s8(
@@ -71,8 +73,8 @@ Tensor& quantized_mul_int8_out(
         static_cast<int32_t>(output_offset),
         static_cast<int32_t>(output_multiplier),
         static_cast<int32_t>(output_shift),
-        std::numeric_limits<int8_t>::min(),
-        std::numeric_limits<int8_t>::max(),
+        static_cast<int32_t>(activation_min),
+        static_cast<int32_t>(activation_max),
         static_cast<int32_t>(numel / block_size),
         static_cast<int32_t>(block_size));
   }

@@ -50,7 +50,10 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (  # noqa: E
     get_symmetric_quantization_config,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec  # noqa: E402
-from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e  # noqa: E402
+from torchao.quantization.pt2e.quantize_pt2e import (  # noqa: E402
+    convert_pt2e,
+    prepare_pt2e,
+)
 
 
 class FeaturesAndClassifier(nn.Module):
@@ -112,6 +115,87 @@ def test_module_name_config_reaches_fused_conv_relu():
     )
     assert "PerChannel" in _weight_observer(prepared, "features")
     assert "PerChannel" not in _weight_observer(prepared, "classifier")
+
+
+class MultiplyActivation(nn.Module):
+    def __init__(self, activation, inplace=False):
+        super().__init__()
+        self.activation = activation
+        self.inplace = inplace
+
+    def forward(self, x, y):
+        if self.inplace:
+            return self.activation(x.clone().mul_(y))
+        return self.activation(x * y)
+
+
+@pytest.mark.parametrize("activation", [nn.ReLU, nn.ReLU6], ids=["relu", "relu6"])
+@pytest.mark.parametrize("inplace", [False, True], ids=["functional", "inplace"])
+def test_multiply_activation_respects_operator_config(activation, inplace):
+    inputs = (torch.linspace(-4, 4, 17), torch.linspace(2, 8, 17))
+    quantizer = EspNNQuantizer()
+    qspec = dataclasses.replace(
+        quantizer.global_config.input_activation, quant_min=-64, quant_max=63
+    )
+    config = dataclasses.replace(
+        quantizer.global_config, input_activation=qspec, output_activation=qspec
+    )
+    quantizer.set_operator_type(torch.ops.aten.mul.Tensor, config)
+    prepared = prepare_pt2e(
+        torch.export.export(MultiplyActivation(activation(), inplace), inputs).module(),
+        quantizer,
+    )
+    prepared(*inputs)
+    converted = convert_pt2e(prepared)
+    quantizers = [
+        node
+        for node in converted.graph.nodes
+        if node.target == torch.ops.quantized_decomposed.quantize_per_tensor.default
+    ]
+    assert quantizers
+    assert all(node.args[3:5] == (-64, 63) for node in quantizers)
+
+
+@pytest.mark.parametrize("activation", [nn.ReLU, nn.ReLU6], ids=["relu", "relu6"])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_multiply_activation_respects_filter(activation, enabled):
+    inputs = (torch.linspace(-4, 4, 17), torch.linspace(2, 8, 17))
+    quantizer = EspNNQuantizer().set_filter_function(
+        lambda node: enabled and node.target == torch.ops.aten.mul.Tensor
+    )
+    prepared = prepare_pt2e(
+        torch.export.export(MultiplyActivation(activation()), inputs).module(),
+        quantizer,
+    )
+    prepared(*inputs)
+    converted = convert_pt2e(prepared)
+    assert (
+        any(
+            node.target == torch.ops.quantized_decomposed.quantize_per_tensor.default
+            for node in converted.graph.nodes
+        )
+        == enabled
+    )
+
+
+@pytest.mark.parametrize("activation", [nn.ReLU, nn.ReLU6], ids=["relu", "relu6"])
+@pytest.mark.parametrize("dtype", [torch.bool, torch.int32])
+def test_multiply_activation_with_non_float_operand_stays_float(activation, dtype):
+    model = MultiplyActivation(activation())
+    inputs = (
+        torch.tensor([-2.0, 2.0, 8.0, -4.0]),
+        torch.tensor([True, True, True, False], dtype=dtype),
+    )
+    prepared = prepare_pt2e(
+        torch.export.export(model, inputs).module(), EspNNQuantizer()
+    )
+    prepared(*inputs)
+    converted = convert_pt2e(prepared)
+    torch.testing.assert_close(converted(*inputs), model(*inputs), atol=0, rtol=0)
+    assert not any(
+        node.target == torch.ops.quantized_decomposed.quantize_per_tensor.default
+        for node in converted.graph.nodes
+    )
 
 
 def test_hardtanh_bounds_given_as_kwargs_fuse_as_relu6():

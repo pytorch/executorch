@@ -1418,15 +1418,23 @@ def _lower_scalar_binary(node, kind: str, registry: TensorRegistry):
     if constant is None:
         return None
     alpha = float(node.kwargs.get("alpha", 1.0)) if kind == "add" else 1.0
-    _require_output_qparams(registry, node)
+    activation, activation_kind = _fusable_activation(node, registry)
+    output_node = activation if activation is not None else node
+    _require_output_qparams(registry, output_node)
     input_id = registry.get_or_create(tensor_arg)
-    output_id = registry.get_or_create(node)
+    output_id = registry.get_or_create(output_node)
+    activation_function = None
+    if activation is not None:
+        registry.fused_nodes.add(activation)
+        activation_function = _unary_function(activation, activation_kind)
     tensor_on_left = tensor_arg is lhs
 
     def function(x):
         if kind != "add":
-            return x * constant
-        return x + constant * alpha if tensor_on_left else constant + alpha * x
+            value = x * constant
+        else:
+            value = x + constant * alpha if tensor_on_left else constant + alpha * x
+        return activation_function(value) if activation_function is not None else value
 
     return _lut_operation(node, input_id, output_id, registry, function)
 

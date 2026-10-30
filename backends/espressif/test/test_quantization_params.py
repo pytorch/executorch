@@ -66,11 +66,58 @@ def binary_program(exported_programs, request):
     return copy.deepcopy(exported_programs[request.param])
 
 
+@pytest.fixture(scope="module")
+def activation_programs():
+    class BinaryActivation(torch.nn.Module):
+        def __init__(self, operator, activation):
+            super().__init__()
+            self.operator = operator
+            self.activation = activation
+
+        def forward(self, x, y):
+            return self.activation(self.operator(x, y))
+
+    inputs = (torch.linspace(-4, 4, 17), torch.linspace(2, 8, 17))
+    return {
+        (operator, activation): (
+            EspTester(BinaryActivation(operator, activation()), inputs)
+            .quantize()
+            .export()
+            .to_edge()
+            .get_artifact()
+            .exported_program()
+        )
+        for operator in (torch.add, torch.mul)
+        for activation in (torch.nn.ReLU, torch.nn.ReLU6)
+    }
+
+
+@pytest.fixture(
+    params=[
+        (torch.add, torch.nn.ReLU),
+        (torch.add, torch.nn.ReLU6),
+        (torch.mul, torch.nn.ReLU),
+        (torch.mul, torch.nn.ReLU6),
+    ],
+    ids=["add_relu", "add_relu6", "mul_relu", "mul_relu6"],
+)
+def activation_program(activation_programs, request):
+    return copy.deepcopy(activation_programs[request.param]), request.param[1]
+
+
 def _pattern(graph_module):
     binary = next(
         node for node in graph_module.graph.nodes if node.target in (_MUL, _ADD)
     )
-    quantize = next(node for node in binary.users if node.target == _QUANTIZE)
+    output = binary
+    if not any(user.target == _QUANTIZE for user in binary.users):
+        output = next(
+            user
+            for user in binary.users
+            if user.target
+            in (exir_ops.edge.aten.relu.default, exir_ops.edge.aten.hardtanh.default)
+        )
+    quantize = next(node for node in output.users if node.target == _QUANTIZE)
     return *binary.args, quantize
 
 
@@ -119,7 +166,7 @@ def test_folding_and_replacement(multiply_program):
     expected = graph(*inputs)
     lowered = AtenToEspPass()(graph).graph_module
     mul = next(node for node in lowered.graph.nodes if node.target == _ESP_MUL)
-    assert mul.args[2:] == (17, -23, -7, 1 << 30, -3)
+    assert mul.args[2:] == (17, -23, -7, 1 << 30, -3, -128, 127)
     assert all(arg.meta["val"].dtype == torch.int8 for arg in mul.args[:2])
     assert output not in lowered.graph.nodes
     assert not any(node.target == _MUL for node in lowered.graph.nodes)
@@ -158,7 +205,7 @@ def test_kernel_shift_and_overflow_limits(
     if expected_shift is None:
         assert mul is None
     else:
-        assert mul.args[-1] == expected_shift
+        assert mul.args[-3] == expected_shift
         assert mul.args[4] == 127
 
 
@@ -304,10 +351,19 @@ def test_multiple_output_quantizers_stay_portable(binary_program):
     "operator, target", [(torch.mul, _ESP_MUL), (torch.add, _ESP_ADD)]
 )
 @pytest.mark.parametrize("float_user_first", [False, True])
-def test_direct_float_branch_is_preserved(float_user_first, operator, target):
+@pytest.mark.parametrize(
+    "activation",
+    [None, torch.relu, torch.nn.functional.relu6],
+    ids=["none", "relu", "relu6"],
+)
+def test_direct_float_branch_is_preserved(
+    float_user_first, operator, target, activation
+):
     class BranchedBinary(torch.nn.Module):
         def forward(self, x, y):
             result = operator(x, y)
+            if activation is not None:
+                result = activation(result)
             return result, torch.sin(result)
 
     inputs = (
@@ -317,7 +373,7 @@ def test_direct_float_branch_is_preserved(float_user_first, operator, target):
     tester = EspTester(BranchedBinary(), inputs).quantize().export().to_edge()
     graph = tester.get_artifact().exported_program().graph_module
     input1, input2, quantize = _pattern(graph)
-    binary = quantize.args[0]
+    binary = next(node for node in graph.graph.nodes if node.target in (_MUL, _ADD))
     float_user = next(
         node
         for node in graph.graph.nodes
@@ -362,6 +418,64 @@ def test_lowering_is_idempotent(binary_program):
     assert not EspPassManager()(first.exported_program).modified
 
 
+@pytest.mark.parametrize(
+    "scale, zero_point, relu6_max",
+    [(0.5, -7, 5), (4.0, -7, -5), (12.0, -7, -7), (0.01, -128, 127)],
+    ids=["bounded", "round_up", "round_down", "saturated"],
+)
+def test_activation_bounds_use_output_quantization(
+    activation_program, scale, zero_point, relu6_max
+):
+    program, activation = activation_program
+    graph = program.graph_module
+    *_, quantize = _pattern(graph)
+    quantize.args = (quantize.args[0], scale, zero_point, -128, 127, torch.int8)
+    assert AtenToEspPass()(graph).modified
+    binary = next(
+        node for node in graph.graph.nodes if node.target in (_ESP_ADD, _ESP_MUL)
+    )
+    maximum = relu6_max if activation is torch.nn.ReLU6 else 127
+    assert binary.args[-2:] == (zero_point, maximum)
+    assert quantize not in graph.graph.nodes
+
+
+def test_activation_clamps_ignore_default_dtype(activation_program):
+    program, _ = activation_program
+    default_dtype = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(torch.float64)
+        assert AtenToEspPass()(program.graph_module).modified
+    finally:
+        torch.set_default_dtype(default_dtype)
+
+
+def test_multiple_activation_quantizers_stay_portable(activation_program):
+    program, _ = activation_program
+    graph = program.graph_module
+    *_, quantize = _pattern(graph)
+    with graph.graph.inserting_after(quantize):
+        other = graph.graph.call_function(
+            _QUANTIZE, (quantize.args[0], 2.0, 13, -128, 127, torch.int8)
+        )
+        other.meta = quantize.meta.copy()
+    output = next(node for node in graph.graph.nodes if node.op == "output")
+    output.args = ((*output.args[0], other),)
+    graph.recompile()
+    assert not AtenToEspPass()(graph).modified
+    assert quantize in graph.graph.nodes and other in graph.graph.nodes
+
+
+@pytest.mark.parametrize("operator", [torch.add, torch.mul], ids=["add", "mul"])
+def test_other_hardtanh_bounds_stay_portable(activation_programs, operator):
+    program = copy.deepcopy(activation_programs[(operator, torch.nn.ReLU6)])
+    graph = program.graph_module
+    *_, quantize = _pattern(graph)
+    activation = quantize.args[0]
+    activation.args = (activation.args[0], -1.0, 1.0)
+    assert not AtenToEspPass()(graph).modified
+    assert quantize in graph.graph.nodes and activation in graph.graph.nodes
+
+
 @pytest.mark.parametrize("scale", [0.03, 0.25, 0.5, 0.7, 1.0, 1.3, 2.0, 32768.0])
 def test_requantization_matches_existing_integer_reference(scale):
     values = torch.arange(-128, 128, dtype=torch.int64)
@@ -383,7 +497,20 @@ def test_add_folding_and_replacement(add_program):
         node.args = (node.args[0], scale, zero_point, -128, 127, torch.int8)
     assert AtenToEspPass()(graph).modified
     add = next(node for node in graph.graph.nodes if node.target == _ESP_ADD)
-    assert add.args[2:] == (17, -23, -7, 1 << 30, 0, 1 << 30, -1, 20, 1 << 30, -19)
+    assert add.args[2:] == (
+        17,
+        -23,
+        -7,
+        1 << 30,
+        0,
+        1 << 30,
+        -1,
+        20,
+        1 << 30,
+        -19,
+        -128,
+        127,
+    )
 
 
 @pytest.mark.parametrize(
@@ -458,6 +585,6 @@ def test_add_matches_existing_integer_reference(offsets):
     expected = multiply_by_quantized_multiplier(total, 1 << 30, -18) + output_offset
     expected = torch.from_numpy(expected.clip(-128, 127)).to(torch.int8)
     actual = torch.ops.esp_nn.quantized_add_int8(
-        input1, input2, *offsets, 1 << 30, 0, 1 << 30, -2, 20, 1 << 30, -18
+        input1, input2, *offsets, 1 << 30, 0, 1 << 30, -2, 20, 1 << 30, -18, -128, 127
     )
     torch.testing.assert_close(actual, expected, atol=0, rtol=0)
