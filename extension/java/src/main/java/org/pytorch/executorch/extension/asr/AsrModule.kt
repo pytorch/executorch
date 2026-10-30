@@ -11,6 +11,7 @@ package org.pytorch.executorch.extension.asr
 import java.io.Closeable
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
+import org.pytorch.executorch.ExecuTorchRuntime
 import org.pytorch.executorch.ExecutorchRuntimeException
 import org.pytorch.executorch.annotations.Experimental
 
@@ -64,7 +65,7 @@ class AsrModule(
 
   companion object {
     init {
-      System.loadLibrary("executorch")
+      ExecuTorchRuntime.ensureNativeLibraryLoaded()
     }
 
     @JvmStatic
