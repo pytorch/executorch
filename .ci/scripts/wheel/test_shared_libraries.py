@@ -92,6 +92,7 @@ _CUDA_EXTENSION_SYMBOLS = (
 _AOTI_SHIM_SYMBOLS = (
     "aoti_torch_empty_strided",
     "aoti_torch_delete_tensor_object",
+    "aoti_torch_dtype_element_size",
     "executorch::backends::cuda::CUDAStreamGuard::create",
     # From the CUDA sources rather than the C++ ones. The build drops every .cu file when no working
     # compiler is found, and the library is still produced from its .cpp sources, so a check that
