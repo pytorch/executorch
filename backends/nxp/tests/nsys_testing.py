@@ -809,7 +809,10 @@ def _parse_input_quant_params(
 
 def get_test_name(request):
     # PyTest request is available, extract correct name including test class and params
-    test_name = request.node.nodeid.lstrip(":")
+    test_filename = request.path.name
+    test_class_name = getattr(request.node.cls, "__name__", "")
+    test_function_name = request.node.name
+    test_name = test_filename + "_" + test_class_name + "_" + test_function_name
     # Escape unacceptable characters from test name to make sure it is a valid filesystem directory name
     test_name = re.sub(r'[<>:"/\\|?* ,()`]', "_", test_name)
     test_name = test_name.strip(" .")

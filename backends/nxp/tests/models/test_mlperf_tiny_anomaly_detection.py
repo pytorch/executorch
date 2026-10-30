@@ -35,7 +35,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-def test_mlperf_tiny_anomaly_detection_mse_cpu_vs_npu(
+def test_ad_mse_cpu_vs_npu(
     mocker,
     request,
     use_qat,
