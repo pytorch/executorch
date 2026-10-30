@@ -51,4 +51,4 @@ print("Architectures:", torch.cuda.get_arch_list())
 PY
 
 
-INT6_LARGE_TEST_ALL_CONFIGS=1 python .ci/scripts/diagnose-int6-rocm.py
+python -m pytest -q backends/cuda/tests/test_int6_large_quantized_gemm.py backends/cuda/tests/test_int6_quantized_gemm.py backends/cuda/tests/test_int6_dispatch.py
