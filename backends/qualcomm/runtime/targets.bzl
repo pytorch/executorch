@@ -64,6 +64,20 @@ def define_common_targets():
         visibility = ["PUBLIC"],
     )
 
+    # The public runtime API alone, for runners that link a different
+    # `QnnBackend` implementation and provide the custom-memory functions.
+    runtime.cxx_library(
+        name = "qnn_executorch_api",
+        exported_headers = [
+            "QnnExecuTorch.h",
+        ],
+        platforms = [ANDROID, CXX],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+        ],
+    )
+
     # "runtime" target is used for offline compile, can be renamed to runtime_aot_build as a BE.
     for include_aot_qnn_lib in (True, False):
         qnn_build_suffix = ("" if include_aot_qnn_lib else "_android_build")
