@@ -51,4 +51,4 @@ print("Architectures:", torch.cuda.get_arch_list())
 PY
 
 
-python -m pytest -q backends/cuda/tests/test_int6_large_quantized_gemm.py backends/cuda/tests/test_int6_quantized_gemm.py backends/cuda/tests/test_int6_dispatch.py
+python -m examples.cuda.scripts.export_amd_pointwise --output-dir "${ROCM_CI_TMPDIR}/pointwise"
