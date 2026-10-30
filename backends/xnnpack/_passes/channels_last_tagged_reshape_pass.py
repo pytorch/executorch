@@ -235,6 +235,39 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         self.mark_as_nhwc_node(input_node)
         return input_node
 
+    def converge_layouts(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.Node,
+        layout_inputs: List[torch.fx.Node],
+    ) -> None:
+        """
+        Bring operands of mixed layouts to one: NHWC if every operand can be
+        converted, NCHW otherwise. A lower-rank operand of a broadcasting op
+        (e.g. a [H, W] map added to [N, C, H, W]) can follow the NHWC operand
+        once reshaped to 4D, so the layout is decided on the other operands
+        first and only then is the graph or the constant touched.
+        """
+        lower_rank = [
+            node.target in self.broadcast_binary_ops
+            and self.is_lower_rank_broadcast_operand(input_node)
+            for input_node in layout_inputs
+        ]
+        if all(
+            is_lower_rank or self.can_be_converted_to_nhwc(input_node)
+            for input_node, is_lower_rank in zip(layout_inputs, lower_rank)
+        ):
+            for input_node, is_lower_rank in zip(layout_inputs, lower_rank):
+                if is_lower_rank:
+                    input_node = self.unsqueeze_to_4d(graph_module, input_node, node)
+                # A constant folded to NHWC needs no copy.
+                if not ChannelsLastTaggedReshapePass.is_nhwc_node(input_node):
+                    self.input_to_nhwc(graph_module, input_node, node)
+            self.mark_as_nhwc_node(node)
+        else:
+            for input_node in layout_inputs:
+                self.input_to_nchw(graph_module, input_node, node)
+
     def unsqueeze_to_4d(
         self,
         graph_module: torch.fx.GraphModule,
@@ -683,33 +716,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                     # There is at least one node of each format, so we need to
                     # convert some of them to another format such that all
                     # are the same.
-                    # Reshape lower-rank operands (e.g. a [H, W] map added to
-                    # [N, C, H, W]) to 4D so they can follow the NHWC operand.
-                    if node.target in self.broadcast_binary_ops:
-                        layout_inputs = [
-                            (
-                                self.unsqueeze_to_4d(graph_module, input_node, node)
-                                if self.is_lower_rank_broadcast_operand(input_node)
-                                else input_node
-                            )
-                            for input_node in layout_inputs
-                        ]
-                    # If all nodes can be converted to nhwc, then convert them
-                    # all to nhwc. Otherwise, convert all to nchw
-                    if all(
-                        self.can_be_converted_to_nhwc(input_node)
-                        for input_node in layout_inputs
-                    ):
-                        for input_node in layout_inputs:
-                            # A constant folded to NHWC above needs no copy.
-                            if not ChannelsLastTaggedReshapePass.is_nhwc_node(
-                                input_node
-                            ):
-                                self.input_to_nhwc(graph_module, input_node, node)
-                        self.mark_as_nhwc_node(node)
-                    else:
-                        for input_node in layout_inputs:
-                            self.input_to_nchw(graph_module, input_node, node)
+                    self.converge_layouts(graph_module, node, layout_inputs)
 
         graph_module.recompile()
 
@@ -741,15 +748,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             ]
             if layouts[0] == layouts[1]:
                 continue
-            if all(
-                self.can_be_converted_to_nhwc(input_node) for input_node in input_nodes
-            ):
-                for input_node in input_nodes:
-                    self.input_to_nhwc(graph_module, input_node, node)
-                self.mark_as_nhwc_node(node)
-            else:
-                for input_node in input_nodes:
-                    self.input_to_nchw(graph_module, input_node, node)
+            self.converge_layouts(graph_module, node, input_nodes)
             reconverged = True
 
         if reconverged:
