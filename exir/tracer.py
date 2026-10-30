@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,6 +20,7 @@ from typing import (
     Iterable,
     List,
     Optional,
+    Sequence,
     Set,
     Tuple,
     Union,
@@ -652,6 +654,7 @@ def _default_decomposition_table(
         return get_decompositions(decomp_opset)  # pyre-fixme[7]
 
     decomps = default_decompositions()
+    decomps[torch.ops.aten.normal.float_float] = _decompose_normal_float_float
     # Add edge specific decompositions
     additional_decomp_ops = [
         # TODO: Eventually this op should be added to the core decompo table, and will not
@@ -673,6 +676,42 @@ def _default_decomposition_table(
     for op in never_decompose:
         decomps.pop(op, None)
     return decomps  # pyre-fixme[7]
+
+
+def _decompose_normal_float_float(
+    mean: float,
+    std: float,
+    size: Sequence[int],
+    *,
+    generator: Optional[torch.Generator] = None,
+    dtype: Optional[torch.dtype] = None,
+    layout: Optional[torch.layout] = None,
+    device: Optional[torch.device] = None,
+    pin_memory: Optional[bool] = None,
+) -> Any:
+    if generator is not None:
+        return NotImplemented
+    if std < 0:
+        raise RuntimeError(f"normal expects std >= 0.0, but found std {std}")
+
+    output_dtype = dtype or torch.get_default_dtype()
+    match output_dtype:
+        case torch.float16 | torch.bfloat16:
+            compute_dtype = torch.float32
+        case torch.complex32:
+            compute_dtype = torch.complex64
+        case _:
+            compute_dtype = output_dtype
+
+    result = torch.randn(
+        size,
+        dtype=compute_dtype,
+        layout=layout,
+        device=device,
+        pin_memory=pin_memory,
+    )
+    result = result * std + (complex(mean, mean) if output_dtype.is_complex else mean)
+    return result.to(output_dtype) if compute_dtype != output_dtype else result
 
 
 def dynamo_trace(
