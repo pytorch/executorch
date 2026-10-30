@@ -155,7 +155,8 @@ class Method final {
    * @param[in] buffer The block of memory to point the specified tensor at.
    *
    * @param[in] size the length of buffer in bytes, must be >= the largest
-   * nbytes the output can have, `MethodMeta::output_tensor_meta(i)->nbytes()`.
+   * nbytes the output can have,
+   * `MethodMeta::output_tensor_meta(output_idx)->nbytes()`.
    *
    * @param[in] output_idx The index of the output to set the data_ptr for. Must
    *     correspond to a tensor, and that tensor must not have had a buffer

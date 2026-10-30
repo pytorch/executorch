@@ -45,8 +45,8 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_index_Tensor(
     Tensor** ret0);
 
 /**
- * out[indices] = values, or out[indices] += values when accumulate is set,
- * with the semantics of aten::index_put_.
+ * Writes values into out at indices, with the semantics of aten::index_put_.
+ * When accumulate is set, every value is added, also when an index repeats.
  *
  * Inductor calls this fallback, with out and self the same tensor, for an
  * index that is a mask, for accumulation into a dtype its generated code
