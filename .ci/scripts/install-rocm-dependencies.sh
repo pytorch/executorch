@@ -21,7 +21,7 @@ python -m pip install "torch==${TORCH_VERSION}+rocm${ROCM_VERSION}" \
 python -m pip install -r requirements-dev.txt ninja
 # ROCm 7.14 TorchAO wheels are Python-only. Build the pinned extension against
 # the installed torch and HIP libraries instead of reusing a ROCm 7.2 binary.
-USE_CPP=1 MAX_JOBS="${MAX_JOBS:-8}" \
+USE_CPP=1 USE_CPU_KERNELS=1 MAX_JOBS="${MAX_JOBS:-8}" \
   python -m pip install --no-build-isolation --no-deps third-party/ao
 
 python - <<'PY'

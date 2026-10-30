@@ -43,10 +43,11 @@ class TestCu134Dependencies(unittest.TestCase):
         nightly=True,
         system="Linux",
         python_version=(3, 14),
+        cmake_args="",
     ):
         self.utils.determine_torch_url.cache_clear()
         with (
-            patch.dict(os.environ, {}, clear=True),
+            patch.dict(os.environ, {"CMAKE_ARGS": cmake_args}, clear=True),
             patch.object(
                 self.utils,
                 "_get_cuda_version",
@@ -139,6 +140,37 @@ class TestCu134Dependencies(unittest.TestCase):
         self.assertIn(f"torchao>={self.installer.TORCHAO_MIN_VERSION}", core)
         self.assertIn("torchvision==0.29.2", domains)
         self.assertIn("https://download.pytorch.org/whl/cpu", core)
+
+    def test_disabled_cuda_keeps_cpu_dependencies_on_gpu_runners(self):
+        for cuda in ((12, 6), (13, 2)):
+            with self.subTest(cuda=cuda):
+                core, _, domains, _ = self.install_commands(
+                    cuda,
+                    cmake_args="-DEXECUTORCH_BUILD_VULKAN=ON -DEXECUTORCH_BUILD_CUDA=OFF",
+                )
+                self.assertIn("torch==2.15.0", core)
+                self.assertIn("torchvision==0.29.2", domains)
+                self.assertIn("https://download.pytorch.org/whl/cpu", core)
+                self.assertIn("https://download.pytorch.org/whl/nightly/cpu", core)
+
+    def test_disabled_cuda_skips_toolkit_detection(self):
+        for args in (
+            "-DEXECUTORCH_BUILD_CUDA=OFF",
+            "-D EXECUTORCH_BUILD_CUDA:BOOL=0",
+            "-DEXECUTORCH_BUILD_CUDA=ON -DEXECUTORCH_BUILD_CUDA=OFF",
+        ):
+            self.utils.determine_torch_url.cache_clear()
+            with (
+                self.subTest(args=args),
+                patch.dict(os.environ, {"CMAKE_ARGS": args}, clear=True),
+                patch.object(self.utils.platform, "system", return_value="Linux"),
+                patch.object(self.utils, "_get_cuda_version") as detect,
+            ):
+                self.assertEqual(
+                    self.utils.determine_torch_url(self.installer.TORCH_URL_BASE),
+                    "https://download.pytorch.org/whl/cpu",
+                )
+                detect.assert_not_called()
 
     def test_windows_does_not_select_cu134(self):
         core, _, domains, _ = self.install_commands((13, 4), system="Windows")

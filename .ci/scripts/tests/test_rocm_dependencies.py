@@ -25,7 +25,7 @@ python() {
     echo VERIFY
     return "$VERIFY_STATUS"
   else
-    echo "PIP $* CPP=${USE_CPP:-unset} JOBS=${MAX_JOBS:-unset}"
+    echo "PIP $* CPP=${USE_CPP:-unset} CPU=${USE_CPU_KERNELS:-unset} JOBS=${MAX_JOBS:-unset}"
     if [[ "$*" == *third-party/ao* ]]; then return "$AO_STATUS"; fi
     if [[ "$*" == *torch==* ]]; then return "$TORCH_STATUS"; fi
   fi
@@ -70,7 +70,7 @@ python() {
                 )
                 if not torch_status:
                     self.assertIn(
-                        "--no-build-isolation --no-deps third-party/ao CPP=1 JOBS=8",
+                        "--no-build-isolation --no-deps third-party/ao CPP=1 CPU=1 JOBS=8",
                         result.stdout,
                     )
                 else:
