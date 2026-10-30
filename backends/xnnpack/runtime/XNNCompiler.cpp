@@ -13,6 +13,7 @@
 #include <executorch/runtime/executor/pte_data_map.h>
 #include <xnnpack.h>
 #include <cinttypes>
+#include <cstdio>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -168,6 +169,136 @@ std::vector<T> flatbufferDimsToVector(
   return dims_data;
 }
 
+/*
+Hex FNV-1a of a byte range, for naming quantization parameters in the weights
+cache. The hash is part of the cache entry's name, so a collision between two
+parameter sets would hand one kernel the other's packing: 64 bits keep that
+negligible for the few thousand tensors of a program, and nothing here needs
+to resist a deliberate collision.
+*/
+std::string hashBytesHex(const void* data, size_t size) {
+  const uint8_t* bytes = static_cast<const uint8_t*>(data);
+  uint64_t hash = 1469598103934665603ULL;
+  for (size_t i = 0; i < size; i++) {
+    hash ^= bytes[i];
+    hash *= 1099511628211ULL;
+  }
+  char out[17];
+  snprintf(out, sizeof(out), "%016llx", static_cast<unsigned long long>(hash));
+  return std::string(out);
+}
+
+/*
+The part of a quantized kernel's weights-cache qualifier that comes from the
+kernel's own quantization: the parameters XNNPACK packs together with it.
+`scales`/`scales_size` are the scale bytes handed to XNNPACK, wherever they
+were loaded from.
+*/
+std::string quantizedKernelQualifier(
+    bool use_weight_cache,
+    const char* kind,
+    const void* scales,
+    size_t scales_size,
+    const std::string& extra) {
+  if (!use_weight_cache) {
+    return "";
+  }
+  return std::string("|") + kind + ":" + hashBytesHex(scales, scales_size) +
+      ":" + extra;
+}
+
+/*
+Per-compile state for weights-cache naming. XNNPACK packs a quantized
+kernel together with its requantization scales (input scale * kernel scale
+/ output scale), so the packed bytes depend on the activation quantization
+of the node that consumes the kernel, not only on the kernel's bytes. The
+kernel's cache name is qualified with the kernel's own quantization and
+those parameters, in one go per consuming node: the cache keys packed data
+by the kernel pointer alone, so a kernel whose consumers disagree on the
+qualifier has to be packed outside the cache, and the cache can only tell
+them apart when each node reports its full qualifier.
+*/
+struct KernelNaming {
+  const void* data = nullptr;
+  std::string qualifier;
+};
+struct CacheNamingContext {
+  XNNWeightsCache* weights_cache = nullptr;
+  bool use_weight_cache = false;
+  // serialized value id -> constant data pointer and the qualifier from the
+  // value's own quantization (set while defining tensors)
+  std::unordered_map<uint32_t, KernelNaming> value_data;
+  // serialized value id -> value (for quantization parameters)
+  std::unordered_map<uint32_t, const fb_xnnpack::XValue*> values;
+};
+
+std::string activationQuantSuffix(const fb_xnnpack::XValue* value) {
+  if (value == nullptr ||
+      value->xvalue_union_type() !=
+          fb_xnnpack::XValueUnion::XNNQuantizedTensorValue) {
+    return "f";
+  }
+  auto q = value->xvalue_union_as_XNNQuantizedTensorValue();
+  switch (q->quant_params_type()) {
+    case fb_xnnpack::XNNQuantParams::PerTensorQuant: {
+      auto p = q->quant_params_as_PerTensorQuant();
+      const float scale = p->scale();
+      return hashBytesHex(&scale, sizeof(scale)) + ":" +
+          std::to_string(p->zero_point());
+    }
+    case fb_xnnpack::XNNQuantParams::PerTokenDynamicQuant:
+      return "dyn";
+    default:
+      return "q";
+  }
+}
+
+void qualifyPackedKernel(
+    const CacheNamingContext& ctx,
+    uint32_t filter_id,
+    uint32_t input_id,
+    uint32_t output_id) {
+  auto data = ctx.value_data.find(filter_id);
+  auto filter = ctx.values.find(filter_id);
+  if (data == ctx.value_data.end() || filter == ctx.values.end() ||
+      filter->second->xvalue_union_type() !=
+          fb_xnnpack::XValueUnion::XNNQuantizedTensorValue) {
+    return;
+  }
+  auto in = ctx.values.find(input_id);
+  auto out = ctx.values.find(output_id);
+  std::string suffix = data->second.qualifier + "|io:" +
+      activationQuantSuffix(in == ctx.values.end() ? nullptr : in->second) +
+      "/" +
+      activationQuantSuffix(out == ctx.values.end() ? nullptr : out->second);
+  ctx.weights_cache->qualify_unpacked_name(data->second.data, suffix);
+}
+
+/*
+Appends the node's input and output activation quantization to its kernel's
+cache name when the node packs a quantized constant the cache loaded.
+*/
+void qualifyPackedNodeKernel(const CacheNamingContext& ctx, NodePtr node) {
+  if (!ctx.use_weight_cache || ctx.weights_cache == nullptr) {
+    return;
+  }
+  // An if-chain for the same reason as in getPackedValueIds.
+  auto type = node->xnode_union_type();
+  if (type == fb_xnnpack::XNodeUnion::XNNFullyConnected) {
+    auto n = node->xnode_union_as_XNNFullyConnected();
+    qualifyPackedKernel(ctx, n->filter_id(), n->input1_id(), n->output_id());
+  } else if (type == fb_xnnpack::XNodeUnion::XNNConv2d) {
+    auto n = node->xnode_union_as_XNNConv2d();
+    qualifyPackedKernel(ctx, n->filter_id(), n->input1_id(), n->output_id());
+  } else if (type == fb_xnnpack::XNodeUnion::XNNDepthwiseConv2d) {
+    auto n = node->xnode_union_as_XNNDepthwiseConv2d();
+    qualifyPackedKernel(ctx, n->filter_id(), n->input1_id(), n->output_id());
+  } else if (type == fb_xnnpack::XNodeUnion::XNNConvTranspose2d) {
+    auto n = node->xnode_union_as_XNNConvTranspose2d();
+    qualifyPackedKernel(ctx, n->filter_id(), n->input1_id(), n->output_id());
+  }
+}
+
 /**
 Gets the constant data pointer associated with the given tensor value.
 Obtaining the constant data pointer can either be from within the flatbuffer
@@ -312,7 +443,8 @@ Error defineTensor(
     const NamedDataMap* named_data_map,
     std::vector<FreeableBuffer>& freeable_buffers,
     XNNWeightsCache* weights_cache,
-    bool use_weight_cache) {
+    bool use_weight_cache,
+    CacheNamingContext& cache_naming) {
   const fb_xnnpack::XNNTensorValue* tensor_value = nullptr;
   const fb_xnnpack::XNNQuantizedTensorValue* qtensor_value = nullptr;
 
@@ -373,6 +505,8 @@ Error defineTensor(
     return buffer_result.error();
   }
   const uint8_t* buffer_ptr = buffer_result.get();
+  // weights-cache qualifier from a quantized kernel's own parameters
+  std::string kernel_qualifier;
 
   xnn_status status;
   // The type we might have to convert to
@@ -497,6 +631,15 @@ Error defineTensor(
             /*external_id=*/tensor_value->external_id(),
             /*flags=*/tensor_value->flags(),
             /*id_out=*/&id);
+        {
+          const float scale_value = qparams->scale();
+          kernel_qualifier = quantizedKernelQualifier(
+              use_weight_cache,
+              "pt",
+              &scale_value,
+              sizeof(scale_value),
+              std::to_string(qparams->zero_point()));
+        }
         break;
       }
       case fb_xnnpack::XNNQuantParams::PerChannelQuant: {
@@ -515,6 +658,7 @@ Error defineTensor(
             zero_point);
 
         const float* scale = qparams->scale()->data();
+        uint32_t scale_numel = qparams->scale()->size();
 
         if (qparams->scale_buffer_idx() != 0) {
           auto scale_result = getConstantDataPtr(
@@ -532,6 +676,7 @@ Error defineTensor(
           scale = reinterpret_cast<const float*>(scale_result.get());
           ET_CHECK_OR_RETURN_ERROR(
               scale != nullptr, Internal, "Failed to load scale data.");
+          scale_numel = qparams->num_scales();
         }
         status = xnn_define_channelwise_quantized_tensor_value_v2(
             /*subgraph=*/subgraph_ptr,
@@ -545,6 +690,12 @@ Error defineTensor(
             /*external_id=*/tensor_value->external_id(),
             /*flags=*/tensor_value->flags(),
             /*id_out=*/&id);
+        kernel_qualifier = quantizedKernelQualifier(
+            use_weight_cache,
+            "pc",
+            scale,
+            scale_numel * sizeof(float),
+            std::to_string(qparams->channel_dim()));
         break;
       }
       case fb_xnnpack::XNNQuantParams::PerChannelGroupQuant: {
@@ -626,6 +777,13 @@ Error defineTensor(
             /*external_id=*/tensor_value->external_id(),
             /*flags=*/tensor_value->flags(),
             /*id_out=*/&id);
+        kernel_qualifier = quantizedKernelQualifier(
+            use_weight_cache,
+            "pcg",
+            scale_data,
+            scale_numel * sizeof(uint16_t),
+            std::to_string(group_size) + ":" +
+                std::to_string(qparams->channel_dim()));
         break;
       }
       case fb_xnnpack::XNNQuantParams::PerTokenDynamicQuant: {
@@ -670,6 +828,10 @@ Error defineTensor(
 
   // map serialized id to newly generated id
   remapped_ids.emplace(std::make_pair(tensor_value->id_out(), id));
+  if (buffer_ptr != nullptr) {
+    cache_naming.value_data[tensor_value->id_out()] = {
+        buffer_ptr, std::move(kernel_qualifier)};
+  }
 
   // Add external ids to either list of input or output ids
   if (tensor_value->flags() & XNN_VALUE_FLAG_EXTERNAL_INPUT) {
@@ -2234,6 +2396,14 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   std::vector<uint32_t> input_ids;
   std::vector<uint32_t> output_ids;
   Error err = Error::Ok;
+
+  CacheNamingContext cache_naming;
+  cache_naming.weights_cache = weights_cache;
+  cache_naming.use_weight_cache = use_weight_cache;
+  for (auto value : *flatbuffer_graph->xvalues()) {
+    cache_naming.values[getSerializedValueId(value)] = value;
+  }
+
   for (auto value : *flatbuffer_graph->xvalues()) {
     size_t prev_buffers = unpacked_buffers.size();
     // With the weights cache the buffers land in the cache rather than in
@@ -2253,7 +2423,8 @@ ET_NODISCARD Error XNNCompiler::compileModel(
         named_data_map,
         unpacked_buffers,
         weights_cache,
-        use_weight_cache);
+        use_weight_cache,
+        cache_naming);
 
     if (err != Error::Ok) {
       return err;
@@ -2276,6 +2447,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   }
 
   for (auto node : *flatbuffer_graph->xnodes()) {
+    qualifyPackedNodeKernel(cache_naming, node);
     err = getDefineNodeFunc(node->xnode_union_type())(
         subgraph.get(), remapped_ids, node, flatbuffer_graph);
     if (err != Error::Ok) {

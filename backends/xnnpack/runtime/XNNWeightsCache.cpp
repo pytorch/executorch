@@ -226,6 +226,7 @@ Error XNNWeightsCache::initialize_for_runtime(
   }
   unpacked_data_.clear();
   unpacked_data_to_name_.clear();
+  unpacked_data_to_qualifier_.clear();
 
 #ifndef _WIN32
   if (packed_cache_path_.empty() || packed_file_fd_ >= 0) {
@@ -342,6 +343,7 @@ Result<std::vector<std::string>> XNNWeightsCache::finalize_for_runtime() {
   }
   unpacked_data_.clear();
   unpacked_data_to_name_.clear();
+  unpacked_data_to_qualifier_.clear();
 
   std::vector<std::string> packed_data_names;
   // update the reference count of all the packed data
@@ -394,8 +396,37 @@ Result<const uint8_t*> XNNWeightsCache::load_unpacked_data(
   const uint8_t* data_pointer =
       static_cast<const uint8_t*>(named_data.get().data());
   unpacked_data_.push_back(std::move(named_data.get()));
-  unpacked_data_to_name_[data_pointer] = name;
+  // A data map that hands out its own storage (BufferDataLoader) returns the
+  // same pointer for every load of one key; keep what qualify_unpacked_name
+  // already made of it.
+  if (unpacked_data_to_qualifier_.find(data_pointer) ==
+      unpacked_data_to_qualifier_.end()) {
+    unpacked_data_to_name_[data_pointer] = name;
+  }
   return data_pointer;
+}
+
+void XNNWeightsCache::qualify_unpacked_name(
+    const void* data_ptr,
+    const std::string& suffix) {
+  auto entry = unpacked_data_to_name_.find(data_ptr);
+  if (entry == unpacked_data_to_name_.end()) {
+    return;
+  }
+  auto qualifier = unpacked_data_to_qualifier_.find(data_ptr);
+  if (qualifier == unpacked_data_to_qualifier_.end()) {
+    unpacked_data_to_qualifier_.emplace(data_ptr, suffix);
+    entry->second.append(suffix);
+  } else if (qualifier->second != suffix) {
+    ET_LOG(
+        Info,
+        "Unpacked data '%s' is packed with conflicting parameters ('%s' vs "
+        "'%s'); packing it outside the weights cache",
+        entry->second.c_str(),
+        qualifier->second.c_str(),
+        suffix.c_str());
+    unpacked_data_to_name_.erase(entry);
+  }
 }
 
 void XNNWeightsCache::release_entry(void* packed_data_ptr) {
@@ -499,6 +530,10 @@ size_t XNNWeightsCache::look_up(
   auto packed_weight_entry =
       context->name_to_packed_data_metadata_.find(weight_bias_name);
   if (packed_weight_entry == context->name_to_packed_data_metadata_.end()) {
+    return SIZE_MAX;
+  }
+  if (packed_weight_entry->second.conflicted) {
+    context->last_lookup_unnamed_ = true;
     return SIZE_MAX;
   }
   // XNNPACK upgrade detection: a ukernel whose implementation changed
@@ -648,40 +683,60 @@ size_t XNNWeightsCache::look_up_or_insert(
     if (saved_ptr != nullptr && 0 == memcmp(ptr, saved_ptr, size)) {
       return offset;
     }
-    // Cache out of date: name hits but packed bytes differ.
-    return SIZE_MAX;
   }
 
-  // Add to Cache if it is not finalized
   size_t next_offset = context->packed_data_ptrs_.size();
-  auto entry = context->unpacked_data_to_name_.find(cache_key->kernel);
+  context->packed_data_ptrs_.push_back(ptr);
 
-  // Check if weight_pointer has been cached
-  if (entry != context->unpacked_data_to_name_.end()) {
-    std::string weight_bias_name = entry->second;
-    if (cache_key->bias != nullptr) {
-      auto bias_entry = context->unpacked_data_to_name_.find(cache_key->bias);
-      if (bias_entry != context->unpacked_data_to_name_.end()) {
-        weight_bias_name.append(bias_entry->second);
-      }
-    }
-    PackedDataMeta packed_data_metadata;
-    packed_data_metadata.offset = next_offset;
-    packed_data_metadata.data_size = size;
-    packed_data_metadata.ref_count =
-        0; // ref_count is only incremented after finalizing for runtime
-    packed_data_metadata.in_current_runtime = true;
-    packed_data_metadata.seed = cache_key->seed;
-    context->name_to_packed_data_metadata_[weight_bias_name] =
-        packed_data_metadata;
-  } else {
+  auto entry = context->unpacked_data_to_name_.find(cache_key->kernel);
+  if (entry == context->unpacked_data_to_name_.end()) {
     ET_LOG(
         Info,
         "Warning: Unpacked weight and bias were not registered with names, "
         "this will add new cache entries for packed data and may affect performance.");
+    return next_offset;
   }
-  context->packed_data_ptrs_.push_back(ptr);
+  std::string weight_bias_name = entry->second;
+  if (cache_key->bias != nullptr) {
+    auto bias_entry = context->unpacked_data_to_name_.find(cache_key->bias);
+    if (bias_entry != context->unpacked_data_to_name_.end()) {
+      weight_bias_name.append(bias_entry->second);
+    }
+  }
 
+  auto existing = context->name_to_packed_data_metadata_.find(weight_bias_name);
+  if (offset != SIZE_MAX) {
+    // The name maps to different packed bytes: XNNPACK packed something with
+    // this kernel that its cache name does not capture, so the name cannot
+    // serve either packing. Operators that pack before they consult the cache
+    // (deconvolution) take the returned offset as final, so this packing is
+    // stored, but unnamed; the earlier operators keep the packing they hold.
+    // The name is retired: it misses for the rest of this cache's life and
+    // stays out of the file, so a later load cannot hand one node the other's
+    // packing. Unnamed packings live until full_unload, and this one's bytes
+    // stay in the cache file as dead space.
+    ET_LOG(
+        Info,
+        "look_up_or_insert: packed bytes differ for '%s'; storing an unnamed "
+        "packing and retiring the name",
+        weight_bias_name.c_str());
+    existing->second.conflicted = true;
+    return next_offset;
+  }
+  if (existing != context->name_to_packed_data_metadata_.end() &&
+      existing->second.conflicted) {
+    return next_offset;
+  }
+
+  PackedDataMeta packed_data_metadata;
+  packed_data_metadata.offset = next_offset;
+  packed_data_metadata.data_size = size;
+  packed_data_metadata.ref_count =
+      0; // ref_count is only incremented after finalizing for runtime
+  packed_data_metadata.in_current_runtime = true;
+  packed_data_metadata.seed = cache_key->seed;
+  context->name_to_packed_data_metadata_[weight_bias_name] =
+      packed_data_metadata;
   return next_offset;
 }
 
@@ -724,6 +779,9 @@ Error XNNWeightsCache::save_packed_index() {
 
   // Index entry: [name_len:u32][name][file_offset:u64][data_size:u64][seed:u32]
   for (const auto& [name, meta] : name_to_packed_data_metadata_) {
+    if (meta.conflicted) {
+      continue;
+    }
     void* ptr = packed_data_ptrs_[meta.offset];
     auto it = ptr_to_file_offset_.find(ptr);
     if (it == ptr_to_file_offset_.end()) {
