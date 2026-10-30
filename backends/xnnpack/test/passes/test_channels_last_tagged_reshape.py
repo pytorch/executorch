@@ -372,7 +372,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
         for op in self.broadcast_binary_ops:
             with self.subTest(op=op.__name__):
                 self._test_constant_lower_rank_operand_folded_to_nhwc(
-                    self.ConvBinaryOpConv(op, torch.rand(8, 8) + 0.5)
+                    self.ConvBinaryOpConv(op, torch.rand(5, 7) + 0.5)
                 )
 
     class ConvMul5dScalar(torch.nn.Module):
@@ -418,7 +418,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             super().__init__()
             self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
             self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
-            self.register_buffer("noise", torch.randn(8, 8))
+            self.register_buffer("noise", torch.randn(5, 7))
 
         def forward(self, x):
             x = self.conv1(x)
@@ -448,7 +448,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             super().__init__()
             self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
             self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
-            self.register_buffer("noise", torch.randn(8, 8))
+            self.register_buffer("noise", torch.randn(5, 7))
 
         def forward(self, x):
             x = self.conv1(x)
@@ -464,7 +464,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             super().__init__()
             self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
             self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
-            self.register_buffer("bias", torch.randn(8, 8, 8))
+            self.register_buffer("bias", torch.randn(8, 5, 7))
 
         def forward(self, x):
             x = self.conv1(x)
@@ -472,7 +472,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             return self.conv2(x)
 
     def _test_constant_lower_rank_operand_folded_to_nhwc(self, module):
-        inputs = (torch.randn(1, 3, 8, 8),)
+        inputs = (torch.randn(1, 3, 5, 7),)
         (
             Tester(module.eval(), inputs)
             .export()
@@ -521,7 +521,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             super().__init__()
             self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
             self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
-            self.register_buffer("noise", torch.randn(8, 8), persistent=False)
+            self.register_buffer("noise", torch.randn(5, 7), persistent=False)
 
         def forward(self, x):
             x = self.conv1(x)
@@ -543,14 +543,14 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             super().__init__()
             self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
             self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
-            self.register_buffer("noise", torch.randn(8, 8))
+            self.register_buffer("noise", torch.randn(5, 7))
 
         def forward(self, x):
             x = self.conv1(x) + self.noise
             return self.conv2(x) + self.noise
 
     def test_fp32_channels_last_tagged_reshape_pass_shared_lower_rank_operand(self):
-        inputs = (torch.randn(1, 3, 8, 8),)
+        inputs = (torch.randn(1, 3, 5, 7),)
         (
             Tester(self.ConvSharedNoiseAddConv().eval(), inputs)
             .export()
@@ -577,7 +577,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
 
     def test_fp32_channels_last_tagged_reshape_pass_input_lower_rank_operand(self):
         # A non-constant [H, W] operand is reshaped and converted in the graph.
-        inputs = (torch.randn(1, 3, 8, 8), torch.randn(8, 8))
+        inputs = (torch.randn(1, 3, 5, 7), torch.randn(5, 7))
         (
             Tester(self.ConvDynamicNoiseAddConv().eval(), inputs)
             .export()
@@ -607,7 +607,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
         # dequantize and the op would carry no quant params and fail at load.
         for module in (self.ConvNoiseAddConv(), self.ConvChannelScaleConv()):
             (
-                Tester(module.eval(), (torch.randn(1, 3, 8, 8),))
+                Tester(module.eval(), (torch.randn(1, 3, 5, 7),))
                 .quantize()
                 .export()
                 .to_edge()
@@ -637,7 +637,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
         height = torch.export.Dim("height", min=4, max=32)
         width = torch.export.Dim("width", min=4, max=32)
         dynamic_shapes = ({2: height, 3: width}, {0: height, 1: width})
-        inputs = (torch.randn(1, 3, 8, 8), torch.randn(8, 8))
+        inputs = (torch.randn(1, 3, 5, 7), torch.randn(5, 7))
         (
             Tester(
                 self.ConvDynamicNoiseAddConv().eval(),
