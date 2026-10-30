@@ -43,10 +43,7 @@ def cu134_requirements(torch_url, include_domains=False):
         CU134_TORCH_PACKAGES if include_domains else CU134_TORCH_PACKAGES[:1]
     )
     if not torchao_from_source():
-        torchao_variant = (
-            "cpu" if platform.machine().lower() in ("aarch64", "arm64") else "cu134"
-        )
-        packages.append(f"torchao=={CU134_TORCHAO_NIGHTLY_VERSION}+{torchao_variant}")
+        packages.append(f"torchao>={CU134_TORCHAO_NIGHTLY_VERSION}")
     return packages
 
 
@@ -71,17 +68,12 @@ def install_requirements(use_pytorch_nightly):
     cu134_packages = cu134_requirements(torch_url)
     if cu134_packages and not use_pytorch_nightly:
         cu134_packages[0] = "torch"
-    # torchao's CUDA channel publishes x86_64 only, so asking for a CUDA build makes the pin
-    # unsatisfiable on aarch64. Only that case is special-cased: falling back everywhere would
-    # change which torchao a CPU x86_64 install resolves, and the CUDA build is genuinely wanted
-    # where it exists. This nightly is what a development checkout is tested against, and the
-    # wheel's own torchao lower bound is this same version so that installing the package
-    # afterwards leaves this pin in place rather than replacing it.
+    # TorchAO's CUDA channel publishes x86_64 only, so use the CPU channel on
+    # aarch64. The installer and wheel metadata share a minimum version, allowing
+    # newer TorchAO packages without downgrading a preinstalled compatible build.
     if platform.machine().lower() in ("aarch64", "arm64"):
-        # The cpu channel specifically, not the index root. The root carries every variant, and a
-        # pin without a local segment admits all of them while ordering a local segment highest,
-        # so the xpu channel's pure python wheel would win on version before pip compares wheel
-        # tags, silently replacing the compiled aarch64 build.
+        # The index root carries every variant; a local segment sorts above the
+        # base version, so an XPU wheel could replace the compiled aarch64 build.
         torchao_url = f"{TORCHAO_URL_BASE}/cpu"
     else:
         torchao_url = determine_torch_url(TORCHAO_URL_BASE)
@@ -92,7 +84,7 @@ def install_requirements(use_pytorch_nightly):
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
         ("torch==2.15.0" if use_pytorch_nightly else "torch"),
-        f"torchao=={TORCHAO_NIGHTLY_VERSION}",
+        f"torchao>={TORCHAO_NIGHTLY_VERSION}",
     ]
 
     # Install the requirements for core ExecuTorch package.

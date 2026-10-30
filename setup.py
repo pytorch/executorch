@@ -1116,12 +1116,7 @@ def _package_relative_depth(library: Path) -> int:
 
 
 def _torchao_requirement() -> str:
-    """The torchao dependency, pinned to the series install_requirements.py installs.
-
-    Derived from that module rather than written out, so a nightly bump cannot move the
-    pin without moving this bound with it. A bump into the next series would otherwise
-    silently stop satisfying the lower bound, and installing this package over a
-    development checkout would replace the torchao that was just installed.
+    """The TorchAO minimum version, shared with install_requirements.py.
 
     Loaded by path, the way install_utils is above, because setuptools executes this
     file without the project directory on sys.path, so a plain import does not resolve.
@@ -1142,8 +1137,7 @@ def _torchao_requirement() -> str:
         and not module.torchao_from_source()
     ):
         version = module.CU134_TORCHAO_NIGHTLY_VERSION
-    major, minor = (int(part) for part in version.split(".")[:2])
-    return f"torchao>={version},<{major}.{minor + 1}"
+    return f"torchao>={version}"
 
 
 def _base_dependencies() -> List[str]:
