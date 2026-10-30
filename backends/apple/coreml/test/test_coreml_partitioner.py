@@ -567,8 +567,8 @@ class TestCoreMLPartitioner(unittest.TestCase):
         An op that reads a uint8 input runs on the CPU, also when it reads it
         through an op with several outputs.  An op that is not core ATen, such
         as pad, max pooling, roll or zeros_like, may have no CPU kernel, so it
-        is decomposed.  The index math of a gather also runs on the CPU, since
-        it would leave Core ML a partition with no inputs.
+        is decomposed.  Below iOS 18 the index math of a gather also runs on
+        the CPU, since it would leave Core ML a partition with no inputs.
         """
 
         class Model(torch.nn.Module):
@@ -610,19 +610,32 @@ class TestCoreMLPartitioner(unittest.TestCase):
             ),
         }
         x = torch.randint(0, 256, (1, 3, 8, 8), dtype=torch.uint8)
-        for name, (op, cpu_op) in ops.items():
-            with self.subTest(op=name):
+        ios18 = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18
+        )
+        # From iOS 18 index math with no inputs stays in Core ML instead.
+        cases = [(name, op, cpu_op, None) for name, (op, cpu_op) in ops.items()]
+        cases += [
+            (name, op, cpu_op, ios18)
+            for name, (op, cpu_op) in ops.items()
+            if cpu_op == "aten.arange.start_step"
+        ]
+        for name, op, cpu_op, compile_specs in cases:
+            with self.subTest(op=name, ios18=compile_specs is not None):
                 model = Model(op).eval()
                 ep = torch.export.export(model, (x,), strict=True)
                 edge = executorch.exir.to_edge_transform_and_lower(
-                    ep, partitioner=[CoreMLPartitioner()]
+                    ep, partitioner=[CoreMLPartitioner(compile_specs=compile_specs)]
                 )
                 op_names = [
                     n.target.__name__
                     for n in edge.exported_program().graph.nodes
                     if n.op == "call_function"
                 ]
-                self.assertIn(cpu_op, op_names)
+                if compile_specs is None:
+                    self.assertIn(cpu_op, op_names)
+                else:
+                    self.assertNotIn(cpu_op, op_names)
                 self.assertIn("executorch_call_delegate", op_names)
                 buffer = edge.to_executorch().buffer
                 if _TEST_RUNTIME:
@@ -783,6 +796,13 @@ class TestCoreMLPartitioner(unittest.TestCase):
         edge = executorch.exir.to_edge_transform_and_lower(
             ep, partitioner=[CoreMLPartitioner(take_over_constant_data=False)]
         )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("dim_order_ops._to_dim_order_copy.default", op_names)
+        self.assertIn("executorch_call_delegate", op_names)
         buffer = edge.to_executorch().buffer
         if _TEST_RUNTIME:
             program = Runtime.get().load_program(buffer)
