@@ -394,7 +394,9 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
     def test_output_shape_changes_at_capture(self):
         torch.manual_seed(0)
         # The capture call has a larger batch than the warmup calls before it.
-        inputs = [torch.randn(batch, 3, 4, 4) for batch in (1, 1, 1, 2, 2, 2)]
+        # The last call goes back to the warmup batch, which only a live graph
+        # rejects, because a replay needs the captured input sizes.
+        inputs = [torch.randn(batch, 3, 4, 4) for batch in (1, 1, 1, 2, 2, 2, 1)]
         batch = torch.export.Dim("batch", min=1, max=8)
         for memory_format in (torch.contiguous_format, torch.channels_last):
             module = _Double(memory_format).eval()
@@ -403,7 +405,11 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
             )
             for i, (x, out) in enumerate(zip(inputs, outputs)):
                 with self.subTest(memory_format=memory_format, call=i):
-                    self._assert_matches_eager(module, x, out)
+                    if i == 6:
+                        # InvalidArgument, from the replay's input size check.
+                        self.assertIn("error 0x12", str(out))
+                    else:
+                        self._assert_matches_eager(module, x, out)
 
 
 if __name__ == "__main__":
