@@ -14,6 +14,25 @@ from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.utils import _pytree as pytree
 
 
+def _reads_only_shape(node: torch.fx.Node) -> bool:
+    """full_like with a constant fill value reads only the shape and dtype of
+    its input. With a static shape its result is a constant, and OpenVINO
+    folds it into one too.
+    """
+    if node.target != exir_ops.edge.aten.full_like.default:
+        return False
+    if any(
+        isinstance(a, torch.fx.Node) for a in (*node.args[1:], *node.kwargs.values())
+    ):
+        return False
+    val = node.meta.get("val")
+    return isinstance(val, torch.Tensor) and all(isinstance(d, int) for d in val.shape)
+
+
+def _inputs(node: torch.fx.Node) -> list:
+    return [] if _reads_only_shape(node) else node.all_input_nodes
+
+
 def _on_cpu(value):
     if isinstance(value, torch.Tensor):
         return value.cpu()
@@ -33,11 +52,13 @@ def _constant_nodes(graph_module: torch.fx.GraphModule) -> set:
             value = operator.attrgetter(node.target)(graph_module)
             if isinstance(value, torch.Tensor) and node not in written:
                 constants.add(node)
-        elif (
-            node.op == "call_function"
-            and torch.Tag.nondeterministic_seeded
-            not in getattr(node.target, "tags", ())
-            and all(n in constants for n in node.all_input_nodes)
+        elif node.op == "call_function" and (
+            _reads_only_shape(node)
+            or (
+                torch.Tag.nondeterministic_seeded
+                not in getattr(node.target, "tags", ())
+                and all(n in constants for n in node.all_input_nodes)
+            )
         ):
             constants.add(node)
     return constants
@@ -51,24 +72,29 @@ def _evaluate(graph_module: torch.fx.GraphModule, targets: list) -> dict:
         node = stack.pop()
         if node not in needed:
             needed.add(node)
-            stack.extend(node.all_input_nodes)
+            stack.extend(_inputs(node))
     order = [n for n in graph_module.graph.nodes if n in needed]
-    last_use = {i: n for n in order for i in n.all_input_nodes}
+    last_use = {i: n for n in order for i in _inputs(n)}
     values = {}
     for node in order:
         if node.op == "get_attr":
             values[node] = operator.attrgetter(node.target)(graph_module)
             continue
-        args, kwargs = torch.fx.node.map_arg(
-            (node.args, node.kwargs), lambda n: values[n]
-        )
+        if _reads_only_shape(node):
+            like = node.args[0].meta["val"]
+            args = (torch.empty(like.shape, dtype=like.dtype), *node.args[1:])
+            kwargs = dict(node.kwargs)
+        else:
+            args, kwargs = torch.fx.node.map_arg(
+                (node.args, node.kwargs), lambda n: values[n]
+            )
         # The values are the same on any device, and lowering for OpenVINO
         # must not need the GPU a constant was made for.
         args, kwargs = pytree.tree_map(_on_cpu, (args, kwargs))
         if kwargs.get("pin_memory"):
             kwargs = {**kwargs, "pin_memory": False}
         values[node] = node.target(*args, **kwargs)
-        for i in node.all_input_nodes:
+        for i in _inputs(node):
             if last_use[i] is node and i not in targets:
                 del values[i]
     return values
@@ -84,7 +110,8 @@ class FoldConstantCumsumPass(PassBase):
     the oldest supported OpenVINO release has the fix. Only these cumsums are
     folded; constants that feed no such cumsum, such as compressed weights, are
     left as they are. Runs on an unlifted module, where constants are get_attr
-    nodes; buffers the graph writes to are not constants.
+    nodes; buffers the graph writes to are not constants, and full_like of an
+    input with a static shape is one.
     """
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:

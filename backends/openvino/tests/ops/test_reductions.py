@@ -1,5 +1,6 @@
 # mypy: disable-error-code=import-not-found
 
+import itertools
 import unittest
 from unittest import mock
 
@@ -65,12 +66,17 @@ class TestIntegerReductions(BaseOpenvinoOpTest):
         class AttentionMasks(torch.nn.Module):
             """Masks and positions from padding, as pi0 builds them."""
 
-            def __init__(self, dtype):
+            def __init__(self, dtype, from_input):
                 super().__init__()
                 self.dtype = dtype
+                self.from_input = from_input
 
             def forward(self, pad_masks):
-                att_masks = torch.tensor([0] * 765 + [1] * 51, dtype=torch.bool)
+                if self.from_input:
+                    # Constant too, but only once OpenVINO folds the shape.
+                    att_masks = torch.ones_like(pad_masks[0])
+                else:
+                    att_masks = torch.tensor([0] * 765 + [1] * 51, dtype=torch.bool)
                 cumsum = torch.cumsum(att_masks[None, :], dim=1, dtype=self.dtype)
                 att_2d = cumsum[:, None, :] <= cumsum[:, :, None]
                 pad_2d = pad_masks[:, None, :] * pad_masks[:, :, None]
@@ -79,11 +85,13 @@ class TestIntegerReductions(BaseOpenvinoOpTest):
         def pad_masks(valid):
             return (torch.arange(816) < valid)[None, :]
 
-        for dtype in (torch.int64, torch.int32):
-            with self.subTest(dtype=dtype):
+        for dtype, from_input in itertools.product(
+            (torch.int64, torch.int32), (False, True)
+        ):
+            with self.subTest(dtype=dtype, from_input=from_input):
                 # One loaded program, run again with more valid tokens.
                 self.execute_layer_test(
-                    AttentionMasks(dtype),
+                    AttentionMasks(dtype, from_input),
                     (pad_masks(300),),
                     more_inputs=((pad_masks(700),),),
                 )
