@@ -42,6 +42,9 @@ from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
 from executorch.backends.cuda.passes.replace_int64_floordiv import (
     ReplaceInt64FloorDivWithFloatPass,
 )
+from executorch.backends.cuda.passes.replace_masked_copy_with_where import (
+    ReplaceMaskedCopyWithWherePass,
+)
 from executorch.backends.cuda.target_smem import target_smem_context
 from executorch.backends.cuda.triton.kernels import triton_mutation_cache
 from executorch.backends.cuda.triton.replacement_pass import (
@@ -1013,7 +1016,11 @@ class CudaBackend(AotiBackend, BackendDetails):
                         f"Invalid triton_kernel_mode: {mode}. Expected 'ON' or 'OFF'."
                     )
                 triton_kernel_mode = mode
-        passes = [MoveCondPredicateToCpuPass(), ReplaceInt64FloorDivWithFloatPass()]
+        passes = [
+            MoveCondPredicateToCpuPass(),
+            ReplaceInt64FloorDivWithFloatPass(),
+            ReplaceMaskedCopyWithWherePass(),
+        ]
         cell_layout = any(
             spec.key == OFFGRAPH_KV_COMPILE_SPEC
             and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"

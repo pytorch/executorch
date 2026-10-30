@@ -80,6 +80,7 @@ fbcode_target(
         "passes/move_cond_predicate_to_cpu.py",
         "passes/lower_offgraph_kv.py",
         "passes/replace_int64_floordiv.py",
+        "passes/replace_masked_copy_with_where.py",
     ],
     visibility = [
         "//executorch/backends/cuda/...",
