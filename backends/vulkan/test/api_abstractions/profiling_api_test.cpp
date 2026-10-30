@@ -46,7 +46,8 @@ bool timestamps_available(ComputeGraph& graph) {
   vkGetPhysicalDeviceQueueFamilyProperties(
       physical, &family_count, families.data());
   return families.at(graph.context()->queue().family_index).timestampValidBits >
-      0 && graph.context()->adapter_ptr()->timestamp_period() > 0;
+      0 &&
+      graph.context()->adapter_ptr()->timestamp_period() > 0;
 }
 
 void disable_profiling(
@@ -108,7 +109,8 @@ TEST_F(ProfilingApiTest, UnfinishedAndUnsubmittedCapturesHaveNoTimestampTicks) {
     auto recording = context.dispatch_lock();
     context.set_cmd();
     context.report_shader_dispatch_start(
-        "unsubmitted", GlobalWorkGrid({1, 1, 1}, kTextureExtentsWorkGrid),
+        "unsubmitted",
+        GlobalWorkGrid({1, 1, 1}, kTextureExtentsWorkGrid),
         LocalWorkGroup(1, 1, 1));
     if (complete) {
       context.report_shader_dispatch_end();
