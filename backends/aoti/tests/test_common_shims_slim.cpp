@@ -143,6 +143,28 @@ void runGetSizesTest(slim_c10::DeviceType device_type) {
   delete tensor;
 }
 
+void runGetSizeTest(slim_c10::DeviceType device_type) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = calculateContiguousStrides(sizes);
+  slim_c10::Device device(device_type, 0);
+
+  Tensor* tensor = new Tensor(slim::empty_strided(
+      slim::makeArrayRef(sizes),
+      slim::makeArrayRef(strides),
+      slim_c10::ScalarType::Float,
+      device));
+
+  int64_t size = -1;
+  EXPECT_EQ(aoti_torch_get_size(tensor, 1, &size), Error::Ok);
+  EXPECT_EQ(size, 3);
+  EXPECT_EQ(aoti_torch_get_size(tensor, -2, &size), Error::Ok);
+  EXPECT_EQ(size, 2);
+  EXPECT_EQ(aoti_torch_get_size(tensor, 2, &size), Error::InvalidArgument);
+  EXPECT_EQ(aoti_torch_get_size(tensor, -3, &size), Error::InvalidArgument);
+
+  delete tensor;
+}
+
 void runGetStridesTest(slim_c10::DeviceType device_type) {
   std::vector<int64_t> sizes = {2, 3, 4};
   std::vector<int64_t> strides = calculateContiguousStrides(sizes);
@@ -432,6 +454,10 @@ TEST_F(CommonShimsSlimTest, GetSizes_CPU) {
   runGetSizesTest(slim_c10::DeviceType::CPU);
 }
 
+TEST_F(CommonShimsSlimTest, GetSize_CPU) {
+  runGetSizeTest(slim_c10::DeviceType::CPU);
+}
+
 TEST_F(CommonShimsSlimTest, GetStrides_CPU) {
   runGetStridesTest(slim_c10::DeviceType::CPU);
 }
@@ -481,6 +507,13 @@ TEST_F(CommonShimsSlimTest, GetSizes_CUDA) {
     GTEST_SKIP() << "CUDA not available";
   }
   runGetSizesTest(slim_c10::DeviceType::CUDA);
+}
+
+TEST_F(CommonShimsSlimTest, GetSize_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+  runGetSizeTest(slim_c10::DeviceType::CUDA);
 }
 
 TEST_F(CommonShimsSlimTest, GetStrides_CUDA) {
@@ -555,6 +588,7 @@ TEST_F(CommonShimsSlimTest, NullTensorArgument) {
   EXPECT_EQ(
       aoti_torch_get_data_ptr(nullptr, &data_ptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_sizes(nullptr, &sizes), Error::InvalidArgument);
+  EXPECT_EQ(aoti_torch_get_size(nullptr, 0, &numel), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_strides(nullptr, &strides), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dtype(nullptr, &dtype), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dim(nullptr, &dim), Error::InvalidArgument);
@@ -566,6 +600,7 @@ TEST_F(CommonShimsSlimTest, NullReturnPointer) {
 
   EXPECT_EQ(aoti_torch_get_data_ptr(tensor, nullptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_sizes(tensor, nullptr), Error::InvalidArgument);
+  EXPECT_EQ(aoti_torch_get_size(tensor, 0, nullptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_strides(tensor, nullptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dtype(tensor, nullptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dim(tensor, nullptr), Error::InvalidArgument);
