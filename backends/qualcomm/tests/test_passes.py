@@ -207,13 +207,21 @@ class TestPasses(unittest.TestCase):
                 return attention + mul
 
         cases = (
-            (Autocast(), (torch.randn(4, 8), torch.randn(4, 8))),
-            (Attention(), tuple(torch.randn(1, 2, 4, 8) for _ in range(4))),
+            (Autocast(), (torch.randn(4, 8), torch.randn(4, 8)), "t_1"),
+            (Attention(), tuple(torch.randn(1, 2, 4, 8) for _ in range(4)), "mul"),
         )
-        for model, inputs in cases:
+        for model, inputs, name in cases:
             with self.subTest(model=type(model).__name__):
                 ep = torch.export.export(model.eval(), inputs)
+                # Guard against a vacuous test: the colliding name has to be
+                # an input's.
+                self.assertIn(
+                    name, [n.name for n in ep.graph.nodes if n.op == "placeholder"]
+                )
                 ep = get_qnn_pass_manager_cls()().transform_for_export_pipeline(ep)
+                # ep.module() copies the graph and renames duplicates, so lint
+                # the graph the passes produced.
+                ep.graph_module.graph.lint()
                 torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
 
     def test_build_op_wrappers_returns_context_binary(self):
