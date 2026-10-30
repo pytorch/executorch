@@ -45,6 +45,9 @@ from executorch.backends.cuda.passes.replace_fused_sdpa import (
 from executorch.backends.cuda.passes.replace_int64_floordiv import (
     ReplaceInt64FloorDivWithFloatPass,
 )
+from executorch.backends.cuda.passes.replace_masked_copy_with_where import (
+    ReplaceMaskedCopyWithWherePass,
+)
 from executorch.backends.cuda.target_smem import target_smem_context
 from executorch.backends.cuda.triton.kernels import triton_mutation_cache
 from executorch.backends.cuda.triton.replacement_pass import (
@@ -1020,6 +1023,7 @@ class CudaBackend(AotiBackend, BackendDetails):
             MoveCondPredicateToCpuPass(),
             ReplaceInt64FloorDivWithFloatPass(),
             ReplaceFusedSdpaWithSdpaPass(),
+            ReplaceMaskedCopyWithWherePass(),
         ]
         cell_layout = any(
             spec.key == OFFGRAPH_KV_COMPILE_SPEC
