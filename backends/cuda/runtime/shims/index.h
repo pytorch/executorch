@@ -75,6 +75,41 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_index_put_out(
     Tensor* values,
     bool accumulate);
 
+/**
+ * Reduces src into out at index along dim, with the semantics of
+ * aten::scatter_reduce.two.
+ *
+ * Inductor calls this fallback, with out and self the same tensor, for every
+ * reduction but "sum", for a sum into a dtype its generated code cannot add
+ * atomically, and in deterministic mode. Values that land on the same element
+ * are reduced in index order, so the result is deterministic. Half and
+ * bfloat16 sums add in float, as in ATen's deterministic mode. A product
+ * rounds to the dtype of out at every step and a mean rounds its sum before
+ * dividing, as in ATen. As in ATen, an index out of range, negative ones
+ * included, triggers a device-side assert.
+ *
+ * @param out Tensor to update (CUDA device, up to 16 dims)
+ * @param self Must be out; AOTInductor passes the tensor it updates as both
+ * @param dim Dimension of out that index addresses
+ * @param index int64 tensor with as many dims as out, no larger than src, and
+ * no larger than out except at dim
+ * @param src Values to reduce, same dtype as out. Float, double, half,
+ * bfloat16 and the integer dtypes are supported, and bool for "sum" only, as
+ * in ATen.
+ * @param reduce "sum", "prod", "mean", "amax" or "amin"
+ * @param include_self If zero, the elements index names are reduced from src
+ * alone; the others keep their values either way
+ * @return AOTITorchError
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_scatter_reduce_two_out(
+    Tensor* out,
+    Tensor* self,
+    int64_t dim,
+    Tensor* index,
+    Tensor* src,
+    const char* reduce,
+    int32_t include_self);
+
 #ifdef __cplusplus
 }
 #endif

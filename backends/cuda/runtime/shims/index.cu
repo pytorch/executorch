@@ -17,8 +17,11 @@
 #include <cinttypes>
 #include <climits>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <numeric>
+#include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include <c10/macros/Macros.h>
@@ -762,6 +765,49 @@ Error gather(
   return Error::Ok;
 }
 
+// Stably sorts count (key, value) pairs by the low end_bit bits of the key.
+Error sort_pairs(
+    const int64_t* keys,
+    int64_t* sorted_keys,
+    const int64_t* values,
+    int64_t* sorted_values,
+    int count,
+    int end_bit,
+    Scratch& scratch,
+    cudaStream_t stream,
+    const char* op) {
+  size_t temp_bytes = 0;
+  ET_CUDA_CHECK_OR_RETURN_ERROR(cub::DeviceRadixSort::SortPairs(
+      nullptr,
+      temp_bytes,
+      keys,
+      sorted_keys,
+      values,
+      sorted_values,
+      count,
+      0,
+      end_bit,
+      stream));
+  void* temp = scratch.allocate(temp_bytes);
+  ET_CHECK_OR_RETURN_ERROR(
+      temp != nullptr,
+      MemoryAllocationFailed,
+      "%s: allocating the sort scratch failed",
+      op);
+  ET_CUDA_CHECK_OR_RETURN_ERROR(cub::DeviceRadixSort::SortPairs(
+      temp,
+      temp_bytes,
+      keys,
+      sorted_keys,
+      values,
+      sorted_values,
+      count,
+      0,
+      end_bit,
+      stream));
+  return Error::Ok;
+}
+
 template <typename T, typename AccT, bool kAccumulate>
 Error put(
     const IndexPlan& plan,
@@ -801,35 +847,16 @@ Error put(
   index_offsets_kernel<<<grid_size(points), kThreads, 0, stream>>>(
       plan, points, out_offsets, values_offsets);
   ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
-  const auto count = static_cast<int>(points);
-  size_t temp_bytes = 0;
-  ET_CUDA_CHECK_OR_RETURN_ERROR(cub::DeviceRadixSort::SortPairs(
-      nullptr,
-      temp_bytes,
+  ET_CHECK_OK_OR_RETURN_ERROR(sort_pairs(
       out_offsets,
       sorted_out_offsets,
       values_offsets,
       sorted_values_offsets,
-      count,
-      0,
+      static_cast<int>(points),
       static_cast<int>(sizeof(int64_t) * 8),
-      stream));
-  void* temp = scratch.allocate(temp_bytes);
-  ET_CHECK_OR_RETURN_ERROR(
-      temp != nullptr,
-      MemoryAllocationFailed,
-      "index_put: allocating the sort scratch failed");
-  ET_CUDA_CHECK_OR_RETURN_ERROR(cub::DeviceRadixSort::SortPairs(
-      temp,
-      temp_bytes,
-      out_offsets,
-      sorted_out_offsets,
-      values_offsets,
-      sorted_values_offsets,
-      count,
-      0,
-      static_cast<int>(sizeof(int64_t) * 8),
-      stream));
+      scratch,
+      stream,
+      "index_put"));
   put_sorted_kernel<T, AccT, kAccumulate>
       <<<grid_size(numel), kThreads, 0, stream>>>(
           plan,
@@ -839,6 +866,203 @@ Error put(
           sorted_values_offsets,
           out,
           values);
+  ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
+  return Error::Ok;
+}
+
+enum class Reduction { Sum, Prod, Mean, Max, Min };
+
+// A scatter visits every element of index. Dim `dim` of out is addressed by
+// the index value, every other dim of out and src by the element's position.
+struct ScatterPlan {
+  int ndim;
+  int dim;
+  int64_t sizes[kMaxDims]; // of index
+  int64_t index_strides[kMaxDims];
+  int64_t out_strides[kMaxDims];
+  int64_t src_strides[kMaxDims];
+  int64_t dim_size; // of out
+  int64_t max_out_offset;
+};
+
+__global__ void scatter_offsets_kernel(
+    const ScatterPlan plan,
+    int64_t points,
+    const int64_t* __restrict__ index,
+    int64_t* __restrict__ out_offsets,
+    int64_t* __restrict__ src_offsets) {
+  for (int64_t point =
+           static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       point < points;
+       point += static_cast<int64_t>(gridDim.x) * blockDim.x) {
+    int64_t linear = point;
+    int64_t index_offset = 0;
+    int64_t out_offset = 0;
+    int64_t src_offset = 0;
+    for (int d = plan.ndim - 1; d >= 0; --d) {
+      const int64_t coordinate = linear % plan.sizes[d];
+      linear /= plan.sizes[d];
+      index_offset += coordinate * plan.index_strides[d];
+      src_offset += coordinate * plan.src_strides[d];
+      if (d != plan.dim) {
+        out_offset += coordinate * plan.out_strides[d];
+      }
+    }
+    const int64_t position = index[index_offset];
+    // As in ATen, a negative index is out of range, not counted from the end.
+    CUDA_KERNEL_ASSERT_MSG(
+        position >= 0 && position < plan.dim_size, "index out of bounds");
+    out_offsets[point] = out_offset + position * plan.out_strides[plan.dim];
+    src_offsets[point] = src_offset;
+  }
+}
+
+// As ATen's safe_max and safe_min, a NaN on either side wins.
+template <typename AccT>
+__device__ __forceinline__ AccT
+combine(Reduction reduction, AccT result, AccT value) {
+  bool value_is_nan = false;
+  if constexpr (std::is_floating_point_v<AccT>) {
+    value_is_nan = value != value;
+  }
+  switch (reduction) {
+    case Reduction::Prod:
+      return result * value;
+    case Reduction::Max:
+      return value_is_nan || result < value ? value : result;
+    case Reduction::Min:
+      return value_is_nan || value < result ? value : result;
+    default:
+      return result + value;
+  }
+}
+
+// After a stable sort of the points by the element they write, the points of
+// one element are a run in index order. Each run is reduced by one thread in
+// that order and written once, so the result does not depend on scheduling.
+// A sum adds in AccT, as ATen does in deterministic mode, so half and
+// bfloat16 keep small terms. A product rounds to T at every step and a mean
+// rounds its sum to T before dividing, as ATen does, so half overflows to
+// infinity and integers wrap where ATen's do.
+template <typename T, typename AccT>
+__global__ void scatter_reduce_sorted_kernel(
+    int64_t points,
+    const int64_t* __restrict__ out_offsets,
+    const int64_t* __restrict__ src_offsets,
+    T* __restrict__ out,
+    const T* __restrict__ src,
+    Reduction reduction,
+    bool include_self,
+    T identity) {
+  for (int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       i < points;
+       i += static_cast<int64_t>(gridDim.x) * blockDim.x) {
+    const int64_t offset = out_offsets[i];
+    if (i > 0 && out_offsets[i - 1] == offset) {
+      continue;
+    }
+    auto result = static_cast<AccT>(include_self ? out[offset] : identity);
+    int64_t count = include_self ? 1 : 0;
+    for (int64_t j = i; j < points && out_offsets[j] == offset; ++j, ++count) {
+      result =
+          combine(reduction, result, static_cast<AccT>(src[src_offsets[j]]));
+      if (reduction == Reduction::Prod) {
+        result = static_cast<AccT>(static_cast<T>(result));
+      }
+    }
+    if (reduction == Reduction::Mean) {
+      const auto sum = static_cast<AccT>(static_cast<T>(result));
+      if constexpr (std::is_floating_point_v<AccT>) {
+        result = sum / static_cast<AccT>(count);
+      } else {
+        // Integers round down, as ATen's division with rounding_mode="floor".
+        const AccT quotient = sum / count;
+        result = quotient - (quotient * count != sum && sum < 0);
+      }
+    }
+    out[offset] = static_cast<T>(result);
+  }
+}
+
+// What ATen writes to each element the index names before it reduces into
+// it, when include_self is false.
+template <typename T, typename AccT>
+T reduction_identity(Reduction reduction) {
+  switch (reduction) {
+    case Reduction::Prod:
+      return static_cast<T>(AccT(1));
+    case Reduction::Max:
+      if constexpr (std::is_floating_point_v<AccT>) {
+        return static_cast<T>(-std::numeric_limits<AccT>::infinity());
+      } else {
+        return std::numeric_limits<T>::lowest();
+      }
+    case Reduction::Min:
+      if constexpr (std::is_floating_point_v<AccT>) {
+        return static_cast<T>(std::numeric_limits<AccT>::infinity());
+      } else {
+        return std::numeric_limits<T>::max();
+      }
+    default:
+      return static_cast<T>(AccT(0));
+  }
+}
+
+template <typename T, typename AccT>
+Error scatter_reduce(
+    const ScatterPlan& plan,
+    int64_t points,
+    const int64_t* index,
+    void* out,
+    const void* src,
+    Reduction reduction,
+    bool include_self,
+    Scratch& scratch,
+    cudaStream_t stream) {
+  // The sort below takes the count as an int.
+  ET_CHECK_OR_RETURN_ERROR(
+      points <= INT_MAX,
+      NotSupported,
+      "scatter_reduce: more than %d index elements are not supported",
+      INT_MAX);
+  auto* offsets =
+      static_cast<int64_t*>(scratch.allocate(4 * points * sizeof(int64_t)));
+  ET_CHECK_OR_RETURN_ERROR(
+      offsets != nullptr,
+      MemoryAllocationFailed,
+      "scatter_reduce: allocating the offsets failed");
+  int64_t* out_offsets = offsets;
+  int64_t* src_offsets = offsets + points;
+  int64_t* sorted_out_offsets = offsets + 2 * points;
+  int64_t* sorted_src_offsets = offsets + 3 * points;
+  scatter_offsets_kernel<<<grid_size(points), kThreads, 0, stream>>>(
+      plan, points, index, out_offsets, src_offsets);
+  ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
+  // Sorting only the bits an offset into out can use is several times faster.
+  int end_bit = 1;
+  while (end_bit < 63 && (plan.max_out_offset >> end_bit) != 0) {
+    ++end_bit;
+  }
+  ET_CHECK_OK_OR_RETURN_ERROR(sort_pairs(
+      out_offsets,
+      sorted_out_offsets,
+      src_offsets,
+      sorted_src_offsets,
+      static_cast<int>(points),
+      end_bit,
+      scratch,
+      stream,
+      "scatter_reduce"));
+  scatter_reduce_sorted_kernel<T, AccT>
+      <<<grid_size(points), kThreads, 0, stream>>>(
+          points,
+          sorted_out_offsets,
+          sorted_src_offsets,
+          static_cast<T*>(out),
+          static_cast<const T*>(src),
+          reduction,
+          include_self,
+          reduction_identity<T, AccT>(reduction));
   ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
   return Error::Ok;
 }
@@ -1052,6 +1276,161 @@ AOTITorchError aoti_torch_index_put_out(
       ET_LOG(
           Error,
           "aoti_torch_index_put_out: unsupported dtype %d",
+          static_cast<int>(out->dtype()));
+      return Error::NotSupported;
+  }
+}
+
+AOTITorchError aoti_torch_cuda_scatter_reduce_two_out(
+    Tensor* out,
+    Tensor* self,
+    int64_t dim,
+    Tensor* index,
+    Tensor* src,
+    const char* reduce,
+    int32_t include_self) {
+  ET_CHECK_OR_RETURN_ERROR(
+      out != nullptr && index != nullptr && src != nullptr && reduce != nullptr,
+      InvalidArgument,
+      "aoti_torch_cuda_scatter_reduce_two_out: null argument");
+  ET_CHECK_OR_RETURN_ERROR(
+      out == self,
+      NotSupported,
+      "aoti_torch_cuda_scatter_reduce_two_out: out must be self, as AOTInductor calls it");
+  ET_CHECK_OR_RETURN_ERROR(
+      out->is_cuda() && index->is_cuda() && src->is_cuda(),
+      NotSupported,
+      "aoti_torch_cuda_scatter_reduce_two_out: tensors must be on the CUDA device");
+  ET_CHECK_OR_RETURN_ERROR(
+      src->dtype() == out->dtype(),
+      InvalidArgument,
+      "aoti_torch_cuda_scatter_reduce_two_out: src and self must have the same dtype");
+  const std::string_view name(reduce);
+  Reduction reduction;
+  if (name == "sum") {
+    reduction = Reduction::Sum;
+  } else if (name == "prod") {
+    reduction = Reduction::Prod;
+  } else if (name == "mean") {
+    reduction = Reduction::Mean;
+  } else if (name == "amax") {
+    reduction = Reduction::Max;
+  } else if (name == "amin") {
+    reduction = Reduction::Min;
+  } else {
+    ET_LOG(
+        Error,
+        "aoti_torch_cuda_scatter_reduce_two_out: unknown reduction %s",
+        reduce);
+    return Error::InvalidArgument;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      out->dtype() != ScalarType::Bool || reduction == Reduction::Sum,
+      NotSupported,
+      "aoti_torch_cuda_scatter_reduce_two_out: bool supports only sum, as in ATen");
+
+  // As in ATen, a 0-dim tensor counts as one of size 1.
+  const auto ndim = std::max<int64_t>(out->dim(), 1);
+  ET_CHECK_OR_RETURN_ERROR(
+      ndim <= kMaxDims,
+      NotSupported,
+      "aoti_torch_cuda_scatter_reduce_two_out: tensors with more than %d dims are not supported",
+      kMaxDims);
+  if (dim < 0) {
+    dim += ndim;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      dim >= 0 && dim < ndim,
+      InvalidArgument,
+      "aoti_torch_cuda_scatter_reduce_two_out: dim out of range");
+  // ATen checks the index only when it has elements.
+  if (index->numel() == 0) {
+    return Error::Ok;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      index->dtype() == ScalarType::Long,
+      InvalidArgument,
+      "aoti_torch_cuda_scatter_reduce_two_out: index must be int64");
+  ET_CHECK_OR_RETURN_ERROR(
+      std::max<int64_t>(index->dim(), 1) == ndim &&
+          std::max<int64_t>(src->dim(), 1) == ndim,
+      InvalidArgument,
+      "aoti_torch_cuda_scatter_reduce_two_out: index and src must have as many dims as self");
+  auto size = [](const Tensor* tensor, int64_t d) -> int64_t {
+    return tensor->dim() == 0 ? 1 : tensor->size(d);
+  };
+  auto stride = [](const Tensor* tensor, int64_t d) -> int64_t {
+    return tensor->dim() == 0 ? 0 : tensor->stride(d);
+  };
+  ScatterPlan plan{};
+  plan.ndim = static_cast<int>(ndim);
+  plan.dim = static_cast<int>(dim);
+  plan.dim_size = size(out, dim);
+  int64_t points = 1;
+  for (int64_t d = 0; d < ndim; ++d) {
+    plan.max_out_offset +=
+        std::max<int64_t>(size(out, d) - 1, 0) * stride(out, d);
+    const int64_t index_size = size(index, d);
+    ET_CHECK_OR_RETURN_ERROR(
+        index_size <= size(src, d) && (d == dim || index_size <= size(out, d)),
+        InvalidArgument,
+        "aoti_torch_cuda_scatter_reduce_two_out: index is larger than src, or than self, at dim %" PRId64,
+        d);
+    plan.sizes[d] = index_size;
+    plan.index_strides[d] = stride(index, d);
+    plan.out_strides[d] = stride(out, d);
+    plan.src_strides[d] = stride(src, d);
+    points *= index_size;
+  }
+
+  const auto device = static_cast<int32_t>(out->device_index());
+  auto stream_result = getCurrentCUDAStream(out->device_index());
+  ET_CHECK_OR_RETURN_ERROR(
+      stream_result.ok(),
+      Internal,
+      "aoti_torch_cuda_scatter_reduce_two_out: failed to get CUDA stream");
+  cudaStream_t stream = stream_result.get();
+  Scratch scratch(device, stream);
+  auto run = [&](auto value, auto accumulator) {
+    using T = decltype(value);
+    using AccT = decltype(accumulator);
+    return scatter_reduce<T, AccT>(
+        plan,
+        points,
+        static_cast<const int64_t*>(index->data_ptr()),
+        out->data_ptr(),
+        src->data_ptr(),
+        reduction,
+        include_self != 0,
+        scratch,
+        stream);
+  };
+  // Half and bfloat16 compute in float, and integers in int64.
+  switch (out->dtype()) {
+    case ScalarType::Float:
+      return run(float{}, float{});
+    case ScalarType::Double:
+      return run(double{}, double{});
+    case ScalarType::Half:
+      return run(__half{}, float{});
+    case ScalarType::BFloat16:
+      return run(__nv_bfloat16{}, float{});
+    case ScalarType::Long:
+      return run(int64_t{}, int64_t{});
+    case ScalarType::Int:
+      return run(int32_t{}, int64_t{});
+    case ScalarType::Short:
+      return run(int16_t{}, int64_t{});
+    case ScalarType::Char:
+      return run(int8_t{}, int64_t{});
+    case ScalarType::Byte:
+      return run(uint8_t{}, int64_t{});
+    case ScalarType::Bool:
+      return run(bool{}, bool{});
+    default:
+      ET_LOG(
+          Error,
+          "aoti_torch_cuda_scatter_reduce_two_out: unsupported dtype %d",
           static_cast<int>(out->dtype()));
       return Error::NotSupported;
   }
