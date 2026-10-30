@@ -28,8 +28,9 @@ outputs, and ``ExecuTorchResult.to_host()``, still wait for the whole GPU, so
 GPU data written on other streams stays safe.
 
 Limits for now: a stream known to be on a CUDA device other than 0 is
-refused, so is the default stream (handle 0), and the CUDA delegate refuses a
-method that uses CUDA graphs inside a block. This module does not need
+refused, so is the legacy default stream (handle 0, or 1 for
+``cudaStreamLegacy``), and the CUDA delegate refuses a method that uses CUDA
+graphs inside a block. This module does not need
 PyTorch; ``torch.cuda.Stream`` works because it has ``__cuda_stream__``.
 
 As in PyTorch, the selection belongs to the thread, not to an asyncio task, so
@@ -138,11 +139,12 @@ def _target(s: Any) -> Any:
     index = _device_index(s)
     if index is not None and index > 0:
         raise RuntimeError("Only a stream on CUDA device 0 can be selected for now")
-    if not handle:
-        # The legacy default stream waits for work on every other stream, so
-        # selecting it would defeat the point of choosing a stream.
+    # 0 and cudaStreamLegacy (1) both name the legacy default stream, which
+    # waits for every blocking stream, so selecting it would defeat the point
+    # of choosing a stream. The CUDA delegate also refuses a null stream.
+    if handle in (0, 1):
         raise ValueError(
-            "The default CUDA stream (handle 0) cannot be selected; "
+            "The legacy default CUDA stream (handle 0 or 1) cannot be selected; "
             "select a stream created for this, such as cuda.Stream()"
         )
     return handle

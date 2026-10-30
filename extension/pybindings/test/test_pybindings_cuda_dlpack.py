@@ -269,9 +269,10 @@ class CudaDLPackTest(unittest.TestCase):
         foreign = torch.cuda.Stream(device=self.device)
         with cuda.stream(foreign):
             method.execute([value])
-        # The default stream waits for every other stream, so it is refused.
+        # The legacy default stream, as 0 or cudaStreamLegacy, is refused.
         for default in (
             cuda.ExternalStream(0),
+            cuda.ExternalStream(1),
             torch.cuda.default_stream(self.device),
         ):
             with self.assertRaises(ValueError):
