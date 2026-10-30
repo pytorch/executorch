@@ -15,7 +15,7 @@ nm --defined-only aoti_cuda_shims.lib \
 # add the new names to exports.txt, then
 { echo 'LIBRARY aoti_cuda_shims.dll'; echo 'EXPORTS'; sed 's/^/    /' exports.txt; } \
   > aoti_cuda_shims.def
-x86_64-w64-mingw32-dlltool -d aoti_cuda_shims.def -l aoti_cuda_shims.lib \
+x86_64-w64-mingw32-dlltool -m i386:x86-64 -d aoti_cuda_shims.def -l aoti_cuda_shims.lib \
   --dllname aoti_cuda_shims.dll
 # zero the archive metadata so the file is reproducible
 mkdir extract && cd extract && x86_64-w64-mingw32-ar x ../aoti_cuda_shims.lib \
@@ -26,6 +26,9 @@ mkdir extract && cd extract && x86_64-w64-mingw32-ar x ../aoti_cuda_shims.lib \
 The archive has to be built at a fresh path. Updating it in place keeps the reverse
 member order the generator produced, so the same export list would not give the same
 bytes twice.
+
+Use the relative output name shown above in each build directory. The generator embeds
+the output name in its object names, so absolute temporary paths change the bytes.
 
 Then check the result is a superset of what it replaced and that no member carries a
 timestamp, since this file ships in the wheel and a stamped one makes two builds of
