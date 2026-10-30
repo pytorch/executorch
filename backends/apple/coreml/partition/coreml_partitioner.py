@@ -191,10 +191,11 @@ _MIN_MAX_TARGETS = (
 
 
 def _is_min_max_of_bool(node: torch.fx.Node) -> bool:
-    """coremltools 9.0 computes min and max only over fp16, fp32 and int32.
+    """coremltools 9.0 cannot compute a min or max over a bool tensor.
 
-    It raises ``ValueError`` for a bool input, such as the all-true check that
+    It raises ``ValueError`` for one, such as the all-true check that
     torch.distributions exports, instead of reporting the op as unsupported.
+    Integer tensors work.
     """
     if node.target not in _MIN_MAX_TARGETS:
         return False
