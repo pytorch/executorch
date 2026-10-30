@@ -66,7 +66,7 @@ You need to identify:
 | `QnnConfig` setup or args parsing | Reused as-is |
 | `pte_filename` / `args.artifact` | Reused; debug artifacts (`etdump.etdp`, `debug_output.bin`) land under the same artifact dir |
 | `QuantDtype` (or fp16) | Reused as-is — keep the user's quant choice |
-| `SimpleADB` workspace path / device flags | Reused as-is |
+| `Device` workspace path / device flags | Reused as-is |
 
 If anything is missing or ambiguous in their script (e.g. the model is loaded from a checkpoint and you can't tell what the eager `nn.Module` is), stop and ask.
 
@@ -93,7 +93,7 @@ Mirror the structure of the demo (`qnn_intermediate_debugger_demo.py`). The requ
 
 3. **Pass it into `build_executorch_binary`** via `qnn_intermediate_debugger=qnn_intermediate_debugger`. Keep all of the user's other args.
 
-4. **Reduce inference to a single sample** — debug session only supports one execution. Slice the dataset down to `inputs = [inputs[0]]` (and `targets[:1]` if the user uses targets) before `adb.push`.
+4. **Reduce inference to a single sample** — debug session only supports one execution. Slice the dataset down to `inputs = [inputs[0]]` (and `targets[:1]` if the user uses targets) before `device.push`.
 
 5. **Define a `validate_intermediate_tensor` callback** that:
    - Calls `qnn_intermediate_debugger.setup_inspector(etdump_path=..., debug_buffer_path=...)`.
@@ -101,9 +101,9 @@ Mirror the structure of the demo (`qnn_intermediate_debugger_demo.py`). The requ
    - Creates one or more comparators via `qnn_intermediate_debugger.create_comparator(<ComparatorClass>, threshold=...)`. Default to all three: `QcomCosineSimilarityComparator(threshold=0.9)`, `QcomMSEComparator(threshold=0.1)`, and `QcomSQNRComparator(threshold=10.0)` (SQNR is in dB, larger is better) unless the user specifies otherwise.
    - Calls `qnn_intermediate_debugger.generate_results(title=..., path=args.artifact, output_format=OutputFormat.SVG_GRAPH | CSV_FILE, comparator=...)` for each comparator/format combination wanted.
 
-6. **Wire the callback into `adb.pull_debug_output`**:
+6. **Wire the callback into `device.pull_debug_output`**:
    ```python
-   adb.pull_debug_output(args.artifact, args.artifact, callback=validate_intermediate_tensor)
+   device.pull_debug_output(args.artifact, args.artifact, callback=validate_intermediate_tensor)
    ```
 
 7. **Preserve the user's downstream eval logic** (top-k accuracy, IPC client back to a remote, etc.) but it's now running on a single sample — note that in a comment so the user isn't surprised by degenerate metrics.
@@ -228,7 +228,7 @@ The exact field names in `_to_tensor_list` are placeholders — replace with wha
 
 Pulled directly from the README — call these out before they spend time debugging the wrong thing:
 
-1. **One execution per debug session.** Multiple `adb.execute()` calls in a single session produce undefined results. Always reduce dataset to a single sample.
+1. **One execution per debug session.** Multiple `device.execute()` calls in a single session produce undefined results. Always reduce dataset to a single sample.
 2. **No partial delegation.** If their model has CPU fallbacks, the comparator graph may be incomplete or wrong. Verify full delegation first (see `model_enablement.md` step 3).
 3. **No LLM models.**
 4. **No multi-method graphs.**
@@ -243,6 +243,6 @@ If any of 2–4 apply, tell the user this skill's output won't help them and sto
 
 - **Forgetting to slice the dataset to one sample** — script will run multiple times, debug output is undefined.
 - **Using `inputs[0]` as `sample_input` when `inputs` is a list of tuples** — `QNNIntermediateDebugger(sample_input=...)` expects the same shape that the model's `forward` accepts. Match what the user's existing script passes to `model(*inputs)`.
-- **Reusing the user's `dataset=inputs` after slicing** — `build_executorch_binary` wants the *original* (calibration) dataset for quantization; only the post-build inference path is sliced. Slice after `build_executorch_binary`, before `adb.push`.
+- **Reusing the user's `dataset=inputs` after slicing** — `build_executorch_binary` wants the *original* (calibration) dataset for quantization; only the post-build inference path is sliced. Slice after `build_executorch_binary`, before `device.push`.
 - **Overriding `preprocessing` on a custom comparator** — base class raises `TypeError` in `__init_subclass__`. Don't try.
 - **Skipping the nn.Module-vs-edge cosine check** — per-layer comparisons compare QNN against the edge CPU graph, not against eager. If the edge graph already differs from eager (quant calibration, pass transform), every "failure" downstream may be a red herring. Always include this check.

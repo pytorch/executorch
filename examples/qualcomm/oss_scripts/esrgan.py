@@ -14,9 +14,9 @@ import piq
 import torch
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
@@ -69,13 +69,13 @@ def main(args):
         quant_dtype=quant_dtype,
     )
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
     )
-    adb.push(inputs=inputs)
-    adb.execute()
+    device.push(inputs=inputs)
+    device.execute()
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
@@ -100,7 +100,7 @@ def main(args):
             )
             cnt += 1
 
-    adb.pull(host_output_path=args.artifact, callback=post_process)
+    device.pull(host_output_path=args.artifact, callback=post_process)
 
     psnr_list = []
     ssim_list = []

@@ -108,7 +108,7 @@ build_executorch_binary(
 
 ## 2.1 Generate HTP Profile Result (OpTrace) `generate_htp_profile_result()`
 
-Use `generate_htp_profile_result()` when you want real on-device hardware-counter profiling. This path requires sample inputs and `adb`.
+Use `generate_htp_profile_result()` when you want real on-device hardware-counter profiling. This path requires sample inputs and a `Device`.
 ```python
 from executorch.backends.qualcomm.debugger.utils import generate_htp_profile_result
 
@@ -117,13 +117,13 @@ artifacts = generate_htp_profile_result(
     soc_id=get_soc_to_chipset_map()[args.soc_model],
     pte_path=f"{args.artifact}/{pte_filename}.pte",
     inputs=example_inputs,
-    adb=adb,
+    device=device,
 )
 ```
 
 ## 2.2 Estimation of HTP profiling on Host (Hextimate) `estimate_htp_profile_result()`
 
-Use `estimate_htp_profile_result()` when you want host-only compile-time performance estimation. This path does not use sample inputs or `adb`.
+Use `estimate_htp_profile_result()` when you want host-only compile-time performance estimation. This path does not use sample inputs or a device connection.
 
 > [!WARNING]
 > `estimate_htp_profile_result()` hard-errors on SDKs below 2.41 and on unsupported SoCs.
@@ -276,15 +276,15 @@ Ensure `dump_intermediate_outputs` is enabled in your `QnnConfig` (or pass `--du
 **Note:** Intermediate tensor dumping is not currently supported in direct mode on HTP/LPAI backends.
 
 ```python
-from executorch.examples.qualcomm.utils import SimpleADB
+from executorch.backends.qualcomm.export_utils import Device
 
-adb = SimpleADB(
+device = Device(
     qnn_config=qnn_config,
     pte_path=f"{args.artifact}/{pte_filename}.pte",
     workspace=f"/data/local/tmp/executorch/{pte_filename}",
 )
-adb.push(inputs=inputs)
-adb.execute()
+device.push(inputs=inputs)
+device.execute()
 ```
 
 ### 3. Pull results and compare
@@ -324,7 +324,7 @@ def validate_intermediate_tensor():
         comparator=cos_comparator,
     )
 
-adb.pull_debug_output(
+device.pull_debug_output(
     args.artifact, args.artifact, callback=validate_intermediate_tensor
 )
 ```

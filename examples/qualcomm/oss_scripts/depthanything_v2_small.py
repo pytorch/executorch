@@ -20,11 +20,11 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    Device,
     get_imagenet_dataset,
     make_output_dir,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from PIL import Image
 from torchao.quantization.utils import compute_error
@@ -118,19 +118,19 @@ def main(args):
         else f"{args.artifact}/{pte_filename}.pte"
     )
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=pte_path,
         workspace=workspace,
     )
-    adb.push(inputs=inputs)
-    adb.execute()
+    device.push(inputs=inputs)
+    device.execute()
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(host_output_path=args.artifact)
+    device.pull(host_output_path=args.artifact)
 
     evaluations = {
         "sqnr": [],
