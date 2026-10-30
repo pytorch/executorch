@@ -97,12 +97,19 @@ constexpr int64_t kIm2colMinCOut = 128;
 // elements, a 640x640 9x9 conv wants ~100M.
 constexpr int64_t kIm2colMaxCheapGatherElements = 32 * 1024 * 1024;
 
+// Larger output planes favor the tiled direct shaders over im2col + GEMM. From
+// timing 29 Half 3x3 / 5x5 shapes on Adreno, Mali, Xclipse and PowerVR phones:
+// above this size, tiled was faster on all but two noisy PowerVR shapes; below
+// about 1200 output pixels, im2col was up to 1.55x faster.
+constexpr int64_t kTiledMinOutPixels = 1536;
+
 bool should_use_conv2d_im2col(
     ComputeGraph& graph,
     const ValueRef weight_data,
     const int64_t groups_val,
     const Kernel2dParams& kernel_params,
-    const ValueRef out) {
+    const ValueRef out,
+    const bool using_fast_tiled_direct_conv2d) {
   if (groups_val != 1) {
     return false;
   }
@@ -117,6 +124,9 @@ bool should_use_conv2d_im2col(
   const auto out_sizes = graph.sizes_of(out);
   const size_t ndim = out_sizes.size();
   const int64_t n = out_sizes.at(ndim - 1) * out_sizes.at(ndim - 2);
+  if (using_fast_tiled_direct_conv2d && n >= kTiledMinOutPixels) {
+    return false;
+  }
   return c_out >= kIm2colMinCOut ||
       (graph.device_is_mali() && n * k_total <= kIm2colMaxCheapGatherElements);
 }
@@ -192,13 +202,15 @@ void conv2d_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       padding,
       dilation);
 
+  const bool fast_tiled = can_use_fast_tiled_conv2d(
+      graph, in, out, kernel_params, transposed_val, groups_val);
   // SlidingWindow conv2d: route to the im2col + GEMM path when the heuristic
   // indicates it is beneficial, falling back to the direct convolution shader
   // otherwise.
   const bool use_im2col =
       method == Conv2dMethod::SlidingWindow &&
       should_use_conv2d_im2col(
-          graph, weight_data, groups_val, kernel_params, out);
+          graph, weight_data, groups_val, kernel_params, out, fast_tiled);
   if (use_im2col) {
     return conv2d_gemm_impl(
         graph,

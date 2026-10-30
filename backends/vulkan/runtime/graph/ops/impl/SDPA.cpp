@@ -922,10 +922,18 @@ void sdpa_with_kv_cache_impl(
   (void)sequence_len;
 
   utils::StorageType cache_storage = graph.storage_type_of(q_projected);
-  const ValueRef k_cache =
-      graph.add_tensor_like(k_cache_data, cache_storage, utils::kWidthPacked);
-  const ValueRef v_cache =
-      graph.add_tensor_like(v_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef k_cache = prepack_standard(
+      graph,
+      k_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
+  const ValueRef v_cache = prepack_standard(
+      graph,
+      v_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
 
   update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
@@ -971,10 +979,18 @@ void compute_attn_weight_with_kv_cache_impl(
   (void)sequence_len;
 
   const utils::StorageType cache_storage = graph.storage_type_of(q_projected);
-  const ValueRef k_cache =
-      graph.add_tensor_like(k_cache_data, cache_storage, utils::kWidthPacked);
-  const ValueRef v_cache =
-      graph.add_tensor_like(v_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef k_cache = prepack_standard(
+      graph,
+      k_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
+  const ValueRef v_cache = prepack_standard(
+      graph,
+      v_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
 
   update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});

@@ -304,6 +304,125 @@ def conv_input_ranks(graph_module: torch.fx.GraphModule) -> List[int]:
 
 
 class TestVulkanPasses(unittest.TestCase):
+    def test_embedding_q4gsw_reference_supports_per_row_scales(self):
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
+        vocab_size = 3
+        embed_dim = 32
+        unpacked = (
+            torch.arange(vocab_size * embed_dim, dtype=torch.int8)
+            .reshape(vocab_size, embed_dim)
+            .remainder(16)
+            .sub(8)
+        )
+        packed = ((unpacked[:, 1::2] + 8) << 4) | (unpacked[:, 0::2] + 8)
+        packed = packed.to(torch.uint8)
+        scales = torch.tensor([0.25, 0.5, 0.75], dtype=torch.float32)
+        indices = torch.tensor([[2, 0], [1, 2]], dtype=torch.long)
+
+        output = torch.ops.et_vk.embedding_q4gsw.default(
+            packed, scales, embed_dim, indices, True
+        )
+        expected_weight = unpacked.float() * scales.unsqueeze(1)
+        expected = torch.nn.functional.embedding(indices, expected_weight)
+
+        self.assertEqual(tuple(output.shape), (2, 2, embed_dim))
+        self.assertTrue(torch.equal(output, expected))
+
+    def test_embedding_q4gsw_reference_supports_groupwise_scales(self):
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
+        vocab_size = 3
+        embed_dim = 32
+        group_size = 8
+        unpacked = (
+            torch.arange(vocab_size * embed_dim, dtype=torch.int8)
+            .reshape(vocab_size, embed_dim)
+            .remainder(16)
+            .sub(8)
+        )
+        packed = ((unpacked[:, 1::2] + 8) << 4) | (unpacked[:, 0::2] + 8)
+        packed = packed.to(torch.uint8)
+        scales = torch.arange(1, 13, dtype=torch.float32).reshape(vocab_size, 4)
+        indices = torch.tensor([2, 0, 1], dtype=torch.long)
+
+        output = torch.ops.et_vk.embedding_q4gsw.default(
+            packed, scales, group_size, indices, True
+        )
+        expected_weight = (
+            unpacked.reshape(vocab_size, 4, group_size).float() * scales.unsqueeze(-1)
+        ).reshape(vocab_size, embed_dim)
+        expected = torch.nn.functional.embedding(indices, expected_weight)
+
+        self.assertEqual(tuple(output.shape), (3, embed_dim))
+        self.assertTrue(torch.equal(output, expected))
+
+    def test_embedding_q4gsw_reference_rejects_invalid_scale_shape(self):
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
+        packed = torch.zeros((3, 16), dtype=torch.uint8)
+        indices = torch.tensor([0], dtype=torch.long)
+
+        with self.assertRaisesRegex(ValueError, "weight_scales"):
+            torch.ops.et_vk.embedding_q4gsw.default(
+                packed,
+                torch.ones(4, dtype=torch.float32),
+                8,
+                indices,
+                True,
+            )
+
+    def test_fuse_quantized_embedding_with_per_row_scales(self):
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
+        vocab_size = 64
+        embed_dim = 128
+
+        class PerRowQuantizedEmbedding(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "weight",
+                    torch.zeros((vocab_size, embed_dim // 2), dtype=torch.uint8),
+                )
+                self.register_buffer(
+                    "scales", torch.ones(vocab_size, dtype=torch.float32)
+                )
+
+            def forward(self, indices):
+                return torch.ops.quantized_decomposed.embedding_4bit.dtype(
+                    self.weight,
+                    self.scales,
+                    None,
+                    -8,
+                    7,
+                    indices,
+                    dtype=torch.float32,
+                )
+
+        model = PerRowQuantizedEmbedding()
+        sample_inputs = (torch.tensor([[0, 1, 2]], dtype=torch.long),)
+        program = torch.export.export(model, sample_inputs, strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+        self.assertEqual(op_node_count(ep.graph_module, "embedding_q4gsw.default"), 1)
+        fused_node = next(
+            node
+            for node in ep.graph.nodes
+            if get_target_canonical_name(node) == "embedding_q4gsw.default"
+        )
+        self.assertEqual(fused_node.args[2], embed_dim)
+        self.assertEqual(tuple(fused_node.args[1].meta["val"].shape), (vocab_size,))
+
     def test_conv1d_as_conv2d_rewrites_eligible_conv(self):
         # Output equality cannot show this: an unrewritten conv1d computes the
         # same numbers. What distinguishes the two is the rank the convolution
@@ -536,6 +655,62 @@ class TestVulkanPasses(unittest.TestCase):
             True,
         )
         self.assertTrue(torch.allclose(fused_out, eager_ref, atol=1e-3, rtol=1e-3))
+
+    def test_fuse_8da4w_linear_keeps_following_reshape(self):
+        """A reshape after a dynamically quantized linear that is not the view
+        restoring a decomposed N-D linear's leading dims must stay in the graph:
+        the fused et_vk.linear_dq8ca_q4gsw replaces the pattern's output node and
+        produces input.shape[:-1] + [N], not the reshaped shape.
+        """
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: registers et_vk ops
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import (
+            Int8DynamicActivationIntxWeightConfig,
+            quantize_,
+        )
+        from torchao.utils import unwrap_tensor_subclass
+
+        class LinearReshapeAdd(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(64, 32, bias=False)
+                self.register_buffer("pos", torch.randn(3, 32))
+
+            def forward(self, x):
+                # [6, 64] -> [6, 32] -> [2, 3, 32], then broadcast over dim 0
+                return self.linear(x).view(2, 3, 32) + self.pos
+
+        model = LinearReshapeAdd().eval()
+        quantize_(
+            model,
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=torch.int4, weight_granularity=PerGroup(32)
+            ),
+        )
+        unwrap_tensor_subclass(model)
+
+        sample_inputs = (torch.randn(6, 64),)
+        eager_ref = model(*sample_inputs)
+
+        program = torch.export.export(model, sample_inputs, strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+        gm = ep.graph_module
+        self.assertEqual(op_node_count(gm, "linear_dq8ca_q4gsw.default"), 1)
+        # The reshape to [2, 3, 32] is still there, after the fused linear.
+        self.assertEqual(op_node_count(gm, "view_copy.default"), 1)
+
+        fused_out = ep.module()(*sample_inputs)
+        self.assertEqual(tuple(fused_out.shape), (2, 3, 32))
+        self.assertTrue(torch.allclose(fused_out, eager_ref, atol=1e-2, rtol=1e-2))
 
     def test_torchao_quantized_embedding_rejects_bad_embed_dim(self):
         """A torchao 4-bit quantized embedding whose embed_dim is not a multiple
@@ -1538,6 +1713,7 @@ class TestLLMSDPAPartitionerCheck(unittest.TestCase):
 
         q = placeholder("q", (1, self.S, self.H, self.D), q_dtype)
         k = placeholder("k", (1, self.S, self.H, self.D), q_dtype)
+        v = placeholder("v", (1, self.S, self.H, self.D), q_dtype)
         k_cache = placeholder("k_cache", (1, self.C, self.H, self.D), q_dtype)
         v_cache = placeholder("v_cache", (1, self.C, self.H, self.D), q_dtype)
         mask = None
@@ -1547,6 +1723,7 @@ class TestLLMSDPAPartitionerCheck(unittest.TestCase):
         update_cache = graph.call_function(
             _NamedOpStub("llama::update_cache"), (k, k_cache, 0)
         )
+        graph.call_function(_NamedOpStub("llama::update_cache"), (v, v_cache, 0))
         args = (q, k_cache, v_cache, 0, mask, 0.0, is_causal)
         if trim_defaults:
             # torch.export drops trailing arguments that equal their defaults

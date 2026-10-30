@@ -249,10 +249,10 @@ def _is_quantized_constant(node: torch.fx.Node) -> bool:
 def _floating_profile_negative_checks(
     tosa_spec: TosaSpecification, reporter: WhyNoPartitionReporter
 ) -> list[OperatorSupportBase]:
-    checks: list[OperatorSupportBase] = [CheckMixedFloatingInputs(reporter)]
-    if not tosa_spec.support_integer():
-        checks.append(CheckFPComparisonInputs(reporter))
-    return checks
+    return [
+        CheckMixedFloatingInputs(reporter),
+        CheckFPComparisonInputs(reporter, tosa_spec.support_integer()),
+    ]
 
 
 def is_quantized(node: torch.fx.Node) -> bool:
@@ -1581,7 +1581,7 @@ class CheckMixedFloatingInputs(OperatorSupportBase):
 
 
 class CheckFPComparisonInputs(OperatorSupportBase):
-    """Reject unsupported comparison inputs under the FP profile."""
+    """Reject comparison inputs without a supported TOSA promotion."""
 
     comparison_ops = {
         exir_ops.edge.aten.eq.Tensor,
@@ -1602,10 +1602,14 @@ class CheckFPComparisonInputs(OperatorSupportBase):
         exir_ops.edge.aten.isnan.default,
     }
     supported_dtypes = {torch.float16, torch.float32, torch.bfloat16}
-    castable_comparison_dtypes = {torch.int8, torch.int16}
+    castable_comparison_dtypes = {torch.int8, torch.int16, torch.int32}
+    integer_dtypes = {torch.bool, torch.int8, torch.int16, torch.int32}
 
-    def __init__(self, reporter: WhyNoPartitionReporter) -> None:
+    def __init__(
+        self, reporter: WhyNoPartitionReporter, int_supported: bool = False
+    ) -> None:
         self.reporter = reporter
+        self.int_supported = int_supported
         super().__init__()
 
     def is_node_supported(
@@ -1628,8 +1632,24 @@ class CheckFPComparisonInputs(OperatorSupportBase):
         } and all(dtype == torch.bool for dtype in input_dtypes):
             return True
 
-        if node.target in self.comparison_ops and all(
-            dtype in self.castable_comparison_dtypes for dtype in input_dtypes
+        if (
+            self.int_supported
+            and node.target in self.comparison_ops
+            and all(dtype in self.integer_dtypes for dtype in input_dtypes)
+        ):
+            return True
+
+        if (
+            node.target in self.comparison_ops
+            and all(
+                dtype in self.supported_dtypes | self.castable_comparison_dtypes
+                for dtype in input_dtypes
+            )
+            and (
+                self.int_supported
+                or torch.int32 not in input_dtypes
+                or any(dtype in self.supported_dtypes for dtype in input_dtypes)
+            )
         ):
             return True
 
@@ -1638,7 +1658,7 @@ class CheckFPComparisonInputs(OperatorSupportBase):
         )
         self.reporter.report_reject(
             node,
-            f"FP profile does not support {unsupported_dtype} comparison inputs.",
+            f"Comparison input {unsupported_dtype} has no supported promotion for this profile.",
         )
         return False
 

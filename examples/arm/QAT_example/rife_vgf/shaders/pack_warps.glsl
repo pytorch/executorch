@@ -24,6 +24,7 @@ layout(set=0, binding=7) writeonly buffer Output { uint output0[]; };
 layout(local_size_x=8, local_size_y=8, local_size_z=1) in;
 
 const float FLOW_SCALE = @FLOW_SCALE@;
+const vec2 FLOW_NORMALIZATION = vec2(@FLOW_NORMALIZATION_X@, @FLOW_NORMALIZATION_Y@);
 const int FLOW_ZERO_POINT = @FLOW_ZERO_POINT@;
 const float INPUT_SCALE = @INPUT_SCALE@;
 const int INPUT_ZERO_POINT = @INPUT_ZERO_POINT@;
@@ -61,7 +62,7 @@ void resizeTail(ivec2 p, out int8_t result[13]) {
 
 vec2 uv(ivec2 p, vec2 size, vec2 offset) {
   vec2 baseGrid = (vec2(p) * vec2(2.0) / (size - vec2(1.0))) - vec2(1.0);
-  vec2 texel = (baseGrid + offset + vec2(1.0)) * vec2(0.5) * (size - vec2(1.0));
+  vec2 texel = (baseGrid + offset * FLOW_NORMALIZATION + vec2(1.0)) * vec2(0.5) * (size - vec2(1.0));
   return (texel + vec2(0.5)) / size;
 }
 

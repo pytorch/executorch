@@ -33,7 +33,7 @@ class _Inputs(torch.nn.Module):
         return inputs[0]
 
 
-def _program(height=4, width=6):
+def _program(height=4, width=6, normalization=(1.0, 1.0)):
     program = torch.export.export(
         _Inputs(),
         (
@@ -147,6 +147,7 @@ def _program(height=4, width=6):
                 output_scale=0.01 + offset * 0.001,
                 output_zero_point=-14,
                 flow_channel_offset=offset,
+                flow_normalization=normalization,
             )
         custom = graph.call_function(
             TOSA.CUSTOM.default,
@@ -238,7 +239,14 @@ def test_fuses_tail_and_preserves_blend_inputs(adapted, shape):
 
 @pytest.mark.parametrize(
     "unsupported",
-    ["shared_flow", "shared_phase", "wrong_channels", "unsigned", "weight_zp"],
+    [
+        "shared_flow",
+        "shared_phase",
+        "wrong_channels",
+        "unsigned",
+        "weight_zp",
+        "normalization",
+    ],
 )
 def test_leaves_unsupported_graph_unchanged(unsupported):
     program, packed, phase, previous, delta, flow, table, blend = _program()
@@ -251,6 +259,19 @@ def test_leaves_unsupported_graph_unchanged(unsupported):
         previous.args[0].args[0].args = (packed, [0, 0, 0, 20], [1, 4, 6, 4])
     elif unsupported == "unsigned":
         delta.kwargs = {"input_unsigned": True}
+    elif unsupported == "normalization":
+        custom = next(
+            n
+            for n in program.graph.nodes
+            if n.kwargs.get("operator_name")
+            == grid_sampler.flow_offset_grid_sampler_operator_name()
+        )
+        payload = json.loads(bytes(custom.kwargs["implementation_attrs"]))
+        payload["flow_normalization"] = [0.25, 0.125]
+        custom.kwargs = {
+            **custom.kwargs,
+            "implementation_attrs": list(json.dumps(payload).encode()),
+        }
     else:
         phase.args[0].meta["input_qparams"][1].zp = 1
     original = str(program.graph)
@@ -260,8 +281,9 @@ def test_leaves_unsupported_graph_unchanged(unsupported):
     assert str(program.graph) == original
 
 
-def test_payload_preserves_sampling_and_single_round_integer_rescales():
-    program = _program()[0]
+@pytest.mark.parametrize("normalization", [(1.0, 1.0), (0.25, 0.125)])
+def test_payload_preserves_sampling_and_single_round_integer_rescales(normalization):
+    program = _program(normalization=normalization)[0]
     _, payloads, rescales, _, _, _, sigmoid, _, _ = fuse.FuseRifeFinalWarpsPass(
         program
     )._match(program.graph_module)
@@ -271,6 +293,8 @@ def test_payload_preserves_sampling_and_single_round_integer_rescales():
         payload = final_warps.build_final_warps_payload(payloads, rescales, sigmoid)
     source = compile_shader.call_args.args[0]
     assert "@" not in source
+    factors = ", ".join(format(value, ".9g") for value in normalization)
+    assert f"const vec2 FLOW_NORMALIZATION = vec2({factors});" in source
     assert "phase * 5u" in source
     assert "* 8u + 6u" in source
     assert "imulExtended" in source
