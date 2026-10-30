@@ -40,6 +40,11 @@ struct GgmlEngineOptions {
   // Prints each newly built graph's node count per ggml op to stderr, which
   // shows whether a lowering rewrite fired.
   bool print_graph_ops = false;
+  // ggml backends quantize the activations of a quantized matmul themselves,
+  // so a linear with quantized weights, int4 or GGUF, whose input is not a
+  // dequantized activation is rejected unless the caller accepts that loss of
+  // precision.
+  bool allow_activation_quant_for_weight_only = false;
 };
 
 class GgmlEngineContext;
