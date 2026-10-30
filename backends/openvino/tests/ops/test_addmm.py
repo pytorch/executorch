@@ -58,9 +58,11 @@ class TestAddMMOperator(BaseOpenvinoOpTest):
                     compile_model.call_args.args[2], {"INFERENCE_PRECISION_HINT": hint}
                 )
 
-    def test_addmm_refuses_an_unknown_inference_precision(self):
+    def test_addmm_refuses_an_unknown_inference_precision_before_converting(self):
         sample_input = tuple(torch.randn(4, 4) for _ in range(3))
-        with self.assertRaisesRegex(ValueError, "unsupported inference_precision 'f7'"):
+        with mock.patch.object(
+            preprocess, "FrontEndManager", side_effect=AssertionError("converted")
+        ), self.assertRaisesRegex(ValueError, "unsupported inference_precision 'f7'"):
             self.execute_layer_test(
                 self.create_model(),
                 sample_input,
