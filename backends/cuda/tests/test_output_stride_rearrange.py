@@ -399,7 +399,7 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                         self._assert_matches_eager(module, x, out)
                     else:
                         # InvalidArgument, from the replay's input shape check.
-                        self.assertIn("error 0x12", str(out))
+                        self.assertIn("execute() failed with error 0x12", str(out))
 
     def test_mask_runs_without_a_graph(self):
         # A mask index reads its count back to the host, which a capture
@@ -429,7 +429,7 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                 with self.subTest(memory_format=memory_format, call=i):
                     if i == 6:
                         # InvalidArgument, from the replay's input size check.
-                        self.assertIn("error 0x12", str(out))
+                        self.assertIn("execute() failed with error 0x12", str(out))
                     else:
                         self._assert_matches_eager(module, x, out)
 

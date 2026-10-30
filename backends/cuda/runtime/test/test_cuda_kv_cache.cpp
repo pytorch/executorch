@@ -932,6 +932,7 @@ TEST_F(CudaKVCacheTest, GrowthDropsACapturedGraphOnlyWhenStorageMoves) {
   ASSERT_EQ(cudaMalloc(&static_input, 16), cudaSuccess);
   graph.static_input_ptrs = {static_input};
   graph.static_input_nbytes = {16};
+  graph.static_input_sizes = {{4}};
   ASSERT_EQ(kv.commit_step(3), Error::Ok);
 
   // Fits the current storage: the graph keeps replaying.
@@ -950,6 +951,7 @@ TEST_F(CudaKVCacheTest, GrowthDropsACapturedGraphOnlyWhenStorageMoves) {
   EXPECT_EQ(graph.warmup_remaining, 1);
   EXPECT_TRUE(graph.static_input_ptrs.empty());
   EXPECT_TRUE(graph.static_input_nbytes.empty());
+  EXPECT_TRUE(graph.static_input_sizes.empty());
   EXPECT_EQ(graph.graph_exec, nullptr);
 
   // Once recaptured, later steps that fit replay it untouched.
