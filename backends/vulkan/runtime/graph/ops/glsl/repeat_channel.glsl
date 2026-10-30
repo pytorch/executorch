@@ -16,7 +16,7 @@ layout(std430) buffer;
 
 #include "indexing_utils.h"
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
+${layout_declare_image(0, "w", "image_out", DTYPE, image_ndim=NDIM)}
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 
 layout(set = 0, binding = 2) uniform PRECISION restrict RepeatArgs {

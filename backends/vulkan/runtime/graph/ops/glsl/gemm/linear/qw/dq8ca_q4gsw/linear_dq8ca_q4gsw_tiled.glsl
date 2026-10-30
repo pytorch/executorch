@@ -130,7 +130,8 @@ void main() {
     }
 
     load_weight_scales_tile_for_group(weight_scales_tile, n4, group_i, N4);
-    load_weight_sums_tile_for_group(weight_sums_tile, n4, group_i, N4);
+    // Weight sums rows are padded to a multiple of 8.
+    load_weight_sums_tile_for_group(weight_sums_tile, n4, group_i, mul_2(N8));
     load_int8_input_sums_tile_for_group(int8_input_sums_tile, m4, group_i, M4);
 
     accumulate_out_tile_with_int_accum_from_int4_weights(
