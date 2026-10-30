@@ -203,6 +203,62 @@ def _is_min_max_of_bool(node: torch.fx.Node) -> bool:
     return isinstance(val, torch.Tensor) and val.dtype == torch.bool
 
 
+_FULL_TARGETS = (torch.ops.aten.full.default, exir_ops.edge.aten.full.default)
+
+
+# Where the fill value is, for ops that coremltools types by it.
+_FILL_VALUE_INDEX = {
+    torch.ops.aten.full_like.default: 1,
+    torch.ops.aten.fill.Scalar: 1,
+    torch.ops.aten.scalar_tensor.default: 0,
+    exir_ops.edge.aten.full_like.default: 1,
+    exir_ops.edge.aten.fill.Scalar: 1,
+    exir_ops.edge.aten.scalar_tensor.default: 0,
+}
+
+
+_DECOMPOSED_FILL_TARGETS = (
+    torch.ops.aten.zeros.default,
+    torch.ops.aten.new_zeros.default,
+    torch.ops.aten.zeros_like.default,
+    torch.ops.aten.ones_like.default,
+    torch.ops.aten.new_full.default,
+    exir_ops.edge.aten.zeros.default,
+    exir_ops.edge.aten.new_zeros.default,
+    exir_ops.edge.aten.zeros_like.default,
+    exir_ops.edge.aten.ones_like.default,
+    exir_ops.edge.aten.new_full.default,
+)
+
+
+def _fills_int_or_bool_tensor_with_wrong_type(node: torch.fx.Node) -> bool:
+    """coremltools 9.0 often ignores the dtype of an op that fills a tensor.
+
+    It makes ``full`` without a dtype, ``zeros``, ``new_zeros`` and, from iOS
+    16, ``ones_like`` as float, ``zeros_like`` with the dtype of its input, and
+    ``full_like``, ``new_full``, ``fill`` and ``scalar_tensor`` with the type
+    of their fill value. An int or bool tensor made as float silently loses
+    values above 2048 at float16 precision, and fails to lower in an op that
+    does not promote types, such as ``index_put``. Ops in
+    ``_DECOMPOSED_FILL_TARGETS`` that make one are refused even when they would
+    work, so lowering decomposes them into ``full`` or ``full_like`` with the
+    dtype given.
+    """
+    val = node.meta.get("val")
+    if not isinstance(val, torch.Tensor) or val.dtype.is_floating_point:
+        return False
+    if node.target in _DECOMPOSED_FILL_TARGETS:
+        return True
+    if node.target in _FULL_TARGETS:
+        return node.kwargs.get("dtype") is None
+    if node.target in _FILL_VALUE_INDEX:
+        value = node.args[_FILL_VALUE_INDEX[node.target]]
+        return isinstance(value, (bool, int, float)) and type(value) is not (
+            bool if val.dtype == torch.bool else int
+        )
+    return False
+
+
 def _makes_tensor(
     node: torch.fx.Node, dtypes: Optional[Collection[torch.dtype]] = None
 ) -> bool:
@@ -448,6 +504,13 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             self.log_once(
                 f"{node.target} over a bool tensor is not supported by CoreML.  "
                 "Overriding op support."
+            )
+            return True
+
+        if _fills_int_or_bool_tensor_with_wrong_type(node):
+            self.log_once(
+                f"{node.target} making an int or bool tensor gets the wrong dtype "
+                "in CoreML.  Overriding op support."
             )
             return True
 

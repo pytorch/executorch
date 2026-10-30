@@ -592,6 +592,61 @@ class TestCoreMLPartitioner(unittest.TestCase):
             out = program.load_method("forward").execute((x,))[0]
             self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
 
+    def test_int_and_bool_fills_get_their_dtype(self):
+        """
+        coremltools makes a filled int or bool tensor with the wrong dtype in
+        some cases, such as ``full`` without a dtype or ``zeros`` with one.
+        Index math with such a tensor then fails to lower, or loses integers
+        above 2048 to float16 precision.  The partitioner must leave those
+        fills to the portable backend, or let lowering decompose them into a
+        ``full`` with the dtype given.
+        """
+
+        class Positions(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.emb = torch.nn.Embedding(16, 4)
+
+            def forward(self, x, mask):
+                pos = torch.full((1, 16), fill_value=0)
+                pos[mask] = torch.arange(16)[None][mask]
+                return x + self.emb(pos)
+
+        class Counts(torch.nn.Module):
+            def forward(self, ids):
+                return (ids + torch.zeros((2, 3), dtype=torch.long)) * 1001
+
+        class Flags(torch.nn.Module):
+            def forward(self, mask):
+                return mask & torch.full_like(mask, 1)
+
+        mask = torch.arange(16)[None] % 3 != 0
+        cases = [
+            (Positions(), (torch.rand(1, 16, 4), mask), "aten.full.default"),
+            (Counts(), (torch.arange(6).reshape(2, 3),), None),
+            (Flags(), (mask,), "aten.full_like.default"),
+        ]
+        for model, inputs, cpu_op in cases:
+            with self.subTest(model=type(model).__name__):
+                ep = torch.export.export(model.eval(), inputs, strict=True)
+                edge = executorch.exir.to_edge_transform_and_lower(
+                    ep, partitioner=[CoreMLPartitioner()]
+                )
+                op_names = [
+                    n.target.__name__
+                    for n in edge.exported_program().graph.nodes
+                    if n.op == "call_function"
+                ]
+                self.assertIn("executorch_call_delegate", op_names)
+                if cpu_op:
+                    self.assertIn(cpu_op, op_names)
+                if _TEST_RUNTIME:
+                    program = Runtime.get().load_program(edge.to_executorch().buffer)
+                    out = program.load_method("forward").execute(inputs)[0]
+                    ref = model(*inputs)
+                    self.assertEqual(out.dtype, ref.dtype)
+                    self.assertTrue(torch.allclose(out, ref, atol=1e-2))
+
     def test_int8_made_for_the_cpu_runs_on_the_cpu(self):
         """
         The Core ML runtime cannot return an int8 tensor, so an op that makes
