@@ -517,6 +517,7 @@ class CoreMLPartitioner(Partitioner):
         logger.info("CoreMLPartitioner::partition")
         partition_tags = {}
 
+        kept_inside = self._placeholders_kept_inside(exported_program)
         state = self._state_kept_inside(exported_program)
         partition_list, left_out = _propose_partitions(
             exported_program.graph_module,
@@ -525,7 +526,7 @@ class CoreMLPartitioner(Partitioner):
                 self.lower_full_graph,
                 log=True,
             ),
-            self._placeholders_kept_inside(exported_program),
+            kept_inside,
             state,
             self._allows_partitions_without_inputs(),
         )
@@ -539,9 +540,22 @@ class CoreMLPartitioner(Partitioner):
                     "in the CoreMLPartitioner to keep the state outside of CoreML."
                 )
         if left_out:
+            inputs = sorted(
+                {
+                    f"{arg.name} ({arg.meta['val'].dtype})"
+                    for node in left_out
+                    for arg in node.all_input_nodes
+                    if arg not in left_out
+                    and arg.name not in kept_inside
+                    and isinstance(arg.meta.get("val"), torch.Tensor)
+                    and _cannot_be_coreml_input(arg)
+                }
+            )
             msg = (
                 "The model reads a tensor whose dtype CoreML cannot take as an "
-                "input, such as uint8 or int8, from outside a CoreML partition."
+                "input, such as uint8 or int8, from outside a CoreML partition: "
+                + ", ".join(inputs)
+                + "."
             )
             if self.lower_full_graph:
                 raise NotImplementedError(
@@ -552,7 +566,14 @@ class CoreMLPartitioner(Partitioner):
                 )
             self.log_once(
                 f"{msg}  Running these ops outside of CoreML: "
-                + ", ".join(sorted(str(node.target) for node in left_out))
+                + ", ".join(
+                    sorted(
+                        {
+                            getattr(node.target, "__name__", str(node.target))
+                            for node in left_out
+                        }
+                    )
+                )
             )
         for partition in partition_list:
             for node in partition.nodes:
@@ -578,7 +599,7 @@ class CoreMLPartitioner(Partitioner):
 
     def log_once(self, msg: str) -> None:
         if msg not in self._logged_msgs:
-            logging.info(msg)
+            logger.info(msg)
             self._logged_msgs.add(msg)
 
     def _allows_partitions_without_inputs(self) -> bool:
