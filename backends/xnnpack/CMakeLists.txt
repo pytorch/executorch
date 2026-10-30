@@ -130,6 +130,22 @@ if(EXECUTORCH_BUILD_SHARED AND EXECUTORCH_BUILD_NATIVE_CPU)
   list(APPEND xnnpack_third_party xnnpack_shared)
 endif()
 
+list(TRANSFORM _xnnpack_profiler__srcs PREPEND "${EXECUTORCH_ROOT}/")
+# Also linked by the CPU backend's XNNPACK provider, which must not register
+# this delegate.
+add_library(xnnpack_profiler STATIC ${_xnnpack_profiler__srcs})
+target_link_libraries(xnnpack_profiler PUBLIC extension_threadpool)
+if(EXECUTORCH_BUILD_SHARED)
+  # Consumers already link the library that bundles XNNPACK.
+  target_link_libraries(xnnpack_profiler PUBLIC executorch_shared)
+  target_include_directories(
+    xnnpack_profiler PUBLIC $<BUILD_INTERFACE:${XNNPACK_INCLUDE_DIR}>
+  )
+else()
+  target_link_libraries(xnnpack_profiler PUBLIC XNNPACK executorch_core)
+endif()
+target_compile_options(xnnpack_profiler PRIVATE ${_common_compile_options})
+
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 # Build the delegate as a shared library for the wheel so a process has one copy
 # of it, and keep it static everywhere else so no other build changes.
@@ -142,8 +158,9 @@ add_library(
   xnnpack_backend ${_xnnpack_backend_library_type} ${_xnnpack_backend__srcs}
 )
 target_link_libraries(
-  xnnpack_backend PUBLIC ${xnnpack_third_party} xnnpack_schema
-                         extension_threadpool
+  xnnpack_backend
+  PUBLIC ${xnnpack_third_party} xnnpack_schema extension_threadpool
+  PRIVATE xnnpack_profiler
 )
 if(EXECUTORCH_BUILD_SHARED)
   set_target_properties(
@@ -179,7 +196,7 @@ executorch_target_link_options_shared_lib(xnnpack_backend)
 
 executorch_move_interface_include_directories_to_build_time_only(XNNPACK)
 install(
-  TARGETS xnnpack_backend xnnpack_schema
+  TARGETS xnnpack_backend xnnpack_profiler xnnpack_schema
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES

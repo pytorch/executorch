@@ -590,6 +590,7 @@ function(executorch_load_build_variables)
       SIZE_TEST_SRCS
       XNN_EXECUTOR_RUNNER_SRCS
       XNNPACK_BACKEND_SRCS
+      XNNPACK_PROFILER_SRCS
       XNNPACK_SCHEMA_SRCS
       CPU_BACKEND_SRCS
       VULKAN_SCHEMA_SRCS
@@ -622,6 +623,7 @@ function(executorch_load_build_variables)
       _size_test__srcs
       _xnn_executor_runner__srcs
       _xnnpack_backend__srcs
+      _xnnpack_profiler__srcs
       _xnnpack_schema__srcs
       _cpu_backend__srcs
       _vulkan_schema__srcs

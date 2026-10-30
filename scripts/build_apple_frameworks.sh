@@ -124,6 +124,7 @@ libextension_llm_cache.a,\
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
 libxnnpack_backend.a,\
+libxnnpack_profiler.a,\
 libxnnpack-microkernels-prod.a,\
 :"
 
