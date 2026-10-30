@@ -30,8 +30,10 @@ endif()
 # installer may not add it to PATH.
 find_program(GLSLC_PATH glslc HINTS $ENV{VULKAN_SDK}/bin $ENV{VULKAN_SDK}/Bin)
 
-if(NOT GLSLC_PATH AND EXECUTORCH_BUILD_VULKAN)
-  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+if(NOT GLSLC_PATH AND (EXECUTORCH_BUILD_VULKAN OR EXECUTORCH_BUILD_NATIVE_VULKAN
+                      )
+)
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE AND NOT EXECUTORCH_BUILD_NATIVE_VULKAN)
     # In a wheel/pybind build, degrade gracefully so the wheel can still be
     # produced without the Vulkan backend rather than failing the whole build.
     message(
@@ -81,8 +83,14 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
   endif()
 
   # Ninja cannot expand wildcards (*) in DEPENDS lists.
-  file(GLOB VULKAN_SHADERS "${shaders_path}/*.glsl" "${shaders_path}/*.glslh"
-       "${shaders_path}/*.yaml" "${shaders_path}/*.h"
+  file(
+    GLOB_RECURSE
+    VULKAN_SHADERS
+    CONFIGURE_DEPENDS
+    "${shaders_path}/*.glsl"
+    "${shaders_path}/*.glslh"
+    "${shaders_path}/*.yaml"
+    "${shaders_path}/*.h"
   )
 
   add_custom_command(
@@ -114,7 +122,7 @@ function(vulkan_shader_lib library_name generated_spv_cpp)
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/Vulkan-Headers/include
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/volk
   )
-  target_link_libraries(${library_name} vulkan_backend)
+  target_link_libraries(${library_name} vulkan_graph_runtime)
   target_compile_options(${library_name} PRIVATE ${VULKAN_CXX_FLAGS})
   # Link this library with --whole-archive due to dynamic shader registrations
   executorch_target_link_options_shared_lib(${library_name})
@@ -138,7 +146,7 @@ macro(vulkan_shader_library shaders_path library_name)
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/Vulkan-Headers/include
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/volk
   )
-  target_link_libraries(${library_name} vulkan_backend)
+  target_link_libraries(${library_name} vulkan_graph_runtime)
   target_compile_options(${library_name} PRIVATE ${VULKAN_CXX_FLAGS})
   # Link this library with --whole-archive due to dynamic shader registrations
   executorch_target_link_options_shared_lib(${library_name})

@@ -9,10 +9,12 @@ controls the test pipeline, TOSA profile, output path, infrastructure xfails and
 backend-specific registry filtering. Run from the ExecuTorch repository root.
 
 Examples:
+    python backends/arm/scripts/docgen/generate_op_support.py --backend all
     python backends/arm/scripts/docgen/generate_op_support.py --backend vgf
     python backends/arm/scripts/docgen/generate_op_support.py --backend u55
     python backends/arm/scripts/docgen/generate_op_support.py --backend u85
     python backends/arm/scripts/docgen/generate_op_support.py --backend u55 --debug --html
+    python backends/arm/scripts/docgen/generate_op_support.py --backend all --check
     python backends/arm/scripts/docgen/generate_op_support.py --backend vgf --check --strict-ast
 
 """
@@ -74,6 +76,7 @@ class BackendConfig:
 GENERATOR_PATH = Path("backends/arm/scripts/docgen/generate_op_support.py")
 TEST_ROOT = Path("backends/arm/test")
 DEFAULT_BACKEND_KEY = "vgf"
+ALL_BACKENDS_KEY = "all"
 
 BACKENDS: dict[str, BackendConfig] = {
     "vgf": BackendConfig(
@@ -358,6 +361,7 @@ DECOMPOSED_OPS = {
     "torch.ops.aten.pow.Tensor_Tensor",
     "torch.ops.aten.scaled_dot_product_attention.default",
     "torch.ops.aten.adaptive_avg_pool1d.default",
+    "torch.ops.aten.linalg_vector_norm.default",
 }
 
 
@@ -418,6 +422,18 @@ VGF_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
     ): {
         "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
     },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_vgf_no_quant",
+    ): {
+        "FP": {"torch.ops.aten.linalg_vector_norm.default"},
+    },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_vgf_quant",
+    ): {
+        "INT": {"torch.ops.aten.linalg_vector_norm.default"},
+    },
 }
 
 # Existing U55 runtime tests below intentionally suppress direct ATen/Edge
@@ -466,6 +482,12 @@ U55_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
     ): {
         "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
     },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_u55_INT_fvp",
+    ): {
+        "INT": {"torch.ops.aten.linalg_vector_norm.default"},
+    },
 }
 
 # Existing U85 runtime tests below intentionally suppress direct ATen/Edge
@@ -503,6 +525,12 @@ U85_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
         "test_sdpa_u85_INT",
     ): {
         "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
+    },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_u85_INT_fvp",
+    ): {
+        "INT": {"torch.ops.aten.linalg_vector_norm.default"},
     },
 }
 
@@ -605,6 +633,7 @@ PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
     "torch.ops.aten.bmm.default": ("torch.bmm",),
     "torch.ops.aten.matmul.default": ("torch.matmul", "@"),
     "torch.ops.aten.addmm.default": ("torch.addmm",),
+    "torch.ops.aten.linalg_vector_norm.default": ("torch.linalg.vector_norm",),
     "torch.ops.aten.convolution.default": (
         "torch.nn.Conv2d",
         "torch.nn.functional.conv2d",
@@ -3101,6 +3130,29 @@ def run_check(repo_root: Path, *, strict_ast: bool = False) -> int:  # noqa: C90
     return 1
 
 
+def _write_documentation(
+    root: Path,
+    *,
+    output: Path | None,
+    debug: bool,
+    write_html: bool,
+) -> None:
+    resolved_output = output or root / DEFAULT_OUTPUT
+    if not resolved_output.is_absolute():
+        resolved_output = root / resolved_output
+
+    markdown = generate_markdown(root, debug=debug)
+    resolved_output.parent.mkdir(parents=True, exist_ok=True)
+    resolved_output.write_text(markdown, encoding="utf-8")
+    print(f"Wrote {resolved_output}")
+
+    if write_html:
+        html_output = resolved_output.with_suffix(".html")
+        html_page = generate_html(root, debug=debug)
+        html_output.write_text(html_page, encoding="utf-8")
+        print(f"Wrote {html_output}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Generate Arm backend PyTorch operator-support documentation.",
@@ -3108,9 +3160,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--backend",
-        choices=sorted(BACKENDS),
+        choices=sorted([*BACKENDS, ALL_BACKENDS_KEY]),
         default=DEFAULT_BACKEND_KEY,
-        help="Backend to document. Defaults to vgf.",
+        help=(
+            "Backend to document, or 'all' to process every configured backend. "
+            "Defaults to vgf."
+        ),
     )
     parser.add_argument(
         "--repo-root",
@@ -3122,7 +3177,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--output",
         type=Path,
         default=None,
-        help="Markdown output path. Defaults to the selected backend output path.",
+        help=(
+            "Markdown output path. Defaults to the selected backend output path. "
+            "Cannot be used with --backend all."
+        ),
     )
     parser.add_argument(
         "--html",
@@ -3142,7 +3200,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help=(
             "Do not write the page. Compare exact selected-backend pipeline "
-            "coverage against backend support registries."
+            "coverage against backend support registries. With --backend all, "
+            "check every configured backend."
         ),
     )
     parser.add_argument(
@@ -3156,33 +3215,53 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--explain",
         metavar="EXPORTED_OP",
-        help="Explain how one exported ATen operator is covered per profile.",
+        help=(
+            "Explain how one exported ATen operator is covered per profile. "
+            "Cannot be used with --backend all."
+        ),
     )
     args = parser.parse_args(argv)
-    _activate_backend(args.backend)
+
+    if args.backend == ALL_BACKENDS_KEY:
+        if args.output is not None:
+            parser.error("--output cannot be used with --backend all")
+        if args.explain:
+            parser.error("--explain cannot be used with --backend all")
 
     root = _repo_root(args.repo_root)
+
+    if args.backend == ALL_BACKENDS_KEY:
+        previous_backend = ACTIVE_BACKEND_KEY
+        try:
+            result = 0
+            for backend in BACKENDS:
+                _activate_backend(backend)
+                if args.check:
+                    result = max(result, run_check(root, strict_ast=args.strict_ast))
+                else:
+                    _write_documentation(
+                        root,
+                        output=None,
+                        debug=args.debug,
+                        write_html=args.html,
+                    )
+            return result
+        finally:
+            _activate_backend(previous_backend)
+
+    _activate_backend(args.backend)
 
     if args.explain:
         return explain_operator(root, args.explain)
     if args.check:
         return run_check(root, strict_ast=args.strict_ast)
 
-    output = args.output or root / DEFAULT_OUTPUT
-    if not output.is_absolute():
-        output = root / output
-
-    markdown = generate_markdown(root, debug=args.debug)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(markdown, encoding="utf-8")
-    print(f"Wrote {output}")
-
-    if args.html:
-        html_output = output.with_suffix(".html")
-        html_page = generate_html(root, debug=args.debug)
-        html_output.write_text(html_page, encoding="utf-8")
-        print(f"Wrote {html_output}")
-
+    _write_documentation(
+        root,
+        output=args.output,
+        debug=args.debug,
+        write_html=args.html,
+    )
     return 0
 
 

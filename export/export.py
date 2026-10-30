@@ -553,9 +553,9 @@ class ExportSession:
         Get the EdgeProgramManager after edge lowering stages.
 
         This method checks multiple stages in order of preference:
-        1. TO_EDGE_TRANSFORM_AND_LOWER (combined stage)
-        2. TO_BACKEND (separate stage with backend delegation)
-        3. EDGE_PROGRAM_MANAGER_TRANSFORM (separate stage after TO_EDGE)
+        1. TO_BACKEND (separate stage with backend delegation)
+        2. EDGE_PROGRAM_MANAGER_TRANSFORM (latest transform stage, applied after TO_EDGE or TO_EDGE_TRANSFORM_AND_LOWER)
+        3. TO_EDGE_TRANSFORM_AND_LOWER (combined stage)
         4. TO_EDGE (separate stage without backend delegation)
 
         Returns:
@@ -566,9 +566,9 @@ class ExportSession:
         """
         # Check stages in order of preference
         edge_stages = [
-            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
             StageType.TO_BACKEND,
             StageType.EDGE_PROGRAM_MANAGER_TRANSFORM,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
             StageType.TO_EDGE,
         ]
         for stage_type in edge_stages:
@@ -714,7 +714,7 @@ class ExportSession:
         )
         if not lowering_stage:
             raise RuntimeError(
-                "No delegation info available, atleast one of the lowering stages should be present"
+                "No delegation info available, at least one of the lowering stages should be present"
             )
 
         stage_artifact = self._stage_to_artifacts.get(lowering_stage[0])

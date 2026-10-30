@@ -531,12 +531,13 @@ class XNNPackConfig:
     Attributes:
         enabled: :)
         extended_ops: Whether to match more types of ops to delegates to XNNPack.
+            On by default; set to False to restrict the delegate to DQLinear.
         enable_bf16: Whether to delegate BF16 ops to XNNPack. The target runtime
             must have hardware support for XNNPACK's BF16 kernels.
     """
 
     enabled: bool = False
-    extended_ops: bool = False
+    extended_ops: bool = True
     enable_bf16: bool = False
 
 
@@ -667,6 +668,16 @@ class MLXConfig:
 
 
 @dataclass
+class SamsungConfig:
+    """
+    Configures the Samsung backend.
+    """
+
+    enabled: bool = False
+    samsung_chipset: str = "E9965"
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -683,6 +694,7 @@ class BackendConfig:
     ethosu: EthosUConfig = field(default_factory=EthosUConfig)
     vgf: VgfConfig = field(default_factory=VgfConfig)
     mlx: MLXConfig = field(default_factory=MLXConfig)
+    samsung: SamsungConfig = field(default_factory=SamsungConfig)
 
 
 ################################################################################
@@ -891,6 +903,13 @@ class LlmConfig:
             llm_config.quantization.quantize_scope = QuantizeScope(
                 args.vgf_quantize_scope
             )
+
+        # Samsung
+        if hasattr(args, "samsung"):
+            llm_config.backend.samsung.enabled = args.samsung
+        if hasattr(args, "samsung_chipset"):
+            llm_config.backend.samsung.samsung_chipset = args.samsung_chipset
+
         # TorchAoKernels
         if any(
             hasattr(args, a)

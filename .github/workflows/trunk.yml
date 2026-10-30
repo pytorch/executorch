@@ -282,6 +282,7 @@ jobs:
           - test_arm_backend: test_ootb_tests_ethos_u
           - test_arm_backend: test_ootb_tests_tosa
           - test_arm_backend: test_deit_e2e_ethos_u
+          - test_arm_backend: test_person_detection_e2e_cortex_m
       fail-fast: false
     with:
       runner: mt-l-x86iavx512-8-64

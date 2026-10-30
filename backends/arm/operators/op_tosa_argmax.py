@@ -42,9 +42,8 @@ class ArgMaxVisitor(NodeVisitor):
                 ts.DType.FP32,
                 ts.DType.BF16,
             ],
-            self.tosa_spec,
         )
-        validate_valid_dtype(self.target, output, ts.DType.INT32, self.tosa_spec)
+        validate_valid_dtype(self.target, output, ts.DType.INT32)
 
         axis = inputs[1].number
         if axis < 0:

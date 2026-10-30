@@ -53,7 +53,8 @@ jobs:
           executorch-ubuntu-24.04-arm-sdk,
           executorch-ubuntu-22.04-zephyr-sdk,
           executorch-ubuntu-22.04-qnn-sdk,
-          executorch-ubuntu-22.04-mediatek-sdk,
+          # Disabled with test-mediatek-models-linux until the SDK supports Python 3.11+.
+          # executorch-ubuntu-22.04-mediatek-sdk,
           executorch-ubuntu-22.04-clang12-android,
           executorch-ubuntu-24.04-gcc14,
           executorch-ubuntu-26.04-gcc14,

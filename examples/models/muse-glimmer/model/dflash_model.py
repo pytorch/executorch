@@ -395,6 +395,46 @@ class DFlashDraftModel(nn.Module):
         return self.norm(x)
 
 
+class DFlashPackedExportModel(nn.Module):
+    """Packed export with shared weights named exactly as in target forwards."""
+
+    def __init__(self, target: nn.Module, draft: nn.Module):
+        super().__init__()
+        self.embed_tokens = target.embed_tokens
+        self.lm_head = target.lm_head
+        self.draft = draft
+        self.activation_dtype = target.activation_dtype
+
+    def forward(self, draft_tokens, target_hidden, positions, kv_order):
+        return _packed_draft_forward(
+            self.embed_tokens,
+            self.lm_head,
+            self.draft,
+            self.activation_dtype,
+            draft_tokens,
+            target_hidden,
+            positions,
+            kv_order,
+        )
+
+
+def _packed_draft_forward(
+    embed_tokens,
+    lm_head,
+    draft,
+    activation_dtype,
+    draft_tokens,
+    target_hidden,
+    positions,
+    kv_order,
+):
+    # Owners and blocks are separate axes, as in the MLX packed draft ABI.
+    torch._check(draft_tokens.shape[1] == draft.config.block_size)
+    torch._check(target_hidden.shape[0] == 1)
+    noise_embedding = embed_tokens(draft_tokens.reshape(1, -1)).to(activation_dtype)
+    return lm_head(draft(noise_embedding, target_hidden, positions, kv_order)).float()
+
+
 class MuseGlimmerWithDFlash(nn.Module):
     """Wrapper combining target and draft models with shared weights.
 
@@ -416,9 +456,16 @@ class MuseGlimmerWithDFlash(nn.Module):
         return self.target.embed_text(tokens)
 
     def target_forward_from_embeddings(
-        self, inputs_embeds: torch.Tensor, input_pos: torch.Tensor
+        self,
+        inputs_embeds: torch.Tensor,
+        input_pos: torch.Tensor,
+        logits_indices: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run the hidden-tapped target from precomputed text/image embeddings."""
+        if logits_indices is not None:
+            return self.target.target_forward_from_embeddings(
+                inputs_embeds, input_pos, logits_indices
+            )
         return self.target.target_forward_from_embeddings(inputs_embeds, input_pos)
 
     def target_prefill_from_embeddings(
@@ -444,15 +491,33 @@ class MuseGlimmerWithDFlash(nn.Module):
             self.target.activation_dtype
         )
 
-        # valid_ctx_len is a CUDA-graph-only signal (fixed-shape padded context +
-        # a runtime valid length); the CUDA draft forward accepts it, while the
-        # eager reference and MLX forwards keep the 3-arg signature.
+        # The fourth input is CUDA's valid context length or the off-graph MLX
+        # permutation from projected rows to contiguous owner K/V groups.
         if valid_ctx_len is None:
             h = self.draft(noise_embedding, target_hidden, input_pos)
         else:
             h = self.draft(noise_embedding, target_hidden, input_pos, valid_ctx_len)
 
         return self.target.lm_head(h).float()
+
+    def draft_forward_packed(
+        self,
+        draft_tokens: torch.Tensor,
+        target_hidden: torch.Tensor,
+        positions: torch.Tensor,
+        kv_order: torch.Tensor,
+    ) -> torch.Tensor:
+        """Cell-cache ABI; fourth input is explicitly not valid_ctx_len."""
+        return _packed_draft_forward(
+            self.target.embed_tokens,
+            self.target.lm_head,
+            self.draft,
+            self.target.activation_dtype,
+            draft_tokens,
+            target_hidden,
+            positions,
+            kv_order,
+        )
 
     def draft_prefill(
         self,

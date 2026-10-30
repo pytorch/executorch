@@ -14,6 +14,7 @@ from executorch.backends.transforms.addmm_mm_to_linear import (
     apply_addmm_mm_to_linear_transform,
 )
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack.utils.quant_utils import is_dequant
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.fx.passes.infra.pass_base import PassResult
@@ -48,6 +49,9 @@ class ConvertToLinearPass(XNNPACKPass):
         # This is a hack to support lifted graphs.
         # TODO(T171263351) - fix source partitioning for lifted graphs
         if not node or node in args or node.op == "placeholder":
+            return node
+        # A dequant inside the partition carries the quantization, so keep it.
+        if is_dequant(node):
             return node
         if kind == "args":
             other = node.args[index]

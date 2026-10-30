@@ -8,9 +8,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <bitset>
 #include <cmath>
 #include <iomanip>
+#include <limits>
+#include <random>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -292,7 +295,6 @@ std::vector<int64_t> get_reference_strides(
         default:
           return {};
       }
-      break;
     case utils::kHeightPacked:
       switch (sizes.size()) {
         case 1:
@@ -1145,12 +1147,15 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
   for (size_t i = 0; i < spec_vars.size(); ++i) {
     ASSERT_TRUE(entries[i].constantID == i);
     ASSERT_TRUE(entries[i].offset == sv_size * i);
-    if (i != 4) {
-      ASSERT_TRUE(entries[i].size == 4);
-    } else {
-      ASSERT_TRUE(entries[i].size == 1);
-    }
+    ASSERT_TRUE(entries[i].size == sizeof(VkBool32));
   }
+
+  const vkapi::SpecVarList bool_vars{SV(false), SV(true)};
+  const auto bool_entries = bool_vars.generate_map_entries();
+  ASSERT_EQ(bool_entries[0].size, sizeof(VkBool32));
+  ASSERT_EQ(bool_entries[1].size, sizeof(VkBool32));
+  ASSERT_EQ(bool_vars.at(0).value.as_bool, VK_FALSE);
+  ASSERT_EQ(bool_vars.at(1).value.as_bool, VK_TRUE);
 
   // Check copy
   vkapi::SpecVarList spec_vars_copy(spec_vars);
@@ -1158,7 +1163,7 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
 
   // Check validity of the copied data
   const vkapi::SpecVar* copy_data = spec_vars_copy.data();
-  ASSERT_TRUE(*(reinterpret_cast<const bool*>(copy_data + 4)) == true);
+  ASSERT_TRUE(copy_data[4].value.as_bool == VK_TRUE);
   ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(copy_data + 2)) == 45);
   ASSERT_TRUE(*(reinterpret_cast<const float*>(copy_data + 6)) == 5.5f);
 }
@@ -2592,6 +2597,260 @@ TEST(
   test_quantize_and_pack_handles_dynamic_row_counts(128, {2u, 1u, 32u});
 }
 
+template <typename T>
+void test_q4gsw_decode_prefill(
+    vkapi::ScalarType dtype,
+    const int64_t K = 384,
+    const bool check_prefill = true) {
+  constexpr int64_t max_m = 8;
+  for (const auto storage : {utils::kBuffer, utils::kTexture3D}) {
+    for (const int64_t N : {12, 1024, 1028, 2048, 4100, 8192}) {
+      for (const int64_t group_size : {32, 128}) {
+        for (const bool has_bias : {false, true}) {
+          SCOPED_TRACE(
+              ::testing::Message()
+              << "N=" << N << " group_size=" << group_size
+              << " bias=" << has_bias << " storage=" << int(storage));
+          GraphConfig config;
+          config.expect_dynamic_shapes = true;
+          config.enable_querypool = true;
+          ComputeGraph graph(config);
+
+          std::mt19937 rng(419);
+          std::uniform_real_distribution<float> distribution(-1.0f, 1.0f);
+          std::vector<uint8_t> weights(N * K / 2);
+          for (auto& value : weights) {
+            value = static_cast<uint8_t>(rng());
+          }
+          std::vector<T> scales(K / group_size * N);
+          for (auto& value : scales) {
+            value = T(0.01f + 0.1f * std::abs(distribution(rng)));
+          }
+          std::vector<T> bias(N);
+          for (auto& value : bias) {
+            value = T(distribution(rng));
+          }
+          const auto input = graph.add_input_tensor(
+              {max_m, K}, dtype, storage, utils::kWidthPacked);
+          const auto output =
+              graph.add_tensor({max_m, N}, dtype, storage, utils::kWidthPacked);
+          VK_GET_OP_FN("et_vk.q4gsw_linear.default")
+          (graph,
+           {input.value,
+            graph.add_tensorref({N, K / 2}, vkapi::kByte, weights.data()),
+            graph.add_tensorref({K / group_size, N}, dtype, scales.data()),
+            graph.add_scalar<int64_t>(group_size),
+            has_bias ? graph.add_tensorref({N}, dtype, bias.data())
+                     : graph.add_none(),
+            output});
+          const auto staging = graph.set_output_tensor(output);
+          graph.prepare();
+          graph.prepack();
+
+          for (const int64_t M : {1, 8, 1, 3, 1}) {
+            SCOPED_TRACE(M);
+            graph.resize_input(0, {M, K});
+            graph.propagate_resize();
+            ASSERT_EQ(graph.sizes_of(output), std::vector<int64_t>({M, N}));
+            std::vector<T> x(M * K);
+            for (auto& value : x) {
+              value = T(distribution(rng));
+            }
+            graph.maybe_cast_and_copy_into_staging(
+                input.staging, x.data(), x.size(), dtype);
+            graph.execute();
+            std::vector<T> actual(M * N);
+            graph.maybe_cast_and_copy_from_staging(
+                staging, actual.data(), actual.size(), dtype);
+            graph.context()->querypool().extract_results();
+            bool has_gemv = false;
+            bool has_gemm = false;
+            bool has_grouped = false;
+            for (const auto& result :
+                 graph.context()->querypool().get_shader_timestamp_data()) {
+              has_gemv |= result.kernel_name.find("q4gsw_linear_gemv") !=
+                  std::string::npos;
+              has_gemm |= result.kernel_name.find("q4gsw_linear_gemm") !=
+                  std::string::npos;
+              has_grouped |=
+                  result.kernel_name.find("_grouped_") != std::string::npos;
+            }
+            EXPECT_EQ(has_gemv, M == 1);
+            EXPECT_EQ(has_gemm, M != 1);
+            EXPECT_EQ(
+                has_grouped,
+                M == 1 && K == 2048 && group_size == 128 && N > 1024);
+            if (!check_prefill && M != 1) {
+              continue;
+            }
+            double squared_error = 0.0;
+            double squared_reference = 0.0;
+            for (int64_t m = 0; m < M; ++m) {
+              for (int64_t n = 0; n < N; ++n) {
+                double expected = has_bias ? float(bias[n]) : 0.0;
+                double magnitude = std::abs(expected);
+                for (int64_t k = 0; k < K; ++k) {
+                  const int q =
+                      ((weights[n * K / 2 + k / 2] >> (4 * (k % 2))) & 15) - 8;
+                  const double product = double(float(x[m * K + k])) * q *
+                      float(scales[(k / group_size) * N + n]);
+                  expected += product;
+                  magnitude += std::abs(product);
+                }
+                const double half_tolerance =
+                    storage == utils::kBuffer ? 5e-4 : 2e-3;
+                const double tolerance = dtype == vkapi::kHalf
+                    ? half_tolerance * (1.0 + std::abs(expected)) +
+                        (M == 1 ? 0.0 : 5e-3 * magnitude)
+                    : 2e-5 * (1.0 + std::abs(expected));
+                ASSERT_NEAR(float(actual[m * N + n]), expected, tolerance)
+                    << "m=" << m << " n=" << n;
+                const double error = float(actual[m * N + n]) - expected;
+                squared_error += error * error;
+                squared_reference += expected * expected;
+              }
+            }
+            EXPECT_LT(
+                std::sqrt(squared_error / squared_reference),
+                dtype == vkapi::kHalf ? (M == 1 ? 2e-3 : 1e-2) : 2e-5);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_prefill_float) {
+  test_q4gsw_decode_prefill<float>(vkapi::kFloat);
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_prefill_half) {
+  if (!api::context()->adapter_ptr()->supports_16bit_storage_buffers() ||
+      !api::context()->adapter_ptr()->supports_float16_shader_types()) {
+    GTEST_SKIP();
+  }
+  test_q4gsw_decode_prefill<executorch::aten::Half>(vkapi::kHalf);
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_grouped_float) {
+  test_q4gsw_decode_prefill<float>(
+      vkapi::kFloat, 2048, /*check_prefill=*/false);
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_grouped_half) {
+  if (!api::context()->adapter_ptr()->supports_16bit_storage_buffers() ||
+      !api::context()->adapter_ptr()->supports_float16_shader_types()) {
+    GTEST_SKIP();
+  }
+  test_q4gsw_decode_prefill<executorch::aten::Half>(
+      vkapi::kHalf, 2048, /*check_prefill=*/false);
+}
+
+template <typename T>
+void test_q4gsw_decode_with_padded_weights(
+    vkapi::ScalarType dtype,
+    const int64_t K = 12,
+    const int64_t padded_K = 16,
+    const int64_t N = 128,
+    const int64_t group_size = 12,
+    const bool expect_grouped = false) {
+  const int64_t num_groups = (K + group_size - 1) / group_size;
+  std::vector<utils::StorageType> storages = {utils::kBuffer};
+  if ((std::max(padded_K, N) + 3) / 4 <=
+      api::context()->adapter_ptr()->max_texture3d_dim()) {
+    storages.push_back(utils::kTexture3D);
+  }
+  for (const auto storage : storages) {
+    SCOPED_TRACE(int(storage));
+    GraphConfig config;
+    config.expect_dynamic_shapes = true;
+    config.enable_querypool = true;
+    ComputeGraph graph(config);
+    const auto input = graph.add_input_tensor(
+        {1, padded_K}, dtype, storage, utils::kWidthPacked);
+    graph.resize_input(0, {1, K});
+    const auto output =
+        graph.add_tensor({1, N}, dtype, storage, utils::kWidthPacked);
+
+    // Match export's zero padding before packing pairs of signed 4-bit weights.
+    std::vector<uint8_t> weights(N * padded_K / 2, 0x88);
+    for (int64_t n = 0; n < N; ++n) {
+      std::fill_n(weights.begin() + n * padded_K / 2, K / 2, 0x99);
+    }
+    std::vector<T> scales(num_groups * N, T(1.0f));
+    VK_GET_OP_FN("et_vk.q4gsw_linear.default")
+    (graph,
+     {input.value,
+      graph.add_tensorref({N, padded_K / 2}, vkapi::kByte, weights.data()),
+      graph.add_tensorref({num_groups, N}, dtype, scales.data()),
+      graph.add_scalar<int64_t>(group_size),
+      graph.add_none(),
+      output});
+    const auto staging = graph.set_output_tensor(output);
+    graph.prepare();
+    graph.prepack();
+
+    // Poison spare input capacity using only the staging node. Zero weights
+    // must not hide activation reads beyond logical K.
+    graph.resize_input(0, {1, padded_K});
+    graph.propagate_resize();
+    std::vector<T> x(padded_K, T(std::numeric_limits<float>::quiet_NaN()));
+    graph.maybe_cast_and_copy_into_staging(
+        input.staging, x.data(), x.size(), dtype);
+    graph.context()->set_cmd();
+    graph.execute_nodes().front()->encode(&graph);
+    graph.context()->submit_cmd_to_gpu();
+    graph.context()->wait_for_queue();
+
+    graph.resize_input(0, {1, K});
+    graph.propagate_resize();
+    std::fill_n(x.begin(), K, T(1.0f));
+    graph.maybe_cast_and_copy_into_staging(input.staging, x.data(), K, dtype);
+    graph.execute();
+    graph.context()->querypool().extract_results();
+    bool has_grouped = false;
+    for (const auto& result :
+         graph.context()->querypool().get_shader_timestamp_data()) {
+      has_grouped |= result.kernel_name.find("_grouped_") != std::string::npos;
+    }
+    EXPECT_EQ(has_grouped, expect_grouped);
+    std::vector<T> actual(N);
+    graph.maybe_cast_and_copy_from_staging(
+        staging, actual.data(), actual.size(), dtype);
+    for (int64_t n = 0; n < N; ++n) {
+      ASSERT_EQ(float(actual[n]), float(K)) << "n=" << n;
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_with_padded_weights_float) {
+  test_q4gsw_decode_with_padded_weights<float>(vkapi::kFloat);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 2044, 2048, 4100, 128, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 572, 576, 8192, 64, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 4348, 4352, 2048, 256, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 33248, 33280, 1024, 512, /*expect_grouped=*/false);
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_with_padded_weights_half) {
+  if (!api::context()->adapter_ptr()->supports_16bit_storage_buffers() ||
+      !api::context()->adapter_ptr()->supports_float16_shader_types()) {
+    GTEST_SKIP();
+  }
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(vkapi::kHalf);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 2044, 2048, 4100, 128, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 572, 576, 8192, 64, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 4348, 4352, 2048, 256, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 33248, 33280, 1024, 512, /*expect_grouped=*/false);
+}
+
 #define CREATE_WEIGHT_TENSOR(name, sizes, dtype, val)              \
   std::vector<float> data_##name(utils::multiply_integers(sizes)); \
   std::fill(data_##name.begin(), data_##name.end(), val);          \
@@ -3974,6 +4233,49 @@ TEST(VulkanComputeGraphTest, test_int8x4_staging_round_trip) {
   }
 }
 
+TEST(VulkanComputeGraphTest, test_int8x4_staging_byte_dtype_round_trip) {
+  const std::vector<utils::GPUMemoryLayout> layouts = {
+      utils::kPackedInt8_4C,
+      utils::kPackedInt8_4W,
+      utils::kPackedInt8_4W4C,
+      utils::kPackedInt8_4C1W,
+  };
+  const std::vector<std::vector<int64_t>> shapes = {
+      {7}, {7, 11}, {2, 9, 7}, {2, 3, 5, 7}, {1, 4, 8, 8}};
+  for (const auto& sizes : shapes) {
+    for (const auto layout : layouts) {
+      for (const auto dtype : {vkapi::kChar, vkapi::kByte}) {
+        SCOPED_TRACE(
+            ::testing::Message() << "layout " << layout << " dtype " << dtype);
+        GraphConfig config;
+        ComputeGraph graph(config);
+        const ValueRef tensor =
+            graph.add_tensor(sizes, vkapi::kInt8x4, utils::kBuffer, layout);
+        const ValueRef staging_in = graph.set_input_tensor(tensor, dtype);
+        const ValueRef staging_out = graph.set_output_tensor(tensor, dtype);
+        const size_t numel = utils::multiply_integers(sizes);
+
+        EXPECT_GE(graph.get_staging(staging_in)->nbytes(), numel);
+        EXPECT_GE(graph.get_staging(staging_out)->nbytes(), numel);
+        std::vector<uint8_t> data_in(numel);
+        for (size_t i = 0; i < numel; ++i) {
+          data_in[i] = static_cast<uint8_t>(i * 37 + 13);
+        }
+        std::vector<uint8_t> data_out(numel);
+
+        graph.prepare();
+        graph.prepack();
+        graph.maybe_cast_and_copy_into_staging(
+            staging_in, data_in.data(), numel, dtype);
+        graph.execute();
+        graph.maybe_cast_and_copy_from_staging(
+            staging_out, data_out.data(), numel, dtype);
+        EXPECT_EQ(data_out, data_in);
+      }
+    }
+  }
+}
+
 TEST(VulkanWorkGroupSizeTest, lwg) {
   const LocalWorkGroup lwg(64u, 2u, 1u);
 
@@ -4316,15 +4618,35 @@ TEST_P(VulkanSwiGLUTest, MatchesUnfusedAcrossResizes) {
         const float y = float(up_data[broadcast ? i % width : i]);
         const float reference = (x / (1.0f + std::exp(-x))) * y;
         if (dtype == vkapi::kHalf) {
+          constexpr float fp16_min_normal = 0x1p-14f;
+          constexpr float unfused_rtol = 3e-3f;
           ASSERT_NEAR(
-              float(actual[i]), reference, 1e-3f * std::abs(reference) + 1e-7f)
+              float(actual[i]),
+              reference,
+              1e-3f * std::abs(reference) + fp16_min_normal)
               << "element " << i;
-          // The unfused path rounds twice more, including subnormal sigmoid.
-          const float atol = 6e-8f * (std::abs(x * y) + std::abs(y) + 1.0f);
+          const float sigmoid_reference = 1.0f / (1.0f + std::exp(-x));
+          const auto is_subnormal = [](const float value) {
+            return value != 0.0f && std::abs(value) < fp16_min_normal;
+          };
+          const auto may_underflow = [](const float value) {
+            return value != 0.0f &&
+                std::abs(value) < fp16_min_normal * (1.0f + unfused_rtol);
+          };
+          float atol = 6e-8f * (std::abs(x * y) + std::abs(y) + 1.0f);
+          if (is_subnormal(x) || is_subnormal(y) ||
+              may_underflow(sigmoid_reference) ||
+              may_underflow(x * sigmoid_reference) ||
+              may_underflow(reference)) {
+            // Flushing the unfused path to zero can lose the full reference
+            // magnitude. Its relative tolerance then vanishes, so the extra
+            // 1e-3 covers the fused result's relative error.
+            atol += (1.0f + 1e-3f) * std::abs(reference);
+          }
           ASSERT_NEAR(
               float(actual[i]),
               float(expected[i]),
-              3e-3f * std::abs(float(expected[i])) + atol)
+              unfused_rtol * std::abs(float(expected[i])) + atol)
               << "element " << i;
         } else {
           ASSERT_NEAR(

@@ -50,6 +50,18 @@ list(
   extension_runner_util
 )
 
+if(EXECUTORCH_BUILD_WASM_WEBGPU)
+  if(NOT TARGET webgpu_backend)
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_WASM_WEBGPU requires the webgpu_backend target. "
+        "Enable EXECUTORCH_BUILD_WEBGPU and add backends/webgpu before "
+        "extension/wasm."
+    )
+  endif()
+  list(APPEND link_libraries webgpu_backend)
+endif()
+
 add_library(executorch_wasm OBJECT wasm_bindings.cpp)
 
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
@@ -68,6 +80,26 @@ target_link_libraries(
   PUBLIC ${link_libraries}
   INTERFACE executorch_kernels
 )
+
+if(EXECUTORCH_BUILD_WASM_WEBGPU)
+  target_compile_definitions(executorch_wasm PUBLIC EXECUTORCH_WASM_WEBGPU)
+  # Delegated execution blocks on wgpuInstanceWaitAny, which emdawnwebgpu
+  # implements with Asyncify.handleAsync; the port aborts in that call when
+  # Asyncify is off. ASYNCIFY_IGNORE_INDIRECT must stay unset: the wait is
+  # reached through the virtual backend interface, an indirect call. Model data
+  # lives in the Wasm heap before delegate upload, so permit growth beyond
+  # Emscripten's 16 MiB default and retain the full wasm32 address-space
+  # ceiling.
+  target_link_options(
+    executorch_wasm PUBLIC -sASYNCIFY -sASYNCIFY_STACK_SIZE=65536
+    -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB
+  )
+  # The backend reports device and graph failures by throwing, and catches them
+  # at its own boundary; Emscripten needs the flag when compiling and when
+  # linking.
+  target_compile_options(executorch_wasm PUBLIC -fexceptions)
+  target_link_options(executorch_wasm PUBLIC -fexceptions)
+endif()
 
 if(BUILD_TESTING)
   add_subdirectory(test)

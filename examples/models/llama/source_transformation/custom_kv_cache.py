@@ -396,14 +396,15 @@ class StaticQuantizedKVCache(nn.Module):
     def _dequantize(self, value, scale, dtype):
         if self.use_per_channel:
             return value.to(dtype) * scale.to(dtype)
-        return torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+        dequantized = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
             value,
             scale,
             0,
             torch.iinfo(self.quantized_cache_dtype).min,
             torch.iinfo(self.quantized_cache_dtype).max,
             self.quantized_cache_dtype,
-        ).to(dtype)
+        )
+        return dequantized if dtype == torch.float32 else dequantized.to(dtype)
 
     def _update_cache(self, value, cache, input_pos, indices=None):
         start_pos = input_pos[0].item()
@@ -551,24 +552,31 @@ def _replace_kv_cache_with_quantized_kv_cache(module):
 
 
 def replace_kv_cache_with_static_quantized_kv_cache(
-    module, scale: float = 1.0 / 127.0, use_custom_update_cache_op: bool = True
+    module,
+    scale: float = 1.0 / 127.0,
+    use_custom_update_cache_op: bool = True,
+    use_per_channel: bool = True,
 ):
     if use_custom_update_cache_op:
         from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
     logging.info(
         "Replacing KVCache with StaticQuantizedKVCache. This modifies the model "
-        "in place. use_custom_update_cache_op=%s, scale=%s",
+        "in place. use_custom_update_cache_op=%s, use_per_channel=%s, scale=%s",
         use_custom_update_cache_op,
+        use_per_channel,
         scale,
     )
     return _replace_kv_cache_with_static_quantized_kv_cache(
-        module, scale, use_custom_update_cache_op
+        module, scale, use_custom_update_cache_op, use_per_channel
     )
 
 
 def _replace_kv_cache_with_static_quantized_kv_cache(
-    module, scale: float, use_custom_update_cache_op: bool
+    module,
+    scale: float,
+    use_custom_update_cache_op: bool,
+    use_per_channel: bool,
 ):
     for name, child in module.named_children():
         if isinstance(child, KVCache) or isinstance(child, CustomKVCache):
@@ -584,11 +592,12 @@ def _replace_kv_cache_with_static_quantized_kv_cache(
                     child,
                     scale=scale,
                     use_custom_update_cache_op=use_custom_update_cache_op,
+                    use_per_channel=use_per_channel,
                 ),
             )
         else:
             _replace_kv_cache_with_static_quantized_kv_cache(
-                child, scale, use_custom_update_cache_op
+                child, scale, use_custom_update_cache_op, use_per_channel
             )
     return module
 

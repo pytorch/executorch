@@ -80,6 +80,28 @@ class CacheTest : public ::testing::Test {
   }
 };
 
+TEST_F(CacheTest, GeometryDefaultsToNonDFlash) {
+  const CacheGeometry geometry{{flat_layer()}};
+  EXPECT_FALSE(geometry.dflash_block_size.has_value());
+  EXPECT_TRUE(valid(geometry));
+}
+
+TEST_F(CacheTest, GeometryAcceptsNonnegativeDFlashBlockSize) {
+  for (int block_size : {0, 1, 4}) {
+    const CacheGeometry geometry{{flat_layer(), ring_layer(4)}, block_size};
+    ASSERT_TRUE(geometry.dflash_block_size.has_value());
+    EXPECT_EQ(*geometry.dflash_block_size, block_size);
+    EXPECT_TRUE(valid(geometry));
+    EXPECT_TRUE(valid(geometry, config(8)));
+  }
+}
+
+TEST_F(CacheTest, GeometryRejectsNegativeDFlashBlockSize) {
+  const CacheGeometry geometry{{flat_layer()}, -1};
+  EXPECT_FALSE(valid(geometry));
+  EXPECT_FALSE(valid(geometry, config(8)));
+}
+
 // ---- Flat policy -----------------------------------------------------------
 
 TEST_F(CacheTest, FlatPlanAppendsAndReadsAllHistory) {
@@ -822,6 +844,106 @@ TEST_F(CacheTest, KvSharedLayerReservesIdempotently) {
   EXPECT_EQ(c.place(0, args.positions), donor); // same tokens -> same step
   EXPECT_EQ(c.cache.free_cells(), free_after_place); // no new cells claimed
   EXPECT_EQ(c.place(0, {7, 8, 9}), nullptr); // different tokens, never declared
+}
+
+TEST_F(CacheTest, DFlashCellRowsUseOwnerOrderAndContextAnchoredWindow) {
+  CacheGeometry geometry{{flat_layer(), ring_layer(2), ring_layer(2)}};
+  geometry.dflash_block_size = 2;
+  CellCache cache(geometry, config(32));
+  const int32_t a = *cache.seq_new(), b = *cache.seq_new();
+  // b is first despite its larger id; context lengths are unequal.
+  const auto args = flatten_step({{b, 0, 5}, {a, 0, 3}});
+  ASSERT_TRUE(cache.declare_step(args.seq_ids));
+  const auto* flat = cache.place_step(0, args.positions.data(), 8);
+  const auto* windowed = cache.place_step(1, args.positions.data(), 8);
+  ASSERT_NE(flat, nullptr);
+  ASSERT_NE(windowed, nullptr);
+  EXPECT_EQ(flat->query_rows, (std::vector<int32_t>{3, 4, 6, 7}));
+  EXPECT_EQ(windowed->query_rows, flat->query_rows);
+  EXPECT_EQ(flat->cells, (std::vector<int32_t>{0, 1, 2, 3, 4, 5, 6, 7}));
+  EXPECT_EQ(row(*flat, 3), "11111...");
+  EXPECT_EQ(row(*flat, 4), "11111...");
+  EXPECT_EQ(row(*flat, 6), ".....111");
+  // b's context ends at 3: retain positions 1,2 and the full block 3,4.
+  EXPECT_EQ(row(*windowed, 3), ".1111...");
+  EXPECT_EQ(row(*windowed, 4), ".1111...");
+  EXPECT_EQ(row(*windowed, 6), ".....111");
+  EXPECT_EQ(cache.place_step(2, args.positions.data(), 8), windowed);
+  EXPECT_EQ(cache.free_cells(), 24);
+}
+
+TEST_F(CacheTest, DFlashCellRejectsMalformedGroupingWithoutPlacement) {
+  CacheGeometry geometry{{flat_layer()}};
+  geometry.dflash_block_size = 2;
+  CellCache cache(geometry, config(16));
+  const int32_t a = *cache.seq_new(), b = *cache.seq_new();
+  ASSERT_TRUE(cache.declare_step({b, b, a, a}));
+  EXPECT_FALSE(cache.declare_step({a, a, b, b, a, a}));
+  EXPECT_FALSE(cache.declare_step({a, a, b}));
+  EXPECT_FALSE(cache.declare_step({a, -1}));
+  const int32_t wrong[] = {0, 1, 0, 2};
+  EXPECT_EQ(cache.place_step(0, wrong, 4), nullptr);
+  EXPECT_EQ(cache.place_step(0, wrong, 3), nullptr);
+  EXPECT_EQ(cache.place_step(0, nullptr, 4), nullptr);
+  EXPECT_EQ(cache.free_cells(), 16);
+  EXPECT_EQ(cache.pos(a), 0);
+  EXPECT_EQ(cache.pos(b), 0);
+  const int32_t positions[] = {0, 1, 0, 1};
+  ASSERT_NE(cache.place_step(0, positions, 4), nullptr);
+  EXPECT_EQ(cache.free_cells(), 12);
+}
+
+TEST_F(CacheTest, DFlashCellRewindRetainsContextAndReusesTemporaryHoles) {
+  CacheGeometry geometry{{flat_layer()}};
+  geometry.dflash_block_size = 2;
+  CellCache cache(geometry, config(16));
+  const int32_t a = *cache.seq_new(), b = *cache.seq_new();
+  auto args = flatten_step({{b, 0, 5}, {a, 0, 3}});
+  ASSERT_TRUE(cache.declare_step(args.seq_ids));
+  ASSERT_NE(cache.place_step(0, args.positions.data(), 8), nullptr);
+  ASSERT_TRUE(cache.rewind(b, cache.pos(b) - 2));
+  ASSERT_TRUE(cache.rewind(a, cache.pos(a) - 2));
+  EXPECT_EQ(cache.pos(b), 3);
+  EXPECT_EQ(cache.pos(a), 1);
+  EXPECT_EQ(cache.free_cells(), 12);
+  const auto fork = cache.seq_clone(b, std::nullopt);
+  ASSERT_TRUE(fork);
+  args = flatten_step({{a, 1, 2}, {*fork, 3, 2}});
+  ASSERT_TRUE(cache.declare_step(args.seq_ids));
+  const auto* step = cache.place_step(0, args.positions.data(), 4);
+  ASSERT_NE(step, nullptr);
+  EXPECT_EQ(step->cells, (std::vector<int32_t>{3, 4, 6, 7}));
+  EXPECT_EQ(step->query_rows, (std::vector<int32_t>{0, 1, 2, 3}));
+  EXPECT_EQ(row(*step, 0), "...111..");
+  EXPECT_EQ(row(*step, 2), "111...11");
+  ASSERT_TRUE(cache.seq_rm(a));
+  EXPECT_EQ(*cache.seq_new(), a);
+}
+
+TEST_F(CacheTest, DFlashZeroWarmupSelectsOneQueryPerOwnerAndPersistsContext) {
+  CacheGeometry geometry{{flat_layer(), ring_layer(2)}};
+  geometry.dflash_block_size = 0;
+  CellCache cache(geometry, config(16));
+  const int32_t a = *cache.seq_new(), b = *cache.seq_new();
+  const auto args = flatten_step({{b, 0, 4}, {a, 0, 1}});
+  ASSERT_TRUE(cache.declare_step(args.seq_ids));
+  const auto* step = cache.place_step(1, args.positions.data(), 5);
+  ASSERT_NE(step, nullptr);
+  EXPECT_EQ(step->query_rows, (std::vector<int32_t>{3, 4}));
+  EXPECT_EQ(row(*step, 3), "..11.");
+  EXPECT_EQ(row(*step, 4), "....1");
+  EXPECT_EQ(cache.pos(b), 4);
+  EXPECT_EQ(cache.pos(a), 1);
+}
+
+TEST_F(CacheTest, DFlashGeometryRejectsNegativeBlocksAndUnknownPolicy) {
+  CacheGeometry geometry{{flat_layer()}};
+  geometry.dflash_block_size = -1;
+  EXPECT_FALSE(executorch::extension::llm::cache::valid(geometry));
+  geometry.dflash_block_size = 0;
+  EXPECT_TRUE(executorch::extension::llm::cache::valid(geometry));
+  geometry.layers[0].policy.kind = static_cast<LayerPolicy::Kind>(42);
+  EXPECT_FALSE(executorch::extension::llm::cache::valid(geometry));
 }
 
 TEST_F(CacheTest, CellRejectedDeclarationLeavesTheLastOneStanding) {

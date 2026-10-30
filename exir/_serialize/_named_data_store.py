@@ -7,6 +7,7 @@
 # pyre-strict
 
 import hashlib
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -64,8 +65,8 @@ class NamedDataStore:
         in the PTE or externally.
     - Multiple keys can point to the same buffer entry.
     - The same data can be added multiple times and all keys will point to one
-        buffer. If a duplicate blob is added with a different alignment, the
-        lcm of the current and new alignment is taken for that blob.
+        buffer. Within each output file, duplicate blobs use the lcm of every
+        requested alignment for that blob.
     """
 
     # List of unique blobs.
@@ -148,6 +149,14 @@ class NamedDataStore:
                     f"Existing data size: {len(self.buffers[buffer_idx])} bytes. "
                     f"New data size: {len(data)} bytes."
                 )
+            data_entry = self.pte_data.get(key)
+            if data_entry is None:
+                for entries in self.external_data.values():
+                    data_entry = entries.get(key)
+                    if data_entry is not None:
+                        break
+            assert data_entry is not None
+            data_entry.alignment = math.lcm(data_entry.alignment, alignment)
         else:
             # Two-level dedup: cheap fingerprint rejects non-matches fast,
             # SHA-256 confirms matches without full byte comparison.
@@ -167,11 +176,12 @@ class NamedDataStore:
                     buffer_idx
                 )
 
-            local_key_to_buffer_idx[key] = DataEntry(
+            data_entry = DataEntry(
                 buffer_index=buffer_idx,
                 alignment=alignment,
                 tensor_layout=tensor_layout,
             )
+            local_key_to_buffer_idx[key] = data_entry
             self.key_to_buffer_idx[key] = buffer_idx
 
     def add_named_data(
@@ -288,10 +298,34 @@ class NamedDataStore:
         self.external_data = external_data
         self.pte_data = {}
 
+    @staticmethod
+    def _snapshot_data_entries(
+        entries: Dict[str, DataEntry],
+    ) -> Dict[str, DataEntry]:
+        buffer_alignments: Dict[int, int] = {}
+        for entry in entries.values():
+            buffer_alignments[entry.buffer_index] = math.lcm(
+                buffer_alignments.get(entry.buffer_index, 1), entry.alignment
+            )
+        return {
+            key: DataEntry(
+                buffer_index=entry.buffer_index,
+                alignment=buffer_alignments[entry.buffer_index],
+                tensor_layout=entry.tensor_layout,
+            )
+            for key, entry in entries.items()
+        }
+
     def get_named_data_store_output(self) -> NamedDataStoreOutput:
-        # Clean up empty maps inside self.external_data
-        self.external_data = {k: v for k, v in self.external_data.items() if len(v) > 0}
-        return NamedDataStoreOutput(self.buffers, self.pte_data, self.external_data)
+        return NamedDataStoreOutput(
+            buffers=list(self.buffers),
+            pte_data=self._snapshot_data_entries(self.pte_data),
+            external_data={
+                tag: self._snapshot_data_entries(entries)
+                for tag, entries in self.external_data.items()
+                if entries
+            },
+        )
 
     def merge_named_data_store(self, other: NamedDataStoreOutput) -> None:
         """

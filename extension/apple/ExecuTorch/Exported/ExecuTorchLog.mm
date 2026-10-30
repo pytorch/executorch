@@ -37,7 +37,9 @@
   dispatch_once(&onceToken, ^{
     sharedLog = [self new];
 #if ET_LOG_ENABLED
-    sharedLog->_sinks = [NSHashTable weakObjectsHashTable];
+    sharedLog->_sinks =
+        [NSHashTable hashTableWithOptions:NSHashTableWeakMemory |
+                                          NSHashTableObjectPointerPersonality];
     sharedLog->_queue = dispatch_queue_create("org.pytorch.executorch.log",
                                               DISPATCH_QUEUE_SERIAL);
     sharedLog->_buffer = [NSMutableArray new];
@@ -65,8 +67,19 @@
 
 - (void)removeSink:(id<ExecuTorchLogSink>)sink {
 #if ET_LOG_ENABLED
+  // Keep only the address: strong or weak references are unsafe in dealloc.
+  // Adds share this queue, so a new sink at this address is added later.
+  const void *sinkAddress = (__bridge const void *)sink;
   dispatch_async(_queue, ^{
-    [self->_sinks removeObject:sink];
+    // Reading weak entries autoreleases them, so release other sinks here.
+    @autoreleasepool {
+      for (id<ExecuTorchLogSink> candidate in self->_sinks) {
+        if ((__bridge const void *)candidate == sinkAddress) {
+          [self->_sinks removeObject:candidate];
+          break;
+        }
+      }
+    }
   });
 #else
   (void)sink;

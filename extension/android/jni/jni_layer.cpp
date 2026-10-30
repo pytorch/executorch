@@ -104,11 +104,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
   }
 
   static TensorPtr newTensorFromJTensor(
-      facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor);
-
-  static TensorPtr newTensorFromJTensor(
-      facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor,
-      std::vector<executorch::aten::DimOrderType> dim_order) {
+      facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor) {
     static auto cls = TensorHybrid::javaClassStatic();
     static const auto dtypeMethod = cls->getMethod<jint()>("dtypeJniCode");
     jint jdtype = dtypeMethod(jtensor);
@@ -167,24 +163,13 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
       return nullptr;
     }
-    auto tensor = for_blob(
+    return from_blob(
         jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type);
-    if (!dim_order.empty() && dim_order.size() == shape_vec.size()) {
-      return std::move(tensor)
-          .dim_order(std::move(dim_order))
-          .make_tensor_ptr();
-    }
-    return std::move(tensor).make_tensor_ptr();
   }
 
  private:
   friend HybridBase;
 };
-
-TensorPtr TensorHybrid::newTensorFromJTensor(
-    facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor) {
-  return newTensorFromJTensor(jtensor, {});
-}
 
 class JEValue : public facebook::jni::JavaClass<JEValue> {
  public:
@@ -242,11 +227,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
   }
 
   static TensorPtr JEValueToTensorImpl(
-      facebook::jni::alias_ref<JEValue> JEValue);
-
-  static TensorPtr JEValueToTensorImpl(
-      facebook::jni::alias_ref<JEValue> JEValue,
-      std::vector<executorch::aten::DimOrderType> dim_order) {
+      facebook::jni::alias_ref<JEValue> JEValue) {
     static const auto typeCodeField =
         JEValue::javaClassStatic()->getField<jint>("mTypeCode");
     const auto typeCode = JEValue->getFieldValue(typeCodeField);
@@ -256,7 +237,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
               ->getMethod<facebook::jni::alias_ref<TensorHybrid::javaobject>()>(
                   "toTensor");
       auto jtensor = jMethodGetTensor(JEValue);
-      return TensorHybrid::newTensorFromJTensor(jtensor, std::move(dim_order));
+      return TensorHybrid::newTensorFromJTensor(jtensor);
     }
     std::stringstream ss;
     ss << "Unknown EValue typeCode: " << typeCode;
@@ -265,11 +246,6 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
     return {};
   }
 };
-
-TensorPtr JEValue::JEValueToTensorImpl(
-    facebook::jni::alias_ref<JEValue> JEValue) {
-  return JEValueToTensorImpl(JEValue, {});
-}
 
 class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
  private:
@@ -482,14 +458,6 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     std::vector<EValue> evalues;
     std::vector<TensorPtr> tensors;
 
-    auto method_meta = module_->method_meta(method);
-    if (!method_meta.ok()) {
-      executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(method_meta.error()),
-          "Failed to get metadata for method: " + method);
-      return {};
-    }
-
     static const auto typeCodeField =
         JEValue::javaClassStatic()->getField<jint>("mTypeCode");
 
@@ -497,17 +465,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       auto jevalue = jinputs->getElement(i);
       const auto typeCode = jevalue->getFieldValue(typeCodeField);
       if (typeCode == JEValue::kTypeCodeTensor) {
-        auto tensor_meta = method_meta->input_tensor_meta(i);
-        if (!tensor_meta.ok()) {
-          executorch::jni_helper::throwExecutorchException(
-              static_cast<uint32_t>(tensor_meta.error()),
-              "Failed to get tensor metadata for input " + std::to_string(i) +
-                  " of method: " + method);
-          return {};
-        }
-        const auto expected_dim_order = tensor_meta->dim_order();
-        tensors.emplace_back(JEValue::JEValueToTensorImpl(
-            jevalue, {expected_dim_order.begin(), expected_dim_order.end()}));
+        tensors.emplace_back(JEValue::JEValueToTensorImpl(jevalue));
         evalues.emplace_back(tensors.back());
       } else if (typeCode == JEValue::kTypeCodeInt) {
         static const auto toIntMethod =

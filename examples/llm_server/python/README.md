@@ -239,9 +239,9 @@ the generic control plane never imports an example. Backend specifics
 
 The dedicated batching launcher supports concurrent text requests on one shared
 runner, ordered persistent-session continuation, targeted in-band cancellation,
-and optional creation-only prefix reuse. It does not yet migrate Muse image or
-DFlash execution. The serialized-worker limitations below describe the legacy
-path, not the new batching worker.
+and optional prefix reuse for new sessions and clean prompt replacements. It
+does not yet migrate Muse image or DFlash execution. The serialized-worker
+limitations below describe the legacy path, not the new batching worker.
 
 Deliberately narrow (reliability-first): Hermes/Qwen tool calling only;
 unsupported sampling params are rejected, not ignored. **One worker process,

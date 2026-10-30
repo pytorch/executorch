@@ -469,6 +469,22 @@ bool ComputeGraph::is_vectorizable_width_packed_tensor(
   return is_standard_channels_packed_texture_tensor(idx);
 }
 
+bool ComputeGraph::samples_zero_outside_tensor(const ValueRef idx) const {
+  if (!val_is_tensor(idx) || is_buffer_storage(idx)) {
+    return false;
+  }
+  const api::vTensor& tensor = values_.at(idx).toConstTensor();
+  const VkExtent3D extents = tensor.image().extents();
+  const utils::uvec3 limits = utils::make_uvec3(tensor.logical_limits());
+  const vkapi::VulkanImage::SamplerProperties& sampler =
+      tensor.image().sampler_properties();
+  return extents.width == limits[0] && extents.height == limits[1] &&
+      extents.depth == limits[2] && sampler.filter == VK_FILTER_NEAREST &&
+      sampler.mipmap_mode == VK_SAMPLER_MIPMAP_MODE_NEAREST &&
+      sampler.address_mode == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER &&
+      sampler.border_color == VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+}
+
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
@@ -701,6 +717,10 @@ ValueRef ComputeGraph::set_input_tensor(
   // For texture storage, the buffer size needs to account for the zero
   // padding applied by unused texel elements.
   size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  if (dtype_of(idx) == vkapi::kInt8x4 &&
+      vkapi::element_size(staging_dtype) == 1) {
+    buf_numel *= 4;
+  }
   ValueRef staging_idx = add_staging(
       staging_dtype, buf_numel, vkapi::CopyDirection::HOST_TO_DEVICE);
   add_staging_to_tensor_node(*this, staging_idx, idx);
@@ -726,6 +746,10 @@ ValueRef ComputeGraph::set_output_tensor(
   // For texture storage, the buffer size needs to account for the zero
   // padding applied by unused texel elements.
   size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  if (dtype_of(idx) == vkapi::kInt8x4 &&
+      vkapi::element_size(staging_dtype) == 1) {
+    buf_numel *= 4;
+  }
   ValueRef staging_idx = add_staging(
       staging_dtype, buf_numel, vkapi::CopyDirection::DEVICE_TO_HOST);
   // We only run this when the tensor is non-empty.  When the underlying

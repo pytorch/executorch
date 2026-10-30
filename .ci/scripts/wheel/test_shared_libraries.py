@@ -99,10 +99,6 @@ _AOTI_SHIM_SYMBOLS = (
     # kernel shim is listed rather than a sample, because a partially built library is exactly the
     # failure this row exists to catch.
     "aoti_torch_cuda__weight_int4pack_mm",
-    "aoti_torch_cuda_int4_plain_mm",
-    "aoti_torch_cuda_int5_plain_mm",
-    "aoti_torch_cuda_int6_plain_mm",
-    "aoti_torch_cuda_int8_plain_mm",
     "aoti_torch_cuda_rand",
     "aoti_torch_cuda_randint_low_out",
     "aoti_torch_cuda_sort_stable",
@@ -153,7 +149,11 @@ else:
 # The delegate's own entry points. A second definer means the delegate is compiled
 # into the Python extension as well, which would register it twice in one process.
 _QNN_BACKEND_SYMBOLS = ("QnnExecuTorchBackendRegister",)
-_OPENVINO_BACKEND_SYMBOLS = ("executorch::backends::openvino::OpenvinoBackend",)
+# A member rather than the bare class name, because the PE reader matches MSVC decorated
+# names, which spell a member as ?is_available@OpenvinoBackend@... and never the class alone.
+_OPENVINO_BACKEND_SYMBOLS = (
+    "executorch::backends::openvino::OpenvinoBackend::is_available",
+)
 
 _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
 
@@ -1101,22 +1101,23 @@ def _wheel_cuda_train() -> str:
 # wheel is inspected, and a row cannot call that at import time.
 _REQUIRED_ON_A_CUDA_WHEEL = "cuda-wheel-only"
 
-# Marker for a row whose owner every Linux wheel carries and no macOS wheel does.
-_REQUIRED_ON_LINUX = "linux-only"
+# Marker for a row whose owner every Linux and Windows wheel carries and no macOS wheel
+# does.
+_REQUIRED_ON_LINUX_AND_WINDOWS = "linux-and-windows-only"
 # Marker for a row whose owner every macOS wheel carries and no other wheel does.
 # The Core ML delegate is built on every macOS wheel, so its presence is decidable
 # from the installed wheel and a macOS wheel that dropped it should fail rather than
 # quietly regress to folding it into the Python extension.
 _REQUIRED_ON_MACOS = "macos-only"
-# Narrower than the marker above on purpose. The Qualcomm SDK the delegate builds
-# against is published for Linux x86_64 only, so the aarch64 Linux wheels ship no such
-# library and demanding it there would fail a wheel that is correct. Reusing the
-# Linux-wide marker would do exactly that.
+# Narrower than the Linux and Windows marker on purpose. The Qualcomm SDK the delegate
+# builds against is published for Linux x86_64 only, so the aarch64 Linux wheels ship no
+# such library and demanding it there would fail a wheel that is correct. Reusing that
+# marker would do exactly that.
 _REQUIRED_ON_LINUX_X86 = "linux-x86-only"
 # Marker for a row whose owner every aarch64 wheel carries, macOS and Linux alike. The
 # TorchAO kernels are selected by the processor rather than the operating system, so
-# neither the macOS nor the Linux marker describes them and a fixed False would let a
-# wheel that silently dropped the library pass.
+# neither the macOS nor the Linux and Windows marker describes them and a fixed False
+# would let a wheel that silently dropped the library pass.
 _REQUIRED_ON_AARCH64 = "aarch64-only"
 
 
@@ -1124,8 +1125,8 @@ def _resolve_required(required):
     """Turn a row's requirement marker into the answer for the installed wheel."""
     if required == _REQUIRED_ON_A_CUDA_WHEEL:
         return bool(_wheel_cuda_train())
-    if required == _REQUIRED_ON_LINUX:
-        return sys.platform == "linux"
+    if required == _REQUIRED_ON_LINUX_AND_WINDOWS:
+        return sys.platform in ("linux", "win32")
     if required == _REQUIRED_ON_MACOS:
         return sys.platform == "darwin"
     if required == _REQUIRED_ON_LINUX_X86:
@@ -1283,15 +1284,15 @@ _OWNED_COMPONENTS = (
         _library_file_name("libexecutorch_backend_mlx"),
         False,
     ),
-    # Required on Linux, where packaging turns the backend on for every non-minimal
-    # build. A fixed False passed a wheel that had compiled the delegate back into the
-    # extension: no library ships, so the row skips, and one definer inside the
+    # Required on Linux and Windows, where packaging turns the backend on for every
+    # non-minimal build. A fixed False passed a wheel that had compiled the delegate back
+    # into the extension: no library ships, so the row skips, and one definer inside the
     # extension is exactly the monolithic layout a definer count cannot distinguish.
     (
         "OpenVINO delegate",
         _OPENVINO_BACKEND_SYMBOLS,
         _library_file_name("libexecutorch_backend_openvino"),
-        _REQUIRED_ON_LINUX,
+        _REQUIRED_ON_LINUX_AND_WINDOWS,
     ),
     # Required on Linux x86_64 only, where the Qualcomm SDK the delegate builds against
     # is published. A fixed False would pass a wheel that compiled the delegate back

@@ -480,6 +480,75 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
         ]
         self._test_quantizer(m, example_inputs, quantizer, node_occurrence, node_list)
 
+    def test_set_module_type_conv2d(self):
+        # The weight/bias of a conv are get_attr nodes without nn_module_stack,
+        # so the module type filter must only be checked on the conv itself.
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 8, 3)
+                self.linear = torch.nn.Linear(6, 6)
+
+            def forward(self, x):
+                return self.linear(self.conv(x))
+
+        m = M().eval()
+        example_inputs = (torch.randn(1, 3, 8, 8),)
+        quantizer = XNNPACKQuantizer()
+        quantization_config = get_symmetric_quantization_config(is_per_channel=True)
+        quantizer.set_module_type(torch.nn.Conv2d, quantization_config)
+        node_occurrence = {
+            # conv weight only; the linear is not quantized
+            torch.ops.quantized_decomposed.dequantize_per_channel.default: 1,
+            # input and output of the conv
+            torch.ops.quantized_decomposed.quantize_per_tensor.default: 2,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default: 2,
+        }
+        node_list = [
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.linear.default,
+        ]
+        self._test_quantizer(m, example_inputs, quantizer, node_occurrence, node_list)
+
+    def test_set_module_type_conv2d_relu(self):
+        # The relu is called in the parent's forward, so only the conv carries
+        # Conv2d in its nn_module_stack. The relu is fused under the conv's config.
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 8, 3)
+                self.linear = torch.nn.Linear(6, 6)
+
+            def forward(self, x):
+                return self.linear(torch.nn.functional.relu(self.conv(x)))
+
+        m = M().eval()
+        example_inputs = (torch.randn(1, 3, 8, 8),)
+        quantizer = XNNPACKQuantizer()
+        quantization_config = get_symmetric_quantization_config(is_per_channel=True)
+        quantizer.set_module_type(torch.nn.Conv2d, quantization_config)
+        node_occurrence = {
+            # conv weight only; the linear is not quantized
+            torch.ops.quantized_decomposed.dequantize_per_channel.default: 1,
+            # conv input and relu output, nothing between conv and relu
+            torch.ops.quantized_decomposed.quantize_per_tensor.default: 2,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default: 2,
+        }
+        node_list = [
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.relu.default,
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.linear.default,
+        ]
+        self._test_quantizer(m, example_inputs, quantizer, node_occurrence, node_list)
+
     def test_set_module_name_with_underscores(self) -> None:
         """Test that if a module name has an underscore, we can still quantize it"""
 
@@ -565,6 +634,28 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
         ]
         self._test_quantizer(m, example_inputs, quantizer, node_occurrence, node_list)
+
+    def test_set_module_type_skips_cat_outside_the_module(self):
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(5, 5)
+
+            def forward(self, x):
+                return torch.cat([self.linear(x), x], 1)
+
+        quantizer = XNNPACKQuantizer().set_module_type(
+            torch.nn.Linear, get_symmetric_quantization_config()
+        )
+        m = export(M().eval(), (torch.randn(3, 5),), strict=True).module()
+        m = quantizer.annotate(m)
+        annotated = {
+            node.target
+            for node in m.graph.nodes
+            if node.meta.get("quantization_annotation") is not None
+        }
+        self.assertIn(torch.ops.aten.linear.default, annotated)
+        self.assertNotIn(torch.ops.aten.cat.default, annotated)
 
     def test_set_module_type_case_2(self):
         class M(torch.nn.Module):
@@ -711,6 +802,55 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
                 True,
                 qconfig_mapping,
             )
+
+    def test_bf16_is_not_quantized(self):
+        class Cat(torch.nn.Module):
+            def forward(self, x):
+                return torch.cat([x, x.float()], 1)
+
+        class LinearMean(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(8, 8)
+
+            def forward(self, x):
+                return torch.mean(self.linear(x), -1, dtype=torch.bfloat16)
+
+        linear = torch.nn.Linear(8, 8).to(torch.bfloat16)
+        conv = torch.nn.Conv2d(3, 3, 1).to(torch.bfloat16)
+        x2d = torch.randn(9, 8, dtype=torch.bfloat16)
+        x4d = torch.randn(1, 3, 4, 4, dtype=torch.bfloat16)
+        cases = [
+            (linear, x2d),
+            (torch.nn.Sequential(linear, torch.nn.ReLU()), x2d),
+            (conv, x4d),
+            # The cat output is float32 but one of its inputs is bfloat16.
+            (Cat(), x4d),
+            # The linear is float32; only the mean it feeds is bfloat16.
+            (LinearMean(), x2d.float()),
+        ]
+        for (m_eager, x), is_dynamic in itertools.product(cases, (False, True)):
+            quantizer = XNNPACKQuantizer().set_global(
+                get_symmetric_quantization_config(
+                    is_per_channel=True, is_dynamic=is_dynamic
+                )
+            )
+            m = export(m_eager.eval(), (x,), strict=True).module()
+            m = prepare_pt2e(m, quantizer)
+            m(x)
+            m = convert_pt2e(m)
+            quantized = [
+                node.args[0].meta["val"].dtype
+                for node in m.graph.nodes
+                if node.target
+                in (
+                    torch.ops.quantized_decomposed.quantize_per_tensor.default,
+                    torch.ops.quantized_decomposed.quantize_per_tensor.tensor,
+                )
+            ]
+            self.assertNotIn(torch.bfloat16, quantized)
+            if isinstance(m_eager, LinearMean):
+                self.assertTrue(quantized)
 
     def test_dynamic_linear_int4_weight(self):
         quantizer = XNNPACKQuantizer()

@@ -252,16 +252,21 @@ void StartMeasurements() {
   ethosu_ArmCycleCountStart = arm_pmu_cycles();
 }
 
-void StopMeasurements(int num_inferences) {
+void StopMeasurements(size_t num_inferences) {
 #if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   ARM_PMU_CNTR_Disable(
       PMU_CNTENCLR_CCNTR_ENABLE_Msk | PMU_CNTENCLR_CNT0_ENABLE_Msk |
       PMU_CNTENCLR_CNT1_ENABLE_Msk);
 #endif
+  if (num_inferences == 0) {
+    ET_LOG(Error, "Cannot report measurements without completed inferences");
+    return;
+  }
   uint64_t cycle_count = arm_pmu_cycles() - ethosu_ArmCycleCountStart;
 
   // Number of comand streams handled by the NPU
-  ET_LOG(Info, "NPU Inferences : %d", num_inferences);
+  ET_LOG(
+      Info, "NPU Inferences : %lu", static_cast<printf_size_t>(num_inferences));
   ET_LOG(
       Info,
       "NPU delegations: %" PRIu32 " (%.2f per inference)",
@@ -349,7 +354,7 @@ void StopMeasurements(int num_inferences) {
   ET_LOG(Info, "Ethos-U PMU report:");
   ET_LOG(
       Info,
-      "ethosu_pmu_cycle_cntr : % " PRIu64 " (%.2f per inference)",
+      "ethosu_pmu_cycle_cntr : %" PRIu64 " (%.2f per inference)",
       ethosu_pmuCycleCount,
       (double)ethosu_pmuCycleCount / num_inferences);
 
@@ -427,7 +432,7 @@ void StopMeasurements(int num_inferences) {
 void StartMeasurements() {}
 
 // cppcheck-suppress unusedFunction
-void StopMeasurements(int num_inferences) {
+void StopMeasurements(size_t num_inferences) {
   (void)num_inferences;
 }
 

@@ -156,6 +156,9 @@ TEST_F(OpLogSoftmaxOutTest, AllDtypesSupported) {
 
 TEST_F(OpLogSoftmaxOutTest, NonContiguous) {
   test_dtype_noncontiguous_dim<float, ScalarType::Float>();
+  if (SupportedFeatures::get()->op_log_softmax_dtype_double) {
+    test_dtype_noncontiguous_dim<double, ScalarType::Double>();
+  }
 }
 
 TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionsDies) {

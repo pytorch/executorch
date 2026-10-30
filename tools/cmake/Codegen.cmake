@@ -334,7 +334,9 @@ function(gen_custom_ops_aot_lib)
   set_target_properties(${GEN_LIB_NAME} PROPERTIES CXX_STANDARD 20)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
-  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch)
+  # torch would record libtorch_cuda with a CUDA build of PyTorch, so a CPU-only
+  # torch could not load this. torch_cpu_library does not.
+  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch_cpu_library)
 
   executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
   if(TARGET portable_lib)
@@ -589,6 +591,7 @@ function(executorch_load_build_variables)
       XNN_EXECUTOR_RUNNER_SRCS
       XNNPACK_BACKEND_SRCS
       XNNPACK_SCHEMA_SRCS
+      CPU_BACKEND_SRCS
       VULKAN_SCHEMA_SRCS
       CUSTOM_OPS_SRCS
       LLAMA_RUNNER_SRCS
@@ -620,6 +623,7 @@ function(executorch_load_build_variables)
       _xnn_executor_runner__srcs
       _xnnpack_backend__srcs
       _xnnpack_schema__srcs
+      _cpu_backend__srcs
       _vulkan_schema__srcs
       _custom_ops__srcs
       _llama_runner__srcs

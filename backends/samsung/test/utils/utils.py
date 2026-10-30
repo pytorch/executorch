@@ -10,7 +10,7 @@ import torch
 
 class TestConfig:
     host_ip: str = "0.0.0.0"
-    chipset: str = "E9955"
+    chipset: str = "E9965"
 
 
 class GreedyLM:

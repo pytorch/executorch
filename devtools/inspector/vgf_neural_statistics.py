@@ -18,7 +18,9 @@ from typing import Any, Dict, List, Sequence, Union
 # and return a normal Python dictionary that tooling can consume.
 
 SCHEMA = "executorch.vgf.neural_statistics"
-SCHEMA_VERSION = 1
+LEGACY_SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = (LEGACY_SCHEMA_VERSION, SCHEMA_VERSION)
 
 DelegateMetadataBytes = Union[bytes, bytearray, str]
 
@@ -54,6 +56,60 @@ def _decode_blob(blob: Dict[str, Any]) -> Dict[str, Any]:
     return decoded
 
 
+def _require_dict(payload: Dict[str, Any], key: str) -> Dict[str, Any]:
+    value = payload.get(key)
+    if not isinstance(value, dict):
+        raise ValueError(f"VGF neural statistics metadata is missing {key}")
+    return value
+
+
+def _require_keys(value: Dict[str, Any], section: str, keys: Sequence[str]) -> None:
+    missing = [key for key in keys if key not in value]
+    if missing:
+        raise ValueError(
+            f"VGF neural statistics metadata {section} is missing: "
+            + ", ".join(missing)
+        )
+
+
+def _validate_v2_interpretation_metadata(payload: Dict[str, Any]) -> None:
+    statistics_mode = _require_dict(payload, "statistics_mode")
+    _require_keys(
+        statistics_mode,
+        "statistics_mode",
+        ("executorch_index", "vulkan_value", "vulkan_name"),
+    )
+
+    target = _require_dict(payload, "target")
+    _require_keys(
+        target,
+        "target",
+        (
+            "available",
+            "device_name",
+            "vendor_id",
+            "device_id",
+            "driver_version",
+        ),
+    )
+
+    counter_layout = _require_dict(payload, "counter_layout")
+    _require_keys(
+        counter_layout,
+        "counter_layout",
+        (
+            "available",
+            "schema_id",
+            "schema_version",
+            "endianness",
+            "word_type",
+            "words_per_task",
+            "leading_block_count",
+            "reason",
+        ),
+    )
+
+
 def parse_vgf_neural_statistics_metadata(
     metadata: DelegateMetadataBytes,
 ) -> Dict[str, Any]:
@@ -62,13 +118,16 @@ def parse_vgf_neural_statistics_metadata(
     if payload.get("schema") != SCHEMA:
         raise ValueError(f"Not VGF neural statistics metadata: {payload.get('schema')}")
 
-    if payload.get("schema_version") != SCHEMA_VERSION:
+    schema_version = payload.get("schema_version")
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError(
             "Unsupported VGF neural statistics metadata schema version: "
-            f"{payload.get('schema_version')}"
+            f"{schema_version}"
         )
 
     payload = dict(payload)
+    if schema_version == SCHEMA_VERSION:
+        _validate_v2_interpretation_metadata(payload)
     decoded_segments = []
 
     for segment in payload.get("segments", []):

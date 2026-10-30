@@ -13,7 +13,6 @@ import threading
 from types import SimpleNamespace
 
 import pytest
-
 from executorch.examples.llm_server.python import session_runtime as runtime_module
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
@@ -32,7 +31,6 @@ from executorch.examples.llm_server.python.tests.test_multiplexed_worker_client 
     _AsyncProc,
 )
 from executorch.examples.llm_server.python.worker_client import WorkerError, WorkerStats
-
 
 _OPTIONS = GenerationOptions(max_new_tokens=8)
 
@@ -629,6 +627,93 @@ def test_native_mailbox_overflow_holds_lease_until_terminal_and_isolates_peer(ov
     asyncio.run(scenario())
 
 
+def test_native_streaming_parser_emits_before_completion_and_handles_split_stop():
+    from executorch.examples.llm_server.python.protocol import DeltaMessage
+
+    class Parser:
+        def __init__(self):
+            self.reasoning = True
+
+        def feed(self, text):
+            if self.reasoning:
+                text, separator, content = text.partition("|")
+                yield DeltaMessage(reasoning_content=text)
+                self.reasoning = not separator
+                text = content
+            if text:
+                yield DeltaMessage(content=text)
+
+        def finish(self):
+            yield DeltaMessage(content="!")
+
+    async def scenario():
+        worker = _NativeWorker(cooperative=False, tokens=("r" * 40 + "|" + "c" * 40,))
+        runtime = SessionRuntime(worker)
+        serving = ServingChat(
+            runtime,
+            ChatTemplate(hf_tokenizer_path=None, allow_fallback=True),
+            "test-model",
+            streaming_parser_factory=Parser,
+            reasoning_extractor=lambda text: (None, "buffered fallback"),
+        )
+        try:
+            for return_reasoning in (True, False):
+                request = _request("s", stream=True)
+                request.stop = ["[STOP]"]
+                request.chat_template_kwargs = {"return_reasoning": return_reasoning}
+                stream = await serving.create(request)
+                request_id = (await _call(worker))[1]
+                assert '"role":"assistant"' in await anext(stream)
+                chunks = []
+                fields = (
+                    ("reasoning_content", "content")
+                    if return_reasoning
+                    else ("content",)
+                )
+                for field in fields:
+                    chunks.append(await asyncio.wait_for(anext(stream), 2))
+                    choice = json.loads(chunks[-1].removeprefix("data: "))["choices"][0]
+                    assert choice["delta"][field]
+                assert not worker._requests[request_id].completion.done()
+                worker._proc.send(request_id, token="[ST")
+                worker._proc.send(request_id, token="OP]must not leak")
+
+                async def drain(stream=stream, chunks=chunks):
+                    chunks.extend([chunk async for chunk in stream])
+
+                draining = asyncio.create_task(drain())
+                cancel = await asyncio.wait_for(worker.cancel_frames.get(), 2)
+                assert cancel["target_request_id"] == request_id
+                worker.finish(request_id, cancelled=False, finish_reason="length")
+                await asyncio.wait_for(draining, 2)
+                assert chunks[-1] == "data: [DONE]\n\n"
+                choices = [
+                    json.loads(chunk.removeprefix("data: "))["choices"][0]
+                    for chunk in chunks[:-1]
+                ]
+                content = "".join(c["delta"].get("content", "") for c in choices)
+                reasoning = "".join(
+                    c["delta"].get("reasoning_content", "") for c in choices
+                )
+                assert content == "c" * 40 + "!"
+                assert reasoning == ("r" * 40 if return_reasoning else "")
+                assert choices[-1]["finish_reason"] == "stop"
+                transcript = serving._transcript
+                record = transcript._turns["s"][0]
+                assert record["fp"] == transcript._assistant_fingerprint(content, None)
+                assert record["reasoning_fp"] == transcript._reasoning_fingerprint(
+                    reasoning or None
+                )
+                assert worker.cancelled.count(request_id) == 1
+                assert not worker._requests and not worker._controls
+                assert not serving._transactions._entries
+                assert not runtime._session_locks._entries and runtime._admitted == 0
+        finally:
+            await runtime.aclose_worker()
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("path", ["reasoning", "tools", "filter", "stop"])
 def test_buffered_chat_disconnect_cancels_own_generation(path):
     from executorch.examples.llm_server.python.tool_parsers import HermesDetector
@@ -641,6 +726,9 @@ def test_buffered_chat_disconnect_cancels_own_generation(path):
             kwargs["reasoning_extractor"] = lambda text: (None, text)
         elif path == "tools":
             kwargs["tool_detector_cls"] = HermesDetector
+            kwargs["streaming_parser_factory"] = lambda: pytest.fail(
+                "explicit tools must bypass the streaming parser"
+            )
         elif path == "filter":
             kwargs["content_filter"] = lambda text: text
         serving = ServingChat(

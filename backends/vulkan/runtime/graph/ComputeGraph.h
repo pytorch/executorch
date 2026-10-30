@@ -371,6 +371,12 @@ class ComputeGraph final {
 
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
+  inline vkapi::ScalarType original_dtype_of(const ValueRef idx) const {
+    const Value& value = values_.at(idx);
+    return value.isTensor() ? value.toConstTensor().original_dtype()
+                            : dtype_of(idx);
+  }
+
   vkapi::ScalarType get_staging_dtype_for(const ValueRef idx) const;
 
   inline const utils::ivec3& logical_limits_of(const ValueRef idx) const {
@@ -454,6 +460,15 @@ class ComputeGraph final {
    * buffer
    */
   bool is_vectorizable_width_packed_tensor(const ValueRef idx) const;
+
+  /*
+   * Checks that texture reads outside the logical limits of the tensor at
+   * `idx` return zero, i.e. that the following is true:
+   * 1. The value at `idx` is a tensor with texture storage
+   * 2. The image extents of the tensor match its logical limits
+   * 3. The image sampler uses nearest filtering and a transparent black border
+   */
+  bool samples_zero_outside_tensor(const ValueRef idx) const;
 
   inline bool val_is_view_of(const ValueRef maybe_view, const ValueRef base)
       const {

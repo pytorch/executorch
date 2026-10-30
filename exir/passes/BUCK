@@ -101,12 +101,27 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "delegate_scratch_pass",
+    srcs = [
+        "delegate_scratch_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:delegate",
+        "//executorch/exir:memory",
+        "//executorch/exir:memory_planning",
+        "//executorch/exir:tensor",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "insert_write_back_for_buffers_pass",
     srcs = [
         "insert_write_back_for_buffers_pass.py",
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/exir/passes:replace_view_copy_with_view_pass",
     ],
 )
 
@@ -165,6 +180,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/operator:util",
         "//executorch/exir/passes:replace_aten_with_edge_pass",
+        ":insert_write_back_for_buffers_pass",
     ],
 )
 
@@ -226,6 +242,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         "//caffe2:torch",
         "//executorch/exir:error",
+        "//executorch/exir:inplace_aliasing",
         "//executorch/exir:memory",
         "//executorch/exir:memory_planning",
         "//executorch/exir:pass_base",
@@ -289,6 +306,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         "//caffe2:torch",
         "//executorch/exir:delegate",
+        "//executorch/exir:inplace_aliasing",
         "//executorch/exir:pass_base",
         "//executorch/exir:tensor",
     ],
@@ -428,6 +446,7 @@ fbcode_target(_kind = runtime.python_library,
         "//caffe2:torch",
         "//executorch/exir:dim_order_utils",
         "//executorch/exir:pass_base",
+        "//executorch/exir:tensor",
         "//executorch/exir/dialects/edge:lib",
     ],
 )
@@ -506,7 +525,9 @@ fbcode_target(_kind = runtime.python_library,
         "propagate_device_pass.py",
     ],
     deps = [
+        ":convert_constant_dim_order_pass",
         ":device_copy_ops_registry",
+        ":insert_write_back_for_buffers_pass",
         ":propagate_device_config",
         "//caffe2:torch",
         "//executorch/exir:delegate",

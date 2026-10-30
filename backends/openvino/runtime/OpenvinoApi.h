@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <dlfcn.h>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -35,6 +34,11 @@ typedef struct {
   char** devices;
   size_t size;
 } ov_available_devices_t;
+
+typedef struct {
+  const char* buildNumber;
+  const char* description;
+} ov_version_t;
 
 // Intentionally partial — only OV_STATUS_OK is needed for success checks.
 // The full enum is defined in openvino/c/ov_common.h.
@@ -65,6 +69,8 @@ typedef enum {
 } ov_element_type_e;
 
 // Function pointer types for each OpenVINO C API function we use.
+using ov_get_openvino_version_fn = ov_status_e (*)(ov_version_t*);
+using ov_version_free_fn = void (*)(ov_version_t*);
 using ov_core_create_fn = ov_status_e (*)(ov_core_t**);
 using ov_core_free_fn = void (*)(ov_core_t*);
 using ov_core_get_available_devices_fn =
@@ -96,16 +102,15 @@ using ov_shape_create_fn =
     ov_status_e (*)(int64_t, const int64_t*, ov_shape_t*);
 using ov_shape_free_fn = ov_status_e (*)(ov_shape_t*);
 
+// Defined in OpenvinoBackend.cpp, where the platform's loader API is included.
 struct DlCloser {
-  void operator()(void* handle) {
-    if (handle) {
-      dlclose(handle);
-    }
-  }
+  void operator()(void* handle);
 };
 using DlHandle = std::unique_ptr<void, DlCloser>;
 
 struct OpenvinoFunctions {
+  ov_get_openvino_version_fn get_openvino_version = nullptr;
+  ov_version_free_fn version_free = nullptr;
   ov_core_create_fn core_create = nullptr;
   ov_core_free_fn core_free = nullptr;
   ov_core_get_available_devices_fn core_get_available_devices = nullptr;

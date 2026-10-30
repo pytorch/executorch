@@ -44,6 +44,17 @@ Configuration details:
 - Optional `session_affinity` sends an `x-session-affinity` header for KV reuse.
   It requires worker support for named sessions; sequential trials share the ID.
 
+For concurrent tasks, set `[terminal_bench].concurrency` (default `1`), remove
+`session_affinity`, and select a batching server and compatible export. Server
+limits use the launcher's defaults. Keep task concurrency within the server's
+session and request capacity; configure `[server]` options as needed.
+Each trial/attempt uses Harbor's trial UUID as its KV-session ID. Cleanup runs in
+Harbor's END hook before the trial slot is released, retrying transient failures
+for up to two minutes. Persistent cleanup errors stop the run to avoid reusing
+unreleased capacity. Harbor retains the same mini-SWE-agent loop and per-trial
+verification.
+The run also checks that evaluation session IDs match the Harbor trial UUIDs.
+
 `--dry-run` writes resolved commands to `run.json`. Use `--task NAME` to override
 the task list and `--output DIR` to select a new results directory. Each run owns
 its server process.
@@ -60,3 +71,5 @@ its server process.
 
 Model revisions, export/build commands, and dependency versions are not captured;
 retain them alongside results.
+With concurrency, `metrics.json` sums per-request timings, which overlap;
+these sums are not elapsed engine time or aggregate throughput.

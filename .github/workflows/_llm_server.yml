@@ -44,7 +44,9 @@ jobs:
 
         python -m pytest -q \
           examples/llm_server/python/tests \
-          examples/models/muse-glimmer/tests/test_serve.py
+          examples/models/muse-glimmer/tests/test_serve.py \
+          examples/models/muse-glimmer/tests/test_serve_batching.py \
+          examples/models/muse-glimmer/tests/test_stream_parser.py
 
         cmake -S . -B cmake-out \
           -DCMAKE_BUILD_TYPE=Release \

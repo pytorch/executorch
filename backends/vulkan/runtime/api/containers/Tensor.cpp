@@ -604,12 +604,15 @@ vkapi::VulkanImage allocate_image(
   vkapi::Adapter* adapter_ptr = context_ptr->adapter_ptr();
 
   const VkFormat image_format = vkcompute::vkapi::to_vkformat(dtype);
+  const bool floating = dtype == vkapi::kHalf || dtype == vkapi::kFloat ||
+      dtype == vkapi::kDouble;
 
   vkapi::ImageSampler::Properties sampler_props{
       VK_FILTER_NEAREST,
       VK_SAMPLER_MIPMAP_MODE_NEAREST,
-      VK_SAMPLER_ADDRESS_MODE_REPEAT,
-      VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+      VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+      floating ? VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK
+               : VK_BORDER_COLOR_INT_TRANSPARENT_BLACK,
   };
 
   VkImageType image_type = VK_IMAGE_TYPE_3D;
@@ -886,6 +889,7 @@ vTensor::vTensor(
     const vkapi::VulkanImage* external_image,
     const vkapi::VulkanBuffer* external_buffer)
     : dtype_(get_effective_scalar_type(context, dtype, memory_layout)),
+      original_dtype_(dtype),
       packed_dim_info_(calculate_packed_dim_info(memory_layout, storage_type)),
       // Calculate tensor metadata
       sizes_(sizes.begin(), sizes.end()),
@@ -962,6 +966,7 @@ vTensor::vTensor(
     const utils::GPUMemoryLayout memory_layout,
     const utils::AxisMapLayout axis_map_layout)
     : dtype_(vkapi::element_scalartype(image.format())),
+      original_dtype_(dtype_),
       packed_dim_info_(
           calculate_packed_dim_info(memory_layout, utils::kTexture3D)),
       // Calculate tensor metadata
@@ -996,6 +1001,7 @@ vTensor::vTensor(
 
 vTensor::vTensor(vTensor& other)
     : dtype_(other.dtype_),
+      original_dtype_(other.original_dtype_),
       packed_dim_info_{other.packed_dim_info_},
       // Copy tensor size metadata
       sizes_(other.sizes_.begin(), other.sizes_.end()),
@@ -1021,6 +1027,7 @@ vTensor::vTensor(
     const std::vector<int64_t>& sizes,
     const std::vector<int64_t>& dim_order)
     : dtype_(other.dtype_),
+      original_dtype_(other.original_dtype_),
       packed_dim_info_(other.packed_dim_info_),
       // Copy tensor size metadata
       sizes_(sizes.begin(), sizes.end()),

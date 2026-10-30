@@ -70,22 +70,45 @@ class DFlashExportOptionsTest(TestCase):
                 self.assertTrue(configs[method].skip_d2h_for_method_outputs)
 
     def test_cuda_sampler_methods_accept_any_proposal_count(self) -> None:
-        methods = export_dflash._export_cuda_sampler_methods(
-            max_draft_tokens=3, vocab_size=5
-        )
         scalars = (torch.tensor([0.0]), torch.tensor([0]), torch.tensor([1.0]))
-        for proposals in (1, 3):
-            with self.subTest(proposals=proposals):
-                tokens, probabilities = methods["dflash_sample_tokens"].module()(
-                    torch.randn(proposals, 5), *scalars
+        for max_proposals in (3, 15):
+            methods = export_dflash._export_cuda_sampler_methods(
+                max_draft_tokens=max_proposals, vocab_size=5
+            )
+            for proposals in (1, 3, max_proposals):
+                with self.subTest(max_proposals=max_proposals, proposals=proposals):
+                    tokens, probabilities = methods["dflash_sample_tokens"].module()(
+                        torch.randn(proposals, 5), *scalars
+                    )
+                    result = methods["dflash_verify_speculative"].module()(
+                        torch.randn(proposals + 1, 5),
+                        probabilities,
+                        torch.cat([torch.tensor([4]), tokens]),
+                        *scalars,
+                        torch.tensor([False]),
+                    )
+                    self.assertEqual(tokens.shape, torch.Size([proposals]))
+                    self.assertEqual(result.shape, torch.Size([proposals + 3]))
+                    self.assertEqual(result.dtype, torch.int64)
+
+    def test_cuda_exported_verifier_commits_greedy_prefix_at_m16(self) -> None:
+        methods = export_dflash._export_cuda_sampler_methods(
+            max_draft_tokens=15, vocab_size=5
+        )
+        verifier = methods["dflash_verify_speculative"].module()
+        scalars = (torch.tensor([0.0]), torch.tensor([1]), torch.tensor([1.0]))
+        candidates = torch.tensor([4] + [1] * 15)
+        probabilities = torch.nn.functional.one_hot(
+            candidates[1:], num_classes=5
+        ).float()
+        for rejected_row in range(16):
+            with self.subTest(rejected_row=rejected_row):
+                logits = torch.zeros(16, 5)
+                logits[:, 1] = 10.0
+                logits[rejected_row, 2] = 20.0
+                result = verifier(
+                    logits, probabilities, candidates, *scalars, torch.tensor([True])
                 )
-                result = methods["dflash_verify_speculative"].module()(
-                    torch.randn(proposals + 1, 5),
-                    probabilities,
-                    torch.cat([torch.tensor([4]), tokens]),
-                    *scalars,
-                    torch.tensor([False]),
-                )
-                self.assertEqual(tokens.shape, torch.Size([proposals]))
-                self.assertEqual(result.shape, torch.Size([proposals + 3]))
-                self.assertEqual(result.dtype, torch.int64)
+                self.assertEqual(result[0].item(), rejected_row + 1)
+                self.assertEqual(result[1].item(), 2)
+                self.assertTrue(torch.equal(result[2:], candidates))

@@ -6,7 +6,7 @@ This page lists VGF-supported PyTorch APIs and the dtype and quantization modes 
 
 `8x8` means 8-bit activations and 8-bit weights. `16x8` means 16-bit activations and 8-bit weights. `8x4` means 8-bit activations and 4-bit weights.
 
-Total supported PyTorch APIs: **161**.
+Total supported PyTorch APIs: **163**.
 
 | PyTorch API | Support profile | DType | Quantization mode |
 | --- | --- | --- | --- |
@@ -49,6 +49,7 @@ Total supported PyTorch APIs: **161**.
 | `torch.cumsum` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.div` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.div` / `/` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.einsum` | FP | `FP32` | - |
 | `torch.eq` / `==` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.erf` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.erfinv` | FP, INT | `FP32`, `FP16`, `INT8` | 8x8 |
@@ -73,6 +74,7 @@ Total supported PyTorch APIs: **161**.
 | `torch.isnan` | FP | `FP32` | - |
 | `torch.layer_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.le` / `<=` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.linalg.vector_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.linspace` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.log` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.log10` | INT | `INT8` | 8x8 |
@@ -158,9 +160,9 @@ Total supported PyTorch APIs: **161**.
 | `torch.Tensor.__setitem__` / `tensor indexing assignment` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.Tensor.copy_` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.Tensor.expand` | FP, INT | `FP32`, `INT8` | 8x8 |
-| `torch.Tensor.repeat` | FP, INT | `FP16`, `BF16`, `INT8`, `INT16`, `BOOL` | 8x8, 16x8 |
+| `torch.Tensor.repeat` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16`, `BOOL` | 8x8, 16x8 |
 | `torch.Tensor.unfold` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `BOOL` | 8x8 |
-| `torch.Tensor.view` | FP, INT | `FP16`, `INT8` | 8x8 |
+| `torch.Tensor.view` | FP, INT | `FP32`, `FP16`, `INT8` | 8x8 |
 | `torch.topk` | FP | `FP32`, `FP16` | - |
 | `torch.transpose` / `torch.Tensor.transpose` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.tril` | FP | `FP32` | - |

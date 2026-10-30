@@ -76,8 +76,7 @@ if [[ "${MODE}" =~ .*openvino.* ]]; then
   OPENVINO=ON
   TARGET_LIBS="$TARGET_LIBS openvino_backend "
 
-  # Install specific OpenVINO runtime from pip.
-  $PYTHON_EXECUTABLE -m pip install --pre openvino==2026.1.0.dev20260131 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+  $PYTHON_EXECUTABLE -m pip install openvino==2026.4.1
   $PYTHON_EXECUTABLE -m pip install -r backends/openvino/requirements.txt
 
   # Set OPENVINO_LIB_PATH so the C++ demo runner can also find libopenvino_c.so.

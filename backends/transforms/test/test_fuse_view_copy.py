@@ -13,12 +13,22 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class TestFuseViewCopyTransform(unittest.TestCase):
-    def _fuse(self, model, example_inputs, dynamic_shapes=None):
+    def _fuse(
+        self,
+        model,
+        example_inputs,
+        dynamic_shapes=None,
+        extra_fusible_ops=None,
+        target_filters=None,
+    ):
         ep = torch.export.export(
             model, example_inputs, dynamic_shapes=dynamic_shapes, strict=False
         )
         program = to_edge(ep).exported_program()
-        gm = FuseViewCopyTransform()(program.graph_module).graph_module
+        gm = FuseViewCopyTransform(
+            extra_fusible_ops=extra_fusible_ops,
+            target_filters=target_filters,
+        )(program.graph_module).graph_module
         # lint() is what catches a node whose argument is defined after it.
         gm.graph.lint()
         return gm.graph
@@ -39,6 +49,40 @@ class TestFuseViewCopyTransform(unittest.TestCase):
 
         graph = self._fuse(Model().eval(), (torch.rand(2, 16) + 1.0,))
         self.assertEqual(self._count_views(graph), 1)
+
+    def test_extra_op_is_fused_when_filter_accepts(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                viewed = x.view(1, 2, 16)
+                softmax = torch.ops.aten._softmax.default(viewed, -1, False)
+                return softmax.view(2, 16)
+
+        softmax = exir_ops.edge.aten._softmax.default
+        graph = self._fuse(
+            Model().eval(),
+            (torch.rand(2, 16),),
+            extra_fusible_ops={softmax},
+            target_filters={softmax: lambda _node, _final_view: True},
+        )
+
+        self.assertEqual(self._count_views(graph), 1)
+
+    def test_extra_op_is_not_fused_when_filter_rejects(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                viewed = x.view(1, 2, 16)
+                softmax = torch.ops.aten._softmax.default(viewed, -1, False)
+                return softmax.view(2, 16)
+
+        softmax = exir_ops.edge.aten._softmax.default
+        graph = self._fuse(
+            Model().eval(),
+            (torch.rand(2, 16),),
+            extra_fusible_ops={softmax},
+            target_filters={softmax: lambda _node, _final_view: False},
+        )
+
+        self.assertEqual(self._count_views(graph), 2)
 
     def test_chain_ending_in_a_later_computed_shape_stays_ordered(self):
         # The final view's shape is only known after `y` has been reduced, so
