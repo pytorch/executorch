@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 #include <vector>
 #include "coreai_fault_scope.h"
 #include "coreai_file.h"
@@ -35,10 +36,36 @@ TEST(CoreAIStorageTest, DirectoryHelpersDoNotFollowSymlinks) {
   ASSERT_EQ(lstat_at(root.get(), "directory", &info), 0);
   EXPECT_TRUE(S_ISDIR(info.st_mode));
   EXPECT_EQ(open_directory_at(root.get(), "link"), -1);
+  EXPECT_EQ(
+      open_storage_directory(
+          root.get(), @"link", StorageCreationMode::OpenExisting)
+          .error(),
+      Error::AccessFailed);
   EXPECT_EQ(open_directory_at(root.get(), "missing"), -1);
   EXPECT_EQ(errno, ENOENT);
   EXPECT_EQ(lstat_at(root.get(), "missing", &info), -1);
   EXPECT_EQ(errno, ENOENT);
+}
+
+TEST(CoreAIStorageTest, FileDescriptorMovesTransferSingleOwnership) {
+  FileDescriptor source(open("/dev/null", O_RDONLY | O_CLOEXEC));
+  ASSERT_GE(source.get(), 0);
+  const int source_fd = source.get();
+  FileDescriptor moved(std::move(source));
+  EXPECT_EQ(source.get(), -1);
+  EXPECT_EQ(moved.get(), source_fd);
+
+  FileDescriptor destination(open("/dev/null", O_RDONLY | O_CLOEXEC));
+  ASSERT_GE(destination.get(), 0);
+  const int replaced_fd = destination.get();
+  destination = std::move(moved);
+  EXPECT_EQ(moved.get(), -1);
+  EXPECT_EQ(destination.get(), source_fd);
+  EXPECT_EQ(fcntl(replaced_fd, F_GETFD), -1);
+  EXPECT_EQ(errno, EBADF);
+
+  destination = std::move(destination);
+  EXPECT_EQ(destination.get(), source_fd);
 }
 
 TEST(CoreAIStorageTest, OpensDirectoriesAndReportsCreation) {
@@ -51,16 +78,17 @@ TEST(CoreAIStorageTest, OpensDirectoriesAndReportsCreation) {
   auto missing = open_storage_directory(
       root.get(), @"child", StorageCreationMode::OpenExisting);
   ASSERT_TRUE(missing.ok());
-  EXPECT_EQ(missing.get().fd, -1);
-  EXPECT_FALSE(missing.get().created);
+  EXPECT_FALSE(missing->descriptor.has_value());
+  EXPECT_FALSE(missing->created);
 
   StorageFaultScope sync_fault(FaultPoint::SyncDirectory);
   auto created =
       open_storage_directory(root.get(), @"child", StorageCreationMode::Create);
   ASSERT_TRUE(created.ok());
-  FileDescriptor first(created.get().fd);
+  ASSERT_TRUE(created->descriptor.has_value());
+  FileDescriptor first = std::move(*created->descriptor);
   ASSERT_GE(first.get(), 0);
-  EXPECT_TRUE(created.get().created);
+  EXPECT_TRUE(created->created);
   EXPECT_NE(fcntl(first.get(), F_GETFD) & FD_CLOEXEC, 0);
   EXPECT_EQ(sync_fault.matches, 0);
   struct stat original;
@@ -72,9 +100,10 @@ TEST(CoreAIStorageTest, OpensDirectoriesAndReportsCreation) {
        {StorageCreationMode::OpenExisting, StorageCreationMode::Create}) {
     auto reopened = open_storage_directory(root.get(), @"child", mode);
     ASSERT_TRUE(reopened.ok());
-    FileDescriptor next(reopened.get().fd);
+    ASSERT_TRUE(reopened->descriptor.has_value());
+    FileDescriptor next = std::move(*reopened->descriptor);
     ASSERT_GE(next.get(), 0);
-    EXPECT_FALSE(reopened.get().created);
+    EXPECT_FALSE(reopened->created);
     struct stat current;
     ASSERT_EQ(fstat(next.get(), &current), 0);
     EXPECT_EQ(current.st_ino, original.st_ino);
@@ -99,9 +128,10 @@ TEST(CoreAIStorageTest, ConcurrentDirectoryCreationIsNotReportedAsOwnCreation) {
   auto opened =
       open_storage_directory(root.get(), @"child", StorageCreationMode::Create);
   ASSERT_TRUE(opened.ok());
-  FileDescriptor directory(opened.get().fd);
+  ASSERT_TRUE(opened->descriptor.has_value());
+  FileDescriptor directory = std::move(*opened->descriptor);
   EXPECT_GE(directory.get(), 0);
-  EXPECT_FALSE(opened.get().created);
+  EXPECT_FALSE(opened->created);
 }
 
 TEST(CoreAIStorageTest, RejectsInvalidDirectoryComponents) {
@@ -396,6 +426,162 @@ TEST(CoreAIStorageTest, CreatesAndReopensSharedFileWithoutTruncation) {
   ASSERT_EQ(read(reopened.get(), bytes, sizeof(bytes)), sizeof(bytes));
   EXPECT_EQ(memcmp(bytes, "data", sizeof(bytes)), 0);
   EXPECT_EQ(lseek(created.get(), 0, SEEK_CUR), 4);
+}
+
+TEST(CoreAIStorageTest, StrictRemovalPreflightsBeforeMutation) {
+  TestDirectory storage;
+  TestDirectory target;
+  ASSERT_NE(storage.url, nil);
+  ASSERT_NE(target.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  ASSERT_EQ(mkdirat(root.get(), "entry", 0777), 0);
+  FileDescriptor entry(open_directory_at(root.get(), "entry"));
+  ASSERT_GE(entry.get(), 0);
+  ASSERT_EQ(write_storage_file(entry.get(), @"a/file", "x", 1), Error::Ok);
+  ASSERT_EQ(
+      symlinkat(target.url.fileSystemRepresentation, entry.get(), "z-link"), 0);
+  NSDictionary* snapshot = nil;
+  ASSERT_TRUE(asset_tree_snapshot(
+      [storage.url URLByAppendingPathComponent:@"entry"], snapshot));
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Strict),
+      Error::InvalidExternalData);
+  EXPECT_TRUE(snapshot_matches(
+      [storage.url URLByAppendingPathComponent:@"entry"], snapshot));
+}
+
+TEST(CoreAIStorageTest, StrictRemovalRevalidatesDuringRemoval) {
+  TestDirectory storage;
+  TestDirectory target;
+  ASSERT_NE(storage.url, nil);
+  ASSERT_NE(target.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  ASSERT_EQ(mkdirat(root.get(), "entry", 0777), 0);
+  FileDescriptor entry(open_directory_at(root.get(), "entry"));
+  ASSERT_GE(entry.get(), 0);
+  ASSERT_EQ(write_storage_file(entry.get(), @"a", "x", 1), Error::Ok);
+  ASSERT_EQ(write_storage_file(entry.get(), @"z", "x", 1), Error::Ok);
+  __block int removals = 0;
+  const int entry_fd = entry.get();
+  NSString* target_path = target.url.path;
+  StorageFaultScope fault(FaultPoint::Remove);
+  fault.armed = false;
+  fault.observe = ^(FaultPoint operation) {
+    if (operation != FaultPoint::Remove || ++removals != 1) {
+      return;
+    }
+    EXPECT_EQ(unlinkat(entry_fd, "z", 0), 0);
+    EXPECT_EQ(
+        symlinkat(target_path.fileSystemRepresentation, entry_fd, "z"), 0);
+  };
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Strict),
+      Error::InvalidExternalData);
+  EXPECT_EQ(removals, 1);
+  struct stat info;
+  EXPECT_EQ(lstat_at(entry.get(), "a", &info), -1);
+  ASSERT_EQ(lstat_at(entry.get(), "z", &info), 0);
+  EXPECT_TRUE(S_ISLNK(info.st_mode));
+  EXPECT_TRUE([NSFileManager.defaultManager fileExistsAtPath:target.url.path]);
+}
+
+TEST(CoreAIStorageTest, MaintenanceRemovalDoesNotFollowMalformedEntries) {
+  TestDirectory storage;
+  TestDirectory target;
+  ASSERT_NE(storage.url, nil);
+  ASSERT_NE(target.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  ASSERT_EQ(mkdirat(root.get(), "entry", 0777), 0);
+  FileDescriptor entry(open_directory_at(root.get(), "entry"));
+  ASSERT_GE(entry.get(), 0);
+  ASSERT_EQ(write_storage_file(entry.get(), @"nested/file", "x", 1), Error::Ok);
+  ASSERT_EQ(
+      symlinkat(target.url.fileSystemRepresentation, entry.get(), "link"), 0);
+  ASSERT_EQ(mkfifoat(entry.get(), "fifo", 0600), 0);
+  NSDictionary* target_snapshot = nil;
+  ASSERT_TRUE(asset_tree_snapshot(target.url, target_snapshot));
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Maintenance),
+      Error::Ok);
+  struct stat info;
+  EXPECT_EQ(lstat_at(root.get(), "entry", &info), -1);
+  EXPECT_EQ(errno, ENOENT);
+  EXPECT_TRUE(snapshot_matches(target.url, target_snapshot));
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Maintenance),
+      Error::Ok);
+}
+
+TEST(CoreAIStorageTest, EntriesMissingDuringRemovalAreAlreadyRemoved) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  ASSERT_EQ(mkdirat(root.get(), "entry", 0777), 0);
+  FileDescriptor entry(open_directory_at(root.get(), "entry"));
+  ASSERT_GE(entry.get(), 0);
+  ASSERT_EQ(write_storage_file(entry.get(), @"a", "x", 1), Error::Ok);
+  ASSERT_EQ(write_storage_file(entry.get(), @"z", "x", 1), Error::Ok);
+  const int entry_fd = entry.get();
+  __block int removals = 0;
+  StorageFaultScope fault(FaultPoint::Remove);
+  fault.armed = false;
+  fault.observe = ^(FaultPoint operation) {
+    if (operation == FaultPoint::Remove && ++removals == 1) {
+      EXPECT_EQ(unlinkat(entry_fd, "z", 0), 0);
+    }
+  };
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Strict),
+      Error::Ok);
+  EXPECT_EQ(removals, 2);
+  struct stat info;
+  EXPECT_EQ(lstat_at(root.get(), "entry", &info), -1);
+  EXPECT_EQ(errno, ENOENT);
+}
+
+TEST(CoreAIStorageTest, RemovalFailuresCanBeRetried) {
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  FileDescriptor root(open(
+      storage.url.fileSystemRepresentation,
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  ASSERT_GE(root.get(), 0);
+  ASSERT_EQ(mkdirat(root.get(), "entry", 0777), 0);
+  FileDescriptor entry(open_directory_at(root.get(), "entry"));
+  ASSERT_GE(entry.get(), 0);
+  ASSERT_EQ(write_storage_file(entry.get(), @"nested/file", "x", 1), Error::Ok);
+  {
+    StorageFaultScope fault(FaultPoint::Remove);
+    EXPECT_EQ(
+        remove_storage_directory(
+            root.get(), @"entry", StorageRemovalPolicy::Strict),
+        Error::AccessFailed);
+    EXPECT_EQ(fault.hits, 1);
+  }
+  EXPECT_EQ(
+      remove_storage_directory(
+          root.get(), @"entry", StorageRemovalPolicy::Strict),
+      Error::Ok);
+  struct stat info;
+  EXPECT_EQ(lstat_at(root.get(), "entry", &info), -1);
+  EXPECT_EQ(errno, ENOENT);
 }
 
 TEST(CoreAIStorageTest, RetriesEintr) {

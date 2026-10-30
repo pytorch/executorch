@@ -170,7 +170,7 @@ TEST_P(CoreAIManifestMetadataTest, ReturnsManifestFieldsAndNameOrder) {
   auto parsed = parse_manifest(encode(dict));
   ASSERT_TRUE(parsed.ok());
   EXPECT_EQ(parsed->aot_compiled, GetParam());
-  EXPECT_TRUE([parsed->model_hash isEqual:dict[@"hash"]]);
+  EXPECT_TRUE([parsed->export_hash isEqual:dict[@"export_hash"]]);
   EXPECT_TRUE([parsed->function isEqual:dict[@"function"]]);
   EXPECT_TRUE([parsed->inputs isEqual:dict[@"input_names"]]);
   EXPECT_TRUE([parsed->outputs isEqual:dict[@"output_names"]]);
@@ -246,12 +246,12 @@ TEST_P(CoreAIManifestMetadataTest, RequiresExactBundleCoverage) {
 
 TEST_P(CoreAIManifestMetadataTest, RejectsInvalidHashes) {
   auto missing = manifest();
-  [missing removeObjectForKey:@"hash"];
+  [missing removeObjectForKey:@"export_hash"];
   EXPECT_EQ(parse_manifest(encode(missing)).error(), Error::InvalidProgram);
   for (id hash in @[ @"", @"g", @"AB", @"../x", @"a/b", @1, NSNull.null ]) {
     SCOPED_TRACE([hash description].UTF8String);
     auto dict = manifest();
-    dict[@"hash"] = hash;
+    dict[@"export_hash"] = hash;
     if (GetParam()) {
       dict[@"archs"] = @{
         @"arch_a" :
@@ -391,12 +391,12 @@ TEST(CoreAIManifestTest, SelectsAotArchitectureWithoutMutatingManifest) {
       [parsed->architectures copy];
   for (NSString* arch in @[ @"arch_a", @"arch_b" ]) {
     SCOPED_TRACE(arch.UTF8String);
-    auto selected = select_assets(parsed.get(), arch, @"macOS");
+    auto selected = select_bundle(parsed.get(), arch, @"macOS");
     ASSERT_TRUE(selected.ok());
     EXPECT_TRUE([selected->path isEqualToString:dict[@"archs"][arch]]);
     EXPECT_EQ(selected->files.count, 2);
     NSString* bundle = selected->path.lastPathComponent;
-    EXPECT_TRUE([selected->model_hash isEqual:parsed->model_hash]);
+    EXPECT_TRUE([selected->export_hash isEqual:parsed->export_hash]);
     EXPECT_TRUE([selected->function isEqual:parsed->function]);
     EXPECT_TRUE([selected->inputs isEqual:parsed->inputs]);
     EXPECT_TRUE([selected->outputs isEqual:parsed->outputs]);
@@ -420,10 +420,10 @@ TEST(CoreAIManifestTest, SelectsSourceBundleUnchanged) {
   ASSERT_TRUE(parsed.ok());
   ASSERT_FALSE(parsed->aot_compiled);
   // Selection ignores the architecture and platform for source bundles.
-  auto selected = select_assets(parsed.get(), @"anything", @"elsewhere");
+  auto selected = select_bundle(parsed.get(), @"anything", @"elsewhere");
   ASSERT_TRUE(selected.ok());
   EXPECT_TRUE([selected->path isEqualToString:dict[@"path"]]);
-  EXPECT_TRUE([selected->model_hash isEqual:parsed->model_hash]);
+  EXPECT_TRUE([selected->export_hash isEqual:parsed->export_hash]);
   EXPECT_TRUE([selected->function isEqual:parsed->function]);
   EXPECT_TRUE([selected->inputs isEqual:parsed->inputs]);
   EXPECT_TRUE([selected->outputs isEqual:parsed->outputs]);
@@ -441,7 +441,7 @@ TEST(CoreAIManifestTest, ParsesRawBytesAndKeepsIndependentMetadata) {
   ASSERT_TRUE(parsed.ok());
   [bytes setLength:0];
   [original removeAllObjects];
-  auto selected = select_assets(parsed.get(), @"arch_b", @"macOS");
+  auto selected = select_bundle(parsed.get(), @"arch_b", @"macOS");
   ASSERT_TRUE(selected.ok());
   EXPECT_TRUE([selected->path isEqual:@"ab/model.arch_b.aimodelc"]);
   EXPECT_EQ(selected->files.count, 2);
@@ -470,30 +470,31 @@ TEST(CoreAIManifestTest, ManifestTypesAreNotDefaultConstructibleOrAssignable) {
 }
 
 TEST(CoreAIManifestTest, ValidationHelpersMatchParserRules) {
-  EXPECT_FALSE(nonempty_string(nil));
-  EXPECT_FALSE(nonempty_string(@""));
-  EXPECT_TRUE(nonempty_string(@"ab"));
+  EXPECT_FALSE(is_nonempty_string(nil));
+  EXPECT_FALSE(is_nonempty_string(@""));
+  EXPECT_TRUE(is_nonempty_string(@"ab"));
   const unichar characters[] = {'a', 0, 'b'};
   NSString* embedded_nul = [NSString stringWithCharacters:characters length:3];
   ASSERT_EQ(embedded_nul.length, 3);
-  EXPECT_FALSE(nonempty_string(embedded_nul));
-  EXPECT_FALSE(relative_path(embedded_nul));
-  EXPECT_FALSE(lowercase_hex(embedded_nul));
-  EXPECT_FALSE(nonempty_string(@1));
-  EXPECT_FALSE(lowercase_hex((id) @1, 64));
-  EXPECT_FALSE(lowercase_hex((id)NSNull.null, 64));
-  EXPECT_FALSE(relative_path(@"/ab/model.aimodel"));
-  EXPECT_FALSE(relative_path(@"ab/../model.aimodel"));
-  EXPECT_FALSE(relative_path(@"a\\b"));
-  EXPECT_FALSE(relative_path(@"a//b"));
-  EXPECT_TRUE(relative_path(@"ab/model.aimodel"));
-  EXPECT_TRUE(lowercase_hex(@"ab"));
-  EXPECT_FALSE(lowercase_hex(@""));
-  EXPECT_FALSE(lowercase_hex(@"AB"));
-  EXPECT_FALSE(lowercase_hex(@"ag"));
-  EXPECT_TRUE(lowercase_hex(fixture_identity('a'), 64));
-  EXPECT_FALSE(lowercase_hex([fixture_identity('a') substringFromIndex:1], 64));
-  EXPECT_FALSE(lowercase_hex(fixture_identity('a').uppercaseString, 64));
+  EXPECT_FALSE(is_nonempty_string(embedded_nul));
+  EXPECT_FALSE(is_relative_path(embedded_nul));
+  EXPECT_FALSE(is_lowercase_hex(embedded_nul));
+  EXPECT_FALSE(is_nonempty_string(@1));
+  EXPECT_FALSE(is_lowercase_hex((id) @1, 64));
+  EXPECT_FALSE(is_lowercase_hex((id)NSNull.null, 64));
+  EXPECT_FALSE(is_relative_path(@"/ab/model.aimodel"));
+  EXPECT_FALSE(is_relative_path(@"ab/../model.aimodel"));
+  EXPECT_FALSE(is_relative_path(@"a\\b"));
+  EXPECT_FALSE(is_relative_path(@"a//b"));
+  EXPECT_TRUE(is_relative_path(@"ab/model.aimodel"));
+  EXPECT_TRUE(is_lowercase_hex(@"ab"));
+  EXPECT_FALSE(is_lowercase_hex(@""));
+  EXPECT_FALSE(is_lowercase_hex(@"AB"));
+  EXPECT_FALSE(is_lowercase_hex(@"ag"));
+  EXPECT_TRUE(is_lowercase_hex(fixture_identity('a'), 64));
+  EXPECT_FALSE(
+      is_lowercase_hex([fixture_identity('a') substringFromIndex:1], 64));
+  EXPECT_FALSE(is_lowercase_hex(fixture_identity('a').uppercaseString, 64));
 }
 
 TEST(CoreAIManifestTest, RejectsMismatchedAotPlatformAndArchitecture) {
@@ -501,19 +502,19 @@ TEST(CoreAIManifestTest, RejectsMismatchedAotPlatformAndArchitecture) {
   ios[@"platform"] = @"iOS";
   auto parsed_ios = parse_manifest(encode(ios));
   ASSERT_TRUE(parsed_ios.ok());
-  EXPECT_TRUE(select_assets(parsed_ios.get(), @"arch_b", @"iOS").ok());
+  EXPECT_TRUE(select_bundle(parsed_ios.get(), @"arch_b", @"iOS").ok());
   auto parsed = parse_manifest(encode(aot_manifest_dict()));
   ASSERT_TRUE(parsed.ok());
   EXPECT_EQ(
-      select_assets(parsed.get(), @"arch_b", @"iOS").error(),
+      select_bundle(parsed.get(), @"arch_b", @"iOS").error(),
       Error::DelegateInvalidCompatibility);
   EXPECT_EQ(
-      select_assets(parsed.get(), @"arch_b", nil).error(),
+      select_bundle(parsed.get(), @"arch_b", nil).error(),
       Error::DelegateInvalidCompatibility);
   for (id arch in @[ @"missing", @"ARCH_B", @"", NSNull.null ]) {
     SCOPED_TRACE([arch description].UTF8String);
     EXPECT_EQ(
-        select_assets(parsed.get(), arch == NSNull.null ? nil : arch, @"macOS")
+        select_bundle(parsed.get(), arch == NSNull.null ? nil : arch, @"macOS")
             .error(),
         Error::DelegateInvalidCompatibility);
   }
