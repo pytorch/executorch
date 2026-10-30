@@ -23,6 +23,11 @@ DEFINE_int32(
     max_cached_graphs,
     1,
     "Graphs kept per executable by input shapes; 0 rebuilds every call.");
+DEFINE_bool(
+    allow_activation_quant_for_weight_only,
+    false,
+    "Run weight-only quantized linears, such as GGUF k-quants, with ggml's "
+    "quantized activations.");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage(
@@ -41,6 +46,8 @@ int main(int argc, char** argv) {
       throw std::invalid_argument("--max_cached_graphs must be non-negative");
     }
     options.max_cached_graphs = static_cast<size_t>(FLAGS_max_cached_graphs);
+    options.allow_activation_quant_for_weight_only =
+        FLAGS_allow_activation_quant_for_weight_only;
     return ptn::GgmlEngineHost::create(options);
   });
 }
