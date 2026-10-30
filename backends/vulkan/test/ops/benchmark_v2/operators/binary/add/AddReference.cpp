@@ -5,8 +5,8 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/ReferenceRegistry.h>
-#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/binary/add/AddReference.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/binary/BinaryReference.h>
+#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/binary/add/AddReference.h>
 
 namespace vkcompute::shader_profiling::reference {
 Tensor add_tensor_reference(

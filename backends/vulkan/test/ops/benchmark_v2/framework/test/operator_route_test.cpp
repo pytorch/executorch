@@ -392,7 +392,9 @@ TEST_F(
 }
 
 } // namespace
-TEST_F(BenchmarkOperatorRoute, LegacyQdqRejectsUnsupportedFloatingBufferLayout) {
+TEST_F(
+    BenchmarkOperatorRoute,
+    LegacyQdqRejectsUnsupportedFloatingBufferLayout) {
   ComputeGraph graph{GraphConfig{}};
   const auto fp = graph.add_tensor(
       {1, 3, 15, 15}, vkapi::kFloat, utils::kBuffer, utils::kChannelsPacked);

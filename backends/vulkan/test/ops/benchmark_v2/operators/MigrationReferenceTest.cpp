@@ -5,15 +5,14 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/ReferenceRegistry.h>
-#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/convolution/conv1d/Conv1dReference.h>
-#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/quantization/choose_qparams_per_row/ChooseQparamsReference.h>
+#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/attention/sdpa/SdpaReference.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/binary/add/AddReference.h>
-#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/gemm/matmul/MatmulReference.h>
+#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/convolution/conv1d/Conv1dReference.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/embedding/qw/q4gsw/EmbeddingReference.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/dq8ca_q4gsw/Dq8caQ4gswReference.h>
-#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/attention/sdpa/SdpaReference.h>
+#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/gemm/matmul/MatmulReference.h>
+#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/quantization/choose_qparams_per_row/ChooseQparamsReference.h>
 #include <gtest/gtest.h>
-
 
 namespace vkcompute::shader_profiling {
 namespace {

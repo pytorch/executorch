@@ -5,8 +5,8 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/ReferenceRegistry.h>
-#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/dq8ca_q4gsw/Dq8caQ4gswReference.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/gemm/GemmReference.h>
+#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/dq8ca_q4gsw/Dq8caQ4gswReference.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/q4gsw/Q4gswLinearReference.h>
 #include <algorithm>
 #include <cmath>

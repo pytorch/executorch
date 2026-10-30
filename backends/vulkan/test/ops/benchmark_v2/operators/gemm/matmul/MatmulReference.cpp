@@ -5,8 +5,8 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/ReferenceRegistry.h>
-#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/gemm/matmul/MatmulReference.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/gemm/GemmReference.h>
+#include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/gemm/matmul/MatmulReference.h>
 namespace vkcompute::shader_profiling::reference {
 Tensor
 matmul_reference(const Json& spec, const TensorMap& tensors, size_t threads) {

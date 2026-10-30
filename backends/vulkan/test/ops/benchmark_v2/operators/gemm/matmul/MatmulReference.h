@@ -10,9 +10,7 @@
 
 namespace vkcompute::shader_profiling::reference {
 
-Tensor matmul_reference(
-    const Json& spec,
-    const TensorMap& tensors,
-    size_t threads);
+Tensor
+matmul_reference(const Json& spec, const TensorMap& tensors, size_t threads);
 
 } // namespace vkcompute::shader_profiling::reference

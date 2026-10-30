@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 import uvicorn
-
 from executorch.examples.llm_server.python import serve
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
@@ -156,6 +155,57 @@ def test_checkpoint_options_reach_worker(argv, launch):
     )
     command = launch.stages["spawn"].call_args.args[0]
     assert command[command.index("--prefix_checkpoint_interval") + 1] == "512"
+
+
+@pytest.mark.parametrize(
+    "sessions,requests,interval,override,expected",
+    [
+        (16, 8, 0, 0, 8),
+        (4, 8, 0, 0, 4),
+        (16, 8, 64, 0, 2),
+        (1, 8, 64, 0, 1),
+        (16, 8, 0, 1, 1),
+        (16, 8, 64, 3, 3),
+    ],
+)
+def test_capture_capacity_validation_and_worker_override(
+    argv, launch, sessions, requests, interval, override, expected
+):
+    serve.main(
+        argv
+        + [
+            "--max-sessions",
+            str(sessions),
+            "--max-inflight-requests",
+            str(requests),
+            "--prefix-cache-entries",
+            "1",
+            "--prefix-checkpoint-interval",
+            str(interval),
+            "--prefix-capture-slots",
+            str(override),
+        ]
+    )
+    command = launch.stages["spawn"].call_args.args[0]
+    assert command[command.index("--prefix_capture_slots") + 1] == str(override)
+    args = SimpleNamespace(
+        max_context=1024,
+        max_sessions=sessions,
+        max_decode_sequences=8,
+        max_inflight_requests=requests,
+        prefix_cache_entries=1,
+        prefix_checkpoint_interval=interval,
+        port=8000,
+    )
+    assert (
+        serve._validate_limits(Mock(), args, prefix_capture_slots=override) == expected
+    )
+
+
+def test_capture_capacity_defaults_to_automatic(argv, launch):
+    serve.main(argv + ["--prefix-cache-entries", "4"])
+    command = launch.stages["spawn"].call_args.args[0]
+    assert command[command.index("--prefix_capture_slots") + 1] == "0"
 
 
 def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
@@ -355,6 +405,8 @@ def test_overrides_and_capability_based_concurrency(argv, native_launch):
             "23",
             "--prefix-cache-entries",
             "5",
+            "--prefix-capture-slots",
+            "8",
             "--hf-tokenizer",
             "organization/model",
             "--assistant-header",
@@ -379,6 +431,8 @@ def test_overrides_and_capability_based_concurrency(argv, native_launch):
         "23",
         "--prefix_cache_entries",
         "5",
+        "--prefix_capture_slots",
+        "8",
     ]
     launch.stages["template"].assert_called_once_with(
         hf_tokenizer_path="organization/model", assistant_header=header
@@ -441,10 +495,20 @@ def test_invalid_positive_capacities_fail_before_template_or_spawn(
 @pytest.mark.parametrize(
     "options",
     [
+        ["--prefix-capture-slots", "-1"],
+        ["--prefix-capture-slots", str(1 << 31)],
         ["--prefix-cache-entries", "-1"],
         ["--prefix-cache-entries", str(1 << 31)],
         ["--max-sessions", str((1 << 31) - 1), "--prefix-cache-entries", "1"],
-        ["--max-sessions", "1", "--prefix-cache-entries", str((1 << 31) - 2)],
+        ["--max-sessions", "1", "--prefix-cache-entries", str((1 << 31) - 1)],
+        [
+            "--max-sessions",
+            str((1 << 31) - 3),
+            "--prefix-cache-entries",
+            "1",
+            "--prefix-capture-slots",
+            "2",
+        ],
         ["--port", "0"],
         ["--port", "65536"],
     ],
@@ -470,6 +534,8 @@ def test_numeric_limit_boundaries_are_inclusive(argv, port):
             "--max-inflight-requests",
             str(max_int32),
             "--prefix-cache-entries",
+            "1",
+            "--prefix-capture-slots",
             "1",
             "--port",
             str(port),

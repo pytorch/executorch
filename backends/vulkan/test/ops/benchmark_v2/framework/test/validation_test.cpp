@@ -4,9 +4,9 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+#include <executorch/backends/vulkan/test/api_abstractions/VulkanTest.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/OperatorBenchmark.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/ShaderBenchmark.h>
-#include <executorch/backends/vulkan/test/api_abstractions/VulkanTest.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/Validation.h>
 
 #include <gtest/gtest.h>

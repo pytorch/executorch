@@ -10,9 +10,7 @@
 
 namespace vkcompute::shader_profiling::reference {
 
-Tensor sdpa_reference(
-    const Json& spec,
-    const TensorMap& tensors,
-    size_t threads);
+Tensor
+sdpa_reference(const Json& spec, const TensorMap& tensors, size_t threads);
 
 } // namespace vkcompute::shader_profiling::reference

@@ -7,7 +7,8 @@
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/ReferenceRegistry.h>
 
 namespace vkcompute::shader_profiling::reference {
-static Tensor clone_reference(const Json& spec, const TensorMap& tensors, size_t) {
+static Tensor
+clone_reference(const Json& spec, const TensorMap& tensors, size_t) {
   return tensor_arg(spec, 0, tensors);
 }
 REGISTER_REFERENCE_FUNCTIONS {
