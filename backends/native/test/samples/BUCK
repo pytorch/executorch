@@ -40,11 +40,13 @@ fbcode_target(
     ],
 )
 
-# Op packages with bundled samples, one per op and quantization scheme.
+# Op packages with bundled samples, one per op and quantization scheme. The
+# environment pins the eager kernels' ISA and threads, so the golden is the same
+# on any x86 host with AVX2. Other hosts can differ.
 fbcode_target(
     _kind = runtime.genrule,
     name = "op_samples",
     out = "op_samples",
-    cmd = "$(exe :generate) --out $OUT",
+    cmd = "MKL_CBWR=COMPATIBLE ONEDNN_MAX_CPU_ISA=AVX2 ATEN_CPU_CAPABILITY=avx2 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 $(exe :generate) --out $OUT",
     visibility = ["//executorch/backends/native/test/..."],
 )
