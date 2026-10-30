@@ -1839,8 +1839,7 @@ class PyCallerStreamScope final {
     }
   }
 
-  // Whether enter() can check the device of a stream it did not create. That
-  // needs CUDA 12.8 both at build time and in the driver.
+  // Whether enter() can check the device of a stream it did not create.
   static bool can_check_device() {
     int device = -1;
     return stream_device(cudaStreamPerThread, &device);
@@ -1887,26 +1886,27 @@ class PyCallerStreamScope final {
 
  private:
   // Asks CUDA for the device of a stream rather than trusting the device a
-  // wrapper reports. Returns false when CUDA cannot answer at all.
+  // wrapper reports. Returns false when this build cannot ask.
   static bool stream_device(cudaStream_t stream, int* device) {
-#if defined(CUDART_VERSION) && CUDART_VERSION >= 12080
+    // cudaStreamGetDevice came in CUDA 12.8, but a CUDA 12 build may load any
+    // CUDA 12 runtime, where a missing symbol would fail the import. Every
+    // CUDA 13 runtime has it, and runs only on a driver that supports it.
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 13000
     const auto status = cudaStreamGetDevice(stream, device);
-    if (status == cudaSuccess) {
-      return true;
-    }
-    // A failed call leaves an error pending that the next CUDA call, even in
-    // another library, would report.
-    (void)cudaGetLastError();
-    if (status != cudaErrorCallRequiresNewerDriver) {
+    if (status != cudaSuccess) {
+      // A failed call leaves an error pending that the next CUDA call, even
+      // in another library, would report.
+      (void)cudaGetLastError();
       throw std::runtime_error(
           std::string("Failed to find the device of a CUDA stream: ") +
           cudaGetErrorString(status));
     }
+    return true;
 #else
     (void)stream;
     (void)device;
-#endif
     return false;
+#endif
   }
 
   void end(bool refuse_out_of_order) {

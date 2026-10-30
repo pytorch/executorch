@@ -30,8 +30,8 @@ written on other streams stays safe.
 Limits for now: a stream on a CUDA device other than 0 is refused, so is the
 legacy default stream (handle 0, or 1 for ``cudaStreamLegacy``), and the CUDA
 delegate refuses a method that uses CUDA graphs inside a block. The device is
-read from the stream itself when ExecuTorch is built with, and runs on, CUDA
-12.8 or newer; otherwise it goes by the device a wrapper reports. This module
+read from the stream itself when ExecuTorch is built with CUDA 13 or newer;
+otherwise it goes by the device a wrapper reports. This module
 does not need PyTorch; ``torch.cuda.Stream`` works because it has
 ``__cuda_stream__``.
 
