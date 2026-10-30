@@ -360,9 +360,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                     Tester(module, inputs)
                     .export()
                     .to_edge_transform_and_lower()
-                    .check_count(
-                        {"torch.ops.higher_order.executorch_call_delegate": 1}
-                    )
+                    .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
                     .to_executorch()
                     .serialize()
                     .run_method_and_compare_outputs()
