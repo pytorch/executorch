@@ -1839,11 +1839,14 @@ class PyCallerStreamScope final {
     }
   }
 
-  // Whether enter() can check the device of a stream it did not create.
-  static bool can_check_device() {
-    int device = -1;
-    return stream_device(cudaStreamPerThread, &device);
-  }
+  // Whether enter() can check the device of a stream it did not create. Fixed
+  // when the bindings are built; see stream_device().
+  static constexpr bool kCanCheckDevice =
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 13000
+      true;
+#else
+      false;
+#endif
 
   void enter() {
     static std::atomic<uint64_t> next_id{1};
@@ -4907,7 +4910,11 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::init<std::shared_ptr<PyCudaStream>>(),
           py::arg("stream").none(false))
       .def(py::init<uintptr_t>(), py::arg("stream"))
-      .def_static("can_check_device", &PyCallerStreamScope::can_check_device)
+      .def_property_readonly_static(
+          "can_check_device",
+          [](const py::object&) {
+            return PyCallerStreamScope::kCanCheckDevice;
+          })
       .def("__enter__", &PyCallerStreamScope::enter)
       .def(
           "__exit__",
