@@ -1,0 +1,1346 @@
+[
+  {
+    "name": "q8csw_linear/performance [0]",
+    "operator": "et_vk.linear_q8ta_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              256,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00800000037997961
+        },
+        {
+          "int": -2
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_sums",
+            "sizes": [
+              2048
+            ],
+            "dtype": "int32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "row_sum": "weight"
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              256,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8csw_linear/performance [1]",
+    "operator": "et_vk.linear_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              256,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              256,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8csw_linear/performance [2]",
+    "operator": "et_vk.linear_q8ta_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              256,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00800000037997961
+        },
+        {
+          "int": -2
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_sums",
+            "sizes": [
+              2048
+            ],
+            "dtype": "int32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "row_sum": "weight"
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              256,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8csw_linear/performance [3]",
+    "operator": "et_vk.linear_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              256,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              256,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8csw_linear/performance [4]",
+    "operator": "et_vk.linear_q8ta_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              512,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00800000037997961
+        },
+        {
+          "int": -2
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_sums",
+            "sizes": [
+              2048
+            ],
+            "dtype": "int32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "row_sum": "weight"
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              512,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8csw_linear/performance [5]",
+    "operator": "et_vk.linear_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              512,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              512,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8csw_linear/performance [6]",
+    "operator": "et_vk.linear_q8ta_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              512,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00800000037997961
+        },
+        {
+          "int": -2
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_sums",
+            "sizes": [
+              2048
+            ],
+            "dtype": "int32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "row_sum": "weight"
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              512,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8csw_linear/performance [7]",
+    "operator": "et_vk.linear_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              512,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              512,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8csw_linear/performance [8]",
+    "operator": "et_vk.linear_q8ta_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1024,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00800000037997961
+        },
+        {
+          "int": -2
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_sums",
+            "sizes": [
+              2048
+            ],
+            "dtype": "int32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "row_sum": "weight"
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1024,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8csw_linear/performance [9]",
+    "operator": "et_vk.linear_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1024,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1024,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8csw_linear/performance [10]",
+    "operator": "et_vk.linear_q8ta_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1024,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00800000037997961
+        },
+        {
+          "int": -2
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_sums",
+            "sizes": [
+              2048
+            ],
+            "dtype": "int32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "row_sum": "weight"
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1024,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8csw_linear/performance [11]",
+    "operator": "et_vk.linear_q8csw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0020000000949949026,
+      "rtol": 0.0010000000474974513
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1024,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [
+              2048,
+              2048
+            ],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight_scales",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                0.004999999888241291,
+                0.014999999664723873
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1024,
+              2048
+            ],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  }
+]

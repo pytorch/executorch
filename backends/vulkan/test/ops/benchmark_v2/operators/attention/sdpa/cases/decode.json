@@ -1,0 +1,1910 @@
+[
+  {
+    "name": "sdpa Llama-3.2-1B decode D64 H32 Hkv8 S1 C512 P511 float16 texture3d gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 511
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Llama-3.2-1B decode D64 H32 Hkv8 S1 C512 P511 float16 texture3d non_gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "non_gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 511
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Llama-3.2-1B decode D64 H32 Hkv8 S1 C1024 P1023 float16 texture3d gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 1023
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Llama-3.2-1B decode D64 H32 Hkv8 S1 C1024 P1023 float16 texture3d non_gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "non_gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 1023
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Llama-3.2-1B decode D64 H32 Hkv8 S1 C4096 P4095 float16 texture3d gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 4095
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Llama-3.2-1B decode D64 H32 Hkv8 S1 C4096 P4095 float16 texture3d non_gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "non_gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 4095
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              32,
+              64
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Qwen3-0.6B decode D128 H16 Hkv8 S1 C512 P511 float16 texture3d gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 511
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Qwen3-0.6B decode D128 H16 Hkv8 S1 C512 P511 float16 texture3d non_gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "non_gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 511
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Qwen3-0.6B decode D128 H16 Hkv8 S1 C1024 P1023 float16 texture3d gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 1023
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Qwen3-0.6B decode D128 H16 Hkv8 S1 C1024 P1023 float16 texture3d non_gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "non_gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 1023
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Qwen3-0.6B decode D128 H16 Hkv8 S1 C4096 P4095 float16 texture3d gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 4095
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Qwen3-0.6B decode D128 H16 Hkv8 S1 C4096 P4095 float16 texture3d non_gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "non_gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 4095
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              16,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Phi-4-mini decode D128 H24 Hkv8 S1 C512 P511 float16 texture3d gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 511
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Phi-4-mini decode D128 H24 Hkv8 S1 C512 P511 float16 texture3d non_gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "non_gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              512,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 511
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Phi-4-mini decode D128 H24 Hkv8 S1 C1024 P1023 float16 texture3d gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 1023
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Phi-4-mini decode D128 H24 Hkv8 S1 C1024 P1023 float16 texture3d non_gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "non_gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              1024,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 1023
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Phi-4-mini decode D128 H24 Hkv8 S1 C4096 P4095 float16 texture3d gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 4095
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "sdpa Phi-4-mini decode D128 H24 Hkv8 S1 C4096 P4095 float16 texture3d non_gqa",
+    "operator": "llama.custom_sdpa.default",
+    "route": "non_gqa",
+    "target_ms": 100,
+    "warmup_runs": 10,
+    "benchmark_runs": 30,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.01,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "q",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "k_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "value_cache",
+            "sizes": [
+              1,
+              4096,
+              8,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [
+                -1,
+                1
+              ]
+            }
+          }
+        },
+        {
+          "int": 4095
+        },
+        null,
+        {
+          "float": 0.0
+        },
+        {
+          "bool": true
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              1,
+              24,
+              128
+            ],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  }
+]

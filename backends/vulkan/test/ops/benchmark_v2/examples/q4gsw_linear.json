@@ -1,0 +1,22 @@
+{
+  "name": "q4gsw linear",
+  "operator": "et_vk.q4gsw_linear.default",
+  "target_ms": 10,
+  "benchmark_runs": 5,
+  "show_memory_throughput": true,
+  "show_compute_throughput": true,
+  "max_dispatches": 512,
+  "sweep_variables": {
+    "v_DTYPE": ["float32", "float16"]
+  },
+  "args_sweep": [
+    [
+      {"tensor": {"name": "input", "sizes": [4, 32], "dtype": "v_DTYPE", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+      {"tensor": {"name": "weight", "sizes": [16, 16], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+      {"tensor": {"name": "scales", "sizes": [1, 16], "dtype": "v_DTYPE", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.01, 0.1]}}},
+      {"int": 32},
+      {"tensor": {"name": "bias", "sizes": [16], "dtype": "v_DTYPE", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+      {"tensor": {"name": "output", "sizes": [4, 16], "dtype": "v_DTYPE", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+    ]
+  ]
+}

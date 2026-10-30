@@ -1,0 +1,662 @@
+[
+  {
+    "name": "q8ta/unary/debug [0]",
+    "operator": "et_vk.q8ta_relu.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/unary/debug [1]",
+    "operator": "et_vk.q8ta_relu.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4c",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4c",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/unary/debug [2]",
+    "operator": "et_vk.q8ta_relu.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w4c",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w4c",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/unary/debug [3]",
+    "operator": "et_vk.q8ta_relu.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4h4w",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4h4w",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/unary/debug [4]",
+    "operator": "et_vk.q8ta_relu.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4c1w",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4c1w",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/unary/debug [5]",
+    "operator": "et_vk.q8ta_relu.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/unary/debug [6]",
+    "operator": "et_vk.q8ta_relu.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4c",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4c",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/unary/debug [7]",
+    "operator": "et_vk.q8ta_relu.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w4c",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w4c",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/unary/debug [8]",
+    "operator": "et_vk.q8ta_relu.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4h4w",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4h4w",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/unary/debug [9]",
+    "operator": "et_vk.q8ta_relu.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4c1w",
+            "data": {
+              "rand_uniform_int": [
+                -128,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [
+              1,
+              16,
+              16,
+              16
+            ],
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4c1w",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  }
+]
