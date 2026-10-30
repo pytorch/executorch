@@ -326,11 +326,17 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/examples/models/codegen:codegen",
                 "//executorch/examples/models/gemma:gemma",
                 "//executorch/examples/models/gemma2:gemma2",
+                "//executorch/examples/models/gemma3:gemma3",
                 "//executorch/examples/models/gemma4:gemma4",
                 "//executorch/examples/models/glm:glm",
                 "//executorch/examples/models/granite:granite",
                 "//executorch/examples/models/granite_speech:granite_speech",
                 "//executorch/examples/models/internvl3:internvl3",
+                "//executorch/examples/models/phi_4_mini:phi_4_mini",
+                "//executorch/examples/models/qwen2_5:qwen2_5",
+                "//executorch/examples/models/qwen3:qwen3",
+                "//executorch/examples/models/smollm2:smollm2",
+                "//executorch/examples/models/smollm3:smollm3",
                 "//executorch/examples/models/smolvlm:smolvlm",
                 "//executorch/examples/models/llama:hf_download",
                 "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
@@ -367,8 +373,8 @@ def define_common_targets(is_fbcode = False):
             name = "llama_qnn",
             env = {
                 "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
-                # Place holder to pass the QNN_SDK_ROOT check in executorch/examples/qualcomm/utils.py
-                "QNN_SDK_ROOT": "",
+                # Not a placeholder: process_model_args reads the SDK build id from here to gate masked softmax.
+                "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_version()),
             },
             exe = ":llama",
         )
