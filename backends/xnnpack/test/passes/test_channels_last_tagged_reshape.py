@@ -315,6 +315,68 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    class ConvBinaryOpConv(torch.nn.Module):
+        """conv -> op(x, operand) -> conv for any of the broadcasting binary
+        ops the pass handles."""
+
+        def __init__(self, op, operand):
+            super().__init__()
+            self.op = op
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("operand", operand)
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = self.op(x, self.operand)
+            return self.conv2(x)
+
+    broadcast_binary_ops = (
+        torch.add,
+        torch.mul,
+        torch.sub,
+        torch.div,
+        torch.maximum,
+        torch.minimum,
+    )
+
+    def test_fp32_channels_last_tagged_reshape_pass_scalar_operand_all_binary_ops(
+        self,
+    ):
+        inputs = (torch.randn(1, 3, 8, 8),)
+        for op in self.broadcast_binary_ops:
+            with self.subTest(op=op.__name__):
+                module = self.ConvBinaryOpConv(op, torch.tensor(1.4142)).eval()
+                (
+                    Tester(module, inputs)
+                    .export()
+                    .to_edge()
+                    .run_passes(self.PassStage)
+                    # input -> NHWC and output -> NCHW only
+                    .check_count({self.to_copy_name: 2})
+                    .run_method_and_compare_outputs()
+                )
+                (
+                    Tester(module, inputs)
+                    .export()
+                    .to_edge_transform_and_lower()
+                    .check_count(
+                        {"torch.ops.higher_order.executorch_call_delegate": 1}
+                    )
+                    .to_executorch()
+                    .serialize()
+                    .run_method_and_compare_outputs()
+                )
+
+    def test_fp32_channels_last_tagged_reshape_pass_lower_rank_operand_all_binary_ops(
+        self,
+    ):
+        for op in self.broadcast_binary_ops:
+            with self.subTest(op=op.__name__):
+                self._test_constant_lower_rank_operand_folded_to_nhwc(
+                    self.ConvBinaryOpConv(op, torch.rand(8, 8) + 0.5)
+                )
+
     class ConvMul5dScalar(torch.nn.Module):
         """conv -> x * buf[1, 1, 1, 1, 1]: the single-element operand has
         rank 5, so the mul output is 5D and cannot be NHWC. The operand takes
