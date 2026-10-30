@@ -103,8 +103,12 @@ struct CudaWeightStorage {
 // Phases of the CUDA graph lifecycle for a delegate handle.
 //
 // The transition flow is:
-//   Disabled  ──(if CUDA graph is enabled for this method)──▶  Warmup
+//   Disabled  ──(if CUDA graph is enabled for this method, the device
+//                has memory pools, and every constant is in device
+//                memory)──▶  Warmup
 //   Warmup    ──(after `warmup_remaining` execute() calls)──▶  Replay
+//   Warmup    ──(if the capture fails, or an output is not laid out
+//                like its ETensor)──▶  Disabled
 //
 // - Disabled: CUDA graph is not used for this method. Every execute() runs
 //   eagerly through the normal kernel-launch path.
