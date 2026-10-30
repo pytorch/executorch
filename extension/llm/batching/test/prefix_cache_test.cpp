@@ -36,6 +36,10 @@ constexpr std::chrono::seconds kTimeout{5};
 // changes outputs even if the runner submits the expected suffix and position.
 class HistoryExecutor final : public Executor {
  public:
+  bool retains_prefixes() const override {
+    return retained_tail.load() == std::numeric_limits<Position>::max();
+  }
+
   struct Seen {
     Position position;
     Tokens tokens;
@@ -306,6 +310,92 @@ class PrefixCacheTest : public ::testing::Test {
   HistoryExecutor executor;
   std::unique_ptr<Runner> runner;
 };
+
+TEST_F(PrefixCacheTest, TransferredSnapshotKeepsFullAndPartialBranchesCorrect) {
+  PrefixCache cache(2);
+  const Tokens prefix{1, 2, 3};
+  ASSERT_TRUE(cache.insert(prefix, snapshot(prefix)));
+  const auto before = executor.clones().size();
+  const Tokens continuation{1, 2, 3, 4};
+  auto moved = cache.lookup(continuation, true);
+  ASSERT_TRUE(moved);
+  EXPECT_EQ(executor.clones().size(), before);
+  expect_cold_match(*moved, continuation);
+  for (const Tokens& branch : {Tokens{1, 2, 3, 9}, Tokens{1, 2, 8}}) {
+    auto match = cache.lookup(branch);
+    ASSERT_TRUE(match);
+    expect_cold_match(*match, branch);
+  }
+  moved.reset();
+  EXPECT_FALSE(cache.lookup({1, 2, 3, 7}));
+}
+
+TEST_F(PrefixCacheTest, EqualPromptStillClonesAndLeavesLastTokenForForward) {
+  PrefixCache cache(1);
+  const Tokens prefix{1, 2, 3};
+  ASSERT_TRUE(cache.insert(prefix, snapshot(prefix)));
+  const auto before = executor.clones().size();
+  auto equal = cache.lookup(prefix, true);
+  ASSERT_TRUE(equal);
+  EXPECT_EQ(equal->matched_tokens, 2u);
+  EXPECT_EQ(executor.clones().size(), before + 1);
+  expect_cold_match(*equal, prefix);
+  auto extension = cache.lookup({1, 2, 3, 4}, true);
+  ASSERT_TRUE(extension);
+  EXPECT_EQ(extension->matched_tokens, 3u);
+  EXPECT_EQ(executor.clones().size(), before + 1);
+}
+
+TEST_F(PrefixCacheTest, ExpiredTransferredSourceFallsBackToShorterSnapshot) {
+  PrefixCache cache(2);
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  auto moved = cache.lookup({1, 2, 3, 4}, true);
+  ASSERT_TRUE(moved);
+  moved.reset();
+  auto fallback = cache.lookup({1, 2, 3, 9});
+  ASSERT_TRUE(fallback);
+  EXPECT_EQ(fallback->matched_tokens, 2u);
+  expect_cold_match(*fallback, {1, 2, 3, 9});
+}
+
+TEST_F(PrefixCacheTest, RecaptureRestoresOwnershipWithoutDependingOnOldSource) {
+  PrefixCache cache(1);
+  const Tokens prefix{1, 2, 3};
+  ASSERT_TRUE(cache.insert(prefix, snapshot(prefix)));
+  auto moved = cache.lookup({1, 2, 3, 4}, true);
+  ASSERT_TRUE(moved);
+  ASSERT_TRUE(cache.insert(prefix, snapshot(prefix)));
+  EXPECT_EQ(cache.size(), 1u);
+  moved.reset();
+  auto match = cache.lookup({1, 2, 3, 8});
+  ASSERT_TRUE(match);
+  expect_cold_match(*match, {1, 2, 3, 8});
+}
+
+TEST_F(PrefixCacheTest, TransferredSessionSurvivesCacheEviction) {
+  PrefixCache cache(1);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  auto moved = cache.lookup({1, 2, 3, 4}, true);
+  ASSERT_TRUE(moved);
+  cache.clear();
+  EXPECT_EQ(cache.size(), 0u);
+  expect_cold_match(*moved, {1, 2, 3, 4});
+}
+
+TEST_F(PrefixCacheTest, BorrowedHistoricalRefusalFallsBackToRetainedSnapshot) {
+  PrefixCache cache(2);
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  auto moved = cache.lookup({1, 2, 3, 4}, true);
+  ASSERT_TRUE(moved);
+  expect_cold_match(*moved, {1, 2, 3, 4});
+  executor.retained_tail = 1;
+  auto fallback = cache.lookup({1, 2, 3, 9});
+  ASSERT_TRUE(fallback);
+  EXPECT_EQ(fallback->matched_tokens, 2u);
+  expect_cold_match(*fallback, {1, 2, 3, 9});
+}
 
 class PrefillBreakpointTest
     : public PrefixCacheTest,
@@ -1438,6 +1528,91 @@ TEST_F(
   auto generation = run_callback(source, prompt, capture.wrap(), 1);
   EXPECT_EQ(generation.finish_reason(), FinishReason::NewTokenLimit);
   EXPECT_TRUE(capture.collect());
+  EXPECT_EQ(cache.size(), 1u);
+}
+
+TEST_F(
+    PrefixCacheTest,
+    ReclaimContinuedOwnerRetainsHistoricalPrefixWithoutPendingToken) {
+  PrefixCache cache(2);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  auto moved = cache.lookup({1, 2, 3, 4}, true);
+  ASSERT_TRUE(moved);
+  expect_cold_match(*moved, {1, 2, 3, 4});
+  const auto before = executor.clones().size();
+  cache.reclaim(std::move(moved->session));
+  auto sibling = cache.lookup({1, 2, 3, 9}, true);
+  ASSERT_TRUE(sibling);
+  EXPECT_EQ(executor.clones().size(), before + 1);
+  EXPECT_EQ(sibling->matched_tokens, 3u);
+  expect_cold_match(*sibling, {1, 2, 3, 9});
+}
+
+TEST_F(PrefixCacheTest, ReclaimUnusedOwnerCanTransferAgainWithoutClone) {
+  PrefixCache cache(1);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  const auto before = executor.clones().size();
+  auto moved = cache.lookup({1, 2, 3, 4}, true);
+  ASSERT_TRUE(moved);
+  cache.reclaim(std::move(moved->session), true);
+  auto next = cache.lookup({1, 2, 3, 9}, true);
+  ASSERT_TRUE(next);
+  EXPECT_EQ(executor.clones().size(), before);
+  expect_cold_match(*next, {1, 2, 3, 9});
+}
+
+TEST_F(PrefixCacheTest, DeadBorrowedEntriesDoNotEvictLiveSnapshots) {
+  PrefixCache cache(2);
+  ASSERT_TRUE(cache.insert({7, 8}, snapshot({7, 8})));
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  auto moved = cache.lookup({1, 2, 3, 4}, true);
+  ASSERT_TRUE(moved);
+  moved.reset();
+  EXPECT_EQ(cache.size(), 1u);
+  ASSERT_TRUE(cache.insert({10, 11}, snapshot({10, 11})));
+  EXPECT_EQ(cache.size(), 2u);
+  EXPECT_TRUE(cache.lookup({7, 8, 9}));
+}
+
+TEST_F(PrefixCacheTest, ReclaimDoesNotResurrectEvictedEntry) {
+  PrefixCache cache(1);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  auto moved = cache.lookup({1, 2, 3, 4}, true);
+  ASSERT_TRUE(moved);
+  ASSERT_TRUE(cache.insert({7, 8}, snapshot({7, 8})));
+  cache.reclaim(std::move(moved->session), true);
+  EXPECT_EQ(cache.size(), 1u);
+  EXPECT_FALSE(cache.lookup({1, 2, 3, 9}));
+  EXPECT_TRUE(cache.lookup({7, 8, 9}));
+}
+
+TEST_F(PrefixCacheTest, FreshCaptureReplacesReclaimedHistory) {
+  PrefixCache cache(1);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  auto moved = cache.lookup({1, 2, 3, 4}, true);
+  ASSERT_TRUE(moved);
+  expect_cold_match(*moved, {1, 2, 3, 4});
+  cache.reclaim(std::move(moved->session));
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  const auto before = executor.clones().size();
+  auto next = cache.lookup({1, 2, 3, 9}, true);
+  ASSERT_TRUE(next);
+  EXPECT_EQ(executor.clones().size(), before);
+  expect_cold_match(*next, {1, 2, 3, 9});
+}
+
+TEST_F(PrefixCacheTest, NonretainingBackendForksInsteadOfTransferring) {
+  executor.retained_tail = 0;
+  PrefixCache cache(1);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  const auto before = executor.clones().size();
+  for (Token suffix : {4, 9, 10}) {
+    auto branch = cache.lookup({1, 2, 3, suffix}, true);
+    ASSERT_TRUE(branch);
+    expect_cold_match(*branch, {1, 2, 3, suffix});
+    cache.reclaim(std::move(branch->session));
+  }
+  EXPECT_EQ(executor.clones().size(), before + 3);
   EXPECT_EQ(cache.size(), 1u);
 }
 

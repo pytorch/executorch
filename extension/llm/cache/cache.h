@@ -135,6 +135,11 @@ class ET_EXPERIMENTAL BatchControl : public CacheControl {
   // Where the sequence stands: one past its newest position, and so where it
   // continues. Positions are dense from 0, so this is also how many it holds.
   virtual int pos(int32_t seq_id) const = 0;
+  // Appending preserves every committed prefix for seq_clone. This excludes
+  // evicting windows and recurrent state without retained history.
+  virtual bool retains_prefixes() const {
+    return false;
+  }
 };
 
 // Per-layer cache kind and its parameters.

@@ -381,7 +381,10 @@ struct ServingRuntime::Impl {
       if (cancelled) {
         cancelled->cancel();
       }
-      retired.reset();
+      if (retired) {
+        prefix_cache_.reclaim(std::move(*retired));
+        retired.reset();
+      }
       return std::nullopt;
     }
     const bool opening = command.operation == Operation::Open;
@@ -423,7 +426,10 @@ struct ServingRuntime::Impl {
     if (cancelled) {
       cancelled->cancel();
     }
-    retired.reset();
+    if (retired) {
+      prefix_cache_.reclaim(std::move(*retired));
+      retired.reset();
+    }
     std::optional<batching::Session> opened;
     LifecycleResult error;
 #if ET_HAS_EXCEPTIONS
@@ -768,7 +774,8 @@ struct ServingRuntime::Impl {
       if (request->cancelled.load()) {
         return Selection::Cancelled;
       }
-      auto match = lookup_prefix(request);
+      // Replacements must retain fallback checkpoints for subsequent edits.
+      auto match = lookup_prefix(request, false);
       if (!match) {
         return Selection::Unavailable;
       }
@@ -793,6 +800,9 @@ struct ServingRuntime::Impl {
       slot.incarnation = next_incarnation_++;
       // Completion installs the replacement prompt's history.
       slot.dirty = true;
+    }
+    if (retired) {
+      prefix_cache_.reclaim(std::move(*retired));
     }
     return Selection::Selected;
   }
@@ -948,7 +958,9 @@ struct ServingRuntime::Impl {
     return std::nullopt;
   }
 
-  std::optional<batching::PrefixMatch> lookup_prefix(const Request& request) {
+  std::optional<batching::PrefixMatch> lookup_prefix(
+      const Request& request,
+      bool reuse_session) {
     if (!request->text || !request->text->prompt ||
         config_.prefix_cache_capacity == 0) {
       return std::nullopt;
@@ -957,7 +969,8 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      return prefix_cache_.lookup_identity(*request->text->prompt);
+      return prefix_cache_.lookup_identity(
+          *request->text->prompt, reuse_session);
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
       return std::nullopt;
@@ -1047,7 +1060,7 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
       try {
 #endif
-        auto match = lookup_prefix(request);
+        auto match = lookup_prefix(request, config_.reuse_prefix_sessions);
         Selection outcome = Selection::Selected;
         if (match) {
           opened = std::move(match->session);
@@ -1059,7 +1072,7 @@ struct ServingRuntime::Impl {
           } else {
             outcome = std::get<Selection>(selection);
             if (outcome == Selection::Unavailable) {
-              // Queue clone closure outside mutex_ before the cold open.
+              prefix_cache_.reclaim(std::move(*opened), true);
               opened.reset();
             }
           }
@@ -1084,7 +1097,10 @@ struct ServingRuntime::Impl {
             ? ErrorCode::NotReady
             : ErrorCode::CapacityExceeded;
         lock.unlock();
-        opened.reset();
+        if (opened) {
+          prefix_cache_.reclaim(std::move(*opened), true);
+          opened.reset();
+        }
         request->reject(
             cancelled ? std::nullopt
                 : preparation_error
@@ -1292,7 +1308,10 @@ struct ServingRuntime::Impl {
         }
       }
     }
-    retired.reset();
+    if (retired) {
+      prefix_cache_.reclaim(std::move(*retired));
+      retired.reset();
+    }
     {
       std::lock_guard<std::mutex> lock(request->mutex);
       // The session claim is released and completion/error are now fixed.

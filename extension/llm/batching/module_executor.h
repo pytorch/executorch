@@ -76,6 +76,9 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
   // Loads the method here so the delegate that resolves the cache binds on the
   // thread that runs it.
   bool initialize() override;
+  bool retains_prefixes() const override {
+    return ctl_->retains_prefixes();
+  }
 
   std::optional<SessionId> open_session() override;
   void close_session(SessionId session) override;

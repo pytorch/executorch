@@ -14,6 +14,7 @@
 //
 // Must run on Apple Silicon: MLX needs the Metal backend.
 
+#include "MLXBatchedCache.h"
 #include "MLXCache.h"
 #include "MLXSequenceCache.h"
 #include "backend_options.h" // kMLXBackendId
@@ -39,6 +40,36 @@ namespace cache = ::executorch::extension::llm::cache;
 using ::mlx::core::array;
 
 namespace {
+
+TEST(MLXPrefixRetentionTest, AdvertisedRetentionMatchesHistoricalForks) {
+  using namespace ::mlx::core;
+  for (bool windowed : {false, true}) {
+    auto args =
+        flat_config(64, 1, 1, 8, static_cast<int>(ScalarType::Float), 8);
+    args.config.max_write = 8;
+    if (windowed) {
+      args.geometry.layers[0].policy = {cache::LayerPolicy::Kind::Ring, 4};
+    }
+    MLXBatchedCache batch(args.geometry, args.config);
+    EXPECT_EQ(batch.retains_prefixes(), !windowed);
+    auto source = batch.seq_new();
+    ASSERT_TRUE(source);
+    const auto kv = ones({1, 1, 8, 8}, float32);
+    std::vector<int32_t> positions(8);
+    for (int start : {0, 8, 16}) {
+      std::iota(positions.begin(), positions.end(), start);
+      ASSERT_TRUE(batch.declare_step(std::vector<int32_t>(8, *source)));
+      eval(batch.attend(0, positions, kv, kv, kv, 1.0f, {}));
+    }
+    EXPECT_EQ(batch.seq_clone(*source, 8).has_value(), !windowed);
+  }
+  auto args = flat_config(64, 2, 1, 8, static_cast<int>(ScalarType::Float), 8);
+  args.geometry.layers[1].policy = {cache::LayerPolicy::Kind::Ring, 4};
+  EXPECT_FALSE(MLXBatchedCache(args.geometry, args.config).retains_prefixes());
+  args.geometry.layers[1].policy = {};
+  args.geometry.dflash_block_size = 2;
+  EXPECT_FALSE(MLXBatchedCache(args.geometry, args.config).retains_prefixes());
+}
 
 class MLXBatchedCacheTest : public ::testing::TestWithParam<std::string> {
  protected:

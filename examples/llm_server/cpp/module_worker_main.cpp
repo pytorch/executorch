@@ -35,6 +35,10 @@ DEFINE_int32(
     prefix_checkpoint_interval,
     0,
     "Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.");
+DEFINE_bool(
+    reuse_prefix_sessions,
+    true,
+    "Reuse complete idle prefix snapshots without cloning");
 DEFINE_int32(max_session_tokens, 2048, "Maximum retained tokens per session");
 DEFINE_int32(max_decode_sequences, 2, "Decode slots in one packed forward");
 DEFINE_int32(
@@ -109,6 +113,7 @@ int main(int argc, char** argv) {
     llm::serving::ServingRuntimeConfig config;
     config.max_sessions = FLAGS_max_sessions;
     config.prefix_cache_capacity = FLAGS_prefix_cache_entries;
+    config.reuse_prefix_sessions = FLAGS_reuse_prefix_sessions;
     config.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
     config.max_context_length = FLAGS_max_session_tokens;
     config.max_requests = FLAGS_max_inflight_requests;

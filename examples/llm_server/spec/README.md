@@ -253,6 +253,22 @@ Glimmer's legacy session implementation. Prefix caching is disabled by default.
 sampled requests. It adds `N + 1` physical rows for retained snapshots and one
 transient capture; logical `--max_sessions` remains unchanged.
 
+`--reuse_prefix_sessions` defaults to true and transfers complete idle matches
+into new working sessions; set `--reuse_prefix_sessions=false` to clone instead.
+Other requests may clone the transferred prefix while its owner remains alive.
+Abandoned selections return the untouched snapshot. Retiring owners return their
+session as a historical clone source, without resurrecting evicted entries.
+Dead entries are excluded from capacity and eviction decisions. Partial and
+equal-prompt matches still clone. Unavailable history falls back to prefill.
+Existing named-session replacements still clone to retain fallback checkpoints.
+
+Prefix-session transfer requires the executor to guarantee that appending tokens
+preserves earlier prefixes. Ordinary full-attention MLX caches support this;
+evicting windows and executors without that guarantee keep an idle snapshot and
+clone it for each branch. If a transferred owner fails, its cached prefix is
+discarded and a later request may need prefill. Reclaimed full-history
+owners may retain their continuation until replaced or evicted from the cache.
+
 With an existing MLX-enabled ExecuTorch installation and matching gflags package,
 configure the MLX LLM examples and build `llm_worker`. Launch with `--pte`,
 `--tokenizer`, `--max_sessions=4`, `--max_session_tokens=2048`, and

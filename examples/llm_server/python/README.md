@@ -73,6 +73,21 @@ nonblocking work. Prefix snapshots require extra native capacity, which the work
 provisions; ordinary continuation needs no prefix cache.
 The HTTP defaults are `--host 127.0.0.1 --port 8000`.
 
+With prefix caching enabled, complete idle snapshots move into new working sessions
+by default. Use `--no-reuse-prefix-sessions` to clone them instead. Concurrent
+branches can still clone the prefix while its working owner is alive. Abandoned
+selections return the untouched snapshot; retiring owners return their session
+as a historical clone source. Dead entries are removed before eviction decisions.
+Partial and equal-prompt matches still clone.
+Replacements of existing named sessions also clone to retain fallback checkpoints.
+
+Prefix-session transfer requires the executor to guarantee that appending tokens
+preserves earlier prefixes. Ordinary full-attention MLX caches support this;
+evicting windows and executors without that guarantee keep an idle snapshot and
+clone it for each branch. If a transferred owner fails, its cached prefix is
+discarded and a later request may need prefill. Reclaimed full-history
+owners may retain their continuation until replaced or evicted from the cache.
+
 Native worker startup runs inside the ASGI lifespan and awaits readiness before
 accepting requests. Startup, generation, and awaited shutdown share the server's
 event loop. Post-spawn startup failures also await worker cleanup. CLI validation

@@ -70,6 +70,11 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Empty uses global LRU without protected early checkpoints.
   // Runs on control; must not block or reenter the runtime.
   batching::PrefixCache::RetentionPolicy prefix_cache_retention = {};
+  // Move complete idle cache matches into new sessions instead of cloning.
+  // Concurrent branches can still clone while that working session is alive.
+  // Existing named-session replacements retain cloned checkpoints.
+  // Transfer only when the executor guarantees prefix retention across appends.
+  bool reuse_prefix_sessions = true;
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its

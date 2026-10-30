@@ -174,6 +174,10 @@ class Executor : public batching::testing::FakeExecutor {
   mutable std::size_t full_accepts = 0;
   std::size_t burst = 1;
 
+  bool retains_prefixes() const override {
+    return retained_tail == std::numeric_limits<Position>::max() &&
+        !reject_after_decode;
+  }
   bool accepts(const batching::PreparedInput& input) const override {
     if (input.kind() == &TestPreparedInput::tag &&
         !static_cast<const TestPreparedInput&>(input).offset) {
@@ -1788,6 +1792,104 @@ TEST_F(
   EXPECT_EQ(executor.clone_calls.load(), 3);
 }
 
+TEST_F(PrefixReuseTest, ReusedPrefixTransfersOwnershipAndRecaptures) {
+  ASSERT_TRUE(config.reuse_prefix_sessions);
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  ASSERT_EQ(executor.clone_calls.load(), 1);
+  const auto snapshot = executor.clones().front().destination;
+  auto continuation = output();
+  submit(continuation, {1, 2, 3, 4}, std::nullopt).wait();
+  ASSERT_TRUE(continuation->terminal);
+  EXPECT_EQ(continuation->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clone_calls.load(), 2); // Only the new capture.
+  EXPECT_EQ(executor.feeds().back().session, snapshot);
+  EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{4}));
+  auto equal = output();
+  submit(equal, {1, 2, 3, 4}, std::nullopt).wait();
+  ASSERT_TRUE(equal->terminal);
+  EXPECT_EQ(equal->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clone_calls.load(), 4); // Equal prompts still clone.
+  auto divergent = output();
+  submit(divergent, {1, 2, 8, 9}, std::nullopt).wait();
+  ASSERT_TRUE(divergent->terminal);
+  EXPECT_EQ(divergent->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(divergent->terminal->stats.prefilled_prompt_tokens, 2u);
+}
+
+TEST_F(PrefixReuseTest, ReusedPrefixRemainsAvailableToOverlappingBranch) {
+  watch_callbacks();
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  const auto moved = executor.clones().front().destination;
+  auto parent = output();
+  parent->block_first = true;
+  parent->blocked.hold();
+  auto parent_handle = submit(parent, {1, 2, 3, 4}, std::nullopt, 2);
+  ASSERT_TRUE(parent->blocked.wait());
+  const auto feeds = executor.feeds();
+  EXPECT_TRUE(std::any_of(feeds.begin(), feeds.end(), [&](const auto& feed) {
+    return feed.session == moved && feed.tokens == std::vector<Token>{4};
+  }));
+  const auto before_branch = executor.clones();
+  EXPECT_FALSE(std::any_of(
+      before_branch.begin(), before_branch.end(), [&](const auto& clone) {
+        return clone.source == moved &&
+            clone.prefix == std::vector<Token>{1, 2, 3};
+      }));
+  auto branch = output();
+  auto branch_handle = submit(branch, {1, 2, 3, 9}, std::nullopt);
+  ASSERT_TRUE(wait_until([&] { return executor.clone_calls.load() >= 3; }));
+  parent->blocked.release();
+  parent_handle.wait();
+  branch_handle.wait();
+  ASSERT_TRUE(branch->terminal);
+  EXPECT_EQ(branch->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(branch->terminal->stats.prefilled_prompt_tokens, 1u);
+  EXPECT_FALSE(branch->terminal->error);
+  const auto clones = executor.clones();
+  EXPECT_TRUE(std::any_of(clones.begin(), clones.end(), [&](const auto& clone) {
+    return clone.source == moved && clone.prefix == std::vector<Token>{1, 2, 3};
+  }));
+}
+
+TEST_F(PrefixReuseTest, ReusedPrefixAppliesCurrentSamplingAndSeed) {
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  GenerationOptions options;
+  options.max_new_tokens = 1;
+  options.sampling.temperature = 0.8f;
+  options.sampling.top_p = 0.7f;
+  options.sampling.top_k = 11;
+  options.seed = 99;
+  auto continuation = output();
+  submit(continuation, {1, 2, 3, 4}, std::nullopt, options).wait();
+  ASSERT_TRUE(continuation->terminal);
+  EXPECT_EQ(continuation->terminal->stats.reused_prompt_tokens, 3u);
+  const auto feed = executor.feeds().back();
+  ASSERT_TRUE(feed.sampling);
+  EXPECT_FLOAT_EQ(feed.sampling->temperature, 0.8f);
+  EXPECT_FLOAT_EQ(feed.sampling->top_p, 0.7f);
+  EXPECT_EQ(feed.sampling->top_k, 11);
+  EXPECT_EQ(feed.seed, 99u);
+}
+
+TEST_F(PrefixReuseTest, DisablingSessionReuseClonesAndRetainsTheSnapshot) {
+  config.reuse_prefix_sessions = false;
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  ASSERT_EQ(executor.clone_calls.load(), 1);
+  const auto snapshot = executor.clones().front().destination;
+  auto continuation = output();
+  submit(continuation, {1, 2, 3, 4}, std::nullopt).wait();
+  ASSERT_TRUE(continuation->terminal);
+  EXPECT_EQ(continuation->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clone_calls.load(), 3);
+  EXPECT_NE(executor.feeds().back().session, snapshot);
+  const auto closed = executor.closed();
+  EXPECT_EQ(std::count(closed.begin(), closed.end(), snapshot), 0);
+}
+
 TEST_F(
     PrefixReuseTest,
     BusyCaptureLaneAllowsWarmLookupsWithoutLosingCaptureOwnership) {
@@ -2269,6 +2371,141 @@ TEST_F(
   ASSERT_TRUE(cold->terminal);
   EXPECT_EQ(cold->terminal->stats.reused_prompt_tokens, 0u);
   EXPECT_EQ(executor.clone_calls.load(), 1);
+}
+
+class PrefixOwnershipLifetimeTest : public PrefixReuseTest,
+                                    public ::testing::WithParamInterface<bool> {
+};
+
+TEST_P(PrefixOwnershipLifetimeTest, SequentialAnonymousSibling) {
+  config.reuse_prefix_sessions = GetParam();
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  submit(output(), {1, 2, 3, 4}, std::nullopt).wait();
+  auto sibling = output();
+  submit(sibling, {1, 2, 3, 9}, std::nullopt).wait();
+  ASSERT_TRUE(sibling->terminal);
+  EXPECT_EQ(sibling->terminal->stats.reused_prompt_tokens, 3u);
+}
+
+TEST_P(PrefixOwnershipLifetimeTest, CancelledSelectionPreservesSiblingPrefix) {
+  config.reuse_prefix_sessions = GetParam();
+  executor.accept_prepared = true;
+  model_preparer =
+      [this](const auto&, PromptInput input) -> ModelPreparationResult {
+    auto tokens = input.segments[0].get_tokens();
+    if (tokens == std::vector<Token>{1, 2, 3, 4}) {
+      return batching::PreparedInputPtr{std::make_shared<GatedSuffixInput>(
+          std::move(tokens), replacement_preparation)};
+    }
+    return make_token_prepared_input(std::move(tokens));
+  };
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  replacement_preparation.hold();
+  auto cancelled = output();
+  auto handle = submit(cancelled, {1, 2, 3, 4}, std::nullopt);
+  ASSERT_TRUE(replacement_preparation.wait());
+  handle.cancel();
+  replacement_preparation.release();
+  handle.wait();
+  ASSERT_TRUE(cancelled->terminal);
+  EXPECT_EQ(cancelled->terminal->finish_reason, FinishReason::Cancelled);
+  EXPECT_EQ(cancelled->terminal->stats.prefilled_prompt_tokens, 0u);
+  auto sibling = output();
+  submit(sibling, {1, 2, 3, 9}, std::nullopt).wait();
+  ASSERT_TRUE(sibling->terminal);
+  EXPECT_EQ(sibling->terminal->stats.reused_prompt_tokens, 3u);
+}
+
+INSTANTIATE_TEST_SUITE_P(Reuse, PrefixOwnershipLifetimeTest, ::testing::Bool());
+
+class PrefixOwnerRetirementTest : public PrefixReuseTest,
+                                  public ::testing::WithParamInterface<int> {};
+
+TEST_P(PrefixOwnerRetirementTest, RetirementPreservesPrefixWithoutRecapture) {
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_policy = [](const auto& prompt, auto, bool) {
+    return prompt.size() == 3 ? std::vector<PrefixCheckpoint>{{3, {}}}
+                              : std::vector<PrefixCheckpoint>{};
+  };
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  const auto source = executor.clones().front().destination;
+  auto owner = output();
+  const auto key = GetParam() == 0 ? std::optional<std::string>{}
+                                   : std::optional<std::string>{"owner"};
+  submit(owner, {1, 2, 3, 4}, key).wait();
+  ASSERT_TRUE(owner->terminal);
+  EXPECT_EQ(owner->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clone_calls.load(), 1);
+  if (GetParam() == 1) {
+    ASSERT_FALSE(runtime->close_session_async("owner").get());
+  } else if (GetParam() == 2) {
+    ASSERT_FALSE(runtime->reset_session_async("owner").get());
+  } else if (GetParam() == 3) {
+    submit(output(), {6, 7, 8, 9}, "owner").wait();
+  }
+  auto sibling = output();
+  submit(sibling, {1, 2, 3, 9}, std::nullopt).wait();
+  ASSERT_TRUE(sibling->terminal);
+  EXPECT_EQ(sibling->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(sibling->terminal->stats.prefilled_prompt_tokens, 1u);
+  const auto clones = executor.clones();
+  EXPECT_TRUE(std::any_of(clones.begin(), clones.end(), [&](const auto& clone) {
+    return clone.source == source &&
+        clone.prefix == std::vector<Token>{1, 2, 3};
+  }));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Lifecycle,
+    PrefixOwnerRetirementTest,
+    ::testing::Values(0, 1, 2, 3));
+
+TEST_F(PrefixReuseTest, EvictingBackendKeepsSnapshotForSequentialBranches) {
+  executor.retained_tail = 0;
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_policy = [](const auto& prompt, auto, bool) {
+    return prompt.size() == 3 ? std::vector<PrefixCheckpoint>{{3, {}}}
+                              : std::vector<PrefixCheckpoint>{};
+  };
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  const auto snapshot = executor.clones().front().destination;
+  for (Token suffix : {4, 9, 10}) {
+    auto branch = output();
+    submit(branch, {1, 2, 3, suffix}, std::nullopt, 3).wait();
+    ASSERT_TRUE(branch->terminal);
+    ASSERT_FALSE(branch->terminal->error);
+    EXPECT_EQ(branch->terminal->stats.reused_prompt_tokens, 3u);
+    EXPECT_EQ(branch->terminal->stats.prefilled_prompt_tokens, 1u);
+    EXPECT_EQ(executor.clones().back().source, snapshot);
+  }
+}
+
+TEST_F(PrefixReuseTest, FailedTransferredOwnerReleasesCacheEntryAndRow) {
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_policy = [](const auto& prompt, auto, bool) {
+    return prompt.size() == 3 ? std::vector<PrefixCheckpoint>{{3, {}}}
+                              : std::vector<PrefixCheckpoint>{};
+  };
+  start();
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  executor.fail_batches_from = 0;
+  auto failed = output();
+  submit(failed, {1, 2, 3, 4}, std::nullopt).wait();
+  ASSERT_TRUE(failed->terminal);
+  EXPECT_EQ(failed->terminal->finish_reason, FinishReason::Failed);
+  EXPECT_EQ(executor.clone_calls.load(), 1);
+  ASSERT_TRUE(wait_until([&] { return executor.open_count() == 0; }));
+  executor.fail_batches_from = -1;
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  auto recovered = output();
+  submit(recovered, {1, 2, 3, 9}, std::nullopt).wait();
+  ASSERT_TRUE(recovered->terminal);
+  EXPECT_FALSE(recovered->terminal->error);
+  EXPECT_EQ(recovered->terminal->stats.reused_prompt_tokens, 3u);
 }
 
 } // namespace

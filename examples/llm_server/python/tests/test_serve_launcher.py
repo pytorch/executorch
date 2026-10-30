@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 import uvicorn
-
 from executorch.examples.llm_server.python import serve
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
@@ -148,6 +147,20 @@ def test_invalid_checkpoint_options(argv, entries, interval):
                 str(interval),
             ]
         )
+
+
+@pytest.mark.parametrize(
+    ("flags", "enabled"),
+    [
+        ([], True),
+        (["--reuse-prefix-sessions"], True),
+        (["--no-reuse-prefix-sessions"], False),
+    ],
+)
+def test_prefix_session_reuse_reaches_worker(argv, launch, flags, enabled):
+    serve.main(argv + ["--prefix-cache-entries", "8"] + flags)
+    command = launch.stages["spawn"].call_args.args[0]
+    assert ("--reuse_prefix_sessions=false" in command) is (not enabled)
 
 
 def test_checkpoint_options_reach_worker(argv, launch):
