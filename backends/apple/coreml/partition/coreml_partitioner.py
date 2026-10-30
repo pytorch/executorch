@@ -4,6 +4,7 @@
 
 import inspect
 import logging
+import operator
 from typing import Any, Callable, Collection, List, Optional, Set, Tuple
 
 import coremltools as ct
@@ -257,10 +258,11 @@ def _find_makers_of_int8_outputs(
     graph output or, with readers, by one of those nodes.
 
     Such a tensor becomes a Core ML output, and the Core ML runtime cannot
-    return int8.
+    return int8. An op with several outputs hands each one out through a
+    getitem, which always stays with the op, so the op itself is returned.
     """
     return {
-        node
+        node.args[0] if node.target is operator.getitem else node
         for partition in partitions
         for node in partition.nodes
         if _makes_int8(node)
@@ -384,6 +386,9 @@ def _propose_partitions(
             new |= _find_nodes_of_partitions_without_tensor_inputs(
                 partitions, kept_inside, state, allow_partitions_without_inputs
             )
+        # The partitioner can put a node that was left out back, such as a
+        # getitem next to its producer, so only a new node makes progress.
+        new -= left_out
         if not new:
             return partitions, left_out
         left_out |= new
