@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 class RocmDependenciesTest(unittest.TestCase):
     def test_compiled_torchao_uses_the_selected_torch_and_propagates_failures(self):
         stubs = """
-conda() { echo RUNTIME; }
+conda() { echo "RUNTIME $*"; }
 python() {
   if [[ "$1" == "-c" ]]; then
     if [[ "$2" == *torch_pin* ]]; then echo 2.15.0
@@ -51,7 +51,7 @@ python() {
                         "bash",
                         "-c",
                         stubs
-                        + "source .ci/scripts/install-rocm-dependencies.sh\necho INSTALL_ET\necho SDK_HOME=$ROCM_HOME HIP_PATH=$HIP_PATH ROCM_PATH=$ROCM_PATH",
+                        + "source .ci/scripts/install-rocm-dependencies.sh\necho INSTALL_ET\necho SDK_HOME=$ROCM_HOME HIP_PATH=$HIP_PATH ROCM_PATH=$ROCM_PATH\necho CC=$CC CXX=$CXX",
                     ],
                     cwd=ROOT,
                     env={
@@ -72,7 +72,12 @@ python() {
                     max(torch_status, sdk_status, ao_status, verify_status),
                     result.stderr,
                 )
-                self.assertTrue(result.stdout.startswith("RUNTIME\n"))
+                self.assertTrue(
+                    result.stdout.startswith(
+                        "RUNTIME install -y --override-channels -c conda-forge "
+                        "gxx_linux-64=16.2.0 libstdcxx-ng=16.2.0 libgcc-ng=16.2.0\n"
+                    )
+                )
                 self.assertIn(
                     "torch==2.15.0+rocm7.14 --index-url https://download.pytorch.org/whl/rocm7.14",
                     result.stdout,
@@ -97,6 +102,11 @@ python() {
                 if result.returncode == 0:
                     self.assertIn(
                         "SDK_HOME=/sdk HIP_PATH=/sdk ROCM_PATH=/sdk", result.stdout
+                    )
+                    self.assertIn(
+                        "CC=/env/bin/x86_64-conda-linux-gnu-cc "
+                        "CXX=/env/bin/x86_64-conda-linux-gnu-c++",
+                        result.stdout,
                     )
 
 
