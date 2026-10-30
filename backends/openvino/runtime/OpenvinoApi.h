@@ -69,6 +69,9 @@ using ov_core_free_fn = void (*)(ov_core_t*);
 using ov_core_get_available_devices_fn =
     ov_status_e (*)(const ov_core_t*, ov_available_devices_t*);
 using ov_available_devices_free_fn = void (*)(ov_available_devices_t*);
+// Takes one property key and value, both strings, after the device name.
+using ov_core_set_property_fn =
+    ov_status_e (*)(const ov_core_t*, const char*, ...);
 using ov_core_import_model_fn = ov_status_e (*)(
     const ov_core_t*,
     const char*,
@@ -87,10 +90,17 @@ using ov_infer_request_set_input_tensor_by_index_fn =
 using ov_infer_request_set_output_tensor_by_index_fn =
     ov_status_e (*)(ov_infer_request_t*, size_t, const ov_tensor_t*);
 using ov_infer_request_infer_fn = ov_status_e (*)(ov_infer_request_t*);
+using ov_infer_request_get_output_tensor_by_index_fn =
+    ov_status_e (*)(const ov_infer_request_t*, size_t, ov_tensor_t**);
 using ov_infer_request_free_fn = void (*)(ov_infer_request_t*);
 using ov_tensor_create_from_host_ptr_fn =
     ov_status_e (*)(ov_element_type_e, ov_shape_t, void*, ov_tensor_t**);
+using ov_tensor_create_fn =
+    ov_status_e (*)(ov_element_type_e, ov_shape_t, ov_tensor_t**);
 using ov_tensor_free_fn = void (*)(ov_tensor_t*);
+using ov_tensor_get_shape_fn = ov_status_e (*)(const ov_tensor_t*, ov_shape_t*);
+using ov_tensor_get_byte_size_fn = ov_status_e (*)(const ov_tensor_t*, size_t*);
+using ov_tensor_data_fn = ov_status_e (*)(const ov_tensor_t*, void**);
 using ov_shape_create_fn =
     ov_status_e (*)(int64_t, const int64_t*, ov_shape_t*);
 using ov_shape_free_fn = ov_status_e (*)(ov_shape_t*);
@@ -106,6 +116,7 @@ struct OpenvinoFunctions {
   ov_core_free_fn core_free = nullptr;
   ov_core_get_available_devices_fn core_get_available_devices = nullptr;
   ov_available_devices_free_fn available_devices_free = nullptr;
+  ov_core_set_property_fn core_set_property = nullptr;
   ov_core_import_model_fn core_import_model = nullptr;
   ov_compiled_model_create_infer_request_fn
       compiled_model_create_infer_request = nullptr;
@@ -117,9 +128,15 @@ struct OpenvinoFunctions {
   ov_infer_request_set_output_tensor_by_index_fn
       infer_request_set_output_tensor_by_index = nullptr;
   ov_infer_request_infer_fn infer_request_infer = nullptr;
+  ov_infer_request_get_output_tensor_by_index_fn
+      infer_request_get_output_tensor_by_index = nullptr;
   ov_infer_request_free_fn infer_request_free = nullptr;
   ov_tensor_create_from_host_ptr_fn tensor_create_from_host_ptr = nullptr;
+  ov_tensor_create_fn tensor_create = nullptr;
   ov_tensor_free_fn tensor_free = nullptr;
+  ov_tensor_get_shape_fn tensor_get_shape = nullptr;
+  ov_tensor_get_byte_size_fn tensor_get_byte_size = nullptr;
+  ov_tensor_data_fn tensor_data = nullptr;
   ov_shape_create_fn shape_create = nullptr;
   ov_shape_free_fn shape_free = nullptr;
 };
