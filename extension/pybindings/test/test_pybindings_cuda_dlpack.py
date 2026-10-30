@@ -511,40 +511,54 @@ class CudaDLPackTest(unittest.TestCase):
             for index, module in enumerate((torch.nn.ReLU(), torch.nn.Tanh()))
         ]
         child = """
+import importlib.abc
+import re
 import sys
+from pathlib import Path
+
+class BlockTorch(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "torch" or fullname.startswith("torch."):
+            raise ImportError("torch is unavailable")
+
+sys.meta_path.insert(0, BlockTorch())
 import numpy as np
 from executorch.runtime import Runtime, cuda
 
+def load(path, data):
+    program = Runtime.get().load_program(path, data_path=data or None)
+    return program.load_method("forward")
+
+programs = list(zip(sys.argv[1::2], sys.argv[2::2]))
 value = np.linspace(-2, 2, 32, dtype=np.float32).reshape(4, 8)
 stream = cuda.Stream()
 with cuda.stream(stream):
-    outputs = [
-        np.asarray(
-            Runtime.get().load_program(path, data_path=data or None)
-            .load_method("forward").execute([value])[0]
-        )
-        for path, data in zip(sys.argv[1::2], sys.argv[2::2])
-    ]
+    outputs = [np.asarray(load(*program).execute([value])[0]) for program in programs]
 # A delegate that would replay a CUDA graph refuses a caller stream, so the
-# refusal shows that the selection reached both programs.
+# refusal shows that the selection reached both programs. Each runs outside
+# the block first, so that no other failure can pass for the refusal.
 Runtime.get().backend_registry.set_option(
     "CudaBackend", {"enable_cuda_graph_for_method": "forward"}
 )
-graphed = [
-    Runtime.get().load_program(path, data_path=data or None).load_method("forward")
-    for path, data in zip(sys.argv[1::2], sys.argv[2::2])
-]
+graphed = [load(*program) for program in programs]
+for method in graphed:
+    method.execute([value])
 with cuda.stream(stream):
     for method in graphed:
         try:
             method.execute([value])
-        except RuntimeError:
-            continue
+        except RuntimeError as error:
+            if "caller-provided CUDA stream" in str(error):
+                continue
+            raise
         raise AssertionError("A delegate did not see the selected stream")
 stream.close()
 np.testing.assert_allclose(outputs[0], np.maximum(value, 0), atol=1e-6)
 np.testing.assert_allclose(outputs[1], np.tanh(value), atol=1e-6)
 assert "torch" not in sys.modules
+assert re.search(
+    r"lib(?:torch|aten|c10)", Path("/proc/self/maps").read_text().lower()
+) is None
 """
         arguments = [item or "" for program in programs for item in program]
         result = subprocess.run(
