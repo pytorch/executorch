@@ -668,3 +668,58 @@ TEST_F(OpEmbeddingBagOutTest, SumWithPaddingStaticAuxiliaryOutputs) {
     EXPECT_TENSOR_EQ(max_indices, ti.zeros({1}));
   }
 }
+
+TEST_F(OpEmbeddingBagOutTest, TransposedWeightAllModes) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  // Equivalent to tensor([[1, 2, 3], [4, 5, 6]]).t(): strides (1, 3).
+  auto weight = tf.make_with_dimorder({3, 2}, {1, 2, 3, 4, 5, 6}, {1, 0});
+  auto indices = ti.make({2}, {0, 2});
+  auto offsets = ti.make({1}, {0});
+  auto scales = tf.make({2}, {2, 3});
+  for (int64_t mode = 0; mode < 3; ++mode) {
+    SCOPED_TRACE(mode);
+    auto out = tf.zeros({1, 2});
+    auto offset2bag = ti.full({2}, -99);
+    auto bag_size = ti.full({1}, -99);
+    auto max_indices = mode == 2 ? ti.full({1, 2}, -99) : ti.full({1}, -99);
+    op_embedding_bag_out(
+        weight,
+        indices,
+        offsets,
+        mode,
+        {},
+        false,
+        -1,
+        out,
+        offset2bag,
+        bag_size,
+        max_indices);
+    ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+    EXPECT_TENSOR_EQ(
+        out,
+        mode == 0       ? tf.make({1, 2}, {4, 10})
+            : mode == 1 ? tf.make({1, 2}, {2, 5})
+                        : tf.make({1, 2}, {3, 6}));
+    EXPECT_TENSOR_EQ(offset2bag, ti.make({2}, {0, 0}));
+    EXPECT_TENSOR_EQ(bag_size, ti.full({1}, mode == 0 ? 0 : 2));
+    EXPECT_TENSOR_EQ(
+        max_indices,
+        mode == 2 ? ti.make({1, 2}, {2, 2}) : ti.full({1}, mode == 0 ? 0 : 2));
+    if (mode == 0) {
+      op_embedding_bag_out(
+          weight,
+          indices,
+          offsets,
+          mode,
+          scales,
+          false,
+          -1,
+          out,
+          offset2bag,
+          bag_size,
+          max_indices);
+      EXPECT_TENSOR_EQ(out, tf.make({1, 2}, {11, 26}));
+    }
+  }
+}

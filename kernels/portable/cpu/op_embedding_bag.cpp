@@ -300,6 +300,10 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
         ? per_sample_weights.value().const_data_ptr<CTYPE>()
         : nullptr;
 
+    const auto weight_strides = weight.strides();
+    const auto out_strides = out.strides();
+    const auto max_indices_strides = max_indices.strides();
+
     for (const auto bag : c10::irange(num_bags)) {
       const int64_t start = index_at(offsets, bag);
       const int64_t end = bag_end(bag);
@@ -311,12 +315,15 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
           if (row == padding_idx) {
             continue;
           }
-          const AccType value =
-              static_cast<AccType>(weight_data[row * dim + d]);
+          const AccType value = static_cast<AccType>(
+              weight_data[row * weight_strides[0] + d * weight_strides[1]]);
           if (mode == kModeMax) {
             if (count == 0 || value > acc) {
               acc = value;
-              set_index(max_indices, bag * dim + d, row);
+              set_index(
+                  max_indices,
+                  bag * max_indices_strides[0] + d * max_indices_strides[1],
+                  row);
             }
           } else if (psw_data != nullptr) {
             acc += value * static_cast<AccType>(psw_data[i]);
@@ -328,7 +335,8 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
         if (mode == kModeMean && count > 0) {
           acc /= static_cast<AccType>(count);
         }
-        out_data[bag * dim + d] = static_cast<CTYPE>(acc);
+        out_data[bag * out_strides[0] + d * out_strides[1]] =
+            static_cast<CTYPE>(acc);
       }
     }
   });
