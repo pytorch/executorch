@@ -16,11 +16,16 @@ import os
 import tempfile
 import unittest
 from typing import Sequence, Tuple
+from unittest.mock import patch
 
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.backends.cuda.passes.replace_masked_copy_with_where import (
+    ReplaceMaskedCopyWithWherePass,
+)
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
 
 
@@ -94,9 +99,43 @@ class TestIndexShims(unittest.TestCase):
             def forward(self, x, mask):
                 return (x[mask] * 2,)
 
+        torch.manual_seed(0)
         x = torch.randn(4, 5, 6)
         masks = (torch.rand(4, 5) > 0.5, torch.zeros(4, 5, dtype=torch.bool))
         self._run(TwoDimMask(), [(x, mask) for mask in masks])
+
+    def test_masked_copy_lowers_to_where(self):
+        """Outputs alone cannot show the rewrite: a masked copy that keeps its
+        index still gives the right values through the shims."""
+
+        class Copy(torch.nn.Module):
+            def forward(self, x, mask):
+                out = torch.zeros_like(x)
+                out[:, mask.view(-1)] = x[:, mask.view(-1)]
+                return (out,)
+
+        rewritten = []
+        call = ReplaceMaskedCopyWithWherePass.call
+
+        def record(self, graph_module):
+            result = call(self, graph_module)
+            rewritten.extend(
+                n.target
+                for n in result.graph_module.graph.nodes
+                if n.op == "call_function"
+            )
+            return result
+
+        x = torch.randn(2, 5, 3)
+        masks = (
+            torch.tensor([True, False, True, True, False]),
+            torch.zeros(5, dtype=torch.bool),
+            torch.ones(5, dtype=torch.bool),
+        )
+        with patch.object(ReplaceMaskedCopyWithWherePass, "call", record):
+            self._run(Copy(), [(x, mask) for mask in masks])
+        self.assertIn(exir_ops.edge.aten.where.self, rewritten)
+        self.assertNotIn(exir_ops.edge.aten.index.Tensor, rewritten)
 
     def test_index_put_with_repeated_indices(self):
         """Deterministic mode sends half, bfloat16 and int32-index writes to the shim."""
