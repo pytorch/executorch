@@ -5,12 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import ast
+import importlib.metadata
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from typing import List
 from unittest.mock import patch
 
 from packaging.requirements import Requirement
@@ -269,6 +272,80 @@ class TestCu134Dependencies(unittest.TestCase):
                 self.assertIn(version, metadata.specifier)
                 self.assertIn("torch", core)
                 self.assertFalse(any(arg.startswith("torch==") for arg in core))
+
+    def test_package_metadata_preserves_source_torch_only_when_requested(self):
+        with patch.dict(sys.modules, {"install_requirements": self.installer}):
+            package_installer = load_module("install_executorch")
+        tree = ast.parse((ROOT / "setup.py").read_text())
+        functions = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"_base_dependencies", "_minimal_dependencies"}
+        ]
+        namespace = {
+            "List": List,
+            "os": os,
+            "re": re,
+            "importlib": importlib,
+            "_torchao_requirement": self.torchao_requirement,
+        }
+        exec(
+            compile(ast.Module(body=functions, type_ignores=[]), "setup.py", "exec"),
+            namespace,
+        )
+        source_version = "2.15.0a0+git31a77fc"
+        for pinned in (False, True):
+            with self.subTest(pinned=pinned):
+                argv = ["install_executorch", "--minimal"]
+                if pinned:
+                    argv.append("--use-pt-pinned-commit")
+                with (
+                    patch.dict(
+                        os.environ,
+                        {"_EXECUTORCH_USE_PT_PINNED_COMMIT": "1"},
+                        clear=True,
+                    ),
+                    patch.object(sys, "argv", argv),
+                    patch.object(
+                        package_installer, "python_is_compatible", return_value=True
+                    ),
+                    patch.object(package_installer, "check_and_update_submodules"),
+                    patch.object(package_installer, "install_requirements"),
+                    patch.object(package_installer.subprocess, "run") as run,
+                ):
+                    package_installer.main([])
+                    package_env = run.call_args.kwargs["env"]
+                    self.assertEqual(
+                        os.environ["_EXECUTORCH_USE_PT_PINNED_COMMIT"], "1"
+                    )
+                self.assertEqual(
+                    package_env["_EXECUTORCH_USE_PT_PINNED_COMMIT"],
+                    "1" if pinned else "0",
+                )
+                with (
+                    patch.dict(os.environ, package_env, clear=True),
+                    patch.object(
+                        importlib.metadata, "version", return_value=source_version
+                    ),
+                ):
+                    deps = namespace["_base_dependencies"]()
+                    torch = Requirement(
+                        next(dep for dep in deps if dep.startswith("torch=="))
+                    )
+                    self.assertEqual(source_version in torch.specifier, pinned)
+                    self.assertEqual("2.15.0" in torch.specifier, not pinned)
+                    self.assertEqual(
+                        f"torchao>={self.installer.TORCHAO_MIN_VERSION}",
+                        next(dep for dep in deps if dep.startswith("torchao>=")),
+                    )
+                    self.assertIn("pytorch-tokenizers", deps)
+                    self.assertFalse(
+                        any(
+                            dep.startswith("torch")
+                            for dep in namespace["_minimal_dependencies"]()
+                        )
+                    )
 
     def test_cu134_keeps_explicit_torchao_source_build(self):
         with patch.dict(sys.modules, {"install_requirements": self.installer}):

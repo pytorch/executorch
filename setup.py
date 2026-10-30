@@ -53,6 +53,7 @@ import functools
 
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
+import importlib.metadata
 import importlib.util
 import logging
 import os
@@ -1141,6 +1142,11 @@ def _base_dependencies() -> List[str]:
     dynamic) so the minimal build can ship a slimmer set. Keep in sync with the
     project's runtime needs.
     """
+    torch_requirement = "torch==2.15.0"
+    if os.environ.get("_EXECUTORCH_USE_PT_PINNED_COMMIT") == "1":
+        # CI source builds carry an a0+git version even at the release tag.
+        # Preserve the build that our extension libraries link against.
+        torch_requirement = f"torch=={importlib.metadata.version('torch')}"
     return [
         "expecttest",
         "flatbuffers",
@@ -1158,7 +1164,7 @@ def _base_dependencies() -> List[str]:
         "py-cpuinfo",
         "requests",
         "pytorch-tokenizers",
-        "torch==2.15.0",
+        torch_requirement,
         # Shipped code imports torchao at module scope in many places, so a plain install cannot
         # lower a model without it. Among others: the XNNPACK utilities the partitioner uses
         # (backends/xnnpack/utils/utils.py), the Core ML quantizer, and executorch.export itself.
