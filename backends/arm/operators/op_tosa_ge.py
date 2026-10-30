@@ -11,7 +11,13 @@ from executorch.backends.arm.operators.simple_node_visitor import (
     SimpleNodeVisitorConfig,
 )
 
-COMPARE_INPUT_DTYPES = [ts.DType.INT32, ts.DType.FP32, ts.DType.BF16, ts.DType.FP16]
+COMPARE_INPUT_DTYPES = [
+    ts.DType.INT32,
+    ts.DType.FP32,
+    ts.DType.BF16,
+    ts.DType.FP16,
+    ts.DType.INT64,
+]
 
 
 @register_node_visitor

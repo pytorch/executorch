@@ -176,7 +176,7 @@ BenchmarkGraph setup_compute_graph(
     const std::string& op_name,
     int op_invocations_per_execute) {
   GraphConfig config;
-  config.enable_querypool = true;
+  config.enable_querypool = use_gpu_timestamps();
   // Pool sizing takes max(execute, prepack) * factor, so scaling the factor
   // also over-reserves the prepack side (encoded once). Accepted: precise
   // execute-only sizing would need runtime changes.

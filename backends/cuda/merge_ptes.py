@@ -208,6 +208,11 @@ def _load_artifact(source: CudaPteInput) -> _Artifact:
     return _Artifact(source, pte, _named_data_bytes(pte.named_data), ptd, delegates)
 
 
+# Compile specs that only shape how a variant was exported, so variants that
+# differ in them still merge.
+_EXPORT_ONLY_SPEC_KEYS = ("cuda_include_ptx", "data_name")
+
+
 def _normalized_program(program: Program) -> Program:
     normalized = copy.deepcopy(program)
     payloads = []
@@ -219,7 +224,7 @@ def _normalized_program(program: Program) -> Program:
                 delegate.compile_specs = [
                     spec
                     for spec in delegate.compile_specs
-                    if spec.key != "cuda_include_ptx"
+                    if spec.key not in _EXPORT_ONLY_SPEC_KEYS
                 ]
             delegate.processed = BackendDelegateDataReference(
                 location=DataLocation.INLINE, index=len(payloads)
@@ -534,7 +539,7 @@ def _prepare_merged_output(reference: _Artifact) -> Tuple[Program, NamedDataStor
                 delegate.compile_specs = [
                     spec
                     for spec in delegate.compile_specs
-                    if spec.key != "cuda_include_ptx"
+                    if spec.key not in _EXPORT_ONLY_SPEC_KEYS
                 ]
 
     merged_store = NamedDataStore()

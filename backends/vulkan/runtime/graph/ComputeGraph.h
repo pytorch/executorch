@@ -461,6 +461,15 @@ class ComputeGraph final {
    */
   bool is_vectorizable_width_packed_tensor(const ValueRef idx) const;
 
+  /*
+   * Checks that texture reads outside the logical limits of the tensor at
+   * `idx` return zero, i.e. that the following is true:
+   * 1. The value at `idx` is a tensor with texture storage
+   * 2. The image extents of the tensor match its logical limits
+   * 3. The image sampler uses nearest filtering and a transparent black border
+   */
+  bool samples_zero_outside_tensor(const ValueRef idx) const;
+
   inline bool val_is_view_of(const ValueRef maybe_view, const ValueRef base)
       const {
     return values_.at(maybe_view)

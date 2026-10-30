@@ -31,6 +31,9 @@ from executorch.backends.xnnpack._passes.decompose_depthwise_conv_transpose impo
 )
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
+from executorch.backends.xnnpack._passes.fuse_pad_into_conv_pass import (
+    FusePadIntoConvPass,
+)
 from executorch.backends.xnnpack._passes.insert_pad_qdq import InsertPadQDQPass
 from executorch.backends.xnnpack._passes.prelu_reshape_pass import PReLUReshapePass
 from executorch.backends.xnnpack._passes.propagate_custom_meta_pass import (
@@ -94,6 +97,7 @@ class XNNPACKPassManager:
                 PReLUReshapePass,
                 ChannelsLastTaggedReshapePass,
                 RemoveRedundantCopyPass,
+                FusePadIntoConvPass,
             ]
         else:
             self.passes = passes

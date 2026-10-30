@@ -33,7 +33,7 @@ help() {
     echo "Options:"
     echo "  --elf=<ELF_FILE>         elf file to run"
     echo "  --data=<FILE>@<ADDRESS>  Place a file in memory at this address, useful to emulate a PTE flashed into memory instead as part of the code."
-    echo "  --bundle=<BPTE_FILE>     Bundled program (.bpte) to load via semihosting. Required for cortex-m targets; the FVP launches a semihosting executor_runner that reads the bundle from the host filesystem and checks the embedded reference outputs."
+    echo "  --bundle=<BPTE_FILE>     Bundled program (.bpte) to load via semihosting for cortex-m targets; the FVP launches a semihosting executor_runner that reads the bundle from the host filesystem and checks the embedded reference outputs. Optional; without it the ELF is run directly."
     echo "  --target=<TARGET>        Target to build and run for Default: ${target}"
     echo "  --timeout=<TIME_IN_SEC>  Maximum target runtime, used to detect hanging, might need to be higer on large models Default: ${timeout}"
     echo "  --etrecord=<FILE>        If ETDump is used you can supply a ETRecord file matching the PTE"
@@ -185,9 +185,7 @@ if [[ -n "${semihosting_cmd_line}" ]]; then
     )
 fi
 
-if [[ ${target} == cortex-m* ]]; then
-    [[ -z "${bundle_file}" ]] \
-        && { echo "[${BASH_SOURCE[0]}] --bundle=<BPTE_FILE> is required for cortex-m targets"; exit 1; }
+if [[ ${target} == cortex-m* && -n "${bundle_file}" ]]; then
     bundle_file=$(realpath "${bundle_file}")
     bundle_dir=$(dirname "${bundle_file}")
     bundle_name=$(basename "${bundle_file}")
@@ -221,7 +219,8 @@ if [[ ${target} == cortex-m* ]]; then
         rm "${log_file}"
         exit 1
     fi
-elif [[ ${target} == *"ethos-u55"* || ${target} == *"ethos-u65"* ]]; then
+elif [[ ${target} == *"ethos-u55"* || ${target} == *"ethos-u65"* \
+        || ( ${target} == cortex-m* && ${target} != cortex-m85* ) ]]; then
     run_simulation ${nobuf} ${fvp_model}                    \
         -C ethosu.num_macs=${num_macs}                      \
         -C mps3_board.visualisation.disable-visualisation=1 \
@@ -233,7 +232,7 @@ elif [[ ${target} == *"ethos-u55"* || ${target} == *"ethos-u65"* ]]; then
         -a "${elf_file}"                                    \
         ${data_file}                                        \
         --timelimit ${timeout} # seconds
-elif [[ ${target} == *"ethos-u85"*  ]]; then
+elif [[ ${target} == *"ethos-u85"* || ${target} == cortex-m85* ]]; then
     run_simulation ${nobuf} ${fvp_model}                    \
         -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
         -C mps4_board.visualisation.disable-visualisation=1 \

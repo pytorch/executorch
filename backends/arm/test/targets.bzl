@@ -3,6 +3,11 @@ load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def _vgf_zero_copy_test_flags():
+    if native.read_config("executorch", "vgf_zero_copy_io", "false") == "true":
+        return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=1"]
+    return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=0"]
+
 _ENABLE_VGF = True
 
 def define_arm_tests():
@@ -132,6 +137,7 @@ def define_arm_tests():
                 "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
                 "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
+                "EMULATION_LAYER_VERSION": "0.9.0",
             })
 
         python_pytest(
@@ -182,6 +188,8 @@ def define_arm_tests():
             ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
                 "//executorch/examples/models/llama:llama_transformer",
                 "//executorch/examples/models/llama:transformer_modules",
+                "fbsource//third-party/pypi/transformers:transformers",
+                "fbsource//third-party/pypi/typing-extensions:typing-extensions",
             ] if test_file == "modules/test_moe.py" else []) + ([
                 "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
                 "fbsource//third-party/pypi/packaging:packaging",
@@ -198,6 +206,7 @@ def define_arm_tests():
             "//executorch/backends/arm/runtime:vela_bin_stream",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:named_data_map",
+            "//executorch/runtime/platform:platform",
         ],
     )
 
@@ -250,6 +259,7 @@ def define_arm_tests():
                 "-DUSE_VULKAN_WRAPPER",
                 "-DUSE_VULKAN_VOLK",
             ],
+            preprocessor_flags = _vgf_zero_copy_test_flags(),
             deps = [
                 "//executorch/backends/arm/runtime:vgf_backend",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",

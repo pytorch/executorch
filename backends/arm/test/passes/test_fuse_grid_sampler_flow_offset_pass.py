@@ -315,7 +315,110 @@ def _vgf_quantization_config(config=None):
 def test_match_flow_offset_grid_accepts_supported_variants(kwargs, expected_offset):
     grid_sampler, flow = _build_flow_offset_grid_sampler(**kwargs)
 
-    assert _match_flow_offset_grid(grid_sampler) == (flow, expected_offset)
+    assert _match_flow_offset_grid(grid_sampler) == (flow, expected_offset, (1.0, 1.0))
+
+
+def _add_flow_normalization(grid_sampler, values, *, reverse=False):
+    graph = grid_sampler.graph
+    add = grid_sampler.args[1].args[0]
+    flow_slice = add.args[1]
+    with graph.inserting_before(add):
+        constant = graph.get_attr("normalization")
+        args = (constant, flow_slice) if reverse else (flow_slice, constant)
+        multiply = graph.call_function(exir_ops.edge.aten.mul.Tensor, args)
+    multiply.meta["val"] = torch.empty(1, 2, 8, 12)
+    add.args = (add.args[0], multiply)
+    root = torch.nn.Module()
+    root.register_buffer("normalization", values)
+    if not any(node.op == "output" for node in graph.nodes):
+        graph.output(grid_sampler)
+    module = torch.fx.GraphModule(root, graph)
+    program = torch.export.export(torch.nn.Identity(), (torch.zeros(1),))
+    return module, program, multiply
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_match_flow_offset_grid_reads_constant_xy_normalization(reverse):
+    sampler, flow = _build_flow_offset_grid_sampler()
+    factors = torch.tensor([2 / 11, 2 / 7]).reshape(1, 2, 1, 1)
+    module, program, _ = _add_flow_normalization(sampler, factors, reverse=reverse)
+    assert module.normalization is factors
+    assert _match_flow_offset_grid(sampler, program) == (
+        flow,
+        0,
+        tuple(factors.flatten().tolist()),
+    )
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        torch.tensor([0.0, 1.0]).reshape(1, 2, 1, 1),
+        torch.tensor([float("nan"), 1.0]).reshape(1, 2, 1, 1),
+        torch.tensor([float("inf"), 1.0]).reshape(1, 2, 1, 1),
+        torch.ones(2),
+        torch.ones(1, 2, 1, 1, dtype=torch.float16),
+    ],
+)
+def test_match_flow_offset_grid_rejects_invalid_normalization(values):
+    sampler, _ = _build_flow_offset_grid_sampler()
+    _, program, _ = _add_flow_normalization(sampler, values)
+    assert _match_flow_offset_grid(sampler, program) is None
+
+
+def test_match_flow_offset_grid_preserves_quantized_multiply_boundary():
+    sampler, _ = _build_flow_offset_grid_sampler()
+    _, program, multiply = _add_flow_normalization(sampler, torch.ones(1, 2, 1, 1))
+    multiply.meta["output_qparams"] = {0: QuantArgs(0.01, 0, -128, 127, torch.int8)}
+    assert _match_flow_offset_grid(sampler, program) is None
+
+
+@pytest.mark.parametrize("normalized", [False, True])
+@pytest.mark.parametrize("mismatch", [False, True])
+def test_fuse_flow_offset_sampler_preserves_explicit_flow_dequantization(
+    monkeypatch, normalized, mismatch
+):
+    module, flow, _, flow_qparams, _ = _build_quantized_flow_offset_graph_module()
+    sampler = _find_grid_sampler(module.graph)
+    program = None
+    if normalized:
+        module, program, _ = _add_flow_normalization(
+            sampler, torch.tensor([2 / 11, 2 / 7]).reshape(1, 2, 1, 1)
+        )
+    flow_slice = next(
+        n
+        for n in module.graph.nodes
+        if n.target == exir_ops.edge.aten.slice_copy.Tensor and n.args[0] is flow
+    )
+    with module.graph.inserting_before(flow_slice):
+        dequantize = module.graph.call_function(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            (
+                flow,
+                flow_qparams.scale * (2 if mismatch else 1),
+                flow_qparams.zp,
+                flow_qparams.qmin,
+                flow_qparams.qmax,
+                torch.int8,
+            ),
+        )
+    dequantize.meta["val"] = torch.empty(1, 4, 8, 12)
+    flow_slice.args = (dequantize, *flow_slice.args[1:])
+    monkeypatch.setattr(
+        fuse_grid_sampler_flow_offset,
+        "build_flow_offset_grid_sampler_payload",
+        lambda **kwargs: kwargs,
+    )
+    result = FuseGridSamplerFlowOffsetPass(program)(module)
+    assert result.modified != mismatch
+    if not mismatch:
+        custom = next(
+            n
+            for n in module.graph.nodes
+            if n.target == exir_ops.backend.tosa.CUSTOM.default
+        )
+        assert custom.args[0][1] is flow
+        assert dequantize not in module.graph.nodes
 
 
 def test_match_flow_offset_grid_accepts_identity_base_grid_requantization():
@@ -331,7 +434,7 @@ def test_match_flow_offset_grid_accepts_identity_base_grid_requantization():
     dequantize.update_arg(1, 0.007842586375772953)
     dequantize.update_arg(2, -1)
 
-    assert _match_flow_offset_grid(grid_sampler) == (flow, 0)
+    assert _match_flow_offset_grid(grid_sampler) == (flow, 0, (1.0, 1.0))
 
 
 def test_match_flow_offset_grid_accepts_folded_identity_base_grid():
@@ -352,7 +455,7 @@ def test_match_flow_offset_grid_accepts_folded_identity_base_grid():
     base_grid.meta["output_qparams"] = {0: qparams}
     add.replace_input_with(quantize, base_grid)
 
-    assert _match_flow_offset_grid(grid_sampler) == (flow, 0)
+    assert _match_flow_offset_grid(grid_sampler) == (flow, 0, (1.0, 1.0))
 
 
 def test_match_flow_offset_grid_rejects_folded_requantized_base_grid():
@@ -566,6 +669,35 @@ def test_fuse_flow_offset_grid_sampler_leaves_unsupported_qparams_unfused(
     )
 
 
+@pytest.mark.parametrize("input_name", ["image", "flow", "output"])
+@pytest.mark.parametrize("normalized", [False, True])
+def test_fuse_flow_offset_grid_sampler_rejects_non_int8_storage(
+    monkeypatch, input_name, normalized
+):
+    module, flow, *_ = _build_quantized_flow_offset_graph_module()
+    sampler = _find_grid_sampler(module.graph)
+    program = None
+    if normalized:
+        module, program, _ = _add_flow_normalization(
+            sampler, torch.tensor([2 / 11, 2 / 7]).reshape(1, 2, 1, 1)
+        )
+    node = {"image": sampler.args[0], "flow": flow, "output": sampler}[input_name]
+    dtype = torch.int16 if input_name == "output" else torch.float32
+    node.meta["val"] = node.meta["val"].to(dtype)
+    compile_shader = Mock()
+    monkeypatch.setattr(
+        fuse_grid_sampler_flow_offset,
+        "build_flow_offset_grid_sampler_payload",
+        compile_shader,
+    )
+
+    result = FuseGridSamplerFlowOffsetPass(program)(module)
+
+    assert not result.modified
+    assert sampler in module.graph.nodes
+    compile_shader.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("qparams_name", "qmin", "qmax"),
     [
@@ -642,8 +774,11 @@ def test_build_flow_offset_grid_sampler_payload(monkeypatch, flow_channel_offset
 
 @pytest.mark.usefixtures("_arm_tensor_glslc")
 @pytest.mark.parametrize("flow_channel_offset", [0, 2])
-def test_compile_flow_offset_grid_sampler_shader(flow_channel_offset):
-    payload = _build_payload(flow_channel_offset=flow_channel_offset)
+@pytest.mark.parametrize("normalization", [(1.0, 1.0), (2 / 11, 2 / 7)])
+def test_compile_flow_offset_grid_sampler_shader(flow_channel_offset, normalization):
+    payload = _build_payload(
+        flow_channel_offset=flow_channel_offset, flow_normalization=normalization
+    )
 
     assert base64.b64decode(payload["shader_code"])[:4] == b"\x03\x02\x23\x07"
 
@@ -671,6 +806,9 @@ def test_compile_flow_offset_grid_sampler_shader(flow_channel_offset):
             "requires H and W greater than 1",
         ),
         ({"flow_channel_offset": 1}, "flow_channel_offset must be 0 or 2"),
+        ({"flow_normalization": (0.0, 1.0)}, "two finite positive factors"),
+        ({"flow_normalization": (float("nan"), 1.0)}, "two finite positive factors"),
+        ({"flow_normalization": (1.0,)}, "two finite positive factors"),
     ],
 )
 def test_build_flow_offset_grid_sampler_payload_rejects_invalid_contract(
@@ -678,6 +816,63 @@ def test_build_flow_offset_grid_sampler_payload_rejects_invalid_contract(
 ):
     with pytest.raises(ValueError, match=error):
         _build_payload(**overrides)
+
+
+@pytest.mark.parametrize("mismatch", [None, "input", "output"])
+def test_fuse_flow_offset_grid_sampler_preserves_explicit_io_qparams(
+    monkeypatch, mismatch
+):
+    module, _, image_q, _, output_q = _build_quantized_flow_offset_graph_module()
+    sampler = _find_grid_sampler(module.graph)
+    image = sampler.args[0]
+    with module.graph.inserting_before(sampler):
+        dequantize = module.graph.call_function(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            (
+                image,
+                image_q.scale * (2 if mismatch == "input" else 1),
+                image_q.zp,
+                -127,
+                127,
+                torch.int8,
+            ),
+        )
+    dequantize.meta["val"] = torch.empty(1, 4, 8, 12)
+    sampler.args = (dequantize, *sampler.args[1:])
+    sampler.meta["val"] = torch.empty(1, 4, 8, 12)
+    with module.graph.inserting_after(sampler):
+        quantize = module.graph.call_function(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            (
+                sampler,
+                output_q.scale * (2 if mismatch == "output" else 1),
+                output_q.zp,
+                -127,
+                127,
+                torch.int8,
+            ),
+        )
+    quantize.meta["val"] = torch.empty(1, 4, 8, 12, dtype=torch.int8)
+    module.graph.output_node().args = (quantize,)
+    monkeypatch.setattr(
+        fuse_grid_sampler_flow_offset,
+        "build_flow_offset_grid_sampler_payload",
+        lambda **kwargs: kwargs,
+    )
+    result = FuseGridSamplerFlowOffsetPass()(module)
+    assert result.modified == (mismatch is None)
+    if mismatch is None:
+        custom = next(
+            n
+            for n in module.graph.nodes
+            if n.target == exir_ops.backend.tosa.CUSTOM.default
+        )
+        assert custom.args[0][0].args[0] is image
+        assert not any(
+            "quantized_decomposed" in str(n.target) for n in module.graph.nodes
+        )
+    else:
+        assert quantize in module.graph.nodes and dequantize in module.graph.nodes
 
 
 def test_vgf_quantization_uses_snorm_safe_observed_qparams_for_flow_offset_sampler():

@@ -17,7 +17,7 @@ import executorch.exir.serde.schema as export_schema
 from executorch.exir.serde.union import _Union
 
 # NOTE: Please update this value if any modifications are made to the schema
-SCHEMA_VERSION = (5, 5)
+SCHEMA_VERSION = (5, 6)
 TREESPEC_VERSION = 1
 
 
@@ -415,3 +415,4 @@ class LoweredBackendModule:
     named_data_store: Optional[bytes] = None
     # The delegate scratch buffers, in declaration order.
     scratch_specs: Optional[List[DelegateScratchSpec]] = None
+    share_handle_across_calls: bool = False

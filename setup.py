@@ -1154,15 +1154,11 @@ def _base_dependencies() -> List[str]:
     project's runtime needs.
     """
     return [
-        "expecttest",
         "flatbuffers",
-        "hypothesis",
-        "kgb",
         "mpmath==1.3.0",
         "numpy>=2.0.0; python_version >= '3.10'",
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
-        "parameterized",
         # The Qualcomm backend needs both, on different paths. Any lowering reads the CPU vendor
         # to disable an mkldnn path that crashes on AMD, whether or not an SDK is already set up.
         # Fetching an SDK additionally needs requests, which its downloader imports at module
@@ -1398,6 +1394,12 @@ def _windows_import_libraries() -> List["BuiltFile"]:
             "executorch_backend_xnnpack",
             None,
             ["EXECUTORCH_BUILD_XNNPACK"],
+        ),
+        (
+            "backends/xnnpack/",
+            "executorch_xnnpack",
+            None,
+            ["EXECUTORCH_BUILD_XNNPACK", "EXECUTORCH_BUILD_NATIVE_CPU"],
         ),
         (
             "backends/cuda/",
@@ -2725,7 +2727,7 @@ class CustomBuild(build):
                     ]
             else:
                 if windows_cuda_home:
-                    log.warning(
+                    log.warn(
                         "building the CUDA backend with the Visual Studio generator, "
                         "because ninja, clang-cl and cl are not all on PATH; run from "
                         "a Visual Studio developer prompt with ninja for the Ninja "
@@ -3194,6 +3196,16 @@ setup(
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_XNNPACK",
+                    ],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/" + _CFG,
+                    src_name=get_dynamic_lib_name("executorch_xnnpack"),
+                    dst="executorch/lib/" + get_dynamic_lib_name("executorch_xnnpack"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_XNNPACK",
+                        "EXECUTORCH_BUILD_NATIVE_CPU",
                     ],
                 ),
                 # Install the MLX delegate beside them, so a C++ consumer can link

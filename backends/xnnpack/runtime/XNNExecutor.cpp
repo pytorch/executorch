@@ -83,9 +83,10 @@ ET_NODISCARD Error XNNExecutor::initialize(
  * Prepares the args for XNNPACK Runtime.
  *
  * Creates an array of xnn_externals_values from the EValues passed in.
- * Reshapes all the external input tensors, in case any input shapes have
- * changed. The reshapes the entire runtime, propagating shape information
- * through the runtime.
+ * If any input shape differs from the last reshape (or the runtime was never
+ * reshaped), reshapes all the external input tensors and then the entire
+ * runtime, propagating shape information through it. XNNPACK re-binds data
+ * pointers in setup, so unchanged shapes need no reshape.
  *
  * Note: the external ids given to the external tensors in the XNNPACK
  * runtime correspond to their index in the list of arg passed into
@@ -114,6 +115,7 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
 
   // Create xnn_externals_value from evalue args
   xnn_status status;
+  input_dims_.clear();
   for (uint32_t i = 0; i < externals_.size(); ++i) {
     if (i < input_ids_.size()) {
       externals_[i].id = input_ids_[i];
@@ -134,7 +136,7 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
 
     executorch::aten::DimOrderType dim_order[kTensorDimensionLimit];
 
-    // Reshape runtime inputs
+    // Collect runtime input shapes
     if (i < input_ids_.size()) {
       size_t num_dims = tensor->dim();
       Error err =
@@ -143,7 +145,6 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
           err == Error::Ok,
           Internal,
           "Failed to retrieve dim order from tensor!");
-      size_t dims[XNN_MAX_TENSOR_DIMS];
       ET_CHECK_OR_RETURN_ERROR(
           num_dims <= XNN_MAX_TENSOR_DIMS,
           InvalidArgument,
@@ -151,26 +152,43 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
           XNN_MAX_TENSOR_DIMS,
           num_dims);
 
+      input_dims_.push_back(num_dims);
       for (int j = 0; j < num_dims; ++j) {
-        dims[j] = tensor->size(static_cast<int>(dim_order[j]));
+        input_dims_.push_back(tensor->size(static_cast<int>(dim_order[j])));
       }
-      status =
-          xnn_reshape_external_value(runtime_.get(), ext_id, num_dims, dims);
+    }
+  }
+
+  if (!runtime_reshaped_ || input_dims_ != reshaped_input_dims_) {
+    runtime_reshaped_ = false;
+    size_t offset = 0;
+    for (uint32_t i = 0; i < input_ids_.size(); ++i) {
+      const size_t num_dims = input_dims_[offset];
+      status = xnn_reshape_external_value(
+          runtime_.get(),
+          externals_[i].id,
+          num_dims,
+          input_dims_.data() + offset + 1);
       ET_CHECK_OR_RETURN_ERROR(
           status == xnn_status_success,
           Internal,
           "Internal Error: Reshape Input Tensor Failed with code: %s",
           xnn_status_to_string(status));
+      offset += num_dims + 1;
     }
-  }
-  // Propagate Input Shape and Memory Plan for increased allocation
-  status = xnn_reshape_runtime(runtime_.get());
 
-  ET_CHECK_OR_RETURN_ERROR(
-      status == xnn_status_success,
-      Internal,
-      "Internal Error: Propagating input shapes failed with code: %s",
-      xnn_status_to_string(status));
+    // Propagate Input Shape and Memory Plan for increased allocation
+    status = xnn_reshape_runtime(runtime_.get());
+
+    ET_CHECK_OR_RETURN_ERROR(
+        status == xnn_status_success,
+        Internal,
+        "Internal Error: Propagating input shapes failed with code: %s",
+        xnn_status_to_string(status));
+
+    reshaped_input_dims_ = input_dims_;
+    runtime_reshaped_ = true;
+  }
 
   // Resize output tensors.
   Error err = resize_outputs(args);

@@ -181,6 +181,23 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
     SlimTensor** ret_new_tensor);
 
 /**
+ * Creates a view of a tensor with new sizes and strides and the same storage
+ * offset, like torch.as_strided(self, sizes, strides). The view has as many
+ * dimensions as self.
+ *
+ * @param self Original tensor (must not be null)
+ * @param sizes_ptr Pointer to array of dimension sizes
+ * @param strides_ptr Pointer to array of strides for each dimension
+ * @param ret_new_tensor Output parameter for the tensor view
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_as_strided(
+    SlimTensor* self,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    SlimTensor** ret_new_tensor);
+
+/**
  * Copies data from source tensor to destination tensor.
  *
  * Handles all device combinations (CPU-CPU, CPU-CUDA, CUDA-CPU, CUDA-CUDA)
