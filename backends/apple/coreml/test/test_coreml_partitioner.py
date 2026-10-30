@@ -521,6 +521,43 @@ class TestCoreMLPartitioner(unittest.TestCase):
             out = program.load_method("forward").execute((x,))[0]
             self.assertTrue(torch.allclose(out, model(x), atol=5e-2, rtol=5e-2))
 
+    def test_op_made_by_decomposing_a_rejected_op_is_not_kept_whole(self):
+        """
+        A float32 matmul keeps aten.matmul whole.  A bfloat16 linear is
+        rejected and decomposes into another matmul, which Core ML rejects too.
+        That matmul must be decomposed as well, since the portable kernels
+        have no matmul, or the program fails to load.
+        """
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.proj = torch.nn.Linear(8, 8, bias=False).to(torch.bfloat16)
+                self.register_buffer("inv_freq", torch.rand(1, 4, 1))
+
+            def forward(self, x, pos):
+                freqs = self.inv_freq @ pos[:, None, :].float()
+                return self.proj(x).float(), freqs.cos()
+
+        model = Model().eval()
+        inputs = (torch.rand(1, 6, 8, dtype=torch.bfloat16), torch.arange(6)[None])
+        ep = torch.export.export(model, inputs, strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("executorch_call_delegate", op_names)
+        self.assertNotIn("aten.matmul.default", op_names)
+        if _TEST_RUNTIME:
+            program = Runtime.get().load_program(edge.to_executorch().buffer)
+            outputs = program.load_method("forward").execute(inputs)
+            for out, ref in zip(outputs, model(*inputs)):
+                self.assertTrue(torch.allclose(out, ref, atol=1e-2))
+
     def test_min_max_of_bool_is_skipped(self):
         """
         coremltools raises on a min or max over a bool tensor, such as the

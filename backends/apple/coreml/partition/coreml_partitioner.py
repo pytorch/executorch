@@ -4,7 +4,7 @@
 
 import inspect
 import logging
-from typing import Callable, Collection, List, Optional, Set, Tuple
+from typing import Any, Callable, Collection, List, Optional, Set, Tuple
 
 import coremltools as ct
 
@@ -26,6 +26,7 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.tracer import _default_decomposition_table
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import (
@@ -312,6 +313,35 @@ def _propose_partitions(
         if not new:
             return partitions, left_out
         left_out |= new
+
+
+def _drop_ops_rejected_after_decomposition(
+    ep: ExportedProgram,
+    keep: List[torch._ops.OpOverload],
+    is_supported: Callable[[Any, torch.fx.Node], bool],
+) -> List[torch._ops.OpOverload]:
+    """Decomposing a rejected call can make new calls of a kept op, such as the
+    matmul of a bfloat16 linear, that are rejected too. A non-core op may have
+    no CPU kernel, so such ops go back to decomposition.
+    """
+    while any(torch.Tag.core not in op.tags for op in keep):
+        table = _default_decomposition_table()
+        for op in keep:
+            table.pop(op, None)
+        # Only a decomposition can make new calls.
+        if not any(node.target in table for node in ep.graph.nodes):
+            break
+        late = {
+            node.target
+            for node in ep.run_decompositions(table).graph.nodes
+            if node.target in keep
+            and torch.Tag.core not in node.target.tags
+            and not is_supported(None, node)
+        }
+        if not late:
+            break
+        keep = [op for op in keep if op not in late]
+    return keep
 
 
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
@@ -748,4 +778,7 @@ class CoreMLPartitioner(Partitioner):
                     do_not_decompose.append(node.target)
         # Without a per-node filter, a preserved op stays whole at every call, so
         # one rejected call would be left with no kernel.
-        return [op for op in do_not_decompose if op not in rejected], None
+        keep = [op for op in do_not_decompose if op not in rejected]
+        if rejected:
+            keep = _drop_ops_rejected_after_decomposition(ep, keep, is_supported)
+        return keep, None
