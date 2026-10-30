@@ -24,7 +24,7 @@ constexpr auto kWaitTimeout = std::chrono::seconds(5);
 
 struct CacheEntryWaiter {
   std::future<void> attempting;
-  std::future<Result<std::unique_ptr<CacheEntryLock>>> result;
+  std::future<Result<std::unique_ptr<LockedCacheEntry>>> result;
 };
 
 CacheEntryWaiter start_cache_entry_waiter(
@@ -32,7 +32,7 @@ CacheEntryWaiter start_cache_entry_waiter(
     NSString* key,
     bool existing_only = false) {
   std::promise<void> attempting;
-  std::promise<Result<std::unique_ptr<CacheEntryLock>>> result;
+  std::promise<Result<std::unique_ptr<LockedCacheEntry>>> result;
   CacheEntryWaiter waiter{attempting.get_future(), result.get_future()};
   // Detached promise-backed work cannot block test teardown if acquisition
   // stalls after a failed assertion.
@@ -51,8 +51,8 @@ CacheEntryWaiter start_cache_entry_waiter(
         }
       };
       result.set_value(
-          existing_only ? lock_existing_cache_entry(path, key)
-                        : lock_cache_entry(path, key));
+          existing_only ? acquire_existing_test_cache_entry(path, key)
+                        : acquire_test_cache_entry(path, key));
     }
   }).detach();
   return waiter;
@@ -82,7 +82,7 @@ class CoreAIBookmarkContentionTest : public ::testing::Test {
 TEST_F(
     CoreAIBookmarkContentionTest,
     ThreadContentionSerializesSameKeyButNotDifferentStripes) {
-  auto holder = lock_cache_entry(root.url.path, key);
+  auto holder = acquire_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(holder.ok());
   ASSERT_NE(holder.get(), nullptr);
   auto waiter = start_cache_entry_waiter(root.url.path, key);
@@ -112,7 +112,7 @@ TEST_F(
 TEST_F(CoreAIBookmarkContentionTest, CollidingKeysSerializeAcrossThreads) {
   auto collision = different_cache_key(*bundle, key, true);
   ASSERT_TRUE(collision.ok());
-  auto holder = lock_cache_entry(root.url.path, key);
+  auto holder = acquire_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(holder.ok());
   auto waiter = start_cache_entry_waiter(root.url.path, collision.get());
   ASSERT_EQ(
@@ -132,7 +132,7 @@ TEST_F(
     MissingCollidingLookupDoesNotWaitOrCreateAnotherLock) {
   auto collision = different_cache_key(*bundle, key, true);
   ASSERT_TRUE(collision.ok());
-  auto holder = lock_cache_entry(root.url.path, key);
+  auto holder = acquire_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(holder.ok());
   auto waiter = start_cache_entry_waiter(root.url.path, collision.get(), true);
   EXPECT_EQ(waiter.result.wait_for(kWaitTimeout), std::future_status::ready);
@@ -149,7 +149,7 @@ TEST_F(
 }
 
 TEST_F(CoreAIBookmarkContentionTest, ExistingWaiterRechecksEvictedEntry) {
-  auto holder = lock_cache_entry(root.url.path, key);
+  auto holder = acquire_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(holder.ok());
   NSData* bytes = [@"bookmark" dataUsingEncoding:NSUTF8StringEncoding];
   ASSERT_EQ(holder.get()->write_bookmark(bytes), Error::Ok);
@@ -171,7 +171,7 @@ TEST_F(CoreAIBookmarkContentionTest, ExistingWaiterRechecksEvictedEntry) {
 TEST_F(
     CoreAIBookmarkContentionTest,
     WaiterOpensBookmarkDirectoryAfterAcquiringLock) {
-  auto holder = lock_cache_entry(root.url.path, key);
+  auto holder = acquire_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(holder.ok());
   auto waiter = start_cache_entry_waiter(root.url.path, key);
   ASSERT_EQ(
@@ -258,7 +258,8 @@ TEST_F(CoreAIBookmarkContentionTest, LockInventoryIsBoundedAndStable) {
   NSMutableDictionary<NSString*, NSNumber*>* inodes =
       [NSMutableDictionary dictionary];
   for (NSString* name in representatives) {
-    auto locked = lock_cache_entry(root.url.path, representatives[name]);
+    auto locked =
+        acquire_test_cache_entry(root.url.path, representatives[name]);
     ASSERT_TRUE(locked.ok());
     NSURL* file = [[root.url URLByAppendingPathComponent:@"locks"]
         URLByAppendingPathComponent:name];
@@ -275,7 +276,8 @@ TEST_F(CoreAIBookmarkContentionTest, LockInventoryIsBoundedAndStable) {
   ASSERT_EQ(children.count, kCacheEntryLockStripeCount);
 
   for (NSString* name in representatives) {
-    auto locked = lock_cache_entry(root.url.path, representatives[name]);
+    auto locked =
+        acquire_test_cache_entry(root.url.path, representatives[name]);
     ASSERT_TRUE(locked.ok());
     struct stat info {};
     NSURL* file = [locks URLByAppendingPathComponent:name];

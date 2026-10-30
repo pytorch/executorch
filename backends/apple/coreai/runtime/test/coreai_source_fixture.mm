@@ -9,7 +9,7 @@
 #include "coreai_source_fixture.h"
 
 #include <iterator>
-#include "coreai_bookmarks.h"
+#include "coreai_cache_entry.h"
 #include "coreai_cache_key.h"
 
 namespace executorch::backends::coreai::testing {
@@ -74,6 +74,26 @@ void aot_data(TestData& data, NSString* arch) {
   data.files[data.required_prefix + "nested/weights.bin"] = "weights";
 }
 
+Result<SelectedBundle> source_manifest(bool aot) {
+  return selected_bundle(aot ? aot_manifest_dict() : manifest_dict());
+}
+
+NSString* source_key(const SelectedBundle& bundle) {
+  auto key = cache_variant_key(bundle, @"macOS", @"arch_b", @"default");
+  EXPECT_TRUE(key.ok());
+  return key.ok() ? key.get() : nil;
+}
+
+NSURL* staging_root(NSURL* cache_root) {
+  return [cache_root URLByAppendingPathComponent:@"staging" isDirectory:YES];
+}
+
+NSURL* source_entry(NSURL* cache_root, const SelectedBundle& bundle) {
+  return
+      [staging_root(cache_root) URLByAppendingPathComponent:source_key(bundle)
+                                                isDirectory:YES];
+}
+
 Result<NSURL*> CoreAISourceTest::prepare_source_bundle(
     const SelectedBundle& bundle,
     const runtime::NamedDataMap* data,
@@ -84,7 +104,7 @@ Result<NSURL*> CoreAISourceTest::prepare_source_bundle(
     ADD_FAILURE() << "Cannot compute source fixture key";
     return key.error();
   }
-  auto lock = lock_cache_entry(cache_root, key.get());
+  auto lock = acquire_test_cache_entry(cache_root, key.get());
   if (!lock.ok()) {
     ADD_FAILURE() << "Cannot acquire source fixture lock";
     return lock.error();

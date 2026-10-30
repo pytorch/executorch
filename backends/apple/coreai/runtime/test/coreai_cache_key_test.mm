@@ -19,14 +19,6 @@ using namespace executorch::backends::coreai::testing;
 
 namespace {
 
-Result<SelectedBundle> selected_bundle(NSMutableDictionary* dictionary) {
-  auto manifest = parse_manifest(encode(dictionary));
-  if (!manifest.ok()) {
-    return manifest.error();
-  }
-  return select_assets(manifest.get(), @"arch_b", @"macOS");
-}
-
 NSString* key_for_device(NSString* device) {
   NSString* model = [@"" stringByPaddingToLength:64
                                       withString:@"a"
@@ -44,7 +36,7 @@ TEST(CoreAICacheKeyIdentityTest, IgnoresBindingsAndDeliveryLocation) {
   ASSERT_TRUE(expected.ok());
 
   auto dictionary = manifest_dict();
-  dictionary[@"hash"] = @"cd";
+  dictionary[@"export_hash"] = @"cd";
   dictionary[@"path"] = @"cd/model.aimodel";
   dictionary[@"function"] = @"another_function";
   dictionary[@"input_names"] = @[ @"different_input" ];
@@ -85,15 +77,23 @@ TEST(CoreAICacheKeyIdentityTest, SeparatesBundleNameWithSameDigestAndMode) {
   };
   auto manifest = parse_manifest(encode(dictionary));
   ASSERT_TRUE(manifest.ok());
-  auto first = select_assets(manifest.get(), @"arch_a", @"macOS");
-  auto second = select_assets(manifest.get(), @"arch_b", @"macOS");
+  auto first = select_bundle(manifest.get(), @"arch_a", @"macOS");
+  auto second = select_bundle(manifest.get(), @"arch_b", @"macOS");
   ASSERT_TRUE(first.ok());
   ASSERT_TRUE(second.ok());
-  auto first_key = cache_model_key(first.get());
-  auto second_key = cache_model_key(second.get());
+  auto first_key = bundle_identity(first.get());
+  auto second_key = bundle_identity(second.get());
   ASSERT_TRUE(first_key.ok());
   ASSERT_TRUE(second_key.ok());
   EXPECT_FALSE([first_key.get() isEqual:second_key.get()]);
+}
+
+TEST(CoreAICacheKeyIdentityTest, RejectsUnknownBundleName) {
+  auto manifest = parse_manifest(encode(manifest_dict()));
+  ASSERT_TRUE(manifest.ok());
+  EXPECT_EQ(
+      bundle_identity(manifest.get(), @"unknown.aimodel").error(),
+      Error::InvalidArgument);
 }
 
 TEST(CoreAICacheKeyIdentityTest, SeparatesDeviceAndSpecializationIdentity) {
@@ -113,8 +113,8 @@ TEST(CoreAICacheKeyIdentityTest, SeparatesDeviceAndSpecializationIdentity) {
   for (auto* changed : {&platform, &architecture, &specialization}) {
     ASSERT_TRUE(changed->ok());
     EXPECT_FALSE([changed->get() isEqual:baseline.get()]);
-    EXPECT_TRUE([cache_key_model_prefix(changed->get())
-        isEqual:cache_key_model_prefix(baseline.get())]);
+    EXPECT_TRUE([cache_key_bundle_identity(changed->get())
+        isEqual:cache_key_bundle_identity(baseline.get())]);
   }
 }
 
@@ -135,7 +135,7 @@ TEST(CoreAICacheKeyFormatTest, AcceptsReadableDeviceComponents) {
     NSString* key = key_for_device(device);
     EXPECT_TRUE(is_cache_key(key));
     EXPECT_TRUE(
-        [cache_key_model_prefix(key) isEqual:[key substringToIndex:64]]);
+        [cache_key_bundle_identity(key) isEqual:[key substringToIndex:64]]);
   }
 }
 
@@ -153,7 +153,7 @@ TEST(CoreAICacheKeyFormatTest, RejectsUnsafeOrIncompleteDevices) {
        ]) {
     NSString* key = key_for_device(device);
     EXPECT_FALSE(is_cache_key(key));
-    EXPECT_EQ(cache_key_model_prefix(key), nil);
+    EXPECT_EQ(cache_key_bundle_identity(key), nil);
   }
 }
 

@@ -8,6 +8,7 @@
 
 #import "coreai_fake_loader.h"
 #include <cstring>
+#include "coreai_test_utils.h"
 
 using executorch::backends::coreai::testing::FakeBridgeState;
 
@@ -84,7 +85,7 @@ void run_async(CoreAIFakeBridgeContext* context, void (^work)()) {
 }
 
 dispatch_time_t cleanup_deadline() {
-  return dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC);
+  return executorch::backends::coreai::testing::test_deadline();
 }
 } // namespace
 

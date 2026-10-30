@@ -24,7 +24,7 @@ def test_export_replaces_stale_fixture_files(tmp_path, dynamic, include_pte):
     bundle.mkdir(parents=True)
     (bundle / "obsolete.bin").write_bytes(b"obsolete")
     (output / "stale.json").write_text("{}")
-    manifest = {"hash": "ab", "files": {"model.aimodel/graph.bin": 3}}
+    manifest = {"export_hash": "ab", "files": {"model.aimodel/graph.bin": 3}}
     manifest_bytes = json.dumps(manifest).encode()
     delegate = SimpleNamespace(
         processed_bytes=manifest_bytes,

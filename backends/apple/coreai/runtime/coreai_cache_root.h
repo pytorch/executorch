@@ -10,15 +10,23 @@
 
 #import <Foundation/Foundation.h>
 #include <executorch/runtime/core/result.h>
-#include "coreai_file.h"
+#include <optional>
+#include "coreai_storage.h"
 
 namespace executorch::backends::coreai {
 
+struct CacheDirectory final {
+  NSString* path;
+  FileDescriptor descriptor;
+};
+
 // Resolves the default location without creating or modifying storage.
-runtime::Result<NSString*> default_coreai_assets_root();
-// Requires an absolute directory path. With Create, makes the directory and
-// excludes it from backup; otherwise a missing directory is InvalidArgument.
-runtime::Result<NSString*> prepare_storage_root(
+runtime::Result<NSString*> default_cache_directory();
+// Null selects the default; invalid explicit paths never fall back to it.
+runtime::Result<NSString*> cache_directory_path(const char* configured_path);
+// Resolves symlinks once and anchors the resulting directory with an owned
+// descriptor. OpenExisting returns no value when the directory is missing.
+runtime::Result<std::optional<CacheDirectory>> resolve_cache_directory(
     NSString* path,
     StorageCreationMode mode);
 

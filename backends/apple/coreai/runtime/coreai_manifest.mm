@@ -14,7 +14,7 @@
 namespace executorch::backends::coreai {
 
 Manifest::Manifest(
-    NSString* model_hash,
+    NSString* export_hash,
     NSString* function,
     NSArray<NSString*>* inputs,
     NSArray<NSString*>* outputs,
@@ -24,7 +24,7 @@ Manifest::Manifest(
     NSString* platform,
     NSDictionary<NSString*, NSString*>* architectures,
     NSOperatingSystemVersion minimum_version)
-    : model_hash(model_hash),
+    : export_hash(export_hash),
       function(function),
       inputs(inputs),
       outputs(outputs),
@@ -39,7 +39,7 @@ SelectedBundle::SelectedBundle(
     const Manifest& manifest,
     NSString* path,
     NSDictionary<NSString*, NSNumber*>* files)
-    : model_hash(manifest.model_hash),
+    : export_hash(manifest.export_hash),
       path(path),
       bundle_name(path.lastPathComponent),
       digest(manifest.bundle_digests[bundle_name]),
@@ -59,7 +59,7 @@ bool names_array(id value) {
   }
   NSMutableSet<NSString*>* seen = [NSMutableSet set];
   for (id name in value) {
-    if (!nonempty_string(name) || [seen containsObject:name]) {
+    if (!is_nonempty_string(name) || [seen containsObject:name]) {
       return false;
     }
     [seen addObject:name];
@@ -91,7 +91,7 @@ Error validate_files(
   NSLocale* locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
   for (NSString* file in filenames) {
     ET_CHECK_OR_RETURN_ERROR(
-        relative_path(file) && file_size(filenames[file]) &&
+        is_relative_path(file) && file_size(filenames[file]) &&
             [bundles containsObject:[file componentsSeparatedByString:@"/"]
                                         .firstObject] &&
             [file containsString:@"/"] &&
@@ -132,7 +132,7 @@ bool parse_version(id value, NSOperatingSystemVersion& version) {
     version = {};
     return true;
   }
-  if (!nonempty_string(value)) {
+  if (!is_nonempty_string(value)) {
     return false;
   }
   NSArray<NSString*>* parts = [value componentsSeparatedByString:@"."];
@@ -179,21 +179,23 @@ Result<Manifest> parse_manifest(NSData* data) {
       NotSupported,
       "Unsupported Core AI packaging; expected .aimodel or AOT .aimodelc");
   const bool aot_compiled = [packaging hasPrefix:@"aot_compiled_"];
-  NSString* model_hash = dict[@"hash"];
+  NSString* export_hash = dict[@"export_hash"];
   NSString* function = dict[@"function"];
   NSArray<NSString*>* inputs = dict[@"input_names"];
   NSArray<NSString*>* outputs = dict[@"output_names"];
   NSString* platform = nil;
   NSDictionary<NSString*, NSString*>* architectures = nil;
   ET_CHECK_OR_RETURN_ERROR(
-      lowercase_hex(model_hash), InvalidProgram, "Invalid Core AI model hash");
+      is_lowercase_hex(export_hash),
+      InvalidProgram,
+      "Invalid Core AI export hash");
   NSMutableSet<NSString*>* bundles = [NSMutableSet set];
   NSString* source_path = nil;
   if (aot_compiled) {
     platform = dict[@"platform"];
     architectures = dict[@"archs"];
     ET_CHECK_OR_RETURN_ERROR(
-        nonempty_string(platform),
+        is_nonempty_string(platform),
         InvalidProgram,
         "Core AI AOT manifest requires a target platform");
     ET_CHECK_OR_RETURN_ERROR(
@@ -203,15 +205,15 @@ Result<Manifest> parse_manifest(NSData* data) {
         "Core AI AOT manifest requires a nonempty architecture map");
     for (id arch in architectures) {
       ET_CHECK_OR_RETURN_ERROR(
-          relative_path(arch) && ![arch containsString:@"/"] &&
+          is_relative_path(arch) && ![arch containsString:@"/"] &&
               [arch canBeConvertedToEncoding:NSUTF8StringEncoding],
           InvalidProgram,
           "Invalid Core AI AOT architecture name");
       NSString* bundle = [NSString stringWithFormat:@"model.%@.aimodelc", arch];
       id path = architectures[arch];
       ET_CHECK_OR_RETURN_ERROR(
-          relative_path(path) &&
-              [path isEqualToString:[model_hash
+          is_relative_path(path) &&
+              [path isEqualToString:[export_hash
                                         stringByAppendingPathComponent:bundle]],
           InvalidProgram,
           "Invalid Core AI AOT bundle path for architecture %s",
@@ -221,16 +223,17 @@ Result<Manifest> parse_manifest(NSData* data) {
   } else {
     source_path = dict[@"path"];
     ET_CHECK_OR_RETURN_ERROR(
-        relative_path(source_path) &&
+        is_relative_path(source_path) &&
             [source_path
-                isEqualToString:[model_hash
+                isEqualToString:[export_hash
                                     stringByAppendingString:@"/model.aimodel"]],
         InvalidProgram,
         "Invalid Core AI source bundle path");
     [bundles addObject:@"model.aimodel"];
   }
   ET_CHECK_OR_RETURN_ERROR(
-      nonempty_string(function) && names_array(inputs) && names_array(outputs),
+      is_nonempty_string(function) && names_array(inputs) &&
+          names_array(outputs),
       InvalidProgram,
       "Core AI manifest requires ordered input/output names");
   NSOperatingSystemVersion minimum_version{};
@@ -249,12 +252,12 @@ Result<Manifest> parse_manifest(NSData* data) {
   for (NSString* bundle in bundles) {
     id digest = bundle_digests[bundle];
     ET_CHECK_OR_RETURN_ERROR(
-        lowercase_hex(digest, 64),
+        is_lowercase_hex(digest, 64),
         InvalidProgram,
         "Invalid Core AI exported bundle digest");
   }
   return Manifest(
-      model_hash,
+      export_hash,
       function,
       inputs,
       outputs,
@@ -272,14 +275,14 @@ Result<Manifest> parse_manifest(const void* data, size_t size) {
   return parse_manifest([NSData dataWithBytes:data length:size]);
 }
 
-Result<SelectedBundle> select_assets(
+Result<SelectedBundle> select_bundle(
     const Manifest& manifest,
     NSString* device_architecture,
     NSString* platform) {
   if (!manifest.aot_compiled) {
     return SelectedBundle(
         manifest,
-        [manifest.model_hash stringByAppendingString:@"/model.aimodel"],
+        [manifest.export_hash stringByAppendingString:@"/model.aimodel"],
         manifest.files);
   }
   ET_CHECK_OR_RETURN_ERROR(
@@ -295,7 +298,7 @@ Result<SelectedBundle> select_assets(
       }];
   NSString* available = [architectures componentsJoinedByString:@", "];
   ET_CHECK_OR_RETURN_ERROR(
-      nonempty_string(device_architecture),
+      is_nonempty_string(device_architecture),
       DelegateInvalidCompatibility,
       "Core AI SDK device architecture is unavailable (%s); available "
       "architectures: [%s]; re-export the model as .aimodel or for this device",

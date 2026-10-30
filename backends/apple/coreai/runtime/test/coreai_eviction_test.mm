@@ -10,11 +10,13 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <pthread.h>
 #include <cstdlib>
+#include "coreai_acquisition_fixture.h"
 #include "coreai_bookmark_fixture.h"
 #include "coreai_fake_loader.h"
 #include "coreai_fault_scope.h"
 #include "coreai_load_coordinator.h"
 #include "coreai_source_fixture.h"
+#include "coreai_test_utils.h"
 
 using namespace executorch::runtime;
 using namespace executorch::backends::coreai;
@@ -33,7 +35,7 @@ Error initialize_and_destroy(
   if (root == nil)
     return Error::InvalidArgument;
   BackendOptions<1> options;
-  auto error = options.set_option("coreai_assets_dir", root.UTF8String);
+  auto error = options.set_option("coreai_cache_dir", root.UTF8String);
   if (error != Error::Ok)
     return error;
   auto* backend = get_backend_class("CoreAIBackend");
@@ -54,10 +56,6 @@ Error initialize_and_destroy(
     return handle.error();
   backend->destroy(handle.get());
   return Error::Ok;
-}
-
-dispatch_time_t deadline() {
-  return dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC);
 }
 
 class CoreAIEvictionTest : public ::testing::Test {
@@ -93,7 +91,7 @@ struct ReleaseAndJoin final {
     release();
     if (joined)
       return;
-    const auto completion_deadline = deadline();
+    const auto completion_deadline = test_deadline();
     if (eviction_started)
       eviction_wait =
           dispatch_semaphore_wait(eviction_done, completion_deadline);
@@ -114,7 +112,7 @@ struct ReleaseAndJoin final {
                     << ", " << loading_join;
       std::_Exit(EXIT_FAILURE);
     }
-    auto drained = bridge.wait_for_callbacks(deadline());
+    auto drained = bridge.wait_for_callbacks(test_deadline());
     if (!drained) {
       ADD_FAILURE() << drained.message();
       std::_Exit(EXIT_FAILURE);
@@ -222,7 +220,7 @@ TEST_F(CoreAIEvictionTest, ConfirmedMissRecoveryEvictsOnlyCurrentBookmark) {
     EXPECT_FALSE(
         [NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
     ASSERT_EQ(
-        clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
+        clear_test_cache_entry(root.url.path, key, fake.loader), Error::Ok);
     EXPECT_NE(fake.loader.models[original], nil);
     EXPECT_EQ(fake.loader.models[saved], nil);
     EXPECT_FALSE(
@@ -255,7 +253,7 @@ TEST_F(
     ASSERT_TRUE(key_result.ok());
     NSString* key = key_result.get();
     EXPECT_EQ(
-        clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
+        clear_test_cache_entry(root.url.path, key, fake.loader), Error::Ok);
     EXPECT_EQ(fake.loader->evictions.load(), 0);
     // Retain staging after publication to exercise clearing's failure paths.
     {
@@ -280,7 +278,7 @@ TEST_F(
       fake.loader.evictError = bookmark_test_error(EBUSY);
       fake.loader.restoreError = probe_error ? bookmark_test_error() : nil;
       EXPECT_NE(
-          clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
+          clear_test_cache_entry(root.url.path, key, fake.loader), Error::Ok);
       auto retained = saved_bookmark(root.url, key);
       ASSERT_TRUE(retained.ok());
       EXPECT_TRUE([retained.get() isEqual:saved]);
@@ -292,7 +290,7 @@ TEST_F(
     {
       StorageFaultScope fault(FaultPoint::AfterEvict);
       EXPECT_NE(
-          clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
+          clear_test_cache_entry(root.url.path, key, fake.loader), Error::Ok);
       EXPECT_EQ(fault.hits, 1);
     }
     auto retained = saved_bookmark(root.url, key);
@@ -300,7 +298,7 @@ TEST_F(
     EXPECT_TRUE([retained.get() isEqual:saved]);
     fake.loader.evictError = bookmark_test_error(ENOENT);
     ASSERT_EQ(
-        clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
+        clear_test_cache_entry(root.url.path, key, fake.loader), Error::Ok);
     auto absent = saved_bookmark(root.url, key);
     ASSERT_TRUE(absent.ok());
     EXPECT_EQ(absent.get(), nil);
@@ -313,14 +311,14 @@ TEST_F(
     {
       StorageFaultScope fault(FaultPoint::Remove);
       EXPECT_NE(
-          clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
+          clear_test_cache_entry(root.url.path, key, fake.loader), Error::Ok);
       EXPECT_EQ(fault.hits, 1);
       auto before_remove = saved_bookmark(root.url, key);
       ASSERT_TRUE(before_remove.ok());
       EXPECT_NE(before_remove.get(), nil);
     }
     ASSERT_EQ(
-        clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
+        clear_test_cache_entry(root.url.path, key, fake.loader), Error::Ok);
     auto removed = saved_bookmark(root.url, key);
     ASSERT_TRUE(removed.ok());
     EXPECT_EQ(removed.get(), nil);
@@ -347,20 +345,19 @@ TEST_F(
     // Scope teardown clears retained completions even after fatal test
     // failures.
     bridge.state().bookmark_loader = loader;
-    RuntimeAssets assets{selected.get(), @"macOS", @"arch_b"};
+    SelectedHostBundle assets{selected.get(), @"macOS", @"arch_b"};
     @autoreleasepool {
-      auto pinned =
-          acquire_bookmark_model(assets, &data, root.url.path, loader);
+      auto pinned = acquire_test_model(assets, &data, root.url.path, loader);
       ASSERT_TRUE(pinned.ok());
       EXPECT_NE(loader.temporary, nil);
-      EXPECT_NE(clear_bookmark_assets(root.url.path, key, loader), Error::Ok);
+      EXPECT_NE(clear_test_cache_entry(root.url.path, key, loader), Error::Ok);
       auto saved = saved_bookmark(root.url, key);
       ASSERT_TRUE(saved.ok());
       EXPECT_NE(saved.get(), nil);
     }
     EXPECT_EQ(loader.temporary, nil);
     EXPECT_NE(loader.retainedCompletion, nil);
-    ASSERT_EQ(clear_bookmark_assets(root.url.path, key, loader), Error::Ok);
+    ASSERT_EQ(clear_test_cache_entry(root.url.path, key, loader), Error::Ok);
     auto removed = saved_bookmark(root.url, key);
     ASSERT_TRUE(removed.ok());
     EXPECT_EQ(removed.get(), nil);
@@ -398,21 +395,22 @@ TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
     __block long gate_wait = -1;
     fake.loader.onEvict = ^(NSData*) {
       dispatch_semaphore_signal(deleting);
-      gate_wait = dispatch_semaphore_wait(proceed, deadline());
+      gate_wait = dispatch_semaphore_wait(proceed, test_deadline());
     };
     Error eviction_error = Error::Internal;
     bool load_ok = false;
     auto evict = [&] {
       @autoreleasepool {
-        eviction_error = clear_bookmark_assets(root.url.path, key, fake.loader);
+        eviction_error =
+            clear_test_cache_entry(root.url.path, key, fake.loader);
       }
       dispatch_semaphore_signal(eviction_done);
     };
-    RuntimeAssets assets{selected.get(), @"macOS", @"arch_b"};
+    SelectedHostBundle assets{selected.get(), @"macOS", @"arch_b"};
     auto load = [&] {
       @autoreleasepool {
         auto acquired =
-            acquire_bookmark_model(assets, &data, root.url.path, fake.loader);
+            acquire_test_model(assets, &data, root.url.path, fake.loader);
         load_ok = acquired.ok() && acquired.get() != nil;
       }
       dispatch_semaphore_signal(loading_observed);
@@ -429,7 +427,7 @@ TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
         &evict);
     cleanup.eviction_started = eviction_start == 0;
     const long entered = cleanup.eviction_started
-        ? dispatch_semaphore_wait(deleting, deadline())
+        ? dispatch_semaphore_wait(deleting, test_deadline())
         : -1;
     int loading_start = -1;
     long premature_completion = -1;

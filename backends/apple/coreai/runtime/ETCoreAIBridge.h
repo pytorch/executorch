@@ -33,7 +33,8 @@ typedef NS_ENUM(NSInteger, ETCoreAIErrorCode) {
 
 FOUNDATION_EXPORT NSErrorDomain const ETCoreAIErrorDomain;
 
-// Input storage is borrowed through output copying, never retained or freed.
+// Input storage is borrowed until output copying finishes. The bridge never
+// retains or frees it.
 @interface ETCoreAIInputTensor : NSObject
 @property(nonatomic, readonly) const void* _Nullable bytes;
 @property(nonatomic, readonly) NSUInteger byteCount;
@@ -48,9 +49,8 @@ FOUNDATION_EXPORT NSErrorDomain const ETCoreAIErrorDomain;
     NS_DESIGNATED_INITIALIZER;
 @end
 
-// The copier retains its source storage; SDK pointers never escape their access
-// scope. Construct only after validating the source layout. Copying cannot
-// fail.
+// The copier retains its source storage; SDK pointers stay within their access
+// scope. Validate the source layout before constructing. Copying cannot fail.
 @interface ETCoreAITensor : NSObject
 @property(nonatomic, readonly) NSUInteger byteCount;
 @property(nonatomic, readonly, copy) NSArray<NSNumber*>* shape;
@@ -70,11 +70,12 @@ FOUNDATION_EXPORT NSErrorDomain const ETCoreAIErrorDomain;
 - (void)copyBytesTo:(void* _Nullable)bytes NS_SWIFT_NAME(copyBytes(to:));
 @end
 
-// The caller keeps inputs valid until all output copies finish, or completion
-// reports failure. Outputs may share input storage; stage copies before writing
-// any destination that aliases an input or another output destination.
-// Completion is called exactly once, possibly before executeInputs returns,
-// with no guarantee of a particular thread or queue.
+// Keep inputs valid until output copying finishes or completion reports
+// failure. Outputs may share input storage. Stage copies before writing any
+// destination that aliases an input or another output destination.
+//
+// Completion runs exactly once, possibly before executeInputs returns, on an
+// unspecified thread or queue.
 @protocol ETCoreAISession<NSObject>
 - (void)executeInputs:(NSArray<ETCoreAIInputTensor*>*)inputs
            completion:(void (^)(
@@ -82,12 +83,12 @@ FOUNDATION_EXPORT NSErrorDomain const ETCoreAIErrorDomain;
                           NSError* _Nullable error))completion;
 @end
 
-// A prepared model pins the SDK entry. Sessions retain their own pin after
+// A prepared model pins the SDK entry. Each session retains its own pin after
 // binding.
 @protocol ETCoreAIPreparedModel<NSObject>
 - (NSData*)copyBookmarkData;
-// Completes once with either a session or an error, never both. May complete
-// synchronously on the calling thread.
+// Completes once with either a session or an error, never both. Completion may
+// run synchronously on the calling thread.
 - (void)loadFunctionNamed:(NSString*)functionName
                inputNames:(NSArray<NSString*>*)inputNames
               outputNames:(NSArray<NSString*>*)outputNames
@@ -102,26 +103,27 @@ typedef NS_ENUM(NSInteger, ETCoreAIAcquisitionStatus) {
   ETCoreAIAcquisitionStatusError = 2,
 };
 
-// Hit: nonnull model, nil error. Miss: nil model and error, only on SDK nil.
-// Error: nil model, nonnull error. Function errors never produce a Miss.
-// Acquisition operations call completion exactly once off the main thread.
+// Hit: nonnull model, nil error.
+// Miss: nil model and error, only for an SDK nil result.
+// Error: nil model, nonnull error. Function errors never report Miss.
+//
+// Acquisition completions run exactly once off the main thread.
 typedef void (^ETCoreAIAcquisitionCompletion)(
     ETCoreAIAcquisitionStatus status,
     id<ETCoreAIPreparedModel> _Nullable preparedModel,
     NSError* _Nullable error);
 
 @protocol ETCoreAIModelLoading<NSObject>
-// Stable for this loader's lifetime; derived from its actual specialization
-// options.
+// Stable for this loader's lifetime; derived from its specialization options.
 @property(nonatomic, readonly, copy) NSString* specializationIdentifier;
 - (void)restoreModelFromBookmark:(NSData*)bookmark
                       completion:(ETCoreAIAcquisitionCompletion)completion;
-// Uses the SDK default cache with storage-pressure-only purging. Never returns
-// Miss.
+// Uses the SDK default cache with storage-pressure-only purging.
+// Specialization never reports Miss.
 - (void)specializeModelAtURL:(NSURL*)url
                   completion:(ETCoreAIAcquisitionCompletion)completion;
-// Nil error means SDK-confirmed deletion. No busy/absent classification is
-// inferred.
+// Nil error means SDK-confirmed deletion; the bridge adds no
+// busy/absent classification.
 - (void)evictModelWithBookmark:(NSData*)bookmark
                     completion:(void (^)(NSError* _Nullable error))completion;
 @end

@@ -24,6 +24,7 @@
 #include "coreai_filesystem_fixture.h"
 #include "coreai_pte_fixture.h"
 #include "coreai_source_fixture.h"
+#include "coreai_test_utils.h"
 
 namespace executorch::backends::coreai::testing {
 namespace {
@@ -41,8 +42,7 @@ class CoreAICacheTest : public ::testing::Test {
   }
 
   void drain_callbacks() {
-    auto drained = bridge.wait_for_callbacks(
-        dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+    auto drained = bridge.wait_for_callbacks(test_deadline());
     if (!drained) {
       ADD_FAILURE() << drained.message();
       // Timed-out callbacks may still borrow this test's PTE or observations.
@@ -76,7 +76,7 @@ AssertionResult seed_cache(
   if (!parsed.ok()) {
     return AssertionFailure() << "Cannot parse cache seed manifest";
   }
-  auto selected = select_assets(parsed.get(), architecture, platform);
+  auto selected = select_bundle(parsed.get(), architecture, platform);
   if (!selected.ok()) {
     return AssertionFailure() << "Cannot select cache seed assets";
   }
@@ -90,7 +90,7 @@ AssertionResult seed_cache(
       nil,
       [[root URLByAppendingPathComponent:@"staging"]
           URLByAppendingPathComponent:key.get()]};
-  auto lock = lock_cache_entry(root.path, entry.key);
+  auto lock = acquire_test_cache_entry(root.path, entry.key);
   if (!lock.ok()) {
     return AssertionFailure() << "Cannot lock cache seed bookmark";
   }

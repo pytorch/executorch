@@ -11,6 +11,7 @@
 #include <atomic>
 #include <map>
 #include <string>
+#include "coreai_bookmark_fixture.h"
 #include "coreai_filesystem_fixture.h"
 #include "coreai_manifest_fixture.h"
 #include "coreai_source_bundle.h"
@@ -38,6 +39,10 @@ class TestData final : public runtime::NamedDataMap {
 };
 
 void aot_data(TestData& data, NSString* arch);
+runtime::Result<SelectedBundle> source_manifest(bool aot = false);
+NSString* source_key(const SelectedBundle& bundle);
+NSURL* staging_root(NSURL* cache_root);
+NSURL* source_entry(NSURL* cache_root, const SelectedBundle& bundle);
 
 class CoreAISourceTest : public ::testing::Test {
  protected:

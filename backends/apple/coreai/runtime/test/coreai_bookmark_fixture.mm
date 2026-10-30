@@ -44,7 +44,7 @@ int remaining_ms(Clock::time_point deadline) {
   return remaining.count() <= 0 ? 0 : static_cast<int>(remaining.count());
 }
 
-bool send_signal_byte(int fd, char byte) {
+bool send_child_byte_impl(int fd, char byte) {
   const auto deadline = Clock::now() + kChildTimeout;
   while (const int remaining = remaining_ms(deadline)) {
     pollfd entry{fd, POLLOUT, 0};
@@ -69,15 +69,48 @@ bool send_signal_byte(int fd, char byte) {
 } // namespace
 
 Result<SelectedBundle> bookmark_bundle(bool aot) {
-  NSData* encoded = encode(aot ? aot_manifest_dict() : manifest_dict());
-  if (encoded == nil) {
-    return Error::InvalidExternalData;
+  return selected_bundle(aot ? aot_manifest_dict() : manifest_dict());
+}
+
+Result<CacheDirectory> test_cache_directory(
+    NSString* path,
+    StorageCreationMode mode) {
+  auto directory = resolve_cache_directory(path, mode);
+  if (!directory.ok()) {
+    return directory.error();
   }
-  auto parsed = parse_manifest(encoded);
-  if (!parsed.ok()) {
-    return parsed.error();
+  if (!directory->has_value()) {
+    return Error::NotFound;
   }
-  return select_assets(parsed.get(), @"arch_b", @"macOS");
+  return std::move(directory->value());
+}
+
+Result<std::unique_ptr<LockedCacheEntry>> acquire_test_cache_entry(
+    NSString* path,
+    NSString* key) {
+  auto directory = test_cache_directory(path);
+  if (!directory.ok()) {
+    return directory.error();
+  }
+  return LockedCacheEntry::acquire(directory.get(), key);
+}
+
+Result<std::unique_ptr<LockedCacheEntry>> acquire_existing_test_cache_entry(
+    NSString* path,
+    NSString* key) {
+  auto directory =
+      resolve_cache_directory(path, StorageCreationMode::OpenExisting);
+  if (!directory.ok()) {
+    return directory.error();
+  }
+  if (!directory->has_value()) {
+    return std::unique_ptr<LockedCacheEntry>();
+  }
+  return LockedCacheEntry::acquire_existing(directory->value(), key);
+}
+
+bool send_child_byte(int fd, char byte) {
+  return send_child_byte_impl(fd, byte);
 }
 
 Result<NSString*> test_cache_key(const SelectedBundle& bundle) {
@@ -136,7 +169,7 @@ NSURL* test_cache_lock_url(NSURL* root, NSString* key) {
 }
 
 Result<NSData*> saved_bookmark(NSURL* root, NSString* key) {
-  auto locked = lock_cache_entry(root.path, key);
+  auto locked = acquire_test_cache_entry(root.path, key);
   if (!locked.ok()) {
     return locked.error();
   }
@@ -212,15 +245,15 @@ int bookmark_child_mode(int argc, char** argv) {
   scope.observe = ^(FaultPoint point) {
     if (lock && (same || collision) &&
         point == FaultPoint::BeforeCacheEntryLock &&
-        !send_signal_byte(notify_fd, 'B')) {
+        !send_child_byte_impl(notify_fd, 'B')) {
       _exit(12);
     }
   };
-  auto locked = lock_cache_entry(root, selected_key);
+  auto locked = acquire_test_cache_entry(root, selected_key);
   if (!locked.ok()) {
     return 9;
   }
-  if (!send_signal_byte(signal_fd.get(), 'L')) {
+  if (!send_child_byte_impl(signal_fd.get(), 'L')) {
     return 10;
   }
   if (close(signal_fd.release()) != 0) {

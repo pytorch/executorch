@@ -30,15 +30,17 @@ The delegate manifest describes `.aimodel` source bundles, which require
 `inline` packaging, and AOT-compiled `.aimodelc` bundles, which require
 `aot_compiled_inline`. Both formats require a `function` name, and ordered
 `input_names` and `output_names` matching the converter's bindings. Dictionary
-iteration order is not a binding contract. The `files` object maps relative
+iteration order is not a binding contract. `export_hash` identifies the exported
+program used to namespace embedded assets. The `files` object maps relative
 filenames to byte sizes; `bundle_digests` maps each bundle basename to its
 export-time SHA-256 digest. Asset paths, including bundle and directory names,
 must remain distinct under case-insensitive, canonically normalized Unicode
 comparison. Accepted names are preserved, not rewritten.
 
 Parsing returns an immutable `Manifest` covering all exported bundles. Pure
-platform and architecture selection produces an immutable `SelectedBundle`
-with one bundle's path, digest, and files. Neither type can be constructed
+platform and architecture selection through `select_bundle` produces an immutable
+`SelectedBundle` with one bundle's path, digest, and files. Host probing returns a
+`SelectedHostBundle` containing that selection and its platform/architecture.
 without validation; filesystem materialization and SDK host probing remain
 outside the manifest parser.
 
@@ -105,17 +107,18 @@ bookmark restoration. A missing bookmark or SDK-confirmed cache miss falls back
 to source materialization and persistent specialization, then binds the requested
 function and ordered I/O on that same acquired model.
 
-### Asset storage
+### Cache directory
 
-Backend initialization reads the string runtime spec `coreai_assets_dir`. If
+Backend initialization reads the string runtime spec `coreai_cache_dir`. If
 absent, it sets the directory to `executorch_coreai` beneath user-domain
 `NSCachesDirectory`. The coordinator and storage helpers always receive that
 explicit directory. It contains raw bookmarks, staged bundles and lock files.
 
-The assets root must be an absolute path. The application chooses it, should
-reserve it for this backend, and is trusted not to rename, replace or modify its
-contents while the backend uses it; the backend does not defend against other
-processes of the same user rebinding paths. Written files and changed directories
+The cache directory must be an absolute path reserved for this backend. A
+configured symlink is resolved before opening the cache directory. Entry and
+staging operations retain directory descriptors and do not follow internal
+symlinks. The application must still prevent concurrent renaming, replacement,
+or modification while SDK calls use source URLs. Written files and changed directories
 are synced with `fsync`. Bookmark publication uses `F_FULLFSYNC` on the temporary
 file before rename and on the directory afterward. Source-bundle publication
 fully flushes the staging directory after syncing its files and subdirectories,
@@ -126,7 +129,7 @@ volume; unsupported full-device flushes are reported as errors, not downgraded
 to `fsync`.
 
 Inline bundles are read through `NamedDataMap` and materialized as unchanged
-files under the assets root. Named data can be supplied externally; inline
+files under the cache directory. Named data can be supplied externally; inline
 packaging does not require all bytes to reside in one physical PTE. The exporter
 computes each bundle digest from all delivered relative filenames and file bytes,
 not just the SDK's bytecode-only `main.hash`. Each AOT architecture has an
@@ -137,7 +140,7 @@ When source recovery is needed, existing bundles are checked for the expected
 file set, sizes, entry types and directory structure without reading asset
 contents or requesting NDS payloads. Unicode paths are compared in canonical
 decomposed form; NDS keys and bytes remain unchanged. Reuse fully flushes the
-source root, including after a previous publication's final flush failed.
+staging directory, including after a previous publication's final flush failed.
 Missing bundles are written to a staging directory and published with an
 exclusive rename; each selected NDS payload is fetched once and checked for size
 before writing. If another loader publishes first, its bundle is validated and
@@ -156,7 +159,7 @@ NDS source to be reread. The export-time digest is a trusted artifact identifier
 the runtime does not rehash source or stored bytes. Core AI may reject invalid
 contents, but SDK load failures do not automatically evict the extracted copy.
 
-Preparing the assets root sets `NSURLIsExcludedFromBackupKey` on it, which covers
+Preparing the cache directory sets `NSURLIsExcludedFromBackupKey` on it, which covers
 everything beneath it. Ancestors are not modified. This is backup exclusion, not
 a control for iCloud Drive synchronization.
 
@@ -170,7 +173,7 @@ Directory creation uses default permissions filtered by the process umask, witho
 an explicit owner-only restriction. Existing permissions are not changed.
 Backup exclusion and required durability flushes still apply on reused paths.
 
-Cache-root preparation owns location and backup/protection policy; descriptor
+Cache-directory preparation owns location and backup/protection policy; descriptor
 storage owns no-follow operations, publication, and synchronization. Creation
 and enumeration use explicit policies, with a missing child distinguishable
 from an error. Fault injection is a separate, thread-local test interface and
@@ -182,13 +185,15 @@ validating source assets only when recovery requires them. There is no synthetic
 zero-input inference at initialization. SDK specialization and function resource
 loading can still be substantial.
 
-The runtime always uses `AIModelCache.default` with persistent retention and
-stores an opaque bookmark for direct restoration. `coreai_assets_dir` does not
+The runtime uses `AIModelCache.default` with storage-pressure-only purging and
+stores an opaque bookmark for direct restoration. `coreai_cache_dir` does not
 choose the SDK artifact directory. The backend does not inspect SDK-private
 files, alter their backup flags, or use an App Group cache.
 
-Each selected bundle has a model key derived from its export digest, bundle
-name, and source/AOT mode. A readable variant key combines that model key with
+Each selected bundle has a `bundle_identity` derived from its bundle digest,
+name, and source/AOT mode. This identifies the delivered bundle independently of
+`export_hash`, which namespaces embedded assets. A readable cache key combines
+that bundle identity with
 the platform and Core AI device architecture, plus a hash of a versioned
 specialization identity supplied as plain data by the SDK boundary. Function
 bindings and delivery location are excluded, and no model bytes are hashed at
@@ -200,7 +205,7 @@ A healthy bookmark hit does not consult NDS and attempts to clean leftover
 staging. On a missing bookmark or confirmed SDK miss, the coordinator prepares
 the source, specializes it and atomically writes the returned bookmark bytes.
 After durable publication, it attempts to remove the entire keyed staging
-directory while holding the key's stripe lock. Persistent SDK caching supports
+directory while holding the key's stripe lock. The SDK cache supports
 inference and bookmark restoration without that extracted copy.
 Keep the packaged named data available: a later SDK cache miss requires source
 materialization again. There is no secondary source-URL cache lookup.
@@ -226,7 +231,7 @@ time.
 Lock ownership is maintained by the OS, and acquiring a lock does not flush its
 file or directory. Stripe files are never removed, including during cache
 clearing or after process exit, so waiters and future openers keep using the
-same inode. Removing the assets root externally requires all loads, sessions
+same inode. Removing the cache directory externally requires all loads, sessions
 and maintenance to stop.
 
 ### Lifecycle logging
@@ -239,7 +244,7 @@ multiple partitions can be correlated. These messages do not include bookmark
 contents, model data, or per-inference logs.
 
 A cache hit means that the SDK successfully restored a model from its bookmark.
-Specialization start means a request to the SDK's persistent default cache; the
+Specialization start means a request to the SDK's default cache; the
 SDK does not report whether that request compiled afresh or reused an internal
 artifact. The durable-save message confirms local bookmark publication,
 including its final directory flush, not independent verification of SDK-private
@@ -252,21 +257,21 @@ messages, and clearing an absent entry remains quiet.
 The public C++ maintenance APIs are in `executorch::backends::coreai`:
 
 ```cpp
-runtime::Error clear_cache(const char* coreai_assets_dir = nullptr);
+runtime::Error clear_cache(const char* coreai_cache_dir = nullptr);
 runtime::Error clear_cache_for_pte(
-    runtime::DataLoader& pte, const char* coreai_assets_dir = nullptr);
+    runtime::DataLoader& pte, const char* coreai_cache_dir = nullptr);
 runtime::Error clear_cache_for_pte(
-    const char* pte_path, const char* coreai_assets_dir = nullptr);
+    const char* pte_path, const char* coreai_cache_dir = nullptr);
 ```
 
-All three APIs use the same default assets directory as backend initialization
+All three APIs use the same default cache directory as backend initialization
 when the directory is omitted or null. A supplied path must be absolute; invalid
-paths fail without falling back to the default. If loading used a custom root,
-pass that same root when clearing; the PTE does not store runtime overrides.
+paths fail without falling back to the default. If loading used a custom cache
+directory, pass it when clearing; the PTE does not store runtime overrides.
 
-Root-wide clearing inventories keyed bookmarks and staged directories. PTE
-clearing finds every Core AI delegate in every method and derives each bundle's
-model prefix. Matching that validated prefix clears every recorded platform,
+Cache clearing inventories keyed bookmarks and staged directories. PTE clearing
+finds every Core AI delegate in every method and derives each bundle's identity.
+Matching that identity in cache keys clears every recorded platform,
 device, and specialization variant without querying the host or SDK. All
 manifests are validated before any entry is cleared; their minimum OS and runtime
 compatibility do not restrict maintenance. Discovery does not load models or
@@ -303,8 +308,8 @@ SDK errors are not classified as transient or permanent.
 Busy errors and all unclassified eviction/restore errors retain the local
 bookmark for retry; only successful eviction or a confirmed SDK miss permits
 normal removal. If retries keep failing, first stop every process using the
-assets root. Back up or quarantine only the affected key's bookmark and keyed
-staging outside that root, leaving the stable lock files in place. A later load
+cache directory. Back up or quarantine only the affected key's bookmark and keyed
+staging outside that directory, leaving the stable lock files in place. A later load
 can attempt cold acquisition and publish a new bookmark.
 This manual recovery does not confirm SDK eviction or guarantee disk-space
 reclamation: keep the backup because it may contain the only remaining eviction
@@ -318,25 +323,26 @@ loader using the `executorch::runtime` namespace:
 
 ```cpp
 BackendOptions<1> options;
-ET_CHECK_OK_OR_RETURN_ERROR(options.set_option("coreai_assets_dir", assets_dir));
+ET_CHECK_OK_OR_RETURN_ERROR(options.set_option("coreai_cache_dir", cache_dir));
 LoadBackendOptionsMap map;
 ET_CHECK_OK_OR_RETURN_ERROR(map.set_options("CoreAIBackend", options.view()));
 ET_CHECK_OK_OR_RETURN_ERROR(module.load(map));
 ```
 
-No options are required when using the default assets root. `coreai_assets_dir`
+No options are required when using the default cache directory. `coreai_cache_dir`
 selects an application-chosen cache directory reserved for this backend. The
 supplied path is validated during preflight, but warm bookmark hits need no
 source.
 
-Use separate option maps to choose different storage roots for different models.
-The path is a root directory, not the bundle itself. ExecuTorch option strings
+Use separate option maps to choose different cache directories for different models.
+The path names the cache directory, not a bundle. ExecuTorch option strings
 have a 255-byte limit.
 
 ## SDK Bridge
 
-The private Swift module `CoreAIBridge` (`runtime/ETCoreAIModel.swift`) wraps
-the `CoreAI` framework behind the Objective-C protocols in
+The private Swift module `CoreAIBridge` separates error/completion support,
+tensor layout/copying, and model/session lifecycle into three source files. It
+wraps the `CoreAI` framework behind the Objective-C protocols in
 `runtime/ETCoreAIBridge.h`. It restores models from bookmarks, specializes source
 bundles in the default SDK cache with storage-pressure-only purging, and binds
 named functions with ordered inputs and outputs. Each loader owns an immutable

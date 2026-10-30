@@ -11,18 +11,18 @@
 #import <Foundation/Foundation.h>
 #include <executorch/runtime/core/result.h>
 #include <cstddef>
+#include <optional>
 #include "coreai_file.h"
 
 namespace executorch::backends::coreai {
 
 runtime::Error sync_storage_directory(int fd);
-struct StorageDirectory {
-  int fd;
+struct StorageDirectory final {
+  std::optional<FileDescriptor> descriptor;
   bool created;
 };
-// Opens one child component without following symlinks. The caller owns fd;
-// a missing child with OpenExisting returns {-1, false}. Does not flush
-// directories.
+// Opens one child component without following symlinks. A missing child with
+// OpenExisting has no descriptor. Does not flush directories.
 runtime::Result<StorageDirectory>
 open_storage_directory(int parent_fd, NSString* name, StorageCreationMode mode);
 // Returns an independently owned descriptor for a stable coordination file.

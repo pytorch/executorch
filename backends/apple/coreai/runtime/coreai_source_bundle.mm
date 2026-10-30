@@ -8,7 +8,7 @@
 
 #import "coreai_source_bundle.h"
 
-#import "coreai_bookmarks.h"
+#import "coreai_cache_entry.h"
 #import "coreai_fault_injection.h"
 #import "coreai_manifest.h"
 #import "coreai_storage.h"
@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <cerrno>
 #include <cstdint>
+#include <utility>
 
 namespace executorch::backends::coreai {
 namespace {
@@ -144,14 +145,8 @@ Result<EntryState> inspect_source_bundle(
 Error fully_sync_directory(int fd) {
   ET_CHECK_OK_OR_RETURN_ERROR(sync_storage_directory(fd));
   ET_CHECK_OR_RETURN_ERROR(
-      retry_eintr([&] {
-        const int fault = fault_point(FaultPoint::FullSync);
-        if (fault != 0) {
-          errno = fault;
-          return -1;
-        }
-        return fcntl(fd, F_FULLFSYNC);
-      }) == 0,
+      fault_aware_retry(
+          FaultPoint::FullSync, [&] { return fcntl(fd, F_FULLFSYNC); }) == 0,
       AccessFailed,
       "Cannot fully synchronize Core AI source directory");
   return Error::Ok;
@@ -189,26 +184,18 @@ Result<StagingDirectory> create_staging_directory(int root_fd) {
   NSString* name =
       [@".staging-" stringByAppendingString:NSUUID.UUID.UUIDString];
   ET_CHECK_OR_RETURN_ERROR(
-      retry_eintr([&] {
-        const int fault = fault_point(FaultPoint::CreateStagingDirectory);
-        if (fault != 0) {
-          errno = fault;
-          return -1;
-        }
-        return mkdirat(root_fd, name.fileSystemRepresentation, 0777);
-      }) == 0,
+      fault_aware_retry(
+          FaultPoint::CreateStagingDirectory,
+          [&] {
+            return mkdirat(root_fd, name.fileSystemRepresentation, 0777);
+          }) == 0,
       AccessFailed,
       "Cannot create Core AI staging directory");
   return StagingDirectory{root_fd, [name copy]};
 }
 
 Result<int> open_staging_directory(int root_fd, NSString* name) {
-  const int fd = retry_eintr([&] {
-    const int fault = fault_point(FaultPoint::OpenStagingDirectory);
-    if (fault != 0) {
-      errno = fault;
-      return -1;
-    }
+  const int fd = fault_aware_retry(FaultPoint::OpenStagingDirectory, [&] {
     return open_directory_at(root_fd, name.fileSystemRepresentation);
   });
   ET_CHECK_OR_RETURN_ERROR(
@@ -223,7 +210,7 @@ Error write_staging_bundle(
   for (NSString* file in bundle.files) {
     @autoreleasepool {
       NSString* data_key =
-          [NSString stringWithFormat:@"coreai/%@/%@", bundle.model_hash, file];
+          [NSString stringWithFormat:@"coreai/%@/%@", bundle.export_hash, file];
       auto buffer = named_data.get_data(data_key.UTF8String);
       if (!buffer.ok()) {
         ET_CHECK_OR_RETURN_ERROR(
@@ -250,12 +237,7 @@ Result<bool> publish_staging_directory(
     int root_fd,
     StagingDirectory& staging,
     NSString* key) {
-  const int result = retry_eintr([&] {
-    const int fault = fault_point(FaultPoint::Rename);
-    if (fault != 0) {
-      errno = fault;
-      return -1;
-    }
+  const int result = fault_aware_retry(FaultPoint::Rename, [&] {
     return renameatx_np(
         root_fd,
         staging.name.fileSystemRepresentation,
@@ -293,24 +275,18 @@ Error recover_lost_publication_race(
 Result<NSURL*> prepare_source_bundle(
     const SelectedBundle& bundle,
     const runtime::NamedDataMap* named_data,
-    const CacheEntryLock& cache_entry,
+    const LockedCacheEntry& cache_entry,
     CorruptBundlePolicy corrupt_policy) {
   NSString* key = cache_entry.key();
-  auto prepared = cache_entry.prepare_staging_root();
+  auto prepared = cache_entry.prepare_staging_directory();
   if (!prepared.ok()) {
     return prepared.error();
   }
-  NSURL* root = [NSURL fileURLWithPath:prepared.get() isDirectory:YES];
-  NSURL* model_url = [[root URLByAppendingPathComponent:key isDirectory:YES]
+  NSURL* model_url = [[prepared->url URLByAppendingPathComponent:key
+                                                     isDirectory:YES]
       URLByAppendingPathComponent:bundle.bundle_name
                       isDirectory:YES];
-  FileDescriptor root_fd(retry_eintr([&] {
-    return open(
-        root.fileSystemRepresentation,
-        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-  }));
-  ET_CHECK_OR_RETURN_ERROR(
-      root_fd.get() >= 0, AccessFailed, "Cannot open Core AI source root");
+  FileDescriptor root_fd = std::move(prepared->descriptor);
 
   auto state = inspect_source_bundle(root_fd.get(), key, bundle.files);
   if (!state.ok()) {

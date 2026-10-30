@@ -22,12 +22,19 @@ enum class StorageCreationMode {
 
 class FileDescriptor {
  public:
-  explicit FileDescriptor(int fd) : fd_(fd) {}
+  explicit FileDescriptor(int fd = -1) : fd_(fd) {}
   ~FileDescriptor() {
     reset(-1);
   }
   FileDescriptor(const FileDescriptor&) = delete;
   FileDescriptor& operator=(const FileDescriptor&) = delete;
+  FileDescriptor(FileDescriptor&& other) noexcept : fd_(other.release()) {}
+  FileDescriptor& operator=(FileDescriptor&& other) noexcept {
+    if (this != &other) {
+      reset(other.release());
+    }
+    return *this;
+  }
   int get() const {
     return fd_;
   }

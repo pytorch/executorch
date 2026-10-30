@@ -7,7 +7,7 @@
  */
 #import "coreai_load_coordinator.h"
 
-#import "coreai_bookmarks.h"
+#import "coreai_cache_entry.h"
 #import "coreai_cache_key.h"
 #import "coreai_error.h"
 #import "coreai_fault_injection.h"
@@ -70,7 +70,7 @@ Result<id<ETCoreAIPreparedModel>> restore(
   });
 }
 
-void cleanup_source(const CacheEntryLock& cache_entry) {
+void cleanup_source(const LockedCacheEntry& cache_entry) {
   const Error error = cache_entry.remove_staging();
   if (error != Error::Ok) {
     ET_LOG(
@@ -114,7 +114,7 @@ Error evict_one(id<ETCoreAIModelLoading> loader, NSData* bookmark) {
 }
 } // namespace
 
-Result<RuntimeAssets> select_runtime_assets(const Manifest& manifest) {
+Result<SelectedHostBundle> select_host_bundle(const Manifest& manifest) {
   ET_CHECK_OR_RETURN_ERROR(
       [NSProcessInfo.processInfo
           isOperatingSystemAtLeastVersion:manifest.minimum_version],
@@ -132,18 +132,18 @@ Result<RuntimeAssets> select_runtime_assets(const Manifest& manifest) {
   NSString* platform = @"unsupported";
 #endif
   NSString* architecture = ETCoreAIDeviceArchitectureName();
-  auto selected = select_assets(manifest, architecture, platform);
+  auto selected = select_bundle(manifest, architecture, platform);
   if (!selected.ok()) {
     return selected.error();
   }
-  return RuntimeAssets{
+  return SelectedHostBundle{
       std::move(selected.get()), [platform copy], [architecture copy]};
 }
 
-Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
-    const RuntimeAssets& assets,
+Result<id<ETCoreAIPreparedModel>> acquire_model(
+    const SelectedHostBundle& assets,
     const runtime::NamedDataMap* named_data,
-    NSString* root,
+    const CacheDirectory& cache_directory,
     id<ETCoreAIModelLoading> loader) {
   ET_CHECK_OR_RETURN_ERROR(
       loader != nil, InvalidArgument, "Missing Core AI model loader");
@@ -155,7 +155,7 @@ Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
   }
   NSString* cache_key = key.get();
   ET_LOG(Info, "Core AI cache lookup: key=%s", cache_key.UTF8String);
-  auto locked = lock_cache_entry(root, cache_key);
+  auto locked = LockedCacheEntry::acquire(cache_directory, cache_key);
   if (!locked.ok()) {
     return locked.error();
   }
@@ -216,11 +216,11 @@ Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
   return model;
 }
 
-Error clear_bookmark_assets(
-    NSString* root,
+Error clear_cache_entry(
+    const CacheDirectory& cache_directory,
     NSString* key,
     id<ETCoreAIModelLoading> loader) {
-  auto locked = lock_existing_cache_entry(root, key);
+  auto locked = LockedCacheEntry::acquire_existing(cache_directory, key);
   if (!locked.ok()) {
     return locked.error();
   }
@@ -228,11 +228,12 @@ Error clear_bookmark_assets(
     return Error::Ok;
   }
   ET_LOG(Info, "Core AI cache clear started: key=%s", key.UTF8String);
-  auto bookmark = locked.get()->inspect_bookmark_for_maintenance();
+  auto maintenance = locked.get()->maintenance();
+  auto bookmark = maintenance.inspect_bookmark();
   if (!bookmark.ok()) {
     return bookmark.error();
   }
-  ET_CHECK_OK_OR_RETURN_ERROR(locked.get()->preflight_maintenance());
+  ET_CHECK_OK_OR_RETURN_ERROR(maintenance.preflight());
   if (bookmark->state != CacheBookmarkState::Present) {
     ET_LOG(
         Info,
@@ -257,8 +258,8 @@ Error clear_bookmark_assets(
         "Core AI SDK cache entry absence confirmed: key=%s",
         key.UTF8String);
   }
-  ET_CHECK_OK_OR_RETURN_ERROR(locked.get()->remove_staging_for_maintenance());
-  ET_CHECK_OK_OR_RETURN_ERROR(locked.get()->remove_bookmark_for_maintenance());
+  ET_CHECK_OK_OR_RETURN_ERROR(maintenance.remove_staging());
+  ET_CHECK_OK_OR_RETURN_ERROR(maintenance.remove_bookmark());
   ET_LOG(Info, "Core AI local cache entry cleared: key=%s", key.UTF8String);
   return Error::Ok;
 }

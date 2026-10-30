@@ -43,16 +43,16 @@ using namespace executorch::backends::coreai::testing;
 
 namespace {
 
-TEST(CoreAIRuntimeAssetsTest, ProbesHostAndSelectsImmutableBundle) {
+TEST(CoreAISelectedHostBundleTest, ProbesHostAndSelectsImmutableBundle) {
   ScopedFakeBridgeState bridge;
   auto parsed = parse_manifest(encode(aot_manifest_dict()));
   ASSERT_TRUE(parsed.ok());
-  auto assets = select_runtime_assets(parsed.get());
+  auto assets = select_host_bundle(parsed.get());
   ASSERT_TRUE(assets.ok());
   EXPECT_TRUE([assets->platform isEqual:@"macOS"]);
   EXPECT_TRUE([assets->architecture isEqual:@"arch_b"]);
   EXPECT_TRUE([assets->bundle.bundle_name isEqual:@"model.arch_b.aimodelc"]);
-  EXPECT_TRUE([assets->bundle.model_hash isEqual:parsed->model_hash]);
+  EXPECT_TRUE([assets->bundle.export_hash isEqual:parsed->export_hash]);
 }
 
 class CoreAIAcquisitionTest : public ::testing::Test {
@@ -61,14 +61,14 @@ class CoreAIAcquisitionTest : public ::testing::Test {
   ScopedFakeBridgeState bridge;
   TestDirectory root;
   TestData data;
-  std::optional<RuntimeAssets> assets;
+  std::optional<SelectedHostBundle> assets;
   NSString* key = nil;
 
   void SetUp() override {
     ASSERT_NE(root.url, nil);
     auto selected = bookmark_bundle();
     ASSERT_TRUE(selected.ok());
-    assets.emplace(RuntimeAssets{selected.get(), @"macOS", @"arch_b"});
+    assets.emplace(SelectedHostBundle{selected.get(), @"macOS", @"arch_b"});
     auto identity = test_cache_key(assets->bundle);
     ASSERT_TRUE(identity.ok());
     key = identity.get();
@@ -77,7 +77,7 @@ class CoreAIAcquisitionTest : public ::testing::Test {
   Error acquire(BookmarkFakeLoader* loader, const NamedDataMap* named_data) {
     @autoreleasepool {
       auto model =
-          acquire_bookmark_model(*assets, named_data, root.url.path, loader);
+          acquire_test_model(*assets, named_data, root.url.path, loader);
       if (!model.ok())
         return model.error();
       return model.get() != nil ? Error::Ok : Error::Internal;
@@ -216,7 +216,7 @@ TEST_F(CoreAIAcquisitionTest, NilLoaderRejectsWithoutFilesystemEffects) {
   ASSERT_TRUE(asset_tree_snapshot(root.url, before));
   Error error = Error::Ok;
   @autoreleasepool {
-    auto result = acquire_bookmark_model(*assets, &data, root.url.path, nil);
+    auto result = acquire_test_model(*assets, &data, root.url.path, nil);
     ASSERT_FALSE(result.ok());
     error = result.error();
   }
@@ -239,7 +239,7 @@ TEST_F(CoreAIAcquisitionTest, RestoreHitWithoutModelFailsClosed) {
   loader.restoreStatus = ETCoreAIAcquisitionStatusHit;
   Error error = Error::Ok;
   @autoreleasepool {
-    auto result = acquire_bookmark_model(*assets, &data, root.url.path, loader);
+    auto result = acquire_test_model(*assets, &data, root.url.path, loader);
     ASSERT_FALSE(result.ok());
     error = result.error();
   }
@@ -264,7 +264,7 @@ TEST_F(CoreAIAcquisitionTest, RestoreMissWithModelFailsClosed) {
   loader.restoreModel = model;
   Error error = Error::Ok;
   @autoreleasepool {
-    auto result = acquire_bookmark_model(*assets, &data, root.url.path, loader);
+    auto result = acquire_test_model(*assets, &data, root.url.path, loader);
     ASSERT_FALSE(result.ok());
     error = result.error();
   }
@@ -287,7 +287,7 @@ TEST_F(CoreAIAcquisitionTest, RestoreErrorWithoutErrorFailsClosed) {
   loader.restoreStatus = ETCoreAIAcquisitionStatusError;
   Error error = Error::Ok;
   @autoreleasepool {
-    auto result = acquire_bookmark_model(*assets, &data, root.url.path, loader);
+    auto result = acquire_test_model(*assets, &data, root.url.path, loader);
     ASSERT_FALSE(result.ok());
     error = result.error();
   }
@@ -301,7 +301,7 @@ TEST_F(CoreAIAcquisitionTest, SpecializeMissFailsClosed) {
   ASSERT_NE(loader, nil);
   Error error = Error::Ok;
   @autoreleasepool {
-    auto result = acquire_bookmark_model(*assets, &data, root.url.path, loader);
+    auto result = acquire_test_model(*assets, &data, root.url.path, loader);
     ASSERT_FALSE(result.ok());
     error = result.error();
   }

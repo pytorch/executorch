@@ -8,6 +8,10 @@
 
 #pragma once
 
+#include <cerrno>
+#include <utility>
+#include "coreai_file.h"
+
 namespace executorch::backends::coreai {
 
 enum class FaultPoint {
@@ -38,5 +42,17 @@ constexpr int fault_point(FaultPoint) {
   return 0;
 }
 #endif
+
+template <typename F>
+auto fault_aware_retry(FaultPoint point, F&& call) {
+  return retry_eintr([&]() -> decltype(call()) {
+    const int fault = fault_point(point);
+    if (fault != 0) {
+      errno = fault;
+      return -1;
+    }
+    return call();
+  });
+}
 
 } // namespace executorch::backends::coreai
