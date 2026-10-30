@@ -261,6 +261,10 @@ class TestUnsupportedSDPAStaysWithRegularLowering(unittest.TestCase):
         q = torch.randn(1, 2, 8, 16)
         self.assertStays(self._logs(q, q, q), "Expected bfloat16 inputs")
 
+    def test_float16_inputs_are_not_replaced(self):
+        q = torch.randn(1, 2, 8, 16, dtype=torch.float16)
+        self.assertStays(self._logs(q, q, q), "Expected bfloat16 inputs")
+
     def test_broadcast_bool_mask_is_not_replaced(self):
         q = _bf16(1, 2, 8, 16)
         mask = torch.ones(1, 1, 1, 8, dtype=torch.bool)
