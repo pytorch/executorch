@@ -521,6 +521,40 @@ class TestCoreMLPartitioner(unittest.TestCase):
             out = program.load_method("forward").execute((x,))[0]
             self.assertTrue(torch.allclose(out, model(x), atol=5e-2, rtol=5e-2))
 
+    def test_min_max_of_bool_is_skipped(self):
+        """
+        coremltools raises on a min or max over a bool tensor, such as the
+        all-true check torch.distributions exports.  The partitioner must leave
+        those ops to the portable backend and still delegate the rest.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                ok = (x.tril() == x).view(1, -1)
+                flags = ok.min(-1)[0].to(x.dtype) + ok.amax(-1).to(x.dtype)
+                both = torch.maximum(ok, ok.flip(-1)).view(x.shape).to(x.dtype)
+                return x * 2 + flags + both
+
+        model = Model().eval()
+        x = torch.rand(14, 14)
+        ep = torch.export.export(model, (x,), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("executorch_call_delegate", op_names)
+        self.assertIn("aten.min.dim", op_names)
+        self.assertIn("aten.amax.default", op_names)
+        self.assertIn("aten.maximum.default", op_names)
+        if _TEST_RUNTIME:
+            program = Runtime.get().load_program(edge.to_executorch().buffer)
+            out = program.load_method("forward").execute((x,))[0]
+            self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
+
     def test_uint8_camera_frame_is_read_outside_the_delegate(self):
         """
         Core ML cannot take a uint8 or int8 input, so the ops that read such a

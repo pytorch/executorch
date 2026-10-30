@@ -159,6 +159,42 @@ def _reads_or_produces_bfloat16(node: torch.fx.Node) -> bool:
     return any(isinstance(v, torch.Tensor) and v.dtype == torch.bfloat16 for v in vals)
 
 
+_MIN_MAX_TARGETS = (
+    torch.ops.aten.min.default,
+    torch.ops.aten.min.dim,
+    torch.ops.aten.min.other,
+    torch.ops.aten.max.default,
+    torch.ops.aten.max.dim,
+    torch.ops.aten.max.other,
+    torch.ops.aten.amin.default,
+    torch.ops.aten.amax.default,
+    torch.ops.aten.minimum.default,
+    torch.ops.aten.maximum.default,
+    exir_ops.edge.aten.min.default,
+    exir_ops.edge.aten.min.dim,
+    exir_ops.edge.aten.min.other,
+    exir_ops.edge.aten.max.default,
+    exir_ops.edge.aten.max.dim,
+    exir_ops.edge.aten.max.other,
+    exir_ops.edge.aten.amin.default,
+    exir_ops.edge.aten.amax.default,
+    exir_ops.edge.aten.minimum.default,
+    exir_ops.edge.aten.maximum.default,
+)
+
+
+def _is_min_max_of_bool(node: torch.fx.Node) -> bool:
+    """coremltools 9.0 computes min and max only over fp16, fp32 and int32.
+
+    It raises ``ValueError`` for a bool input, such as the all-true check that
+    torch.distributions exports, instead of reporting the op as unsupported.
+    """
+    if node.target not in _MIN_MAX_TARGETS:
+        return False
+    val = node.args[0].meta.get("val")
+    return isinstance(val, torch.Tensor) and val.dtype == torch.bool
+
+
 def _cannot_be_coreml_input(node: torch.fx.Node) -> bool:
     """Whether node makes a tensor that Core ML cannot take as a program input.
 
@@ -369,6 +405,13 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         if _reads_or_produces_bfloat16(node):
             self.log_once(
                 f"{node.target} on a bfloat16 tensor is not supported by CoreML.  "
+                "Overriding op support."
+            )
+            return True
+
+        if _is_min_max_of_bool(node):
+            self.log_once(
+                f"{node.target} over a bool tensor is not supported by CoreML.  "
                 "Overriding op support."
             )
             return True
