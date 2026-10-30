@@ -673,13 +673,17 @@ class CoreMLPartitioner(Partitioner):
         # An op that partition() leaves out runs on the CPU, so it is never
         # preserved: a core ATen op stays whole anyway, and any other op is
         # decomposed into core ATen ops, the op set the portable kernels target.
-        _, left_out = _propose_partitions(
-            ep.graph_module,
-            create_op_support(is_supported),
-            self._placeholders_kept_inside(ep),
-            self._state_kept_inside(ep),
-            self._allows_partitions_without_inputs(),
-        )
+        # Ops are only left out because of a tensor Core ML cannot take as an
+        # input, so a graph without one needs no extra partitioning.
+        left_out = set()
+        if any(_cannot_be_coreml_input(node) for node in ep.graph.nodes):
+            _, left_out = _propose_partitions(
+                ep.graph_module,
+                create_op_support(is_supported),
+                self._placeholders_kept_inside(ep),
+                self._state_kept_inside(ep),
+                self._allows_partitions_without_inputs(),
+            )
         rejected = set()
         for node in ep.graph.nodes:
             if node.op == "call_function" and isinstance(
