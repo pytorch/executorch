@@ -246,6 +246,26 @@ def _find_readers_of_unsupported_inputs(
     }
 
 
+def _find_makers_of_int8_outputs(partitions: List[Partition]) -> Set[torch.fx.Node]:
+    """The nodes that make an int8 tensor read outside their partition.
+
+    Such a tensor becomes a Core ML output, and the Core ML runtime cannot
+    return int8.
+    """
+    return {
+        node
+        for partition in partitions
+        for node in partition.nodes
+        if _makes_int8(node) and any(u not in partition.nodes for u in node.users)
+    }
+
+
+def _makes_int8(node: torch.fx.Node) -> bool:
+    val = node.meta.get("val")
+    vals = val if isinstance(val, (list, tuple)) else [val]
+    return any(isinstance(v, torch.Tensor) and v.dtype == torch.int8 for v in vals)
+
+
 def _makes_tensor(node: torch.fx.Node) -> bool:
     val = node.meta.get("val")
     vals = val if isinstance(val, (list, tuple)) else [val]
@@ -306,6 +326,7 @@ def _propose_partitions(
             graph_module, support, allows_single_node_partition=True
         ).propose_partitions()
         new = _find_readers_of_unsupported_inputs(partitions, kept_inside, left_out)
+        new |= _find_makers_of_int8_outputs(partitions)
         if new or left_out:
             # Moving those ops out can leave a partition that reads no tensor,
             # such as the index math of a gather.

@@ -592,6 +592,37 @@ class TestCoreMLPartitioner(unittest.TestCase):
             out = program.load_method("forward").execute((x,))[0]
             self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
 
+    def test_int8_made_for_the_cpu_runs_on_the_cpu(self):
+        """
+        The Core ML runtime cannot return an int8 tensor, so an op that makes
+        one that is read outside Core ML, here the model output, runs on the
+        CPU.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return (x * 2).to(torch.int8)
+
+        model = Model().eval()
+        # Small integers, which Core ML's float16 math keeps exact.
+        x = torch.randint(-50, 50, (1, 3, 4, 4)).float()
+        ep = torch.export.export(model, (x,), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("executorch_call_delegate", op_names)
+        self.assertIn("dim_order_ops._to_dim_order_copy.default", op_names)
+        buffer = edge.to_executorch().buffer
+        if _TEST_RUNTIME:
+            program = Runtime.get().load_program(buffer)
+            out = program.load_method("forward").execute((x,))[0]
+            self.assertTrue(torch.equal(out, model(x)))
+
     def test_uint8_camera_frame_is_read_outside_the_delegate(self):
         """
         Core ML cannot take a uint8 or int8 input, so the ops that read such a
