@@ -81,6 +81,25 @@ save_pte_program(exec_program, model_name, "./output_dir")
 ```
 This generates `.pte` and `.ptd` files that can be executed on CUDA devices.
 
+By default, the weights go to a data file named `aoti_cuda_blob.ptd`. To export several programs into one folder, give each program its own
+data file name. This partitioner writes `encoder.ptd`:
+
+```python
+partitioner = CudaPartitioner([
+    CudaBackend.generate_method_name_compile_spec("forward"),
+    CudaBackend.generate_data_name_compile_spec("encoder"),
+])
+```
+
+The name can have up to 200 ASCII letters, digits, `_`, `-` and `.`. It cannot start with `.` or `-`, cannot end with `.ptd`
+(the export adds it), and cannot be a Windows device name such as `NUL`. Load each program with its own data file:
+
+```python
+from executorch.runtime import Runtime
+
+program = Runtime.get().load_program("encoder.pte", data_path="encoder.ptd")
+```
+
 For a complete working example, see the [CUDA export script](https://github.com/pytorch/executorch/blob/main/examples/cuda/scripts/export.py).
 
 
@@ -164,13 +183,14 @@ overwrite, unless you pass `clone_outputs=False`.
 
 ### Things worth knowing
 
-**The two flags are independent.** Skip only the input copies if you produce data on the GPU but
-want results back on the host, or only the output copies for the reverse.
+**`skip_h2d_for_method_inputs` and `skip_d2h_for_method_outputs` are independent.** Skip only the
+input copies if you produce data on the GPU but want results back on the host, or only the output
+copies for the reverse.
 
-**Both flags need `enable_non_cpu_memory_planning=True`.** It defaults to `True`, so leaving it
-out works, and the snippet above sets it explicitly only to make the requirement visible. Setting
-it to `False` while asking for either skip raises a `ValueError`, because copy insertion happens
-during device-aware memory planning.
+**Every skip flag needs `enable_non_cpu_memory_planning=True`.** It defaults to `True`, so leaving
+it out works, and the snippet above sets it explicitly only to make the requirement visible.
+Setting it to `False` while asking for any skip raises a `ValueError`, because copy insertion
+happens during device-aware memory planning.
 
 **Inputs must be unplanned**, via `MemoryPlanningPass(alloc_graph_input=False)`. Without it the
 program reserves its own input buffer on the device, and the runtime refuses to copy the caller's
@@ -213,13 +233,26 @@ the graph in the delegate.
   `skip_d2h_for_method_outputs`, read a copy in host memory. A delegate on another device then
   gets a second copy, from the host.
 - A constant, such as a weight, that a delegate reads from outside is copied to each device that
-  reads it.
+  reads it. `skip_h2d_for_constants` (below) can remove this copy.
 - A returned output that an operator outside the delegate writes in place, such as a mutable
   custom operator left on the host, is copied to the host and returned there. The method
   metadata gives the device of each output.
 
 Add `error_on_per_call_copies=True` to `PropagateDeviceConfig` to make `to_executorch` fail
 instead of warning. It fails only on a copy that one of the skip flags you set was meant to remove.
+
+**Set `skip_h2d_for_constants=True` to keep constants in device memory.** If only delegates on
+one device read a constant, it is loaded into that device's memory once, when the method loads,
+and not copied on every call. The cost: it takes device memory for as long as the method is
+loaded, and each method that reads it has its own copy. Its data is stored as the initial state
+of that memory, so if the same data is also stored as an ordinary constant, for example for a
+method that reads it on the host, the `.pte` holds it twice. A constant that a host operator or a
+second device also reads is still copied on every call. So is a constant that is changed on the
+host before the delegate reads it, such as by a view, a transpose or a clone, and
+`error_on_per_call_copies` does not catch that copy. Have the partitioner take that change into
+the delegate, so that the delegate reads the constant itself. `share_mutable_buffers` needs every
+planned tensor in host memory, so it does not work with this flag. This flag works on its own: it
+needs neither `skip_h2d_for_method_inputs` nor unplanned inputs.
 
 **`skip_h2d_for_method_inputs` refuses inputs that the method changes.** `to_executorch` fails if
 the method changes an input, even when the delegate makes the change. This includes a mutable

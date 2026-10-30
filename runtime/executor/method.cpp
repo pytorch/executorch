@@ -13,7 +13,7 @@
 #include <array>
 #include <cinttypes> // @donotremove
 #include <cstdint>
-#include <cstdio>
+#include <cstring>
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
@@ -850,26 +850,29 @@ Error populate_operator_name(
 
   ET_CHECK_OR_RETURN_ERROR(
       op->name() != nullptr, InvalidProgram, "Missing operator name");
-  int cx = snprintf(
-      operator_name,
-      operator_name_size,
-      "%s%s%s",
-      op->name()->c_str(),
-      // Don't append any overload if the overload string is empty.
-      has_overload ? "." : "",
-      has_overload ? op->overload()->c_str() : "");
-  ET_CHECK_OR_RETURN_ERROR(cx >= 0, Internal, "snprintf failed: %d", cx);
+  // Avoid pulling printf formatting code into builds that otherwise omit it.
+  const size_t name_size = strlen(op->name()->c_str());
+  const size_t overload_size =
+      has_overload ? strlen(op->overload()->c_str()) : 0;
+  const uint64_t needed_size = static_cast<uint64_t>(name_size) +
+      overload_size + (has_overload ? 1 : 0) + 1;
   ET_CHECK_OR_RETURN_ERROR(
-      static_cast<size_t>(cx) < operator_name_size,
+      needed_size <= operator_name_size,
       Internal,
-      "Operator name %s%s%s with length %d "
-      "truncated to %" ET_PRIsize_t " due to internal buffer limit.",
+      "Operator name %s%s%s exceeds internal buffer limit of %" ET_PRIsize_t,
       op->name()->c_str(),
       has_overload ? "." : "",
       has_overload ? op->overload()->c_str() : "",
-      cx,
       operator_name_size);
 
+  memcpy(operator_name, op->name()->c_str(), name_size);
+  size_t pos = name_size;
+  if (has_overload) {
+    operator_name[pos++] = '.';
+    memcpy(operator_name + pos, op->overload()->c_str(), overload_size);
+    pos += overload_size;
+  }
+  operator_name[pos] = '\0';
   return Error::Ok;
 }
 } // namespace
@@ -1420,6 +1423,38 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         numel,
         executorch::runtime::elementSize(t_src.scalar_type()));
+    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        tensor_meta.error(),
+        "Error getting tensor metadata at input %" ET_PRIsize_t,
+        input_idx);
+
+    // For DYNAMIC_BOUND the serialized sizes are the per-dimension upper
+    // bound, but numel_bound_ is initialized to their product, so the resize
+    // below only rejects shapes whose total numel exceeds it. A shape that
+    // trades size between dimensions stays under that product and would
+    // otherwise be accepted. Rank mismatches are left to resize_tensor.
+    const auto* s_tensor = serialization_plan_->values()
+                               ->Get(get_input_index(input_idx))
+                               ->val_as_Tensor();
+    if (s_tensor->shape_dynamism() ==
+        executorch_flatbuffer::TensorShapeDynamism::DYNAMIC_BOUND) {
+      const Span<const int32_t> bound_sizes = tensor_meta->sizes();
+      if (static_cast<size_t>(t_src.dim()) == bound_sizes.size()) {
+        for (size_t i = 0; i < bound_sizes.size(); ++i) {
+          ET_CHECK_OR_RETURN_ERROR(
+              t_src.size(i) <= bound_sizes[i],
+              InvalidArgument,
+              "Input %" ET_PRIsize_t " dimension %" ET_PRIsize_t
+              " is %" ET_PRIssize_t " but its upper bound is %" PRId32 ".",
+              input_idx,
+              i,
+              static_cast<ssize_t>(t_src.size(i)),
+              bound_sizes[i]);
+        }
+      }
+    }
+
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     ET_CHECK_OK_OR_RETURN_ERROR(
@@ -1430,7 +1465,6 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         validate_input_tensor_layout(t_dst, t_src, input_idx),
         "Error validating tensor layout at input %" ET_PRIsize_t,
         input_idx);
-    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
     if (tensor_meta->is_memory_planned()) {
       ET_CHECK_OK_OR_RETURN_ERROR(
           internal::copy_tensor_data(t_dst, t_src),
@@ -1579,13 +1613,14 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
     return Error::InvalidArgument;
   }
 
+  // A later call can grow a dynamic output back to its upper bound.
   ET_CHECK_OR_RETURN_ERROR(
-      t.nbytes() <= size,
+      tensor_meta->nbytes() <= size,
       InvalidArgument,
       "buffer size: %" ET_PRIsize_t
-      " is smaller then expected tensor size: %" ET_PRIsize_t,
+      " is smaller than the largest output size: %" ET_PRIsize_t,
       size,
-      t.nbytes());
+      tensor_meta->nbytes());
 
   // Set data
   return internal::set_tensor_data(t, buffer, size);

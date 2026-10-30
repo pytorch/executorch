@@ -183,6 +183,10 @@ define_overridable_option(
   OFF
 )
 cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_CPU "Build the native CPU engine" OFF
+  "EXECUTORCH_BUILD_NATIVE" OFF
+)
+cmake_dependent_option(
   EXECUTORCH_BUILD_NATIVE_VULKAN "Build the native Vulkan engine" OFF
   "EXECUTORCH_BUILD_NATIVE" OFF
 )
@@ -195,9 +199,15 @@ cmake_dependent_option(
   "Build the native vision classification runner (run_classification)" OFF
   "EXECUTORCH_BUILD_NATIVE_VULKAN" OFF
 )
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_LLM_RUNNER "Build the native LLM runners" OFF
+  "EXECUTORCH_BUILD_NATIVE_VULKAN OR EXECUTORCH_BUILD_NATIVE_GGML" OFF
+)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_CPU)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_VULKAN)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_GGML)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_VISION_RUNNER)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_LLM_RUNNER)
 define_overridable_option(
   EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
 )
@@ -536,6 +546,11 @@ check_conflicting_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_METAL REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_NATIVE_CPU REQUIRES EXECUTORCH_BUILD_XNNPACK
+  EXECUTORCH_BUILD_KERNELS_OPTIMIZED
 )
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})

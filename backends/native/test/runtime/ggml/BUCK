@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//third-party/llama.cpp:ggml_ci.bzl", "ggml_ci_labels")
 load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT", "CUDA_COMPAT", "HIP_COMPAT")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
@@ -22,13 +23,15 @@ fbcode_target(
 )
 
 # The op suite runs once per ggml backend set; only the engine variant, the
-# runner's --device, link deps and resources, and the test host differ.
+# runner's --device, link deps and resources, the test host, and the CI
+# configuration differ.
 _VARIANTS = [
     {"suffix": "", "engine": "ggml_engine_cpu", "compat": CPU_COMPAT, "device": "cpu"},
     {
         "suffix": "_cuda",
         "engine": "ggml_engine_cuda",
         "compat": CUDA_COMPAT,
+        "labels": ggml_ci_labels("cuda"),
         "device": "gpu",
         "remote_execution": re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
@@ -47,6 +50,7 @@ _VARIANTS = [
         "suffix": "_hip",
         "engine": "ggml_engine_hip",
         "compat": HIP_COMPAT,
+        "labels": ggml_ci_labels("hip"),
         "device": "gpu",
         "remote_execution": re_test_utils.remote_execution(
             platform = "amd-gpu",
@@ -66,6 +70,7 @@ _VARIANTS = [
             "//executorch/backends/native/test/runtime:ptn_runner_main",
         ] + v.get("deps", []),
         external_deps = ["gflags"] + v.get("external_deps", []),
+        labels = v.get("labels", []),
         **v.get("compat", {})
     )
     for v in _VARIANTS
@@ -77,6 +82,7 @@ _VARIANTS = [
         name = "test_ggml_ops" + v["suffix"],
         srcs = ["test_ggml_ops.py"],
         env = {"GGML_PTN_DEVICE": v["device"]},
+        labels = v.get("labels", []),
         remote_execution = v.get("remote_execution"),
         resources = {":ggml_ptn_runner" + v["suffix"]: "ggml_ptn_runner"} |
                     v.get("resources", {}),

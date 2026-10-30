@@ -84,6 +84,8 @@
 
 - op: atanh.out
 
+- op: avg_pool1d.out
+
 - op: avg_pool2d.out
 
 - op: baddbmm.out
@@ -130,6 +132,8 @@
 - op: cos.out
 
 - op: cosh.out
+
+- op: cummin.out
 
 - op: cumsum.out
 
