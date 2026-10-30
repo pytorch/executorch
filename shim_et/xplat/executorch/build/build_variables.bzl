@@ -423,10 +423,15 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNWeightsCacheManager.cpp",
     "runtime/XNNWorkspaceManager.cpp",
     "runtime/XnnpackBackendOptions.cpp",
+]
+
+XNNPACK_PROFILER_BUCK_SRCS = [
     "runtime/profiling/XNNProfiler.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
+
+XNNPACK_PROFILER_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_PROFILER_BUCK_SRCS]
 
 XNNPACK_SCHEMA_SRCS = [
     "backends/xnnpack/serialization/runtime_schema.fbs",
