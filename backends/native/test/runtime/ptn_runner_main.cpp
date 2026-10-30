@@ -65,6 +65,10 @@ DEFINE_int32(
     iterations,
     1,
     "Timed executions; above one, prints median and min latency.");
+DEFINE_bool(
+    allow_activation_quant_for_weight_only,
+    false,
+    "Let the engine quantize the activations of weight-only quantized linears.");
 
 namespace {
 
@@ -201,7 +205,9 @@ void run() {
   const ptn::ByteSpan program_bytes = package->program_bytes();
   const auto program = std::make_shared<const ptn::Program>(
       ptn::Program::load(program_bytes.data(), program_bytes.size()));
-  const auto host = ptn::testing::make_engine_host();
+  const auto host = ptn::testing::make_engine_host(
+      {.allow_activation_quant_for_weight_only =
+           FLAGS_allow_activation_quant_for_weight_only});
   const auto context = host->create_context(program, package);
   const auto executable = context->compile(FLAGS_method);
 

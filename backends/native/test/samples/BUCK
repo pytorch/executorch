@@ -1,0 +1,91 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "record",
+    srcs = [
+        "cases.py",
+        "linear.py",
+        "ops.py",
+        "record.py",
+        "schemes.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/test/suite/operators:test_operators",
+        "//executorch/exir/native:native",
+        "//pytorch/ao:torchao",
+        "//pytorch/facto:facto",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_binary,
+    name = "generate",
+    srcs = ["generate.py"],
+    main_function = "executorch.backends.native.test.samples.generate.main",
+    deps = [":record"],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_record",
+    srcs = ["test_record.py"],
+    deps = [
+        ":record",
+        "//caffe2:torch",
+        "//executorch/exir/native:native",
+    ],
+)
+
+# Op packages with bundled samples, one per op and quantization scheme. The
+# environment pins the eager kernels' ISA and threads, so the golden is the same
+# on any x86 host with AVX2. Other hosts can differ.
+fbcode_target(
+    _kind = runtime.genrule,
+    name = "op_samples",
+    out = "op_samples",
+    cmd = "MKL_CBWR=COMPATIBLE ONEDNN_MAX_CPU_ISA=AVX2 ATEN_CPU_CAPABILITY=avx2 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 $(exe :generate) --out $OUT",
+    visibility = ["//executorch/backends/native/test/..."],
+)
+
+# Judges an engine's outputs against a package's golden and precise samples.
+fbcode_target(
+    _kind = runtime.cxx_library,
+    name = "output_check",
+    srcs = ["OutputCheck.cpp"],
+    exported_headers = ["OutputCheck.h"],
+    exported_deps = ["//executorch/backends/native/runtime/deserialize:samples"],
+)
+
+fbcode_target(
+    _kind = runtime.cxx_test,
+    name = "output_check_test",
+    srcs = ["test_output_check.cpp"],
+    deps = [":output_check"],
+)
+
+# A gtest main judging the engine whose host library a test links on the
+# bundled samples of the packages it names; engine tests set its flags.
+fbcode_target(
+    _kind = runtime.cxx_library,
+    name = "sample_test_main",
+    srcs = ["sample_test_main.cpp"],
+    link_whole = True,
+    undefined_symbols = True,
+    visibility = ["//executorch/backends/native/test/..."],
+    exported_deps = ["//executorch/backends/native/test/runtime:engine_host"],
+    deps = [
+        ":output_check",
+        "//executorch/backends/native/runtime:runtime",
+        "//executorch/backends/native/runtime/deserialize:package",
+        "//executorch/backends/native/runtime/deserialize:samples",
+    ],
+    external_deps = [
+        "gflags",
+        "gtest",
+    ],
+)

@@ -145,6 +145,14 @@ an engine through the interfaces in `runtime/engine/Engine.h`:
 
 An engine rejects a method whose semantics it cannot fully honor.
 
+Engines need not match eager bit for bit: accumulation precision and order,
+fused multiply-add, and the accuracy of functions such as `exp` are up to each
+engine. As a guideline, an engine should round to nearest when it narrows a
+value for storage, with ties to even between floating-point types (f32 to f16 or
+bf16), as eager does. Rounding toward zero, which some GPU APIs allow, biases
+every stored value toward zero, and the bias compounds across layers instead of
+averaging out.
+
 | Engine | Source | Notes |
 | --- | --- | --- |
 | Vulkan | `runtime/vulkan/` | Builds on the ET-VK `ComputeGraph` and shaders. |
@@ -334,6 +342,9 @@ install/bin/run_hf_llm_ggml --device cpu --cpu_threads 4 \
 The GGML runner accepts `--device cpu|gpu`, `--device_index`, `--cpu_threads`,
 and `--max_cached_graphs` (default 1, 0 rebuilds each call). For GPU execution,
 enable the desired `GGML_*` backend when configuring ExecuTorch, as above.
+GGML quantizes the activations of its quantized matmuls, so it rejects
+weight-only quantized linears, including GGUF k-quants, unless
+`--allow_activation_quant_for_weight_only` accepts that loss of precision.
 
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_llm_runner_utils_test` exercises the
 LLM generation utilities.
