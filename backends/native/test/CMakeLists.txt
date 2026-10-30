@@ -151,6 +151,12 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
            COMMAND native_ggml_sample_test --packages=${_native_op_samples}
                    --device=cpu
   )
+  # native_ggml_sample_test_act_quant lets ggml quantize the activations of
+  # weight-only quantized linears, judged against golden-int8_act.
+  add_test(NAME native_ggml_sample_test_act_quant
+           COMMAND native_ggml_sample_test --packages=${_native_op_samples}
+                   --device=cpu --allow_activation_quant_for_weight_only
+  )
   target_compile_options(
     native_ggml_sample_test
     PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
