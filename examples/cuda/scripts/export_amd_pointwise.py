@@ -106,10 +106,12 @@ def main() -> None:
     if not ptd_path.is_file():
         raise RuntimeError(f"expected AOTI data file was not created: {ptd_path}")
 
-    # Verify the embedded code object matches the active device.
+    # Kernel code objects may be stored in the external AOTI constants.
     triple = f"amdgcn-amd-amdhsa--{arch}".encode()
-    if triple not in pte_path.read_bytes():
-        raise RuntimeError(f"{pte_path} embeds no code object for {arch}")
+    if triple not in pte_path.read_bytes() and triple not in ptd_path.read_bytes():
+        raise RuntimeError(
+            f"{pte_path} and {ptd_path} contain no code object for {arch}"
+        )
 
     print(f"ROCm: {torch.version.hip}")
     print(f"Compile GPU: cuda:{device_index} {device.name} ({device.gcnArchName})")
