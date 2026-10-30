@@ -28,10 +28,10 @@ namespace openvino {
 struct ExecutionHandle {
   ov_compiled_model_t* compiled_model = nullptr;
   ov_infer_request_t* infer_request = nullptr;
-  // The sizes of each output at the first execute, which are its upper bound,
-  // kTensorDimensionLimit entries per output.
-  int64_t* output_bound_sizes = nullptr;
-  bool output_bounds_recorded = false;
+  // A buffer OpenVINO owns for each output whose size can change, made on
+  // first use and reused by every call; null for the others.
+  ov_tensor_t** owned_outputs = nullptr;
+  size_t num_outputs = 0;
 };
 
 class OpenvinoBackend final : public ::exr::BackendInterface {
@@ -53,7 +53,14 @@ class OpenvinoBackend final : public ::exr::BackendInterface {
  private:
   bool ensure_loaded() const;
   ov_element_type_e convert_to_openvino_type(exa::ScalarType scalar_type) const;
-  exr::Result<ov_tensor_t*> create_ov_tensor(const exa::Tensor& tensor) const;
+  // With own_memory, the OpenVINO tensor gets its own buffer instead of
+  // borrowing the tensor's.
+  exr::Result<ov_tensor_t*> create_ov_tensor(
+      const exa::Tensor& tensor,
+      bool own_memory = false) const;
+  exr::Error copy_output(
+      const ov_tensor_t* ov_output,
+      const exa::Tensor& output) const;
 
   mutable DlHandle lib_handle_;
   mutable OpenvinoFunctions ov_;
