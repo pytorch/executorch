@@ -1202,6 +1202,71 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
   }
 }
 
+TEST_F(VulkanComputeAPITest, half_texture_store_rounds_to_nearest_even) {
+  // Ties, their neighbors, f16 subnormals and values at and past the largest
+  // f16, where rounding toward zero differs from rounding to nearest even.
+  const std::vector<float> values = {
+      1.0f + 0x1p-11f,
+      1.0f + 0x3p-11f,
+      -(1.0f + 0x3p-11f),
+      std::nextafter(1.0f + 0x1p-11f, 0.0f),
+      std::nextafter(1.0f + 0x1p-11f, 2.0f),
+      0x1p-25f,
+      0x3p-25f,
+      std::nextafter(0x1p-25f, 0.0f),
+      0x1.ffcp-15f,
+      -0x1.0p-24f,
+      65504.0f,
+      65519.0f,
+      65520.0f,
+      -65520.0f,
+      1e6f,
+      -1e6f,
+  };
+
+  struct Params final {
+    utils::ivec3 size;
+    int32_t fill;
+    utils::vec4 values;
+  };
+
+  for (size_t i = 0; i < values.size(); i += 4) {
+    vTensor a(
+        context(),
+        {4, 1, 1},
+        vkapi::kHalf,
+        utils::kTexture3D,
+        utils::kChannelsPacked);
+    Params block{
+        {1, 1, 1},
+        0,
+        {values[i], values[i + 1], values[i + 2], values[i + 3]},
+    };
+    ParamsBuffer params(context(), block);
+
+    vkapi::PipelineBarrier pipeline_barrier{};
+    context()->submit_compute_job(
+        VK_KERNEL(fill_texture__test_half),
+        pipeline_barrier,
+        GlobalWorkGrid({1u, 1u, 1u}, kExplicitWorkGrid),
+        LocalWorkGroup(1u, 1u, 1u),
+        {},
+        VK_NULL_HANDLE,
+        0,
+        a.image(
+            pipeline_barrier,
+            vkapi::PipelineStage::COMPUTE,
+            vkapi::MemoryAccessType::WRITE),
+        params.buffer());
+
+    const std::vector<float> out = extract_vtensor(a);
+    for (size_t j = 0; j < 4; ++j) {
+      EXPECT_EQ(out[j], float(executorch::aten::Half(values[i + j])))
+          << "input " << values[i + j];
+    }
+  }
+}
+
 TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   context()->set_cmd(/*reusable = */ true);
   std::vector<int64_t> sizes = {4, 4, 2};
