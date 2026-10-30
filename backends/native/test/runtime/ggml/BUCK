@@ -91,14 +91,16 @@ _VARIANTS = [
     for v in _VARIANTS
 ]
 
+# ggml_sample_test_act_quant lets ggml quantize the activations of weight-only
+# quantized linears, judged against golden-int8_act.
 [
     fbcode_target(
         _kind = runtime.cxx_test,
-        name = "ggml_sample_test" + v["suffix"],
+        name = "ggml_sample_test" + name + v["suffix"],
         args = [
             "--packages=$(location //executorch/backends/native/test/samples:op_samples)",
             "--device=" + v["device"],
-        ],
+        ] + flags,
         env = v.get("env", {}),
         remote_execution = v.get("remote_execution"),
         # TODO: run in CI once they pass.
@@ -108,6 +110,10 @@ _VARIANTS = [
         **v.get("compat", {})
     )
     for v in _VARIANTS
+    for name, flags in [
+        ("", []),
+        ("_act_quant", ["--allow_activation_quant_for_weight_only"]),
+    ]
 ]
 
 [
