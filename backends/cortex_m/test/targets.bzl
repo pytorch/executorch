@@ -83,6 +83,8 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/cortex_m/passes:cortex_passes",
                 "//executorch/backends/cortex_m/quantizer:quantizer",
                 "//executorch/backends/test/harness:tester",
+                "//executorch/backends/test:graph_builder",
+                "//executorch/backends/transforms:channels_last_layout",
                 "//executorch/backends/transforms:remove_unused_constants_pass",
                 "//executorch/exir:lib",
                 "//executorch/exir/dialects:lib",

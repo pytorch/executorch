@@ -55,6 +55,7 @@ from .decompose_mean_pass import DecomposeMeanPass
 from .decompose_sdpa_pass import DecomposeSDPAPass
 from .explicit_layout_pass import (
     CortexMCanonicalizeViewCopyPermutePass,
+    CortexMPostponeLayoutCopyBelowSqueezePass,
     CortexMReplaceOpsWithChannelsLastVariants,
     ValidateCortexMExplicitLayoutPass,
 )
@@ -175,6 +176,8 @@ class CortexMPassManager(ExportedProgramPassManager):
         ConvertConv1dToConv2dPass,
         CortexMReplaceOpsWithChannelsLastVariants,
         ReplaceSqueezeAndUnsqueezeWithViewPass,
+        # Let elementwise regions meet layout copies of their own rank.
+        CortexMPostponeLayoutCopyBelowSqueezePass,
         # Move layout copies across pads before singleton permutations become views.
         RemovePermutesAroundElementwiseOps,
         CortexMCanonicalizeViewCopyPermutePass,
