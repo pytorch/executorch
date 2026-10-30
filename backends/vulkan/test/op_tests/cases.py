@@ -812,6 +812,7 @@ def get_conv_inputs():
     ]
 
     test_suite = VkTestSuite(test_cases)
+    test_suite.case_tolerances = {0: {"at::kHalf": (0.012, 0.01)}}
     test_suite.layouts = [
         "utils::kChannelsPacked",
     ]
