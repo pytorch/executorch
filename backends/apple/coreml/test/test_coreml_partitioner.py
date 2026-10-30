@@ -913,24 +913,43 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
     def test_uint8_made_inside_the_delegate_keeps_ops_whole(self):
         """
-        A uint8 tensor made inside the delegate is not an input, so a pad that
-        reads it does not make the float reflect pad decompose.
+        A uint8 tensor made inside the delegate is not an input, so the ops
+        that read it stay in the delegate, whole: a pad, and a rot90 that only
+        Core ML's decomposition supports followed by a roll.
         """
 
-        class Model(torch.nn.Module):
+        class Pad(torch.nn.Module):
             def forward(self, x):
                 image = torch.nn.functional.pad((x * 255).to(torch.uint8), (1, 1))
                 return torch.nn.functional.pad(
                     image.float() / 255.0, (1, 1), mode="reflect"
                 )
 
-        ep = torch.export.export(Model().eval(), (torch.rand(1, 3, 8),), strict=True)
-        edge = executorch.exir.to_edge_transform_and_lower(
-            ep, partitioner=[CoreMLPartitioner()]
-        )
-        delegated = format_delegated_graph(edge.exported_program().graph_module)
-        self.assertIn("aten.pad.default", delegated)
-        self.assertNotIn("aten.index.Tensor", delegated)
+        class RotateRoll(torch.nn.Module):
+            def forward(self, x):
+                image = torch.rot90((x * 255).to(torch.uint8), 1, (2, 3))
+                return torch.roll(image, 1, 2).float() / 255.0
+
+        for model, x in (
+            (Pad(), torch.rand(1, 3, 8)),
+            (RotateRoll(), torch.rand(1, 3, 8, 8)),
+        ):
+            with self.subTest(model=type(model).__name__):
+                ep = torch.export.export(model.eval(), (x,), strict=True)
+                edge = executorch.exir.to_edge_transform_and_lower(
+                    ep, partitioner=[CoreMLPartitioner()]
+                )
+                op_names = {
+                    n.target.__name__
+                    for n in edge.exported_program().graph.nodes
+                    if n.op == "call_function"
+                }
+                self.assertEqual(op_names, {"executorch_call_delegate", "getitem"})
+                buffer = edge.to_executorch().buffer
+                if _TEST_RUNTIME:
+                    program = Runtime.get().load_program(buffer)
+                    out = program.load_method("forward").execute((x,))[0]
+                    self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
 
     def test_tied_embedding_is_quantized_with_its_linear(self):
         """A weight that is both an embedding table and an output projection lowers.

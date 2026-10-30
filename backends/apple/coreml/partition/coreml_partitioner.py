@@ -217,12 +217,14 @@ def _find_readers_of_unsupported_inputs(
     partitions: List[Partition],
     kept_inside: Collection[str],
     left_out: Collection[torch.fx.Node],
+    sources: Optional[Collection[torch.fx.Node]] = None,
 ) -> Set[torch.fx.Node]:
     """The nodes that read a tensor Core ML cannot take as an input from outside
     their partition, or a symbolic value computed by an op left out of Core ML.
 
     A tensor made inside the partition, or a weight, constant or state the
-    partitioner moves into Core ML, is not an input.
+    partitioner moves into Core ML, is not an input. With sources, only tensors
+    made by those nodes count.
     """
     return {
         node
@@ -231,6 +233,7 @@ def _find_readers_of_unsupported_inputs(
         if any(
             arg not in partition.nodes
             and arg.name not in kept_inside
+            and (sources is None or arg in sources)
             and (
                 _cannot_be_coreml_input(arg)
                 or (
@@ -264,6 +267,24 @@ def _makes_int8(node: torch.fx.Node) -> bool:
     val = node.meta.get("val")
     vals = val if isinstance(val, (list, tuple)) else [val]
     return any(isinstance(v, torch.Tensor) and v.dtype == torch.int8 for v in vals)
+
+
+def _cpu_nodes_from_graph_inputs(
+    graph: torch.fx.Graph, partitions: List[Partition], kept_inside: Collection[str]
+) -> Set[torch.fx.Node]:
+    """uint8 and int8 graph inputs, and the nodes outside Core ML that read
+    them, directly or through other such nodes."""
+    in_partition = {node for partition in partitions for node in partition.nodes}
+    found = set()
+    for node in graph.nodes:
+        if node.op == "placeholder":
+            if node.name not in kept_inside and _cannot_be_coreml_input(node):
+                found.add(node)
+        elif node not in in_partition and any(
+            arg in found for arg in node.all_input_nodes
+        ):
+            found.add(node)
+    return found
 
 
 def _makes_tensor(node: torch.fx.Node) -> bool:
@@ -310,10 +331,16 @@ def _propose_partitions(
     kept_inside: Collection[str],
     state: Collection[str],
     allow_partitions_without_inputs: bool,
+    graph_inputs_only: bool = False,
 ) -> Tuple[List[Partition], Set[torch.fx.Node]]:
     """Propose Core ML partitions, leaving out every op that reads a tensor
     Core ML cannot take as an input from outside its partition, and then every
     partition this leaves without a tensor input.
+
+    graph_inputs_only follows only the uint8 and int8 tensors that come from
+    graph inputs through ops outside Core ML. On a graph before decomposition,
+    any other boundary can still go away, for example when an op Core ML
+    rejects decomposes into ops it takes.
 
     Returns the partitions and the ops left out.
     """
@@ -325,8 +352,17 @@ def _propose_partitions(
         partitions = CapabilityBasedPartitioner(
             graph_module, support, allows_single_node_partition=True
         ).propose_partitions()
-        new = _find_readers_of_unsupported_inputs(partitions, kept_inside, left_out)
-        new |= _find_makers_of_int8_outputs(partitions)
+        if graph_inputs_only:
+            sources = _cpu_nodes_from_graph_inputs(
+                graph_module.graph, partitions, kept_inside
+            )
+            new = _find_readers_of_unsupported_inputs(
+                partitions, kept_inside, left_out, sources
+            )
+        else:
+            new = _find_readers_of_unsupported_inputs(
+                partitions, kept_inside, left_out
+            ) | _find_makers_of_int8_outputs(partitions)
         if new or left_out:
             # Moving those ops out can leave a partition that reads no tensor,
             # such as the index math of a gather.
@@ -766,19 +802,23 @@ class CoreMLPartitioner(Partitioner):
                 )
                 return False
 
-        # An op that partition() leaves out runs on the CPU, so it is never
-        # preserved: a core ATen op stays whole anyway, and any other op is
-        # decomposed into core ATen ops, the op set the portable kernels target.
-        # Ops are only left out because of a tensor Core ML cannot take as an
-        # input, so a graph without one needs no extra partitioning.
+        # An op that partition() leaves out runs on the CPU, so it is not
+        # preserved: it is decomposed into core ATen ops, the op set the
+        # portable kernels target, unless it is one already. Here only uint8
+        # and int8 graph inputs leave ops out, so a graph without one needs no
+        # extra partitioning.
         left_out = set()
-        if any(_cannot_be_coreml_input(node) for node in ep.graph.nodes):
+        if any(
+            node.op == "placeholder" and _cannot_be_coreml_input(node)
+            for node in ep.graph.nodes
+        ):
             _, left_out = _propose_partitions(
                 ep.graph_module,
                 create_op_support(is_supported),
                 self._placeholders_kept_inside(ep),
                 self._state_kept_inside(ep),
                 self._allows_partitions_without_inputs(),
+                graph_inputs_only=True,
             )
         rejected = set()
         for node in ep.graph.nodes:
