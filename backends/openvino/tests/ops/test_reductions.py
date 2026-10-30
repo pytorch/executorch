@@ -33,17 +33,33 @@ class TestIntegerReductions(BaseOpenvinoOpTest):
             with self.subTest(dtype=x.dtype):
                 self.execute_layer_test(CumSum(), (x,))
 
-    def test_prod(self):
-        if "torch.ops.aten.prod.dim_int" not in OperatorSupport([])._support_dict:
-            self.skipTest("this OpenVINO release does not delegate prod")
-
-        class Prod(torch.nn.Module):
+    def test_sum(self):
+        class Sum(torch.nn.Module):
             def forward(self, x):
-                return x.prod(1)
+                return x.sum(1)
 
-        self.execute_layer_test(
-            Prod(), (torch.randint(1, 4, (2, 5), dtype=torch.int32),)
-        )
+        # More than 255 true values in a row, which 8 bits cannot count.
+        mask = torch.arange(800).reshape(2, 400) % 4 != 0
+        for x in (mask, torch.randint(0, 5, (2, 7), dtype=torch.int32)):
+            with self.subTest(dtype=x.dtype):
+                self.execute_layer_test(Sum(), (x,))
+
+    def test_prod(self):
+        class Prod(torch.nn.Module):
+            def __init__(self, dim):
+                super().__init__()
+                self.dim = dim
+
+            def forward(self, x):
+                return x.prod() if self.dim is None else x.prod(self.dim)
+
+        support = OperatorSupport([])._support_dict
+        x = torch.randint(1, 4, (2, 5), dtype=torch.int32)
+        for dim, op in ((1, "prod.dim_int"), (None, "prod.default")):
+            with self.subTest(op=op):
+                if f"torch.ops.aten.{op}" not in support:
+                    self.skipTest(f"this OpenVINO release does not delegate {op}")
+                self.execute_layer_test(Prod(dim), (x,))
 
     def test_attention_masks_with_more_valid_tokens(self):
         class AttentionMasks(torch.nn.Module):

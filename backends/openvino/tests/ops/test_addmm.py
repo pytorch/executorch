@@ -1,3 +1,6 @@
+# mypy: disable-error-code=import-not-found
+
+
 from unittest import mock
 
 import torch
@@ -6,6 +9,7 @@ from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
     BaseOpenvinoOpTest,
 )
 from executorch.exir.backend.backend_details import CompileSpec
+from openvino import Core, Type  # type: ignore[import-untyped]
 
 
 class TestAddMMOperator(BaseOpenvinoOpTest):
@@ -34,6 +38,8 @@ class TestAddMMOperator(BaseOpenvinoOpTest):
     def test_addmm_computes_in_float32(self):
         if not self.device.startswith("CPU"):
             self.skipTest("only CPUs compute in float32 by default")
+        if Core().get_property("CPU", "INFERENCE_PRECISION_HINT") == Type.f32:
+            self.skipTest("OpenVINO already computes in float32 on this CPU")
         # OpenVINO would otherwise compute this in bfloat16 on x86 CPUs with
         # bfloat16 units, or in float16 on ARM CPUs, far outside 1e-4.
         self.atol = self.rtol = 1e-4

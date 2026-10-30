@@ -36,15 +36,25 @@ class TestViewOperator(BaseOpenvinoOpTest):
 
     def test_view_data_dependent_size(self):
         class View(torch.nn.Module):
+            def __init__(self, reduce):
+                super().__init__()
+                self.reduce = reduce
+
             def forward(self, x, n):
                 n = n.item()
                 torch._check(n >= 1)
                 torch._check(n <= x.shape[0])
-                return x[:n].view(n, -1)
+                y = x[:n].view(n, -1)
+                return y.sum(0) if self.reduce else y
 
         # The size reaches the OpenVINO partition as a SymInt input. The second
-        # call needs a larger output than the first one returned.
+        # call needs a larger output than the first one returned, unless the
+        # sum makes the output static.
         x = torch.randn(4, 8)
-        self.execute_layer_test(
-            View(), (x, torch.tensor(3)), more_inputs=((x, torch.tensor(4)),)
-        )
+        for reduce in (False, True):
+            with self.subTest(reduce=reduce):
+                self.execute_layer_test(
+                    View(reduce),
+                    (x, torch.tensor(3)),
+                    more_inputs=((x, torch.tensor(4)),),
+                )
