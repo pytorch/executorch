@@ -368,6 +368,29 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                 else:
                     self._assert_matches_eager(module, x, out)
 
+    def test_input_shape_changes_after_capture(self):
+        torch.manual_seed(0)
+        # The last calls swap two dims, which keeps the byte count, so only the
+        # shape tells them apart from the captured input.
+        shapes = [(2, 3, 4, 4)] * 4 + [(2, 4, 3, 4)] * 2
+        inputs = [torch.randn(shape) for shape in shapes]
+        dims = {
+            1: torch.export.Dim("c", min=2, max=8),
+            2: torch.export.Dim("h", min=2, max=8),
+        }
+        for memory_format in (torch.contiguous_format, torch.channels_last):
+            module = _Double(memory_format).eval()
+            outputs = self._run_with_cuda_graph(
+                module, (inputs[0].cuda(),), inputs, dynamic_shapes=(dims,)
+            )
+            for i, (x, out) in enumerate(zip(inputs, outputs)):
+                with self.subTest(memory_format=memory_format, call=i):
+                    if i < 4:
+                        self._assert_matches_eager(module, x, out)
+                    else:
+                        # InvalidArgument, from the replay's input shape check.
+                        self.assertIn("error 0x12", str(out))
+
     def test_output_shape_changes_at_capture(self):
         torch.manual_seed(0)
         # The capture call has a larger batch than the warmup calls before it.
