@@ -76,11 +76,11 @@ and `FLAVOR` is `xnnpack`, `qnn`, or `vulkan`. Match the version and backend to
 the model export. The QNN flavor also needs the separate
 [Qualcomm runtime dependency](#qualcomm-qnn-dependency).
 
-For example, download the XNNPACK 1.4.1 artifact and verify its checksum:
+For example, download the XNNPACK 1.6.0 artifact and verify its checksum:
 
 ```sh
-curl -fLO https://ossci-android.s3.amazonaws.com/executorch/release/1.4.1-xnnpack/executorch.aar
-curl -fLO https://ossci-android.s3.amazonaws.com/executorch/release/1.4.1-xnnpack/executorch.aar.sha256sums
+curl -fLO https://ossci-android.s3.amazonaws.com/executorch/release/1.6.0-xnnpack/executorch.aar
+curl -fLO https://ossci-android.s3.amazonaws.com/executorch/release/1.6.0-xnnpack/executorch.aar.sha256sums
 shasum -a 256 -c executorch.aar.sha256sums
 ```
 
