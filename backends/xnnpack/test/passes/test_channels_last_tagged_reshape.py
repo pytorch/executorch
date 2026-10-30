@@ -412,13 +412,24 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
     class ConvNoiseAddConv(torch.nn.Module):
         """conv -> x + noise[H, W] -> conv: the constant operand is reshaped to
         [1, 1, H, W] and laid out as NHWC ahead of time, instead of converting
-        the activation."""
+        the activation. `kind` picks how the constant is held by the module,
+        which decides where the exported program stores it."""
 
-        def __init__(self):
+        def __init__(self, kind="buffer"):
             super().__init__()
             self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
             self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
-            self.register_buffer("noise", torch.randn(5, 7))
+            noise = torch.randn(5, 7)
+            if kind == "buffer":
+                self.register_buffer("noise", noise)
+            elif kind == "non_persistent_buffer":
+                self.register_buffer("noise", noise, persistent=False)
+            elif kind == "parameter":
+                self.noise = torch.nn.Parameter(noise, requires_grad=False)
+            elif kind == "tensor_constant":
+                self.noise = noise
+            else:
+                raise ValueError(kind)
 
         def forward(self, x):
             x = self.conv1(x)
@@ -495,7 +506,13 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
         )
 
     def test_fp32_channels_last_tagged_reshape_pass_lower_rank_operand_stays_nhwc(self):
-        self._test_constant_lower_rank_operand_folded_to_nhwc(self.ConvNoiseAddConv())
+        # Every kind of constant: state dict buffer and parameter, and the
+        # non-persistent buffer and lifted tensor held among the constants.
+        for kind in ("buffer", "non_persistent_buffer", "parameter", "tensor_constant"):
+            with self.subTest(kind=kind):
+                self._test_constant_lower_rank_operand_folded_to_nhwc(
+                    self.ConvNoiseAddConv(kind)
+                )
 
     def test_fp32_channels_last_tagged_reshape_pass_per_channel_operand_stays_nhwc(
         self,
@@ -511,29 +528,6 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
 
     def test_fp32_channels_last_tagged_reshape_pass_chw_operand_stays_nhwc(self):
         self._test_constant_lower_rank_operand_folded_to_nhwc(self.ConvChwBiasAddConv())
-
-    class ConvNonPersistentNoiseAddConv(torch.nn.Module):
-        """conv -> x + noise[H, W] -> conv with a non-persistent buffer, which
-        the exported program stores among its constants, not in the state
-        dict."""
-
-        def __init__(self):
-            super().__init__()
-            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
-            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
-            self.register_buffer("noise", torch.randn(5, 7), persistent=False)
-
-        def forward(self, x):
-            x = self.conv1(x)
-            x = x + self.noise
-            return self.conv2(x)
-
-    def test_fp32_channels_last_tagged_reshape_pass_non_persistent_buffer_operand_stays_nhwc(
-        self,
-    ):
-        self._test_constant_lower_rank_operand_folded_to_nhwc(
-            self.ConvNonPersistentNoiseAddConv()
-        )
 
     class ConvSharedNoiseAddConv(torch.nn.Module):
         """conv -> x + noise[H, W] -> conv -> x + noise: the constant has two
