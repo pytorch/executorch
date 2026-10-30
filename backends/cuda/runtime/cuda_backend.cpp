@@ -880,23 +880,7 @@ class ET_EXPERIMENTAL CudaBackend final
         // a capture that cannot succeed is tried once rather than on every
         // fourth call for the life of the process. Eager execution is correct,
         // just slower.
-        for (void* ptr : state_->static_input_ptrs) {
-          (void)cudaFree(ptr);
-        }
-        state_->static_input_ptrs.clear();
-        state_->static_output_ptrs.clear();
-        state_->static_input_nbytes.clear();
-        state_->static_output_nbytes.clear();
-        state_->static_input_sizes.clear();
-        // Same order as ~CudaGraphState: the exec depends on the graph.
-        if (state_->graph_exec != nullptr) {
-          (void)cudaGraphExecDestroy(state_->graph_exec);
-          state_->graph_exec = nullptr;
-        }
-        if (state_->graph != nullptr) {
-          (void)cudaGraphDestroy(state_->graph);
-          state_->graph = nullptr;
-        }
+        state_->release();
         state_->phase = CudaGraphPhase::Disabled;
         state_->warmup_remaining = 0;
         (void)cudaGetLastError();
@@ -1145,7 +1129,6 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphInstantiate failed: %s",
           cudaGetErrorString(gerr));
-      handle->cuda_graph_state.note_graph_allocations();
 
       // Record static output pointers (stable under graph replay). Releasing
       // them from slim_outputs here, before the copies below, keeps the cleanup
@@ -1172,6 +1155,7 @@ class ET_EXPERIMENTAL CudaBackend final
           "cudaGraphLaunch (first replay) failed: %s",
           cudaGetErrorString(gerr));
       graph_ran = true;
+      handle->cuda_graph_state.note_graph_allocations();
 
       // Copy capture-step outputs into the planned GPU ET buffers (D2D).
       for (size_t i = 0; i < n_outputs; i++) {
