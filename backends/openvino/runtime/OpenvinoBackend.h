@@ -55,6 +55,8 @@ class OpenvinoBackend final : public ::exr::BackendInterface {
   mutable OpenvinoFunctions ov_;
   mutable std::once_flag load_flag_;
   mutable bool loaded_ = false;
+  // Whether core_import_model copies the blob, so init can free it.
+  mutable bool import_copies_blob_ = false;
 };
 
 } // namespace openvino

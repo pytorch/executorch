@@ -10,6 +10,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 #include <cmath>
+#include <cstdint>
+#include <type_traits>
 
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
@@ -49,29 +51,37 @@ void quantized_layer_norm_per_tensor_(
     const T* x = in_data + i * last_dim;
     T* y = out_data + i * last_dim;
 
-    // compute sum and squared sum. The fp32 sum can be approximated as:
-    // (X_1 - in_zero_point) * in_scale + (X_2 - in_zero_point) * in_scale + ...
-    // (X_N - in_zero_point) * in_scale.
-    int32_t sum = 0;
-    int32_t sq_sum = last_dim * input_zero_point * input_zero_point;
+    // 16-bit squares overflow an int32 sum after two elements.
+    using acc_t = std::conditional_t<sizeof(T) == 1, int32_t, int64_t>;
+    acc_t sum = 0;
+    acc_t sq_sum = 0;
     for (size_t j = 0; j < last_dim; ++j) {
-      int32_t val = x[j];
+      const int32_t val = x[j];
       sum += val;
-      sq_sum += val * val;
+      sq_sum += static_cast<acc_t>(val) * val;
     }
-    sq_sum -= (2 * sum * input_zero_point);
-    sum -= (last_dim * input_zero_point);
 
-    float mean = (input_scale * sum) / last_dim;
-    float variance =
-        (sq_sum * input_scale * input_scale) / last_dim - mean * mean;
+    // Shift raw sums to zero-point-centered sums, then form the variance
+    // numerator N * sum(v^2) - sum(v)^2 exactly in integers: doing
+    // E[x^2] - E[x]^2 in fp32 cancels catastrophically for 16-bit inputs.
+    const int64_t n = static_cast<int64_t>(last_dim);
+    const int64_t zp = input_zero_point;
+    const int64_t centered_sum = static_cast<int64_t>(sum) - n * zp;
+    const int64_t centered_sq_sum =
+        static_cast<int64_t>(sq_sum) - 2 * zp * sum + n * zp * zp;
+    const int64_t var_numerator =
+        n * centered_sq_sum - centered_sum * centered_sum;
+
+    const double n_d = static_cast<double>(n);
+    float mean = input_scale * centered_sum / n_d;
+    float variance = var_numerator / (n_d * n_d) * (input_scale * input_scale);
     float inv_std = 1.0f / std::sqrt(variance + eps);
 
     // y = (x - mean) / std * kGamma + kBeta
     for (int j = 0; j < last_dim; ++j) {
       // y[j] = (x[j] - mean) / std * kGamma + kBeta;
       // Since X is quantized, we dequantize it, compute fp32 result, and
-      // quantize the result to an int8/uint8 value.
+      // quantize the result back to T.
       float val = kernels::dequantize<T>(x[j], input_scale, input_zero_point);
 
       val = (val - mean) * inv_std * weight_data[j] + bias_data[j];
@@ -144,6 +154,17 @@ void quantized_layer_norm_out(
         output_scale,
         output_zero_point,
         out);
+  } else if (input.scalar_type() == executorch::aten::ScalarType::Short) {
+    quantized_layer_norm_<int16_t>(
+        input,
+        in_scale,
+        in_zero_point,
+        weight,
+        bias,
+        eps,
+        output_scale,
+        output_zero_point,
+        out);
   } else {
     ET_CHECK_MSG(
         false,
@@ -177,6 +198,17 @@ void quantized_layer_norm_per_tensor_out(
         out);
   } else if (input.scalar_type() == executorch::aten::ScalarType::Char) {
     quantized_layer_norm_per_tensor_<int8_t>(
+        input,
+        in_scale,
+        in_zero_point,
+        weight,
+        bias,
+        eps,
+        output_scale,
+        output_zero_point,
+        out);
+  } else if (input.scalar_type() == executorch::aten::ScalarType::Short) {
+    quantized_layer_norm_per_tensor_<int16_t>(
         input,
         in_scale,
         in_zero_point,

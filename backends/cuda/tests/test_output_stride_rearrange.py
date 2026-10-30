@@ -256,6 +256,132 @@ class TestOutputStrideRearrange(unittest.TestCase):
             "simple add should match exactly",
         )
 
+    def test_detached_output(self):
+        """A method that returns y and y.detach() gets two separate outputs."""
+
+        class DetachedOutputModule(nn.Module):
+            def forward(self, x):
+                y = x * 2
+                return y, y.detach()
+
+        x = torch.randn(4, 64, device="cuda")
+        module = DetachedOutputModule().eval()
+        outputs = _run_et_aoti(module, (x,))
+        expected = module(x)
+        self.assertEqual(len(outputs), len(expected))
+        for output, reference in zip(outputs, expected):
+            torch.testing.assert_close(output.cpu(), reference.cpu())
+
+
+class _SlicedLinear(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.proj = nn.Linear(64, 32)
+
+    def forward(self, x):
+        return self.proj(x)[:, :, :14]
+
+
+class _Double(nn.Module):
+    def __init__(self, memory_format):
+        super().__init__()
+        self.memory_format = memory_format
+
+    def forward(self, x):
+        return (x * 2).contiguous(memory_format=self.memory_format)
+
+
+class TestStridedOutputWithCudaGraph(unittest.TestCase):
+    """A CUDA graph replay copies raw bytes, so a strided output must not reach it."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not torch.cuda.is_available():
+            raise unittest.SkipTest("CUDA not available")
+        if torch.version.hip is not None:
+            raise unittest.SkipTest("CUDA graphs are not supported on ROCm")
+
+    def _run_with_cuda_graph(self, module, example, inputs, dynamic_shapes=None):
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import to_edge_transform_and_lower
+        from executorch.runtime import Runtime
+
+        with torch.no_grad():
+            ep = torch.export.export(module, example, dynamic_shapes=dynamic_shapes)
+        spec = CudaBackend.generate_method_name_compile_spec("forward")
+        program = to_edge_transform_and_lower(
+            ep, partitioner=[CudaPartitioner([spec])]
+        ).to_executorch()
+        runtime = Runtime.get()
+        option = "enable_cuda_graph_for_method"
+        results = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pte = os.path.join(tmpdir, "model.pte")
+            with open(pte, "wb") as f:
+                program.write_to_file(f)
+            program.write_tensor_data_to_file(tmpdir)
+            ptd = glob.glob(os.path.join(tmpdir, "*.ptd"))[0]
+            runtime.backend_registry.set_option("CudaBackend", {option: "forward"})
+            try:
+                method = runtime.load_program(pte, data_path=ptd).load_method("forward")
+            finally:
+                # The option is process wide.
+                runtime.backend_registry.set_option("CudaBackend", {option: ""})
+            for x in inputs:
+                try:
+                    results.append(method.execute([x])[0])
+                except RuntimeError as e:
+                    results.append(e)
+        return results
+
+    def _assert_matches_eager(self, module, x, out):
+        self.assertIsInstance(out, torch.Tensor)
+        with torch.no_grad():
+            expected = module(x.cuda()).cpu()
+        torch.testing.assert_close(out, expected, atol=1e-4, rtol=1e-4)
+
+    def test_sliced_output_matches_eager_past_warmup(self):
+        torch.manual_seed(0)
+        module = _SlicedLinear().cuda().eval()
+        # Three warmup calls, the capture call, then replays.
+        inputs = [torch.randn(1, 50, 64) for _ in range(6)]
+        outputs = self._run_with_cuda_graph(module, (inputs[0].cuda(),), inputs)
+        for i, (x, out) in enumerate(zip(inputs, outputs)):
+            with self.subTest(call=i):
+                self._assert_matches_eager(module, x, out)
+
+    def test_strided_output_first_seen_at_capture(self):
+        torch.manual_seed(0)
+        module = _SlicedLinear().cuda().eval()
+        # With one row the slice is contiguous, so only the capture call sees a
+        # strided output.
+        inputs = [torch.randn(1, rows, 64) for rows in (1, 1, 1, 50, 50, 50)]
+        rows = torch.export.Dim("rows", min=1, max=64)
+        outputs = self._run_with_cuda_graph(
+            module, (inputs[3].cuda(),), inputs, dynamic_shapes=({1: rows},)
+        )
+        for i, (x, out) in enumerate(zip(inputs, outputs)):
+            with self.subTest(call=i):
+                if i == 3:
+                    self.assertIsInstance(out, RuntimeError)
+                else:
+                    self._assert_matches_eager(module, x, out)
+
+    def test_output_shape_changes_at_capture(self):
+        torch.manual_seed(0)
+        # The capture call has a larger batch than the warmup calls before it.
+        inputs = [torch.randn(batch, 3, 4, 4) for batch in (1, 1, 1, 2, 2, 2)]
+        batch = torch.export.Dim("batch", min=1, max=8)
+        for memory_format in (torch.contiguous_format, torch.channels_last):
+            module = _Double(memory_format).eval()
+            outputs = self._run_with_cuda_graph(
+                module, (inputs[3].cuda(),), inputs, dynamic_shapes=({0: batch},)
+            )
+            for i, (x, out) in enumerate(zip(inputs, outputs)):
+                with self.subTest(memory_format=memory_format, call=i):
+                    self._assert_matches_eager(module, x, out)
+
 
 if __name__ == "__main__":
     unittest.main()

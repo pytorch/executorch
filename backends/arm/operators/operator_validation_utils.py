@@ -37,12 +37,14 @@ def supported_data_layout_dtypes(
                 supported_dtypes.append(ts.DType.INT16)
     if tosa_spec.support_float():
         supported_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
-    if tosa_spec.support_extension("bf16"):
-        supported_dtypes.append(ts.DType.BF16)
-    if tosa_spec.support_extension("fp8e4m3"):
-        supported_dtypes.append(ts.DType.FP8E4M3)
-    if tosa_spec.support_extension("fp8e5m2"):
-        supported_dtypes.append(ts.DType.FP8E5M2)
+    for extension, dtype in (
+        ("int64", ts.DType.INT64),
+        ("bf16", ts.DType.BF16),
+        ("fp8e4m3", ts.DType.FP8E4M3),
+        ("fp8e5m2", ts.DType.FP8E5M2),
+    ):
+        if tosa_spec.support_extension(extension):
+            supported_dtypes.append(dtype)
     if include_mxfp and tosa_spec.support_extension("mxfp"):
         for dtype in (ts.DType.FP8E4M3, ts.DType.FP8E5M2):
             if dtype not in supported_dtypes:

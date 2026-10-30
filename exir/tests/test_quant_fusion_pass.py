@@ -19,6 +19,7 @@ from executorch.exir.passes.quant_fusion_pass import (
     QuantFusionPass,
 )
 from executorch.exir.tests.common import register_additional_test_aten_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.ao.quantization import (  # @manual
     float_qparams_weight_only_qconfig,
     get_default_qconfig_mapping,
@@ -380,6 +381,34 @@ class TestQuantFusionPass(unittest.TestCase):
             # ).run(
             #     m.dump_graph_module().code
             # )
+
+    def test_embedding_xbit_fake_dtype(self) -> None:
+        # The variants without a dtype argument return the scales' dtype; their
+        # fake kernels must report the same dtype, or export records the wrong one.
+        indices = torch.tensor([1, 2, 3])
+        for op, values_per_byte, quant_min, quant_max in (
+            (torch.ops.quantized_decomposed.embedding_2bit.default, 4, -2, 1),
+            (torch.ops.quantized_decomposed.embedding_4bit.default, 2, -8, 7),
+        ):
+            for scales_dtype in (torch.float16, torch.bfloat16, torch.float32):
+                with self.subTest(op=str(op), scales_dtype=scales_dtype):
+                    weight = torch.randint(
+                        0, 256, (10, 32 // values_per_byte), dtype=torch.uint8
+                    )
+                    scales = torch.rand(10, dtype=scales_dtype) + 0.5
+                    expected = op(weight, scales, None, quant_min, quant_max, indices)
+                    with FakeTensorMode() as mode:
+                        actual = op(
+                            mode.from_tensor(weight),
+                            mode.from_tensor(scales),
+                            None,
+                            quant_min,
+                            quant_max,
+                            mode.from_tensor(indices),
+                        )
+                    self.assertEqual(expected.dtype, scales_dtype)
+                    self.assertEqual(actual.dtype, expected.dtype)
+                    self.assertEqual(actual.shape, expected.shape)
 
     def test_embedding_torchao(self) -> None:
         for bit_width, use_dtype_variant, test_per_group, mapping_type in zip(

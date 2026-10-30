@@ -7,7 +7,7 @@
 import functools
 import inspect
 from collections import OrderedDict
-from typing import Dict
+from typing import Dict, Optional, Set
 
 from executorch.backends.qualcomm._passes import (
     AnnotateAvgPool1D,
@@ -172,6 +172,8 @@ class QnnPassManager(PassManager):
         """Return annotation pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
             RemoveRedundancy,
+            # Retraced autocast regions may emit ops that the passes below decompose.
+            DecomposeWrapWithAutocast,
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
             ReplaceArangeArgs,
@@ -194,7 +196,6 @@ class QnnPassManager(PassManager):
             DecomposeTriu,
             DecomposeTrunc,
             DecomposeVar,
-            DecomposeWrapWithAutocast,
             DecomposeEinsum,
             DecomposeEmpty,
             DecomposeExpM1,
@@ -218,6 +219,7 @@ class QnnPassManager(PassManager):
     def get_export_passes(cls):
         """Return export pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
+            DecomposeWrapWithAutocast,
             ConvertComplexStft,
             DecomposeAsStrided,
             DecomposeBinaryAlpha,
@@ -239,7 +241,6 @@ class QnnPassManager(PassManager):
             # We keep div and floor operations in floating-point to maintain precision.
             # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
             DecomposeFloorDivide,
-            DecomposeWrapWithAutocast,
             ConvertSquareToPow,
             LiftConstantScalarOperands,
             InsertReshapeForReduceOps,
@@ -447,12 +448,18 @@ class QnnPassManager(PassManager):
         self,
         graph_module: GraphModule,
         convert_linear_to_conv2d: bool = False,
+        linear_node_names: Optional[Set[str]] = None,
     ):
+        # convert_linear_to_conv2d converts every linear; otherwise only the
+        # linears in linear_node_names are converted.
+        selected_linears = None if convert_linear_to_conv2d else linear_node_names
         self._instantiate_passes(
             self.get_annotation_passes(
-                convert_linear_to_conv2d=convert_linear_to_conv2d,
+                convert_linear_to_conv2d=convert_linear_to_conv2d
+                or bool(selected_linears),
             ),
             quantization_capture=True,
+            linear_node_names=selected_linears,
         )
         return self._transform(graph_module)
 

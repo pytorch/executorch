@@ -230,9 +230,8 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
   endif()
   executorch_target_link_shared_runtime(custom_ops_aot_lib)
 
-  # torch_cpu_library is the CPU half of torch. Linking torch would also force
-  # libtorch_cuda into DT_NEEDED in a CUDA build, and a CPU-only torch could
-  # then not load this library.
+  # torch would record libtorch_cuda with a CUDA build of PyTorch, so a CPU-only
+  # torch could not load this. torch_cpu_library does not.
   target_link_libraries(
     custom_ops_aot_lib PUBLIC cpublas torch_cpu_library extension_tensor
                               extension_threadpool

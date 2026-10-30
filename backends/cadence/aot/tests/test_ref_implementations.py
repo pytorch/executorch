@@ -21,6 +21,67 @@ from executorch.exir.scalar_type import ScalarType
 
 
 class TestRefImplementations(unittest.TestCase):
+    def test_sdpa_bitwise_ring_mask_matches_visible_slots(self) -> None:
+        for dtype in (torch.int32, torch.int64):
+            for capacity in (8, 16, 24, 2048, 4096):
+                positions = torch.tensor(
+                    [0, 1, 7, 8, capacity - 1, capacity, 3 * capacity + 5],
+                    dtype=dtype,
+                )
+                for window in (1, min(9, capacity), capacity):
+                    with self.subTest(dtype=dtype, capacity=capacity, window=window):
+                        expected = torch.full(
+                            (positions.numel(), capacity // 8), 255, dtype=torch.uint8
+                        )
+                        for row, position in enumerate(positions.tolist()):
+                            for key in range(
+                                max(0, position - window + 1), position + 1
+                            ):
+                                slot = key % capacity
+                                expected[row, slot // 8] &= 255 ^ (1 << (slot % 8))
+                        actual = torch.ops.cadence.sdpa_bitwise_ring_mask_gen.default(
+                            positions, window, capacity
+                        )
+                        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+                        meta = torch.ops.cadence.sdpa_bitwise_ring_mask_gen.default(
+                            positions.to("meta"), window, capacity
+                        )
+                        self.assertEqual(meta.shape, expected.shape)
+                        self.assertEqual(meta.dtype, torch.uint8)
+
+    def test_sdpa_bitwise_ring_mask_empty_and_large_positions(self) -> None:
+        empty = torch.ops.cadence.sdpa_bitwise_ring_mask_gen.default(
+            torch.empty(0, dtype=torch.int64), 4, 16
+        )
+        self.assertEqual(tuple(empty.shape), (0, 2))
+        actual = torch.ops.cadence.sdpa_bitwise_ring_mask_gen.default(
+            torch.tensor([torch.iinfo(torch.int64).max]), 4, 16
+        )
+        torch.testing.assert_close(
+            actual, torch.tensor([[255, 15]], dtype=torch.uint8), rtol=0, atol=0
+        )
+
+    def test_sdpa_bitwise_ring_mask_rejects_invalid_inputs(self) -> None:
+        for device in ("cpu", "meta"):
+            cases = [
+                (torch.zeros(1, dtype=torch.float32, device=device), 4, 16),
+                (torch.zeros((1, 1), dtype=torch.int64, device=device), 4, 16),
+                (torch.zeros(1, dtype=torch.int64, device=device), 0, 16),
+                (torch.zeros(1, dtype=torch.int64, device=device), 17, 16),
+                (torch.zeros(1, dtype=torch.int64, device=device), 4, 0),
+                (torch.zeros(1, dtype=torch.int64, device=device), 4, 15),
+            ]
+            for positions, window, capacity in cases:
+                with self.subTest(device=device, window=window, capacity=capacity):
+                    with self.assertRaises((AssertionError, RuntimeError)):
+                        torch.ops.cadence.sdpa_bitwise_ring_mask_gen.default(
+                            positions, window, capacity
+                        )
+        with self.assertRaises(AssertionError):
+            torch.ops.cadence.sdpa_bitwise_ring_mask_gen.default(
+                torch.tensor([-1], dtype=torch.int64), 4, 16
+            )
+
     @expand(
         [
             ("basic_int8", 0.42, -1.0, 2.0, -7, 7, torch.int8, 0),

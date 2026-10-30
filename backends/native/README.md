@@ -33,6 +33,11 @@ quantize/dequantize ops. TorchAO int4 group-wise weights of `linear` and
 stored packed with their scheme in tensor metadata. Each method must lower wholly
 to one delegate; `to_native` raises otherwise.
 
+Immutable constant keys are namespaced as `<method>/<key>`, even for a single
+method. A key mutated by any method becomes `state/<key>` in every method, so
+methods share its runtime state. Method names may not be `state` or start with
+`state/`. `to_native` raises if namespaced keys collide.
+
 A `.ptn` is an uncompressed zip with fixed entry names:
 
 | Entry | Contents |
@@ -40,6 +45,94 @@ A `.ptn` is an uncompressed zip with fixed entry names:
 | `program.ptg` | Methods as graphs; FlatBuffer defined by `serialization/native_graph.fbs`. |
 | `program.safetensors` | Constants. Byte-identical immutable tensors are stored once. |
 | `aliases.json` | Deduplicated key to owner key; present only when needed. |
+
+## Samples (optional)
+
+A `.ptn` may carry recorded method calls: inputs, and optionally the outputs and
+intermediate values they produced. A sample is an ordered sequence of calls, each
+naming the method it runs, so a stateful sequence such as an LLM's prefill
+followed by decode steps can be checked whether it uses one method or several.
+Samples serve reference checks, layer-by-layer numerical debugging, calibration
+and benchmarking. Program loaders ignore them.
+
+```python
+from executorch.exir.native import Call, read_samples, Sample, SampleSet, to_native, write_samples
+
+to_native(ep).save("model.ptn")
+golden = SampleSet([Sample([Call("forward", [x], [model(x)])])])
+write_samples("model.ptn", "golden", golden)
+read_samples("model.ptn")       # {"golden": SampleSet(...)}
+```
+
+`write_samples` appends a set to any existing `.ptn`, not only one this process
+saved, and replaces the file only once the set is complete. `read_samples`
+validates every set against the rules below, except that each call's method
+exists in the program and its intermediate names are values of that method.
+
+### Layout
+
+```
+samples/<set>/index.json
+samples/<set>/data.safetensors
+```
+
+- `<set>` is an identifier with no meaning to the format, matching
+  `[A-Za-z0-9_-]+`.
+- Each set has exactly these two members, and nothing else lives under `samples/`.
+- Members are stored (uncompressed). The `data.safetensors` data section starts
+  64-byte aligned in the file, like `program.safetensors`.
+- Adding a set only appends members; removing one means rewriting the zip.
+
+### `index.json`
+
+```
+{ "version":     "1.0",                required, "MAJOR.MINOR"
+  "description": str,                  optional
+  "source":      str,                  optional, producer of the outputs
+  "tol":         [atol, rtol],         optional, default for every call
+  "samples":     [Sample, ...] }       required, non-empty
+
+Sample = { "calls":         [Call, ...],         required, non-empty, run in order
+           "tol":           [atol, rtol] }       optional, overrides the set's
+
+Call   = { "method":        str,                 required, a program method
+           "in":            [Value, ...],        required, positional arguments
+           "out":           [Value, ...],        optional, positional outputs
+           "intermediates": {name: Key, ...},    optional
+           "tol":           [atol, rtol] }       optional, overrides the sample's
+
+Value  = Key | number | true | false | [Value, ...]
+Key    = str naming a tensor in the set's data.safetensors
+```
+
+- Each sample starts from the program's initial state. Samples are independent and
+  may run in any order; the calls within a sample run in order with no reset
+  between them, so each sees the state the previous one left, whichever method
+  that call ran.
+- A tensor's key is its JSON path in the index, e.g. `samples[0].calls[1].in[2]`.
+  Below a call that is `.in[k]`, `.out[k]` or `.intermediates.<name>`, with
+  `[l]` appended for each level of list nesting. Every key resolves, and every
+  tensor is referenced exactly once.
+- A JSON integer is an int scalar, any other number a float.
+- Intermediate names are top-level SSA value names of the call's method
+  (`[A-Za-z_][A-Za-z0-9_]*`).
+  Producers record what they can; consumers compare the names both sides have.
+- Tolerances are finite and non-negative, and advisory: a consumer may override them.
+  `write_samples` warns when atol or rtol is above 1e-3.
+- Readers reject another major `version` and accept any minor one: a minor bump
+  only adds fields, and readers ignore unknown fields and the tensors only those
+  fields reference.
+
+Not in v1:
+
+- Tensors shared across sets.
+- Values inside nested graphs.
+- Quantized method inputs and outputs (a `QuantSpec` on graph I/O). Integer and
+  float I/O of quantized models is supported; torch quantized dtypes and tensor
+  subclasses are not.
+
+TODO: specify quantized I/O as the storage form the method binds (packed for
+sub-byte), with quant parameters read from the program rather than the sample.
 
 ## Runtime
 
@@ -110,9 +203,21 @@ target_link_libraries(my_app PRIVATE native_api native_vulkan_engine)
 
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_runtime_test` covers the shared runtime
 and API. `native_vulkan_passes_test` covers the Vulkan graph rewrites without
-requiring a GPU. When the vision runner below is enabled,
-`native_runner_utils_test` covers its shared runner utilities. Run these with
+requiring a GPU. When either runner below is enabled,
+`native_runner_utils_test` covers their shared runner utilities. Run these with
 `ctest --test-dir cmake-out -R native_`.
+
+The `Test Native Engines` CI workflow has separate Linux jobs for the shared
+runtime, GGML, and Vulkan, with each test suite run once. To reproduce with
+dependencies installed, run `bash .ci/scripts/test-native.sh runtime`,
+`bash .ci/scripts/test-native.sh ggml`, or
+`bash .ci/scripts/test-native.sh vulkan` from the OSS checkout. The GGML job
+also runs `native_llm_runner_utils_test` and executes `run_hf_llm_ggml` on a tiny
+seeded Hugging Face Llama with a generated byte tokenizer. Its eight generated
+token IDs must match eager PyTorch, covering prefill and KV-cache decoding without
+downloading a model. The GGML job requires the Python export dependencies
+installed by the `Test Native Engines` workflow. The Vulkan job builds
+`run_classification` and `run_hf_llm_vulkan`; its tests do not require a GPU.
 
 ### GGML engine
 
@@ -147,26 +252,69 @@ prefix (or the corresponding `CMAKE_INSTALL_DATADIR` location).
 CPU engine tests, including quantized linear execution, graph caching, and
 mutable buffers.
 
-### Vision classification runner
+### Vision classification runners
 
-Enable `EXECUTORCH_BUILD_NATIVE_VISION_RUNNER=ON` together with
-`EXECUTORCH_BUILD_NATIVE_VULKAN=ON` to build `run_classification` from
-`examples/vision`. The runner additionally requires gflags; an OSS build uses
-the vendored copy, and other builds resolve an installed gflags package.
-Running the runner requires a Vulkan device.
+`examples/vision` shares model loading, FP32 input/output handling, top-5 display,
+and eager-reference comparison between the CPU and Vulkan engines.
+`run_classification_cpu` uses the CPU engine and `run_classification` the Vulkan
+engine; `run_classification_vulkan` is a Buck alias for `run_classification`.
+
+For a CPU-only CMake build:
 
 ```sh
 cmake -S . -B cmake-out -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTORCH_BUILD_NATIVE=ON -DEXECUTORCH_BUILD_NATIVE_VULKAN=ON \
+  -DEXECUTORCH_BUILD_NATIVE=ON -DEXECUTORCH_BUILD_NATIVE_CPU=ON \
+  -DEXECUTORCH_BUILD_XNNPACK=ON \
+  -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
   -DEXECUTORCH_BUILD_NATIVE_VISION_RUNNER=ON
-cmake --build cmake-out --target run_classification
+cmake --build cmake-out --target run_classification_cpu
 cmake --install cmake-out --prefix install
-install/bin/run_classification \
+install/bin/run_classification_cpu \
   --package mv2.ptn --input mv2_input.bin \
   --expected mv2_expected.bin --categories categories.txt
 ```
 
+`EXECUTORCH_BUILD_NATIVE_CPU` provides `native_cpu_engine`, using
+XNNPACK and the Reference provider with optimized/portable operator registrations.
+The CPU build does not need a Vulkan SDK or device. Enable
+`EXECUTORCH_BUILD_NATIVE_VULKAN=ON` to also build `run_classification`, which
+runs on the host's Vulkan device; both engines can be enabled together. The
+runners require gflags.
+
 Export the `.ptn`, input, reference logits, and labels with
-[`export.py`](../../examples/native/vision/export.py). The runner prints the
-top-5 logits and, when `--expected` is given, exits nonzero if the logits
-differ from the reference beyond `--rtol`/`--atol` (both default to `1e-3`).
+[`export.py`](../../examples/native/vision/export.py). The same package and FP32
+artifacts are accepted by either runner, subject to each engine's supported
+operators. Each runner expects a model with one FP32 input and one FP32 output,
+and prints the selected engine and device and the top-5 logits. When
+`--expected` is given, it compares the logits with the reference using
+`--rtol`/`--atol` (both default to `1e-3`). Exit codes are 0 on success, 1 for
+invalid arguments, 2 for a loading or execution error, and 3 for a reference
+mismatch.
+
+## Native LLM runner
+
+`EXECUTORCH_BUILD_NATIVE_LLM_RUNNER=ON` builds `run_hf_llm_vulkan` with Native
+Vulkan and `run_hf_llm_ggml` with Native GGML. It requires gflags and
+`tokenizers::tokenizers` (the vendored tokenizer is built automatically in an
+OSS checkout; otherwise provide an installed tokenizers package with regex
+lookahead support). It accepts Llama 3 TikToken tokenizer files.
+
+To build the text runner for GGML CPU, initialize the llama.cpp submodule as above:
+
+```sh
+cmake -S . -B cmake-out -DCMAKE_BUILD_TYPE=Release \
+  -DEXECUTORCH_BUILD_NATIVE=ON -DEXECUTORCH_BUILD_NATIVE_GGML=ON \
+  -DEXECUTORCH_BUILD_NATIVE_LLM_RUNNER=ON
+cmake --build cmake-out --target run_hf_llm_ggml
+cmake --install cmake-out --prefix install
+install/bin/run_hf_llm_ggml --device cpu --cpu_threads 4 \
+  --package llama.ptn --tokenizer tokenizer.model \
+  --prompt "The capital of France is" --max_new_tokens 32
+```
+
+The GGML runner accepts `--device cpu|gpu`, `--device_index`, `--cpu_threads`,
+and `--max_cached_graphs` (default 1, 0 rebuilds each call). For GPU execution,
+enable the desired `GGML_*` backend when configuring ExecuTorch, as above.
+
+With `EXECUTORCH_BUILD_TESTS=ON`, `native_llm_runner_utils_test` exercises the
+LLM generation utilities.
