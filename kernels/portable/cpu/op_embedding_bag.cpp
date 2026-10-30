@@ -155,6 +155,20 @@ bool check_offsets_and_indices(
   return true;
 }
 
+// Mirrors ATen's is_fast_path in EmbeddingBag.cpp.
+bool is_aten_fast_path(
+    const Tensor& weight,
+    const std::optional<Tensor>& per_sample_weights,
+    const Tensor& out,
+    int64_t padding_idx) {
+  const auto dtype = weight.scalar_type();
+  return (dtype == ScalarType::Float || dtype == ScalarType::Half ||
+          dtype == ScalarType::BFloat16) &&
+      weight.strides()[1] == 1 && out.strides()[1] == 1 && padding_idx < 0 &&
+      (!per_sample_weights.has_value() ||
+       per_sample_weights->strides()[0] == 1);
+}
+
 } // namespace
 
 std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
@@ -205,18 +219,32 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
       include_last_offset ? offsets.numel() - 1 : offsets.numel();
   const int64_t dim = weight.size(1);
 
+  const SizesType out_sizes[2] = {
+      static_cast<SizesType>(num_bags), static_cast<SizesType>(dim)};
+  // out must be resized first: the fast-path check reads its strides.
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {out_sizes, 2}) == Error::Ok,
+      InvalidArgument,
+      ret_val);
+
+  // This kernel uses one reduction loop for both ATen paths, but follows
+  // ATen's path choice so the auxiliary outputs match, including statically
+  // allocated export outputs.
+  const bool fast_path =
+      is_aten_fast_path(weight, per_sample_weights, out, padding_idx);
+  // ATen skips offset2bag only for sum on its fast path.
+  const bool fills_offset2bag = mode != kModeSum || !fast_path;
+
   // The auxiliary outputs exist for the backward pass, and the ATen CPU kernel
   // only fills the ones each mode needs; match it so shapes agree.
   // bag_size and the non-max max_indices are {num_bags}, a prefix of
   // out_sizes.
-  const SizesType out_sizes[2] = {
-      static_cast<SizesType>(num_bags), static_cast<SizesType>(dim)};
   const SizesType offset2bag_size =
-      static_cast<SizesType>(mode == kModeSum ? 0 : num_indices);
+      static_cast<SizesType>(fills_offset2bag ? num_indices : 0);
   ET_KERNEL_CHECK(
       ctx,
-      resize_tensor(out, {out_sizes, 2}) == Error::Ok &&
-          resize_tensor(offset2bag, {&offset2bag_size, 1}) == Error::Ok &&
+      resize_tensor(offset2bag, {&offset2bag_size, 1}) == Error::Ok &&
           resize_tensor(bag_size, {out_sizes, 1}) == Error::Ok &&
           resize_tensor(max_indices, {out_sizes, mode == kModeMax ? 2u : 1u}) ==
               Error::Ok,
@@ -236,7 +264,7 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
   // The ATen CPU kernel leaves bag_size at zero for the sum mode, and mirrors
   // it into the 1-D max_indices for the mean mode, where that output carries
   // nothing else.
-  if (mode != kModeSum) {
+  if (fills_offset2bag) {
     for (const auto bag : c10::irange(num_bags)) {
       const int64_t end = bag_end(bag);
       int64_t count = 0;
@@ -246,7 +274,9 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
           ++count;
         }
       }
-      set_index(bag_size, bag, count);
+      if (mode != kModeSum) {
+        set_index(bag_size, bag, count);
+      }
       if (mode == kModeMean) {
         set_index(max_indices, bag, count);
       }

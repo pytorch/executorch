@@ -69,7 +69,8 @@ class OpEmbeddingBagOutTest : public OperatorTest {
     const auto offsets = to.make({2}, {0, 1});
     for (int64_t mode = 0; mode < 3; ++mode) {
       auto out = tf.zeros({2, 2});
-      auto offset2bag = tout.zeros({mode == 0 ? 0 : 3});
+      const bool needs_offset2bag = mode != 0 || Weight == ScalarType::Double;
+      auto offset2bag = tout.full({needs_offset2bag ? 3 : 0}, -99);
       auto bag_size = tout.zeros({2});
       auto max_indices = mode == 2 ? tout.zeros({2, 2}) : tout.zeros({2});
       op_embedding_bag_out(
@@ -91,7 +92,7 @@ class OpEmbeddingBagOutTest : public OperatorTest {
       EXPECT_TENSOR_EQ(
           bag_size,
           mode == 0 ? tout.make({2}, {0, 0}) : tout.make({2}, {1, 2}));
-      if (mode != 0) {
+      if (needs_offset2bag) {
         EXPECT_TENSOR_EQ(offset2bag, tout.make({3}, {0, 1, 1}));
       }
       if (mode == 2) {
@@ -631,4 +632,39 @@ TEST_F(OpEmbeddingBagOutTest, EmptyInputsWithPerSampleWeights) {
       bag_size,
       max_indices);
   EXPECT_TENSOR_EQ(out, tf.zeros({1, 1}));
+}
+
+TEST_F(OpEmbeddingBagOutTest, SumWithPaddingStaticAuxiliaryOutputs) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  auto weight = tf.make({3, 2}, {10, 20, 1, 2, 3, 4});
+  auto indices = ti.make({3}, {0, 1, 2});
+  auto offsets = ti.make({1}, {0});
+  auto scales = tf.make({3}, {100, 2, 3});
+  for (bool weighted : {false, true}) {
+    SCOPED_TRACE(weighted);
+    auto out = tf.zeros({1, 2});
+    // Match the static auxiliary shape allocated by export, including padding.
+    auto offset2bag = ti.full({3}, -99);
+    auto bag_size = ti.full({1}, -99);
+    auto max_indices = ti.full({1}, -99);
+    op_embedding_bag_out(
+        weight,
+        indices,
+        offsets,
+        0,
+        weighted ? optional<Tensor>(scales) : std::nullopt,
+        false,
+        0,
+        out,
+        offset2bag,
+        bag_size,
+        max_indices);
+    ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+    EXPECT_TENSOR_EQ(
+        out, weighted ? tf.make({1, 2}, {11, 16}) : tf.make({1, 2}, {4, 6}));
+    EXPECT_TENSOR_EQ(offset2bag, ti.make({3}, {0, 0, 0}));
+    EXPECT_TENSOR_EQ(bag_size, ti.zeros({1}));
+    EXPECT_TENSOR_EQ(max_indices, ti.zeros({1}));
+  }
 }
