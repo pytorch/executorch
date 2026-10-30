@@ -50,3 +50,19 @@ fbcode_target(
     cmd = "MKL_CBWR=COMPATIBLE ONEDNN_MAX_CPU_ISA=AVX2 ATEN_CPU_CAPABILITY=avx2 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 $(exe :generate) --out $OUT",
     visibility = ["//executorch/backends/native/test/..."],
 )
+
+# Judges an engine's outputs against a package's golden and precise samples.
+fbcode_target(
+    _kind = runtime.cxx_library,
+    name = "output_check",
+    srcs = ["OutputCheck.cpp"],
+    exported_headers = ["OutputCheck.h"],
+    exported_deps = ["//executorch/backends/native/runtime/deserialize:samples"],
+)
+
+fbcode_target(
+    _kind = runtime.cxx_test,
+    name = "output_check_test",
+    srcs = ["test_output_check.cpp"],
+    deps = [":output_check"],
+)
