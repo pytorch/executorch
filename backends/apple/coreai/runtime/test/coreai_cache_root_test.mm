@@ -207,7 +207,12 @@ TEST(CoreAICacheRootTest, PreservesExistingRootProtection) {
   NSDictionary* before = [manager attributesOfItemAtPath:root.path
                                                    error:&error];
   ASSERT_NE(before, nil) << error.description.UTF8String;
-  ASSERT_TRUE([before[NSFileProtectionKey] isEqual:NSFileProtectionComplete]);
+  NSString* protection = before[NSFileProtectionKey];
+  ASSERT_NE(protection, nil);
+  if (![protection isEqual:NSFileProtectionComplete]) {
+    GTEST_SKIP() << "Filesystem did not apply NSFileProtectionComplete; got "
+                 << protection.UTF8String;
+  }
   for (StorageCreationMode mode :
        {StorageCreationMode::OpenExisting, StorageCreationMode::Create}) {
     ASSERT_TRUE(resolve_test_cache_directory(root.path, mode).ok());

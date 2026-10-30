@@ -410,7 +410,7 @@ if(EXECUTORCH_BUILD_TESTS
     add_test(
       NAME coreai_sdk_source_lifetime_test
       COMMAND
-        "${Python3_EXECUTABLE}"
+        "${PYTHON_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/runtime/test/run_sdk_source_lifetime.py"
         "$<TARGET_FILE:coreai_sdk_source_lifetime_test>"
     )
