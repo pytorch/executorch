@@ -154,10 +154,13 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
                    --device=cpu
   )
   # native_ggml_sample_test_act_quant lets ggml quantize the activations of
-  # weight-only quantized linears, judged against golden-int8_act.
-  add_test(NAME native_ggml_sample_test_act_quant
-           COMMAND native_ggml_sample_test --packages=${_native_op_samples}
-                   --device=cpu --allow_activation_quant_for_weight_only
+  # weight-only quantized linears, judged against golden-int8_act. ggml
+  # quantizes them symmetrically per block, not asymmetrically per token like
+  # the golden, so the biases get one more standard error.
+  add_test(
+    NAME native_ggml_sample_test_act_quant
+    COMMAND native_ggml_sample_test --packages=${_native_op_samples}
+            --device=cpu --allow_activation_quant_for_weight_only --sigmas=7
   )
   target_compile_options(
     native_ggml_sample_test
