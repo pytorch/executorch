@@ -334,6 +334,9 @@ install/bin/run_hf_llm_ggml --device cpu --cpu_threads 4 \
 The GGML runner accepts `--device cpu|gpu`, `--device_index`, `--cpu_threads`,
 and `--max_cached_graphs` (default 1, 0 rebuilds each call). For GPU execution,
 enable the desired `GGML_*` backend when configuring ExecuTorch, as above.
+GGML quantizes the activations of its quantized matmuls, so it rejects
+weight-only quantized linears, including GGUF k-quants, unless
+`--allow_activation_quant_for_weight_only` accepts that loss of precision.
 
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_llm_runner_utils_test` exercises the
 LLM generation utilities.
