@@ -48,6 +48,8 @@ let products = deliverables([
     "frameworks": [
       "Accelerate",
       "CoreML",
+      "CoreVideo",
+      "IOSurface",
     ],
     "libraries": [
       "sqlite3",

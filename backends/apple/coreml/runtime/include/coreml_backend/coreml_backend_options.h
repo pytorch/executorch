@@ -9,10 +9,21 @@
 #pragma once
 
 #include <executorch/runtime/backend/options.h>
+#include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
 namespace backends {
 namespace coreml {
+
+/**
+ * Prefix of the int load-time options that bind IOSurfaces to the loaded
+ * model, such as "iosurface_0". The rest of the key only has to make it unique;
+ * it isn't an input or output index. Each value is an IOSurface ID, and an input
+ * or output whose data pointer is a bound surface's base address reaches Core
+ * ML without a copy. See "IOSurface-backed inputs and outputs" in the Core ML
+ * backend docs.
+ */
+ET_EXPERIMENTAL inline constexpr const char* kIOSurfaceSpecPrefix = "iosurface_";
 
 /**
  * Builder for CoreML backend load-time options.

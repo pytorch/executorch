@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		38626BB42B225A560059413D /* libflatccrt.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 38626BB32B225A560059413D /* libflatccrt.a */; };
 		38626BB52B225A890059413D /* libetdump.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 38626BAF2B21C98F0059413D /* libetdump.a */; };
+		4A18A25D03085CB9ABDE5D75 /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A580E08A3E468CDA6A1FA9B /* CoreVideo.framework */; };
+		67AB77BD629D09466C847E7E /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE3E0842B1608644807B34C3 /* IOSurface.framework */; };
 		879121DA2D91DDBA001E6C66 /* libcoreml_inmemoryfs.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 879121D82D91DDBA001E6C66 /* libcoreml_inmemoryfs.a */; };
 		879121DB2D91DDBA001E6C66 /* libcoreml_util.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 879121D92D91DDBA001E6C66 /* libcoreml_util.a */; };
 		C94D51592ACF4BFC00AF47FD /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = C94D51582ACF4BFC00AF47FD /* main.mm */; };
@@ -36,10 +38,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		2A580E08A3E468CDA6A1FA9B /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = System/Library/Frameworks/CoreVideo.framework; sourceTree = SDKROOT; };
 		38626BAF2B21C98F0059413D /* libetdump.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libetdump.a; path = libraries/libetdump.a; sourceTree = "<group>"; };
 		38626BB32B225A560059413D /* libflatccrt.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libflatccrt.a; path = "../../../../third-party/flatcc/lib/libflatccrt.a"; sourceTree = "<group>"; };
 		879121D82D91DDBA001E6C66 /* libcoreml_inmemoryfs.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libcoreml_inmemoryfs.a; path = "libraries/libcoreml_inmemoryfs.a"; sourceTree = "<group>"; };
 		879121D92D91DDBA001E6C66 /* libcoreml_util.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libcoreml_util.a; path = "libraries/libcoreml_util.a"; sourceTree = "<group>"; };
+		BE3E0842B1608644807B34C3 /* IOSurface.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOSurface.framework; path = System/Library/Frameworks/IOSurface.framework; sourceTree = SDKROOT; };
 		C94D514E2ACF4B9300AF47FD /* coreml_executor_runner */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = coreml_executor_runner; sourceTree = BUILT_PRODUCTS_DIR; };
 		C94D51582ACF4BFC00AF47FD /* main.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		C94D515C2ACFCBA000AF47FD /* libexecutorch.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch.a; path = libraries/libexecutorch.a; sourceTree = "<group>"; };
@@ -68,6 +72,8 @@
 				C988D69D2B998CDE00979CF6 /* libprotobuf-lite.a in Frameworks */,
 				C97BFFA62BC0C1F200F55BAC /* libportable_ops_lib.a in Frameworks */,
 				C94D51642ACFCBC500AF47FD /* CoreML.framework in Frameworks */,
+				67AB77BD629D09466C847E7E /* IOSurface.framework in Frameworks */,
+				4A18A25D03085CB9ABDE5D75 /* CoreVideo.framework in Frameworks */,
 				C97BFFA42BC0C17300F55BAC /* libportable_kernels.a in Frameworks */,
 				C94D51622ACFCBBA00AF47FD /* libsqlite3.tbd in Frameworks */,
 				C94D515E2ACFCBA000AF47FD /* libexecutorch.a in Frameworks */,
@@ -104,6 +110,8 @@
 				38626BAF2B21C98F0059413D /* libetdump.a */,
 				C94D51652ACFCBCB00AF47FD /* Accelerate.framework */,
 				C94D51632ACFCBC500AF47FD /* CoreML.framework */,
+				BE3E0842B1608644807B34C3 /* IOSurface.framework */,
+				2A580E08A3E468CDA6A1FA9B /* CoreVideo.framework */,
 				C94D515C2ACFCBA000AF47FD /* libexecutorch.a */,
 				C94D51612ACFCBBA00AF47FD /* libsqlite3.tbd */,
 				C94D51672ACFCC7100AF47FD /* libcoremldelegate.a */,

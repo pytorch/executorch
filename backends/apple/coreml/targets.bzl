@@ -209,6 +209,7 @@ def define_common_targets(is_fbcode = False):
                 "runtime/sdk/*.mm",
             ]) if build_sdk() else []),
             headers = glob([
+                "runtime/include/coreml_backend/coreml_backend_options.h",
                 "runtime/include/coreml_backend/delegate.h",
                 "runtime/kvstore/*.hpp",
                 "runtime/inmemoryfs/*.hpp",
@@ -234,7 +235,9 @@ def define_common_targets(is_fbcode = False):
             fbobjc_frameworks = [
                 "Accelerate",
                 "CoreML",
+                "CoreVideo",
                 "Foundation",
+                "IOSurface",
             ],
             include_directories = [
                 "runtime/include",
@@ -256,6 +259,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/kernel:kernel_includes",
+                "//executorch/runtime/executor:program_no_prim_ops",
             ] + ([
                 ":proto",
             ] if build_sdk() else []),
@@ -307,6 +311,45 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/backend:backend_options",
                 "//executorch/runtime/backend:backend_options_map",
                 "//executorch/runtime/core:core",
+            ],
+        )
+
+        runtime.cxx_test(
+            name = "pixel_buffer_binding_test",
+            srcs = [
+                "runtime/test/pixel_buffer_binding_test.mm",
+            ],
+            headers = glob([
+                "runtime/delegate/*.h",
+                "runtime/inmemoryfs/*.hpp",
+                "runtime/kvstore/*.hpp",
+            ]) + ["runtime/include/coreml_backend/delegate.h"],
+            compiler_flags = [
+                "-fobjc-arc",
+            ],
+            fbobjc_frameworks = [
+                "CoreML.framework",
+                "CoreVideo.framework",
+                "Foundation.framework",
+                "IOSurface.framework",
+            ],
+            include_directories = [
+                "runtime/delegate",
+                "runtime/include",
+                "runtime/inmemoryfs",
+                "runtime/kvstore",
+            ],
+            platforms = [APPLE],
+            deps = [
+                ":coreml",
+                ":proto",
+                "//executorch/runtime/backend:backend_options",
+                "//executorch/runtime/backend:interface",
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core:memory_allocator",
+                "//executorch/runtime/executor:program_no_prim_ops",
+                "//executorch/runtime/platform:platform",
+                "//executorch/schema:program",
             ],
         )
 

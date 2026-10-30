@@ -8,6 +8,7 @@
 #import "coreml_backend/delegate.h"
 
 #import "backend_delegate.h"
+#import "coreml_backend/coreml_backend_options.h"
 #import "ETCoreMLLogging.h"
 #import "ETCoreMLModel.h"
 #import "ETCoreMLStrings.h"
@@ -17,10 +18,12 @@
 #import "objc_safe_cast.h"
 
 #import <executorch/runtime/core/evalue.h>
+#import <executorch/runtime/executor/method_meta.h>
 #import <executorch/runtime/platform/log.h>
 #import <executorch/runtime/kernel/kernel_includes.h>
 
 #include <array>
+#import <cstring>
 #import <memory>
 #import <optional>
 #import <unordered_map>
@@ -34,6 +37,11 @@
 
 namespace {
 using namespace executorchcoreml;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+constexpr const char *kIOSurfaceSpecPrefix = executorch::backends::coreml::kIOSurfaceSpecPrefix;
+#pragma clang diagnostic pop
 
 using executorch::aten::ScalarType;
 using executorch::runtime::ArrayRef;
@@ -238,6 +246,47 @@ ModelLoggingOptions get_logging_options(BackendExecutionContext& context) {
     return options;
 }
 
+bool has_iosurface_options(Span<const executorch::runtime::BackendOption> runtime_specs) {
+    const size_t prefix_length = std::strlen(kIOSurfaceSpecPrefix);
+    for (size_t i = 0; i < runtime_specs.size(); ++i) {
+        if (std::strncmp(runtime_specs[i].key, kIOSurfaceSpecPrefix, prefix_length) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool is_single_delegate_with_unplanned_io(const executorch::runtime::MethodMeta& meta) {
+    if (meta.num_backends() != 1 ||
+        !meta.uses_backend(ETCoreMLStrings.delegateIdentifier.UTF8String) ||
+        meta.num_instructions() != 1) {
+        return false;
+    }
+
+    for (size_t i = 0; i < meta.num_inputs(); ++i) {
+        const auto info = meta.input_tensor_meta(i);
+        if (!info.ok() || info->is_memory_planned()) {
+            return false;
+        }
+    }
+
+    for (size_t i = 0; i < meta.num_outputs(); ++i) {
+        const auto info = meta.output_tensor_meta(i);
+        if (!info.ok() || info->is_memory_planned()) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool supports_pixel_buffer_arrays() {
+    if (@available(macOS 12.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
+        return true;
+    }
+    return false;
+}
+
 } //namespace
 
 namespace executorch {
@@ -280,6 +329,15 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
             specs_map.insert_or_assign(compute_units_key, std::move(buffer));
         }
     }
+
+    const auto* method_meta = context.method_meta();
+    ET_CHECK_OR_RETURN_ERROR(!has_iosurface_options(runtime_specs) ||
+                                 (method_meta != nullptr && is_single_delegate_with_unplanned_io(*method_meta) &&
+                                  supports_pixel_buffer_arrays()),
+                             NotSupported,
+                             "%s: IOSurface runtime specs need method metadata with a single CoreML delegate, one "
+                             "instruction and unplanned tensor inputs and outputs, on macOS 12 / iOS 16 or later.",
+                             ETCoreMLStrings.delegateIdentifier.UTF8String);
 
     // This will hold the NamedDataStore data if needed, keeping it alive until scope exit
     std::optional<FreeableBuffer> namedDataStoreBuffer;
