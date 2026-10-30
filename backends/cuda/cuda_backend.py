@@ -773,6 +773,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "at::_ops::sort_stable::call": None,
             "aoti_torch_cuda_sort_stable": None,
             "aoti_torch_cuda_randint_low_out": None,
+            "aoti_torch_cuda_index_Tensor": None,
+            "aoti_torch_index_put_out": None,
         }
 
     @classmethod
