@@ -6,7 +6,7 @@
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
-from executorch.backends.arm.test.common import parametrize, xfail_type
+from executorch.backends.arm.test.common import parametrize
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -358,12 +358,8 @@ test_cases = {
     ),
 }
 
-xfails: dict[str, xfail_type] = {
-    "surrounded_quantized_op_constant": "Numerical error since the add is forced to have non-correct qparams.",
-}
 
-
-@parametrize("test_case", test_cases, xfails=xfails)
+@parametrize("test_case", test_cases)
 def test_shared_qspec_quantizer(test_case):
     """
     Test that ops which does not change dynamic range are able to use int8 portable kernels.
