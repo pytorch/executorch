@@ -951,6 +951,10 @@ class TestCoreMLPartitioner(unittest.TestCase):
         model = Model().eval()
         x = torch.randn(2, 8)
         ep = torch.export.export(model, (x,), strict=True)
+        with self.assertRaisesRegex(ValueError, "tensor\\[8,uint8\\]"):
+            executorch.exir.to_edge_transform_and_lower(
+                ep, partitioner=[CoreMLPartitioner()]
+            )
         edge = executorch.exir.to_edge_transform_and_lower(
             ep, partitioner=[CoreMLPartitioner(take_over_constant_data=False)]
         )
