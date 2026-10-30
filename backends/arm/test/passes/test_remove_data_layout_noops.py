@@ -18,6 +18,7 @@ from executorch.backends.arm._passes import (
     SymbolicToTosaShapesPass,
 )
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm._passes.tosa_lowering_utils import create_const
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.specification import (
@@ -72,7 +73,11 @@ def _tosa_data_layout_graph(
         )
         for values in shape_values
     ]
-    kwargs = {"value": 0.0} if target == exir_ops.backend.tosa.PAD.default else {}
+    kwargs = (
+        {"value": create_const(graph, 0.0, x.meta["val"].dtype, x)}
+        if target == exir_ops.backend.tosa.PAD.default
+        else {}
+    )
     result = _call(
         graph,
         target,

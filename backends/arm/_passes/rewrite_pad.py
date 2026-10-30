@@ -70,10 +70,17 @@ class RewritePadPass(ArmOpTargetedPass):
             exir_ops.backend.tosa.CONST_SHAPE.default, (shape,), {}, meta, True
         )
 
+        pad_value = super().call_operator(
+            exir_ops.backend.tosa.CONST.default,
+            ([value], [1], output_dtype),
+            {},
+            meta,
+            True,
+        )
         return super().call_operator(
             exir_ops.backend.tosa.PAD.default,
-            (input_tensor, pad_shape),
-            {"value": value},
+            (input_tensor, pad_shape, pad_value),
+            {},
             meta,
             True,
         )

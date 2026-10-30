@@ -26,7 +26,9 @@ _DATA_LAYOUT_OPS = [
         id="concat",
     ),
     pytest.param(
-        lambda x: exir_ops.backend.tosa.PAD.default(x, [1, 2, 3, 4], value=0),
+        lambda x: exir_ops.backend.tosa.PAD.default(
+            x, [1, 2, 3, 4], value=x.new_zeros((1,))
+        ),
         (5, 10),
         id="pad",
     ),
@@ -89,7 +91,9 @@ def test_data_layout_ops_positive(op, expected_shape, spec, dtype) -> None:
             id="concat",
         ),
         pytest.param(
-            lambda x: exir_ops.backend.tosa.PAD.default(x, [0, -1, 0, 0], value=0),
+            lambda x: exir_ops.backend.tosa.PAD.default(
+                x, [0, -1, 0, 0], value=x.new_zeros((1,))
+            ),
             "non-negative",
             id="pad",
         ),
@@ -165,7 +169,7 @@ def test_pad_rejects_wrong_padding_length() -> None:
             exir_ops.backend.tosa.PAD.default(
                 mode.from_tensor(torch.randn((2, 3), dtype=torch.float32)),
                 [1, 2],
-                value=0.0,
+                value=torch.zeros(1),
             )
 
 

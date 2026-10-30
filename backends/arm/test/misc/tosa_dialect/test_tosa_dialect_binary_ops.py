@@ -194,6 +194,8 @@ def test_tosa_binary_ops(
     with TosaLoweringContext(
         TosaSpecification.create_from_string(spec)
     ), FakeTensorMode() as mode:
+        if op_name == "MUL":
+            kwargs = {**kwargs, "shift": torch.zeros(1, dtype=torch.int8)}
         output = getattr(exir_ops.backend.tosa, op_name).default(
             *_to_fake(mode, input1, input2),
             **kwargs,
@@ -343,7 +345,32 @@ def test_pow_accepts_bfloat16_with_bf16_extension() -> None:
     assert tuple(output.shape) == tuple(input1.shape)
 
 
-def test_mul_rejects_non_zero_shift_for_non_int32() -> None:
+@pytest.mark.parametrize("shift", [-1, 64])
+def test_mul_rejects_out_of_range_shift(shift):
+    from executorch.backends.arm.tosa.dialect.ops.binary_elementwise import MUL
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.1+INT")):
+        with pytest.raises(TosaValueError, match="range"):
+            MUL(
+                torch.ones(2, dtype=torch.int32),
+                torch.ones(2, dtype=torch.int32),
+                torch.tensor([shift], dtype=torch.int8),
+            )
+
+
+def test_mul_rejects_nonzero_shift_for_narrow_input():
+    from executorch.backends.arm.tosa.dialect.ops.binary_elementwise import MUL
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.1+INT")):
+        with pytest.raises(TosaValueError, match="Only int32"):
+            MUL(
+                torch.ones(2, dtype=torch.int8),
+                torch.ones(2, dtype=torch.int8),
+                torch.tensor([1], dtype=torch.int8),
+            )
+
+
+def test_mul_rejects_non_int8_shift() -> None:
     input1 = torch.randint(-8, 8, (2, 3), dtype=torch.int8)
     input2 = torch.randint(-8, 8, (2, 3), dtype=torch.int8)
 
@@ -352,11 +379,11 @@ def test_mul_rejects_non_zero_shift_for_non_int32() -> None:
     ), FakeTensorMode() as mode:
         with pytest.raises(
             TosaValueError,
-            match="Only int32 MUL supports a non-zero shift value",
+            match="MUL shift must be a single-element int8 tensor",
         ):
             exir_ops.backend.tosa.MUL.default(
                 *_to_fake(mode, input1, input2),
-                shift=3,
+                shift=torch.tensor([3], dtype=torch.int32),
             )
 
 

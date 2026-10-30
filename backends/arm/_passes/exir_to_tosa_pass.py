@@ -20,6 +20,8 @@ from executorch.backends.arm._passes.aten_to_tosa_reduction import (
 )
 from executorch.backends.arm._passes.aten_to_tosa_tensor_operators import (
     rewrite_binary_operator,
+    rewrite_mul,
+    rewrite_negate,
     rewrite_rfft2,
     rewrite_unary_operator,
 )
@@ -65,6 +67,16 @@ def _get_fft_replacement(
     return rewrite_rfft2(node, pass_)
 
 
+@register_dialect_substitutions(exir_ops.edge.aten.mul.Tensor)
+def _get_mul_replacement(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec:
+    return rewrite_mul(node, pass_)
+
+
+@register_dialect_substitutions(exir_ops.edge.aten.neg.default)
+def _get_negate_replacement(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec:
+    return rewrite_negate(node, pass_)
+
+
 @register_dialect_substitutions(
     exir_ops.edge.aten.add.Tensor,
     exir_ops.edge.aten.bitwise_and.Tensor,
@@ -77,7 +89,6 @@ def _get_fft_replacement(
     exir_ops.edge.aten.logical_xor.default,
     exir_ops.edge.aten.maximum.default,
     exir_ops.edge.aten.minimum.default,
-    exir_ops.edge.aten.mul.Tensor,
     exir_ops.edge.aten.pow.Tensor_Tensor,
     exir_ops.edge.aten.sub.Tensor,
 )
@@ -107,7 +118,6 @@ def _get_comparison_operator_replacement(
     exir_ops.edge.aten.floor.default,
     exir_ops.edge.aten.log.default,
     exir_ops.edge.aten.logical_not.default,
-    exir_ops.edge.aten.neg.default,
     exir_ops.edge.aten.reciprocal.default,
     exir_ops.edge.aten.rsqrt.default,
     exir_ops.edge.aten.sin.default,
