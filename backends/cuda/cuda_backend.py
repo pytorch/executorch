@@ -582,8 +582,8 @@ def _antialias_taps(
     if align_corners or scale is None or scale <= 0:
         if align_corners:
             # ATen uses a ratio of 0 for an output size of 1. min and max give
-            # that without a conditional, which torch.compile cannot handle for
-            # dynamic sizes.
+            # that without a conditional: an exported program keeps the branch
+            # it was traced with, so a plain if would divide by zero there.
             num = (in_size - 1) * torch.sym_min(out_size - 1, 1)
             den = torch.sym_max(out_size - 1, 1)
         else:
