@@ -245,18 +245,16 @@ def define_common_targets(is_fbcode = False):
             ] + ([
                 "runtime/sdk",
             ] if build_sdk() else []),
-            fbobjc_libraries = [
-                "libsqlite3",
-            ],
             link_whole = True,
             platforms = [APPLE],
             visibility = ["PUBLIC"],
+            fbobjc_libraries = runtime.sqlite_libraries(),
             deps = [
                 "//executorch/runtime/backend:backend_options",
                 "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/kernel:kernel_includes",
-            ] + ([
+            ] + runtime.sqlite_deps() + ([
                 ":proto",
             ] if build_sdk() else []),
         )
