@@ -65,6 +65,7 @@ class GenerationOptions:
     top_k: int = 0
     seed: int = 0
     stop: list[str] = field(default_factory=list)
+    ignore_eos: bool = False
 
 
 @dataclass
@@ -106,6 +107,7 @@ class _WorkerRequest:
     stop: list[str]
     session_id: Optional[str]
     prompt_segments: Optional[list]
+    ignore_eos: bool = False
 
 
 def _copy_stats(stats: GenStats, s) -> None:
@@ -458,6 +460,8 @@ class SessionRuntime:
             raise ValueError("cancellation timeouts must be nonnegative and positive")
         self._worker = worker
         self._native = isinstance(worker, MultiplexedWorkerClient)
+        self.supports_ignore_eos = getattr(worker, "supports_ignore_eos", False) is True
+        self.default_stop_strings = getattr(worker, "default_stop_strings", None)
         self.supports_multiplexing = (
             getattr(worker, "supports_multiplexing", False) is True
         )
@@ -741,6 +745,7 @@ class SessionRuntime:
             top_k=options.top_k,
             seed=options.seed,
             stop=list(options.stop),
+            ignore_eos=options.ignore_eos,
             session_id=session_id,
             prompt_segments=prompt.segments,
         )
