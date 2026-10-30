@@ -31,7 +31,7 @@ This tutorial demonstrates how to deploy **Llama models on Raspberry Pi 4/5 devi
 **Memory Requirements**:
 
 - **RAM & Storage** Varies by model size and optimization level
-- **64-bit Raspberry Pi OS** (Bullseye or newer)
+- **64-bit Raspberry Pi OS** Bookworm (Debian 12) or Trixie (Debian 13). Bullseye is not supported.
 
 ### Verification Commands
 
@@ -85,24 +85,41 @@ Refer to → {doc}`getting-started` for more details.
 
 ## Cross-Compilation Toolchain Step
 
-Run the following script on your Linux host machine:
+Check the Raspberry Pi OS release on your Pi:
 
 ```bash
-# Run the Raspberry Pi setup script for Pi 5
-examples/raspberry_pi/setup.sh pi5
+ssh <rpi-user>@<rpi-ip> grep VERSION_CODENAME /etc/os-release
+# VERSION_CODENAME=bookworm
 ```
+
+`--os` builds against that release's glibc so the binaries run on the Pi as is. It needs `mmdebstrap` on the host:
+
+```bash
+sudo apt-get install mmdebstrap debian-archive-keyring
+```
+
+Run the following script on your Linux host machine with the codename from above (`bookworm` or `trixie`):
+
+```bash
+# Pi 5 running Raspberry Pi OS Bookworm
+examples/raspberry_pi/setup.sh pi5 --os bookworm
+```
+
+Without `--os`, the binaries are built against the toolchain's bundled glibc and fail on a Pi with an older glibc (e.g. Bookworm) with `version 'GLIBC_2.38' not found`. Each run does a clean build.
 
 On successful completion, you should see the following output:
 
 ```bash
-[100%] Linking CXX executable llama_main
-[100%] Built target llama_main
-[SUCCESS] LLaMA runner built successfully
-
 ==== Verifying Build Outputs ====
-[SUCCESS] ✓ llama_main (6.1M)
-[SUCCESS] ✓ libllama_runner.so (4.0M)
-[SUCCESS] ✓ libextension_module.a (89K) - static library
+[INFO] Checking required binaries...
+[SUCCESS] ✓ llama_main (6.9M)
+[SUCCESS] ✓ libllama_runner.so (17M)
+[SUCCESS] ✓ libextension_module.a (159K) - statically linked
+[SUCCESS] All required binaries built successfully!
+[INFO] Binaries require glibc >= 2.36
+[SUCCESS] Compatible with Debian bookworm (glibc 2.36)
+
+==== Setup Complete! ====
 
 ✓ ExecuTorch cross-compilation setup completed successfully!
 ```
@@ -185,149 +202,11 @@ source setup_env.sh
 ./llama_main --help
 ```
 
-Make sure that the output does not have any GLIBC / other library mismatch errors in the output. If you see any, follow the troubleshooting steps below.
+Make sure that the output does not have any GLIBC / other library mismatch errors. If you see `GLIBC_x.y not found`, rerun the cross-compilation step with `--os` set to the Pi's release. For other errors, see the troubleshooting steps below.
 
 ## Troubleshooting
 
-### Issue 1: GLIBC Version Mismatch
-
-**Problem:** The binary was compiled with a newer GLIBC version (2.38) than what's available on your Raspberry Pi (2.36).
-
-**Error Symptoms:**
-
-```bash
-./llama_main: /lib/aarch64-linux-gnu/libm.so.6: version `GLIBC_2.38' not found (required by ./llama_main)
-./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found (required by ./llama_main)
-./llama_main: /lib/aarch64-linux-gnu/libstdc++.so.6: version `CXXABI_1.3.15' not found (required by ./llama_main)
-./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found (required by /lib/libllama_runner.so)
-```
-
-**There are two potential solutions:**
-
-- **Solution A**: Modify the Pi to match the binary (run on Pi)
-
-- **Solution B**: Modify the binary to match the Pi (run on host)
-
-#### Solution A: Upgrade GLIBC on Raspberry Pi (Recommended)
-
-1. **Check your current GLIBC version:**
-
-```bash
-ldd --version
-# Output: ldd (Debian GLIBC 2.36-9+rpt2+deb12u12) 2.36
-```
-
-2. **⚠️ Compatibility Warning and Safety Check:**
-
-```bash
-# Just check and warn - don't do the upgrade
-current_glibc=$(ldd --version | head -n1 | grep -o '[0-9]\+\.[0-9]\+')
-required_glibc="2.38"
-
-echo "Current GLIBC: $current_glibc"
-echo "Required GLIBC: $required_glibc"
-
-if [[ $(echo "$current_glibc < $required_glibc" | bc -l) -eq 1 ]]; then
-    echo ""
-    echo "⚠️  WARNING: Your GLIBC version is too old"
-    echo "   You need to upgrade to continue with the next steps"
-    echo "   Consider using Solution B (rebuild binary) for better safety"
-    echo ""
-else
-    echo "✅ Your GLIBC version is already compatible"
-fi
-```
-
-**NOTE:** If the output shows "⚠️  WARNING: Your GLIBC version is too old", proceed with either Upgrade / Step #3 below (or) Solution B. Otherwise skip the next step as your device is __already compatible__ and directly go to Step#4.
-
-3. **Upgrade to newer GLIBC:**
-
-```bash
-# Add Debian unstable repository
-echo "deb http://deb.debian.org/debian sid main contrib non-free" | sudo tee -a /etc/apt/sources.list
-
-# Update package lists
-sudo apt update
-
-# Install newer GLIBC packages
-sudo apt-get -t sid install libc6 libstdc++6
-
-# Reboot system
-sudo reboot
-```
-
-4. **Verify compatibility after reboot:**
-
-```bash
-cd ~/executorch-deployment
-source setup_env.sh
-
-# Test that the binary works
-if ./llama_main --help &>/dev/null; then
-    echo "✅ GLIBC upgrade successful - binary is compatible"
-else
-    echo "❌ GLIBC upgrade failed - binary still incompatible"
-    echo "Consider rolling back or refer to documentation for troubleshooting"
-fi
-```
-
-5. **Test the fix:**
-
-```bash
-cd ~/executorch-deployment
-source setup_env.sh
-./llama_main --model_path ./llama3_2.pte --tokenizer_path ./tokenizer.model --seq_len 128 --prompt "Hello"
-```
-
-**Important Notes:**
-
-- Select "Yes" when prompted to restart services
-- Press Enter to keep current version for configuration files
-- Backup important data before upgrading
-
-#### Solution B: Rebuild with Raspberry Pi's GLIBC (Advanced)
-
-If you prefer not to upgrade your Raspberry Pi system:
-
-1. **Copy Pi's filesystem to host machine:**
-
-```bash
-# On Raspberry Pi - install rsync
-ssh pi@<your-rpi-ip>
-sudo apt update && sudo apt install rsync
-exit
-
-# On host machine - copy Pi's filesystem
-mkdir -p ~/rpi5-sysroot
-rsync -aAXv --exclude={"/proc","/sys","/dev","/run","/tmp","/mnt","/media","/lost+found"} \
-    pi@<your-rpi-ip>:/ ~/rpi5-sysroot
-```
-
-2. **Update CMake toolchain file:**
-```bash
-# Edit arm-toolchain-pi5.cmake
-# Replace this line:
-# set(CMAKE_SYSROOT "${TOOLCHAIN_PATH}/aarch64-none-linux-gnu/libc")
-
-# With this:
-set(CMAKE_SYSROOT "/home/yourusername/rpi5-sysroot")
-set(CMAKE_FIND_ROOT_PATH "${CMAKE_SYSROOT}")
-```
-
-3. **Rebuild binaries:**
-```bash
-# Clean and rebuild
-rm -rf cmake-out
-./examples/raspberry_pi/rpi_setup.sh pi5 --force-rebuild
-
-# Verify GLIBC version
-strings ./cmake-out/examples/models/llama/llama_main | grep GLIBC_
-# Should show max GLIBC_2.36 (matching your Pi)
-```
-
----
-
-### Issue 2: Library Not Found
+### Issue 1: Library Not Found
 
 **Problem:** Required libraries are not found at runtime.
 
@@ -348,7 +227,7 @@ source setup_env.sh
 
 ---
 
-### Issue 3: Tokenizer JSON Parsing Warnings
+### Issue 2: Tokenizer JSON Parsing Warnings
 
 **Problem:** Warning messages about JSON parsing errors after running the llama_main binary.
 
