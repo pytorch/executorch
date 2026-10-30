@@ -89,6 +89,28 @@ fbcode_target(
 )
 
 fbcode_target(
+    _kind = runtime.python_library,
+    name = "etdump_lib",
+    srcs = ["workflows/etdump.py"],
+    deps = ["//executorch/devtools/inspector:lib"],
+)
+
+fbcode_target(
+    _kind = runtime.python_binary,
+    name = "etdump_cpu",
+    par_style = "xar",
+    main_module = "executorch.backends.cpu.workflows.etdump",
+    deps = [":etdump_lib"],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_etdump",
+    srcs = ["test/test_etdump.py"],
+    deps = [":etdump_lib"],
+)
+
+fbcode_target(
     _kind = runtime.python_test,
     name = "test_aot",
     srcs = ["test/test_aot.py"],
