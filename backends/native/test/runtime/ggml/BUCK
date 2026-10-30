@@ -45,6 +45,8 @@ _VARIANTS = [
             # Buck does not put the CUDA driver stub's library on the loader path.
             # @oss-disable[end= ]: "LD_PRELOAD": "$(location //tools/lazify:lazy_stub_binder[shared])",
         },
+        # ggml-CUDA computes f16 BLAS GEMMs in f16 by default.
+        "sample_env": {"GGML_CUDA_CUBLAS_COMPUTE_TYPE": "f32"},
     },
     {
         "suffix": "_hip",
@@ -101,7 +103,7 @@ _VARIANTS = [
             "--packages=$(location //executorch/backends/native/test/samples:op_samples)",
             "--device=" + v["device"],
         ] + flags,
-        env = v.get("env", {}),
+        env = v.get("env", {}) | v.get("sample_env", {}),
         remote_execution = v.get("remote_execution"),
         # TODO: run in CI once they pass.
         labels = ci.labels(ci.map(ci.skip_test())),
