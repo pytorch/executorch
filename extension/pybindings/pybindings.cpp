@@ -1829,8 +1829,20 @@ class PyCallerStreamScope final {
     }
   }
 
+  // Whether enter() can check the device of a stream it did not create. That
+  // needs CUDA 12.8 both at build time and in the driver.
+  static bool can_check_device() {
+    int device = -1;
+    return stream_device(cudaStreamPerThread, &device);
+  }
+
   void enter() {
     static std::atomic<uint64_t> next_id{1};
+    int device = 0;
+    if (!owner_ && stream_device(stream_, &device) && device != 0) {
+      throw std::runtime_error(
+          "Only a stream on CUDA device 0 can be selected for now");
+    }
     const cudaStream_t stream = owner_ ? owner_->select() : stream_;
     try {
       auto guard =
@@ -1857,6 +1869,29 @@ class PyCallerStreamScope final {
   }
 
  private:
+  // Asks CUDA for the device of a stream rather than trusting the device a
+  // wrapper reports. Returns false when CUDA cannot answer at all.
+  static bool stream_device(cudaStream_t stream, int* device) {
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 12080
+    const auto status = cudaStreamGetDevice(stream, device);
+    if (status == cudaSuccess) {
+      return true;
+    }
+    // A failed call leaves an error pending that the next CUDA call, even in
+    // another library, would report.
+    (void)cudaGetLastError();
+    if (status != cudaErrorCallRequiresNewerDriver) {
+      throw std::runtime_error(
+          std::string("Failed to find the device of a CUDA stream: ") +
+          cudaGetErrorString(status));
+    }
+#else
+    (void)stream;
+    (void)device;
+#endif
+    return false;
+  }
+
   void end(bool refuse_out_of_order) {
     auto& scopes = caller_stream_scopes;
     const auto it = std::find_if(
@@ -4842,6 +4877,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   py::class_<PyCallerStreamScope>(m, "_CallerStreamScope", py::module_local())
       .def(py::init<std::shared_ptr<PyCudaStream>>(), py::arg("stream"))
       .def(py::init<uintptr_t>(), py::arg("stream"))
+      .def_static("can_check_device", &PyCallerStreamScope::can_check_device)
       .def("__enter__", &PyCallerStreamScope::enter)
       .def(
           "__exit__",

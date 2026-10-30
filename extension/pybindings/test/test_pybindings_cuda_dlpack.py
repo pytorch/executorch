@@ -342,6 +342,27 @@ class CudaDLPackTest(unittest.TestCase):
             with made_before_close:
                 pass
 
+    def test_stream_on_another_device_is_refused(self):
+        if torch.cuda.device_count() < 2:
+            self.skipTest("needs two CUDA devices")
+        from executorch.runtime import cuda
+
+        owned = cuda.Stream(device=1)
+        self.addCleanup(owned.close)
+        refused = [owned, cuda.ExternalStream(owned.cuda_stream)]
+        # These wrappers report no device or the current one, so only CUDA can
+        # tell that the stream is on device 1.
+        if cuda._bindings()._CallerStreamScope.can_check_device():
+            foreign = torch.cuda.Stream(device=1)
+            refused += [
+                cuda.ExternalStream(foreign.cuda_stream),
+                torch.cuda.ExternalStream(foreign.cuda_stream),
+            ]
+        for selected in refused:
+            with self.assertRaises(RuntimeError):
+                with cuda.stream(selected):
+                    pass
+
     @staticmethod
     def _close_after_teardown(stream):
         import threading

@@ -27,11 +27,13 @@ other streams still have queued keeps running. A call with GPU inputs or
 outputs, and ``ExecuTorchResult.to_host()``, still wait for the whole GPU, so
 GPU data written on other streams stays safe.
 
-Limits for now: a stream known to be on a CUDA device other than 0 is
-refused, so is the legacy default stream (handle 0, or 1 for
-``cudaStreamLegacy``), and the CUDA delegate refuses a method that uses CUDA
-graphs inside a block. This module does not need
-PyTorch; ``torch.cuda.Stream`` works because it has ``__cuda_stream__``.
+Limits for now: a stream on a CUDA device other than 0 is refused, so is the
+legacy default stream (handle 0, or 1 for ``cudaStreamLegacy``), and the CUDA
+delegate refuses a method that uses CUDA graphs inside a block. The device is
+read from the stream itself when ExecuTorch is built with, and runs on, CUDA
+12.8 or newer; otherwise it goes by the device a wrapper reports. This module
+does not need PyTorch; ``torch.cuda.Stream`` works because it has
+``__cuda_stream__``.
 
 As in PyTorch, the selection belongs to the thread, not to an asyncio task, so
 do not await or yield inside a block. Blocks end on the thread that started
@@ -44,7 +46,7 @@ import contextlib
 import operator
 import threading
 import weakref
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Union
 
 # Every open Stream by handle, so a selection of its handle through any wrapper
 # is checked and counted by the Stream itself.
@@ -96,11 +98,13 @@ class Stream:
 class ExternalStream:
     """A CUDA stream someone else created and keeps alive; never destroyed here.
 
-    ``device`` is the CUDA device it belongs to, if known; stream() refuses a
-    device other than 0.
+    ``device`` is the CUDA device it belongs to, if known, as an index or a
+    string such as ``"cuda:1"``; stream() refuses a device other than 0.
     """
 
-    def __init__(self, stream_ptr: int, device: Optional[int] = None) -> None:
+    def __init__(
+        self, stream_ptr: int, device: Optional[Union[int, str]] = None
+    ) -> None:
         self.device = device
         self.cuda_stream = stream_ptr
 
