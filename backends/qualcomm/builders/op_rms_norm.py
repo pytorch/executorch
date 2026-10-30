@@ -19,7 +19,7 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from .node_visitor import NodeVisitor
+from .node_visitor import NodeVisitor, q_ops
 from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpRmsNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
 
@@ -51,7 +51,7 @@ class RmsNormVisitor(NodeVisitor):
         normalized_shapes = node.args[1]
         if (
             len(normalized_shapes) != 1
-            and normalized_shapes[0] != input_tensor.shape[-1]
+            or normalized_shapes[0] != input_tensor.shape[-1]
         ):
             warnings.warn(
                 "[QNN Delegate Op Builder]: Only supports normalization with last input dimension.",
@@ -111,10 +111,17 @@ class RmsNormVisitor(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        epsilon = torch.finfo(torch.float32).eps
         eps = node.args[3] if len(node.args) > 3 else node.kwargs.get("eps")
         if eps is not None:
             epsilon = eps
+        else:
+            logical_input = node.args[0]
+            input_dtype = logical_input.meta["val"].dtype
+            if logical_input.target in q_ops:
+                input_dtype = logical_input.args[0].meta["val"].dtype
+            if not input_dtype.is_floating_point:
+                input_dtype = node.meta["val"].dtype
+            epsilon = torch.finfo(input_dtype).eps
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,

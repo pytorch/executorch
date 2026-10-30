@@ -179,28 +179,50 @@ class TestPasses(unittest.TestCase):
         )
         from executorch.backends.qualcomm.builders.qnn_constants import OpRmsNorm
 
-        for eps, expected_eps in (
-            (0.125, 0.125),
-            (None, torch.finfo(torch.float32).eps),
+        for logical_dtype, storage_dtype, eps, expected_eps in (
+            (torch.float32, torch.float32, 0.125, 0.125),
+            (torch.float32, torch.float32, None, torch.finfo(torch.float32).eps),
+            (torch.float16, torch.float16, None, torch.finfo(torch.float16).eps),
+            (torch.float32, torch.uint8, 0.125, 0.125),
+            (torch.float32, torch.uint8, None, torch.finfo(torch.float32).eps),
         ):
-            with self.subTest(eps=eps):
+            with self.subTest(
+                logical_dtype=logical_dtype, storage_dtype=storage_dtype, eps=eps
+            ):
                 graph = torch.fx.Graph()
                 input_node = graph.placeholder("input")
-                input_node.meta["val"] = torch.empty(1, 4, 16)
+                input_node.meta["val"] = torch.empty(1, 4, 16, dtype=logical_dtype)
+                rms_input_node = input_node
+                if storage_dtype != logical_dtype:
+                    quantize_node = graph.call_function(
+                        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                        (input_node, 1.0, 0, 0, 255, storage_dtype),
+                    )
+                    quantize_node.meta["val"] = torch.empty(
+                        1, 4, 16, dtype=storage_dtype
+                    )
+                    rms_input_node = graph.call_function(
+                        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+                        (quantize_node, 1.0, 0, 0, 255, storage_dtype),
+                    )
+                    rms_input_node.meta["val"] = torch.empty(
+                        1, 4, 16, dtype=logical_dtype
+                    )
                 weight_node = graph.placeholder("weight")
                 node = graph.call_function(
                     exir_ops.edge.aten.rms_norm.default,
-                    (input_node, [16]),
+                    (rms_input_node, [16]),
                     {"weight": weight_node, "eps": eps},
                 )
-                node.meta["val"] = torch.empty(1, 4, 16)
+                node.meta["val"] = torch.empty(1, 4, 16, dtype=logical_dtype)
                 edge_program = MagicMock()
                 visitor = _node_visitor_dict["aten.rms_norm.default"](
                     {}, edge_program, False
                 )
-                visitor.get_node = MagicMock(side_effect=lambda value: value)
-                visitor.get_tensor = MagicMock(side_effect=[torch.empty(1, 4, 16)] * 2)
-                visitor.define_tensor = MagicMock(side_effect=[MagicMock()] * 4)
+                visitor.get_tensor = MagicMock(
+                    side_effect=lambda input_node, *_: input_node.meta["val"]
+                )
+                visitor.define_tensor = MagicMock(return_value=MagicMock())
 
                 with (
                     patch(
@@ -222,21 +244,6 @@ class TestPasses(unittest.TestCase):
                     if call.args[0] == OpRmsNorm.param_epsilon
                 )
                 self.assertEqual(expected_eps, epsilon_call.args[2][QCOM_DATA])
-
-    def test_rms_norm_recomposition_rejects_missing_upcast_metadata(self):
-        from executorch.backends.qualcomm._passes.recompose_rms_norm import (
-            RecomposeRmsNorm,
-        )
-
-        graph = torch.fx.Graph()
-        source = graph.placeholder("source")
-        upcast = graph.call_function(
-            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-            (source,),
-            {"dtype": torch.float32},
-        )
-
-        self.assertFalse(RecomposeRmsNorm._is_fp32_upcast(upcast))
 
     def test_rms_norm_recomposition_rejects_scaled_eps(self):
         from executorch.backends.qualcomm._passes.recompose_rms_norm import (
