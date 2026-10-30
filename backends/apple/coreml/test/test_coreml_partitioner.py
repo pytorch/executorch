@@ -530,12 +530,13 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         class Model(torch.nn.Module):
             def forward(self, image):
-                return torch.relu(image.permute(2, 0, 1).float() / 255.0 - 0.5)
+                return torch.relu(image.permute(2, 0, 1).float() / 127.0 - 0.25)
 
         model = Model().eval()
         for dtype in (torch.uint8, torch.int8):
             with self.subTest(dtype=dtype):
-                x = torch.randint(0, 100, (8, 8, 3), dtype=dtype)
+                info = torch.iinfo(dtype)
+                x = torch.randint(info.min, info.max + 1, (8, 8, 3), dtype=dtype)
                 ep = torch.export.export(model, (x,), strict=True)
                 edge = executorch.exir.to_edge_transform_and_lower(
                     ep, partitioner=[CoreMLPartitioner()]
@@ -554,18 +555,20 @@ class TestCoreMLPartitioner(unittest.TestCase):
                     program = Runtime.get().load_program(edge.to_executorch().buffer)
                     out = program.load_method("forward").execute((x,))[0]
                     self.assertTrue(torch.allclose(out, model(x), atol=1e-3))
-
-        with self.assertRaisesRegex(NotImplementedError, "dtype CoreML cannot take"):
-            executorch.exir.to_edge_transform_and_lower(
-                ep, partitioner=[CoreMLPartitioner(lower_full_graph=True)]
-            )
+                with self.assertRaisesRegex(
+                    NotImplementedError, "dtype CoreML cannot take"
+                ):
+                    executorch.exir.to_edge_transform_and_lower(
+                        ep, partitioner=[CoreMLPartitioner(lower_full_graph=True)]
+                    )
 
     def test_uint8_input_read_by_ops_with_and_without_cpu_kernels(self):
         """
-        An op that reads a uint8 input runs on the CPU.  Pad and max pooling
-        have no CPU kernel of their own, so they are decomposed.  Roll has one,
-        so it stays whole, since its decomposition would leave Core ML a
-        partition with no inputs.
+        An op that reads a uint8 input runs on the CPU, also when it reads it
+        through an op with several outputs.  Pad and max pooling have no CPU
+        kernel of their own, so they are decomposed.  Roll has one, so it stays
+        whole, since its decomposition would leave Core ML a partition with no
+        inputs.
         """
 
         class Model(torch.nn.Module):
@@ -576,24 +579,74 @@ class TestCoreMLPartitioner(unittest.TestCase):
             def forward(self, image):
                 return self.op(image).float() / 255.0
 
+        # Each op, and the op that has to run on the CPU in its place.
         ops = {
-            "pad": lambda x: torch.nn.functional.pad(x, (1, 1, 1, 1)),
-            "max_pool2d": lambda x: torch.nn.functional.max_pool2d(x, 2),
-            "roll": lambda x: torch.roll(x, 1, 2),
+            "pad": (
+                lambda x: torch.nn.functional.pad(x, (1, 1, 1, 1)),
+                "aten.constant_pad_nd.default",
+            ),
+            "max_pool2d": (
+                lambda x: torch.nn.functional.max_pool2d(x, 2),
+                "aten.max_pool2d_with_indices.default",
+            ),
+            "roll": (lambda x: torch.roll(x, 1, 2), "aten.roll.default"),
+            "max_then_pad": (
+                lambda x: torch.nn.functional.pad(x.max(dim=1).values, (1, 1)),
+                "aten.constant_pad_nd.default",
+            ),
+            "split_then_pad": (
+                lambda x: torch.nn.functional.pad(x.split(1, dim=1)[0], (1, 1)),
+                "aten.constant_pad_nd.default",
+            ),
         }
         x = torch.randint(0, 256, (1, 3, 8, 8), dtype=torch.uint8)
-        for name, op in ops.items():
+        for name, (op, cpu_op) in ops.items():
             with self.subTest(op=name):
                 model = Model(op).eval()
                 ep = torch.export.export(model, (x,), strict=True)
                 edge = executorch.exir.to_edge_transform_and_lower(
                     ep, partitioner=[CoreMLPartitioner()]
                 )
+                op_names = [
+                    n.target.__name__
+                    for n in edge.exported_program().graph.nodes
+                    if n.op == "call_function"
+                ]
+                self.assertIn(cpu_op, op_names)
+                self.assertIn("executorch_call_delegate", op_names)
                 buffer = edge.to_executorch().buffer
                 if _TEST_RUNTIME:
                     program = Runtime.get().load_program(buffer)
                     out = program.load_method("forward").execute((x,))[0]
                     self.assertTrue(torch.allclose(out, model(x), atol=1e-3))
+
+    def test_uint8_buffer_not_taken_over_is_read_outside_the_delegate(self):
+        """
+        A uint8 buffer that Core ML does not take over is a program input, so
+        the op that reads it runs on the CPU.
+        """
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "lut", torch.randint(0, 256, (8,), dtype=torch.uint8)
+                )
+
+            def forward(self, x):
+                return x * (self.lut.float() / 255.0)
+
+        model = Model().eval()
+        x = torch.randn(2, 8)
+        ep = torch.export.export(model, (x,), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner(take_over_constant_data=False)]
+        )
+        buffer = edge.to_executorch().buffer
+        if _TEST_RUNTIME:
+            program = Runtime.get().load_program(buffer)
+            out = program.load_method("forward").execute((x,))[0]
+            self.assertTrue(torch.allclose(out, model(x), atol=1e-3))
 
     def test_uint8_made_inside_the_delegate_keeps_ops_whole(self):
         """
