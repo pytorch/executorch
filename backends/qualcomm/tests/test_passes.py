@@ -1009,6 +1009,8 @@ class TestPasses(unittest.TestCase):
             if node.op == "call_function"
         }
         self.assertIn(exir_ops.edge.aten.mul.Tensor, top_level_ops)
+        self.assertIn(exir_ops.edge.aten.sub.Tensor, top_level_ops)
+        self.assertNotIn(exir_ops.edge.aten.add.Tensor, top_level_ops)
         self.assertIn(torch.ops.higher_order.executorch_call_delegate, top_level_ops)
         edge.to_executorch()
 
