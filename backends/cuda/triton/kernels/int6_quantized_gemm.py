@@ -1239,6 +1239,10 @@ def _tile_main_loop_trips(args) -> int:
 
 
 def _prune_tiles(configs, named_args, **kwargs):
+    if torch.version.hip is not None:
+        # Larger M tiles can access invalid memory on masked tails with ROCm
+        # 7.14. Keep the eight-row path for the release.
+        configs = [config for config in configs if config.kwargs["BLOCK_M"] == 8]
     return prune_by_main_loop_trips(
         _tile_main_loop_trips, configs, named_args, **kwargs
     )
