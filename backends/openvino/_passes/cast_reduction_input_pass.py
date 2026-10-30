@@ -9,7 +9,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 REDUCTION_OPS = {
-    exir_ops.edge.aten.sum.dim_IntList,
     exir_ops.edge.aten.cumsum.default,
     exir_ops.edge.aten.prod.default,
     exir_ops.edge.aten.prod.dim_int,
@@ -17,11 +16,12 @@ REDUCTION_OPS = {
 
 
 class CastReductionInputPass(ExportPass):
-    """Cast the input of sum, cumsum and prod to the dtype of their result.
+    """Cast the input of cumsum and prod to the dtype of their result.
 
     PyTorch reduces bool and integer tensors in int64, but OpenVINO keeps a
-    narrower type for some of them. A cumsum over a bool mask is computed in
-    8 bits and wraps after 255, and a cumsum or prod over int32 returns int32.
+    narrower type for these two, though not for sum. A cumsum over a bool mask
+    is computed in 8 bits and wraps after 255, and a cumsum or prod over int32
+    returns int32.
     """
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
