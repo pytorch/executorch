@@ -9,20 +9,9 @@ import operator
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes.constant_prop_pass import _nodes_written_in_place
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.utils import _pytree as pytree
-
-
-def _is_written(node: torch.fx.Node) -> bool:
-    """Whether an op writes to node in place, as a mutated buffer is."""
-    for user in node.users:
-        schema = getattr(user.target, "_schema", None)
-        if schema is None:
-            continue
-        for arg, value in zip(schema.arguments, user.args):
-            if value is node and arg.alias_info is not None and arg.alias_info.is_write:
-                return True
-    return False
 
 
 def _on_cpu(value):
@@ -36,12 +25,13 @@ def _on_cpu(value):
 def _constant_nodes(graph_module: torch.fx.GraphModule) -> set:
     """Nodes that depend only on constants. Graph order puts inputs first."""
     constants = set()
+    written = _nodes_written_in_place(graph_module)
     for node in graph_module.graph.nodes:
         # Only tensors: a higher-order op such as cond reads its subgraphs,
         # which may hold a random op, through get_attr nodes too.
         if node.op == "get_attr":
             value = operator.attrgetter(node.target)(graph_module)
-            if isinstance(value, torch.Tensor) and not _is_written(node):
+            if isinstance(value, torch.Tensor) and node not in written:
                 constants.add(node)
         elif (
             node.op == "call_function"
