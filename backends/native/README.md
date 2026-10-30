@@ -257,9 +257,9 @@ mutable buffers.
 ### Vision classification runners
 
 `examples/vision` shares model loading, FP32 input/output handling, top-5 display,
-and eager-reference comparison between the CPU and Vulkan engines.
-`run_classification_cpu` uses the CPU engine and `run_classification` the Vulkan
-engine; `run_classification_vulkan` is a Buck alias for `run_classification`.
+and eager-reference comparison between the CPU, GGML CPU, and Vulkan engines.
+`run_classification_cpu` uses the CPU engine, `run_classification_ggml_cpu` uses
+GGML on the CPU, and `run_classification` uses Vulkan.
 
 For a CPU-only CMake build:
 
@@ -280,12 +280,29 @@ install/bin/run_classification_cpu \
 XNNPACK and the Reference provider with optimized/portable operator registrations.
 The CPU build does not need a Vulkan SDK or device. Enable
 `EXECUTORCH_BUILD_NATIVE_VULKAN=ON` to also build `run_classification`, which
-runs on the host's Vulkan device; both engines can be enabled together. The
+runs on the host's Vulkan device. The engines can be enabled together, and the
 runners require gflags.
+
+For a GGML CPU build, initialize the GGML submodule as described above, then:
+
+```sh
+cmake -S . -B cmake-out-ggml -DCMAKE_BUILD_TYPE=Release \
+  -DEXECUTORCH_BUILD_NATIVE=ON -DEXECUTORCH_BUILD_NATIVE_GGML=ON \
+  -DEXECUTORCH_BUILD_NATIVE_VISION_RUNNER=ON
+cmake --build cmake-out-ggml --target run_classification_ggml_cpu
+cmake --install cmake-out-ggml --prefix install-ggml
+install-ggml/bin/run_classification_ggml_cpu \
+  --package mv2.ptn --input mv2_input.bin \
+  --expected mv2_expected.bin --categories categories.txt --cpu_threads 4
+```
+
+The GGML runner does not require XNNPACK or Vulkan. `--cpu_threads` defaults to
+0, which keeps GGML's default of 4 threads. Its constants line reports
+materialized bytes; GGML does not expose unique source-byte accounting.
 
 Export the `.ptn`, input, reference logits, and labels with
 [`export.py`](../../examples/native/vision/export.py). The same package and FP32
-artifacts are accepted by either runner, subject to each engine's supported
+artifacts are accepted by each runner, subject to each engine's supported
 operators. Each runner expects a model with one FP32 input and one FP32 output,
 and prints the selected engine and device and the top-5 logits. When
 `--expected` is given, it compares the logits with the reference using
