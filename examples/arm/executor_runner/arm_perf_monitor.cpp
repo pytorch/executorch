@@ -225,7 +225,7 @@ void EthosUBackend_execute_end() {
 }
 
 void StartMeasurements() {
-#if defined(__ARM_ARCH_8_1M_MAIN__)
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   // StopMeasurements() disables the cycle counter after each measurement.
   // Server mode starts a new measurement for every inference.
   ARM_PMU_Enable();
@@ -263,6 +263,15 @@ void StopMeasurements(size_t num_inferences) {
     return;
   }
   uint64_t cycle_count = arm_pmu_cycles() - ethosu_ArmCycleCountStart;
+  const bool cpu_timing_available =
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
+      true;
+#else
+      false;
+#endif
+  if (!cpu_timing_available) {
+    ET_LOG(Info, "CPU timing and CPU/NPU ratios: N/A (CPU PMU is not present)");
+  }
 
   // Number of comand streams handled by the NPU
   ET_LOG(
@@ -272,15 +281,14 @@ void StopMeasurements(size_t num_inferences) {
       "NPU delegations: %" PRIu32 " (%.2f per inference)",
       ethosu_delegation_count,
       (double)ethosu_delegation_count / num_inferences);
-  ET_LOG(Info, "Profiler report, CPU cycles per operator:");
-  // This is number of CPU cycles for the ethos-u operator from start to finish
-  // in the framework If there is more then one commandstream the time is added
-  // together
-  ET_LOG(
-      Info,
-      "ethos-u : cycle_cnt : %" PRIu64 " cycles (%.2f per inference)",
-      ethosu_ArmBackendExecuteCycleCount,
-      (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
+  if (cpu_timing_available) {
+    ET_LOG(Info, "Profiler report, CPU cycles per operator:");
+    ET_LOG(
+        Info,
+        "ethos-u : cycle_cnt : %" PRIu64 " cycles (%.2f per inference)",
+        ethosu_ArmBackendExecuteCycleCount,
+        (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
+  }
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
   const uint64_t io_copy_calls =
       ethosu_inputCopyStats.calls + ethosu_outputCopyStats.calls;
@@ -307,49 +315,40 @@ void StopMeasurements(size_t num_inferences) {
       ethosu_outputCopyStats.calls,
       ethosu_outputCopyStats.bytes);
 #endif
-  // We could print a list of the cycles used by the other delegates here in the
-  // future but now we only print ethos-u: this means that "Operator(s) total:
-  // ..." will be the same number as ethos-u : cycle_cnt and not the sum of all
-  ET_LOG(
-      Info,
-      "Operator(s) total: %" PRIu64 " CPU cycles (%.2f per inference)",
-      ethosu_ArmBackendExecuteCycleCount,
-      (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
-  // Total CPU cycles used in the executorch method->execute()
-  // Other delegates and no delegates are counted in this
-  ET_LOG(
-      Info,
-      "Inference runtime: %" PRIu64 " CPU cycles total (%.2f per inference)",
-      cycle_count,
-      (double)cycle_count / num_inferences);
-
-  ET_LOG(
-      Info,
-      "NOTE: CPU cycle values and ratio calculations require FPGA and identical CPU/NPU frequency");
-
-  // Avoid division with zero if arm_pmu_cycles() is not enabled properly.
-  if (cycle_count == 0) {
-    ET_LOG(Info, "Inference CPU ratio: ?.?? %%");
-    ET_LOG(Info, "Inference NPU ratio: ?.?? %%");
-  } else {
+  // Only the Ethos-U backend is included in the operator total.
+  if (cpu_timing_available) {
     ET_LOG(
         Info,
-        "Inference CPU ratio: %.2f %%",
-        100.0 * (cycle_count - ethosu_ArmWhenNPURunCycleCount) / cycle_count);
+        "Operator(s) total: %" PRIu64 " CPU cycles (%.2f per inference)",
+        ethosu_ArmBackendExecuteCycleCount,
+        (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
     ET_LOG(
         Info,
-        "Inference NPU ratio: %.2f %%",
-        100.0 * ethosu_ArmWhenNPURunCycleCount / cycle_count);
+        "Inference runtime: %" PRIu64 " CPU cycles total (%.2f per inference)",
+        cycle_count,
+        (double)cycle_count / num_inferences);
+    if (cycle_count == 0 || ethosu_ArmWhenNPURunCycleCount > cycle_count) {
+      ET_LOG(Info, "Inference CPU ratio: N/A");
+      ET_LOG(Info, "Inference NPU ratio: N/A");
+    } else {
+      ET_LOG(
+          Info,
+          "NOTE: CPU/NPU ratios use CPU-clock time inside NPU callbacks, not NPU utilization");
+      ET_LOG(
+          Info,
+          "Inference CPU ratio: %.2f %%",
+          100.0 * (cycle_count - ethosu_ArmWhenNPURunCycleCount) / cycle_count);
+      ET_LOG(
+          Info,
+          "Inference NPU ratio: %.2f %%",
+          100.0 * ethosu_ArmWhenNPURunCycleCount / cycle_count);
+    }
+    ET_LOG(
+        Info,
+        "cpu_wait_for_npu_cntr : %" PRIu64 " CPU cycles (%.2f per inference)",
+        ethosu_ArmWhenNPURunCycleCount,
+        (double)ethosu_ArmWhenNPURunCycleCount / num_inferences);
   }
-
-  // CPU cycles used by NPU, e.g. number of CPU cycles used between
-  // ethosu_inference_begin() and ethosu_inference_end()
-  // If there is more then one commandstream the time is added together
-  ET_LOG(
-      Info,
-      "cpu_wait_for_npu_cntr : %" PRIu64 " CPU cycles (%.2f per inference)",
-      ethosu_ArmWhenNPURunCycleCount,
-      (double)ethosu_ArmWhenNPURunCycleCount / num_inferences);
 
   ET_LOG(Info, "Ethos-U PMU report:");
   ET_LOG(

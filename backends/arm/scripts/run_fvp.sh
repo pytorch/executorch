@@ -90,13 +90,18 @@ hash ${fvp_model} \
 if [[ ${target} == cortex-m* ]]; then
     # Cortex-M CPU-only; the NPU is unused but the FVP still needs a value.
     num_macs=128
+    ethosu_fast=1
 else
     num_macs=$(echo ${target} | cut -d - -f 3)
 fi
 
 echo "--------------------------------------------------------------------------------"
 echo "Running ${elf_file} for ${target} run with FVP:${fvp_model} num_macs:${num_macs} timeout:${timeout}"
-echo "The Corstone FVPs are cycle accurate for the NPU part, but note that the CPU performance is not cycle accurate."
+if [[ ${ethosu_fast} == 1 ]]; then
+    echo "FVP CPU timing, CPU/NPU ratios and NPU PMU counters: N/A (--fast)."
+else
+    echo "FVP CPU timing and CPU/NPU ratios: N/A; NPU PMU counters are simulated."
+fi
 echo "--------------------------------------------------------------------------------"
 
 # Check if stdbuf is intalled and use stdbuf -oL together with tee below to make the output
@@ -115,6 +120,18 @@ if [[ ${target} == ethos-u55-* ]]; then
     known_u55_diagnostic='^\[critical\]\[u_dut\.u_npu(_simple)?\.u_npu_cc\.u_npu_cc_tsu\.proc\]'
     known_u55_diagnostic+='\[[0-9]+ ns\] Op=4: Invalid data type, ifm=5 ofm=1$'
     log_filter+="; /${known_u55_diagnostic}/s/^\[critical\]/[warning]/"
+fi
+
+# Non-semihosting runners cannot receive the simulation mode as an argument.
+# Qualify their console measurements here, leaving errors and execution counts intact.
+perf_log='^I \[executorch:arm_perf_monitor\.cpp:[0-9]+ StopMeasurements\(\)\] '
+cpu_metrics='(Profiler report, CPU cycles per operator:|ethos-u : cycle_cnt :|Operator\(s\) total:'
+cpu_metrics+='|Inference runtime:|Inference (CPU|NPU) ratio:|cpu_wait_for_npu_cntr :'
+cpu_metrics+='|NOTE: CPU\/NPU ratios|CPU timing and CPU\/NPU ratios:)'
+log_filter+="; /${perf_log}${cpu_metrics}/d"
+if [[ ${ethosu_fast} == 1 ]]; then
+    npu_metrics='(Ethos-U (per-delegate )?PMU report:|ethosu_pmu_(cycle_cntr|cntr[0-9]+) :|Ethos-U delegate [0-9]+ PMU (cycles|counter [0-9]+):)'
+    log_filter+="; /${perf_log}${npu_metrics}/d"
 fi
 
 run_simulation() {

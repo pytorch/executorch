@@ -10,12 +10,14 @@ in the exported model. Changing the prompt requires re-exporting the model.
 
 ## Run It
 
+Use Python 3.12 with its `venv` and development packages, a C++ compiler,
+Ninja, Git, curl, pkg-config, libglib2.0, libgomp, and xz-utils.
 From the ExecuTorch repository root:
 
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-./install_executorch.sh --optional-dependency ethos_u
+CMAKE_GENERATOR=Ninja ./install_executorch.sh --optional-dependency ethos_u
 ./examples/arm/setup.sh --i-agree-to-the-contained-eula
 ./examples/arm/mobilesam_prompt_segmentation_example_ethos_u/run.sh
 ```
@@ -24,6 +26,8 @@ The final command performs the complete flow and prints
 `MobileSAM example: PASS`. Its main result is:
 
 `arm_test/mobilesam/result/fvp_comparison.png`
+
+Add `--timed` to `run.sh` to collect simulated NPU counters.
 
 ## What It Does
 

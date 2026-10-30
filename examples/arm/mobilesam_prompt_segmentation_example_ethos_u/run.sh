@@ -6,11 +6,13 @@
 
 set -euo pipefail
 
-if (($#)); then
-    echo "This example has one supported configuration; run it without arguments."
+fvp_args=(--fast --timeout=300)
+if [[ $# -eq 1 && $1 == --timed ]]; then
+    fvp_args=(--timeout=7200)
+elif (($#)); then
+    echo "Usage: $0 [--timed]" >&2
     exit 2
 fi
-
 example_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd "${example_dir}/../../.." && pwd)
 work_dir="${repo_root}/arm_test/mobilesam"
@@ -51,10 +53,9 @@ echo "[4/4] Run on FVP and validate the output"
 backends/arm/scripts/run_fvp.sh \
     --elf="${runner_dir}/arm_executor_runner" \
     --target=ethos-u85-256 \
-    --timeout=300 \
     --semihosting-cwd="${io_dir}" \
-    '--semihosting-cmd-line=executor_runner -i input.bin -o output' \
-    --fast | tee "${work_dir}/fvp.log"
+    "--semihosting-cmd-line=executor_runner -i input.bin -o output" \
+    "${fvp_args[@]}" | tee "${work_dir}/fvp.log"
 python3 "${example_dir}/runtime/visualize_fvp_output.py"
 
 echo "MobileSAM example: PASS"
