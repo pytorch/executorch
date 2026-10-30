@@ -1,0 +1,22 @@
+# Int8 wake-word op profile for build_idf_component.sh: one root op per line.
+#
+# Derived from an int8 (Cadence-backend PTQ) export of a streaming
+# wake-word model: the op list is `gen_oplist` output on the quantized
+# .pte. The cadence:: ops run on the Cadence backend's generic
+# (portable) kernel implementations from backends/cadence/generic. The
+# Cadence edge lowering always skips dim_order, so dim_order copy
+# spellings are not needed here. aten::_to_copy.out is included
+# defensively for export-flag variation.
+aten::_softmax.out
+aten::_to_copy.out
+aten::cat.out
+aten::copy_
+aten::permute_copy.out
+aten::slice_copy.Tensor_out
+aten::squeeze_copy.dim_out
+aten::transpose_copy.int_out
+cadence::dequantize_per_tensor.out
+cadence::quantize_per_tensor.out
+cadence::quantized_conv2d_nhwc.per_tensor_out
+cadence::quantized_fully_connected.per_tensor_out
+cadence::quantized_relu.per_tensor_out
