@@ -14,6 +14,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using namespace ::testing;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
@@ -74,4 +76,54 @@ TEST_F(OpRemainderOutTest, DoubleKeepsDoublePrecision) {
   // Rounding to float would be off by about 1.7e-5
   EXPECT_TENSOR_CLOSE_WITH_TOL(
       out, tf.make({2}, {789.123456789, 210.876543211}), 0, 1e-6);
+}
+
+TEST_F(OpRemainderOutTest, MostNegativeByMinusOneIsZero) {
+  TensorFactory<ScalarType::Long> tf;
+
+  const int64_t min = std::numeric_limits<int64_t>::min();
+  Tensor self = tf.make({3}, {min, 7, -7});
+  Tensor out = tf.zeros({3});
+  op_remainder_tensor_out(self, tf.full({3}, -1), out);
+  EXPECT_TENSOR_EQ(out, tf.zeros({3}));
+
+  Tensor scalar_out = tf.full({3}, 1);
+  op_remainder_scalar_out(self, -1, scalar_out);
+  EXPECT_TENSOR_EQ(scalar_out, tf.zeros({3}));
+}
+
+TEST_F(OpRemainderOutTest, IntegerDivisionByZeroFails) {
+  TensorFactory<ScalarType::Int> tf;
+
+  Tensor self = tf.make({2}, {5, -3});
+  Tensor out = tf.zeros({2});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_remainder_tensor_out(self, tf.make({2}, {1, 0}), out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_remainder_scalar_out(self, 0, out));
+}
+
+TEST_F(OpRemainderOutTest, ScalarIsCastToIntegerDtype) {
+  TensorFactory<ScalarType::Char> tf;
+
+  Tensor self = tf.make({3}, {5, -3, 100});
+  Tensor out = tf.full({3}, 1);
+  // 255 and 257 become -1 and 1 as int8.
+  op_remainder_scalar_out(self, 255, out);
+  EXPECT_TENSOR_EQ(out, tf.zeros({3}));
+  out = tf.full({3}, 1);
+  op_remainder_scalar_out(self, 257, out);
+  EXPECT_TENSOR_EQ(out, tf.zeros({3}));
+  // 256 becomes 0 as int8.
+  ET_EXPECT_KERNEL_FAILURE(context_, op_remainder_scalar_out(self, 256, out));
+}
+
+TEST_F(OpRemainderOutTest, EmptyInputWithZeroScalarDivisor) {
+  TensorFactory<ScalarType::Char> tf;
+
+  Tensor self = tf.make({0}, {});
+  Tensor out = tf.make({0}, {});
+  op_remainder_scalar_out(self, 256, out);
+  EXPECT_TENSOR_EQ(out, tf.make({0}, {}));
+  op_remainder_scalar_out(self, 0, out);
+  EXPECT_TENSOR_EQ(out, tf.make({0}, {}));
 }
