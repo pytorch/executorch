@@ -17,15 +17,17 @@ from pathlib import Path
 from typing import TypedDict
 
 import torch
-from executorch.examples.models import MODEL_NAME_TO_MODEL
-from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.exir.native import to_native
 from PIL import Image
-from torchvision.models import MobileNet_V2_Weights, ResNet50_Weights  # @manual
+from torchvision import models  # @manual
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-_MODEL_NAMES = ("mv2", "resnet50")
+_MODEL_ALIASES = {"mv2": "mobilenet_v2", "vit": "vit_b_16"}
+_WEIGHTS = {
+    name: models.get_model_weights(name).DEFAULT
+    for name in models.list_models(module=models)
+}
 
 
 class _Expected(TypedDict):
@@ -41,22 +43,14 @@ def _default_out_dir() -> Path:
 
 
 def _load_model(name: str) -> torch.nn.Module:
-    model, _, _, _ = EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL[name])
-    return model.eval()
+    return models.get_model(name, weights=_WEIGHTS[name]).eval()
 
 
 def _load_image(name: str, image_path: Path) -> tuple[torch.Tensor, list[str]]:
+    weights = _WEIGHTS[name]
     with Image.open(image_path) as image:
-        rgb_image = image.convert("RGB")
-        if name == "mv2":
-            weights = MobileNet_V2_Weights.DEFAULT
-            image_tensor = weights.transforms()(rgb_image)
-            categories = list(weights.meta["categories"])
-        else:
-            weights = ResNet50_Weights.IMAGENET1K_V1
-            image_tensor = weights.transforms()(rgb_image)
-            categories = list(weights.meta["categories"])
-    return image_tensor.unsqueeze(0).contiguous(), categories
+        image_tensor = weights.transforms()(image.convert("RGB"))
+    return image_tensor.unsqueeze(0).contiguous(), list(weights.meta["categories"])
 
 
 def _expected(
@@ -113,7 +107,7 @@ def _summary(
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=_MODEL_NAMES, default="mv2")
+    parser.add_argument("--model", choices=[*_WEIGHTS, *_MODEL_ALIASES], default="mv2")
     parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--image", type=Path, required=True)
     args = parser.parse_args()
@@ -129,8 +123,9 @@ def main() -> None:
         "summary": output_dir / f"{args.model}.summary.txt",
     }
 
-    model = _load_model(args.model)
-    example_input, categories = _load_image(args.model, args.image)
+    model_name = _MODEL_ALIASES.get(args.model, args.model)
+    model = _load_model(model_name)
+    example_input, categories = _load_image(model_name, args.image)
     logits, expected = _expected(model, example_input, categories)
     native_program = to_native(torch.export.export(model, (example_input,)))
 
