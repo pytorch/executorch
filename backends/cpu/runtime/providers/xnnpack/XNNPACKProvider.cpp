@@ -66,6 +66,134 @@ bool fp32(const Kernel& node, const ptn::Graph& graph) {
   });
 }
 
+struct MaxPool2d {
+  ptn::ValueId input;
+  ptn::ValueId output;
+  int64_t kh, kw, sh, sw, ph, pw, dh, dw;
+  bool ceil_mode;
+};
+
+const std::vector<int64_t>* static_pool_list(const ptn::Argument& argument) {
+  if (argument.kind() != ptn::ArgKind::IntList) {
+    return nullptr;
+  }
+  const auto& list = argument.as_int_list();
+  return std::all_of(
+             list.ids.begin(),
+             list.ids.end(),
+             [](auto id) { return id == ptn::kInvalid; })
+      ? &list.values
+      : nullptr;
+}
+
+// Broadcasts an aten int[2] argument: empty uses the fallback, one element
+// broadcasts, two elements pass through; anything else is malformed.
+bool pool_pair(
+    const std::vector<int64_t>& list,
+    int64_t fallback,
+    int64_t& first,
+    int64_t& second) {
+  if (list.empty()) {
+    first = fallback;
+    second = fallback;
+    return true;
+  }
+  if (list.size() == 1) {
+    first = list[0];
+    second = list[0];
+    return true;
+  }
+  if (list.size() == 2) {
+    first = list[0];
+    second = list[1];
+    return true;
+  }
+  return false;
+}
+
+int64_t pooling_output_size(
+    int64_t in,
+    int64_t k,
+    int64_t s,
+    int64_t p,
+    int64_t d,
+    bool ceil_mode) {
+  const int64_t numerator = in + 2 * p - d * (k - 1) - 1;
+  int64_t out = ceil_mode ? (numerator + s - 1) / s + 1 : numerator / s + 1;
+  if (ceil_mode && (out - 1) * s >= in + p) {
+    out -= 1;
+  }
+  return out;
+}
+
+// Extra trailing padding so floor-only pooling produces aten ceil-mode output
+// sizes. Ports the ceil handling of the main XNNPACK backend: pad just enough
+// for the final partial window, unless aten's adjustment drops that window.
+int64_t ceil_pad_amount(
+    int64_t in_size,
+    int64_t kernel_size,
+    int64_t stride,
+    int64_t padding,
+    int64_t dilation) {
+  const int64_t no_ceil =
+      in_size + 2 * padding - dilation * (kernel_size - 1) - 1;
+  const int64_t output_size = (no_ceil + stride - 1) / stride + 1;
+  const bool needs_adjust = (output_size - 1) * stride >= in_size + padding;
+  const int64_t partial_stride = no_ceil % stride;
+  return (partial_stride > 0 && !needs_adjust) ? stride - partial_stride : 0;
+}
+
+std::optional<MaxPool2d> parse_max_pool2d(const Kernel& node) {
+  if (node.target != "torch.ops.aten.max_pool2d_with_indices.default" ||
+      node.inputs.size() != 6 || node.outputs.size() != 2 ||
+      node.outputs[0].kind != ptn::OutputValueKind::Tensor ||
+      node.outputs[1].kind != ptn::OutputValueKind::Tensor ||
+      std::any_of(node.inputs.begin(), node.inputs.end(), [](const auto& in) {
+        return in.mutated;
+      })) {
+    return std::nullopt;
+  }
+  const auto& input = node.inputs[0].arg;
+  const auto* kernel = static_pool_list(node.inputs[1].arg);
+  const auto* stride = static_pool_list(node.inputs[2].arg);
+  const auto* padding = static_pool_list(node.inputs[3].arg);
+  const auto* dilation = static_pool_list(node.inputs[4].arg);
+  const auto& ceil = node.inputs[5].arg;
+  if (input.kind() != ptn::ArgKind::Tensor || !kernel || !stride || !padding ||
+      !dilation || ceil.kind() != ptn::ArgKind::Bool ||
+      ceil.as_bool().id != ptn::kInvalid) {
+    return std::nullopt;
+  }
+  MaxPool2d parsed;
+  parsed.input = input.as_tensor().id;
+  parsed.output = node.outputs[0].value_id;
+  if (!pool_pair(*kernel, 0, parsed.kh, parsed.kw) || parsed.kh < 1 ||
+      parsed.kw < 1) {
+    return std::nullopt;
+  }
+  if (stride->empty()) {
+    parsed.sh = parsed.kh;
+    parsed.sw = parsed.kw;
+  } else if (
+      !pool_pair(*stride, 0, parsed.sh, parsed.sw) || parsed.sh < 1 ||
+      parsed.sw < 1) {
+    return std::nullopt;
+  }
+  if (!pool_pair(*padding, 0, parsed.ph, parsed.pw) || parsed.ph < 0 ||
+      parsed.pw < 0) {
+    return std::nullopt;
+  }
+  if (!pool_pair(*dilation, 1, parsed.dh, parsed.dw) || parsed.dh < 1 ||
+      parsed.dw < 1) {
+    return std::nullopt;
+  }
+  if (parsed.ph > parsed.kh / 2 || parsed.pw > parsed.kw / 2) {
+    return std::nullopt;
+  }
+  parsed.ceil_mode = ceil.as_bool().value;
+  return parsed;
+}
+
 class XNNExecutable;
 
 struct XNNOp {
@@ -131,11 +259,14 @@ class XNNExecutable final : public Executable {
         region.outputs.begin(), region.outputs.end());
     std::unordered_set<ptn::ValueId> used;
     for (auto id : region.nodes) {
-      for (auto value : context_.graph.node(id).input_value_ids()) {
+      const auto& node = context_.graph.node(id);
+      for (auto value : node.input_value_ids()) {
         used.insert(value);
       }
-      for (const auto& output : context_.graph.node(id).outputs) {
-        used.insert(output.value_id);
+      const auto output_count =
+          parse_max_pool2d(node) ? 1 : node.outputs.size();
+      for (size_t i = 0; i < output_count; ++i) {
+        used.insert(node.outputs[i].value_id);
       }
     }
     bindings_.reserve(inputs.size() + outputs.size());
@@ -610,6 +741,130 @@ class XNNExecutable final : public Executable {
          (shape.size() == 1 && (shape[0] == 1 || shape[0] == filter[0])));
   }
 
+  static bool supports_max_pool(const Kernel& node, const ptn::Graph& graph) {
+    const auto parsed = parse_max_pool2d(node);
+    if (!parsed) {
+      return false;
+    }
+    const auto& input = graph.value(parsed->input).tensor_meta();
+    const auto& output = graph.value(parsed->output).tensor_meta();
+    const auto indices_id = node.outputs[1].value_id;
+    const auto& indices = graph.value(indices_id);
+    if (!indices.consumer_ids.empty() ||
+        std::find(
+            graph.output_ids.begin(), graph.output_ids.end(), indices_id) !=
+            graph.output_ids.end() ||
+        indices.tensor_meta().dtype != ptn::ScalarType::Long ||
+        indices.tensor_meta().sizes != output.sizes ||
+        input.dtype != ptn::ScalarType::Float ||
+        output.dtype != ptn::ScalarType::Float || input.sizes.size() != 4 ||
+        output.sizes.size() != 4 || input.quant || output.quant ||
+        input.sizes[0] != output.sizes[0] ||
+        input.sizes[1] != output.sizes[1]) {
+      return false;
+    }
+    return output.sizes[2] ==
+        pooling_output_size(
+               input.sizes[2],
+               parsed->kh,
+               parsed->sh,
+               parsed->ph,
+               parsed->dh,
+               parsed->ceil_mode) &&
+        output.sizes[3] ==
+        pooling_output_size(
+            input.sizes[3],
+            parsed->kw,
+            parsed->sw,
+            parsed->pw,
+            parsed->dw,
+            parsed->ceil_mode);
+  }
+
+  Error max_pool(const Kernel& node) {
+    const auto parsed = parse_max_pool2d(node);
+    ET_CHECK_OR_RETURN_ERROR(
+        parsed, InvalidProgram, "XNNPACK max_pool2d schema mismatch");
+    const auto input = parsed->input;
+    const auto output = parsed->output;
+    const auto in = dimensions(input);
+    const auto out = dimensions(output);
+    int64_t pad_top = parsed->ph, pad_left = parsed->pw;
+    int64_t pad_bottom = parsed->ph, pad_right = parsed->pw;
+    if (parsed->ceil_mode) {
+      pad_bottom += ceil_pad_amount(
+          in[2], parsed->kh, parsed->sh, parsed->ph, parsed->dh);
+      pad_right += ceil_pad_amount(
+          in[3], parsed->kw, parsed->sw, parsed->pw, parsed->dw);
+    }
+    uint32_t nhwc_in, nhwc_out;
+    auto error = tensor({in[0], in[2], in[3], in[1]}, nhwc_in);
+    if (error != Error::Ok) {
+      return error;
+    }
+    error = tensor({out[0], out[2], out[3], out[1]}, nhwc_out);
+    if (error != Error::Ok) {
+      return error;
+    }
+    const size_t to_nhwc[] = {0, 2, 3, 1};
+    const size_t to_nchw[] = {0, 3, 1, 2};
+    CPU_XNN_CHECK(
+        xnn_define_static_transpose(subgraph_, 4, to_nhwc, input, nhwc_in, 0));
+    const auto infinity = std::numeric_limits<float>::infinity();
+    // XNNPACK's implicit padding assumes every window samples the input.
+    if (in[2] < static_cast<size_t>(parsed->dh) ||
+        in[3] < static_cast<size_t>(parsed->dw)) {
+      pad_bottom = std::max<int64_t>(
+          pad_bottom,
+          (static_cast<int64_t>(out[2]) - 1) * parsed->sh +
+              (parsed->kh - 1) * parsed->dh + 1 - static_cast<int64_t>(in[2]) -
+              pad_top);
+      pad_right = std::max<int64_t>(
+          pad_right,
+          (static_cast<int64_t>(out[3]) - 1) * parsed->sw +
+              (parsed->kw - 1) * parsed->dw + 1 - static_cast<int64_t>(in[3]) -
+              pad_left);
+      const size_t pre[] = {
+          0, static_cast<size_t>(pad_top), static_cast<size_t>(pad_left), 0};
+      const size_t post[] = {
+          0,
+          static_cast<size_t>(pad_bottom),
+          static_cast<size_t>(pad_right),
+          0};
+      uint32_t padded_input;
+      error = tensor(
+          {in[0], in[2] + pre[1] + post[1], in[3] + pre[2] + post[2], in[1]},
+          padded_input);
+      if (error != Error::Ok) {
+        return error;
+      }
+      CPU_XNN_CHECK(xnn_define_static_constant_pad_v2(
+          subgraph_, 4, pre, post, -infinity, nhwc_in, padded_input, 0));
+      nhwc_in = padded_input;
+      pad_top = pad_left = pad_bottom = pad_right = 0;
+    }
+    CPU_XNN_CHECK(xnn_define_max_pooling_2d(
+        subgraph_,
+        static_cast<uint32_t>(pad_top),
+        static_cast<uint32_t>(pad_right),
+        static_cast<uint32_t>(pad_bottom),
+        static_cast<uint32_t>(pad_left),
+        static_cast<uint32_t>(parsed->kh),
+        static_cast<uint32_t>(parsed->kw),
+        static_cast<uint32_t>(parsed->sh),
+        static_cast<uint32_t>(parsed->sw),
+        static_cast<uint32_t>(parsed->dh),
+        static_cast<uint32_t>(parsed->dw),
+        -infinity,
+        infinity,
+        nhwc_in,
+        nhwc_out,
+        0));
+    CPU_XNN_CHECK(xnn_define_static_transpose(
+        subgraph_, 4, to_nchw, nhwc_out, output, 0));
+    return Error::Ok;
+  }
+
   static bool supports_bmm(const Kernel& node, const ptn::Graph& graph) {
     if (!fp32(node, graph) || node.inputs.size() != 2 ||
         node.outputs.size() != 1 ||
@@ -869,6 +1124,9 @@ const XNNOp* find_op(std::string_view target) {
        &E::supports_gelu,
        &E::unary<xnn_unary_gelu>},
       {"torch.ops.aten.linear.default", &E::supports_linear, &E::linear},
+      {"torch.ops.aten.max_pool2d_with_indices.default",
+       &E::supports_max_pool,
+       &E::max_pool},
       {"torch.ops.aten.mean.dim", &E::supports_mean, &E::mean},
       {"torch.ops.aten.mul.Tensor",
        &E::supports_mul,
