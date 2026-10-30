@@ -59,12 +59,20 @@ static std::once_flag g_rng_init_flag;
 
 // Initialize RNG state on the given stream.
 // Must be called during warmup (before graph capture). Subsequent calls
-// from any thread are no-ops thanks to std::call_once. A failed allocation
-// throws out of the call_once, which leaves it not done, so the next call
-// tries again rather than every later launch using a null state.
+// from any thread are no-ops thanks to std::call_once. A failure throws out
+// of the call_once, which leaves it not done, so the next call tries again
+// rather than every later launch using a null state.
 bool ensure_rng_init(cudaStream_t stream) {
   try {
     std::call_once(g_rng_init_flag, [&]() {
+      RngState h;
+      // From std::random_device: a seed from the clock repeats for every
+      // process started in the same second. Drawn before allocating, so a
+      // throw here leaves nothing allocated.
+      std::random_device entropy;
+      h.seed = (static_cast<unsigned long long>(entropy()) << 32) | entropy();
+      h.counter = 0;
+      h.base_scratch = 0;
       // The current device: the stream callers pass from getCurrentCUDAStream
       // may have been created on it whatever index they looked up, and the
       // cudaMalloc fallback on a device without memory pools follows this
@@ -75,21 +83,15 @@ bool ensure_rng_init(cudaStream_t stream) {
         throw std::bad_alloc();
       }
       d_rng = static_cast<RngState*>(rng.get());
-      RngState h;
-      // From std::random_device: a seed from the clock repeats for every
-      // process started in the same second.
-      std::random_device entropy;
-      h.seed = (static_cast<unsigned long long>(entropy()) << 32) | entropy();
-      h.counter = 0;
-      h.base_scratch = 0;
       cudaMemcpyAsync(
           d_rng, &h, sizeof(RngState), cudaMemcpyHostToDevice, stream);
       // Synchronize to ensure the copy completes before we return
       // (the host-side RngState `h` is on the stack).
       cudaStreamSynchronize(stream);
     });
-  } catch (const std::bad_alloc&) {
-    ET_LOG(Error, "rand: allocating the RNG state failed");
+  } catch (const std::exception& e) {
+    // std::random_device throws an implementation-defined std::exception.
+    ET_LOG(Error, "rand: initializing the RNG state failed: %s", e.what());
     return false;
   }
   return true;
