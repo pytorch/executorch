@@ -42,6 +42,15 @@ def arguments(tmp_path):
     ]
 
 
+@pytest.mark.parametrize("captures", [0, 1, 8])
+def test_prefix_capture_override_reaches_worker(arguments, captures):
+    args = serve_batching._parse_args(
+        arguments
+        + ["--prefix-cache-entries", "4", "--prefix-capture-slots", str(captures)]
+    )
+    assert f"--prefix_capture_slots={captures}" in serve_batching._worker_command(args)
+
+
 def test_worker_forwards_mg_options(arguments):
     args = serve_batching._parse_args(
         arguments
@@ -102,6 +111,8 @@ def test_draft_count_forwarded(arguments, n_draft):
         ("--max-vision-patches", str(1 << 31)),
         ("--prefix-checkpoint-interval", "8"),
         ("--prefix-checkpoint-interval", "-1"),
+        ("--prefix-capture-slots", "-1"),
+        ("--prefix-capture-slots", str(1 << 31)),
     ],
 )
 def test_launcher_rejects_invalid_options(arguments, flag, value):

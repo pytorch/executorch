@@ -22,28 +22,43 @@ Example::
 
 Inside the block, the CUDA and TensorRT delegates queue their work on ``s``
 instead of their own streams, and so do a program's copies between host and
-GPU memory. A call then waits only for ``s``, not for the whole GPU: work that
-other streams still have queued keeps running. A call with GPU inputs or
-outputs, and ``ExecuTorchResult.to_host()``, still wait for the whole GPU, so
-GPU data written on other streams stays safe.
+GPU memory. A call then waits for ``s``. If ``s`` is non-blocking, as a
+``Stream`` is, work that other streams still have queued keeps running. A
+blocking ``s``, such as a ``cupy.cuda.Stream()`` with default flags, also
+waits for work on the legacy default stream. Some steps still wait for more:
+the CUDA delegate copies an output whose memory layout has to change through
+the legacy default stream, and loading a method's CUDA weights waits for the
+whole GPU. A call with GPU inputs or outputs, and
+``ExecuTorchResult.to_host()``, also wait for the whole GPU, so GPU data
+written on other streams stays safe.
 
-Limits for now: a stream known to be on a CUDA device other than 0 is
-refused, so is the default stream (handle 0), and the CUDA delegate refuses a
-method that uses CUDA graphs inside a block. This module does not need
-PyTorch; ``torch.cuda.Stream`` works because it has ``__cuda_stream__``.
+Limits for now: a stream known to be on a CUDA device other than 0 is refused,
+so is the legacy default stream (handle 0, or 1 for ``cudaStreamLegacy``), and
+the CUDA delegate refuses a method that uses CUDA graphs inside a block. A
+``Stream`` is checked on the device it was created on, whatever wrapper
+selects it. Any other stream is refused if its wrapper reports another device.
+In builds with CUDA 13 or newer, ExecuTorch also asks CUDA for the stream's
+device, so it is refused even if its wrapper does not say so, except while the
+stream captures a CUDA graph, when CUDA cannot be asked. This module does not
+need PyTorch; ``torch.cuda.Stream`` works because it has ``__cuda_stream__``.
 
 As in PyTorch, the selection belongs to the thread, not to an asyncio task, so
 do not await or yield inside a block. Blocks end on the thread that started
-them, innermost first; a block left by a thread that ends, or by a dropped
-scope object, ends on its own. A ``Stream`` cannot be closed while any block
-selects its handle. Any other stream must stay alive while selected.
+them, innermost first. A block also ends when its thread ends, or when its
+scope object is dropped on that thread. A scope object dropped on another
+thread cannot end the block, so the stream stays selected until the thread
+that started the block ends. A ``Stream`` cannot be closed while any block
+selects its handle, and a closed one is refused. A stream given only by its
+handle, for example through ``ExternalStream``, must stay alive while
+selected: CUDA has no safe way to tell a destroyed handle from a live one, so
+this module cannot refuse one, and using one can crash the process.
 """
 
 import contextlib
 import operator
 import threading
 import weakref
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Union
 
 # Every open Stream by handle, so a selection of its handle through any wrapper
 # is checked and counted by the Stream itself.
@@ -95,11 +110,13 @@ class Stream:
 class ExternalStream:
     """A CUDA stream someone else created and keeps alive; never destroyed here.
 
-    ``device`` is the CUDA device it belongs to, if known; stream() refuses a
-    device other than 0.
+    ``device`` is the CUDA device it belongs to, if known, as an index or a
+    string such as ``"cuda:1"``; stream() refuses a device other than 0.
     """
 
-    def __init__(self, stream_ptr: int, device: Optional[int] = None) -> None:
+    def __init__(
+        self, stream_ptr: int, device: Optional[Union[int, str]] = None
+    ) -> None:
         self.device = device
         self.cuda_stream = stream_ptr
 
@@ -138,13 +155,7 @@ def _target(s: Any) -> Any:
     index = _device_index(s)
     if index is not None and index > 0:
         raise RuntimeError("Only a stream on CUDA device 0 can be selected for now")
-    if not handle:
-        # The legacy default stream waits for work on every other stream, so
-        # selecting it would defeat the point of choosing a stream.
-        raise ValueError(
-            "The default CUDA stream (handle 0) cannot be selected; "
-            "select a stream created for this, such as cuda.Stream()"
-        )
+    # The native scope refuses the legacy default stream, handle 0 or 1.
     return handle
 
 
