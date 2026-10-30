@@ -781,7 +781,7 @@ Error put(
   // One key per index point, so the scratch and the sort grow with the
   // number of indices, not with the elements they write.
   const int64_t points = plan.broadcast_numel;
-  // CUB counts items in an int on CUDA 12.
+  // The sort below takes the count as an int.
   ET_CHECK_OR_RETURN_ERROR(
       points <= INT_MAX,
       NotSupported,
@@ -1017,7 +1017,8 @@ AOTITorchError aoti_torch_index_put_out(
         return Error::NotSupported;
     }
   }
-  // The accumulation types are ATen's.
+  // Half and bfloat16 add in float, as ATen does. Narrower integers add in
+  // int64, which wraps to the same result as adding in their own type.
   switch (out->dtype()) {
     case ScalarType::Float:
       return put<float, float, true>(
