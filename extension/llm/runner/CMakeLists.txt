@@ -49,6 +49,12 @@ set(runner_deps
     executorch_core extension_module extension_tensor extension_llm_sampler
     extension_memory_allocator tokenizers::tokenizers
 )
+if(EXECUTORCH_BUILD_HF_RUST_TOKENIZER)
+  list(APPEND runner_deps tokenizers::hf_rust_tokenizer)
+  target_compile_definitions(
+    extension_llm_runner PRIVATE EXECUTORCH_USE_HF_RUST_TOKENIZER=1
+  )
+endif()
 
 # depend on arange_utils
 if(NOT TARGET kernels_util_all_deps)
