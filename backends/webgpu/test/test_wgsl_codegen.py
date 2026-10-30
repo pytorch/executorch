@@ -220,14 +220,14 @@ class WgslCodegenTest(unittest.TestCase):
             digest.update(b"\0")
             digest.update(output.read_bytes())
             digest.update(b"\0")
-        self.assertEqual(len(outputs), 136)
+        self.assertEqual(len(outputs), 140)
         self.assertEqual(
             digest.hexdigest(),
-            "0512f8d258952e446ffaedcb653b6a3a720eccf8a6b5327d95fd454a912214a3",
+            "ded44575107a051d653318bd23b73595063d2edd181f19d93f4f528e6ced32cc",
         )
         self.assertEqual(
             hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "28aaa7a8d3e916df43e407120e91d487d0d51cbc5ca93c56bd822d25d109890e",
+            "8e9ba90b4ead46dd9208cf4c98d56df0587d202f2cd36ffb46bdb142ccbce295",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:

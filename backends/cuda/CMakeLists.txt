@@ -255,8 +255,8 @@ set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
 
 # Only build CUDA-only operator shims when the CUDA toolchain is available.
 if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
-  list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu
-       runtime/shims/sort.cu runtime/shims/rand.cu
+  list(APPEND _aoti_cuda_shim_sources runtime/shims/index.cu
+       runtime/shims/int4mm.cu runtime/shims/sort.cu runtime/shims/rand.cu
   )
 endif()
 
@@ -367,7 +367,9 @@ set(_aoti_cuda_backend_sources
 )
 # The off-graph KV cache builds on the LLM extension's neutral cache.
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
-  list(APPEND _aoti_cuda_backend_sources runtime/cuda_kv_cache.cpp)
+  list(APPEND _aoti_cuda_backend_sources runtime/cuda_kv_cache.cpp
+       runtime/cuda_kv_pool.cpp
+  )
 endif()
 
 # Build the delegate as a shared library for the wheel so a process has one copy
@@ -491,6 +493,12 @@ if(BUILD_TESTING)
     EXTRA_LIBS aoti_cuda_backend
   )
   target_compile_definitions(test_cuda_weight_cache PRIVATE CUDA_AVAILABLE=1)
+
+  et_cxx_test(
+    test_cuda_output_copy SOURCES runtime/test/test_cuda_output_copy.cpp
+    EXTRA_LIBS aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_output_copy PRIVATE CUDA_AVAILABLE=1)
   # sort.cu and rand.cu are compiled only under this condition (see
   # _aoti_cuda_shim_sources), so the test that calls them is too.
   if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
@@ -499,5 +507,18 @@ if(BUILD_TESTING)
       EXTRA_LIBS aoti_cuda_backend
     )
     target_compile_definitions(test_cuda_sort_rand PRIVATE CUDA_AVAILABLE=1)
+  endif()
+
+  if(EXECUTORCH_BUILD_EXTENSION_LLM)
+    et_cxx_test(
+      test_cuda_kv_cache SOURCES runtime/test/test_cuda_kv_cache.cpp EXTRA_LIBS
+      aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_kv_cache PRIVATE CUDA_AVAILABLE=1)
+    et_cxx_test(
+      test_cuda_cache_routing SOURCES runtime/test/test_cuda_cache_routing.cpp
+      EXTRA_LIBS aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_cache_routing PRIVATE CUDA_AVAILABLE=1)
   endif()
 endif()

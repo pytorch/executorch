@@ -57,7 +57,7 @@ A full implementation is available
 in [aot_neutron_compile.py](https://github.com/pytorch/executorch/blob/main/examples/nxp/aot_neutron_compile.py).
 
 The following command creates a `cifar10_nxp_delegate.pte` model with channels last inputs and no transpositions,
-compatible with the `i.MX RT700` board using **MCUXpresso SDK 25.06**:
+compatible with the `i.MX RT700` board:
 
 ```bash
 python -m examples.nxp.aot_neutron_compile --quantize \

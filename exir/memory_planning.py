@@ -351,8 +351,11 @@ def update_tensor_lifetime(
     else:
         start = node_idx if start is None or start > node_idx else start
 
-    if node.op == "placeholder" and _is_mutable_buffer(node, gs):
-        # mutable buffers are never freed
+    if node.op == "placeholder" and (
+        _is_mutable_buffer(node, gs) or _is_device_resident_constant(node)
+    ):
+        # Mutable buffers and device resident constants keep their data across
+        # calls, so they are never freed.
         end = max_node_idx
     else:
         end = node_idx if end is None or end < node_idx else end
@@ -384,6 +387,14 @@ def _is_mutable_buffer(
                 if fqn in graph_signature.buffers_to_mutate.values():
                     return True
     return False
+
+
+def _is_device_resident_constant(node: Node) -> bool:
+    """Whether node is a constant that PropagateDevicePass placed in device
+    memory. The runtime copies its data from the program or its data file
+    into its planned memory once, at load, so it is planned like a mutable
+    buffer instead of being used in place."""
+    return node.op == "placeholder" and node.meta.get("device_resident_constant", False)
 
 
 def _get_mutable_buffer_specs(
@@ -425,7 +436,11 @@ def get_graph_input_tensors(
 ) -> Set[TensorSpec]:
     graph_input_tensors = set()
     for node in nodes:
-        if node.op == "placeholder" and not _is_mutable_buffer(node, graph_signature):
+        if (
+            node.op == "placeholder"
+            and not _is_mutable_buffer(node, graph_signature)
+            and not _is_device_resident_constant(node)
+        ):
             for spec in get_node_tensor_specs(node):
                 graph_input_tensors.add(spec)
 
@@ -535,6 +550,7 @@ def collect_specs_from_nodes(  # noqa: C901
                 ignore_const
                 and spec.const
                 and not node.meta.get("weight_has_gradient", False)
+                and not _is_device_resident_constant(node)
             ):
                 continue
             if dedup:
@@ -567,6 +583,22 @@ def update_all_tensors_lifetime(
         ):
             update_tensor_lifetime(node, spec, node_idx, max_node_idx, graph_signature)
             specs.add(spec)
+    # Scratch is live only while the delegate is executing, but it is reached
+    # through the delegate node, so the walk above extends it every time a
+    # consumer of the call's outputs mentions that node. Recompute it from the
+    # delegate calls alone rather than letting those consumers stretch it.
+    #
+    # Accumulated across calls rather than assigned per call: fx copies
+    # node.meta shallowly, so a pass that clones a delegate call leaves two
+    # nodes sharing one spec. Covering both is conservative; assigning would
+    # leave the buffer looking dead while the earlier call still writes to it.
+    scratch_lifetimes: Dict[TensorSpec, Tuple[int, int]] = {}
+    for node_idx, node in enumerate(graph_module.graph.nodes):
+        for spec in memory.delegate_scratch_specs(node):
+            start, end = scratch_lifetimes.get(spec, (node_idx, node_idx))
+            scratch_lifetimes[spec] = (min(start, node_idx), max(end, node_idx))
+    for spec, (start, end) in scratch_lifetimes.items():
+        spec.lifetime = [start, end]
     _extend_storage_base_lifetimes(specs)
     return specs
 
@@ -764,6 +796,10 @@ def get_node_tensor_specs(
     r"""
     Return the list of the tensor specs for the node or empty list if the node
     has no tensor specs.
+
+    A delegate call's scratch buffers are included. They are not values the
+    node produces, but every caller that walks specs to place, verify or
+    attribute memory needs them.
     """
     # get tensor specs
     if node.target == memory.view:
@@ -776,13 +812,17 @@ def get_node_tensor_specs(
     if isinstance(specs, TensorSpec):
         specs = [specs]
     if not isinstance(specs, (list, tuple)):
-        return []
+        specs = []
     else:
-        return [
+        specs = [
             spec
             for spec in specs
             if not isinstance(spec, (int, float, bool, str, type(None)))
         ]
+
+    if scratch := memory.delegate_scratch_specs(node):
+        return list(specs) + scratch
+    return specs
 
 
 # Little bit hacky to check if the graph contains

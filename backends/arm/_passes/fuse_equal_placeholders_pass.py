@@ -13,6 +13,7 @@ from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
     get_param_tensor,
+    is_mutable_buffer,
     is_param_node,
 )
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
@@ -40,6 +41,17 @@ class FuseEqualPlaceholdersPass(ArmPass):
         self, node: torch.fx.Node, include_data_hash: bool
     ) -> tuple[tuple[object, ...], torch.Tensor] | None:
         if not is_param_node(self.exported_program, node):
+            return None
+
+        # Never fuse mutable buffers. Two pieces of streaming state that happen
+        # to start from the same value (all-zero at the start of a stream, say)
+        # are still independent: each is written back separately every
+        # invocation, so aliasing them to one placeholder makes the states
+        # shadow each other. It also strands the BUFFER_MUTATION entries that
+        # still name the removed placeholders, and export fails its own
+        # verifier with "Buffer output ... does not point to a buffer that
+        # exists". Only genuinely constant data is safe to share.
+        if is_mutable_buffer(self.exported_program, node):
             return None
 
         tensor = get_param_tensor(self.exported_program, node)

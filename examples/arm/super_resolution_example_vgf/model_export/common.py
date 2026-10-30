@@ -277,12 +277,14 @@ def _load_checkpointed_swin2sr(
         model = Swin2SRForImageSuperResolution.from_pretrained(  # nosec B615
             checkpoint,
             local_files_only=local_files_only,
+            use_safetensors=True,
         ).eval()
     else:
         model = Swin2SRForImageSuperResolution.from_pretrained(  # nosec B615
             checkpoint,
             revision=checkpoint_revision,
             local_files_only=local_files_only,
+            use_safetensors=True,
         ).eval()
     return Swin2SRWrapper(model)
 

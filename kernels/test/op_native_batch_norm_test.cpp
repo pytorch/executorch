@@ -15,6 +15,10 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cmath>
+#include <vector>
+
 using namespace ::testing;
 
 class OpNativeBatchNormLegitNoTrainingOutTest : public OperatorTest {
@@ -190,6 +194,80 @@ class OpNativeBatchNormLegitOutTest : public OperatorTest {
 
 class OpNativeBatchNormLegitNoStatsOutTest : public OperatorTest {
  protected:
+  template <executorch::aten::ScalarType DTYPE>
+  void test_large_offset_small_variance(
+      int batches = 2,
+      bool affine = true,
+      int samples = 320) {
+    torch::executor::testing::TensorFactory<DTYPE> tf;
+    constexpr int channels = 3;
+    constexpr double eps = 1e-5;
+    const double delta =
+        DTYPE == executorch::aten::ScalarType::BFloat16 ? 0.125 : 0.0078125;
+    constexpr std::array<double, channels> centers{9.25, 1024, 42};
+    const double high_offset_delta =
+        DTYPE == executorch::aten::ScalarType::BFloat16 ? 8 : 2;
+    const std::array<double, channels> spreads{delta, high_offset_delta, 0};
+    const std::array<double, channels> weights{
+        affine ? 2.0 : 1.0, affine ? 0.5 : 1.0, 1};
+    const std::array<double, channels> biases{
+        affine ? 1.0 : 0.0, affine ? -1.0 : 0.0, affine ? 3.0 : 0.0};
+    using Value = typename decltype(tf)::ctype;
+    std::vector<Value> values;
+    std::vector<Value> expected;
+    std::vector<Value> expected_invstd;
+    values.reserve(batches * channels * samples);
+    expected.reserve(batches * channels * samples);
+    expected_invstd.reserve(channels);
+    for (int c = 0; c < channels; ++c) {
+      expected_invstd.push_back(1 / std::sqrt(spreads[c] * spreads[c] + eps));
+    }
+    for (int b = 0; b < batches; ++b) {
+      for (int c = 0; c < channels; ++c) {
+        for (int j = 0; j < samples; ++j) {
+          const int parity = batches == 1 ? j % 2 : b % 2;
+          const double deviation = (parity == 0 ? -1 : 1) * spreads[c];
+          values.push_back(centers[c] + deviation);
+          expected.push_back(
+              deviation / std::sqrt(spreads[c] * spreads[c] + eps) *
+                  weights[c] +
+              biases[c]);
+        }
+      }
+    }
+    auto input = tf.make({batches, channels, samples}, values);
+    const std::optional<executorch::aten::Tensor> weight = affine
+        ? std::optional<executorch::aten::Tensor>(
+              tf.make({channels}, {2, 0.5, 1}))
+        : std::nullopt;
+    const std::optional<executorch::aten::Tensor> bias = affine
+        ? std::optional<executorch::aten::Tensor>(
+              tf.make({channels}, {1, -1, 3}))
+        : std::nullopt;
+    auto out = tf.zeros({batches, channels, samples});
+    auto mean = tf.full({channels}, 999);
+    auto invstd = tf.full({channels}, 999);
+
+    op_native_batch_norm_legit_no_stats_out(
+        input, weight, bias, true, 0.1, eps, out, mean, invstd);
+
+    const auto expected_out = tf.make({batches, channels, samples}, expected);
+    if (DTYPE == executorch::aten::ScalarType::Float &&
+        torch::executor::testing::SupportedFeatures::get()->is_aten) {
+      // ATen's x * alpha + beta fast path cancels large float terms,
+      // including for the constant channel. Keep portable checks strict.
+      EXPECT_TENSOR_CLOSE_WITH_TOL(
+          out,
+          expected_out,
+          executorch::runtime::testing::internal::kDefaultRtol,
+          1e-3);
+    } else {
+      EXPECT_TENSOR_CLOSE(out, expected_out);
+    }
+    EXPECT_TENSOR_CLOSE(mean, tf.make({channels}, {9.25, 1024, 42}));
+    EXPECT_TENSOR_CLOSE(invstd, tf.make({channels}, expected_invstd));
+  }
+
   ::std::tuple<
       executorch::aten::Tensor&,
       executorch::aten::Tensor&,
@@ -1140,6 +1218,37 @@ TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest4D) {
   EXPECT_TENSOR_CLOSE(out0, out0_expected);
   EXPECT_TENSOR_CLOSE(out1, out1_expected);
   EXPECT_TENSOR_CLOSE(out2, out2_expected);
+}
+
+TEST_F(OpNativeBatchNormLegitNoStatsOutTest, LargeOffsetSmallVarianceFloat) {
+  test_large_offset_small_variance<executorch::aten::ScalarType::Float>();
+}
+
+TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SingleBatchWithoutAffine) {
+  test_large_offset_small_variance<executorch::aten::ScalarType::Float>(
+      1, false);
+}
+
+TEST_F(OpNativeBatchNormLegitNoStatsOutTest, LargeOffsetWithVectorTail) {
+  test_large_offset_small_variance<executorch::aten::ScalarType::Float>(
+      2, true, 321);
+}
+
+TEST_F(OpNativeBatchNormLegitNoStatsOutTest, LargeOffsetWithoutFullVector) {
+  test_large_offset_small_variance<executorch::aten::ScalarType::Float>(
+      2, true, 3);
+}
+
+TEST_F(OpNativeBatchNormLegitNoStatsOutTest, LargeOffsetSmallVarianceDouble) {
+  test_large_offset_small_variance<executorch::aten::ScalarType::Double>();
+}
+
+TEST_F(OpNativeBatchNormLegitNoStatsOutTest, LargeOffsetSmallVarianceHalf) {
+  test_large_offset_small_variance<executorch::aten::ScalarType::Half>();
+}
+
+TEST_F(OpNativeBatchNormLegitNoStatsOutTest, LargeOffsetSmallVarianceBFloat16) {
+  test_large_offset_small_variance<executorch::aten::ScalarType::BFloat16>();
 }
 
 // Test that verifies the fix for uninitialized memory bug in mean/invstd

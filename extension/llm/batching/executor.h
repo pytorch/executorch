@@ -98,6 +98,9 @@ class ET_EXPERIMENTAL Executor {
   // with a lifetime-unique id and no sampling policy. Called between forwards;
   // source may have an active generation or hold speculative state past upto.
   // The caller owns the returned session until close_session().
+  // Includes all continuation state (attention KV, convolution, recurrent/SSM)
+  // at the same boundary. A current recurrent state cannot stand in for an
+  // earlier one: refuse unless the complete state at upto is recoverable.
   //
   // nullopt = unsupported, unavailable retained history, or insufficient
   // capacity. An empty prefix may also be refused. Failure, including an
@@ -120,8 +123,11 @@ class ET_EXPERIMENTAL Executor {
       const SamplingParams& params,
       std::optional<std::uint64_t> seed) = 0;
 
-  // Metadata-only admission check on the engine thread. False rejects just
-  // this generation before any tasks are queued. Raw tokens bypass this check.
+  // Metadata-only compatibility check on the engine thread after initialize().
+  // Stable and repeatable for an initialized executor and input, independent of
+  // transient capacity or session state; must not open or mutate sessions.
+  // Preflight and generation admission may both call this. False rejects the
+  // input before any tasks are queued. Raw tokens bypass this check.
   virtual bool accepts(const PreparedInput& /*input*/) const {
     return false;
   }
@@ -133,6 +139,10 @@ class ET_EXPERIMENTAL Executor {
   // contents. Backing can outlive this executor and be released on another
   // thread, so its destruction must be thread-safe and must not depend on this
   // executor's life.
+  //
+  // Cancellation does not interrupt an in-progress execute() call. Work already
+  // submitted in that batch may run to completion before cancellation takes
+  // effect.
   //
   // The batch arrives shaped as the scheduler packed it, and every input must
   // be answered. An implementation whose model needs static shapes pads or

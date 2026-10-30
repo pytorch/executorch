@@ -154,13 +154,144 @@ def test_down_pass_remembers_path_blocked_before_shared_node() -> None:
     assert targets == [PERMUTE, ABS, NEG, ADD, ADD]
 
 
-def test_is_swappable_declines_reduction_that_drops_the_dimension() -> None:
+def test_is_swappable_accepts_reduction_that_drops_the_dimension() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     pass_ = PropagateViewCopyPermuteUpPass()
 
     assert pass_.is_swappable(graph.call_function(SUM, args=(x, [1], True)))
-    assert not pass_.is_swappable(graph.call_function(SUM, args=(x, [1], False)))
+    assert pass_.is_swappable(graph.call_function(SUM, args=(x, [1], False)))
+    assert pass_.is_swappable(graph.call_function(SUM, args=(x, [1])))
+
+
+@pytest.mark.parametrize(
+    ("pass_cls", "expected_permute", "expected_reduction_dims"),
+    [
+        (PropagateViewCopyPermuteDownPass, [1, 0], [0]),
+        (PropagateViewCopyPermuteUpPass, [0, 2, 1], [0]),
+    ],
+)
+@pytest.mark.parametrize("keepdim_explicit", [False, True])
+def test_permute_crosses_rank_dropping_reduction(
+    pass_cls: (
+        type[PropagateViewCopyPermuteDownPass] | type[PropagateViewCopyPermuteUpPass]
+    ),
+    expected_permute: list[int],
+    expected_reduction_dims: list[int],
+    keepdim_explicit: bool,
+) -> None:
+    values = torch.arange(24, dtype=torch.float32).reshape(2, 3, 4)
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = values
+    if pass_cls is PropagateViewCopyPermuteDownPass:
+        permute = graph.call_function(PERMUTE, args=(x, [2, 0, 1]))
+        permute.meta["val"] = values.permute(2, 0, 1)
+        reduction_args = (permute, [1], False) if keepdim_explicit else (permute, [1])
+        reduction = graph.call_function(SUM, args=reduction_args)
+        reduction.meta["val"] = permute.meta["val"].sum(dim=1)
+        graph.output(reduction)
+    else:
+        reduction_args = (x, [0], False) if keepdim_explicit else (x, [0])
+        reduction = graph.call_function(SUM, args=reduction_args)
+        reduction.meta["val"] = values.sum(dim=0)
+        permute = graph.call_function(PERMUTE, args=(reduction, [1, 0]))
+        permute.meta["val"] = reduction.meta["val"].permute(1, 0)
+        graph.output(permute)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+    expected = graph_module(values)
+
+    result = pass_cls().call(graph_module).graph_module
+    call_nodes = [node for node in result.graph.nodes if node.op == "call_function"]
+    moved_permute = next(node for node in call_nodes if node.target == PERMUTE)
+    moved_reduction = next(node for node in call_nodes if node.target == SUM)
+
+    if pass_cls is PropagateViewCopyPermuteDownPass:
+        assert call_nodes.index(moved_reduction) < call_nodes.index(moved_permute)
+    else:
+        assert call_nodes.index(moved_permute) < call_nodes.index(moved_reduction)
+    assert moved_permute.args[1] == expected_permute
+    assert moved_reduction.args[1] == expected_reduction_dims
+    torch.testing.assert_close(result(values), expected)
+
+
+@pytest.mark.parametrize("dims", [[0], [-1], []])
+@pytest.mark.parametrize("keepdim_explicit", [False, True])
+def test_upward_permute_preserves_scalar_reduction(
+    dims: list[int], keepdim_explicit: bool
+) -> None:
+    values = torch.tensor(3.0)
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = values
+    reduction_args = (x, dims, False) if keepdim_explicit else (x, dims)
+    reduction = graph.call_function(SUM, args=reduction_args)
+    reduction.meta["val"] = values.sum(dim=dims)
+    permute = graph.call_function(PERMUTE, args=(reduction, []))
+    permute.meta["val"] = reduction.meta["val"].permute([])
+    graph.output(permute)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+    expected = graph_module(values)
+
+    pass_ = PropagateViewCopyPermuteUpPass()
+    assert not pass_._propagate_iteration(graph_module)
+    result = pass_.call(graph_module).graph_module
+    result.graph.lint()
+    reduced = next(node for node in result.graph.nodes if node.target == SUM)
+
+    assert reduced.args[1:] == reduction_args[1:]
+    assert reduced.meta["val"].shape == torch.Size(())
+    torch.testing.assert_close(result(values), expected)
+
+
+def test_downward_permute_crosses_reduction_over_all_dims() -> None:
+    values = torch.arange(24, dtype=torch.float32).reshape(2, 3, 4)
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = values
+    permute = graph.call_function(PERMUTE, args=(x, [2, 0, 1]))
+    permute.meta["val"] = values.permute(2, 0, 1)
+    reduction = graph.call_function(SUM, args=(permute, []))
+    reduction.meta["val"] = permute.meta["val"].sum()
+    graph.output(reduction)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+    expected = graph_module(values)
+
+    result = PropagateViewCopyPermuteDownPass().call(graph_module).graph_module
+    call_targets = [
+        node.target for node in result.graph.nodes if node.op == "call_function"
+    ]
+
+    assert call_targets == [SUM]
+    torch.testing.assert_close(result(values), expected)
+
+
+def test_upward_permute_crosses_rank_expanding_binary_after_reduction() -> None:
+    values = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+    bias_value = torch.ones((1, 1, 1, 1), dtype=torch.float32)
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = values
+    bias = graph.placeholder("bias")
+    bias.meta["val"] = bias_value
+    add = graph.call_function(ADD, args=(x, bias))
+    add.meta["val"] = values + bias_value
+    reduction = graph.call_function(SUM, args=(add, [0]))
+    reduction.meta["val"] = add.meta["val"].sum(dim=0)
+    permute = graph.call_function(PERMUTE, args=(reduction, [0, 2, 1]))
+    permute.meta["val"] = reduction.meta["val"].permute(0, 2, 1)
+    graph.output(permute)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+    expected = graph_module(values, bias_value)
+
+    result = PropagateViewCopyPermuteUpPass().call(graph_module).graph_module
+    call_nodes = [node for node in result.graph.nodes if node.op == "call_function"]
+    moved_permute = next(node for node in call_nodes if node.target == PERMUTE)
+    moved_add = next(node for node in call_nodes if node.target == ADD)
+
+    assert call_nodes.index(moved_permute) < call_nodes.index(moved_add)
+    assert moved_permute.args[1] == [1, 0]
+    torch.testing.assert_close(result(values, bias_value), expected)
 
 
 @pytest.mark.parametrize("shape", [(1, 3, 5), (1, 5, 5)])

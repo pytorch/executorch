@@ -26,5 +26,10 @@ class BitwiseNotVisitor(SimpleNodeVisitor):
             tosa_op=ts.Op.BITWISE_NOT,
             attr_method="BitwiseNotAttribute",
             num_inputs=1,
-            input_dtypes=[ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+            input_dtypes=[
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.INT64,
+            ],
         )

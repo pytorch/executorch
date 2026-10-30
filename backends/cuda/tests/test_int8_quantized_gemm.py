@@ -14,6 +14,7 @@ The default run covers every autotune candidate. For focused development,
 """
 
 import unittest
+import warnings
 from unittest import mock
 
 import sympy
@@ -342,7 +343,7 @@ class Int8QuantizedGemmLegalityTest(unittest.TestCase):
     @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
     def test_static_rows_must_equal_bucket(self) -> None:
         args = self._cuda_args(m=2)
-        self._expect_unsupported(1, args, "static M must equal the bucket 1")
+        self._expect_unsupported(1, args, "static M must be within \\[1, 1\\]")
 
     def test_ops_are_registered_per_bucket(self) -> None:
         self.assertEqual(SUPPORTED_BUCKETS, (1, 2, 3, 4))
@@ -358,7 +359,7 @@ class Int8QuantizedGemmLegalityTest(unittest.TestCase):
 
     @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
     def test_registered_op_validates_before_launch(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "static M must equal the bucket 1"):
+        with self.assertRaisesRegex(RuntimeError, "static M must be within \\[1, 1\\]"):
             INT8_QUANTIZED_GEMM.op(1)(*self._cuda_args(m=2))
 
 
@@ -445,6 +446,7 @@ class Int8QuantizedGemmNumericsTest(unittest.TestCase):
                             seed=200000 + bucket * 10000 + k * 10 + group_size,
                         )
                         ref = _unit_dq_mm_int8(x, *weights, group_size)
+                        checked = 0
                         for config_index, config in enumerate(
                             int8_autotune_configs(bucket)
                         ):
@@ -457,15 +459,28 @@ class Int8QuantizedGemmNumericsTest(unittest.TestCase):
                                 config=str(config),
                             ):
                                 single = _single_config_kernel(config)
-                                with mock.patch.dict(
-                                    int8_kernel._BUCKET_KERNELS, {bucket: single}
-                                ):
-                                    out = int8_kernel._launch(
-                                        bucket, x, *weights, group_size
-                                    )
+                                try:
+                                    with mock.patch.dict(
+                                        int8_kernel._BUCKET_KERNELS, {bucket: single}
+                                    ):
+                                        out = int8_kernel._launch(
+                                            bucket, x, *weights, group_size
+                                        )
+                                except triton.runtime.errors.OutOfResources as e:
+                                    # The autotuner drops a config that does not
+                                    # fit the device (e.g. BLOCK_N=8 x 3 stages
+                                    # at K=4096 on a 99 KiB A10G).
+                                    warnings.warn(f"{config}: {e}", stacklevel=1)
+                                    continue
+                                checked += 1
                                 self.assertEqual(out.shape, (bucket, _N))
                                 self.assertEqual(out.dtype, torch.bfloat16)
                                 _check_close(self, out, ref)
+                        self.assertGreater(
+                            checked,
+                            0,
+                            f"no candidate fits for {k=} {group_size=} {bucket=}",
+                        )
 
     def test_every_dynamic_bucket_and_candidate(self) -> None:
         with torch.no_grad():

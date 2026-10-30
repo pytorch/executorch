@@ -180,11 +180,10 @@ install(
 # executorchcoreml
 
 if(EXECUTORCH_BUILD_PYBIND)
-  pybind11_add_module(
-    executorchcoreml SHARED runtime/inmemoryfs/inmemory_filesystem_py.cpp
+  executorch_add_pybind_module(
+    executorchcoreml runtime/inmemoryfs/inmemory_filesystem_py.cpp
     runtime/inmemoryfs/inmemory_filesystem_utils.cpp
   )
-  strip_python_lib(executorchcoreml)
   target_link_libraries(
     executorchcoreml PRIVATE coreml_util coreml_inmemoryfs
                              nlohmann_json::nlohmann_json

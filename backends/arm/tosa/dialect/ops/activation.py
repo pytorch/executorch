@@ -7,7 +7,10 @@ import math
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops._common import validate_nan_mode
+from executorch.backends.arm.tosa.dialect.ops._common import (
+    validate_float_dtype,
+    validate_nan_mode,
+)
 from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
@@ -36,30 +39,7 @@ def _validate_clamp_dtype(dtype: torch.dtype, op: str) -> None:
             )
         return
 
-    _validate_float_dtype(dtype, op)
-    return
-
-
-def _validate_float_dtype(dtype: torch.dtype, op: str) -> None:
-    tosa_spec = get_context_spec()
-
-    if dtype in (torch.float16, torch.float32):
-        if not tosa_spec.support_float():
-            raise TosaValueError(
-                f"TOSA spec {tosa_spec} doesn't support {dtype} for {op}",
-                op=op,
-            )
-        return
-
-    if dtype == torch.bfloat16:
-        if not (tosa_spec.support_float() and tosa_spec.support_extension("bf16")):
-            raise TosaValueError(
-                f"TOSA spec {tosa_spec} doesn't support bfloat16 for {op}",
-                op=op,
-            )
-        return
-
-    raise TosaValueError(f"Unsupported dtype {dtype} for {op}", op=op)
+    validate_float_dtype(dtype, op)
 
 
 def _validate_integer_clamp_bounds(
@@ -116,7 +96,7 @@ def CLAMP(
     FP_SPECS,
 )
 def ERF(input: torch.Tensor) -> torch.Tensor:
-    _validate_float_dtype(input.dtype, "ERF")
+    validate_float_dtype(input.dtype, "ERF")
     return torch.empty_like(input, dtype=input.dtype)
 
 
@@ -125,7 +105,7 @@ def ERF(input: torch.Tensor) -> torch.Tensor:
     FP_SPECS,
 )
 def SIGMOID(input: torch.Tensor) -> torch.Tensor:
-    _validate_float_dtype(input.dtype, "SIGMOID")
+    validate_float_dtype(input.dtype, "SIGMOID")
     return torch.empty_like(input, dtype=input.dtype)
 
 
@@ -134,5 +114,5 @@ def SIGMOID(input: torch.Tensor) -> torch.Tensor:
     FP_SPECS,
 )
 def TANH(input: torch.Tensor) -> torch.Tensor:
-    _validate_float_dtype(input.dtype, "TANH")
+    validate_float_dtype(input.dtype, "TANH")
     return torch.empty_like(input, dtype=input.dtype)

@@ -78,6 +78,19 @@ Args:
 - **output_path**: Path to dump intermediate results to.
 
 ```python
+def EthosUCompileSpec.set_delegate_mutable_buffers(self, enabled: bool = True) -> 'EthosUCompileSpec':
+```
+Let the delegate own mutable buffers (streaming state).
+
+The buffers become variables in a persistent region kept across
+invocations, instead of being passed as program inputs and outputs.
+Requires Vela 5.3 or later (for --separate-persistent-region), and the
+firmware must be built with ETHOSU_PERSISTENT_REGION.
+
+Args:
+- **enabled**: Whether the delegate owns mutable buffers.
+
+```python
 def EthosUCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
 ```
 Set the configuration for the Arm pass pipeline.

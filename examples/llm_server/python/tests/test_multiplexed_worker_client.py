@@ -16,7 +16,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     MultiplexedWorkerClient,
     spawn_multiplexed_worker,
@@ -29,7 +28,6 @@ from executorch.examples.llm_server.python.worker_client import (
     WorkerError,
     WorkerStats,
 )
-
 
 _PREAMBLE = """
 import json, os, sys
@@ -1109,6 +1107,7 @@ def test_invalid_request_handles(request_id):
             "mailbox_capacity",
             "max_buffered_chars",
             "max_message_bytes",
+            "max_request_bytes",
         )
         for value in (True, 0, -1, 1.5)
     ]
@@ -1168,6 +1167,86 @@ def test_outbound_frame_limit_counts_encoded_jsonl_and_max_uint64(extra_bytes, e
                 assert isinstance(await stream.wait(), WorkerStats)
             assert not client._requests and not client._writes and not client._controls
             assert client.healthy
+
+    _run(scenario())
+
+
+@pytest.mark.parametrize("extra_bytes", [0, 1])
+def test_configurable_request_limit_keeps_response_bound_independent(extra_bytes):
+    async def scenario():
+        limit = 2 * _LIMIT
+        async with _fake_client(max_request_bytes=limit, max_message_bytes=128) as (
+            client,
+            proc,
+        ):
+            stream = client.generate("seed", SimpleNamespace())
+            seed = await proc.stdin.frames.get()
+            proc.send(stream.request_id, done=True)
+            assert await _collect(stream) == []
+            seed["request_id"] = client._next_request_id
+            seed["prompt"] = ""
+            overhead = len((json.dumps(seed) + "\n").encode())
+            prompt = "x" * (limit - overhead + extra_bytes)
+            if extra_bytes:
+                with pytest.raises(WorkerError, match=f"{limit} byte") as error:
+                    client.generate(prompt, SimpleNamespace())
+                assert error.value.code == "invalid_argument"
+                assert not client._requests and not client._writes
+                assert proc.stdin.frames.empty()
+            else:
+                stream = client.generate(prompt, SimpleNamespace())
+                request = await proc.stdin.frames.get()
+                assert request["prompt"] == prompt
+                assert len(proc.stdin.written[-1]) == limit
+                proc.send(stream.request_id, token="x" * 128)
+                with pytest.raises(WorkerError, match="oversized"):
+                    await stream.wait()
+                assert client.failed
+
+    _run(scenario())
+
+
+def test_factory_forwards_large_image_request_limit_without_raising_response_bound():
+    async def scenario():
+        image = {"encoding": "base64", "mime_type": "image/png", "data": "A" * _LIMIT}
+        async with _real_client(
+            f"""
+            print(json.dumps(dict(ready=True, multiplexed=True)), flush=True)
+            request = recv()
+            assert request['prompt_segments'][1]['image']['encoding'] == 'base64'
+            assert len(request['prompt_segments'][1]['image']['data']) == {_LIMIT}
+            send(request, done=True)
+            """,
+            negotiate=True,
+            max_request_bytes=32 * _LIMIT,
+            max_message_bytes=128,
+        ) as client:
+            stream = client.generate(
+                "ignored",
+                SimpleNamespace(
+                    prompt_segments=[
+                        {"text": "before"},
+                        {"image": image},
+                        {"text": "after"},
+                    ]
+                ),
+            )
+            assert await _collect(stream) == []
+            assert isinstance(await stream.wait(), WorkerStats)
+            assert client._max_message_bytes == 128
+
+    _run(scenario())
+
+
+@pytest.mark.parametrize("limit", [True, 0, -1, 1.5])
+def test_factory_rejects_invalid_request_limit_before_spawning(limit):
+    async def scenario():
+        with patch("asyncio.create_subprocess_exec") as spawn:
+            with pytest.raises(WorkerError, match="max_request_bytes"):
+                await spawn_multiplexed_worker(
+                    [sys.executable], max_request_bytes=limit
+                )
+            spawn.assert_not_called()
 
     _run(scenario())
 

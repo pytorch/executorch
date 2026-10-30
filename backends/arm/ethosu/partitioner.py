@@ -37,3 +37,4 @@ class EthosUPartitioner(TOSAPartitioner):
         self._requires_resolved_tensor_shapes = True
         self._custom_partition_ops: set[OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
+        self.delegate_mutable_buffers = compile_spec.delegate_mutable_buffers

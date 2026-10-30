@@ -68,7 +68,8 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   if(EXECUTORCH_BUILD_ARM_BAREMETAL)
     target_sources(
       executorch_delegate_ethos_u
-      PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_M.cpp
+      PRIVATE
+        ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_CoreDriver.cpp
     )
     set(DRIVER_ETHOSU_INCLUDE_DIR
         "${ETHOS_SDK_PATH}/core_software/core_driver/include"
@@ -92,7 +93,8 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   elseif(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     target_sources(
       executorch_delegate_ethos_u
-      PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_A.cpp
+      PRIVATE
+        ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_LinuxDriver.cpp
     )
     if(NOT ETHOSU_LINUX_DRIVER_SOURCE_DIR
        OR NOT EXISTS
@@ -264,6 +266,7 @@ if(EXECUTORCH_BUILD_VGF)
   # Add backend delegate for VGF
   set(_vgf_backend_sources
       backends/arm/runtime/VGFBackend.cpp backends/arm/runtime/VGFSetup.cpp
+      backends/arm/runtime/VGFZeroCopy.cpp
       backends/arm/runtime/VGFNeuralStatistics.cpp
   )
   if(NOT EXECUTORCH_BUILD_VULKAN)
@@ -273,6 +276,15 @@ if(EXECUTORCH_BUILD_VGF)
   # vgf backend
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
   add_library(vgf_backend ${_vgf_backend_sources})
+
+  option(EXECUTORCH_VGF_ZERO_COPY_IO
+         "Enable VGF model-boundary host zero-copy I/O" OFF
+  )
+  if(EXECUTORCH_VGF_ZERO_COPY_IO)
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_ZERO_COPY_IO=1)
+  else()
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_ZERO_COPY_IO=0)
+  endif()
 
   # Should be absent in ordinary production builds.
   option(EXECUTORCH_VGF_IO_STATS "Collect per-execution VGF copy statistics"
@@ -359,6 +371,20 @@ if(EXECUTORCH_BUILD_VGF)
     add_test(NAME vgf_neural_statistics_test COMMAND vgf_neural_statistics_test)
 
     add_executable(
+      vgf_shape_utils_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_shape_utils_test.cpp
+    )
+    target_include_directories(
+      vgf_shape_utils_test PRIVATE ${_common_include_directories}
+    )
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(vgf_shape_utils_test PRIVATE GTest::gtest_main)
+    else()
+      target_link_libraries(vgf_shape_utils_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_shape_utils_test COMMAND vgf_shape_utils_test)
+
+    add_executable(
       vgf_vulkan_features_test
       ${EXECUTORCH_ROOT}/backends/arm/test/vgf_vulkan_features_test.cpp
     )
@@ -376,6 +402,25 @@ if(EXECUTORCH_BUILD_VGF)
       target_link_libraries(vgf_vulkan_features_test PRIVATE gtest gtest_main)
     endif()
     add_test(NAME vgf_vulkan_features_test COMMAND vgf_vulkan_features_test)
+
+    add_executable(
+      vgf_zero_copy_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_zero_copy_test.cpp
+    )
+    target_include_directories(
+      vgf_zero_copy_test PRIVATE ${_common_include_directories}
+                                 ${VULKAN_HEADERS_PATH} ${VOLK_HEADERS_PATH}
+    )
+    target_compile_options(
+      vgf_zero_copy_test PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK
+    )
+    target_link_libraries(vgf_zero_copy_test PRIVATE vgf_backend)
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(vgf_zero_copy_test PRIVATE GTest::gtest_main)
+    else()
+      target_link_libraries(vgf_zero_copy_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_zero_copy_test COMMAND vgf_zero_copy_test)
   endif()
 
   # end config for VGF builds

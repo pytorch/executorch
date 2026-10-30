@@ -147,6 +147,9 @@ ROCM_EXCLUDED_TESTS=(
   --ignore=backends/cuda/tests/test_triton_sdpa_splitk.py
   # This test process core-dumps on ROCm instead of reporting a failure.
   --ignore=backends/cuda/tests/test_triton_sdpa_nan.py
+  # CUDA-graph autotune timing is NVIDIA-only; the CUDA backend turns it off
+  # on ROCm.
+  --ignore=backends/cuda/tests/test_cuda_graph_timing.py
 )
 python -m pytest -v -o 'addopts=' \
   "${ROCM_EXCLUDED_TESTS[@]}" \

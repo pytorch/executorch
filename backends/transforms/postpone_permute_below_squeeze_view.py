@@ -12,6 +12,7 @@ from typing import cast, List
 import torch
 import torch.fx
 from executorch.backends.transforms.channels_last_layout import PERMUTE_COPY_TARGETS
+from executorch.backends.transforms.dim_maps import _normalize_dims
 from executorch.backends.transforms.permute_pass_utils import (
     get_shape,
     RemoveOrReplacePassInterface,
@@ -78,7 +79,9 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
 
         permute_node_shape = [*cast(list, get_shape(node.graph.owning_module, node))]
 
-        permute_dims = cast(list, node.args[1])
+        permute_dims = _normalize_dims(
+            cast(list, node.args[1]), len(permute_node_shape)
+        )
         view_node = users[0]
 
         if view_node.meta.get("val") is None:

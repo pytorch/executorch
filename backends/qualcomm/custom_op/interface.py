@@ -6,14 +6,6 @@
 
 from typing import List, Optional
 
-try:
-    from qti.aisw.op_package_generator.generator import QnnOpPackageGenerator
-except ImportError as e:
-    raise ImportError(
-        "Failed to import QnnOpPackageGenerator. "
-        "Please run 'source $QNN_SDK_ROOT/bin/envsetup.sh' to set up the QNN SDK environment."
-    ) from e
-
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchOpPackageInfo,
     QnnExecuTorchOpPackageOptions,
@@ -47,9 +39,20 @@ class QnnCustomOpPackageBuilder:
                 "{PackageName}InterfaceProvider" if not specified.
 
         Raises:
+            ImportError: If the QNN SDK Python bindings are unavailable or incompatible.
             ValueError: If any key in torch_op_name_map is not found in the
                 parsed op package.
         """
+        try:
+            from qti.aisw.op_package_generator.generator import QnnOpPackageGenerator
+        except ImportError as e:
+            raise ImportError(
+                "Failed to import QnnOpPackageGenerator. "
+                "Ensure the QNN SDK supports this Python version and run "
+                "'source $QNN_SDK_ROOT/bin/envsetup.sh' to set up the SDK environment. "
+                f"Original error: {e}"
+            ) from e
+
         op_package_generator = QnnOpPackageGenerator()
         op_package_generator.parse_config([xml_path])
 

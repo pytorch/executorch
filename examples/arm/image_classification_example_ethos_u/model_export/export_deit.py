@@ -96,7 +96,7 @@ if __name__ == "__main__":
         type=str,
         default="./deit-tiny-oxford-pet/final_model",
         required=True,
-        help="Path to the fine-tuned ViT model.",
+        help="Path to the fine-tuned ViT model saved in safetensors format.",
     )
     argparser.add_argument(
         "--output-path",
@@ -123,6 +123,7 @@ if __name__ == "__main__":
         num_labels=37,
         ignore_mismatched_sizes=True,
         revision="b3428f18dcc7b543470d07f14b4a4157815d1880",
+        use_safetensors=True,
     ).eval()
     image_preprocessor = AutoImageProcessor.from_pretrained(
         "facebook/deit-tiny-patch16-224",

@@ -21,7 +21,7 @@ using executorch::runtime::FreeableBuffer;
 struct FreeCallArgs {
   size_t calls;
   std::variant<const void*, uint64_t> data;
-  size_t size;
+  uint64_t size;
 };
 
 void RecordFree(void* context, void* data, size_t size) {
@@ -31,7 +31,14 @@ void RecordFree(void* context, void* data, size_t size) {
   call->size = size;
 }
 
-void RecordInt64Free(void* context, uint64_t data, size_t size) {
+void RecordInt64Free(void* context, uint64_t data, uint64_t size) {
+  auto* call = reinterpret_cast<FreeCallArgs*>(context);
+  call->calls++;
+  call->data = data;
+  call->size = size;
+}
+
+void RecordLegacyInt64Free(void* context, uint64_t data, size_t size) {
   auto* call = reinterpret_cast<FreeCallArgs*>(context);
   call->calls++;
   call->data = data;
@@ -250,6 +257,127 @@ TEST(FreeableBufferTest, MoveTest) {
   EXPECT_EQ(call2.size, sizeof(i64));
 }
 
+TEST(FreeableBufferTest, UInt64SizeTest) {
+  constexpr uint64_t kSize = (uint64_t{1} << 32) + 1;
+  FreeCallArgs call = {};
+  FreeableBuffer fb(
+      /*data_uint64=*/uint64_t{0x900000000},
+      /*size=*/kSize,
+      /*free_fn=*/RecordInt64Free,
+      /*free_fn_context=*/&call);
+
+  EXPECT_EQ(fb.size_uint64(), kSize);
+
+  FreeableBuffer moved(std::move(fb));
+  EXPECT_EQ(fb.size_uint64(), 0); // NOLINT(bugprone-use-after-move)
+  EXPECT_EQ(fb.data_uint64_type().get(), 0); // NOLINT(bugprone-use-after-move)
+  fb.Free();
+  EXPECT_EQ(call.calls, 0);
+  EXPECT_EQ(moved.size_uint64(), kSize);
+  EXPECT_EQ(moved.data_uint64_type().get(), uint64_t{0x900000000});
+
+  moved.Free();
+  EXPECT_EQ(call.calls, 1);
+  EXPECT_EQ(call.size, kSize);
+  EXPECT_EQ(moved.size_uint64(), 0);
+  moved.Free();
+  EXPECT_EQ(call.calls, 1);
+}
+
+TEST(FreeableBufferTest, UInt64SizeWithNullFreeFnTest) {
+  constexpr uint64_t kAddress = 0x900000000;
+  constexpr uint64_t kSize = (uint64_t{1} << 32) + 1;
+  FreeableBuffer fb(kAddress, kSize, nullptr);
+
+  EXPECT_EQ(fb.size_uint64(), kSize);
+  EXPECT_EQ(fb.data_uint64_type().get(), kAddress);
+  fb.Free();
+  EXPECT_EQ(fb.size_uint64(), 0);
+  EXPECT_EQ(fb.data_uint64_type().get(), 0);
+}
+
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+TEST(FreeableBufferTest, LegacySizeTFreeFnTest) {
+  executorch::runtime::pal_init();
+  const uint64_t i64 = 0x900000000;
+  FreeCallArgs call = {};
+  FreeableBuffer fb(
+      /*data_uint64=*/i64,
+      /*size=*/sizeof(i64),
+      /*free_fn=*/RecordLegacyInt64Free,
+      /*free_fn_context=*/&call);
+
+  EXPECT_EQ(fb.size(), sizeof(i64));
+  EXPECT_EQ(fb.data_uint64_type().get(), i64);
+  EXPECT_EQ(fb.data_safe().error(), Error::InvalidType);
+  fb.Free();
+  EXPECT_EQ(call.calls, 1);
+  EXPECT_EQ(std::get<uint64_t>(call.data), i64);
+  EXPECT_EQ(call.size, sizeof(i64));
+  EXPECT_EQ(fb.size_uint64(), 0);
+  EXPECT_EQ(fb.data_uint64_type().get(), 0);
+  fb.Free();
+  EXPECT_EQ(call.calls, 1);
+}
+
+TEST(FreeableBufferTest, LegacyConvertibleFreeFnTest) {
+  struct Callback {
+    using FreeFn = FreeableBuffer::FreeUInt64Fn;
+    Callback() = default;
+    Callback(const Callback&) = delete;
+    Callback& operator=(const Callback&) = delete;
+    operator FreeFn() & {
+      return RecordLegacyInt64Free;
+    }
+  } callback;
+  FreeCallArgs call = {};
+  constexpr uint64_t kAddress = 0x900000000;
+  FreeableBuffer fb(kAddress, size_t{16}, callback, &call);
+
+  fb.Free();
+  EXPECT_EQ(call.calls, 1);
+  EXPECT_EQ(std::get<uint64_t>(call.data), kAddress);
+  EXPECT_EQ(call.size, 16);
+}
+
+TEST(FreeableBufferTest, LegacyLambdaFreeFnMoveTest) {
+  executorch::runtime::pal_init();
+  constexpr uint64_t kAddress = 0x900000000;
+  constexpr size_t kSize = 16;
+  FreeCallArgs call = {};
+  {
+    FreeableBuffer source(
+        kAddress,
+        kSize,
+        [](void* context, uint64_t data, size_t size) {
+          RecordLegacyInt64Free(context, data, size);
+        },
+        &call);
+    FreeableBuffer destination(std::move(source));
+
+    EXPECT_EQ(source.size(), 0); // NOLINT(bugprone-use-after-move)
+    EXPECT_EQ(
+        source.data_uint64_type().get(), 0); // NOLINT(bugprone-use-after-move)
+    source.Free();
+    EXPECT_EQ(call.calls, 0);
+    EXPECT_EQ(destination.size(), kSize);
+    EXPECT_EQ(destination.data_uint64_type().get(), kAddress);
+    EXPECT_EQ(destination.data_safe().error(), Error::InvalidType);
+    destination.Free();
+    destination.Free();
+    EXPECT_EQ(call.calls, 1);
+  }
+  EXPECT_EQ(call.calls, 1);
+  EXPECT_EQ(std::get<uint64_t>(call.data), kAddress);
+  EXPECT_EQ(call.size, kSize);
+}
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
+
 TEST(FreeableBufferTest, APIMisuseDeathTest) {
   executorch::runtime::pal_init();
   int i;
@@ -266,4 +394,8 @@ TEST(FreeableBufferTest, APIMisuseDeathTest) {
       /*free_fn=*/nullptr);
   EXPECT_EQ(fb2.data_safe().error(), Error::InvalidType);
   ET_EXPECT_DEATH(fb2.data(), ".*");
+#if SIZE_MAX < UINT64_MAX
+  FreeableBuffer wide(i64, uint64_t{SIZE_MAX} + 1, nullptr);
+  ET_EXPECT_DEATH(wide.size(), "FreeableBuffer size exceeds size_t");
+#endif
 }

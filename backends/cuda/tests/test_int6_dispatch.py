@@ -352,12 +352,13 @@ class TestDecodeDispatch(unittest.TestCase):
     def _bucket_ops(targets):
         return {t for t in targets if "int6_quantized_gemm" in t}
 
-    def test_decode_sized_m_uses_its_bucket_op(self):
+    def test_static_m_uses_the_smallest_covering_bucket_op(self):
         module, w_ref = self._module()
-        for m in (1, 2, 3, 4):
+        cases = {1: 1, 2: 2, 3: 3, 4: 4, 6: 8, 8: 8, 16: 16, 24: 32, 48: 64, 64: 64}
+        for m, bucket in cases.items():
             x = torch.randn(m, 512, dtype=torch.bfloat16, device="cuda")
             ops = self._bucket_ops(self._targets(module, x))
-            self.assertEqual(ops, {f"triton.int6_quantized_gemm_m{m}.default"}, m)
+            self.assertEqual(ops, {f"triton.int6_quantized_gemm_m{bucket}.default"}, m)
             with torch.no_grad():
                 out = module(x)
             ref = F.linear(x, w_ref)
@@ -376,12 +377,23 @@ class TestDecodeDispatch(unittest.TestCase):
             {"triton.int6_quantized_gemm_m3.default"},
         )
 
-    def test_prefill_and_unbounded_dynamic_m_use_dequant(self):
+    def test_bounded_dynamic_m_through_64_uses_a_bucket(self):
         module, _ = self._module()
-        x8 = torch.randn(8, 512, dtype=torch.bfloat16, device="cuda")
-        self.assertFalse(self._bucket_ops(self._targets(module, x8)))
-        self.assertFalse(self._bucket_ops(self._targets(module, x8, dynamic_m=(5, 64))))
-        self.assertFalse(self._bucket_ops(self._targets(module, x8, dynamic_m=(1, 64))))
+        x64 = torch.randn(64, 512, dtype=torch.bfloat16, device="cuda")
+        for bounds in ((5, 64), (1, 64)):
+            self.assertEqual(
+                self._bucket_ops(self._targets(module, x64, dynamic_m=bounds)),
+                {"triton.int6_quantized_gemm_m64.default"},
+                bounds,
+            )
+
+    def test_more_than_64_rows_uses_dequant(self):
+        module, _ = self._module()
+        x65 = torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
+        self.assertFalse(self._bucket_ops(self._targets(module, x65)))
+        self.assertFalse(
+            self._bucket_ops(self._targets(module, x65, dynamic_m=(1, 65)))
+        )
 
 
 class TestFallbacks(unittest.TestCase):
@@ -423,10 +435,10 @@ class TestFallbacks(unittest.TestCase):
             t, q, scale, 32, torch.randn(2, 512, dtype=torch.bfloat16, device="cuda")
         )
 
-    def test_more_than_four_rows(self):
+    def test_more_than_64_rows(self):
         t, q, scale = self._cuda_tensor(64, 512, 16)
         self._check(
-            t, q, scale, 16, torch.randn(5, 512, dtype=torch.bfloat16, device="cuda")
+            t, q, scale, 16, torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
         )
 
     def test_raw_uint8_scale_codes_are_signed(self):

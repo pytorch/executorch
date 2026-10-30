@@ -1623,9 +1623,15 @@ def quantized_w8a32_gru(
     assert new_hidden.shape == original_hidden_shape
 
     batch_size = inputs.shape[0]
-    input_dim = inputs.shape[1]
     hidden_dim = hidden.shape[-1]
+    if inputs.dim() == 3:
+        # [batch, seq_len, input] with one step: [2, batch, 1, hidden], as the
+        # fake kernel and the HiFi kernel produce. Batch > 1 is rejected
+        # above (the hidden state has one row).
+        step = new_hidden.reshape(batch_size, 1, hidden_dim)
+        return torch.stack([step, step], dim=0)
 
+    input_dim = inputs.shape[1]
     new_hidden_expanded = new_hidden.unsqueeze(1).expand(
         batch_size, input_dim, hidden_dim
     )
@@ -3081,6 +3087,30 @@ def sdpa_bitwise_causal_mask_gen(
         torch.bitwise_left_shift(torch.full_like(visible_bits, 0xFF), visible_bits),
         0xFF,
     ).to(torch.uint8)
+
+
+@impl_tracked(m, "sdpa_bitwise_ring_mask_gen")
+def sdpa_bitwise_ring_mask_gen(
+    positions: torch.Tensor, sliding_window: int, cache_length: int
+) -> torch.Tensor:
+    """Generate an LSB-first ring mask; set bits represent masked cache slots."""
+    assert positions.dtype in (torch.int32, torch.int64)
+    assert positions.dim() == 1
+    assert cache_length > 0 and cache_length % 8 == 0
+    assert 0 < sliding_window <= cache_length
+    assert bool(torch.all(positions >= 0))
+    absolute = positions.to(torch.int64).unsqueeze(1)
+    slots = torch.arange(
+        0, cache_length, 8, dtype=torch.int64, device=positions.device
+    ).unsqueeze(0)
+    packed = positions.new_zeros(
+        (positions.numel(), cache_length // 8), dtype=torch.uint8
+    )
+    for bit in range(8):
+        distance = (absolute - (slots + bit)) % cache_length
+        masked = (distance >= sliding_window) | (distance > absolute)
+        packed |= masked.to(torch.uint8) << bit
+    return packed
 
 
 @impl_tracked(m, "slice_scatter_")

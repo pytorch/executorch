@@ -29,6 +29,8 @@ if ! python -c "import tosa_serializer" >/dev/null 2>&1; then
   python -c "import tosa_serializer"
 fi
 
+bash .ci/scripts/tests/vulkan/test_vulkan_cmake_package.sh
+
 # Run pytest with coverage
 pytest -n auto --cov=./ --cov-report=xml
 # Run gtest

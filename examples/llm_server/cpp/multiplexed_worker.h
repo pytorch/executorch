@@ -10,6 +10,9 @@
 
 #include <chrono>
 #include <cstddef>
+#include <functional>
+
+#include <nlohmann/json.hpp>
 
 #include <executorch/extension/llm/serving/serving_runtime.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -18,12 +21,21 @@ namespace executorch::examples::llm_server {
 
 struct ET_EXPERIMENTAL MultiplexedWorkerConfig {
   std::size_t max_inflight_requests = 64;
-  // Includes the terminating newline. Applies to input and output records.
+  // Includes the terminating newline. Output bound and default input bound.
   std::size_t max_frame_bytes = 1024 * 1024;
   std::size_t token_frames_per_request = 64;
   std::size_t token_bytes_per_request = 256 * 1024;
   std::chrono::milliseconds write_timeout{10000};
   std::chrono::milliseconds startup_timeout{30000};
+  // Zero inherits max_frame_bytes. Raising this does not raise output limits.
+  std::size_t max_input_frame_bytes = 0;
+  // Optional model-aware adapter. Receives an owned object containing exactly
+  // one of prompt/prompt_segments, on runtime control after bounded admission.
+  // The serial reader only validates the envelope and captures prompt JSON.
+  std::function<extension::llm::serving::PromptPreparationResult(
+      const nlohmann::json&,
+      const extension::llm::serving::PromptPreparationContext&)>
+      prompt_preparer;
 };
 
 // POSIX JSONL transport. Borrows both descriptors exclusively for the call;

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <vector>
 
 #include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
@@ -18,6 +19,31 @@
 namespace executorch {
 namespace backends {
 namespace vgf {
+
+// Compile-time gate for the execute-path optimization. Undefined is treated
+// as OFF so non-CMake builds remain conservative by default.
+inline constexpr bool vgf_zero_copy_io_build_enabled() {
+#if defined(EXECUTORCH_VGF_ZERO_COPY_IO) && EXECUTORCH_VGF_ZERO_COPY_IO
+  return true;
+#else
+  return false;
+#endif
+}
+
+// ET_VGF_ZERO_COPY=0 is a runtime kill switch. Unset, empty, and any value
+// other than the exact string "0" leave an enabled build active.
+inline bool vgf_zero_copy_io_runtime_enabled(const char* value) {
+  return value == nullptr || value[0] == '\0' ||
+      !(value[0] == '0' && value[1] == '\0');
+}
+
+inline bool vgf_zero_copy_io_should_attempt(
+    bool build_enabled,
+    const char* runtime_value,
+    bool host_import_enabled) {
+  return build_enabled && vgf_zero_copy_io_runtime_enabled(runtime_value) &&
+      host_import_enabled;
+}
 
 // Identifies one descriptor binding that refers to a model-boundary resource.
 // An IO can appear in multiple segments and bindings, so this is deliberately
@@ -35,6 +61,74 @@ struct VgfBoundaryBindingRef {
 
 // Zero-copy eligibility information for one model input or output.
 // This metadata does not change resource allocation or execution.
+// Runtime selection state for one eligible boundary tensor. Descriptor
+// bindings stay in VgfZeroCopyIoMetadata because one IO can be referenced by
+// multiple segment-owned descriptor sets.
+struct VgfBoundaryBindingState {
+  VkTensorViewARM owned_view = VK_NULL_HANDLE;
+  VkTensorViewARM selected_view = VK_NULL_HANDLE;
+  VkTensorViewARM bound_view = VK_NULL_HANDLE;
+  bool import_active = false;
+  bool dirty = false;
+
+  void initialize(VkTensorViewARM view) {
+    owned_view = view;
+    selected_view = view;
+    bound_view = view;
+    import_active = false;
+    dirty = false;
+  }
+
+  bool select(VkTensorViewARM view, bool imported) {
+    import_active = imported;
+    if (selected_view == view) {
+      return false;
+    }
+    selected_view = view;
+    dirty = selected_view != bound_view;
+    return true;
+  }
+
+  void mark_clean() {
+    bound_view = selected_view;
+    dirty = false;
+  }
+};
+
+struct VgfBoundaryDescriptorUpdate {
+  size_t io_index = 0;
+  VgfBoundaryBindingRef binding{};
+  VkTensorViewARM tensor_view = VK_NULL_HANDLE;
+};
+
+// Apply the binding-selection policy after a host-import attempt.
+//
+// A successful import is immediately selected, including a cache hit. This is
+// important when the owned view was selected by an earlier fallback while the
+// imported slot remained cached. A failed import restores the owned view so the
+// next dispatch cannot accidentally use an imported tensor selected by a prior
+// attempt. Descriptor writes remain deferred until flush_boundary_bindings().
+inline bool vgf_apply_import_binding_selection(
+    VgfBoundaryBindingState* state,
+    bool import_accepted,
+    VkTensorViewARM imported_view) {
+  if (state == nullptr || state->owned_view == VK_NULL_HANDLE) {
+    return false;
+  }
+
+  if (!import_accepted) {
+    state->select(state->owned_view, false);
+    return true;
+  }
+
+  if (imported_view == VK_NULL_HANDLE) {
+    return false;
+  }
+
+  state->select(imported_view, true);
+  return true;
+}
+
 struct VgfZeroCopyIoMetadata {
   bool eligible = false;
 
@@ -75,6 +169,82 @@ struct VgfZeroCopyIoMetadata {
 
   std::vector<VgfBoundaryBindingRef> bindings;
 };
+
+inline std::vector<VgfBoundaryDescriptorUpdate>
+vgf_collect_boundary_descriptor_updates(
+    const std::vector<VgfZeroCopyIoMetadata>& metadata,
+    const std::vector<VgfBoundaryBindingState>& states) {
+  std::vector<VgfBoundaryDescriptorUpdate> updates;
+  const size_t count = std::min(metadata.size(), states.size());
+  for (size_t io_index = 0; io_index < count; ++io_index) {
+    const auto& state = states[io_index];
+    const auto& io_metadata = metadata[io_index];
+    if (!state.dirty || !io_metadata.eligible) {
+      continue;
+    }
+    updates.reserve(updates.size() + io_metadata.bindings.size());
+    std::transform(
+        io_metadata.bindings.begin(),
+        io_metadata.bindings.end(),
+        std::back_inserter(updates),
+        [&](const VgfBoundaryBindingRef& binding) {
+          return VgfBoundaryDescriptorUpdate{
+              .io_index = io_index,
+              .binding = binding,
+              .tensor_view = state.selected_view,
+          };
+        });
+  }
+  return updates;
+}
+
+inline bool vgf_boundary_bindings_dirty(
+    const std::vector<VgfBoundaryBindingState>& states) {
+  return std::any_of(states.begin(), states.end(), [](const auto& state) {
+    return state.dirty;
+  });
+}
+
+struct VgfExternalIoMapping {
+  std::vector<int> inputs;
+  std::vector<int> outputs;
+};
+
+inline VgfExternalIoMapping vgf_resolve_external_io_mapping(
+    const std::vector<int>& serialized_inputs,
+    const std::vector<int>& serialized_outputs,
+    const std::vector<bool>& mutable_inputs,
+    const std::vector<bool>& mutable_outputs,
+    std::vector<VgfZeroCopyIoMetadata>& metadata) {
+  VgfExternalIoMapping mapping;
+  for (size_t i = 0; i < serialized_inputs.size(); ++i) {
+    if (!mutable_inputs[i]) {
+      mapping.inputs.push_back(serialized_inputs[i]);
+    }
+  }
+  for (size_t i = 0; i < serialized_outputs.size(); ++i) {
+    if (!mutable_outputs[i]) {
+      mapping.outputs.push_back(serialized_outputs[i]);
+    }
+  }
+
+  for (size_t i = 0; i < mapping.inputs.size(); ++i) {
+    const int io_index = mapping.inputs[i];
+    if (io_index >= 0 && static_cast<size_t>(io_index) < metadata.size()) {
+      metadata[io_index].mapped_to_model_boundary = true;
+      metadata[io_index].executorch_argument_index = static_cast<int64_t>(i);
+    }
+  }
+  for (size_t i = 0; i < mapping.outputs.size(); ++i) {
+    const int io_index = mapping.outputs[i];
+    if (io_index >= 0 && static_cast<size_t>(io_index) < metadata.size()) {
+      metadata[io_index].mapped_to_model_boundary = true;
+      metadata[io_index].executorch_argument_index =
+          static_cast<int64_t>(mapping.inputs.size() + i);
+    }
+  }
+  return mapping;
+}
 
 // We keep this as the single source of truth for VGF tensor usage.
 inline VkTensorUsageFlagsARM vgf_tensor_usage_flags(bool image_aliasing) {
@@ -221,6 +391,183 @@ inline bool vgf_record_boundary_binding(
   (*all_metadata)[io_index].bindings.push_back(binding_ref);
   return true;
 }
+
+// Reasons are stable indices for optional EXECUTORCH_VGF_IO_STATS counters.
+// Keep kCount last and append new reasons before it.
+enum class VgfZeroCopyImportRejectionReason : uint32_t {
+  kNone = 0,
+  kInvalidIoIndex,
+  kFeatureDisabled,
+  kMetadataIneligible,
+  kExternalTensorUnsupported,
+  kDedicatedAllocationUnsupported,
+  kNullHostPointer,
+  kInvalidHostRange,
+  kPointerAlignment,
+  kLogicalSizeAlignment,
+  kVulkanFunctionUnavailable,
+  kHostPointerPropertiesQueryFailed,
+  kNoCompatibleCoherentMemoryType,
+  kMemoryRequirementsTooLarge,
+  kTensorCreateFailed,
+  kMemoryAllocateFailed,
+  kTensorBindFailed,
+  kTensorViewCreateFailed,
+  kDuplicateActiveRange,
+  kOverlappingActiveRange,
+  kCount,
+};
+
+// cppcheck-suppress unusedFunction
+const char* vgf_zero_copy_import_rejection_reason_string(
+    VgfZeroCopyImportRejectionReason reason);
+
+// One application-owned host buffer imported for one VGF boundary IO.
+// The host allocation is never owned or freed by the delegate.
+struct VgfZeroCopySlot {
+  void* host_pointer = nullptr;
+  size_t logical_size = 0;
+  size_t imported_size = 0;
+  VkDeviceMemory memory = VK_NULL_HANDLE;
+  VkTensorARM tensor = VK_NULL_HANDLE;
+  VkTensorViewARM tensor_view = VK_NULL_HANDLE;
+  uint32_t memory_type_index = UINT32_MAX;
+
+  bool valid() const {
+    return host_pointer != nullptr && imported_size != 0 &&
+        memory != VK_NULL_HANDLE && tensor != VK_NULL_HANDLE &&
+        tensor_view != VK_NULL_HANDLE;
+  }
+};
+
+struct VgfZeroCopyImportResult {
+  bool accepted = false;
+  bool cache_hit = false;
+  VgfZeroCopyImportRejectionReason reason =
+      VgfZeroCopyImportRejectionReason::kNone;
+  VkResult vk_result = VK_SUCCESS;
+};
+
+// Vulkan call table for host-memory import operations.
+// Production uses the loaded Vulkan entry points; unit tests can
+// inject mock functions without requiring a Vulkan device.
+//
+// The guard checks Vulkan header support for VK_EXT_external_memory_host.
+// It is not a test-only flag or a runtime extension availability check.
+#if defined(VK_EXT_external_memory_host)
+struct VgfZeroCopyVulkanApi {
+  void* context = nullptr;
+
+  VkResult (*get_memory_host_pointer_properties)(
+      void* context,
+      VkDevice device,
+      VkExternalMemoryHandleTypeFlagBits handle_type,
+      const void* host_pointer,
+      VkMemoryHostPointerPropertiesEXT* properties) = nullptr;
+  void (*get_physical_device_memory_properties)(
+      void* context,
+      VkPhysicalDevice physical_device,
+      VkPhysicalDeviceMemoryProperties* properties) = nullptr;
+  VkResult (*create_tensor)(
+      void* context,
+      VkDevice device,
+      const VkTensorCreateInfoARM* create_info,
+      const VkAllocationCallbacks* allocator,
+      VkTensorARM* tensor) = nullptr;
+  void (*get_tensor_memory_requirements)(
+      void* context,
+      VkDevice device,
+      const VkTensorMemoryRequirementsInfoARM* info,
+      VkMemoryRequirements2* requirements) = nullptr;
+  VkResult (*allocate_memory)(
+      void* context,
+      VkDevice device,
+      const VkMemoryAllocateInfo* allocate_info,
+      const VkAllocationCallbacks* allocator,
+      VkDeviceMemory* memory) = nullptr;
+  VkResult (*bind_tensor_memory)(
+      void* context,
+      VkDevice device,
+      uint32_t bind_info_count,
+      const VkBindTensorMemoryInfoARM* bind_infos) = nullptr;
+  VkResult (*create_tensor_view)(
+      void* context,
+      VkDevice device,
+      const VkTensorViewCreateInfoARM* create_info,
+      const VkAllocationCallbacks* allocator,
+      VkTensorViewARM* tensor_view) = nullptr;
+  void (*destroy_tensor_view)(
+      void* context,
+      VkDevice device,
+      VkTensorViewARM tensor_view,
+      const VkAllocationCallbacks* allocator) = nullptr;
+  void (*destroy_tensor)(
+      void* context,
+      VkDevice device,
+      VkTensorARM tensor,
+      const VkAllocationCallbacks* allocator) = nullptr;
+  void (*free_memory)(
+      void* context,
+      VkDevice device,
+      VkDeviceMemory memory,
+      const VkAllocationCallbacks* allocator) = nullptr;
+};
+#else
+struct VgfZeroCopyVulkanApi {
+  void* context = nullptr;
+};
+#endif
+
+// Per-method resource manager. VgfRepr owns the manager, but the execute path
+// releases every slot before returning because imported host pointers refer to
+// caller-owned EValue storage. Cache hits are therefore limited to one active
+// execution/lifetime scope and must not be used to extend pointer lifetime
+// across BackendInterface::execute() calls.
+class VgfZeroCopyImportManager final {
+ public:
+  VgfZeroCopyImportManager() = default;
+  ~VgfZeroCopyImportManager();
+
+  VgfZeroCopyImportManager(const VgfZeroCopyImportManager&) = delete;
+  VgfZeroCopyImportManager& operator=(const VgfZeroCopyImportManager&) = delete;
+
+  void reset(
+      VkPhysicalDevice physical_device,
+      VkDevice device,
+      const VgfHostMemoryImportCapabilities& capabilities,
+      size_t io_count,
+      const VgfZeroCopyVulkanApi* api = nullptr);
+
+  VgfZeroCopyImportResult try_import_candidate(
+      size_t io_index,
+      void* host_pointer,
+      size_t logical_nbytes,
+      const VgfZeroCopyIoMetadata& metadata);
+
+  void release(size_t io_index);
+  void release_all();
+  const VgfZeroCopySlot* slot(size_t io_index) const;
+  size_t slot_count() const {
+    return slots_.size();
+  }
+
+ private:
+  bool api_ready() const;
+  bool find_coherent_memory_type(
+      uint32_t compatible_memory_type_bits,
+      uint32_t* memory_type_index) const;
+  void destroy_slot(VgfZeroCopySlot* slot) noexcept;
+  VgfZeroCopyImportResult reject(
+      VgfZeroCopyImportRejectionReason reason,
+      bool import_failure,
+      VkResult vk_result = VK_SUCCESS) const;
+
+  VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
+  VkDevice device_ = VK_NULL_HANDLE;
+  VgfHostMemoryImportCapabilities capabilities_{};
+  VgfZeroCopyVulkanApi api_{};
+  std::vector<VgfZeroCopySlot> slots_;
+};
 
 } // namespace vgf
 } // namespace backends

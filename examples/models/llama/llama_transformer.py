@@ -257,6 +257,10 @@ class TransformerBlock(nn.Module):
                 eps=args.norm_eps,
                 zero_centered_gamma=args.norm_zero_centered_gamma,
             )
+        elif (
+            getattr(args, "weightless_post_ffn_norm", False) and self.mlp_type != "skip"
+        ):
+            self.post_ffn_norm = ScalelessRMSNorm(args.dim, eps=args.norm_eps)
 
     @classmethod
     def from_type(cls, layer_id, args, rope) -> "TransformerBlock":

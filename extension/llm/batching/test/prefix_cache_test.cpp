@@ -307,6 +307,537 @@ class PrefixCacheTest : public ::testing::Test {
   std::unique_ptr<Runner> runner;
 };
 
+class PrefillBreakpointTest
+    : public PrefixCacheTest,
+      public ::testing::WithParamInterface<std::size_t> {};
+
+TEST_P(PrefillBreakpointTest, ClonesExactPositionsBeforeLaterWrites) {
+  runner.reset();
+  runner = std::make_unique<Runner>(
+      executor, DecodeFirstScheduler::create(64, 4, GetParam()));
+  executor.retained_tail = 0;
+  auto source = open();
+  const Tokens prompt(40, 7);
+  std::vector<Position> positions;
+  std::vector<std::future<std::optional<Session>>> snapshots;
+  GenConfig config;
+  config.max_new_tokens = 4;
+  config.prefill_breakpoints = {5, 17, 31, 40};
+  auto generation =
+      source.generate_async(prompt, config, {}, {}, [&](Position position) {
+        EXPECT_EQ(position, source.position());
+        positions.push_back(position);
+        snapshots.push_back(source.clone_async(position));
+      });
+  generation.wait();
+  ASSERT_EQ(generation.finish_reason(), FinishReason::NewTokenLimit);
+  ASSERT_EQ(positions, config.prefill_breakpoints);
+  EXPECT_FALSE(source.clone_async(positions.front()).get());
+  PrefixCache cache(1);
+  for (std::size_t i = 0; i < snapshots.size(); ++i) {
+    auto snapshot = snapshots[i].get();
+    ASSERT_TRUE(snapshot);
+    EXPECT_EQ(snapshot->position(), positions[i]);
+    if (i == 0) {
+      ASSERT_TRUE(cache.insert(
+          Tokens(prompt.begin(), prompt.begin() + positions[i]),
+          std::move(*snapshot)));
+    }
+  }
+  Tokens changed(prompt.begin(), prompt.begin() + positions.front());
+  changed.push_back(9);
+  auto match = cache.lookup(changed);
+  ASSERT_TRUE(match);
+  EXPECT_EQ(match->matched_tokens, positions.front());
+  expect_cold_match(*match, changed);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ChunkSizes,
+    PrefillBreakpointTest,
+    ::testing::Values(4u, 13u, 40u));
+
+TEST_F(PrefixCacheTest, ContinuationBreakpointsIncludeThePendingToken) {
+  executor.retained_tail = 0;
+  auto source = open();
+  const Tokens initial(5, 3);
+  const auto first = generate(source, initial, 1);
+  ASSERT_EQ(source.position(), 5);
+  const Tokens delta(19, 7);
+  GenConfig config;
+  config.max_new_tokens = 2;
+  config.seed = 17;
+  config.prefill_breakpoints = periodic_prefill_breakpoints(5, 25, 8, true);
+  std::vector<Position> positions;
+  std::vector<std::future<std::optional<Session>>> snapshots;
+  Tokens output;
+  auto handle = source.generate_async(
+      delta,
+      config,
+      [&](const GenerationUpdate& update) {
+        output.insert(output.end(), update.tokens.begin(), update.tokens.end());
+      },
+      {},
+      [&](Position position) {
+        positions.push_back(position);
+        snapshots.push_back(source.clone_async(position));
+      });
+  handle.wait();
+  ASSERT_EQ(handle.finish_reason(), FinishReason::NewTokenLimit);
+  EXPECT_EQ(positions, (std::vector<Position>{8, 16, 24, 25}));
+  for (auto& snapshot : snapshots) {
+    EXPECT_TRUE(snapshot.get());
+  }
+  Tokens full = initial;
+  full.insert(full.end(), first.tokens.begin(), first.tokens.end());
+  full.insert(full.end(), delta.begin(), delta.end());
+  auto cold = open();
+  EXPECT_EQ(output, generate(cold, full, 2).tokens);
+}
+
+TEST_F(PrefixCacheTest, InvalidBreakpointsFailBeforePrefill) {
+  auto source = open();
+  for (const std::vector<Position>& positions :
+       {std::vector<Position>{0}, {9}, {3, 3}, {4, 2}}) {
+    GenConfig config;
+    config.prefill_breakpoints = positions;
+    auto handle = source.generate_async(Tokens(8, 7), config, {});
+    handle.wait();
+    EXPECT_EQ(handle.finish_reason(), FinishReason::Failed);
+    EXPECT_EQ(
+        handle.error_message(),
+        "prefill breakpoints must increase within the generation's prefill range");
+    EXPECT_EQ(source.position(), 0);
+  }
+  EXPECT_TRUE(executor.seen().empty());
+}
+
+TEST_F(PrefixCacheTest, ClosingAtBreakpointDropsDeferredPrefill) {
+  auto source = open();
+  GenConfig config;
+  config.prefill_breakpoints = {5, 17};
+  auto handle = source.generate_async(
+      Tokens(40, 7), config, {}, {}, [&](Position position) {
+        EXPECT_EQ(position, 5);
+        source = Session{};
+      });
+  handle.wait();
+  EXPECT_EQ(handle.finish_reason(), FinishReason::Cancelled);
+  const auto seen = executor.seen();
+  ASSERT_FALSE(seen.empty());
+  EXPECT_EQ(seen.back().position + seen.back().tokens.size(), 5u);
+}
+
+TEST(PrefillCheckpointPolicyTest, AbsoluteIntervalsAndRangeBoundaries) {
+  EXPECT_EQ(
+      periodic_prefill_breakpoints(0, 24, 8),
+      (std::vector<Position>{8, 16, 24}));
+  EXPECT_EQ(
+      periodic_prefill_breakpoints(9, 26, 8, true),
+      (std::vector<Position>{16, 24, 26}));
+  EXPECT_EQ(
+      periodic_prefill_breakpoints(16, 17, 8, true),
+      (std::vector<Position>{17}));
+  EXPECT_TRUE(periodic_prefill_breakpoints(16, 17, 8).empty());
+  EXPECT_TRUE(periodic_prefill_breakpoints(0, 8, 0).empty());
+  const auto end = std::numeric_limits<Position>::max();
+  EXPECT_EQ(
+      periodic_prefill_breakpoints(end - 1, end, end, true),
+      (std::vector<Position>{end}));
+}
+
+TEST_F(PrefixCacheTest, CaptureObserverHonorsAdmissionAndReportsQueueFailure) {
+  auto source = open();
+  generate(source, Tokens(4, 7), 1);
+  PrefixCache cache(1);
+  auto capture = cache.capture_prompt(source, Tokens(4, 7));
+  bool available = false;
+  std::vector<bool> queued;
+  auto observer = capture.observer(
+      [&] { return available; }, [&](bool value) { queued.push_back(value); });
+  observer(4);
+  EXPECT_TRUE(queued.empty());
+  EXPECT_TRUE(executor.clones().empty());
+  available = true;
+  observer(5); // Outside the supplied identity.
+  observer(4);
+  observer(4); // A capture is already pending.
+  EXPECT_EQ(queued, (std::vector<bool>{false, true, false}));
+  ASSERT_TRUE(capture.collect());
+  EXPECT_EQ(executor.clones().size(), 1u);
+  executor.reject_clones = true;
+  observer(4);
+  EXPECT_TRUE(queued.back());
+  EXPECT_FALSE(capture.collect());
+  executor.reject_clones = false;
+  auto match = cache.lookup({7, 7, 7, 7, 9});
+  ASSERT_TRUE(match);
+  EXPECT_EQ(match->matched_tokens, 4u);
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST_F(PrefixCacheTest, PrefillObserverExceptionFailsWithoutDeliveringTokens) {
+  auto source = open();
+  Tokens delivered;
+  GenConfig config;
+  config.prefill_breakpoints = {5, 17};
+  auto generation = source.generate_async(
+      Tokens(40, 7),
+      config,
+      [&](const GenerationUpdate& update) {
+        delivered.insert(
+            delivered.end(), update.tokens.begin(), update.tokens.end());
+      },
+      {},
+      [](Position) { throw std::runtime_error("observer"); });
+  generation.wait();
+  EXPECT_EQ(generation.finish_reason(), FinishReason::Failed);
+  EXPECT_EQ(generation.error_message(), "prefill observer threw");
+  EXPECT_TRUE(delivered.empty());
+  EXPECT_EQ(source.position(), 5);
+}
+#endif
+
+TEST_F(
+    PrefixCacheTest,
+    IntermediateCaptureTruncatesOpaqueIdentityAndCanBeReused) {
+  auto source = open();
+  const auto tokens = std::make_shared<const Tokens>(Tokens(12, 7));
+  const PrefixIdentity identity{
+      {TokenSpan{tokens, 0, 2},
+       OpaqueSpan{ContentKey{7}, 0, 6},
+       TokenSpan{tokens, 8, 4}}};
+  PrefixCache cache(2);
+  auto capture = cache.capture_identity(source, identity);
+  generate(source, Tokens(4, 7), 1);
+  ASSERT_TRUE(capture.capture_at(4));
+  EXPECT_FALSE(capture.capture_at(4));
+  ASSERT_TRUE(capture.collect());
+  EXPECT_FALSE(capture.collect());
+  auto first = cache.lookup_identity(identity);
+  ASSERT_TRUE(first);
+  EXPECT_EQ(first->matched_tokens, 4u);
+  generate(source, Tokens(5, 7), 1);
+  ASSERT_TRUE(capture.capture_at(10));
+  ASSERT_TRUE(capture.collect());
+  auto second = cache.lookup_identity(identity);
+  ASSERT_TRUE(second);
+  EXPECT_EQ(second->matched_tokens, 10u);
+  EXPECT_FALSE(capture.capture_at(13));
+}
+
+TEST_F(PrefixCacheTest, CustomRetentionSelectsVictimFromSnapshotIdentities) {
+  executor.retained_tail = 0;
+  PrefixCache cache(
+      2,
+      [](const PrefixCache::EntryView& incoming,
+         const PrefixCache::Entries& entries) {
+        EXPECT_EQ(incoming.identity.get().size(), 12u);
+        EXPECT_EQ(entries.size(), 2u);
+        return std::max_element(
+                   entries.begin(),
+                   entries.end(),
+                   [](const auto& a, const auto& b) {
+                     return a.identity.get().size() < b.identity.get().size();
+                   }) -
+            entries.begin();
+      });
+  const Tokens prompt(16, 7);
+  for (std::size_t size : {4, 8, 12}) {
+    const Tokens prefix(prompt.begin(), prompt.begin() + size);
+    auto source = open();
+    generate(source, prefix, 1);
+    auto checkpoint = source.clone_async(static_cast<Position>(size)).get();
+    ASSERT_TRUE(checkpoint);
+    ASSERT_TRUE(cache.insert(prefix, std::move(*checkpoint)));
+  }
+  EXPECT_EQ(cache.size(), 2u);
+  for (std::size_t edit : {4, 8, 12}) {
+    Tokens changed(prompt.begin(), prompt.begin() + edit);
+    changed.push_back(9);
+    auto match = cache.lookup(changed);
+    ASSERT_TRUE(match);
+    EXPECT_EQ(match->matched_tokens, edit == 12 ? 12u : 4u);
+    expect_cold_match(*match, changed);
+  }
+}
+
+TEST_F(PrefixCacheTest, OneCheckpointEntryStillEvictsAtCapacity) {
+  executor.retained_tail = 0;
+  PrefixCache cache(1);
+  for (std::size_t size : {4, 8}) {
+    auto source = open();
+    generate(source, Tokens(size, 7), 1);
+    auto checkpoint = source.clone_async(static_cast<Position>(size)).get();
+    ASSERT_TRUE(checkpoint);
+    ASSERT_TRUE(cache.insert(Tokens(size, 7), std::move(*checkpoint)));
+  }
+  EXPECT_EQ(cache.size(), 1u);
+  EXPECT_FALSE(cache.lookup(Tokens{7, 7, 7, 7, 9}));
+  auto match = cache.lookup(Tokens{7, 7, 7, 7, 7, 7, 7, 7, 9});
+  ASSERT_TRUE(match);
+  EXPECT_EQ(match->matched_tokens, 8u);
+}
+
+TEST_F(PrefixCacheTest, RetentionCanAssignSortAndPartitionCopiedViews) {
+  std::size_t calls = 0;
+  PrefixCache cache(
+      3,
+      [&](const auto& incoming,
+          const auto& entries) -> std::optional<std::size_t> {
+        ++calls;
+        PrefixCache::Entries candidates;
+        candidates = entries;
+        auto eligible_end = std::partition(
+            candidates.begin(), candidates.end(), [&](const auto& entry) {
+              return entry.identity.get().size() <
+                  incoming.identity.get().size();
+            });
+        EXPECT_EQ(eligible_end - candidates.begin(), 2);
+        if (eligible_end == candidates.begin()) {
+          return std::nullopt;
+        }
+        std::sort(
+            candidates.begin(), eligible_end, [](const auto& a, const auto& b) {
+              return *std::static_pointer_cast<const int>(a.metadata) <
+                  *std::static_pointer_cast<const int>(b.metadata);
+            });
+        const auto* identity = &candidates.front().identity.get();
+        const auto victim = std::find_if(
+            entries.begin(), entries.end(), [&](const auto& entry) {
+              return &entry.identity.get() == identity;
+            });
+        EXPECT_EQ(victim - entries.begin(), 1);
+        EXPECT_EQ(entries.front().identity.get().size(), 5u);
+        return victim - entries.begin();
+      });
+  const std::vector<Tokens> prompts{{1, 2}, {3, 4, 5}, {6, 7, 8, 9, 10}};
+  const std::vector<int> priorities{30, 10, 20};
+  for (std::size_t i = 0; i < prompts.size(); ++i) {
+    ASSERT_TRUE(cache.insert(
+        prompts[i],
+        snapshot(prompts[i]),
+        std::make_shared<const int>(priorities[i])));
+  }
+  const Tokens incoming{11, 12, 13, 14};
+  ASSERT_TRUE(cache.insert(incoming, snapshot(incoming)));
+  EXPECT_EQ(calls, 1u);
+  EXPECT_FALSE(cache.lookup({3, 4, 5, 99}));
+  for (auto prompt : {prompts.front(), prompts.back(), incoming}) {
+    prompt.push_back(99);
+    auto match = cache.lookup(prompt);
+    ASSERT_TRUE(match);
+    expect_cold_match(*match, prompt);
+  }
+}
+
+TEST_F(PrefixCacheTest, DeclinedOrInvalidRetentionLeavesSnapshotsUsable) {
+  std::optional<std::size_t> victim;
+#if ET_HAS_EXCEPTIONS
+  bool throw_policy = false;
+#endif
+  std::size_t calls = 0;
+  PrefixCache cache(2, [&](const auto&, const auto& entries) {
+    ++calls;
+    EXPECT_EQ(entries.size(), 2u);
+#if ET_HAS_EXCEPTIONS
+    if (throw_policy) {
+      throw std::runtime_error("retention failed");
+    }
+#endif
+    return victim;
+  });
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4})));
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  EXPECT_EQ(calls, 0u);
+  auto hints = std::make_shared<const int>(42);
+  std::weak_ptr<const int> declined = hints;
+  EXPECT_FALSE(cache.insert({5, 6}, snapshot({5, 6}), std::move(hints)));
+  EXPECT_TRUE(declined.expired());
+  victim = 2;
+  EXPECT_FALSE(cache.insert({5, 6}, snapshot({5, 6})));
+#if ET_HAS_EXCEPTIONS
+  throw_policy = true;
+  EXPECT_FALSE(cache.insert({5, 6}, snapshot({5, 6})));
+#endif
+  EXPECT_EQ(cache.size(), 2u);
+  ASSERT_TRUE(executor.wait_for_live(2));
+  EXPECT_FALSE(cache.lookup({5, 6, 9}));
+  for (const Tokens prompt : {Tokens{1, 2, 9}, Tokens{3, 4, 9}}) {
+    auto match = cache.lookup(prompt);
+    ASSERT_TRUE(match);
+    expect_cold_match(*match, prompt);
+  }
+}
+
+TEST_F(PrefixCacheTest, CustomMetadataPolicyCanProtectAnAnchor) {
+  PrefixCache cache(2, [](const auto& incoming, const auto& entries) {
+    EXPECT_EQ(*std::static_pointer_cast<const int>(incoming.metadata), 2);
+    return std::min_element(
+               entries.begin(),
+               entries.end(),
+               [](const auto& a, const auto& b) {
+                 return *std::static_pointer_cast<const int>(a.metadata) <
+                     *std::static_pointer_cast<const int>(b.metadata);
+               }) -
+        entries.begin();
+  });
+  auto anchor = std::make_shared<const int>(3);
+  auto expendable = std::make_shared<const int>(1);
+  std::weak_ptr<const int> evicted = expendable;
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2}), anchor));
+  ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4}), std::move(expendable)));
+  ASSERT_FALSE(evicted.expired());
+  ASSERT_TRUE(
+      cache.insert({5, 6}, snapshot({5, 6}), std::make_shared<const int>(2)));
+  EXPECT_TRUE(evicted.expired());
+  EXPECT_FALSE(cache.lookup({3, 4, 9}));
+  auto match = cache.lookup({1, 2, 9});
+  ASSERT_TRUE(match);
+  expect_cold_match(*match, {1, 2, 9});
+}
+
+TEST_F(PrefixCacheTest, DuplicateRefreshesMetadataAndReleasesPreviousHints) {
+  auto original = std::make_shared<const int>(1);
+  auto refreshed = std::make_shared<const int>(2);
+  std::weak_ptr<const int> old = original;
+  std::weak_ptr<const int> current = refreshed;
+  std::size_t calls = 0;
+  PrefixCache cache(1, [&](const auto& incoming, const auto& entries) {
+    ++calls;
+    EXPECT_FALSE(incoming.metadata);
+    EXPECT_EQ(entries.front().metadata, current.lock());
+    return 0;
+  });
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2}), std::move(original)));
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2}), std::move(refreshed)));
+  EXPECT_EQ(calls, 0u);
+  EXPECT_TRUE(old.expired());
+  EXPECT_FALSE(current.expired());
+  ASSERT_TRUE(cache.lookup({1, 2, 9}));
+  ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4})));
+  EXPECT_EQ(calls, 1u);
+  EXPECT_TRUE(current.expired());
+}
+
+TEST_F(PrefixCacheTest, CaptureKeepsMetadataWithItsPendingSnapshot) {
+  auto source = open();
+  generate(source, Tokens(12, 7), 1);
+  auto first = std::make_shared<const int>(4);
+  auto second = std::make_shared<const int>(8);
+  std::size_t calls = 0;
+  PrefixCache cache(1, [&](const auto& incoming, const auto& entries) {
+    ++calls;
+    EXPECT_EQ(incoming.identity.get().size(), 8u);
+    EXPECT_EQ(incoming.metadata, second);
+    EXPECT_EQ(entries.front().identity.get().size(), 4u);
+    EXPECT_EQ(entries.front().metadata, first);
+    return 0;
+  });
+  auto capture = cache.capture_prompt(source, Tokens(12, 7));
+  ASSERT_TRUE(capture.capture_at(4, first));
+  EXPECT_FALSE(capture.capture_at(8, second));
+  ASSERT_TRUE(capture.collect());
+  ASSERT_TRUE(capture.capture_at(8, second));
+  ASSERT_TRUE(capture.collect());
+  EXPECT_EQ(calls, 1u);
+  executor.reject_clones = true;
+  auto refused = std::make_shared<const int>(12);
+  std::weak_ptr<const int> discarded = refused;
+  ASSERT_TRUE(capture.capture_at(12, std::move(refused)));
+  EXPECT_FALSE(capture.collect());
+  EXPECT_TRUE(discarded.expired());
+  EXPECT_EQ(calls, 1u);
+}
+
+TEST_F(PrefixCacheTest, WrappedCaptureOwnsMetadataUntilCollection) {
+  auto source = open();
+  auto hints = std::make_shared<const int>(7);
+  std::weak_ptr<const int> saved = hints;
+  PrefixCache cache(1, [&](const auto&, const auto& entries) {
+    EXPECT_EQ(entries.front().metadata, saved.lock());
+    EXPECT_FALSE(saved.expired());
+    return 0;
+  });
+  auto capture = cache.capture_prompt(source, {1, 2, 3}, std::move(hints));
+  auto generation = run_callback(source, {1, 2, 3}, capture.wrap());
+  source = Session{};
+  ASSERT_TRUE(capture.collect());
+  capture = {};
+  EXPECT_FALSE(saved.expired());
+  ASSERT_TRUE(cache.insert({8, 8}, snapshot({8, 8})));
+  EXPECT_TRUE(saved.expired());
+}
+
+TEST_F(PrefixCacheTest, ObserverMatchesMetadataAfterSkippingABoundary) {
+  auto source = open();
+  generate(source, Tokens(8, 7), 1);
+  auto early = std::make_shared<const int>(4);
+  auto later = std::make_shared<const int>(8);
+  std::size_t calls = 0;
+  PrefixCache cache(1, [&](const auto& incoming, const auto& entries) {
+    ++calls;
+    EXPECT_EQ(incoming.identity.get().size(), 8u);
+    EXPECT_EQ(incoming.metadata, later);
+    EXPECT_FALSE(entries.front().metadata);
+    return 0;
+  });
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  auto capture = cache.capture_prompt(source, Tokens(8, 7));
+  bool available = false;
+  std::vector<bool> queued;
+  auto observer = capture.observer(
+      [&] { return available; },
+      [&](bool value) { queued.push_back(value); },
+      {{4, early}, {8, later}});
+  observer(4);
+  EXPECT_TRUE(queued.empty());
+  available = true;
+  observer(8);
+  ASSERT_EQ(queued, (std::vector<bool>{true}));
+  ASSERT_TRUE(capture.collect());
+  EXPECT_EQ(calls, 1u);
+}
+
+TEST_F(PrefixCacheTest, MixedIdentityComparisonIgnoresSpanPartitioning) {
+  const auto tokens = std::make_shared<const Tokens>(Tokens{1, 2, 3});
+  const ContentKey image{7};
+  const PrefixIdentity full{
+      {TokenSpan{tokens, 0, 2},
+       OpaqueSpan{image, 0, 4},
+       TokenSpan{tokens, 2, 1}}};
+  const PrefixIdentity split{
+      {TokenSpan{tokens, 0, 1},
+       TokenSpan{tokens, 1, 1},
+       OpaqueSpan{image, 0, 2},
+       OpaqueSpan{image, 2, 2},
+       TokenSpan{tokens, 2, 1}}};
+  const auto max = std::numeric_limits<std::size_t>::max();
+  for (const auto& item : std::vector<std::pair<PrefixIdentity, std::size_t>>{
+           {split, 7},
+           {{{TokenSpan{tokens, 0, 2}, OpaqueSpan{ContentKey{8}, 0, 4}}}, 2},
+           {{{TokenSpan{tokens, 0, 2}, OpaqueSpan{image, 1, 4}}}, 2},
+           {{{TokenSpan{tokens, 0, 2}, OpaqueSpan{image, 0, 2}}}, 4},
+           {{{TokenSpan{tokens, 0, 3}}}, 2},
+           {{{TokenSpan{nullptr, 0, 1}}}, 0},
+           {{{TokenSpan{tokens, 2, 2}}}, 0},
+           {{{OpaqueSpan{image, max, 1}}}, 0},
+           {{{OpaqueSpan{image, 0, max}, OpaqueSpan{image, 0, 1}}}, 0},
+           {{{TokenSpan{tokens, 0, 0}}}, 0},
+           {{}, 0}}) {
+    EXPECT_EQ(common_prefix(full, item.first), item.second);
+    EXPECT_EQ(common_prefix(item.first, full), item.second);
+  }
+  PrefixCache cache(1);
+  ASSERT_TRUE(cache.insert_identity(full, snapshot({1, 2, 7, 7, 7, 7, 3})));
+  ASSERT_TRUE(cache.insert_identity(split, snapshot({1, 2, 7, 7, 7, 7, 3})));
+  EXPECT_EQ(cache.size(), 1u);
+  auto hit = cache.lookup_identity(split);
+  ASSERT_TRUE(hit);
+  EXPECT_EQ(hit->matched_tokens, 6u);
+}
+
 TEST_F(PrefixCacheTest, EqualShorterAndExtendedPromptsReplayTheFinalToken) {
   PrefixCache cache(2);
   const Tokens prompt{1, 2, 3, 4, 5, 6};
@@ -387,13 +918,18 @@ TEST_F(PrefixCacheTest, DuplicateInsertRefreshesLruAndReleasesTheNewSnapshot) {
 }
 
 TEST_F(PrefixCacheTest, SuccessfulLookupRefreshesLruBeforeEviction) {
-  PrefixCache cache(2);
-  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
-  ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4})));
-  EXPECT_TRUE(cache.lookup({1, 2, 9}));
-  ASSERT_TRUE(cache.insert({5, 6}, snapshot({5, 6})));
-  EXPECT_FALSE(cache.lookup({3, 4, 9}));
-  EXPECT_TRUE(cache.lookup({1, 2, 9}));
+  for (const auto& policy : std::vector<PrefixCacheRetentionPolicy>{
+           {}, lru_prefix_cache_retention}) {
+    PrefixCache cache(2, policy);
+    ASSERT_TRUE(
+        cache.insert({1, 2}, snapshot({1, 2}), std::make_shared<const int>(1)));
+    ASSERT_TRUE(cache.insert(
+        {3, 4}, snapshot({3, 4}), std::make_shared<const int>(100)));
+    EXPECT_TRUE(cache.lookup({1, 2, 9}));
+    ASSERT_TRUE(cache.insert({5, 6}, snapshot({5, 6})));
+    EXPECT_FALSE(cache.lookup({3, 4, 9}));
+    EXPECT_TRUE(cache.lookup({1, 2, 9}));
+  }
 }
 
 TEST_F(PrefixCacheTest, TokenKeysPreserveAllSixtyFourBits) {

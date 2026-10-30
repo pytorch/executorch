@@ -58,7 +58,16 @@ class EventTraceScope {
 #define EXECUTORCH_PROF_END(EVENTTRACER, SCOPE)
 #endif
 
+// Base address registers handed to the Ethos-U driver. Index maps to Vela
+// region id: 0 weights, 1 scratch, 2 fast-scratch, 3 input (unused), 4 output
+// (unused), 5 persistent (delegate-owned streaming state). The U55/U65/U85
+// hardware and core-driver support up to NPU_REG_BASEP_ARRLEN (8) regions.
+// Without ETHOSU_PERSISTENT_REGION only regions 0-2 are passed.
+#ifdef ETHOSU_PERSISTENT_REGION
+#define ETHOSU_NUM_BASE_ADDRS 6
+#else
 #define ETHOSU_NUM_BASE_ADDRS 3
+#endif
 
 namespace executorch {
 namespace backends {
@@ -69,6 +78,12 @@ struct PlatformState;
 struct ExecutionHandle {
   PlatformState* platform_state;
   VelaHandles handles{};
+  // Dedicated persistent (Vela region 5) buffer for delegate-owned streaming
+  // state, base address 5. Kept separate from the scratch region (base 1) so
+  // state is isolated from both intermediates and the read-only weights.
+  // Allocated from the model-lifetime runtime allocator and zeroed once at
+  // init(); null when the model has no persistent state.
+  char* persistent_region{nullptr};
 };
 
 extern "C" {

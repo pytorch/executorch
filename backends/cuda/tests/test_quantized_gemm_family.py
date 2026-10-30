@@ -12,6 +12,7 @@
 import unittest
 
 import torch
+import triton
 from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
     QuantizedGemmFamily,
 )
@@ -116,6 +117,35 @@ class QuantizedGemmFamilyTest(unittest.TestCase):
         self.assertIn("Tensor x, Tensor weight", schema)
         x, w = torch.randn(1, 4), torch.randn(3, 4)
         torch.testing.assert_close(family.op(1)(x, w), x @ w.t())
+
+    def test_every_autotuned_kernel_uses_the_shared_benchmark_window(self) -> None:
+        from executorch.backends.cuda.triton.kernels import (
+            int4_quantized_gemm,
+            int5_quantized_gemm,
+            int6_quantized_gemm,
+            int8_quantized_gemm,
+        )
+        from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import (
+            autotune_do_bench,
+        )
+
+        modules = (
+            int4_quantized_gemm,
+            int5_quantized_gemm,
+            int6_quantized_gemm,
+            int8_quantized_gemm,
+        )
+        autotuners = [
+            value
+            for module in modules
+            for table in vars(module).values()
+            if isinstance(table, dict)
+            for value in table.values()
+            if isinstance(value, triton.runtime.Autotuner)
+        ]
+        self.assertGreater(len(autotuners), len(modules))
+        for autotuner in autotuners:
+            self.assertIs(autotuner.do_bench, autotune_do_bench)
 
     def test_rejects_invalid_buckets(self) -> None:
         for buckets in ((), (0, 1), (1, 1)):

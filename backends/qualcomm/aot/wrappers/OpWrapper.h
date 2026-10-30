@@ -116,6 +116,22 @@ class OpWrapper final {
     }
     return raw_params;
   }
+
+  void ResetGraphState() {
+    for (const auto& tensor_wrapper : input_tensors_) {
+      tensor_wrapper->ResetGraphState();
+    }
+    for (const auto& tensor_wrapper : output_tensors_) {
+      tensor_wrapper->ResetGraphState();
+    }
+    for (const auto& param : params_) {
+      auto* tensor_param = dynamic_cast<TensorParamWrapper*>(param.get());
+      if (tensor_param != nullptr) {
+        tensor_param->GetTensorWrapper()->ResetGraphState();
+      }
+    }
+  }
+
   Qnn_OpConfig_t GetOpConfig();
 
  private:

@@ -23,7 +23,7 @@ Among currently supported machine learning models are:
 ## Development Requirements
 
 - [MCUXpresso IDE](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-integrated-development-environment-ide:MCUXpresso-IDE) or [MCUXpresso Visual Studio Code extension](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-for-visual-studio-code:MCUXPRESSO-VSC)
-- [MCUXpresso SDK 26.06](https://mcuxpresso.nxp.com/mcuxsdk/26.06.00/html/index.html)
+- [MCUXpresso SDK](https://mcuxpresso.nxp.com/mcuxsdk/latest/html/index.html)
 - eIQ Neutron SDK version 3.2.3, what you can download from eIQ PyPI:
 
 ```commandline
