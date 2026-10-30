@@ -19,9 +19,9 @@
 #include <curand_kernel.h>
 
 #include <cstdint>
-#include <ctime>
 #include <mutex>
 #include <new>
+#include <random>
 #include <vector>
 
 namespace executorch::backends::cuda {
@@ -76,7 +76,10 @@ bool ensure_rng_init(cudaStream_t stream) {
       }
       d_rng = static_cast<RngState*>(rng.get());
       RngState h;
-      h.seed = static_cast<unsigned long long>(time(nullptr));
+      // From std::random_device: a seed from the clock repeats for every
+      // process started in the same second.
+      std::random_device entropy;
+      h.seed = (static_cast<unsigned long long>(entropy()) << 32) | entropy();
       h.counter = 0;
       h.base_scratch = 0;
       cudaMemcpyAsync(
