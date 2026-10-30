@@ -13,6 +13,7 @@ from unittest import mock
 from unittest.mock import patch
 
 import torch
+from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.examples.models.toy_model import SdpaModule
@@ -277,6 +278,11 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 CudaBackend.data_name_from_compile_specs(
                     [CompileSpec(key="data_name", value=b"encoder")]
                 )
+        # The shared preprocess, which Metal uses, refuses it before compiling.
+        with self.assertRaisesRegex(ValueError, "takes no data name"):
+            AotiBackend.preprocess(
+                None, [CompileSpec(key="data_name", value=b"encoder")]
+            )
 
     def test_valid_data_name_compile_spec(self):
         self.assertEqual(CudaBackend.data_name_from_compile_specs([]), "aoti_cuda_blob")
