@@ -854,6 +854,7 @@ endif()
 
 if(EXECUTORCH_BUILD_COREAI)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreai)
+  list(APPEND _executorch_backends coreaidelegate)
 endif()
 
 if(EXECUTORCH_BUILD_MLX)
