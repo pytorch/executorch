@@ -120,9 +120,17 @@ def _model_explorer_imports() -> tuple[Any, Any, Any, Any, Any]:
         from model_explorer.graph_builder import (  # type: ignore[import-not-found]
             KeyValue,
         )
-        from model_explorer.pytorch_exported_program_adater_impl import (  # type: ignore
-            PytorchExportedProgramAdapterImpl,
-        )
+
+        try:
+            # ai-edge-model-explorer >= 0.1.34 corrected this module name.
+            from model_explorer.pytorch_exported_program_adapter_impl import (  # type: ignore
+                PytorchExportedProgramAdapterImpl,
+            )
+        except ImportError:
+            # ai-edge-model-explorer <= 0.1.33 used the 'adater' spelling.
+            from model_explorer.pytorch_exported_program_adater_impl import (  # type: ignore
+                PytorchExportedProgramAdapterImpl,
+            )
     except ImportError as exc:
         raise ImportError(
             "Model Explorer is required for VGF quantization visualization. "
