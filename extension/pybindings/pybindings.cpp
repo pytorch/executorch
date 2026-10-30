@@ -1820,9 +1820,10 @@ class PyCallerStreamScope final {
   explicit PyCallerStreamScope(uintptr_t stream)
       : stream_(reinterpret_cast<cudaStream_t>(stream)) {}
 
-  // Losing the scope without an exit ends it at once, or, if blocks started
-  // after it are still active, when they end. Compared, never dereferenced:
-  // the starting thread may have ended.
+  // Losing the scope on the thread that entered it ends it at once, or when
+  // the blocks started after it end. Another thread cannot change the
+  // entering thread's selection, which then lasts until that thread ends.
+  // home_ is compared, never dereferenced: the entering thread may have ended.
   ~PyCallerStreamScope() {
     if (id_ != 0 && home_ == &caller_stream_scopes) {
       end(/*refuse_out_of_order=*/false);
@@ -1838,6 +1839,10 @@ class PyCallerStreamScope final {
 
   void enter() {
     static std::atomic<uint64_t> next_id{1};
+    if (id_ != 0) {
+      throw std::runtime_error(
+          "This CUDA stream scope was entered and has not exited");
+    }
     int device = 0;
     if (!owner_ && stream_device(stream_, &device) && device != 0) {
       throw std::runtime_error(
@@ -1860,12 +1865,15 @@ class PyCallerStreamScope final {
     }
   }
 
-  // executorch.runtime.cuda enters each scope once, and exits it only on the
-  // thread that entered it.
   void exit() {
-    if (id_ != 0) {
-      end(/*refuse_out_of_order=*/true);
+    if (id_ == 0) {
+      return;
     }
+    if (home_ != &caller_stream_scopes) {
+      throw std::runtime_error(
+          "This CUDA stream scope was entered on another thread");
+    }
+    end(/*refuse_out_of_order=*/true);
   }
 
  private:

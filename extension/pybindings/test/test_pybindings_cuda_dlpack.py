@@ -480,6 +480,26 @@ class CudaDLPackTest(unittest.TestCase):
         dropped.__enter__()
         del dropped
         gc.collect()
+        # The native scope keeps the same rules for callers that use it directly.
+        native = cuda._bindings()._CallerStreamScope(stream._native)
+        native.__enter__()
+        try:
+            with self.assertRaises(RuntimeError):
+                native.__enter__()
+            refused = []
+
+            def exit_elsewhere():
+                try:
+                    native.__exit__(None, None, None)
+                except RuntimeError:
+                    refused.append(True)
+
+            exiter = threading.Thread(target=exit_elsewhere)
+            exiter.start()
+            exiter.join()
+            self.assertEqual(refused, [True])
+        finally:
+            native.__exit__(None, None, None)
         self._close_after_teardown(stream)
 
     def test_torch_free_caller_shares_one_stream_across_programs(self):
