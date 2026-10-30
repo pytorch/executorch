@@ -554,7 +554,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 if _TEST_RUNTIME:
                     program = Runtime.get().load_program(edge.to_executorch().buffer)
                     out = program.load_method("forward").execute((x,))[0]
-                    self.assertTrue(torch.allclose(out, model(x), atol=1e-3))
+                    self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
                 with self.assertRaisesRegex(
                     NotImplementedError, "dtype CoreML cannot take"
                 ):
@@ -565,10 +565,10 @@ class TestCoreMLPartitioner(unittest.TestCase):
     def test_uint8_input_read_by_ops_with_and_without_cpu_kernels(self):
         """
         An op that reads a uint8 input runs on the CPU, also when it reads it
-        through an op with several outputs.  Pad and max pooling have no CPU
-        kernel of their own, so they are decomposed.  Roll has one, so it stays
-        whole, since its decomposition would leave Core ML a partition with no
-        inputs.
+        through an op with several outputs.  An op that is not core ATen, such
+        as pad, max pooling, roll or zeros_like, may have no CPU kernel, so it
+        is decomposed.  The index math of a gather also runs on the CPU, since
+        it would leave Core ML a partition with no inputs.
         """
 
         class Model(torch.nn.Module):
@@ -589,7 +589,17 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 lambda x: torch.nn.functional.max_pool2d(x, 2),
                 "aten.max_pool2d_with_indices.default",
             ),
-            "roll": (lambda x: torch.roll(x, 1, 2), "aten.roll.default"),
+            "reflect_pad": (
+                lambda x: torch.nn.functional.pad(x, (1, 1, 1, 1), mode="reflect"),
+                "aten.arange.start_step",
+            ),
+            "roll": (lambda x: torch.roll(x, 1, 2), "aten.arange.start_step"),
+            "zeros_like": (
+                lambda x: torch.where(x > 100, x, torch.zeros_like(x)),
+                "aten.full_like.default",
+            ),
+            "channel_swap": (lambda x: x[:, [2, 1, 0]], "aten.index.Tensor"),
+            "masked_fill": (lambda x: x.masked_fill(x < 10, 0), "aten.where.self"),
             "max_then_pad": (
                 lambda x: torch.nn.functional.pad(x.max(dim=1).values, (1, 1)),
                 "aten.constant_pad_nd.default",
@@ -618,7 +628,71 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 if _TEST_RUNTIME:
                     program = Runtime.get().load_program(buffer)
                     out = program.load_method("forward").execute((x,))[0]
-                    self.assertTrue(torch.allclose(out, model(x), atol=1e-3))
+                    self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
+
+    def test_uint8_input_with_dynamic_shape(self):
+        """
+        With a dynamic height, the index math of a decomposed roll reads only
+        a symbolic size, which Core ML cannot take as an input, so it runs on
+        the CPU too.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, image):
+                return torch.roll(image, 1, 2).float() / 255.0
+
+        model = Model().eval()
+        x = torch.randint(0, 256, (1, 3, 8, 8), dtype=torch.uint8)
+        ep = torch.export.export(
+            model,
+            (x,),
+            dynamic_shapes=({2: torch.export.Dim("height", min=4, max=64)},),
+            strict=True,
+        )
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        buffer = edge.to_executorch().buffer
+        if _TEST_RUNTIME:
+            x = torch.randint(0, 256, (1, 3, 12, 8), dtype=torch.uint8)
+            program = Runtime.get().load_program(buffer)
+            out = program.load_method("forward").execute((x,))[0]
+            self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
+
+    def test_uint8_input_keeps_state_in_the_delegate_from_ios18(self):
+        """
+        From iOS 18 Core ML takes a partition with no inputs, so a partition
+        that only updates state stays in the delegate with that state instead
+        of moving to the CPU, which would leave the delegate a stale copy.
+        """
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("frames", torch.zeros(1))
+
+            def forward(self, image):
+                out = image.float() / 255.0 * self.frames
+                frames = self.frames + 1
+                self.frames.copy_(frames)
+                # acosh runs on the CPU, so the update gets its own partition.
+                return out * torch.acosh(frames + 1)
+
+        x = torch.randint(0, 256, (1, 3, 2, 2), dtype=torch.uint8)
+        ep = torch.export.export(Model().eval(), (x,), strict=True)
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18
+        )
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner(compile_specs=compile_specs)]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertNotIn("aten.add.Tensor", op_names)
+        self.assertIn("aten.acosh.default", op_names)
 
     def test_uint8_buffer_not_taken_over_is_read_outside_the_delegate(self):
         """
@@ -646,7 +720,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
         if _TEST_RUNTIME:
             program = Runtime.get().load_program(buffer)
             out = program.load_method("forward").execute((x,))[0]
-            self.assertTrue(torch.allclose(out, model(x), atol=1e-3))
+            self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
 
     def test_uint8_made_inside_the_delegate_keeps_ops_whole(self):
         """

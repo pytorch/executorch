@@ -26,7 +26,6 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.operator.convert import to_out_variant
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import (
@@ -197,36 +196,67 @@ def _find_readers_of_unsupported_inputs(
     }
 
 
+def _makes_tensor(node: torch.fx.Node) -> bool:
+    val = node.meta.get("val")
+    vals = val if isinstance(val, (list, tuple)) else [val]
+    return any(isinstance(v, torch.Tensor) for v in vals)
+
+
+def _find_nodes_of_partitions_without_tensor_inputs(
+    partitions: List[Partition],
+    kept_inside: Collection[str],
+    allow_partitions_without_inputs: bool,
+) -> Set[torch.fx.Node]:
+    """The nodes of the partitions that read no tensor from outside, except the
+    weights, constants and state the partitioner moves into Core ML.
+
+    Core ML cannot take a symbolic size as an input, and below iOS 18 it
+    rejects a model with no inputs, so such a partition cannot be delegated.
+    """
+    nodes = set()
+    for partition in partitions:
+        inputs = [
+            arg
+            for node in partition.nodes
+            for arg in node.all_input_nodes
+            if arg not in partition.nodes and arg.name not in kept_inside
+        ]
+        reads_tensor = any(_makes_tensor(arg) for arg in inputs)
+        if not reads_tensor and (inputs or not allow_partitions_without_inputs):
+            nodes.update(partition.nodes)
+    return nodes
+
+
 def _propose_partitions(
     graph_module: torch.fx.GraphModule,
     op_support: OperatorSupportBase,
     kept_inside: Collection[str],
+    allow_partitions_without_inputs: bool,
 ) -> Tuple[List[Partition], Set[torch.fx.Node]]:
     """Propose Core ML partitions, leaving out every op that reads a tensor
-    Core ML cannot take as an input from outside its partition.
+    Core ML cannot take as an input from outside its partition, and then every
+    partition this leaves without a tensor input.
 
-    Returns the partitions and the ops left out this way.
+    Returns the partitions and the ops left out.
     """
-    readers: Set[torch.fx.Node] = set()
-    support = chain(create_op_support(lambda _, node: node not in readers), op_support)
+    left_out: Set[torch.fx.Node] = set()
+    support = chain(create_op_support(lambda _, node: node not in left_out), op_support)
     # Each op moved out of Core ML can hand such a tensor to the next op, so
     # repeat until no partition reads one.
     while True:
         partitions = CapabilityBasedPartitioner(
             graph_module, support, allows_single_node_partition=True
         ).propose_partitions()
-        new_readers = _find_readers_of_unsupported_inputs(partitions, kept_inside)
-        if not new_readers:
-            return partitions, readers
-        readers |= new_readers
-
-
-def _has_out_variant(op: torch._ops.OpOverload) -> bool:
-    try:
-        to_out_variant(op)
-    except RuntimeError:
-        return False
-    return True
+        new = _find_readers_of_unsupported_inputs(partitions, kept_inside)
+        if new or left_out:
+            # Moving those ops out can leave a partition that reads no tensor,
+            # such as the index math of a gather.
+            new |= _find_nodes_of_partitions_without_tensor_inputs(
+                partitions, kept_inside, allow_partitions_without_inputs
+            )
+        if not new:
+            return partitions, left_out
+        left_out |= new
 
 
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
@@ -468,7 +498,7 @@ class CoreMLPartitioner(Partitioner):
         logger.info("CoreMLPartitioner::partition")
         partition_tags = {}
 
-        partition_list, readers = _propose_partitions(
+        partition_list, left_out = _propose_partitions(
             exported_program.graph_module,
             _OperatorsSupportedForCoreMLBackend(
                 self.skip_ops_for_coreml_delegation,
@@ -476,19 +506,24 @@ class CoreMLPartitioner(Partitioner):
                 log=True,
             ),
             self._placeholders_kept_inside(exported_program),
+            self._allows_partitions_without_inputs(),
         )
-        for node in readers:
+        if left_out:
             msg = (
-                f"{node.target} reads a tensor whose dtype CoreML cannot take as "
-                "an input, such as uint8 or int8, from outside its CoreML partition."
+                "The model reads a tensor whose dtype CoreML cannot take as an "
+                "input, such as uint8 or int8, from outside a CoreML partition."
             )
             if self.lower_full_graph:
                 raise NotImplementedError(
                     f"{msg}  Convert the tensor to a supported dtype before it "
                     "enters the model, or set lower_full_graph=False in the "
-                    "CoreMLPartitioner to run this op outside of CoreML."
+                    "CoreMLPartitioner to run the ops that read it outside of "
+                    "CoreML."
                 )
-            self.log_once(f"{msg}  Running it outside of CoreML.")
+            self.log_once(
+                f"{msg}  Running these ops outside of CoreML: "
+                + ", ".join(sorted(str(node.target) for node in left_out))
+            )
         for partition in partition_list:
             for node in partition.nodes:
                 tag = f"tag{partition.id}"
@@ -515,6 +550,13 @@ class CoreMLPartitioner(Partitioner):
         if msg not in self._logged_msgs:
             logging.info(msg)
             self._logged_msgs.add(msg)
+
+    def _allows_partitions_without_inputs(self) -> bool:
+        """Whether Core ML accepts a partition with no inputs, which needs iOS 18."""
+        target = CoreMLBackend.min_deployment_target_from_compile_specs(
+            self.delegation_spec.compile_specs
+        )
+        return target is not None and target >= ct.target.iOS18
 
     def _placeholders_kept_inside(self, ep: ExportedProgram) -> Set[str]:
         """The weights, constants and state this partitioner moves into Core ML."""
@@ -565,12 +607,14 @@ class CoreMLPartitioner(Partitioner):
                 )
                 return False
 
-        # partition() keeps an op that reads a tensor Core ML cannot take as an
-        # input on the CPU, where it stays whole only if it has an out variant.
-        _, readers = _propose_partitions(
+        # An op that partition() leaves out runs on the CPU, so it is never
+        # preserved: a core ATen op stays whole anyway, and any other op is
+        # decomposed into core ATen ops, the op set the portable kernels target.
+        _, left_out = _propose_partitions(
             ep.graph_module,
             create_op_support(is_supported),
             self._placeholders_kept_inside(ep),
+            self._allows_partitions_without_inputs(),
         )
         rejected = set()
         for node in ep.graph.nodes:
@@ -579,12 +623,13 @@ class CoreMLPartitioner(Partitioner):
             ):
                 if not is_supported(None, node):
                     rejected.add(node.target)
-                elif node in readers and not _has_out_variant(node.target):
-                    self.log_once(
-                        f"{node.target} reads a tensor CoreML cannot take as an "
-                        "input and has no out variant, so every call of it is "
-                        "decomposed."
-                    )
+                elif node in left_out:
+                    if torch.Tag.core not in node.target.tags:
+                        self.log_once(
+                            f"{node.target} runs outside of CoreML here because "
+                            "of a tensor CoreML cannot take as an input, so every "
+                            "call of it is decomposed."
+                        )
                     rejected.add(node.target)
                 elif node.target not in do_not_decompose_blocklist and not _is_view_op(
                     node.target
