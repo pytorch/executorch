@@ -65,3 +65,10 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
     run_classification_cpu run_classification_cpu.cpp native_cpu_engine
   )
 endif()
+
+if(EXECUTORCH_BUILD_NATIVE_GGML)
+  add_native_classification_runner(
+    run_classification_ggml_cpu run_classification_ggml_cpu.cpp
+    native_ggml_engine
+  )
+endif()
