@@ -75,7 +75,8 @@ python() {
                 self.assertTrue(
                     result.stdout.startswith(
                         "RUNTIME install -y --override-channels -c conda-forge "
-                        "gxx_linux-64=16.2.0 libstdcxx-ng=16.2.0 libgcc-ng=16.2.0\n"
+                        "gxx_linux-64=16.2.0 libstdcxx-ng=16.2.0 libgcc-ng=16.2.0 "
+                        "sysroot_linux-64=2.28\n"
                     )
                 )
                 self.assertIn(

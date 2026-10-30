@@ -12,7 +12,8 @@ if ! command -v conda >/dev/null; then
   exit 1
 fi
 conda install -y --override-channels -c conda-forge \
-  gxx_linux-64=16.2.0 libstdcxx-ng=16.2.0 libgcc-ng=16.2.0
+  gxx_linux-64=16.2.0 libstdcxx-ng=16.2.0 libgcc-ng=16.2.0 \
+  sysroot_linux-64=2.28
 ROCM_PYTHON_PREFIX="$(python -c 'import sys; print(sys.prefix)')"
 export CC="${ROCM_PYTHON_PREFIX}/bin/x86_64-conda-linux-gnu-cc"
 export CXX="${ROCM_PYTHON_PREFIX}/bin/x86_64-conda-linux-gnu-c++"
