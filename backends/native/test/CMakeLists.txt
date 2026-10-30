@@ -65,6 +65,31 @@ add_custom_command(
 )
 add_custom_target(native_op_samples DEPENDS ${_native_op_samples}.stamp)
 
+if(EXECUTORCH_BUILD_NATIVE_GGML OR EXECUTORCH_BUILD_NATIVE_VULKAN)
+  if(NOT TARGET gflags AND NOT TARGET gflags::gflags)
+    find_package(gflags REQUIRED)
+  endif()
+  if(TARGET gflags::gflags)
+    set(_native_test_gflags gflags::gflags)
+  else()
+    set(_native_test_gflags gflags)
+  endif()
+
+  # A gtest main judging the engine whose host a test links on the bundled
+  # samples of the packages it names; engine tests set its flags.
+  add_library(native_sample_test_main OBJECT samples/sample_test_main.cpp)
+  target_link_libraries(
+    native_sample_test_main
+    PUBLIC native_output_check native_runtime native_package native_engine
+           ${_native_test_gflags} GTest::gtest
+  )
+  target_compile_options(
+    native_sample_test_main
+    PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  )
+endif()
+
 if(EXECUTORCH_BUILD_NATIVE_VULKAN)
   add_executable(
     native_vulkan_passes_test
@@ -86,6 +111,21 @@ if(EXECUTORCH_BUILD_NATIVE_VULKAN)
     PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
   )
+
+  add_executable(native_vulkan_sample_test runtime/vulkan/vulkan_ptn_runner.cpp)
+  target_link_libraries(
+    native_vulkan_sample_test PRIVATE native_sample_test_main
+                                      native_vulkan_engine
+  )
+  add_dependencies(native_vulkan_sample_test native_op_samples)
+  add_test(NAME native_vulkan_sample_test
+           COMMAND native_vulkan_sample_test --packages=${_native_op_samples}
+  )
+  target_compile_options(
+    native_vulkan_sample_test
+    PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  )
 endif()
 
 if(EXECUTORCH_BUILD_NATIVE_GGML)
@@ -98,6 +138,21 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   add_test(NAME native_ggml_engine_test COMMAND native_ggml_engine_test)
   target_compile_options(
     native_ggml_engine_test
+    PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  )
+
+  add_executable(native_ggml_sample_test runtime/ggml/ggml_ptn_runner.cpp)
+  target_link_libraries(
+    native_ggml_sample_test PRIVATE native_sample_test_main native_ggml_engine
+  )
+  add_dependencies(native_ggml_sample_test native_op_samples)
+  add_test(NAME native_ggml_sample_test
+           COMMAND native_ggml_sample_test --packages=${_native_op_samples}
+                   --device=cpu
+  )
+  target_compile_options(
+    native_ggml_sample_test
     PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
   )

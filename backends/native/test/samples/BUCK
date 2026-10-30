@@ -66,3 +66,25 @@ fbcode_target(
     srcs = ["test_output_check.cpp"],
     deps = [":output_check"],
 )
+
+# A gtest main judging the engine whose host library a test links on the
+# bundled samples of the packages it names; engine tests set its flags.
+fbcode_target(
+    _kind = runtime.cxx_library,
+    name = "sample_test_main",
+    srcs = ["sample_test_main.cpp"],
+    link_whole = True,
+    undefined_symbols = True,
+    visibility = ["//executorch/backends/native/test/..."],
+    exported_deps = ["//executorch/backends/native/test/runtime:engine_host"],
+    deps = [
+        ":output_check",
+        "//executorch/backends/native/runtime:runtime",
+        "//executorch/backends/native/runtime/deserialize:package",
+        "//executorch/backends/native/runtime/deserialize:samples",
+    ],
+    external_deps = [
+        "gflags",
+        "gtest",
+    ],
+)
