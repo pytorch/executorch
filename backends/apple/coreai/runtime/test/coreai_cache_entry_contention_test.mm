@@ -200,7 +200,7 @@ TEST_F(
   ASSERT_TRUE(holder.spawn(@"--bookmark-hold", root.url.path, @"same"));
   ASSERT_TRUE(holder.receive('L'));
   NSURL* file = lock_url();
-  struct stat before{};
+  struct stat before {};
   ASSERT_EQ(stat(file.fileSystemRepresentation, &before), 0);
   BookmarkChild waiter;
   ASSERT_TRUE(waiter.spawn(@"--bookmark-lock", root.url.path, @"same"));
@@ -213,7 +213,7 @@ TEST_F(
   ASSERT_TRUE(holder.kill_and_reap());
   ASSERT_TRUE(waiter.receive('L'));
   ASSERT_TRUE(waiter.expect_exit(0));
-  struct stat after{};
+  struct stat after {};
   ASSERT_EQ(stat(file.fileSystemRepresentation, &after), 0);
   EXPECT_EQ(before.st_dev, after.st_dev);
   EXPECT_EQ(before.st_ino, after.st_ino);
@@ -225,7 +225,7 @@ TEST_F(
   BookmarkChild holder;
   ASSERT_TRUE(holder.spawn(@"--bookmark-hold", root.url.path, @"same"));
   ASSERT_TRUE(holder.receive('L'));
-  struct stat before{};
+  struct stat before {};
   ASSERT_EQ(lstat(lock_url().fileSystemRepresentation, &before), 0);
   BookmarkChild waiter;
   ASSERT_TRUE(waiter.spawn(@"--bookmark-lock", root.url.path, @"collision"));
@@ -234,7 +234,7 @@ TEST_F(
   ASSERT_TRUE(holder.kill_and_reap());
   ASSERT_TRUE(waiter.receive('L'));
   ASSERT_TRUE(waiter.expect_exit(0));
-  struct stat after{};
+  struct stat after {};
   ASSERT_EQ(lstat(lock_url().fileSystemRepresentation, &after), 0);
   EXPECT_EQ(before.st_dev, after.st_dev);
   EXPECT_EQ(before.st_ino, after.st_ino);

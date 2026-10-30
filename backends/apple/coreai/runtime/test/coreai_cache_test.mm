@@ -672,10 +672,9 @@ TEST_F(CoreAICacheTest, WarnsAndContinuesPastMissingOrCorruptBookmarks) {
               logs.find("SDK eviction could not be confirmed"),
               std::string::npos);
           EXPECT_EQ(
-              logs.find(
-                  std::string(
-                      static_cast<const char*>(damaged.bookmark.bytes),
-                      damaged.bookmark.length)),
+              logs.find(std::string(
+                  static_cast<const char*>(damaged.bookmark.bytes),
+                  damaged.bookmark.length)),
               std::string::npos);
         }
         cache_entry_removed(root.url, damaged);
