@@ -282,6 +282,16 @@ class _SlicedLinear(nn.Module):
         return self.proj(x)[:, :, :14]
 
 
+class _MaskedRows(nn.Module):
+    def forward(self, x, mask):
+        return x[mask] * 2
+
+
+class _MaskedAdd(nn.Module):
+    def forward(self, x, mask):
+        return x.index_put((mask,), torch.ones(4), accumulate=True)
+
+
 class _Double(nn.Module):
     def __init__(self, memory_format):
         super().__init__()
@@ -304,14 +314,16 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
     def _run_with_cuda_graph(self, module, example, inputs, dynamic_shapes=None):
         from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-        from executorch.exir import to_edge_transform_and_lower
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
         from executorch.runtime import Runtime
 
         with torch.no_grad():
             ep = torch.export.export(module, example, dynamic_shapes=dynamic_shapes)
         spec = CudaBackend.generate_method_name_compile_spec("forward")
         program = to_edge_transform_and_lower(
-            ep, partitioner=[CudaPartitioner([spec])]
+            ep,
+            partitioner=[CudaPartitioner([spec])],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
         ).to_executorch()
         runtime = Runtime.get()
         option = "enable_cuda_graph_for_method"
@@ -329,8 +341,9 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                 # The option is process wide.
                 runtime.backend_registry.set_option("CudaBackend", {option: ""})
             for x in inputs:
+                args = x if isinstance(x, tuple) else (x,)
                 try:
-                    results.append(method.execute([x])[0])
+                    results.append(method.execute(list(args))[0])
                 except RuntimeError as e:
                     results.append(e)
         return results
@@ -363,10 +376,7 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
         )
         for i, (x, out) in enumerate(zip(inputs, outputs)):
             with self.subTest(call=i):
-                if i == 3:
-                    self.assertIsInstance(out, RuntimeError)
-                else:
-                    self._assert_matches_eager(module, x, out)
+                self._assert_matches_eager(module, x, out)
 
     def test_input_shape_changes_after_capture(self):
         torch.manual_seed(0)
@@ -390,6 +400,18 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                     else:
                         # InvalidArgument, from the replay's input shape check.
                         self.assertIn("error 0x12", str(out))
+
+    def test_mask_runs_without_a_graph(self):
+        # A mask index reads its count back to the host, which a capture
+        # cannot record, so the capture call has to run without a graph.
+        torch.manual_seed(0)
+        inputs = [(torch.randn(8, 4), torch.rand(8) > 0.5) for _ in range(6)]
+        for module in (_MaskedRows().eval(), _MaskedAdd().eval()):
+            outputs = self._run_with_cuda_graph(module, inputs[0], inputs)
+            for i, (args, out) in enumerate(zip(inputs, outputs)):
+                with self.subTest(module=type(module).__name__, call=i):
+                    self.assertIsInstance(out, torch.Tensor)
+                    torch.testing.assert_close(out, module(*args))
 
     def test_output_shape_changes_at_capture(self):
         torch.manual_seed(0)
