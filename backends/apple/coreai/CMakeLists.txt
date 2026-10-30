@@ -31,14 +31,17 @@ enable_language(OBJCXX)
 if(EXECUTORCH_BUILD_SHARED)
   set(_coreai_library_type SHARED)
   set(_coreai_runtime executorch_shared)
+  set(_coreai_data_loader "")
 else()
   set(_coreai_library_type STATIC)
   set(_coreai_runtime executorch)
+  set(_coreai_data_loader extension_data_loader)
 endif()
 
 set(_coreai_runtime_sources
     runtime/coreai_backend.mm
-    runtime/coreai_bookmarks.mm
+    runtime/coreai_cache_entry.mm
+    runtime/coreai_cache.mm
     runtime/coreai_cache_key.mm
     runtime/coreai_cache_root.mm
     runtime/coreai_error.mm
@@ -75,10 +78,12 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     runtime/test/coreai_storage_test.mm
     runtime/test/coreai_filesystem_fixture.mm
     runtime/test/coreai_cache_key_test.mm
-    runtime/test/coreai_bookmark_test.mm
-    runtime/test/coreai_bookmark_contention_test.mm
+    runtime/test/coreai_cache_entry_test.mm
+    runtime/test/coreai_cache_entry_contention_test.mm
     runtime/test/coreai_source_test.mm
-    runtime/test/coreai_bookmark_fixture.mm
+    runtime/test/coreai_source_integrity_test.mm
+    runtime/test/coreai_source_publication_test.mm
+    runtime/test/coreai_cache_entry_fixture.mm
     runtime/test/coreai_source_fixture.mm
     runtime/test/coreai_fake_loader.mm
     runtime/test/coreai_acquisition_test.mm
@@ -87,6 +92,8 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     runtime/test/coreai_delegate_test.mm
     runtime/test/coreai_pte_test.mm
     runtime/test/coreai_pte_fixture.mm
+    runtime/test/coreai_cache_test.mm
+    runtime/test/coreai_eviction_test.mm
     runtime/ETCoreAITensor.mm
     ${_coreai_runtime_sources}
   )
@@ -94,8 +101,9 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   target_compile_definitions(coreai_host_test PRIVATE COREAI_ASSETS_TESTING=1)
   find_library(COREAI_FOUNDATION_FRAMEWORK Foundation REQUIRED)
   target_link_libraries(
-    coreai_host_test PRIVATE ${_coreai_runtime} program_schema GTest::gtest
-                             ${COREAI_FOUNDATION_FRAMEWORK}
+    coreai_host_test
+    PRIVATE ${_coreai_runtime} ${_coreai_data_loader} program_schema
+            GTest::gtest ${COREAI_FOUNDATION_FRAMEWORK}
   )
   add_test(NAME coreai_host_test COMMAND coreai_host_test)
   set_tests_properties(coreai_host_test PROPERTIES TIMEOUT 120)
@@ -213,7 +221,11 @@ else()
   file(MAKE_DIRECTORY "${_coreai_generated_dir}")
 endif()
 set(_coreai_swift_header "${_coreai_generated_dir}/CoreAIBridge-Swift.h")
-add_library(coreai_swift STATIC runtime/ETCoreAIModel.swift)
+set(_coreai_swift_sources
+    runtime/ETCoreAIError.swift runtime/ETCoreAITensors.swift
+    runtime/ETCoreAIModelLoader.swift
+)
+add_library(coreai_swift STATIC ${_coreai_swift_sources})
 coreai_configure_swift_target(coreai_swift CoreAIBridge)
 set_target_properties(
   coreai_swift PROPERTIES Swift_MODULE_DIRECTORY "${_coreai_generated_dir}"
@@ -251,7 +263,7 @@ else()
 endif()
 # The bridge header is an input to Swift even when only its declarations change.
 set_property(
-  SOURCE runtime/ETCoreAIModel.swift
+  SOURCE ${_coreai_swift_sources}
   APPEND
   PROPERTY OBJECT_DEPENDS
            "${CMAKE_CURRENT_SOURCE_DIR}/runtime/ETCoreAIBridge.h"
@@ -304,7 +316,7 @@ if(EXECUTORCH_BUILD_TESTS
   set(_coreai_xctest_libs "${_coreai_platform}/Developer/usr/lib")
   add_library(
     coreai_swift_bridge_test MODULE
-    runtime/ETCoreAIModel.swift runtime/test/SwiftBridgeTests.swift
+    ${_coreai_swift_sources} runtime/test/SwiftBridgeTests.swift
     runtime/ETCoreAITensor.mm
   )
   set_target_properties(
@@ -361,11 +373,9 @@ if(EXECUTORCH_BUILD_TESTS
   )
   coreai_configure_objc_target(coreai_pte_export_test)
   target_link_libraries(
-    coreai_pte_export_test PRIVATE ${_coreai_host_runtime} program_schema
+    coreai_pte_export_test PRIVATE ${_coreai_runtime} ${_coreai_data_loader}
+                                   program_schema
   )
-  if(NOT EXECUTORCH_BUILD_SHARED)
-    target_link_libraries(coreai_pte_export_test PRIVATE extension_data_loader)
-  endif()
   add_dependencies(coreai_pte_export_test coreai_bridge_fixture)
   if(_coreai_run_sdk_tests)
     add_test(NAME coreai_pte_export_test
@@ -385,7 +395,7 @@ if(EXECUTORCH_BUILD_TESTS
   endif()
   add_executable(
     coreai_sdk_source_lifetime_test
-    runtime/test/SDKSourceLifetimeTest.swift runtime/ETCoreAIModel.swift
+    runtime/test/SDKSourceLifetimeTest.swift ${_coreai_swift_sources}
     runtime/ETCoreAITensor.mm
   )
   coreai_configure_objc_target(coreai_sdk_source_lifetime_test)
@@ -419,8 +429,8 @@ coreai_require_os27(coreaidelegate)
 target_include_directories(coreaidelegate PUBLIC ${_common_include_directories})
 add_dependencies(coreaidelegate coreai_swift)
 target_link_libraries(
-  coreaidelegate PRIVATE coreai_swift ${_coreai_runtime} program_schema
-                         executorch::coreai_dependencies
+  coreaidelegate PRIVATE coreai_swift ${_coreai_runtime} ${_coreai_data_loader}
+                         program_schema executorch::coreai_dependencies
 )
 executorch_target_link_options_shared_lib(coreaidelegate)
 if(EXECUTORCH_BUILD_SHARED)
@@ -443,6 +453,12 @@ coreai_require_os27(coreai_runtime_smoke)
 set_target_properties(coreai_runtime_smoke PROPERTIES LINKER_LANGUAGE CXX)
 target_link_libraries(
   coreai_runtime_smoke PRIVATE coreaidelegate ${_coreai_runtime}
+)
+
+install(
+  FILES runtime/coreai_cache.h
+  DESTINATION
+    ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/apple/coreai/runtime
 )
 
 install(

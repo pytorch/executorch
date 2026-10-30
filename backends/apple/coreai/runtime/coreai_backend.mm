@@ -27,23 +27,19 @@ struct Handle final {
   id<ETCoreAISession> session = nil;
 };
 
-Result<NSString*> path_option(BackendInitContext& context, const char* key) {
-  auto option = context.get_runtime_spec<const char*>(key);
+Result<NSString*> cache_directory_option(BackendInitContext& context) {
+  auto option = context.get_runtime_spec<const char*>("coreai_cache_dir");
   if (!option.ok()) {
     if (option.error() == Error::NotFound) {
-      return static_cast<NSString*>(nil);
+      return cache_directory_path(nullptr);
     }
     return option.error();
   }
-  NSString* path = option.get() == nullptr
-      ? nil
-      : [NSString stringWithUTF8String:option.get()];
   ET_CHECK_OR_RETURN_ERROR(
-      path != nil && path.isAbsolutePath,
+      option.get() != nullptr,
       InvalidArgument,
-      "Core AI %s must be an absolute UTF-8 path",
-      key);
-  return path;
+      "Core AI cache directory option must not be null");
+  return cache_directory_path(option.get());
 }
 
 Result<id<ETCoreAISession>> bind_session(
@@ -93,31 +89,30 @@ class CoreAIBackend final : public BackendInterface {
       if (!manifest.ok()) {
         return manifest.error();
       }
-      auto assets = select_runtime_assets(manifest.get());
-      if (!assets.ok()) {
-        return assets.error();
+      auto host_bundle = select_host_bundle(manifest.get());
+      if (!host_bundle.ok()) {
+        return host_bundle.error();
       }
-      auto assets_option = path_option(context, "coreai_assets_dir");
-      if (!assets_option.ok()) {
-        return assets_option.error();
-      }
-      NSString* root = assets_option.get();
-      if (root == nil) {
-        auto default_root = default_coreai_assets_root();
-        if (!default_root.ok()) {
-          return default_root.error();
-        }
-        root = default_root.get();
+      auto configured = cache_directory_option(context);
+      if (!configured.ok()) {
+        return configured.error();
       }
       id<ETCoreAIModelLoading> loader = ETCoreAICreateModelLoader();
       ET_CHECK_OR_RETURN_ERROR(
           loader != nil, Internal, "Cannot create Core AI loader");
-      auto prepared = acquire_bookmark_model(
-          assets.get(), context.get_named_data_map(), root, loader);
+      auto cache_directory = create_cache_directory(configured.get());
+      if (!cache_directory.ok()) {
+        return cache_directory.error();
+      }
+      auto prepared = acquire_model(
+          host_bundle.get(),
+          context.get_named_data_map(),
+          cache_directory.get(),
+          loader);
       if (!prepared.ok()) {
         return prepared.error();
       }
-      auto session = bind_session(prepared.get(), assets->bundle);
+      auto session = bind_session(prepared.get(), host_bundle->bundle);
       if (!session.ok()) {
         return session.error();
       }
@@ -126,8 +121,8 @@ class CoreAIBackend final : public BackendInterface {
           handle != nullptr,
           MemoryAllocationFailed,
           "Cannot allocate Core AI handle");
-      handle->input_count = assets->bundle.inputs.count;
-      handle->output_count = assets->bundle.outputs.count;
+      handle->input_count = host_bundle->bundle.inputs.count;
+      handle->output_count = host_bundle->bundle.outputs.count;
       handle->session = session.get();
       processed->Free();
       return static_cast<DelegateHandle*>(handle.release());

@@ -68,7 +68,7 @@ def _export_model(
     if output_dir.exists():
         shutil.rmtree(output_dir)
     for relative_path in manifest["files"]:
-        entry = store.pte_data[f"coreai/{manifest['hash']}/{relative_path}"]
+        entry = store.pte_data[f"coreai/{manifest['export_hash']}/{relative_path}"]
         destination = output_dir / relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(store.buffers[entry.buffer_index])

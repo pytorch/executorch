@@ -20,15 +20,12 @@
 #include <cstring>
 #include "coreai_fault_scope.h"
 #include "coreai_load_coordinator.h"
+#include "coreai_test_utils.h"
 
 namespace executorch::backends::coreai::testing {
 namespace {
 using runtime::Error;
 using runtime::Result;
-
-dispatch_time_t deadline() {
-  return dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC);
-}
 
 struct AcquisitionWorker {
   const SelectedBundle* bundle = nullptr;
@@ -44,8 +41,8 @@ struct AcquisitionWorker {
     auto* worker = static_cast<AcquisitionWorker*>(opaque);
     dispatch_semaphore_signal(worker->started);
     @autoreleasepool {
-      RuntimeAssets assets{*worker->bundle, @"macOS", @"arch_b"};
-      auto acquired = acquire_bookmark_model(
+      SelectedHostBundle assets{*worker->bundle, @"macOS", @"arch_b"};
+      auto acquired = acquire_test_model(
           assets, worker->data, worker->root, worker->loader);
       worker->error = acquired.ok() ? Error::Ok : acquired.error();
       worker->model = acquired.ok() && acquired.get() != nil;
@@ -80,12 +77,12 @@ struct AcquisitionWorkers {
       if (!started[i])
         continue;
       observation.completed[i] =
-          dispatch_semaphore_wait(workers[i].done, deadline()) == 0;
+          dispatch_semaphore_wait(workers[i].done, test_deadline()) == 0;
       observation.joined[i] = pthread_join(threads[i], nullptr);
       observation.errors[i] = workers[i].error;
       observation.models[i] = workers[i].model;
     }
-    observation.callbacks_drained = bridge.wait_for_callbacks(deadline());
+    observation.callbacks_drained = bridge.wait_for_callbacks(test_deadline());
     if (observation.callbacks_drained)
       loader.onSpecialize = nil;
     finished = true;
@@ -95,30 +92,31 @@ struct AcquisitionWorkers {
   }
 };
 
-bool send_child_byte(int fd, char value) {
-  const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-  while (std::chrono::steady_clock::now() < end) {
-    const auto remaining =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            end - std::chrono::steady_clock::now())
-            .count();
-    pollfd entry{fd, POLLOUT, 0};
-    const int ready =
-        poll(&entry, 1, static_cast<int>(remaining > 0 ? remaining : 0));
-    if (ready < 0 && errno == EINTR)
-      continue;
-    if (ready <= 0 || !(entry.revents & POLLOUT))
-      return false;
-    const ssize_t written = write(fd, &value, 1);
-    if (written == 1)
-      return true;
-    if (written < 0 && (errno == EINTR || errno == EAGAIN))
-      continue;
-    return false;
-  }
-  return false;
-}
 } // namespace
+
+Result<id<ETCoreAIPreparedModel>> acquire_test_model(
+    const SelectedHostBundle& bundle,
+    const runtime::NamedDataMap* data,
+    NSString* cache_path,
+    id<ETCoreAIModelLoading> loader) {
+  auto directory = test_cache_directory(cache_path);
+  if (!directory.ok()) {
+    return directory.error();
+  }
+  return acquire_model(bundle, data, directory.get(), loader);
+}
+
+Error clear_test_cache_entry(
+    NSString* cache_path,
+    NSString* key,
+    id<ETCoreAIModelLoading> loader) {
+  auto directory =
+      test_cache_directory(cache_path, StorageCreationMode::OpenExisting);
+  if (!directory.ok()) {
+    return directory.error() == Error::NotFound ? Error::Ok : directory.error();
+  }
+  return clear_cache_entry(directory.get(), key, loader);
+}
 
 Result<NSURL*> acquisition_staged_url(
     NSURL* root,
@@ -126,7 +124,7 @@ Result<NSURL*> acquisition_staged_url(
   auto key = test_cache_key(bundle);
   if (!key.ok())
     return key.error();
-  return [[[root URLByAppendingPathComponent:@"staging"]
+  return [[[root URLByAppendingPathComponent:@"sources"]
       URLByAppendingPathComponent:key.get()]
       URLByAppendingPathComponent:bundle.bundle_name];
 }
@@ -146,7 +144,7 @@ ParallelAcquisitionObservation parallel_acquisitions(
   dispatch_semaphore_t proceed = group.proceed;
   loader.onSpecialize = ^(NSURL*) {
     dispatch_semaphore_signal(entered);
-    if (dispatch_semaphore_wait(proceed, deadline()) != 0)
+    if (dispatch_semaphore_wait(proceed, test_deadline()) != 0)
       ++*timeouts;
   };
   for (int i = 0; i < 2; ++i) {
@@ -161,17 +159,18 @@ ParallelAcquisitionObservation parallel_acquisitions(
   group.started[0] = observation.creation[0] == 0;
   if (group.started[0]) {
     observation.first_entered =
-        dispatch_semaphore_wait(entered, deadline()) == 0;
+        dispatch_semaphore_wait(entered, test_deadline()) == 0;
   }
   if (observation.first_entered) {
     observation.creation[1] = pthread_create(
         &group.threads[1], nullptr, AcquisitionWorker::run, &group.workers[1]);
     group.started[1] = observation.creation[1] == 0;
     if (group.started[1] &&
-        dispatch_semaphore_wait(group.workers[1].started, deadline()) == 0) {
+        dispatch_semaphore_wait(group.workers[1].started, test_deadline()) ==
+            0) {
       const auto second_deadline = same_key
           ? dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC)
-          : deadline();
+          : test_deadline();
       const bool second_entered =
           dispatch_semaphore_wait(entered, second_deadline) == 0;
       observation.second_observed = same_key ? !second_entered : second_entered;
@@ -314,17 +313,11 @@ int acquisition_child_mode(int argc, char** argv) {
   auto parsed = parse_manifest(encode(dictionary));
   if (!parsed.ok())
     return 5;
-  auto selected = select_assets(parsed.get(), @"arch_b", @"macOS");
+  auto selected = select_bundle(parsed.get(), @"arch_b", @"macOS");
   if (!selected.ok())
     return 5;
-  char* end = nullptr;
-  errno = 0;
-  const long descriptor = std::strtol(argv[4], &end, 10);
-  if (errno != 0 || end == argv[4] || *end != '\0' || descriptor < 0 ||
-      descriptor > INT_MAX)
-    return 6;
-  const int fd = static_cast<int>(descriptor);
-  if (fcntl(fd, F_GETFD) < 0)
+  const int fd = parse_child_fd(argv[4]);
+  if (fd < 0 || fcntl(fd, F_GETFD) < 0)
     return 6;
   signal(SIGPIPE, SIG_IGN);
   if (!send_child_byte(fd, 'C'))
@@ -338,7 +331,7 @@ int acquisition_child_mode(int argc, char** argv) {
     auto second_parsed = parse_manifest(encode(second_dictionary));
     if (!second_parsed.ok())
       return 5;
-    auto second = select_assets(second_parsed.get(), @"arch_b", @"macOS");
+    auto second = select_bundle(second_parsed.get(), @"arch_b", @"macOS");
     if (!second.ok())
       return 5;
     parallel_child(
@@ -362,8 +355,8 @@ int acquisition_child_mode(int argc, char** argv) {
       if (event == boundary)
         _exit(73);
     };
-    RuntimeAssets assets{selected.get(), @"macOS", @"arch_b"};
-    auto result = acquire_bookmark_model(assets, &data, root, loader);
+    SelectedHostBundle assets{selected.get(), @"macOS", @"arch_b"};
+    auto result = acquire_test_model(assets, &data, root, loader);
     _exit(result.ok() ? 9 : 10);
   }
 }

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 #import "coreai_delegate_fixture.h"
+#include "coreai_test_utils.h"
 
 namespace executorch::backends::coreai::testing {
 using namespace executorch::runtime;
@@ -25,8 +26,7 @@ DelegateFixture::DelegateFixture(
 
 DelegateFixture::~DelegateFixture() {
   reset();
-  EXPECT_TRUE(bridge_.wait_for_callbacks(
-      dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)));
+  EXPECT_TRUE(bridge_.wait_for_callbacks(test_deadline()));
   processed.Free();
   if (json != nil) {
     EXPECT_EQ(freed, 1);
@@ -40,7 +40,7 @@ Error DelegateFixture::init(NSString* root) {
   }
   BackendOptions<1> options;
   const Error error = options.set_option(
-      "coreai_assets_dir", (root ?: storage.url.path).UTF8String);
+      "coreai_cache_dir", (root ?: storage.url.path).UTF8String);
   if (error != Error::Ok) {
     return error;
   }
@@ -56,8 +56,7 @@ Error DelegateFixture::init_with_options(
   if (result.ok()) {
     handle = result.get();
   }
-  auto drained = bridge_.wait_for_callbacks(
-      dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+  auto drained = bridge_.wait_for_callbacks(test_deadline());
   if (!drained) {
     ADD_FAILURE() << drained.message();
     reset();

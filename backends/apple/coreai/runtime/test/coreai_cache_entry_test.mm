@@ -9,7 +9,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include "coreai_bookmark_fixture.h"
+#include "coreai_cache_entry_fixture.h"
 #include "coreai_fault_scope.h"
 #include "coreai_filesystem_fixture.h"
 #include "coreai_storage.h"
@@ -29,7 +29,7 @@ class CoreAIBookmarkPathTest : public ::testing::Test {
 
   void SetUp() override {
     ASSERT_NE(root.url, nil);
-    auto selected = bookmark_bundle();
+    auto selected = selected_bundle(manifest_dict());
     ASSERT_TRUE(selected.ok());
     bundle = std::make_unique<SelectedBundle>(selected.get());
     auto result = test_cache_key(*bundle);
@@ -44,7 +44,7 @@ class CoreAIBookmarkPathTest : public ::testing::Test {
 
 class CoreAIBookmarkIOTest : public CoreAIBookmarkPathTest {
  protected:
-  std::unique_ptr<CacheEntryLock> locked;
+  std::unique_ptr<LockedCacheEntry> locked;
   NSURL* url = nil;
 
   void SetUp() override {
@@ -52,7 +52,7 @@ class CoreAIBookmarkIOTest : public CoreAIBookmarkPathTest {
     if (HasFatalFailure()) {
       return;
     }
-    auto result = lock_cache_entry(root.url.path, key);
+    auto result = acquire_test_cache_entry(root.url.path, key);
     ASSERT_TRUE(result.ok());
     locked = std::move(result.get());
     ASSERT_NE(locked, nullptr);
@@ -62,7 +62,7 @@ class CoreAIBookmarkIOTest : public CoreAIBookmarkPathTest {
 };
 
 ::testing::AssertionResult bookmark_bytes_equal(
-    const CacheEntryLock& lock,
+    const LockedCacheEntry& lock,
     NSData* expected) {
   auto result = lock.read_bookmark();
   if (!result.ok()) {
@@ -183,49 +183,51 @@ TEST_F(CoreAIBookmarkIOTest, RejectsOversizedStoredBookmark) {
   EXPECT_EQ(info.st_size, static_cast<off_t>(8 * kMiB + 1));
 }
 
-TEST_F(CoreAIBookmarkIOTest, ExistingLookupReadsWithoutPreparingStaging) {
+TEST_F(CoreAIBookmarkIOTest, ExistingLookupReadsWithoutPreparingSources) {
   NSData* bytes = [@"bookmark" dataUsingEncoding:NSUTF8StringEncoding];
   ASSERT_EQ(locked->write_bookmark(bytes), Error::Ok);
   locked.reset();
-  auto existing = lock_existing_cache_entry(root.url.path, key);
+  auto existing = acquire_existing_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(existing.ok());
   ASSERT_NE(existing.get(), nullptr);
   EXPECT_EQ(
       existing.get()->persistence(), CacheEntryPersistence::BookmarkCapable);
   EXPECT_TRUE(bookmark_bytes_equal(*existing.get(), bytes));
   EXPECT_FALSE([NSFileManager.defaultManager
-      fileExistsAtPath:[root.url URLByAppendingPathComponent:@"staging"].path]);
+      fileExistsAtPath:[root.url URLByAppendingPathComponent:@"sources"].path]);
 }
 
-TEST_F(CoreAIBookmarkIOTest, PreparesSharedStagingParentOnDemand) {
+TEST_F(CoreAIBookmarkIOTest, PreparesSharedSourcesParentOnDemand) {
   EXPECT_TRUE([locked->key() isEqual:key]);
-  NSString* expected = [root.url URLByAppendingPathComponent:@"staging"].path;
+  NSString* expected = [root.url.URLByResolvingSymlinksInPath
+                           URLByAppendingPathComponent:@"sources"]
+                           .path;
   EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:expected]);
-  auto staging = locked->prepare_staging_root();
-  ASSERT_TRUE(staging.ok());
-  EXPECT_TRUE([staging.get() isEqual:expected]);
+  auto sources = locked->prepare_source_directory();
+  ASSERT_TRUE(sources.ok());
+  EXPECT_TRUE([sources->url.path isEqual:expected]);
   struct stat info {};
-  ASSERT_EQ(lstat(staging.get().fileSystemRepresentation, &info), 0);
+  ASSERT_EQ(lstat(sources->url.fileSystemRepresentation, &info), 0);
   EXPECT_TRUE(S_ISDIR(info.st_mode));
-  auto repeated = locked->prepare_staging_root();
+  auto repeated = locked->prepare_source_directory();
   ASSERT_TRUE(repeated.ok());
-  EXPECT_TRUE([repeated.get() isEqual:expected]);
+  EXPECT_TRUE([repeated->url.path isEqual:expected]);
   EXPECT_FALSE([NSFileManager.defaultManager
       fileExistsAtPath:[expected stringByAppendingPathComponent:key]]);
 }
 
-TEST_F(CoreAIBookmarkIOTest, CleanupDoesNotCreateMissingStaging) {
+TEST_F(CoreAIBookmarkIOTest, CleanupDoesNotCreateMissingSources) {
   StorageFaultScope fault(FaultPoint::BeforeCreateDirectory);
-  EXPECT_EQ(locked->remove_staging(), Error::Ok);
+  EXPECT_EQ(locked->remove_source(), Error::Ok);
   EXPECT_EQ(fault.matches, 0);
   EXPECT_FALSE([NSFileManager.defaultManager
-      fileExistsAtPath:[root.url URLByAppendingPathComponent:@"staging"].path]);
+      fileExistsAtPath:[root.url URLByAppendingPathComponent:@"sources"].path]);
 }
 
 TEST_F(CoreAIBookmarkIOTest, CleanupRejectsUnexpectedTypesBeforeDeletingFiles) {
-  auto staging = locked->prepare_staging_root();
-  ASSERT_TRUE(staging.ok());
-  NSString* entry = [staging.get() stringByAppendingPathComponent:key];
+  auto sources = locked->prepare_source_directory();
+  ASSERT_TRUE(sources.ok());
+  NSString* entry = [sources->url.path stringByAppendingPathComponent:key];
   ASSERT_EQ(mkdir(entry.fileSystemRepresentation, 0700), 0);
   NSString* file = [entry stringByAppendingPathComponent:@"data"];
   NSData* bytes = [@"preserved" dataUsingEncoding:NSUTF8StringEncoding];
@@ -233,7 +235,7 @@ TEST_F(CoreAIBookmarkIOTest, CleanupRejectsUnexpectedTypesBeforeDeletingFiles) {
   NSString* pipe = [entry stringByAppendingPathComponent:@"pipe"];
   ASSERT_EQ(mkfifo(pipe.fileSystemRepresentation, 0600), 0);
 
-  EXPECT_EQ(locked->remove_staging(), Error::InvalidExternalData);
+  EXPECT_EQ(locked->remove_source(), Error::InvalidExternalData);
   EXPECT_TRUE([[NSData dataWithContentsOfFile:file] isEqual:bytes]);
   struct stat info;
   ASSERT_EQ(lstat(pipe.fileSystemRepresentation, &info), 0);
@@ -241,9 +243,9 @@ TEST_F(CoreAIBookmarkIOTest, CleanupRejectsUnexpectedTypesBeforeDeletingFiles) {
 }
 
 TEST_F(CoreAIBookmarkIOTest, CleanupUsesLockedRootAfterPathReplacement) {
-  auto staging = locked->prepare_staging_root();
-  ASSERT_TRUE(staging.ok());
-  NSString* entry = [staging.get() stringByAppendingPathComponent:key];
+  auto sources = locked->prepare_source_directory();
+  ASSERT_TRUE(sources.ok());
+  NSString* entry = [sources->url.path stringByAppendingPathComponent:key];
   ASSERT_EQ(mkdir(entry.fileSystemRepresentation, 0700), 0);
   TestDirectory moved;
   ASSERT_NE(moved.url, nil);
@@ -252,15 +254,15 @@ TEST_F(CoreAIBookmarkIOTest, CleanupUsesLockedRootAfterPathReplacement) {
           root.url.fileSystemRepresentation,
           moved.url.fileSystemRepresentation),
       0);
-  NSURL* replacement = [[root.url URLByAppendingPathComponent:@"staging"]
+  NSURL* replacement = [[root.url URLByAppendingPathComponent:@"sources"]
       URLByAppendingPathComponent:key];
   ASSERT_TRUE([NSFileManager.defaultManager createDirectoryAtURL:replacement
                                      withIntermediateDirectories:YES
                                                       attributes:nil
                                                            error:nil]);
 
-  EXPECT_EQ(locked->remove_staging(), Error::Ok);
-  NSURL* original = [[moved.url URLByAppendingPathComponent:@"staging"]
+  EXPECT_EQ(locked->remove_source(), Error::Ok);
+  NSURL* original = [[moved.url URLByAppendingPathComponent:@"sources"]
       URLByAppendingPathComponent:key];
   EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:original.path]);
   EXPECT_TRUE([NSFileManager.defaultManager fileExistsAtPath:replacement.path]);
@@ -271,8 +273,8 @@ TEST_F(CoreAIBookmarkIOTest, CreatesDirectoriesWithDefaultPermissions) {
   ASSERT_EQ(mkdir(reference.fileSystemRepresentation, 0777), 0);
   struct stat expected;
   ASSERT_EQ(stat(reference.fileSystemRepresentation, &expected), 0);
-  ASSERT_TRUE(locked->prepare_staging_root().ok());
-  for (NSString* name in @[ @"locks", @"bookmarks", @"staging" ]) {
+  ASSERT_TRUE(locked->prepare_source_directory().ok());
+  for (NSString* name in @[ @"locks", @"bookmarks", @"sources" ]) {
     NSURL* directory = [root.url URLByAppendingPathComponent:name];
     struct stat actual;
     ASSERT_EQ(stat(directory.fileSystemRepresentation, &actual), 0);
@@ -281,102 +283,104 @@ TEST_F(CoreAIBookmarkIOTest, CreatesDirectoriesWithDefaultPermissions) {
 }
 
 TEST_F(CoreAIBookmarkIOTest, ReusesDirectoriesWithoutCreation) {
-  ASSERT_TRUE(locked->prepare_staging_root().ok());
+  ASSERT_TRUE(locked->prepare_source_directory().ok());
   ASSERT_EQ(
       locked->write_bookmark(
           [@"bookmark" dataUsingEncoding:NSUTF8StringEncoding]),
       Error::Ok);
   locked.reset();
   StorageFaultScope fault(FaultPoint::BeforeCreateDirectory);
-  auto created = lock_cache_entry(root.url.path, key);
+  auto created = acquire_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(created.ok());
   ASSERT_NE(created.get(), nullptr);
-  EXPECT_TRUE(created.get()->prepare_staging_root().ok());
+  EXPECT_TRUE(created.get()->prepare_source_directory().ok());
   created.get().reset();
-  auto existing = lock_existing_cache_entry(root.url.path, key);
+  auto existing = acquire_existing_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(existing.ok());
   ASSERT_NE(existing.get(), nullptr);
-  EXPECT_TRUE(existing.get()->prepare_staging_root().ok());
+  EXPECT_TRUE(existing.get()->prepare_source_directory().ok());
   EXPECT_EQ(fault.matches, 0);
 }
 
-TEST_F(CoreAIBookmarkIOTest, RecreatesMissingStagingParent) {
-  auto staging = locked->prepare_staging_root();
-  ASSERT_TRUE(staging.ok());
-  ASSERT_EQ(rmdir(staging.get().fileSystemRepresentation), 0);
+TEST_F(CoreAIBookmarkIOTest, RecreatesMissingSourcesParent) {
+  auto sources = locked->prepare_source_directory();
+  ASSERT_TRUE(sources.ok());
+  ASSERT_EQ(rmdir(sources->url.fileSystemRepresentation), 0);
   StorageFaultScope fault(FaultPoint::BeforeCreateDirectory);
-  EXPECT_EQ(locked->prepare_staging_root().error(), Error::AccessFailed);
+  EXPECT_EQ(locked->prepare_source_directory().error(), Error::AccessFailed);
   EXPECT_EQ(fault.hits, 1);
-  auto recreated = locked->prepare_staging_root();
+  auto recreated = locked->prepare_source_directory();
   ASSERT_TRUE(recreated.ok());
-  EXPECT_TRUE([recreated.get() isEqual:staging.get()]);
+  EXPECT_TRUE([recreated->url isEqual:sources->url]);
 }
 
-TEST_F(CoreAIBookmarkIOTest, AcceptsConcurrentStagingCreation) {
-  NSURL* staging = [root.url URLByAppendingPathComponent:@"staging"];
+TEST_F(CoreAIBookmarkIOTest, AcceptsConcurrentSourcesCreation) {
+  NSURL* sources = [root.url URLByAppendingPathComponent:@"sources"];
   StorageFaultScope fault(FaultPoint::BeforeCreateDirectory);
   fault.armed = false;
   __block int creations = 0;
   fault.observe = ^(FaultPoint point) {
     if (point == FaultPoint::BeforeCreateDirectory) {
       ++creations;
-      EXPECT_EQ(mkdir(staging.fileSystemRepresentation, 0700), 0);
+      EXPECT_EQ(mkdir(sources.fileSystemRepresentation, 0700), 0);
     }
   };
-  EXPECT_TRUE(locked->prepare_staging_root().ok());
+  EXPECT_TRUE(locked->prepare_source_directory().ok());
   EXPECT_EQ(creations, 1);
 }
 
-TEST_F(CoreAIBookmarkIOTest, RejectsInvalidStagingParent) {
+TEST_F(CoreAIBookmarkIOTest, RejectsInvalidSourcesParent) {
   TestDirectory target;
   ASSERT_NE(target.url, nil);
-  NSURL* staging = [root.url URLByAppendingPathComponent:@"staging"];
+  NSURL* sources = [root.url URLByAppendingPathComponent:@"sources"];
   ASSERT_EQ(
       symlink(
           target.url.fileSystemRepresentation,
-          staging.fileSystemRepresentation),
+          sources.fileSystemRepresentation),
       0);
-  EXPECT_EQ(locked->prepare_staging_root().error(), Error::AccessFailed);
-  ASSERT_EQ(unlink(staging.fileSystemRepresentation), 0);
+  EXPECT_EQ(locked->prepare_source_directory().error(), Error::AccessFailed);
+  ASSERT_EQ(unlink(sources.fileSystemRepresentation), 0);
   NSData* bytes = [@"not a directory" dataUsingEncoding:NSUTF8StringEncoding];
-  ASSERT_TRUE([bytes writeToURL:staging atomically:NO]);
-  EXPECT_EQ(locked->prepare_staging_root().error(), Error::AccessFailed);
-  EXPECT_TRUE([[NSData dataWithContentsOfURL:staging] isEqual:bytes]);
+  ASSERT_TRUE([bytes writeToURL:sources atomically:NO]);
+  EXPECT_EQ(locked->prepare_source_directory().error(), Error::AccessFailed);
+  EXPECT_TRUE([[NSData dataWithContentsOfURL:sources] isEqual:bytes]);
 }
 
 TEST_F(CoreAIBookmarkPathTest, AllowsTemporaryRootsAndRejectsInvalidKeys) {
-  auto allowed = lock_cache_entry(root.url.path, key);
+  auto allowed = acquire_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(allowed.ok());
   ASSERT_NE(allowed.get(), nullptr);
-  EXPECT_FALSE(lock_cache_entry(root.url.path, @"../escape").ok());
+  EXPECT_FALSE(acquire_test_cache_entry(root.url.path, @"../escape").ok());
 }
 
 TEST_F(CoreAIBookmarkPathTest, SnapshotsMutableRootAtAcquisition) {
   TestDirectory other;
   ASSERT_NE(other.url, nil);
   NSMutableString* path = [root.url.path mutableCopy];
-  auto locked = lock_cache_entry(path, key);
+  auto locked = acquire_test_cache_entry(path, key);
   ASSERT_TRUE(locked.ok());
   ASSERT_NE(locked.get(), nullptr);
   [path setString:other.url.path];
 
-  auto staging = locked.get()->prepare_staging_root();
-  ASSERT_TRUE(staging.ok());
-  NSString* expected = [root.url URLByAppendingPathComponent:@"staging"].path;
-  NSString* unrelated = [other.url URLByAppendingPathComponent:@"staging"].path;
+  auto sources = locked.get()->prepare_source_directory();
+  ASSERT_TRUE(sources.ok());
+  NSString* expected = [root.url.URLByResolvingSymlinksInPath
+                           URLByAppendingPathComponent:@"sources"]
+                           .path;
+  NSString* unrelated = [other.url URLByAppendingPathComponent:@"sources"].path;
   EXPECT_TRUE([NSFileManager.defaultManager fileExistsAtPath:expected]);
   EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:unrelated]);
-  EXPECT_TRUE([staging.get() isEqual:expected])
-      << "Returned staging path: " << staging.get().UTF8String
-      << "; descriptor-pinned staging path: " << expected.UTF8String;
+  EXPECT_TRUE([sources->url.path isEqual:expected])
+      << "Returned sources path: " << sources->url.path.UTF8String
+      << "; descriptor-pinned sources path: " << expected.UTF8String;
 }
 
-TEST_F(CoreAIBookmarkPathTest, ExcludesRootWithoutCreatingStaging) {
-  auto locked = lock_cache_entry(root.url.path, key);
+TEST_F(CoreAIBookmarkPathTest, ExcludesRootWithoutCreatingSources) {
+  auto locked = acquire_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(locked.ok());
   EXPECT_TRUE(backup_excluded(root.url));
   EXPECT_FALSE([NSFileManager.defaultManager
-      fileExistsAtPath:[root.url URLByAppendingPathComponent:@"staging"].path]);
+      fileExistsAtPath:[root.url URLByAppendingPathComponent:@"sources"].path]);
 }
 
 TEST_F(CoreAIBookmarkPathTest, MissingLookupLeavesRootAndEntryUntouched) {
@@ -385,10 +389,16 @@ TEST_F(CoreAIBookmarkPathTest, MissingLookupLeavesRootAndEntryUntouched) {
   for (NSString* path in @[ root.url.path, missing ]) {
     SCOPED_TRACE(path.UTF8String);
     auto resolved =
-        resolve_bookmark_root(path, StorageCreationMode::OpenExisting);
+        resolve_test_cache_directory(path, StorageCreationMode::OpenExisting);
     ASSERT_TRUE(resolved.ok());
-    EXPECT_TRUE([resolved.get() isEqual:path]);
-    auto absent = lock_existing_cache_entry(path, key);
+    const bool root_exists = [path isEqual:root.url.path];
+    EXPECT_EQ(resolved->has_value(), root_exists);
+    if (resolved->has_value()) {
+      EXPECT_TRUE([resolved->value().path
+          isEqual:[NSURL fileURLWithPath:path]
+                      .URLByResolvingSymlinksInPath.path]);
+    }
+    auto absent = acquire_existing_test_cache_entry(path, key);
     ASSERT_TRUE(absent.ok());
     EXPECT_EQ(absent.get(), nullptr);
   }
@@ -403,28 +413,28 @@ TEST_F(CoreAIBookmarkPathTest, MissingLookupLeavesRootAndEntryUntouched) {
 TEST_F(CoreAIBookmarkPathTest, MissingLookupIgnoresOtherEntries) {
   auto other_key = different_cache_key(*bundle, key, false);
   ASSERT_TRUE(other_key.ok());
-  auto other = lock_cache_entry(root.url.path, other_key.get());
+  auto other = acquire_test_cache_entry(root.url.path, other_key.get());
   ASSERT_TRUE(other.ok());
   NSData* bytes = [@"other" dataUsingEncoding:NSUTF8StringEncoding];
   ASSERT_EQ(other.get()->write_bookmark(bytes), Error::Ok);
-  auto absent = lock_existing_cache_entry(root.url.path, key);
+  auto absent = acquire_existing_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(absent.ok());
   EXPECT_EQ(absent.get(), nullptr);
   EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:lock_url().path]);
   EXPECT_TRUE(bookmark_bytes_equal(*other.get(), bytes));
 }
 
-TEST_F(CoreAIBookmarkPathTest, StagingOnlyLookupHasExplicitPersistence) {
-  NSURL* staged = [[root.url URLByAppendingPathComponent:@"staging"]
+TEST_F(CoreAIBookmarkPathTest, SourceOnlyLookupHasExplicitPersistence) {
+  NSURL* staged = [[root.url URLByAppendingPathComponent:@"sources"]
       URLByAppendingPathComponent:key];
   ASSERT_TRUE([NSFileManager.defaultManager createDirectoryAtURL:staged
                                      withIntermediateDirectories:YES
                                                       attributes:nil
                                                            error:nil]);
-  auto existing = lock_existing_cache_entry(root.url.path, key);
+  auto existing = acquire_existing_test_cache_entry(root.url.path, key);
   ASSERT_TRUE(existing.ok());
   ASSERT_NE(existing.get(), nullptr);
-  EXPECT_EQ(existing.get()->persistence(), CacheEntryPersistence::StagingOnly);
+  EXPECT_EQ(existing.get()->persistence(), CacheEntryPersistence::SourceOnly);
   EXPECT_TRUE(bookmark_bytes_equal(*existing.get(), nil));
   NSData* bytes = [@"bookmark" dataUsingEncoding:NSUTF8StringEncoding];
   EXPECT_EQ(existing.get()->write_bookmark(bytes), Error::InvalidArgument);
@@ -436,16 +446,21 @@ TEST_F(CoreAIBookmarkPathTest, StagingOnlyLookupHasExplicitPersistence) {
 
 TEST_F(CoreAIBookmarkPathTest, ResolvesAndCreatesRootWithBackupExclusion) {
   ASSERT_TRUE(set_backup_excluded(root.url, false));
-  NSString* path = [root.url URLByAppendingPathComponent:@"nested/assets"].path;
-  auto resolved = resolve_bookmark_root(path, StorageCreationMode::Create);
+  NSString* path = [root.url URLByAppendingPathComponent:@"nested/cache"].path;
+  auto resolved =
+      resolve_test_cache_directory(path, StorageCreationMode::Create);
   ASSERT_TRUE(resolved.ok());
-  EXPECT_TRUE([resolved.get() isEqual:path]);
-  EXPECT_TRUE(backup_excluded([NSURL fileURLWithPath:resolved.get()]));
+  ASSERT_TRUE(resolved->has_value());
+  EXPECT_TRUE([resolved->value().path
+      isEqual:[NSURL fileURLWithPath:path].URLByResolvingSymlinksInPath.path]);
+  EXPECT_TRUE(backup_excluded([NSURL fileURLWithPath:resolved->value().path]));
   EXPECT_FALSE(backup_excluded(root.url));
   auto existing =
-      resolve_bookmark_root(path, StorageCreationMode::OpenExisting);
+      resolve_test_cache_directory(path, StorageCreationMode::OpenExisting);
   ASSERT_TRUE(existing.ok());
-  EXPECT_TRUE([existing.get() isEqual:path]);
+  ASSERT_TRUE(existing->has_value());
+  EXPECT_TRUE([existing->value().path
+      isEqual:[NSURL fileURLWithPath:path].URLByResolvingSymlinksInPath.path]);
 }
 
 TEST_F(CoreAIBookmarkPathTest, RejectsInvalidResolvedRoots) {
@@ -455,18 +470,21 @@ TEST_F(CoreAIBookmarkPathTest, RejectsInvalidResolvedRoots) {
          @[ @"relative", @"~", @"~/cache", @"~nobody/cache" ]) {
       SCOPED_TRACE(path.UTF8String);
       EXPECT_EQ(
-          resolve_bookmark_root(path, mode).error(), Error::InvalidArgument);
+          resolve_test_cache_directory(path, mode).error(),
+          Error::InvalidArgument);
     }
-    EXPECT_EQ(resolve_bookmark_root(nil, mode).error(), Error::InvalidArgument);
+    EXPECT_EQ(
+        resolve_test_cache_directory(nil, mode).error(),
+        Error::InvalidArgument);
   }
   NSURL* file = [root.url URLByAppendingPathComponent:@"file"];
   ASSERT_TRUE([[NSData data] writeToURL:file atomically:NO]);
   EXPECT_EQ(
-      resolve_bookmark_root(file.path, StorageCreationMode::OpenExisting)
+      resolve_test_cache_directory(file.path, StorageCreationMode::OpenExisting)
           .error(),
       Error::AccessFailed);
   EXPECT_EQ(
-      resolve_bookmark_root(
+      resolve_test_cache_directory(
           [file.path stringByAppendingPathComponent:@"child"],
           StorageCreationMode::OpenExisting)
           .error(),
@@ -494,7 +512,8 @@ TEST_F(CoreAIBookmarkPathTest, RejectsInvalidStripeFiles) {
       ASSERT_EQ(mkfifo(stripe.fileSystemRepresentation, 0600), 0);
     }
     EXPECT_EQ(
-        lock_cache_entry(isolated.url.path, key).error(), Error::AccessFailed);
+        acquire_test_cache_entry(isolated.url.path, key).error(),
+        Error::AccessFailed);
     EXPECT_TRUE([[NSData dataWithContentsOfURL:target] isEqual:bytes]);
   }
 }

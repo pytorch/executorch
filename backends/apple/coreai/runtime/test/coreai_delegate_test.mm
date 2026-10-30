@@ -10,11 +10,15 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <gtest/gtest.h>
 #include <pthread.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <cstdint>
 #include <cstdlib>
 
-#include "coreai_bookmark_fixture.h"
+#include "coreai_cache.h"
+#include "coreai_cache_entry_fixture.h"
 #import "coreai_delegate_fixture.h"
+#include "coreai_test_utils.h"
 
 namespace executorch::backends::coreai::testing {
 namespace {
@@ -165,14 +169,14 @@ TEST_F(CoreAIDelegateTest, AotInitPassesOnlySelectedArchitectureBundleToSdk) {
     bridge.state().device_architecture = arch;
     auto parsed = parse_manifest(fixture.json);
     ASSERT_TRUE(parsed.ok());
-    auto selected = select_assets(parsed.get(), arch, @"macOS");
+    auto selected = select_bundle(parsed.get(), arch, @"macOS");
     ASSERT_TRUE(selected.ok());
     ASSERT_EQ(fixture.init(), Error::Ok);
     auto key = cache_variant_key(selected.get(), @"macOS", arch, @"default");
     ASSERT_TRUE(key.ok());
     NSString* expected = [fixture.storage.url.path
         stringByAppendingPathComponent:
-            [NSString stringWithFormat:@"staging/%@/%@",
+            [NSString stringWithFormat:@"sources/%@/%@",
                                        key.get(),
                                        selected->path.lastPathComponent]];
     EXPECT_TRUE([bridge.state().last_bundle isEqualToString:expected]);
@@ -204,7 +208,8 @@ TEST_F(
     EXPECT_FALSE([NSFileManager.defaultManager
         fileExistsAtPath:bridge.state().last_bundle]);
     EXPECT_TRUE([bridge.state().last_bundle
-        hasPrefix:[fixture.storage.url.path stringByAppendingString:@"/"]]);
+        hasPrefix:[fixture.storage.url.URLByResolvingSymlinksInPath.path
+                      stringByAppendingString:@"/"]]);
   }
   EXPECT_EQ(bridge.state().sessions.load(), 0);
 }
@@ -476,8 +481,7 @@ class BorrowedInputWorker final {
     return error;
   }
   long wait_ready() {
-    return dispatch_semaphore_wait(
-        state_.input_ready, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
+    return dispatch_semaphore_wait(state_.input_ready, test_deadline(5));
   }
   long wait_finished(int64_t timeout) {
     return dispatch_semaphore_wait(
@@ -489,8 +493,7 @@ class BorrowedInputWorker final {
   void release_and_join() {
     release();
     if (started_) {
-      const long returned = dispatch_semaphore_wait(
-          returned_, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+      const long returned = dispatch_semaphore_wait(returned_, test_deadline());
       if (returned != 0) {
         ADD_FAILURE()
             << "Delegate worker did not return after releasing its input gate";
@@ -548,8 +551,7 @@ TEST_F(CoreAIDelegateTest, BorrowedInputStorageStaysLiveUntilSuccessOrError) {
       worker.release();
       const long finished = worker.wait_finished(5 * NSEC_PER_SEC);
       worker.release_and_join();
-      ASSERT_TRUE(bridge.wait_for_callbacks(
-          dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)));
+      ASSERT_TRUE(bridge.wait_for_callbacks(test_deadline()));
       EXPECT_EQ(ready, 0);
       EXPECT_EQ(observed, tensors.input);
       EXPECT_NE(premature, 0);
@@ -828,22 +830,42 @@ TEST_F(CoreAIDelegateTest, StorageOptionsRejectWrongTypeAndRelativePaths) {
   @autoreleasepool {
     DelegateFixture fixture(backend, bridge);
     {
-      SCOPED_TRACE("integer assets directory");
-      BackendOption wrong_type{"coreai_assets_dir", 1};
+      SCOPED_TRACE("integer cache directory");
+      BackendOption wrong_type{"coreai_cache_dir", 1};
       EXPECT_EQ(
           fixture.init_with_options({&wrong_type, 1}), Error::InvalidArgument);
     }
     {
-      SCOPED_TRACE("relative assets directory");
+      SCOPED_TRACE("relative cache directory");
       BackendOptions<1> relative;
-      ASSERT_EQ(
-          relative.set_option("coreai_assets_dir", "relative"), Error::Ok);
+      ASSERT_EQ(relative.set_option("coreai_cache_dir", "relative"), Error::Ok);
       EXPECT_EQ(
           fixture.init_with_options(
               {relative.view().data(), relative.view().size()}),
           Error::InvalidArgument);
     }
     EXPECT_EQ(fixture.freed, 0);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ConfiguredSymlinkCacheDirectoryLoadsAndClears) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    NSURL* target =
+        [fixture.storage.url URLByAppendingPathComponent:@"cache-target"];
+    NSURL* configured =
+        [fixture.storage.url URLByAppendingPathComponent:@"cache-link"];
+    ASSERT_EQ(mkdir(target.fileSystemRepresentation, 0777), 0);
+    ASSERT_EQ(
+        symlink(
+            target.fileSystemRepresentation,
+            configured.fileSystemRepresentation),
+        0);
+    ASSERT_EQ(fixture.init(configured.path), Error::Ok);
+    EXPECT_TRUE([bridge.state().last_bundle containsString:@"/cache-target/"]);
+    EXPECT_FALSE([bridge.state().last_bundle containsString:@"/cache-link/"]);
+    fixture.reset();
+    EXPECT_EQ(clear_cache(configured.path.UTF8String), Error::Ok);
   }
 }
 
@@ -873,7 +895,8 @@ TEST_F(
     ASSERT_EQ(other.init(nested.path), Error::Ok);
     EXPECT_EQ(bridge.state().sessions.load(), 2);
     EXPECT_TRUE([bridge.state().last_bundle
-        hasPrefix:[other.storage.url.path stringByAppendingString:@"/"]]);
+        hasPrefix:[other.storage.url.URLByResolvingSymlinksInPath.path
+                      stringByAppendingString:@"/"]]);
     EXPECT_FALSE([bridge.state().last_bundle isEqualToString:first_bundle]);
     EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:first_bundle]);
     other.reset();
