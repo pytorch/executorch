@@ -9,9 +9,10 @@
 A package holds one method per case and dtype under one quantization scheme,
 and two sample sets over the same inputs: `golden`, the eager outputs, and
 `precise`, the same math in float64 with weights dequantized and activations
-unquantized, floating outputs stored as float32. Nothing in it depends on an
-engine or a device: consumers judge an engine by its distance from `precise`
-relative to eager's.
+unquantized, floating outputs stored as float32. Weight-only schemes add
+`golden-int8_act`, the eager outputs with the same weights and int8 per-token
+dynamic activations. Nothing in it depends on an engine or a device: consumers
+judge an engine by its distance from `precise` relative to eager's.
 """
 
 import copy
@@ -50,7 +51,8 @@ def record(
     dtypes: Iterable[str] = tuple(DTYPES),
 ) -> None:
     """Writes no package, removing any at `path`, when the scheme fits no case."""
-    programs, golden, precise = {}, [], []
+    act_scheme = scheme.act_quant()
+    programs, golden, precise, golden_act = {}, [], [], []
     for case in cases:
         if not scheme.fits(case.model):
             logger.info(f"{path.name}: {case.name} does not fit the scheme")
@@ -63,6 +65,9 @@ def record(
             model = copy.deepcopy(case.model).to(dtype).eval()
             scheme.quantize(model)
             method = _Method({name: model})
+            if act_scheme is not None:
+                act_model = copy.deepcopy(case.model).to(dtype).eval()
+                act_scheme.quantize(act_model)
             state = {
                 k: scheme.decode(v).double() for k, v in method.state_dict().items()
             }
@@ -76,6 +81,10 @@ def record(
                         t.float() if t.is_floating_point() else t for t in outputs(ref)
                     ]
                     precise.append(Sample([Call(name, list(x), ref)]))
+                    if act_scheme is not None:
+                        golden_act.append(
+                            Sample([Call(name, list(x), outputs(act_model(*x)))])
+                        )
     if not programs:
         logger.info(f"{path.name}: no case fits the scheme, not written")
         path.unlink(missing_ok=True)
@@ -90,3 +99,9 @@ def record(
             precise, "float64, weights dequantized, activations unquantized", source
         ),
     )
+    if act_scheme is not None:
+        write_samples(
+            str(path),
+            "golden-int8_act",
+            SampleSet(golden_act, "eager, int8 per-token dynamic activations", source),
+        )

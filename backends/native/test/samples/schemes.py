@@ -33,6 +33,11 @@ class Scheme:
         """A state tensor of a quantized model as a plain tensor."""
         return value
 
+    def act_quant(self) -> "Scheme | None":
+        """This weight-only scheme's weights with int8 dynamic activations, or
+        None when the scheme is not weight-only."""
+        return None
+
 
 def _fits(model: torch.nn.Module, group: int | None) -> bool:
     """Whether `model` has an nn.Linear and every one's in_features split into
@@ -67,6 +72,18 @@ class Torchao(Scheme):
 
     def decode(self, value: torch.Tensor) -> torch.Tensor:
         return value.dequantize() if isinstance(value, TorchAOBaseTensor) else value
+
+    def act_quant(self) -> Scheme | None:
+        if not isinstance(self.config, IntxWeightOnlyConfig):
+            return None
+        return Torchao(
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=self.config.weight_dtype,
+                weight_granularity=self.config.granularity,
+                weight_mapping_type=self.config.mapping_type,
+                weight_scale_dtype=self.config.scale_dtype,
+            )
+        )
 
 
 def schemes() -> dict[str, Scheme]:
