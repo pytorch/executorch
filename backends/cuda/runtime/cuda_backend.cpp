@@ -904,7 +904,7 @@ class ET_EXPERIMENTAL CudaBackend final
         }
         // Free what this attempt pinned and disable graphs for this method, so
         // a capture that cannot succeed is tried once rather than on every
-        // fourth call for the life of the process. Eager execution is correct,
+        // later call for the life of the process. Eager execution is correct,
         // just slower.
         for (void* ptr : state_->static_input_ptrs) {
           (void)cudaFree(ptr);
