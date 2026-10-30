@@ -24,7 +24,7 @@ define_overridable_option(
   EXECUTORCH_BUILD_COREML "Build the Core ML backend" BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_COREAI "Build the Core AI backend" BOOL OFF
+  EXECUTORCH_BUILD_COREAI "Build the Core AI backend (Apple SDK 27+)" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT
@@ -438,6 +438,10 @@ check_required_options_on(
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER REQUIRES
   EXECUTORCH_BUILD_EXTENSION_LLM
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_COREAI REQUIRES EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
 )
 
 check_required_options_on(

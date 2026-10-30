@@ -19,13 +19,13 @@ NSCharacterSet* invalid_hex_characters() {
 
 } // namespace
 
-bool nonempty_string(id value) {
+bool is_nonempty_string(id value) {
   return [value isKindOfClass:NSString.class] && [value length] > 0 &&
       [value rangeOfString:@"\0"].location == NSNotFound;
 }
 
-bool relative_path(NSString* path) {
-  if (!nonempty_string(path) || path.isAbsolutePath ||
+bool is_relative_path(NSString* path) {
+  if (!is_nonempty_string(path) || path.isAbsolutePath ||
       [path containsString:@"\\"]) {
     return false;
   }
@@ -38,14 +38,19 @@ bool relative_path(NSString* path) {
   return true;
 }
 
-bool lowercase_hex(NSString* value) {
-  return nonempty_string(value) &&
+bool is_storage_component(NSString* name) {
+  return is_nonempty_string(name) && ![name isEqualToString:@"."] &&
+      ![name isEqualToString:@".."] && ![name containsString:@"/"];
+}
+
+bool is_lowercase_hex(NSString* value) {
+  return is_nonempty_string(value) &&
       [value rangeOfCharacterFromSet:invalid_hex_characters()].location ==
       NSNotFound;
 }
 
-bool lowercase_hex(NSString* value, NSUInteger length) {
-  return lowercase_hex(value) && [value length] == length;
+bool is_lowercase_hex(NSString* value, NSUInteger length) {
+  return is_lowercase_hex(value) && [value length] == length;
 }
 
 } // namespace executorch::backends::coreai

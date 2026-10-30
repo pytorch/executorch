@@ -13,12 +13,15 @@
 namespace executorch::backends::coreai {
 
 // Nonempty text without embedded NULs.
-bool nonempty_string(id value);
+bool is_nonempty_string(id value);
 // Relative bundle path without escapes, backslashes, or empty components.
-bool relative_path(NSString* path);
-// Lowercase hex of any positive length, as in the exporter model hash.
-bool lowercase_hex(NSString* value);
+bool is_relative_path(NSString* path);
+// Single path component for an fd-relative open: no slashes, ".", or "..".
+// Unlike is_relative_path, backslashes are ordinary bytes on this filesystem.
+bool is_storage_component(NSString* name);
+// Lowercase hex of any positive length, as in the export hash.
+bool is_lowercase_hex(NSString* value);
 // Lowercase hex of exactly length characters, as in bundle digests.
-bool lowercase_hex(NSString* value, NSUInteger length);
+bool is_lowercase_hex(NSString* value, NSUInteger length);
 
 } // namespace executorch::backends::coreai
