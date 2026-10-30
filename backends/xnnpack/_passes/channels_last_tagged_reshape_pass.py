@@ -20,7 +20,11 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_tagged_as_implicit_q_dq,
     tag_as_implicit_q_dq,
 )
-from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_node
+from executorch.backends.xnnpack.utils.utils import (
+    get_param_tensor,
+    is_dtype_cast,
+    is_param_node,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 from torch.fx.experimental.symbolic_shapes import has_free_symbols
@@ -699,7 +703,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 # The node requires nchw inputs
                 for input_node in node.all_input_nodes:
                     self.input_to_nchw(graph_module, input_node, node)
-            elif node.target == exir_ops.edge.aten._to_copy.default:
+            elif (
+                node.target == exir_ops.edge.aten._to_copy.default
+                and not is_dtype_cast(node)
+            ):
                 self.tag_node(node)
             else:
                 # The node can have inputs in any format (but all must be the

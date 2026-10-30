@@ -24,7 +24,7 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
       powershell
       ${EXECUTORCH_ROOT}/kernels/test/export_test_model.ps1
       -Modules
-      "\"ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful\""
+      "\"ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleChannelsLast,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful\""
       -outDir
       "${CMAKE_CURRENT_BINARY_DIR}"
       -CondaEnv
@@ -36,7 +36,7 @@ else()
       -m
       test.models.export_program
       --modules
-      "ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
+      "ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleChannelsLast,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
       --outdir
       "${CMAKE_CURRENT_BINARY_DIR}"
   )
@@ -48,6 +48,7 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMul.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleChannelsLast.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleDynamicCatUnallocatedIO.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleIndex.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
@@ -86,6 +87,9 @@ add_custom_target(
 
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddConstantWithDevice.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddConstantWithDeviceProgram.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddConstantWithDeviceProgram.ptd"
   COMMAND ${PYTHON_EXECUTABLE} -m test.models.export_program_with_device_info
           --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
@@ -94,6 +98,9 @@ add_custom_command(
 add_custom_target(
   method_meta_test_pte_files
   DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddConstantWithDevice.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddConstantWithDeviceProgram.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddConstantWithDeviceProgram.ptd"
 )
 
 set(test_env
@@ -103,6 +110,7 @@ set(test_env
     "ET_MODULE_ADD_MUL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMul.pte"
     "ET_MODULE_ADD_MUL_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
     "ET_MODULE_ADD_MUL_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
+    "ET_MODULE_CHANNELS_LAST_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleChannelsLast.pte"
     "ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleDynamicCatUnallocatedIO.pte"
     "ET_MODULE_INDEX_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleIndex.pte"
     "ET_MODULE_MULTI_ENTRY_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
@@ -110,6 +118,9 @@ set(test_env
     "ET_MODULE_STATEFUL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
     "ET_MODULE_ADD_MUL_DELEGATED_PATH=${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
     "ET_MODULE_ADD_WITH_DEVICE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
+    "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddConstantWithDevice.pte"
+    "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddConstantWithDeviceProgram.pte"
+    "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddConstantWithDeviceProgram.ptd"
     "ET_MODULE_ADD_MUL_DELEGATED_SCRATCH_PATH=${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul-scratch.pte"
 )
 
@@ -161,6 +172,23 @@ set_property(TEST method_meta_test PROPERTY ENVIRONMENT ${test_env})
 target_include_directories(
   method_meta_test PRIVATE "${CMAKE_INSTALL_PREFIX}/schema/include"
                            "${EXECUTORCH_ROOT}/third-party/flatbuffers/include"
+)
+
+et_cxx_test(
+  tensor_parser_device_test
+  SOURCES
+  tensor_parser_device_test.cpp
+  EXTRA_LIBS
+  extension_data_loader
+  extension_flat_tensor
+  program_schema
+)
+add_dependencies(tensor_parser_device_test method_meta_test_pte_files)
+set_property(TEST tensor_parser_device_test PROPERTY ENVIRONMENT ${test_env})
+target_include_directories(
+  tensor_parser_device_test
+  PRIVATE "${CMAKE_INSTALL_PREFIX}/schema/include"
+          "${EXECUTORCH_ROOT}/third-party/flatbuffers/include"
 )
 
 et_cxx_test(

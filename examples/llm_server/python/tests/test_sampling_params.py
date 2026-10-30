@@ -11,6 +11,8 @@ These exercise the real server over the HTTP boundary with a FakeRunner.
 
 import json
 
+import pytest
+
 CALL = (
     '<tool_call>\n{"name": "get_weather", "arguments": {"city": "Paris"}}\n</tool_call>'
 )
@@ -286,3 +288,363 @@ def test_tool_choice_default_still_parses(make_client):
     )
     calls = r.json()["choices"][0]["message"].get("tool_calls")
     assert calls and calls[0]["function"]["name"] == "get_weather"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("ignore_eos", [False, True])
+def test_ignore_eos_hides_text_after_template_terminators(
+    make_client, stream, ignore_eos
+):
+    client, runner = make_client(
+        tokens=["before", "<|im_end|>", "after"], finish_reason="length"
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json=_body(ignore_eos=ignore_eos, stream=stream, max_tokens=3),
+    )
+    assert response.status_code == 200
+    if stream:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        content = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
+        finish = chunks[-1]["choices"][0]["finish_reason"]
+    else:
+        content = response.json()["choices"][0]["message"]["content"]
+        finish = response.json()["choices"][0]["finish_reason"]
+    assert content == "before"
+    assert finish == ("length" if ignore_eos else "stop")
+    assert runner.captured_config.ignore_eos is ignore_eos
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_still_honors_explicit_stop(make_client, stream):
+    client, runner = make_client(tokens=["before<|im_end|>after", "ST", "OP", "hidden"])
+    response = client.post(
+        "/v1/chat/completions",
+        json=_body(ignore_eos=True, stop="STOP", stream=stream, max_tokens=32),
+    )
+    assert response.status_code == 200
+    if stream:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        content = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
+        finish = chunks[-1]["choices"][0]["finish_reason"]
+    else:
+        content = response.json()["choices"][0]["message"]["content"]
+        finish = response.json()["choices"][0]["finish_reason"]
+    assert content == "before"
+    assert finish == "stop"
+    assert runner.captured_config.stop == ["STOP"]
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true", "false", [], {}])
+def test_ignore_eos_requires_a_boolean(make_client, value):
+    client, runner = make_client()
+    response = client.post("/v1/chat/completions", json=_body(ignore_eos=value))
+    assert response.status_code == 422
+    assert runner.captured_config is None
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_rejects_unsupported_worker_before_streaming(make_client, stream):
+    client, runner = make_client(supports_ignore_eos=False)
+    response = client.post(
+        "/v1/chat/completions", json=_body(ignore_eos=True, stream=stream)
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "unsupported_parameter"
+    assert runner.captured_config is None
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("tool_before_eos", [False, True])
+@pytest.mark.parametrize("eos", ["<|im_end|>", "<|native_eos|>"])
+def test_ignore_eos_parses_only_first_turn_and_counts_full_generation(
+    make_client, stream, tool_before_eos, eos
+):
+    first = CALL if tool_before_eos else "answer"
+    client, runner = make_client(
+        tokens=[first, eos[:4], eos[4:], CALL],
+        finish_reason="length",
+        default_stop_strings=[eos],
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json=_body(
+            ignore_eos=True,
+            tools=[WEATHER_TOOL],
+            stream=stream,
+            stream_options={"include_usage": True},
+            max_tokens=4,
+        ),
+    )
+    assert response.status_code == 200
+    if stream:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        choices = [c["choices"][0] for c in chunks if c["choices"]]
+        calls = [call for c in choices for call in c["delta"].get("tool_calls", [])]
+        content = "".join(c["delta"].get("content", "") for c in choices)
+        finish = choices[-1]["finish_reason"]
+        usage = chunks[-1]["usage"]
+    else:
+        choice = response.json()["choices"][0]
+        calls = choice["message"].get("tool_calls") or []
+        content = choice["message"].get("content") or ""
+        finish = choice["finish_reason"]
+        usage = response.json()["usage"]
+    assert len(calls) == int(tool_before_eos)
+    assert content == ("" if tool_before_eos else "answer")
+    assert finish == ("tool_calls" if tool_before_eos else "length")
+    assert usage["completion_tokens"] == 4
+    assert not runner.stopped
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("eos", ["<|im_end|>", "<|native_eos|>"])
+def test_ignore_eos_reasoning_excludes_later_turns(make_client, stream, eos):
+    def extract(text):
+        reasoning, _, content = text.partition("</think>")
+        return reasoning.removeprefix("<think>"), content
+
+    client, runner = make_client(
+        tokens=["<think>reason</think>answer", eos, "hidden"],
+        default_stop_strings=[eos],
+        reasoning_extractor=extract,
+        finish_reason="length",
+    )
+    response = client.post(
+        "/v1/chat/completions", json=_body(ignore_eos=True, stream=stream)
+    )
+    assert response.status_code == 200
+    if stream:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        deltas = [c["choices"][0]["delta"] for c in chunks]
+        content = "".join(d.get("content", "") for d in deltas)
+        reasoning = "".join(d.get("reasoning_content", "") for d in deltas)
+    else:
+        message = response.json()["choices"][0]["message"]
+        content, reasoning = message["content"], message["reasoning_content"]
+    assert content == "answer"
+    assert reasoning == "reason"
+    assert not runner.stopped
+
+
+@pytest.mark.parametrize("eos", ["<|im_end|>", "<|native_eos|>"])
+def test_ignore_eos_streaming_parser_never_receives_later_turn(make_client, eos):
+    from executorch.examples.llm_server.python.protocol import DeltaMessage
+
+    seen = []
+
+    class Parser:
+        def feed(self, text):
+            seen.append(text)
+            return [DeltaMessage(content=text)]
+
+        def finish(self):
+            return []
+
+    client, runner = make_client(
+        tokens=["answer", eos[:4], eos[4:], "hidden"],
+        default_stop_strings=[eos],
+        streaming_parser_factory=Parser,
+        finish_reason="length",
+    )
+    response = client.post(
+        "/v1/chat/completions", json=_body(ignore_eos=True, stream=True)
+    )
+    assert response.status_code == 200
+    assert "".join(seen) == "answer"
+    assert not runner.stopped
+
+
+def test_ignore_eos_rejects_old_worker_before_context_validation(make_client):
+    client, _ = make_client(supports_ignore_eos=False, max_context=1, prompt_tokens=10)
+    response = client.post("/v1/chat/completions", json=_body(ignore_eos=True))
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "unsupported_parameter"
+
+
+def test_ignore_eos_content_filter_preserves_explicit_stop_reason(make_client):
+    client, runner = make_client(
+        tokens=["answer", "<|im_end|>", "STOP", "hidden"],
+        content_filter=lambda text: text.upper(),
+        finish_reason="length",
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json=_body(
+            ignore_eos=True,
+            stream=True,
+            stop="STOP",
+            max_tokens=4,
+        ),
+    )
+    assert response.status_code == 200
+    chunks = [
+        json.loads(line[6:])
+        for line in response.text.splitlines()
+        if line.startswith("data: ") and line != "data: [DONE]"
+    ]
+    assert (
+        "".join(c["choices"][0]["delta"].get("content", "") for c in chunks) == "ANSWER"
+    )
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+    assert runner.stopped
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_requires_reported_native_terminators(make_client, stream):
+    client, runner = make_client(default_stop_strings=None)
+    response = client.post(
+        "/v1/chat/completions", json=_body(ignore_eos=True, stream=stream)
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "unsupported_parameter"
+    assert "native EOS markers" in response.json()["error"]["message"]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_reasoning_stops_at_nonterminator_special(make_client, stream):
+    def extract(text):
+        reasoning, _, content = text.partition("</think>")
+        return reasoning.removeprefix("<think>"), content
+
+    client, runner = make_client(
+        tokens=["<think>before", "<|im_start|>", "hidden</think>answer"],
+        special_tokens=["<|im_end|>", "<|im_start|>"],
+        reasoning_extractor=extract,
+        finish_reason="length",
+    )
+    response = client.post(
+        "/v1/chat/completions", json=_body(ignore_eos=True, stream=stream)
+    )
+    assert response.status_code == 200
+    if stream:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        deltas = [c["choices"][0]["delta"] for c in chunks]
+        reasoning = "".join(d.get("reasoning_content", "") for d in deltas)
+        content = "".join(d.get("content", "") for d in deltas)
+    else:
+        message = response.json()["choices"][0]["message"]
+        reasoning, content = message["reasoning_content"], message.get("content")
+    assert reasoning == "before"
+    assert not content
+    assert not runner.stopped
+
+
+@pytest.mark.parametrize("marker", ["<|im_end|>", "<|im_start|>"])
+def test_ignore_eos_parser_stops_at_all_plain_chat_boundaries(make_client, marker):
+    from executorch.examples.llm_server.python.protocol import DeltaMessage
+
+    seen = []
+
+    class Parser:
+        def feed(self, text):
+            seen.append(text)
+            return [DeltaMessage(content=text)]
+
+        def finish(self):
+            return []
+
+    client, runner = make_client(
+        tokens=["answer", marker[:4], marker[4:], "hidden"],
+        special_tokens=["<|im_end|>", "<|im_start|>"],
+        streaming_parser_factory=Parser,
+        finish_reason="length",
+    )
+    response = client.post(
+        "/v1/chat/completions", json=_body(ignore_eos=True, stream=True)
+    )
+    assert response.status_code == 200
+    assert "".join(seen) == "answer"
+    assert not runner.stopped
+
+
+@pytest.mark.parametrize(
+    "mode", ["buffered", "stream", "parser", "filter", "reasoning"]
+)
+@pytest.mark.parametrize(
+    "tokens",
+    [
+        ["answer<|im_end|>hidden"],
+        ["answer<|im_", "end", "|>hidden"],
+        ["answer<|im_"],  # Native string-stop filtering removed the marker's end.
+    ],
+)
+def test_ignore_eos_request_stop_inside_terminator_never_leaks_fragment(
+    make_client, mode, tokens
+):
+    from executorch.examples.llm_server.python.protocol import DeltaMessage
+
+    seen = []
+
+    class Parser:
+        def feed(self, text):
+            seen.append(text)
+            return [DeltaMessage(content=text)]
+
+        def finish(self):
+            return []
+
+    client, _ = make_client(
+        tokens=tokens,
+        finish_reason="stop",
+        streaming_parser_factory=Parser if mode == "parser" else None,
+        content_filter=(lambda text: text) if mode == "filter" else None,
+        reasoning_extractor=(
+            (lambda text: (None, text)) if mode == "reasoning" else None
+        ),
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json=_body(ignore_eos=True, stop="end", stream=mode != "buffered"),
+    )
+    assert response.status_code == 200
+    if mode == "buffered":
+        choice = response.json()["choices"][0]
+        content = choice["message"]["content"]
+        finish = choice["finish_reason"]
+    else:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        content = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
+        finish = chunks[-1]["choices"][0]["finish_reason"]
+    assert content == "answer"
+    assert finish == "stop"
+    if mode == "parser":
+        assert "".join(seen) == "answer"
+
+
+@pytest.mark.parametrize("native_stops", [None, [], ["<|native_eos|>"]])
+def test_normal_generation_does_not_add_native_text_stops(make_client, native_stops):
+    client, runner = make_client(
+        tokens=["literal <|native_eos|> text"], default_stop_strings=native_stops
+    )
+    response = client.post("/v1/chat/completions", json=_body())
+    assert response.status_code == 200
+    assert (
+        response.json()["choices"][0]["message"]["content"]
+        == "literal <|native_eos|> text"
+    )
+    assert "<|native_eos|>" not in runner.captured_config.stop

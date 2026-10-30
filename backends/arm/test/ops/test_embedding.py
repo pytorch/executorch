@@ -141,6 +141,25 @@ def test_embedding_tosa_INT_expand():
     pipeline.run()
 
 
+@common.parametrize("test_input", test_input_fp8)
+@common.SkipIfNoModelConverter
+def test_embedding_vgf_no_quant_fp8(test_input):
+    inputs, _ = test_input
+    op = Embedding()
+    pipeline = VgfPipeline[input_params](
+        op,
+        inputs,
+        op.aten_op,
+        op.exir_op,
+        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
+        tosa_extensions=["fp8e4m3", "fp8e5m2"],
+        quantize=False,
+        atol=0,
+        rtol=0,
+    )
+    pipeline.run()
+
+
 @pytest.mark.skip("reason=MLETORCH-1274 Improve data type checks during partitioning")
 @common.parametrize("test_input", test_input)
 @common.SkipIfNoModelConverter

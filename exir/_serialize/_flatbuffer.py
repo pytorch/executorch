@@ -16,6 +16,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 
@@ -272,7 +273,12 @@ def _get_flatc_path() -> str:
 
         for package, resource_name in (
             (__package__, _FLATC_RESOURCE_NAME),
-            ("executorch.data.bin", "flatc"),
+            # The wheel installs flatc under the name setup.py's
+            # get_executable_name() gives it, which has a .exe suffix on Windows.
+            (
+                "executorch.data.bin",
+                "flatc.exe" if sys.platform == "win32" else "flatc",
+            ),
         ):
             try:
                 flatc_resource = importlib.resources.files(package).joinpath(

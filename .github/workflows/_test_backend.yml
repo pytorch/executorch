@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       backend:
-        description: 'Backend to test (xnnpack, coreml, vulkan, qnn, openvino)'
+        description: 'Backend to test (xnnpack, coreml, vulkan, qnn, openvino, cpu)'
         required: true
         type: string
       flows:

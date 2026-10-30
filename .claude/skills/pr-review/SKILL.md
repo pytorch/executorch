@@ -116,7 +116,7 @@ only the diff and commit log need to be fetched via git.
 A single line of code can have deep cross-cutting implications. **Treat every line as potentially load-bearing.**
 
 1. **Only report problems** — The review output must contain only issues, concerns, and actionable suggestions. Do NOT mention things that are done correctly, do NOT praise good decisions, do NOT explain why something is fine. If a section has no problems, omit it entirely. The reader's time is precious — every sentence must point to something that needs fixing or further discussion.
-2. **Investigate, don't guess** — When uncertain whether a checklist item applies, spawn a sub-agent to read the relevant code. A reviewer who guesses wrong provides negative value.
+2. **Investigate, don't guess** — When uncertain whether a checklist item applies, read the relevant code. A reviewer who guesses wrong provides negative value.
 3. **Review the design, not just the implementation** — A PR can have perfectly correct implementation of a bad design. Question side-channel communication, on/off private flags, and demand concrete interface documentation for new contracts between components.
 4. **Focus on what CI cannot check** — Don't comment on formatting, linting, type errors, or CI failures. Focus on design quality, interface correctness, thread safety, BC implications, test adequacy, and pattern adherence.
 5. **Be specific and actionable** — Reference file paths and line numbers. Name the function/class/file the author should use.
@@ -124,11 +124,14 @@ A single line of code can have deep cross-cutting implications. **Treat every li
 7. **Assume competence** — The author knows ExecuTorch; explain only non-obvious context.
 8. **No repetition** — Each observation appears in exactly one section of the review output.
 
-### Using sub-agents
+### Review panel
 
-The review checklist is large. You cannot hold the full context of every infrastructure system in your head. **Spawn sub-agents** to investigate whether checklist items apply: read surrounding code, infrastructure the PR should be using, or tests that should exist. Spawn them in parallel for independent areas. A typical medium PR should spawn 3-8 sub-agents.
+The review is done by **three independent reviewer sub-agents**, launched in Step 2. They are the only sub-agents in a review. Independent reviewers miss different things, so together they catch more than one pass does, and agreement between them shows which findings are solid. Three is the smallest panel where a majority means something.
 
-Sub-agents overlap on purpose. Expect the same defect back from two or three of them in different words; that signals importance, not multiplicity. Reconcile in Step 3, before spending verification agents on it.
+- Launch all three in one message, in the foreground (`run_in_background: false`). In non-interactive runs such as GitHub Actions, background sub-agents are stopped when your turn ends and their work is lost.
+- Reviewers do not spawn sub-agents of their own. Each one reads the code itself.
+- Each reviewer has a budget of about 15 tool calls. It spends them on the changed code, its callers, and the code it uses, then reports.
+- Nobody searches the whole git history (for example `git log -S` or `git log -G` over the repository). It is slow, and in GitHub Actions the checkout is shallow, so the history is incomplete anyway.
 
 ## Review Workflow
 
@@ -138,29 +141,41 @@ Before reviewing, build understanding of what the PR touches and why:
 1. Identify the purpose of the change from title/description/issue
 2. Group changes by type (new code, tests, config, docs)
 3. Note the scope of changes (files affected, lines changed)
-4. Spawn sub-agents to read the unchanged code surrounding each significantly changed file to understand existing patterns and infrastructure
 
-### Step 2: Deep Review
+### Step 2: Independent Reviews
 
-Go through **every changed line** in the diff and evaluate it against the review checklist in [review-checklist.md](review-checklist.md).
+Launch the three reviewers (see "Review panel" above) with the same brief. On a PR with many changed files, give each reviewer a different file to start from, so their budgets do not all run out on the same files. Each one does the whole deep review on its own: it goes through **every changed line** in the diff and evaluates it against the review checklist in [review-checklist.md](review-checklist.md), following the Review Philosophy above.
+
+The brief must:
+- Carry everything the reviewer needs, because it cannot see your prompt: the PR number or branch, title, description, relevant comments, the base branch, whether a detailed review was asked for, the path `.claude/skills/pr-review/review-checklist.md`, the Review Philosophy rules, the files under "Files to Reference", and the exact commands to get the diff in the current mode (in GitHub Actions mode, only git commands work).
+- Include the rules from "Review panel": no sub-agents, the tool call budget, and no whole-history searches.
+- Ask the reviewer to find what is wrong with the change, not to confirm that it is fine.
+- Contain no findings or opinions of your own, and none from earlier automated reviews of this PR. Human discussion and author replies are fine. Reviewers stay blind to each other.
+- Use the `general-purpose` agent type and not set a `model`, so every reviewer runs on the same model and effort as you.
+- Ask for a list of findings, not a drafted review. Each finding gives `file:line`, the problem, the concrete trigger (the input, state, or caller that hits it), a severity (blocker, major, or minor), and how it was established (which code was read, or which command was run), marked confirmed or suspected.
+- Ask the reviewer to name any changed file it did not get to. For a detailed review, also ask for short notes on naming, wording, and stale comments, for Specific Comments.
+
+Do not review the diff yourself while the reviewers work. Your job is to judge their findings in Steps 3 and 4.
 
 ### Step 3: Consolidate Findings
 
 Deduplicate **before** you draft, and before Step 4 as it would slow it down significantly.
 
-Flatten every candidate — yours and every sub-agent's — into a list of `(file:line, one-line claim)` pairs, then collapse it:
+Flatten every candidate from all reviewers into a list of `(file:line, one-line claim)` pairs, then collapse it:
 
-- **Same root cause → one finding.** Two sub-agents describing one defect from different angles is the expected outcome of fanning out over adjacent areas, not corroboration of two defects.
+- **Same root cause → one finding.** Two reviewers describing one defect from different angles are reporting one defect, not two.
 - **Same fix → one finding.** If a single edit resolves several bullets, that is one finding with several consequences.
 - **Same `file:line` twice → merge**, unless you can name two independent defects.
+
+Note how many reviewers reported each finding. Two or three is strong evidence the problem is real. A finding from a single reviewer is not wrong for that reason, but it needs a closer look in Step 4.
+
+If a changed file was reached by no reviewer, review that file yourself against the checklist before Step 4, with a few reads per file. List any file you still could not get to in the Summary, so the review does not look more complete than it is.
 
 Only then assign each survivor to exactly one section (see "One finding, one section" under Output Format) and write it up. Every finding must be traceable to a specific line in the diff.
 
 ### Step 4: Fact-Check
 
-Fact-check the **consolidated** list — one sub-agent per surviving finding, never one per raw candidate.
-
-Spawn the agents in parallel. Each independently verifies the claim by re-reading the relevant code and surrounding context, and returns **valid**, **invalid**, or **needs rewording**. Drop invalid issues, reword the rest. If unsure, leave the issue with a comment for the author that this is low confidence.
+Fact-check the **consolidated** list yourself, without sub-agents. For every finding you would post, re-read the cited code, usually one or two reads per finding, and mark it **valid**, **invalid**, or **needs rewording**. Check findings that all reviewers agree on too, because agreement is not proof. For a finding from a single reviewer, also repeat the read or command it cites. Do not start new investigations or look for new problems here. Drop invalid issues, reword the rest. If unsure, leave the issue with a comment for the author that this is low confidence.
 
 ## Output Format
 

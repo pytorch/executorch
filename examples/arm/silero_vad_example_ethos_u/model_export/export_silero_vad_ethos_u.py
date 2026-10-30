@@ -250,12 +250,17 @@ def run_stream(
     if max_frames is not None:
         total_frames = min(total_frames, max_frames)
 
-    reset_state(model, initial_state)
-    with torch.no_grad():
-        for frame_index in range(total_frames):
-            model_input, context = make_model_input(audio, frame_index, context)
-            prob = model(model_input)
-            probs.append(float(prob.flatten()[0].item()))
+    saved_state = model.get_buffer(STATE_BUFFER_NAME).detach().clone()
+    try:
+        reset_state(model, initial_state)
+        with torch.no_grad():
+            for frame_index in range(total_frames):
+                model_input, context = make_model_input(audio, frame_index, context)
+                prob = model(model_input)
+                probs.append(float(prob.flatten()[0].item()))
+    finally:
+        # ExportedProgram.module() shares this buffer with the program to serialize.
+        reset_state(model, saved_state)
 
     return torch.tensor(probs, dtype=torch.float32)
 

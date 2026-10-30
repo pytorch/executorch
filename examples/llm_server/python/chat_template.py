@@ -34,6 +34,7 @@ _TURN_TERMINATORS = (
     "<|im_end|>",
     "<|endoftext|>",
     "<|eot_id|>",
+    "<|eot|>",
     "<|end|>",
     "<|end_of_text|>",
     "<end_of_turn>",

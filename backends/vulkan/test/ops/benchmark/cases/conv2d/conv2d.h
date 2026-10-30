@@ -10,6 +10,7 @@
 #include <executorch/backends/vulkan/test/ops/benchmark/framework/registry.h>
 #include <executorch/backends/vulkan/test/ops/benchmark/framework/utils.h>
 
+#include <optional>
 #include <string>
 
 namespace executorch {
@@ -41,6 +42,12 @@ struct Conv2dTestConfig {
   Padding padding;
   Dilation dilation;
   bool has_bias;
+  int64_t groups = 1;
+  struct Clamp {
+    float min;
+    float max;
+  };
+  std::optional<Clamp> clamp = std::nullopt;
 };
 
 struct Conv2dDwConfig {
@@ -84,6 +91,8 @@ TestCase create_conv2d_pw_test_case(
     utils::GPUMemoryLayout memory_layout);
 
 void conv2d_reference_impl(TestCase& test_case);
+
+void conv2d_exact_operands_reference(TestCase& test_case);
 
 void conv2d_dw_reference_impl(TestCase& test_case);
 

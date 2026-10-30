@@ -59,6 +59,72 @@ int prepare_data(
   return num_axis_dims;
 }
 
+namespace {
+
+constexpr size_t kSimdLanes = 4;
+constexpr uintptr_t kSimdAlignmentBytes = 16;
+
+// Spatial mean of a channels-last float tensor [N, H, W, C] over dims {1, 2},
+// the pooling of squeeze-and-excitation blocks. NNLib reduces it with a strided
+// generic loop; here every position row is added into the output row with PDX
+// vectors. PDX vector accesses must be 16-byte aligned, so unaligned tensors
+// and channel counts that are not a multiple of the lane width return false.
+bool mean_nhwc_spatial_simd(
+    const Tensor& in,
+    optional<ArrayRef<int64_t>> dim_list,
+    Tensor& out) {
+  if (!dim_list.has_value() || dim_list.value().size() != 2 || in.dim() != 4) {
+    return false;
+  }
+  int64_t first_dim = dim_list.value()[0];
+  int64_t second_dim = dim_list.value()[1];
+  first_dim += first_dim < 0 ? in.dim() : 0;
+  second_dim += second_dim < 0 ? in.dim() : 0;
+  if (!((first_dim == 1 && second_dim == 2) ||
+        (first_dim == 2 && second_dim == 1))) {
+    return false;
+  }
+
+  const size_t batch = in.size(0);
+  const size_t positions = static_cast<size_t>(in.size(1)) * in.size(2);
+  const size_t channels = in.size(3);
+  if (positions == 0 || channels == 0 || channels % kSimdLanes != 0 ||
+      static_cast<size_t>(out.numel()) != batch * channels) {
+    return false;
+  }
+
+  const float* p_in = in.const_data_ptr<float>();
+  float* p_out = out.mutable_data_ptr<float>();
+  if (reinterpret_cast<uintptr_t>(p_in) % kSimdAlignmentBytes != 0 ||
+      reinterpret_cast<uintptr_t>(p_out) % kSimdAlignmentBytes != 0) {
+    return false;
+  }
+
+  const size_t channel_vectors = channels / kSimdLanes;
+  const float count = static_cast<float>(positions);
+  const xb_vecMxf32 v_zero{0.0f, 0.0f, 0.0f, 0.0f};
+  const xb_vecMxf32 v_count{count, count, count, count};
+  for (size_t n = 0; n < batch; ++n) {
+    auto v_out = reinterpret_cast<xb_vecMxf32*>(p_out + n * channels);
+    for (size_t v = 0; v < channel_vectors; ++v) {
+      v_out[v] = v_zero;
+    }
+    for (size_t p = 0; p < positions; ++p) {
+      auto v_in = reinterpret_cast<const xb_vecMxf32*>(
+          p_in + (n * positions + p) * channels);
+      for (size_t v = 0; v < channel_vectors; ++v) {
+        v_out[v] = PDX_ADD_MXF32(v_out[v], v_in[v]);
+      }
+    }
+    for (size_t v = 0; v < channel_vectors; ++v) {
+      v_out[v] = PDX_DIV_MXF32(v_out[v], v_count);
+    }
+  }
+  return true;
+}
+
+} // namespace
+
 Tensor& mean_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
@@ -99,6 +165,10 @@ Tensor& mean_out(
 
   if (in.dim() > kNnlibMaxDim)
     optimized = false;
+
+  if (optimized && mean_nhwc_spatial_simd(in, dim_list, out)) {
+    return out;
+  }
 
   if (optimized) {
     float* __restrict__ p_out = out.mutable_data_ptr<float>();

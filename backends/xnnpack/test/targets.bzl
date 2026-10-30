@@ -22,12 +22,16 @@ def define_common_targets():
     runtime.cxx_test(
         name = "xnnexecutor_test",
         srcs = ["runtime/test_xnnexecutor.cpp"],
+        fbcode_deps = [
+            third_party_dep("XNNPACK").replace(":XNNPACK", ":public-headers"),
+        ],
         deps = [
             third_party_dep("XNNPACK"),
             third_party_dep("FP16"),
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/backends/xnnpack:xnnpack_backend",
+            "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",
         ],
     )
 
