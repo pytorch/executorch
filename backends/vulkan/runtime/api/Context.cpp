@@ -88,6 +88,16 @@ void Context::report_shader_dispatch_end() {
 }
 
 void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
+  if (!shader.required_capabilities.empty()) {
+    for (const uint32_t capability : shader.required_capabilities) {
+      if (!adapter_p_->supports_spirv_capability(capability)) {
+        throw vkapi::ShaderNotSupportedError(
+            shader.kernel_name,
+            utils::concat_str("SPIR-V capability ", capability));
+      }
+    }
+    return;
+  }
   if (shader.requires_shader_int16) {
     if (!adapter_p_->supports_int16_shader_types()) {
       throw vkapi::ShaderNotSupportedError(
