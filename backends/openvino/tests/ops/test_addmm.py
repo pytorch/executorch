@@ -45,6 +45,14 @@ class TestAddMMOperator(BaseOpenvinoOpTest):
         self.atol = self.rtol = 1e-4
         sample_input = tuple(torch.randn(256, 256) for _ in range(3))
         self.execute_layer_test(self.create_model(), sample_input)
+        # On x86 only the runtime passes the precision on, so this fails if it
+        # drops an explicit one.
+        with self.assertRaisesRegex(AssertionError, "ref_output"):
+            self.execute_layer_test(
+                self.create_model(),
+                sample_input,
+                compile_specs=(CompileSpec("inference_precision", b"bf16"),),
+            )
 
     def test_addmm_passes_the_precision_to_openvino(self):
         if not self.device.startswith("CPU"):
