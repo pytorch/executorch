@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -105,7 +105,7 @@ target_compile_definitions(
 target_compile_options(vulkan_compute_api PRIVATE ${VULKAN_CXX_FLAGS})
 target_link_libraries(
   vulkan_compute_api
-  PUBLIC executorch_core
+  PUBLIC executorch_core executorch_vulkan_shared_runtime
   PRIVATE Threads::Threads ${CMAKE_DL_LIBS}
 )
 
@@ -219,7 +219,7 @@ add_library(vulkan_backend ${vulkan_backend_cpp})
 target_link_libraries(
   vulkan_backend
   PUBLIC vulkan_graph_runtime
-  PRIVATE vulkan_schema
+  PRIVATE vulkan_schema executorch_vulkan_shared_runtime
 )
 target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 # Link this library with --whole-archive due to dynamic backend registration
@@ -228,6 +228,9 @@ executorch_target_link_options_shared_lib(vulkan_backend)
 set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
 
 # Test targets
+if(EXECUTORCH_BUILD_TESTS)
+  add_subdirectory(test/shared_context)
+endif()
 
 install(
   TARGETS vulkan_backend vulkan_schema
