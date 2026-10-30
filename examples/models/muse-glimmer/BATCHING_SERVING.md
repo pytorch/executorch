@@ -223,9 +223,14 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
 
 `--data-path` is required and `--pos-embed-path` is rejected; image requests
 fail preparation. Every resident session reserves `--max-context` cells of the
-pool: requests, `--prefix-cache-entries` snapshots, and one capture lane when
-snapshots are enabled. Their total reservation must leave one cell for padded
-writes within the exported `--max-cells`.
+pool: requests, `--prefix-cache-entries` snapshots, and the resolved number of
+capture slots when snapshots are enabled. `--prefix-capture-slots 0` (the default)
+matches request concurrency, capped at two when checkpoints are enabled; a
+positive value sets an explicit limit. Their total reservation must leave one
+cell for padded writes within the exported `--max-cells`. More capture slots
+reduce the context available per session in the native worker's automatic
+context mode. This Python launcher requires an explicit `--max-context`;
+reduce the context or slot counts if they do not fit.
 The cell pool tracks at most 64 resident sessions. Prefix snapshots clone a
 session's cells by reference, sharing the prompt's KV rather than copying it.
 

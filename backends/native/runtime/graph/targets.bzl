@@ -111,6 +111,20 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "aliases",
+        srcs = ["utils/Aliases.cpp"],
+        exported_headers = [
+            "utils/Aliases.h",
+        ],
+        exported_deps = [":graph"],
+        deps = [
+            ":argument",
+            ":node",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
+    runtime.cxx_library(
         name = "memory_planning",
         srcs = ["MemoryPlanning.cpp"],
         exported_headers = [

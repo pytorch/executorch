@@ -8,7 +8,9 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, TypeVar, Union
+
+import torch
 
 _T = TypeVar("_T")
 
@@ -135,6 +137,19 @@ class ExecuTorchProgram:
 class ExecuTorchMethod:
     """ExecuTorchMethod is a Python wrapper around a loaded C++ method.
 
+    Outputs are cloned when ``clone_outputs`` is True, except for an output
+    bound with ``set_output``, which is returned as the bound tensor and
+    overwritten by later calls.
+
+    An input that is not memory planned (e.g. exported with
+    ``alloc_graph_input=False``) is used in place, so a mutation of it is
+    written into the tensor passed in for it. When such an input is also an
+    output (e.g. the write-back of a mutated input, or an input returned
+    unchanged), that output is a clone like any other by default, and shares
+    the storage of the tensor passed in with ``clone_outputs=False``. A memory
+    planned input is copied into the method, so the tensor passed in for it is
+    not updated.
+
     .. warning::
 
         This API is experimental and subject to change without notice.
@@ -143,6 +158,7 @@ class ExecuTorchMethod:
     # pyre-ignore[2]: "Any" in parameter type annotations.
     def set_inputs(self, inputs: Any) -> None: ...
     def execute(self) -> None: ...
+    def set_output(self, tensor: torch.Tensor, index: int) -> None: ...
     # pyre-ignore[3]: "Any" in return type annotations.
     def get_outputs(self, clone_outputs: bool = True) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
@@ -461,3 +477,26 @@ def _threadpool_get_thread_count() -> int:
         This API is experimental and subject to change without notice.
     """
     ...
+
+class _CudaStream:
+    """A non-blocking CUDA stream on ``device`` (-1: current device). Only with
+    CUDA; use executorch.runtime.cuda.Stream.
+    """
+
+    def __init__(self, device: int) -> None: ...
+    @property
+    def handle(self) -> int: ...
+    @property
+    def device(self) -> int: ...
+    def close(self) -> None: ...
+
+class _CallerStreamScope:
+    """Selects a CUDA stream for this thread's delegates. Only with CUDA.
+
+    Use executorch.runtime.cuda.stream.
+    """
+
+    def __init__(self, stream: Union[_CudaStream, int]) -> None: ...
+    can_check_device: ClassVar[bool]
+    def __enter__(self) -> None: ...
+    def __exit__(self, *args: Any) -> None: ...

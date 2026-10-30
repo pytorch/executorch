@@ -13,6 +13,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     _convert_scalars_to_attrs,
     OP_TO_ANNOTATOR,
     propagate_annotation,
+    touches_bfloat16,
 )
 from torchao.quantization.pt2e import (
     FakeQuantize,
@@ -399,9 +400,9 @@ class XNNPACKQuantizer(Quantizer):
         if quantization_config is None:
             return model
 
-        # Create a combined filter function, which returns True only when
-        # both filter_fn and self.filter_fn return True.
         def combined_filter_fn(n: Node) -> bool:
+            if touches_bfloat16(n):
+                return False
             combined_filter = [self.filter_fn, filter_fn]
             return all(f(n) for f in combined_filter if f is not None)
 

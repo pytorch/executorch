@@ -1,0 +1,94 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+conv2d_tiled:
+  parameter_names_with_default_values:
+    DTYPE: half
+    OUT_N4: 1
+    ZERO_BORDER: false
+    WEIGHT_BUFFER: false
+    SPECIALIZED_BOUNDS: false
+    CONST_TEXTURE_OFFSETS: false
+    GATHER_GROUPS: false
+    TILE_X: 2
+    TILE_Y: 2
+    CLAMP_TAPS: false
+  generate_variant_forall:
+    DTYPE:
+    - VALUE: half
+  shader_variants:
+  - NAME: conv2d_2x2x8_border
+    OUT_N4: 2
+    ZERO_BORDER: true
+    generate_variant_forall:
+      DTYPE:
+      - VALUE: half
+      - VALUE: float
+  - NAME: conv2d_2x2x4_buffer
+    WEIGHT_BUFFER: true
+  - NAME: conv2d_2x2x8_border_buffer_offset
+    OUT_N4: 2
+    ZERO_BORDER: true
+    WEIGHT_BUFFER: true
+    SPECIALIZED_BOUNDS: true
+    CONST_TEXTURE_OFFSETS: true
+  - NAME: conv2d_2x2x4
+    TILE_X: 2
+    TILE_Y: 2
+    ZERO_BORDER: false
+    generate_variant_forall:
+      DTYPE:
+      - VALUE: half
+      - VALUE: float
+  - NAME: conv2d_2x2x4_border
+    TILE_X: 2
+    TILE_Y: 2
+    ZERO_BORDER: true
+    generate_variant_forall:
+      DTYPE:
+      - VALUE: half
+      - VALUE: float
+  - NAME: conv2d_1x1x4
+    TILE_X: 1
+    TILE_Y: 1
+    ZERO_BORDER: false
+    generate_variant_forall:
+      DTYPE:
+      - VALUE: half
+      - VALUE: float
+    CLAMP_TAPS: true
+  - NAME: conv2d_2x1x4
+    TILE_X: 2
+    TILE_Y: 1
+    ZERO_BORDER: false
+    generate_variant_forall:
+      DTYPE:
+      - VALUE: half
+      - VALUE: float
+  - NAME: conv2d_2x1x4_border
+    TILE_X: 2
+    TILE_Y: 1
+    ZERO_BORDER: true
+    generate_variant_forall:
+      DTYPE:
+      - VALUE: half
+      - VALUE: float
+  - NAME: conv2d_2x2x8_border_buffer
+    OUT_N4: 2
+    ZERO_BORDER: true
+    WEIGHT_BUFFER: true
+  - NAME: conv2d_1x1x4_buffer
+    TILE_X: 1
+    TILE_Y: 1
+    ZERO_BORDER: false
+    WEIGHT_BUFFER: true
+    CLAMP_TAPS: true
+  - NAME: conv2d_2x2x4_grouped_gather
+    GATHER_GROUPS: true
+    generate_variant_forall:
+      DTYPE:
+      - VALUE: half
+      - VALUE: float

@@ -378,6 +378,219 @@ export const MODELS = [
     },
   },
   {
+    id: 'phonon-31m-en',
+    name: 'Phonon 31M (English)',
+    shortName: 'Phonon 31M',
+    task: 'text-to-speech',
+    tagline: 'Natural English speech · 24 kHz',
+    approxBytes: 158e6,
+    approxBytesIsEstimate: false,
+    assets: {
+      "baseUrl": "https://huggingface.co/executorch-community/Phonon-31M-EN-ExecuTorch-WebGPU/resolve/afd4b73c5e05d3e78b760f3dbe34bcc3a63f3e73/", // @lint-ignore (base URL, files resolve under it)
+      "files": [
+        "phonon.json",
+        "phonon_bos_embed.f32.bin",
+        "phonon_flow_lm.pte",
+        "phonon_mimi.pte",
+        "phonon_text_embed.bf16.bin",
+        "tokenizer.json",
+        "voice_default.f32.bin",
+        "voice_en_us_easton.f32.bin"
+      ],
+      "sha256": {
+        "phonon.json": "e8fa6604769aeb3b63e95c44c912f7ae635a324ca3793ec62fca017346521750",
+        "phonon_bos_embed.f32.bin": "a4464c50596adea27c8f0457124ead461202dc2f67daf3c6dbbc289cf289fd32",
+        "phonon_flow_lm.pte": "178698a6c4539ba48c93bd74c4165586c1da4fdd393bd144c27fd09d80021ad7",
+        "phonon_mimi.pte": "d7acdf2d93ba4897e63b58d933c7425f49cf855ecbd1a6f51e273c5dd65bb3cc",
+        "phonon_text_embed.bf16.bin": "7c6f3394fc86b55ed181ff0b9d2472cf0371d3feeac25a5d0f2eed0a3a2eaae1",
+        "tokenizer.json": "691a00068fa7b989f2f3e5ae5daa2d1a5bb319f2d5360deafcfb19a8bb6e7936",
+        "voice_default.f32.bin": "d8a8ffc97e46c0330ef6a3842130b95cc5ee71759f66bb54bc2ec0b79fc36e57",
+        "voice_en_us_easton.f32.bin": "1d6ec67cbd3a45b2bacf84ff7ddfb184fd9e8467c2204f2eac0f4975c354b66b"
+      },
+      "spec": {
+        "files": {
+          "flowLm": {
+            "path": "phonon_flow_lm.pte",
+            "bytes": 111847044
+          },
+          "mimi": {
+            "path": "phonon_mimi.pte",
+            "bytes": 41304196
+          },
+          "textEmbed": {
+            "path": "phonon_text_embed.bf16.bin",
+            "bytes": 4097024
+          },
+          "bosEmbed": {
+            "path": "phonon_bos_embed.f32.bin",
+            "bytes": 2048
+          },
+          "tokenizer": {
+            "path": "tokenizer.json",
+            "bytes": 277967
+          }
+        },
+        "voices": [
+          {
+            "id": "default",
+            "label": "Default",
+            "path": "voice_default.f32.bin",
+            "bytes": 256000
+          },
+          {
+            "id": "en_us_easton",
+            "label": "Easton",
+            "path": "voice_en_us_easton.f32.bin",
+            "bytes": 256000
+          }
+        ],
+        "sampleRate": 24000,
+        "frameSamples": 1920,
+        "maxContext": 512,
+        "prefillMax": 128,
+        "voiceLen": 125,
+        "eosThreshold": 4.0,
+        "temperature": 0.3,
+        "mimiState": [
+          [
+            "upsample_partial",
+            [
+              1,
+              512,
+              16
+            ]
+          ],
+          [
+            "k0",
+            [
+              1,
+              8,
+              250,
+              64
+            ]
+          ],
+          [
+            "v0",
+            [
+              1,
+              8,
+              250,
+              64
+            ]
+          ],
+          [
+            "k1",
+            [
+              1,
+              8,
+              250,
+              64
+            ]
+          ],
+          [
+            "v1",
+            [
+              1,
+              8,
+              250,
+              64
+            ]
+          ],
+          [
+            "kv_seen",
+            [
+              1,
+              1,
+              1,
+              250
+            ]
+          ],
+          [
+            "rope_offset",
+            [
+              1
+            ]
+          ],
+          [
+            "init_conv_prev",
+            [
+              1,
+              512,
+              6
+            ]
+          ],
+          [
+            "up1_partial",
+            [
+              1,
+              256,
+              6
+            ]
+          ],
+          [
+            "res1_prev",
+            [
+              1,
+              256,
+              2
+            ]
+          ],
+          [
+            "up2_partial",
+            [
+              1,
+              128,
+              5
+            ]
+          ],
+          [
+            "res2_prev",
+            [
+              1,
+              128,
+              2
+            ]
+          ],
+          [
+            "up3_partial",
+            [
+              1,
+              64,
+              4
+            ]
+          ],
+          [
+            "res3_prev",
+            [
+              1,
+              64,
+              2
+            ]
+          ],
+          [
+            "final_conv_prev",
+            [
+              1,
+              64,
+              2
+            ]
+          ]
+        ]
+      }
+    },
+    credit: { by: 'Gradium', url: 'https://huggingface.co/gradium/phonon-31m-en' },
+    attribution: "Builds on Kyutai's Pocket TTS and the Mimi codec",
+    license: {
+      status: LICENSE_STATUS.CLEARED,
+      reviewNote: "Approved for public redistribution (approved and published by the project owner, 2026-10-28).",
+      upstream: 'Apache-2.0 (weights, tokenizer and voices, per the model card; the voices repo card is Apache-2.0 too)',
+      provenance:
+        'Upstream: gradium/phonon-31m-en @ 52433c46975bfa13144c56204c9f4ee1c5b148aa (model.safetensors, tokenizer.json, ' +
+        'default-voice.safetensors) and gradium/phonon-voices @ 0ee17205f254b5abc43b266c8a0f215565c352f7 (Easton). ' +
+        'Exported to fp32 ExecuTorch programs; audio matches the official runtime (ptts 0.4.0). ',
+    },
+  },
+  {
     id: 'depth-anything-v2-small',
     name: 'Depth Anything V2 Small',
     shortName: 'Depth Anything V2-S',

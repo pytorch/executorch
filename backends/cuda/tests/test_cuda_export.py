@@ -6,6 +6,7 @@
 
 import contextlib
 import os
+import tempfile
 import threading
 import unittest
 from typing import Tuple
@@ -236,6 +237,60 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 [CompileSpec(key="cuda_include_ptx", value=b"MAYBE")]
             )
 
+    def test_invalid_data_name_compile_spec(self):
+        for name in (
+            "",
+            "..",
+            ".hidden",
+            "../outside",
+            "a/b",
+            "a\\b",
+            "a/../../outside",
+            "C:model",
+            "model?",
+            "nul",
+            "COM1.txt",
+            "a" * 201,
+            # Non-ASCII letters that IGNORECASE alone would let through.
+            "\u212a" * 200,
+            "\u017fizes",
+            "\u0130d",
+            "\u0131d",
+            "-enc",
+            # One writer turns "encoder.ptd" into the same file as "encoder".
+            # The check ignores case, like the rest of the pattern.
+            "encoder.ptd",
+            "encoder.PTD",
+        ):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "Invalid data name"):
+                    CudaBackend.generate_data_name_compile_spec(name)
+                with self.assertRaisesRegex(ValueError, "Invalid data name"):
+                    CudaBackend.data_name_from_compile_specs(
+                        [CompileSpec(key="data_name", value=name.encode())]
+                    )
+        # A backend that keeps its data in the .pte would ignore the name.
+        with patch.object(CudaBackend, "save_data_externally", return_value=False):
+            with self.assertRaisesRegex(ValueError, "takes no data name"):
+                CudaBackend.generate_data_name_compile_spec("encoder")
+
+    def test_valid_data_name_compile_spec(self):
+        self.assertEqual(CudaBackend.data_name_from_compile_specs([]), "aoti_cuda_blob")
+        for name in ("encoder", "model_sm80", "v1.2-final", "a" * 200, "x.ptd.bak"):
+            with self.subTest(name=name):
+                spec = CudaBackend.generate_data_name_compile_spec(name)
+                self.assertEqual(CudaBackend.data_name_from_compile_specs([spec]), name)
+
+    def test_methods_of_one_program_must_share_a_data_name(self):
+        def specs(name):
+            return [[CudaBackend.generate_data_name_compile_spec(name)]]
+
+        with self.assertRaisesRegex(ValueError, "same data name"):
+            CudaBackend.preprocess_multimethod(
+                {"forward": [None], "second": [None]},
+                {"forward": specs("first"), "second": specs("second")},
+            )
+
 
 class TestCudaExport(unittest.TestCase):
     """Test CUDA export functionality for various operations using to_edge_transform_and_lower."""
@@ -266,6 +321,7 @@ class TestCudaExport(unittest.TestCase):
         module: torch.nn.Module,
         inputs: Tuple[torch.Tensor, ...],
         compile_specs: list[CompileSpec] | None = None,
+        strict: bool = True,
     ) -> None:
         """Helper method to export a module to CUDA backend using to_edge_transform_and_lower.
 
@@ -274,9 +330,10 @@ class TestCudaExport(unittest.TestCase):
             inputs: The example inputs for the module
             compile_specs: Optional list of compile specs. If not provided, defaults to
                           only the method name compile spec for "forward"
+            strict: Whether to export in strict mode
         """
         # Export the model
-        exported_program = export(module, inputs, strict=True)
+        exported_program = export(module, inputs, strict=strict)
 
         # Create partitioner with compile specs
         if compile_specs is None:
@@ -327,6 +384,57 @@ class TestCudaExport(unittest.TestCase):
         # Test export
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Simple add operation export failed")
+
+    def test_detach(self):
+        """Edge turns detach into detach_copy, which has no CUDA kernel of its own."""
+
+        class DetachModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x * 2).detach() + 1
+
+        class DetachedOutputModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                y = x * 2
+                return y, y.detach()
+
+        class DetachInCondModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.cond(x.sum() > 0, lambda t: t.sin().detach(), torch.cos, (x,))
+                # Without this detach, Edge decomposes the branch's detach.
+                return y.detach() + 1
+
+        x = torch.randn(4, 8)
+        for module in (DetachModule(), DetachedOutputModule(), DetachInCondModule()):
+            with self.subTest(module=type(module).__name__):
+                # The default config also verifies the program the backend rewrites.
+                edge_program_manager = to_edge_transform_and_lower(
+                    export(module, (x,), strict=True),
+                    partitioner=[
+                        CudaPartitioner(
+                            [CudaBackend.generate_method_name_compile_spec("forward")]
+                        )
+                    ],
+                )
+                self.assertTrue(
+                    any(
+                        "executorch_call_delegate" in str(node.target)
+                        for node in edge_program_manager.exported_program().graph.nodes
+                    )
+                )
+                edge_program_manager.to_executorch()
+
+    def test_check_tensor_all(self):
+        """Test CUDA export of a tensor-wide runtime check."""
+
+        class CheckModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                torch._check_tensor_all(x > -1e9)
+                return x * 2
+
+        # A strict export does not keep the check.
+        self._export_to_cuda_with_lower(
+            CheckModule().eval(), (torch.randn(4, 8),), strict=False
+        )
 
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""
@@ -520,6 +628,44 @@ class TestCudaExport(unittest.TestCase):
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Conv1d operation export failed")
 
+    def test_conv_transpose(self):
+        """Test CUDA export for transposed convolution."""
+        module = torch.nn.ConvTranspose1d(4, 6, kernel_size=4, stride=2, padding=1)
+        module.eval()
+        inputs = (torch.randn(1, 4, 10),)
+
+        edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
+        self.assertIsNotNone(
+            edge_program_manager, "ConvTranspose1d operation export failed"
+        )
+
+        # Unbatched input, a crop larger than the input, and uneven 2D options.
+        cases = [
+            (
+                torch.ops.aten.conv_transpose1d.default,
+                torch.nn.functional.conv_transpose1d,
+                (torch.randn(4, 1), torch.randn(4, 3, 1), torch.randn(6)),
+                ([10], [4], [9], 2, [1]),
+            ),
+            (
+                torch.ops.aten.conv_transpose2d.input,
+                torch.nn.functional.conv_transpose2d,
+                (torch.randn(2, 4, 5, 6), torch.randn(4, 3, 3, 2), torch.randn(6)),
+                ([3, 2], [2, 0], [1, 1], 2, [2, 1]),
+            ),
+        ]
+        table = CudaBackend.get_decomposition_table()
+        for op, reference, tensors, options in cases:
+            # ROCm leaves transposed conv2d to Inductor's own template.
+            if (
+                torch.version.hip is not None
+                and op == torch.ops.aten.conv_transpose2d.input
+            ):
+                continue
+            torch.testing.assert_close(
+                table[op](*tensors, *options), reference(*tensors, *options)
+            )
+
     def test_sdpa_single_kernel(self):
         """
         Test CUDA export for model containing single SDPA kernel.
@@ -561,6 +707,64 @@ class TestCudaExport(unittest.TestCase):
             edge_program_manager,
             "SDPA kernel export with triton_kernel_mode=OFF failed",
         )
+
+    def test_missing_scatter_kernel_fails_at_export(self):
+        """Inductor leaves int64 scatter_add to an ATen kernel the CUDA shim lacks."""
+
+        class Int64ScatterAdd(torch.nn.Module):
+            def forward(self, counts: torch.Tensor, idx: torch.Tensor):
+                return counts.scatter_add(0, idx, torch.ones_like(idx))
+
+        inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
+        with self.assertRaises(RuntimeError) as context:
+            self._export_to_cuda_with_lower(Int64ScatterAdd(), inputs)
+        self.assertIn("aoti_torch_cuda_scatter_reduce_two_out", str(context.exception))
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_mask_index_and_index_put(self):
+        """A mask index makes the result size depend on the data, and Inductor
+        has no atomic add for int64, so these run in the index shims."""
+        from executorch.runtime import Runtime
+
+        class MaskIndex(torch.nn.Module):
+            def forward(self, x, mask, column, idx, counts):
+                out = x.clone()
+                out[mask] = x[mask] * 2
+                # The mask and column index dims 0 and 2, which are not adjacent.
+                picked = x[mask, :, column].sum(0)
+                # A transposed input gives a result that is not row-major.
+                rows = x.transpose(1, 2)[mask] * 3
+                ones = torch.ones_like(idx)
+                counts = counts.index_put((idx,), ones, accumulate=True)
+                return out, picked, rows, counts
+
+        model = MaskIndex()
+        x = torch.randn(4, 5, 6)
+        column = torch.tensor([2])
+        idx = torch.tensor([0, 3, 3, 1, 3])
+        # Nonzero counts check that repeated writes add to the old values.
+        counts = torch.arange(8) * 5
+        masks = (
+            torch.tensor([True, False, True, True]),
+            torch.zeros(4, dtype=torch.bool),
+            torch.ones(4, dtype=torch.bool),
+        )
+        edge = self._export_to_cuda_with_lower(
+            model, (x, masks[0], column, idx, counts)
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            method = Runtime.get().load_program(path).load_method("forward")
+            for mask in masks:
+                inputs = (x, mask, column, idx, counts)
+                outputs = method.execute(list(inputs))
+                for output, expected in zip(outputs, model(*inputs), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected)
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """

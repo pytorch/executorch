@@ -92,7 +92,15 @@ class BackendInterface {
    *
    * @param[in] handle An opaque handle returned by `init()`. Usually a backend
    *     executable unit. This executable unit should be ready to execute the
-   *     delegate blobs.
+   *     delegate blobs. One handle can serve several calls in a method, each
+   *     with its own `args`. The emitter does this when the backend set
+   *     `PreprocessResult.share_handle_across_calls` and declared no scratch,
+   *     and programs from ExecuTorch 0.7 and earlier can do it for any
+   *     backend. Such programs rely on `execute()` reading `args` again on
+   *     every call, keeping nothing on the handle that is tied to one call or
+   *     that changes later results, and writing outputs only into the output
+   *     tensors in `args`. Setting the flag promises this for every runtime
+   *     version of the backend that may load the program.
    * @param[in] args The method’s inputs and outputs.
    * @retval Error::Ok if successful.
    */

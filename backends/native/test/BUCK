@@ -5,6 +5,17 @@ oncall("executorch")
 
 fbcode_target(
     _kind = runtime.python_test,
+    name = "test_fuse_conv_batch_norm",
+    srcs = ["test_fuse_conv_batch_norm.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
     name = "test_serialize",
     srcs = ["test_serialize.py"],
     deps = [
@@ -74,5 +85,19 @@ fbcode_target(
         "//executorch/backends/native:lib",
         "//executorch/exir:lib",
         "//executorch/extension/llm/export:gguf",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_hf_whisper",
+    srcs = ["test_hf_whisper.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/backends/native/examples/audio:hf_whisper",
+        "//executorch/exir:lib",
+        "//executorch/exir/native:native",
+        "fbsource//third-party/pypi/transformers:transformers",
     ],
 )
