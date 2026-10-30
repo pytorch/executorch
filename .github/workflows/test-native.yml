@@ -17,6 +17,8 @@ on:
       - backends/cpu/CMakeLists.txt
       - backends/cpu/runtime/**
       - backends/native/**
+      - backends/cadence/utils/FACTO
+      - backends/test/suite/operators/test_linear.py
       - backends/vulkan/CMakeLists.txt
       - backends/vulkan/cmake/**
       - backends/vulkan/runtime/api/**
@@ -113,9 +115,10 @@ jobs:
 
           if [[ "${NATIVE_COMPONENT}" == "ggml" ]]; then
             ./install_requirements.sh --use-pt-pinned-commit
-            # The LLM runner test imports executorch from src/ without installing the
-            # wheel, so install its export-time dependencies directly.
-            pip install flatbuffers ruamel.yaml tabulate \
+            # The LLM runner test and the op sample generator import executorch from
+            # src/ without installing the wheel, so install their export-time
+            # dependencies directly.
+            pip install flatbuffers gguf ruamel.yaml tabulate \
               "$(grep -E '^transformers\b' requirements-examples.txt)"
           fi
 

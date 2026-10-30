@@ -36,8 +36,9 @@ case "${component}" in
       -DEXECUTORCH_BUILD_NATIVE_VISION_RUNNER=ON
       -DGGML_NATIVE=OFF
     )
-    targets+=(run_hf_llm_ggml native_ggml_engine_test native_llm_runner_utils_test run_classification_ggml_cpu)
-    test_regex='^native_(ggml_engine|llm_runner_utils)_test$'
+    # TODO: run the other sample tests once they pass.
+    targets+=(run_hf_llm_ggml native_ggml_engine_test native_llm_runner_utils_test run_classification_ggml_cpu native_output_check_test native_ggml_sample_test)
+    test_regex='^native_(ggml_engine|llm_runner_utils|output_check)_test$|^native_ggml_sample_test_act_quant$'
     ;;
   vulkan)
     cmake_args+=(
