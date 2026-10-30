@@ -33,6 +33,9 @@ class BaseOpenvinoOpTest(unittest.TestCase):
 
         # Convert to edge dialect and lower the module to the backend with a custom partitioner
         compile_spec = [CompileSpec("device", self.device.encode())]
+        # CPUs with native bf16 otherwise run f32 models in bf16, which misses atol.
+        if self.device == "CPU":
+            compile_spec.append(CompileSpec("inference_precision", b"f32"))
         lowered_module: EdgeProgramManager = to_edge_transform_and_lower(
             aten_dialect,
             partitioner=[

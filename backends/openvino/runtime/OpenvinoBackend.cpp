@@ -236,6 +236,7 @@ bool OpenvinoBackend::ensure_loaded() const {
     LOAD_SYM(core_free, ov_core_free)
     LOAD_SYM(core_get_available_devices, ov_core_get_available_devices)
     LOAD_SYM(available_devices_free, ov_available_devices_free)
+    LOAD_SYM(core_set_property, ov_core_set_property)
     LOAD_SYM(core_import_model, ov_core_import_model)
     LOAD_SYM(
         compiled_model_create_infer_request,
@@ -321,17 +322,44 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
   size_t data_size = processed->size();
 
   std::string device = "CPU";
+  std::string inference_precision;
   for (auto& compile_spec : compile_specs) {
+    std::string* target = nullptr;
     if (std::strcmp(compile_spec.key, "device") == 0) {
-      const char* buf = static_cast<const char*>(compile_spec.value.buffer);
-      size_t len = compile_spec.value.nbytes;
-      // Strip trailing null bytes that may be included in nbytes.
-      while (len > 0 && buf[len - 1] == '\0') {
-        --len;
-      }
-      if (len > 0) {
-        device.assign(buf, len);
-      }
+      target = &device;
+    } else if (std::strcmp(compile_spec.key, "inference_precision") == 0) {
+      target = &inference_precision;
+    } else {
+      continue;
+    }
+    const char* buf = static_cast<const char*>(compile_spec.value.buffer);
+    size_t len = compile_spec.value.nbytes;
+    // Strip trailing null bytes that may be included in nbytes.
+    while (len > 0 && buf[len - 1] == '\0') {
+      --len;
+    }
+    if (len > 0) {
+      target->assign(buf, len);
+    }
+  }
+
+  // The device picks its default precision when the model is imported, e.g.
+  // bf16 for f32 models on CPUs with native bf16 support.
+  if (!inference_precision.empty()) {
+    status = ov_.core_set_property(
+        core,
+        device.c_str(),
+        "INFERENCE_PRECISION_HINT",
+        inference_precision.c_str());
+    if (status != OV_STATUS_OK) {
+      ET_LOG(
+          Error,
+          "OpenVINO: failed to set inference precision '%s' for device '%s' (status=%d)",
+          inference_precision.c_str(),
+          device.c_str(),
+          status);
+      ov_.core_free(core);
+      return exr::Error::InvalidArgument;
     }
   }
 
@@ -343,8 +371,10 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
   if (status != OV_STATUS_OK || !compiled_model) {
     ET_LOG(
         Error,
-        "OpenVINO: failed to import model for device '%s' (status=%d)",
+        "OpenVINO: failed to import model for device '%s'%s%s (status=%d)",
         device.c_str(),
+        inference_precision.empty() ? "" : " with inference_precision ",
+        inference_precision.c_str(),
         status);
     return exr::Error::Internal;
   }
@@ -541,8 +571,12 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
   }
   // shape is zero-initialized; shape_free is only needed after a successful
   // shape_create (the zero state is safe to skip).
+  // ov_shape_create rejects rank 0, so 0-d tensors use the zero shape as-is.
   ov_shape_t shape = {};
-  ov_status_e status = ov_.shape_create(rank, dims, &shape);
+  ov_status_e status = OV_STATUS_OK;
+  if (rank > 0) {
+    status = ov_.shape_create(rank, dims, &shape);
+  }
   dims_heap.reset(); // Release heap dims (no-op if stack was used).
   if (status != OV_STATUS_OK) {
     return exr::Error::Internal;
@@ -551,7 +585,9 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
   ov_tensor_t* ov_tensor = nullptr;
   status = ov_.tensor_create_from_host_ptr(
       ov_type, shape, tensor.mutable_data_ptr(), &ov_tensor);
-  ov_.shape_free(&shape);
+  if (rank > 0) {
+    ov_.shape_free(&shape);
+  }
   if (status != OV_STATUS_OK || !ov_tensor) {
     return exr::Error::Internal;
   }
