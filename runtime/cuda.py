@@ -22,10 +22,10 @@ Example::
 
 Inside the block, the CUDA and TensorRT delegates queue their work on ``s``
 instead of their own streams, and so do a program's copies between host and
-GPU memory. A call then waits only for ``s``, not for the whole GPU: work that
-other streams still have queued keeps running. A call with GPU inputs or
-outputs, and ``ExecuTorchResult.to_host()``, still wait for the whole GPU, so
-GPU data written on other streams stays safe.
+GPU memory. A call then waits only for ``s``: work that other streams still
+have queued keeps running. A call with GPU inputs or outputs, and
+``ExecuTorchResult.to_host()``, still wait for the whole GPU, so GPU data
+written on other streams stays safe.
 
 Limits for now: a stream on a CUDA device other than 0 is refused, so is the
 legacy default stream (handle 0, or 1 for ``cudaStreamLegacy``), and the CUDA
