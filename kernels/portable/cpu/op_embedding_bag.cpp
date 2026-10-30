@@ -142,7 +142,7 @@ bool check_offsets_and_indices(
     prev_offset = offset;
   }
 
-  // Also covers indices past a partial final offset, which no bag reads.
+  // Validate every index, including those past a partial final offset.
   const int64_t num_rows = weight.size(0);
   for (const auto i : c10::irange(num_indices)) {
     const int64_t row = index_at(indices, i);
@@ -229,12 +229,16 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
       ret_val);
 
   // This kernel uses one reduction loop for both ATen paths, but follows
-  // ATen's path choice so the auxiliary outputs match, including statically
-  // allocated export outputs.
+  // ATen's path choice so the auxiliary outputs and the partial final bag
+  // match, including statically allocated export outputs.
   const bool fast_path =
       is_aten_fast_path(weight, per_sample_weights, out, padding_idx);
   // ATen skips offset2bag only for sum on its fast path.
   const bool fills_offset2bag = mode != kModeSum || !fast_path;
+  // With include_last_offset, ATen's fast path stops the last sum/mean bag at
+  // the final offset; every other path gives it all remaining indices.
+  const bool truncate_last_bag =
+      include_last_offset && fast_path && mode != kModeMax;
 
   // The auxiliary outputs exist for the backward pass, and the ATen CPU kernel
   // only fills the ones each mode needs; match it so shapes agree.
@@ -258,7 +262,10 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
   }
 
   const auto bag_end = [&](int64_t bag) {
-    return bag + 1 < offsets.numel() ? index_at(offsets, bag + 1) : num_indices;
+    return bag + 1 < num_bags ? index_at(offsets, bag + 1) : num_indices;
+  };
+  const auto reduction_end = [&](int64_t bag) {
+    return truncate_last_bag ? index_at(offsets, bag + 1) : bag_end(bag);
   };
 
   // The ATen CPU kernel leaves bag_size at zero for the sum mode, and mirrors
@@ -306,10 +313,14 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
 
     for (const auto bag : c10::irange(num_bags)) {
       const int64_t start = index_at(offsets, bag);
-      const int64_t end = bag_end(bag);
+      const int64_t end = reduction_end(bag);
+      // ATen divides by the full bag size even when the fast path truncates
+      // the last bag.
+      const int64_t mean_divisor =
+          mode == kModeMean ? index_at(bag_size, bag) : 0;
       for (const auto d : c10::irange(dim)) {
         AccType acc = 0;
-        int64_t count = 0;
+        bool seen = false;
         for (int64_t i = start; i < end; ++i) {
           const int64_t row = index_at(indices, i);
           if (row == padding_idx) {
@@ -318,7 +329,7 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
           const AccType value = static_cast<AccType>(
               weight_data[row * weight_strides[0] + d * weight_strides[1]]);
           if (mode == kModeMax) {
-            if (count == 0 || value > acc) {
+            if (!seen || value > acc) {
               acc = value;
               set_index(
                   max_indices,
@@ -330,10 +341,10 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
           } else {
             acc += value;
           }
-          ++count;
+          seen = true;
         }
-        if (mode == kModeMean && count > 0) {
-          acc /= static_cast<AccType>(count);
+        if (mean_divisor > 0) {
+          acc /= static_cast<AccType>(mean_divisor);
         }
         out_data[bag * out_strides[0] + d * out_strides[1]] =
             static_cast<CTYPE>(acc);
