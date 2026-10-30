@@ -22,23 +22,25 @@ Example::
 
 Inside the block, the CUDA and TensorRT delegates queue their work on ``s``
 instead of their own streams, and so do a program's copies between host and
-GPU memory. A call then waits only for ``s``. If ``s`` is non-blocking, as a
+GPU memory. A call then waits for ``s``. If ``s`` is non-blocking, as a
 ``Stream`` is, work that other streams still have queued keeps running. A
 blocking ``s``, such as a ``cupy.cuda.Stream()`` with default flags, also
-waits for work on the legacy default stream. A call with GPU inputs or
-outputs, and ``ExecuTorchResult.to_host()``, still wait for the whole GPU, so
-GPU data written on other streams stays safe.
+waits for work on the legacy default stream. Some steps still wait for more:
+the CUDA delegate copies an output whose memory layout has to change through
+the legacy default stream, and loading a method's CUDA weights waits for the
+whole GPU. A call with GPU inputs or outputs, and
+``ExecuTorchResult.to_host()``, also wait for the whole GPU, so GPU data
+written on other streams stays safe.
 
-Limits for now: a stream on a CUDA device other than 0 is refused, so is the
-legacy default stream (handle 0, or 1 for ``cudaStreamLegacy``), and the CUDA
-delegate refuses a method that uses CUDA graphs inside a block. A ``Stream``
-is checked on the device it was created on, whatever wrapper selects it. Any
-other stream is refused if its wrapper reports another device. When ExecuTorch
-is built with CUDA 13 or newer, its device is also read from the stream
-itself, so it is refused even if its wrapper does not say so, except while
-the stream captures a CUDA graph, when CUDA cannot be asked. This module
-does not need PyTorch; ``torch.cuda.Stream`` works because it has
-``__cuda_stream__``.
+Limits for now: a stream known to be on a CUDA device other than 0 is refused,
+so is the legacy default stream (handle 0, or 1 for ``cudaStreamLegacy``), and
+the CUDA delegate refuses a method that uses CUDA graphs inside a block. A
+``Stream`` is checked on the device it was created on, whatever wrapper
+selects it. Any other stream is refused if its wrapper reports another device.
+In builds with CUDA 13 or newer, ExecuTorch also asks CUDA for the stream's
+device, so it is refused even if its wrapper does not say so, except while the
+stream captures a CUDA graph, when CUDA cannot be asked. This module does not
+need PyTorch; ``torch.cuda.Stream`` works because it has ``__cuda_stream__``.
 
 As in PyTorch, the selection belongs to the thread, not to an asyncio task, so
 do not await or yield inside a block. Blocks end on the thread that started
