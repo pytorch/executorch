@@ -6,7 +6,7 @@
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 REDUCTION_OPS = {
     exir_ops.edge.aten.cumsum.default,
@@ -15,7 +15,7 @@ REDUCTION_OPS = {
 }
 
 
-class CastReductionInputPass(ExportPass):
+class CastReductionInputPass(PassBase):
     """Cast the input of cumsum and prod to the dtype of their result.
 
     PyTorch reduces bool and integer tensors in int64, but OpenVINO keeps a
