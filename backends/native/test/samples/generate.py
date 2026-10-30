@@ -5,7 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 
 """Write <op>_<scheme>.ptn for each op and quantization scheme that fits a case
-of the op."""
+of the op.
+
+Golden outputs depend on the eager kernels' ISA and threads; the op_samples
+genrule and the native_op_samples CMake target pin them, so build one of those
+rather than running this module to reproduce their packages.
+"""
 
 import argparse
 import logging
