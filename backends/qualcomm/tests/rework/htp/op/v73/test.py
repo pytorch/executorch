@@ -426,6 +426,10 @@ def test_conv2d_transpose(request, kwargs):
     Conv.test_2d_transpose(request, kwargs)  # noqa: F405
 
 
+def test_conv2d_16a16w_default(subtests, caplog):
+    Conv.test_2d_16a16w_default(subtests, caplog)  # noqa: F405
+
+
 # LPBQ (QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION) requires V69+; enabled here
 @pytest.mark.parametrize(
     "kwargs",
