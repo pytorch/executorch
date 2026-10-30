@@ -9,7 +9,6 @@ from typing import Any, Callable, Collection, List, Optional, Set, Tuple
 import coremltools as ct
 
 import torch
-from coremltools.converters.mil.frontend.torch.utils import TORCH_DTYPE_TO_MIL_DTYPE
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.compiler.coreml_preprocess import (
@@ -197,16 +196,19 @@ def _is_min_max_of_bool(node: torch.fx.Node) -> bool:
 
 
 def _cannot_be_coreml_input(node: torch.fx.Node) -> bool:
-    """Whether node makes a tensor that Core ML cannot take as a program input.
+    """Whether node makes a uint8 or int8 tensor, which Core ML cannot take as a
+    program input.
 
     coremltools types each program input through ``TORCH_DTYPE_TO_MIL_DTYPE``
-    and raises ``KeyError`` for a dtype missing from it, such as uint8 or int8,
-    instead of reporting the op as unsupported.
+    and raises ``KeyError`` for a dtype missing from it instead of reporting the
+    op as unsupported. Only uint8 and int8 move to the CPU: the portable kernels
+    handle them, while other missing dtypes, such as uint16, would only fail
+    later, at run time.
     """
     val = node.meta.get("val")
     vals = val if isinstance(val, (list, tuple)) else [val]
     return any(
-        isinstance(v, torch.Tensor) and v.dtype not in TORCH_DTYPE_TO_MIL_DTYPE
+        isinstance(v, torch.Tensor) and v.dtype in (torch.uint8, torch.int8)
         for v in vals
     )
 
