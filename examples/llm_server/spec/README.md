@@ -277,8 +277,14 @@ batched cache via `cache::kind::kBatched`, derives scheduler width from
 one `ServingRuntime`. It does not preload `forward`, run token-step loops, or use
 Glimmer's legacy session implementation. Prefix caching is disabled by default.
 `--prefix_cache_entries=N` enables creation-only reuse for both greedy and
-sampled requests. It adds `N + 1` physical rows for retained snapshots and one
-transient capture; logical `--max_sessions` remains unchanged.
+sampled requests. With `--prefix_capture_slots=C`, it adds `N + C` physical rows
+for retained snapshots and transient captures; logical `--max_sessions` remains
+unchanged. The default `--prefix_capture_slots=0` resolves `C` automatically to
+`min(max_sessions, max_inflight_requests)`, so overlapping requests can each capture
+their initial prompt. With checkpoints enabled, automatic sizing uses at most two
+rows because checkpoint collection remains serialized and one replacement can
+overlap. A positive value overrides automatic sizing; values above two add unused
+row capacity in checkpoint mode. Disabled prefix caching reserves no capture rows.
 
 With an existing MLX-enabled ExecuTorch installation and matching gflags package,
 configure the MLX LLM examples and build `llm_worker`. Launch with `--pte`,

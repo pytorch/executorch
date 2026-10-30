@@ -717,16 +717,37 @@ struct ServingRuntime::Impl {
     return Selection::Selected;
   }
 
+  bool try_acquire_capture_lane() {
+    auto used = capture_lanes_used_.load();
+    while (used < config_.resolved_prefix_captures()) {
+      if (capture_lanes_used_.compare_exchange_weak(used, used + 1)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool try_acquire_checkpoint_lane() {
+    if (checkpoint_lane_busy_.exchange(true)) {
+      return false;
+    }
+    if (try_acquire_capture_lane()) {
+      return true;
+    }
+    checkpoint_lane_busy_.store(false);
+    return false;
+  }
+
   SelectionResult clone_prefix(const Request& request, const SessionKey& key) {
-    if (capture_lane_busy_.exchange(true)) {
+    if (!try_acquire_capture_lane()) {
       return Selection::Unavailable;
     }
     struct ReleaseLane {
-      std::atomic<bool>& busy;
+      std::atomic<std::size_t>& used;
       ~ReleaseLane() {
-        busy.store(false);
+        used.fetch_sub(1);
       }
-    } release{capture_lane_busy_};
+    } release{capture_lanes_used_};
     batching::Session* source;
     std::size_t upto;
     {
@@ -918,8 +939,8 @@ struct ServingRuntime::Impl {
         *outcome == Selection::Selected && reset &&
         (plan.reason == "mismatch" || plan.reason == "equal" ||
          plan.reason == "suffix_unavailable") &&
-        config_.prefix_cache_capacity != 0 && !capture_lane_busy_) {
-      // Capture and replacement share one transient row.
+        config_.prefix_cache_capacity != 0) {
+      // Capture and replacement share the transient row budget.
       auto cold_delta = std::move(request->request.delta);
       selection = clone_prefix(request, key);
       if (auto* cloned = std::get_if<Selection>(&selection)) {
@@ -989,7 +1010,7 @@ struct ServingRuntime::Impl {
     collect_capture(request);
     request->text->prefix_capture.reset();
     request->text->capture_lane = false;
-    capture_lane_busy_ = false;
+    capture_lanes_used_.fetch_sub(1);
   }
 
   void generate(const Request& request) {
@@ -1163,7 +1184,7 @@ struct ServingRuntime::Impl {
           on_prefill = request->text->prefix_capture->observer(
               [this, request] {
                 return !request->cancelled.load() &&
-                    !capture_lane_busy_.exchange(true);
+                    try_acquire_checkpoint_lane();
               },
               [this, request](bool queued) {
                 if (queued) {
@@ -1173,7 +1194,8 @@ struct ServingRuntime::Impl {
                   }
                   cv_.notify_one();
                 } else {
-                  capture_lane_busy_.store(false);
+                  capture_lanes_used_.fetch_sub(1);
+                  checkpoint_lane_busy_.store(false);
                 }
               },
               std::move(checkpoints));
@@ -1188,9 +1210,8 @@ struct ServingRuntime::Impl {
 #endif
       } else if (
           opening && request->text && request->text->prompt &&
-          config_.prefix_cache_capacity != 0 && !capture_lane_busy_) {
+          config_.prefix_cache_capacity != 0 && try_acquire_capture_lane()) {
         // Only a capture needs an extra row beyond the working-session slots.
-        capture_lane_busy_ = true;
         request->text->capture_lane = true;
 #if ET_HAS_EXCEPTIONS
         try {
@@ -1551,7 +1572,8 @@ struct ServingRuntime::Impl {
       }
       if (checkpoint) {
         collect_capture(checkpoint);
-        capture_lane_busy_.store(false);
+        capture_lanes_used_.fetch_sub(1);
+        checkpoint_lane_busy_.store(false);
         continue;
       }
       if (finalizer) {
@@ -1676,9 +1698,11 @@ struct ServingRuntime::Impl {
   const ModelPreparer model_preparer_;
   std::unique_ptr<batching::Runner> runner_;
   batching::PrefixCache prefix_cache_;
-  // One transient row shared by capture and replacement, held through
-  // collection.
-  std::atomic<bool> capture_lane_busy_{false};
+  // A capture holds its transient row until collection, including failures.
+  std::atomic<std::size_t> capture_lanes_used_{0};
+  // Serializes observer/collect access to PromptCapture and
+  // pending_checkpoint_.
+  std::atomic<bool> checkpoint_lane_busy_{false};
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   std::condition_variable stopped_cv_;

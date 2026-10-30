@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -54,7 +55,7 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::int32_t default_max_new_tokens = 256;
   // Snapshots for new sessions and clean replacements; zero disables reuse.
   // Explicit open/reset bypass reuse. When enabled, provision
-  // max_sessions + prefix_cache_capacity + 1 executor rows.
+  // max_sessions + prefix_cache_capacity + resolved_prefix_captures() rows.
   std::size_t prefix_cache_capacity = 0;
   // Capture at absolute interval multiples and the initial prompt end.
   // Requires cache capacity; zero captures only the initial prompt.
@@ -70,6 +71,25 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Empty uses global LRU without protected early checkpoints.
   // Runs on control; must not block or reenter the runtime.
   batching::PrefixCache::RetentionPolicy prefix_cache_retention = {};
+  // Transient rows shared by prompt capture and named-session replacement.
+  // Zero matches request concurrency, bounded by max_sessions; replacements
+  // compete with prompt captures for these rows.
+  // Automatic checkpoint mode needs at most two rows because collection is
+  // serialized; one replacement may overlap. Positive values override sizing.
+  std::size_t max_prefix_captures = 0;
+
+  std::size_t resolved_prefix_captures() const {
+    if (prefix_cache_capacity == 0) {
+      return 0;
+    }
+    if (max_prefix_captures != 0) {
+      return max_prefix_captures;
+    }
+    const auto concurrency = std::min(max_sessions, max_requests);
+    return prefix_checkpoint_interval || prefix_checkpoint_policy
+        ? std::min(concurrency, std::size_t{2})
+        : concurrency;
+  }
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its
