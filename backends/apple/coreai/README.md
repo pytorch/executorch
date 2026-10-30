@@ -112,16 +112,16 @@ function and ordered I/O on that same acquired model.
 Backend initialization reads the string runtime spec `coreai_cache_dir`. If
 absent, it sets the directory to `executorch_coreai` beneath user-domain
 `NSCachesDirectory`. The coordinator and storage helpers always receive that
-explicit directory. It contains raw bookmarks, staged bundles and lock files.
+explicit directory. It contains raw bookmarks, source bundles and lock files.
 
 The cache directory must be an absolute path reserved for this backend. A
-configured symlink is resolved before opening the cache directory. Entry and
-staging operations retain directory descriptors and do not follow internal
+symlink in the final component of the configured path is resolved before
+opening the cache directory. Entry and source operations retain directory descriptors and do not follow internal
 symlinks. The application must still prevent concurrent renaming, replacement,
 or modification while SDK calls use source URLs. Written files and changed directories
 are synced with `fsync`. Bookmark publication uses `F_FULLFSYNC` on the temporary
 file before rename and on the directory afterward. Source-bundle publication
-fully flushes the staging directory after syncing its files and subdirectories,
+fully flushes the pending build directory after syncing its files and subdirectories,
 then fully flushes the destination directory after rename. A failure before
 rename preserves the old contents; a failure of the final flush reports an error
 even though the new complete contents are already visible. Use a local APFS
@@ -140,8 +140,8 @@ When source recovery is needed, existing bundles are checked for the expected
 file set, sizes, entry types and directory structure without reading asset
 contents or requesting NDS payloads. Unicode paths are compared in canonical
 decomposed form; NDS keys and bytes remain unchanged. Reuse fully flushes the
-staging directory, including after a previous publication's final flush failed.
-Missing bundles are written to a staging directory and published with an
+`sources` directory, including after a previous publication's final flush failed.
+Missing bundles are written to a `.pending-<uuid>` directory and published with an
 exclusive rename; each selected NDS payload is fetched once and checked for size
 before writing. If another loader publishes first, its bundle is validated and
 used. Incomplete, size-mismatched or otherwise malformed existing bundles fail
@@ -198,13 +198,13 @@ the platform and Core AI device architecture, plus a hash of a versioned
 specialization identity supplied as plain data by the SDK boundary. Function
 bindings and delivery location are excluded, and no model bytes are hashed at
 runtime. Each variant key determines a raw bookmark in `bookmarks`, a bundle
-directory in `staging`, and one of 256 shared coordination files in `locks`.
+directory in `sources`, and one of 256 shared coordination files in `locks`.
 There is no PTE-wide bookmark list or serialized lifecycle record.
 
-A healthy bookmark hit does not consult NDS and attempts to clean leftover
-staging. On a missing bookmark or confirmed SDK miss, the coordinator prepares
+A healthy bookmark hit does not consult NDS and attempts to clean the leftover
+source bundle. On a missing bookmark or confirmed SDK miss, the coordinator prepares
 the source, specializes it and atomically writes the returned bookmark bytes.
-After durable publication, it attempts to remove the entire keyed staging
+After durable publication, it attempts to remove the entire keyed source
 directory while holding the key's stripe lock. The SDK cache supports
 inference and bookmark restoration without that extracted copy.
 Keep the packaged named data available: a later SDK cache miss requires source
@@ -224,7 +224,7 @@ A fixed pool of at most 256 disk locks coordinates loading and eviction across
 threads and processes. A SHA-256 hash of the full validated cache key selects a
 stripe modulo the configured pool size. Files are created on demand, so new
 model versions do not grow the pool beyond 256. Different keys on the same
-stripe serialize; different stripes remain independent. Bookmarks and staging
+stripe serialize; different stripes remain independent. Bookmarks and source bundles
 remain separate for every key. Runtime operations hold only one stripe at a
 time.
 
@@ -281,16 +281,16 @@ available loader.
 These synchronous calls require callers to unload affected models and prevent
 concurrent loads, inference and maintenance across processes. Stripe locks are
 not a whole-root barrier. Clearing first deletes the recorded SDK entry, then
-staging, then its bookmark. Busy or unknown SDK errors preserve the files;
+its source bundle, then its bookmark. Busy or unknown SDK errors preserve the files;
 SDK-confirmed absence permits cleanup. Filesystem errors may leave partial
-cleanup, but the bookmark is retained until staging removal succeeds so cleanup
+cleanup, but the bookmark is retained until source removal succeeds so cleanup
 can be retried. Independent keys are still attempted in sorted order, and the
 first key error is returned. Each removal syncs the directory it changed. A
 missing root or absent entry is a noncreating no-op.
 
-Everything under a keyed `staging/<key>` directory belongs to the backend and is
+Everything under a keyed `sources/<key>` directory belongs to the backend and is
 removed with that key. Outside keyed entries, clearing does not delete PTEs,
-other files or the stable lock files. Unkeyed interrupted-staging directories
+other files or the stable lock files. Unkeyed interrupted `.pending-*` directories
 also remain untouched. Bookmarks are SDK eviction handles, not weights. For an
 existing entry with a missing or structurally invalid bookmark, clearing logs an
 Info message with the cache key, attempts local cleanup, and continues to other keys.
@@ -309,7 +309,7 @@ Busy errors and all unclassified eviction/restore errors retain the local
 bookmark for retry; only successful eviction or a confirmed SDK miss permits
 normal removal. If retries keep failing, first stop every process using the
 cache directory. Back up or quarantine only the affected key's bookmark and keyed
-staging outside that directory, leaving the stable lock files in place. A later load
+source bundle outside that directory, leaving the stable lock files in place. A later load
 can attempt cold acquisition and publish a new bookmark.
 This manual recovery does not confirm SDK eviction or guarantee disk-space
 reclamation: keep the backup because it may contain the only remaining eviction

@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "coreai_bookmark_fixture.h"
+#include "coreai_cache_entry_fixture.h"
 #include "coreai_fake_loader.h"
 #include "coreai_fault_injection.h"
 #include "coreai_load_coordinator.h"

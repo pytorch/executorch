@@ -52,7 +52,7 @@ TEST(CoreAICacheRootTest, PreparesRootWithRootOnlyBackupPolicy) {
   ASSERT_TRUE(set_backup_excluded(parent, false));
   NSURL* root = [parent URLByAppendingPathComponent:@"nested/models"];
   auto prepared =
-      resolve_cache_directory(root.path, StorageCreationMode::Create);
+      resolve_test_cache_directory(root.path, StorageCreationMode::Create);
   ASSERT_TRUE(prepared.ok());
   ASSERT_TRUE(prepared->has_value());
   EXPECT_TRUE([prepared->value().path
@@ -62,25 +62,27 @@ TEST(CoreAICacheRootTest, PreparesRootWithRootOnlyBackupPolicy) {
   ASSERT_TRUE((!backup_excluded(root.URLByDeletingLastPathComponent)));
 
   ASSERT_TRUE(set_backup_excluded(root, false));
-  auto inspected =
-      resolve_cache_directory(root.path, StorageCreationMode::OpenExisting);
+  auto inspected = resolve_test_cache_directory(
+      root.path, StorageCreationMode::OpenExisting);
   ASSERT_TRUE(inspected.ok());
   ASSERT_TRUE(inspected->has_value());
   EXPECT_TRUE([inspected->value().path
       isEqualToString:root.URLByResolvingSymlinksInPath.path]);
   ASSERT_TRUE((!backup_excluded(root)));
   ASSERT_TRUE(
-      (resolve_cache_directory(root.path, StorageCreationMode::Create).ok() &&
+      (resolve_test_cache_directory(root.path, StorageCreationMode::Create)
+           .ok() &&
        backup_excluded(root)));
 
   NSURL* missing = [sandbox.url URLByAppendingPathComponent:@"missing"];
-  auto absent =
-      resolve_cache_directory(missing.path, StorageCreationMode::OpenExisting);
+  auto absent = resolve_test_cache_directory(
+      missing.path, StorageCreationMode::OpenExisting);
   ASSERT_TRUE(absent.ok());
   EXPECT_FALSE(absent->has_value());
   EXPECT_FALSE([manager fileExistsAtPath:missing.path]);
   EXPECT_EQ(
-      resolve_cache_directory(@"relative", StorageCreationMode::Create).error(),
+      resolve_test_cache_directory(@"relative", StorageCreationMode::Create)
+          .error(),
       Error::InvalidArgument);
   EXPECT_TRUE((!backup_excluded(parent) && !backup_excluded(sandbox.url)));
 }
@@ -90,30 +92,33 @@ TEST(CoreAICacheRootTest, SkipsCreationForExistingRoots) {
   ASSERT_NE(storage.url, nil);
   NSURL* root = [storage.url URLByAppendingPathComponent:@"cache"];
   ASSERT_TRUE(
-      resolve_cache_directory(root.path, StorageCreationMode::Create).ok());
+      resolve_test_cache_directory(root.path, StorageCreationMode::Create)
+          .ok());
   StorageFaultScope fault(FaultPoint::BeforeCreateDirectory);
   EXPECT_TRUE(
-      resolve_cache_directory(root.path, StorageCreationMode::Create).ok());
+      resolve_test_cache_directory(root.path, StorageCreationMode::Create)
+          .ok());
   EXPECT_TRUE(
-      resolve_cache_directory(root.path, StorageCreationMode::OpenExisting)
+      resolve_test_cache_directory(root.path, StorageCreationMode::OpenExisting)
           .ok());
   EXPECT_EQ(fault.matches, 0);
   EXPECT_TRUE(backup_excluded(root));
 
   NSURL* missing = [storage.url URLByAppendingPathComponent:@"missing"];
-  auto absent =
-      resolve_cache_directory(missing.path, StorageCreationMode::OpenExisting);
+  auto absent = resolve_test_cache_directory(
+      missing.path, StorageCreationMode::OpenExisting);
   ASSERT_TRUE(absent.ok());
   EXPECT_FALSE(absent->has_value());
   EXPECT_EQ(fault.matches, 0);
   EXPECT_EQ(
-      resolve_cache_directory(missing.path, StorageCreationMode::Create)
+      resolve_test_cache_directory(missing.path, StorageCreationMode::Create)
           .error(),
       Error::AccessFailed);
   EXPECT_EQ(fault.hits, 1);
   EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:missing.path]);
   EXPECT_TRUE(
-      resolve_cache_directory(missing.path, StorageCreationMode::Create).ok());
+      resolve_test_cache_directory(missing.path, StorageCreationMode::Create)
+          .ok());
 }
 
 TEST(CoreAICacheRootTest, CreatesDirectoriesWithDefaultPermissions) {
@@ -125,7 +130,8 @@ TEST(CoreAICacheRootTest, CreatesDirectoriesWithDefaultPermissions) {
   ASSERT_EQ(stat(reference.fileSystemRepresentation, &expected), 0);
   NSURL* root = [storage.url URLByAppendingPathComponent:@"cache"];
   ASSERT_TRUE(
-      resolve_cache_directory(root.path, StorageCreationMode::Create).ok());
+      resolve_test_cache_directory(root.path, StorageCreationMode::Create)
+          .ok());
   FileDescriptor directory(
       open(root.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC));
   ASSERT_GE(directory.get(), 0);
@@ -144,10 +150,12 @@ TEST(CoreAICacheRootTest, RecreatesRemovedRoot) {
   ASSERT_NE(storage.url, nil);
   NSURL* root = [storage.url URLByAppendingPathComponent:@"cache"];
   ASSERT_TRUE(
-      resolve_cache_directory(root.path, StorageCreationMode::Create).ok());
+      resolve_test_cache_directory(root.path, StorageCreationMode::Create)
+          .ok());
   ASSERT_EQ(rmdir(root.fileSystemRepresentation), 0);
   ASSERT_TRUE(
-      resolve_cache_directory(root.path, StorageCreationMode::Create).ok());
+      resolve_test_cache_directory(root.path, StorageCreationMode::Create)
+          .ok());
   EXPECT_TRUE(backup_excluded(root));
 }
 
@@ -156,7 +164,8 @@ TEST(CoreAICacheRootTest, NewRootAndDescendantsUseFirstUnlockProtection) {
   ASSERT_NE(sandbox.url, nil);
   NSURL* root = [sandbox.url URLByAppendingPathComponent:@"cache"];
   ASSERT_TRUE(
-      resolve_cache_directory(root.path, StorageCreationMode::Create).ok());
+      resolve_test_cache_directory(root.path, StorageCreationMode::Create)
+          .ok());
   FileDescriptor directory(
       open_directory_at(AT_FDCWD, root.fileSystemRepresentation));
   ASSERT_GE(directory.get(), 0);
@@ -201,7 +210,7 @@ TEST(CoreAICacheRootTest, PreservesExistingRootProtection) {
   ASSERT_TRUE([before[NSFileProtectionKey] isEqual:NSFileProtectionComplete]);
   for (StorageCreationMode mode :
        {StorageCreationMode::OpenExisting, StorageCreationMode::Create}) {
-    ASSERT_TRUE(resolve_cache_directory(root.path, mode).ok());
+    ASSERT_TRUE(resolve_test_cache_directory(root.path, mode).ok());
     NSDictionary* after = [manager attributesOfItemAtPath:root.path
                                                     error:&error];
     ASSERT_NE(after, nil) << error.description.UTF8String;
@@ -222,8 +231,8 @@ TEST(CoreAICacheRootTest, SupportsSymlinkAndAnchorsResolvedDirectory) {
           first.fileSystemRepresentation, configured.fileSystemRepresentation),
       0);
 
-  auto resolved =
-      resolve_cache_directory(configured.path, StorageCreationMode::Create);
+  auto resolved = resolve_test_cache_directory(
+      configured.path, StorageCreationMode::Create);
   ASSERT_TRUE(resolved.ok());
   ASSERT_TRUE(resolved->has_value());
   struct stat target_info;
@@ -257,19 +266,21 @@ TEST(CoreAICacheRootTest, RejectsInvalidRootsConsistently) {
        {StorageCreationMode::OpenExisting, StorageCreationMode::Create}) {
     SCOPED_TRACE(static_cast<int>(mode));
     EXPECT_EQ(
-        resolve_cache_directory(nil, mode).error(), Error::InvalidArgument);
+        resolve_test_cache_directory(nil, mode).error(),
+        Error::InvalidArgument);
     for (NSString* path in
          @[ @"", @"relative", @"~", @"~/cache", @"~nobody/cache" ]) {
       SCOPED_TRACE(path.UTF8String);
       EXPECT_EQ(
-          resolve_cache_directory(path, mode).error(), Error::InvalidArgument);
+          resolve_test_cache_directory(path, mode).error(),
+          Error::InvalidArgument);
     }
     for (NSString* path in @[
            regular.path,
            [regular.path stringByAppendingPathComponent:@"child"]
          ]) {
       EXPECT_EQ(
-          resolve_cache_directory(path, mode).error(),
+          resolve_test_cache_directory(path, mode).error(),
           mode == StorageCreationMode::Create ? Error::InvalidArgument
                                               : Error::AccessFailed);
     }

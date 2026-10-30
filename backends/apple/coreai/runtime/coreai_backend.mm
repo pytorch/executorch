@@ -89,9 +89,9 @@ class CoreAIBackend final : public BackendInterface {
       if (!manifest.ok()) {
         return manifest.error();
       }
-      auto assets = select_host_bundle(manifest.get());
-      if (!assets.ok()) {
-        return assets.error();
+      auto host_bundle = select_host_bundle(manifest.get());
+      if (!host_bundle.ok()) {
+        return host_bundle.error();
       }
       auto configured = cache_directory_option(context);
       if (!configured.ok()) {
@@ -100,24 +100,19 @@ class CoreAIBackend final : public BackendInterface {
       id<ETCoreAIModelLoading> loader = ETCoreAICreateModelLoader();
       ET_CHECK_OR_RETURN_ERROR(
           loader != nil, Internal, "Cannot create Core AI loader");
-      auto cache_directory = resolve_cache_directory(
-          configured.get(), StorageCreationMode::Create);
+      auto cache_directory = create_cache_directory(configured.get());
       if (!cache_directory.ok()) {
         return cache_directory.error();
       }
-      ET_CHECK_OR_RETURN_ERROR(
-          cache_directory->has_value(),
-          AccessFailed,
-          "Core AI cache directory disappeared");
       auto prepared = acquire_model(
-          assets.get(),
+          host_bundle.get(),
           context.get_named_data_map(),
-          cache_directory->value(),
+          cache_directory.get(),
           loader);
       if (!prepared.ok()) {
         return prepared.error();
       }
-      auto session = bind_session(prepared.get(), assets->bundle);
+      auto session = bind_session(prepared.get(), host_bundle->bundle);
       if (!session.ok()) {
         return session.error();
       }
@@ -126,8 +121,8 @@ class CoreAIBackend final : public BackendInterface {
           handle != nullptr,
           MemoryAllocationFailed,
           "Cannot allocate Core AI handle");
-      handle->input_count = assets->bundle.inputs.count;
-      handle->output_count = assets->bundle.outputs.count;
+      handle->input_count = host_bundle->bundle.inputs.count;
+      handle->output_count = host_bundle->bundle.outputs.count;
       handle->session = session.get();
       processed->Free();
       return static_cast<DelegateHandle*>(handle.release());

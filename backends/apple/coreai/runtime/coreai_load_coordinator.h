@@ -26,7 +26,7 @@ runtime::Result<SelectedHostBundle> select_host_bundle(
 // The cache entry lock outlives all SDK callbacks and bookmark publication.
 // Cleanup after a restore hit or durable publication is best-effort.
 runtime::Result<id<ETCoreAIPreparedModel>> acquire_model(
-    const SelectedHostBundle& assets,
+    const SelectedHostBundle& host_bundle,
     const runtime::NamedDataMap* named_data,
     const CacheDirectory& cache_directory,
     id<ETCoreAIModelLoading> loader);

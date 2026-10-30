@@ -124,7 +124,7 @@ Result<NSURL*> acquisition_staged_url(
   auto key = test_cache_key(bundle);
   if (!key.ok())
     return key.error();
-  return [[[root URLByAppendingPathComponent:@"staging"]
+  return [[[root URLByAppendingPathComponent:@"sources"]
       URLByAppendingPathComponent:key.get()]
       URLByAppendingPathComponent:bundle.bundle_name];
 }
@@ -316,14 +316,8 @@ int acquisition_child_mode(int argc, char** argv) {
   auto selected = select_bundle(parsed.get(), @"arch_b", @"macOS");
   if (!selected.ok())
     return 5;
-  char* end = nullptr;
-  errno = 0;
-  const long descriptor = std::strtol(argv[4], &end, 10);
-  if (errno != 0 || end == argv[4] || *end != '\0' || descriptor < 0 ||
-      descriptor > INT_MAX)
-    return 6;
-  const int fd = static_cast<int>(descriptor);
-  if (fcntl(fd, F_GETFD) < 0)
+  const int fd = parse_child_fd(argv[4]);
+  if (fd < 0 || fcntl(fd, F_GETFD) < 0)
     return 6;
   signal(SIGPIPE, SIG_IGN);
   if (!send_child_byte(fd, 'C'))

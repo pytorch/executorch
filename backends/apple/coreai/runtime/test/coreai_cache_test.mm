@@ -17,8 +17,8 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include "coreai_bookmark_fixture.h"
 #include "coreai_cache.h"
+#include "coreai_cache_entry_fixture.h"
 #include "coreai_fake_loader.h"
 #include "coreai_fault_scope.h"
 #include "coreai_filesystem_fixture.h"
@@ -88,7 +88,7 @@ AssertionResult seed_cache(
   CacheEntry entry{
       key.get(),
       nil,
-      [[root URLByAppendingPathComponent:@"staging"]
+      [[root URLByAppendingPathComponent:@"sources"]
           URLByAppendingPathComponent:key.get()]};
   auto lock = acquire_test_cache_entry(root.path, entry.key);
   if (!lock.ok()) {
@@ -449,7 +449,7 @@ TEST_F(CoreAICacheTest, ClearsOptionAndDeviceVariantsPreservingUnrelatedModel) {
   }
 }
 
-TEST_F(CoreAICacheTest, ClearsStagingOnlyEntriesWithoutSdk) {
+TEST_F(CoreAICacheTest, ClearsSourceOnlyEntriesWithoutSdk) {
   @autoreleasepool {
     TestDirectory root;
     BookmarkLoaderScope fake;
@@ -465,7 +465,7 @@ TEST_F(CoreAICacheTest, ClearsStagingOnlyEntriesWithoutSdk) {
   }
 }
 
-TEST_F(CoreAICacheTest, MaintenanceUnlinksStagingRootWithoutFollowingIt) {
+TEST_F(CoreAICacheTest, MaintenanceUnlinksSourcesRootWithoutFollowingIt) {
   @autoreleasepool {
     TestDirectory root, outside;
     BookmarkLoaderScope fake;
@@ -531,7 +531,7 @@ TEST_F(CoreAICacheTest, ProcessedBuffersRemainAliveThroughEviction) {
 
 TEST_F(
     CoreAICacheTest,
-    InventoriesBookmarkAndStagingUnionPreservingUnownedFiles) {
+    InventoriesBookmarkAndSourceUnionPreservingUnownedFiles) {
   @autoreleasepool {
     TestDirectory root;
     BookmarkLoaderScope fake;
@@ -547,7 +547,7 @@ TEST_F(
     ASSERT_TRUE(seed_cache(
         root.url, cache_manifest('3'), fake.loader, stage_only, false, true));
     NSURL* temporary =
-        [root.url URLByAppendingPathComponent:@"staging/.staging-unkeyed"];
+        [root.url URLByAppendingPathComponent:@"sources/.pending-unkeyed"];
     ASSERT_TRUE([NSFileManager.defaultManager createDirectoryAtURL:temporary
                                        withIntermediateDirectories:NO
                                                         attributes:nil
@@ -586,7 +586,7 @@ TEST_F(
   }
 }
 
-TEST_F(CoreAICacheTest, RemovesStagingOnlyEntriesWithoutSdkAvailability) {
+TEST_F(CoreAICacheTest, RemovesSourceOnlyEntriesWithoutSdkAvailability) {
   @autoreleasepool {
     TestDirectory root;
     BookmarkLoaderScope fake;
@@ -672,9 +672,10 @@ TEST_F(CoreAICacheTest, WarnsAndContinuesPastMissingOrCorruptBookmarks) {
               logs.find("SDK eviction could not be confirmed"),
               std::string::npos);
           EXPECT_EQ(
-              logs.find(std::string(
-                  static_cast<const char*>(damaged.bookmark.bytes),
-                  damaged.bookmark.length)),
+              logs.find(
+                  std::string(
+                      static_cast<const char*>(damaged.bookmark.bytes),
+                      damaged.bookmark.length)),
               std::string::npos);
         }
         cache_entry_removed(root.url, damaged);

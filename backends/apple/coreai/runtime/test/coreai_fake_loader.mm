@@ -11,6 +11,7 @@
 #include "coreai_test_utils.h"
 
 using executorch::backends::coreai::testing::FakeBridgeState;
+using executorch::backends::coreai::testing::test_deadline;
 
 // ARC keeps failed asynchronous work from outliving its state storage.
 @interface CoreAIFakeBridgeContext : NSObject {
@@ -83,10 +84,6 @@ void run_async(CoreAIFakeBridgeContext* context, void (^work)()) {
   }
   return ::testing::AssertionSuccess();
 }
-
-dispatch_time_t cleanup_deadline() {
-  return executorch::backends::coreai::testing::test_deadline();
-}
 } // namespace
 
 @interface FakeOutputOwner : NSObject
@@ -150,7 +147,7 @@ dispatch_time_t cleanup_deadline() {
     if (ready != nil) {
       dispatch_semaphore_signal(ready);
       if (proceed == nil ||
-          dispatch_semaphore_wait(proceed, cleanup_deadline()) != 0) {
+          dispatch_semaphore_wait(proceed, test_deadline()) != 0) {
         ++context->state.input_wait_timeouts;
         completion(nil, fake_error(ETCoreAIErrorRuntime));
         return;
@@ -467,7 +464,7 @@ ScopedFakeBridgeState::ScopedFakeBridgeState()
 }
 
 ScopedFakeBridgeState::~ScopedFakeBridgeState() {
-  auto drained = wait_for_callbacks(cleanup_deadline());
+  auto drained = wait_for_callbacks(test_deadline());
   EXPECT_TRUE(drained);
   if (drained) {
     id<ETCoreAIModelLoading> loader = context_->state.bookmark_loader;
@@ -516,7 +513,7 @@ BookmarkLoaderScope::~BookmarkLoaderScope() {
   if (context_ == nil) {
     return;
   }
-  auto drained = ::wait_for_callbacks(context_, cleanup_deadline());
+  auto drained = ::wait_for_callbacks(context_, test_deadline());
   EXPECT_TRUE(drained);
   if (drained) {
     [loader clearRetainedState];

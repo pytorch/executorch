@@ -10,7 +10,7 @@
 
 #include <gtest/gtest.h>
 #include <limits.h>
-#include "coreai_bookmark_fixture.h"
+#include "coreai_cache_entry_fixture.h"
 #include "coreai_manifest_fixture.h"
 
 using namespace executorch::runtime;
@@ -30,7 +30,7 @@ NSString* key_for_device(NSString* device) {
 }
 
 TEST(CoreAICacheKeyIdentityTest, IgnoresBindingsAndDeliveryLocation) {
-  auto baseline = bookmark_bundle();
+  auto baseline = selected_bundle(manifest_dict());
   ASSERT_TRUE(baseline.ok());
   auto expected = test_cache_key(baseline.get());
   ASSERT_TRUE(expected.ok());
@@ -49,7 +49,7 @@ TEST(CoreAICacheKeyIdentityTest, IgnoresBindingsAndDeliveryLocation) {
 }
 
 TEST(CoreAICacheKeyIdentityTest, SeparatesExportedBundleIdentity) {
-  auto baseline = bookmark_bundle();
+  auto baseline = selected_bundle(manifest_dict());
   ASSERT_TRUE(baseline.ok());
   auto expected = test_cache_key(baseline.get());
   ASSERT_TRUE(expected.ok());
@@ -60,7 +60,7 @@ TEST(CoreAICacheKeyIdentityTest, SeparatesExportedBundleIdentity) {
   auto reweighted = selected_bundle(digest_changed);
   ASSERT_TRUE(reweighted.ok());
 
-  auto aot = bookmark_bundle(true);
+  auto aot = selected_bundle(aot_manifest_dict());
   ASSERT_TRUE(aot.ok());
   for (const SelectedBundle* bundle : {&reweighted.get(), &aot.get()}) {
     auto actual = test_cache_key(*bundle);
@@ -97,7 +97,7 @@ TEST(CoreAICacheKeyIdentityTest, RejectsUnknownBundleName) {
 }
 
 TEST(CoreAICacheKeyIdentityTest, SeparatesDeviceAndSpecializationIdentity) {
-  auto bundle = bookmark_bundle();
+  auto bundle = selected_bundle(manifest_dict());
   ASSERT_TRUE(bundle.ok());
   auto baseline = test_cache_key(bundle.get());
   auto platform =
@@ -119,7 +119,7 @@ TEST(CoreAICacheKeyIdentityTest, SeparatesDeviceAndSpecializationIdentity) {
 }
 
 TEST(CoreAICacheKeyIdentityTest, RejectsIncompletePlainIdentity) {
-  auto bundle = bookmark_bundle();
+  auto bundle = selected_bundle(manifest_dict());
   ASSERT_TRUE(bundle.ok());
   EXPECT_FALSE(
       cache_variant_key(bundle.get(), nil, @"arch_b", @"default").ok());
@@ -184,7 +184,7 @@ TEST(CoreAICacheKeyFormatTest, RequiresExactHashBoundaries) {
 }
 
 TEST(CoreAICacheKeyFormatTest, LockStripesStayWithinConfiguredPool) {
-  auto bundle = bookmark_bundle();
+  auto bundle = selected_bundle(manifest_dict());
   ASSERT_TRUE(bundle.ok());
   NSMutableSet<NSString*>* names = [NSMutableSet set];
   for (NSUInteger index = 0; index < 4096; ++index) {

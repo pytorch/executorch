@@ -21,6 +21,14 @@ namespace {
 using runtime::Error;
 using runtime::Result;
 
+Error require_coreai_available() {
+  ET_CHECK_OR_RETURN_ERROR(
+      ETCoreAIIsAvailable(),
+      NotSupported,
+      "Core AI requires macOS 27 or iOS 27");
+  return Error::Ok;
+}
+
 Result<id<ETCoreAIPreparedModel>> wait_for_acquisition(
     void (^operation)(ETCoreAIAcquisitionCompletion)) {
   ET_CHECK_OR_RETURN_ERROR(
@@ -71,11 +79,11 @@ Result<id<ETCoreAIPreparedModel>> restore(
 }
 
 void cleanup_source(const LockedCacheEntry& cache_entry) {
-  const Error error = cache_entry.remove_staging();
+  const Error error = cache_entry.remove_source();
   if (error != Error::Ok) {
     ET_LOG(
         Error,
-        "Cannot clean Core AI staging: error=%u",
+        "Cannot remove Core AI source bundle: error=%u",
         static_cast<unsigned>(error));
   }
 }
@@ -120,10 +128,7 @@ Result<SelectedHostBundle> select_host_bundle(const Manifest& manifest) {
           isOperatingSystemAtLeastVersion:manifest.minimum_version],
       DelegateInvalidCompatibility,
       "Core AI model requires a newer operating system");
-  ET_CHECK_OR_RETURN_ERROR(
-      ETCoreAIIsAvailable(),
-      NotSupported,
-      "Core AI requires macOS 27 or iOS 27");
+  ET_CHECK_OK_OR_RETURN_ERROR(require_coreai_available());
 #if TARGET_OS_OSX
   NSString* platform = @"macOS";
 #elif TARGET_OS_IOS
@@ -141,7 +146,7 @@ Result<SelectedHostBundle> select_host_bundle(const Manifest& manifest) {
 }
 
 Result<id<ETCoreAIPreparedModel>> acquire_model(
-    const SelectedHostBundle& assets,
+    const SelectedHostBundle& host_bundle,
     const runtime::NamedDataMap* named_data,
     const CacheDirectory& cache_directory,
     id<ETCoreAIModelLoading> loader) {
@@ -149,7 +154,10 @@ Result<id<ETCoreAIPreparedModel>> acquire_model(
       loader != nil, InvalidArgument, "Missing Core AI model loader");
   NSString* specialization = [loader.specializationIdentifier copy];
   auto key = cache_variant_key(
-      assets.bundle, assets.platform, assets.architecture, specialization);
+      host_bundle.bundle,
+      host_bundle.platform,
+      host_bundle.architecture,
+      specialization);
   if (!key.ok()) {
     return key.error();
   }
@@ -185,7 +193,10 @@ Result<id<ETCoreAIPreparedModel>> acquire_model(
         Info, "Core AI cache miss: no bookmark, key=%s", cache_key.UTF8String);
   }
   auto source = prepare_source_bundle(
-      assets.bundle, named_data, *locked.get(), CorruptBundlePolicy::Replace);
+      host_bundle.bundle,
+      named_data,
+      *locked.get(),
+      CorruptBundlePolicy::Replace);
   if (!source.ok()) {
     return source.error();
   }
@@ -195,7 +206,7 @@ Result<id<ETCoreAIPreparedModel>> acquire_model(
         ET_LOG(
             Info,
             "Core AI specialization started: kind=%s, key=%s",
-            assets.bundle.aot_compiled ? "aot" : "source",
+            host_bundle.bundle.aot_compiled ? "aot" : "source",
             cache_key.UTF8String);
         [loader specializeModelAtURL:url completion:completion];
       });
@@ -243,10 +254,7 @@ Error clear_cache_entry(
         bookmark->state == CacheBookmarkState::Missing ? "missing" : "corrupt");
   } else {
     if (loader == nil) {
-      ET_CHECK_OR_RETURN_ERROR(
-          ETCoreAIIsAvailable(),
-          NotSupported,
-          "Core AI requires macOS 27 or iOS 27");
+      ET_CHECK_OK_OR_RETURN_ERROR(require_coreai_available());
       loader = ETCoreAICreateModelLoader();
       ET_CHECK_OR_RETURN_ERROR(
           loader != nil, Internal, "Cannot create Core AI model loader");
@@ -258,7 +266,7 @@ Error clear_cache_entry(
         "Core AI SDK cache entry absence confirmed: key=%s",
         key.UTF8String);
   }
-  ET_CHECK_OK_OR_RETURN_ERROR(maintenance.remove_staging());
+  ET_CHECK_OK_OR_RETURN_ERROR(maintenance.remove_source());
   ET_CHECK_OK_OR_RETURN_ERROR(maintenance.remove_bookmark());
   ET_LOG(Info, "Core AI local cache entry cleared: key=%s", key.UTF8String);
   return Error::Ok;

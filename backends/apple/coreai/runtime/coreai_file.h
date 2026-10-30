@@ -15,11 +15,6 @@
 
 namespace executorch::backends::coreai {
 
-enum class StorageCreationMode {
-  OpenExisting,
-  Create,
-};
-
 class FileDescriptor {
  public:
   explicit FileDescriptor(int fd = -1) : fd_(fd) {}

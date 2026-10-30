@@ -16,9 +16,9 @@ class DataLoader;
 namespace executorch::backends::coreai {
 
 /**
- * Clears tracked SDK entries, keyed staging, and bookmarks in a dedicated
- * Core AI cache directory. Null selects the same default as loading; supplied
- * paths must be absolute. Missing directories are successful no-ops.
+ * Clears tracked SDK entries, per-key source bundles, and bookmarks in a
+ * dedicated Core AI cache directory. Null selects the same default as loading;
+ * supplied paths must be absolute. Missing directories are successful no-ops.
  * PTEs, stable lock files, and unkeyed temporaries are not removed.
  * SDK entries without saved bookmarks cannot be targeted.
  *
@@ -33,10 +33,10 @@ namespace executorch::backends::coreai {
 
 /**
  * Clears all recorded cache variants referenced by every CoreAI delegate in
- * the PTE after validating its manifests. Model prefixes select every device
- * and specialization variant. Discovery does not require host compatibility or
- * SDK availability. Actual SDK eviction requires a loader. Does not initialize
- * delegates or materialize Core AI assets.
+ * the PTE after validating its manifests. Each exported bundle's identity
+ * selects every device and specialization variant. Discovery does not require
+ * host compatibility or SDK availability; evicting an entry with a saved
+ * bookmark does. Does not initialize delegates or materialize Core AI assets.
  *
  * A null directory selects the same Caches default as backend initialization.
  * Supplied paths must resolve to valid explicit cache directories; they never

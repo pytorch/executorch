@@ -17,7 +17,7 @@
 namespace executorch::backends::coreai::testing {
 using runtime::Error;
 using runtime::Result;
-TEST_F(CoreAISourceTest, StagingRemainsAnchoredWhenConfiguredSymlinkChanges) {
+TEST_F(CoreAISourceTest, SourcesRemainAnchoredWhenConfiguredSymlinkChanges) {
   TestDirectory storage;
   ASSERT_NE(storage.url, nil);
   NSURL* target = [storage.url URLByAppendingPathComponent:@"target"];
@@ -29,7 +29,7 @@ TEST_F(CoreAISourceTest, StagingRemainsAnchoredWhenConfiguredSymlinkChanges) {
       symlink(
           target.fileSystemRepresentation, configured.fileSystemRepresentation),
       0);
-  auto bundle = source_manifest();
+  auto bundle = selected_bundle(manifest_dict());
   ASSERT_TRUE(bundle.ok());
   auto key = test_cache_key(bundle.get());
   ASSERT_TRUE(key.ok());
@@ -75,7 +75,8 @@ TEST_F(CoreAISourceTest, RejectsMalformedStoredBundlesWithoutReplacement) {
       TestData data;
       if (aot)
         aot_data(data, @"arch_b");
-      auto manifest = source_manifest(aot);
+      auto manifest =
+          selected_bundle(aot ? aot_manifest_dict() : manifest_dict());
       ASSERT_TRUE(manifest.ok());
       auto source =
           prepare_source_bundle(manifest.get(), &data, storage.url.path);
@@ -124,7 +125,7 @@ TEST_F(CoreAISourceTest, RejectsMalformedStoredBundlesWithoutReplacement) {
       EXPECT_EQ(data.attempts, attempts);
       EXPECT_TRUE(snapshot_matches(storage.url, snapshot));
       EXPECT_TRUE(snapshot_matches(target.url, target_snapshot));
-      EXPECT_EQ(staging_directories(storage.url).count, 0u);
+      EXPECT_EQ(pending_directories(storage.url).count, 0u);
     }
   }
 }
@@ -146,7 +147,7 @@ TEST_F(CoreAISourceTest, ExplicitReplacementRepairsMalformedStoredBundles) {
     ASSERT_NE(storage.url, nil);
     ASSERT_NE(target.url, nil);
     TestData data;
-    auto bundle = source_manifest();
+    auto bundle = selected_bundle(manifest_dict());
     ASSERT_TRUE(bundle.ok());
     auto source = prepare_source_bundle(bundle.get(), &data, storage.url.path);
     ASSERT_TRUE(source.ok());
@@ -206,7 +207,7 @@ TEST_F(CoreAISourceTest, ExplicitReplacementRepairsMalformedStoredBundles) {
         isEqual:[NSData dataWithBytes:"model data" length:11]]));
     EXPECT_EQ(data.attempts, 2);
     EXPECT_EQ(data.requests, data.releases);
-    EXPECT_EQ(staging_directories(storage.url).count, 0u);
+    EXPECT_EQ(pending_directories(storage.url).count, 0u);
     EXPECT_TRUE(snapshot_matches(target.url, target_snapshot));
   }
 }
@@ -219,7 +220,7 @@ TEST_F(CoreAISourceTest, PublishedDirectoriesUseDefaultPermissions) {
   struct stat expected;
   ASSERT_EQ(stat(reference.fileSystemRepresentation, &expected), 0);
   TestData data;
-  auto manifest = source_manifest();
+  auto manifest = selected_bundle(manifest_dict());
   ASSERT_TRUE(manifest.ok());
   auto source = prepare_source_bundle(manifest.get(), &data, storage.url.path);
   ASSERT_TRUE(source.ok());
@@ -239,7 +240,7 @@ TEST_F(CoreAISourceTest, PermissionErrorsRemainDistinctFromCorruptEntries) {
   TestDirectory storage;
   ASSERT_NE(storage.url, nil);
   TestData data;
-  auto manifest = source_manifest();
+  auto manifest = selected_bundle(manifest_dict());
   ASSERT_TRUE(manifest.ok());
   auto source = prepare_source_bundle(manifest.get(), &data, storage.url.path);
   ASSERT_TRUE(source.ok());
@@ -271,7 +272,7 @@ TEST_F(CoreAISourceTest, PreservesNamedDataErrorsWithoutRetrying) {
     TestData data;
     data.fail_at = 1;
     data.failure_error = error;
-    auto manifest = source_manifest();
+    auto manifest = selected_bundle(manifest_dict());
     ASSERT_TRUE(manifest.ok());
     EXPECT_EQ(
         prepare_source_bundle(manifest.get(), &data, storage.url.path).error(),
@@ -279,7 +280,7 @@ TEST_F(CoreAISourceTest, PreservesNamedDataErrorsWithoutRetrying) {
     EXPECT_EQ(data.attempts, 1);
     EXPECT_EQ(data.requests, 0);
     EXPECT_EQ(data.releases, 0);
-    EXPECT_EQ(staging_directories(storage.url).count, 0u);
+    EXPECT_EQ(pending_directories(storage.url).count, 0u);
     EXPECT_FALSE([NSFileManager.defaultManager
         fileExistsAtPath:source_entry(storage.url, manifest.get()).path]);
   }
@@ -290,14 +291,14 @@ TEST_F(CoreAISourceTest, MissingNamedDataIsInvalidExternalData) {
   ASSERT_NE(storage.url, nil);
   TestData data;
   data.files.clear();
-  auto manifest = source_manifest();
+  auto manifest = selected_bundle(manifest_dict());
   ASSERT_TRUE(manifest.ok());
   EXPECT_EQ(
       prepare_source_bundle(manifest.get(), &data, storage.url.path).error(),
       Error::InvalidExternalData);
   EXPECT_EQ(data.attempts, 1);
   EXPECT_EQ(data.requests, 0);
-  EXPECT_EQ(staging_directories(storage.url).count, 0u);
+  EXPECT_EQ(pending_directories(storage.url).count, 0u);
 }
 
 } // namespace executorch::backends::coreai::testing

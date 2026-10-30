@@ -74,23 +74,19 @@ void aot_data(TestData& data, NSString* arch) {
   data.files[data.required_prefix + "nested/weights.bin"] = "weights";
 }
 
-Result<SelectedBundle> source_manifest(bool aot) {
-  return selected_bundle(aot ? aot_manifest_dict() : manifest_dict());
-}
-
 NSString* source_key(const SelectedBundle& bundle) {
   auto key = cache_variant_key(bundle, @"macOS", @"arch_b", @"default");
   EXPECT_TRUE(key.ok());
   return key.ok() ? key.get() : nil;
 }
 
-NSURL* staging_root(NSURL* cache_root) {
-  return [cache_root URLByAppendingPathComponent:@"staging" isDirectory:YES];
+NSURL* sources_root(NSURL* cache_root) {
+  return [cache_root URLByAppendingPathComponent:@"sources" isDirectory:YES];
 }
 
 NSURL* source_entry(NSURL* cache_root, const SelectedBundle& bundle) {
   return
-      [staging_root(cache_root) URLByAppendingPathComponent:source_key(bundle)
+      [sources_root(cache_root) URLByAppendingPathComponent:source_key(bundle)
                                                 isDirectory:YES];
 }
 

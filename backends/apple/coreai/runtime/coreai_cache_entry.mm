@@ -26,12 +26,12 @@ using runtime::Result;
 
 constexpr size_t kBookmarkByteLimit = 8 * 1024 * 1024;
 NSString* const kBookmarksDirectory = @"bookmarks";
-NSString* const kStagingDirectory = @"staging";
+NSString* const kSourcesDirectory = @"sources";
 NSString* const kLocksDirectory = @"locks";
-NSString* const kBookmarkExtension = @".bookmark";
+NSString* const kBookmarkSuffix = @(kBookmarkExtension);
 
 NSString* bookmark_name(NSString* key) {
-  return [key stringByAppendingString:kBookmarkExtension];
+  return [key stringByAppendingString:kBookmarkSuffix];
 }
 
 Result<std::optional<FileDescriptor>>
@@ -48,7 +48,7 @@ open_child(int root_fd, NSString* name, StorageCreationMode mode) {
 
 Result<bool> entry_exists(int root_fd, NSString* key) {
   for (NSString* directory_name in
-       @[ kBookmarksDirectory, kStagingDirectory ]) {
+       @[ kBookmarksDirectory, kSourcesDirectory ]) {
     auto opened =
         open_child(root_fd, directory_name, StorageCreationMode::OpenExisting);
     if (!opened.ok()) {
@@ -86,7 +86,7 @@ Result<FileDescriptor> duplicate_directory(int fd) {
 Result<NSArray<NSString*>*> inventory_cache_keys(
     const CacheDirectory& directory) {
   NSMutableSet<NSString*>* keys = [NSMutableSet set];
-  for (NSString* child_name in @[ kBookmarksDirectory, kStagingDirectory ]) {
+  for (NSString* child_name in @[ kBookmarksDirectory, kSourcesDirectory ]) {
     auto child = open_child(
         directory.descriptor.get(),
         child_name,
@@ -105,11 +105,11 @@ Result<NSArray<NSString*>*> inventory_cache_keys(
     for (NSString* name in names.get()) {
       NSString* key = name;
       if ([child_name isEqual:kBookmarksDirectory]) {
-        if (![name hasSuffix:kBookmarkExtension] ||
-            name.length <= kBookmarkExtension.length) {
+        if (![name hasSuffix:kBookmarkSuffix] ||
+            name.length <= kBookmarkSuffix.length) {
           continue;
         }
-        key = [name substringToIndex:name.length - kBookmarkExtension.length];
+        key = [name substringToIndex:name.length - kBookmarkSuffix.length];
       }
       if (is_cache_key(key)) {
         [keys addObject:key];
@@ -159,6 +159,7 @@ Result<std::unique_ptr<LockedCacheEntry>> LockedCacheEntry::acquire_impl(
   }
   FileDescriptor directory = std::move(duplicated.get());
   const bool create = mode == StorageCreationMode::Create;
+  // Checking before locking avoids creating locks/ for a missing entry.
   if (!create) {
     auto exists = entry_exists(directory.get(), key);
     if (!exists.ok()) {
@@ -189,6 +190,7 @@ Result<std::unique_ptr<LockedCacheEntry>> LockedCacheEntry::acquire_impl(
       retry_eintr([&] { return flock(lock_file.get(), LOCK_EX); }) == 0,
       AccessFailed,
       "Cannot lock Core AI cache entry");
+  // Another process may have cleared the entry while this one waited.
   if (!create) {
     auto exists = entry_exists(directory.get(), key);
     if (!exists.ok()) {
@@ -204,7 +206,7 @@ Result<std::unique_ptr<LockedCacheEntry>> LockedCacheEntry::acquire_impl(
   }
   const CacheEntryPersistence persistence = bookmarks->has_value()
       ? CacheEntryPersistence::BookmarkCapable
-      : CacheEntryPersistence::StagingOnly;
+      : CacheEntryPersistence::SourceOnly;
   FileDescriptor bookmark_directory =
       bookmarks->has_value() ? std::move(bookmarks->value()) : FileDescriptor();
   return std::unique_ptr<LockedCacheEntry>(new LockedCacheEntry(
@@ -217,7 +219,7 @@ Result<std::unique_ptr<LockedCacheEntry>> LockedCacheEntry::acquire_impl(
 }
 
 Result<NSData*> LockedCacheEntry::read_bookmark() const {
-  if (persistence_ == CacheEntryPersistence::StagingOnly) {
+  if (persistence_ == CacheEntryPersistence::SourceOnly) {
     return static_cast<NSData*>(nil);
   }
   FileDescriptor file(retry_eintr([&] {
@@ -243,13 +245,12 @@ Result<NSData*> LockedCacheEntry::read_bookmark() const {
       bytes != nil, MemoryAllocationFailed, "Cannot allocate Core AI bookmark");
   size_t offset = 0;
   while (offset < bytes.length) {
-    const ssize_t count = ::read(
-        file.get(),
-        static_cast<char*>(bytes.mutableBytes) + offset,
-        bytes.length - offset);
-    if (count < 0 && errno == EINTR) {
-      continue;
-    }
+    const ssize_t count = retry_eintr([&] {
+      return ::read(
+          file.get(),
+          static_cast<char*>(bytes.mutableBytes) + offset,
+          bytes.length - offset);
+    });
     ET_CHECK_OR_RETURN_ERROR(
         count > 0, AccessFailed, "Cannot read Core AI bookmark");
     offset += count;
@@ -266,37 +267,43 @@ Error LockedCacheEntry::write_bookmark(NSData* data) const {
   ET_CHECK_OR_RETURN_ERROR(
       persistence_ == CacheEntryPersistence::BookmarkCapable,
       InvalidArgument,
-      "Cannot write through a staging-only Core AI cache entry lock");
+      "Cannot write through a source-only Core AI cache entry lock");
   return publish_storage_data(bookmarks_.get(), bookmark_name(key_), data);
 }
 
-Result<std::optional<FileDescriptor>> LockedCacheEntry::open_staging_directory(
+Result<std::optional<FileDescriptor>> LockedCacheEntry::open_source_directory(
     StorageCreationMode mode) const {
-  return open_child(root_.get(), kStagingDirectory, mode);
+  return open_child(root_.get(), kSourcesDirectory, mode);
 }
 
-Result<CacheStagingDirectory> LockedCacheEntry::prepare_staging_directory()
-    const {
-  auto staging = open_staging_directory(StorageCreationMode::Create);
-  if (!staging.ok()) {
-    return staging.error();
+Error LockedCacheEntry::apply_to_source(
+    Error (*operation)(int, NSString*, StorageRemovalPolicy),
+    StorageRemovalPolicy policy) const {
+  auto sources = open_source_directory(StorageCreationMode::OpenExisting);
+  if (!sources.ok()) {
+    return sources.error();
   }
-  NSURL* url = [[NSURL fileURLWithPath:root_path_ isDirectory:YES]
-      URLByAppendingPathComponent:kStagingDirectory
-                      isDirectory:YES];
-  return CacheStagingDirectory{std::move(staging->value()), url};
-}
-
-Error LockedCacheEntry::remove_staging() const {
-  auto staging = open_staging_directory(StorageCreationMode::OpenExisting);
-  if (!staging.ok()) {
-    return staging.error();
-  }
-  if (!staging->has_value()) {
+  if (!sources->has_value()) {
     return Error::Ok;
   }
-  return remove_storage_directory(
-      staging->value().get(), key_, StorageRemovalPolicy::Strict);
+  return operation(sources->value().get(), key_, policy);
+}
+
+Result<CacheSourceDirectory> LockedCacheEntry::prepare_source_directory()
+    const {
+  auto sources = open_source_directory(StorageCreationMode::Create);
+  if (!sources.ok()) {
+    return sources.error();
+  }
+  NSURL* url = [[NSURL fileURLWithPath:root_path_ isDirectory:YES]
+      URLByAppendingPathComponent:kSourcesDirectory
+                      isDirectory:YES];
+  return CacheSourceDirectory{std::move(sources->value()), url};
+}
+
+Error LockedCacheEntry::remove_source() const {
+  return apply_to_source(
+      remove_storage_directory, StorageRemovalPolicy::Strict);
 }
 
 CacheEntryMaintenance LockedCacheEntry::maintenance() const {
@@ -305,7 +312,7 @@ CacheEntryMaintenance LockedCacheEntry::maintenance() const {
 
 Result<CacheBookmarkInspection> CacheEntryMaintenance::inspect_bookmark()
     const {
-  if (entry_.persistence_ == CacheEntryPersistence::StagingOnly) {
+  if (entry_.persistence_ == CacheEntryPersistence::SourceOnly) {
     return CacheBookmarkInspection{CacheBookmarkState::Missing, nil};
   }
   struct stat info;
@@ -341,33 +348,17 @@ Error CacheEntryMaintenance::preflight() const {
         bookmark_name(entry_.key_),
         StorageRemovalPolicy::Maintenance));
   }
-  auto staging =
-      entry_.open_staging_directory(StorageCreationMode::OpenExisting);
-  if (!staging.ok()) {
-    return staging.error();
-  }
-  if (!staging->has_value()) {
-    return Error::Ok;
-  }
-  return preflight_storage_directory(
-      staging->value().get(), entry_.key_, StorageRemovalPolicy::Maintenance);
+  return entry_.apply_to_source(
+      preflight_storage_directory, StorageRemovalPolicy::Maintenance);
 }
 
-Error CacheEntryMaintenance::remove_staging() const {
-  auto staging =
-      entry_.open_staging_directory(StorageCreationMode::OpenExisting);
-  if (!staging.ok()) {
-    return staging.error();
-  }
-  if (!staging->has_value()) {
-    return Error::Ok;
-  }
-  return remove_storage_directory(
-      staging->value().get(), entry_.key_, StorageRemovalPolicy::Maintenance);
+Error CacheEntryMaintenance::remove_source() const {
+  return entry_.apply_to_source(
+      remove_storage_directory, StorageRemovalPolicy::Maintenance);
 }
 
 Error CacheEntryMaintenance::remove_bookmark() const {
-  if (entry_.persistence_ == CacheEntryPersistence::StagingOnly) {
+  if (entry_.persistence_ == CacheEntryPersistence::SourceOnly) {
     return Error::Ok;
   }
   return remove_storage_directory(

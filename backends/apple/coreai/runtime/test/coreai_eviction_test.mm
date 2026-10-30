@@ -11,7 +11,7 @@
 #include <pthread.h>
 #include <cstdlib>
 #include "coreai_acquisition_fixture.h"
-#include "coreai_bookmark_fixture.h"
+#include "coreai_cache_entry_fixture.h"
 #include "coreai_fake_loader.h"
 #include "coreai_fault_scope.h"
 #include "coreai_load_coordinator.h"
@@ -182,7 +182,7 @@ TEST_F(CoreAIEvictionTest, ConfirmedMissRecoveryEvictsOnlyCurrentBookmark) {
     BookmarkLoaderScope fake;
     ASSERT_NE(fake.loader, nil);
     TestData data;
-    auto selected = bookmark_bundle();
+    auto selected = selected_bundle(manifest_dict());
     ASSERT_TRUE(selected.ok());
     auto key_result = test_cache_key(selected.get());
     ASSERT_TRUE(key_result.ok());
@@ -247,7 +247,7 @@ TEST_F(
     BookmarkLoaderScope fake;
     ASSERT_NE(fake.loader, nil);
     TestData data;
-    auto selected = bookmark_bundle();
+    auto selected = selected_bundle(manifest_dict());
     ASSERT_TRUE(selected.ok());
     auto key_result = test_cache_key(selected.get());
     ASSERT_TRUE(key_result.ok());
@@ -255,7 +255,8 @@ TEST_F(
     EXPECT_EQ(
         clear_test_cache_entry(root.url.path, key, fake.loader), Error::Ok);
     EXPECT_EQ(fake.loader->evictions.load(), 0);
-    // Retain staging after publication to exercise clearing's failure paths.
+    // Retain the source bundle after publication to exercise clearing's failure
+    // paths.
     {
       StorageFaultScope fault(FaultPoint::Remove);
       ASSERT_EQ(
@@ -267,7 +268,7 @@ TEST_F(
     ASSERT_TRUE(saved_result.ok());
     NSData* saved = saved_result.get();
     ASSERT_NE(saved, nil);
-    NSURL* source_url = [[[root.url URLByAppendingPathComponent:@"staging"]
+    NSURL* source_url = [[[root.url URLByAppendingPathComponent:@"sources"]
         URLByAppendingPathComponent:key]
         URLByAppendingPathComponent:selected->path.lastPathComponent];
     EXPECT_TRUE(
@@ -335,7 +336,7 @@ TEST_F(
     TestDirectory root;
     ASSERT_NE(root.url, nil);
     TestData data;
-    auto selected = bookmark_bundle();
+    auto selected = selected_bundle(manifest_dict());
     ASSERT_TRUE(selected.ok());
     auto key_result = test_cache_key(selected.get());
     ASSERT_TRUE(key_result.ok());
@@ -362,7 +363,7 @@ TEST_F(
     ASSERT_TRUE(removed.ok());
     EXPECT_EQ(removed.get(), nil);
     EXPECT_EQ(loader->evictions.load(), 2);
-    NSURL* source_url = [[[root.url URLByAppendingPathComponent:@"staging"]
+    NSURL* source_url = [[[root.url URLByAppendingPathComponent:@"sources"]
         URLByAppendingPathComponent:key]
         URLByAppendingPathComponent:selected->path.lastPathComponent];
     EXPECT_FALSE(
@@ -379,7 +380,7 @@ TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
     BookmarkLoaderScope fake;
     ASSERT_NE(fake.loader, nil);
     TestData data;
-    auto selected = bookmark_bundle();
+    auto selected = selected_bundle(manifest_dict());
     ASSERT_TRUE(selected.ok());
     auto key_result = test_cache_key(selected.get());
     ASSERT_TRUE(key_result.ok());

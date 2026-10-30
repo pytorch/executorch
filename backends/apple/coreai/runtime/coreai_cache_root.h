@@ -24,10 +24,16 @@ struct CacheDirectory final {
 runtime::Result<NSString*> default_cache_directory();
 // Null selects the default; invalid explicit paths never fall back to it.
 runtime::Result<NSString*> cache_directory_path(const char* configured_path);
-// Resolves symlinks once and anchors the resulting directory with an owned
-// descriptor. OpenExisting returns no value when the directory is missing.
-runtime::Result<std::optional<CacheDirectory>> resolve_cache_directory(
-    NSString* path,
-    StorageCreationMode mode);
+
+// Both functions resolve a symlink in the final path component once and hold
+// the directory open, so later path changes cannot redirect the cache.
+//
+// Creates the directory if missing and excludes it from backup. A path that is
+// not a directory is the caller's configuration error: InvalidArgument.
+runtime::Result<CacheDirectory> create_cache_directory(NSString* path);
+// Returns no value when the directory is missing. A path that is not a
+// directory means existing storage is unusable: AccessFailed.
+runtime::Result<std::optional<CacheDirectory>> open_cache_directory(
+    NSString* path);
 
 } // namespace executorch::backends::coreai

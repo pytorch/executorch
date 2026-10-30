@@ -19,6 +19,9 @@ class SelectedBundle;
 bool is_cache_key(NSString* key);
 NSString* cache_key_bundle_identity(NSString* key);
 
+// Bookmark files are named key + extension, which bounds the key length.
+inline constexpr char kBookmarkExtension[] = ".bookmark";
+
 // Bundle identity excludes device and specialization so maintenance can find
 // every runtime variant of one exported bundle.
 runtime::Result<NSString*> bundle_identity(

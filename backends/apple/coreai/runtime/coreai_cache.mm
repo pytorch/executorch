@@ -27,8 +27,7 @@ Result<std::optional<CacheDirectory>> cache_directory(const char* path) {
   if (!configured.ok()) {
     return configured.error();
   }
-  return resolve_cache_directory(
-      configured.get(), StorageCreationMode::OpenExisting);
+  return open_cache_directory(configured.get());
 }
 
 Error clear_keys(const CacheDirectory& directory, NSArray<NSString*>* keys) {

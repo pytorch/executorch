@@ -140,7 +140,7 @@ void CoreAISourceTest::check_concurrent_source() {
   TestDirectory storage;
   ASSERT_NE(storage.url, nil);
   TestData data;
-  auto selected = source_manifest();
+  auto selected = selected_bundle(manifest_dict());
   ASSERT_TRUE(selected.ok());
   for (int pass = 0; pass < 2; ++pass) {
     SCOPED_TRACE(pass == 0 ? "cold" : "warm");
@@ -207,7 +207,7 @@ void CoreAISourceTest::check_concurrent_source() {
     EXPECT_EQ(data.metadata_requests, 0);
     EXPECT_EQ(
         [NSFileManager.defaultManager
-            contentsOfDirectoryAtPath:staging_root(storage.url).path
+            contentsOfDirectoryAtPath:sources_root(storage.url).path
                                 error:nil]
             .count,
         1u);
@@ -219,7 +219,7 @@ TEST_F(CoreAISourceTest, PerKeyLockSerializesColdAndWarmPreparation) {
 }
 
 TEST_F(CoreAISourceTest, MissingSourceRequiresNamedData) {
-  auto bundle = source_manifest();
+  auto bundle = selected_bundle(manifest_dict());
   ASSERT_TRUE(bundle.ok());
   TestData data;
   TestDirectory storage;
@@ -242,7 +242,7 @@ TEST_F(CoreAISourceTest, PublishedSourceOutlivesResult) {
   TestData data;
   TestDirectory storage;
   ASSERT_NE(storage.url, nil);
-  auto manifest = source_manifest();
+  auto manifest = selected_bundle(manifest_dict());
   ASSERT_TRUE(manifest.ok());
   NSURL* first_url = nil;
   {
@@ -306,7 +306,7 @@ TEST_F(CoreAISourceTest, PersistentIdentityTracksDigestNotFileOrder) {
   EXPECT_EQ(data.releases, data.requests);
 }
 
-TEST_F(CoreAISourceTest, PartialMaterializationCleansStagingAndCanRetry) {
+TEST_F(CoreAISourceTest, PartialMaterializationCleansPendingAndCanRetry) {
   TestDirectory storage;
   ASSERT_NE(storage.url, nil);
   TestData data;
@@ -326,7 +326,7 @@ TEST_F(CoreAISourceTest, PartialMaterializationCleansStagingAndCanRetry) {
   EXPECT_EQ(data.attempts, 2);
   EXPECT_EQ(
       [NSFileManager.defaultManager
-          contentsOfDirectoryAtPath:staging_root(storage.url).path
+          contentsOfDirectoryAtPath:sources_root(storage.url).path
                               error:nil]
           .count,
       0u);
@@ -336,7 +336,7 @@ TEST_F(CoreAISourceTest, PartialMaterializationCleansStagingAndCanRetry) {
       prepare_source_bundle(manifest.get(), &data, storage.url.path).ok());
   EXPECT_EQ(
       [NSFileManager.defaultManager
-          contentsOfDirectoryAtPath:staging_root(storage.url).path
+          contentsOfDirectoryAtPath:sources_root(storage.url).path
                               error:nil]
           .count,
       1u);
@@ -390,11 +390,11 @@ TEST_F(
 
 TEST_F(
     CoreAISourceTest,
-    ExplicitStagingKeyReusesSourceWithoutWritesOrRepublication) {
+    ExplicitSourceKeyReusesSourceWithoutWritesOrRepublication) {
   TestDirectory directory;
   ASSERT_NE(directory.url, nil);
   TestData data;
-  auto bundle = source_manifest();
+  auto bundle = selected_bundle(manifest_dict());
   ASSERT_TRUE(bundle.ok());
   auto key = cache_variant_key(
       bundle.get(), @"macOS", @"arch_b", @"explicit-test-options");
@@ -407,7 +407,7 @@ TEST_F(
   EXPECT_EQ(data.attempts, 1);
   NSString* expected_path = [directory.url.URLByResolvingSymlinksInPath.path
       stringByAppendingPathComponent:
-          [NSString stringWithFormat:@"staging/%@/model.aimodel", key.get()]];
+          [NSString stringWithFormat:@"sources/%@/model.aimodel", key.get()]];
   EXPECT_TRUE([first.get().path isEqualToString:expected_path]);
   NSDictionary* snapshot = nil;
   ASSERT_TRUE(asset_tree_snapshot(directory.url, snapshot));

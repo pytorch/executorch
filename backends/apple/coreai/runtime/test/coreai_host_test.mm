@@ -10,7 +10,7 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
 #include "coreai_acquisition_fixture.h"
-#include "coreai_bookmark_fixture.h"
+#include "coreai_cache_entry_fixture.h"
 
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();

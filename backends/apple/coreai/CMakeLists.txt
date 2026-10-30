@@ -78,12 +78,12 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     runtime/test/coreai_storage_test.mm
     runtime/test/coreai_filesystem_fixture.mm
     runtime/test/coreai_cache_key_test.mm
-    runtime/test/coreai_bookmark_test.mm
-    runtime/test/coreai_bookmark_contention_test.mm
+    runtime/test/coreai_cache_entry_test.mm
+    runtime/test/coreai_cache_entry_contention_test.mm
     runtime/test/coreai_source_test.mm
     runtime/test/coreai_source_integrity_test.mm
     runtime/test/coreai_source_publication_test.mm
-    runtime/test/coreai_bookmark_fixture.mm
+    runtime/test/coreai_cache_entry_fixture.mm
     runtime/test/coreai_source_fixture.mm
     runtime/test/coreai_fake_loader.mm
     runtime/test/coreai_acquisition_test.mm

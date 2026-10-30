@@ -15,8 +15,8 @@
 #include <cstdint>
 #include <cstdlib>
 
-#include "coreai_bookmark_fixture.h"
 #include "coreai_cache.h"
+#include "coreai_cache_entry_fixture.h"
 #import "coreai_delegate_fixture.h"
 #include "coreai_test_utils.h"
 
@@ -176,7 +176,7 @@ TEST_F(CoreAIDelegateTest, AotInitPassesOnlySelectedArchitectureBundleToSdk) {
     ASSERT_TRUE(key.ok());
     NSString* expected = [fixture.storage.url.path
         stringByAppendingPathComponent:
-            [NSString stringWithFormat:@"staging/%@/%@",
+            [NSString stringWithFormat:@"sources/%@/%@",
                                        key.get(),
                                        selected->path.lastPathComponent]];
     EXPECT_TRUE([bridge.state().last_bundle isEqualToString:expected]);

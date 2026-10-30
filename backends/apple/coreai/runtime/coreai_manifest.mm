@@ -42,7 +42,7 @@ SelectedBundle::SelectedBundle(
     : export_hash(manifest.export_hash),
       path(path),
       bundle_name(path.lastPathComponent),
-      digest(manifest.bundle_digests[bundle_name]),
+      digest(manifest.bundle_digests[path.lastPathComponent]),
       function(manifest.function),
       inputs(manifest.inputs),
       outputs(manifest.outputs),

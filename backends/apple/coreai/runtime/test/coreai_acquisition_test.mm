@@ -66,7 +66,7 @@ class CoreAIAcquisitionTest : public ::testing::Test {
 
   void SetUp() override {
     ASSERT_NE(root.url, nil);
-    auto selected = bookmark_bundle();
+    auto selected = selected_bundle(manifest_dict());
     ASSERT_TRUE(selected.ok());
     assets.emplace(SelectedHostBundle{selected.get(), @"macOS", @"arch_b"});
     auto identity = test_cache_key(assets->bundle);
@@ -90,14 +90,14 @@ class CoreAIAcquisitionTest : public ::testing::Test {
     return bookmark.ok() ? bookmark.get() : nil;
   }
 
-  NSURL* staging_key_url() {
-    return [[[root.url URLByAppendingPathComponent:@"staging"]
+  NSURL* source_key_url() {
+    return [[[root.url URLByAppendingPathComponent:@"sources"]
         URLByAppendingPathComponent:key] copy];
   }
 
-  BOOL staging_key_exists() {
+  BOOL source_key_exists() {
     return
-        [NSFileManager.defaultManager fileExistsAtPath:staging_key_url().path];
+        [NSFileManager.defaultManager fileExistsAtPath:source_key_url().path];
   }
 
   NSURL* lock_url() {
@@ -122,7 +122,7 @@ TEST_F(CoreAIAcquisitionTest, ColdSpecializesStagedSourceAndPersistsBookmark) {
   ASSERT_TRUE(staged.ok());
   EXPECT_TRUE([fake.loader.lastSpecializeURL isEqual:staged.get().path]);
   EXPECT_TRUE([saved() isEqual:fake.loader.lastAcquired.bookmark]);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
   EXPECT_FALSE(
       [NSFileManager.defaultManager fileExistsAtPath:staged.get().path]);
 }
@@ -131,14 +131,14 @@ TEST_F(CoreAIAcquisitionTest, WarmHitRestoresWithoutNamedData) {
   BookmarkLoaderScope fake;
   ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
   NSData* original = saved();
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
   const int attempts = data.attempts.load();
   ASSERT_EQ(acquire(fake.loader, nullptr), Error::Ok);
   EXPECT_EQ(fake.loader->specializations.load(), 1);
   EXPECT_EQ(fake.loader->restores.load(), 1);
   EXPECT_EQ(data.attempts.load(), attempts);
   EXPECT_TRUE([saved() isEqual:original]);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
 }
 
 TEST_F(CoreAIAcquisitionTest, RestoreErrorFailsClosedWithoutSourceFallback) {
@@ -170,7 +170,7 @@ TEST_F(
   NSData* replaced = saved();
   EXPECT_NE(replaced, nil);
   EXPECT_FALSE([replaced isEqual:original]);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
 }
 
 TEST_F(
@@ -223,7 +223,7 @@ TEST_F(CoreAIAcquisitionTest, NilLoaderRejectsWithoutFilesystemEffects) {
   EXPECT_EQ(error, Error::InvalidArgument);
   EXPECT_TRUE(snapshot_matches(root.url, before));
   EXPECT_EQ(saved(), nil);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
 }
 
 TEST_F(CoreAIAcquisitionTest, RestoreHitWithoutModelFailsClosed) {
@@ -312,9 +312,7 @@ TEST_F(CoreAIAcquisitionTest, SpecializeMissFailsClosed) {
   EXPECT_EQ(saved(), nil);
 }
 
-TEST_F(
-    CoreAIAcquisitionTest,
-    ColdSuccessRemovesWholeStagingAfterBookmarkFlush) {
+TEST_F(CoreAIAcquisitionTest, ColdSuccessRemovesWholeSourceAfterBookmarkFlush) {
   BookmarkLoaderScope fake;
   __block std::vector<FaultPoint> ops;
   Error error = Error::Internal;
@@ -328,7 +326,7 @@ TEST_F(
   }
   ASSERT_EQ(error, Error::Ok);
   EXPECT_TRUE([saved() isEqual:fake.loader.lastAcquired.bookmark]);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
   auto staged = acquisition_staged_url(root.url, assets->bundle);
   ASSERT_TRUE(staged.ok());
   EXPECT_FALSE(
@@ -421,13 +419,13 @@ TEST_F(
   EXPECT_EQ(fake.loader->specializations.load(), specializations);
   const int attempts = data.attempts.load();
   const int restores = fake.loader->restores.load();
-  EXPECT_TRUE(staging_key_exists());
+  EXPECT_TRUE(source_key_exists());
   ASSERT_EQ(acquire(fake.loader, nullptr), Error::Ok);
   EXPECT_EQ(fake.loader->specializations.load(), specializations);
   EXPECT_EQ(fake.loader->restores.load(), restores + 1);
   EXPECT_EQ(data.attempts.load(), attempts);
   EXPECT_TRUE([saved() isEqual:bookmark]);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
 }
 
 TEST_F(
@@ -451,13 +449,13 @@ TEST_F(
   EXPECT_EQ(fake.loader->specializations.load(), specializations);
   const int attempts = data.attempts.load();
   const int restores = fake.loader->restores.load();
-  EXPECT_TRUE(staging_key_exists());
+  EXPECT_TRUE(source_key_exists());
   ASSERT_EQ(acquire(fake.loader, nullptr), Error::Ok);
   EXPECT_EQ(fake.loader->specializations.load(), specializations);
   EXPECT_EQ(fake.loader->restores.load(), restores + 1);
   EXPECT_EQ(data.attempts.load(), attempts);
   EXPECT_TRUE([saved() isEqual:bookmark]);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
 }
 
 TEST_F(
@@ -485,13 +483,13 @@ TEST_F(
   }
   const int attempts = data.attempts.load();
   const int restores = fake.loader->restores.load();
-  EXPECT_TRUE(staging_key_exists());
+  EXPECT_TRUE(source_key_exists());
   ASSERT_EQ(acquire(fake.loader, nullptr), Error::Ok);
   EXPECT_EQ(fake.loader->specializations.load(), specializations);
   EXPECT_EQ(fake.loader->restores.load(), restores + 1);
   EXPECT_EQ(data.attempts.load(), attempts);
   EXPECT_TRUE([saved() isEqual:bookmark]);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
 }
 
 TEST_F(CoreAIAcquisitionTest, WarmHitCleanupFailureStillReturnsModel) {
@@ -519,7 +517,7 @@ TEST_F(CoreAIAcquisitionTest, PartialCleanupThenMissRebuildsSource) {
     ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
     EXPECT_EQ(fault.hits, 1);
   }
-  ASSERT_TRUE(staging_key_exists());
+  ASSERT_TRUE(source_key_exists());
   NSData* original = saved();
   fake.loader.restoreMiss = YES;
   ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
@@ -528,7 +526,7 @@ TEST_F(CoreAIAcquisitionTest, PartialCleanupThenMissRebuildsSource) {
   EXPECT_EQ(fake.loader->evictions.load(), 0);
   EXPECT_EQ(data.attempts.load(), 2);
   EXPECT_FALSE([saved() isEqual:original]);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
 }
 
 TEST_F(
@@ -552,7 +550,7 @@ TEST_F(
   EXPECT_EQ(fake.loader->evictions.load(), 0);
   EXPECT_TRUE([saved() isEqual:original]);
   ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
 }
 
 TEST_F(CoreAIAcquisitionTest, MissingNamedDataIsNotRetried) {
@@ -594,7 +592,7 @@ TEST_P(CoreAIAcquisitionSaveFailureTest, PreservesBookmarkAndRetries) {
     ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
     original = saved();
     ASSERT_NE(original, nil);
-    EXPECT_FALSE(staging_key_exists());
+    EXPECT_FALSE(source_key_exists());
     fake.loader.restoreMiss = YES;
   }
   {
@@ -613,7 +611,7 @@ TEST_P(CoreAIAcquisitionSaveFailureTest, PreservesBookmarkAndRetries) {
   fake.loader.restoreMiss = NO;
   ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
   EXPECT_EQ(fake.loader->specializations.load(), calls + (prior ? 0 : 1));
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
 }
 INSTANTIATE_TEST_SUITE_P(
     Boundaries,
@@ -654,22 +652,22 @@ TEST_F(CoreAIAcquisitionProcessTest, IndependentKeysSpecializeInParallel) {
   expect_parallel(false);
 }
 
-TEST_F(CoreAIAcquisitionProcessTest, CrashBeforeSdkRetainsStagingAndRetries) {
+TEST_F(CoreAIAcquisitionProcessTest, CrashBeforeSdkRetainsSourceAndRetries) {
   BookmarkChild child;
   ASSERT_TRUE(spawn_acquisition_crash(
       child, root.url, FaultPoint::BeforeSDK, manifest_dict()));
   ASSERT_TRUE(child.receive('C'));
   ASSERT_TRUE(child.expect_exit(73));
   EXPECT_EQ(saved(), nil);
-  EXPECT_TRUE(staging_key_exists());
+  EXPECT_TRUE(source_key_exists());
   BookmarkLoaderScope fake;
   ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
   EXPECT_EQ(fake.loader->specializations.load(), 1);
   EXPECT_EQ(data.attempts.load(), 0);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
 }
 
-TEST_F(CoreAIAcquisitionProcessTest, CrashAfterSdkRetainsStagingAndRetries) {
+TEST_F(CoreAIAcquisitionProcessTest, CrashAfterSdkRetainsSourceAndRetries) {
   BookmarkChild child;
   ASSERT_TRUE(spawn_acquisition_crash(
       child, root.url, FaultPoint::AfterSDK, manifest_dict()));
@@ -686,7 +684,7 @@ TEST_F(CoreAIAcquisitionProcessTest, CrashAfterSdkRetainsStagingAndRetries) {
   EXPECT_EQ(fake.loader->restores.load(), 0);
   EXPECT_EQ(data.attempts.load(), 0);
   EXPECT_NE(saved(), nil);
-  EXPECT_FALSE(staging_key_exists());
+  EXPECT_FALSE(source_key_exists());
 }
 
 class CoreAILifecycleLogTest : public CoreAIAcquisitionTest {

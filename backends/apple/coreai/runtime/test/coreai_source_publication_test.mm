@@ -24,7 +24,7 @@ TEST_F(CoreAISourceTest, RejectsMismatchedBufferSizesAndReleasesPayload) {
     ASSERT_NE(storage.url, nil);
     TestData data;
     data.files["coreai/ab/model.aimodel/graph.bin"] = std::string(size, 'x');
-    auto manifest = source_manifest();
+    auto manifest = selected_bundle(manifest_dict());
     ASSERT_TRUE(manifest.ok());
     EXPECT_EQ(
         prepare_source_bundle(manifest.get(), &data, storage.url.path).error(),
@@ -32,7 +32,7 @@ TEST_F(CoreAISourceTest, RejectsMismatchedBufferSizesAndReleasesPayload) {
     EXPECT_EQ(data.attempts, 1);
     EXPECT_EQ(data.requests, 1);
     EXPECT_EQ(data.releases, 1);
-    EXPECT_EQ(staging_directories(storage.url).count, 0u);
+    EXPECT_EQ(pending_directories(storage.url).count, 0u);
     EXPECT_FALSE([NSFileManager.defaultManager
         fileExistsAtPath:source_entry(storage.url, manifest.get()).path]);
   }
@@ -43,10 +43,10 @@ TEST_F(CoreAISourceTest, FullyFlushesSourceBeforeAndAfterPublication) {
   ASSERT_NE(storage.url, nil);
   TestData data;
   aot_data(data, @"arch_b");
-  auto manifest = source_manifest(true);
+  auto manifest = selected_bundle(aot_manifest_dict());
   ASSERT_TRUE(manifest.ok());
   NSURL* final = source_entry(storage.url, manifest.get());
-  NSURL* root = staging_root(storage.url);
+  NSURL* root = sources_root(storage.url);
   const NSUInteger file_count = manifest->files.count;
   __block int synced_files = 0;
   __block int full_syncs = 0;
@@ -63,7 +63,7 @@ TEST_F(CoreAISourceTest, FullyFlushesSourceBeforeAndAfterPublication) {
       const bool published =
           [NSFileManager.defaultManager fileExistsAtPath:final.path];
       ordered &= full_syncs == 1 ? !published : published;
-      ordered &= staging_directories(root).count == (full_syncs == 1 ? 1u : 0u);
+      ordered &= pending_directories(root).count == (full_syncs == 1 ? 1u : 0u);
     }
     if (operation == FaultPoint::Rename) {
       ++publications;
@@ -79,10 +79,10 @@ TEST_F(CoreAISourceTest, FullyFlushesSourceBeforeAndAfterPublication) {
   EXPECT_EQ(data.requests, data.releases);
 }
 
-TEST_F(CoreAISourceTest, PublicationFailuresCleanStagingWithoutAutomaticRetry) {
+TEST_F(CoreAISourceTest, PublicationFailuresCleanPendingWithoutAutomaticRetry) {
   for (auto operation :
-       {FaultPoint::CreateStagingDirectory,
-        FaultPoint::OpenStagingDirectory,
+       {FaultPoint::CreatePendingDirectory,
+        FaultPoint::OpenPendingDirectory,
         FaultPoint::Write,
         FaultPoint::SyncFile,
         FaultPoint::SyncDirectory,
@@ -92,7 +92,7 @@ TEST_F(CoreAISourceTest, PublicationFailuresCleanStagingWithoutAutomaticRetry) {
     TestDirectory storage;
     ASSERT_NE(storage.url, nil);
     TestData data;
-    auto manifest = source_manifest();
+    auto manifest = selected_bundle(manifest_dict());
     ASSERT_TRUE(manifest.ok());
     NSString* key = source_key(manifest.get());
     auto lock = acquire_test_cache_entry(storage.url.path, key);
@@ -108,15 +108,15 @@ TEST_F(CoreAISourceTest, PublicationFailuresCleanStagingWithoutAutomaticRetry) {
       EXPECT_EQ(fault.matches, 1);
       EXPECT_EQ(fault.hits, 1);
     }
-    const int attempts = operation == FaultPoint::CreateStagingDirectory ||
-            operation == FaultPoint::OpenStagingDirectory ||
+    const int attempts = operation == FaultPoint::CreatePendingDirectory ||
+            operation == FaultPoint::OpenPendingDirectory ||
             operation == FaultPoint::SyncDirectory
         ? 0
         : 1;
     EXPECT_EQ(data.attempts, attempts);
     EXPECT_EQ(data.requests, data.releases);
     EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:final.path]);
-    EXPECT_EQ(staging_directories(storage.url).count, 0u);
+    EXPECT_EQ(pending_directories(storage.url).count, 0u);
     auto retried = executorch::backends::coreai::prepare_source_bundle(
         manifest.get(), &data, *lock.get());
     ASSERT_TRUE(retried.ok());
@@ -124,17 +124,17 @@ TEST_F(CoreAISourceTest, PublicationFailuresCleanStagingWithoutAutomaticRetry) {
   }
 }
 
-TEST_F(CoreAISourceTest, RetriesInterruptedStagingAndPublicationCalls) {
+TEST_F(CoreAISourceTest, RetriesInterruptedPendingAndPublicationCalls) {
   for (auto operation :
-       {FaultPoint::CreateStagingDirectory,
-        FaultPoint::OpenStagingDirectory,
+       {FaultPoint::CreatePendingDirectory,
+        FaultPoint::OpenPendingDirectory,
         FaultPoint::SyncDirectory,
         FaultPoint::Rename}) {
     SCOPED_TRACE(static_cast<int>(operation));
     TestDirectory storage;
     ASSERT_NE(storage.url, nil);
     TestData data;
-    auto manifest = source_manifest();
+    auto manifest = selected_bundle(manifest_dict());
     ASSERT_TRUE(manifest.ok());
     NSString* key = source_key(manifest.get());
     auto lock = acquire_test_cache_entry(storage.url.path, key);
@@ -148,7 +148,7 @@ TEST_F(CoreAISourceTest, RetriesInterruptedStagingAndPublicationCalls) {
     EXPECT_GE(fault.matches, 2);
     EXPECT_EQ(data.attempts, 1);
     EXPECT_EQ(data.requests, data.releases);
-    EXPECT_EQ(staging_directories(storage.url).count, 0u);
+    EXPECT_EQ(pending_directories(storage.url).count, 0u);
   }
 }
 
@@ -156,7 +156,7 @@ TEST_F(CoreAISourceTest, PostRenameFlushFailureLeavesCompleteSourceVisible) {
   TestDirectory storage;
   ASSERT_NE(storage.url, nil);
   TestData data;
-  auto manifest = source_manifest();
+  auto manifest = selected_bundle(manifest_dict());
   ASSERT_TRUE(manifest.ok());
   NSURL* final = source_entry(storage.url, manifest.get());
   {
@@ -170,7 +170,7 @@ TEST_F(CoreAISourceTest, PostRenameFlushFailureLeavesCompleteSourceVisible) {
   }
   EXPECT_EQ(data.attempts, 1);
   EXPECT_EQ(data.requests, data.releases);
-  EXPECT_EQ(staging_directories(storage.url).count, 0u);
+  EXPECT_EQ(pending_directories(storage.url).count, 0u);
   NSURL* graph = [final URLByAppendingPathComponent:@"model.aimodel/graph.bin"];
   EXPECT_TRUE(([[NSData dataWithContentsOfURL:graph]
       isEqual:[NSData dataWithBytes:"model data" length:11]]));
@@ -203,7 +203,7 @@ TEST_F(CoreAISourceTest, IncompleteConcurrentWinnerFailsWithoutReplacement) {
   ASSERT_NE(winner_storage.url, nil);
   TestData data;
   TestData winner_data;
-  auto manifest = source_manifest();
+  auto manifest = selected_bundle(manifest_dict());
   ASSERT_TRUE(manifest.ok());
   auto winner = prepare_source_bundle(
       manifest.get(), &winner_data, winner_storage.url.path);
@@ -214,7 +214,7 @@ TEST_F(CoreAISourceTest, IncompleteConcurrentWinnerFailsWithoutReplacement) {
   NSURL* winner_entry = winner.get().URLByDeletingLastPathComponent;
   NSDictionary* snapshot = nil;
   ASSERT_TRUE(asset_tree_snapshot(winner_entry, snapshot));
-  NSURL* root = staging_root(storage.url);
+  NSURL* root = sources_root(storage.url);
   NSURL* final = source_entry(storage.url, manifest.get());
   __block int publications = 0;
   __block bool callback_ok = true;
@@ -225,7 +225,7 @@ TEST_F(CoreAISourceTest, IncompleteConcurrentWinnerFailsWithoutReplacement) {
       if (operation != FaultPoint::Rename)
         return;
       ++publications;
-      callback_ok &= staging_directories(root).count == 1;
+      callback_ok &= pending_directories(root).count == 1;
       callback_ok &= [NSFileManager.defaultManager moveItemAtURL:winner_entry
                                                            toURL:final
                                                            error:nil];
@@ -238,20 +238,20 @@ TEST_F(CoreAISourceTest, IncompleteConcurrentWinnerFailsWithoutReplacement) {
   }
   EXPECT_EQ(data.attempts, 1);
   EXPECT_EQ(data.requests, data.releases);
-  EXPECT_EQ(staging_directories(storage.url).count, 0u);
+  EXPECT_EQ(pending_directories(storage.url).count, 0u);
   EXPECT_TRUE(snapshot_matches(final, snapshot));
 }
 
 TEST_F(
     CoreAISourceTest,
-    ExclusivePublicationValidatesWinnerAndRemovesLosingStaging) {
+    ExclusivePublicationValidatesWinnerAndRemovesLosingPending) {
   TestDirectory storage;
   TestDirectory winner_storage;
   ASSERT_NE(storage.url, nil);
   ASSERT_NE(winner_storage.url, nil);
   TestData data;
   TestData winner_data;
-  auto manifest = source_manifest();
+  auto manifest = selected_bundle(manifest_dict());
   ASSERT_TRUE(manifest.ok());
   auto winner = prepare_source_bundle(
       manifest.get(), &winner_data, winner_storage.url.path);
@@ -259,7 +259,7 @@ TEST_F(
   NSURL* winner_entry = winner.get().URLByDeletingLastPathComponent;
   NSDictionary* snapshot = nil;
   ASSERT_TRUE(asset_tree_snapshot(winner_entry, snapshot));
-  NSURL* root = staging_root(storage.url);
+  NSURL* root = sources_root(storage.url);
   NSURL* final = source_entry(storage.url, manifest.get());
   __block int publications = 0;
   __block bool callback_ok = true;
@@ -271,7 +271,7 @@ TEST_F(
       if (operation != FaultPoint::Rename)
         return;
       ++publications;
-      callback_ok &= staging_directories(root).count == 1;
+      callback_ok &= pending_directories(root).count == 1;
       callback_ok &= [NSFileManager.defaultManager moveItemAtURL:winner_entry
                                                            toURL:final
                                                            error:nil];
@@ -288,7 +288,7 @@ TEST_F(
   }
   EXPECT_EQ(data.attempts, manifest->files.count);
   EXPECT_EQ(data.requests, data.releases);
-  EXPECT_EQ(staging_directories(storage.url).count, 0u);
+  EXPECT_EQ(pending_directories(storage.url).count, 0u);
   EXPECT_TRUE(snapshot_matches(final, snapshot));
 }
 

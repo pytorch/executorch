@@ -26,8 +26,8 @@ typedef NS_ENUM(NSInteger, ETCoreAIErrorCode) {
   ETCoreAIErrorUnsupported = 2,
   // Invalid caller arguments or input tensor payloads.
   ETCoreAIErrorInvalidArgument = 3,
-  // SDK/system failures or inconsistent SDK outputs, not evidence of
-  // corruption.
+  // SDK or system failures, or inconsistent SDK outputs. Does not mean cached
+  // files are corrupt.
   ETCoreAIErrorRuntime = 4,
 };
 
@@ -49,8 +49,9 @@ FOUNDATION_EXPORT NSErrorDomain const ETCoreAIErrorDomain;
     NS_DESIGNATED_INITIALIZER;
 @end
 
-// The copier retains its source storage; SDK pointers stay within their access
-// scope. Validate the source layout before constructing. Copying cannot fail.
+// Holds the SDK output until copyBytesTo: runs; raw SDK pointers are used only
+// inside that call. Construct only after validating the source layout, because
+// copying cannot report errors.
 @interface ETCoreAITensor : NSObject
 @property(nonatomic, readonly) NSUInteger byteCount;
 @property(nonatomic, readonly, copy) NSArray<NSNumber*>* shape;
@@ -83,8 +84,8 @@ FOUNDATION_EXPORT NSErrorDomain const ETCoreAIErrorDomain;
                           NSError* _Nullable error))completion;
 @end
 
-// A prepared model pins the SDK entry. Each session retains its own pin after
-// binding.
+// Holds the SDK model, keeping its cache entry in use. Bound sessions hold the
+// model too, so they stay valid after the prepared model is released.
 @protocol ETCoreAIPreparedModel<NSObject>
 - (NSData*)copyBookmarkData;
 // Completes once with either a session or an error, never both. Completion may

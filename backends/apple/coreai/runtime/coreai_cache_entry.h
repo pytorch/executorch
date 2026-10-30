@@ -32,10 +32,11 @@ struct CacheBookmarkInspection final {
 
 enum class CacheEntryPersistence {
   BookmarkCapable,
-  StagingOnly,
+  // Only from acquire_existing when bookmarks/ is missing; never creates it.
+  SourceOnly,
 };
 
-struct CacheStagingDirectory final {
+struct CacheSourceDirectory final {
   FileDescriptor descriptor;
   NSURL* url;
 };
@@ -66,9 +67,10 @@ class LockedCacheEntry final {
   // closed.
   runtime::Result<NSData*> read_bookmark() const;
   runtime::Error write_bookmark(NSData* data) const;
-  runtime::Result<CacheStagingDirectory> prepare_staging_directory() const;
-  // Missing staging is a no-op; unexpected entry types fail before deletion.
-  runtime::Error remove_staging() const;
+  runtime::Result<CacheSourceDirectory> prepare_source_directory() const;
+  // A missing source bundle is a no-op; unexpected entry types fail before
+  // deletion.
+  runtime::Error remove_source() const;
 
   // The view must not outlive this locked entry.
   CacheEntryMaintenance maintenance() const;
@@ -87,8 +89,13 @@ class LockedCacheEntry final {
       const CacheDirectory& directory,
       NSString* key,
       StorageCreationMode mode);
-  runtime::Result<std::optional<FileDescriptor>> open_staging_directory(
+  runtime::Result<std::optional<FileDescriptor>> open_source_directory(
       StorageCreationMode mode) const;
+  // Applies a storage operation to this key's source bundle. A missing
+  // sources/ directory is a no-op.
+  runtime::Error apply_to_source(
+      runtime::Error (*operation)(int, NSString*, StorageRemovalPolicy),
+      StorageRemovalPolicy policy) const;
 
   FileDescriptor root_;
   FileDescriptor bookmarks_;
@@ -102,7 +109,7 @@ class CacheEntryMaintenance final {
  public:
   runtime::Result<CacheBookmarkInspection> inspect_bookmark() const;
   runtime::Error preflight() const;
-  runtime::Error remove_staging() const;
+  runtime::Error remove_source() const;
   runtime::Error remove_bookmark() const;
 
  private:
