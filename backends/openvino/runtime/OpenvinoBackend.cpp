@@ -685,7 +685,7 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
     dims = dims_heap.get();
   }
   for (int64_t d = 0; d < rank; d++) {
-    dims[d] = sizes[d];
+    dims[d] = own_memory ? 0 : sizes[d];
   }
   // shape_create refuses rank 0, so a 0-d tensor keeps the zero-initialized
   // shape, which describes a scalar.
