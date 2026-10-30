@@ -84,6 +84,14 @@ static void test_sdpa_impl(
       ? 1.0f / std::sqrt(static_cast<float>(head_dim_size))
       : graph.extract_scalar<float>(scale);
 
+  add_sdpa_compute_attn_weights_with_softmax_node(
+      graph,
+      q_projected,
+      k_cache,
+      input_pos_symint,
+      scale_val,
+      attn_weights_softmax);
+
   add_sdpa_compute_attn_weights_node(
       graph,
       q_projected,
@@ -92,7 +100,8 @@ static void test_sdpa_impl(
       /*attn_mask=*/kDummyValueRef,
       scale_val,
       attn_weights,
-      SDPAMode::LLM);
+      SDPAMode::LLM,
+      /*has_fused_qk_softmax=*/true);
 
   add_sdpa_attn_weights_softmax_node(
       graph,
@@ -101,7 +110,8 @@ static void test_sdpa_impl(
       k_cache,
       input_pos_symint,
       attn_weights_softmax,
-      SDPAMode::LLM);
+      SDPAMode::LLM,
+      /*has_fused_qk_softmax=*/true);
 
   add_sdpa_compute_out_node(
       graph,
