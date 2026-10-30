@@ -282,6 +282,15 @@ class _SlicedLinear(nn.Module):
         return self.proj(x)[:, :, :14]
 
 
+class _Double(nn.Module):
+    def __init__(self, memory_format):
+        super().__init__()
+        self.memory_format = memory_format
+
+    def forward(self, x):
+        return (x * 2).contiguous(memory_format=self.memory_format)
+
+
 class TestStridedOutputWithCudaGraph(unittest.TestCase):
     """A CUDA graph replay copies raw bytes, so a strided output must not reach it."""
 
@@ -357,6 +366,20 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                 if i == 3:
                     self.assertIsInstance(out, RuntimeError)
                 else:
+                    self._assert_matches_eager(module, x, out)
+
+    def test_output_shape_changes_at_capture(self):
+        torch.manual_seed(0)
+        # The capture call has a larger batch than the warmup calls before it.
+        inputs = [torch.randn(batch, 3, 4, 4) for batch in (1, 1, 1, 2, 2, 2)]
+        batch = torch.export.Dim("batch", min=1, max=8)
+        for memory_format in (torch.contiguous_format, torch.channels_last):
+            module = _Double(memory_format).eval()
+            outputs = self._run_with_cuda_graph(
+                module, (inputs[3].cuda(),), inputs, dynamic_shapes=({0: batch},)
+            )
+            for i, (x, out) in enumerate(zip(inputs, outputs)):
+                with self.subTest(memory_format=memory_format, call=i):
                     self._assert_matches_eager(module, x, out)
 
 
