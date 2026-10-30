@@ -119,6 +119,8 @@
 
 - op: clone.out
 
+- op: complex.out
+
 - op: constant_pad_nd.out
 
 - op: conv1d.out

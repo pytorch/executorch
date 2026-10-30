@@ -27,6 +27,7 @@ regular_tensor_dtypes_to_str = {
     torch.float: "Float",
     torch.double: "Double",
     torch.uint16: "UInt16",
+    torch.complex32: "ComplexHalf",
     torch.complex64: "ComplexFloat",
     torch.complex128: "ComplexDouble",
 }

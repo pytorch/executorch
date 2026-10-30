@@ -459,6 +459,12 @@ ATEN_OPS = (
         name = "op_clone",
     ),
     op_target(
+        name = "op_complex",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
+    ),
+    op_target(
         name = "op_constant_pad_nd",
         deps = [
             ":scalar_utils",

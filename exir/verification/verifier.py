@@ -143,6 +143,9 @@ def EXIRATenDialectVerifier(  # noqa: C901
                     torch.ops.aten.max.default,  # TODO(T188268054)
                     torch.ops.aten.min.default,  # TODO(T188268054)
                     torch.ops.aten.full_like.default,  # TODO(T183507359)
+                    # TODO: Add complex.default to PyTorch's Core ATen opset.
+                    # Allow it here until the upstream change is available in supported versions.
+                    torch.ops.aten.complex.default,
                 ]
                 + list(_EXECUTORCH_SYM_OPS)
                 + DISALLOW_LIST

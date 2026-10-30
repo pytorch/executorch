@@ -874,6 +874,24 @@ print("CUDA DLPack roundtrip preserved device storage")
         with self.assertRaisesRegex(BufferError, "dense, non-overlapping"):
             executorch_module(non_dense)
 
+    def test_complex_construction(self):
+        class Complex(torch.nn.Module):
+            def forward(self, real, imag):
+                return torch.complex(real, imag)
+
+        for dtype in (torch.float16, torch.float32, torch.float64):
+            with self.subTest(dtype=dtype):
+                real = torch.tensor([[1.0], [-2.0]], dtype=dtype)
+                imag = torch.tensor([[3.0, 0.0, -4.0]], dtype=dtype)
+                program = to_edge(export(Complex(), (real, imag))).to_executorch()
+                module = self.load_fn(program.buffer)
+                output = torch.from_dlpack(module.forward([real, imag])[0])
+                expected = torch.complex(real, imag)
+                self.assertEqual(output.dtype, expected.dtype)
+                self.assertEqual(output.shape, expected.shape)
+                torch.testing.assert_close(output.real, expected.real, rtol=0, atol=0)
+                torch.testing.assert_close(output.imag, expected.imag, rtol=0, atol=0)
+
     def test_complex_numpy_input(self):
         class Identity(torch.nn.Module):
             def forward(self, x):
