@@ -66,7 +66,7 @@ def main() -> None:
         CompileSpec("target_device", f"cuda:{device_index}".encode()),
         CompileSpec("triton_kernel_mode", b"ON"),
         CompileSpec("max_autotune", b"OFF"),
-        CompileSpec("autotune_at_compile_time", b"OFF"),
+        CompileSpec("autotune_at_compile_time", b"ON"),
     ]
     edge_program = to_edge_transform_and_lower(
         exported_program,
