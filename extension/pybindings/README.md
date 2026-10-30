@@ -141,10 +141,17 @@ and return borrowed CUDA results.
 
 Execution is synchronous at the Python boundary: a call returns after its device
 work has finished, so its outputs are ready on any stream. A call with only host
-inputs and outputs waits just for the stream its delegates ran on: their own, or
-the one selected with `executorch.runtime.cuda.stream()`. Outside such a block,
-their own stream also waits for work on the legacy default stream, which is the
-default stream of torch. The waits below, for
+inputs and outputs waits for the stream its work ran on, not for the whole
+device: the one selected with `executorch.runtime.cuda.stream()`, or outside
+such a block, the delegates' own stream. CUDA's legacy default stream, which is
+also the default stream of torch, can make that wait longer. A blocking stream,
+such as the delegates' own stream or a `cupy.cuda.Stream()` with default flags,
+also waits for work on the legacy default stream. Outside a block, a program's
+copies between host and GPU memory run on the legacy default stream, so they
+wait for work on every blocking stream of the device, for example delegates
+running on another thread. A non-blocking stream, such as
+`executorch.runtime.cuda.Stream()`, does not wait for the legacy default
+stream. The waits below, for
 CUDA inputs and outputs, are for the whole device (`cudaDeviceSynchronize`), not
 for one stream, so they also wait for unrelated work queued on that device, for
 example by torch. Before it runs, a

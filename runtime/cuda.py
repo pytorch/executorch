@@ -22,10 +22,12 @@ Example::
 
 Inside the block, the CUDA and TensorRT delegates queue their work on ``s``
 instead of their own streams, and so do a program's copies between host and
-GPU memory. A call then waits only for ``s``: work that other streams still
-have queued keeps running. A call with GPU inputs or outputs, and
-``ExecuTorchResult.to_host()``, still wait for the whole GPU, so GPU data
-written on other streams stays safe.
+GPU memory. A call then waits only for ``s``. If ``s`` is non-blocking, as a
+``Stream`` is, work that other streams still have queued keeps running. A
+blocking ``s``, such as a ``cupy.cuda.Stream()`` with default flags, also
+waits for work on the legacy default stream. A call with GPU inputs or
+outputs, and ``ExecuTorchResult.to_host()``, still wait for the whole GPU, so
+GPU data written on other streams stays safe.
 
 Limits for now: a stream on a CUDA device other than 0 is refused, so is the
 legacy default stream (handle 0, or 1 for ``cudaStreamLegacy``), and the CUDA
