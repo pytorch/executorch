@@ -2465,6 +2465,84 @@ TEST(VulkanComputeGraphTest, choose_qparams_handles_dynamic_row_counts) {
   }
 }
 
+TEST(VulkanComputeGraphTest, choose_qparams_affine_handles_1d_input) {
+  constexpr int64_t kK = 128;
+
+  ComputeGraph graph(GraphConfig{});
+  const IOValueRef input =
+      graph.add_input_tensor({kK}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef scales = graph.add_tensor(
+      {1}, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
+  const ValueRef zero_points = graph.add_tensor(
+      {1}, vkapi::kChar, utils::kTexture3D, utils::kWidthPacked);
+
+  VK_GET_OP_FN("torchao.choose_qparams_affine.default")
+  (graph,
+   {input.value,
+    graph.add_none(), // mapping_type
+    graph.add_scalar_list<int64_t>({kK}),
+    graph.add_none(), // target_dtype
+    graph.add_scalar<int64_t>(-128),
+    graph.add_scalar<int64_t>(127),
+    graph.add_none(), // eps
+    graph.add_none(), // scale_dtype
+    graph.add_none(), // zero_point_dtype
+    graph.add_value_list({scales, zero_points})});
+
+  const ValueRef scales_staging = graph.set_output_tensor(scales);
+  const ValueRef zero_points_staging = graph.set_output_tensor(zero_points);
+
+  graph.prepare();
+  graph.prepack();
+
+  // The row's maximum is its last element, so the whole row must be reduced.
+  std::vector<float> input_data(kK);
+  for (int64_t k = 0; k < kK; ++k) {
+    input_data[k] = 0.5f * float(k);
+  }
+  graph.maybe_cast_and_copy_into_staging(
+      input.staging, input_data.data(), input_data.size(), vkapi::kFloat);
+
+  graph.execute();
+
+  float scale = 0;
+  int8_t zero_point = 0;
+  graph.maybe_cast_and_copy_from_staging(
+      scales_staging, &scale, 1, vkapi::kFloat);
+  graph.maybe_cast_and_copy_from_staging(
+      zero_points_staging, &zero_point, 1, vkapi::kChar);
+  EXPECT_NEAR(scale, input_data.back() / 255.0f, 1e-6f);
+  EXPECT_EQ(zero_point, -128);
+}
+
+TEST(VulkanComputeGraphTest, quantize_and_pack_accepts_1d_input) {
+  constexpr int64_t kK = 128;
+
+  ComputeGraph graph(GraphConfig{});
+  const IOValueRef input =
+      graph.add_input_tensor({kK}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef scales = graph.add_tensor(
+      {1}, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
+  const ValueRef zero_points = graph.add_tensor(
+      {1}, vkapi::kChar, utils::kTexture3D, utils::kWidthPacked);
+  const ValueRef packed_input = graph.add_tensor(
+      {1, kK}, vkapi::kInt8x4, utils::kBuffer, utils::kPackedInt8_4H4W);
+  const ValueRef input_sums =
+      graph.add_tensor({4}, vkapi::kInt, utils::kBuffer, utils::kWidthPacked);
+  const QuantizationConfig input_quant_config(
+      8, kPerChannel, {1, kK}, false, true);
+
+  EXPECT_NO_THROW(add_quantize_and_pack_4h4w_with_group_sums_node(
+      graph,
+      input_quant_config,
+      input.value,
+      input_sums,
+      scales,
+      zero_points,
+      packed_input,
+      graph.add_scalar<int64_t>(kK)));
+}
+
 void test_quantize_and_pack_handles_dynamic_row_counts(
     const int64_t group_size_value,
     const utils::uvec3& expected_local_wg_size) {

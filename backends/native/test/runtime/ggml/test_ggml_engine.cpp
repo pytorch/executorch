@@ -81,6 +81,11 @@ flatbuffers::Offset<fbs::Argument> create_none_arg(
 
 constexpr size_t kQ4KBlockBytes = 144;
 
+// The safetensors header of the affine linear program's constants.
+constexpr const char* kQ4_0SafeTensorsHeader =
+    R"({"weight_scale":{"dtype":"F16","shape":[1,8],"data_offsets":[0,16]},)"
+    R"("weight":{"dtype":"U8","shape":[128],"data_offsets":[16,144]}})";
+
 // A [1, 256] x [256] linear with gguf:q4_k weights, or with symmetric int4
 // AffineGroup weights whose fp16 scales `weight_scale` cover groups of 32.
 // `cache` is an unused mutable buffer.
@@ -231,6 +236,10 @@ std::vector<uint8_t> make_linear_program(
       builder.GetBufferPointer(),
       builder.GetBufferPointer() + builder.GetSize()};
 }
+
+// For tests of quantized linears whose activation numerics aren't under test.
+constexpr GgmlEngineOptions kAllowActivationQuant{
+    .allow_activation_quant_for_weight_only = true};
 
 std::unique_ptr<GgmlEngineContext> make_context(
     GgmlEngineHost& host,
@@ -473,7 +482,7 @@ std::vector<uint8_t> make_cache_update_program(
 
 // cppcheck-suppress syntaxError
 TEST(GgmlEngineTest, ExecutesPackedQ4KLinear) {
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(*host, make_linear_program());
   auto executable = context->compile("forward");
 
@@ -491,8 +500,9 @@ TEST(GgmlEngineTest, ExecutesPackedQ4KLinear) {
 TEST(GgmlEngineTest, RepeatedExecutionsReadFreshInputs) {
   for (const size_t max_cached_graphs : {size_t{0}, size_t{1}}) {
     SCOPED_TRACE(max_cached_graphs);
-    auto host = GgmlEngineHost::create(
-        GgmlEngineOptions{.max_cached_graphs = max_cached_graphs});
+    auto host = GgmlEngineHost::create(GgmlEngineOptions{
+        .max_cached_graphs = max_cached_graphs,
+        .allow_activation_quant_for_weight_only = true});
     auto context = make_context(*host, make_linear_program());
     auto executable = context->compile("forward");
     for (const float value : {1.0f, 2.0f, -1.0f}) {
@@ -580,7 +590,7 @@ TEST(GgmlEngineTest, RejectsUnsupportedOpAtCompile) {
 }
 
 TEST(GgmlEngineTest, RejectsSecondExecutableBindingMutableBuffer) {
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(
       *host,
       make_linear_program(
@@ -590,17 +600,41 @@ TEST(GgmlEngineTest, RejectsSecondExecutableBindingMutableBuffer) {
 }
 
 void expect_compile_error(
-    const std::vector<uint8_t>& program,
+    GgmlEngineContext& context,
     const std::string& message) {
-  auto host = GgmlEngineHost::create();
-  auto context = make_context(*host, program);
   try {
-    context->compile("forward");
+    context.compile("forward");
     FAIL() << "compile accepted the program";
   } catch (const std::runtime_error& error) {
     EXPECT_NE(std::string(error.what()).find(message), std::string::npos)
         << error.what();
   }
+}
+
+void expect_compile_error(
+    const std::vector<uint8_t>& program,
+    const std::string& message) {
+  auto host = GgmlEngineHost::create();
+  expect_compile_error(*make_context(*host, program), message);
+}
+
+TEST(GgmlEngineTest, RejectsWeightOnlyQuantizedLinearsByDefault) {
+  expect_compile_error(
+      make_linear_program(), "allow_activation_quant_for_weight_only");
+  const std::vector<uint8_t> program_bytes = make_linear_program(
+      "torch.ops.aten.linear.default", /*with_cache=*/false, /*affine=*/true);
+  auto host = GgmlEngineHost::create();
+  auto context = host->create_ggml_context(
+      std::make_shared<const Program>(
+          Program::load(program_bytes.data(), program_bytes.size())),
+      std::make_shared<const Package>(
+          Package::load(OwnedBytes::from_vector(testing::make_zip({
+              {kProgramEntry, program_bytes},
+              {kSafeTensorsEntry,
+               testing::make_safetensors(
+                   kQ4_0SafeTensorsHeader, /*scales + weights=*/16 + 128)},
+          })))));
+  expect_compile_error(*context, "allow_activation_quant_for_weight_only");
 }
 
 TEST(GgmlEngineTest, RejectsIntegerGelu) {
@@ -773,7 +807,7 @@ TEST(GgmlEngineTest, WriteToCachedMaskReachesLaterAttention) {
 }
 
 TEST(GgmlEngineTest, ReleasesMutableBufferWithItsExecutable) {
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(
       *host,
       make_linear_program(
@@ -1067,7 +1101,7 @@ TEST(GgmlEngineTest, Q4KLinearOfAHalfInput) {
       {{"input", std::string("x")}, {"weight", std::string("weight")}},
       fbs::ScalarType::HALF,
       {1, 1});
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(*host, program.finish("y"));
   auto executable = context->compile("forward");
   // The IEEE half bit pattern of 1.0.
@@ -1399,7 +1433,9 @@ TEST(GgmlEngineTest, RejectsPackedWeightWithPartialBlocks) {
       {{"input", std::string("x")}, {"weight", std::string("weight")}},
       fbs::ScalarType::FLOAT,
       {1, 1});
-  expect_compile_error(program.finish("y"), "divisible by 256");
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  expect_compile_error(
+      *make_context(*host, program.finish("y")), "divisible by 256");
 }
 
 TEST(GgmlEngineTest, RejectsUnsupportedOpOnUnquantizedInput) {
@@ -1478,9 +1514,7 @@ TEST(GgmlEngineTest, ViewsQ4_0ScalesOfMappedPackage) {
     // alternate fp16 scales 0.5 and 1.0.
     constexpr size_t kScaleBytes = 16;
     constexpr size_t kWeightBytes = 128;
-    std::string header =
-        R"({"weight_scale":{"dtype":"F16","shape":[1,8],"data_offsets":[0,16]},)"
-        R"("weight":{"dtype":"U8","shape":[128],"data_offsets":[16,144]}})";
+    std::string header = kQ4_0SafeTensorsHeader;
     // The safetensors member comes first, so its payload starts right after
     // the local header, name, size prefix and JSON header. read_constant views
     // the scales in place only at an even offset.
@@ -1522,7 +1556,7 @@ TEST(GgmlEngineTest, ViewsQ4_0ScalesOfMappedPackage) {
     ASSERT_TRUE(view.has_value());
     ASSERT_EQ(reinterpret_cast<uintptr_t>(view->span().data()) % 2, misaligned);
 
-    auto host = GgmlEngineHost::create();
+    auto host = GgmlEngineHost::create(kAllowActivationQuant);
     auto context = host->create_ggml_context(
         std::make_shared<const Program>(
             Program::load(program_bytes.data(), program_bytes.size())),
