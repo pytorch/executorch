@@ -198,6 +198,45 @@ std::vector<ShaderResult> QueryPool::get_shader_timestamp_data() {
   return shader_result;
 }
 
+std::vector<ShaderTimestamp> QueryPool::get_shader_timestamp_ticks() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (querypool_ == VK_NULL_HANDLE || num_queries_ == 0) {
+    return {};
+  }
+  for (const ShaderDuration& entry : shader_durations_) {
+    if (entry.start_query_idx >= num_queries_ ||
+        entry.end_query_idx >= num_queries_) {
+      return {};
+    }
+  }
+  std::vector<uint64_t> ticks(num_queries_);
+  // Without PARTIAL_BIT, any unavailable query makes the whole call NOT_READY.
+  const VkResult status = vkGetQueryPoolResults(
+      device_,
+      querypool_,
+      0u,
+      num_queries_,
+      sizeof(uint64_t) * ticks.size(),
+      ticks.data(),
+      sizeof(uint64_t),
+      VK_QUERY_RESULT_64_BIT);
+  if (status == VK_NOT_READY) {
+    return {};
+  }
+  VK_CHECK(status);
+  std::vector<ShaderTimestamp> results;
+  results.reserve(shader_durations_.size());
+  for (const ShaderDuration& entry : shader_durations_) {
+    results.push_back(
+        {entry.kernel_name,
+         ticks.at(entry.start_query_idx),
+         ticks.at(entry.end_query_idx),
+         {{entry.gwg[0u], entry.gwg[1u], entry.gwg[2u]},
+          {entry.lwg.x(), entry.lwg.y(), entry.lwg.z()}}});
+  }
+  return results;
+}
+
 std::string QueryPool::generate_string_report() {
   std::lock_guard<std::mutex> lock(mutex_);
 
