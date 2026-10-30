@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 import unittest
 
 import torch
@@ -13,7 +14,7 @@ from executorch.backends.cuda.passes.replace_masked_copy_with_where import (
 )
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export import export
+from torch.export import Dim, export
 
 
 def _targets(graph_module):
@@ -89,6 +90,46 @@ class TestReplaceMaskedCopyWithWherePass(unittest.TestCase):
         self.assertIn(exir_ops.edge.aten.index.Tensor, targets)
         for got, expected in zip(program.module()(x, mask), Kept()(x, mask)):
             torch.testing.assert_close(got, expected, rtol=0, atol=0)
+
+    def test_check_on_another_size_keeps_the_index(self):
+        """A check that reads the count but tests another size does not hold
+        for every mask."""
+
+        class Copy(torch.nn.Module):
+            def forward(self, x, mask, y):
+                out = torch.zeros_like(x)
+                out[mask] = x[mask]
+                return out, y * 2
+
+        x = torch.randn(4, 3)
+        mask = torch.tensor([True, False, True, False])
+        y = torch.randn(3)
+        program = to_edge(
+            export(Copy(), (x, mask, y), dynamic_shapes=(None, None, {0: Dim("n")}))
+        ).exported_program()
+        graph = program.graph_module.graph
+        index = next(
+            n for n in graph.nodes if n.target == exir_ops.edge.aten.index.Tensor
+        )
+        y_node = next(n for n in graph.nodes if n.name == "y")
+        # count * 0 + y.size(0) <= 4 has the one symbol of y's size.
+        with graph.inserting_before(index.next):
+            count = graph.call_function(torch.ops.aten.sym_size.int, (index, 0))
+            size = graph.call_function(torch.ops.aten.sym_size.int, (y_node, 0))
+            zero = graph.call_function(operator.mul, (count, 0))
+            total = graph.call_function(operator.add, (zero, size))
+            check = graph.call_function(operator.le, (total, 4))
+            graph.call_function(torch.ops.aten._assert_scalar.default, (check, ""))
+        count.meta["val"] = index.meta["val"].shape[0]
+        size.meta["val"] = y_node.meta["val"].shape[0]
+        zero.meta["val"] = count.meta["val"] * 0
+        total.meta["val"] = zero.meta["val"] + size.meta["val"]
+        check.meta["val"] = total.meta["val"] <= 4
+        ReplaceMaskedCopyWithWherePass()(program.graph_module)
+
+        targets = _targets(program.graph_module)
+        self.assertIn(exir_ops.edge.aten.where.self, targets)
+        self.assertIn(exir_ops.edge.aten.index.Tensor, targets)
 
 
 if __name__ == "__main__":

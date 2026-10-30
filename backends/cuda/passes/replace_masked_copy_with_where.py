@@ -24,6 +24,7 @@ from typing import Any, List, Optional
 import sympy
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch.fx import GraphModule, Node
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -48,8 +49,10 @@ def _same_value(a: Any, b: Any) -> bool:
         return True
     if a.op != "call_function" or a.target != b.target:
         return False
-    op = getattr(a.target, "_op", a.target)
-    if torch.Tag.nondeterministic_seeded in getattr(op, "tags", ()):
+    if (
+        isinstance(a.target, (EdgeOpOverload, torch._ops.OpOverload))
+        and torch.Tag.nondeterministic_seeded in a.target.tags
+    ):
         return False
     return (
         _same_value(a.args, b.args)
@@ -119,9 +122,10 @@ class ReplaceMaskedCopyWithWherePass(PassBase):
         graph = graph_module.graph
         out, indices, values = node.args[:3]
         src = values.args[0]
+        position = indices.index(mask)
         # The mask covers the dims after the leading Nones; broadcasting lines
         # it up from the right, so only the dims after it need a size-1 dim.
-        trailing = out.meta["val"].dim() - indices.index(mask) - mask.meta["val"].dim()
+        trailing = out.meta["val"].dim() - position - mask.meta["val"].dim()
         with graph.inserting_before(node):
             condition = mask
             for _ in range(trailing):
@@ -136,17 +140,23 @@ class ReplaceMaskedCopyWithWherePass(PassBase):
         where.meta = node.meta.copy()
         node.replace_all_uses_with(where)
         graph.erase_node(node)
-        dead = self._only_range_checked(values, mask)
+        dead = self._only_range_checked(values, mask, position)
         if dead is not None:
             for user in reversed(dead):
                 graph.erase_node(user)
 
     @staticmethod
-    def _only_range_checked(index: Node, mask: Node) -> Optional[List[Node]]:
+    def _only_range_checked(
+        index: Node, mask: Node, position: int
+    ) -> Optional[List[Node]]:
         """
         The index and everything that reads it, in graph order, if all that
-        reads it is a check that its size is in [0, mask.numel()], else None.
+        reads it is a check that its count, its size at ``position``, is in
+        [0, mask.numel()], else None.
         """
+        count = index.meta["val"].shape[position]
+        if not isinstance(count, torch.SymInt):
+            return None
         numel = mask.meta["val"].numel()
         if isinstance(numel, torch.SymInt):
             numel = numel.node.shape_env.bound_sympy(numel.node.expr).upper
@@ -165,17 +175,16 @@ class ReplaceMaskedCopyWithWherePass(PassBase):
                     and isinstance(condition.meta.get("val"), torch.SymBool)
                     else None
                 )
-                if expr is None or len(expr.free_symbols) != 1:
+                if expr is None or expr.free_symbols != {count.node.expr}:
                     return None
-                (symbol,) = expr.free_symbols
-                bounds = bound_sympy(expr, {symbol: within})
+                bounds = bound_sympy(expr, {count.node.expr: within})
                 if not (bounds.is_singleton() and bounds.lower == sympy.true):
                     return None
             elif user.target == _SYM_SIZE and user.args[0] is index:
                 pass
-            elif not isinstance(
-                user.meta.get("val"), (torch.SymInt, torch.SymBool)
-            ) or not any(arg in found for arg in user.all_input_nodes):
+            # Computing a symbolic value has no effect of its own, and its
+            # readers are visited in turn.
+            elif not isinstance(user.meta.get("val"), (torch.SymInt, torch.SymBool)):
                 return None
             found.append(user)
             pending.extend(user.users)
