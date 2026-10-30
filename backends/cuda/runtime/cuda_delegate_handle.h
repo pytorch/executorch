@@ -168,7 +168,8 @@ struct CudaGraphState {
   }
 
   // Records the graph's outstanding allocations: every memory-allocation node
-  // without a matching free node. Call once the graph is captured.
+  // without a matching free node. Call once the graph has launched: only a
+  // launch allocates them, so freeing them before one fails.
   void note_graph_allocations() {
     graph_allocations.clear();
 #if !defined(EXECUTORCH_USE_HIP)

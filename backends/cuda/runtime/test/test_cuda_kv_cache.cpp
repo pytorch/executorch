@@ -1039,14 +1039,13 @@ TEST_F(CudaKVCacheTest, RetiringAGraphFreesWhatItsLastLaunchAllocated) {
           graph.graph,
           cudaGraphInstantiateFlagAutoFreeOnLaunch),
       cudaSuccess);
+  ASSERT_EQ(cudaGraphLaunch(graph.graph_exec, stream), cudaSuccess);
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  EXPECT_GE(graph_mem_in_use(), before + kBytes);
   graph.note_graph_allocations();
   // Only the allocation the graph leaves outstanding is its to free.
   ASSERT_EQ(graph.graph_allocations.size(), 1);
   EXPECT_EQ(graph.graph_allocations[0], output);
-
-  ASSERT_EQ(cudaGraphLaunch(graph.graph_exec, stream), cudaSuccess);
-  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
-  EXPECT_GE(graph_mem_in_use(), before + kBytes);
 
   graph.release();
   ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
