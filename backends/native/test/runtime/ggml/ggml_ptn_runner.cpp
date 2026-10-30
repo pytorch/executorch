@@ -4,7 +4,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-// The ggml engine for ptn_runner_main.cpp.
+// The ggml engine host for PTN test drivers.
 
 #include <stdexcept>
 
