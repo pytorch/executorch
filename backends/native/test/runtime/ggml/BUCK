@@ -94,7 +94,9 @@ _VARIANTS = [
 ]
 
 # ggml_sample_test_act_quant lets ggml quantize the activations of weight-only
-# quantized linears, judged against golden-int8_act.
+# quantized linears, judged against golden-int8_act. ggml quantizes them
+# symmetrically per block, not asymmetrically per token like the golden, so the
+# biases get one more standard error.
 [
     fbcode_target(
         _kind = runtime.cxx_test,
@@ -105,8 +107,8 @@ _VARIANTS = [
         ] + flags,
         env = v.get("env", {}) | v.get("sample_env", {}),
         remote_execution = v.get("remote_execution"),
-        # TODO: run in CI once they pass.
-        labels = ci.labels(ci.map(ci.skip_test())),
+        # TODO: run the others in CI once they pass.
+        labels = [] if v["suffix"] + name == "_act_quant" else ci.labels(ci.map(ci.skip_test())),
         test_main = "//executorch/backends/native/test/samples:sample_test_main",
         deps = [":ggml_engine_host" + v["suffix"]],
         **v.get("compat", {})
@@ -114,7 +116,7 @@ _VARIANTS = [
     for v in _VARIANTS
     for name, flags in [
         ("", []),
-        ("_act_quant", ["--allow_activation_quant_for_weight_only"]),
+        ("_act_quant", ["--allow_activation_quant_for_weight_only", "--sigmas=7"]),
     ]
 ]
 
