@@ -343,6 +343,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_avg_pool1d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_avg_pool2d",
         deps = [
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
@@ -494,6 +500,12 @@ ATEN_OPS = (
         name = "op_cosh",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
+        ],
+    ),
+    op_target(
+        name = "op_cummin",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(

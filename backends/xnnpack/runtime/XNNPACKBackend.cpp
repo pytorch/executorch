@@ -90,12 +90,15 @@ class XnnpackBackend final
     }
     auto workspace = workspace_result.get();
 
-    bool use_weight_cache = options_.resolve_weight_cache(context);
+    const xnnpack::delegate::XNNCompilerOptions compiler_options{
+        .use_weight_cache = options_.resolve_weight_cache(context),
+        .disable_packed_lhs = options_.resolve_disable_packed_lhs(context),
+    };
     // Per-path weights cache: same-path PTEs share an instance and
     // serialize on its mutex; different paths run in parallel.
     std::shared_ptr<xnnpack::delegate::XNNWeightsCache> weights_cache;
     std::unique_lock<std::mutex> lock_weights_cache;
-    if (use_weight_cache) {
+    if (compiler_options.use_weight_cache) {
       // Only honor a path coming through runtime_spec (per-PTE opt-in).
       // Reading the backend-singleton global would let a non-opt-in PTE
       // inherit another model's cache file.
@@ -131,7 +134,7 @@ class XnnpackBackend final
         weights_cache.get(),
         workspace_ptr,
         named_data_map,
-        use_weight_cache);
+        compiler_options);
     // This backend does not need its processed data after compiling the model.
     processed->Free();
 
@@ -147,7 +150,7 @@ class XnnpackBackend final
 
     // Hand the cache to the executor (held by shared_ptr so it
     // outlives any sibling executors that share it).
-    if (use_weight_cache) {
+    if (compiler_options.use_weight_cache) {
       executor->set_weights_cache(std::move(weights_cache));
     }
 

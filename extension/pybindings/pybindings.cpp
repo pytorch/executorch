@@ -7,6 +7,7 @@
  */
 
 #include <algorithm>
+#include <atomic>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
@@ -35,6 +36,9 @@
 #include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/pybindings/pybindings_cuda.h>
+#ifdef EXECUTORCH_PYBINDINGS_CUDA
+#include <executorch/extension/cuda/caller_stream.h>
+#endif
 #include <executorch/extension/pybindings/pybindings_data_loader.h>
 #include <executorch/extension/pybindings/pybindings_dlpack.h>
 #include <executorch/extension/pybindings/pybindings_executorch_result.h>
@@ -1688,6 +1692,201 @@ void synchronize_tensor_devices(const Method& method) {
     synchronize_device(index);
   }
 }
+
+#ifdef EXECUTORCH_PYBINDINGS_CUDA
+// A stream made by executorch.runtime.cuda.Stream. Selection and destruction
+// share one lock, so no thread can destroy it while any thread has it selected.
+class PyCudaStream final {
+ public:
+  explicit PyCudaStream(int device) {
+    const auto create = [this] {
+      auto status = cudaGetDevice(&device_);
+      if (status == cudaSuccess) {
+        status = cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking);
+      }
+      if (status != cudaSuccess) {
+        throw std::runtime_error(
+            std::string("Failed to create a CUDA stream: ") +
+            cudaGetErrorString(status));
+      }
+    };
+    device < 0 ? create() : with_cuda_device(device, create);
+  }
+
+  ~PyCudaStream() {
+    try {
+      close();
+    } catch (const std::exception&) {
+    }
+  }
+
+  uintptr_t handle() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return reinterpret_cast<uintptr_t>(stream_);
+  }
+
+  int device() const {
+    return device_;
+  }
+
+  cudaStream_t select() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (stream_ == nullptr) {
+      throw std::runtime_error("This CUDA stream is closed");
+    }
+    // The CUDA delegate installs a caller stream for device 0 only.
+    if (device_ != 0) {
+      throw std::runtime_error(
+          "Only a stream on CUDA device 0 can be selected for now");
+    }
+    ++selected_;
+    return stream_;
+  }
+
+  void deselect() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    --selected_;
+  }
+
+  void close() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (selected_ != 0) {
+      throw std::runtime_error(
+          "Cannot close a CUDA stream while it is selected");
+    }
+    if (stream_ != nullptr) {
+      // A stream is destroyed on its own device, which another thread may not
+      // have current.
+      const auto status = with_cuda_device(
+          device_, [this] { return cudaStreamDestroy(stream_); });
+      if (status != cudaSuccess) {
+        throw std::runtime_error(
+            std::string("Failed to destroy a CUDA stream: ") +
+            cudaGetErrorString(status));
+      }
+      stream_ = nullptr;
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  cudaStream_t stream_ = nullptr;
+  int device_ = 0;
+  int selected_ = 0;
+};
+
+// A thread's active stream scopes, innermost last. They live here rather than
+// in the scope objects, so a scope that ends out of order, or is dropped on
+// another thread, never restores the wrong selection.
+struct CallerStreamScopes {
+  struct Entry {
+    uint64_t id;
+    std::shared_ptr<PyCudaStream> owner;
+    std::unique_ptr<executorch::extension::cuda::CallerStreamGuard> guard;
+    // Refused or abandoned; ends as soon as every scope above it has ended.
+    bool retired = false;
+  };
+  std::vector<Entry> active;
+
+  // A guard restores the selection it replaced, so scopes end innermost first.
+  void pop_finished() {
+    do {
+      Entry entry = std::move(active.back());
+      active.pop_back();
+      entry.guard.reset();
+      if (entry.owner) {
+        entry.owner->deselect();
+      }
+    } while (!active.empty() && active.back().retired);
+  }
+
+  ~CallerStreamScopes() {
+    for (auto& entry : active) {
+      entry.retired = true;
+    }
+    if (!active.empty()) {
+      pop_finished();
+    }
+  }
+};
+thread_local CallerStreamScopes caller_stream_scopes;
+
+// Selects a CUDA stream for the delegates of a Python with-block. Scopes are
+// told apart by a number that is never reused, unlike a guard's address.
+class PyCallerStreamScope final {
+ public:
+  explicit PyCallerStreamScope(std::shared_ptr<PyCudaStream> owner)
+      : owner_(std::move(owner)) {}
+  explicit PyCallerStreamScope(uintptr_t stream)
+      : stream_(reinterpret_cast<cudaStream_t>(stream)) {}
+
+  // Losing the scope without an exit ends it at once, or, if blocks started
+  // after it are still active, when they end. Compared, never dereferenced:
+  // the starting thread may have ended.
+  ~PyCallerStreamScope() {
+    if (id_ != 0 && home_ == &caller_stream_scopes) {
+      end(/*refuse_out_of_order=*/false);
+    }
+  }
+
+  void enter() {
+    static std::atomic<uint64_t> next_id{1};
+    const cudaStream_t stream = owner_ ? owner_->select() : stream_;
+    try {
+      auto guard =
+          std::make_unique<executorch::extension::cuda::CallerStreamGuard>(
+              stream);
+      const uint64_t id = next_id++;
+      caller_stream_scopes.active.push_back({id, owner_, std::move(guard)});
+      id_ = id;
+      home_ = &caller_stream_scopes;
+    } catch (...) {
+      if (owner_) {
+        owner_->deselect();
+      }
+      throw;
+    }
+  }
+
+  // executorch.runtime.cuda enters each scope once, and exits it only on the
+  // thread that entered it.
+  void exit() {
+    if (id_ != 0) {
+      end(/*refuse_out_of_order=*/true);
+    }
+  }
+
+ private:
+  void end(bool refuse_out_of_order) {
+    auto& scopes = caller_stream_scopes;
+    const auto it = std::find_if(
+        scopes.active.begin(), scopes.active.end(), [this](const auto& e) {
+          return e.id == id_;
+        });
+    if (it == scopes.active.end()) {
+      id_ = 0; // Already ended after an earlier refused exit.
+      return;
+    }
+    if (it + 1 != scopes.active.end()) {
+      it->retired = true;
+      if (refuse_out_of_order) {
+        throw std::runtime_error(
+            "CUDA stream scopes must end innermost first; this one ends "
+            "when the scopes started after it end");
+      }
+      id_ = 0;
+      return;
+    }
+    scopes.pop_finished();
+    id_ = 0;
+  }
+
+  std::shared_ptr<PyCudaStream> owner_;
+  cudaStream_t stream_ = nullptr;
+  uint64_t id_ = 0;
+  const CallerStreamScopes* home_ = nullptr;
+};
+#endif
 
 py::object portable_tensor_result(
     const executorch::aten::Tensor& tensor,
@@ -3588,6 +3787,118 @@ struct PyMethod final {
     torch_inputs_ = std::move(torch_inputs);
     torch_tensor_ptrs_ = std::move(input_tensors);
 #endif
+    find_inputs_aliased_by_outputs();
+  }
+
+  // Writes output `index` straight into `tensor`'s storage from the next
+  // execute() on, instead of into storage this method allocates. The binding
+  // persists across calls and the tensor is kept alive until it is replaced.
+  // Storage the output used before is kept alive, so tensors already returned
+  // for it with clone_outputs=False stay valid.
+  void set_output(py::object tensor, size_t index) {
+    ObjectLock lock(mutex_);
+#ifdef USE_ATEN_LIB
+    // ATen swaps the data pointer of the output's storage in place, so an
+    // output returned earlier would read the bound tensor, or freed memory once
+    // it is rebound.
+    throw std::runtime_error(
+        "set_output is not supported by the ATen bindings");
+#else
+    if (!is_torch_tensor(tensor)) {
+      throw py::type_error("Output storage must be a torch tensor");
+    }
+    const auto num_outputs = storage_->method->outputs_size();
+    if (index >= num_outputs) {
+      throw std::out_of_range(
+          "output index " + std::to_string(index) + " is out of range for " +
+          std::to_string(num_outputs) + " outputs");
+    }
+    const auto& output = storage_->method->get_output(index);
+    if (!output.isTensor()) {
+      throw py::value_error(
+          "output " + std::to_string(index) + " is not a tensor");
+    }
+    if (const auto input = aliased_input(index)) {
+      throw py::value_error(aliased_input_message(index, *input));
+    }
+    for (size_t i = 0; i < num_outputs; ++i) {
+      if (i != index && &storage_->method->get_output(i) == &output) {
+        throw py::value_error(
+            "output " + std::to_string(index) +
+            " is the same value as output " + std::to_string(i) +
+            " and cannot be bound");
+      }
+    }
+    const auto meta = storage_->method->method_meta().output_tensor_meta(index);
+    THROW_IF_ERROR(
+        meta.error(), "Failed to get output tensor meta for output %zu", index);
+    if (meta->is_memory_planned()) {
+      throw py::value_error(
+          "output " + std::to_string(index) +
+          " is memory planned and cannot be bound");
+    }
+    if (!tensor.attr("is_contiguous")().cast<bool>()) {
+      throw py::value_error(
+          "output " + std::to_string(index) +
+          " must be bound to a contiguous tensor");
+    }
+    const TorchTensorView view(tensor, index);
+    const auto device = output.toTensor().device();
+    if (view.scalar_type() != meta->scalar_type() || view.device() != device) {
+      const auto name = [](executorch::aten::Device value) {
+        return value.is_cpu() ? std::string("cpu")
+                              : "cuda:" + std::to_string(value.index());
+      };
+      throw py::value_error(
+          "output " + std::to_string(index) + " is " +
+          runtime::toString(meta->scalar_type()) + " on " + name(device) +
+          ", but the bound tensor is " + runtime::toString(view.scalar_type()) +
+          " on " + name(view.device()));
+    }
+    const auto dim_order = meta->dim_order();
+    for (size_t d = 0; d < dim_order.size(); ++d) {
+      if (dim_order[d] != d) {
+        throw py::value_error(
+            "output " + std::to_string(index) +
+            " is not contiguous (e.g. channels-last) and cannot be bound");
+      }
+    }
+    if (view.nbytes() < meta->nbytes()) {
+      throw py::value_error(
+          "output " + std::to_string(index) + " needs " +
+          std::to_string(meta->nbytes()) + " bytes, but the tensor has " +
+          std::to_string(view.nbytes()));
+    }
+    // Two outputs written into one buffer, or an output written over an input
+    // a kernel is still reading, would silently corrupt each other.
+    const auto overlaps = [&](const void* data, size_t nbytes) {
+      const auto start = reinterpret_cast<uintptr_t>(view.data());
+      const auto other = reinterpret_cast<uintptr_t>(data);
+      return nbytes != 0 && view.nbytes() != 0 && start < other + nbytes &&
+          other < start + view.nbytes();
+    };
+    for (size_t i = 0; i < bound_outputs_.size(); ++i) {
+      if (i == index || !bound_outputs_[i]) {
+        continue;
+      }
+      const TorchTensorView bound(bound_outputs_[i], i);
+      if (overlaps(bound.data(), bound.nbytes())) {
+        throw py::value_error(
+            "output " + std::to_string(index) +
+            " would share memory with output " + std::to_string(i) +
+            ", which is already bound");
+      }
+    }
+    for (const auto& input : torch_inputs_) {
+      if (overlaps(input->data(), input->nbytes())) {
+        throw py::value_error(
+            "output " + std::to_string(index) +
+            " would share memory with input " + std::to_string(input->index()));
+      }
+    }
+    bound_outputs_.resize(num_outputs);
+    bound_outputs_[index] = tensor;
+#endif
   }
 
   void execute() {
@@ -3634,7 +3945,26 @@ struct PyMethod final {
     const auto num_outputs = storage_->method->outputs_size();
     allocate_output_storages();
     std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
-    for (int i = 0; i < storage_->output_storages.size(); ++i) {
+    caller_outputs_.assign(num_outputs, py::object());
+    for (size_t i = 0; i < storage_->output_storages.size(); ++i) {
+#ifndef USE_ATEN_LIB
+      // set_output() refuses to bind anything in ATen builds.
+      if (is_bound_output(i)) {
+        auto bound = bound_outputs_[i];
+        set_output(bound, i);
+        const TorchTensorView view(bound, i);
+        output_storage_spans[i] =
+            Span<uint8_t>(static_cast<uint8_t*>(view.data()), view.nbytes());
+        caller_outputs_[i] = bound;
+        continue;
+      }
+#endif
+      // An output that is an unplanned input (e.g. the write-back of a mutated
+      // input) already points at the tensor fed for it. Giving it storage
+      // would repoint the input too.
+      if (aliased_input(i)) {
+        continue;
+      }
       const auto& device_buffer = storage_->device_output_storages[i];
       output_storage_spans[i] = device_buffer
           ? device_buffer->as_span()
@@ -3688,8 +4018,39 @@ struct PyMethod final {
         storage_->method->method_meta().name(),
         static_cast<uint32_t>(get_outputs_status));
 
+    // An output bound with set_output() already lives in the caller's tensor,
+    // so it is returned as that tensor and taken out of `result` before it
+    // could be cloned. A dynamic bound output may have been resized smaller
+    // than its (contiguous) tensor, so view it at its written size. An output
+    // that is an input is returned like any other: cloned by default, and as
+    // an alias of the caller's tensor with clone_outputs=False.
+    std::vector<py::object> caller_backed(result.size());
+    for (size_t i = 0; i < caller_outputs_.size() && i < result.size(); ++i) {
+      if (!caller_outputs_[i] || !result[i].isTensor()) {
+        continue;
+      }
+      const auto& caller = caller_outputs_[i];
+      const auto& written = result[i].toTensor();
+      std::vector<int64_t> sizes(
+          written.sizes().begin(), written.sizes().end());
+      if (caller.attr("shape").cast<std::vector<int64_t>>() == sizes) {
+        caller_backed[i] = caller;
+      } else {
+        caller_backed[i] = caller.attr("view")(-1)
+                               .attr("narrow")(0, 0, written.numel())
+                               .attr("view")(py::cast(sizes));
+      }
+      result[i] = EValue();
+    }
+
     // Retrieve outputs
-    return get_outputs_as_py_list(result, clone_outputs);
+    py::list outputs = get_outputs_as_py_list(result, clone_outputs);
+    for (size_t i = 0; i < caller_backed.size(); ++i) {
+      if (caller_backed[i]) {
+        outputs[i] = caller_backed[i];
+      }
+    }
+    return outputs;
   }
 
   py::list call(const py::object& inputs, bool clone_outputs = true) {
@@ -3778,6 +4139,70 @@ struct PyMethod final {
   std::vector<std::shared_ptr<BufferTensor>> buffer_inputs_;
   std::vector<TensorPtr> buffer_tensor_ptrs_;
   std::vector<BorrowedInput> borrowed_inputs_;
+  // Caller tensors bound as output storage with set_output(), by output index.
+  std::vector<py::object> bound_outputs_;
+  // Per output of the last execute(), the caller tensor it lives in, if any.
+  std::vector<py::object> caller_outputs_;
+  // Per output, the unplanned input it is, if any. Empty until the first
+  // set_inputs().
+  std::vector<std::optional<size_t>> inputs_aliased_by_outputs_;
+
+  bool is_bound_output(size_t index) const {
+    return index < bound_outputs_.size() && bool(bound_outputs_[index]);
+  }
+
+  std::optional<size_t> aliased_input(size_t index) const {
+    return index < inputs_aliased_by_outputs_.size()
+        ? inputs_aliased_by_outputs_[index]
+        : std::nullopt;
+  }
+
+  // An output that carries an input mutation is the same value as that input.
+  // get_input() marks the input as set, so this only runs once set_inputs()
+  // has set them all, leaving execute()'s check for unset inputs intact.
+  void find_inputs_aliased_by_outputs() {
+    const auto num_outputs = storage_->method->outputs_size();
+    if (inputs_aliased_by_outputs_.size() == num_outputs) {
+      return;
+    }
+    inputs_aliased_by_outputs_.assign(num_outputs, std::nullopt);
+    const auto meta = storage_->method->method_meta();
+    for (size_t i = 0; i < num_outputs; ++i) {
+      const auto output_meta = meta.output_tensor_meta(i);
+      if (!output_meta.ok() || output_meta->is_memory_planned()) {
+        continue;
+      }
+      for (size_t j = 0; j < storage_->method->inputs_size(); ++j) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        const bool same =
+            &storage_->method->get_output(i) == &storage_->method->get_input(j);
+#pragma GCC diagnostic pop
+        if (same) {
+          inputs_aliased_by_outputs_[i] = j;
+          break;
+        }
+      }
+    }
+    // Only possible for a binding made before the first set_inputs(), when
+    // aliases were not known yet.
+    std::string error;
+    for (size_t i = 0; i < num_outputs; ++i) {
+      if (const auto input = aliased_input(i); input && is_bound_output(i)) {
+        bound_outputs_[i] = py::object();
+        error +=
+            aliased_input_message(i, *input) + ", so its binding was removed. ";
+      }
+    }
+    if (!error.empty()) {
+      throw py::value_error(error);
+    }
+  }
+
+  static std::string aliased_input_message(size_t output, size_t input) {
+    return "output " + std::to_string(output) + " is input " +
+        std::to_string(input) + ", which the method already writes in place";
+  }
 #ifndef USE_ATEN_LIB
   std::vector<std::shared_ptr<DLPackTensorView>> dlpack_inputs_;
   std::vector<TensorPtr> dlpack_tensor_ptrs_;
@@ -3997,17 +4422,10 @@ struct PyMethod final {
           output_tensor_meta.error(),
           "Failed to get output tensor meta for output %zu",
           i);
-      if (output_tensor_meta.get().is_memory_planned()) {
-        // Skip allocating storage for planned memory outputs.
-        output_storages.emplace_back();
-        continue;
-      }
-      const auto& output = storage_->method->get_output(i);
-      bool is_input = false;
-      for (size_t j = 0; j < storage_->method->inputs_size(); ++j) {
-        is_input |= &output == &storage_->method->get_input(j);
-      }
-      if (is_input) {
+      if (output_tensor_meta.get().is_memory_planned() || is_bound_output(i) ||
+          aliased_input(i).has_value()) {
+        // Skip allocating storage for planned memory outputs, and for outputs
+        // that live in a caller's tensor.
         output_storages.emplace_back();
         continue;
       }
@@ -4413,6 +4831,26 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   // not thread-safe when Python operations inside a binding release the GIL.
   auto call_guard = py::call_guard<RuntimeErrorScope>();
 
+#if defined(EXECUTORCH_PYBINDINGS_CUDA) && !defined(USE_ATEN_LIB)
+  // Back executorch.runtime.cuda, which keeps the runtime free of PyTorch.
+  py::class_<PyCudaStream, std::shared_ptr<PyCudaStream>>(
+      m, "_CudaStream", py::module_local())
+      .def(py::init<int>(), py::arg("device"))
+      .def_property_readonly("handle", &PyCudaStream::handle)
+      .def_property_readonly("device", &PyCudaStream::device)
+      .def("close", &PyCudaStream::close);
+  py::class_<PyCallerStreamScope>(m, "_CallerStreamScope", py::module_local())
+      .def(py::init<std::shared_ptr<PyCudaStream>>(), py::arg("stream"))
+      .def(py::init<uintptr_t>(), py::arg("stream"))
+      .def("__enter__", &PyCallerStreamScope::enter)
+      .def(
+          "__exit__",
+          [](PyCallerStreamScope& scope,
+             const py::object&,
+             const py::object&,
+             const py::object&) { scope.exit(); });
+#endif
+
 #ifdef USE_ATEN_LIB
   m.attr("_uses_aten") = true;
 #else
@@ -4776,6 +5214,12 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   py::class_<PyMethod>(m, "ExecuTorchMethod", py::module_local())
       .def("set_inputs", &PyMethod::set_inputs, py::arg("inputs"), call_guard)
       .def("execute", &PyMethod::execute, call_guard)
+      .def(
+          "set_output",
+          &PyMethod::set_output,
+          py::arg("tensor"),
+          py::arg("index"),
+          call_guard)
       .def(
           "get_outputs",
           &PyMethod::get_outputs,

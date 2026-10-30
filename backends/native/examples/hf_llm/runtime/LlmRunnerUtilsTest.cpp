@@ -140,6 +140,48 @@ TEST(LlmRunnerUtilsTest, TopLogitIndicesRankNanFirst) {
       (std::vector<size_t>{2, 104, 103, 102, 101}));
   EXPECT_EQ(top_logit_indices(row.data(), 2, 5), (std::vector<size_t>{0, 1}));
 }
+
+TEST(LlmRunnerUtilsTest, CompareCloseAppliesAbsoluteAndRelativeBounds) {
+  const std::vector<float> want = {1.0f, -100.0f, 0.0f};
+  const std::vector<float> got = {1.5f, -101.0f, 0.0f};
+
+  const Closeness loose = compare_close(got.data(), want.data(), 3, 0.5, 0.01);
+  EXPECT_TRUE(loose.close);
+  EXPECT_DOUBLE_EQ(loose.max_abs_error, 1.0);
+  EXPECT_FALSE(compare_close(got.data(), want.data(), 3, 0.4, 0.01).close);
+  EXPECT_FALSE(compare_close(got.data(), want.data(), 3, 0.5, 0.004).close);
+}
+
+TEST(LlmRunnerUtilsTest, CompareCloseScalesRtolByWant) {
+  const std::vector<float> small = {100.0f};
+  const std::vector<float> large = {102.0f};
+
+  EXPECT_FALSE(compare_close(large.data(), small.data(), 1, 0.0, 0.0199).close);
+  EXPECT_TRUE(compare_close(small.data(), large.data(), 1, 0.0, 0.0199).close);
+}
+
+TEST(LlmRunnerUtilsTest, CompareCloseRejectsNonFiniteMismatches) {
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+  const std::vector<float> want = {0.0f, inf, 2.0f};
+
+  const Closeness result = compare_close(
+      std::vector<float>{nan, inf, 2.5f}.data(), want.data(), 3, 1.0, 1.0);
+  EXPECT_FALSE(result.close);
+  EXPECT_DOUBLE_EQ(result.max_abs_error, 0.5);
+  EXPECT_EQ(result.nan_count, 1);
+  const Closeness both_nan = compare_close(
+      std::vector<float>{nan}.data(), std::vector<float>{nan}.data(), 1, 1, 1);
+  EXPECT_FALSE(both_nan.close);
+  EXPECT_EQ(both_nan.nan_count, 1);
+  EXPECT_TRUE(compare_close(want.data() + 1, want.data() + 1, 2, 0, 0).close);
+  EXPECT_FALSE(
+      compare_close(std::vector<float>{-inf}.data(), want.data() + 1, 1, 1, 1)
+          .close);
+  EXPECT_FALSE(
+      compare_close(std::vector<float>{0.0f}.data(), want.data() + 1, 1, 1, 1)
+          .close);
+}
 // cppcheck-suppress-end syntaxError
 
 } // namespace

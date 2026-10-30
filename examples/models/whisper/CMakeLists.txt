@@ -114,8 +114,10 @@ if(MSVC AND EXECUTORCH_BUILD_CUDA)
   add_custom_command(
     TARGET whisper_runner
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
-            $<TARGET_FILE_DIR:whisper_runner>
-    COMMENT "Copying aoti_cuda_shims.dll to whisper_runner directory"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_RUNTIME_DLLS:whisper_runner> $<TARGET_FILE_DIR:whisper_runner>
+    COMMENT "Copying runtime DLLs to whisper_runner directory"
+    COMMAND_EXPAND_LISTS
   )
 endif()

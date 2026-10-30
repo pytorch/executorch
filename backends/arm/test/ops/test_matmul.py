@@ -73,6 +73,8 @@ class MatMulDoubleInput(torch.nn.Module):
             MatMulDoubleInput(),
             lambda: (torch.randn(5), torch.rand(5)),
             EXIR_OPS_MUL_SUM,
+            u55_a16w8_non_delegated_ops={exir_op_mm_2d: 1},
+            u55_a16w8_n_delegates=2,
         ),
         "double_input_randn_rand_2d_2d": lambda: _make_test_case(
             MatMulDoubleInput(),
@@ -86,6 +88,8 @@ class MatMulDoubleInput(torch.nn.Module):
             MatMulDoubleInput(),
             lambda: (torch.randn(5, 5), torch.rand(5)),
             EXIR_OPS_MUL_SUM,
+            u55_a16w8_non_delegated_ops={exir_op_mm_2d: 1},
+            u55_a16w8_n_delegates=2,
         ),
         "double_input_randn_rand_1d_2d": lambda: _make_test_case(
             MatMulDoubleInput(),
@@ -105,11 +109,8 @@ class MatMulDoubleInput(torch.nn.Module):
             MatMulDoubleInput(),
             lambda: (torch.randn(2, 3, 5), torch.rand(5)),
             EXIR_OPS_MUL_SUM_VIEW,
-            u55_a16w8_non_delegated_ops={
-                exir_op_mul: 1,
-                exir_op_sum: 1,
-                exir_op_view: 2,
-            },
+            u55_a16w8_non_delegated_ops={exir_op_mm_2d: 1},
+            u55_a16w8_n_delegates=2,
         ),
         "double_input_randn_rand_3d_2d": lambda: _make_test_case(
             MatMulDoubleInput(),
@@ -149,11 +150,8 @@ class MatMulDoubleInput(torch.nn.Module):
                 torch.rand(5),
             ),
             EXIR_OPS_MUL_SUM_VIEW,
-            u55_a16w8_non_delegated_ops={
-                exir_op_mul: 1,
-                exir_op_sum: 1,
-                exir_op_view: 2,
-            },
+            u55_a16w8_non_delegated_ops={exir_op_mm_2d: 1},
+            u55_a16w8_n_delegates=2,
         ),
         "double_input_randn_rand_4d_2d": lambda: _make_test_case(
             MatMulDoubleInput(),
@@ -233,6 +231,8 @@ class MatMulSingleInput(torch.nn.Module):
             MatMulSingleInput(),
             lambda: (torch.randn(5),),
             EXIR_OPS_MUL_SUM,
+            u55_a16w8_non_delegated_ops={exir_op_mm_2d: 1},
+            u55_a16w8_n_delegates=2,
         ),
         "single_input_randn_2d": lambda: _make_test_case(
             MatMulSingleInput(),
@@ -385,14 +385,13 @@ xfails = {
     "double_input_randn_rand_4d_1d": "aten.mv.default is not supported",
     "single_input_randn_1d": "aten.dot.default is not supported",
 }
-vgf_quant_xfails = {
+vgf_a16w8_xfails = {
     name: reason
     for name, reason in xfails.items()
     if name
     not in {
-        "double_input_randn_rand_1d_1d",
-        "double_input_randn_rand_2d_1d",
-        "single_input_randn_1d",
+        "double_input_randn_rand_3d_1d",
+        "double_input_randn_rand_4d_1d",
     }
 }
 
@@ -429,7 +428,7 @@ def test_matmul_tosa_FP_fp8(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite, xfails=xfails)
+@common.parametrize("test_case", test_suite)
 def test_matmul_tosa_INT(test_case: test_case_t):
     test_data = test_case()
     pipeline = TosaPipelineINT[input_t](
@@ -442,7 +441,7 @@ def test_matmul_tosa_INT(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite, xfails=xfails)
+@common.parametrize("test_case", test_suite)
 @common.XfailIfNoCorstone300
 def test_matmul_u55_INT(test_case: test_case_t):
     test_data = test_case()
@@ -455,7 +454,7 @@ def test_matmul_u55_INT(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite, xfails=xfails)
+@common.parametrize("test_case", test_suite)
 @common.XfailIfNoCorstone320
 def test_matmul_u85_INT(test_case: test_case_t):
     test_data = test_case()
@@ -496,7 +495,7 @@ def test_matmul_vgf_no_quant_fp8(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite, xfails=vgf_quant_xfails)
+@common.parametrize("test_case", test_suite)
 @common.SkipIfNoModelConverter
 def test_matmul_vgf_quant(test_case: test_case_t):
     test_data = test_case()
@@ -511,7 +510,7 @@ def test_matmul_vgf_quant(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite, xfails=xfails)
+@common.parametrize("test_case", test_suite)
 @common.SkipIfNoModelConverter
 def test_matmul_vgf_quant_a16w8(test_case: test_case_t):
     test_data = test_case()
@@ -527,7 +526,7 @@ def test_matmul_vgf_quant_a16w8(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite, xfails=xfails)
+@common.parametrize("test_case", test_suite)
 def test_matmul_tosa_INT_a16w8(test_case: test_case_t):
     """Test matmul with 16A8W quantization for TOSA INT."""
     test_data = test_case()
@@ -544,13 +543,7 @@ def test_matmul_tosa_INT_a16w8(test_case: test_case_t):
 @common.parametrize("test_case", test_suite)
 @common.XfailIfNoCorstone300
 def test_matmul_u55_INT_a16w8(test_case: test_case_t):
-    """Test matmul with 16A8W quantization on U55 (16-bit activations, 8-bit
-    weights).
-
-    U55 does not support matmuls with INT16 inputs, so all matmuls should be
-    rejected by the partitioner.
-
-    """
+    """Check that U55 leaves A16W8 matrix multiplication on the CPU."""
     test_data = test_case()
     test_inputs = test_data.input_factory()
 
@@ -567,7 +560,7 @@ def test_matmul_u55_INT_a16w8(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite, xfails=xfails)
+@common.parametrize("test_case", test_suite)
 @common.XfailIfNoCorstone320
 def test_matmul_u85_INT_a16w8(test_case: test_case_t):
     """Test matmul with 16A8W quantization on U85 (16-bit activations, 8-bit

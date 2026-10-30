@@ -94,9 +94,11 @@ jobs:
       repository: ${{ matrix.repository }}
       ref: ""
       test-infra-repository: pytorch/test-infra
-      # Avoid the unsatisfiable conda upgrade in the Windows runner's base env.
+      # Avoid the unsatisfiable conda upgrade in the Windows runner's base env, and the
+      # Python 3.15 release candidate download that fails on the current runner image.
       # https://github.com/pytorch/test-infra/pull/9179
-      test-infra-ref: e3d344d886a7281f6a919115d332df2a080da8ad
+      # https://github.com/pytorch/test-infra/pull/9265
+      test-infra-ref: b46669025788e540ed4ecc7c56cc52db343e284f
       build-matrix: ${{ needs.filter-matrix.outputs.matrix }}
       pre-script: ${{ matrix.pre-script }}
       env-script: ${{ matrix.env-script }}

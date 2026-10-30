@@ -38,42 +38,62 @@ add_library(
   graph/Scalar.cpp
   graph/TensorMeta.cpp
   graph/Value.cpp
+  graph/utils/Aliases.cpp
   graph/utils/GraphUtils.cpp
 )
 
-add_library(native_reference_gguf_kquant utils/ReferenceGgufKQuant.cpp)
-target_link_libraries(native_reference_gguf_kquant PRIVATE Threads::Threads)
-
-add_library(
-  native_package deserialize/OwnedBytes.cpp deserialize/Package.cpp
-                 deserialize/SafeTensorsReader.cpp deserialize/ZipReader.cpp
-)
+add_library(native_program Deserialize.cpp Program.cpp)
 target_link_libraries(
-  native_package
+  native_program
   PUBLIC native_graph
-  PRIVATE libzip::zip nlohmann_json::nlohmann_json Threads::Threads
-)
-
-add_library(
-  native_runtime Deserialize.cpp Program.cpp MethodMeta.cpp TensorInfo.cpp
-                 Validation.cpp
-)
-target_link_libraries(
-  native_runtime
-  PUBLIC native_graph native_package
   PRIVATE $<BUILD_INTERFACE:native_graph_schema> Threads::Threads
 )
-add_dependencies(native_runtime native_graph_schema_gen)
+add_dependencies(native_program native_graph_schema_gen)
 
-add_library(native_engine engine/Engine.cpp)
-target_link_libraries(native_engine PUBLIC native_runtime)
+set(_native_runtime_targets native_graph native_program)
 
-add_library(native_api api/Model.cpp)
-target_link_libraries(native_api PUBLIC native_engine)
+if(EXECUTORCH_BUILD_NATIVE)
+  add_library(native_reference_gguf_kquant utils/ReferenceGgufKQuant.cpp)
+  target_link_libraries(native_reference_gguf_kquant PRIVATE Threads::Threads)
 
-foreach(target native_graph native_reference_gguf_kquant native_package
-               native_runtime native_engine native_api
-)
+  add_library(
+    native_package
+    deserialize/OwnedBytes.cpp deserialize/Package.cpp
+    deserialize/SafeTensorsReader.cpp deserialize/Samples.cpp
+    deserialize/ZipReader.cpp
+  )
+  target_link_libraries(
+    native_package
+    PUBLIC native_graph
+    PRIVATE libzip::zip nlohmann_json::nlohmann_json Threads::Threads
+  )
+
+  add_library(native_runtime MethodMeta.cpp TensorInfo.cpp Validation.cpp)
+  target_link_libraries(
+    native_runtime
+    PUBLIC native_program native_package
+    PRIVATE $<BUILD_INTERFACE:native_graph_schema> Threads::Threads
+  )
+  add_dependencies(native_runtime native_graph_schema_gen)
+
+  add_library(native_engine engine/Engine.cpp)
+  target_link_libraries(native_engine PUBLIC native_runtime)
+
+  add_library(native_api api/Model.cpp)
+  target_link_libraries(native_api PUBLIC native_engine)
+
+  list(
+    APPEND
+    _native_runtime_targets
+    native_reference_gguf_kquant
+    native_package
+    native_runtime
+    native_engine
+    native_api
+  )
+endif()
+
+foreach(target ${_native_runtime_targets})
   add_library(executorch::${target} ALIAS ${target})
   target_compile_features(${target} PUBLIC cxx_std_20)
   target_compile_options(
@@ -87,8 +107,7 @@ foreach(target native_graph native_reference_gguf_kquant native_package
 endforeach()
 
 install(
-  TARGETS native_graph native_reference_gguf_kquant native_package
-          native_runtime native_engine native_api
+  TARGETS ${_native_runtime_targets}
   EXPORT ExecuTorchTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
