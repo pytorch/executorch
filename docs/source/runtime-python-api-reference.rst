@@ -44,3 +44,11 @@ Other buffers, such as ``memoryview``, work as inputs too. NumPy has no bfloat16
 For data on a GPU, use DLPack, the standard way to share tensors between Python libraries. This needs ExecuTorch built with CUDA support. Pass a CuPy array to a method that takes CUDA inputs. Read a CUDA result with ``cupy.from_dlpack(out)``, or copy it to the CPU with ``out.to_host()``. ``ExecuTorchResult.from_host()`` copies CPU data to a CUDA device.
 
 To get ``ExecuTorchResult`` values even when PyTorch is installed, set ``EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch`` before importing ExecuTorch.
+
+CUDA streams
+~~~~~~~~~~~~
+
+With ExecuTorch built with CUDA support, ``executorch.runtime.cuda`` makes the CUDA and TensorRT delegates of any number of programs run on one stream you choose, for example a CUDA green-context stream. It does not need PyTorch. The module documentation below gives an example and the rules.
+
+.. automodule:: executorch.runtime.cuda
+    :members: Stream, ExternalStream, stream

@@ -323,6 +323,11 @@
     - arg_meta: null
       kernel_name: torch::executor::cosh_out
 
+- op: cummin.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::cummin_out
+
 - op: cumsum.out
   kernels:
     - arg_meta: null

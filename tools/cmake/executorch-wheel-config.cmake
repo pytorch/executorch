@@ -75,6 +75,7 @@
 #                                model. Not part of EXECUTORCH_LIBRARIES, see
 #                                below.
 # executorch::backend_xnnpack    The XNNPACK delegate.
+# executorch::backend_cpu        The CPU delegate, when explicitly enabled.
 # executorch::backend_coreml     The Core ML delegate. macOS only.
 # executorch::backend_mlx        The MLX delegate. macOS on Apple Silicon only.
 #                                Its Metal kernel archive is published as
@@ -383,6 +384,7 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
     ITEMS libexecutorch_kernels_optimized
           libexecutorch_kernels_torchao
           libexecutorch_backend_xnnpack
+          libexecutorch_backend_cpu
           libexecutorch_backend_coreml
           libexecutorch_backend_mlx
           libexecutorch_backend_cuda
@@ -765,6 +767,7 @@ if(TARGET executorch::runtime AND TARGET executorch::threadpool)
 endif()
 
 _executorch_define_component(backend_xnnpack executorch_backend_xnnpack)
+_executorch_define_component(backend_cpu executorch_backend_cpu)
 # The Core ML delegate, present only in a wheel built on macOS.
 _executorch_define_component(backend_coreml executorch_backend_coreml)
 # The MLX delegate, present only in a wheel built on Apple Silicon with the

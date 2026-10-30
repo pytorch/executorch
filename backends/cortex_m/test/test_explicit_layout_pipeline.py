@@ -26,6 +26,7 @@ from executorch.backends.transforms.remove_unused_constants_pass import (
 )
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export import ExportedProgram
 from torch.fx import Node
 
 # Temporary opt-in coverage. Move these invariants into the standard Cortex-M
@@ -65,6 +66,35 @@ class UnsupportedAvgPool(torch.nn.Module):
         return torch.nn.functional.avg_pool2d(
             x, kernel_size=2, stride=2, divisor_override=3
         )
+
+
+class ThenConv1d(torch.nn.Module):
+    def __init__(self, fn) -> None:
+        super().__init__()
+        self.fn = fn
+        self.conv = torch.nn.Conv1d(8, 8, 1)
+
+    def forward(self, x):
+        return self.conv(self.fn(x))
+
+
+class TanhConvReshapeConv(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv1 = torch.nn.Conv1d(8, 8, 1)
+        self.conv2 = torch.nn.Conv1d(4, 4, 1)
+
+    def forward(self, x):
+        return self.conv2(self.conv1(torch.tanh(x)).view(1, 4, 32))
+
+
+class Apply(torch.nn.Module):
+    def __init__(self, fn) -> None:
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, *inputs):
+        return self.fn(*inputs)
 
 
 class NHWCPaddedConv(torch.nn.Module):
@@ -382,3 +412,148 @@ def test_explicit_layout_rejects_unsupported_spatial_operator():
     while error.__cause__ is not None:
         error = error.__cause__
     assert "NHWC-eligible" in str(error)
+
+
+def _run_passes(tester: CortexMTester, use_explicit_layout: bool) -> ExportedProgram:
+    tester.run_passes(
+        CortexMRunPasses(
+            target_config=CortexMTargetConfig(cpu=CortexM.M55),
+            use_explicit_layout=use_explicit_layout,
+        )
+    )
+    return tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+
+@pytest.mark.parametrize(
+    "fn,shape",
+    [
+        (torch.tanh, (1, 8, 16)),
+        (lambda x: torch.tanh(x).view(1, 8, 16), (1, 128)),
+        (lambda x: torch.relu(torch.sigmoid(x)), (1, 8, 16)),
+        (lambda x: torch.clamp(torch.tanh(x), -0.5, 0.5), (1, 8, 16)),
+    ],
+    ids=["tanh", "tanh_view", "sigmoid_relu", "tanh_clamp"],
+)
+def test_conv_behind_lut_activation_lowers_to_cmsis_nn(fn, shape):
+    torch.manual_seed(0)
+    inputs = (torch.randn(shape),)
+    tester = _run_explicit_layout_passes(CortexMTester(ThenConv1d(fn).eval(), inputs))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.quantized_activation.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 2
+    assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
+    for node in program.graph.nodes:
+        if node.target == exir_ops.edge.aten.clamp.default:
+            assert node.meta["val"].dtype == torch.int8
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+@pytest.mark.parametrize(
+    "fn",
+    [
+        torch.nn.functional.silu,
+        torch.nn.functional.gelu,
+        torch.log,
+        torch.log2,
+        torch.log10,
+        torch.log1p,
+        torch.sqrt,
+        torch.rsqrt,
+    ],
+    ids=["silu", "gelu", "log", "log2", "log10", "log1p", "sqrt", "rsqrt"],
+)
+def test_conv_behind_each_lut_activation_lowers_to_cmsis_nn(fn):
+    torch.manual_seed(0)
+    inputs = (torch.rand(1, 8, 16) + 0.5,)
+    tester = _run_explicit_layout_passes(CortexMTester(ThenConv1d(fn).eval(), inputs))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.quantized_activation.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+@pytest.mark.parametrize(
+    "fn,cortex_m_op,aten_op",
+    [
+        (
+            lambda x, y: torch.sigmoid(x).permute(0, 2, 1),
+            exir_ops.edge.cortex_m.transpose,
+            exir_ops.edge.aten.permute_copy,
+        ),
+        (
+            lambda x, y: (x / y).permute(0, 2, 1),
+            exir_ops.edge.cortex_m.transpose,
+            exir_ops.edge.aten.permute_copy,
+        ),
+        (
+            lambda x, y: torch.minimum(torch.tanh(x), y),
+            exir_ops.edge.cortex_m.minimum,
+            exir_ops.edge.aten.minimum,
+        ),
+        (
+            lambda x, y: torch.maximum(torch.tanh(x), y),
+            exir_ops.edge.cortex_m.maximum,
+            exir_ops.edge.aten.maximum,
+        ),
+    ],
+    ids=[
+        "sigmoid_permute",
+        "div_permute",
+        "tanh_minimum",
+        "tanh_maximum",
+    ],
+)
+@pytest.mark.parametrize("use_explicit_layout", [False, True])
+def test_op_behind_float_promoting_op_lowers_to_cortex_m(
+    use_explicit_layout, fn, cortex_m_op, aten_op
+):
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 8, 16), torch.rand(1, 8, 16) + 0.5)
+    tester = CortexMTester(Apply(fn).eval(), inputs)
+    tester.quantize(Quantize(CortexMQuantizer(use_explicit_layout=use_explicit_layout)))
+    tester.export().to_edge()
+    program = _run_passes(tester, use_explicit_layout)
+
+    assert _count(program, cortex_m_op.default) == 1
+    assert _count(program, aten_op.default) == 0
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+@pytest.mark.parametrize("use_explicit_layout", [False, True])
+def test_unquantized_int8_permute_lowers_to_transpose(use_explicit_layout):
+    inputs = (torch.randint(-128, 127, (1, 8, 16), dtype=torch.int8),)
+    tester = CortexMTester(Apply(lambda x: x.permute(0, 2, 1)).eval(), inputs)
+    tester.export().to_edge()
+    program = _run_passes(tester, use_explicit_layout)
+
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 1
+    assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
+
+
+def test_convs_around_a_reshape_behind_lut_activation_lower_to_cmsis_nn():
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 8, 16),)
+    tester = _run_explicit_layout_passes(
+        CortexMTester(TanhConvReshapeConv().eval(), inputs)
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 2
+    assert _count(program, exir_ops.edge.aten.convolution.default) == 0
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+def test_explicit_layout_rejects_float_input_to_int8_conv():
+    model = ThenConv1d(lambda x: torch.full_like(x, 0.5, dtype=torch.float32))
+    tester = CortexMTester(model.eval(), (torch.randn(1, 8, 16),))
+
+    with pytest.raises(Exception) as caught:
+        _run_explicit_layout_passes(tester)
+
+    error = caught.value
+    while error.__cause__ is not None:
+        error = error.__cause__
+    assert "must move an int8 tensor" in str(error)

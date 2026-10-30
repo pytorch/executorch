@@ -7,7 +7,7 @@
 
 set -euxo pipefail
 
-component="${1:?Usage: test-native.sh <runtime|ggml|vulkan> [cmake options]}"
+component="${1:?Usage: test-native.sh <runtime|cpu|ggml|vulkan> [cmake options]}"
 shift
 build_dir="cmake-out/native-${component}"
 build_jobs="${CMAKE_BUILD_PARALLEL_LEVEL:-$(nproc)}"
@@ -19,13 +19,24 @@ case "${component}" in
     targets+=(native_runtime_test)
     test_regex='^native_runtime_test$'
     ;;
+  cpu)
+    cmake_args+=(
+      -DEXECUTORCH_BUILD_NATIVE_CPU=ON
+      -DEXECUTORCH_BUILD_XNNPACK=ON
+      -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON
+      -DEXECUTORCH_BUILD_NATIVE_VISION_RUNNER=ON
+    )
+    targets+=(native_cpu_engine_test run_classification_cpu)
+    test_regex='^native_cpu_engine_test$'
+    ;;
   ggml)
     cmake_args+=(
       -DEXECUTORCH_BUILD_NATIVE_GGML=ON
       -DEXECUTORCH_BUILD_NATIVE_LLM_RUNNER=ON
+      -DEXECUTORCH_BUILD_NATIVE_VISION_RUNNER=ON
       -DGGML_NATIVE=OFF
     )
-    targets+=(run_hf_llm_ggml native_ggml_engine_test native_llm_runner_utils_test)
+    targets+=(run_hf_llm_ggml native_ggml_engine_test native_llm_runner_utils_test run_classification_ggml_cpu)
     test_regex='^native_(ggml_engine|llm_runner_utils)_test$'
     ;;
   vulkan)

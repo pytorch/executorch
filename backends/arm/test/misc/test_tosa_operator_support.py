@@ -83,7 +83,7 @@ def test_where_bf16_requires_extension(x_dtype, y_dtype, bf16_enabled) -> None:
 )
 @pytest.mark.parametrize(
     "dtype",
-    (torch.bool, torch.uint8, torch.int32, torch.int64),
+    (torch.bool, torch.uint8, torch.int64),
 )
 def test_fp_comparison_input_support(target, dtype) -> None:
     graph = torch.fx.Graph()
@@ -100,7 +100,13 @@ def test_fp_comparison_input_support(target, dtype) -> None:
 
 @pytest.mark.parametrize(
     "dtype",
-    (torch.float16, torch.float32, torch.bfloat16, torch.int8, torch.int16),
+    (
+        torch.float16,
+        torch.float32,
+        torch.bfloat16,
+        torch.int8,
+        torch.int16,
+    ),
 )
 def test_fp_comparison_accepts_supported_inputs(dtype) -> None:
     graph = torch.fx.Graph()
@@ -110,6 +116,44 @@ def test_fp_comparison_accepts_supported_inputs(dtype) -> None:
     node.meta["val"] = _fake_tensor((3, 4), torch.bool)
 
     assert _fp_comparison_checker().is_node_supported({}, node)
+
+
+@pytest.mark.parametrize(
+    ("dtypes", "supported"),
+    (
+        ((torch.int32, torch.float32), True),
+        ((torch.float32, torch.int32), True),
+        ((torch.int32, torch.float16), True),
+        ((torch.int32, torch.bfloat16), True),
+        ((torch.int16, torch.float32), True),
+        ((torch.int16, torch.float16), True),
+        ((torch.int16, torch.bfloat16), True),
+        ((torch.int8, torch.float16), True),
+        ((torch.uint8, torch.float32), False),
+    ),
+)
+@pytest.mark.parametrize("int_supported", (False, True))
+def test_fp_comparison_mixed_inputs(dtypes, supported, int_supported) -> None:
+    graph = torch.fx.Graph()
+    x = _placeholder(graph, "x", (3, 4), dtypes[0])
+    y = _placeholder(graph, "y", (3, 4), dtypes[1])
+    node = graph.call_function(exir_ops.edge.aten.eq.Tensor, (x, y))
+    node.meta["val"] = _fake_tensor((3, 4), torch.bool)
+
+    checker = CheckFPComparisonInputs(WhyNoPartitionReporter(), int_supported)
+    assert checker.is_node_supported({}, node) == supported
+
+
+@pytest.mark.parametrize("int_supported", (False, True))
+def test_int32_comparison_requires_int_profile(int_supported) -> None:
+    graph = torch.fx.Graph()
+    x = _placeholder(graph, "x", (3, 4), torch.int32)
+    y = _placeholder(graph, "y", (3, 4), torch.int32)
+    node = graph.call_function(exir_ops.edge.aten.eq.Tensor, (x, y))
+    node.meta["val"] = _fake_tensor((3, 4), torch.bool)
+
+    checker = CheckFPComparisonInputs(WhyNoPartitionReporter(), int_supported)
+    assert checker.is_node_supported({}, node) == int_supported
 
 
 def test_rejects_argmax_without_int32_cast_user() -> None:
