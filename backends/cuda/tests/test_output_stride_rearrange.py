@@ -292,6 +292,18 @@ class _MaskedAdd(nn.Module):
         return x.index_put((mask,), torch.ones(4), accumulate=True)
 
 
+class _MaskedCounter(nn.Module):
+    """Counts its calls in a device buffer, and reads a mask's count."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("calls", torch.zeros(1), persistent=False)
+
+    def forward(self, x, mask):
+        self.calls.add_(1)
+        return self.calls.clone(), x[mask]
+
+
 class _HostFlag(nn.Module):
     """A torch.cond on a flag the program keeps in host memory and updates on
     every call."""
@@ -422,7 +434,6 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
         torch.manual_seed(0)
         module = _HostFlag().cuda().eval()
         eager = _HostFlag().cuda().eval()
-        eager.load_state_dict(module.state_dict())
         inputs = [torch.randn(1, rows, 64) for rows in (1, 1, 1, 50, 50, 50)]
         rows = torch.export.Dim("rows", min=1, max=64)
         outputs = self._run_with_cuda_graph(
@@ -445,6 +456,17 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                 with self.subTest(module=type(module).__name__, call=i):
                     self.assertIsInstance(out, torch.Tensor)
                     torch.testing.assert_close(out, module(*args))
+
+    def test_mask_retry_updates_state_once(self):
+        # The capture call runs again without a graph, so its update to the
+        # count must not land twice.
+        torch.manual_seed(0)
+        inputs = [(torch.randn(8, 4), torch.rand(8) > 0.5) for _ in range(6)]
+        outputs = self._run_with_cuda_graph(_MaskedCounter().eval(), inputs[0], inputs)
+        for i, out in enumerate(outputs):
+            with self.subTest(call=i):
+                self.assertIsInstance(out, torch.Tensor)
+                torch.testing.assert_close(out, torch.tensor([i + 1.0]))
 
     def test_output_shape_changes_at_capture(self):
         torch.manual_seed(0)
