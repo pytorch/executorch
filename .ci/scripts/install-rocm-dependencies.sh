@@ -18,6 +18,15 @@ export LD_LIBRARY_PATH="${ROCM_PYTHON_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 TORCH_VERSION="$(python -c 'from torch_pin import TORCH_VERSION; print(TORCH_VERSION)')"
 python -m pip install "torch==${TORCH_VERSION}+rocm${ROCM_VERSION}" \
   --index-url "${PYTORCH_ROCM_INDEX}"
+ROCM_SDK_VERSION="$(python -c 'import rocm_sdk; print(rocm_sdk.__version__)')"
+python -m pip install "rocm[devel]==${ROCM_SDK_VERSION}" \
+  --index-url "${PYTORCH_ROCM_INDEX}"
+ROCM_PATH="$(python -m rocm_sdk path --root)"
+export ROCM_PATH
+export ROCM_HOME="${ROCM_PATH}"
+export HIP_PATH="${ROCM_PATH}"
+export PATH="${ROCM_PATH}/bin:${PATH}"
+export LD_LIBRARY_PATH="${ROCM_PYTHON_PREFIX}/lib:${ROCM_PATH}/lib:${ROCM_PATH}/lib64:${LD_LIBRARY_PATH:-}"
 python -m pip install -r requirements-dev.txt ninja
 # ROCm 7.14 TorchAO wheels are Python-only. Build the pinned extension against
 # the installed torch and HIP libraries instead of reusing a ROCm 7.2 binary.

@@ -19,7 +19,11 @@ class RocmDependenciesTest(unittest.TestCase):
 conda() { echo RUNTIME; }
 python() {
   if [[ "$1" == "-c" ]]; then
-    if [[ "$2" == *torch_pin* ]]; then echo 2.15.0; else echo /env; fi
+    if [[ "$2" == *torch_pin* ]]; then echo 2.15.0
+    elif [[ "$2" == *rocm_sdk* ]]; then echo 7.14.1
+    else echo /env; fi
+  elif [[ "$*" == "-m rocm_sdk path --root" ]]; then
+    echo /sdk
   elif [[ "$1" == "-" ]]; then
     cat >/dev/null
     echo VERIFY
@@ -28,22 +32,26 @@ python() {
     echo "PIP $* CPP=${USE_CPP:-unset} CPU=${USE_CPU_KERNELS:-unset} JOBS=${MAX_JOBS:-unset}"
     if [[ "$*" == *third-party/ao* ]]; then return "$AO_STATUS"; fi
     if [[ "$*" == *torch==* ]]; then return "$TORCH_STATUS"; fi
+    if [[ "$*" == *'rocm[devel]'* ]]; then return "$SDK_STATUS"; fi
   fi
 }
 """
-        for torch_status, ao_status, verify_status in (
-            (0, 0, 0),
-            (1, 0, 0),
-            (0, 1, 0),
-            (0, 0, 1),
+        for torch_status, sdk_status, ao_status, verify_status in (
+            (0, 0, 0, 0),
+            (1, 0, 0, 0),
+            (0, 1, 0, 0),
+            (0, 0, 1, 0),
+            (0, 0, 0, 1),
         ):
-            with self.subTest(torch=torch_status, ao=ao_status, verify=verify_status):
+            with self.subTest(
+                torch=torch_status, sdk=sdk_status, ao=ao_status, verify=verify_status
+            ):
                 result = subprocess.run(
                     [
                         "bash",
                         "-c",
                         stubs
-                        + "source .ci/scripts/install-rocm-dependencies.sh\necho INSTALL_ET",
+                        + "source .ci/scripts/install-rocm-dependencies.sh\necho INSTALL_ET\necho SDK_HOME=$ROCM_HOME HIP_PATH=$HIP_PATH ROCM_PATH=$ROCM_PATH",
                     ],
                     cwd=ROOT,
                     env={
@@ -51,6 +59,7 @@ python() {
                         "ROCM_VERSION": "7.14",
                         "PYTORCH_ROCM_INDEX": "https://download.pytorch.org/whl/rocm7.14",
                         "TORCH_STATUS": str(torch_status),
+                        "SDK_STATUS": str(sdk_status),
                         "AO_STATUS": str(ao_status),
                         "VERIFY_STATUS": str(verify_status),
                         "MAX_JOBS": "8",
@@ -60,7 +69,7 @@ python() {
                 )
                 self.assertEqual(
                     result.returncode,
-                    max(torch_status, ao_status, verify_status),
+                    max(torch_status, sdk_status, ao_status, verify_status),
                     result.stderr,
                 )
                 self.assertTrue(result.stdout.startswith("RUNTIME\n"))
@@ -70,15 +79,25 @@ python() {
                 )
                 if not torch_status:
                     self.assertIn(
+                        "rocm[devel]==7.14.1 --index-url https://download.pytorch.org/whl/rocm7.14",
+                        result.stdout,
+                    )
+                if not (torch_status or sdk_status):
+                    self.assertIn(
                         "--no-build-isolation --no-deps third-party/ao CPP=1 CPU=1 JOBS=8",
                         result.stdout,
                     )
                 else:
                     self.assertNotIn("third-party/ao", result.stdout)
                 self.assertEqual(
-                    "VERIFY" in result.stdout, not (torch_status or ao_status)
+                    "VERIFY" in result.stdout,
+                    not (torch_status or sdk_status or ao_status),
                 )
                 self.assertEqual("INSTALL_ET" in result.stdout, result.returncode == 0)
+                if result.returncode == 0:
+                    self.assertIn(
+                        "SDK_HOME=/sdk HIP_PATH=/sdk ROCM_PATH=/sdk", result.stdout
+                    )
 
 
 if __name__ == "__main__":
