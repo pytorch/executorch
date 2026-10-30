@@ -10,7 +10,7 @@
 
 namespace executorch::backends::coreai {
 
-#if defined(COREAI_ASSETS_TESTING) && COREAI_ASSETS_TESTING
+#if defined(COREAI_FAULT_INJECTION) && COREAI_FAULT_INJECTION
 namespace testing {
 thread_local FaultCallback fault_callback = nullptr;
 }

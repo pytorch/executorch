@@ -98,7 +98,7 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     ${_coreai_runtime_sources}
   )
   coreai_configure_objc_target(coreai_host_test)
-  target_compile_definitions(coreai_host_test PRIVATE COREAI_ASSETS_TESTING=1)
+  target_compile_definitions(coreai_host_test PRIVATE COREAI_FAULT_INJECTION=1)
   find_library(COREAI_FOUNDATION_FRAMEWORK Foundation REQUIRED)
   target_link_libraries(
     coreai_host_test

@@ -31,7 +31,7 @@ enum class FaultPoint {
   AfterEvict,
 };
 
-#if defined(COREAI_ASSETS_TESTING) && COREAI_ASSETS_TESTING
+#if defined(COREAI_FAULT_INJECTION) && COREAI_FAULT_INJECTION
 int fault_point(FaultPoint point);
 namespace testing {
 using FaultCallback = int (*)(FaultPoint);
