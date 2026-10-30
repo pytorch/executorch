@@ -805,8 +805,10 @@ class CoreMLPartitioner(Partitioner):
         rejected: Set[torch._ops.OpOverload],
         is_supported: Callable[[Any, torch.fx.Node], bool],
     ) -> List[torch._ops.OpOverload]:
-        """Drops every kept op that partition() leaves outside of CoreML at some
-        call, since the portable kernels may have no kernel for it.
+        """Drops every kept op that partition() moves out of CoreML at some call
+        for a uint8 or int8 tensor, or that CoreML rejects once the program is
+        decomposed, since the portable kernels may have no kernel for it. An op
+        skipped by name stays kept, as before.
 
         partition() sees the program once lowering decomposes the ops that are
         not kept. That can make new calls of a kept op that CoreML rejects, such
