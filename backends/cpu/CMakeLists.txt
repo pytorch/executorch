@@ -35,7 +35,12 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
   target_link_libraries(
     cpu_xnnpack
     PUBLIC cpu_runtime
-    PRIVATE extension_threadpool
+    PRIVATE extension_threadpool xnnpack_profiler
+  )
+  # Traced builds include XNNPACK's internal runtime header from its source
+  # root.
+  target_include_directories(
+    cpu_xnnpack PRIVATE $<TARGET_PROPERTY:XNNPACK,SOURCE_DIR>
   )
   if(EXECUTORCH_BUILD_SHARED)
     target_link_libraries(cpu_xnnpack PRIVATE xnnpack_shared)
@@ -106,7 +111,10 @@ add_library(
 )
 target_link_libraries(
   cpu_backend PRIVATE native_program extension_threadpool
-                      optimized_native_cpu_ops_lib
+                      optimized_native_cpu_ops_lib xnnpack_profiler
+)
+target_include_directories(
+  cpu_backend PRIVATE $<TARGET_PROPERTY:XNNPACK,SOURCE_DIR>
 )
 if(EXECUTORCH_BUILD_SHARED)
   set_target_properties(

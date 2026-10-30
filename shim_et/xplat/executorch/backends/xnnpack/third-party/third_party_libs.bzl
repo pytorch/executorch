@@ -1,6 +1,9 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-_XNNPACK_LATEST = "fbsource//third-party/XNNPACK:XNNPACK"
+_XNNPACK_LATEST = {
+    "XNNPACK": "fbsource//third-party/XNNPACK:XNNPACK",
+    "XNNPACK_internal_headers": "fbsource//third-party/XNNPACK:public-headers",
+}
 
 # Dictionary mappping third-party library name to the correct OSS/Internal target dependencies.
 # the values of the dictionary are lists where the first element is the internal dep and the
@@ -9,6 +12,7 @@ _THIRD_PARTY_LIBS = {
     "FP16": ["fbsource//xplat/third-party/FP16:FP16Fbcode", "//backends/xnnpack/third-party:FP16"],
     "FXdiv": ["fbsource//xplat/third-party/FXdiv:FXdiv", "//backends/xnnpack/third-party:FXdiv"],
     "XNNPACK": ["fbsource//xplat/third-party/XNNPACK:XNNPACK", "//backends/xnnpack/third-party:XNNPACK"],
+    "XNNPACK_internal_headers": ["fbsource//xplat/third-party/XNNPACK:public-headers", "//backends/xnnpack/third-party:XNNPACK_internal_headers"],
     "clog": ["fbsource//xplat/third-party/clog:clog", "//backends/xnnpack/third-party:clog"],
     "cpuinfo": ["fbsource//third-party/cpuinfo:cpuinfo", "//backends/xnnpack/third-party:cpuinfo"],
     "pthreadpool": ["fbsource//xplat/third-party/pthreadpool:pthreadpool", "//backends/xnnpack/third-party:pthreadpool"],
@@ -21,6 +25,6 @@ def third_party_dep(name):
 
     if runtime.is_oss:
         return _THIRD_PARTY_LIBS[name][1]
-    if name == "XNNPACK" and native.read_config("executorch", "use_latest_xnnpack", "false") == "true":
-        return _XNNPACK_LATEST
+    if name in _XNNPACK_LATEST and native.read_config("executorch", "use_latest_xnnpack", "false") == "true":
+        return _XNNPACK_LATEST[name]
     return _THIRD_PARTY_LIBS[name][0]
