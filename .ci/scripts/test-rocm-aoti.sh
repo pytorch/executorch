@@ -51,4 +51,19 @@ print("Architectures:", torch.cuda.get_arch_list())
 PY
 
 
-python -m examples.cuda.scripts.export_amd_pointwise --output-dir "${ROCM_CI_TMPDIR}/pointwise"
+ROCM_POINTWISE_STATUS=0
+python -m examples.cuda.scripts.export_amd_pointwise --output-dir "${ROCM_CI_TMPDIR}/pointwise" || ROCM_POINTWISE_STATUS=$?
+python - "${ROCM_CI_TMPDIR}/pointwise" <<'PYCODE'
+from pathlib import Path
+import sys
+import torch
+root = Path(sys.argv[1])
+arch = torch.cuda.get_device_properties(0).gcnArchName.split(":", 1)[0]
+triple = f"amdgcn-amd-amdhsa--{arch}".encode()
+paths = [root / "amd_triton.pte", root / "aoti_cuda_blob.ptd", *root.rglob("*.hsaco")]
+for path in paths:
+    if path.is_file():
+        data = path.read_bytes()
+        print("ARCHITECTURE_CHECK", path.name, len(data), triple in data, flush=True)
+PYCODE
+exit "${ROCM_POINTWISE_STATUS}"
