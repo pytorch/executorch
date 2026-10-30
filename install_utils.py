@@ -346,6 +346,12 @@ def determine_torch_url(torch_nightly_url_base):
         )
         return f"{torch_nightly_url_base}/cpu"
 
+    if not is_cmake_option_on(
+        _cmake_args_from_env(), "EXECUTORCH_BUILD_CUDA", default=True
+    ):
+        print("CUDA delegate disabled, using CPU-only PyTorch")
+        return f"{torch_nightly_url_base}/cpu"
+
     print("Attempting to detect CUDA via nvcc...")
 
     try:

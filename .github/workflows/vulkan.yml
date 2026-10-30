@@ -100,7 +100,7 @@ jobs:
         # setup-linux.sh's "deps already in the image" assumption does not hold.
         # CMAKE_ARGS enables Vulkan in the pybindings so the model --test runs and
         # the pt2e/torchao e2e tests below execute on the GPU (default is OFF).
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" PYTHON_EXECUTABLE=python ./install_executorch.sh
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON -DEXECUTORCH_BUILD_CUDA=OFF" PYTHON_EXECUTABLE=python ./install_executorch.sh
 
         python -m unittest backends/vulkan/test/test_vulkan_dynamic.py
 
@@ -193,7 +193,7 @@ jobs:
         export PIP_EXTRA_INDEX_URL=
         pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
         export USE_MKL=OFF
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON -DEXECUTORCH_BUILD_KERNELS_LLM_AOT=ON" \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON -DEXECUTORCH_BUILD_CUDA=OFF -DEXECUTORCH_BUILD_KERNELS_LLM_AOT=ON" \
           PYTHON_EXECUTABLE=python ./install_executorch.sh
         python -m pip list --format=json > "${RUNNER_ARTIFACT_DIR}/python-packages.json"
 

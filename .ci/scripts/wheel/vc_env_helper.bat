@@ -23,6 +23,12 @@ if "%VSDEVCMD_ARGS%" == "" (
 
 @echo on
 
+REM CUDAHOSTCXX is read after Torch overwrites CMAKE_CUDA_HOST_COMPILER.
+if /I "%CU_VERSION:~0,2%" == "cu" (
+    where cl.exe >nul 2>&1 || exit /b 1
+    for /f "delims=" %%i in ('where cl.exe') do if not defined CUDAHOSTCXX set "CUDAHOSTCXX=%%i"
+)
+
 if "%CU_VERSION%" == "xpu" call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
 
 set DISTUTILS_USE_SDK=1

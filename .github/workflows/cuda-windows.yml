@@ -105,7 +105,7 @@ jobs:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-cuda-windows-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
       upload-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}
@@ -206,9 +206,6 @@ jobs:
       timeout: 240
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      # The Windows runner image carries only the toolkits the CUDA wheels are built for,
-      # 13.2 and 13.4, so this cannot match the export's 13.0. The exported program loads
-      # cudart64_13.dll, which every CUDA 13 toolkit provides.
       gpu-arch-version: "13.2"
       download-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
