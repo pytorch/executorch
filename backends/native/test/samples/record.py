@@ -8,11 +8,12 @@
 
 A package holds one method per case and dtype under one quantization scheme,
 and two sample sets over the same inputs: `golden`, the eager outputs, and
-`precise`, the same math in float64 with weights dequantized and activations
-unquantized, floating outputs stored as float32. Weight-only schemes add
-`golden-int8_act`, the eager outputs with the same weights and int8 per-token
-dynamic activations. Nothing in it depends on an engine or a device: consumers
-judge an engine by its distance from `precise` relative to eager's.
+`precise`, the same math in float64 with quantized weights decoded in float32,
+whatever the method's dtype, and activations unquantized, floating outputs
+stored as float32. Weight-only schemes add `golden-int8_act`, the eager outputs
+with the same weights and int8 per-token dynamic activations. Nothing in it
+depends on an engine or a device: consumers judge an engine by its distance
+from `precise` relative to eager's.
 """
 
 import copy
@@ -93,7 +94,9 @@ def record(
         str(path),
         "precise",
         SampleSet(
-            precise, "float64, weights dequantized, activations unquantized", source
+            precise,
+            "float64, quantized weights decoded in float32, activations unquantized",
+            source,
         ),
     )
     if scheme.weight_only:
