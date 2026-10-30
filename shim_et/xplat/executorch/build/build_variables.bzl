@@ -432,6 +432,19 @@ XNNPACK_SCHEMA_SRCS = [
     "backends/xnnpack/serialization/runtime_schema.fbs",
 ]
 
+CPU_RUNTIME_BUCK_SRCS = [
+    "runtime/KernelProvider.cpp",
+    "runtime/CPUPlan.cpp",
+    "runtime/op_helpers/Convolution.cpp",
+]
+
+# CpuBackend with the default provider composition: XNNPACK and Reference.
+CPU_BACKEND_SRCS = ["backends/cpu/" + x for x in CPU_RUNTIME_BUCK_SRCS + [
+    "runtime/CPUBackend.cpp",
+    "runtime/providers/reference/ReferenceProvider.cpp",
+    "runtime/providers/xnnpack/XNNPACKProvider.cpp",
+]]
+
 VULKAN_SCHEMA_SRCS = [
     "backends/vulkan/serialization/schema.fbs",
 ]

@@ -787,7 +787,7 @@ endif()
 if(EXECUTORCH_BUILD_NATIVE)
   string(APPEND _executorch_backend_dependencies
          "find_dependency(libzip CONFIG)\n"
-         "find_dependency(nlohmann_json CONFIG)\n" "find_dependency(Threads)\n"
+         "find_dependency(nlohmann_json CONFIG)\n"
   )
 endif()
 if(EXECUTORCH_BUILD_NATIVE_GGML)
@@ -797,7 +797,10 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
     "  add_library(executorch_ggml ALIAS ggml::ggml)\n" "endif()\n"
   )
 endif()
-if(EXECUTORCH_BUILD_VULKAN)
+if(EXECUTORCH_BUILD_NATIVE
+   OR EXECUTORCH_BUILD_CPU
+   OR EXECUTORCH_BUILD_VULKAN
+)
   string(APPEND _executorch_backend_dependencies "find_dependency(Threads)\n")
 endif()
 configure_file(
@@ -1417,6 +1420,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     endif()
   endif()
 
+  if(EXECUTORCH_BUILD_CPU)
+    list(APPEND _dep_libs cpu_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_VULKAN)
     list(APPEND _dep_libs vulkan_backend)
   endif()
@@ -1624,8 +1631,13 @@ if(EXECUTORCH_BUILD_VULKAN)
   list(APPEND _executorch_backends vulkan_backend vulkan_schema)
 endif()
 
-if(EXECUTORCH_BUILD_NATIVE)
+if(EXECUTORCH_BUILD_NATIVE OR EXECUTORCH_BUILD_CPU)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/native)
+endif()
+
+if(EXECUTORCH_BUILD_CPU)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cpu)
+  list(APPEND _executorch_backends cpu_backend)
 endif()
 
 if(EXECUTORCH_BUILD_WEBGPU)
