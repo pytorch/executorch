@@ -55,15 +55,31 @@ ROCM_POINTWISE_STATUS=0
 python -m examples.cuda.scripts.export_amd_pointwise --output-dir "${ROCM_CI_TMPDIR}/pointwise" || ROCM_POINTWISE_STATUS=$?
 python - "${ROCM_CI_TMPDIR}/pointwise" <<'PYCODE'
 from pathlib import Path
+import re
 import sys
 import torch
 root = Path(sys.argv[1])
 arch = torch.cuda.get_device_properties(0).gcnArchName.split(":", 1)[0]
 triple = f"amdgcn-amd-amdhsa--{arch}".encode()
+bare = arch.encode()
+for path in sorted(p for p in root.rglob("*") if p.is_file()):
+    print("POINTWISE_FILE", path.relative_to(root), path.stat().st_size, flush=True)
 paths = [root / "amd_triton.pte", root / "aoti_cuda_blob.ptd", *root.rglob("*.hsaco")]
 for path in paths:
     if path.is_file():
         data = path.read_bytes()
-        print("ARCHITECTURE_CHECK", path.name, len(data), triple in data, flush=True)
+        tokens = sorted(set(re.findall(rb"gfx[0-9][0-9a-z:+\-]*", data)))[:10]
+        print(
+            "ARCHITECTURE_CHECK",
+            path.name,
+            len(data),
+            "triple=",
+            triple in data,
+            "bare=",
+            bare in data,
+            "tokens=",
+            tokens,
+            flush=True,
+        )
 PYCODE
 exit "${ROCM_POINTWISE_STATUS}"
