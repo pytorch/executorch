@@ -331,13 +331,14 @@ Error mask_positions(
     return Error::Ok;
   }
   // A graph capture cannot record the host read of the count below, so refuse
-  // before allocating anything.
+  // before allocating anything. Info, not Error: the backend then retries the
+  // call without a graph.
   cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
   ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamIsCapturing(stream, &capture));
-  ET_CHECK_OR_RETURN_ERROR(
-      capture == cudaStreamCaptureStatusNone,
-      NotSupported,
-      "index: a mask index cannot run inside a CUDA graph capture");
+  if (capture != cudaStreamCaptureStatusNone) {
+    ET_LOG(Info, "index: a mask index cannot run inside a CUDA graph capture");
+    return Error::NotSupported;
+  }
   // CUB counts items in an int on CUDA 12.
   ET_CHECK_OR_RETURN_ERROR(
       numel <= INT_MAX,
