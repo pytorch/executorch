@@ -141,6 +141,9 @@ struct CudaGraphState {
   std::vector<void*> static_output_ptrs;
   std::vector<size_t> static_input_nbytes;
   std::vector<size_t> static_output_nbytes;
+  // An input with another shape of the same byte count would replay with the
+  // captured shape and return a wrong result with no error.
+  std::vector<std::vector<int64_t>> static_input_sizes;
 
   // Allocations the graph makes and never frees -- the outputs AOTI allocates
   // while being captured. AutoFreeOnLaunch frees one launch's before the next
@@ -227,6 +230,7 @@ struct CudaGraphState {
     static_output_ptrs.clear();
     static_input_nbytes.clear();
     static_output_nbytes.clear();
+    static_input_sizes.clear();
   }
 
   // Drops the captured graph so a new one is captured, for when memory the
@@ -253,6 +257,7 @@ struct CudaGraphState {
         static_output_ptrs(std::move(other.static_output_ptrs)),
         static_input_nbytes(std::move(other.static_input_nbytes)),
         static_output_nbytes(std::move(other.static_output_nbytes)),
+        static_input_sizes(std::move(other.static_input_sizes)),
         graph_allocations(std::move(other.graph_allocations)) {
     other.graph = nullptr;
     other.graph_exec = nullptr;
@@ -270,6 +275,7 @@ struct CudaGraphState {
       static_output_ptrs = std::move(other.static_output_ptrs);
       static_input_nbytes = std::move(other.static_input_nbytes);
       static_output_nbytes = std::move(other.static_output_nbytes);
+      static_input_sizes = std::move(other.static_input_sizes);
       graph_allocations = std::move(other.graph_allocations);
 
       other.graph = nullptr;
