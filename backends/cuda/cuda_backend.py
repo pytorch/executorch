@@ -39,9 +39,7 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
 from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
     MoveCondPredicateToCpuPass,
 )
-from executorch.backends.cuda.passes.remove_assert_async import (
-    RemoveAssertAsyncPass,
-)
+from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyncPass
 from executorch.backends.cuda.passes.replace_int64_floordiv import (
     ReplaceInt64FloorDivWithFloatPass,
 )
