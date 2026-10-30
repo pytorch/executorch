@@ -66,7 +66,11 @@ def main() -> None:
         CompileSpec("target_device", f"cuda:{device_index}".encode()),
         CompileSpec("triton_kernel_mode", b"ON"),
         CompileSpec("max_autotune", b"OFF"),
-        CompileSpec("autotune_at_compile_time", b"OFF"),
+        # Compile the Triton kernels during AOTI lowering: with
+        # autotune_at_compile_time OFF, AOTInductor also generates JIT code
+        # and the JIT code fails to run on gfx950 with the pinned
+        # ROCm 7.14 toolchain, so lowering never completes.
+        CompileSpec("autotune_at_compile_time", b"ON"),
     ]
     edge_program = to_edge_transform_and_lower(
         exported_program,
@@ -106,10 +110,20 @@ def main() -> None:
     if not ptd_path.is_file():
         raise RuntimeError(f"expected AOTI data file was not created: {ptd_path}")
 
-    # Verify the embedded code object matches the active device.
-    triple = f"amdgcn-amd-amdhsa--{arch}".encode()
-    if triple not in pte_path.read_bytes():
+    # Verify the generated code object targets the active device. The
+    # toolchain embeds the bare architecture name, not the full amdgcn
+    # triple, in the program and in the hsaco files, so check for that
+    # and require a compiled hsaco for the device.
+    arch_marker = arch.encode()
+    if arch_marker not in pte_path.read_bytes():
         raise RuntimeError(f"{pte_path} embeds no code object for {arch}")
+    hsaco_paths = [
+        hsaco_path
+        for hsaco_path in cache_dir.rglob("*.hsaco")
+        if arch_marker in hsaco_path.read_bytes()
+    ]
+    if not hsaco_paths:
+        raise RuntimeError(f"no hsaco code object for {arch} under {cache_dir}")
 
     print(f"ROCm: {torch.version.hip}")
     print(f"Compile GPU: cuda:{device_index} {device.name} ({device.gcnArchName})")
@@ -119,6 +133,9 @@ def main() -> None:
     print("Triton sources:")
     for source_path in triton_sources:
         print(f"  {source_path}")
+    print("Code objects:")
+    for hsaco_path in hsaco_paths:
+        print(f"  {hsaco_path}")
 
 
 if __name__ == "__main__":

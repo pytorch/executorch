@@ -23,8 +23,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  dispatch:
+    if: github.repository_owner == 'pytorch' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Refresh runner groups from protected main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run release-runner-groups-refresh.yml --ref main -f apply=true
+
   reconcile:
-    if: github.repository_owner == 'pytorch'
+    if: github.repository_owner == 'pytorch' && github.event_name != 'push'
     runs-on: ubuntu-latest
     environment: ${{ github.event_name != 'pull_request' && 'runner-group' || '' }}
     steps:

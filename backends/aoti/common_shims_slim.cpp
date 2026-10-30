@@ -177,6 +177,11 @@ int32_t aoti_torch_dtype_bool() {
   return 11; // ScalarType::Bool
 }
 
+size_t aoti_torch_dtype_element_size(int32_t dtype) {
+  using namespace executorch::backends::aoti::slim::c10;
+  return elementSize(static_cast<ScalarType>(dtype));
+}
+
 // ============================================================
 // Device Type Constants - Implementations
 // ============================================================
