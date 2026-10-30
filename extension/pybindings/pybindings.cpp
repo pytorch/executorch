@@ -1926,17 +1926,18 @@ class PyCallerStreamScope final {
           return e.id == id_;
         });
     if (it == scopes.active.end()) {
-      id_ = 0; // Already ended after an earlier refused exit.
+      id_ = 0; // Ended with the thread that entered it.
       return;
     }
     if (it + 1 != scopes.active.end()) {
+      // Ends with the scopes above it, so this object can be entered again.
       it->retired = true;
+      id_ = 0;
       if (refuse_out_of_order) {
         throw std::runtime_error(
             "CUDA stream scopes must end innermost first; this one ends "
             "when the scopes started after it end");
       }
-      id_ = 0;
       return;
     }
     scopes.pop_finished();

@@ -518,7 +518,7 @@ class CudaDLPackTest(unittest.TestCase):
         del dropped
         gc.collect()
         self._assert_no_stream_selected()
-        # The native scope keeps the same rules for callers that use it directly.
+        # The native scope keeps these rules for callers that use it directly.
         for handle in (0, 1):
             with self.assertRaisesRegex(ValueError, "legacy default CUDA stream"):
                 cuda._bindings()._CallerStreamScope(handle)
@@ -543,6 +543,18 @@ class CudaDLPackTest(unittest.TestCase):
             self.assertEqual(refused, [True])
         finally:
             native.__exit__(None, None, None)
+        # A scope refused for ending out of order can be entered again once
+        # the block above it has ended.
+        outer = cuda._bindings()._CallerStreamScope(stream._native)
+        inner = cuda._bindings()._CallerStreamScope(stream._native)
+        outer.__enter__()
+        inner.__enter__()
+        with self.assertRaisesRegex(RuntimeError, "innermost first"):
+            outer.__exit__(None, None, None)
+        inner.__exit__(None, None, None)
+        self._assert_no_stream_selected()
+        outer.__enter__()
+        outer.__exit__(None, None, None)
         self._close_after_teardown(stream)
 
     def test_torch_free_caller_shares_one_stream_across_programs(self):
