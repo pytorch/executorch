@@ -17,8 +17,7 @@ from install_utils import determine_torch_url, is_intel_mac_os, python_is_compat
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
 TORCH_URL_BASE = "https://download.pytorch.org/whl"
 TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"
-TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
-CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
+TORCHAO_MIN_VERSION = "0.18.0"
 # Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
 # are py3-none-any only, and none are published after 0.19.0.dev20260831.
 ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
@@ -43,7 +42,7 @@ def cu134_requirements(torch_url, include_domains=False):
         CU134_TORCH_PACKAGES if include_domains else CU134_TORCH_PACKAGES[:1]
     )
     if not torchao_from_source():
-        packages.append(f"torchao>={CU134_TORCHAO_NIGHTLY_VERSION}")
+        packages.append(f"torchao>={TORCHAO_MIN_VERSION}")
     return packages
 
 
@@ -84,7 +83,7 @@ def install_requirements(use_pytorch_nightly):
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
         ("torch==2.15.0" if use_pytorch_nightly else "torch"),
-        f"torchao>={TORCHAO_NIGHTLY_VERSION}",
+        f"torchao>={TORCHAO_MIN_VERSION}",
     ]
 
     # Install the requirements for core ExecuTorch package.

@@ -48,8 +48,7 @@ python -m pip install "torch==${TORCH_VERSION}" \
   --index-url "${PYTORCH_ROCM_INDEX}"
 python -m pip install -r requirements-dev.txt \
   "${TORCHAO_WHEEL}"
-# ExecuTorch requires torchao>=TORCHAO_NIGHTLY_VERSION, which has no ROCm build, so
-# install its other dependencies separately to keep the ROCm TorchAO wheel in place.
+# Install the other dependencies separately to keep the compiled ROCm TorchAO wheel in place.
 python -m pip install --editable . --no-build-isolation --no-deps
 python - <<'PY' >"${VOXTRAL_CI_TMPDIR}/executorch-deps.txt"
 from importlib.metadata import requires

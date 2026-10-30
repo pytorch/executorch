@@ -69,7 +69,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     "torch==2.15.0+cu134",
                     "torchvision==0.29.2+cu134",
                     "torchaudio==2.11.1+cu134",
-                    f"torchao>={self.installer.CU134_TORCHAO_NIGHTLY_VERSION}",
+                    f"torchao>={self.installer.TORCHAO_MIN_VERSION}",
                 }
                 for index, command in enumerate(commands):
                     required = (
@@ -108,7 +108,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     )
                     self.assertIn("torch==2.15.0", core)
                     self.assertIn(
-                        f"torchao>={self.installer.TORCHAO_NIGHTLY_VERSION}", core
+                        f"torchao>={self.installer.TORCHAO_MIN_VERSION}", core
                     )
                     self.assertIn("torchvision==0.29.2", domains)
                     self.assertIn("torchaudio==2.11.1", domains)
@@ -127,7 +127,7 @@ class TestCu134Dependencies(unittest.TestCase):
     def test_no_cuda_keeps_default_pins(self):
         core, _, domains, _ = self.install_commands(None)
         self.assertIn("torch==2.15.0", core)
-        self.assertIn(f"torchao>={self.installer.TORCHAO_NIGHTLY_VERSION}", core)
+        self.assertIn(f"torchao>={self.installer.TORCHAO_MIN_VERSION}", core)
         self.assertIn("torchvision==0.29.2", domains)
         self.assertIn("https://download.pytorch.org/whl/cpu", core)
 
@@ -302,9 +302,7 @@ class TestCu134Dependencies(unittest.TestCase):
                 for command in commands:
                     self.assertFalse(any(arg.startswith("torchao") for arg in command))
                 self.assertIn("torch==2.15.0+cu134", commands[-1])
-                source_version = self.installer.TORCHAO_NIGHTLY_VERSION.partition(
-                    ".dev"
-                )[0]
+                source_version = self.installer.TORCHAO_MIN_VERSION
                 source_commit = subprocess.run(
                     ["git", "rev-parse", "HEAD:third-party/ao"],
                     cwd=ROOT,
@@ -318,11 +316,7 @@ class TestCu134Dependencies(unittest.TestCase):
 
     def test_wheel_torchao_minimum_matches_installer(self):
         for cuda in ((13, 4), (13, 2), None):
-            version = (
-                self.installer.CU134_TORCHAO_NIGHTLY_VERSION
-                if cuda == (13, 4)
-                else self.installer.TORCHAO_NIGHTLY_VERSION
-            )
+            version = self.installer.TORCHAO_MIN_VERSION
             expected = f"torchao>={version}"
             self.utils.determine_torch_url.cache_clear()
             with (
@@ -336,9 +330,17 @@ class TestCu134Dependencies(unittest.TestCase):
             ):
                 self.assertEqual(self.torchao_requirement(), expected)
                 requirement = Requirement(self.torchao_requirement())
-                self.assertNotIn("0.18.0", requirement.specifier)
-                for newer in ("0.19.0.dev20260908", "0.19.0", "0.20.0", "1.0.0"):
-                    self.assertIn(newer, requirement.specifier)
+                self.assertNotIn("0.17.0", requirement.specifier)
+                for newer in (
+                    "0.18.0",
+                    "0.19.0.dev20260908",
+                    "0.19.0",
+                    "0.20.0",
+                    "1.0.0",
+                ):
+                    self.assertTrue(
+                        requirement.specifier.contains(newer, prereleases=True)
+                    )
 
 
 if __name__ == "__main__":
