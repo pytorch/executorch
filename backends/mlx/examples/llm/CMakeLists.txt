@@ -83,3 +83,20 @@ endif()
 set(EXECUTORCH_BUILD_MLX ON)
 executorch_target_copy_mlx_metallib(mlx_run_llm_hf)
 executorch_target_copy_mlx_metallib(mlx_run_llm_batched)
+
+# Shared JSONL adapter over the packed ModuleExecutor, not the legacy worker.
+find_package(Threads REQUIRED)
+set(_worker_dir ${EXECUTORCH_ROOT}/examples/llm_server/cpp)
+add_executable(
+  llm_worker ${_worker_dir}/module_worker_main.cpp
+             ${_worker_dir}/multiplexed_worker.cpp
+)
+target_include_directories(
+  llm_worker PRIVATE ${_common_include_directories} ${_json_include}
+                     ${_flatbuffers_include}
+)
+target_link_libraries(
+  llm_worker PRIVATE ${link_libraries} extension_llm_batching_module
+                     extension_llm_serving Threads::Threads
+)
+executorch_target_copy_mlx_metallib(llm_worker)

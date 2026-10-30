@@ -184,6 +184,8 @@ def enable_vulkan_validation_for_vgf_tests(request, monkeypatch) -> None:
         "VK_KHRONOS_VALIDATION_LOG_FILENAME",
         "VK_KHRONOS_VALIDATION_DEBUG_ACTION",
         runner_utils.VULKAN_VALIDATION_MESSAGE_FILTER_ENV,
+        runner_utils.VULKAN_VALIDATION_OBJECT_LIFETIME_ENV,
+        runner_utils.VULKAN_VALIDATION_CORE_ENV,
     ):
         value = configured_env.get(variable)
         if value is not None:

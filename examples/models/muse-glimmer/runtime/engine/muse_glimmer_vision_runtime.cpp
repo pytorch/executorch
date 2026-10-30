@@ -59,10 +59,8 @@ bool has_png_signature(Span<const uint8_t> bytes) {
              kPngSignature, kPngSignature + kPngSignatureSize, bytes.data());
 }
 
-bool validate_image_dimensions(
-    int width,
-    int height,
-    const MuseGlimmerVisionRuntimeConfig& config) {
+template <typename Limits>
+bool validate_image_dimensions(int width, int height, const Limits& config) {
   if (width <= 0 || height <= 0) {
     ET_LOG(Error, "Muse Glimmer image dimensions must be positive");
     return false;
@@ -240,6 +238,20 @@ MuseGlimmerVisionRuntime::prepare_image_from_file(
 Result<PreparedMuseGlimmerImage>
 MuseGlimmerVisionRuntime::prepare_image_from_bytes(
     Span<const uint8_t> encoded_image) const {
+  ET_ASSIGN_OR_RETURN(
+      image,
+      decode_muse_glimmer_image(
+          encoded_image,
+          MuseGlimmerImageLimits{
+              config_.max_encoded_bytes,
+              config_.max_image_dimension,
+              config_.max_image_pixels}));
+  return prepare_decoded_image(image.rgb.data(), image.width, image.height);
+}
+
+Result<MuseGlimmerRGBImage> decode_muse_glimmer_image(
+    Span<const uint8_t> encoded_image,
+    const MuseGlimmerImageLimits& config_) {
   if (encoded_image.empty()) {
     ET_LOG(Error, "Muse Glimmer encoded image is empty");
     return Error::InvalidArgument;
@@ -285,7 +297,32 @@ MuseGlimmerVisionRuntime::prepare_image_from_bytes(
   if (!validate_image_dimensions(width, height, config_)) {
     return Error::InvalidExternalData;
   }
-  return prepare_decoded_image(rgb.get(), width, height);
+  MuseGlimmerRGBImage image;
+  image.width = width;
+  image.height = height;
+  image.rgb.assign(
+      rgb.get(), rgb.get() + static_cast<size_t>(width) * height * 3);
+  return image;
+}
+
+Result<MuseGlimmerImageGrid> muse_glimmer_image_grid(
+    int32_t width,
+    int32_t height,
+    int64_t max_soft_tokens) {
+  if (width <= 0 || height <= 0 || max_soft_tokens <= 0) {
+    return Error::InvalidArgument;
+  }
+  MuseGlimmerImageGrid grid;
+  muse_glimmer_vision::compute_grid_size(
+      width, height, grid.height, grid.width, max_soft_tokens);
+  grid.soft_tokens =
+      static_cast<int64_t>(grid.height / muse_glimmer_vision::kCell) *
+      (grid.width / muse_glimmer_vision::kCell);
+  // Extreme aspect ratios can take the grid helper's rounded fallback.
+  if (grid.soft_tokens <= 0 || grid.soft_tokens > max_soft_tokens) {
+    return Error::InvalidArgument;
+  }
+  return grid;
 }
 
 Result<PreparedMuseGlimmerImage>
@@ -293,6 +330,9 @@ MuseGlimmerVisionRuntime::prepare_decoded_image(
     const uint8_t* rgb,
     int32_t width,
     int32_t height) const {
+  if (rgb == nullptr || !validate_image_dimensions(width, height, config_)) {
+    return Error::InvalidArgument;
+  }
   muse_glimmer_vision::VisionInputs inputs;
   try {
     inputs = muse_glimmer_vision::preprocess_image(

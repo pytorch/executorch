@@ -236,7 +236,10 @@ def main(
     np_dummy_tensor = np.ones((input_dims[0], input_dims[1], 3))
     model.predict(np_dummy_tensor, imgsz=((input_dims[0], input_dims[1])), device="cpu")
 
-    pt_model = model.model.to(torch.device("cpu"))
+    # ultralytics 8.4.133-8.4.139 switch to channels_last in predict(); undo it.
+    pt_model = model.model.to(
+        torch.device("cpu"), memory_format=torch.contiguous_format
+    )
 
     def transform_fn(frame):
         input_tensor = model.predictor.preprocess([frame])

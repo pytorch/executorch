@@ -90,6 +90,11 @@ unsigned char* ethosu_fast_scratch = dedicated_sram;
 
 namespace {
 
+// Preprocessing constants for torchvision's ImageNet-trained MobileNetV2.
+constexpr size_t kNumChannels = 3;
+constexpr float kImageNetMean[kNumChannels] = {0.485f, 0.456f, 0.406f};
+constexpr float kImageNetStd[kNumChannels] = {0.229f, 0.224f, 0.225f};
+
 Error prepare_input_tensors(
     Method& method,
     MemoryAllocator& allocator,
@@ -147,9 +152,19 @@ Error prepare_input_tensors(
           Info,
           "Converting uint8 input (%lu elements) to float32",
           static_cast<unsigned long>(input_size));
+      // torchvision MobileNetV2 is trained with ImageNet normalisation, so the
+      // uint8 image has to be scaled to [0,1] and then standardised per
+      // channel. The tensor is NCHW, so each channel is a contiguous plane.
       float* float_data = static_cast<float*>(data_ptr);
-      for (size_t j = 0; j < input_size; j++) {
-        float_data[j] = (static_cast<float>(input_data[j]) - 128.0f) / 128.0f;
+      const size_t plane = input_size / kNumChannels;
+      for (size_t c = 0; c < kNumChannels; c++) {
+        const float mean = kImageNetMean[c];
+        const float stddev = kImageNetStd[c];
+        for (size_t j = 0; j < plane; j++) {
+          const size_t idx = c * plane + j;
+          float_data[idx] =
+              ((static_cast<float>(input_data[idx]) / 255.0f) - mean) / stddev;
+        }
       }
     } else if (input_size == tensor_meta->nbytes()) {
       ET_LOG(
@@ -254,6 +269,17 @@ void print_top_k(const std::vector<EValue>& outputs) {
         top_indices[j],
         static_cast<double>(top_values[j]));
   }
+
+#if defined(MV2_HOST_TOP1) && defined(MV2_HOST_LABEL)
+  // gen_input.py records what float32 torchvision predicts for this image, so
+  // the class ID can be interpreted without an ImageNet label table on target.
+  ET_LOG(
+      Info,
+      "\nhost float32 reference: class %d (%s) -> device top-1 %s",
+      MV2_HOST_TOP1,
+      MV2_HOST_LABEL,
+      (top_indices[0] == MV2_HOST_TOP1) ? "MATCHES" : "DIFFERS");
+#endif
 }
 
 } // namespace

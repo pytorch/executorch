@@ -55,6 +55,10 @@ export VK_KHRONOS_VALIDATION_REPORT_FLAGS="error"
 export VK_KHRONOS_VALIDATION_DEBUG_ACTION="VK_DBG_LAYER_ACTION_LOG_MSG"
 export VK_KHRONOS_VALIDATION_LOG_FILENAME="stdout"
 
+# Make the lifetime contract explicit for every command using this wrapper.
+export VK_LAYER_OBJECT_LIFETIME="1"
+export VK_LAYER_VALIDATE_CORE="1"
+
 
 # Keep normal command output visible in CI while retaining a copy that can be
 # inspected as a fallback. PIPESTATUS[0] is the status of the command, not tee.

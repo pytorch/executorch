@@ -655,6 +655,14 @@ class OpSqueeze:
 
 
 @dataclass(init=False, frozen=True)
+class OpStft:
+    op_name: str = "Stft"
+    param_frame_step: str = "frame_step"
+    param_frame_length: str = "frame_length"
+    param_onesided: str = "onesided"
+
+
+@dataclass(init=False, frozen=True)
 class OpStridedSlice:
     op_name: str = "StridedSlice"
     param_ranges: str = "ranges"

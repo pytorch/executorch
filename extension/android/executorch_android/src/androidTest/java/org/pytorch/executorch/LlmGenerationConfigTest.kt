@@ -71,6 +71,24 @@ class LlmGenerationConfigTest {
   }
 
   @Test(timeout = MAX_TEST_TIMEOUT_MS)
+  fun testDefaultConfigInheritsModuleTemperature() {
+    val config = LlmGenerationConfig.create().seqLen(SEQ_LEN).echo(false).build()
+    assertEquals(-1.0f, config.temperature, 0.0f)
+
+    val configCallback = CollectingCallback()
+    llmModule.generate(TEST_PROMPT, config, configCallback)
+    llmModule.resetContext()
+
+    val simpleCallback = CollectingCallback()
+    llmModule.generate(TEST_PROMPT, SEQ_LEN, simpleCallback, false)
+    assertEquals(
+        "Default config should use the module's greedy temperature",
+        simpleCallback.results.joinToString(""),
+        configCallback.results.joinToString(""),
+    )
+  }
+
+  @Test(timeout = MAX_TEST_TIMEOUT_MS)
   fun testEchoModeTrue() {
     val config = buildConfig(echo = true)
     val callback = CollectingCallback()

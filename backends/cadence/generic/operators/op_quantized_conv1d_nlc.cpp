@@ -10,6 +10,7 @@
 
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/backends/cadence/generic/operators/cadence_type_util.h>
+#include <executorch/backends/cadence/generic/operators/weight_zero_point.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
@@ -24,6 +25,7 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 using ::impl::generic::kernels::quantize;
+using ::impl::generic::quantized::resolve_per_channel_weight_zero_point;
 
 // This implements a generic 1d conv kernel that operates on raw pointers.
 // The quantized version handles both quantized convolutions for 1D inputs.
@@ -299,13 +301,14 @@ void quantized_conv1d_nlc(
     IntArrayRef dilation,
     int64_t groups,
     int64_t input_zero_point,
-    const Tensor& weight_zero_point,
+    const std::optional<Tensor>& weight_zero_point,
     const Tensor& bias_scale,
     double output_scale,
     int64_t output_zero_point,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     Tensor& out) {
+  const auto wzp = resolve_per_channel_weight_zero_point(weight_zero_point);
   (void)ctx;
   (void)out_multiplier;
   (void)out_shift;
@@ -318,8 +321,8 @@ void quantized_conv1d_nlc(
       dilation,
       static_cast<int16_t>(groups),
       static_cast<int32_t>(input_zero_point),
-      weight_zero_point.const_data_ptr<int32_t>(),
-      weight_zero_point.numel() > 1 ? 1 : 0,
+      wzp.data,
+      wzp.stride,
       bias_scale.const_data_ptr<float>(),
       bias_scale.numel() > 1 ? 1 : 0,
       static_cast<float>(output_scale),

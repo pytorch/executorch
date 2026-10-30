@@ -63,12 +63,46 @@ std::vector<uint8_t> make_tensor_package() {
           native_backend::CreateDim(builder, /*min=*/2, /*max=*/2)});
   const auto metadata = native_backend::CreateTensorMeta(
       builder, native_backend::ScalarType::FLOAT, dimensions);
+  const auto tensor_arg = [&builder](const char* name) {
+    return native_backend::CreateNamedArgumentDirect(
+        builder,
+        "",
+        native_backend::CreateArgument(
+            builder,
+            native_backend::ArgumentValue::TensorArg,
+            native_backend::CreateTensorArgDirect(builder, name).Union()));
+  };
+  const std::vector<flatbuffers::Offset<native_backend::Output>> input_outputs =
+      {native_backend::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<native_backend::Output>> op_outputs = {
+      native_backend::CreateOutputDirect(builder, "output")};
+  const std::vector<flatbuffers::Offset<native_backend::NamedArgument>>
+      op_inputs = {tensor_arg("input")};
+  const std::vector<flatbuffers::Offset<native_backend::NamedArgument>>
+      results = {tensor_arg("output")};
+  const std::vector<flatbuffers::Offset<native_backend::Node>> nodes = {
+      native_backend::CreateNodeDirect(
+          builder,
+          "input",
+          native_backend::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &input_outputs),
+      native_backend::CreateNodeDirect(
+          builder,
+          "output",
+          native_backend::OpKind::CALL_FUNCTION,
+          "test.op",
+          &op_inputs,
+          &op_outputs),
+      native_backend::CreateNodeDirect(
+          builder, "return", native_backend::OpKind::OUTPUT, "", &results),
+  };
   const auto input_name = builder.CreateString("input");
   const auto output_name = builder.CreateString("output");
   const auto graph = native_backend::CreateGraph(
       builder,
-      builder.CreateVector(
-          std::vector<flatbuffers::Offset<native_backend::Node>>{}),
+      builder.CreateVector(nodes),
       builder.CreateVector(
           std::vector<flatbuffers::Offset<flatbuffers::String>>{input_name}),
       builder.CreateVector(
@@ -267,6 +301,11 @@ TEST(ModelTest, PropagatesEngineExceptions) {
   ThrowingHost host;
 
   EXPECT_THROW(model.create_session(host), std::runtime_error);
+}
+
+TEST(EngineExecutableTest, RejectsResizeByDefault) {
+  RunningExecutable executable;
+  EXPECT_THROW(executable.resize_input(0, {1}), std::runtime_error);
 }
 
 TEST(SessionTest, RunExecutesPreparedMethod) {

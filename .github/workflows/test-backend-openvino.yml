@@ -10,6 +10,8 @@ on:
       - ciflow/nightly/*
   pull_request:
     paths:
+      - .ci/scripts/setup-openvino.sh
+      - .ci/scripts/test_backend.sh
       - .github/workflows/test-backend-openvino.yml
       - .github/workflows/_test_backend.yml
   workflow_dispatch:

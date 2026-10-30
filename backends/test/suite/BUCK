@@ -14,3 +14,30 @@ fbcode_target(
 )
 
 fbcode_target(_kind = define_common_targets, is_fbcode = True)
+
+fbcode_target(
+    _kind = runtime.python_binary,
+    name = "buck_runner",
+    srcs = glob(["*.py", "flows/*.py", "models/*.py"]),
+    main_module = "executorch.backends.test.suite.buck_runner",
+    par_style = "xar",
+    compile = "with-source",
+    preload_deps = [
+        "//executorch/backends/cpu:cpu_backend",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cpu:tester",
+        "//executorch/backends/test/harness:tester",
+        "//executorch/backends/test/suite/operators:test_operators",
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/devtools/etrecord:etrecord", # @manual
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable_lib",
+        "//pytorch/audio:torchaudio", # @manual
+        "//pytorch/vision:torchvision", # @manual
+        "fbsource//third-party/pypi/pytest:pytest",
+        "fbsource//third-party/pypi/pytest-json-report:pytest-json-report",
+        "fbsource//third-party/pypi/pytest-timeout:pytest-timeout",
+    ],
+)

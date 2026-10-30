@@ -9,6 +9,7 @@
 
 import argparse
 import csv
+import getpass
 import importlib
 import json
 import logging
@@ -55,6 +56,8 @@ from executorch.devtools import Inspector
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
+from executorch.exir.schema import ScalarType
+from executorch.exir.tensor import get_scalar_type
 from torchao.quantization import pt2e
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -76,7 +79,7 @@ def get_logger():
     return logging.LoggerAdapter(logger, extra={"prefix": "QNN_BACKEND"})
 
 
-def get_io_info(pte_path, compiler_specs):
+def get_io_info(pte_path, compiler_specs, program=None):
     dtype_map = {}
     for type_map in (QNN_QUANT_TYPE_MAP, QNN_TENSOR_TYPE_MAP):
         for k, v in type_map.items():
@@ -104,10 +107,31 @@ def get_io_info(pte_path, compiler_specs):
     tensor_info = {in_key: [], out_key: []}
 
     path_of_pte = Path(pte_path)
-    dump_context_from_pte(path_of_pte.absolute())
-    ctx_bin = [f for f in os.listdir(path_of_pte.parent) if Path(f).suffix == ".bin"][0]
+    context_files = dump_context_from_pte(path_of_pte.absolute())
+    if len(context_files) != 1:
+        raise ValueError(
+            "CLI execution requires a fully delegated program with one QNN context"
+        )
+    if Path(context_files[0]).suffix == ".dlc":
+        if program is None:
+            raise ValueError(
+                "ExecuTorch program metadata is required for FCB execution"
+            )
+        metadata = program.metadata("forward")
+        tensor_info[out_key] = [
+            {
+                "name": f"output_{index}",
+                "shape": list(metadata.output_tensor_meta(index).sizes()),
+                "dtype": get_scalar_type(
+                    ScalarType(metadata.output_tensor_meta(index).dtype())
+                ),
+                "encoding": None,
+            }
+            for index in range(metadata.num_outputs())
+        ]
+        return tensor_info
     # assume graph is fully delegated or it will be too hard to handle
-    with open(f"{path_of_pte.parent}/{ctx_bin}", "rb") as f:
+    with open(context_files[0], "rb") as f:
         ctx_bin = preprocess_binary(f.read(), compiler_specs)
         # leverage QNN pybind interface to retrieve tensor encodings
         qnn_mgr = PyQnnManagerAdaptor.QnnManager(
@@ -217,30 +241,38 @@ def compile(args):
 
     file_name, extension = Path(args.artifact).stem, Path(args.artifact).suffix
     os.makedirs(args.output_folder, exist_ok=True)
+    soc_models = [getattr(QcomChipset, name) for name in args.soc_model]
+    fcb_enabled = len(soc_models) > 1
+
+    if extension == ".bin" and fcb_enabled:
+        raise ValueError("FCB compilation is only supported for .pt2 artifacts")
+
     # setup compiler spec
     backend_type = get_backend_type(args.backend)
     match backend_type:
         case QnnExecuTorchBackendType.kHtpBackend:
-            backend_options = generate_htp_compiler_spec(use_fp16=True)
+            backend_options = [
+                generate_htp_compiler_spec(use_fp16=True) for _ in soc_models
+            ]
         case QnnExecuTorchBackendType.kLpaiBackend:
-            backend_options = generate_lpai_compiler_spec(
-                target_env=QnnExecuTorchLpaiTargetEnv.kArm
-            )
+            if fcb_enabled:
+                raise ValueError("FCB compilation is only supported for HTP")
+            backend_options = [
+                generate_lpai_compiler_spec(target_env=QnnExecuTorchLpaiTargetEnv.kArm)
+            ]
         case _:
             raise ValueError("Backend is not implemented yet")
     # setup general compiler spec for QNN
     compiler_specs = generate_qnn_executorch_compiler_spec(
-        soc_model=getattr(QcomChipset, args.soc_model),
-        backend_options=backend_options,
-        is_from_context_binary=extension == "bin",
+        soc_model=soc_models if fcb_enabled else soc_models[0],
+        backend_options=backend_options if fcb_enabled else backend_options[0],
+        is_from_context_binary=extension == ".bin",
     )
     if extension == ".bin":
         custom_op_name = f"ctx_loader_{file_name}"
         # step 1: generate ExportedProgram with custom op as a binary loader & lower it w/QnnBackend
         logger.info(f"exporting program for {args.artifact}")
-        prog_info = from_context_binary(
-            args.artifact, custom_op_name, getattr(QcomChipset, args.soc_model)
-        )
+        prog_info = from_context_binary(args.artifact, custom_op_name, soc_models[0])
         # step 2: write pte files and store final graph
         logger.info(f"exporting {file_name}.pte")
         with open(f"{args.output_folder}/{file_name}.pte", "wb") as f:
@@ -356,7 +388,7 @@ def execute(args):
         soc_model=getattr(QcomChipset, args.soc_model),
         backend_options=backend_options,
     )
-    io_info = get_io_info(args.artifact, compiler_specs)
+    io_info = get_io_info(args.artifact, compiler_specs, program)
     logger.info("preparing ADB connection")
 
     qnn_config = QnnConfig.load_config(args)
@@ -364,7 +396,7 @@ def execute(args):
     adb = SimpleADB(
         qnn_config=qnn_config,
         pte_path=args.artifact,
-        workspace=f"/data/local/tmp/executorch/{pte_name}",
+        workspace=f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_name}",
     )
 
     logger.info("pushing QNN libraries & other artifacts")
@@ -521,9 +553,10 @@ def main():
     sub_quantize.add_argument(
         "-m",
         "--soc_model",
-        type=str,
+        nargs="+",
+        choices=QcomChipset.__members__,
         required=True,
-        help="SoC model. e.g. SM8750",
+        help="One or more target SoCs. Multiple SoCs enable FCB quantization.",
     )
     sub_quantize.add_argument(
         "--backend",
@@ -557,9 +590,10 @@ def main():
     sub_compile.add_argument(
         "-m",
         "--soc_model",
-        type=str,
+        nargs="+",
+        choices=QcomChipset.__members__,
         required=True,
-        help="SoC model. e.g. SM8750",
+        help="One or more target SoCs. Multiple SoCs generate an HTP FCB.",
     )
     sub_compile.add_argument(
         "-o",

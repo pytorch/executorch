@@ -113,10 +113,28 @@ class NativeSupportedOperatorsTest(unittest.TestCase):
         node = graph.call_function(operator.getitem, args=(producer, 0))
         self.assertFalse(self.sup.is_node_supported({}, node))
 
+    def test_accepts_symbolic_ops(self):
+        for op in (operator.add, operator.floordiv, operator.mul, operator.sub):
+            with self.subTest(op=str(op)):
+                self.assertTrue(
+                    self.sup.is_node_supported({}, _make_node("call_function", op))
+                )
+
     def test_accepts_core_aten_op(self):
         op = torch.ops.aten.add.Tensor
         self.assertIn(torch.Tag.core, op.tags)
         self.assertTrue(self.sup.is_node_supported({}, _make_node("call_function", op)))
+
+    def test_accepts_torchao_quant_ops(self):
+        for op in (
+            torch.ops.torchao.choose_qparams_affine.default,
+            torch.ops.torchao.quantize_affine.default,
+            torch.ops.torchao.dequantize_affine.default,
+        ):
+            with self.subTest(op=str(op)):
+                self.assertTrue(
+                    self.sup.is_node_supported({}, _make_node("call_function", op))
+                )
 
     def test_accepts_opt_in_ops(self):
         # Every op in the explicit opt-in set is claimed.

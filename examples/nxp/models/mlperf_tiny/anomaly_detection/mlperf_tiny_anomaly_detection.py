@@ -17,7 +17,7 @@ from executorch.backends.nxp.tests.calibration_dataset import (
     RandomCalibrationDataset,
 )
 from executorch.examples.models.mlperf_tiny import DeepAutoEncoderModel
-from executorch.examples.nxp.models.mlperf_tiny.mlperf_tiny_model import MLPerfTinyModel
+from executorch.examples.nxp.models.nxp_test_base_model import NXPTestBaseModel
 from torch.utils.data import Dataset
 from torchao.quantization.pt2e import disable_observer
 from tqdm import tqdm
@@ -25,7 +25,7 @@ from tqdm import tqdm
 log = logging.getLogger(__name__)
 
 
-class MLPerfTinyAnomalyDetection(MLPerfTinyModel):
+class MLPerfTinyAnomalyDetection(NXPTestBaseModel):
     """MLPerf Tiny Anomaly Detection model (DeepAutoEncoder).
 
     The input shape is set to (98, 640) as the reference internal model was trained with this shape.
@@ -53,6 +53,7 @@ class MLPerfTinyAnomalyDetection(MLPerfTinyModel):
         dataset_path: Path | str | None = None,
         use_random_dataset: bool = False,
         num_samples: int | None = None,
+        balanced_dataset: bool = True,
         num_workers: int = 4,
     ):
         self._dataset_flattened = False
@@ -60,6 +61,7 @@ class MLPerfTinyAnomalyDetection(MLPerfTinyModel):
             dataset_path=dataset_path,
             use_random_dataset=use_random_dataset,
             num_samples=num_samples,
+            balanced_dataset=balanced_dataset,
             num_workers=num_workers,
         )
 
@@ -112,7 +114,7 @@ class MLPerfTinyAnomalyDetection(MLPerfTinyModel):
             num_classes = len(self.labels)
             sample_shape = tuple(self.input_shape)
             return RandomCalibrationDataset(
-                self._num_samples, sample_shape, num_classes
+                self._num_samples, sample_shape, num_classes, self._balanced_dataset
             )
         else:
             return CalibrationDataset(self._dataset_path)
@@ -125,14 +127,14 @@ class MLPerfTinyAnomalyDetection(MLPerfTinyModel):
         self, batch_size: int = 1
     ) -> Iterator[tuple[torch.Tensor]]:
         if not self._dataset_flattened:
-            self._flatten_dataset()  # For Anomaly detection data have to flattened/unbatched first
+            self._flatten_dataset()  # For Anomaly detection data have to be flattened/unbatched first
         return super().get_calibration_inputs(batch_size)
 
     def get_qat_train_inputs(
         self, batch_size: int = 5, dataset_portion: float = 0.1
     ) -> Iterator[tuple[torch.Tensor]]:
         if not self._dataset_flattened:
-            self._flatten_dataset()  # For Anomaly detection data have to flattened/unbatched first for calibration
+            self._flatten_dataset()  # For Anomaly detection data have to be flattened/unbatched first for calibration
         return super().get_qat_train_inputs(
             batch_size=batch_size, dataset_portion=dataset_portion
         )

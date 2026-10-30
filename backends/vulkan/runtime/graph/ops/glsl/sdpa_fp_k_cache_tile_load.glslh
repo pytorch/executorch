@@ -31,7 +31,7 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "linear_fp_weight_tile.glslh"
+#include "gemm/tile_utils/linear_fp_weight_tile.glslh"
 
 // Determine whether buffer mode is active. Both K_CACHE_BUFFER (LLM) and
 // K_BUFFER (fused) activate the buffer path.

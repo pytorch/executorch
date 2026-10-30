@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  build_flow.svg
+  Build flow diagram for the executorch_cifarnet example.
+  Scripts reflected: examples/nxp/mcuxpresso/imxrt700/executorch_cifarnet/
+    test_build_from_scratch.sh, prepare_model.sh, build_example.sh
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1075"
+     font-family="Arial, sans-serif">
+
+  <defs>
+    <marker id="ah" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#555555"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="1075" fill="#f5f5f5"/>
+
+  <!-- ===== TITLE ===== -->
+  <text x="600" y="28" text-anchor="middle" font-size="17" font-weight="bold" fill="#222222">executorch_cifarnet  --  Build Flow</text>
+
+  <!-- ================================================================ -->
+  <!-- SECTION A: SCRIPT ORCHESTRATION                                  -->
+  <!-- ================================================================ -->
+
+  <!-- test_build_from_scratch.sh -->
+  <rect x="300" y="40" width="600" height="100" rx="8" fill="#d4edda" stroke="#28a745" stroke-width="2"/>
+  <text x="600" y="60"  text-anchor="middle" font-size="13" font-weight="bold" fill="#155724">test_build_from_scratch.sh</text>
+  <text x="600" y="75"  text-anchor="middle" font-size="9"  fill="#155724">1. Download ARM GCC toolchain  -->  sets ARMGCC_DIR</text>
+  <text x="600" y="89"  text-anchor="middle" font-size="9"  fill="#155724">2. Call prepare_model.sh  (see right)  -->  produces model_pte.h</text>
+  <text x="600" y="103" text-anchor="middle" font-size="9"  fill="#155724">3. Locate eiq_neutron_sdk  -->  sets NEUTRON_LIB_DIR</text>
+  <text x="600" y="117" text-anchor="middle" font-size="9"  fill="#155724">4. Download MCUXpresso SDK  -->  sets SdkRootDirPath</text>
+
+  <!-- arrow right to prepare_model.sh -->
+  <line x1="900" y1="83" x2="960" y2="83" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="930" y="77" text-anchor="middle" font-size="8" fill="#555555">calls</text>
+
+  <!-- prepare_model.sh box -->
+  <rect x="960" y="40" width="230" height="130" rx="8" fill="#fffde7" stroke="#f9a825" stroke-width="2"/>
+  <text x="1075" y="60"  text-anchor="middle" font-size="11" font-weight="bold" fill="#7a5200">prepare_model.sh</text>
+  <text x="1075" y="76"  text-anchor="middle" font-size="9"  fill="#7a5200">Install ExecuTorch + pip deps</text>
+  <text x="1075" y="92"  text-anchor="middle" font-size="9"  fill="#4a007a">Run aot_neutron_compile</text>
+  <text x="1075" y="107" text-anchor="middle" font-size="9"  fill="#4a007a">  --> model.pte</text>
+  <text x="1075" y="122" text-anchor="middle" font-size="9"  fill="#155724">xxd  -->  model_pte.h</text>
+  <text x="1075" y="138" text-anchor="middle" font-size="8"  font-style="italic" fill="#7a5200">side effect: installs eiq_neutron_sdk</text>
+
+  <!-- arrow down from prepare_model.sh to column 4 -->
+  <line x1="1075" y1="170" x2="1075" y2="380" stroke="#555555" stroke-width="1.5"/>
+  <line x1="1075" y1="380" x2="1046" y2="380" stroke="#555555" stroke-width="1.5"/>
+  <line x1="1046" y1="380" x2="1046" y2="403" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="1060" y="295" text-anchor="middle" font-size="8" fill="#555555" transform="rotate(90,1060,295)">model_pte.h</text>
+
+  <!-- arrow down from test_build to build_example -->
+  <line x1="600" y1="140" x2="600" y2="154" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <!-- build_example.sh -->
+  <rect x="350" y="154" width="500" height="62" rx="8" fill="#d4edda" stroke="#28a745" stroke-width="1.5"/>
+  <text x="600" y="172" text-anchor="middle" font-size="12" font-weight="bold" fill="#155724">build_example.sh</text>
+  <text x="600" y="187" text-anchor="middle" font-size="9"  fill="#155724">Checks: ARMGCC_DIR, SdkRootDirPath, model_pte.h, NEUTRON_LIB_DIR</text>
+  <text x="600" y="201" text-anchor="middle" font-size="9"  fill="#155724">Runs: cmake  -DMODEL_DIR=$(pwd)  -DNEUTRON_LIB_DIR=...  -DSdkRootDirPath=...  +  make</text>
+
+  <!-- arrow build_example -> CMakeLists -->
+  <line x1="600" y1="216" x2="600" y2="226" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <!-- ===== CMakeLists.txt ===== -->
+  <rect x="200" y="228" width="800" height="82" rx="8" fill="#cce5ff" stroke="#004085" stroke-width="2"/>
+  <text x="600" y="247" text-anchor="middle" font-size="12" font-weight="bold" fill="#004085">CMakeLists.txt</text>
+  <text x="600" y="262" text-anchor="middle" font-size="10" fill="#004085">Defines executorch_cifarnet.elf.  CPU flags: -mcpu=cortex-m33 -mfpu=fpv5-sp-d16.  Linker script, include paths, source file lists.</text>
+  <text x="600" y="276" text-anchor="middle" font-size="9"  font-family="Courier New, monospace" fill="#004085">add_subdirectory(EXECUTORCH_ROOT_DIR)   |   MODEL_DIR points to model_pte.h</text>
+  <text x="600" y="290" text-anchor="middle" font-size="9"  fill="#004085">Links: sdk objects  +  Neutron static libs  +  ExecuTorch libs  +  model_pte.o</text>
+
+  <!-- ================================================================ -->
+  <!-- FAN ARROWS  CMakeLists -> 3 columns                              -->
+  <!-- ================================================================ -->
+  <polyline points="200,310 143,310 143,403" fill="none" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+  <line x1="393" y1="310" x2="393" y2="403" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+  <line x1="643" y1="310" x2="643" y2="403" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+  <!-- col4 is fed by prepare_model.sh, not CMakeLists -->
+
+  <!-- ================================================================ -->
+  <!-- COLUMN 1: MCUXpresso SDK  x=10 w=266 y=403 h=485 bot=888        -->
+  <!-- ================================================================ -->
+  <rect x="10" y="403" width="266" height="485" rx="12" fill="white" fill-opacity="0.55" stroke="#aaaaaa" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="143" y="420" text-anchor="middle" font-size="10" font-weight="bold" fill="#555555">MCUXpresso SDK</text>
+  <text x="143" y="433" text-anchor="middle" font-size="8" fill="#555555">(SdkRootDirPath)</text>
+
+  <rect x="18" y="440" width="250" height="92" rx="5" fill="#ffe0b2" stroke="#e65100" stroke-width="1.5"/>
+  <text x="143" y="457" text-anchor="middle" font-size="10" font-weight="bold" fill="#e65100">Board Sources</text>
+  <text x="143" y="469" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">examples/_boards/mimxrt700evk/</text>
+  <text x="143" y="480" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">  flash_config/flash_config.c</text>
+  <text x="143" y="491" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">  board.c  pmic_support.c</text>
+  <text x="143" y="502" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">  hardware_init.c  pin_mux.c</text>
+  <text x="143" y="513" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">  clock_config.c</text>
+  <line x1="143" y1="532" x2="143" y2="546" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="18" y="546" width="250" height="72" rx="5" fill="#ffe0b2" stroke="#e65100" stroke-width="1.5"/>
+  <text x="143" y="563" text-anchor="middle" font-size="10" font-weight="bold" fill="#e65100">Device / Startup</text>
+  <text x="143" y="575" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">devices/RT/RT700/MIMXRT798S/</text>
+  <text x="143" y="586" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">  startup_MIMXRT798S_cm33_core0.c</text>
+  <text x="143" y="597" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">  system_*.c  fsl_clock.c  fsl_power.c</text>
+  <line x1="143" y1="618" x2="143" y2="632" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="18" y="632" width="250" height="96" rx="5" fill="#ffe0b2" stroke="#e65100" stroke-width="1.5"/>
+  <text x="143" y="649" text-anchor="middle" font-size="10" font-weight="bold" fill="#e65100">Peripheral Drivers</text>
+  <text x="143" y="661" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">fsl_common_arm.c  fsl_cache.c</text>
+  <text x="143" y="672" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">fsl_lpflexcomm.c  fsl_lpi2c.c</text>
+  <text x="143" y="683" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">fsl_lpuart.c  fsl_gpio.c</text>
+  <text x="143" y="694" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">fsl_glikey.c</text>
+  <text x="143" y="705" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">fsl_adapter_lpuart.c  fsl_pca9422.c</text>
+  <text x="143" y="716" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">fsl_debug_console.c  syscalls_stub.c</text>
+  <line x1="143" y1="728" x2="143" y2="742" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="18" y="742" width="250" height="56" rx="5" fill="#ffe0b2" stroke="#e65100" stroke-width="1.5"/>
+  <text x="143" y="759" text-anchor="middle" font-size="10" font-weight="bold" fill="#e65100">Example App Sources</text>
+  <text x="143" y="772" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">eiq_examples/executorch_cifarnet/</text>
+  <text x="143" y="783" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#7a3300">  main.cpp  RegisterKernels.cpp  timer.c</text>
+  <line x1="143" y1="798" x2="143" y2="812" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="18" y="812" width="250" height="60" rx="5" fill="#e2e3e5" stroke="#6c757d" stroke-width="1.5"/>
+  <text x="143" y="829" text-anchor="middle" font-size="10" font-weight="bold" fill="#383d41">Linker Script</text>
+  <text x="143" y="842" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#383d41">eiq_examples/executorch_cifarnet/</text>
+  <text x="143" y="853" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#383d41">  cm33_core0/gcc/*.ld</text>
+  <!-- col1 bottom = 888 -->
+
+  <!-- ================================================================ -->
+  <!-- COLUMN 2: eiq_neutron_sdk  x=284 w=218 y=403 h=162 bot=565      -->
+  <!-- ================================================================ -->
+  <rect x="284" y="403" width="218" height="162" rx="12" fill="white" fill-opacity="0.55" stroke="#aaaaaa" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="393" y="420" text-anchor="middle" font-size="10" font-weight="bold" fill="#555555">eiq_neutron_sdk</text>
+  <text x="393" y="433" text-anchor="middle" font-size="8" fill="#555555">(pip pkg, installed by prepare_model.sh)</text>
+
+  <rect x="292" y="440" width="202" height="100" rx="5" fill="#f8d7da" stroke="#721c24" stroke-width="1.5"/>
+  <text x="393" y="457" text-anchor="middle" font-size="10" font-weight="bold" fill="#721c24">Neutron NPU Libs</text>
+  <text x="393" y="469" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#721c24">target/imxrt700/rt700/cm33/</text>
+  <text x="393" y="480" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#721c24">  libNeutronDriver.a</text>
+  <text x="393" y="491" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#721c24">  libNeutronFirmware.a</text>
+  <text x="393" y="503" text-anchor="middle" font-size="8" fill="#721c24">Neutron NPU delegate runtime</text>
+  <text x="393" y="554" text-anchor="middle" font-size="8" fill="#555555">via NEUTRON_LIB_DIR</text>
+  <!-- col2 bottom = 565 -->
+
+  <!-- ================================================================ -->
+  <!-- COLUMN 3: ExecuTorch Repo  x=510 w=382 y=403 h=392 bot=795      -->
+  <!-- ================================================================ -->
+  <rect x="510" y="403" width="382" height="392" rx="12" fill="white" fill-opacity="0.55" stroke="#6a0dad" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="701" y="420" text-anchor="middle" font-size="10" font-weight="bold" fill="#4a007a">ExecuTorch Repo  (add_subdirectory)</text>
+  <text x="701" y="434" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#6a0dad">&#x2192; THIS repo  (EXECUTORCH_ROOT_DIR = repo root)</text>
+
+  <rect x="518" y="445" width="366" height="48" rx="5" fill="#e8d5f5" stroke="#6a0dad" stroke-width="1.5"/>
+  <text x="701" y="465" text-anchor="middle" font-size="10" font-weight="bold" fill="#4a007a">executorch</text>
+  <text x="701" y="480" text-anchor="middle" font-size="9" fill="#4a007a">Core runtime  (program load, execution loop)</text>
+  <line x1="701" y1="493" x2="701" y2="507" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="518" y="507" width="366" height="48" rx="5" fill="#e8d5f5" stroke="#6a0dad" stroke-width="1.5"/>
+  <text x="701" y="527" text-anchor="middle" font-size="10" font-weight="bold" fill="#4a007a">executorch_core</text>
+  <text x="701" y="542" text-anchor="middle" font-size="9" fill="#4a007a">Operator registration and dispatch</text>
+  <line x1="701" y1="555" x2="701" y2="569" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="518" y="569" width="366" height="36" rx="5" fill="#e8d5f5" stroke="#6a0dad" stroke-width="1.5"/>
+  <text x="701" y="591" text-anchor="middle" font-size="10" font-weight="bold" fill="#4a007a">extension_runner_util</text>
+  <line x1="701" y1="605" x2="701" y2="619" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="518" y="619" width="366" height="48" rx="5" fill="#e8d5f5" stroke="#6a0dad" stroke-width="1.5"/>
+  <text x="701" y="639" text-anchor="middle" font-size="10" font-weight="bold" fill="#4a007a">portable_kernels</text>
+  <text x="701" y="654" text-anchor="middle" font-size="9" fill="#4a007a">CPU fallback ops</text>
+  <line x1="701" y1="667" x2="701" y2="681" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="518" y="681" width="366" height="36" rx="5" fill="#e8d5f5" stroke="#6a0dad" stroke-width="1.5"/>
+  <text x="701" y="703" text-anchor="middle" font-size="10" font-weight="bold" fill="#4a007a">quantized_kernels</text>
+  <line x1="701" y1="717" x2="701" y2="731" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="518" y="731" width="366" height="48" rx="5" fill="#e8d5f5" stroke="#6a0dad" stroke-width="1.5"/>
+  <text x="701" y="751" text-anchor="middle" font-size="10" font-weight="bold" fill="#4a007a">NeutronBackend.cpp</text>
+  <text x="701" y="766" text-anchor="middle" font-size="9" font-family="Courier New, monospace" fill="#4a007a">backends/nxp/runtime/</text>
+  <!-- col3 bottom = 795 -->
+
+  <!-- ================================================================ -->
+  <!-- COLUMN 4: Model (model_pte.h)  x=900 w=290 y=403 h=167 bot=570  -->
+  <!-- ================================================================ -->
+  <rect x="900" y="403" width="290" height="167" rx="12" fill="#fffde7" fill-opacity="0.90" stroke="#f9a825" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="1045" y="420" text-anchor="middle" font-size="10" font-weight="bold" fill="#7a5200">Model  (from prepare_model.sh)</text>
+
+  <rect x="908" y="432" width="274" height="60" rx="5" fill="#d4edda" stroke="#28a745" stroke-width="1.5"/>
+  <text x="1045" y="452" text-anchor="middle" font-size="10" font-weight="bold" fill="#155724">model_pte.h</text>
+  <text x="1045" y="467" text-anchor="middle" font-size="9" fill="#155724">C byte array  +  section placement</text>
+  <text x="1045" y="481" text-anchor="middle" font-size="8" font-family="Courier New, monospace" fill="#155724">__attribute__((section(".data.$modeldata")))</text>
+
+  <line x1="1045" y1="492" x2="1045" y2="506" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="908" y="506" width="274" height="48" rx="5" fill="#d4edda" stroke="#28a745" stroke-width="1.5"/>
+  <text x="1045" y="525" text-anchor="middle" font-size="10" font-weight="bold" fill="#155724">model_pte.o</text>
+  <text x="1045" y="539" text-anchor="middle" font-size="9" fill="#155724">Compiled from model_pte.h by cmake</text>
+  <!-- col4 bottom = 570 -->
+
+  <!-- ================================================================ -->
+  <!-- CONVERGING MERGE  y=900                                          -->
+  <!-- col1 bot=888  col2 bot=565  col3 bot=795  col4 bot=570          -->
+  <!-- ================================================================ -->
+  <line x1="143"  y1="888" x2="143"  y2="900" stroke="#555555" stroke-width="1.5"/>
+  <line x1="393"  y1="565" x2="393"  y2="900" stroke="#555555" stroke-width="1.5"/>
+  <line x1="701"  y1="795" x2="701"  y2="900" stroke="#555555" stroke-width="1.5"/>
+  <line x1="1045" y1="570" x2="1045" y2="900" stroke="#555555" stroke-width="1.5"/>
+  <line x1="143"  y1="900" x2="1045" y2="900" stroke="#555555" stroke-width="1.5"/>
+
+  <!-- arrow merge -> ELF -->
+  <line x1="594" y1="900" x2="594" y2="932" stroke="#555555" stroke-width="1.5" marker-end="url(#ah)"/>
+  <rect x="240" y="907" width="720" height="14" fill="#f5f5f5"/>
+  <text x="594" y="918" text-anchor="middle" font-size="10" fill="#555555">arm-none-eabi-g++  --  links all compiled objects and static libraries</text>
+
+  <!-- ELF -->
+  <rect x="394" y="934" width="400" height="76" rx="8" fill="#d4edda" stroke="#28a745" stroke-width="2"/>
+  <text x="594" y="955" text-anchor="middle" font-size="12" font-weight="bold" fill="#155724">flash_release/executorch_cifarnet.elf</text>
+  <text x="594" y="971" text-anchor="middle" font-size="10" fill="#155724">Cortex-M33  |  hard-FP  |  flash XIP</text>
+  <text x="594" y="986" text-anchor="middle" font-size="9"  fill="#155724">Flash config  0x28000000   |   Vectors + code  0x28004000</text>
+
+  <!-- ================================================================ -->
+  <!-- LEGEND                                                            -->
+  <!-- ================================================================ -->
+  <line x1="20" y1="1025" x2="1180" y2="1025" stroke="#cccccc" stroke-width="1"/>
+  <text x="600" y="1041" text-anchor="middle" font-size="10" font-weight="bold" fill="#888888">LEGEND</text>
+
+  <rect x="20"  y="1048" width="130" height="22" rx="4" fill="#d4edda"  stroke="#28a745" stroke-width="1.5"/>
+  <text x="85"  y="1063" text-anchor="middle" font-size="9" fill="#155724">Entry / Output / Scripts</text>
+
+  <rect x="192" y="1048" width="130" height="22" rx="4" fill="#cce5ff"  stroke="#004085" stroke-width="1.5"/>
+  <text x="257" y="1063" text-anchor="middle" font-size="9" fill="#004085">CMakeLists.txt</text>
+
+  <rect x="364" y="1048" width="130" height="22" rx="4" fill="#ffe0b2"  stroke="#e65100" stroke-width="1.5"/>
+  <text x="429" y="1063" text-anchor="middle" font-size="9" fill="#7a3300">SDK Sources</text>
+
+  <rect x="536" y="1048" width="130" height="22" rx="4" fill="#f8d7da"  stroke="#721c24" stroke-width="1.5"/>
+  <text x="601" y="1063" text-anchor="middle" font-size="9" fill="#721c24">Neutron NPU Libs</text>
+
+  <rect x="707" y="1048" width="130" height="22" rx="4" fill="#e8d5f5"  stroke="#6a0dad" stroke-width="1.5"/>
+  <text x="772" y="1063" text-anchor="middle" font-size="9" fill="#4a007a">ExecuTorch Repo</text>
+
+  <rect x="879" y="1048" width="130" height="22" rx="4" fill="#fff9c4"  stroke="#f9a825" stroke-width="1.5"/>
+  <text x="944" y="1063" text-anchor="middle" font-size="9" fill="#7a5200">Model Prep (.pte)</text>
+
+  <rect x="1050" y="1048" width="130" height="22" rx="4" fill="#e2e3e5"  stroke="#6c757d" stroke-width="1.5"/>
+  <text x="1115" y="1063" text-anchor="middle" font-size="9" fill="#383d41">Linker Script</text>
+
+</svg>

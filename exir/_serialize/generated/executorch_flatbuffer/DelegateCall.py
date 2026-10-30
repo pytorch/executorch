@@ -2,9 +2,12 @@
 
 # namespace: executorch_flatbuffer
 
+from executorch.exir._serialize.generated import executorch_flatbuffer
 import flatbuffers
 from flatbuffers.compat import import_numpy
 from typing import Any
+from executorch.exir._serialize.generated.executorch_flatbuffer.DelegateScratch import DelegateScratch
+from typing import Optional
 np = import_numpy()
 
 class DelegateCall(object):
@@ -63,8 +66,32 @@ class DelegateCall(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         return o == 0
 
+    # DelegateCall
+    def Scratch(self, j: int) -> Optional[DelegateScratch]:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
+        if o != 0:
+            x = self._tab.Vector(o)
+            x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
+            x = self._tab.Indirect(x)
+            obj = DelegateScratch()
+            obj.Init(self._tab.Bytes, x)
+            return obj
+        return None
+
+    # DelegateCall
+    def ScratchLength(self) -> int:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
+        if o != 0:
+            return self._tab.VectorLen(o)
+        return 0
+
+    # DelegateCall
+    def ScratchIsNone(self) -> bool:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
+        return o == 0
+
 def DelegateCallStart(builder: flatbuffers.Builder):
-    builder.StartObject(2)
+    builder.StartObject(3)
 
 def Start(builder: flatbuffers.Builder):
     DelegateCallStart(builder)
@@ -87,12 +114,25 @@ def DelegateCallStartArgsVector(builder, numElems: int) -> int:
 def StartArgsVector(builder, numElems: int) -> int:
     return DelegateCallStartArgsVector(builder, numElems)
 
+def DelegateCallAddScratch(builder: flatbuffers.Builder, scratch: int):
+    builder.PrependUOffsetTRelativeSlot(2, flatbuffers.number_types.UOffsetTFlags.py_type(scratch), 0)
+
+def AddScratch(builder: flatbuffers.Builder, scratch: int):
+    DelegateCallAddScratch(builder, scratch)
+
+def DelegateCallStartScratchVector(builder, numElems: int) -> int:
+    return builder.StartVector(4, numElems, 4)
+
+def StartScratchVector(builder, numElems: int) -> int:
+    return DelegateCallStartScratchVector(builder, numElems)
+
 def DelegateCallEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
 
 def End(builder: flatbuffers.Builder) -> int:
     return DelegateCallEnd(builder)
 
+from executorch.exir._serialize.generated.executorch_flatbuffer import DelegateScratch
 try:
     from typing import List
 except:
@@ -104,6 +144,7 @@ class DelegateCallT(object):
     def __init__(self):
         self.delegateIndex = 0  # type: int
         self.args = None  # type: List[int]
+        self.scratch = None  # type: List[executorch_flatbuffer.DelegateScratch.DelegateScratchT]
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -125,7 +166,8 @@ class DelegateCallT(object):
     def __eq__(self, other):
         return type(self) == type(other) and \
             self.delegateIndex == other.delegateIndex and \
-            self.args == other.args
+            self.args == other.args and \
+            self.scratch == other.scratch
 
     # DelegateCallT
     def _UnPack(self, delegateCall):
@@ -139,6 +181,14 @@ class DelegateCallT(object):
                     self.args.append(delegateCall.Args(i))
             else:
                 self.args = delegateCall.ArgsAsNumpy()
+        if not delegateCall.ScratchIsNone():
+            self.scratch = []
+            for i in range(delegateCall.ScratchLength()):
+                if delegateCall.Scratch(i) is None:
+                    self.scratch.append(None)
+                else:
+                    delegateScratch_ = executorch_flatbuffer.DelegateScratch.DelegateScratchT.InitFromObj(delegateCall.Scratch(i))
+                    self.scratch.append(delegateScratch_)
 
     # DelegateCallT
     def Pack(self, builder):
@@ -150,9 +200,19 @@ class DelegateCallT(object):
                 for i in reversed(range(len(self.args))):
                     builder.PrependInt32(self.args[i])
                 args = builder.EndVector()
+        if self.scratch is not None:
+            scratchlist = []
+            for i in range(len(self.scratch)):
+                scratchlist.append(self.scratch[i].Pack(builder))
+            DelegateCallStartScratchVector(builder, len(self.scratch))
+            for i in reversed(range(len(self.scratch))):
+                builder.PrependUOffsetTRelative(scratchlist[i])
+            scratch = builder.EndVector()
         DelegateCallStart(builder)
         DelegateCallAddDelegateIndex(builder, self.delegateIndex)
         if self.args is not None:
             DelegateCallAddArgs(builder, args)
+        if self.scratch is not None:
+            DelegateCallAddScratch(builder, scratch)
         delegateCall = DelegateCallEnd(builder)
         return delegateCall

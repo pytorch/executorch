@@ -127,15 +127,24 @@ class PtnHooksTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     runtime::runtime_init();
-    ASSERT_EQ(
-        native_module::internal::register_ptn_hooks(kFakeHooks),
-        runtime::Error::Ok);
+    // The registry survives repeated GTest runs, including the XCTest bridge.
+    static const auto registration_error =
+        native_module::internal::register_ptn_hooks(kFakeHooks);
+    ASSERT_EQ(registration_error, runtime::Error::Ok);
   }
 
   void SetUp() override {
     last_source().reset();
   }
 };
+
+TEST_F(PtnHooksTest, SuiteSetup_CanBeRepeated) {
+  ASSERT_NO_FATAL_FAILURE(SetUpTestSuite());
+  ASSERT_NO_FATAL_FAILURE(SetUpTestSuite());
+  const auto* hooks = native_module::internal::get_ptn_hooks();
+  ASSERT_NE(hooks, nullptr);
+  EXPECT_EQ(hooks->load, load_fake_ptn);
+}
 
 TEST_F(PtnHooksTest, Load_PtnSource_DispatchesMetadataAndMethodState) {
   const std::array<uint8_t, 2> bytes{'P', 'K'};

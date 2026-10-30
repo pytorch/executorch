@@ -89,6 +89,7 @@ class ArmPass(ExportPass):
         ops_without_quantized_fake_kernel = {
             exir_ops.edge.aten.bmm.default,
             exir_ops.edge.aten.leaky_relu.default,
+            exir_ops.edge.aten.softplus.default,
         }
         if (
             op in ops_without_quantized_fake_kernel

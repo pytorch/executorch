@@ -35,12 +35,11 @@ class TosaReverseVisitor(NodeVisitor):
         supported_dtypes = supported_data_layout_dtypes(self.tosa_spec)
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_same_dtype(self.target, [inputs[0], output])
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
             supported_dtypes,
-            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()

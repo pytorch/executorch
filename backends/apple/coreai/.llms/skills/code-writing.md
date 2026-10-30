@@ -33,21 +33,15 @@ Legitimate non-prose dashes are fine: CLI flags (`--platform`,
 
 ## Running the tests
 
-Run the whole backend suite (both `test/` and `passes/test/`) with the helper
-script, from inside the Core AI conda env:
+Run the whole backend suite (both `test/` and `passes/test/`) from the
+repository root, in an env with ExecuTorch installed in editable mode and
+`backends/apple/coreai/requirements.txt` installed:
 
 ```bash
-conda run -n coreai backends/apple/coreai/run_all_tests.sh
+python -m pytest backends/apple/coreai
 ```
 
-Extra args are forwarded to `unittest`, e.g. `... run_all_tests.sh -v` or
-`... run_all_tests.sh -k sidecar`.
-
-**Use this script (unittest), not `pytest` directly.** pytest's default
-discovery puts `backends/apple/` on `sys.path`, so `import coreai` resolves to
-this backend directory and shadows the real Apple `coreai` SDK (`coreai_torch`
-then fails importing `coreai.authoring`). unittest imports via the full
-`executorch.backends.apple.coreai.*` path and avoids the shadowing.
+Standard pytest options apply, e.g. `-v` or `-k manifest`.
 
 The real-toolchain AOT test (`CoreAIAOTCompileTest`) is gated on
 `xcrun coreai-build`; it runs on macOS with the Metal Toolchain and skips

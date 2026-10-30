@@ -42,6 +42,7 @@ WEBGPU_SUPPORTED_OPS = [
     exir_ops.edge.aten.ones.default,
     exir_ops.edge.aten.ones_like.default,
     exir_ops.edge.aten.scalar_tensor.default,
+    exir_ops.edge.aten.arange.start_step,
     exir_ops.edge.aten._to_copy.default,
     exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     exir_ops.edge.aten.abs.default,

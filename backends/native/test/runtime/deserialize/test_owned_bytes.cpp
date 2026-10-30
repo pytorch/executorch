@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -114,6 +115,31 @@ TEST_F(OwnedBytesTest, EmptyFileUsesHeapStorage) {
 
   EXPECT_FALSE(bytes.is_mapped());
   EXPECT_TRUE(bytes.span().empty());
+}
+
+TEST_F(OwnedBytesTest, ViewKeepsOwnerAlive) {
+  auto owner =
+      std::make_shared<const OwnedBytes>(OwnedBytes::from_vector({1, 2, 3, 4}));
+  const ByteSpan whole = owner->span();
+
+  const OwnedBytes view = OwnedBytes::view(owner, whole.subspan(1, 2));
+  EXPECT_THROW(
+      OwnedBytes::view(owner, ByteSpan(whole.data() + 3, 2)),
+      std::invalid_argument);
+  owner.reset();
+
+  EXPECT_FALSE(view.is_mapped());
+  EXPECT_EQ(view.span().data(), whole.data() + 1);
+  EXPECT_EQ(
+      std::vector<uint8_t>(view.span().begin(), view.span().end()),
+      (std::vector<uint8_t>{2, 3}));
+
+#if !defined(_WIN32)
+  const std::string path = temp_path("_view.bin");
+  ASSERT_NO_FATAL_FAILURE(write_file(path, "abc"));
+  auto mapped = std::make_shared<const OwnedBytes>(OwnedBytes::from_file(path));
+  EXPECT_TRUE(OwnedBytes::view(mapped, mapped->span()).is_mapped());
+#endif
 }
 
 TEST_F(OwnedBytesTest, RejectsInvalidPaths) {

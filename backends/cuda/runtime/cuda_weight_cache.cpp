@@ -136,6 +136,63 @@ bool is_supported_device_type(int32_t device_type) {
   return device_type == 0 || device_type == 1; // CPU or CUDA
 }
 
+bool is_offgraph_kv_fqn(const std::string& fqn) {
+  return fqn.rfind(kOffGraphKVFqnPrefix, 0) == 0;
+}
+
+// torch::aot_inductor::ConstantType.
+constexpr int32_t kAotiParameter = 1;
+constexpr int32_t kAotiBuffer = 2;
+constexpr int32_t kAotiTensorConstant = 3;
+
+bool can_check_constants_bound(const CudaDelegateHandle& handle) {
+  return handle.get_constant_type && handle.get_constant_from_folded &&
+      handle.get_constant_data_size;
+}
+
+// The same rule as AOTI's validate_full_update, without its warning for each
+// absent buffer: folded constants, buffers, tensor constants and empty
+// parameters may be absent, every other constant must be bound.
+Error check_constants_bound(
+    const CudaDelegateHandle& handle,
+    size_t num_constants,
+    const std::unordered_set<std::string>& bound) {
+  for (size_t index = 0; index < num_constants; ++index) {
+    bool from_folded = false;
+    int32_t type = 0;
+    size_t data_size = 0;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_from_folded(
+            handle.container_handle, index, &from_folded),
+        "Failed to read CUDA AOTI constant folding at index %zu",
+        index);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_type(handle.container_handle, index, &type),
+        "Failed to read CUDA AOTI constant type at index %zu",
+        index);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_data_size(
+            handle.container_handle, index, &data_size),
+        "Failed to read CUDA AOTI constant size at index %zu",
+        index);
+    if (from_folded || type == kAotiBuffer || type == kAotiTensorConstant ||
+        (type == kAotiParameter && data_size == 0)) {
+      continue;
+    }
+    const char* name = nullptr;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_name(handle.container_handle, index, &name),
+        "Failed to read CUDA AOTI constant name at index %zu",
+        index);
+    ET_CHECK_OR_RETURN_ERROR(
+        name != nullptr && bound.count(name) != 0,
+        InvalidProgram,
+        "CUDA AOTI constant '%s' has no bound FQN weight",
+        name == nullptr ? "<unnamed>" : name);
+  }
+  return Error::Ok;
+}
+
 } // namespace
 
 bool CudaWeightCache::is_serialized(const void* data, size_t size) {
@@ -484,6 +541,17 @@ Error CudaWeightCache::acquire_storage(
   return Error::Ok;
 }
 
+std::unordered_map<std::string, std::vector<int64_t>>
+CudaWeightCache::offgraph_kv_sizes(const Metadata& metadata) {
+  std::unordered_map<std::string, std::vector<int64_t>> sizes;
+  for (const Entry& entry : metadata.entries) {
+    if (is_offgraph_kv_fqn(entry.fqn)) {
+      sizes.emplace(entry.fqn, entry.sizes);
+    }
+  }
+  return sizes;
+}
+
 Error CudaWeightCache::load(
     CudaDelegateHandle* handle,
     const NamedDataMap* named_data_map,
@@ -560,6 +628,7 @@ Error CudaWeightCache::load(
   pairs.reserve(metadata.entries.size());
   std::unordered_set<std::string> bound_fqns;
   size_t reused_storages = 0;
+  size_t external_storages = 0;
   handle->fqn_weight_tensors.reserve(metadata.entries.size());
 
   for (const Entry& entry : metadata.entries) {
@@ -586,6 +655,11 @@ Error CudaWeightCache::load(
         InvalidProgram,
         "CUDA FQN weight '%s' appears more than once in serialized metadata",
         entry.fqn.c_str());
+
+    if (is_offgraph_kv_fqn(entry.fqn)) {
+      ++external_storages;
+      continue;
+    }
 
     std::shared_ptr<CudaWeightStorage> storage;
     bool reused = false;
@@ -628,19 +702,34 @@ Error CudaWeightCache::load(
     }
   }
 
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      handle->update_user_managed_constant_buffer_pairs(
-          handle->container_handle,
-          pairs.data(),
-          pairs.size(),
-          /*use_inactive=*/false,
-          /*validate_full_update=*/true),
-      "Failed to bind CUDA FQN weights");
+  if (!pairs.empty()) {
+    // Off-graph KV constants are AOTI buffers bound later by the KV pool, so
+    // they are allowed to be absent here, while every weight must be supplied.
+    const bool check_here = can_check_constants_bound(*handle);
+    if (check_here) {
+      std::unordered_set<std::string> bound_names;
+      for (const auto& pair : pairs) {
+        bound_names.emplace(pair.name);
+      }
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          check_constants_bound(*handle, num_constants, bound_names),
+          "CUDA FQN weights do not cover the AOTI library");
+    }
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle->update_user_managed_constant_buffer_pairs(
+            handle->container_handle,
+            pairs.data(),
+            pairs.size(),
+            /*use_inactive=*/false,
+            /*validate_full_update=*/!check_here),
+        "Failed to bind CUDA FQN weights");
+  }
   ET_LOG(
       Info,
-      "Loaded %zu CUDA FQN weights (%zu reused across methods)",
-      metadata.entries.size(),
-      reused_storages);
+      "Loaded %zu CUDA FQN weights (%zu reused, %zu runtime-owned)",
+      metadata.entries.size() - external_storages,
+      reused_storages,
+      external_storages);
   return Error::Ok;
 }
 

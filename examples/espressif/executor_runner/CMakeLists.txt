@@ -24,17 +24,20 @@ if(ESP_PLATFORM)
   # ═══════════════════════════════════════════════════════════════
   # ESP-IDF Component Build
   # ═══════════════════════════════════════════════════════════════
+  # Keep the PAL overrides even though the runtime supplies weak defaults.
   idf_component_register(
     SRCS
     "esp_executor_runner.cpp"
-    "esp_pal.cpp"
+    "../platform/esp_pal.cpp"
     "esp_perf_monitor.cpp"
     INCLUDE_DIRS
     "."
     REQUIRES
     esp_timer
     esp_system
+    log
     spiffs
+    WHOLE_ARCHIVE
   )
 
   # ExecuTorch pre-built library paths
@@ -70,10 +73,8 @@ if(ESP_PLATFORM)
       "0.01"
       CACHE STRING "Relative tolerance for BundleIO testing"
   )
-  option(ET_DUMP_OUTPUTS "Collect and print outputs as base64 in log" OFF)
-  option(ET_DUMP_INTERMEDIATE_OUTPUTS "Collect and print intermediate outputs"
-         OFF
-  )
+  option(ET_DUMP_OUTPUTS "Capture the latest inference's outputs" OFF)
+  option(ET_DUMP_INTERMEDIATE_OUTPUTS "Capture its intermediate outputs" OFF)
   set(ET_DEBUG_BUFFER_SIZE
       "65536"
       CACHE STRING "Size of ETDump debug buffer"
@@ -145,6 +146,11 @@ if(ESP_PLATFORM)
 
   if(TARGET xnnpack_backend)
     list(APPEND esp_runner_libs xnnpack_backend)
+  endif()
+
+  # quantize/dequantize kernels for quantized models with CPU regions
+  if(TARGET quantized_ops_lib)
+    list(APPEND esp_runner_libs quantized_ops_lib)
   endif()
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
@@ -281,7 +287,7 @@ else()
 
   add_executable(esp_executor_runner)
   target_sources(
-    esp_executor_runner PRIVATE esp_executor_runner.cpp esp_pal.cpp
+    esp_executor_runner PRIVATE esp_executor_runner.cpp ../platform/esp_pal.cpp
                                 esp_perf_monitor.cpp
   )
 

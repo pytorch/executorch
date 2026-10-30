@@ -17,6 +17,13 @@ on:
       - backends/cuda/**
       - backends/aoti/**
       - extension/cuda/**
+      - .ci/scripts/export_model_artifact.sh
+      - .ci/scripts/test_model_e2e_windows.ps1
+      # Only unittest-cuda-runtime-windows runs for these alone; the other jobs
+      # filter on their own paths and stay skipped.
+      - .ci/scripts/test_cuda_runtime_windows.ps1
+      - .ci/scripts/install_nvidia_driver_windows.ps1
+      - tools/cmake/Test.cmake
   workflow_dispatch:
 
 concurrency:
@@ -56,6 +63,8 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e_windows.ps1') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -87,6 +96,7 @@ jobs:
           - model_repo: "mistralai"
             model_name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "quantized-int4-tile-packed"
+            mode: "vr-offline"
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
@@ -142,11 +152,7 @@ jobs:
           echo "::endgroup::"
         fi
 
-        VR_MODE=""
-        if [ "${{ matrix.model_name }}" = "Voxtral-Mini-4B-Realtime-2602" ]; then
-          VR_MODE="vr-offline"
-        fi
-        source .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model_repo }}/${{ matrix.model_name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${VR_MODE}"
+        source .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model_repo }}/${{ matrix.model_name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${{ matrix.mode }}"
 
   test-model-cuda-windows-e2e:
     name: test-model-cuda-windows-e2e
@@ -163,6 +169,8 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e_windows.ps1') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
@@ -190,6 +198,7 @@ jobs:
           - model_repo: "mistralai"
             model_name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "quantized-int4-tile-packed"
+            mode: "vr-offline"
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
@@ -197,7 +206,10 @@ jobs:
       timeout: 240
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      # The Windows runner image carries only the toolkits the CUDA wheels are built for,
+      # 13.2 and 13.4, so this cannot match the export's 13.0. The exported program loads
+      # cudart64_13.dll, which every CUDA 13 toolkit provides.
+      gpu-arch-version: "13.2"
       download-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -209,7 +221,7 @@ jobs:
           \$ErrorActionPreference = 'Stop'
           \$PSNativeCommandUseErrorActionPreference = \$true
 
-          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0'
+          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2'
           \$env:CUDA_PATH = \$env:CUDA_HOME
           \$env:PATH = \"\$env:CUDA_HOME\bin;\$env:PATH\"
           nvcc --version
@@ -220,7 +232,43 @@ jobs:
             throw 'RUNNER_ARTIFACT_DIR is empty. Ensure download-artifact is configured for windows_job.yml.'
           }
 
-          .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.0'
+          .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.2' -Mode '${{ matrix.mode }}'
+        }"
+
+  # The counterpart of cuda.yml's unittest-cuda-runtime on Windows. The Windows GPU runners
+  # carry data-center GPUs in TCC mode, which have no memory pools, so this also covers the
+  # allocator's synchronous fallback that the Linux job cannot reach.
+  unittest-cuda-runtime-windows:
+    name: unittest-cuda-runtime-windows
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_cuda_runtime_windows.ps1') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/install_nvidia_driver_windows.ps1') ||
+      contains(needs.changed-files.outputs.changed-files, 'tools/cmake/Test.cmake') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    with:
+      timeout: 120
+      runner: windows.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      # The same toolkit as test-model-cuda-windows-e2e, for the same reason.
+      gpu-arch-version: "13.2"
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        git config --global http.sslBackend openssl
+        git submodule update --init --recursive
+        conda init powershell
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2'
+          \$env:CUDA_PATH = \$env:CUDA_HOME
+          .ci/scripts/setup-windows.ps1
+          .ci/scripts/test_cuda_runtime_windows.ps1
         }"
 
   delete-model-cuda-windows-artifacts:

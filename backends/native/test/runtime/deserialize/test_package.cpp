@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -56,7 +57,9 @@ class TempPackage {
   std::filesystem::path path_;
 
  public:
-  explicit TempPackage(std::vector<uint8_t> tensors = {}) {
+  explicit TempPackage(
+      std::vector<uint8_t> tensors = {},
+      const std::vector<std::pair<std::string, std::string>>& extra = {}) {
     path_ = std::filesystem::temp_directory_path() /
         ("ptn_package_" + std::to_string(reinterpret_cast<uintptr_t>(this)) +
          ".ptn");
@@ -74,6 +77,9 @@ class TempPackage {
     add(archive.get(), kProgramEntry, as_bytes(program_));
     add(archive.get(), kSafeTensorsEntry, ByteSpan(tensors));
     add(archive.get(), kAliasesEntry, as_bytes(aliases_));
+    for (const auto& [name, bytes] : extra) {
+      add(archive.get(), name.c_str(), as_bytes(bytes));
+    }
     if (zip_close(archive.get()) != 0) {
       throw std::runtime_error("failed to close test package");
     }
@@ -135,6 +141,24 @@ TEST(PackageTest, LoadsConstantsOnDemand) {
   EXPECT_NO_THROW(package.verify());
 }
 
+TEST(PackageTest, IgnoresSampleMembers) {
+  const std::string index =
+      R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":["samples[0].calls[0].in[0]"]}]}]})";
+  const std::vector<uint8_t> data = make_safetensors(
+      R"({"samples[0].calls[0].in[0]":{"dtype":"U8","shape":[2],"data_offsets":[0,2]}})",
+      "in");
+  const TempPackage file(
+      {},
+      {{"samples/golden/index.json", index},
+       {"samples/golden/data.safetensors",
+        std::string(data.begin(), data.end())}});
+  const Package package = Package::load(file.path());
+
+  EXPECT_EQ(package.owner_keys(), (std::vector<std::string>{"weight", "bias"}));
+  EXPECT_FALSE(package.constant_info("samples[0].calls[0].in[0]"));
+  EXPECT_NO_THROW(package.verify());
+}
+
 TEST(PackageTest, ReportsMissingConstantsAndWrongDestinations) {
   const TempPackage file;
   const Package package = Package::load(file.path());
@@ -156,6 +180,32 @@ TEST(PackageTest, SupportsCallerOwnedArchiveBytes) {
   ASSERT_TRUE(weight);
   EXPECT_TRUE(std::ranges::equal(
       weight->span(), (std::array<uint8_t, 4>{'d', 'a', 't', 'a'})));
+}
+
+TEST(PackageTest, ViewsConstantsInPlace) {
+  const TempPackage file;
+  std::optional<OwnedBytes> view;
+  {
+    const Package package =
+        Package::load(OwnedBytes::from_file(file.path(), false));
+    EXPECT_EQ(package.view_constant("missing"), std::nullopt);
+    view = package.view_constant("tied_weight");
+  }
+  ASSERT_TRUE(view);
+  EXPECT_FALSE(view->is_mapped());
+  EXPECT_TRUE(std::ranges::equal(
+      view->span(), (std::array<uint8_t, 4>{'d', 'a', 't', 'a'})));
+
+  const Package mapped = Package::load(file.path());
+  const std::optional<OwnedBytes> bias = mapped.view_constant("bias");
+#if defined(_WIN32)
+  EXPECT_EQ(bias, std::nullopt);
+#else
+  ASSERT_TRUE(bias);
+  EXPECT_TRUE(bias->is_mapped());
+  EXPECT_TRUE(
+      std::ranges::equal(bias->span(), (std::array<uint8_t, 2>{'x', 'y'})));
+#endif
 }
 
 TEST(PackageTest, RejectsOversizedSafeTensorsHeaderBeforeReadingIt) {

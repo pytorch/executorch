@@ -1314,3 +1314,30 @@ footer a {
         display: none;
     }
 }
+
+/* WebGPU Playground call-to-action */
+.nav-links a.nav-playground {
+  display: inline-flex; align-items: center; gap: 0.4rem; color: #fff; font-weight: 600;
+  padding: 0.3rem 0.85rem; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 999px; margin-top: -0.3rem;
+}
+.nav-links a.nav-playground:hover { border-color: var(--primary); background: rgba(223, 52, 17, 0.18); }
+.nav-playground__tag { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; padding: 0.05rem 0.4rem; border-radius: 999px; background: var(--primary); color: #fff; }
+.playground-cta { padding: 3.5rem 0; background: linear-gradient(180deg, var(--bg-gray) 0%, #fff 100%); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.playground-cta__inner { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 3rem; align-items: center; }
+.playground-cta__eyebrow { color: var(--primary); font-weight: 700; font-size: 0.85rem; letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 0.5rem; }
+.playground-cta__title { font-size: 2.2rem; line-height: 1.15; color: var(--text-dark); margin: 0 0 1rem; }
+.playground-cta__text { color: var(--text-gray); font-size: 1.08rem; line-height: 1.65; margin: 0 0 1.25rem; }
+.playground-cta__chips { list-style: none; display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0; margin: 0 0 1.75rem; }
+.playground-cta__chips li { background: #fff; border: 1px solid var(--border); color: var(--text-dark); border-radius: 999px; padding: 0.35rem 0.85rem; font-size: 0.9rem; font-weight: 600; }
+.playground-cta__btn { display: inline-block; }
+.playground-cta__art { width: 100%; height: auto; filter: drop-shadow(0 18px 36px rgba(31, 19, 96, 0.25)); }
+@media (max-width: 860px) {
+  .playground-cta__inner { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
+  .playground-cta__title { font-size: 1.75rem; }
+}
+.nav-links a { white-space: nowrap; }
+@media (min-width: 769px) and (max-width: 1500px) {
+  .nav-links { gap: 1.25rem; }
+  .nav-search { margin-left: 1.25rem; }
+  .nav-search input { width: 11rem; }
+}

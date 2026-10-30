@@ -15,7 +15,7 @@ from torch.export.exported_program import (
 )
 
 
-def _get_updated_range_constraints(gm):
+def _get_updated_range_constraints(gm, old_range_constraints=None):
     def get_shape_env(gm):
         vals = [
             node.meta["val"]
@@ -42,6 +42,11 @@ def _get_updated_range_constraints(gm):
     # e.g. [2, oo) -> [0, oo)
     for k, v in shape_env.var_to_range.items():
         if k not in shape_env.replacements:
+            range_constraints[k] = v
+    # As torch.export does, keep the declared range of a surviving symbol: the
+    # ShapeEnv raises a backed symbol's declared min of 0 or 1 to 2.
+    for k, v in (old_range_constraints or {}).items():
+        if k in range_constraints:
             range_constraints[k] = v
     return range_constraints
 

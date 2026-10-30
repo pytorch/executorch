@@ -35,6 +35,13 @@ class NativeLlamaRunner(LlamaRunner):
     def __init__(self, args):
         with open(args.params, "r") as f:
             params = json.loads(f.read())
+        self.model = _load_for_executorch(args.pte)
+        method_names = self.model.method_names()
+        enable_dynamic_shape = False
+        if "enable_dynamic_shape" in method_names:
+            enable_dynamic_shape = bool(
+                self.model.run_method("enable_dynamic_shape")[0]
+            )
         super().__init__(
             tokenizer_path=args.tokenizer,
             tokenizer_config_path=args.tokenizer_config,
@@ -42,8 +49,8 @@ class NativeLlamaRunner(LlamaRunner):
             max_batch_size=1,
             use_kv_cache=args.kv_cache,
             vocab_size=params["vocab_size"],
+            enable_dynamic_shape=enable_dynamic_shape,
         )
-        self.model = _load_for_executorch(args.pte)
 
     def forward(
         self,

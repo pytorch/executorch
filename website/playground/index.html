@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Playground · ExecuTorch</title>
+  <meta name="description" content="Try ExecuTorch hands-on, right in your browser.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" type="image/svg+xml" href="./webgpu/assets/executorch-chip-logo.svg">
+  <script>
+    // Same theme resolution as the WebGPU playground, so moving between them never flashes.
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem('etwg-theme'); } catch (e) {}
+      var dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    })();
+  </script>
+  <link rel="stylesheet" href="./webgpu/styles/app.css">
+  <link rel="stylesheet" href="./hub.css">
+</head>
+<body>
+  <header class="sitebar">
+    <div class="sitebar__inner">
+      <a class="sitebar__brand" href="../index.html">
+        <img class="sitebar__logo" src="./webgpu/assets/executorch-chip-logo.svg" alt="" width="40" height="40">
+        <span class="sitebar__name">ExecuTorch</span>
+      </a>
+      <nav class="sitebar__links" aria-label="executorch.ai">
+        <a class="sitebar__link sitebar__link--wide" href="../index.html#why-ondevice">Why On-Device</a>
+        <a class="sitebar__link sitebar__link--wide" href="../index.html#challenges">Challenges</a>
+        <a class="sitebar__link sitebar__link--wide" href="../index.html#features">Solution</a>
+        <a class="sitebar__link sitebar__link--wide" href="../index.html#performance">Backends</a>
+        <a class="sitebar__link sitebar__link--wide" href="../index.html#partners">Partners</a>
+        <a class="sitebar__link" href="https://github.com/pytorch/executorch">GitHub</a>
+        <a class="sitebar__pill" href="./" aria-current="page">Playground</a>
+      </nav>
+      <form class="sitebar__search" action="https://docs.pytorch.org/executorch/1.0/search.html" method="get">
+        <input class="sitebar__search-input" type="text" name="q" placeholder="Search docs…" aria-label="Search docs">
+      </form>
+    </div>
+  </header>
+
+  <main class="hub">
+    <header class="hub__head">
+      <p class="eyebrow">ExecuTorch Playground</p>
+      <h1 class="hub__title">Try ExecuTorch hands-on</h1>
+      <p class="hub__lede">Interactive experiments that run ExecuTorch right where you are: no install and no server. Pick a playground to start.</p>
+    </header>
+
+    <a class="track" href="./webgpu/">
+      <div class="track__art" data-art="effects"></div>
+      <div class="track__body">
+        <div class="track__tags">
+          <span class="track__tag">WebGPU</span>
+          <span class="track__tag track__tag--exp">Experimental</span>
+        </div>
+        <h2 class="track__title">Run PyTorch models locally in your browser</h2>
+        <p class="track__text">Chat with a language model, transcribe your voice, segment objects, and see depth through your camera. Real ExecuTorch models running on your GPU with the WebGPU backend.</p>
+        <ul class="track__demos" data-demos="effects chat speech-to-text segment vlm depth"></ul>
+        <p class="track__privacy">Private by design: models run on your GPU, and nothing you type, say, or show leaves the tab.</p>
+        <span class="btn btn--primary track__cta">Open the WebGPU playground <span aria-hidden="true">&rarr;</span></span>
+      </div>
+    </a>
+
+    <section class="soon" aria-labelledby="soon-title">
+      <h2 class="soon__title" id="soon-title">More playgrounds are on the way</h2>
+      <p class="soon__text">What would you like to try next? Tell us on <a href="https://github.com/pytorch/executorch/issues" target="_blank" rel="noopener">GitHub</a> or in the <a href="https://discord.gg/GbraDsuqCW" target="_blank" rel="noopener">PyTorch Edge Discord</a>.</p>
+    </section>
+  </main>
+
+  <script type="module" src="./hub.js"></script>
+</body>
+</html>

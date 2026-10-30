@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -59,6 +60,15 @@ set(_executorch_host_osx_args
     "$<${_executorch_apple_cross}:-DCMAKE_OSX_SYSROOT=>"
     "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=$<IF:${_executorch_apple_cross},${_executorch_host_macos_floor},${CMAKE_OSX_DEPLOYMENT_TARGET}>"
 )
+# The host's executable suffix, for the byproducts and the imported locations
+# alike. Not CMAKE_EXECUTABLE_SUFFIX, which is the target's: a cross toolchain
+# such as Zephyr's sets .elf, and a byproduct named after it is not the file the
+# host build writes, so Ninja would have no rule for the tool.
+if(CMAKE_HOST_WIN32)
+  set(_executorch_host_executable_suffix ".exe")
+else()
+  set(_executorch_host_executable_suffix "")
+endif()
 
 # Allow reusing a prebuilt host flatc instead of building it from source. This is
 # required when cross-compiling with the Ninja generator on Windows: the WIN32
@@ -90,24 +100,21 @@ ExternalProject_Add(
     # flatc runs on the build machine, so it must target the host, not the app's
     # iOS platform. See _executorch_host_osx_args above.
     ${_executorch_host_osx_args}
-  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
+  # With the suffix, or Ninja on Windows has no rule producing the flatc.exe
+  # that the generated schema headers depend on.
+  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc${_executorch_host_executable_suffix}
                    ${_executorch_external_project_additional_args}
                    ${_flatbuffers_ep_additional_args}
 )
 ExternalProject_Get_Property(flatbuffers_ep INSTALL_DIR)
 add_executable(flatc IMPORTED GLOBAL)
 add_dependencies(flatc flatbuffers_ep)
-if(CMAKE_HOST_WIN32)
-  # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces
-  # Release config, but from CMake's perspective the build type is always Debug.
-  set_target_properties(
-    flatc PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatc.exe
-  )
-else()
-  set_target_properties(
-    flatc PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatc
-  )
-endif()
+# flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
+# config, but from CMake's perspective the build type is always Debug.
+set_target_properties(
+  flatc PROPERTIES IMPORTED_LOCATION
+                   ${INSTALL_DIR}/bin/flatc${_executorch_host_executable_suffix}
+)
 endif()
 
 # TODO: re-enable once flatbuffers is added as a subdirectory.
@@ -140,9 +147,11 @@ else()
 ExternalProject_Add(
   flatcc_ep
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep
-  SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatcc
-  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep/src/build
+  SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatcc-host
+  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep/src/host-build
+  BUILD_ALWAYS TRUE
   CMAKE_ARGS
+    -DEXECUTORCH_FLATCC_SOURCE_DIR:PATH=${PROJECT_SOURCE_DIR}/third-party/flatcc
     -DFLATCC_RTONLY=OFF
     -DFLATCC_TEST=OFF
     -DFLATCC_REFLECTION=OFF
@@ -155,23 +164,18 @@ ExternalProject_Add(
     -DCMAKE_TOOLCHAIN_FILE=
     ${_executorch_host_osx_args}
     ${_flatcc_extra_cmake_args}
-  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
+  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc${_executorch_host_executable_suffix}
                    ${_executorch_external_project_additional_args}
                    ${_flatbuffers_ep_additional_args}
 )
-file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
 ExternalProject_Get_Property(flatcc_ep INSTALL_DIR)
 add_executable(flatcc_cli IMPORTED GLOBAL)
 add_dependencies(flatcc_cli flatcc_ep)
-if(CMAKE_HOST_WIN32)
-  set_target_properties(
-    flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc.exe
-  )
-else()
-  set_target_properties(
-    flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc
-  )
-endif()
+set_target_properties(
+  flatcc_cli
+  PROPERTIES IMPORTED_LOCATION
+             ${INSTALL_DIR}/bin/flatcc${_executorch_host_executable_suffix}
+)
 endif()
 
 set(FLATCC_RTONLY
@@ -199,6 +203,13 @@ set(FLATCC_INSTALL
     CACHE BOOL ""
 )
 add_subdirectory(flatcc)
+set_target_properties(
+  flatccrt
+  PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flatcc/lib"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flatcc/lib"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flatcc/bin"
+)
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
    AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 15
 )
@@ -206,12 +217,6 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
     flatccrt PRIVATE -Wno-error=unterminated-string-initialization
   )
 endif()
-# Unfortunately flatcc writes libs directly in to the source tree [1]. So to
-# ensure the target lib is created last, force flatcc_cli to build first.
-#
-# [1]
-# https://github.com/dvidelabs/flatcc/blob/896db54787e8b730a6be482c69324751f3f5f117/CMakeLists.txt#L168
-add_dependencies(flatccrt flatcc_cli)
 # Fix for "relocation R_X86_64_32 against `.rodata' can not be used when making
 # a shared object; recompile with -fPIC" when building on some x86 linux
 # systems.

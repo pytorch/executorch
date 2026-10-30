@@ -6,6 +6,41 @@ model on the Arm Ethos-U NPU using ExecuTorch within a Zephyr RTOS application.
 The model classifies a static RGB test input tensor with shape `[1, 3, 224, 224]`
 (NCHW) into one of 1000 ImageNet classes and prints the top-5 predictions.
 
+## Using a real image
+
+The bundled `src/mv2_input.h` holds a synthetic tensor, not a photograph. It
+exercises the full runtime path (load, delegate, execute) but the predictions it
+produces are meaningless. To classify something real, regenerate the header:
+
+```bash
+python gen_input.py your_photo.jpg
+```
+
+The script applies the same resize and centre-crop that torchvision's default
+MobileNetV2 weights expect, stores the result as uint8 RGB in NCHW order, and
+records what float32 torchvision MobileNetV2 predicts.
+Rebuild and reflash after regenerating.
+
+Two things are required for that recorded prediction to be a valid reference.
+Export with `--model_name=mv2` rather than the `mv2_untrained` used in the
+commands below, since untrained weights produce arbitrary class IDs. And supply
+representative calibration data with `--calibration_data`, because the default
+calibrates on the model's example input, which is random:
+
+```bash
+python -m executorch.backends.arm.scripts.aot_arm_compiler \
+    --model_name=mv2 --quantize --delegate \
+    --target=ethos-u55-256 --calibration_data=calib \
+    --output=mv2_ethosu.pte
+```
+
+`--calibration_data` takes a directory of `.pt` files, each holding one
+preprocessed input tensor of shape `[1, 3, 224, 224]`, produced with the same
+transform the model expects (`MobileNet_V2_Weights.DEFAULT.transforms()`).
+
+ImageNet has no "person" class, so portraits return an unrelated label with low
+confidence. Photographs of animals, objects, food and vehicles work well.
+
 ## Prerequisites
 
 - Zephyr SDK with ExecuTorch module enabled

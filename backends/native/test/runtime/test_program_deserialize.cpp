@@ -229,7 +229,7 @@ TEST(ProgramTest, GetMethodRejectsSelfAlias) {
   EXPECT_THROW(program.get_method("forward"), std::runtime_error);
 }
 
-TEST(ProgramTest, GetMethodRejectsDynamicTensorExtent) {
+TEST(ProgramTest, GetMethodPreservesDynamicTensorExtent) {
   flatbuffers::FlatBufferBuilder builder;
   const std::vector<flatbuffers::Offset<fbs::Dim>> sizes = {
       fbs::CreateDim(builder, 2, 16)};
@@ -241,7 +241,12 @@ TEST(ProgramTest, GetMethodRejectsDynamicTensorExtent) {
       finish_program(builder, {create_method(builder, "forward", graph)});
   const Program program = load_program(bytes);
 
-  EXPECT_THROW(program.get_method("forward"), std::runtime_error);
+  const Method& method = program.get_method("forward");
+  ASSERT_EQ(method.graph.input_ids.size(), 1);
+  const TensorMeta& loaded =
+      method.graph.value(method.graph.input_ids[0]).tensor_meta();
+  EXPECT_EQ(loaded.sizes, std::vector<int64_t>({16}));
+  EXPECT_EQ(loaded.lower_bounds, std::vector<int64_t>({2}));
 }
 
 TEST(ProgramTest, GetMethodRejectsTensorRankOverLimit) {

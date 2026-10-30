@@ -215,6 +215,39 @@ def test_u85_explicit_coverage_attribution() -> None:
         docgen._activate_backend(original)
 
 
+SDPA_OP = "torch.ops.aten.scaled_dot_product_attention.default"
+
+
+def test_sdpa_is_decomposed_with_public_api_alias() -> None:
+    assert SDPA_OP in docgen.DECOMPOSED_OPS
+    assert docgen._pytorch_api_aliases(SDPA_OP) == (
+        "torch.nn.functional.scaled_dot_product_attention",
+    )
+
+
+@pytest.mark.parametrize(
+    ("backend", "function", "profile"),
+    [
+        ("vgf", "test_sdpa_vgf_no_quant", "FP"),
+        ("vgf", "test_sdpa_vgf_quant", "INT"),
+        ("u55", "test_sdpa_u55_INT", "INT"),
+        ("u85", "test_sdpa_u85_INT", "INT"),
+    ],
+)
+def test_sdpa_explicit_backend_coverage(
+    backend: str, function: str, profile: str
+) -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend(backend)
+        coverage = docgen._active_explicit_backend_coverage()
+        assert coverage[("backends/arm/test/ops/test_sdpa.py", function)][profile] == {
+            SDPA_OP
+        }
+    finally:
+        docgen._activate_backend(original)
+
+
 def test_non_vgf_backend_does_not_collect_vgf_custom_partition_ops() -> None:
     original = docgen.ACTIVE_BACKEND_KEY
     try:
@@ -695,3 +728,115 @@ def test_main_writes_requested_markdown_and_html(
     assert result == 0
     assert (tmp_path / "generated/support.md").read_text(encoding="utf-8") == "md\n"
     assert (tmp_path / "generated/support.html").read_text(encoding="utf-8") == "html\n"
+
+
+def test_main_backend_all_writes_all_markdown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        docgen,
+        "generate_markdown",
+        lambda _root, debug=False: f"{docgen.ACTIVE_BACKEND_KEY}\n",
+    )
+
+    result = docgen.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--backend",
+            "all",
+        ]
+    )
+
+    assert result == 0
+    for backend, config in docgen.BACKENDS.items():
+        assert (tmp_path / config.default_output).read_text(encoding="utf-8") == (
+            f"{backend}\n"
+        )
+
+
+def test_main_backend_all_check_runs_every_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checked: list[tuple[str, bool]] = []
+
+    def fake_run_check(_root: Path, *, strict_ast: bool = False) -> int:
+        checked.append((docgen.ACTIVE_BACKEND_KEY, strict_ast))
+        return 1 if docgen.ACTIVE_BACKEND_KEY == "u55" else 0
+
+    monkeypatch.setattr(docgen, "run_check", fake_run_check)
+
+    result = docgen.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--backend",
+            "all",
+            "--check",
+            "--strict-ast",
+        ]
+    )
+
+    assert result == 1
+    assert checked == [(backend, True) for backend in docgen.BACKENDS]
+
+
+def test_main_backend_all_rejects_custom_output(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        docgen.main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "--backend",
+                "all",
+                "--output",
+                "generated/support.md",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+
+
+ADAPTIVE_AVG_POOL1D_OP = "torch.ops.aten.adaptive_avg_pool1d.default"
+
+
+def test_adaptive_avg_pool1d_is_decomposed_with_public_api_alias() -> None:
+    assert ADAPTIVE_AVG_POOL1D_OP in docgen.DECOMPOSED_OPS
+    assert docgen._pytorch_api_aliases(ADAPTIVE_AVG_POOL1D_OP) == (
+        "torch.nn.AdaptiveAvgPool1d",
+        "torch.nn.functional.adaptive_avg_pool1d",
+    )
+
+
+def test_linalg_vector_norm_is_decomposed_with_public_api_alias() -> None:
+    op = "torch.ops.aten.linalg_vector_norm.default"
+
+    assert op in docgen.DECOMPOSED_OPS
+    assert docgen._pytorch_api_aliases(op) == ("torch.linalg.vector_norm",)
+
+
+@pytest.mark.parametrize(
+    ("backend", "function", "profile"),
+    [
+        ("vgf", "test_vector_norm_vgf_no_quant", "FP"),
+        ("vgf", "test_vector_norm_vgf_quant", "INT"),
+        ("u55", "test_vector_norm_u55_INT_fvp", "INT"),
+        ("u85", "test_vector_norm_u85_INT_fvp", "INT"),
+    ],
+)
+def test_linalg_vector_norm_explicit_backend_coverage(
+    backend: str, function: str, profile: str
+) -> None:
+    op = "torch.ops.aten.linalg_vector_norm.default"
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend(backend)
+        coverage = docgen._active_explicit_backend_coverage()
+        assert coverage[
+            (
+                "backends/arm/test/ops/test_linalg_vector_norm.py",
+                function,
+            )
+        ][profile] == {op}
+    finally:
+        docgen._activate_backend(original)

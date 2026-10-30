@@ -16,6 +16,8 @@ turns keep the narrow terminator set so a <tool_call> is never cut before parsin
 
 import json
 
+import pytest
+
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat
@@ -57,7 +59,7 @@ class _Runner:
 
     def __init__(self, tokens, gen_ids=None, honor_stops=False, max_named=4):
         self._tokens = list(tokens)
-        self._gen_ids = list(gen_ids or [])
+        self._gen_ids = list(gen_ids) if gen_ids is not None else None
         self._honor = honor_stops
         self.max_named_sessions = max_named
         self.open_named = set()
@@ -100,7 +102,9 @@ class _Runner:
             stats.num_prompt_tokens = 5
             stats.num_generated_tokens = emitted
             stats.finish_reason = "stop" if trimmed else None
-            stats.generated_token_ids = [] if trimmed else list(self._gen_ids)
+            stats.generated_token_ids = (
+                None if trimmed or self._gen_ids is None else list(self._gen_ids)
+            )
             stats_callback(stats)
 
 
@@ -259,8 +263,10 @@ def test_plain_chat_broad_stop_marks_turn_nonresumable():
     assert serving._transcript._turns["s"][0]["ids"] is None
 
 
-def test_user_request_stop_trims_and_nonresumable():
-    serving, _ = _serving(["keep", "STOPHERE", "drop"], honor_stops=True, gen_ids=[9])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("prefix", [[], ["keep"]])
+def test_user_request_stop_trims_and_nonresumable(stream, prefix):
+    serving, _ = _serving(prefix + ["STOPHERE", "drop"], honor_stops=True, gen_ids=[9])
     r = _client(serving).post(
         "/v1/chat/completions",
         json={
@@ -268,7 +274,14 @@ def test_user_request_stop_trims_and_nonresumable():
             "messages": [{"role": "user", "content": "hi"}],
             "session_id": "s",
             "stop": "STOPHERE",
+            "stream": stream,
         },
     )
-    assert r.json()["choices"][0]["message"]["content"] == "keep"
+    assert r.status_code == 200
+    content = (
+        _sse_content(r.text)[0]
+        if stream
+        else r.json()["choices"][0]["message"].get("content")
+    )
+    assert (content or "") == "".join(prefix)
     assert serving._transcript._turns["s"][0]["ids"] is None

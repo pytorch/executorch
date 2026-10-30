@@ -113,7 +113,11 @@ test_cases = {
 }
 
 
+@parametrize("use_explicit_layout", {"legacy": False, "explicit_layout": True})
 @parametrize("test_case", test_cases)
-def test_dialect_nn_functional(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
-    tester.test_dialect({}, {}, qtol=1)
+def test_dialect_nn_functional(test_case, use_explicit_layout):
+    tester = CortexMTester(
+        test_case.model,
+        test_case.get_example_inputs(use_explicit_layout=use_explicit_layout),
+    )
+    tester.test_dialect({}, {}, qtol=1, use_explicit_layout=use_explicit_layout)

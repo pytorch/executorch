@@ -179,6 +179,36 @@ define_overridable_option(
   EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE "Build the engine-independent native runtime" BOOL
+  OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_CPU "Build the native CPU engine" OFF
+  "EXECUTORCH_BUILD_NATIVE" OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_VULKAN "Build the native Vulkan engine" OFF
+  "EXECUTORCH_BUILD_NATIVE" OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_GGML "Build the native GGML engine" OFF
+  "EXECUTORCH_BUILD_NATIVE" OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_VISION_RUNNER
+  "Build the native vision classification runner (run_classification)" OFF
+  "EXECUTORCH_BUILD_NATIVE_VULKAN" OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_LLM_RUNNER "Build the native LLM runners" OFF
+  "EXECUTORCH_BUILD_NATIVE_VULKAN OR EXECUTORCH_BUILD_NATIVE_GGML" OFF
+)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_CPU)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_VULKAN)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_GGML)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_VISION_RUNNER)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_LLM_RUNNER)
+define_overridable_option(
   EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
 )
 define_overridable_option(
@@ -222,6 +252,10 @@ define_overridable_option(
   EXECUTORCH_BUILD_TOKENIZERS_WASM "Build the JavaScript Tokenizers API" BOOL
   OFF
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_WASM_WEBGPU
+  "Link the WebGPU backend into the ExecuTorch JavaScript API" BOOL OFF
+)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   set(_default_executorch_build_pthreadpool OFF)
@@ -240,7 +274,8 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_SHARED
-  "Build a consolidated ExecuTorch shared library (Linux and macOS)" BOOL OFF
+  "Build a consolidated ExecuTorch shared library (Linux, macOS and Windows)"
+  BOOL OFF
 )
 
 # Threadpool size options. At most one can be specified. Note that the default
@@ -304,8 +339,7 @@ define_overridable_option(
   EXECUTORCH_XNNPACK_SHARED_WORKSPACE
   "Enable workspace sharing across different delegate instances" BOOL ON
 )
-# Keeping this OFF by default due to regressions in decode and model load with
-# kleidi kernels
+# Enable KleidiAI kernels by default when building the XNNPACK backend.
 define_overridable_option(
   EXECUTORCH_XNNPACK_ENABLE_KLEIDI "Enable Arm Kleidi kernels" BOOL ON
 )
@@ -426,6 +460,7 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_PYBIND REQUIRES EXECUTORCH_BUILD_EXTENSION_MODULE
+  EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 
 check_required_options_on(
@@ -493,6 +528,11 @@ check_required_options_on(
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_WASM_WEBGPU REQUIRES EXECUTORCH_BUILD_WASM
+  EXECUTORCH_BUILD_WEBGPU
+)
+
+check_required_options_on(
   IF_ON EXECUTORCH_BUILD_CUDA REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 
@@ -506,6 +546,11 @@ check_conflicting_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_METAL REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_NATIVE_CPU REQUIRES EXECUTORCH_BUILD_XNNPACK
+  EXECUTORCH_BUILD_KERNELS_OPTIMIZED
 )
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})

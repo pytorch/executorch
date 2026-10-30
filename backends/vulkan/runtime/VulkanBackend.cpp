@@ -660,6 +660,28 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     VkGraphPtr flatbuffer_graph = vkgraph::GetVkGraph(flatbuffer_data);
 
+    if (!compute_graph->context()
+             ->adapter_ptr()
+             ->supports_8bit_storage_buffers()) {
+      for (const auto* value : *flatbuffer_graph->values()) {
+        const auto* tensor = value->value_as_VkTensor();
+        // Constants become CPU TensorRefs; their prepack destinations are
+        // separate GPU tensors checked here.
+        if (tensor == nullptr || tensor->constant_id() >= 0 ||
+            tensor->datatype() != vkgraph::VkDataType::BOOL) {
+          continue;
+        }
+        const auto storage =
+            tensor->storage_type() == vkgraph::VkStorageType::DEFAULT_STORAGE
+            ? compute_graph->suggested_storage_type()
+            : get_storage_type(tensor->storage_type());
+        ET_CHECK_OR_RETURN_ERROR(
+            storage != utils::kBuffer,
+            NotSupported,
+            "Vulkan bool buffer tensors require 8-bit storage buffer support");
+      }
+    }
+
     GraphBuilder builder(
         compute_graph,
         flatbuffer_graph,
@@ -703,6 +725,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     processed->Free();
 
     if (err != Error::Ok) {
+      compute_graph->~ComputeGraph();
       return err;
     }
 
@@ -831,7 +854,13 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     for (const auto& r :
          compute_graph->context()->querypool().get_shader_timestamp_data()) {
       std::string event_name = "{" + r.kernel_name +
-          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) + "}";
+          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) +
+          ", \"global_workgroup\": [" + std::to_string(r.metadata.gwg[0]) +
+          ", " + std::to_string(r.metadata.gwg[1]) + ", " +
+          std::to_string(r.metadata.gwg[2]) + "], \"local_workgroup\": [" +
+          std::to_string(r.metadata.lwg[0]) + ", " +
+          std::to_string(r.metadata.lwg[1]) + ", " +
+          std::to_string(r.metadata.lwg[2]) + "]}";
       event_tracer_log_profiling_delegate(
           event_tracer,
           event_name.c_str(),

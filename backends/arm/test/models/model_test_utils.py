@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import errno
 import os
 from typing import Any
 
@@ -19,6 +20,29 @@ PTQ_AND_QAT_DATA = {
     "ptq": False,
     "qat": True,
 }
+
+
+def download_model_weights(*, repo_id: str, filename: str, revision: str) -> str:
+    """Reuse the HF cache, retrying read-only CI caches in writable storage."""
+    from huggingface_hub import hf_hub_download
+
+    try:
+        return hf_hub_download(  # nosec B615
+            repo_id=repo_id,
+            filename=filename,
+            revision=revision,
+        )
+    except OSError as error:
+        runner_temp = os.environ.get("RUNNER_TEMP")
+        if error.errno != errno.EROFS or not runner_temp:
+            raise
+
+    return hf_hub_download(  # nosec B615
+        repo_id=repo_id,
+        filename=filename,
+        revision=revision,
+        cache_dir=os.path.join(runner_temp, "hf_cache", "hub"),
+    )
 
 
 def skip_if_frozen_release(model_name: str):

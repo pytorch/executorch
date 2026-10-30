@@ -1,0 +1,2 @@
+# Harbor runs separately from the model server and requires Python 3.12+.
+harbor==0.22.0

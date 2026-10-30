@@ -20,7 +20,7 @@ if (Test-Path -Path $buildDir) {
 # XNNPACK's optional ARM ISA and assembly microkernels do not build with MSVC.
 # Baseline ARM64 NEON kernels remain enabled.
 cmake -S . -B $buildDir `
-    -G "Visual Studio 17 2022" `
+    -G "Visual Studio 18 2026" `
     -A ARM64 `
     -DCMAKE_BUILD_TYPE=Release `
     -DCMAKE_CXX_STANDARD=20 `

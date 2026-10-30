@@ -79,27 +79,30 @@ The target SoC must be one of those listed in the `QcomChipset` enum; see [qc_sc
 
 [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
  - Click the "Get Software" button to download the latest version of the QNN SDK.
- - Although newer versions are available, we have verified and recommend using QNN 2.37.0 for stability.
- - You can download it directly from the following link: [QNN 2.37.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.37.0.250724/v2.37.0.250724.zip)
+ - Although newer versions are available, we have verified and recommend using QNN 2.51.0 for stability.
+ - You can download it directly from the following link: [QNN 2.51.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.51.0.260929/v2.51.0.260929.zip)
 
 The directory with installed Qualcomm AI Engine Direct SDK looks like:
 ```
-├── benchmarks
-├── bin
-├── docs
-├── examples
-├── include
-├── lib
-├── LICENSE.pdf
-├── NOTICE.txt
-├── NOTICE_WINDOWS.txt
-├── QNN_NOTICE.txt
-├── QNN_README.txt
-├── QNN_ReleaseNotes.txt
-├── ReleaseNotes.txt
-├── ReleaseNotesWindows.txt
-├── sdk.yaml
-└── share
+|-- GENIE_README.txt
+|-- LICENSE.pdf
+|-- NOTICE.txt
+|-- NOTICE_WINDOWS.txt
+|-- QAIRT_ReleaseNotes.txt
+|-- QNN_NOTICE.txt
+|-- QNN_README.txt
+|-- QNN_TFLITE_DELEGATE_NOTICE.txt
+|-- QNN_TFLITE_DELEGATE_README.txt
+|-- QNN_TFLITE_DELEGATE_ReleaseNotes.txt
+|-- benchmarks
+|-- bin
+|-- docs
+|-- examples
+|-- include
+|-- lib
+|-- lib-safe
+|-- sdk.yaml
+`-- share
 ```
 
 On Android / Linux devices:
@@ -188,6 +191,128 @@ cd $env:EXECUTORCH_ROOT
 >
 > The script supports building both x64 and cross-compiling ARM64 target artifacts on Windows x64 host. After the build completes, the ARM64 libraries and executables can be copied to a Windows on Snapdragon (WoS) device using `scp`.
 > This allows a `.pte` generated on Windows x64 host to be executed on WoS device.
+
+## Flexible Context Binary for multiple HTP SoCs
+
+A normal offline QNN context binary is specific to one SoC. A Flexible Context
+Binary (FCB) is one offline-prepared HTP DLC containing one context for each
+specified SoC. Use FCB when the same model must ship as one artifact to a known
+set of HTP devices. The QNN runtime selects the device-compatible context from
+the DLC. FCB requires QNN SDK version 2.48 or later.
+
+FCB is created by passing paired lists to
+`generate_qnn_executorch_compiler_spec`. Each position describes one target:
+
+```python
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.utils.utils import (
+    generate_htp_compiler_spec,
+    generate_qnn_executorch_compiler_spec,
+)
+
+compiler_specs = generate_qnn_executorch_compiler_spec(
+    soc_model=[QcomChipset.SM8650, QcomChipset.SM8750],
+    backend_options=[
+        generate_htp_compiler_spec(use_fp16=False),
+        generate_htp_compiler_spec(use_fp16=False),
+    ],
+)
+```
+
+The resulting compiler specs are used with the ordinary QNN lowering flow. For
+an end-to-end real-model example, including optional ADB execution and ImageNet
+accuracy evaluation, run:
+
+```bash
+python -m examples.qualcomm.util_scripts.fcb \
+  --model resnet50 \
+  --use_fp16 \
+  --soc_models SM8650 SM8750 \
+  --dataset /path/to/imagenet-mini-val/val \
+  --devices <device-on-SM8650> <device-on-SM8750> \
+  --build_folder build-android
+```
+
+### Quantized FCB
+
+`QnnQuantizer` and `make_quantizer` accept either a single SoC or the FCB
+target list. For an FCB list, the quantizer validates annotations and loads
+backend operator constraints for the target with the lowest HTP architecture.
+This produces quantization valid for every requested target under HTP's
+backward-compatibility guarantee. The compiler still receives the complete list
+and creates one context per target.
+
+```python
+from executorch.backends.qualcomm.export_utils import make_quantizer
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.utils.utils import (
+    generate_htp_compiler_spec,
+    generate_qnn_executorch_compiler_spec,
+)
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+soc_models = [QcomChipset.SM8550, QcomChipset.SM8750]
+quantizer = make_quantizer(
+    quant_dtype=QuantDtype.use_8a8w,
+    per_channel_conv=True,
+    soc_model=soc_models,
+)
+prepared_model = prepare_pt2e(
+    torch.export.export(model, example_inputs, strict=True).module(), quantizer
+)
+prepared_model(*example_inputs)  # Replace with representative calibration data.
+quantized_model = convert_pt2e(prepared_model)
+
+compiler_specs = generate_qnn_executorch_compiler_spec(
+    soc_model=soc_models,
+    backend_options=[
+        generate_htp_compiler_spec(use_fp16=False) for _ in soc_models
+    ],
+)
+```
+
+An end-to-end ResNet50 example uses this flow:
+
+```bash
+python -m examples.qualcomm.util_scripts.fcb \
+  --model resnet50 \
+  --soc_models SM8550 SM8750 \
+  --dataset /path/to/imagenet-mini-val/val \
+  --devices <device-on-SM8550> <device-on-SM8750> \
+  --build_folder build-android
+```
+
+The same entry point can compare FCB reference-weight sharing and multi-graph
+weight sharing:
+
+```bash
+python -m examples.qualcomm.util_scripts.fcb \
+  --model weight_sharing \
+  --soc_models SM8650 SM8750 \
+  --devices <device-on-SM8650> <device-on-SM8750> \
+  --build_folder build-android
+```
+
+### Restrictions
+
+- FCB requires at least two distinct targets; `soc_model` and `backend_options`
+  must be equal-length lists.
+- Every target must use the HTP backend. GPU, LPAI, and online preparation are
+  unsupported.
+- `fcb_reference_weight_sharing` is enabled by default. It deduplicates weights
+  only while host AOT appends contexts to the FCB DLC; it is not a runtime
+  setting. (Note that `use_weight_sharing` is a separate HTP option that addresses
+  different sharing scenarios. When FCB reference-weight sharing is enabled, its
+  incremental benefit of enabling `use_weight_sharing` may be limited.)
+- Reference-weight sharing might conflict with DLBC. Set
+  `fcb_reference_weight_sharing=False` when any target enables `use_dlbc`.
+- An FCB DLC can contain only one context binary per target SoC. Including multiple
+  backend options for the same SoC in an FCB is unsupported.
+
+FCB has device coverage only for the requested SoCs. Deploying the artifact to
+an SoC omitted from the target list is unsupported.
+
 
 ## Deploying and running on device
 
@@ -492,7 +617,9 @@ cd $DEMO_APP
 unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "libQnnHtp.so"
 ```
 
-Expected size for QNN 2.37.0: ~2,465,440 bytes
+This prints the single `arm64-v8a/libQnnHtp.so` entry bundled from the
+`com.qualcomm.qti:qnn-runtime` artifact. Expected size for QNN 2.51.0:
+~4,158,496 bytes.
 
 ***Step 3***. Monitor Logs During Model Loading
 
@@ -559,6 +686,59 @@ adb logcat | grep -E "ExecuTorch"
     ```bash
     adb logcat | grep "ExecuTorch"
     ```
+
+##### Issue 5: fp16 model compiles, then the DSP stops responding (err 1003 / 1007 / 1011)
+
+- **Symptoms**: lowering succeeds, but the first execution never returns and fails
+  after a constant ~10 s with a transport error rather than a graph error:
+
+    ```
+    [ERROR] QnnDsp <E> DspTransport call failed, error 0x00000010
+    [ERROR] QnnDsp <E> skelExecute call failed with err 1003
+    [ERROR] QnnDsp <E> Graph forward failed in execution with err 1003
+    ```
+
+  A fixed interval is the signature of an RPC/watchdog timeout, not of slow
+  arithmetic. The error codes are `QNN_COMMON_ERROR_SYSTEM*`, not
+  `QNN_GRAPH_ERROR_*`, so QNN is not rejecting the graph.
+
+- **Cause**: a convolution with a large `dilation` and many input channels that
+  HTP could not tile into VTCM. Reported for a single
+  `Conv2d(960, 256, 3, padding=36, dilation=36)` on a `(1, 960, 65, 65)` input on
+  an 8 MB-VTCM part. The quantized path rejects the same shape at compile time
+  with `not sufficiently tiled to fit in TCM`, but the fp16 path performs no such
+  check and emits a context binary that cannot execute. Tracked as
+  [#23096](https://github.com/pytorch/executorch/issues/23096).
+
+- **Diagnosis**: the partitioner logs a warning naming the convolution when its
+  weights plus one output pixel's receptive field exceed the SoC's VTCM. The
+  warning is advisory, not a defect report: the estimate behind it ignores that
+  the backend can also tile along input and output channels, so it fires on some
+  convolutions that run correctly. The operator is still delegated either way.
+  Treat it as a starting point when a model does fail as above, not as a problem
+  to fix on its own. The warning is a temporary workaround for an open backend
+  defect: the estimate behind it comes from measurements on QAIRT 2.49 with
+  8 MB-VTCM parts, not from a documented backend constraint. Both the warning and
+  this entry are expected to be removed once HTP performs the TCM-fit check on
+  the fp16 path; `test_dilated_conv_tcm_fit_sentinel` is an `xfail(strict=True)`
+  guard that starts failing when that happens.
+
+- **Solution**: split the convolution along its input channels and sum the
+  results. This is mathematically identical, since convolution is linear in the
+  input-channel axis, and it lets the backend tile each part:
+
+    ```
+    # instead of:  nn.Conv2d(960, 256, 3, padding=36, dilation=36, bias=False)
+    self.convs = nn.ModuleList([
+        nn.Conv2d(480, 256, 3, padding=36, dilation=36, bias=False)
+        for _ in range(2)
+    ])
+    ...
+    out = self.convs[0](x[:, :480]) + self.convs[1](x[:, 480:])
+    ```
+
+  Quantizing the model also avoids the crash, though on some SDK versions the
+  same shape then fails at compile time instead.
 
 ## Supported model list
 

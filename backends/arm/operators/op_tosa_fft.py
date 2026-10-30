@@ -32,8 +32,8 @@ class FFT2dVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, inputs, ts)
-        validate_valid_dtype(self.target, inputs, ts.DType.FP32, self.tosa_spec)
+        validate_same_dtype(self.target, inputs)
+        validate_valid_dtype(self.target, inputs, ts.DType.FP32)
 
         attr = ts.TosaSerializerAttribute()
         attr.FFT2dAttribute(
@@ -62,7 +62,7 @@ class RFFT2dVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 1)
-        validate_valid_dtype(self.target, inputs, ts.DType.FP32, self.tosa_spec)
+        validate_valid_dtype(self.target, inputs, ts.DType.FP32)
 
         attr = ts.TosaSerializerAttribute()
         attr.RFFT2dAttribute(node.kwargs.get("local_bound", False))

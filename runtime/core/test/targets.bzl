@@ -157,3 +157,21 @@ def define_common_targets():
                 "//executorch/runtime/core:evalue" + aten_suffix,
             ],
         )
+
+        if aten_mode:
+            # Links lean and ATen EValue into one binary.
+            runtime.cxx_library(
+                name = "evalue_lean_type_name",
+                srcs = ["evalue_lean_type_name.cpp"],
+                exported_headers = ["evalue_lean_type_name.h"],
+                deps = ["//executorch/runtime/core:evalue"],
+            )
+
+            runtime.cxx_test(
+                name = "evalue_lean_and_aten_test",
+                srcs = ["evalue_lean_and_aten_test.cpp"],
+                deps = [
+                    ":evalue_lean_type_name",
+                    "//executorch/runtime/core:evalue_aten",
+                ],
+            )

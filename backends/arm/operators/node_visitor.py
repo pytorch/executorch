@@ -118,23 +118,21 @@ class NodeVisitor:
     ) -> None:
         validate_num_inputs(target, inputs, num_inputs)
         if same_dtype_with_output:
-            validate_same_dtype(target, [*inputs, output], ts)
+            validate_same_dtype(target, [*inputs, output])
         else:
-            validate_same_dtype(target, inputs, ts)
+            validate_same_dtype(target, inputs)
 
         dtype_check_tensors = inputs if dtype_check_inputs_only else [*inputs, output]
         validate_valid_dtype(
             target,
             dtype_check_tensors,
             input_dtypes,
-            self.tosa_spec,
         )
         if output_dtypes is not None:
             validate_valid_dtype(
                 target,
                 output,
                 output_dtypes,
-                self.tosa_spec,
             )
 
     def serialize(

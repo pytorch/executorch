@@ -4,13 +4,27 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import List
+import logging
+from typing import List, Optional
 
 import torch
+from executorch.backends.qualcomm.builders.node_visitor import (
+    dq_ops,
+    q_ops,
+    QNN_TENSOR_TYPE_MAP,
+)
 
-from executorch.backends.qualcomm.utils.constants import QCOM_QNN_COMPILE_SPEC
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_BYPASS_NODE,
+    QCOM_QNN_COMPILE_SPEC,
+    QCOM_QUANT_ATTRS,
+)
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch.utils import _pytree as pytree
+
+logger = logging.getLogger(__name__)
 
 
 def generate_qnn_executorch_option(
@@ -32,8 +46,166 @@ def generate_qnn_executorch_option(
     return qnn_compile_spec_buffer
 
 
+def estimate_conv_vtcm_working_set(
+    in_channels: int,
+    spatial: List[int],
+    paddings: List[int],
+    kernels: List[int],
+    dilations: List[int],
+    weight_numel: int,
+    byte_width: int = 2,
+) -> int:
+    """
+    Proxy for the VTCM (TCM) working set of a single convolution, in bytes:
+        (in_channels * prod(receptive_field) + weight_numel) * byte_width
+    The weights stay resident for the whole operator, and the smallest useful
+    tile is one output pixel, whose input window is the dilated receptive field
+    `1 + dilation * (kernel - 1)` per spatial dimension, clamped to the padded
+    input. `byte_width` is the element width, i.e. 2 for fp16.
+
+    Over-estimates, because it ignores that the tiler can also split along `cin`
+    and `cout`: it exceeds VTCM for every shape measured in #23096 that fails on
+    device, but also for one that runs (cin 960, dilation 24). Callers must treat
+    an over-VTCM result as a hint only, never as grounds for rejecting an op.
+    """
+    footprint = in_channels
+    for size, pad, kernel, dilation in zip(spatial, paddings, kernels, dilations):
+        footprint *= min(size + 2 * pad, 1 + dilation * (kernel - 1))
+    return (footprint + weight_numel) * byte_width
+
+
+def warn_if_dilated_conv_may_not_fit_vtcm(
+    node: torch.fx.Node,
+    vtcm_size_in_mb: int,
+    phase: str = "QnnPartitioner",
+) -> Optional[int]:
+    """
+    Log a warning if `node` is a dilated convolution that may not be tileable
+    into VTCM. Returns the estimate when it warns, otherwise None.
+
+    On the fp16 path HTP does not reject a dilated convolution it failed to tile
+    into VTCM -- the quantized path does, at finalize, with `not sufficiently
+    tiled to fit in TCM`. fp16 instead emits a context binary that cannot
+    execute, and the DSP stops responding with a transport error (err 1003 /
+    1007 / 1011) after a fixed watchdog timeout. Nothing in the export log points
+    at the cause, so this names the operator likely responsible.
+
+    Nothing is un-delegated: the estimate over-estimates on at least one shape
+    that runs, so acting on it would move working models to CPU.
+
+    TODO: this is a workaround for a backend defect, not a fix. Remove it once
+    HTP performs the TCM-fit check on the fp16 path. See
+    https://github.com/pytorch/executorch/issues/23096
+    """
+    if node.target is not exir_ops.edge.aten.convolution.default:
+        return None
+
+    vtcm_bytes = vtcm_size_in_mb * 1024 * 1024
+    if vtcm_bytes == 0:
+        return None
+
+    try:
+        dilations = node.args[5]
+        if node.args[8] != 1 or not any(d > 1 for d in dilations):
+            # Grouped convolutions divide the channel work up already, and an
+            # undilated convolution tiles down to the kernel size.
+            return None
+
+        paddings = node.args[4]
+        input_shape = node.args[0].meta["val"].shape
+        # (cout, cin / groups, *kernel)
+        weight = node.args[1].meta["val"]
+        estimate = estimate_conv_vtcm_working_set(
+            in_channels=int(input_shape[1]),
+            spatial=[int(s) for s in input_shape[2:]],
+            paddings=list(paddings),
+            kernels=[int(k) for k in weight.shape[2:]],
+            dilations=list(dilations),
+            weight_numel=weight.numel(),
+        )
+    except (AttributeError, IndexError, KeyError, TypeError):
+        # Not a shape we can reason about (e.g. dynamic shapes, or a weight fed
+        # by something other than a tensor). Stay silent rather than guess.
+        return None
+
+    if estimate <= vtcm_bytes:
+        return None
+
+    logger.warning(
+        f"[{phase}] {node.name} | dilation={list(dilations)} convolution needs "
+        f"at least {estimate} bytes of VTCM for its weights and the receptive "
+        f"field of a single output pixel, but this SoC has {vtcm_bytes} bytes, "
+        "so HTP may fail to tile it. Unlike the quantized path, fp16 does not "
+        "reject such a graph at compile time -- it emits a context binary that "
+        "stops the DSP at execute (err 1003/1007/1011 after a fixed ~10 s "
+        "timeout). This operator is still being delegated, since the estimate "
+        "is approximate. If you do hit that failure, splitting this convolution "
+        "along its input channels and summing the results is mathematically "
+        "identical and does run. See pytorch/executorch#23096."
+    )
+    return estimate
+
+
+def has_unsupported_dtype(node: torch.fx.Node) -> bool:
+    """
+    Whether the node reads or writes an unquantized tensor of a data type the
+    backend has no QNN type for (e.g. bfloat16). Such a node has to stay on
+    CPU. A quantized tensor takes its QNN type from its encoding instead.
+    """
+    return any(
+        _produces_unsupported_dtype(n)
+        for n in (node, *node.all_input_nodes)
+        if QCOM_QUANT_ATTRS not in n.meta and not n.meta.get(QCOM_BYPASS_NODE)
+    )
+
+
+def _produces_unsupported_dtype(node: torch.fx.Node) -> bool:
+    return any(
+        isinstance(val, torch.Tensor) and val.dtype not in QNN_TENSOR_TYPE_MAP
+        for val in pytree.tree_leaves(node.meta.get("val"))
+    )
+
+
+def _unsupported_dtypes_are_quantized(node: torch.fx.Node) -> bool:
+    # filter_fn runs before quantization attributes are annotated, so the
+    # surrounding quantize and dequantize ops are the only sign of them.
+    inputs_quantized = all(
+        arg.target in _DQ_OPS
+        for arg in node.all_input_nodes
+        if _produces_unsupported_dtype(arg)
+    )
+    output_quantized = not _produces_unsupported_dtype(node) or any(
+        user.target in _Q_OPS for user in node.users
+    )
+    return inputs_quantized and output_quantized
+
+
+_Q_OPS = {op._op for op in q_ops}
+_DQ_OPS = {op._op for op in dq_ops}
+
+
+def has_data_dependent_shape(node: torch.fx.Node) -> bool:
+    """
+    Whether the node reads or writes a tensor with a data-dependent size (e.g.
+    after boolean mask indexing). QNN needs a size for every dimension, and
+    such a dimension has no hint to give it, so the node has to stay on CPU.
+    """
+    return any(
+        isinstance(dim, torch.SymInt) and dim.node.hint is None
+        for n in (node, *node.all_input_nodes)
+        for val in pytree.tree_leaves(n.meta.get("val"))
+        if isinstance(val, torch.Tensor)
+        for dim in val.shape
+    )
+
+
 # Logic to determine whether to skip decompose and has higher priority than get_skip_decomp_table()
 def filter_fn(node: torch.fx.Node) -> bool:
+    # The node will stay on CPU, so it must not be kept from decomposition.
+    if has_unsupported_dtype(node) and not _unsupported_dtypes_are_quantized(node):
+        return False
+    if has_data_dependent_shape(node):
+        return False
     # QNN does not support int32/int64 IO for the following OPs.
     potential_i32_i64_io_ops = [
         torch.ops.aten.stack.default,
@@ -44,6 +216,24 @@ def filter_fn(node: torch.fx.Node) -> bool:
         torch.int64,
     ]:
         return False
+    # HTP Pack takes inputs of rank 1 to 4, so its output has 2 to 5 dims.
+    if node.target == torch.ops.aten.stack.default and not (
+        2 <= node.meta["val"].dim() <= 5
+    ):
+        return False
+    # QNN Stft only produces the real-valued spectrum and has no normalization.
+    # ConvertComplexStft rewrites the supported complex cases into this form.
+    # Without a window, QNN's rectangular default spans n_fft rather than
+    # win_length.
+    if node.target == torch.ops.aten.stft.default:
+        args = list(node.args) + [None] * (8 - len(node.args))
+        n_fft, win_length, window, normalized = args[1], args[3], args[4], args[5]
+        return (
+            not node.meta["val"].is_complex()
+            and node.args[0].meta["val"].is_floating_point()
+            and not normalized
+            and (window is not None or win_length in (None, n_fft))
+        )
     return True
 
 
@@ -72,6 +262,7 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.scatter_add.default,
         torch.ops.aten.scatter_reduce.two,
         torch.ops.aten.stack.default,
+        torch.ops.aten.stft.default,
         torch.ops.aten.upsample_bicubic2d.vec,
         # This request is ignored because it is in a blocklist. Refer to exir/program/_program.py
         torch.ops.aten.unbind.int,

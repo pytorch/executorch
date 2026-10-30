@@ -34,18 +34,16 @@ class ScatterVisitor(NodeVisitor):
     ) -> None:
 
         validate_num_inputs(self.target, inputs, 3)
-        validate_same_dtype(self.target, [inputs[0], inputs[2], output], ts)
+        validate_same_dtype(self.target, [inputs[0], inputs[2], output])
         validate_valid_dtype(
             self.target,
             [inputs[1]],
             [ts.DType.INT32],
-            self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
             [inputs[0], inputs[2], output],
             supported_data_layout_dtypes(self.tosa_spec, include_bool=False),
-            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()

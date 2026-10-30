@@ -106,11 +106,9 @@ def _run_model(model: torch.nn.Module, out_dir: str) -> Path:
 
 
 def _assert_all_transposes_shape_consistent(tosa_path: Path) -> None:
-    import tosa.Op as Op  # type: ignore[import-not-found,import-untyped]
-    from tosa.TosaGraph import (  # type: ignore[import-not-found,import-untyped]
-        TosaGraph,
-    )
-    from tosa.TransposeAttribute import (  # type: ignore[import-not-found,import-untyped]
+    import tosa.Op as Op  # type: ignore[import-untyped]
+    from tosa.TosaGraph import TosaGraph  # type: ignore[import-untyped]
+    from tosa.TransposeAttribute import (  # type: ignore[import-untyped]
         TransposeAttribute,
     )
 

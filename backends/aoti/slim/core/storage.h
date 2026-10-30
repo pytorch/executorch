@@ -13,8 +13,8 @@
 #ifdef CUDA_AVAILABLE
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
 #include <executorch/backends/aoti/slim/cuda/guard.h>
-#include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/extension/cuda/caller_stream.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 #endif
 
 #include <executorch/backends/aoti/slim/c10/core/Device.h>

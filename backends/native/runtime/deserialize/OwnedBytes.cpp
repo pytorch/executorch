@@ -7,6 +7,7 @@
 #include <executorch/backends/native/runtime/deserialize/OwnedBytes.h>
 
 #include <cerrno>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -41,6 +42,23 @@ void OwnedBytes::Unmap::operator()(void* base) const noexcept {
 
 OwnedBytes OwnedBytes::from_vector(std::vector<uint8_t> bytes) {
   return OwnedBytes(std::move(bytes));
+}
+
+OwnedBytes OwnedBytes::view(
+    std::shared_ptr<const OwnedBytes> owner,
+    ByteSpan bytes) {
+  if (owner == nullptr) {
+    throw std::invalid_argument("OwnedBytes::view: owner is null");
+  }
+  const ByteSpan whole = owner->span();
+  const auto begin = reinterpret_cast<uintptr_t>(whole.data());
+  const auto first = reinterpret_cast<uintptr_t>(bytes.data());
+  if (!bytes.empty() &&
+      (first < begin || first - begin > whole.size() ||
+       bytes.size() > whole.size() - (first - begin))) {
+    throw std::invalid_argument("OwnedBytes::view: bytes lie outside owner");
+  }
+  return OwnedBytes(SharedView{std::move(owner), bytes});
 }
 
 OwnedBytes OwnedBytes::from_file(
@@ -160,11 +178,17 @@ ByteSpan OwnedBytes::span() const {
     return ByteSpan(
         static_cast<const uint8_t*>(mapped->get()), mapped->get_deleter().size);
   }
+  if (const SharedView* view = std::get_if<SharedView>(&storage_)) {
+    return view->bytes;
+  }
   const std::vector<uint8_t>& bytes = std::get<std::vector<uint8_t>>(storage_);
   return ByteSpan(bytes.data(), bytes.size());
 }
 
 bool OwnedBytes::is_mapped() const {
+  if (const SharedView* view = std::get_if<SharedView>(&storage_)) {
+    return view->owner->is_mapped();
+  }
   return std::holds_alternative<MappedFile>(storage_);
 }
 

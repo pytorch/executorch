@@ -5,4 +5,4 @@
 
 # These dependencies need to match pyproject.toml
 
-ethos-u-vela == 5.1.0
+ethos-u-vela == 5.2.0

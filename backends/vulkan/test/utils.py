@@ -5,10 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import json
 import logging
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from copy import deepcopy
 from enum import auto, Enum
+from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 import executorch.backends.vulkan.utils as utils
@@ -42,9 +44,6 @@ from executorch.exir.lowered_backend_module import (
     create_exported_program_from_submodule,
     create_submodule_from_nodes,
 )
-from executorch.extension.pybindings.portable_lib import (  # @manual
-    _load_for_executorch_from_buffer,
-)
 from executorch.extension.pytree import tree_flatten
 from torch.export import export
 
@@ -53,6 +52,60 @@ from torch.export.graph_signature import InputKind
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+
+def verify_vulkan_llm_pte(
+    model_path: str | Path,
+    qmode: str = "8da4w",
+    quantized_embedding: bool = False,
+    max_size_mib: Optional[int] = None,
+) -> None:
+    """Check exported LLM size and required operators in called Vulkan delegates."""
+    from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
+        extract_vk_flatbuffer,
+        flatbuffer_to_vk_graph,
+    )
+    from executorch.exir._serialize._program import deserialize_pte_binary
+    from executorch.exir.schema import DelegateCall
+
+    model_path = Path(model_path)
+    if max_size_mib and model_path.stat().st_size > max_size_mib * 1024 * 1024:
+        raise ValueError(f"Model exceeds {max_size_mib} MiB: {model_path}")
+    program = deserialize_pte_binary(model_path.read_bytes()).program
+    forward = next(plan for plan in program.execution_plan if plan.name == "forward")
+    called_delegates = {
+        instruction.instr_args.delegate_index
+        for chain in forward.chains
+        for instruction in chain.instructions
+        if isinstance(instruction.instr_args, DelegateCall)
+    }
+    delegate_ids = [forward.delegates[index].id for index in called_delegates]
+    (model_path.parent / "delegation.json").write_text(
+        json.dumps({"forward_delegates": delegate_ids}, indent=2) + "\n"
+    )
+    if "VulkanBackend" not in delegate_ids:
+        raise ValueError(
+            f"Expected called VulkanBackend delegation, got {delegate_ids}"
+        )
+    operator_names = []
+    for index in called_delegates:
+        delegate = forward.delegates[index]
+        if delegate.id == "VulkanBackend":
+            payload = program.backend_delegate_data[delegate.processed.index].data
+            graph = flatbuffer_to_vk_graph(extract_vk_flatbuffer(payload))
+            operator_names.extend(op.name for op in graph.chain)
+    (model_path.parent / "vulkan_operators.json").write_text(
+        json.dumps(dict(Counter(operator_names)), indent=2, sort_keys=True) + "\n"
+    )
+    required_ops = [
+        "linear_dq8ca_q4gsw" if qmode == "8da4w" else "linear_q4gsw",
+        "sdpa",
+    ]
+    if quantized_embedding:
+        required_ops.append("embedding_q4gsw")
+    for required in required_ops:
+        if not any(required in name for name in operator_names):
+            raise ValueError(f"Missing Vulkan operator family: {required}")
 
 
 class NodeFlagIsSetChecker(OperatorSupportBase):
@@ -559,6 +612,10 @@ def run_and_check_output(
     Returns:
         bool: True if outputs match within tolerance, False otherwise
     """
+    from executorch.extension.pybindings.portable_lib import (  # @manual
+        _load_for_executorch_from_buffer,
+    )
+
     # Load the ExecuTorch program
     executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
 
@@ -613,6 +670,10 @@ def lower_module_and_test_output(
     Returns:
         bool: True if all comparisons pass, False otherwise.
     """
+    from executorch.extension.pybindings.portable_lib import (  # @manual
+        _load_for_executorch_from_buffer,
+    )
+
     # Export model to Vulkan using the helper function
     if xnnpack:
         executorch_program = export_model_to_xnnpack(

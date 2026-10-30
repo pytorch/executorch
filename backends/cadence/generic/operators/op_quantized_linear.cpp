@@ -30,7 +30,7 @@ Tensor& quantized_linear_out(
     const Tensor& weight,
     const Tensor& bias,
     int64_t src_zero_point,
-    const Tensor& weight_zero_point_t,
+    const std::optional<Tensor>& weight_zero_point_t,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,

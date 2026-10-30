@@ -7,10 +7,8 @@ import json
 from dataclasses import dataclass
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.common.pipeline_config import ArmPassPipelineConfig
-from executorch.backends.arm.tosa import (  # type: ignore[import-not-found]
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.exir._warnings import experimental
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
@@ -78,6 +76,8 @@ class EthosUCompileSpec(ArmCompileSpec):
     _TARGET_KEY = "target"
     _EXTERNAL_BLOCK_PLACEMENTS_KEY = "external_block_placements"
     _MAX_SCRATCH_SIZE_KEY = "max_scratch_size"
+    _DELEGATE_MUTABLE_BUFFERS_KEY = "delegate_mutable_buffers"
+    _SEPARATE_PERSISTENT_REGION_FLAG = "--separate-persistent-region"
 
     @staticmethod
     def _default_system_config_and_memory_mode(
@@ -153,6 +153,7 @@ class EthosUCompileSpec(ArmCompileSpec):
     ):
         self.target = target
         self.max_scratch_size = max_scratch_size
+        self.delegate_mutable_buffers = False
         self.external_block_placements = (
             VelaExternalBlockPlacements()
             if external_block_placements is None
@@ -178,10 +179,37 @@ class EthosUCompileSpec(ArmCompileSpec):
         self._set_compile_specs(tosa_spec, compiler_flags)
         self._validate()
 
+    @experimental(
+        "Delegate-owned mutable buffers are experimental and may change without "
+        "notice."
+    )
+    def set_delegate_mutable_buffers(self, enabled: bool = True) -> "EthosUCompileSpec":
+        """Let the delegate own mutable buffers (streaming state).
+
+        The buffers become variables in a persistent region kept across
+        invocations, instead of being passed as program inputs and outputs.
+        Requires Vela 5.3 or later (for --separate-persistent-region), and the
+        firmware must be built with ETHOSU_PERSISTENT_REGION.
+
+        Args:
+            enabled: Whether the delegate owns mutable buffers.
+
+        """
+        self.delegate_mutable_buffers = enabled
+        flag = self._SEPARATE_PERSISTENT_REGION_FLAG
+        self.compiler_flags = [f for f in self.compiler_flags if f != flag]
+        if enabled:
+            self.compiler_flags.append(flag)
+        return self
+
     def _to_list(self):
         """Return compile specs including the encoded Ethos-U target."""
         compile_specs = super()._to_list()
         compile_specs.append(CompileSpec(self._TARGET_KEY, self.target.encode()))
+        if self.delegate_mutable_buffers:
+            compile_specs.append(
+                CompileSpec(self._DELEGATE_MUTABLE_BUFFERS_KEY, b"true")
+            )
         if self.max_scratch_size is not None:
             compile_specs.append(
                 CompileSpec(
@@ -208,6 +236,9 @@ class EthosUCompileSpec(ArmCompileSpec):
     def _from_list_hook(cls, compile_spec, specs: dict[str, str]):
         """Restore target-specific metadata from serialized compile specs."""
         compile_spec.target = specs.get(cls._TARGET_KEY, None)
+        compile_spec.delegate_mutable_buffers = (
+            specs.get(cls._DELEGATE_MUTABLE_BUFFERS_KEY) == "true"
+        )
         max_scratch_size = specs.get(cls._MAX_SCRATCH_SIZE_KEY)
         compile_spec.max_scratch_size = (
             int(max_scratch_size) if max_scratch_size is not None else None
@@ -248,8 +279,3 @@ class EthosUCompileSpec(ArmCompileSpec):
     def _get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "vela"
-
-    def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
-        # Any u55 subset passes are treated as tosa specification configs
-        # As such, they should be added to the base class default.
-        return super()._create_default_pipeline_config()

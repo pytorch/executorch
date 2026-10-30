@@ -447,6 +447,7 @@ exclude_patterns = [
     # Zephyr sample application can use std::vector in the sample code
     'zephyr/samples/**',
     'scripts/**',
+    '**/.ci/**',
     'third-party/**',
     'util/**',
 ]

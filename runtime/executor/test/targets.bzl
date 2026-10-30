@@ -281,6 +281,7 @@ def define_common_targets(is_fbcode = False):
                 "ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-nosegments-da1024.pte])",
                 "ET_MODULE_ADD_MUL_NOSEGMENTS_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-nosegments.pte])",
                 "ET_MODULE_ADD_MUL_DELEGATED_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul.pte])",
+                "ET_MODULE_ADD_MUL_DELEGATED_SCRATCH_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-scratch.pte])",
             },
         )
 
@@ -357,9 +358,13 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/core:device_memory_buffer",
                 "//executorch/runtime/core/test:mock_cuda_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
                 "//executorch/schema:program",
             ],
             env = {
                 "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDevice.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDeviceProgram.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDeviceProgram.ptd])",
             },
         )

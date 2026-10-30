@@ -26,16 +26,12 @@ adb_shell_with_retries() {
 }
 
 echo "Waiting for emulator boot to complete"
-# shellcheck disable=SC2016
-$ADB_PATH wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 5; done;'
-$ADB_PATH wait-for-device
+"$ADB_PATH" wait-for-device
 
-# sys.boot_completed flips before system_server finishes registering the
-# settings provider and PackageManager. Installing before then fails with
-# "Cannot access system provider: 'settings' before system providers are
-# installed!". Wait until PackageManager actually answers.
-echo "Waiting for package manager to become available"
-adb_shell_with_retries 60 cmd package list packages >/dev/null
+# PackageManager can answer before StorageManager is ready to install APKs.
+# shellcheck disable=SC2016
+adb_shell_with_retries 180 \
+  'test "$(getprop sys.boot_completed)" = "1" && cmd package list packages >/dev/null && sm list-volumes all >/dev/null'
 
 echo "Unlock emulator and disable animations"
 adb_shell_with_retries 5 input keyevent 82 || true

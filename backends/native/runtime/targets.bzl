@@ -79,6 +79,7 @@ def define_common_targets():
             "//executorch/backends/native/runtime/deserialize:checked_math",
             "//executorch/backends/native/runtime/deserialize:deserialize_error",
             "//executorch/backends/native/runtime/deserialize:limits",
+            "//executorch/backends/native/runtime/graph:graph_utils",
         ],
         visibility = ["PUBLIC"],
     )
@@ -98,6 +99,29 @@ def define_common_targets():
             "//executorch/backends/native/runtime/graph:string_format",
         ],
         visibility = ["PUBLIC"],
+    )
+
+    # Reference decoding of GGUF K-quant PackedQuant codecs, for correctness
+    # testing and as a temporary engine fallback; not a performance path.
+    runtime.cxx_library(
+        name = "reference_gguf_kquant",
+        srcs = [
+            "utils/ReferenceGgufKQuant.cpp",
+        ],
+        exported_headers = [
+            "utils/ReferenceGgufKQuant.h",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
+    runtime.cxx_test(
+        name = "reference_gguf_kquant_test",
+        srcs = ["test/ReferenceGgufKQuantTest.cpp"],
+        deps = [
+            ":reference_gguf_kquant",
+            # ggml's own dequantization is the oracle.
+            "fbsource//third-party/llama.cpp:ggml_base",
+        ],
     )
 
     runtime.cxx_test(

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -35,6 +36,21 @@ ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_cortex_m_softmax_default": 1,
 }
 
+ops_before_explicit_layout = ops_before_transforms
+
+ops_after_explicit_layout: dict[str, int] = {
+    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 3,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_nhwc_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_nhwc_default": 9,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_softmax_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_transpose_default": 1,
+}
+
+
 test_cases = {
     "resnet8": McuTestCase(
         model=ResNet8(apply_softmax=True).eval(),
@@ -45,15 +61,22 @@ test_cases = {
 }
 
 
+@parametrize("use_explicit_layout", {"legacy": False, "explicit_layout": True})
 @parametrize("test_case", test_cases)
-def test_dialect_resnet8(test_case):
-    inputs = test_case.get_example_inputs()
+def test_dialect_resnet8(test_case, use_explicit_layout):
+    inputs = test_case.get_example_inputs(use_explicit_layout=use_explicit_layout)
     tester = CortexMTester(test_case.model, inputs)
-    tester.test_dialect(ops_before_transforms, ops_after_transforms, qtol=1)
+    tester.test_dialect(
+        ops_before_explicit_layout if use_explicit_layout else ops_before_transforms,
+        ops_after_explicit_layout if use_explicit_layout else ops_after_transforms,
+        qtol=1,
+        use_explicit_layout=use_explicit_layout,
+    )
 
 
+@parametrize("use_explicit_layout", {"legacy": False, "explicit_layout": True})
 @parametrize("test_case", test_cases)
-def test_implementation_resnet8(test_case):
-    inputs = test_case.get_example_inputs()
+def test_implementation_resnet8(test_case, use_explicit_layout):
+    inputs = test_case.get_example_inputs(use_explicit_layout=use_explicit_layout)
     tester = CortexMTester(test_case.model, inputs)
-    tester.test_implementation(qtol=1)
+    tester.test_implementation(qtol=1, use_explicit_layout=use_explicit_layout)

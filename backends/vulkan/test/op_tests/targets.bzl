@@ -168,6 +168,13 @@ def define_common_targets(is_fbcode = False):
     )
 
     define_test_targets(
+        "sdpa_av_test",
+        extra_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+    define_test_targets(
         "sdpa_test",
         extra_deps = [
             ":test_utils",

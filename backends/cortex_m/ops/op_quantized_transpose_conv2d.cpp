@@ -81,7 +81,8 @@ bool validate_transpose_conv2d_arguments(
       requantize_shifts.size(0) != out_channels) {
     ET_LOG(
         Error,
-        "quantized_transpose_conv2d_out: per-channel params must match output channels (%zd)",
+        "quantized_transpose_conv2d_out: per-channel params must match "
+        "output channels (%" PRId64 ")",
         out_channels);
     context.fail(Error::InvalidArgument);
     return false;

@@ -3,8 +3,8 @@ tracking_issue: 7679
 ciflow_push_tags:
 - ciflow/android
 - ciflow/apple
+- ciflow/coreai
 - ciflow/cuda
-- ciflow/cuda-perf
 - ciflow/docker
 - ciflow/metal
 - ciflow/mlx

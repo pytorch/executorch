@@ -40,7 +40,6 @@ from utils.artifacts import (  # type: ignore[import-not-found]
     report_output,
     save_checkpoint,
     TRAINED_FULLY_PRUNED_PATH,
-    TRAINED_PATH,
     TRAINED_UNPRUNED_PATH,
     TRAINING_RESUME_PATH,
 )
@@ -443,24 +442,30 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="First epoch for a warm-started or new run.",
     )
+    parser.add_argument("--smoke-test", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:  # noqa: C901
     """Set up data, train µYOLO, and save the resulting checkpoints."""
     args = parse_args()
+    train_samples = 1 if args.smoke_test else TRAIN_SAMPLES
+    validation_samples = 1 if args.smoke_test else VALIDATION_SAMPLES
     if not all(
         exported_image_count(DATASET_DIR / split / "labels.json") == samples
         for split, samples in (
-            ("train", TRAIN_SAMPLES),
-            ("validation", VALIDATION_SAMPLES),
+            ("train", train_samples),
+            ("validation", validation_samples),
         )
     ):
-        setup_dataset()
+        setup_dataset(train_samples, validation_samples)
     backbone_checkpoint = PRETRAINED_PATH
-    epochs = 400
-    batch_size = 64
-    workers = 8
+    epochs = 2 if args.smoke_test else 400
+    batch_size = 1 if args.smoke_test else 64
+    pruning_targets = (
+        {2: max(PRUNING_TARGETS.values())} if args.smoke_test else PRUNING_TARGETS
+    )
+    workers = 0
     learning_rate = 0.001
     momentum = 0.9
     weight_decay = 0.005
@@ -490,7 +495,6 @@ def main() -> None:  # noqa: C901
     last_checkpoint = TRAINING_RESUME_PATH
     best_unpruned_checkpoint = TRAINED_UNPRUNED_PATH
     best_pruned_checkpoint = TRAINED_FULLY_PRUNED_PATH
-    final_checkpoint = TRAINED_PATH
     best_unpruned_map = -1.0
     best_pruned_map = -1.0
     mean_average_precision = -1.0
@@ -564,7 +568,7 @@ def main() -> None:  # noqa: C901
         print(f"Initializing detector backbone from {backbone_checkpoint}.")
     if not 1 <= start_epoch <= epochs:
         raise ValueError(f"start epoch must be between 1 and {epochs}")
-    final_pruning_target = max(PRUNING_TARGETS.values())
+    final_pruning_target = max(pruning_targets.values())
     if args.input is not None:
         mean_average_precision = evaluate(
             model.eval(), validation_loader, device, model.grid_size, model.num_boxes
@@ -584,7 +588,16 @@ def main() -> None:  # noqa: C901
             )
         print(f"warm-start baseline mAP@0.5={mean_average_precision:.3%}")
     for epoch in range(start_epoch, epochs + 1):
+        if args.smoke_test and epoch in pruning_targets:
+            apply_pruning(model, pruning_targets[epoch])
+            for parameter_group in optimizer.param_groups:
+                parameter_group["lr"] = PRUNING_RECOVERY_LR
+            scheduler = make_scheduler(optimizer)
         model.train()
+        if batch_size == 1:
+            for module in model.modules():
+                if isinstance(module, nn.BatchNorm1d):
+                    module.eval()
         loss_sum = 0.0
         for batch_index, (images, targets) in enumerate(train_loader, start=1):
             optimizer.zero_grad()
@@ -603,8 +616,8 @@ def main() -> None:  # noqa: C901
                 end="",
                 flush=True,
             )
-        if epoch in PRUNING_TARGETS:
-            apply_pruning(model, PRUNING_TARGETS[epoch])
+        if not args.smoke_test and epoch in pruning_targets:
+            apply_pruning(model, pruning_targets[epoch])
             for parameter_group in optimizer.param_groups:
                 parameter_group["lr"] = PRUNING_RECOVERY_LR
             scheduler = make_scheduler(optimizer)
@@ -640,7 +653,7 @@ def main() -> None:  # noqa: C901
             "pruning": {
                 "method": "iterative_gradual_l1_channel_masking",
                 "target": pruning_target(model),
-                "targets": PRUNING_TARGETS,
+                "targets": pruning_targets,
             },
         }
         if device.type == "cuda":
@@ -664,28 +677,11 @@ def main() -> None:  # noqa: C901
                 best_pruned_checkpoint,
             )
         save_checkpoint(checkpoint, last_checkpoint)
-    save_checkpoint(
-        {
-            "model": model.state_dict(),
-            "grid_size": model.grid_size,
-            "num_classes": model.num_classes,
-            "num_boxes": model.num_boxes,
-            "dataset": "openimages_v7_person",
-            "mAP@0.5": mean_average_precision,
-            "architecture": {
-                "backbone_channels": list(model.backbone_channels),
-                "hidden_features": model.hidden_features,
-                "pruning_masks": model.pruning_masks,
-            },
-            "pruning": {
-                "method": "iterative_gradual_l1_channel_masking",
-                "target": pruning_target(model),
-                "targets": PRUNING_TARGETS,
-            },
-        },
-        final_checkpoint,
-    )
-    report_output(final_checkpoint)
+    report_output(last_checkpoint)
+    if best_unpruned_map >= 0 and best_unpruned_checkpoint.exists():
+        report_output(best_unpruned_checkpoint)
+    if best_pruned_map >= 0 and best_pruned_checkpoint.exists():
+        report_output(best_pruned_checkpoint)
 
 
 if __name__ == "__main__":

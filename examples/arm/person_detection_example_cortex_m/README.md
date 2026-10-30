@@ -1,8 +1,10 @@
 ## Person detection example on Cortex-M
 
-This example demonstrates training, exporting and deployment of a person detection model based on [microYOLO: Towards Single-Shot Object Detection on Microcontrollers](https://arxiv.org/pdf/2408.15865) [1] in a small demo application.
+![example](example.jpg)
 
-Before you begin, install Executorch and relevant Cortex-M dependencies according to the [documentation](https://docs.pytorch.org/executorch/stable/backends/arm-cortex-m/arm-cortex-m-overview.html). Additional pip packages required for the demo are listed in `requirements.txt`.
+This example demonstrates training, A8W8 quantization, exporting, and deployment of a person detection model based on [microYOLO: Towards Single-Shot Object Detection on Microcontrollers](https://arxiv.org/pdf/2408.15865) [1] in a small demo application using the ExecuTorch Cortex-M backend. The final product is a real-time streaming video with bounding boxes and a confidence score for all detected people in the frame, running on the Arm Corstone-300 FVP with simulated video and screen interfaces.
+
+Before you begin, install Executorch and relevant Cortex-M dependencies according to the [documentation](https://docs.pytorch.org/executorch/stable/backends/arm-cortex-m/arm-cortex-m-overview.html). Additional pip packages required for the demo are listed in `requirements.txt`. All python scripts by default use the output from the previous script and working default parameters, run them with `--help` to see the full list of options. All intermediate artifacts produced are described in `utils/artifacts.py`.
 
 
 ## Model and training
@@ -15,12 +17,13 @@ The model backbone goes through a pretraining phase on Caltech256 [2] in `traini
 To test the capabilities of the trained model, `training/test_model.py` by default will output one random image from Open Images Person detection annotated by the model, or if you have access to a webcamera you may use `training/test_model.py --webcam` to test it on completely live data. Since the model is based on a work-in-progress paper under heavy constraints the accuracy is not expected to be top quality (~27mAP@0.5 reported on the COCO dataset in the original paper, ~20mAP@0.5 seen over Open Images V7), but simpler samples provided by e.g. a webcam with one-three people present are generally well detected from experience.
 
 ## Export
-The export folder contains the Executorch AOT pt2 quantization and lowering using the Cortex-M backend. Addtionally the general QuantizeInputs/Outputs passes are applied to make the graph run directly on the int8 data provided by the camera, rather than the standard float inputs/outputs and quantization/ dequantization operators.
+The export folder contains the Executorch AOT pt2 quantization and lowering using the Cortex-M backend in `export/export_model.py`. Additionally the general QuantizeInputs/Outputs passes are applied to make the graph run directly on the int8 data provided by the camera, rather than the standard float inputs/outputs and quantization/ dequantization operators.
 
-A testing script similar the one used when training is also provided to easily compare the accuracy between the original and lowered model.
+A testing script similar the one used when training is also provided to easily compare the accuracy between the original and lowered model, in the `test_exported_model.py` script.
 
 ## Deployment
-TODO
+A deployment application for FVP is demonstrated in the `deploy` folder. For
+in-depth build instructions, see the README inside the folder.
 
 ## Citations and Licensing
 

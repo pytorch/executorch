@@ -11,8 +11,10 @@ import torch.fx as fx
 
 from executorch.backends.arm._passes.arm_pass_utils import is_submodule_node
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
+    TOSA_EXT_CONTROL_FLOW_SupportList,
+)
 from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.arm.tosa.specification import Tosa_1_00
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 
@@ -33,7 +35,7 @@ def _fully_partitioned(submodule: fx.GraphModule) -> bool:
     partition_tag = None
 
     for submodule_node in submodule.graph.nodes:
-        if submodule_node.target in ControlFlowOpSupported._targeted_ops:
+        if submodule_node.target in TOSA_EXT_CONTROL_FLOW_SupportList:
             if not _submodules_fully_partitioned(submodule_node, submodule):
                 return False
 
@@ -101,9 +103,16 @@ def _submodules_fully_partitioned(
 
 
 def _tosa_spec_supports_cf(tosa_spec: TosaSpecification) -> bool:
-    if not isinstance(tosa_spec, Tosa_1_00):
-        return False
     return tosa_spec.support_extension("cf")
+
+
+class ControlFlowSubmoduleSupportList(OperatorSupportBase):
+    """Include control-flow submodule references in the support list."""
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        return is_submodule_node(node)
 
 
 class ControlFlowSubmoduleSupported(OperatorSupportBase):
@@ -128,26 +137,27 @@ class ControlFlowSubmoduleSupported(OperatorSupportBase):
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
 
-        if is_submodule_node(node):
-            if not _tosa_spec_supports_cf(self.tosa_spec):
+        if not is_submodule_node(node):
+            return True
+
+        if not _tosa_spec_supports_cf(self.tosa_spec):
+            self.reporter.report_reject(
+                node,
+                f"TOSA spec {self.tosa_spec} does not support control flow extension.",
+            )
+            return False
+        for user in node.users:
+            if user.target not in TOSA_EXT_CONTROL_FLOW_SupportList:
                 self.reporter.report_reject(
-                    node,
-                    f"TOSA spec {self.tosa_spec} does not support control flow extension.",
+                    node, f"Submodule had unsupported user {user}"
                 )
                 return False
-            for user in node.users:
-                if user.target not in ControlFlowOpSupported._targeted_ops:
-                    self.reporter.report_reject(
-                        node, f"Submodule had unsupported user {user}"
-                    )
-                    return False
-                if not _submodules_fully_partitioned(user):
-                    self.reporter.report_reject(
-                        node, "One submodule was not fully partitioned"
-                    )
-                    return False
-            return True
-        return False
+            if not _submodules_fully_partitioned(user):
+                self.reporter.report_reject(
+                    node, "One submodule was not fully partitioned"
+                )
+                return False
+        return True
 
 
 class ControlFlowOpSupported(OperatorSupportBase):
@@ -156,11 +166,6 @@ class ControlFlowOpSupported(OperatorSupportBase):
     Applies control-flow extension constraints before allowing delegation.
 
     """
-
-    _targeted_ops = {
-        torch.ops.higher_order.cond,
-        torch.ops.higher_order.while_loop,
-    }
 
     def __init__(
         self,
@@ -176,19 +181,17 @@ class ControlFlowOpSupported(OperatorSupportBase):
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        if node.target in self._targeted_ops:
-            if not _tosa_spec_supports_cf(self.tosa_spec):
-                self.reporter.report_reject(
-                    node,
-                    f"TOSA spec {self.tosa_spec} does not support control flow extension.",
-                )
-                return False
-
-            if not _submodules_fully_partitioned(node):
-                self.reporter.report_reject(
-                    node, "Submodule was not fully partitioned."
-                )
-                return False
+        if node.target not in TOSA_EXT_CONTROL_FLOW_SupportList:
             return True
 
-        return False
+        if not _tosa_spec_supports_cf(self.tosa_spec):
+            self.reporter.report_reject(
+                node,
+                f"TOSA spec {self.tosa_spec} does not support control flow extension.",
+            )
+            return False
+
+        if not _submodules_fully_partitioned(node):
+            self.reporter.report_reject(node, "Submodule was not fully partitioned.")
+            return False
+        return True

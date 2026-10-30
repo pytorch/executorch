@@ -17,6 +17,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Optional
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
@@ -26,7 +27,9 @@ from torch.export import export
 
 
 def _export_and_execute(
-    model: torch.nn.Module, example_inputs: tuple[torch.Tensor, ...]
+    model: torch.nn.Module,
+    example_inputs: tuple[torch.Tensor, ...],
+    backend_options: Optional[dict] = None,
 ):
     """Export *model* with XNNPACK, save to a temp .pte, and run it via Runtime."""
     with tempfile.TemporaryDirectory() as temp_dir, torch.no_grad():
@@ -43,7 +46,9 @@ def _export_and_execute(
         et.save(str(pte_path))
 
         runtime = Runtime.get()
-        program = runtime.load_program(pte_path, verification=Verification.Minimal)
+        program = runtime.load_program(
+            pte_path, verification=Verification.Minimal, backend_options=backend_options
+        )
         method = program.load_method("forward")
         assert method is not None, "forward method should exist in exported program"
         return method.execute(example_inputs)
@@ -55,6 +60,25 @@ def _export_and_execute(
 )
 class RuntimeXNNPACKTest(unittest.TestCase):
     """Export → .pte → Python Runtime tests for XNNPACK on Linux."""
+
+    def test_load_options_run(self):
+        model = torch.nn.Linear(4, 4)
+        inputs = (torch.randn(1, 4),)
+        with torch.no_grad():
+            expected = model(*inputs)
+        options = {"XnnpackBackend": {"workspace_sharing_mode": 1}}
+        actual = _export_and_execute(model, inputs, options)
+        torch.testing.assert_close(actual[0], expected, atol=1e-4, rtol=1e-4)
+
+    def test_load_options_reach_the_backend(self):
+        # XNNPACK has no workspace sharing mode 3, so the load fails only if the
+        # option reaches the backend.
+        with self.assertRaises(RuntimeError):
+            _export_and_execute(
+                torch.nn.Linear(4, 4),
+                (torch.randn(1, 4),),
+                {"XnnpackBackend": {"workspace_sharing_mode": 3}},
+            )
 
     # ------------------------------------------------------------------
     # Simple arithmetic

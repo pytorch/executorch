@@ -317,6 +317,33 @@ TEST_F(MethodTest, AliasedIOTest) {
   }
 }
 
+TEST_F(MethodTest, SetOutputDataPtrChecksUpperBound) {
+  // The "cat" model's output is at most (4, 4) and is not memory planned.
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float input[4] = {};
+  int32_t sizes[2] = {1, 4};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {4, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float, 2, sizes, input, dim_order, strides);
+  ASSERT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0), Error::Ok);
+  float output[16];
+  ASSERT_EQ(method->set_output_data_ptr(output, sizeof(output), 0), Error::Ok);
+  ASSERT_EQ(method->execute(), Error::Ok);
+  ASSERT_EQ(method->get_output(0).toTensor().nbytes(), 8 * sizeof(float));
+
+  // A later call can grow the output back to (4, 4), so a buffer that only
+  // fits the current (2, 4) output must be refused.
+  float small_output[8];
+  EXPECT_EQ(
+      method->set_output_data_ptr(small_output, sizeof(small_output), 0),
+      Error::InvalidArgument);
+}
+
 TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
   // The "cat" model (ModuleDynamicCatUnallocatedIO) has a 2D input.
   // set_input validates numel/nbytes overflow before resize_tensor.
@@ -325,7 +352,8 @@ TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Create a 2D tensor with enormous sizes. On 32-bit platforms the numel
-  // multiplication overflows; on 64-bit the resize bounds check rejects it.
+  // multiplication overflows; on 64-bit the per-dimension bound check in
+  // set_input rejects it.
   int32_t sizes[2] = {2000000000, 2000000000};
   uint8_t dim_order[2] = {0, 1};
   int32_t strides[2] = {1, 1};
@@ -340,6 +368,163 @@ TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
   auto input_err =
       method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
   EXPECT_NE(input_err, Error::Ok);
+}
+
+// The "cat" model (ModuleDynamicCatUnallocatedIO) is DYNAMIC_BOUND with a
+// serialized upper-bound shape of (3, 4), so numel_bound_ is 12.
+TEST_F(MethodTest, SetInputAcceptsShapesWithinPerDimBound) {
+  float data[12] = {};
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // (3, 4) is the bound itself, and must still be accepted.
+  const int32_t accepted[][2] = {{3, 4}, {2, 4}, {1, 1}};
+  for (const auto& shape : accepted) {
+    SCOPED_TRACE(
+        testing::Message() << "shape (" << shape[0] << ", " << shape[1] << ")");
+    int32_t sizes[2] = {shape[0], shape[1]};
+    uint8_t dim_order[2] = {0, 1};
+    int32_t strides[2] = {shape[1], 1};
+    executorch::aten::TensorImpl impl(
+        executorch::aten::ScalarType::Float,
+        2,
+        sizes,
+        data,
+        dim_order,
+        strides);
+    EXPECT_EQ(
+        method->set_input(EValue(executorch::aten::Tensor(&impl)), 0),
+        Error::Ok);
+  }
+}
+
+TEST_F(MethodTest, SetInputRejectsPerDimOverflowWithinNumelBound) {
+  float data[12] = {};
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // Both shapes have numel 12, so they satisfy the numel-only bound while
+  // exceeding the upper bound of 4 on dim 1.
+  const int32_t rejected[][2] = {{2, 6}, {1, 12}};
+  for (const auto& shape : rejected) {
+    SCOPED_TRACE(
+        testing::Message() << "shape (" << shape[0] << ", " << shape[1] << ")");
+    int32_t sizes[2] = {shape[0], shape[1]};
+    uint8_t dim_order[2] = {0, 1};
+    int32_t strides[2] = {shape[1], 1};
+    executorch::aten::TensorImpl impl(
+        executorch::aten::ScalarType::Float,
+        2,
+        sizes,
+        data,
+        dim_order,
+        strides);
+    EXPECT_EQ(
+        method->set_input(EValue(executorch::aten::Tensor(&impl)), 0),
+        Error::InvalidArgument);
+  }
+}
+
+TEST_F(MethodTest, SetInputRejectsPerDimOverflowBeyondNumelBound) {
+  float data[16] = {};
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // (4, 4) exceeds both dim 0 and numel_bound_. It was already rejected, but
+  // as NotSupported from resize_tensor; the per-dim check now reports it
+  // first, as InvalidArgument.
+  int32_t sizes[2] = {4, 4};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {4, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float, 2, sizes, data, dim_order, strides);
+
+  EXPECT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0),
+      Error::InvalidArgument);
+}
+
+TEST_F(MethodTest, SetInputRejectsRankMismatchOnBoundedInput) {
+  float data[12] = {};
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // The per-dim check skips these, so resize_tensor still reports the rank
+  // change. Covered here because the check indexes the bound shape by the
+  // input's rank.
+  {
+    int32_t sizes[1] = {12};
+    uint8_t dim_order[1] = {0};
+    int32_t strides[1] = {1};
+    executorch::aten::TensorImpl impl(
+        executorch::aten::ScalarType::Float,
+        1,
+        sizes,
+        data,
+        dim_order,
+        strides);
+    EXPECT_EQ(
+        method->set_input(EValue(executorch::aten::Tensor(&impl)), 0),
+        Error::NotSupported);
+  }
+  {
+    int32_t sizes[3] = {1, 3, 4};
+    uint8_t dim_order[3] = {0, 1, 2};
+    int32_t strides[3] = {12, 4, 1};
+    executorch::aten::TensorImpl impl(
+        executorch::aten::ScalarType::Float,
+        3,
+        sizes,
+        data,
+        dim_order,
+        strides);
+    EXPECT_EQ(
+        method->set_input(EValue(executorch::aten::Tensor(&impl)), 0),
+        Error::NotSupported);
+  }
+}
+
+TEST_F(MethodTest, SetInputStaticShapeBehaviorUnchanged) {
+  float data[4] = {};
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // "add" has STATIC (2, 2) inputs, which the per-dim check leaves alone.
+  {
+    int32_t sizes[2] = {2, 2};
+    uint8_t dim_order[2] = {0, 1};
+    int32_t strides[2] = {2, 1};
+    executorch::aten::TensorImpl impl(
+        executorch::aten::ScalarType::Float,
+        2,
+        sizes,
+        data,
+        dim_order,
+        strides);
+    EXPECT_EQ(
+        method->set_input(EValue(executorch::aten::Tensor(&impl)), 0),
+        Error::Ok);
+  }
+  {
+    int32_t sizes[2] = {4, 1};
+    uint8_t dim_order[2] = {0, 1};
+    int32_t strides[2] = {1, 1};
+    executorch::aten::TensorImpl impl(
+        executorch::aten::ScalarType::Float,
+        2,
+        sizes,
+        data,
+        dim_order,
+        strides);
+    EXPECT_EQ(
+        method->set_input(EValue(executorch::aten::Tensor(&impl)), 0),
+        Error::NotSupported);
+  }
 }
 
 TEST_F(MethodTest, ConstantSegmentTest) {

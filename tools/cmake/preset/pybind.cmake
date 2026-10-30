@@ -132,13 +132,14 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   endif()
   set_overridable_option(EXECUTORCH_BUILD_OPENVINO OFF)
   # Ship one shared runtime that both the pybind extension and standalone C++
-  # consumers link, so a process has a single backend registry. Not set on
-  # Windows, where the runtime has no export annotations for a DLL.
+  # consumers link, so a process has a single backend registry.
   set_overridable_option(EXECUTORCH_BUILD_SHARED ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
-  # Windows or other OS-specific code here
+  # One shared runtime, as on Linux and macOS. The event tracer stays off here,
+  # so the profiler library ships only because the Python extension links it.
+  set_overridable_option(EXECUTORCH_BUILD_SHARED ON)
 else()
   message(
     FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME for pybind: ${CMAKE_SYSTEM_NAME}"

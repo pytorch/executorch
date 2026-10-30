@@ -23,6 +23,24 @@ bool TensorMeta::is_contiguous() const {
       std::views::iota(int32_t{0}, static_cast<int32_t>(sizes.size())));
 }
 
+bool TensorMeta::accepts_sizes(const std::vector<int64_t>& candidate) const {
+  if (candidate.size() != sizes.size()) {
+    return false;
+  }
+  if (lower_bounds.empty()) {
+    return candidate == sizes;
+  }
+  if (lower_bounds.size() != sizes.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < sizes.size(); ++i) {
+    if (candidate[i] < lower_bounds[i] || candidate[i] > sizes[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 int64_t TensorMeta::numel() const {
   int64_t n = 1;
   for (const int64_t dim_size : sizes) {

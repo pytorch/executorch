@@ -1,0 +1,22 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+# Run an exported .ptn on the Vulkan engine and check the logits against the
+# eager reference. Runs on the host's system Vulkan device.
+fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_classification",
+    srcs = ["run_classification.cpp"],
+    deps = [
+        "//executorch/backends/native/examples/runner_utils:runner_utils",
+        "//executorch/backends/native/runtime:runtime",
+        "//executorch/backends/native/runtime/deserialize:package",
+        "//executorch/backends/native/runtime/engine:engine",
+        "//executorch/backends/native/runtime/graph:scalar_type",
+        "//executorch/backends/native/runtime/vulkan:vulkan_engine",
+    ],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+)

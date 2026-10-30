@@ -23,8 +23,13 @@ from executorch.backends.mlx.llm.cache import (
 )
 from executorch.examples.models.muse_glimmer.model.dflash_model import (
     build_dflash_swa_mask,
+    rotate_half,
 )
-from executorch.examples.models.muse_glimmer.model.model import MuseGlimmerAttention
+from executorch.examples.models.muse_glimmer.model.model import (
+    apply_rotary_emb,
+    MuseGlimmerAttention,
+)
+from executorch.extension.llm.cache.update_and_attend import update_and_attend
 
 
 class MLXMuseGlimmerAttention(nn.Module):
@@ -37,10 +42,13 @@ class MLXMuseGlimmerAttention(nn.Module):
         max_seq_len: int,
         dtype: torch.dtype = torch.bfloat16,
         max_write_len: int | None = None,
+        use_offgraph_kv_cache: bool = False,
     ) -> "MLXMuseGlimmerAttention":
         m = cls.__new__(cls)
         nn.Module.__init__(m)
 
+        m.layer_idx = attn.layer_idx
+        m.use_offgraph_kv_cache = use_offgraph_kv_cache
         m.n_heads = attn.n_heads
         m.n_kv_heads = attn.n_kv_heads
         m.head_dim = attn.head_dim
@@ -67,6 +75,14 @@ class MLXMuseGlimmerAttention(nn.Module):
         m.q_norm = attn.q_norm
         m.k_norm = attn.k_norm
 
+        if use_offgraph_kv_cache:
+            if m.use_rope:
+                m.register_buffer(
+                    "inv_freq", attn._compute_inv_freq(device="cpu"), persistent=False
+                )
+            # No graph-owned cache is constructed, including on the meta path.
+            return m
+
         if attn.is_sliding:
             ring_kwargs = {
                 "max_batch_size": 1,
@@ -90,9 +106,20 @@ class MLXMuseGlimmerAttention(nn.Module):
 
         return m
 
+    def _apply(self, fn, recurse=True):
+        result = super()._apply(fn, recurse)
+        if self.use_offgraph_kv_cache and self.use_rope:
+            # Keep phase precision across model.to(dtype), without computing
+            # the frequency table in the exported graph.
+            self.inv_freq = MuseGlimmerAttention._compute_inv_freq(
+                self, device=self.inv_freq.device
+            )
+        return result
+
     def forward(self, x: torch.Tensor, input_pos: torch.Tensor) -> torch.Tensor:
         B, T, _ = x.shape
-        start_pos = input_pos[0].item()
+        if not self.use_offgraph_kv_cache:
+            start_pos = input_pos[0].item()
 
         h = self.qkv_proj_norm(x)
         if self.fuse_qkv:
@@ -118,7 +145,14 @@ class MLXMuseGlimmerAttention(nn.Module):
         k = xk.transpose(1, 2)
         v = xv.transpose(1, 2)
 
-        if self.use_rope:
+        if self.use_rope and self.use_offgraph_kv_cache:
+            # Packed sessions can reset positions inside a single forward.
+            # Broadcast in fp32 using ops with direct MLX handlers.
+            freqs = input_pos.float().unsqueeze(-1) * self.inv_freq.unsqueeze(0)
+            cos = freqs.cos().unsqueeze(0).unsqueeze(0)
+            sin = freqs.sin().unsqueeze(0).unsqueeze(0)
+            q, k = apply_rotary_emb(q, k, cos, sin)
+        elif self.use_rope:
             q = torch.ops.mlx.rope(
                 q, self.head_dim, start_pos, True, self.rope_theta, 1.0, None
             )
@@ -126,9 +160,20 @@ class MLXMuseGlimmerAttention(nn.Module):
                 k, self.head_dim, start_pos, True, self.rope_theta, 1.0, None
             )
 
-        k_cache, v_cache = self.kv_cache.update(start_pos, k, v)
+        if not self.use_offgraph_kv_cache:
+            k_cache, v_cache = self.kv_cache.update(start_pos, k, v)
 
-        if self.is_sliding:
+        if self.use_offgraph_kv_cache:
+            y = update_and_attend(
+                q,
+                k,
+                v,
+                input_pos.unsqueeze(-1),
+                self.layer_idx,
+                self.attn_scale,
+                q.dtype,
+            )
+        elif self.is_sliding:
             sdpa_mask = self.kv_cache.create_sliding_window_mask(start_pos, T)
             y = torch.ops.mlx.custom_sdpa(
                 q,
@@ -181,7 +226,9 @@ def _replace_layer_forward(layer: nn.Module) -> None:
     layer.forward = types.MethodType(_mlx_layer_forward, layer)
 
 
-def _replace_model_forward(model: nn.Module) -> None:
+def _replace_model_forward(
+    model: nn.Module, use_offgraph_kv_cache: bool = False
+) -> None:
     """Install sampler-free MLX entry points.
 
     MLX samples on the host, so prefill returns softcapped last-token logits
@@ -230,11 +277,40 @@ def _replace_model_forward(model: nn.Module) -> None:
     model.mlx_prefill_forward = types.MethodType(_mlx_prefill_forward, model)
     model.forward = types.MethodType(_mlx_model_forward, model)
 
+    if use_offgraph_kv_cache:
+
+        def _mlx_selected_forward(
+            self,
+            inputs_embeds: torch.Tensor,
+            input_pos: torch.Tensor,
+            logits_indices: torch.Tensor,
+        ) -> torch.Tensor:
+            x = inputs_embeds
+            for layer in self.layers:
+                x = layer(x, input_pos)
+            # Only selected rows enter normalization and the vocabulary projection.
+            x = self.output_norm(x.index_select(1, logits_indices))
+            return self._soft_cap(self.lm_head(x))
+
+        def _mlx_selected_model_forward(
+            self,
+            tokens: torch.Tensor,
+            input_pos: torch.Tensor,
+            logits_indices: torch.Tensor,
+        ) -> torch.Tensor:
+            return self.mlx_prefill_forward(
+                self.mlx_embed_text(tokens), input_pos, logits_indices
+            )
+
+        model.mlx_prefill_forward = types.MethodType(_mlx_selected_forward, model)
+        model.forward = types.MethodType(_mlx_selected_model_forward, model)
+
 
 def _apply_mlx_transforms(
     model: nn.Module,
     dtype: torch.dtype = torch.bfloat16,
     max_write_len: int | None = None,
+    use_offgraph_kv_cache: bool = False,
 ) -> None:
     """Shared MLX transforms: swap attention modules, patch layer forwards, fuse norms."""
     config = model.config
@@ -248,6 +324,7 @@ def _apply_mlx_transforms(
             max_seq_len=config.max_seq_len,
             dtype=dtype,
             max_write_len=max_write_len,
+            use_offgraph_kv_cache=use_offgraph_kv_cache,
         )
         _replace_layer_forward(layer)
 
@@ -256,6 +333,7 @@ def mlx_source_transformations(
     model: nn.Module,
     dtype: torch.dtype = torch.bfloat16,
     max_write_len: int | None = None,
+    use_offgraph_kv_cache: bool = False,
 ) -> None:
     """Apply MLX source transformations to a Muse Glimmer model in-place.
 
@@ -273,14 +351,17 @@ def mlx_source_transformations(
     Args:
         model: MuseGlimmerModel to transform in place.
         dtype: dtype for KV cache buffers (bf16 by default).
+        use_offgraph_kv_cache: Use the neutral runtime cache without allocating
+            graph buffers. Prefill and token forward additionally take Long[R]
+            selected row indices and return Float[B, R, V].
         max_write_len: largest single write to the sliding-window ring buffer
             (i.e. the max prefill chunk). When set, the ring buffer is sized to
             ``window + max_write_len - 1`` instead of ``2 * window``, saving
             memory for chunked prefill. Ignored if the installed
             ``RingBufferKVCache`` predates the ``max_write_len`` parameter.
     """
-    _apply_mlx_transforms(model, dtype, max_write_len)
-    _replace_model_forward(model)
+    _apply_mlx_transforms(model, dtype, max_write_len, use_offgraph_kv_cache)
+    _replace_model_forward(model, use_offgraph_kv_cache)
 
 
 # DFlash: target model with hidden state tapping
@@ -305,7 +386,10 @@ def _replace_model_forward_with_hidden_tapping(
         return x.to(self.activation_dtype)
 
     def _mlx_target_forward_from_embeddings(
-        self, inputs_embeds: torch.Tensor, input_pos: torch.Tensor
+        self,
+        inputs_embeds: torch.Tensor,
+        input_pos: torch.Tensor,
+        logits_indices: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         x = inputs_embeds.to(self.activation_dtype)
         tapped = []
@@ -314,6 +398,8 @@ def _replace_model_forward_with_hidden_tapping(
                 tapped.append(x)
             x = layer(x, input_pos)
 
+        if logits_indices is not None:
+            x = x.index_select(1, logits_indices)
         x = self.output_norm(x)
         all_logits = self.lm_head(x).float()
         mult = self.output_multiplier.float()
@@ -338,6 +424,7 @@ def mlx_source_transformations_dflash_target(
     target_layer_ids: list[int],
     dtype: torch.dtype = torch.bfloat16,
     max_write_len: int | None = None,
+    use_offgraph_kv_cache: bool = False,
 ) -> None:
     """Apply MLX source transformations for the DFlash target model.
 
@@ -351,7 +438,7 @@ def mlx_source_transformations_dflash_target(
         ``target_forward_from_embeddings(inputs_embeds, input_pos)`` with the
         same full-sequence logits and hidden outputs as ``forward``.
     """
-    _apply_mlx_transforms(model, dtype, max_write_len)
+    _apply_mlx_transforms(model, dtype, max_write_len, use_offgraph_kv_cache)
     _replace_model_forward_with_hidden_tapping(model, target_layer_ids)
 
 
@@ -371,20 +458,24 @@ class MLXDFlashAttention(nn.Module):
         cls,
         attn,
         max_context_length: int,
+        layer_idx: int,
         dtype: torch.dtype = torch.bfloat16,
         is_sliding: bool = False,
         window_size: int | None = None,
         max_write_len: int | None = None,
+        use_offgraph_kv_cache: bool = False,
     ) -> "MLXDFlashAttention":
         m = cls.__new__(cls)
         nn.Module.__init__(m)
 
+        m.layer_idx = layer_idx
         m.n_heads = attn.n_heads
         m.n_kv_heads = attn.n_kv_heads
         m.head_dim = attn.head_dim
         m.attn_scale = attn.attn_scale
         m.rope_theta = attn.rope_theta
         m.is_sliding = is_sliding
+        m.use_offgraph_kv_cache = use_offgraph_kv_cache
 
         m.q_proj = attn.q_proj
         m.k_proj = attn.k_proj
@@ -393,6 +484,13 @@ class MLXDFlashAttention(nn.Module):
         m.q_norm = attn.q_norm
         m.k_norm = attn.k_norm
 
+        if use_offgraph_kv_cache:
+            m.register_buffer(
+                "inv_freq",
+                MuseGlimmerAttention._compute_inv_freq(m, device="cpu"),
+                persistent=False,
+            )
+            return m
         if is_sliding:
             ring_kwargs = {
                 "max_batch_size": 1,
@@ -416,12 +514,49 @@ class MLXDFlashAttention(nn.Module):
 
         return m
 
+    def _apply(self, fn, recurse=True):
+        result = super()._apply(fn, recurse)
+        if self.use_offgraph_kv_cache:
+            self.inv_freq = MuseGlimmerAttention._compute_inv_freq(
+                self, device=self.inv_freq.device
+            )
+        return result
+
+    def _offgraph_forward(self, x, target_hidden, positions, kv_order):
+        batch, width, _ = x.shape
+        context = target_hidden.shape[1]
+        torch._check(kv_order.shape[0] == context + width)
+        # Raw rows and positions are [all context, all blocks], before gathering.
+        k = torch.cat([self.k_proj(target_hidden), self.k_proj(x)], dim=1)
+        v = torch.cat([self.v_proj(target_hidden), self.v_proj(x)], dim=1)
+        k = self.k_norm(k.view(batch, context + width, self.n_kv_heads, self.head_dim))
+        v = v.view(batch, context + width, self.n_kv_heads, self.head_dim)
+        q = self.q_norm(self.q_proj(x).view(batch, width, self.n_heads, self.head_dim))
+        phase = positions.float()[:, None] * self.inv_freq[None, :]
+        cos, sin = phase.cos()[None, None], phase.sin()[None, None]
+        q = rotate_half(q.transpose(1, 2), cos[:, :, context:], sin[:, :, context:])
+        k = rotate_half(k.transpose(1, 2), cos, sin).index_select(2, kv_order)
+        v = v.transpose(1, 2).index_select(2, kv_order)
+        y = update_and_attend(
+            q,
+            k,
+            v,
+            positions.index_select(0, kv_order)[:, None],
+            self.layer_idx,
+            self.attn_scale,
+            q.dtype,
+        )
+        return self.o_proj(y.transpose(1, 2).reshape(batch, width, -1))
+
     def forward(
         self,
         x: torch.Tensor,
         target_hidden: torch.Tensor,
         input_pos: torch.Tensor,
+        kv_order: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        if kv_order is not None:
+            return self._offgraph_forward(x, target_hidden, input_pos, kv_order)
         B, T, _ = x.shape
         n_new = target_hidden.shape[1]
         ctx_start = input_pos[0].item()
@@ -499,8 +634,11 @@ def _replace_dflash_layer_forward(layer: nn.Module) -> None:
         x: torch.Tensor,
         target_hidden: torch.Tensor,
         input_pos: torch.Tensor,
+        kv_order: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = x + self.self_attn(self.input_layernorm(x), target_hidden, input_pos)
+        x = x + self.self_attn(
+            self.input_layernorm(x), target_hidden, input_pos, kv_order
+        )
         x = x + self.mlp(self.post_attention_layernorm(x))
         return x
 
@@ -519,12 +657,15 @@ def _replace_dflash_model_forward(model: nn.Module) -> None:
         noise_embedding: torch.Tensor,
         target_hidden: torch.Tensor,
         input_pos: torch.Tensor,
+        kv_order: torch.Tensor | None = None,
     ) -> torch.Tensor:
         ctx = self.hidden_norm(self.fc(target_hidden))
 
         x = noise_embedding
+        if kv_order is not None:
+            x = x.reshape(1, -1, x.shape[-1])
         for layer in self.layers:
-            x = layer(x, ctx, input_pos)
+            x = layer(x, ctx, input_pos, kv_order)
 
         return self.norm(x)
 
@@ -538,6 +679,7 @@ def dflash_mlx_source_transformations(
     sliding_window: int | None = None,
     sliding_window_pattern: list[bool] | None = None,
     max_write_len: int | None = None,
+    use_offgraph_kv_cache: bool = False,
 ) -> nn.Module:
     """Apply MLX source transformations to a DFlashDraftModel in-place.
 
@@ -552,10 +694,12 @@ def dflash_mlx_source_transformations(
         layer.self_attn = MLXDFlashAttention.from_attention(
             layer.self_attn,
             max_context_length,
-            dtype,
+            layer_idx=i,
+            dtype=dtype,
             is_sliding=is_sliding,
             window_size=sliding_window if is_sliding else None,
             max_write_len=max_write_len if is_sliding else None,
+            use_offgraph_kv_cache=use_offgraph_kv_cache,
         )
         _replace_dflash_layer_forward(layer)
 

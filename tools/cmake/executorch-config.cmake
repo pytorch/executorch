@@ -38,6 +38,15 @@ set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 # runtime this install actually contains.
 include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 
+if(TARGET vulkan_backend)
+  get_target_property(
+    _vulkan_link_libraries vulkan_backend INTERFACE_LINK_LIBRARIES
+  )
+  if("${_vulkan_link_libraries}" MATCHES "Boost::stacktrace_")
+    find_dependency(Boost 1.89 COMPONENTS stacktrace_basic stacktrace_addr2line)
+  endif()
+endif()
+
 # A shared build installs libexecutorch.a and libexecutorch.so side by side, and
 # naming the static runtime as well as the shared one gives a consumer two
 # kernel registries, which aborts during registration before main. The shared
@@ -127,6 +136,8 @@ set(optional_lib_list
     openvino_backend
     torchao_ops_executorch
     torchao_kernels_aarch64
+    enn_backend
+    enn_logging
 )
 
 foreach(lib ${optional_lib_list})

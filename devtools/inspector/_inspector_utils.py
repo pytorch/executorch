@@ -394,7 +394,11 @@ def display_or_print_df(df: pd.DataFrame, file: IO[str] = sys.stdout):
         )
 
 
-def plot_metric(result: List[float], metric_name: str):
+def plot_metric(result: List[Optional[float]], metric_name: str):
+    # Nothing to plot (no outputs to compare), so don't write an empty chart.
+    if len(result) == 0:
+        return
+
     import matplotlib.pyplot as plt
     import numpy as np
 
@@ -402,8 +406,13 @@ def plot_metric(result: List[float], metric_name: str):
     plt.clf()
     plt.figure(figsize=(8, 6))
 
-    x_axis = np.arange(len(result))
-    bars = plt.bar(x_axis, result, width=0.5)
+    # Non-tensor outputs have no metric value (None), and metrics can be
+    # non-finite (SNR is inf for identical tensors, NaN for all-zero ones).
+    # Plot these as 0; matplotlib cannot use inf/NaN as axis limits. The bar
+    # label still shows the actual value.
+    values = [v if v is not None and math.isfinite(v) else 0.0 for v in result]
+    x_axis = np.arange(len(values))
+    bars = plt.bar(x_axis, values, width=0.5)
     plt.grid(True, which="major", axis="y")
     num_ticks = len(x_axis) if len(x_axis) > 5 else 5
     interval = 1 if num_ticks < 20 else 5
@@ -422,8 +431,8 @@ def plot_metric(result: List[float], metric_name: str):
             va="bottom",
         )
 
-    max_value = max(result) * 1.25
-    min_value = min(result) * 1.25
+    max_value = max(values, default=0.0) * 1.25
+    min_value = min(values, default=0.0) * 1.25
 
     # Cosine similarity has range [-1, 1], so we set y-axis limits accordingly.
     if metric_name == "cosine_similarity":
@@ -514,7 +523,7 @@ def compare_results(
     run_output: ProgramOutput,
     metrics: Optional[List[str]] = None,
     plot: bool = False,
-) -> Dict[str, List[float]]:
+) -> Dict[str, List[Optional[float]]]:
     """
     Compares the results of two runs and returns a dictionary of metric names -> lists of metric values. This list matches
     the reference output & run output lists, so essentially we compare each pair of values in those two lists.
@@ -546,7 +555,10 @@ def compare_results(
                 print(supported_metric)
                 print("-" * 20)
                 for index, value in enumerate(result):
-                    print(f"{index:<5}{value:>8.5f}")
+                    if value is None:
+                        print(f"{index:<5}{'N/A':>8}")
+                    else:
+                        print(f"{index:<5}{value:>8.5f}")
                 print("\n")
 
     return results

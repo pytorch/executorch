@@ -52,12 +52,12 @@ class NegVisitor(NodeVisitor):
             ts.DType.BF16,
             ts.DType.FP32,
         ]
+        if self.tosa_spec.support_extension("int64"):
+            supported_dtypes.append(ts.DType.INT64)
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output], ts)
-        validate_valid_dtype(
-            self.target, [*inputs, output], supported_dtypes, self.tosa_spec
-        )
+        validate_same_dtype(self.target, [*inputs, output])
+        validate_valid_dtype(self.target, [*inputs, output], supported_dtypes)
 
         input_zp, output_zp = get_negate_zero_points(
             node, inputs[0].dtype == ts.DType.INT8

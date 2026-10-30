@@ -130,8 +130,19 @@ class DecomposeLayerNormPass(ArmOpTargetedPass):
             ) = get_layer_norm_decomposition(node.target)
             with graph_module.graph.inserting_before(node):
                 keepdim = True
-                mean = create_node(graph_module.graph, mean_op, args=(x, dims, keepdim))
-                sub = create_node(graph_module.graph, sub_op, args=(x, mean))
+                # Keep module provenance for module-specific quantization (e.g. A16W8).
+                mean = create_node(
+                    graph_module.graph,
+                    mean_op,
+                    args=(x, dims, keepdim),
+                    from_node=node,
+                )
+                sub = create_node(
+                    graph_module.graph,
+                    sub_op,
+                    args=(x, mean),
+                    from_node=node,
+                )
                 var = create_node(
                     graph_module.graph,
                     var_op,

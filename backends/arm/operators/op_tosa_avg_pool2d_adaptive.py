@@ -36,7 +36,7 @@ if hasattr(ts.Op, "AVG_POOL2D_ADAPTIVE"):
             output: TosaArg,
         ) -> None:
             validate_num_inputs(self.target, inputs, [7])
-            validate_same_dtype(self.target, [inputs[0], output], ts)
+            validate_same_dtype(self.target, [inputs[0], output])
 
             input_tensor, input_zp, output_zp, kernel, stride, pad, acc_arg = inputs
 
@@ -47,9 +47,7 @@ if hasattr(ts.Op, "AVG_POOL2D_ADAPTIVE"):
                 supported.append(ts.DType.FP8E4M3)
             if self.tosa_spec.support_extension("fp8e5m2"):
                 supported.append(ts.DType.FP8E5M2)
-            validate_valid_dtype(
-                self.target, [input_tensor, output], supported, self.tosa_spec
-            )
+            validate_valid_dtype(self.target, [input_tensor, output], supported)
 
             attr = ts.TosaSerializerAttribute()
             attr.AvgPool2dAdaptiveAttribute(acc_type=acc_arg.dtype)

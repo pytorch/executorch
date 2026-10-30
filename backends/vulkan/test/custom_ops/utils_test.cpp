@@ -6,7 +6,7 @@
 
 #include <gtest/gtest.h>
 
-#include "utils.h"
+#include <executorch/backends/vulkan/test/ops/benchmark/framework/utils.h>
 
 namespace executorch::vulkan::prototyping {
 namespace {

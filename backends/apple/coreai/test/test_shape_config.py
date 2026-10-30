@@ -294,7 +294,9 @@ class MultiInputEnumerationsTest(unittest.TestCase):
         for key, shapes in entries.items():
             with self.subTest(key):
                 self.assertEqual(
-                    set(shapes), {"x", "y"}, f"{key} leaves an input unconstrained"
+                    set(shapes),
+                    {"input_0", "input_1"},
+                    f"{key} leaves an input unconstrained",
                 )
                 self.assertEqual(len({tuple(s) for s in shapes.values()}), 1)
 
@@ -329,7 +331,7 @@ class BoundaryCoverageTest(unittest.TestCase):
         for cfg in captured:
             for key, shapes in cfg.items():
                 with self.subTest(key):
-                    self.assertEqual(set(shapes), {"x", "y"})
+                    self.assertEqual(set(shapes), {"input_0", "input_1"})
 
 
 class SubgraphBoundaryTest(unittest.TestCase):
@@ -356,7 +358,12 @@ class SubgraphBoundaryTest(unittest.TestCase):
             len(captured), 2, "expected a graph break into exactly 2 delegates"
         )
         # Identify by content rather than order, which preprocess does not fix.
-        model_input = next(c for c in captured if "x" in next(iter(c.values())))
+        model_input = next(
+            c
+            for c in captured
+            if sorted(tuple(s) for v in c.values() for s in v.values())
+            == [(4, 8), (16, 8)]
+        )
         intermediate = next(c for c in captured if c is not model_input)
         return model_input, intermediate
 

@@ -15,6 +15,7 @@ Usage:
     python -m pytest examples/models/muse-glimmer/tests/test_cuda_pipeline.py -v
 """
 
+import copy
 import json
 import os
 import tempfile
@@ -42,6 +43,8 @@ from executorch.examples.models.muse_glimmer.source_transformations.cuda import 
     add_dflash_hidden_tapping,
     add_on_device_sampler,
     cuda_source_transformations,
+    enable_offgraph_kv_cache,
+    offgraph_kv_cache_geometry,
 )
 from executorch.examples.models.muse_glimmer.tests.test_pipeline import (
     build_random_tiny_model,
@@ -50,6 +53,12 @@ from executorch.examples.models.muse_glimmer.tests.test_pipeline import (
     save_checkpoint,
     TINY_CONFIG,
 )
+from executorch.extension.llm.cache.reference_cache import (
+    CacheConfig,
+    LayerPolicy,
+    SequenceReferenceCache,
+)
+from executorch.extension.llm.cache.update_and_attend import REGISTRY
 from executorch.extension.llm.export.quant import quantize_model
 
 
@@ -78,6 +87,83 @@ class TestMutableBufferMetadataTest(unittest.TestCase):
             ],
             metadata["mutable_buffers"],
         )
+
+    def test_offgraph_manifest_replaces_every_kv_cache(self):
+        model = build_random_tiny_model()
+
+        manifest = json.loads(enable_offgraph_kv_cache(model, 8))
+
+        self.assertEqual(1, manifest["version"])
+        self.assertEqual(TINY_CONFIG.max_seq_len, manifest["maximum_capacity"])
+        self.assertEqual(8, manifest["max_write"])
+        self.assertEqual(TINY_CONFIG.n_layers, len(manifest["layers"]))
+        self.assertFalse(
+            any(hasattr(layer.self_attn, "kv_cache") for layer in model.layers)
+        )
+        self.assertEqual(
+            {"flat", "ring"}, {layer["policy"] for layer in manifest["layers"]}
+        )
+
+    def test_offgraph_geometry_matches_the_model_layers(self):
+        model = build_random_tiny_model()
+        enable_offgraph_kv_cache(model, 8)
+
+        geometry = offgraph_kv_cache_geometry(model)
+
+        self.assertEqual(TINY_CONFIG.n_layers, geometry["get_n_caches"])
+        for name in ("get_kv_heads", "get_head_dims", "get_windows"):
+            self.assertEqual(TINY_CONFIG.n_layers, geometry[name].numel())
+        # A sliding layer publishes its window; a global layer publishes 0.
+        self.assertEqual(
+            [layer.self_attn.is_sliding for layer in model.layers],
+            [window > 0 for window in geometry["get_windows"].tolist()],
+        )
+
+    def test_offgraph_model_matches_the_in_graph_model(self):
+        # Swapping the graph-owned caches for the neutral op must not change
+        # what the model computes. The op's reference cache stands in for the
+        # runtime, and the steps cross the sliding window.
+        in_graph = build_random_tiny_model()
+        off_graph = copy.deepcopy(in_graph)
+        enable_offgraph_kv_cache(off_graph, 12)
+        attn = off_graph.layers[0].self_attn
+        cache = SequenceReferenceCache(
+            CacheConfig(
+                n_layers=TINY_CONFIG.n_layers,
+                n_kv_heads=attn.n_kv_heads,
+                head_dim=attn.head_dim,
+                capacity=TINY_CONFIG.max_seq_len,
+                layers=tuple(
+                    (
+                        LayerPolicy.ring(layer.self_attn.window_size)
+                        if layer.self_attn.is_sliding
+                        else LayerPolicy.flat()
+                    )
+                    for layer in off_graph.layers
+                ),
+            )
+        )
+        key = f"muse-offgraph-{id(self)}"
+        REGISTRY.install(key, cache)
+        self.addCleanup(REGISTRY.uninstall, key)
+
+        generator = torch.Generator().manual_seed(0)
+        start = 0
+        for length in (20, 1, 1, 1, 1, 12):
+            tokens = torch.randint(
+                0, TINY_CONFIG.vocab_size, (1, length), generator=generator
+            )
+            input_pos = torch.arange(start, start + length)
+            with torch.no_grad():
+                expected = in_graph(tokens, input_pos)
+                with REGISTRY.active(key):
+                    actual = off_graph(tokens, input_pos)
+            self.assertTrue(
+                torch.equal(expected.argmax(-1), actual.argmax(-1)),
+                f"step at {start} diverged",
+            )
+            self.assertLess((expected - actual).abs().max().item(), 5e-2)
+            start += length
 
 
 class TestCudaInferenceTest(unittest.TestCase):

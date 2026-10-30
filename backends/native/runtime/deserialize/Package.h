@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -42,12 +43,14 @@ struct ConstantInfo {
 // A loaded .ptn package: the serialized native Program plus the constants it
 // references.
 //
-// Opening a file-backed package reads its directory and metadata, but leaves
-// weight payloads on disk until an engine requests them.
+// Opening a package from a path reads its directory and metadata, but leaves
+// weight payloads on disk until an engine requests them. Opening from bytes
+// keeps the caller's whole image resident.
 class Package {
  private:
   uint64_t id_ = 0;
-  OwnedBytes archive_bytes_;
+  // Null when the package is read through file I/O rather than memory.
+  std::shared_ptr<const OwnedBytes> archive_bytes_;
   std::optional<ZipReader> zip_;
   std::vector<uint8_t> program_;
   // Absent when the program references no constants, in which case the package
@@ -66,6 +69,7 @@ class Package {
   Package& operator=(const Package&) = delete;
 
   // Open and parse the .ptn at `path` without loading its weight payloads.
+  // Maps the file where supported; otherwise opens it through libzip.
   static Package load(const std::string& path);
 
   // Parse a .ptn image already in hand. Takes ownership rather than copying, so
@@ -99,6 +103,13 @@ class Package {
 
   // Load one constant into a new owning buffer. nullopt when absent.
   std::optional<OwnedBytes> acquire_constant(const std::string& key) const;
+
+  // One constant's bytes in place in the package's memory, keeping that memory
+  // alive past the Package instead of copying. nullopt when absent, when the
+  // package is read through file I/O, or when the archive's local headers are
+  // not laid out back to back. Alignment is whatever the file gives, so
+  // a caller with stricter needs checks it and falls back to acquire_constant.
+  std::optional<OwnedBytes> view_constant(const std::string& key) const;
 
   // Load one constant directly into an exact-sized destination. Returns false
   // when absent and throws when the destination has the wrong size.

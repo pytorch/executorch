@@ -71,6 +71,10 @@ DEFINE_bool(
     false,
     "Capture CUDA graphs for supported methods. Disables CUDA multi-session "
     "state rebinding.");
+DEFINE_int64(
+    offgraph_initial_capacity,
+    512,
+    "Initial token capacity for growable flat off-graph KV caches.");
 
 namespace {
 namespace llm = ::executorch::extension::llm;
@@ -319,6 +323,7 @@ int main(int argc, char** argv) {
   config.dflash_n_draft = FLAGS_dflash_n_draft;
   config.dflash_draft_argmax = FLAGS_dflash_draft_argmax;
   config.enable_cuda_graph = FLAGS_cuda_graph;
+  config.offgraph_initial_capacity = FLAGS_offgraph_initial_capacity;
 
   auto engine_result = llm::MuseGlimmerEngine::create(config);
   if (engine_result.error() != Error::Ok) {

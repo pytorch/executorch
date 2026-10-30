@@ -76,7 +76,7 @@ class EthosUBackend(BackendDetails):
         return vela_compile(
             tosa_flatbuffer,
             compile_flags,
-            verbose=logger.getEffectiveLevel() <= logging.INFO,
+            verbose=logger.isEnabledFor(logging.DEBUG),
             intermediate_path=compile_spec._get_intermediate_path(),
             block_placements=(
                 compile_spec.external_block_placements.to_block_placements()
@@ -113,6 +113,22 @@ class EthosUBackend(BackendDetails):
         # preprocess returns the serialized TOSA flatbuffer in .processed_bytes,
         # which can be passed on to next compilation step.
         tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
+
+        unused_inputs = [
+            node.name
+            for node in edge_program.graph_module.graph.nodes
+            if node.op == "placeholder"
+            and not node.users
+            and node.name in edge_program.graph_signature.user_inputs
+        ]
+        if unused_inputs:
+            raise RuntimeError(
+                "A delegate input is not used after lowering, for example an "
+                "input that only gives its shape to zeros_like or full_like, or "
+                "that copy_ overwrites. Vela removes unused inputs, but the "
+                "Ethos-U runtime binds delegate arguments by position, so this "
+                f"delegate would compute on the wrong tensors. Unused: {unused_inputs}"
+            )
 
         compile_result = EthosUBackend._compile_tosa_flatbuffer(
             tosa_preprocess.processed_bytes, compile_spec

@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import operator
 from typing import Callable, Dict, Tuple
 
@@ -13,6 +14,12 @@ from executorch.backends.arm._passes import (
     ArmPassManager,
     ConvertInt64OutputOpsToInt32Pass,
     PrepareGatherIndicesPass,
+)
+from executorch.backends.arm._passes.decompose_topk_pass import (
+    is_topk_indices_getitem,
+    is_topk_indices_int32_cast,
+    topk_indices_only_feed_int32_casts,
+    TOPK_OPS,
 )
 from executorch.backends.arm._passes.prepare_gather_indices_pass import (
     is_safe_int32_to_int64_gather_boundary,
@@ -28,6 +35,7 @@ from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lo
 from executorch.exir.backend.operator_support import DontPartition, DontPartitionName
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Graph, GraphModule
+from torch.utils import _pytree as pytree
 
 input_t1 = Tuple[torch.Tensor]  # Input x
 
@@ -1279,3 +1287,216 @@ def test_on_overflow_skip():
 def test_on_overflow_invalid():
     with pytest.raises(ValueError, match="on_overflow must be"):
         ConvertInt64OutputOpsToInt32Pass(on_overflow="blah")
+
+
+class TopKPreparedConsumers(torch.nn.Module):
+    def __init__(self, output):
+        super().__init__()
+        self.output = output
+
+    def forward(self, scores):
+        values, indices = torch.topk(scores, 3)
+        if self.output == "values":
+            return values
+        if self.output == "indices":
+            return indices
+        if self.output == "both":
+            return values, indices
+        if self.output == "int32":
+            return indices.int()
+        if self.output == "arithmetic":
+            return indices, indices * indices
+        return indices, torch.gather(scores, 1, indices), indices.unsqueeze(-1)
+
+
+@pytest.mark.parametrize("edge", [False, True])
+@pytest.mark.parametrize(
+    "output", ["values", "indices", "both", "int32", "arithmetic", "gather"]
+)
+def test_topk_target_preparation_preserves_interfaces_and_is_idempotent(edge, output):
+    model = TopKPreparedConsumers(output)
+    scores = torch.tensor([[3.0, 1.0, 7.0, 2.0, 4.0, 6.0, 0.0, 5.0]])
+    ep = torch.export.export(model, (scores,))
+    if edge:
+        ep = to_edge(
+            ep, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        ).exported_program()
+    prepare = ConvertInt64OutputOpsToInt32Pass(
+        convert_cast_ops=False,
+        tosa_spec=TosaSpecification.create_from_string("TOSA-1.0+FP+INT"),
+    )
+    result = prepare(ep.graph_module)
+    actual = result.graph_module(scores)
+    expected = pytree.tree_leaves(model(scores))
+    for a, b in zip(actual, expected, strict=True):
+        torch.testing.assert_close(a, b, atol=0, rtol=0)
+    topk = next(n for n in result.graph_module.graph.nodes if n.target in TOPK_OPS)
+    assert topk_indices_only_feed_int32_casts(topk)
+    if output == "gather":
+        graph = result.graph_module.graph
+        gather = next(
+            n
+            for n in graph.nodes
+            if n.target
+            in (torch.ops.aten.gather.default, exir_ops.edge.aten.gather.default)
+        )
+        boundary = gather.args[2]
+        assert set(boundary.users) == {gather}
+        assert boundary is not graph.output_node().args[0][0]
+        assert boundary.meta["val"].dtype == torch.int64
+        assert boundary.args[0].meta["val"].dtype == torch.int32
+    graph_before = str(result.graph_module.graph)
+    repeated = prepare(result.graph_module)
+    assert not repeated.modified
+    assert str(repeated.graph_module.graph) == graph_before
+
+
+@pytest.mark.parametrize(
+    "tosa_spec,convert_cast_ops",
+    [(None, False), ("TOSA-1.0+FP", False), (None, True)],
+)
+def test_topk_existing_int32_indices_need_no_conversion(tosa_spec, convert_cast_ops):
+    model = TopKPreparedConsumers("int32")
+    scores = torch.tensor([[3.0, 1.0, 0.0, 2.0]])
+    ep = to_edge(
+        torch.export.export(model, (scores,)),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).exported_program()
+    before = str(ep.graph)
+    result = ConvertInt64OutputOpsToInt32Pass(
+        convert_cast_ops=convert_cast_ops,
+        tosa_spec=(
+            TosaSpecification.create_from_string(tosa_spec) if tosa_spec else None
+        ),
+    )(ep.graph_module)
+    assert not result.modified
+    assert str(result.graph_module.graph) == before
+    torch.testing.assert_close(result.graph_module(scores)[0], model(scores))
+
+
+def test_topk_target_preparation_does_not_narrow_unsafe_arithmetic():
+    scores = torch.zeros(1, 50001)
+    scores[0, -3:] = torch.tensor([1.0, 2.0, 3.0])
+    ep = torch.export.export(TopKPreparedConsumers("arithmetic"), (scores,))
+    result = ConvertInt64OutputOpsToInt32Pass(
+        convert_cast_ops=False,
+        tosa_spec=TosaSpecification.create_from_string("TOSA-1.0+FP+INT"),
+    )(ep.graph_module)
+    indices, squares = result.graph_module(scores)
+    assert indices.dtype == squares.dtype == torch.int64
+    assert squares[0, 0].item() == 2500000000
+
+
+def test_topk_target_preparation_leaves_unsupported_target_unchanged():
+    ep = torch.export.export(TopKPreparedConsumers("indices"), (torch.randn(2, 8),))
+    before = str(ep.graph)
+    result = ConvertInt64OutputOpsToInt32Pass(
+        convert_cast_ops=False,
+        tosa_spec=TosaSpecification.create_from_string("TOSA-1.0+FP"),
+    )(ep.graph_module)
+    assert not result.modified
+    assert str(result.graph_module.graph) == before
+
+
+def test_topk_target_preparation_repeated_index_extractions():
+    scores = torch.tensor([[3.0, 1.0, 0.0, 2.0]])
+    ep = torch.export.export(TopKPreparedConsumers("indices"), (scores,))
+    graph = ep.graph_module.graph
+    indices = next(n for n in graph.nodes if is_topk_indices_getitem(n))
+    output = graph.output_node()
+    with graph.inserting_before(output):
+        duplicate = graph.call_function(operator.getitem, (indices.args[0], 1))
+        duplicate.meta = indices.meta.copy()
+    output.args = ((indices, duplicate),)
+    spec = TosaSpecification.create_from_string("TOSA-1.0+FP+INT")
+    result = ConvertInt64OutputOpsToInt32Pass(convert_cast_ops=False, tosa_spec=spec)(
+        ep.graph_module
+    )
+    expected = scores.topk(3).indices
+    first, second = result.graph_module(scores)
+    torch.testing.assert_close(first, expected)
+    torch.testing.assert_close(second, expected)
+    assert topk_indices_only_feed_int32_casts(
+        next(n for n in result.graph_module.graph.nodes if n.target in TOPK_OPS)
+    )
+
+
+@pytest.mark.parametrize("edge", [False, True])
+@pytest.mark.parametrize("tosa_spec", [None, "TOSA-1.0+FP", "TOSA-1.0+FP+INT"])
+def test_topk_reuses_existing_int32_cast(edge, tosa_spec):
+    scores = torch.tensor([[3.0, 1.0, 0.0, 2.0]])
+    model = TopKPreparedConsumers("gather")
+    ep = torch.export.export(model, (scores,))
+    if edge:
+        ep = to_edge(
+            ep, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        ).exported_program()
+    partial = ConvertInt64OutputOpsToInt32Pass(convert_cast_ops=False)(
+        ep.graph_module
+    ).graph_module
+    assert sum(is_topk_indices_int32_cast(n) for n in partial.graph.nodes) == 1
+    assert not topk_indices_only_feed_int32_casts(
+        next(n for n in partial.graph.nodes if n.target in TOPK_OPS)
+    )
+    result = ConvertInt64OutputOpsToInt32Pass(
+        convert_cast_ops=False,
+        tosa_spec=(
+            TosaSpecification.create_from_string(tosa_spec) if tosa_spec else None
+        ),
+    )(partial)
+    int32_casts = [
+        n for n in _cast_nodes(result.graph_module) if n.kwargs["dtype"] == torch.int32
+    ]
+    assert len(int32_casts) == 1
+    assert is_topk_indices_int32_cast(int32_casts[0])
+    topk = next(n for n in result.graph_module.graph.nodes if n.target in TOPK_OPS)
+    assert topk_indices_only_feed_int32_casts(topk) == (tosa_spec == "TOSA-1.0+FP+INT")
+    for actual, expected in zip(
+        result.graph_module(scores), pytree.tree_leaves(model(scores)), strict=True
+    ):
+        torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+
+
+@pytest.mark.parametrize("edge", [False, True])
+@pytest.mark.parametrize("case", ["missing_int", "large_k", "symbolic"])
+def test_topk_target_preparation_retains_generic_conversion(edge, case):
+    class Model(torch.nn.Module):
+        def forward(self, scores):
+            indices = torch.topk(scores, 5 if case == "large_k" else 3).indices
+            return indices, indices.unsqueeze(-1)
+
+    scores = torch.randn(2, 8)
+    shapes = (
+        ({1: torch.export.Dim("experts", min=5, max=16)},)
+        if case == "symbolic"
+        else None
+    )
+    ep = torch.export.export(Model(), (scores,), dynamic_shapes=shapes)
+    if edge:
+        ep = to_edge(
+            ep, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        ).exported_program()
+    generic = ConvertInt64OutputOpsToInt32Pass(convert_cast_ops=False)(
+        copy.deepcopy(ep.graph_module)
+    )
+    result = ConvertInt64OutputOpsToInt32Pass(
+        convert_cast_ops=False,
+        tosa_spec=TosaSpecification.create_from_string(
+            "TOSA-1.0+FP" if case == "missing_int" else "TOSA-1.0+FP+INT"
+        ),
+    )(ep.graph_module)
+    assert generic.modified and result.modified
+    assert str(result.graph_module.graph) == str(generic.graph_module.graph)
+    assert not topk_indices_only_feed_int32_casts(
+        next(n for n in result.graph_module.graph.nodes if n.target in TOPK_OPS)
+    )
+    torch.testing.assert_close(
+        result.graph_module(scores), Model()(scores), atol=0, rtol=0
+    )
+
+
+def test_topk_target_preparation_requires_preserved_casts():
+    with pytest.raises(ValueError, match="requires convert_cast_ops=False"):
+        ConvertInt64OutputOpsToInt32Pass(
+            tosa_spec=TosaSpecification.create_from_string("TOSA-1.0+FP+INT")
+        )
