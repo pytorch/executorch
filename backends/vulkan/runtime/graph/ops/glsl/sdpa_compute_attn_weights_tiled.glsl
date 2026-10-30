@@ -36,6 +36,8 @@ $else:
 
 $if HAS_BIAS:
   #define HAS_BIAS
+$if HAS_MASK:
+  #define HAS_MASK
 
 #define TILE_M4 ${TILE_M4}
 #define TILE_K4 ${TILE_K4}
@@ -56,6 +58,8 @@ ${layout_declare_tensor(B, "r", "t_q", IN_DTYPE, IO_STORAGE, is_scalar_array=Fal
 ${layout_declare_tensor(B, "r", "t_k", IN_DTYPE, K_CACHE_STORAGE, is_scalar_array=False)}
 $if HAS_BIAS:
   ${layout_declare_tensor(B, "r", "t_bias", IN_DTYPE, IO_STORAGE, is_scalar_array=False)}
+$if HAS_MASK:
+  ${layout_declare_tensor(B, "r", "t_mask", IN_DTYPE, IO_STORAGE, is_scalar_array=True)}
 
 ${layout_declare_ubo(B, "ivec4", "q_sizes")}
 ${layout_declare_ubo(B, "ivec4", "k_sizes")}
@@ -63,6 +67,8 @@ $if MODE == "llm":
   ${layout_declare_ubo(B, "int", "input_pos")}
 $if HAS_BIAS:
   ${layout_declare_ubo(B, "ivec4", "bias_sizes")}
+$if HAS_MASK:
+  ${layout_declare_ubo(B, "ivec4", "mask_sizes")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -82,6 +88,9 @@ ${layout_declare_spec_const(C, "float", "inv_scale", "1.0")}
  *   attn_weights: [B, H_q, S, context_len] in input dtype
  *   current context_len = input_pos + S
  *   Applies combined scale + causal mask.
+ *   With HAS_MASK the causal mask is replaced by an additive attn_mask
+ *   [S, context_len]; the caller passes input_pos = C - S so that every key
+ *   in k is attended, as in the CPU op.
  *
  * Fused SDPA:
  *   q:            [B, H, S, D]          (DSHB layout)
@@ -164,7 +173,7 @@ void main() {
   const int attn_S = S;
 #endif
 
-#ifdef HAS_INPUT_POS
+#if defined(HAS_INPUT_POS) && !defined(HAS_MASK)
   // If the tile is completely inside the mask region, then there is no need to
   // compute the output tile. All the elements in the output tile can be set to
   // negative infinity.
@@ -200,7 +209,11 @@ void main() {
       fp_accumulate_with_fp_weight(out_tile, q_tile, w_tile);
     }
 
-#ifdef HAS_INPUT_POS
+#if defined(HAS_INPUT_POS) && defined(HAS_MASK)
+    // LLM: scale + additive attn_mask
+    apply_scale(out_tile, inv_scale);
+    apply_attn_mask(out_tile, c, s);
+#elif defined(HAS_INPUT_POS)
     // LLM: combined scale + causal mask
     VEC4_T inv_scale_vec = VEC4_T(inv_scale);
     apply_scale_and_mask(
