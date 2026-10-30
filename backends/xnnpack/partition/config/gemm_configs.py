@@ -562,6 +562,8 @@ class AddmmConfig(GEMMConfig):
             not in (src_partition.nodes + src_partition.input_nodes)
             # there can only be a single output node in partition
             or len(src_partition.output_nodes) != 1
+            # this partition takes these nodes even if their configs reject them
+            or not all(self._check_tensor_ranks(n) for n in src_partition.nodes)
         ):
             why(node, "invalid source partition")
             return (False, [])

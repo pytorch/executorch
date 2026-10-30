@@ -15,6 +15,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_qparam,
     is_quant,
 )
+from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_MAX_TENSOR_DIMS
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
     PartitionerConfig,
@@ -151,6 +152,20 @@ class XNNPartitionerConfig(PartitionerConfig):
         if not has_valid_dtypes:
             why(node, reason="invalid dtype")
             return False
+
+        return self._check_tensor_ranks(node)
+
+    def _check_tensor_ranks(self, node: torch.fx.Node) -> bool:
+        vals = [arg.meta.get("val") for arg in node.all_input_nodes]
+        node_val = node.meta.get("val")
+        vals.extend(node_val if isinstance(node_val, (list, tuple)) else [node_val])
+        for val in vals:
+            if isinstance(val, torch.Tensor) and val.dim() > XNN_MAX_TENSOR_DIMS:
+                why(
+                    node,
+                    reason=f"XNNPACK supports at most {XNN_MAX_TENSOR_DIMS} dims, got {val.dim()}",
+                )
+                return False
 
         return True
 
