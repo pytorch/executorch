@@ -1085,11 +1085,23 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
-    ET_CHECK_OR_RETURN_ERROR(
-        error == Error::Ok,
-        Internal,
-        "AOTInductorModelContainerRun failed with error code %d",
-        error);
+    if (error != Error::Ok) {
+      // A failed capture is retried without a graph, which reports a real
+      // failure at Error.
+      if (is_capture_step) {
+        ET_LOG(
+            Info,
+            "AOTInductorModelContainerRun failed during CUDA graph capture "
+            "with error code %d",
+            error);
+      } else {
+        ET_LOG(
+            Error,
+            "AOTInductorModelContainerRun failed with error code %d",
+            error);
+      }
+      return Error::Internal;
+    }
 
     if (is_capture_step) {
       // End capture → instantiate graph
@@ -1114,7 +1126,7 @@ class ET_EXPERIMENTAL CudaBackend final
           ET_LOG(
               Info,
               "CUDA graph: output %zu of '%s' is not laid out like its "
-              "ETensor; running without a graph",
+              "ETensor",
               i,
               handle->method_name.c_str());
           return Error::NotSupported;
@@ -1129,7 +1141,7 @@ class ET_EXPERIMENTAL CudaBackend final
           ET_LOG(
               Info,
               "CUDA graph: cannot resize output %zu of '%s' to its captured "
-              "shape; running without a graph",
+              "shape",
               i,
               handle->method_name.c_str());
           return resize_err;
