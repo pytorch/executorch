@@ -555,6 +555,16 @@ def _conv_transpose_as_conv(
     return conv(x, weight, bias, [1] * n, [0] * n, dilation, groups)
 
 
+def _reshape_copy(x: torch.Tensor, size: List[int]) -> torch.Tensor:
+    """
+    Torch-TensorRT turns a view into _reshape_copy, and a view that TensorRT
+    leaves to PyTorch reaches this backend in that form. Inductor has no
+    lowering for it and this backend no kernel. ATen computes it as a
+    contiguous copy viewed to the new shape.
+    """
+    return x.clone(memory_format=torch.contiguous_format).view(size)
+
+
 def _linear_kernel(x: torch.Tensor) -> torch.Tensor:
     return torch.clamp(1 - x.abs(), min=0)
 
@@ -981,6 +991,7 @@ class CudaBackend(AotiBackend, BackendDetails):
             # torch._check_tensor_all exports to this op; Inductor has no lowering
             # for it and the shim no fallback kernel.
             torch.ops.aten._is_all_true.default: torch.ops.aten.all.default,
+            torch.ops.aten._reshape_copy.default: _reshape_copy,
         }
         for resize, support, kernel in (
             (torch.ops.aten._upsample_bilinear2d_aa, 1, _linear_kernel),

@@ -471,6 +471,15 @@ class TestCudaExport(unittest.TestCase):
             strict=False,
         )
 
+    def test_reshape_copy(self):
+        """Torch-TensorRT hands back the views it leaves to PyTorch as _reshape_copy."""
+
+        class ReshapeCopyModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.ops.aten._reshape_copy(x.transpose(0, 1), [-1, 4]) * 2
+
+        self._export_to_cuda_with_lower(ReshapeCopyModule(), (torch.randn(8, 4, 4),))
+
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""
 
