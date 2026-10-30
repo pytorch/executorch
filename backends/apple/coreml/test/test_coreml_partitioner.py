@@ -628,6 +628,10 @@ class TestCoreMLPartitioner(unittest.TestCase):
                     program = Runtime.get().load_program(buffer)
                     out = program.load_method("forward").execute((x,))[0]
                     self.assertTrue(torch.equal(out, model(x)))
+                with self.assertRaisesRegex(NotImplementedError, "makes an int8"):
+                    executorch.exir.to_edge_transform_and_lower(
+                        ep, partitioner=[CoreMLPartitioner(lower_full_graph=True)]
+                    )
 
     def test_uint8_camera_frame_is_read_outside_the_delegate(self):
         """

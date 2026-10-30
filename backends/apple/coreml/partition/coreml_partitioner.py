@@ -618,18 +618,33 @@ class CoreMLPartitioner(Partitioner):
                     and _cannot_be_coreml_input(arg)
                 }
             )
+            outputs = sorted(
+                node.name
+                for node in left_out
+                if _makes_tensor(node, (torch.int8,))
+                and any(user not in left_out for user in node.users)
+            )
+            reasons = []
+            if inputs:
+                reasons.append(
+                    "reads a uint8 or int8 tensor, which CoreML cannot take as an "
+                    "input, from outside a CoreML partition: " + ", ".join(inputs)
+                )
+            if outputs:
+                reasons.append(
+                    "makes an int8 tensor, which CoreML cannot return, for use "
+                    "outside of CoreML: " + ", ".join(outputs)
+                )
             msg = (
-                "The model reads a uint8 or int8 tensor, which CoreML cannot take "
-                "as an input, from outside a CoreML partition: "
-                + ", ".join(inputs)
-                + "."
+                f"The model {', and '.join(reasons)}."
+                if reasons
+                else "The model uses a uint8 or int8 tensor CoreML cannot handle."
             )
             if self.lower_full_graph:
                 raise NotImplementedError(
-                    f"{msg}  Convert the tensor to a supported dtype before it "
-                    "enters the model, or set lower_full_graph=False in the "
-                    "CoreMLPartitioner to run the ops that read it outside of "
-                    "CoreML."
+                    f"{msg}  Use a dtype CoreML supports for these tensors, or set "
+                    "lower_full_graph=False in the CoreMLPartitioner to run the ops "
+                    "that use them outside of CoreML."
                 )
             self.log_once(
                 f"{msg}  Running these ops outside of CoreML: "
