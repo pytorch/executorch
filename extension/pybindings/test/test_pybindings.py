@@ -154,7 +154,10 @@ class PybindingsTest(unittest.TestCase):
         finally:
             sys.modules["torch"] = torch_module
 
-        self.assertTrue(torch.equal(output, inputs[0] + inputs[0]))
+        # Without torch in sys.modules the output may be an ExecuTorchResult.
+        np.testing.assert_array_equal(
+            np.asarray(output), (inputs[0] + inputs[0]).numpy()
+        )
 
     def test_tensor_output_import_policy(self):
         if self.kernel_mode != "portable":
@@ -163,8 +166,11 @@ class PybindingsTest(unittest.TestCase):
         script = """
 import importlib
 import importlib.abc
+import importlib.machinery
 import os
 import sys
+import tempfile
+import types
 from pathlib import Path
 
 class BlockTorch(importlib.abc.MetaPathFinder):
@@ -179,39 +185,58 @@ if sys.platform == "win32":
     library_directory = native_directory.parent.parent / "lib"
     if library_directory.is_dir():
         os.add_dll_directory(str(library_directory))
-blocker = BlockTorch()
-if available == "no":
-    sys.meta_path.insert(0, blocker)
+if available == "first":
+    import torch
+elif available == "no":
+    sys.meta_path.insert(0, BlockTorch())
+elif available == "none":
+    sys.modules["torch"] = None
+elif available == "broken":
+    broken = Path(tempfile.mkdtemp()) / "torch"
+    broken.mkdir()
+    (broken / "__init__.py").write_text("raise ImportError('torch is broken')")
+    sys.path.insert(0, str(broken.parent))
+elif available == "initializing":
+    # What another thread sees while it is still importing torch.
+    sys.modules["torch"] = types.ModuleType("torch")
+    sys.modules["torch"].__spec__ = importlib.machinery.ModuleSpec("torch", None)
+    sys.modules["torch"].__spec__._initializing = True
 try:
     bindings = importlib.import_module(entrypoint)
 except (ImportError, SystemError) as error:
     # Built-in extension loaders may wrap initialization errors.
-    assert policy == "torch" and available == "no"
+    assert policy == "torch" and available in ("no", "none", "broken")
     while error.__cause__ is not None:
         error = error.__cause__
     assert isinstance(error, ImportError)
-    assert "torch is unavailable" in str(error)
+    assert "torch" in str(error)
 else:
-    assert policy != "torch" or available == "yes"
+    assert policy != "torch" or available in ("yes", "first")
     native = sys.modules[native_name]
-    expected = "torch" if policy != "executorch" and available == "yes" else "executorch"
-    assert native._tensor_output == expected
-    assert ("torch" in sys.modules) == (expected == "torch")
+    assert native._tensor_output == (None if policy == "None" else policy)
+    loaded = policy == "torch" or available == "first"
+    expected = "executorch" if policy == "executorch" or not loaded else "torch"
     import numpy as np
     program_data = Path(program_path).read_bytes()
     module = bindings._load_for_executorch_from_buffer(program_data)
-    output = module(np.ones((2, 2), dtype=np.float32))[0]
-    if expected == "executorch":
-        assert isinstance(output, bindings.ExecuTorchResult)
-        np.testing.assert_array_equal(np.asarray(output), np.full((2, 2), 2.0))
-        if available == "no":
-            sys.meta_path.remove(blocker)
+    method = bindings._load_program_from_buffer(program_data).load_method("forward")
+    method.set_inputs(np.ones((2, 2), dtype=np.float32))
+    method.execute()
+    outputs = [module(np.ones((2, 2), dtype=np.float32))[0], method.get_outputs()[0]]
+    # Only the setting imports torch; otherwise torch outputs need the caller's torch.
+    assert hasattr(sys.modules.get("torch"), "Tensor") == loaded
+    for output in outputs:
+        if expected == "executorch":
+            assert isinstance(output, bindings.ExecuTorchResult)
+            np.testing.assert_array_equal(np.asarray(output), np.full((2, 2), 2.0))
+        else:
             import torch
-            assert isinstance(module(torch.ones(2, 2))[0], bindings.ExecuTorchResult)
-    else:
+            assert isinstance(output, torch.Tensor)
+            torch.testing.assert_close(output, torch.full((2, 2), 2.0))
+    if available == "yes":
         import torch
-        assert isinstance(output, torch.Tensor)
-        torch.testing.assert_close(output, torch.full((2, 2), 2.0))
+        output = module(np.ones((2, 2), dtype=np.float32))[0]
+        assert isinstance(output, torch.Tensor) == (policy != "executorch")
 """
         native_name = self.load_fn.__module__
         native_path = sys.modules[native_name].__spec__.origin
@@ -221,7 +246,16 @@ else:
                 handle.write(program.buffer)
             for entrypoint in dict.fromkeys((self.runtime.__name__, native_name)):
                 for policy in (None, "torch", "executorch"):
-                    for available in ("yes", "no"):
+                    for available in (
+                        "yes",
+                        "first",
+                        "no",
+                        "none",
+                        "broken",
+                        "initializing",
+                    ):
+                        if policy == "torch" and available == "initializing":
+                            continue
                         with self.subTest(
                             entrypoint=entrypoint, policy=policy, available=available
                         ):

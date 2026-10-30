@@ -134,7 +134,7 @@ else:
     import os
 
     assert Path(runtime.__file__).resolve() == Path(sys.argv[1]).resolve()
-    assert runtime._tensor_output == "executorch"
+    assert runtime._tensor_output is None
     with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as source:
         data = source.read()
     module = runtime._load_for_executorch_from_buffer(data)
@@ -474,10 +474,12 @@ else:
 
         output = module((torch.tensor([1.0]), torch.tensor([2.0])))[0]
 
+        # torch is imported here, so only an explicit "executorch" setting keeps
+        # ExecuTorchResult outputs.
         expected_type = (
-            torch.Tensor
-            if runtime._tensor_output == "torch"
-            else runtime.ExecuTorchResult
+            runtime.ExecuTorchResult
+            if runtime._tensor_output == "executorch"
+            else torch.Tensor
         )
         self.assertIsInstance(output, expected_type)
         np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))

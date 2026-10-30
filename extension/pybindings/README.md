@@ -91,9 +91,12 @@ with `clone_outputs=False` lives in the method's output memory, so passing it
 back in as an input means each run reads what the run before it wrote there;
 pass a copied result instead.
 
-To select `ExecuTorchResult` outputs even when PyTorch is installed, set the
-environment variable before importing the bindings. The setting is fixed when
-the extension loads, so importing PyTorch later does not change the output type.
+The bindings never import PyTorch on their own. Each call returns torch tensors
+only if `torch` is already imported, and `ExecuTorchResult` values otherwise, so
+a program that never imports `torch` does not load it. To fix the output type,
+set the environment variable before importing the bindings: `executorch` keeps
+`ExecuTorchResult` outputs even after `torch` is imported, and `torch` makes the
+bindings import PyTorch and always return torch tensors.
 
 ```python
 import os
@@ -103,11 +106,9 @@ from executorch.extension.pybindings import portable_lib
 ```
 
 `ExecuTorchResult` preserves shape, strides, dtype, and device. CPU results expose
-the Python buffer protocol so NumPy can read them without another copy. Without
-the environment setting, the bindings fall back to `ExecuTorchResult` if
-PyTorch cannot be imported. Explicitly selecting `torch` requires it to import
-successfully. ATen-mode bindings continue to return native PyTorch tensors
-directly.
+the Python buffer protocol so NumPy can read them without another copy.
+Explicitly selecting `torch` requires it to import successfully. ATen-mode
+bindings continue to return native PyTorch tensors directly.
 
 ```python
 output = module.forward([numpy_input])[0]

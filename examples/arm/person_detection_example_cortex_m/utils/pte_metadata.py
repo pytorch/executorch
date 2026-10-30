@@ -24,6 +24,8 @@ def io_method_names() -> tuple[str, ...]:
 
 
 def read_io_qparams(path: Path) -> dict[str, float | int]:
+    # Tensor outputs have item() only as torch tensors, once torch is imported.
+    import torch  # noqa: F401
     from executorch.runtime import Runtime
 
     program = Runtime.get().load_program(path)

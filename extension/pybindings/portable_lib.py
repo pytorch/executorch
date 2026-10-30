@@ -28,23 +28,19 @@ class _LightweightExperimentalWarning(DeprecationWarning):
 
 _TENSOR_OUTPUT_ENV = "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"
 _tensor_output = os.environ.get(_TENSOR_OUTPUT_ENV)
-if _tensor_output in (None, "torch"):
+# Without the setting, ExecuTorch never imports torch itself: each call returns
+# torch tensors only if the caller has already imported torch.
+if _tensor_output == "torch":
     try:
-        # Preserve the existing API: importing portable_lib also imports Torch,
-        # and tensor outputs are torch.Tensor objects.
-        import torch as _torch
+        _import_module("torch")
     except ImportError as error:
-        if _tensor_output == "torch":
-            raise ImportError(
-                "ExecuTorch portable pybindings were configured to return "
-                "torch.Tensor outputs, but PyTorch could not be imported. "
-                f"Install PyTorch or set {_TENSOR_OUTPUT_ENV}=executorch "
-                "before importing portable_lib."
-            ) from error
-        _torch = None
-elif _tensor_output == "executorch":
-    _torch = None
-else:
+        raise ImportError(
+            "ExecuTorch portable pybindings were configured to return "
+            "torch.Tensor outputs, but PyTorch could not be imported. "
+            f"Install PyTorch or set {_TENSOR_OUTPUT_ENV}=executorch "
+            "before importing portable_lib."
+        ) from error
+elif _tensor_output not in (None, "executorch"):
     raise ValueError(
         f"{_TENSOR_OUTPUT_ENV} must be either 'torch' or 'executorch', "
         f"but was {_tensor_output!r}"
@@ -152,7 +148,6 @@ from executorch.extension.pybindings._C import (  # noqa: F401
 del _bindings
 del _tensor_output
 del _TENSOR_OUTPUT_ENV
-del _torch
 del _warning_category
 del _import_module
 del _exir_warnings

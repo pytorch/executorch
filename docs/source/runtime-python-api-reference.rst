@@ -26,7 +26,7 @@ For detailed information on how APIs evolve and the deprecation process, please 
 Without PyTorch
 ~~~~~~~~~~~~~~~
 
-The runtime also works when PyTorch is not installed. Then ``Method.execute`` takes NumPy arrays as inputs and returns ``ExecuTorchResult`` values, which NumPy can read. For a model that adds its two inputs:
+ExecuTorch never imports PyTorch on its own. ``Method.execute`` returns ``torch.Tensor`` outputs only when your program has already imported ``torch``, and ``ExecuTorchResult`` values otherwise, even when PyTorch is installed. So a program that never imports ``torch`` runs without loading it. It passes NumPy arrays as inputs and reads the ``ExecuTorchResult`` outputs with NumPy. For a model that adds its two inputs:
 
 .. code-block:: python
 
@@ -43,4 +43,4 @@ Other buffers, such as ``memoryview``, work as inputs too. NumPy has no bfloat16
 
 For data on a GPU, use DLPack, the standard way to share tensors between Python libraries. This needs ExecuTorch built with CUDA support. Pass a CuPy array to a method that takes CUDA inputs. Read a CUDA result with ``cupy.from_dlpack(out)``, or copy it to the CPU with ``out.to_host()``. ``ExecuTorchResult.from_host()`` copies CPU data to a CUDA device.
 
-To get ``ExecuTorchResult`` values even when PyTorch is installed, set ``EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch`` before importing ExecuTorch.
+To always get ``ExecuTorchResult`` values, even after ``torch`` is imported, set ``EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch`` before importing ExecuTorch. Set it to ``torch`` to always get ``torch.Tensor`` outputs; ExecuTorch then imports PyTorch itself.
