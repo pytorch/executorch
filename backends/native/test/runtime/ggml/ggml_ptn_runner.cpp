@@ -4,7 +4,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-// The ggml engine for ptn_runner_main.cpp.
+// The ggml engine host for PTN test drivers.
 
 #include <stdexcept>
 
@@ -26,6 +26,10 @@ DEFINE_bool(
     print_graph_ops,
     false,
     "Print each built graph's node count per ggml op to stderr.");
+DEFINE_bool(
+    allow_activation_quant_for_weight_only,
+    false,
+    "Run weight-only quantized linears with ggml's quantized activations.");
 
 namespace ptn::testing {
 
@@ -44,6 +48,8 @@ std::unique_ptr<EngineHost> make_engine_host() {
   }
   options.max_cached_graphs = static_cast<size_t>(FLAGS_max_cached_graphs);
   options.print_graph_ops = FLAGS_print_graph_ops;
+  options.allow_activation_quant_for_weight_only =
+      FLAGS_allow_activation_quant_for_weight_only;
   return GgmlEngineHost::create(options);
 }
 

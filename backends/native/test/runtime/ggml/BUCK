@@ -1,5 +1,6 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbsource//third-party/llama.cpp:ggml_ci.bzl", "ggml_ci_labels")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT", "CUDA_COMPAT", "HIP_COMPAT")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
@@ -23,7 +24,7 @@ fbcode_target(
 )
 
 # The op suite runs once per ggml backend set; only the engine variant, the
-# runner's --device, link deps and resources, the test host, and the CI
+# runner's --device, link deps and test env, the test host, and the CI
 # configuration differ.
 _VARIANTS = [
     {"suffix": "", "engine": "ggml_engine_cpu", "compat": CPU_COMPAT, "device": "cpu"},
@@ -40,10 +41,9 @@ _VARIANTS = [
         # beside it, and its VMM pool calls the CUDA driver API.
         "deps": ["fbsource//third-party/llama.cpp:ggml_base[prefer-shared]"],
         "external_deps": [("cuda", None, "cuda_driver_api-lazy")],
-        # Buck does not put the CUDA driver stub's library on the runner's
-        # loader path, so it ships beside the runner.
-        "resources": {
-            "//tools/lazify:lazy_stub_binder[shared]": "libtools_lazify_lazy_stub_binder.so",
+        "env": {
+            # Buck does not put the CUDA driver stub's library on the loader path.
+            # @oss-disable[end= ]: "LD_PRELOAD": "$(location //tools/lazify:lazy_stub_binder[shared])",
         },
     },
     {
@@ -61,16 +61,50 @@ _VARIANTS = [
 
 [
     fbcode_target(
-        _kind = runtime.cxx_binary,
-        name = "ggml_ptn_runner" + v["suffix"],
+        _kind = runtime.cxx_library,
+        name = "ggml_engine_host" + v["suffix"],
         srcs = ["ggml_ptn_runner.cpp"],
+        link_whole = True,
         visibility = ["//executorch/backends/native/test/..."],
-        deps = [
-            "//executorch/backends/native/runtime/engine:" + v["engine"],
-            "//executorch/backends/native/test/runtime:ptn_runner_main",
-        ] + v.get("deps", []),
+        exported_deps = ["//executorch/backends/native/test/runtime:engine_host"],
+        deps = ["//executorch/backends/native/runtime/engine:" + v["engine"]] +
+               v.get("deps", []),
         external_deps = ["gflags"] + v.get("external_deps", []),
         labels = v.get("labels", []),
+        **v.get("compat", {})
+    )
+    for v in _VARIANTS
+]
+
+[
+    fbcode_target(
+        _kind = runtime.cxx_binary,
+        name = "ggml_ptn_runner" + v["suffix"],
+        visibility = ["//executorch/backends/native/test/..."],
+        deps = [
+            ":ggml_engine_host" + v["suffix"],
+            "//executorch/backends/native/test/runtime:ptn_runner_main",
+        ],
+        labels = v.get("labels", []),
+        **v.get("compat", {})
+    )
+    for v in _VARIANTS
+]
+
+[
+    fbcode_target(
+        _kind = runtime.cxx_test,
+        name = "ggml_sample_test" + v["suffix"],
+        args = [
+            "--packages=$(location //executorch/backends/native/test/samples:op_samples)",
+            "--device=" + v["device"],
+        ],
+        env = v.get("env", {}),
+        remote_execution = v.get("remote_execution"),
+        # TODO: run in CI once they pass.
+        labels = ci.labels(ci.map(ci.skip_test())),
+        test_main = "//executorch/backends/native/test/samples:sample_test_main",
+        deps = [":ggml_engine_host" + v["suffix"]],
         **v.get("compat", {})
     )
     for v in _VARIANTS
@@ -81,11 +115,10 @@ _VARIANTS = [
         _kind = runtime.python_test,
         name = "test_ggml_ops" + v["suffix"],
         srcs = ["test_ggml_ops.py"],
-        env = {"GGML_PTN_DEVICE": v["device"]},
+        env = {"GGML_PTN_DEVICE": v["device"]} | v.get("env", {}),
         labels = v.get("labels", []),
         remote_execution = v.get("remote_execution"),
-        resources = {":ggml_ptn_runner" + v["suffix"]: "ggml_ptn_runner"} |
-                    v.get("resources", {}),
+        resources = {":ggml_ptn_runner" + v["suffix"]: "ggml_ptn_runner"},
         deps = [
             "//caffe2:torch",
             "//executorch/exir/native:native",
