@@ -8,6 +8,11 @@
 from typing import Any, cast, List, Optional, Sequence, Tuple
 
 import torch
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_qparam,
+    is_quant,
+)
 
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -27,6 +32,8 @@ from torchao.quantization.pt2e.utils import _is_conv_node, _is_conv_transpose_no
 ### XNNPACK Utils ###
 PERM_NCHW_TO_NHWC = [0, 2, 3, 1]
 PERM_NHWC_TO_NCHW = [0, 3, 1, 2]
+
+COMPUTED_PARAM_TAG = "xnn_computed_param"
 
 
 def check_or_raise(condition: bool, err: str) -> None:
@@ -188,6 +195,65 @@ def get_param_tensor(
         except AttributeError:
             return getattr(exp_prog.graph_module, node.target)
     raise RuntimeError(f"unsupported param type, {node.op}.")
+
+
+def get_static_param_deps(
+    exp_prog: ExportedProgram, node: torch.fx.Node, user: torch.fx.Node
+) -> Optional[List[torch.fx.Node]]:
+    """
+    Returns the nodes to partition with user for node to be a static param, or
+    None. That is node itself if it is a param. Otherwise it is node and the
+    unmutated params it is computed from with pure ops, such as the weight of a
+    conv under weight_norm. Preprocess folds node into a param that replaces
+    them without growing the program, so only node and the params may have
+    users outside of the computation, and only user, and node may not be larger
+    than the params it frees. The computing nodes add user's name to their
+    COMPUTED_PARAM_TAG set.
+    """
+    if is_param_node(exp_prog, node):
+        return [node]
+
+    signature = exp_prog.graph_signature
+    mutated_buffers = set(signature.buffers_to_mutate.values())
+    deps = {}
+    pending = [node]
+    while pending:
+        dep = pending.pop()
+        if dep in deps:
+            continue
+        deps[dep] = None
+        if dep.op == "placeholder" and is_param_node(exp_prog, dep):
+            if (
+                signature.inputs_to_buffers.get(dep.name) in mutated_buffers
+                # Folding would move data tagged for an external file into the PTE.
+                or dep.meta.get("custom", {}).get("delegate_constant_tag") is not None
+            ):
+                return None
+            continue
+        if (
+            dep.op != "call_function"
+            or dep.is_impure()
+            or is_quant(dep)
+            or is_dequant(dep)
+            or is_qparam(dep)
+        ):
+            return None
+        pending.extend(dep.all_input_nodes)
+
+    if any(
+        u not in deps and not (u is user and (dep is node or dep.op == "placeholder"))
+        for dep in deps
+        for u in dep.users
+    ):
+        return None
+    removed = [dep for dep in deps if dep.op == "placeholder" and user not in dep.users]
+    if node.meta["val"].nbytes > sum(param.meta["val"].nbytes for param in removed):
+        return None
+
+    for dep in deps:
+        if dep.op == "call_function":
+            dep.meta.setdefault(COMPUTED_PARAM_TAG, set()).add(user.name)
+    return list(deps)
 
 
 def get_tensor_name(exp_prog: ExportedProgram, node: torch.fx.Node) -> str:
