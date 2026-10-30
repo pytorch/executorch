@@ -156,6 +156,19 @@ class CudaDLPackTest(unittest.TestCase):
             ._method
         )
 
+    def _assert_no_stream_selected(self):
+        from executorch.runtime import Runtime
+
+        # A delegate that would replay a CUDA graph refuses a caller stream, so
+        # this call fails while this thread still has a stream selected.
+        registry = Runtime.get().backend_registry
+        registry.set_option("CudaBackend", {"enable_cuda_graph_for_method": "forward"})
+        try:
+            method = self._load_method(self.host_input_program)
+        finally:
+            registry.set_option("CudaBackend", {"enable_cuda_graph_for_method": ""})
+        method(torch.ones(self.shape))
+
     def _consumer_stream(self, device_index):
         if device_index not in self.consumer_streams:
             self.consumer_streams[device_index] = torch.cuda.Stream(
@@ -328,6 +341,7 @@ class CudaDLPackTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             stream.close()
         inner.__exit__(None, None, None)
+        self._assert_no_stream_selected()
         # The refused scope ended with the inner one, so it can be used again.
         with outer:
             pass
@@ -480,6 +494,7 @@ class CudaDLPackTest(unittest.TestCase):
         dropped.__enter__()
         del dropped
         gc.collect()
+        self._assert_no_stream_selected()
         # The native scope keeps the same rules for callers that use it directly.
         native = cuda._bindings()._CallerStreamScope(stream._native)
         native.__enter__()
