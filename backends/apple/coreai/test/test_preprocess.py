@@ -26,12 +26,15 @@ import torch.nn as nn
 from executorch.backends.apple.coreai.compiler.preprocess import (
     _aot_compile_options,
     _asset_metadata,
+    _deliver,
     AOTCompileConfig,
+    AssetPackaging,
     COMPILE_SPEC_KEYS,
     CoreAIBackend,
 )
 from executorch.backends.apple.coreai.partition.partitioner import CoreAIPartitioner
 from executorch.exir import to_edge, to_edge_transform_and_lower
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import (
     executorch_call_delegate,
@@ -196,6 +199,71 @@ class AssetMetadataTest(unittest.TestCase):
                 self.assertEqual(manifest["files"], embedded)
                 self.assertEqual(set(manifest["bundle_digests"]), bundles)
 
+    def test_same_program_hash_with_different_metadata_merges(self):
+        store = NamedDataStore()
+        manifests = []
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            bundle = root / "model.aimodel"
+            bundle.mkdir()
+            (bundle / "main.hash").write_bytes(b"same-program-hash")
+            for timestamp in (
+                "20261030T231600Z",
+                "20261030T231601Z",
+                "20261030T231601Z",
+            ):
+                (bundle / "metadata.json").write_text(
+                    json.dumps({"creationDate": timestamp})
+                )
+                result = _deliver(root, AssetPackaging.INLINE, {"path": bundle.name})
+                manifest = json.loads(result.processed_bytes)
+                manifests.append(manifest)
+                self.assertEqual(
+                    manifest["path"], f"{manifest['export_hash']}/{bundle.name}"
+                )
+                store.merge_named_data_store(result.data_store_output)
+
+        self.assertNotEqual(manifests[0]["export_hash"], manifests[1]["export_hash"])
+        self.assertEqual(manifests[1], manifests[2])
+        output = store.get_named_data_store_output()
+        self.assertEqual(len(output.pte_data), 4)
+        self.assertEqual(len(output.buffers), 3)
+
+    def test_aot_namespace_covers_every_architecture(self):
+        manifests = []
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            archs = {arch: f"model.{arch}.aimodelc" for arch in ("h15g", "h16")}
+            for name in archs.values():
+                bundle = root / name
+                bundle.mkdir()
+                (bundle / "model.mil").write_bytes(b"original")
+            for payload in (b"original", b"modified"):
+                (root / archs["h16"] / "model.mil").write_bytes(payload)
+                result = _deliver(
+                    root, AssetPackaging.AOT_COMPILED_INLINE, {"archs": archs}
+                )
+                manifest = json.loads(result.processed_bytes)
+                manifests.append(manifest)
+                for arch, name in archs.items():
+                    self.assertEqual(
+                        manifest["archs"][arch], f"{manifest['export_hash']}/{name}"
+                    )
+                    self.assertIn(
+                        f"coreai/{manifest['archs'][arch]}/model.mil",
+                        result.data_store_output.pte_data,
+                    )
+
+        self.assertNotEqual(manifests[0]["export_hash"], manifests[1]["export_hash"])
+        self.assertEqual(
+            manifests[0]["bundle_digests"][archs["h15g"]],
+            manifests[1]["bundle_digests"][archs["h15g"]],
+        )
+        self.assertNotEqual(
+            manifests[0]["bundle_digests"][archs["h16"]],
+            manifests[1]["bundle_digests"][archs["h16"]],
+        )
+
     def test_digest_changes_with_file_contents(self):
         with tempfile.TemporaryDirectory() as d:
             weights = Path(d) / "model.aimodel" / "weights.bin"
@@ -337,8 +405,8 @@ class CompiledPreprocessTest(unittest.TestCase):
         self.assertTrue(manifest["archs"])
 
     @mock.patch(_MOCK_BUILD, side_effect=_fake_run_coreai_build)
-    def test_two_delegates_get_separate_asset_keys(self, _build):
-        """A graph break gives two delegates, whose assets must not collide."""
+    def test_identical_compiled_bundles_share_asset_keys(self, _build):
+        """Different graphs with byte-identical compiled assets can share storage."""
         lowered = _lower_with_break(
             CoreAIPartitioner(
                 aot_compile_config=AOTCompileConfig(
@@ -349,7 +417,11 @@ class CompiledPreprocessTest(unittest.TestCase):
         lbms = get_lowered_backend_modules(lowered.exported_program().graph_module)
         self.assertEqual(len(lbms), 2)
         hashes = {json.loads(bytes(lbm.processed_bytes))["export_hash"] for lbm in lbms}
-        self.assertEqual(len(hashes), 2)
+        self.assertEqual(len(hashes), 1)
+        self.assertEqual(
+            set(lbms[0].named_data_store_output.pte_data),
+            set(lbms[1].named_data_store_output.pte_data),
+        )
 
 
 def _lower_linear(partitioner):

@@ -145,7 +145,7 @@ void round(
         et::BackendOptions<1> options;
         et::LoadBackendOptionsMap option_map;
         check(
-            options.set_option("coreai_assets_dir", cache.c_str()),
+            options.set_option("coreai_cache_dir", cache.c_str()),
             "set option");
         check(
             option_map.set_options("CoreAIBackend", options.view()),

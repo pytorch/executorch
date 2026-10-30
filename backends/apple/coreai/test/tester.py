@@ -7,6 +7,7 @@
 import copy
 import tempfile
 
+import pytest
 import torch
 from executorch.backends.apple.coreai import (
     get_default_compile_config,
@@ -33,10 +34,11 @@ def _fp16_inputs(inputs):
 
 
 class CoreAIQuantize(Stage):
-    def __init__(self, mode="w8a8"):
+    def __init__(self, mode="w8a8", *, skip_if_unquantizable=False):
         if mode not in ("w8a8", "w8", "w4"):
             raise ValueError(f"Unsupported CoreAI quantization mode: {mode}")
         self.mode = mode
+        self.skip_if_unquantizable = skip_if_unquantizable
         self.converted_graph = None
 
     def stage_type(self):
@@ -54,7 +56,15 @@ class CoreAIQuantize(Stage):
         prepared = quantizer.prepare(tuple(inputs))
         with quantizer.calibration_mode():
             prepared(*inputs)
-        self.converted_graph = quantizer.convert()
+        try:
+            self.converted_graph = quantizer.convert()
+        except ValueError as error:
+            no_targets = (
+                str(error) == "Model contains no fake quantization nodes to convert"
+            )
+            if self.skip_if_unquantizable and no_targets:
+                pytest.skip(f"{self.mode}: no applicable quantization targets")
+            raise
 
     @property
     def artifact(self):
@@ -103,7 +113,7 @@ class CoreAISerialize(stages.Serialize):
             program = _load_program_from_buffer(
                 self.buffer,
                 program_verification=Verification.Minimal,
-                backend_options={"CoreAIBackend": {"coreai_assets_dir": cache}},
+                backend_options={"CoreAIBackend": {"coreai_cache_dir": cache}},
             )
             try:
                 method = program.load_method("forward")

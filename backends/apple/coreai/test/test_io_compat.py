@@ -63,6 +63,27 @@ class OrderedNamesTest(unittest.TestCase):
 
 
 class IoMismatchesTest(unittest.TestCase):
+    def test_coreai_dynamic_dimensions(self):
+        from coreai._compiler.ir import ShapedType
+
+        dynamic = ShapedType.get_dynamic_size()
+        for kind in ("input", "output"):
+            for coreai_shape, edge_shape, compatible in (
+                ((2, dynamic, dynamic), (2, 56, 56), True),
+                ((dynamic, 8), (_Sym(), 8), True),
+                ((dynamic, 8), (2, 16), False),
+                ((-2, 8), (2, 8), False),
+            ):
+                with self.subTest(kind=kind, shape=coreai_shape, compatible=compatible):
+                    errors = io_mismatches(
+                        [("f32", coreai_shape)], [(torch.float32, edge_shape)], kind
+                    )
+                    if compatible:
+                        self.assertEqual(errors, [])
+                    else:
+                        self.assertEqual(len(errors), 1)
+                        self.assertIn("static shape mismatch", errors[0])
+
     def test_io_mismatches(self):
         # (name, coreai_io, edge_io, expected substring or None if compatible)
         cases = [
