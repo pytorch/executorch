@@ -28,6 +28,7 @@ from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.tracer import _default_decomposition_table
 from torch.export.exported_program import ExportedProgram
+from torch.export.graph_signature import OutputKind
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import (
     chain,
@@ -313,7 +314,6 @@ def _makes_tensor(node: torch.fx.Node) -> bool:
 def _find_nodes_of_partitions_without_tensor_inputs(
     partitions: List[Partition],
     kept_inside: Collection[str],
-    state: Collection[str],
     allow_partitions_without_inputs: bool,
 ) -> Set[torch.fx.Node]:
     """The nodes of the partitions that read no tensor from outside, except the
@@ -321,21 +321,15 @@ def _find_nodes_of_partitions_without_tensor_inputs(
 
     Core ML cannot take a symbolic size as an input, and below iOS 18 it
     rejects a model with no inputs, so such a partition cannot be delegated.
-    A partition that uses state stays: moving it to the CPU would leave the
-    state's other readers in Core ML a stale copy, and Core ML state needs
-    iOS 18 anyway.
     """
     nodes = set()
     for partition in partitions:
-        outside = [
+        inputs = [
             arg
             for node in partition.nodes
             for arg in node.all_input_nodes
-            if arg not in partition.nodes
+            if arg not in partition.nodes and arg.name not in kept_inside
         ]
-        if any(arg.name in state for arg in outside):
-            continue
-        inputs = [arg for arg in outside if arg.name not in kept_inside]
         reads_tensor = any(_makes_tensor(arg) for arg in inputs)
         if not reads_tensor and (inputs or not allow_partitions_without_inputs):
             nodes.update(partition.nodes)
@@ -346,7 +340,6 @@ def _propose_partitions(
     graph_module: torch.fx.GraphModule,
     op_support: OperatorSupportBase,
     kept_inside: Collection[str],
-    state: Collection[str],
     allow_partitions_without_inputs: bool,
     before_decomposition: bool = False,
 ) -> Tuple[List[Partition], Set[torch.fx.Node]]:
@@ -384,7 +377,7 @@ def _propose_partitions(
             # Moving those ops out can leave a partition that reads no tensor,
             # such as the index math of a gather.
             new |= _find_nodes_of_partitions_without_tensor_inputs(
-                partitions, kept_inside, state, allow_partitions_without_inputs
+                partitions, kept_inside, allow_partitions_without_inputs
             )
         # The partitioner can put a node that was left out back, such as a
         # getitem next to its producer, so only a new node makes progress.
@@ -670,7 +663,6 @@ class CoreMLPartitioner(Partitioner):
         partition_tags = {}
 
         kept_inside = self._placeholders_kept_inside(exported_program)
-        state = self._state_kept_inside(exported_program)
         partition_list, left_out = _propose_partitions(
             exported_program.graph_module,
             _OperatorsSupportedForCoreMLBackend(
@@ -679,18 +671,8 @@ class CoreMLPartitioner(Partitioner):
                 log=True,
             ),
             kept_inside,
-            state,
             self._allows_partitions_without_inputs(),
         )
-        for node in left_out:
-            read = [arg.name for arg in node.all_input_nodes if arg.name in state]
-            if read:
-                raise NotImplementedError(
-                    f"{node} has to run outside of CoreML, but it reads "
-                    f"{', '.join(read)}, which CoreML takes over as state, so it "
-                    "would read a stale copy.  Set take_over_mutable_buffer=False "
-                    "in the CoreMLPartitioner to keep the state outside of CoreML."
-                )
         if left_out:
             inputs = sorted(
                 {
@@ -732,6 +714,7 @@ class CoreMLPartitioner(Partitioner):
                 tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = tag
                 partition_tags[tag] = self.delegation_spec
+        self._check_state_is_used_in_one_place(exported_program)
 
         if self.take_over_constant_data:
             tag_constant_data(exported_program)
@@ -753,6 +736,34 @@ class CoreMLPartitioner(Partitioner):
         if msg not in self._logged_msgs:
             logger.info(msg)
             self._logged_msgs.add(msg)
+
+    def _check_state_is_used_in_one_place(self, ep: ExportedProgram) -> None:
+        """Raises if ops in more than one place, CoreML partitions or the CPU,
+        read or update a buffer CoreML takes over as state, since each place
+        would then work on its own copy of it.
+        """
+        signature = ep.graph_signature
+        nodes = {node.name: node for node in ep.graph.nodes}
+        updates = {
+            spec.target: nodes[spec.arg.name]
+            for spec in signature.output_specs
+            if spec.kind == OutputKind.BUFFER_MUTATION
+        }
+        for name in self._state_kept_inside(ep):
+            users = [user for user in nodes[name].users if user.op != "output"]
+            users.append(updates[signature.inputs_to_buffers[name]])
+            if len({user.meta.get("delegation_tag") for user in users}) > 1:
+                hint = (
+                    ""
+                    if self.lower_full_graph
+                    else "  Set take_over_mutable_buffer=False in the "
+                    "CoreMLPartitioner to keep the state outside of CoreML."
+                )
+                raise NotImplementedError(
+                    f"CoreML takes over {name} as state, but it is used in more "
+                    "than one place: in two CoreML partitions, or both in and "
+                    f"outside of CoreML.  Each place would use its own copy.{hint}"
+                )
 
     def _allows_partitions_without_inputs(self) -> bool:
         """Whether Core ML accepts a partition with no inputs, which needs iOS 18."""
@@ -833,7 +844,6 @@ class CoreMLPartitioner(Partitioner):
                 ep.graph_module,
                 create_op_support(is_supported),
                 self._placeholders_kept_inside(ep),
-                self._state_kept_inside(ep),
                 self._allows_partitions_without_inputs(),
                 before_decomposition=True,
             )

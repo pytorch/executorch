@@ -799,61 +799,69 @@ class TestCoreMLPartitioner(unittest.TestCase):
                     out = program.load_method("forward").execute((y,))[0]
                     self.assertTrue(torch.allclose(out, model(y), atol=1e-2))
 
-    def test_uint8_input_keeps_state_in_the_delegate(self):
+    def test_uint8_input_with_state(self):
         """
-        A partition that only updates state, which has no inputs, stays in
-        Core ML with that state instead of moving to the CPU.  Below iOS 18
-        Core ML then refuses the state at lowering, as it does for any model
-        with state.
+        A CPU op that reads a uint8 input can separate a read of state from its
+        update, so two places would each use their own copy of the state.
+        Lowering refuses that, at any deployment target, unless the state stays
+        outside of Core ML.  State that only a partition with no inputs uses
+        moves to the CPU with it below iOS 18.
         """
 
-        class Model(torch.nn.Module):
+        class Split(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.register_buffer("frames", torch.zeros(1))
+                self.register_buffer("state", torch.zeros(1, 3, 2, 2))
 
             def forward(self, image):
-                out = image.float() / 255.0 * self.frames
-                frames = self.frames + 1
-                self.frames.copy_(frames)
-                # The skipped sqrt runs on the CPU, so the update gets its own
-                # partition.
-                return out * torch.sqrt(frames + 1)
+                y = (image + (self.state * 2).to(torch.uint8)).float()
+                self.state.add_(y)
+                return y + 1
 
-        skip = ["aten.sqrt.default"]
-        x = torch.randint(0, 256, (1, 3, 2, 2), dtype=torch.uint8)
-        ep = torch.export.export(Model().eval(), (x,), strict=True)
-        with self.assertRaisesRegex(ValueError, "State model is supported only"):
-            executorch.exir.to_edge_transform_and_lower(
-                ep,
-                partitioner=[CoreMLPartitioner(skip_ops_for_coreml_delegation=skip)],
-            )
-        compile_specs = CoreMLBackend.generate_compile_specs(
+        class Counter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("count", torch.zeros(1))
+
+            def forward(self, image):
+                self.count.add_(1)
+                return (image + self.count.to(torch.uint8)).float()
+
+        x = torch.randint(0, 3, (1, 3, 2, 2), dtype=torch.uint8)
+        ep = torch.export.export(Split().eval(), (x,), strict=True)
+        ios18 = CoreMLBackend.generate_compile_specs(
             minimum_deployment_target=ct.target.iOS18
         )
-        edge = executorch.exir.to_edge_transform_and_lower(
-            ep,
-            partitioner=[
-                CoreMLPartitioner(
-                    compile_specs=compile_specs, skip_ops_for_coreml_delegation=skip
-                )
-            ],
-        )
-        op_names = [
-            n.target.__name__
-            for n in edge.exported_program().graph.nodes
-            if n.op == "call_function"
+        for compile_specs in (None, ios18):
+            with self.subTest(ios18=compile_specs is not None):
+                with self.assertRaisesRegex(NotImplementedError, "b_state as state"):
+                    executorch.exir.to_edge_transform_and_lower(
+                        ep, partitioner=[CoreMLPartitioner(compile_specs=compile_specs)]
+                    )
+        lowered = [
+            (Split, CoreMLPartitioner(take_over_mutable_buffer=False)),
+            (Counter, CoreMLPartitioner()),
         ]
-        self.assertIn("executorch_call_delegate", op_names)
-        self.assertIn("aten.sqrt.default", op_names)
-        self.assertNotIn("aten.add.Tensor", op_names)
-        edge.to_executorch()
+        for model_class, partitioner in lowered:
+            with self.subTest(model=model_class.__name__):
+                ep = torch.export.export(model_class().eval(), (x,), strict=True)
+                edge = executorch.exir.to_edge_transform_and_lower(
+                    ep, partitioner=[partitioner]
+                )
+                buffer = edge.to_executorch().buffer
+                if _TEST_RUNTIME:
+                    method = Runtime.get().load_program(buffer).load_method("forward")
+                    eager = model_class().eval()
+                    for _ in range(2):
+                        out = method.execute((x,))[0]
+                        self.assertTrue(torch.allclose(out, eager(x), atol=1e-2))
 
     def test_uint8_input_size_that_slices_state(self):
         """
         A slice of state to a size read from a uint8 input has to run on the
-        CPU, where it would read a stale copy of state that Core ML takes over,
-        so lowering refuses it unless the state stays outside of Core ML.
+        CPU.  When Core ML uses that state too, the slice would read a stale
+        copy, so lowering refuses it unless the state stays outside of Core ML.
+        When only CPU ops use it, the state stays on the CPU.
         """
 
         class Model(torch.nn.Module):
@@ -866,39 +874,57 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 self.hist.add_(1)
                 return out
 
-        model = Model().eval()
+        class SliceUpdate(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("hist", torch.zeros(64))
+
+            def forward(self, image, y):
+                self.hist[: image.shape[2]] += 1
+                return y * 2 + self.hist
+
         inputs = (
             torch.randint(0, 256, (1, 3, 8, 8), dtype=torch.uint8),
             torch.randn(64),
         )
-        ep = torch.export.export(
-            model,
-            inputs,
-            dynamic_shapes=({2: torch.export.Dim("height", min=2, max=64)}, None),
-            strict=True,
-        )
+        dynamic_shapes = ({2: torch.export.Dim("height", min=2, max=64)}, None)
         compile_specs = CoreMLBackend.generate_compile_specs(
             minimum_deployment_target=ct.target.iOS18
+        )
+        ep = torch.export.export(
+            Model().eval(), inputs, dynamic_shapes=dynamic_shapes, strict=True
         )
         with self.assertRaisesRegex(NotImplementedError, "take_over_mutable_buffer"):
             executorch.exir.to_edge_transform_and_lower(
                 ep, partitioner=[CoreMLPartitioner(compile_specs=compile_specs)]
             )
-        edge = executorch.exir.to_edge_transform_and_lower(
-            ep,
-            partitioner=[
+        lowered = [
+            (
+                Model,
                 CoreMLPartitioner(
                     compile_specs=compile_specs, take_over_mutable_buffer=False
+                ),
+            ),
+            (SliceUpdate, CoreMLPartitioner(compile_specs=compile_specs)),
+        ]
+        for model_class, partitioner in lowered:
+            with self.subTest(model=model_class.__name__):
+                ep = torch.export.export(
+                    model_class().eval(),
+                    inputs,
+                    dynamic_shapes=dynamic_shapes,
+                    strict=True,
                 )
-            ],
-        )
-        if _TEST_RUNTIME:
-            method = Runtime.get().load_program(edge.to_executorch().buffer)
-            method = method.load_method("forward")
-            eager = Model().eval()
-            for _ in range(2):
-                out = method.execute(inputs)[0]
-                self.assertTrue(torch.allclose(out, eager(*inputs), atol=1e-2))
+                edge = executorch.exir.to_edge_transform_and_lower(
+                    ep, partitioner=[partitioner]
+                )
+                buffer = edge.to_executorch().buffer
+                if _TEST_RUNTIME:
+                    method = Runtime.get().load_program(buffer).load_method("forward")
+                    eager = model_class().eval()
+                    for _ in range(2):
+                        out = method.execute(inputs)[0]
+                        self.assertTrue(torch.allclose(out, eager(*inputs), atol=1e-2))
 
     def test_uint8_buffer_not_taken_over_is_read_outside_the_delegate(self):
         """
