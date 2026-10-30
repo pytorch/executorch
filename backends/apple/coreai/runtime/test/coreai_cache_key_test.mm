@@ -10,7 +10,7 @@
 
 #include <gtest/gtest.h>
 #include <limits.h>
-#include "coreai_bookmark_fixture.h"
+#include "coreai_cache_entry_fixture.h"
 #include "coreai_manifest_fixture.h"
 
 using namespace executorch::runtime;
@@ -18,14 +18,6 @@ using namespace executorch::backends::coreai;
 using namespace executorch::backends::coreai::testing;
 
 namespace {
-
-Result<SelectedBundle> selected_bundle(NSMutableDictionary* dictionary) {
-  auto manifest = parse_manifest(encode(dictionary));
-  if (!manifest.ok()) {
-    return manifest.error();
-  }
-  return select_assets(manifest.get(), @"arch_b", @"macOS");
-}
 
 NSString* key_for_device(NSString* device) {
   NSString* model = [@"" stringByPaddingToLength:64
@@ -38,13 +30,13 @@ NSString* key_for_device(NSString* device) {
 }
 
 TEST(CoreAICacheKeyIdentityTest, IgnoresBindingsAndDeliveryLocation) {
-  auto baseline = bookmark_bundle();
+  auto baseline = selected_bundle(manifest_dict());
   ASSERT_TRUE(baseline.ok());
   auto expected = test_cache_key(baseline.get());
   ASSERT_TRUE(expected.ok());
 
   auto dictionary = manifest_dict();
-  dictionary[@"hash"] = @"cd";
+  dictionary[@"export_hash"] = @"cd";
   dictionary[@"path"] = @"cd/model.aimodel";
   dictionary[@"function"] = @"another_function";
   dictionary[@"input_names"] = @[ @"different_input" ];
@@ -57,7 +49,7 @@ TEST(CoreAICacheKeyIdentityTest, IgnoresBindingsAndDeliveryLocation) {
 }
 
 TEST(CoreAICacheKeyIdentityTest, SeparatesExportedBundleIdentity) {
-  auto baseline = bookmark_bundle();
+  auto baseline = selected_bundle(manifest_dict());
   ASSERT_TRUE(baseline.ok());
   auto expected = test_cache_key(baseline.get());
   ASSERT_TRUE(expected.ok());
@@ -68,7 +60,7 @@ TEST(CoreAICacheKeyIdentityTest, SeparatesExportedBundleIdentity) {
   auto reweighted = selected_bundle(digest_changed);
   ASSERT_TRUE(reweighted.ok());
 
-  auto aot = bookmark_bundle(true);
+  auto aot = selected_bundle(aot_manifest_dict());
   ASSERT_TRUE(aot.ok());
   for (const SelectedBundle* bundle : {&reweighted.get(), &aot.get()}) {
     auto actual = test_cache_key(*bundle);
@@ -85,19 +77,27 @@ TEST(CoreAICacheKeyIdentityTest, SeparatesBundleNameWithSameDigestAndMode) {
   };
   auto manifest = parse_manifest(encode(dictionary));
   ASSERT_TRUE(manifest.ok());
-  auto first = select_assets(manifest.get(), @"arch_a", @"macOS");
-  auto second = select_assets(manifest.get(), @"arch_b", @"macOS");
+  auto first = select_bundle(manifest.get(), @"arch_a", @"macOS");
+  auto second = select_bundle(manifest.get(), @"arch_b", @"macOS");
   ASSERT_TRUE(first.ok());
   ASSERT_TRUE(second.ok());
-  auto first_key = cache_model_key(first.get());
-  auto second_key = cache_model_key(second.get());
+  auto first_key = bundle_identity(first.get());
+  auto second_key = bundle_identity(second.get());
   ASSERT_TRUE(first_key.ok());
   ASSERT_TRUE(second_key.ok());
   EXPECT_FALSE([first_key.get() isEqual:second_key.get()]);
 }
 
+TEST(CoreAICacheKeyIdentityTest, RejectsUnknownBundleName) {
+  auto manifest = parse_manifest(encode(manifest_dict()));
+  ASSERT_TRUE(manifest.ok());
+  EXPECT_EQ(
+      bundle_identity(manifest.get(), @"unknown.aimodel").error(),
+      Error::InvalidArgument);
+}
+
 TEST(CoreAICacheKeyIdentityTest, SeparatesDeviceAndSpecializationIdentity) {
-  auto bundle = bookmark_bundle();
+  auto bundle = selected_bundle(manifest_dict());
   ASSERT_TRUE(bundle.ok());
   auto baseline = test_cache_key(bundle.get());
   auto platform =
@@ -113,13 +113,13 @@ TEST(CoreAICacheKeyIdentityTest, SeparatesDeviceAndSpecializationIdentity) {
   for (auto* changed : {&platform, &architecture, &specialization}) {
     ASSERT_TRUE(changed->ok());
     EXPECT_FALSE([changed->get() isEqual:baseline.get()]);
-    EXPECT_TRUE([cache_key_model_prefix(changed->get())
-        isEqual:cache_key_model_prefix(baseline.get())]);
+    EXPECT_TRUE([cache_key_bundle_identity(changed->get())
+        isEqual:cache_key_bundle_identity(baseline.get())]);
   }
 }
 
 TEST(CoreAICacheKeyIdentityTest, RejectsIncompletePlainIdentity) {
-  auto bundle = bookmark_bundle();
+  auto bundle = selected_bundle(manifest_dict());
   ASSERT_TRUE(bundle.ok());
   EXPECT_FALSE(
       cache_variant_key(bundle.get(), nil, @"arch_b", @"default").ok());
@@ -135,7 +135,7 @@ TEST(CoreAICacheKeyFormatTest, AcceptsReadableDeviceComponents) {
     NSString* key = key_for_device(device);
     EXPECT_TRUE(is_cache_key(key));
     EXPECT_TRUE(
-        [cache_key_model_prefix(key) isEqual:[key substringToIndex:64]]);
+        [cache_key_bundle_identity(key) isEqual:[key substringToIndex:64]]);
   }
 }
 
@@ -153,7 +153,7 @@ TEST(CoreAICacheKeyFormatTest, RejectsUnsafeOrIncompleteDevices) {
        ]) {
     NSString* key = key_for_device(device);
     EXPECT_FALSE(is_cache_key(key));
-    EXPECT_EQ(cache_key_model_prefix(key), nil);
+    EXPECT_EQ(cache_key_bundle_identity(key), nil);
   }
 }
 
@@ -184,7 +184,7 @@ TEST(CoreAICacheKeyFormatTest, RequiresExactHashBoundaries) {
 }
 
 TEST(CoreAICacheKeyFormatTest, LockStripesStayWithinConfiguredPool) {
-  auto bundle = bookmark_bundle();
+  auto bundle = selected_bundle(manifest_dict());
   ASSERT_TRUE(bundle.ok());
   NSMutableSet<NSString*>* names = [NSMutableSet set];
   for (NSUInteger index = 0; index < 4096; ++index) {

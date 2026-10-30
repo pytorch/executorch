@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "coreai_bookmark_fixture.h"
+#include "coreai_cache_entry_fixture.h"
 
 #include <fcntl.h>
 #include <poll.h>
@@ -22,6 +22,7 @@
 #include <cstring>
 #include <string>
 #include "coreai_fault_scope.h"
+#include "coreai_filesystem_fixture.h"
 #include "coreai_manifest_fixture.h"
 
 extern char** environ;
@@ -44,7 +45,7 @@ int remaining_ms(Clock::time_point deadline) {
   return remaining.count() <= 0 ? 0 : static_cast<int>(remaining.count());
 }
 
-bool send_signal_byte(int fd, char byte) {
+bool send_child_byte_impl(int fd, char byte) {
   const auto deadline = Clock::now() + kChildTimeout;
   while (const int remaining = remaining_ms(deadline)) {
     pollfd entry{fd, POLLOUT, 0};
@@ -68,16 +69,56 @@ bool send_signal_byte(int fd, char byte) {
 }
 } // namespace
 
-Result<SelectedBundle> bookmark_bundle(bool aot) {
-  NSData* encoded = encode(aot ? aot_manifest_dict() : manifest_dict());
-  if (encoded == nil) {
-    return Error::InvalidExternalData;
+Result<CacheDirectory> test_cache_directory(
+    NSString* path,
+    StorageCreationMode mode) {
+  auto directory = resolve_test_cache_directory(path, mode);
+  if (!directory.ok()) {
+    return directory.error();
   }
-  auto parsed = parse_manifest(encoded);
-  if (!parsed.ok()) {
-    return parsed.error();
+  if (!directory->has_value()) {
+    return Error::NotFound;
   }
-  return select_assets(parsed.get(), @"arch_b", @"macOS");
+  return std::move(directory->value());
+}
+
+Result<std::unique_ptr<LockedCacheEntry>> acquire_test_cache_entry(
+    NSString* path,
+    NSString* key) {
+  auto directory = test_cache_directory(path);
+  if (!directory.ok()) {
+    return directory.error();
+  }
+  return LockedCacheEntry::acquire(directory.get(), key);
+}
+
+Result<std::unique_ptr<LockedCacheEntry>> acquire_existing_test_cache_entry(
+    NSString* path,
+    NSString* key) {
+  auto directory =
+      resolve_test_cache_directory(path, StorageCreationMode::OpenExisting);
+  if (!directory.ok()) {
+    return directory.error();
+  }
+  if (!directory->has_value()) {
+    return std::unique_ptr<LockedCacheEntry>();
+  }
+  return LockedCacheEntry::acquire_existing(directory->value(), key);
+}
+
+int parse_child_fd(const char* argument) {
+  char* end = nullptr;
+  errno = 0;
+  const long value = std::strtol(argument, &end, 10);
+  if (errno != 0 || end == argument || *end != '\0' || value < 0 ||
+      value > INT_MAX) {
+    return -1;
+  }
+  return static_cast<int>(value);
+}
+
+bool send_child_byte(int fd, char byte) {
+  return send_child_byte_impl(fd, byte);
 }
 
 Result<NSString*> test_cache_key(const SelectedBundle& bundle) {
@@ -136,7 +177,7 @@ NSURL* test_cache_lock_url(NSURL* root, NSString* key) {
 }
 
 Result<NSData*> saved_bookmark(NSURL* root, NSString* key) {
-  auto locked = lock_cache_entry(root.path, key);
+  auto locked = acquire_test_cache_entry(root.path, key);
   if (!locked.ok()) {
     return locked.error();
   }
@@ -174,14 +215,11 @@ int bookmark_child_mode(int argc, char** argv) {
   if ((!hold && !lock) || (!other && !same && !collision)) {
     return 2;
   }
-  char* end = nullptr;
-  errno = 0;
-  const long value = std::strtol(argv[4], &end, 10);
-  if (errno != 0 || end == argv[4] || *end != '\0' || value < 0 ||
-      value > INT_MAX) {
+  const int parsed_fd = parse_child_fd(argv[4]);
+  if (parsed_fd < 0) {
     return 3;
   }
-  FileDescriptor signal_fd(static_cast<int>(value));
+  FileDescriptor signal_fd(parsed_fd);
   if (fcntl(signal_fd.get(), F_GETFD) < 0) {
     return 4;
   }
@@ -190,7 +228,7 @@ int bookmark_child_mode(int argc, char** argv) {
   if (root == nil) {
     return 5;
   }
-  auto bundle = bookmark_bundle();
+  auto bundle = selected_bundle(manifest_dict());
   if (!bundle.ok()) {
     return 6;
   }
@@ -212,15 +250,15 @@ int bookmark_child_mode(int argc, char** argv) {
   scope.observe = ^(FaultPoint point) {
     if (lock && (same || collision) &&
         point == FaultPoint::BeforeCacheEntryLock &&
-        !send_signal_byte(notify_fd, 'B')) {
+        !send_child_byte_impl(notify_fd, 'B')) {
       _exit(12);
     }
   };
-  auto locked = lock_cache_entry(root, selected_key);
+  auto locked = acquire_test_cache_entry(root, selected_key);
   if (!locked.ok()) {
     return 9;
   }
-  if (!send_signal_byte(signal_fd.get(), 'L')) {
+  if (!send_child_byte_impl(signal_fd.get(), 'L')) {
     return 10;
   }
   if (close(signal_fd.release()) != 0) {

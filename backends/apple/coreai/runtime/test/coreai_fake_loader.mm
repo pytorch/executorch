@@ -8,8 +8,10 @@
 
 #import "coreai_fake_loader.h"
 #include <cstring>
+#include "coreai_test_utils.h"
 
 using executorch::backends::coreai::testing::FakeBridgeState;
+using executorch::backends::coreai::testing::test_deadline;
 
 // ARC keeps failed asynchronous work from outliving its state storage.
 @interface CoreAIFakeBridgeContext : NSObject {
@@ -82,10 +84,6 @@ void run_async(CoreAIFakeBridgeContext* context, void (^work)()) {
   }
   return ::testing::AssertionSuccess();
 }
-
-dispatch_time_t cleanup_deadline() {
-  return dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC);
-}
 } // namespace
 
 @interface FakeOutputOwner : NSObject
@@ -149,7 +147,7 @@ dispatch_time_t cleanup_deadline() {
     if (ready != nil) {
       dispatch_semaphore_signal(ready);
       if (proceed == nil ||
-          dispatch_semaphore_wait(proceed, cleanup_deadline()) != 0) {
+          dispatch_semaphore_wait(proceed, test_deadline()) != 0) {
         ++context->state.input_wait_timeouts;
         completion(nil, fake_error(ETCoreAIErrorRuntime));
         return;
@@ -368,6 +366,7 @@ dispatch_time_t cleanup_deadline() {
     specializations = 0;
     bindings = 0;
     evictions = 0;
+    specializationQueries = 0;
     ++_context->state.loaders;
   }
   return self;
@@ -378,6 +377,7 @@ dispatch_time_t cleanup_deadline() {
   }
 }
 - (NSString*)specializationIdentifier {
+  ++specializationQueries;
   return @"default";
 }
 - (void)restoreModelFromBookmark:(NSData*)bookmark
@@ -435,11 +435,20 @@ dispatch_time_t cleanup_deadline() {
                     completion:(void (^)(NSError*))completion {
   ++evictions;
   run_async(self.context, ^{
-    completion(fake_error(ETCoreAIErrorUnsupported));
+    if (self.onEvict != nil) {
+      self.onEvict(bookmark);
+    }
+    @synchronized(self) {
+      if (self.evictError == nil) {
+        [self.models removeObjectForKey:bookmark];
+      }
+      completion(self.evictError);
+    }
   });
 }
 - (void)clearRetainedState {
   self.onSpecialize = nil;
+  self.onEvict = nil;
   self.lastAcquired = nil;
   self.lastBound = nil;
   [self.models removeAllObjects];
@@ -455,7 +464,7 @@ ScopedFakeBridgeState::ScopedFakeBridgeState()
 }
 
 ScopedFakeBridgeState::~ScopedFakeBridgeState() {
-  auto drained = wait_for_callbacks(cleanup_deadline());
+  auto drained = wait_for_callbacks(test_deadline());
   EXPECT_TRUE(drained);
   if (drained) {
     id<ETCoreAIModelLoading> loader = context_->state.bookmark_loader;
@@ -504,7 +513,7 @@ BookmarkLoaderScope::~BookmarkLoaderScope() {
   if (context_ == nil) {
     return;
   }
-  auto drained = ::wait_for_callbacks(context_, cleanup_deadline());
+  auto drained = ::wait_for_callbacks(context_, test_deadline());
   EXPECT_TRUE(drained);
   if (drained) {
     [loader clearRetainedState];

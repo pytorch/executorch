@@ -19,28 +19,22 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 namespace executorch::backends::coreai {
 namespace {
 using runtime::Error;
 using runtime::Result;
 
-template <typename F>
-auto storage_call(FaultPoint point, F call) {
-  return retry_eintr([&]() -> decltype(call()) {
-    const int fault = fault_point(point);
-    if (fault != 0) {
-      errno = fault;
-      return -1;
-    }
-    return call();
-  });
-}
-
 enum class StorageSyncMode {
   Normal,
   Full,
 };
+
+bool full_fsync(int fd) {
+  return fault_aware_retry(
+             FaultPoint::FullSync, [&] { return fcntl(fd, F_FULLFSYNC); }) == 0;
+}
 
 Error write_file(
     int root_fd,
@@ -56,7 +50,9 @@ Error write_file(
       "Invalid Core AI storage write");
   for (NSString* component in components) {
     ET_CHECK_OR_RETURN_ERROR(
-        storage_component(component), InvalidArgument, "Invalid storage path");
+        is_storage_component(component),
+        InvalidArgument,
+        "Invalid storage path");
   }
   FileDescriptor parent(
       retry_eintr([&] { return fcntl(root_fd, F_DUPFD_CLOEXEC, 0); }));
@@ -65,11 +61,12 @@ Error write_file(
   for (NSUInteger i = 0; i + 1 < components.count; ++i) {
     auto opened = open_storage_directory(
         parent.get(), components[i], StorageCreationMode::Create);
-    if (!opened.ok())
+    if (!opened.ok()) {
       return opened.error();
-    FileDescriptor next(opened.get().fd);
+    }
+    FileDescriptor next = std::move(*opened->descriptor);
     ET_CHECK_OK_OR_RETURN_ERROR(sync_storage_directory(parent.get()));
-    parent.reset(next.release());
+    parent = std::move(next);
   }
   FileDescriptor file(retry_eintr([&] {
     return openat(
@@ -83,7 +80,7 @@ Error write_file(
   const auto result = [&]() -> Error {
     const auto* bytes = static_cast<const uint8_t*>(data);
     while (size > 0) {
-      const ssize_t count = storage_call(FaultPoint::Write, [&] {
+      const ssize_t count = fault_aware_retry(FaultPoint::Write, [&] {
         return write(file.get(), bytes, std::min(size, size_t(1024 * 1024)));
       });
       ET_CHECK_OR_RETURN_ERROR(
@@ -92,12 +89,9 @@ Error write_file(
       size -= count;
     }
     ET_CHECK_OR_RETURN_ERROR(
-        storage_call(FaultPoint::SyncFile, [&] { return fsync(file.get()); }) ==
-                0 &&
-            (sync_mode != StorageSyncMode::Full ||
-             storage_call(
-                 FaultPoint::FullSync,
-                 [&] { return fcntl(file.get(), F_FULLFSYNC); }) == 0),
+        fault_aware_retry(
+            FaultPoint::SyncFile, [&] { return fsync(file.get()); }) == 0 &&
+            (sync_mode != StorageSyncMode::Full || full_fsync(file.get())),
         AccessFailed,
         "Cannot synchronize Core AI file");
     ET_CHECK_OR_RETURN_ERROR(
@@ -124,6 +118,91 @@ enum class StorageTreePass {
   Preflight,
   Remove,
 };
+
+enum class StorageEntryState {
+  Missing,
+  NonDirectory,
+  Directory,
+};
+
+struct InspectedStorageEntry final {
+  StorageEntryState state;
+  std::optional<FileDescriptor> directory;
+  struct stat info;
+};
+
+Result<InspectedStorageEntry> inspect_storage_entry(
+    int parent_fd,
+    NSString* name,
+    StorageRemovalPolicy policy) {
+  ET_CHECK_OR_RETURN_ERROR(
+      is_storage_component(name),
+      InvalidArgument,
+      "Invalid Core AI entry name");
+  struct stat info {};
+  const int inspected =
+      lstat_at(parent_fd, name.fileSystemRepresentation, &info);
+  if (inspected < 0 && errno == ENOENT) {
+    return InspectedStorageEntry{
+        StorageEntryState::Missing, std::nullopt, info};
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      inspected == 0, AccessFailed, "Cannot inspect Core AI storage entry");
+  if (!S_ISDIR(info.st_mode)) {
+    ET_CHECK_OR_RETURN_ERROR(
+        policy == StorageRemovalPolicy::Maintenance,
+        InvalidExternalData,
+        "Core AI storage entry is not a directory");
+    return InspectedStorageEntry{
+        StorageEntryState::NonDirectory, std::nullopt, info};
+  }
+  FileDescriptor entry(
+      open_directory_at(parent_fd, name.fileSystemRepresentation));
+  if (entry.get() < 0 && errno == ENOENT) {
+    return InspectedStorageEntry{
+        StorageEntryState::Missing, std::nullopt, info};
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      entry.get() >= 0, AccessFailed, "Cannot open Core AI storage directory");
+  return InspectedStorageEntry{
+      StorageEntryState::Directory,
+      std::optional<FileDescriptor>(std::move(entry)),
+      info};
+}
+
+bool same_storage_entry(const struct stat& left, const struct stat& right) {
+  return left.st_dev == right.st_dev && left.st_ino == right.st_ino &&
+      (left.st_mode & S_IFMT) == (right.st_mode & S_IFMT);
+}
+
+// Removes name only while it is still the entry described by expected. A
+// missing entry counts as removed. Does not sync parent_fd.
+Error remove_if_unchanged(
+    int parent_fd,
+    NSString* name,
+    const struct stat& expected) {
+  struct stat current;
+  const int inspected =
+      lstat_at(parent_fd, name.fileSystemRepresentation, &current);
+  if (inspected != 0 && errno == ENOENT) {
+    return Error::Ok;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      inspected == 0 && same_storage_entry(expected, current),
+      AccessFailed,
+      "Core AI storage entry changed during removal");
+  const int removed = fault_aware_retry(FaultPoint::Remove, [&] {
+    return unlinkat(
+        parent_fd,
+        name.fileSystemRepresentation,
+        S_ISDIR(expected.st_mode) ? AT_REMOVEDIR : 0);
+  });
+  ET_CHECK_OR_RETURN_ERROR(
+      removed == 0 || errno == ENOENT,
+      AccessFailed,
+      "Cannot remove Core AI storage entry");
+  return Error::Ok;
+}
 
 Error walk_storage_tree(
     int fd,
@@ -161,15 +240,7 @@ Error walk_storage_tree(
       ET_CHECK_OK_OR_RETURN_ERROR(walk_storage_tree(child.get(), pass, policy));
     }
     if (pass == StorageTreePass::Remove) {
-      const int removed = storage_call(FaultPoint::Remove, [&] {
-        return unlinkat(
-            fd, name.fileSystemRepresentation, directory ? AT_REMOVEDIR : 0);
-      });
-      if (removed < 0 && errno == ENOENT) {
-        continue;
-      }
-      ET_CHECK_OR_RETURN_ERROR(
-          removed == 0, AccessFailed, "Cannot remove Core AI storage entry");
+      ET_CHECK_OK_OR_RETURN_ERROR(remove_if_unchanged(fd, name, info));
     }
   }
   return pass == StorageTreePass::Remove ? sync_storage_directory(fd)
@@ -182,7 +253,7 @@ Result<StorageDirectory> open_storage_directory(
     NSString* name,
     StorageCreationMode mode) {
   ET_CHECK_OR_RETURN_ERROR(
-      storage_component(name),
+      is_storage_component(name),
       InvalidArgument,
       "Invalid storage directory name");
   const auto open_directory = [&] {
@@ -206,11 +277,12 @@ Result<StorageDirectory> open_storage_directory(
     created = made == 0;
     fd = open_directory();
   }
-  if (fd < 0 && errno == ENOENT && !create)
-    return StorageDirectory{-1, false};
+  if (fd < 0 && errno == ENOENT && !create) {
+    return StorageDirectory{std::nullopt, false};
+  }
   ET_CHECK_OR_RETURN_ERROR(
       fd >= 0, AccessFailed, "Cannot open Core AI storage directory");
-  return StorageDirectory{fd, created};
+  return StorageDirectory{FileDescriptor(fd), created};
 }
 
 Result<NSArray<NSString*>*> storage_children(int fd, StorageNamePolicy policy) {
@@ -231,10 +303,12 @@ Result<NSArray<NSString*>*> storage_children(int fd, StorageNamePolicy policy) {
     errno = 0;
     dirent* entry = readdir(directory);
     if (entry == nullptr) {
-      if (errno == EINTR)
+      if (errno == EINTR) {
         continue;
-      if (errno != 0)
+      }
+      if (errno != 0) {
         result = Error::AccessFailed;
+      }
       break;
     }
     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
@@ -259,56 +333,43 @@ Result<NSArray<NSString*>*> storage_children(int fd, StorageNamePolicy policy) {
   return [names sortedArrayUsingSelector:@selector(compare:)];
 }
 
+Error preflight_storage_directory(
+    int parent_fd,
+    NSString* name,
+    StorageRemovalPolicy policy) {
+  auto entry = inspect_storage_entry(parent_fd, name, policy);
+  if (!entry.ok()) {
+    return entry.error();
+  }
+  return entry->state == StorageEntryState::Directory
+      ? walk_storage_tree(
+            entry->directory->get(), StorageTreePass::Preflight, policy)
+      : Error::Ok;
+}
+
 Error remove_storage_directory(
     int parent_fd,
     NSString* name,
     StorageRemovalPolicy policy) {
-  ET_CHECK_OR_RETURN_ERROR(
-      storage_component(name), InvalidArgument, "Invalid Core AI entry name");
-  struct stat info;
-  const int inspected =
-      lstat_at(parent_fd, name.fileSystemRepresentation, &info);
-  if (inspected < 0 && errno == ENOENT) {
+  auto entry = inspect_storage_entry(parent_fd, name, policy);
+  if (!entry.ok()) {
+    return entry.error();
+  }
+  if (entry->state == StorageEntryState::Missing) {
     return Error::Ok;
   }
-  ET_CHECK_OR_RETURN_ERROR(
-      inspected == 0, AccessFailed, "Cannot inspect Core AI storage entry");
-  if (!S_ISDIR(info.st_mode)) {
-    ET_CHECK_OR_RETURN_ERROR(
-        policy == StorageRemovalPolicy::Maintenance,
-        InvalidExternalData,
-        "Core AI storage entry is not a directory");
-    const int removed = storage_call(FaultPoint::Remove, [&] {
-      return unlinkat(parent_fd, name.fileSystemRepresentation, 0);
-    });
-    ET_CHECK_OR_RETURN_ERROR(
-        removed == 0 || (removed < 0 && errno == ENOENT),
-        AccessFailed,
-        "Cannot remove Core AI storage entry");
-    return sync_storage_directory(parent_fd);
+  if (entry->state == StorageEntryState::Directory) {
+    ET_CHECK_OK_OR_RETURN_ERROR(walk_storage_tree(
+        entry->directory->get(), StorageTreePass::Preflight, policy));
+    ET_CHECK_OK_OR_RETURN_ERROR(walk_storage_tree(
+        entry->directory->get(), StorageTreePass::Remove, policy));
   }
-  FileDescriptor entry(
-      open_directory_at(parent_fd, name.fileSystemRepresentation));
-  if (entry.get() < 0 && errno == ENOENT) {
-    return sync_storage_directory(parent_fd);
-  }
-  ET_CHECK_OR_RETURN_ERROR(
-      entry.get() >= 0, AccessFailed, "Cannot open Core AI storage directory");
   ET_CHECK_OK_OR_RETURN_ERROR(
-      walk_storage_tree(entry.get(), StorageTreePass::Preflight, policy));
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      walk_storage_tree(entry.get(), StorageTreePass::Remove, policy));
-  const int removed = storage_call(FaultPoint::Remove, [&] {
-    return unlinkat(parent_fd, name.fileSystemRepresentation, AT_REMOVEDIR);
-  });
-  ET_CHECK_OR_RETURN_ERROR(
-      removed == 0 || (removed < 0 && errno == ENOENT),
-      AccessFailed,
-      "Cannot remove Core AI storage directory");
+      remove_if_unchanged(parent_fd, name, entry->info));
   return sync_storage_directory(parent_fd);
 }
 
-int open_storage_shared_file(int parent_fd, const char* name) {
+FileDescriptor open_storage_shared_file(int parent_fd, const char* name) {
   // APFS can return ENOENT to a concurrent O_CREAT loser without O_EXCL.
   int fd = retry_eintr([&] {
     return openat(
@@ -322,14 +383,24 @@ int open_storage_shared_file(int parent_fd, const char* name) {
       return openat(parent_fd, name, O_RDWR | O_NOFOLLOW | O_CLOEXEC);
     });
   }
-  return fd;
+  return FileDescriptor(fd);
 }
 
 Error sync_storage_directory(int fd) {
   ET_CHECK_OR_RETURN_ERROR(
-      storage_call(FaultPoint::SyncDirectory, [&] { return fsync(fd); }) == 0,
+      fault_aware_retry(FaultPoint::SyncDirectory, [&] { return fsync(fd); }) ==
+          0,
       AccessFailed,
       "Cannot synchronize Core AI directory");
+  return Error::Ok;
+}
+
+Error full_sync_storage_directory(int fd) {
+  ET_CHECK_OK_OR_RETURN_ERROR(sync_storage_directory(fd));
+  ET_CHECK_OR_RETURN_ERROR(
+      full_fsync(fd),
+      AccessFailed,
+      "Cannot fully synchronize Core AI directory");
   return Error::Ok;
 }
 
@@ -344,7 +415,7 @@ Error write_storage_file(
 
 Error publish_storage_data(int root_fd, NSString* name, NSData* data) {
   ET_CHECK_OR_RETURN_ERROR(
-      storage_component(name) && data != nil,
+      is_storage_component(name) && data != nil,
       InvalidArgument,
       "Invalid Core AI storage publication");
   NSString* temporary =
@@ -352,7 +423,7 @@ Error publish_storage_data(int root_fd, NSString* name, NSData* data) {
   // Bookmarks are small and costly to lose, so they get a full device flush.
   auto result = write_file(
       root_fd, temporary, data.bytes, data.length, StorageSyncMode::Full);
-  if (result == Error::Ok && storage_call(FaultPoint::Rename, [&] {
+  if (result == Error::Ok && fault_aware_retry(FaultPoint::Rename, [&] {
                                return renameat(
                                    root_fd,
                                    temporary.fileSystemRepresentation,
@@ -365,9 +436,7 @@ Error publish_storage_data(int root_fd, NSString* name, NSData* data) {
   if (result == Error::Ok) {
     // Flush the renamed entry as well as the file's pre-rename contents.
     ET_CHECK_OR_RETURN_ERROR(
-        storage_call(
-            FaultPoint::FullSync,
-            [&] { return fcntl(root_fd, F_FULLFSYNC); }) == 0,
+        full_fsync(root_fd),
         AccessFailed,
         "Cannot fully synchronize Core AI publication directory");
     return Error::Ok;
