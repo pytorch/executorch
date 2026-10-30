@@ -20,3 +20,12 @@ class TestAddOperator(BaseOpenvinoOpTest):
         module = self.create_model()
         sample_input = (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3))
         self.execute_layer_test(module, sample_input)
+
+    def test_add_0d_inputs(self):
+        module = self.create_model()
+        for sample_input in (
+            (torch.randn(2, 3), torch.tensor(2.5)),
+            (torch.tensor(1.5), torch.tensor(2.5)),
+        ):
+            with self.subTest(shapes=[list(x.shape) for x in sample_input]):
+                self.execute_layer_test(module, sample_input)

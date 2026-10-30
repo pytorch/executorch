@@ -27,6 +27,7 @@ from executorch.backends.xnnpack.utils.utils import (
     is_param_node,
     normalize_mean_dims,
     normalize_pool2d_args,
+    why_not_x2_nearest_upsample,
 )
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
@@ -526,6 +527,26 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.upsample_bilinear2d.vec
+
+
+class UpsampleNearest2dConfig(GenericNodePartitionerConfig):
+    target_name = "upsample_nearest2d.vec"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        reason = why_not_x2_nearest_upsample(node)
+        if reason is not None:
+            why(node, reason=reason)
+            return False
+        return True
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.upsample_nearest2d.vec
 
 
 class ExpConfig(GenericNodePartitionerConfig):

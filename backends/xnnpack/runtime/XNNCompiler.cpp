@@ -1643,6 +1643,39 @@ Error defineConcatenate5Node(
 }
 
 /*
+Defines serialized depth_to_space_2d node into the subgraph,
+using the remapped ids to map the serialized ids,
+to the new ids generated when defining the tensor value
+*/
+Error defineDepthToSpace2dNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node,
+    const fb_xnnpack::XNNGraph* graph) noexcept {
+  MAYBE_UNUSED(graph);
+
+  auto graph_node = node->xnode_union_as_XNNDepthToSpace2d();
+
+  REMAP_ID(remapped_ids, graph_node->input_id(), d2s_input);
+  REMAP_ID(remapped_ids, graph_node->output_id(), d2s_output);
+
+  xnn_status status = xnn_define_depth_to_space_2d(
+      subgraph_ptr,
+      graph_node->block_size(),
+      d2s_input,
+      d2s_output,
+      graph_node->flags());
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create depth_to_space node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
 Defines serialized static_slice node into the subgraph,
 using the remapped ids to map the serialized ids,
 to the new ids generated when defining the tensor value
@@ -2052,6 +2085,7 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(Convert)
     _DEFINE(GlobalAvgPooling2d)
     _DEFINE(StaticReshape)
+    _DEFINE(DepthToSpace2d)
     _DEFINE(ArgMaxPooling2d)
     _DEFINE(Concatenate2)
     _DEFINE(Concatenate3)
@@ -2131,7 +2165,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
     XNNWeightsCache* weights_cache,
     xnn_workspace_t workspace,
     const NamedDataMap* named_data_map,
-    bool use_weight_cache) {
+    const XNNCompilerOptions& options) {
   Result<XNNHeader> header = XNNHeader::Parse(buffer_pointer, num_bytes);
   const uint8_t* flatbuffer_data = nullptr;
   const uint8_t* constant_data = nullptr;
@@ -2239,7 +2273,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
     // With the weights cache the buffers land in the cache rather than in
     // unpacked_buffers, so track its list too.
     size_t prev_cached_buffers =
-        use_weight_cache ? weights_cache->get_num_unpacked_data() : 0;
+        options.use_weight_cache ? weights_cache->get_num_unpacked_data() : 0;
     err = defineTensor(
         subgraph.get(),
         remapped_ids,
@@ -2253,7 +2287,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
         named_data_map,
         unpacked_buffers,
         weights_cache,
-        use_weight_cache);
+        options.use_weight_cache);
 
     if (err != Error::Ok) {
       return err;
@@ -2268,7 +2302,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
         executor->unpacked_buffers_.push_back(std::move(unpacked_buffers[i]));
       }
       unpacked_buffers.resize(prev_buffers);
-      if (use_weight_cache) {
+      if (options.use_weight_cache) {
         weights_cache->take_unpacked_data_from(
             prev_cached_buffers, executor->unpacked_buffers_);
       }
@@ -2288,10 +2322,20 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   runtime_flags |= XNN_FLAG_BASIC_PROFILING;
 #endif
 
+  if (options.disable_packed_lhs) {
+#if defined(XNN_FLAG_NO_PACKED_LHS)
+    runtime_flags |= XNN_FLAG_NO_PACKED_LHS;
+#else
+    ET_LOG(
+        Error,
+        "Ignoring disable_packed_lhs: this XNNPACK build does not support it");
+#endif
+  }
+
   xnn_runtime_t runtime_ptr = nullptr;
 
   xnn_weights_cache_t weights_cache_ptr = nullptr;
-  if (use_weight_cache) {
+  if (options.use_weight_cache) {
     ET_CHECK_OR_RETURN_ERROR(
         unpacked_buffers.size() == 0,
         Internal,
@@ -2319,7 +2363,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       xnn_status_to_string(status));
 
   std::vector<std::string> packed_weights_names;
-  if (use_weight_cache) {
+  if (options.use_weight_cache) {
     // Constants XNNPACK does not pack were already moved to the executor in
     // the value loop above, so everything left here is safe to free.
     auto packed_weights_names_result = weights_cache->finalize_for_runtime();

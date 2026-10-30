@@ -239,7 +239,9 @@ int main(int argc, char** argv) {
   config.prefix_cache_capacity = prefix_cache ? 2 : 0;
   executor.capacity = static_cast<int>(
       config.max_sessions +
-      (prefix_cache ? config.prefix_cache_capacity + 1 : 0));
+      (prefix_cache
+           ? config.prefix_cache_capacity + config.resolved_prefix_captures()
+           : 0));
   if (stop_immediately) {
     config.default_stop_tokens = {9};
   }

@@ -6,6 +6,7 @@
 
 import contextlib
 import os
+import tempfile
 import threading
 import unittest
 from typing import Tuple
@@ -234,6 +235,60 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid cuda_include_ptx"):
             CudaBackend.get_aoti_compile_options(
                 [CompileSpec(key="cuda_include_ptx", value=b"MAYBE")]
+            )
+
+    def test_invalid_data_name_compile_spec(self):
+        for name in (
+            "",
+            "..",
+            ".hidden",
+            "../outside",
+            "a/b",
+            "a\\b",
+            "a/../../outside",
+            "C:model",
+            "model?",
+            "nul",
+            "COM1.txt",
+            "a" * 201,
+            # Non-ASCII letters that IGNORECASE alone would let through.
+            "\u212a" * 200,
+            "\u017fizes",
+            "\u0130d",
+            "\u0131d",
+            "-enc",
+            # One writer turns "encoder.ptd" into the same file as "encoder".
+            # The check ignores case, like the rest of the pattern.
+            "encoder.ptd",
+            "encoder.PTD",
+        ):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "Invalid data name"):
+                    CudaBackend.generate_data_name_compile_spec(name)
+                with self.assertRaisesRegex(ValueError, "Invalid data name"):
+                    CudaBackend.data_name_from_compile_specs(
+                        [CompileSpec(key="data_name", value=name.encode())]
+                    )
+        # A backend that keeps its data in the .pte would ignore the name.
+        with patch.object(CudaBackend, "save_data_externally", return_value=False):
+            with self.assertRaisesRegex(ValueError, "takes no data name"):
+                CudaBackend.generate_data_name_compile_spec("encoder")
+
+    def test_valid_data_name_compile_spec(self):
+        self.assertEqual(CudaBackend.data_name_from_compile_specs([]), "aoti_cuda_blob")
+        for name in ("encoder", "model_sm80", "v1.2-final", "a" * 200, "x.ptd.bak"):
+            with self.subTest(name=name):
+                spec = CudaBackend.generate_data_name_compile_spec(name)
+                self.assertEqual(CudaBackend.data_name_from_compile_specs([spec]), name)
+
+    def test_methods_of_one_program_must_share_a_data_name(self):
+        def specs(name):
+            return [[CudaBackend.generate_data_name_compile_spec(name)]]
+
+        with self.assertRaisesRegex(ValueError, "same data name"):
+            CudaBackend.preprocess_multimethod(
+                {"forward": [None], "second": [None]},
+                {"forward": specs("first"), "second": specs("second")},
             )
 
 
@@ -653,23 +708,63 @@ class TestCudaExport(unittest.TestCase):
             "SDPA kernel export with triton_kernel_mode=OFF failed",
         )
 
-    def test_missing_scatter_and_index_put_kernels_fail_at_export(self):
-        """Inductor leaves these int64 ops to ATen kernels the CUDA shim lacks."""
+    def test_missing_scatter_kernel_fails_at_export(self):
+        """Inductor leaves int64 scatter_add to an ATen kernel the CUDA shim lacks."""
 
-        class Int64Accumulate(torch.nn.Module):
+        class Int64ScatterAdd(torch.nn.Module):
             def forward(self, counts: torch.Tensor, idx: torch.Tensor):
-                ones = torch.ones_like(idx)
-                return (
-                    counts.scatter_add(0, idx, ones),
-                    counts.index_put((idx,), ones, accumulate=True),
-                )
+                return counts.scatter_add(0, idx, torch.ones_like(idx))
 
         inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
         with self.assertRaises(RuntimeError) as context:
-            self._export_to_cuda_with_lower(Int64Accumulate(), inputs)
-        message = str(context.exception)
-        self.assertIn("aoti_torch_cuda_scatter_reduce_two_out", message)
-        self.assertIn("aoti_torch_index_put_out", message)
+            self._export_to_cuda_with_lower(Int64ScatterAdd(), inputs)
+        self.assertIn("aoti_torch_cuda_scatter_reduce_two_out", str(context.exception))
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_mask_index_and_index_put(self):
+        """A mask index makes the result size depend on the data, and Inductor
+        has no atomic add for int64, so these run in the index shims."""
+        from executorch.runtime import Runtime
+
+        class MaskIndex(torch.nn.Module):
+            def forward(self, x, mask, column, idx, counts):
+                out = x.clone()
+                out[mask] = x[mask] * 2
+                # The mask and column index dims 0 and 2, which are not adjacent.
+                picked = x[mask, :, column].sum(0)
+                # A transposed input gives a result that is not row-major.
+                rows = x.transpose(1, 2)[mask] * 3
+                ones = torch.ones_like(idx)
+                counts = counts.index_put((idx,), ones, accumulate=True)
+                return out, picked, rows, counts
+
+        model = MaskIndex()
+        x = torch.randn(4, 5, 6)
+        column = torch.tensor([2])
+        idx = torch.tensor([0, 3, 3, 1, 3])
+        # Nonzero counts check that repeated writes add to the old values.
+        counts = torch.arange(8) * 5
+        masks = (
+            torch.tensor([True, False, True, True]),
+            torch.zeros(4, dtype=torch.bool),
+            torch.ones(4, dtype=torch.bool),
+        )
+        edge = self._export_to_cuda_with_lower(
+            model, (x, masks[0], column, idx, counts)
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            method = Runtime.get().load_program(path).load_method("forward")
+            for mask in masks:
+                inputs = (x, mask, column, idx, counts)
+                outputs = method.execute(list(inputs))
+                for output, expected in zip(outputs, model(*inputs), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected)
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """
