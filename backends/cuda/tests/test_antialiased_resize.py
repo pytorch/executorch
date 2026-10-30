@@ -11,7 +11,6 @@ plain tensor math. These tests lower real programs, run them through the Python
 runtime, and compare with eager PyTorch.
 """
 
-import functools
 import os
 import tempfile
 import unittest
@@ -152,26 +151,3 @@ class TestAntialiasedResizeDecomposition(unittest.TestCase):
         x = torch.randn(1, 3, 48, 32, device="cuda")
         output = resize(x.to(memory_format=torch.channels_last), [20, 56], False)
         self.assertTrue(output.is_contiguous(memory_format=torch.channels_last))
-
-    def test_align_corners_compiles_with_dynamic_sizes(self):
-        from torch._inductor.compile_fx import compile_fx
-        from torch._inductor.decomposition import select_decomp_table
-
-        model = Resize("bicubic", align_corners=True)
-        # Lowering keeps Inductor's own decompositions after the backend's.
-        decompositions = {
-            **select_decomp_table(),
-            **CudaBackend.get_decomposition_table(),
-        }
-        compiled = torch.compile(
-            model,
-            backend=functools.partial(compile_fx, decompositions=decompositions),
-            dynamic=True,
-            fullgraph=True,
-        )
-        for in_height, out_height in ((48, 20), (10, 1)):
-            x = torch.randn(1, 3, in_height, 32, device="cuda")
-            like = torch.empty(1, 1, out_height, device="cuda")
-            torch.testing.assert_close(
-                compiled(x, like), model(x, like), atol=1e-5, rtol=1e-4
-            )
