@@ -289,6 +289,20 @@ def test_i64_to_i32(request, kwargs):
     I64toI32.test(request, kwargs)  # noqa: F405
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"backend_type": QnnExecuTorchBackendType.kHtpBackend},
+            id=str(QnnExecuTorchBackendType.kHtpBackend),
+        )
+    ],
+)
+@repack_pass_fixtures
+def test_insert_cast_for_fp_act_quantized_weight(request, kwargs):
+    InsertCastForFpActQuantizedWeight.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_backends([QnnExecuTorchBackendType.kHtpBackend])
 @repack_pass_fixtures
 def test_insert_io_qdq(request, kwargs):
