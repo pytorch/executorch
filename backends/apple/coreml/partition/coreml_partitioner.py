@@ -804,9 +804,9 @@ class CoreMLPartitioner(Partitioner):
 
         # An op that partition() leaves out runs on the CPU, so it is not
         # preserved: it is decomposed into core ATen ops, the op set the
-        # portable kernels target, unless it is one already. Here only uint8
-        # and int8 graph inputs leave ops out, so a graph without one needs no
-        # extra partitioning.
+        # portable kernels target, unless it is a core op with no default
+        # decomposition. Here only uint8 and int8 graph inputs leave ops out,
+        # so a graph without one needs no extra partitioning.
         left_out = set()
         if any(
             node.op == "placeholder" and _cannot_be_coreml_input(node)
@@ -820,6 +820,7 @@ class CoreMLPartitioner(Partitioner):
                 self._allows_partitions_without_inputs(),
                 graph_inputs_only=True,
             )
+        decomposed_by_default = _default_decomposition_table() if left_out else {}
         rejected = set()
         for node in ep.graph.nodes:
             if node.op == "call_function" and isinstance(
@@ -828,7 +829,9 @@ class CoreMLPartitioner(Partitioner):
                 if not is_supported(None, node):
                     rejected.add(node.target)
                 elif node in left_out:
-                    if torch.Tag.core not in node.target.tags:
+                    if torch.Tag.core not in node.target.tags or (
+                        node.target in decomposed_by_default
+                    ):
                         self.log_once(
                             f"{node.target} runs outside of CoreML here because "
                             "of a tensor CoreML cannot take as an input, so every "
