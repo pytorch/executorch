@@ -659,7 +659,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
                     out = program.load_method("forward").execute((x,))[0]
                     self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
                 with self.assertRaisesRegex(
-                    NotImplementedError, "dtype CoreML cannot take"
+                    NotImplementedError, "image \\(torch\\.u?int8\\)"
                 ):
                     executorch.exir.to_edge_transform_and_lower(
                         ep, partitioner=[CoreMLPartitioner(lower_full_graph=True)]
@@ -970,6 +970,46 @@ class TestCoreMLPartitioner(unittest.TestCase):
                     program = Runtime.get().load_program(buffer)
                     out = program.load_method("forward").execute((x,))[0]
                     self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
+
+    def test_ops_after_a_cpu_op_on_a_tensor_made_inside(self):
+        """
+        A uint8 tensor made in Core ML and passed through an op that stays on
+        the CPU, such as diagonal, sends the pad after it to the CPU too.  The
+        pad is decomposed there, since the portable kernels have no pad, and so
+        is a pad that makes an int8 model output.
+        """
+
+        class DiagonalPad(torch.nn.Module):
+            def forward(self, x):
+                d = torch.diagonal((x * 255).to(torch.uint8), 0, 2, 3)
+                return torch.nn.functional.pad(d, (1, 1)).float() / 255.0
+
+        class PadInt8(torch.nn.Module):
+            def forward(self, x):
+                return torch.nn.functional.pad(x.to(torch.int8), (1, 1))
+
+        for model, x in (
+            (DiagonalPad(), torch.rand(1, 3, 8, 8)),
+            (PadInt8(), torch.randint(-50, 50, (1, 3, 8)).float()),
+        ):
+            with self.subTest(model=type(model).__name__):
+                ep = torch.export.export(model.eval(), (x,), strict=True)
+                edge = executorch.exir.to_edge_transform_and_lower(
+                    ep, partitioner=[CoreMLPartitioner()]
+                )
+                op_names = [
+                    n.target.__name__
+                    for n in edge.exported_program().graph.nodes
+                    if n.op == "call_function"
+                ]
+                self.assertIn("aten.constant_pad_nd.default", op_names)
+                buffer = edge.to_executorch().buffer
+                if _TEST_RUNTIME:
+                    program = Runtime.get().load_program(buffer)
+                    out = program.load_method("forward").execute((x,))[0]
+                    self.assertTrue(
+                        torch.allclose(out.float(), model(x).float(), atol=1e-2)
+                    )
 
     def test_tied_embedding_is_quantized_with_its_linear(self):
         """A weight that is both an embedding table and an output projection lowers.

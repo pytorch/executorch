@@ -249,8 +249,12 @@ def _find_readers_of_unsupported_inputs(
     }
 
 
-def _find_makers_of_int8_outputs(partitions: List[Partition]) -> Set[torch.fx.Node]:
-    """The nodes that make an int8 tensor read outside their partition.
+def _find_makers_of_int8_outputs(
+    partitions: List[Partition],
+    readers: Optional[Collection[torch.fx.Node]] = None,
+) -> Set[torch.fx.Node]:
+    """The nodes that make an int8 tensor read outside their partition, by the
+    graph output or, with readers, by one of those nodes.
 
     Such a tensor becomes a Core ML output, and the Core ML runtime cannot
     return int8.
@@ -259,7 +263,12 @@ def _find_makers_of_int8_outputs(partitions: List[Partition]) -> Set[torch.fx.No
         node
         for partition in partitions
         for node in partition.nodes
-        if _makes_int8(node) and any(u not in partition.nodes for u in node.users)
+        if _makes_int8(node)
+        and any(
+            u not in partition.nodes
+            and (readers is None or u.op == "output" or u in readers)
+            for u in node.users
+        )
     }
 
 
@@ -269,21 +278,27 @@ def _makes_int8(node: torch.fx.Node) -> bool:
     return any(isinstance(v, torch.Tensor) and v.dtype == torch.int8 for v in vals)
 
 
-def _cpu_nodes_from_graph_inputs(
-    graph: torch.fx.Graph, partitions: List[Partition], kept_inside: Collection[str]
+def _lasting_cpu_sources(
+    graph: torch.fx.Graph,
+    partitions: List[Partition],
+    kept_inside: Collection[str],
+    decomposed: Collection[torch._ops.OpOverload],
 ) -> Set[torch.fx.Node]:
-    """uint8 and int8 graph inputs, and the nodes outside Core ML that read
-    them, directly or through other such nodes."""
+    """The nodes whose outputs still come from outside Core ML once the graph is
+    decomposed: uint8 and int8 graph inputs, ops outside Core ML that have no
+    default decomposition, and ops outside Core ML that read such a node.
+    """
     in_partition = {node for partition in partitions for node in partition.nodes}
     found = set()
     for node in graph.nodes:
         if node.op == "placeholder":
             if node.name not in kept_inside and _cannot_be_coreml_input(node):
                 found.add(node)
-        elif node not in in_partition and any(
-            arg in found for arg in node.all_input_nodes
-        ):
-            found.add(node)
+        elif node.op == "call_function" and node not in in_partition:
+            if node.target not in decomposed or any(
+                arg in found for arg in node.all_input_nodes
+            ):
+                found.add(node)
     return found
 
 
@@ -331,19 +346,19 @@ def _propose_partitions(
     kept_inside: Collection[str],
     state: Collection[str],
     allow_partitions_without_inputs: bool,
-    graph_inputs_only: bool = False,
+    before_decomposition: bool = False,
 ) -> Tuple[List[Partition], Set[torch.fx.Node]]:
     """Propose Core ML partitions, leaving out every op that reads a tensor
     Core ML cannot take as an input from outside its partition, and then every
     partition this leaves without a tensor input.
 
-    graph_inputs_only follows only the uint8 and int8 tensors that come from
-    graph inputs through ops outside Core ML. On a graph before decomposition,
-    any other boundary can still go away, for example when an op Core ML
-    rejects decomposes into ops it takes.
+    On a graph before decomposition, a boundary can still go away, for example
+    when an op Core ML rejects decomposes into ops it takes, so then only the
+    boundaries that last are followed.
 
     Returns the partitions and the ops left out.
     """
+    decomposed = _default_decomposition_table() if before_decomposition else {}
     left_out: Set[torch.fx.Node] = set()
     support = chain(create_op_support(lambda _, node: node not in left_out), op_support)
     # Each op moved out of Core ML can hand such a tensor to the next op, so
@@ -352,13 +367,13 @@ def _propose_partitions(
         partitions = CapabilityBasedPartitioner(
             graph_module, support, allows_single_node_partition=True
         ).propose_partitions()
-        if graph_inputs_only:
-            sources = _cpu_nodes_from_graph_inputs(
-                graph_module.graph, partitions, kept_inside
+        if before_decomposition:
+            sources = _lasting_cpu_sources(
+                graph_module.graph, partitions, kept_inside, decomposed
             )
             new = _find_readers_of_unsupported_inputs(
                 partitions, kept_inside, left_out, sources
-            )
+            ) | _find_makers_of_int8_outputs(partitions, sources)
         else:
             new = _find_readers_of_unsupported_inputs(
                 partitions, kept_inside, left_out
@@ -684,8 +699,8 @@ class CoreMLPartitioner(Partitioner):
                 }
             )
             msg = (
-                "The model reads a tensor whose dtype CoreML cannot take as an "
-                "input, such as uint8 or int8, from outside a CoreML partition: "
+                "The model reads a uint8 or int8 tensor, which CoreML cannot take "
+                "as an input, from outside a CoreML partition: "
                 + ", ".join(inputs)
                 + "."
             )
@@ -805,20 +820,17 @@ class CoreMLPartitioner(Partitioner):
         # An op that partition() leaves out runs on the CPU, so it is not
         # preserved: it is decomposed into core ATen ops, the op set the
         # portable kernels target, unless it is a core op with no default
-        # decomposition. Here only uint8 and int8 graph inputs leave ops out,
-        # so a graph without one needs no extra partitioning.
+        # decomposition. Ops are only left out because of a uint8 or int8
+        # tensor, so a graph without one needs no extra partitioning.
         left_out = set()
-        if any(
-            node.op == "placeholder" and _cannot_be_coreml_input(node)
-            for node in ep.graph.nodes
-        ):
+        if any(_cannot_be_coreml_input(node) for node in ep.graph.nodes):
             _, left_out = _propose_partitions(
                 ep.graph_module,
                 create_op_support(is_supported),
                 self._placeholders_kept_inside(ep),
                 self._state_kept_inside(ep),
                 self._allows_partitions_without_inputs(),
-                graph_inputs_only=True,
+                before_decomposition=True,
             )
         decomposed_by_default = _default_decomposition_table() if left_out else {}
         rejected = set()
