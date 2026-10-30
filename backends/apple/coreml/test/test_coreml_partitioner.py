@@ -1006,9 +1006,10 @@ class TestCoreMLPartitioner(unittest.TestCase):
     def test_ops_after_a_cpu_op_on_a_tensor_made_inside(self):
         """
         A uint8 tensor made in Core ML and passed through an op that stays on
-        the CPU, such as diagonal, sends the pad after it to the CPU too.  The
-        pad is decomposed there, since the portable kernels have no pad, and so
-        is a pad that makes an int8 model output.
+        the CPU, such as diagonal, a skipped flip or view, or an add that
+        reads it from another partition past acosh, sends the pad after it to
+        the CPU too.  The pad is decomposed there, since the portable kernels have no
+        pad, and so is a pad that makes an int8 model output.
         """
 
         class DiagonalPad(torch.nn.Module):
@@ -1016,18 +1017,40 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 d = torch.diagonal((x * 255).to(torch.uint8), 0, 2, 3)
                 return torch.nn.functional.pad(d, (1, 1)).float() / 255.0
 
+        class FlipPad(torch.nn.Module):
+            def forward(self, x):
+                d = (x * 255).to(torch.uint8).flip(-1)
+                return torch.nn.functional.pad(d, (1, 1)).float() / 255.0
+
+        class ViewPad(torch.nn.Module):
+            def forward(self, x):
+                d = (x * 255).to(torch.uint8).view(1, 3, 8)
+                return torch.nn.functional.pad(d, (1, 1)).float() / 255.0
+
+        class AcoshPad(torch.nn.Module):
+            def forward(self, x):
+                d = (x * 255).to(torch.uint8)
+                d = d + torch.acosh(d.float() + 2).to(torch.uint8)
+                return torch.nn.functional.pad(d, (1, 1)).float() / 255.0
+
         class PadInt8(torch.nn.Module):
             def forward(self, x):
-                return torch.nn.functional.pad(x.to(torch.int8), (1, 1))
+                return torch.nn.functional.pad((x * 2).to(torch.int8), (1, 1))
 
-        for model, x in (
-            (DiagonalPad(), torch.rand(1, 3, 8, 8)),
-            (PadInt8(), torch.randint(-50, 50, (1, 3, 8)).float()),
+        for model, x, skip in (
+            (DiagonalPad(), torch.rand(1, 3, 8, 8), None),
+            (FlipPad(), torch.rand(1, 3, 8), ["aten.flip.default"]),
+            (ViewPad(), torch.rand(1, 3, 2, 4), ["aten.view_copy.default"]),
+            (AcoshPad(), torch.rand(1, 3, 8), None),
+            (PadInt8(), torch.randint(-25, 25, (1, 3, 8)).float(), None),
         ):
             with self.subTest(model=type(model).__name__):
                 ep = torch.export.export(model.eval(), (x,), strict=True)
                 edge = executorch.exir.to_edge_transform_and_lower(
-                    ep, partitioner=[CoreMLPartitioner()]
+                    ep,
+                    partitioner=[
+                        CoreMLPartitioner(skip_ops_for_coreml_delegation=skip)
+                    ],
                 )
                 op_names = [
                     n.target.__name__
@@ -1035,6 +1058,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
                     if n.op == "call_function"
                 ]
                 self.assertIn("aten.constant_pad_nd.default", op_names)
+                self.assertIn("executorch_call_delegate", op_names)
                 buffer = edge.to_executorch().buffer
                 if _TEST_RUNTIME:
                     program = Runtime.get().load_program(buffer)
