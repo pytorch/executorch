@@ -35,7 +35,8 @@ delegate refuses a method that uses CUDA graphs inside a block. A ``Stream``
 is checked on the device it was created on, whatever wrapper selects it. Any
 other stream is refused if its wrapper reports another device. When ExecuTorch
 is built with CUDA 13 or newer, its device is also read from the stream
-itself, so it is refused even if its wrapper does not say so. This module
+itself, so it is refused even if its wrapper does not say so, except while
+the stream captures a CUDA graph, when CUDA cannot be asked. This module
 does not need PyTorch; ``torch.cuda.Stream`` works because it has
 ``__cuda_stream__``.
 

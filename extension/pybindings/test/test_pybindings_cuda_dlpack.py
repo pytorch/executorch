@@ -386,6 +386,20 @@ class CudaDLPackTest(unittest.TestCase):
                 with cuda.stream(selected):
                     pass
 
+    def test_stream_block_leaves_a_graph_capture_intact(self):
+        from executorch.runtime import cuda
+
+        x = torch.ones(4, device="cuda")
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            y = x * 2
+            with cuda.stream(torch.cuda.current_stream()):
+                pass
+        x.fill_(3)
+        graph.replay()
+        torch.cuda.synchronize()
+        self.assertEqual(y.tolist(), [6.0] * 4)
+
     @staticmethod
     def _close_after_teardown(stream):
         import threading

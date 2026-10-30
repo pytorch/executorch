@@ -1886,13 +1886,23 @@ class PyCallerStreamScope final {
 
  private:
   // Asks CUDA for the device of a stream rather than trusting the device a
-  // wrapper reports. Returns false when this build cannot ask.
+  // wrapper reports. Returns false when it cannot ask: in a CUDA 12 build, or
+  // while the stream captures a CUDA graph.
   static bool stream_device(cudaStream_t stream, int* device) {
     // cudaStreamGetDevice came in CUDA 12.8, but a CUDA 12 build may load any
     // CUDA 12 runtime, where a missing symbol would fail the import. Every
     // CUDA 13 runtime has it, and runs only on a driver that supports it.
 #if defined(CUDART_VERSION) && CUDART_VERSION >= 13000
-    const auto status = cudaStreamGetDevice(stream, device);
+    // CUDA refuses cudaStreamGetDevice on a capturing stream, and the refusal
+    // also ends the caller's capture.
+    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+    auto status = cudaStreamIsCapturing(stream, &capture);
+    if (status == cudaSuccess && capture != cudaStreamCaptureStatusNone) {
+      return false;
+    }
+    if (status == cudaSuccess) {
+      status = cudaStreamGetDevice(stream, device);
+    }
     if (status != cudaSuccess) {
       // A failed call leaves an error pending that the next CUDA call, even
       // in another library, would report.
