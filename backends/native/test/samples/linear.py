@@ -14,6 +14,7 @@ from executorch.backends.native.test.samples.cases import (
     facto_cases,
     suite_cases,
 )
+from executorch.backends.native.test.samples.schemes import GGUF_SUPER_SCALES
 from executorch.backends.test.suite.operators import test_linear
 from executorch.extension.llm.export.gguf import QK_K
 from facto.inputgen.argument.type import ArgType
@@ -78,6 +79,17 @@ def _facto_case(name: str, x, weight, bias) -> Case:
     return Case(name, model, [(x,)])
 
 
+class _Parallel(torch.nn.Module):
+    """nn.Linears on one input, each giving its own output."""
+
+    def __init__(self, *linears: torch.nn.Linear) -> None:
+        super().__init__()
+        self.linears = torch.nn.ModuleList(linears)
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        return tuple(m(x) for m in self.linears)
+
+
 def cases() -> list[Case]:
     suite = suite_cases(test_linear, samples=4)
     torch.manual_seed(0)
@@ -100,6 +112,12 @@ def cases() -> list[Case]:
         ),
         Case("outlier_channel", torch.nn.Linear(256, 128), outlier),
         Case("zero_row", torch.nn.Linear(256, 64), zero_row),
+        # One output per family of GGUF super-block scales.
+        Case(
+            "scale_families",
+            _Parallel(*(torch.nn.Linear(256, 32) for _ in GGUF_SUPER_SCALES["q4_k"])),
+            draws(2, (4, 256)),
+        ),
         # FACTO varies one argument at a time, so only every fifth tuple is kept,
         # plus those whose in_features fit GGUF blocks. Its values lie on a 1/8
         # grid, which makes float32 math exact: these cases cover shapes more

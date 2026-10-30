@@ -101,18 +101,40 @@ class Torchao(Scheme):
         return value
 
 
-# fp16 super-block scales by byte offset in each block, kept in fp16's normal
-# range; q4_k's dmin of 8 d centers random weights near zero.
-_GGUF_SUPER_SCALES = {"q4_k": {0: 2**-12, 2: 2**-9}, "q6_k": {208: 2**-12}}
+# Families of fp16 super-block scales by byte offset in each block: powers of
+# two, where q4_k's dmin of 8 d centers random weights near zero, then zero d,
+# negative, rounded and subnormal ones. A model's i-th nn.Linear takes the i-th
+# family, so one nn.Linear per family isolates each in its own output.
+GGUF_SUPER_SCALES = {
+    "q4_k": [
+        {0: 2**-12, 2: 2**-9},
+        {0: 0.0, 2: 2**-9},
+        {0: -(2**-12), 2: -(2**-9)},
+        {0: 3.1e-4, 2: 2.3e-3},
+        {0: 3 * 2**-21, 2: 3 * 2**-18},
+    ],
+    "q6_k": [
+        {208: 2**-12},
+        {208: 0.0},
+        {208: -(2**-12)},
+        {208: 3.1e-4},
+        {208: 3 * 2**-21},
+    ],
+}
 
 
 def _random_blocks(
-    ggml_type: str, rows: int, cols: int, rng: np.random.Generator
+    ggml_type: str,
+    rows: int,
+    cols: int,
+    scales: dict[int, float],
+    rng: np.random.Generator,
 ) -> np.ndarray:
-    """Valid `ggml_type` blocks for a [rows, cols] weight from random bytes."""
+    """Valid `ggml_type` blocks for a [rows, cols] weight from random bytes and
+    the given super-block scales."""
     _, block_bytes = GGML_QUANT_SIZES[GGMLQuantizationType[ggml_type.upper()]]
     raw = rng.integers(0, 256, (rows, cols // QK_K, block_bytes), dtype=np.uint8)
-    for offset, scale in _GGUF_SUPER_SCALES[ggml_type].items():
+    for offset, scale in scales.items():
         raw[..., offset : offset + 2] = np.array([scale], np.float16).view(np.uint8)
     return raw.reshape(rows, -1)
 
@@ -125,10 +147,15 @@ def _load_gguf(model: torch.nn.Module, ggml_type: str) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         path = f"{tmp}/weights.gguf"
         writer = GGUFWriter(path, arch="linear")
-        for i, m in enumerate(linears):
+        families = GGUF_SUPER_SCALES[ggml_type]
+        if len(linears) > len(families):
+            raise ValueError(
+                f"{len(linears)} nn.Linears, {len(families)} {ggml_type} scale families"
+            )
+        for i, (m, scales) in enumerate(zip(linears, families)):
             writer.add_tensor(
                 f"linear.{i}.weight",
-                _random_blocks(ggml_type, *m.weight.shape, rng),
+                _random_blocks(ggml_type, *m.weight.shape, scales, rng),
                 raw_dtype=GGMLQuantizationType[ggml_type.upper()],
             )
         writer.write_header_to_file()
@@ -153,7 +180,8 @@ class Gguf(Scheme):
         return True
 
     def fits(self, model: torch.nn.Module) -> bool:
-        return _fits(model, QK_K)
+        linears = sum(isinstance(m, torch.nn.Linear) for m in model.modules())
+        return _fits(model, QK_K) and linears <= len(GGUF_SUPER_SCALES[self.ggml_type])
 
     def quantize(self, model: torch.nn.Module) -> None:
         _load_gguf(model, self.ggml_type)
