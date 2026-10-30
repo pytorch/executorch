@@ -34,10 +34,10 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the
 [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and
 select it. For Dependency Rule, select **Branch** and enter
-`swiftpm-<version>` for a stable release (for example, `swiftpm-1.4.1`), or
+`swiftpm-<version>` for a stable release (for example, `swiftpm-1.6.0`), or
 `swiftpm-<version>.<YYYYMMDD>` for a
 [nightly build](https://ossci-ios.s3.amazonaws.com/list.html) on a specific date
-(for example, `swiftpm-1.5.0.20260909`). Match this version to the one used to
+(for example, `swiftpm-1.6.0.20261027`). Match this version to the one used to
 export the model.
 
 ![](_static/img/swiftpm_xcode1.png)
@@ -60,7 +60,7 @@ Add a package and target dependencies on ExecuTorch to your package file like th
 // swift-tools-version:5.9
 import PackageDescription
 
-let executorchVersion = "1.4.1" // Match the release used to export the model.
+let executorchVersion = "1.6.0" // Match the release used to export the model.
 
 let package = Package(
   name: "YourPackageName",
@@ -125,7 +125,7 @@ xcode-select --install
 2. Clone ExecuTorch:
 
 ```bash
-git clone -b viable/strict https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules && cd executorch
+git clone -b release/1.6 https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules && cd executorch
 ```
 
 3. Set up [Python](https://www.python.org/downloads/macos/) 3.10+ and activate a virtual environment:
