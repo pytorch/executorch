@@ -18,8 +18,8 @@ using runtime::Result;
 
 constexpr NSUInteger kHashLength = 2 * CC_SHA256_DIGEST_LENGTH;
 constexpr NSUInteger kFixedLength = 2 * (kHashLength + 1);
-constexpr NSUInteger kBookmarkExtensionLength = sizeof(".bookmark") - 1;
-constexpr NSUInteger kMaxKeyLength = NAME_MAX - kBookmarkExtensionLength;
+constexpr NSUInteger kMaxKeyLength =
+    NAME_MAX - (sizeof(kBookmarkExtension) - 1);
 
 static_assert(kCacheEntryLockStripeCount > 0);
 static_assert(kCacheEntryLockStripeCount <= 256);
@@ -74,13 +74,11 @@ Result<NSString*> hash_data(NSData* data) {
   return [result copy];
 }
 
-Result<NSString*>
-model_key(NSString* digest, NSString* bundle_name, bool aot_compiled) {
-  ET_CHECK_OR_RETURN_ERROR(
-      lowercase_hex(digest, kHashLength) && relative_path(bundle_name) &&
-          ![bundle_name containsString:@"/"],
-      DelegateInvalidCompatibility,
-      "Invalid Core AI bundle identity");
+Result<NSString*> compute_bundle_identity(
+    NSString* digest,
+    NSString* bundle_name,
+    bool aot_compiled) {
+  // Bumping the leading version makes every existing cache entry unreachable.
   auto encoded = encode_json(
       @[ @"1", digest, aot_compiled ? @"aot" : @"source", bundle_name ]);
   if (!encoded.ok()) {
@@ -91,7 +89,7 @@ model_key(NSString* digest, NSString* bundle_name, bool aot_compiled) {
 
 Result<NSData*> utf8_data(NSString* value) {
   ET_CHECK_OR_RETURN_ERROR(
-      nonempty_string(value),
+      is_nonempty_string(value),
       DelegateInvalidCompatibility,
       "Missing Core AI cache specialization");
   NSData* data = [value dataUsingEncoding:NSUTF8StringEncoding];
@@ -113,8 +111,8 @@ bool is_cache_key(NSString* key) {
   }
   NSString* model = [key substringToIndex:kHashLength];
   NSString* options = [key substringFromIndex:options_start];
-  if (!lowercase_hex(model, kHashLength) ||
-      !lowercase_hex(options, kHashLength)) {
+  if (!is_lowercase_hex(model, kHashLength) ||
+      !is_lowercase_hex(options, kHashLength)) {
     return false;
   }
   return valid_device(
@@ -122,19 +120,22 @@ bool is_cache_key(NSString* key) {
                                   kHashLength + 1, key.length - kFixedLength)]);
 }
 
-NSString* cache_key_model_prefix(NSString* key) {
+NSString* cache_key_bundle_identity(NSString* key) {
   return is_cache_key(key) ? [key substringToIndex:kHashLength] : nil;
 }
 
-Result<NSString*> cache_model_key(
+Result<NSString*> bundle_identity(
     const Manifest& manifest,
     NSString* bundle_name) {
-  return model_key(
-      manifest.bundle_digests[bundle_name], bundle_name, manifest.aot_compiled);
+  NSString* digest = manifest.bundle_digests[bundle_name];
+  ET_CHECK_OR_RETURN_ERROR(
+      digest != nil, InvalidArgument, "Unknown Core AI bundle name");
+  return compute_bundle_identity(digest, bundle_name, manifest.aot_compiled);
 }
 
-Result<NSString*> cache_model_key(const SelectedBundle& bundle) {
-  return model_key(bundle.digest, bundle.bundle_name, bundle.aot_compiled);
+Result<NSString*> bundle_identity(const SelectedBundle& bundle) {
+  return compute_bundle_identity(
+      bundle.digest, bundle.bundle_name, bundle.aot_compiled);
 }
 
 Result<NSString*> cache_variant_key(
@@ -142,12 +143,12 @@ Result<NSString*> cache_variant_key(
     NSString* platform,
     NSString* architecture,
     NSString* specialization_identity) {
-  auto model = cache_model_key(bundle);
+  auto model = bundle_identity(bundle);
   if (!model.ok()) {
     return model.error();
   }
   ET_CHECK_OR_RETURN_ERROR(
-      nonempty_string(platform) && nonempty_string(architecture) &&
+      is_nonempty_string(platform) && is_nonempty_string(architecture) &&
           ![platform containsString:@"_"],
       DelegateInvalidCompatibility,
       "Invalid Core AI cache context");
@@ -173,17 +174,11 @@ Result<NSString*> cache_entry_lock_name(NSString* key) {
   ET_CHECK_OR_RETURN_ERROR(
       is_cache_key(key), InvalidArgument, "Invalid Core AI cache key");
   NSData* encoded = [key dataUsingEncoding:NSUTF8StringEncoding];
-  auto hash = hash_data(encoded);
-  if (!hash.ok()) {
-    return hash.error();
-  }
-  unsigned int first_byte = 0;
-  const bool parsed =
-      [[NSScanner scannerWithString:[hash.get() substringToIndex:2]]
-          scanHexInt:&first_byte];
-  ET_CHECK_OR_RETURN_ERROR(
-      parsed, InvalidExternalData, "Cannot derive Core AI cache lock stripe");
-  const size_t stripe = first_byte % kCacheEntryLockStripeCount;
+  unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+  CC_SHA256(encoded.bytes, static_cast<CC_LONG>(encoded.length), digest);
+  const size_t stripe = digest[0] % kCacheEntryLockStripeCount;
+  // A different stripe scheme needs a new prefix so its files never alias
+  // these.
   return [NSString stringWithFormat:@"stripe-v1-%02zx.lock", stripe];
 }
 

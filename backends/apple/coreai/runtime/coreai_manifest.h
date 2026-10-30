@@ -15,7 +15,7 @@ namespace executorch::backends::coreai {
 
 class Manifest final {
  public:
-  NSString* const model_hash;
+  NSString* const export_hash;
   NSString* const function;
   NSArray<NSString*>* const inputs;
   NSArray<NSString*>* const outputs;
@@ -34,7 +34,7 @@ class Manifest final {
 
  private:
   Manifest(
-      NSString* model_hash,
+      NSString* export_hash,
       NSString* function,
       NSArray<NSString*>* inputs,
       NSArray<NSString*>* outputs,
@@ -50,7 +50,7 @@ class Manifest final {
 
 class SelectedBundle final {
  public:
-  NSString* const model_hash;
+  NSString* const export_hash;
   NSString* const path;
   NSString* const bundle_name;
   NSString* const digest;
@@ -71,7 +71,7 @@ class SelectedBundle final {
       NSString* path,
       NSDictionary<NSString*, NSNumber*>* files);
 
-  friend runtime::Result<SelectedBundle> select_assets(
+  friend runtime::Result<SelectedBundle> select_bundle(
       const Manifest& manifest,
       NSString* device_architecture,
       NSString* platform);
@@ -79,7 +79,7 @@ class SelectedBundle final {
 
 runtime::Result<Manifest> parse_manifest(NSData* data);
 runtime::Result<Manifest> parse_manifest(const void* data, size_t size);
-runtime::Result<SelectedBundle> select_assets(
+runtime::Result<SelectedBundle> select_bundle(
     const Manifest& manifest,
     NSString* device_architecture,
     NSString* platform);
