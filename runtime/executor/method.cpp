@@ -1528,13 +1528,14 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
     return Error::InvalidArgument;
   }
 
+  // A later call can grow a dynamic output back to its upper bound.
   ET_CHECK_OR_RETURN_ERROR(
-      t.nbytes() <= size,
+      tensor_meta->nbytes() <= size,
       InvalidArgument,
       "buffer size: %" ET_PRIsize_t
-      " is smaller then expected tensor size: %" ET_PRIsize_t,
+      " is smaller than the largest output size: %" ET_PRIsize_t,
       size,
-      t.nbytes());
+      tensor_meta->nbytes());
 
   // Set data
   return internal::set_tensor_data(t, buffer, size);
