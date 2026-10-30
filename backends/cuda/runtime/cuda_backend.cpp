@@ -1172,6 +1172,17 @@ class ET_EXPERIMENTAL CudaBackend final
       } else {
         // Case (b): AOTI returned its own buffer. D2D copy the result into the
         // planned GPU ET buffer, then free AOTI's buffer.
+        //
+        // A graph replay could not land this output, so run the method eagerly.
+        if (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
+            !output_is_raw_copyable(slim_outputs[i], et_output)) {
+          handle->cuda_graph_state.phase = CudaGraphPhase::Disabled;
+          ET_LOG(
+              Info,
+              "CUDA graph: disabled for '%s', output %zu is not laid out like its ETensor",
+              handle->method_name.c_str(),
+              i);
+        }
         ET_CHECK_OK_OR_RETURN_ERROR(
             copy_slimtensor_to_device_etensor_async(
                 slim_outputs[i], et_output, cuda_stream),
