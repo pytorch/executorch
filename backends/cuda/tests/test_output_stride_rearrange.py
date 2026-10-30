@@ -292,6 +292,20 @@ class _MaskedAdd(nn.Module):
         return x.index_put((mask,), torch.ones(4), accumulate=True)
 
 
+class _HostFlag(nn.Module):
+    """A torch.cond on a flag the program keeps in host memory and updates on
+    every call."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("flag", torch.tensor(False), persistent=False)
+
+    def forward(self, x):
+        picked = torch.cond(self.flag, lambda t: t + t, lambda t: t.neg(), (x,))
+        self.flag.fill_(x.shape[1] > 1)
+        return (picked,)
+
+
 class _Double(nn.Module):
     def __init__(self, memory_format):
         super().__init__()
@@ -400,6 +414,25 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                     else:
                         # InvalidArgument, from the replay's input shape check.
                         self.assertIn("execute() failed with error 0x12", str(out))
+
+    def test_host_state_runs_without_a_graph(self):
+        # A graph would keep the branch of the capture call, and a failed
+        # capture would already have updated the flag before running the call
+        # again, so this method must not use a graph.
+        torch.manual_seed(0)
+        module = _HostFlag().cuda().eval()
+        eager = _HostFlag().cuda().eval()
+        eager.load_state_dict(module.state_dict())
+        inputs = [torch.randn(1, rows, 64) for rows in (1, 1, 1, 50, 50, 50)]
+        rows = torch.export.Dim("rows", min=1, max=64)
+        outputs = self._run_with_cuda_graph(
+            module, (inputs[3].cuda(),), inputs, dynamic_shapes=({1: rows},)
+        )
+        for i, (x, out) in enumerate(zip(inputs, outputs)):
+            with self.subTest(call=i):
+                with torch.no_grad():
+                    expected = eager(x.cuda())[0].cpu()
+                torch.testing.assert_close(out, expected)
 
     def test_mask_runs_without_a_graph(self):
         # A mask index reads its count back to the host, which a capture

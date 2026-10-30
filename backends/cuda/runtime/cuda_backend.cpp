@@ -614,7 +614,16 @@ class ET_EXPERIMENTAL CudaBackend final
     // Initialize CUDA graph state if enabled for this method. Not on a device
     // without memory pools, where the method runs without a graph.
     if (should_use_cuda_graph_for_method(method_name)) {
-      if (handle->cuda_graph_state.start_warmup()) {
+      if (keeps_host_constants(handle)) {
+        // A graph records only the device work of the capture call. Host code,
+        // such as the choice of a torch.cond branch on a flag in host memory,
+        // would be fixed at its value from that call.
+        ET_LOG(
+            Info,
+            "CUDA graph requested for method '%s', but it keeps constants in "
+            "host memory; running without a CUDA graph",
+            method_name.c_str());
+      } else if (handle->cuda_graph_state.start_warmup()) {
         ET_LOG(
             Info,
             "CUDA graph enabled for method '%s' (warmup=%d)",
@@ -828,19 +837,48 @@ class ET_EXPERIMENTAL CudaBackend final
         run_once(handle, args, n_inputs, n_outputs, is_capture_step, graph_ran);
     if (error != Error::Ok && is_capture_step && !graph_ran) {
       // A capture records kernels without running them, so until the new graph
-      // runs, the inputs and any state the program updates are untouched.
+      // runs, the inputs and any state the program updates are untouched. A
+      // program that keeps state in host memory, where host code does run
+      // during a capture, never gets here: init leaves its graph off.
       ET_LOG(
           Info,
           "CUDA graph: capture failed for '%s'; running this call and later "
           "ones without a graph",
           handle->method_name.c_str());
-      error = run_once(handle, args, n_inputs, n_outputs, false, graph_ran);
+      error = run_once(
+          handle,
+          args,
+          n_inputs,
+          n_outputs,
+          /*is_capture_step=*/false,
+          graph_ran);
     }
     ET_CHECK_OK_OR_RETURN_ERROR(error);
     return commit_offgraph_kv_step(handle, kv_step_width);
   }
 
  private:
+  // Whether any constant of the program is in host memory. Unknown counts as
+  // yes.
+  static bool keeps_host_constants(cuda::CudaDelegateHandle* handle) {
+    if (handle->extract_constants_map == nullptr) {
+      return true;
+    }
+    std::unordered_map<std::string, AtenTensorHandle> constants;
+    if (handle->extract_constants_map(
+            handle->container_handle,
+            reinterpret_cast<AOTInductorConstantMapHandle>(&constants),
+            /*use_inactive=*/false) != Error::Ok) {
+      return true;
+    }
+    for (const auto& [fqn, tensor] : constants) {
+      if (reinterpret_cast<SlimTensor*>(tensor)->is_cpu()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Runs the program once. On the capture step it captures the CUDA graph
   // instead, then launches it once, and sets graph_ran once that launch is
   // queued.
