@@ -17,6 +17,10 @@ quantization ranges must be ``[-127, 127]`` because the custom shader stores
 them in SNORM images. The flow tensor may use the full int8 range because the
 shader reads it directly.
 
+An optional immutable FP32 XY multiplication on the selected flow channels is
+performed inside the shader, after flow dequantization. This keeps pixel-unit
+flow available to other consumers without normalizing convolution weights.
+
 """
 
 import logging
@@ -25,6 +29,11 @@ import operator
 from typing import TypeGuard
 
 import torch
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_param_tensor,
+    is_mutable_buffer,
+    is_param_node,
+)
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
     get_output_qparams,
@@ -45,6 +54,7 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
+from torch.export import ExportedProgram
 from torch.fx import GraphModule, Node
 
 logger = logging.getLogger(__name__)
@@ -169,7 +179,15 @@ def _unwrap_quantized_base_grid(node: Node) -> Node | None:
     """
     # The exir FoldRedundantDequantizeQuantizePass has removed a DQ/Q pair after
     # the cat. Ensure the cat has the same input & output qparams before returning.
-    if _target_is(node, "aten.cat.default") and _has_identity_qparams(node):
+    if _target_is(node, "aten.cat.default") and (
+        _has_identity_qparams(node)
+        or (
+            isinstance(node.meta.get("val"), torch.Tensor)
+            and node.meta["val"].dtype == torch.float32
+            and not node.meta.get("input_qparams")
+            and not node.meta.get("output_qparams")
+        )
+    ):
         return node
     if not _target_is(node, "quantized_decomposed.quantize_per_tensor.default"):
         return None
@@ -262,28 +280,109 @@ def _matches_canonical_base_grid(node: Node, *, height: int, width: int) -> bool
     )
 
 
+def _unwrap_flow_normalization(
+    node: Node, exported_program: ExportedProgram | None
+) -> tuple[Node, tuple[float, float]] | None:
+    """Read an optional immutable FP32 XY multiplier on the flow slice.
+
+    Args:
+        node (Node): Flow slice or multiplication feeding the base-grid add.
+        exported_program (ExportedProgram | None): Owner of lifted constants.
+
+    Returns:
+        tuple[Node, tuple[float, float]] | None: Unscaled slice and XY factors,
+        or ``None`` for dynamic, quantized or unsupported multiplication.
+
+    """
+    if _target_is(node, "aten.slice_copy.Tensor"):
+        return node, (1.0, 1.0)
+    if (
+        not _target_is(node, "aten.mul.Tensor")
+        or exported_program is None
+        or len(node.args) != 2
+        or node.kwargs
+        or node.meta.get("input_qparams")
+        or node.meta.get("output_qparams")
+        or not isinstance(node.meta.get("val"), torch.Tensor)
+        or node.meta["val"].dtype != torch.float32
+    ):
+        return None
+    for flow_slice, constant in (node.args, node.args[::-1]):
+        if (
+            not _target_is(flow_slice, "aten.slice_copy.Tensor")
+            or not isinstance(constant, Node)
+            or not is_param_node(exported_program, constant)
+            or is_mutable_buffer(exported_program, constant)
+        ):
+            continue
+        value = get_param_tensor(exported_program, constant)
+        if (
+            value is not None
+            and value.dtype == torch.float32
+            and tuple(value.shape) == (1, 2, 1, 1)
+            and torch.all(torch.isfinite(value) & (value > 0))
+        ):
+            x, y = value.detach().cpu().flatten().tolist()
+            return flow_slice, (x, y)
+    return None
+
+
+def _unwrap_dequantized_flow(flow: Node) -> Node | None:
+    """Unwrap FP32 dequantization only when producer qparams match exactly.
+
+    Args:
+        flow (Node): Flow producer or explicit per-tensor dequantization.
+
+    Returns:
+        Node | None: INT8 producer, or ``None`` for incompatible qparams.
+
+    """
+    if not _target_is(flow, "quantized_decomposed.dequantize_per_tensor.default"):
+        return flow
+    if len(flow.args) != 6 or flow.kwargs.get("out_dtype") not in (None, torch.float32):
+        return None
+    source = flow.args[0]
+    if not isinstance(source, Node):
+        return None
+    try:
+        qparams = next(iter(get_output_qparams(source).values()), None)
+    except ValueError:
+        return None
+    if not _is_per_tensor_int8(qparams) or qparams != QuantArgs.from_operator(
+        flow.target, flow.args
+    ):
+        return None
+    return source
+
+
 def _match_flow_offset_add(
     add: Node,
     *,
     spatial_shape: tuple[int, int],
-) -> tuple[Node, int] | None:
+    exported_program: ExportedProgram | None = None,
+) -> tuple[Node, int, tuple[float, float]] | None:
     """Match ``base_grid + flow[:, i:i + 2]`` in either operand order.
 
     Args:
         add (Node): Candidate addition node.
         spatial_shape (tuple[int, int]): Expected flow height and width.
+        exported_program (ExportedProgram | None): Owner of lifted constants.
 
     Returns:
-        tuple[Node, int] | None: Flow node and first selected channel, or
-        ``None`` when the addition is unsupported.
+        tuple[Node, int, tuple[float, float]] | None: Flow node, first channel
+        and XY factors, or ``None`` when the addition is unsupported.
 
     """
-    for base_grid, flow_slice in (
+    for base_grid, flow_offset in (
         (add.args[0], add.args[1]),
         (add.args[1], add.args[0]),
     ):
-        if not _target_is(flow_slice, "aten.slice_copy.Tensor"):
+        if not isinstance(flow_offset, Node):
             continue
+        unwrapped = _unwrap_flow_normalization(flow_offset, exported_program)
+        if unwrapped is None:
+            continue
+        flow_slice, normalization = unwrapped
         flow, dim, start, end, *step = flow_slice.args
         if (
             not isinstance(flow, Node)
@@ -295,6 +394,9 @@ def _match_flow_offset_add(
         if not isinstance(start, int) or not isinstance(end, int):
             continue
         if (start, end) not in ((0, 2), (2, 4)):
+            continue
+        flow = _unwrap_dequantized_flow(flow)
+        if flow is None:
             continue
         flow_value = flow.meta.get("val")
         if (
@@ -311,23 +413,27 @@ def _match_flow_offset_add(
         if isinstance(base_grid, Node) and _matches_canonical_base_grid(
             base_grid, height=height, width=width
         ):
-            return flow, int(start)
+            return flow, int(start), normalization
     return None
 
 
-def _match_flow_offset_grid(node: Node) -> tuple[Node, int] | None:
+def _match_flow_offset_grid(
+    node: Node, exported_program: ExportedProgram | None = None
+) -> tuple[Node, int, tuple[float, float]] | None:
     """Match a grid sampler that adds flow to a canonical base grid.
 
     The supported sampler uses bilinear interpolation, border padding, and
     ``align_corners=True``. Its grid is the NHWC permutation of a canonical
-    base grid plus flow channels zero-to-one or two-to-three.
+    base grid plus flow channels zero-to-one or two-to-three. An optional
+    constant FP32 XY multiplication is absorbed after flow dequantization.
 
     Args:
         node (Node): Candidate ``aten.grid_sampler_2d`` node.
+        exported_program (ExportedProgram | None): Owner of lifted constants.
 
     Returns:
-        tuple[Node, int] | None: Flow node and first selected channel, or
-        ``None`` when the complete pattern is unsupported.
+        tuple[Node, int, tuple[float, float]] | None: Flow node, first channel
+        and XY factors, or ``None`` for an unsupported pattern.
 
     """
     if node.target != exir_ops.edge.aten.grid_sampler_2d.default:
@@ -366,6 +472,7 @@ def _match_flow_offset_grid(node: Node) -> tuple[Node, int] | None:
             int(input_value.shape[2]),
             int(input_value.shape[3]),
         ),
+        exported_program=exported_program,
     )
 
 
@@ -412,6 +519,65 @@ def _get_flow_offset_qparams(
     return image_qparams, flow_qparams, output_qparams
 
 
+def _get_quantized_sampler_io(
+    node: Node,
+    image_qparams: QuantArgs,
+    output_qparams: QuantArgs,
+) -> tuple[Node, list[Node]] | None:
+    """Match INT8 storage across optional sampler dequantize/quantize nodes.
+
+    Args:
+        node (Node): Grid sampler with annotated quantization parameters.
+        image_qparams (QuantArgs): Expected image input quantization.
+        output_qparams (QuantArgs): Expected sampler output quantization.
+
+    Returns:
+        tuple[Node, list[Node]] | None: INT8 image and removable output
+        quantizers, or ``None`` for incompatible boundaries or storage.
+
+    """
+    image = node.args[0]
+    if not isinstance(image, Node):
+        return None
+    if _target_is(image, "quantized_decomposed.dequantize_per_tensor.default"):
+        expected = (
+            image_qparams.get_scale_per_tensor(),
+            image_qparams.get_zp_per_tensor(),
+            image_qparams.qmin,
+            image_qparams.qmax,
+            torch.int8,
+        )
+        if tuple(image.args[1:]) != expected or image.kwargs.get("out_dtype") not in (
+            None,
+            torch.float32,
+        ):
+            return None
+        image = image.args[0]
+    if (
+        not isinstance(image, Node)
+        or image.meta["val"].dtype != torch.int8
+        or node.meta["val"].dtype not in (torch.int8, torch.float32)
+    ):
+        return None
+    quantizers = []
+    if node.meta["val"].dtype == torch.float32:
+        expected = (
+            output_qparams.get_scale_per_tensor(),
+            output_qparams.get_zp_per_tensor(),
+            output_qparams.qmin,
+            output_qparams.qmax,
+            torch.int8,
+        )
+        for user in node.users:
+            if (
+                not _target_is(user, "quantized_decomposed.quantize_per_tensor.default")
+                or tuple(user.args[1:]) != expected
+            ):
+                return None
+            quantizers.append(user)
+    return image, quantizers
+
+
 class FuseGridSamplerFlowOffsetPass(RewriteGridSamplerToTosaCustomPass):
     """Fuse ``grid_sample(canonical_grid + flow)`` into one custom shader."""
 
@@ -423,10 +589,10 @@ class FuseGridSamplerFlowOffsetPass(RewriteGridSamplerToTosaCustomPass):
         for node in list(graph_module.graph.nodes):
             if node.op != "call_function":
                 continue
-            match = _match_flow_offset_grid(node)
+            match = _match_flow_offset_grid(node, self.exported_program)
             if match is None:
                 continue
-            flow, flow_channel_offset = match
+            flow, flow_channel_offset, normalization = match
             qparams = _get_flow_offset_qparams(node, flow)
             if qparams is None:
                 continue
@@ -436,6 +602,7 @@ class FuseGridSamplerFlowOffsetPass(RewriteGridSamplerToTosaCustomPass):
                 flow,
                 flow_channel_offset,
                 *qparams,
+                flow_normalization=normalization,
             )
             modified = rewritten or modified
 
@@ -454,10 +621,13 @@ class FuseGridSamplerFlowOffsetPass(RewriteGridSamplerToTosaCustomPass):
         image_qparams: QuantArgs,
         flow_qparams: QuantArgs,
         output_qparams: QuantArgs,
+        *,
+        flow_normalization: tuple[float, float] = (1.0, 1.0),
     ) -> bool:
-        input_tensor = node.args[0]
-        if not isinstance(input_tensor, Node):
-            raise RuntimeError("grid sampler image input must be a tensor node")
+        sampler_io = _get_quantized_sampler_io(node, image_qparams, output_qparams)
+        if sampler_io is None or flow.meta["val"].dtype != torch.int8:
+            return False
+        input_tensor, output_quantizers = sampler_io
         input_value = input_tensor.meta["val"]
         output_value = node.meta["val"]
         flow_value = flow.meta["val"]
@@ -480,6 +650,7 @@ class FuseGridSamplerFlowOffsetPass(RewriteGridSamplerToTosaCustomPass):
                 flow_scale=float(flow_qparams.get_scale_per_tensor()),
                 flow_zero_point=int(flow_qparams.get_zp_per_tensor()),
                 flow_channel_offset=flow_channel_offset,
+                flow_normalization=flow_normalization,
             )
         except _FlowOffsetShaderCompilationError as error:
             logger.warning("Skipping flow-offset grid sampler fusion: %s", error)
@@ -543,6 +714,9 @@ class FuseGridSamplerFlowOffsetPass(RewriteGridSamplerToTosaCustomPass):
                 replacement = self._slice_c4_output_to_c3(graph_module, output, node)
         else:
             replacement = output
+        for quantize in output_quantizers:
+            quantize.replace_all_uses_with(replacement)
+            graph.erase_node(quantize)
         node.replace_all_uses_with(replacement)
         graph.erase_node(node)
         return True

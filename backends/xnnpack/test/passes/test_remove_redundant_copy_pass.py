@@ -180,3 +180,72 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             )
             .run_method_and_compare_outputs(qtol=1)
         )
+
+    class FloatCastAroundConv(torch.nn.Module):
+        """fp32 I/O around an fp16 conv: the casts share the layout tags of the
+        copies next to them and must not be removed as same-layout copies."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 3, 3).half()
+
+        def forward(self, x):
+            return self.conv(x.to(torch.float16)).to(torch.float32)
+
+    class FloatCastRoundTrip(torch.nn.Module):
+        def forward(self, x):
+            return x.to(torch.float16).to(torch.float32)
+
+    class ChannelsLastAfterFloatCast(torch.nn.Module):
+        """conv -> fp16 cast -> channels_last: the layout copy behind the cast
+        is NHWC -> NHWC and must still be removed, or the delegate transposes
+        the already-NHWC data a second time."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, 3, padding=1)
+
+        def forward(self, x):
+            return self.conv(x).to(torch.float16).to(memory_format=torch.channels_last)
+
+    def test_float_cast_around_conv_kept(self):
+        (
+            Tester(self.FloatCastAroundConv(), (torch.randn(1, 3, 8, 8),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten__to_copy_default": 4,
+                }
+            )
+            .run_method_and_compare_outputs(atol=2e-2, rtol=2e-2)
+        )
+
+    def test_channels_last_copy_after_float_cast_removed(self):
+        (
+            Tester(self.ChannelsLastAfterFloatCast(), (torch.randn(1, 3, 8, 8),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten__to_copy_default": 2,
+                }
+            )
+            .run_method_and_compare_outputs(atol=2e-2, rtol=2e-2)
+        )
+
+    def test_float_cast_round_trip_kept(self):
+        (
+            Tester(self.FloatCastRoundTrip(), (torch.randn(1, 3, 8, 8),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten__to_copy_default": 2,
+                }
+            )
+            .run_method_and_compare_outputs(atol=2e-2, rtol=2e-2)
+        )

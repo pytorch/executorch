@@ -129,8 +129,11 @@ if(MSVC AND EXECUTORCH_BUILD_CUDA)
   add_custom_command(
     TARGET voxtral_realtime_runner
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
-            $<TARGET_FILE_DIR:voxtral_realtime_runner>
-    COMMENT "Copying aoti_cuda_shims.dll to voxtral_realtime_runner directory"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_RUNTIME_DLLS:voxtral_realtime_runner>
+      $<TARGET_FILE_DIR:voxtral_realtime_runner>
+    COMMENT "Copying runtime DLLs to voxtral_realtime_runner directory"
+    COMMAND_EXPAND_LISTS
   )
 endif()
