@@ -771,11 +771,23 @@ class ET_EXPERIMENTAL CudaBackend final
         const auto sizes = et_input->sizes();
         const auto& captured = handle->cuda_graph_state.static_input_sizes[i];
         ET_CHECK_OR_RETURN_ERROR(
-            std::equal(
-                sizes.begin(), sizes.end(), captured.begin(), captured.end()),
+            sizes.size() == captured.size(),
             InvalidArgument,
-            "CUDA graph replay: input %zu has a different shape than at capture",
-            i);
+            "CUDA graph replay: input %zu has %zu dims, captured with %zu",
+            i,
+            sizes.size(),
+            captured.size());
+        for (size_t d = 0; d < sizes.size(); d++) {
+          ET_CHECK_OR_RETURN_ERROR(
+              sizes[d] == captured[d],
+              InvalidArgument,
+              "CUDA graph replay: input %zu has size %lld in dim %zu, "
+              "captured with %lld",
+              i,
+              static_cast<long long>(sizes[d]),
+              d,
+              static_cast<long long>(captured[d]));
+        }
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
             handle->cuda_graph_state.static_input_ptrs[i],
             et_input->const_data_ptr(),

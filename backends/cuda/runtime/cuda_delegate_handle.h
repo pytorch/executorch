@@ -118,7 +118,9 @@ struct CudaWeightStorage {
 // - Replay:   The captured `graph_exec` is launched on every execute() call.
 //   Inputs are memcpy'd into the static input buffers, the graph is replayed,
 //   and outputs are memcpy'd back from the static output buffers. No tensor
-//   setup or kernel launches happen on the host hot path.
+//   setup or kernel launches happen on the host hot path. The graph only
+//   works for the input shapes it was captured with, so a call whose input
+//   shapes differ from the capture call fails with InvalidArgument.
 enum class CudaGraphPhase {
   Disabled = 0,
   Warmup = 1,
