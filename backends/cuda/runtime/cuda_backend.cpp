@@ -614,15 +614,17 @@ class ET_EXPERIMENTAL CudaBackend final
     // Initialize CUDA graph state if enabled for this method. Not on a device
     // without memory pools, where the method runs without a graph.
     if (should_use_cuda_graph_for_method(method_name)) {
-      if (keeps_host_constants(handle)) {
+      const std::string host_constants = describe_host_constants(handle);
+      if (!host_constants.empty()) {
         // A graph records only the device work of the capture call. Host code,
         // such as the choice of a torch.cond branch on a flag in host memory,
         // would be fixed at its value from that call.
         ET_LOG(
             Info,
-            "CUDA graph requested for method '%s', but it keeps constants in "
-            "host memory; running without a CUDA graph",
-            method_name.c_str());
+            "CUDA graph requested for method '%s', but %s; running without a "
+            "CUDA graph",
+            method_name.c_str(),
+            host_constants.c_str());
       } else if (handle->cuda_graph_state.start_warmup()) {
         ET_LOG(
             Info,
@@ -845,6 +847,8 @@ class ET_EXPERIMENTAL CudaBackend final
           "CUDA graph: capture failed for '%s'; running this call and later "
           "ones without a graph",
           handle->method_name.c_str());
+      // The capture guard turned graphs off, so later calls run eagerly too.
+      ET_DCHECK(handle->cuda_graph_state.phase == CudaGraphPhase::Disabled);
       error = run_once(
           handle,
           args,
@@ -858,25 +862,27 @@ class ET_EXPERIMENTAL CudaBackend final
   }
 
  private:
-  // Whether any constant of the program is in host memory. Unknown counts as
-  // yes.
-  static bool keeps_host_constants(cuda::CudaDelegateHandle* handle) {
+  // Names a constant of the program in host memory, or says that the
+  // constants could not be listed, since unknown counts as host memory.
+  // Empty when every constant is on the device.
+  static std::string describe_host_constants(cuda::CudaDelegateHandle* handle) {
+    const char* unlisted = "its constants could not be listed";
     if (handle->extract_constants_map == nullptr) {
-      return true;
+      return unlisted;
     }
     std::unordered_map<std::string, AtenTensorHandle> constants;
     if (handle->extract_constants_map(
             handle->container_handle,
             reinterpret_cast<AOTInductorConstantMapHandle>(&constants),
             /*use_inactive=*/false) != Error::Ok) {
-      return true;
+      return unlisted;
     }
     for (const auto& [fqn, tensor] : constants) {
       if (reinterpret_cast<SlimTensor*>(tensor)->is_cpu()) {
-        return true;
+        return "constant '" + fqn + "' is in host memory";
       }
     }
-    return false;
+    return "";
   }
 
   // Runs the program once. On the capture step it captures the CUDA graph
