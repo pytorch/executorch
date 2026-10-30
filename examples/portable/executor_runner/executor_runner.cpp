@@ -18,7 +18,14 @@
  * all fp32 tensors.
  */
 
+#include <algorithm>
+#include <array>
+#include <cerrno>
+#include <chrono>
 #include <cstdint>
+#include <cstring>
+#include <iomanip>
+#include <sstream>
 #ifdef ET_BUNDLE_IO_ENABLED
 #include <filesystem>
 #endif // ET_BUNDLE_IO_ENABLED
@@ -43,6 +50,9 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
+#if defined(EXECUTORCH_VGF_IO_STATS) && EXECUTORCH_VGF_IO_STATS
+#include <executorch/backends/arm/runtime/VGFExecutionStats.h>
+#endif
 #ifdef ET_EVENT_TRACER_ENABLED
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #endif // ET_EVENT_TRACER_ENABLED
@@ -96,6 +106,25 @@ DEFINE_string(
     "summary",
     "Output printing mode: 'none' to suppress, 'summary' for first/last 100 elements, 'all' for everything.");
 DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
+
+#if defined(EXECUTORCH_VGF_IO_STATS) && EXECUTORCH_VGF_IO_STATS
+DEFINE_string(
+    vgf_perf_json,
+    "",
+    "Write VGF zero-copy benchmark JSON. Non-empty enables persistent aligned "
+    "boundary buffers and the benchmark loop.");
+DEFINE_uint32(vgf_perf_warmups, 20, "VGF perf warmup forwards.");
+DEFINE_uint32(vgf_perf_iterations, 200, "VGF perf measured forwards.");
+DEFINE_uint64(
+    vgf_perf_alignment,
+    65536,
+    "Alignment for caller-owned VGF input/output buffers. Use a power of two "
+    "at least as large as minImportedHostPointerAlignment.");
+DEFINE_uint32(
+    vgf_perf_max_delegate_calls,
+    64,
+    "Preallocated maximum VGF delegate calls per measured forward.");
+#endif
 DEFINE_string(
     method_name,
     "",
@@ -153,6 +182,353 @@ using executorch::runtime::etensor::Device;
 enum class PrintOutputMode { None, Summary, All };
 
 namespace {
+
+#if defined(EXECUTORCH_VGF_IO_STATS) && EXECUTORCH_VGF_IO_STATS
+using executorch::backends::vgf::get_vgf_device_info;
+using executorch::backends::vgf::kVgfImportRejectionReasonSlots;
+using executorch::backends::vgf::set_vgf_stats_buffer;
+using executorch::backends::vgf::VgfDeviceInfo;
+using executorch::backends::vgf::VgfExecutionRecord;
+using executorch::backends::vgf::VgfExecutionStats;
+using executorch::backends::vgf::VgfStatsBuffer;
+
+struct VgfPerfAllocation final {
+  void* data = nullptr;
+  size_t logical_size = 0;
+  size_t capacity = 0;
+
+  VgfPerfAllocation() = default;
+  VgfPerfAllocation(const VgfPerfAllocation&) = delete;
+  VgfPerfAllocation& operator=(const VgfPerfAllocation&) = delete;
+  VgfPerfAllocation(VgfPerfAllocation&& rhs) noexcept
+      : data(rhs.data), logical_size(rhs.logical_size), capacity(rhs.capacity) {
+    rhs.data = nullptr;
+    rhs.logical_size = 0;
+    rhs.capacity = 0;
+  }
+  VgfPerfAllocation& operator=(VgfPerfAllocation&& rhs) noexcept {
+    if (this != &rhs) {
+      std::free(data);
+      data = rhs.data;
+      logical_size = rhs.logical_size;
+      capacity = rhs.capacity;
+      rhs.data = nullptr;
+      rhs.logical_size = 0;
+      rhs.capacity = 0;
+    }
+    return *this;
+  }
+  ~VgfPerfAllocation() {
+    std::free(data);
+  }
+};
+
+struct VgfPerfIteration final {
+  uint64_t forward_ns = 0;
+  uint64_t in_copy_bytes = 0;
+  uint64_t out_copy_bytes = 0;
+  uint64_t in_memcpy_ns = 0;
+  uint64_t out_memcpy_ns = 0;
+  uint64_t submit_wait_ns = 0;
+  uint64_t execute_ns = 0;
+  uint64_t imports = 0;
+  uint64_t import_ns = 0;
+  uint64_t import_failures = 0;
+  uint64_t binding_refresh_ns = 0;
+  uint64_t in_zero_copy_bytes = 0;
+  uint64_t out_zero_copy_bytes = 0;
+  uint64_t fallback_count = 0;
+  uint64_t rejection_count = 0;
+  uint64_t vgf_calls = 0;
+  std::array<uint64_t, kVgfImportRejectionReasonSlots> rejection_reasons{};
+};
+
+struct VgfPerfState final {
+  // Method::set_input retains a non-owning TensorImpl reference.
+  // Heap allocation keeps each TensorImpl address stable across vector growth.
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> input_impls;
+  std::vector<VgfPerfAllocation> inputs;
+  std::vector<VgfPerfAllocation> outputs;
+  std::vector<size_t> input_sizes;
+  std::vector<size_t> output_sizes;
+  std::vector<VgfExecutionRecord> records;
+  std::vector<VgfPerfIteration> iterations;
+  VgfStatsBuffer stats_buffer{};
+};
+
+bool is_power_of_two(size_t value) {
+  return value != 0 && (value & (value - 1)) == 0;
+}
+
+size_t round_up(size_t value, size_t alignment) {
+  ET_CHECK_MSG(value <= SIZE_MAX - (alignment - 1), "aligned size overflow");
+  return (value + alignment - 1) & ~(alignment - 1);
+}
+
+VgfPerfAllocation allocate_vgf_perf_buffer(
+    size_t logical_size,
+    size_t alignment) {
+  ET_CHECK_MSG(
+      is_power_of_two(alignment) && alignment >= sizeof(void*),
+      "--vgf_perf_alignment must be a power of two >= %zu",
+      sizeof(void*));
+  const size_t capacity =
+      round_up(std::max<size_t>(logical_size, 1), alignment);
+  void* ptr = nullptr;
+  const int rc = posix_memalign(&ptr, alignment, capacity);
+  ET_CHECK_MSG(
+      rc == 0 && ptr != nullptr,
+      "posix_memalign(%zu, %zu) failed: %d",
+      alignment,
+      capacity,
+      rc);
+  std::memset(ptr, 0, capacity);
+  VgfPerfAllocation allocation;
+  allocation.data = ptr;
+  allocation.logical_size = logical_size;
+  allocation.capacity = capacity;
+  return allocation;
+}
+
+VgfPerfState prepare_vgf_perf_state(
+    Method& method,
+    const MethodMeta& method_meta,
+    const std::vector<std::pair<char*, size_t>>& input_buffers) {
+  ET_CHECK_MSG(
+      !FLAGS_vgf_perf_json.empty(), "internal: VGF perf mode is not enabled");
+  ET_CHECK_MSG(
+      !input_buffers.empty(),
+      "VGF perf mode requires --inputs so copy and zero-copy runs use identical data");
+  ET_CHECK_MSG(
+      input_buffers.size() == method_meta.num_inputs(),
+      "VGF perf mode requires one input file per method input (%zu != %zu)",
+      input_buffers.size(),
+      method_meta.num_inputs());
+
+  const size_t alignment = static_cast<size_t>(FLAGS_vgf_perf_alignment);
+  VgfPerfState state;
+  state.input_impls.reserve(method_meta.num_inputs());
+  state.inputs.reserve(method_meta.num_inputs());
+  state.outputs.reserve(method_meta.num_outputs());
+  state.input_sizes.reserve(method_meta.num_inputs());
+  state.output_sizes.reserve(method_meta.num_outputs());
+
+  for (size_t i = 0; i < method_meta.num_inputs(); ++i) {
+    auto tag = method_meta.input_tag(i);
+    ET_CHECK_MSG(
+        tag.ok() && tag.get() == executorch::runtime::Tag::Tensor,
+        "VGF perf helper currently requires tensor-only inputs; input %zu is not a tensor",
+        i);
+    auto tensor_meta = method_meta.input_tensor_meta(i);
+    ET_CHECK_MSG(
+        tensor_meta.ok(), "Failed to read input tensor metadata %zu", i);
+    ET_CHECK_MSG(
+        !tensor_meta->is_memory_planned(),
+        "Input %zu is memory-planned; export with alloc_graph_input=False",
+        i);
+    auto allocation =
+        allocate_vgf_perf_buffer(tensor_meta->nbytes(), alignment);
+    auto [source, source_size] = input_buffers[i];
+    ET_CHECK_MSG(
+        source_size == tensor_meta->nbytes(),
+        "Input %zu file size %zu does not match tensor nbytes %zu",
+        i,
+        source_size,
+        tensor_meta->nbytes());
+    std::memcpy(allocation.data, source, source_size);
+
+    auto impl = std::make_unique<executorch::aten::TensorImpl>(
+        tensor_meta->scalar_type(),
+        static_cast<ssize_t>(tensor_meta->sizes().size()),
+        const_cast<executorch::aten::TensorImpl::SizesType*>(
+            tensor_meta->sizes().data()),
+        allocation.data,
+        const_cast<executorch::aten::TensorImpl::DimOrderType*>(
+            tensor_meta->dim_order().data()));
+    Tensor tensor(impl.get());
+    // Persist the metadata object before handing its address to Method.
+    state.input_impls.push_back(std::move(impl));
+    const Error status = method.set_input(tensor, i);
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "set_input failed for VGF perf input %zu: 0x%" PRIx32,
+        i,
+        static_cast<uint32_t>(status));
+
+    state.input_sizes.push_back(allocation.logical_size);
+    state.inputs.push_back(std::move(allocation));
+  }
+
+  for (size_t i = 0; i < method_meta.num_outputs(); ++i) {
+    auto tag = method_meta.output_tag(i);
+    ET_CHECK_MSG(
+        tag.ok() && tag.get() == executorch::runtime::Tag::Tensor,
+        "VGF perf helper currently requires tensor-only outputs; output %zu is not a tensor",
+        i);
+    auto tensor_meta = method_meta.output_tensor_meta(i);
+    ET_CHECK_MSG(
+        tensor_meta.ok(), "Failed to read output tensor metadata %zu", i);
+    ET_CHECK_MSG(
+        !tensor_meta->is_memory_planned(),
+        "Output %zu is memory-planned; export with alloc_graph_output=False",
+        i);
+    auto allocation =
+        allocate_vgf_perf_buffer(tensor_meta->nbytes(), alignment);
+    std::memset(allocation.data, 0xA5, allocation.capacity);
+    const Error status =
+        method.set_output_data_ptr(allocation.data, allocation.capacity, i);
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "set_output_data_ptr failed for output %zu; export with alloc_graph_output=False (status=0x%" PRIx32
+        ")",
+        i,
+        static_cast<uint32_t>(status));
+    state.output_sizes.push_back(allocation.logical_size);
+    state.outputs.push_back(std::move(allocation));
+  }
+
+  const size_t measured = FLAGS_vgf_perf_iterations;
+  const size_t max_calls = FLAGS_vgf_perf_max_delegate_calls;
+  ET_CHECK_MSG(
+      measured > 0 && max_calls > 0,
+      "VGF perf iteration/call counts must be positive");
+  ET_CHECK_MSG(
+      measured <= SIZE_MAX / max_calls, "VGF perf stats capacity overflow");
+  state.records.resize(measured * max_calls);
+  state.iterations.resize(measured);
+  state.stats_buffer =
+      VgfStatsBuffer{state.records.data(), state.records.size(), 0, false};
+  return state;
+}
+
+void add_vgf_stats(VgfPerfIteration& dst, const VgfExecutionStats& src) {
+  dst.in_copy_bytes += src.in_copy_bytes;
+  dst.out_copy_bytes += src.out_copy_bytes;
+  dst.in_memcpy_ns += src.in_memcpy_ns;
+  dst.out_memcpy_ns += src.out_memcpy_ns;
+  dst.submit_wait_ns += src.submit_wait_ns;
+  dst.execute_ns += src.execute_ns;
+  dst.imports += src.imports;
+  dst.import_ns += src.import_ns;
+  dst.import_failures += src.import_failures;
+  dst.binding_refresh_ns += src.binding_refresh_ns;
+  dst.in_zero_copy_bytes += src.in_zero_copy_bytes;
+  dst.out_zero_copy_bytes += src.out_zero_copy_bytes;
+  dst.fallback_count += src.fallback_count;
+  dst.rejection_count += src.rejection_count;
+  for (size_t i = 0; i < kVgfImportRejectionReasonSlots; ++i) {
+    dst.rejection_reasons[i] += src.import_rejection_reasons[i];
+  }
+}
+
+std::string json_escape(const std::string& value) {
+  std::ostringstream out;
+  for (const unsigned char ch : value) {
+    switch (ch) {
+      case '\\':
+        out << "\\\\";
+        break;
+      case '"':
+        out << "\\\"";
+        break;
+      case '\n':
+        out << "\\n";
+        break;
+      case '\r':
+        out << "\\r";
+        break;
+      case '\t':
+        out << "\\t";
+        break;
+      default:
+        if (ch < 0x20) {
+          out << "\\u" << std::hex << std::setw(4) << std::setfill('0')
+              << static_cast<unsigned>(ch) << std::dec;
+        } else {
+          out << static_cast<char>(ch);
+        }
+    }
+  }
+  return out.str();
+}
+
+void write_size_array(std::ostream& out, const std::vector<size_t>& values) {
+  out << '[';
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i)
+      out << ',';
+    out << values[i];
+  }
+  out << ']';
+}
+
+void write_vgf_perf_json(const VgfPerfState& state) {
+  const VgfDeviceInfo device = get_vgf_device_info();
+  const char* zero_copy = std::getenv("ET_VGF_ZERO_COPY");
+  std::ofstream out(FLAGS_vgf_perf_json, std::ios::trunc);
+  ET_CHECK_MSG(
+      out.good(), "Cannot open VGF perf JSON: %s", FLAGS_vgf_perf_json.c_str());
+
+  out << "{\n";
+  out << "  \"model_path\": \"" << json_escape(FLAGS_model_path) << "\",\n";
+  out << "  \"zero_copy_env\": \""
+      << json_escape(zero_copy ? zero_copy : "<unset>") << "\",\n";
+  out << "  \"warmups\": " << FLAGS_vgf_perf_warmups << ",\n";
+  out << "  \"measured\": " << FLAGS_vgf_perf_iterations << ",\n";
+  out << "  \"requested_alignment\": " << FLAGS_vgf_perf_alignment << ",\n";
+  out << "  \"input_sizes\": ";
+  write_size_array(out, state.input_sizes);
+  out << ",\n";
+  out << "  \"output_sizes\": ";
+  write_size_array(out, state.output_sizes);
+  out << ",\n";
+  out << "  \"stats_overflow\": "
+      << (state.stats_buffer.overflow ? "true" : "false") << ",\n";
+  out << "  \"device\": {\n";
+  out << "    \"valid\": " << (device.valid ? "true" : "false") << ",\n";
+  out << "    \"vendor_id\": " << device.vendor_id << ",\n";
+  out << "    \"device_id\": " << device.device_id << ",\n";
+  out << "    \"api_version\": " << device.api_version << ",\n";
+  out << "    \"driver_version\": " << device.driver_version << ",\n";
+  out << "    \"device_name\": \"" << json_escape(device.device_name)
+      << "\",\n";
+  out << "    \"driver_name\": \"" << json_escape(device.driver_name)
+      << "\",\n";
+  out << "    \"driver_info\": \"" << json_escape(device.driver_info) << "\"\n";
+  out << "  },\n";
+  out << "  \"iterations\": [\n";
+  for (size_t i = 0; i < state.iterations.size(); ++i) {
+    const auto& it = state.iterations[i];
+    out << "    {";
+    out << "\"forward_ns\":" << it.forward_ns;
+    out << ",\"vgf_calls\":" << it.vgf_calls;
+    out << ",\"in_copy_bytes\":" << it.in_copy_bytes;
+    out << ",\"out_copy_bytes\":" << it.out_copy_bytes;
+    out << ",\"in_zero_copy_bytes\":" << it.in_zero_copy_bytes;
+    out << ",\"out_zero_copy_bytes\":" << it.out_zero_copy_bytes;
+    out << ",\"in_memcpy_ns\":" << it.in_memcpy_ns;
+    out << ",\"out_memcpy_ns\":" << it.out_memcpy_ns;
+    out << ",\"import_ns\":" << it.import_ns;
+    out << ",\"binding_refresh_ns\":" << it.binding_refresh_ns;
+    out << ",\"submit_wait_ns\":" << it.submit_wait_ns;
+    out << ",\"execute_ns\":" << it.execute_ns;
+    out << ",\"imports\":" << it.imports;
+    out << ",\"import_failures\":" << it.import_failures;
+    out << ",\"fallback_count\":" << it.fallback_count;
+    out << ",\"rejection_count\":" << it.rejection_count;
+    out << ",\"rejection_reasons\":[";
+    for (size_t r = 0; r < it.rejection_reasons.size(); ++r) {
+      if (r)
+        out << ',';
+      out << it.rejection_reasons[r];
+    }
+    out << "]}" << (i + 1 == state.iterations.size() ? "\n" : ",\n");
+  }
+  out << "  ]\n";
+  out << "}\n";
+  ET_CHECK_MSG(out.good(), "Failed writing VGF perf JSON");
+}
+#endif
 
 Error load_input_files(
     const std::vector<std::string>& file_paths,
@@ -697,6 +1073,12 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
   EventTraceManager tracer;
+#if defined(EXECUTORCH_VGF_IO_STATS) && EXECUTORCH_VGF_IO_STATS
+  // Declared before Method so its caller-owned boundary buffers outlive the
+  // Method, which may alias them for unplanned graph I/O.
+  std::optional<VgfPerfState> vgf_perf_state;
+#endif
+
   Result<Method> method = program->load_method(
       method_name,
       &memory_manager,
@@ -717,6 +1099,28 @@ int main(int argc, char** argv) {
             load_tick_ratio.numerator / load_tick_ratio.denominator /
             1000000.0);
   }
+
+#if defined(EXECUTORCH_VGF_IO_STATS) && EXECUTORCH_VGF_IO_STATS
+  if (!FLAGS_vgf_perf_json.empty()) {
+    ET_CHECK_MSG(
+        !FLAGS_server_mode, "VGF perf mode does not support --server_mode");
+    ET_CHECK_MSG(
+        !bundle_io,
+        "VGF perf mode currently requires a plain PTE, not BundleIO");
+    ET_CHECK_MSG(
+        FLAGS_input_shapes.empty(),
+        "VGF perf mode currently requires static input shapes");
+    vgf_perf_state.emplace(
+        prepare_vgf_perf_state(*method, method_meta.get(), input_buffers));
+    ET_LOG(
+        Info,
+        "VGF perf mode: %u warmups + %u measured, aligned boundary buffers=%" PRIu64,
+        FLAGS_vgf_perf_warmups,
+        FLAGS_vgf_perf_iterations,
+        FLAGS_vgf_perf_alignment);
+    FLAGS_num_executions = FLAGS_vgf_perf_warmups + FLAGS_vgf_perf_iterations;
+  }
+#endif
 
   if (FLAGS_server_mode) {
     ET_CHECK_MSG(
@@ -825,31 +1229,48 @@ int main(int argc, char** argv) {
     // execution.
     std::optional<executorch::extension::BufferCleanup> inputs;
 
-#ifdef ET_BUNDLE_IO_ENABLED
-    if (bundle_io) {
-      ET_LOG(Debug, "Getting inputs from bundled IO");
-      Error status = executorch::bundled_program::load_bundled_input(
-          *method, model_pte, testset_idx);
-      ET_CHECK_MSG(
-          status == Error::Ok,
-          "load_bundled_input failed with status 0x%" PRIx32,
-          static_cast<uint32_t>(status));
-    } else
+#if defined(EXECUTORCH_VGF_IO_STATS) && EXECUTORCH_VGF_IO_STATS
+    const bool vgf_perf_enabled = !FLAGS_vgf_perf_json.empty();
+    if (!vgf_perf_enabled) {
 #endif
-    {
-      ET_LOG(Debug, "Preparing inputs.");
-      auto res = executorch::extension::prepare_input_tensors(
-          *method, {}, input_buffers);
-      ET_CHECK_MSG(
-          res.ok(),
-          "Could not prepare inputs: 0x%" PRIx32,
-          (uint32_t)res.error());
-      inputs.emplace(std::move(res.get()));
-      ET_LOG(Debug, "Inputs prepared.");
-      if (!FLAGS_input_shapes.empty()) {
-        resize_inputs_to(*method, FLAGS_input_shapes);
+#ifdef ET_BUNDLE_IO_ENABLED
+      if (bundle_io) {
+        ET_LOG(Debug, "Getting inputs from bundled IO");
+        Error status = executorch::bundled_program::load_bundled_input(
+            *method, model_pte, testset_idx);
+        ET_CHECK_MSG(
+            status == Error::Ok,
+            "load_bundled_input failed with status 0x%" PRIx32,
+            static_cast<uint32_t>(status));
+      } else
+#endif
+      {
+        ET_LOG(Debug, "Preparing inputs.");
+        auto res = executorch::extension::prepare_input_tensors(
+            *method, {}, input_buffers);
+        ET_CHECK_MSG(
+            res.ok(),
+            "Could not prepare inputs: 0x%" PRIx32,
+            (uint32_t)res.error());
+        inputs.emplace(std::move(res.get()));
+        ET_LOG(Debug, "Inputs prepared.");
+        if (!FLAGS_input_shapes.empty()) {
+          resize_inputs_to(*method, FLAGS_input_shapes);
+        }
       }
+#if defined(EXECUTORCH_VGF_IO_STATS) && EXECUTORCH_VGF_IO_STATS
+    } // if (!vgf_perf_enabled)
+
+    size_t vgf_stats_begin = 0;
+    if (vgf_perf_enabled && i == FLAGS_vgf_perf_warmups) {
+      ET_CHECK_MSG(
+          set_vgf_stats_buffer(&vgf_perf_state->stats_buffer) == nullptr,
+          "Unexpected pre-existing VGF stats sink");
     }
+    if (vgf_perf_enabled && i >= FLAGS_vgf_perf_warmups) {
+      vgf_stats_begin = vgf_perf_state->stats_buffer.size;
+    }
+#endif
 
     const et_timestamp_t before_execute =
         executorch::runtime::pal_current_ticks();
@@ -865,20 +1286,61 @@ int main(int argc, char** argv) {
         executorch::runtime::pal_current_ticks();
     const et_timestamp_t iter_elapsed = after_execute - before_execute;
     time_spent_executing += iter_elapsed;
+#if defined(EXECUTORCH_VGF_IO_STATS) && EXECUTORCH_VGF_IO_STATS
+    if (vgf_perf_enabled && i >= FLAGS_vgf_perf_warmups) {
+      ET_CHECK_MSG(
+          !vgf_perf_state->stats_buffer.overflow, "VGF stats buffer overflow");
+      const size_t measured_index = i - FLAGS_vgf_perf_warmups;
+      auto& perf_it = vgf_perf_state->iterations[measured_index];
+      const auto ratio = et_pal_ticks_to_ns_multiplier();
+      perf_it.forward_ns = static_cast<uint64_t>(
+          static_cast<double>(iter_elapsed) * ratio.numerator /
+          ratio.denominator);
+      const size_t vgf_stats_end = vgf_perf_state->stats_buffer.size;
+      ET_CHECK_MSG(
+          vgf_stats_end >= vgf_stats_begin,
+          "VGF stats buffer size moved backwards");
+      perf_it.vgf_calls = vgf_stats_end - vgf_stats_begin;
+      for (size_t rec = vgf_stats_begin; rec < vgf_stats_end; ++rec) {
+        ET_CHECK_MSG(
+            vgf_perf_state->records[rec].success,
+            "VGF delegate record %zu failed during measured forward %zu",
+            rec,
+            measured_index);
+        add_vgf_stats(perf_it, vgf_perf_state->records[rec].stats);
+      }
+    }
+#endif
     ET_CHECK_MSG(
         status == Error::Ok,
         "Execution of method %s failed with status 0x%" PRIx32,
         method_name,
         static_cast<uint32_t>(status));
     const auto iter_tick_ratio = et_pal_ticks_to_ns_multiplier();
-    ET_LOG(
-        Info,
-        "Iteration %" PRIu32 " of %" PRIu32 ": %f ms",
-        i + 1,
-        FLAGS_num_executions,
-        static_cast<double>(iter_elapsed) * iter_tick_ratio.numerator /
-            iter_tick_ratio.denominator / 1000000.0);
+#if defined(EXECUTORCH_VGF_IO_STATS) && EXECUTORCH_VGF_IO_STATS
+    if (!vgf_perf_enabled)
+#endif
+    {
+      ET_LOG(
+          Info,
+          "Iteration %" PRIu32 " of %" PRIu32 ": %f ms",
+          i + 1,
+          FLAGS_num_executions,
+          static_cast<double>(iter_elapsed) * iter_tick_ratio.numerator /
+              iter_tick_ratio.denominator / 1000000.0);
+    }
   }
+#if defined(EXECUTORCH_VGF_IO_STATS) && EXECUTORCH_VGF_IO_STATS
+  if (!FLAGS_vgf_perf_json.empty()) {
+    ET_CHECK_MSG(
+        set_vgf_stats_buffer(nullptr) == &vgf_perf_state->stats_buffer,
+        "Unexpected VGF stats sink while stopping capture");
+    ET_CHECK_MSG(
+        !vgf_perf_state->stats_buffer.overflow, "VGF stats buffer overflow");
+    write_vgf_perf_json(*vgf_perf_state);
+    ET_LOG(Info, "VGF perf JSON written to %s", FLAGS_vgf_perf_json.c_str());
+  }
+#endif
   const auto tick_ratio = et_pal_ticks_to_ns_multiplier();
   constexpr auto NANOSECONDS_PER_MILLISECOND = 1000000;
   ET_LOG(

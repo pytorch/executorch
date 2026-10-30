@@ -540,9 +540,56 @@ VgfZeroCopyImportResult VgfZeroCopyImportManager::try_import_candidate(
           VgfZeroCopyImportRejectionReason::kMemoryRequirementsTooLarge, false);
     }
 
-    const uint32_t compatible_bits =
-        memory_requirements.memoryRequirements.memoryTypeBits &
-        host_properties.memoryTypeBits;
+    const uint32_t host_bits = host_properties.memoryTypeBits;
+    const uint32_t tensor_bits =
+        memory_requirements.memoryRequirements.memoryTypeBits;
+    const uint32_t compatible_bits = host_bits & tensor_bits;
+
+    ET_LOG(
+        Info,
+        "VGF zero-copy memory types: io=%zu "
+        "host_bits=0x%08x tensor_bits=0x%08x compatible_bits=0x%08x",
+        io_index,
+        host_bits,
+        tensor_bits,
+        compatible_bits);
+
+    // Log every memory type that appears in either side of the compatibility
+    // test. This must happen here rather than in find_coherent_memory_type(),
+    // because that helper returns immediately when compatible_bits == 0.
+    VkPhysicalDeviceMemoryProperties memory_properties{};
+    api_.get_physical_device_memory_properties(
+        api_.context, physical_device_, &memory_properties);
+
+    const uint32_t interesting_bits = host_bits | tensor_bits;
+    for (uint32_t i = 0; i < memory_properties.memoryTypeCount && i < 32; ++i) {
+      const uint32_t bit = 1u << i;
+      if ((interesting_bits & bit) == 0) {
+        continue;
+      }
+
+      const VkMemoryType& type = memory_properties.memoryTypes[i];
+      const VkMemoryPropertyFlags flags = type.propertyFlags;
+
+      ET_LOG(
+          Info,
+          "VGF zero-copy memory type detail: io=%zu index=%u "
+          "in_host=%d in_tensor=%d in_intersection=%d "
+          "flags=0x%08x heap=%u "
+          "host_visible=%d host_coherent=%d host_cached=%d device_local=%d",
+          io_index,
+          i,
+          (host_bits & bit) != 0,
+          (tensor_bits & bit) != 0,
+          (compatible_bits & bit) != 0,
+          flags,
+          type.heapIndex,
+          (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0,
+          (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0,
+          (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) != 0,
+          (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0);
+    }
+
     if (!find_coherent_memory_type(
             compatible_bits, &candidate.memory_type_index)) {
       return fail_candidate(
