@@ -100,6 +100,12 @@ wrote mobilenet_v2_espnn.pte
 
 Calibrate on a few hundred real samples; random data gives useless scales.
 
+`EspNNQuantizer` quantizes constant linear and conv2d bias to int32
+with zero point 0 and scale `input_scale * weight_scale` (per output channel
+when weights are per-channel). Bias rounding is visible in the PT2E model,
+and both the delegate and operator-library lowering use the prepared integer
+bias directly.
+
 ## Running on the ESP32-S3
 
 You need ESP-IDF and an activated ESP-IDF shell.

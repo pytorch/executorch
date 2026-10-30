@@ -24,6 +24,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
 )
 from torch.fx import Node
 from torchao.quantization.pt2e.quantizer import (
+    DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
     get_bias_qspec,
     get_input_act_qspec,
@@ -32,6 +33,7 @@ from torchao.quantization.pt2e.quantizer import (
     get_weight_qspec,
     QuantizationAnnotation,
     QuantizationConfig,
+    QuantizationSpec,
     SharedQuantizationSpec,
 )
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
@@ -215,6 +217,8 @@ class EspNNQuantizer(XNNPACKQuantizer):
 
     Activations: int8 per-tensor affine.
     Weights: int8 per-output-channel symmetric.
+    Constant bias: int32 with scale derived from the input and weight observers
+    for linear and conv2d.
     ReLU and ReLU6 that directly follow conv2d, linear, add, or mul are fused
     into the producer so that the clamp happens on the producer's
     requantized output, exactly as the ESP-NN activation_min/max arguments
@@ -256,13 +260,82 @@ class EspNNQuantizer(XNNPACKQuantizer):
         return model
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        bias_candidates = []
+        for node in model.graph.nodes:
+            if (
+                node.op != "call_function"
+                or node.target not in (*LINEAR_TARGETS, *CONV_TARGETS)
+                or _is_annotated(node)
+                or len(node.args) < 3
+                or not isinstance(node.args[2], Node)
+                or node.args[2].op != "get_attr"
+                or self.node_config(node) is None
+                or (self.filter_fn is not None and not self.filter_fn(node))
+            ):
+                continue
+            bias_candidates.append(node)
+            bias = node.args[2]
+            if len(bias.users) > 1:
+                # PT2E's implicit sharing ignores DerivedQuantizationSpec inputs.
+                with model.graph.inserting_before(node):
+                    bias_copy = model.graph.call_function(
+                        torch.ops.aten.clone.default, (bias,)
+                    )
+                bias_copy.meta = bias.meta.copy()
+                bias_copy.meta.pop(Q_ANNOTATION_KEY, None)
+                node.update_arg(2, bias_copy)
         self.fused_activation_count = annotate_fused_activations(
             model, self.node_config, self.filter_fn
         )
         model = self._annotate_for_quantization_config(model)
         annotate_unary_and_softmax(model, self.node_config)
         propagate_shared_quantization(model, self.node_config)
+        annotate_int32_bias(bias_candidates)
+        model.recompile()
         return model
+
+
+def _derive_bias_qparams(observers):
+    input_scale, _ = observers[0].calculate_qparams()
+    weight_scale, _ = observers[1].calculate_qparams()
+    return input_scale * weight_scale, torch.zeros_like(weight_scale, dtype=torch.int32)
+
+
+def annotate_int32_bias(nodes: list[Node]) -> None:
+    for node in nodes:
+        annotation = node.meta.get(Q_ANNOTATION_KEY)
+        if annotation is None:
+            continue
+        input_node, weight, bias = node.args[:3]
+        input_spec = annotation.input_qspec_map.get(input_node)
+        weight_spec = annotation.input_qspec_map.get(weight)
+        if (
+            bias not in annotation.input_qspec_map
+            or not isinstance(input_spec, QuantizationSpec)
+            or input_spec.dtype != torch.int8
+            or input_spec.is_dynamic
+            or not isinstance(weight_spec, QuantizationSpec)
+            or weight_spec.dtype != torch.int8
+        ):
+            continue
+        per_channel = weight_spec.qscheme in (
+            torch.per_channel_symmetric,
+            torch.per_channel_affine,
+        )
+        annotation.input_qspec_map[bias] = DerivedQuantizationSpec(
+            derived_from=[(input_node, node), (weight, node)],
+            derive_qparams_fn=_derive_bias_qparams,
+            dtype=torch.int32,
+            quant_min=torch.iinfo(torch.int32).min,
+            # INT32_MAX rounds to 2**31 in PT2E's float32 clamp before the cast.
+            quant_max=(1 << 31) - 128,
+            qscheme=(
+                torch.per_channel_symmetric
+                if per_channel
+                else torch.per_tensor_symmetric
+            ),
+            ch_axis=0 if per_channel else None,
+        )
 
 
 def annotate_unary_and_softmax(
