@@ -17,14 +17,16 @@ import io
 import os
 import re
 import shutil
+import struct
 import sys
+from enum import IntEnum
 from itertools import product
 from multiprocessing.pool import ThreadPool
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import subprocess
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import yaml
@@ -1349,6 +1351,23 @@ class SPVGenerator:
 ##############################################
 
 
+class SpvCapability(IntEnum):
+    FLOAT64 = 10
+    INT64 = 11
+    INT16 = 22
+    STORAGE_BUFFER_16_BIT_ACCESS = 4433
+    UNIFORM_AND_STORAGE_BUFFER_16_BIT_ACCESS = 4434
+    STORAGE_PUSH_CONSTANT_16 = 4435
+    STORAGE_INPUT_OUTPUT_16 = 4436
+    STORAGE_BUFFER_8_BIT_ACCESS = 4448
+    UNIFORM_AND_STORAGE_BUFFER_8_BIT_ACCESS = 4449
+    STORAGE_PUSH_CONSTANT_8 = 4450
+    DOT_PRODUCT_INPUT_ALL = 6016
+    DOT_PRODUCT_INPUT_4X8_BIT = 6017
+    DOT_PRODUCT_INPUT_4X8_BIT_PACKED = 6018
+    DOT_PRODUCT = 6019
+
+
 @dataclass
 class ShaderInfo:
     tile_size: List[int]
@@ -1368,6 +1387,7 @@ class ShaderInfo:
     #        `SUBGROUP_SIZE` template parameter (single source of truth for
     #        both GLSL substitution and the Vulkan pipeline pin).
     required_subgroup_size: int = 0
+    required_capabilities: List[int] = field(default_factory=list)
 
 
 def getName(filePath: str) -> str:
@@ -1446,11 +1466,6 @@ def findRegisterFor(lineStr: str) -> Tuple[str, List[str]]:
     return (matches_list[0], matches_list[1:])
 
 
-def isExtensionRequireLine(lineStr: str) -> bool:
-    extension_require_id = r"^#extension ([A-Za-z0-9_]+)\s*:\s*require"
-    return re.search(extension_require_id, lineStr) is not None
-
-
 typeIdMapping = {
     r"image[123]D\b": "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE",
     r"sampler[123]D\b": "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER",
@@ -1468,7 +1483,33 @@ def determineDescriptorType(lineStr: str) -> str:
     )
 
 
-def getShaderInfo(srcFilePath: str) -> ShaderInfo:  # noqa: C901
+def getSpvCapabilities(spvPath: str) -> Set[int]:
+    with open(spvPath, "rb") as spvFile:
+        data = spvFile.read()
+    if len(data) < 20 or len(data) % 4 != 0:
+        raise ValueError(f"Invalid SPIR-V header or byte length: {spvPath}")
+    words = struct.unpack(f"<{len(data) // 4}I", data)
+    if words[0] != 0x07230203:
+        raise ValueError(f"Invalid SPIR-V magic: {spvPath}")
+
+    capabilities = set()
+    offset = 5
+    while offset < len(words):
+        word_count = words[offset] >> 16
+        opcode = words[offset] & 0xFFFF
+        if word_count == 0 or offset + word_count > len(words):
+            raise ValueError(f"Invalid SPIR-V instruction at word {offset}: {spvPath}")
+        if opcode == 17:  # OpCapability
+            if word_count != 2:
+                raise ValueError(
+                    f"Invalid SPIR-V OpCapability at word {offset}: {spvPath}"
+                )
+            capabilities.add(words[offset + 1])
+        offset += word_count
+    return capabilities
+
+
+def getShaderInfo(srcFilePath: str, spvFilePath: str) -> ShaderInfo:  # noqa: C901
     shader_info = ShaderInfo([], [], "")
     with open(srcFilePath) as srcFile:
         for line in srcFile:
@@ -1484,20 +1525,37 @@ def getShaderInfo(srcFilePath: str) -> ShaderInfo:  # noqa: C901
                 shader_info.bias_storage_type = getBiasStorageType(line)
             if isRegisterForLine(line):
                 shader_info.register_for = findRegisterFor(line)
-            if isExtensionRequireLine(line):
-                if "GL_EXT_shader_explicit_arithmetic_types_int16" in line:
-                    shader_info.requires_shader_int16_ext = True
-                if "GL_EXT_shader_16bit_storage" in line:
-                    shader_info.requires_16bit_storage_ext = True
-                if "GL_EXT_shader_8bit_storage" in line:
-                    shader_info.requires_8bit_storage_ext = True
-                if "GL_EXT_integer_dot_product" in line:
-                    shader_info.requires_integer_dot_product_ext = True
-                if "GL_EXT_shader_explicit_arithmetic_types_int64" in line:
-                    shader_info.requires_shader_int64_ext = True
-                if "GL_EXT_shader_explicit_arithmetic_types_float64" in line:
-                    shader_info.requires_shader_float64_ext = True
-
+    capabilities = getSpvCapabilities(spvFilePath)
+    shader_info.required_capabilities = sorted(capabilities)
+    shader_info.requires_shader_int16_ext = SpvCapability.INT16 in capabilities
+    shader_info.requires_shader_int64_ext = SpvCapability.INT64 in capabilities
+    shader_info.requires_shader_float64_ext = SpvCapability.FLOAT64 in capabilities
+    shader_info.requires_16bit_storage_ext = bool(
+        capabilities
+        & {
+            SpvCapability.STORAGE_BUFFER_16_BIT_ACCESS,
+            SpvCapability.UNIFORM_AND_STORAGE_BUFFER_16_BIT_ACCESS,
+            SpvCapability.STORAGE_PUSH_CONSTANT_16,
+            SpvCapability.STORAGE_INPUT_OUTPUT_16,
+        }
+    )
+    shader_info.requires_8bit_storage_ext = bool(
+        capabilities
+        & {
+            SpvCapability.STORAGE_BUFFER_8_BIT_ACCESS,
+            SpvCapability.UNIFORM_AND_STORAGE_BUFFER_8_BIT_ACCESS,
+            SpvCapability.STORAGE_PUSH_CONSTANT_8,
+        }
+    )
+    shader_info.requires_integer_dot_product_ext = bool(
+        capabilities
+        & {
+            SpvCapability.DOT_PRODUCT_INPUT_ALL,
+            SpvCapability.DOT_PRODUCT_INPUT_4X8_BIT,
+            SpvCapability.DOT_PRODUCT_INPUT_4X8_BIT_PACKED,
+            SpvCapability.DOT_PRODUCT,
+        }
+    )
     return shader_info
 
 
@@ -1576,6 +1634,7 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
         to_cpp_str(shader_info.requires_shader_int64_ext),
         to_cpp_str(shader_info.requires_shader_float64_ext),
         str(shader_info.required_subgroup_size),
+        "{" + ", ".join(str(x) for x in shader_info.required_capabilities) + "}",
     ]
 
     shader_info_str = textwrap.indent(
@@ -1621,7 +1680,7 @@ def genCppFiles(
         sizeBytes, spv_bin_str = generateSpvBinStr(spvPath, name)
         spv_bin_strs.append(spv_bin_str)
 
-        shader_info = getShaderInfo(srcPath)
+        shader_info = getShaderInfo(srcPath, spvPath)
 
         register_shader_info_strs.append(
             generateShaderInfoStr(shader_info, name, sizeBytes)

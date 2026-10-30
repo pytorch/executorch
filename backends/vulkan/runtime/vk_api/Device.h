@@ -33,6 +33,7 @@ struct PhysicalDevice final {
 
   // Properties obtained from Vulkan
   VkPhysicalDeviceProperties properties;
+  VkPhysicalDeviceFeatures shader_features;
   VkPhysicalDeviceMemoryProperties memory_properties;
 
   // Additional features available from extensions
