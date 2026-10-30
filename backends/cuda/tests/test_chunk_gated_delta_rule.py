@@ -252,6 +252,38 @@ class TestChunkGatedDeltaRule(unittest.TestCase):
 
         self.assertLess((o_ours.float() - o_ref.float()).abs().max().item(), 0.01)
 
+    def test_batched_partial_chunks_match_reference(self):
+        from fla.ops.gated_delta_rule.naive import naive_recurrent_gated_delta_rule
+
+        torch.manual_seed(42)
+        for length in (63, 129):
+            with self.subTest(length=length), torch.no_grad():
+                q = F.normalize(
+                    torch.rand(2, length, 3, 64, device="cuda", dtype=torch.bfloat16),
+                    dim=-1,
+                )
+                k = F.normalize(torch.rand_like(q), dim=-1)
+                v = torch.rand(2, length, 3, 96, device="cuda", dtype=torch.bfloat16)
+                g = F.logsigmoid(
+                    torch.rand(2, length, 3, device="cuda", dtype=torch.bfloat16)
+                )
+                beta = torch.rand_like(g).sigmoid()
+                h0 = torch.rand(2, 3, 64, 96, device="cuda", dtype=torch.bfloat16)
+                actual = torch.ops.triton.chunk_gated_delta_rule(q, k, v, g, beta, h0)
+                expected = naive_recurrent_gated_delta_rule(
+                    q=q,
+                    k=k,
+                    v=v,
+                    g=g,
+                    beta=beta,
+                    initial_state=h0,
+                    output_final_state=True,
+                )
+                for result, reference in zip(actual, expected):
+                    self.assertLess(
+                        (result.float() - reference.float()).abs().max().item(), 0.01
+                    )
+
     def test_export_cuda(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             pte_path = export_chunk_gated_delta(tmpdir)

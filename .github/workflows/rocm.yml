@@ -16,6 +16,7 @@ on:
       - .github/workflows/rocm.yml
       - .github/workflows/_ci-run-decision.yml
       - .github/workflows/_get-changed-files.yml
+      - .ci/scripts/install-rocm-dependencies.sh
       - .ci/scripts/test-rocm-aoti.sh
       - .ci/scripts/test-rocm-voxtral.sh
       - CMakeLists.txt
@@ -80,6 +81,7 @@ jobs:
               .github/workflows/rocm.yml | \
               .github/workflows/_ci-run-decision.yml | \
               .github/workflows/_get-changed-files.yml | \
+              .ci/scripts/install-rocm-dependencies.sh | \
               .ci/scripts/test-rocm-aoti.sh | \
               CMakeLists.txt | \
               CMakePresets.json | \
@@ -146,6 +148,7 @@ jobs:
               .github/workflows/_ci-run-decision.yml | \
               .github/workflows/_get-changed-files.yml | \
               install_requirements.py | \
+              .ci/scripts/install-rocm-dependencies.sh | \
               torch_pin.py)
                 RUN_VOXTRAL=true
                 ;;
@@ -169,7 +172,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ["7.2"]
+        rocm-version: ["7.14"]
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -209,7 +212,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ["7.2"]
+        rocm-version: ["7.14"]
     with:
       timeout: 180
       no-sudo: true
@@ -251,7 +254,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ["7.2"]
+        rocm-version: ["7.14"]
     with:
       timeout: 180
       no-sudo: true

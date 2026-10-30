@@ -23,6 +23,12 @@ if "%VSDEVCMD_ARGS%" == "" (
 
 @echo on
 
+REM nvcc with clang-cl collides with MSVC's cmath definitions on CUDA 13.2.
+if /I "%CU_VERSION:~0,2%" == "cu" (
+    where cl.exe >nul 2>&1 || exit /b 1
+    set "CMAKE_ARGS=%CMAKE_ARGS% -DCMAKE_CUDA_HOST_COMPILER=cl.exe"
+)
+
 if "%CU_VERSION%" == "xpu" call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
 
 set DISTUTILS_USE_SDK=1

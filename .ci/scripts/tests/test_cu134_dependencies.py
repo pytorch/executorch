@@ -63,63 +63,69 @@ class TestCu134Dependencies(unittest.TestCase):
             self.installer.install_optional_example_requirements(nightly)
         return [call.args[0] for call in run.call_args_list]
 
-    def test_all_install_steps_preserve_exact_cu134_selection(self):
-        for machine, ao_variant in (("x86_64", "cu134"), ("aarch64", "cpu")):
-            with self.subTest(machine=machine):
-                commands = self.install_commands((13, 4), machine)
-                self.assertEqual(len(commands), 4)
-                expected = {
-                    "torch==2.15.0+cu134",
-                    "torchvision==0.29.2+cu134",
-                    "torchaudio==2.11.1+cu134",
-                    f"torchao>={self.installer.TORCHAO_MIN_VERSION}",
-                }
-                for index, command in enumerate(commands):
-                    required = (
-                        expected
-                        if index >= 2
-                        else {
-                            requirement
-                            for requirement in expected
-                            if requirement.startswith(("torch==", "torchao>="))
-                        }
-                    )
-                    self.assertTrue(required.issubset(command), command)
-                    if index < 2:
-                        self.assertFalse(
-                            any(
-                                arg.startswith(("torchvision", "torchaudio"))
-                                for arg in command
-                            )
-                        )
-                    self.assertIn("https://download.pytorch.org/whl/cu134", command)
-                    self.assertIn(
-                        f"https://download.pytorch.org/whl/nightly/{ao_variant}",
-                        command,
-                    )
-                    self.assertNotIn(
-                        "https://download.pytorch.org/whl/test/cu134", command
-                    )
-                    self.assertNotIn("--no-deps", command)
-
-    def test_other_cuda_trains_keep_existing_pins(self):
-        for cuda in ((12, 6), (13, 0), (13, 2)):
-            for machine in ("x86_64", "aarch64"):
+    def test_all_install_steps_preserve_exact_cuda_selection(self):
+        for cuda in ((13, 2), (13, 4)):
+            variant = f"cu{cuda[0]}{cuda[1]}"
+            for machine, ao_variant in (("x86_64", variant), ("aarch64", "cpu")):
                 with self.subTest(cuda=cuda, machine=machine):
-                    core, local, domains, examples = self.install_commands(
-                        cuda, machine
-                    )
-                    self.assertIn("torch==2.15.0", core)
-                    self.assertIn(
-                        f"torchao>={self.installer.TORCHAO_MIN_VERSION}", core
-                    )
-                    self.assertIn("torchvision==0.29.2", domains)
-                    self.assertIn("torchaudio==2.11.1", domains)
-                    self.assertFalse(any("==" in arg for arg in local))
-                    self.assertFalse(any("==" in arg for arg in examples))
+                    commands = self.install_commands(cuda, machine)
+                    self.assertEqual(len(commands), 4)
+                    expected = {
+                        f"torch==2.15.0+{variant}",
+                        f"torchvision==0.29.2+{variant}",
+                        f"torchaudio==2.11.1+{variant}",
+                        f"torchao>={self.installer.TORCHAO_MIN_VERSION}",
+                    }
+                    for index, command in enumerate(commands):
+                        required = (
+                            expected
+                            if index >= 2
+                            else {
+                                requirement
+                                for requirement in expected
+                                if requirement.startswith(("torch==", "torchao>="))
+                            }
+                        )
+                        self.assertTrue(required.issubset(command), command)
+                        if index < 2:
+                            self.assertFalse(
+                                any(
+                                    arg.startswith(("torchvision", "torchaudio"))
+                                    for arg in command
+                                )
+                            )
+                        self.assertIn(
+                            f"https://download.pytorch.org/whl/{variant}", command
+                        )
+                        self.assertIn(
+                            f"https://download.pytorch.org/whl/nightly/{ao_variant}",
+                            command,
+                        )
+                        self.assertNotIn("--no-deps", command)
+
+    def test_unpublished_cuda_variants_fail_before_pip(self):
+        for variant in ("cu126", "cu130"):
+            for install in (
+                self.installer.install_requirements,
+                self.installer.install_optional_example_requirements,
+            ):
+                with (
+                    self.subTest(variant=variant, install=install.__name__),
+                    patch.object(
+                        self.installer,
+                        "determine_torch_url",
+                        return_value=f"https://download.pytorch.org/whl/{variant}",
+                    ),
+                    patch.object(self.installer.subprocess, "run") as run,
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError, f"no released {variant} wheels"
+                    ):
+                        install(True)
+                    run.assert_not_called()
 
     def test_source_pinned_torch_is_not_replaced(self):
-        for cuda in ((13, 2), (13, 4)):
+        for cuda in ((12, 6), (13, 0), (13, 2), (13, 4)):
             with self.subTest(cuda=cuda):
                 core, _, domains, _ = self.install_commands(cuda, nightly=False)
                 self.assertIn("torch", core)
@@ -157,8 +163,8 @@ class TestCu134Dependencies(unittest.TestCase):
                 _, _, domains, _ = self.install_commands(
                     (13, 2), machine=machine, python_version=(3, 15)
                 )
-                self.assertIn("torchaudio==2.11.1", domains)
-                self.assertIn("torchvision==0.29.2", domains)
+                self.assertIn("torchaudio==2.11.1+cu132", domains)
+                self.assertIn("torchvision==0.29.2+cu132", domains)
                 self.assertIn("https://download.pytorch.org/whl/cu132", domains)
 
     def test_python315_preserves_cu134_and_source_pins(self):
@@ -169,9 +175,9 @@ class TestCu134Dependencies(unittest.TestCase):
                         cuda, nightly=nightly, python_version=(3, 15)
                     )
                     audio = (
-                        "torchaudio==2.11.1+cu134"
-                        if nightly and cuda == (13, 4)
-                        else "torchaudio==2.11.1" if nightly else "torchaudio"
+                        f"torchaudio==2.11.1+cu{cuda[0]}{cuda[1]}"
+                        if nightly
+                        else "torchaudio"
                     )
                     self.assertIn(audio, domains)
 
