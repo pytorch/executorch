@@ -9,8 +9,6 @@ import { attributionEl, creditEl } from './badges.js';
 import { hfBadge } from './hf-badge.js';
 import { icon } from './icons.js';
 
-const MODELS = ALL_MODELS.filter((m) => LISTED_DEMOS.some((d) => d.models.includes(m.id)));
-
 // Two-step delete: the first click arms the button, a second click within a few
 // seconds removes the files.
 const CONFIRM_MS = 4000;
@@ -21,6 +19,7 @@ function shortLicense(text) {
 }
 
 export function mountModels(root) {
+  const MODELS = ALL_MODELS.filter((m) => LISTED_DEMOS.some((d) => d.models.includes(m.id)));
   const usedBy = (id) => LISTED_DEMOS.filter((d) => d.models.includes(id));
   let disposed = false;
   const stored = new Map();

@@ -137,6 +137,7 @@ def define_arm_tests():
                 "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
                 "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
+                "EMULATION_LAYER_VERSION": "0.9.0",
             })
 
         python_pytest(
@@ -187,6 +188,8 @@ def define_arm_tests():
             ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
                 "//executorch/examples/models/llama:llama_transformer",
                 "//executorch/examples/models/llama:transformer_modules",
+                "fbsource//third-party/pypi/transformers:transformers",
+                "fbsource//third-party/pypi/typing-extensions:typing-extensions",
             ] if test_file == "modules/test_moe.py" else []) + ([
                 "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
                 "fbsource//third-party/pypi/packaging:packaging",

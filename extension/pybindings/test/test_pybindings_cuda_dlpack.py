@@ -9,6 +9,8 @@
 """CUDA DLPack integration tests, run in both output modes by cuda.yml."""
 
 import array
+import contextlib
+import copy
 import ctypes
 import functools
 import gc
@@ -16,6 +18,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -196,6 +199,320 @@ class CudaDLPackTest(unittest.TestCase):
         ready.synchronize()
         torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, expected))
         return tensor
+
+    def _export_to_directory(self, name, module, example):
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import to_edge_transform_and_lower
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        directory = os.path.join(self.directory.name, name)
+        os.makedirs(directory, exist_ok=True)
+        program = to_edge_transform_and_lower(
+            torch.export.export(module, example, strict=True),
+            partitioner=[CudaPartitioner([CompileSpec("method_name", b"forward")])],
+        ).to_executorch()
+        plan = program.executorch_program.execution_plan[0]
+        if not any(delegate.id == "CudaBackend" for delegate in plan.delegates):
+            raise AssertionError("test model must execute a CUDA delegate")
+        path = os.path.join(directory, "model.pte")
+        with open(path, "wb") as file:
+            file.write(program.buffer)
+        program.write_tensor_data_to_file(directory)
+        data = [f for f in os.listdir(directory) if f.endswith(".ptd")]
+        return path, os.path.join(directory, data[0]) if data else None
+
+    def test_delegate_runs_on_the_caller_stream(self):
+        from executorch.runtime import cuda, Runtime
+
+        class MatmulChain(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(1024, 1024) / 32)
+
+            def forward(self, value):
+                value = value.repeat(64, 64)
+                for _ in range(16):
+                    value = torch.tanh(value @ self.weight)
+                return value.sum()
+
+        path, data = self._export_to_directory(
+            "matmul_chain", MatmulChain().eval(), (torch.randn(16, 16),)
+        )
+        method = Runtime.get().load_program(path, data_path=data).load_method("forward")
+        value = torch.randn(16, 16)
+        stream = cuda.Stream()
+        caller = torch.cuda.ExternalStream(stream.cuda_stream, device=self.device)
+
+        def work_on_stream_ms(use_stream):
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            with torch.cuda.stream(caller):
+                # Keeps the stream busy while the call is queued, so the two
+                # events bracket only work queued on the stream in between.
+                torch.cuda._sleep(100_000_000)
+                start.record()
+            if use_stream:
+                with cuda.stream(stream):
+                    method.execute([value])
+            else:
+                method.execute([value])
+            with torch.cuda.stream(caller):
+                end.record()
+            end.synchronize()
+            return start.elapsed_time(end)
+
+        work_on_stream_ms(False)
+        outside = work_on_stream_ms(False)
+        inside = work_on_stream_ms(True)
+        self.assertGreater(inside, 4 * outside + 0.5)
+
+        foreign = torch.cuda.Stream(device=self.device)
+        with cuda.stream(foreign):
+            method.execute([value])
+        # The default stream waits for every other stream, so it is refused.
+        for default in (
+            cuda.ExternalStream(0),
+            torch.cuda.default_stream(self.device),
+        ):
+            with self.assertRaises(ValueError):
+                with cuda.stream(default):
+                    pass
+        with self.assertRaises(TypeError):
+            with cuda.stream(stream.cuda_stream):
+                pass
+        for device in (1, "cuda:1"):
+            with self.assertRaises(RuntimeError):
+                with cuda.stream(cuda.ExternalStream(foreign.cuda_stream, device)):
+                    pass
+
+        class Protocol:  # a cuda.core-style stream: device.device_id
+            def __init__(self, version, device_id):
+                self.version = version
+                self.device = types.SimpleNamespace(device_id=device_id)
+
+            def __cuda_stream__(self):
+                return (self.version, foreign.cuda_stream)
+
+        with cuda.stream(Protocol(0, 0)):
+            pass
+        with self.assertRaises(RuntimeError):
+            with cuda.stream(Protocol(0, 1)):
+                pass
+        with self.assertRaises(ValueError):
+            with cuda.stream(Protocol(1, 0)):
+                pass
+        cupy_style = types.SimpleNamespace(
+            device_id=1, __cuda_stream__=lambda: (0, foreign.cuda_stream)
+        )
+        with self.assertRaises(RuntimeError):
+            with cuda.stream(cupy_style):
+                pass
+        # A Stream's handle selected through any wrapper keeps it open.
+        for selected in (stream, cuda.ExternalStream(stream.cuda_stream)):
+            with cuda.stream(selected), self.assertRaises(RuntimeError):
+                stream.close()
+        second = cuda.Stream()
+        outer, inner = cuda.stream(stream), cuda.stream(second)
+
+        def exit_if_active(scope):
+            with contextlib.suppress(RuntimeError):
+                scope.__exit__(None, None, None)
+
+        outer.__enter__()
+        self.addCleanup(exit_if_active, outer)
+        inner.__enter__()
+        self.addCleanup(exit_if_active, inner)
+        with self.assertRaises(RuntimeError):
+            outer.__exit__(None, None, None)
+        with self.assertRaises(RuntimeError):
+            stream.close()
+        inner.__exit__(None, None, None)
+        # The refused scope ended with the inner one, so it can be used again.
+        with outer:
+            pass
+        stream.close()
+        second.close()
+        stream = cuda.Stream()
+        with self.assertRaises(TypeError):
+            copy.copy(stream)
+        made_before_close = cuda.stream(stream)
+        stream.close()
+        with self.assertRaises(RuntimeError):
+            with made_before_close:
+                pass
+
+    @staticmethod
+    def _close_after_teardown(stream):
+        import threading
+
+        # Native selections of ended threads end at their teardown.
+        for _ in range(100):
+            try:
+                stream.close()
+                return
+            except RuntimeError:
+                threading.Event().wait(0.05)
+        stream.close()
+
+    def test_stream_scopes_across_threads(self):
+        import threading
+
+        from executorch.runtime import cuda
+
+        stream = cuda.Stream()
+        shared = cuda.stream(stream)
+        errors = []
+
+        def enter_and_exit():
+            try:
+                for _ in range(200):
+                    with shared:
+                        pass
+            except Exception as error:
+                errors.append(error)
+
+        # Switch threads often, so a race in the shared object shows up.
+        interval = sys.getswitchinterval()
+        sys.setswitchinterval(1e-6)
+        try:
+            workers = [threading.Thread(target=enter_and_exit) for _ in range(2)]
+            for worker in workers:
+                worker.start()
+            for worker in workers:
+                worker.join()
+        finally:
+            sys.setswitchinterval(interval)
+        self.assertEqual(errors, [])
+
+        # A thread that ends inside a block does not block later threads.
+        ended = threading.Thread(target=shared.__enter__)
+        ended.start()
+        ended.join()
+        later = threading.Thread(target=enter_and_exit)
+        later.start()
+        later.join()
+        self.assertEqual(errors, [])
+        # An exit from a thread that is not inside the block is refused.
+        with self.assertRaises(RuntimeError):
+            shared.__exit__(None, None, None)
+        with shared:
+            pass
+        self._close_after_teardown(stream)
+
+    def test_stream_scopes_on_threads_outside_threading(self):
+        import _thread
+        import threading
+
+        from executorch.runtime import cuda
+
+        # Threads started outside the threading module reuse ids, and their
+        # slots must still be freed when they end inside a block.
+        stream = cuda.Stream()
+        shared = cuda.stream(stream)
+        errors = []
+
+        def enter_and_end(done):
+            try:
+                shared.__enter__()
+            except Exception as error:
+                errors.append(error)
+            done.set()
+
+        for _ in range(2):
+            done = threading.Event()
+            _thread.start_new_thread(enter_and_end, (done,))
+            done.wait()
+        self.assertEqual(errors, [])
+        with shared:
+            pass
+        self._close_after_teardown(stream)
+
+    def test_stream_scope_ends_on_its_own_thread(self):
+        import threading
+
+        from executorch.runtime import cuda
+
+        stream = cuda.Stream()
+        entered = threading.Event()
+        leave = threading.Event()
+        scope = cuda.stream(stream)
+
+        def hold():
+            with scope:
+                entered.set()
+                leave.wait()
+
+        holder = threading.Thread(target=hold)
+        holder.start()
+        entered.wait()
+        try:
+            with self.assertRaises(RuntimeError):
+                scope.__exit__(None, None, None)
+            with self.assertRaises(RuntimeError):
+                stream.close()
+        finally:
+            leave.set()
+            holder.join()
+        # A scope object dropped without an exit ends its block.
+        dropped = cuda.stream(stream)
+        dropped.__enter__()
+        del dropped
+        gc.collect()
+        self._close_after_teardown(stream)
+
+    def test_torch_free_caller_shares_one_stream_across_programs(self):
+        self._require_libgomp_without_torch()
+        programs = [
+            self._export_to_directory(
+                f"torch_free_{index}", module, (torch.ones(4, 8),)
+            )
+            for index, module in enumerate((torch.nn.ReLU(), torch.nn.Tanh()))
+        ]
+        child = """
+import sys
+import numpy as np
+from executorch.runtime import Runtime, cuda
+
+value = np.linspace(-2, 2, 32, dtype=np.float32).reshape(4, 8)
+stream = cuda.Stream()
+with cuda.stream(stream):
+    outputs = [
+        np.asarray(
+            Runtime.get().load_program(path, data_path=data or None)
+            .load_method("forward").execute([value])[0]
+        )
+        for path, data in zip(sys.argv[1::2], sys.argv[2::2])
+    ]
+# A delegate that would replay a CUDA graph refuses a caller stream, so the
+# refusal shows that the selection reached both programs.
+Runtime.get().backend_registry.set_option(
+    "CudaBackend", {"enable_cuda_graph_for_method": "forward"}
+)
+graphed = [
+    Runtime.get().load_program(path, data_path=data or None).load_method("forward")
+    for path, data in zip(sys.argv[1::2], sys.argv[2::2])
+]
+with cuda.stream(stream):
+    for method in graphed:
+        try:
+            method.execute([value])
+        except RuntimeError:
+            continue
+        raise AssertionError("A delegate did not see the selected stream")
+stream.close()
+np.testing.assert_allclose(outputs[0], np.maximum(value, 0), atol=1e-6)
+np.testing.assert_allclose(outputs[1], np.tanh(value), atol=1e-6)
+assert "torch" not in sys.modules
+"""
+        arguments = [item or "" for program in programs for item in program]
+        result = subprocess.run(
+            [sys.executable, "-c", child, *arguments],
+            env=dict(os.environ, EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT="executorch"),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_delegate_cross_stream_input_and_output(self):
         method = self._load_method()

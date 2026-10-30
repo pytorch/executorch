@@ -158,32 +158,50 @@ class QnnBackend(BackendDetails):
     ) -> PreprocessResult:
         option = generate_qnn_executorch_option(compile_specs)
         obj_options = flatbuffer_to_option(option)
+        if obj_options.target_options is not None:
+            return QnnBackend.preprocess_multimethod(
+                {DEFAULT_GRAPH_NAME: [edge_program]},
+                {DEFAULT_GRAPH_NAME: [compile_specs]},
+            )[DEFAULT_GRAPH_NAME][0]
         qnn_manager = get_current_qnn_manager(compile_specs)
-        qnn_manager.InitContext([DEFAULT_GRAPH_NAME])
-        py_op_wrapper_list = QnnBackend._build_op_wrappers(
-            edge_program,
-            qnn_manager.IsTensorDump(),
-            obj_options.op_package_options.op_package_infos,
-            obj_options.use_mha2sha,
-            obj_options.backend_options.backend_type,
-        )
-
-        qnn_context_binary = qnn_manager.Compile(
-            qnn_manager.GetGraphNames(),
-            [[py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrapper_list]],
-        )
-
-        if obj_options.saver:
-            exit(
-                f"Record all QNN API calls from saver backend at: {obj_options.saver_output_dir}"
+        init_result = qnn_manager.InitContext([DEFAULT_GRAPH_NAME])
+        try:
+            if init_result.value != 0:
+                raise RuntimeError(
+                    f"Failed to initialize QNN context: {init_result.value}"
+                )
+            py_op_wrapper_list = QnnBackend._build_op_wrappers(
+                edge_program,
+                qnn_manager.IsTensorDump(),
+                obj_options.op_package_options.op_package_infos,
+                obj_options.use_mha2sha,
+                obj_options.backend_options.backend_type,
             )
-        assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
-        qnn_manager.DestroyContext()
-        # For now, debug_handle_map is not used by QNN ExecuTorch
-        return PreprocessResult(
-            processed_bytes=qnn_context_binary,
-            debug_handle_map={},
-        )
+
+            qnn_context_binary = qnn_manager.Compile(
+                qnn_manager.GetGraphNames(),
+                [
+                    [
+                        py_op_wrapper.GetOpWrapper()
+                        for py_op_wrapper in py_op_wrapper_list
+                    ]
+                ],
+            )
+
+            if obj_options.saver:
+                exit(
+                    f"Record all QNN API calls from saver backend at: {obj_options.saver_output_dir}"
+                )
+            assert (
+                len(qnn_context_binary) != 0
+            ), "Failed to generate Qnn context binary."
+            # For now, debug_handle_map is not used by QNN ExecuTorch
+            return PreprocessResult(
+                processed_bytes=qnn_context_binary,
+                debug_handle_map={},
+            )
+        finally:
+            qnn_manager.DestroyContext()
 
     @staticmethod
     def _populate_delegate_mapping(
@@ -207,8 +225,12 @@ class QnnBackend(BackendDetails):
     @staticmethod
     def _get_compile_func(qnn_manager: PyQnnManager.QnnManager):
         def compile_func(graph_names, op_wrapper_list):
-            qnn_manager.InitContext(graph_names)
+            init_result = qnn_manager.InitContext(graph_names)
             try:
+                if init_result.value != 0:
+                    raise RuntimeError(
+                        f"Failed to initialize QNN context: {init_result.value}"
+                    )
                 qnn_context_binary = qnn_manager.Compile(graph_names, op_wrapper_list)
             finally:
                 qnn_manager.DestroyContext()
@@ -221,8 +243,13 @@ class QnnBackend(BackendDetails):
         def compile_func(graph_names, op_wrapper_list):
             with qnn_managers[0].CreateDlc() as dlc_handle:
                 for qnn_manager in qnn_managers:
-                    qnn_manager.InitContext(graph_names)
+                    init_result = qnn_manager.InitContext(graph_names)
                     try:
+                        if init_result.value != 0:
+                            raise RuntimeError(
+                                "Failed to initialize QNN context: "
+                                f"{init_result.value}"
+                            )
                         qnn_manager.CompileToDlc(
                             graph_names, op_wrapper_list, dlc_handle
                         )

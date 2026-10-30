@@ -12,6 +12,7 @@ add_executable(
   ../runtime/test/MethodMetaTest.cpp
   ../runtime/test/ProgramVersionTest.cpp
   runtime/deserialize/test_samples.cpp
+  runtime/graph/test_aliases.cpp
   runtime/graph/test_graph.cpp
   runtime/graph/test_graph_utils.cpp
   runtime/graph/test_memory_planning.cpp
@@ -95,6 +96,22 @@ if(TARGET native_llm_runner_utils)
   )
   target_compile_options(
     native_llm_runner_utils_test
+    PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  )
+endif()
+
+if(EXECUTORCH_BUILD_NATIVE_CPU)
+  add_executable(native_cpu_engine_test runtime/cpu/test_cpu_engine.cpp)
+  target_link_libraries(
+    native_cpu_engine_test
+    PRIVATE native_cpu_engine cpu_reference extension_threadpool native_api
+            native_graph_schema GTest::gtest_main
+  )
+  add_dependencies(native_cpu_engine_test native_graph_schema_gen)
+  add_test(NAME native_cpu_engine_test COMMAND native_cpu_engine_test)
+  target_compile_options(
+    native_cpu_engine_test
     PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
   )

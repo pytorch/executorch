@@ -19,6 +19,7 @@ def define_common_targets():
             "//executorch/backends/native/runtime:runtime",
             "//executorch/runtime/backend:interface",
         ],
+        deps = ["//executorch/extension/threadpool:threadpool"],
         visibility = ["PUBLIC"],
     )
 
@@ -26,7 +27,6 @@ def define_common_targets():
         name = "cpu_engine",
         srcs = ["runtime/CPUBackend.cpp"],
         exported_deps = [":cpu_runtime"],
-        deps = ["//executorch/extension/threadpool:threadpool"],
         visibility = ["PUBLIC"],
         # @lint-ignore BUCKLINT: Backend registration runs at static initialization.
         link_whole = True,

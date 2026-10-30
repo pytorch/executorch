@@ -6,7 +6,6 @@
 
 #include <executorch/backends/cpu/runtime/CPUPlan.h>
 #include <executorch/backends/native/runtime/Program.h>
-#include <executorch/extension/threadpool/threadpool.h>
 
 #include <algorithm>
 #include <chrono>
@@ -30,20 +29,6 @@ constexpr uint32_t kCpuDelegateVersion = 1;
 std::optional<RuntimeConfigurationFactory>& runtime_configuration_factory() {
   static std::optional<RuntimeConfigurationFactory> factory;
   return factory;
-}
-
-ExecutionContext execution_context(runtime::EventTracer* tracer = nullptr) {
-  ExecutionContext context;
-  context.threadpool = extension::threadpool::get_pthreadpool();
-  context.threads = context.threadpool
-      ? extension::threadpool::get_threadpool()->get_thread_count()
-      : 1;
-#if defined(__x86_64__) || defined(__i386__)
-  context.avx2_fma =
-      __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
-#endif
-  context.event_tracer = tracer;
-  return context;
 }
 
 class CPUExecution {
@@ -78,6 +63,19 @@ class CPUExecution {
           NotSupported,
           "CPU static delegate requires unaliased values: %s",
           value.name.c_str());
+      if (value.is_tensor()) {
+        const auto dtype = value.tensor_meta().dtype;
+        ET_CHECK_OR_RETURN_ERROR(
+            dtype == ptn::ScalarType::Float || dtype == ptn::ScalarType::Byte ||
+                dtype == ptn::ScalarType::Char ||
+                dtype == ptn::ScalarType::Short ||
+                dtype == ptn::ScalarType::Int ||
+                dtype == ptn::ScalarType::Long ||
+                dtype == ptn::ScalarType::Bool,
+            NotSupported,
+            "CPU static delegate requires a supported dtype: %s",
+            value.name.c_str());
+      }
       auto bytes = tensor_bytes(value);
       if (!bytes.ok()) {
         return bytes.error();
@@ -95,7 +93,7 @@ class CPUExecution {
       return error;
     }
     plan_ = std::make_unique<CPUPlan>(
-        graph, buffers_, std::move(configuration), execution_context());
+        graph, buffers_, std::move(configuration), current_execution_context());
     error = plan_->select();
     if (error != Error::Ok) {
       return error;
@@ -219,7 +217,7 @@ class CPUExecution {
       }
     }
     const auto error =
-        plan_->execute(execution_context(context.event_tracer()));
+        plan_->execute(current_execution_context(context.event_tracer()));
     if (error != Error::Ok) {
       return error;
     }

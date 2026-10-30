@@ -18,6 +18,10 @@ endif()
 
 add_subdirectory(runtime)
 
+if(EXECUTORCH_BUILD_NATIVE_CPU)
+  add_subdirectory(runtime/cpu)
+endif()
+
 if(EXECUTORCH_BUILD_NATIVE_VULKAN)
   add_subdirectory(runtime/vulkan)
 endif()
@@ -32,6 +36,7 @@ install(
   FILES_MATCHING
   PATTERN "*.h"
   PATTERN "test" EXCLUDE
+  PATTERN "cpu" EXCLUDE
   PATTERN "vulkan" EXCLUDE
   PATTERN "ggml" EXCLUDE
 )
