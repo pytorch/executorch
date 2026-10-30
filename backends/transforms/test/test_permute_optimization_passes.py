@@ -2615,6 +2615,59 @@ class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
             "permute_bypassed_by_one_region_is_kept_by_another",
         )
 
+    def test_lower_rank_constant_is_transposed_into_region_layout(self) -> None:
+        # Constants that reorder non-unit dims need a transpose; constants that
+        # only move unit dims reshape. The channels-last cases use a start
+        # permutation that is not its own inverse, so applying the wrong one fails.
+        ncl_to_nlc = ((1, 4, 6), [0, 2, 1], [0, 2, 1])
+        nchw_to_nhwc = ((1, 3, 4, 5), [0, 2, 3, 1], [0, 3, 1, 2])
+        cases = (
+            (ncl_to_nlc, (6, 4), 1),
+            (ncl_to_nlc, (4,), 0),
+            (ncl_to_nlc, (6, 1), 0),
+            (nchw_to_nhwc, (4, 5, 3), 1),
+            (nchw_to_nhwc, (5, 3), 1),
+            (nchw_to_nhwc, (3,), 0),
+            (nchw_to_nhwc, (4, 1, 1), 0),
+        )
+        for (x_shape, start, end), const_shape, expected_permutes in cases:
+            with self.subTest(x_shape=x_shape, const_shape=const_shape):
+                builder = GraphBuilder()
+                x_data = torch.randn(*x_shape)
+                const_data = torch.randn(*const_shape)
+                x = builder.placeholder("x", x_data)
+                const = builder.placeholder("p_const", const_data)
+                p1 = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default, args=(x, start)
+                )
+                add = builder.call_operator(
+                    op=exir_ops.edge.aten.add.Tensor, args=(p1, const)
+                )
+                p2 = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default, args=(add, end)
+                )
+                builder.output([p2])
+                original = builder.get_graph_module()
+                gm_before = copy.deepcopy(original)
+
+                result = cast(
+                    PassResult, RemovePermutesAroundElementwiseOps()(original)
+                )
+
+                self.assertTrue(result.modified)
+                validate_numerics(
+                    gm_before,
+                    result.graph_module,
+                    [x_data, const_data],
+                    f"lower_rank_constant_{const_shape}",
+                )
+                self.assertEqual(
+                    count_node(
+                        result.graph_module, exir_ops.edge.aten.permute_copy.default
+                    ),
+                    expected_permutes,
+                )
+
 
 class LayoutPermuteVisibilityTest(unittest.TestCase):
     """The data-movement passes must see both permute dialects.
