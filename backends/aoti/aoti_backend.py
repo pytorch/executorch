@@ -286,6 +286,9 @@ class AotiBackend(ABC):
         Preprocess the edge program and compile it using AOTInductor.
         Weights are always separated from the SO file.
         """
+        # First, so that a backend keeping its data in the .pte refuses a data
+        # name before anything is compiled.
+        data_name = cls.data_name_from_compile_specs(compile_specs)
         device_name = cls.get_device_name()
         decomposition_table = cls.get_decomposition_table()
         options = cls.get_aoti_compile_options(compile_specs)
@@ -390,7 +393,6 @@ class AotiBackend(ABC):
         named_data_store.add_named_data(so_blob_key, so_data, 1, None)
         # Determine whether to save named data externally based on backend setting
         # External: save to separate .ptd file, otherwise merge with .pte file
-        data_name = cls.data_name_from_compile_specs(compile_specs)
         external_tag = data_name if cls.save_data_externally() else None
 
         named_data_store.add_named_data(weights_blob_key, blob_data, 1, external_tag)
