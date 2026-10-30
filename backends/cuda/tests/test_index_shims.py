@@ -40,6 +40,15 @@ class TestIndexShims(unittest.TestCase):
             partitioner=[CudaPartitioner([spec])],
             compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
+        # Everything runs in the delegate, the index ops included.
+        self.assertEqual(
+            {
+                n.target.__name__
+                for n in lowered.exported_program().graph.nodes
+                if n.op == "call_function"
+            },
+            {"executorch_call_delegate", "getitem"},
+        )
         from executorch.runtime import Runtime
 
         with tempfile.TemporaryDirectory() as directory:
@@ -53,7 +62,8 @@ class TestIndexShims(unittest.TestCase):
                     torch.testing.assert_close(output.cpu(), expected)
 
     def test_mask_index_and_index_put(self):
-        """Inductor also has no atomic add for int64."""
+        """index_put with accumulate goes to the shim too: Inductor has no atomic
+        add for int64."""
 
         class MaskIndex(torch.nn.Module):
             def forward(self, x, mask, column, idx, counts):
@@ -100,6 +110,7 @@ class TestIndexShims(unittest.TestCase):
 
         idx = torch.tensor([0, 3, 3, 1, 3])
         deterministic = torch.are_deterministic_algorithms_enabled()
+        warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
         torch.use_deterministic_algorithms(True)
         try:
             for dtype in (torch.float16, torch.bfloat16):
@@ -108,4 +119,4 @@ class TestIndexShims(unittest.TestCase):
                     values = torch.arange(1, 6, dtype=dtype)
                     self._run(Put(), [(x, idx, values)])
         finally:
-            torch.use_deterministic_algorithms(deterministic)
+            torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
