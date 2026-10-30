@@ -808,13 +808,37 @@ class ET_EXPERIMENTAL CudaBackend final
       return commit_offgraph_kv_step(handle, kv_step_width);
     }
 
-    // ---------------------------------------------------------------
-    // Normal path (also used for WARMUP and CAPTURE phases)
-    // ---------------------------------------------------------------
-    bool is_capture_step =
+    const bool is_capture_step =
         (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
          handle->cuda_graph_state.warmup_remaining == 0);
+    bool graph_ran = false;
+    Error error =
+        run_once(handle, args, n_inputs, n_outputs, is_capture_step, graph_ran);
+    if (error != Error::Ok && is_capture_step && !graph_ran) {
+      // A capture records kernels without running them, so until the new graph
+      // runs, the inputs and any state the program updates are untouched.
+      ET_LOG(
+          Info,
+          "CUDA graph: capture failed for '%s'; running this call and later "
+          "ones without a graph",
+          handle->method_name.c_str());
+      error = run_once(handle, args, n_inputs, n_outputs, false, graph_ran);
+    }
+    ET_CHECK_OK_OR_RETURN_ERROR(error);
+    return commit_offgraph_kv_step(handle, kv_step_width);
+  }
 
+ private:
+  // Runs the program once. On the capture step it captures the CUDA graph
+  // instead, then launches it once, and sets graph_ran once that launch is
+  // queued.
+  Error run_once(
+      cuda::CudaDelegateHandle* handle,
+      Span<EValue*> args,
+      size_t n_inputs,
+      size_t n_outputs,
+      bool is_capture_step,
+      bool& graph_ran) const {
     // Wrrap them as SlimTensors for AOTI execution without any host<->device
     // copies.
     std::vector<SlimTensor*> slim_inputs(n_inputs);
@@ -841,9 +865,9 @@ class ET_EXPERIMENTAL CudaBackend final
           return;
         }
         // Free what this attempt pinned and disable graphs for this method, so
-        // a capture that cannot succeed costs one error rather than one on
-        // every fourth call for the life of the process. Eager execution is
-        // correct, just slower.
+        // a capture that cannot succeed is tried once rather than on every
+        // fourth call for the life of the process. Eager execution is correct,
+        // just slower.
         for (void* ptr : state_->static_input_ptrs) {
           (void)cudaFree(ptr);
         }
@@ -1064,9 +1088,9 @@ class ET_EXPERIMENTAL CudaBackend final
                 slim_outputs[i], &(args[i + n_inputs]->toTensor()))) {
           std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
           ET_LOG(
-              Error,
+              Info,
               "CUDA graph: output %zu of '%s' is not laid out like its "
-              "ETensor; this call fails and later calls run without a graph",
+              "ETensor; running without a graph",
               i,
               handle->method_name.c_str());
           return Error::NotSupported;
@@ -1079,9 +1103,9 @@ class ET_EXPERIMENTAL CudaBackend final
         if (resize_err != Error::Ok) {
           std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
           ET_LOG(
-              Error,
+              Info,
               "CUDA graph: cannot resize output %zu of '%s' to its captured "
-              "shape; this call fails and later calls run without a graph",
+              "shape; running without a graph",
               i,
               handle->method_name.c_str());
           return resize_err;
@@ -1123,6 +1147,7 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphLaunch (first replay) failed: %s",
           cudaGetErrorString(gerr));
+      graph_ran = true;
 
       // Copy capture-step outputs into the planned GPU ET buffers (D2D).
       for (size_t i = 0; i < n_outputs; i++) {
@@ -1139,7 +1164,7 @@ class ET_EXPERIMENTAL CudaBackend final
       // Last failure point is behind us, so the captured state is now the state
       // the next call should replay from.
       capture_guard.disarm();
-      return commit_offgraph_kv_step(handle, kv_step_width);
+      return Error::Ok;
     }
 
     // ----- Normal / WARMUP execution continues here -----
@@ -1196,9 +1221,10 @@ class ET_EXPERIMENTAL CudaBackend final
       slim_outputs[i] = nullptr;
     }
 
-    return commit_offgraph_kv_step(handle, kv_step_width);
+    return Error::Ok;
   }
 
+ public:
   void destroy(DelegateHandle* handle_) const override {
     if (handle_ == nullptr) {
       return;
