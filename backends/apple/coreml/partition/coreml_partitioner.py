@@ -205,6 +205,7 @@ def _makes_tensor(node: torch.fx.Node) -> bool:
 def _find_nodes_of_partitions_without_tensor_inputs(
     partitions: List[Partition],
     kept_inside: Collection[str],
+    state: Collection[str],
     allow_partitions_without_inputs: bool,
 ) -> Set[torch.fx.Node]:
     """The nodes of the partitions that read no tensor from outside, except the
@@ -212,15 +213,21 @@ def _find_nodes_of_partitions_without_tensor_inputs(
 
     Core ML cannot take a symbolic size as an input, and below iOS 18 it
     rejects a model with no inputs, so such a partition cannot be delegated.
+    A partition that uses state stays: moving it to the CPU would leave the
+    state's other readers in Core ML a stale copy, and Core ML state needs
+    iOS 18 anyway.
     """
     nodes = set()
     for partition in partitions:
-        inputs = [
+        outside = [
             arg
             for node in partition.nodes
             for arg in node.all_input_nodes
-            if arg not in partition.nodes and arg.name not in kept_inside
+            if arg not in partition.nodes
         ]
+        if any(arg.name in state for arg in outside):
+            continue
+        inputs = [arg for arg in outside if arg.name not in kept_inside]
         reads_tensor = any(_makes_tensor(arg) for arg in inputs)
         if not reads_tensor and (inputs or not allow_partitions_without_inputs):
             nodes.update(partition.nodes)
@@ -231,6 +238,7 @@ def _propose_partitions(
     graph_module: torch.fx.GraphModule,
     op_support: OperatorSupportBase,
     kept_inside: Collection[str],
+    state: Collection[str],
     allow_partitions_without_inputs: bool,
 ) -> Tuple[List[Partition], Set[torch.fx.Node]]:
     """Propose Core ML partitions, leaving out every op that reads a tensor
@@ -252,7 +260,7 @@ def _propose_partitions(
             # Moving those ops out can leave a partition that reads no tensor,
             # such as the index math of a gather.
             new |= _find_nodes_of_partitions_without_tensor_inputs(
-                partitions, kept_inside, allow_partitions_without_inputs
+                partitions, kept_inside, state, allow_partitions_without_inputs
             )
         if not new:
             return partitions, left_out
@@ -506,6 +514,7 @@ class CoreMLPartitioner(Partitioner):
                 log=True,
             ),
             self._placeholders_kept_inside(exported_program),
+            self._state_kept_inside(exported_program),
             self._allows_partitions_without_inputs(),
         )
         if left_out:
@@ -562,16 +571,28 @@ class CoreMLPartitioner(Partitioner):
         """The weights, constants and state this partitioner moves into Core ML."""
         signature = ep.graph_signature
         mutated = set(signature.buffers_to_mutate.values())
-        kept = set()
+        kept = self._state_kept_inside(ep)
         if self.take_over_constant_data:
             kept |= set(signature.inputs_to_parameters)
             kept |= set(signature.inputs_to_lifted_tensor_constants)
-        for name, buffer in signature.inputs_to_buffers.items():
-            if (buffer in mutated and self.take_over_mutable_buffer) or (
-                buffer not in mutated and self.take_over_constant_data
-            ):
-                kept.add(name)
+            kept |= {
+                name
+                for name, buffer in signature.inputs_to_buffers.items()
+                if buffer not in mutated
+            }
         return kept
+
+    def _state_kept_inside(self, ep: ExportedProgram) -> Set[str]:
+        """The mutable buffers this partitioner moves into Core ML as state."""
+        if not self.take_over_mutable_buffer:
+            return set()
+        signature = ep.graph_signature
+        mutated = set(signature.buffers_to_mutate.values())
+        return {
+            name
+            for name, buffer in signature.inputs_to_buffers.items()
+            if buffer in mutated
+        }
 
     def ops_to_not_decompose(
         self, ep: ExportedProgram
@@ -614,6 +635,7 @@ class CoreMLPartitioner(Partitioner):
             ep.graph_module,
             create_op_support(is_supported),
             self._placeholders_kept_inside(ep),
+            self._state_kept_inside(ep),
             self._allows_partitions_without_inputs(),
         )
         rejected = set()
