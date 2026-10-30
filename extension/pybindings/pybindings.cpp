@@ -1818,7 +1818,16 @@ class PyCallerStreamScope final {
   explicit PyCallerStreamScope(std::shared_ptr<PyCudaStream> owner)
       : owner_(std::move(owner)) {}
   explicit PyCallerStreamScope(uintptr_t stream)
-      : stream_(reinterpret_cast<cudaStream_t>(stream)) {}
+      : stream_(reinterpret_cast<cudaStream_t>(stream)) {
+    // 0 and cudaStreamLegacy (1) both name the legacy default stream, which
+    // waits for every blocking stream, so selecting it would defeat the point
+    // of choosing a stream. The CUDA delegate also refuses a null stream.
+    if (stream == 0 || stream == 1) {
+      throw std::invalid_argument(
+          "The legacy default CUDA stream (handle 0 or 1) cannot be selected; "
+          "select a stream created for this, such as cuda.Stream()");
+    }
+  }
 
   // Losing the scope on the thread that entered it ends it at once, or when
   // the blocks started after it end. Another thread cannot change the
@@ -4883,7 +4892,9 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def_property_readonly("device", &PyCudaStream::device)
       .def("close", &PyCudaStream::close);
   py::class_<PyCallerStreamScope>(m, "_CallerStreamScope", py::module_local())
-      .def(py::init<std::shared_ptr<PyCudaStream>>(), py::arg("stream"))
+      .def(
+          py::init<std::shared_ptr<PyCudaStream>>(),
+          py::arg("stream").none(false))
       .def(py::init<uintptr_t>(), py::arg("stream"))
       .def_static("can_check_device", &PyCallerStreamScope::can_check_device)
       .def("__enter__", &PyCallerStreamScope::enter)

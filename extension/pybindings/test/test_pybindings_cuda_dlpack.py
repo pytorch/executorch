@@ -496,6 +496,11 @@ class CudaDLPackTest(unittest.TestCase):
         gc.collect()
         self._assert_no_stream_selected()
         # The native scope keeps the same rules for callers that use it directly.
+        for handle in (0, 1):
+            with self.assertRaisesRegex(ValueError, "legacy default CUDA stream"):
+                cuda._bindings()._CallerStreamScope(handle)
+        with self.assertRaises(TypeError):
+            cuda._bindings()._CallerStreamScope(None)
         native = cuda._bindings()._CallerStreamScope(stream._native)
         native.__enter__()
         try:

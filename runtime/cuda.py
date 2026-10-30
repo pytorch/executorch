@@ -148,14 +148,7 @@ def _target(s: Any) -> Any:
     index = _device_index(s)
     if index is not None and index > 0:
         raise RuntimeError("Only a stream on CUDA device 0 can be selected for now")
-    # 0 and cudaStreamLegacy (1) both name the legacy default stream, which
-    # waits for every blocking stream, so selecting it would defeat the point
-    # of choosing a stream. The CUDA delegate also refuses a null stream.
-    if handle in (0, 1):
-        raise ValueError(
-            "The legacy default CUDA stream (handle 0 or 1) cannot be selected; "
-            "select a stream created for this, such as cuda.Stream()"
-        )
+    # The native scope refuses the legacy default stream, handle 0 or 1.
     return handle
 
 
