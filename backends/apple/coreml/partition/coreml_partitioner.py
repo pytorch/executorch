@@ -175,10 +175,12 @@ def _cannot_be_coreml_input(node: torch.fx.Node) -> bool:
 
 
 def _find_readers_of_unsupported_inputs(
-    partitions: List[Partition], kept_inside: Collection[str]
+    partitions: List[Partition],
+    kept_inside: Collection[str],
+    left_out: Collection[torch.fx.Node],
 ) -> Set[torch.fx.Node]:
     """The nodes that read a tensor Core ML cannot take as an input from outside
-    their partition.
+    their partition, or a symbolic value computed by an op left out of Core ML.
 
     A tensor made inside the partition, or a weight, constant or state the
     partitioner moves into Core ML, is not an input.
@@ -190,7 +192,16 @@ def _find_readers_of_unsupported_inputs(
         if any(
             arg not in partition.nodes
             and arg.name not in kept_inside
-            and _cannot_be_coreml_input(arg)
+            and (
+                _cannot_be_coreml_input(arg)
+                or (
+                    arg in left_out
+                    and isinstance(
+                        arg.meta.get("val"),
+                        (torch.SymInt, torch.SymFloat, torch.SymBool),
+                    )
+                )
+            )
             for arg in node.all_input_nodes
         )
     }
@@ -255,7 +266,7 @@ def _propose_partitions(
         partitions = CapabilityBasedPartitioner(
             graph_module, support, allows_single_node_partition=True
         ).propose_partitions()
-        new = _find_readers_of_unsupported_inputs(partitions, kept_inside)
+        new = _find_readers_of_unsupported_inputs(partitions, kept_inside, left_out)
         if new or left_out:
             # Moving those ops out can leave a partition that reads no tensor,
             # such as the index math of a gather.
@@ -506,6 +517,7 @@ class CoreMLPartitioner(Partitioner):
         logger.info("CoreMLPartitioner::partition")
         partition_tags = {}
 
+        state = self._state_kept_inside(exported_program)
         partition_list, left_out = _propose_partitions(
             exported_program.graph_module,
             _OperatorsSupportedForCoreMLBackend(
@@ -514,9 +526,18 @@ class CoreMLPartitioner(Partitioner):
                 log=True,
             ),
             self._placeholders_kept_inside(exported_program),
-            self._state_kept_inside(exported_program),
+            state,
             self._allows_partitions_without_inputs(),
         )
+        for node in left_out:
+            read = [arg.name for arg in node.all_input_nodes if arg.name in state]
+            if read:
+                raise NotImplementedError(
+                    f"{node} has to run outside of CoreML, but it reads "
+                    f"{', '.join(read)}, which CoreML takes over as state, so it "
+                    "would read a stale copy.  Set take_over_mutable_buffer=False "
+                    "in the CoreMLPartitioner to keep the state outside of CoreML."
+                )
         if left_out:
             msg = (
                 "The model reads a tensor whose dtype CoreML cannot take as an "

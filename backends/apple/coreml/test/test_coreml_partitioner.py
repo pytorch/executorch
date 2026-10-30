@@ -634,12 +634,15 @@ class TestCoreMLPartitioner(unittest.TestCase):
         """
         With a dynamic height, the index math of a decomposed roll reads only
         a symbolic size, which Core ML cannot take as an input, so it runs on
-        the CPU too.
+        the CPU too.  So do a reshape to a size read from the uint8 input, and
+        a scale computed from it.
         """
 
         class Model(torch.nn.Module):
             def forward(self, image):
-                return torch.roll(image, 1, 2).float() / 255.0
+                rolled = torch.roll(image, 1, 2).float() / 255.0
+                scaled = rolled * (image.shape[2] / 8)
+                return scaled.reshape(1, 3 * image.shape[2], 8)
 
         model = Model().eval()
         x = torch.randint(0, 256, (1, 3, 8, 8), dtype=torch.uint8)
@@ -652,6 +655,14 @@ class TestCoreMLPartitioner(unittest.TestCase):
         edge = executorch.exir.to_edge_transform_and_lower(
             ep, partitioner=[CoreMLPartitioner()]
         )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        for name in ("aten.arange.start_step", "aten.view_copy.default"):
+            self.assertIn(name, op_names)
+        self.assertIn("executorch_call_delegate", op_names)
         buffer = edge.to_executorch().buffer
         if _TEST_RUNTIME:
             x = torch.randint(0, 256, (1, 3, 12, 8), dtype=torch.uint8)
@@ -698,6 +709,57 @@ class TestCoreMLPartitioner(unittest.TestCase):
         ]
         self.assertNotIn("aten.add.Tensor", op_names)
         self.assertIn("aten.acosh.default", op_names)
+
+    def test_uint8_input_size_that_slices_state(self):
+        """
+        A slice of state to a size read from a uint8 input has to run on the
+        CPU, where it would read a stale copy of state that Core ML takes over,
+        so lowering refuses it unless the state stays outside of Core ML.
+        """
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("hist", torch.zeros(64))
+
+            def forward(self, image, y):
+                out = y * self.hist + self.hist[: image.shape[2]].sum()
+                self.hist.add_(1)
+                return out
+
+        model = Model().eval()
+        inputs = (
+            torch.randint(0, 256, (1, 3, 8, 8), dtype=torch.uint8),
+            torch.randn(64),
+        )
+        ep = torch.export.export(
+            model,
+            inputs,
+            dynamic_shapes=({2: torch.export.Dim("height", min=2, max=64)}, None),
+            strict=True,
+        )
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18
+        )
+        with self.assertRaisesRegex(NotImplementedError, "take_over_mutable_buffer"):
+            executorch.exir.to_edge_transform_and_lower(
+                ep, partitioner=[CoreMLPartitioner(compile_specs=compile_specs)]
+            )
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep,
+            partitioner=[
+                CoreMLPartitioner(
+                    compile_specs=compile_specs, take_over_mutable_buffer=False
+                )
+            ],
+        )
+        if _TEST_RUNTIME:
+            method = Runtime.get().load_program(edge.to_executorch().buffer)
+            method = method.load_method("forward")
+            eager = Model().eval()
+            for _ in range(2):
+                out = method.execute(inputs)[0]
+                self.assertTrue(torch.allclose(out, eager(*inputs), atol=1e-2))
 
     def test_uint8_buffer_not_taken_over_is_read_outside_the_delegate(self):
         """
