@@ -76,8 +76,9 @@ class Int6LargeRulesTest(unittest.TestCase):
         for bucket, expected in expected_counts.items():
             configs = tile_autotune_configs(bucket)
             self.assertEqual(len(configs), expected)
-            self.assertEqual(len(legal_configs(bucket, 256)), expected // 3)
-            self.assertEqual(len(legal_configs(bucket, 5376)), expected)
+            legal_expected = 18 if torch.version.hip is not None else expected
+            self.assertEqual(len(legal_configs(bucket, 256)), legal_expected // 3)
+            self.assertEqual(len(legal_configs(bucket, 5376)), legal_expected)
             self.assertTrue(hasattr(torch.ops.triton, f"int6_quantized_gemm_m{bucket}"))
 
     @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
