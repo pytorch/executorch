@@ -41,7 +41,10 @@ them, innermost first. A block also ends when its thread ends, or when its
 scope object is dropped on that thread. A scope object dropped on another
 thread cannot end the block, so the stream stays selected until the thread
 that started the block ends. A ``Stream`` cannot be closed while any block
-selects its handle. Any other stream must stay alive while selected.
+selects its handle, and a closed one is refused. A stream given only by its
+handle, for example through ``ExternalStream``, must stay alive while
+selected: CUDA has no safe way to tell a destroyed handle from a live one, so
+this module cannot refuse one, and using one can crash the process.
 """
 
 import contextlib
