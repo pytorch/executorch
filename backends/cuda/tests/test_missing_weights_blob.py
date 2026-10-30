@@ -222,6 +222,36 @@ class TestMissingWeightsBlob(unittest.TestCase):
                     module(value).cpu(),
                 )
 
+    def test_float64_weight_loads(self) -> None:
+        """The weight cache must accept a float64 weight the export wrote."""
+
+        class Float64Scale(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer(
+                    "scale", torch.linspace(1.0, 2.0, 64, dtype=torch.float64)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x.to(torch.float64) * self.scale).to(x.dtype)
+
+        from executorch.runtime import Runtime
+
+        with tempfile.TemporaryDirectory() as outdir:
+            module = Float64Scale()
+            path = self._lower(outdir, module=module)
+            (blob,) = [f for f in os.listdir(outdir) if f.endswith(".ptd")]
+            method = (
+                Runtime.get()
+                .load_program(path, data_path=os.path.join(outdir, blob))
+                .load_method("forward")
+            )
+            # The same draw _lower made for its example input.
+            torch.manual_seed(0)
+            value = torch.randn(4, 64, device="cuda")
+            out = method.execute([value.cpu()])
+            torch.testing.assert_close(out[0].cpu(), module(value).cpu())
+
     def test_load_succeeds_when_the_model_has_no_constants(self) -> None:
         """A model with nothing to bind still loads without its weights blob.
 

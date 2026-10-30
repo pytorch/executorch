@@ -633,8 +633,8 @@ def _antialiased_resize(
     each output's taps, one dim at a time. Inductor has no lowering for these
     resizes, so it would call ATen's kernel, which this backend does not ship.
     """
-    # The backend's tensors have no float64, and ATen's CUDA kernel has no
-    # integer version.
+    # The rewrite computes in float32, so float64 would lose precision, and
+    # ATen's CUDA kernel has no integer version.
     if input.dtype not in (torch.float32, torch.float16, torch.bfloat16):
         return NotImplemented
     # Half types are computed in float and rounded once, so they can differ

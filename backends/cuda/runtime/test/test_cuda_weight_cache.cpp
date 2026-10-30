@@ -275,9 +275,19 @@ TEST(CudaWeightCacheTest, RejectsTruncationAndTrailingData) {
       Error::InvalidProgram);
 }
 
+TEST(CudaWeightCacheTest, ParsesDoubleWeight) {
+  const std::vector<uint8_t> bytes = serialized_metadata(7); // Double
+  cuda::CudaWeightCache::Metadata metadata;
+  ASSERT_EQ(
+      cuda::CudaWeightCache::parse(bytes.data(), bytes.size(), metadata),
+      Error::Ok);
+  ASSERT_EQ(metadata.entries.size(), 1u);
+  EXPECT_EQ(metadata.entries[0].dtype, 7);
+}
+
 TEST(CudaWeightCacheTest, RejectsUnsupportedDtype) {
   const std::vector<uint8_t> bytes =
-      serialized_metadata(7); // Double is unsupported.
+      serialized_metadata(9); // ComplexFloat is unsupported.
   cuda::CudaWeightCache::Metadata metadata;
   EXPECT_EQ(
       cuda::CudaWeightCache::parse(bytes.data(), bytes.size(), metadata),

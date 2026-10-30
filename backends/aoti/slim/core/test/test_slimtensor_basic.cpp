@@ -508,10 +508,10 @@ TEST(SlimTensorValidationTest, InvalidDtypeUndefined) {
       "");
 }
 
-TEST(SlimTensorValidationTest, InvalidDtypeDouble) {
+TEST(SlimTensorValidationTest, InvalidDtypeComplexFloat) {
   std::vector<int64_t> sizes = {2, 3};
   std::vector<int64_t> strides = {3, 1};
-  size_t nbytes = 6 * sizeof(double);
+  size_t nbytes = 6 * 2 * sizeof(float);
   Storage storage = make_cpu_storage(nbytes);
 
   EXPECT_DEATH(
@@ -519,7 +519,7 @@ TEST(SlimTensorValidationTest, InvalidDtypeDouble) {
           std::move(storage),
           makeArrayRef(sizes),
           makeArrayRef(strides),
-          static_cast<c10::ScalarType>(7)), // Double = 7
+          static_cast<c10::ScalarType>(9)), // ComplexFloat = 9
       "");
 }
 
