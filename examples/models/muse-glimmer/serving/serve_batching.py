@@ -67,6 +67,12 @@ def _parse_args(argv=None):
         help="Opt-in prefix reuse for new sessions and prompt replacements; "
         "requires batching executor cache-clone support.",
     )
+    parser.add_argument(
+        "--prefix-capture-slots",
+        type=int,
+        default=0,
+        help="Transient capture rows; 0 (default): size from session/request limits",
+    )
     parser.add_argument("--max-vision-patches", type=int, default=4096)
     parser.add_argument(
         "--prefix-checkpoint-interval",
@@ -87,7 +93,7 @@ def _parse_args(argv=None):
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
-    _validate_limits(parser, args)
+    _validate_limits(parser, args, prefix_capture_slots=args.prefix_capture_slots)
     if not 0 <= args.dflash_n_draft < _INT32_MAX:
         parser.error("--dflash-n-draft must be nonnegative and below INT32_MAX")
     if args.dflash_n_draft and not args.dflash:
@@ -158,6 +164,10 @@ def _worker_command(args):
         ("max_decode_sequences", args.max_decode_sequences),
         ("max_inflight_requests", args.max_inflight_requests),
         ("prefix_cache_entries", args.prefix_cache_entries),
+        (
+            "prefix_capture_slots",
+            args.prefix_capture_slots if args.prefix_cache_entries else None,
+        ),
         ("prefix_checkpoint_interval", args.prefix_checkpoint_interval or None),
         ("max_vision_patches", args.max_vision_patches),
         ("max_image_bytes", args.max_image_bytes),

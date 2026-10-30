@@ -15,15 +15,18 @@ import shutil
 from collections import Counter
 from pathlib import Path
 from typing import Any
+from zipfile import ZipFile
 
 import torch
 import torchvision
 from executorch.backends.cpu.partitioner import CPU_DELEGATE_VERSION
 from executorch.backends.cpu.recipes import CPURecipeType
+from executorch.backends.native.passes import get_default_passes
 from executorch.backends.native.serialization import deserialize_graph
 from executorch.backends.native.serialization.schema import OpKind
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack.recipes import XNNPackRecipeType
+from executorch.exir.native import to_native
 from executorch.export import export, ExportRecipe, ExportSession
 from torchvision.models import get_model, get_model_weights, list_models
 
@@ -91,14 +94,20 @@ def write_manifest(
     args: argparse.Namespace,
     spec: dict[str, Any],
     exported: torch.export.ExportedProgram,
-    recipe: ExportRecipe,
-    session: ExportSession,
+    recipe: ExportRecipe | None,
+    session: ExportSession | None,
     image: torch.Tensor,
 ) -> None:
+    is_native = args.runtime == "native"
     is_cpu = spec["backend"] == "cpu"
-    passes = [] if is_cpu else XNNPACKPassManager(exported).passes
+    if is_native:
+        passes = [type(p) for p in get_default_passes()]
+        preprocess = "NativeBackend"
+    else:
+        passes = [] if is_cpu else XNNPACKPassManager(exported).passes
+        preprocess = "CpuBackend" if is_cpu else "XnnpackBackend"
     files = {}
-    artifact = "model.pte"
+    artifact = "model.ptn" if is_native else "model.pte"
     for name in (f"{args.model}.pt2", "input.bin", "eager.bin", "golden.bin", artifact):
         path = args.output / name
         with path.open("rb") as handle:
@@ -106,24 +115,35 @@ def write_manifest(
             for chunk in iter(lambda: handle.read(8 << 20), b""):
                 digest.update(chunk)
         files[name] = {"sha256": digest.hexdigest(), "bytes": path.stat().st_size}
-    program = session.get_executorch_program()
-    semantic_nodes = None
-    if is_cpu:
+    if session is None:
+        with ZipFile(args.output / artifact) as package:
+            graph = deserialize_graph(package.read("program.ptg"))
         semantic_nodes = [
-            node.name
-            for delegate in program.execution_plan[0].delegates
-            if delegate.id == "CpuBackend"
-            for node in deserialize_graph(
-                bytes(program.backend_delegate_data[delegate.processed.index].data)
-            ).nodes
-            if node.op_kind == OpKind.CALL_FUNCTION
+            node.name for node in graph.nodes if node.op_kind == OpKind.CALL_FUNCTION
         ]
+        stages = ["torch.export", "to_native"]
+        delegates = {}
+    else:
+        program = session.get_executorch_program()
+        semantic_nodes = None
+        if is_cpu:
+            semantic_nodes = [
+                node.name
+                for delegate in program.execution_plan[0].delegates
+                if delegate.id == "CpuBackend"
+                for node in deserialize_graph(
+                    bytes(program.backend_delegate_data[delegate.processed.index].data)
+                ).nodes
+                if node.op_kind == OpKind.CALL_FUNCTION
+            ]
+        stages = [stage.name for stage in session.get_stage_artifacts()]
+        delegates = dict(Counter(d.id for d in program.execution_plan[0].delegates))
     manifest = {
         "version": 1,
         "model": args.model,
-        "runtime": "et",
+        "runtime": args.runtime,
         "artifact": artifact,
-        "preprocess": "CpuBackend" if is_cpu else "XnnpackBackend",
+        "preprocess": preprocess,
         "source_revision": args.source_revision,
         "versions": {
             "torch": torch.__version__,
@@ -131,18 +151,22 @@ def write_manifest(
         },
         "recipe": spec,
         "quantization": None,
-        "cpu_delegate_version": CPU_DELEGATE_VERSION if is_cpu else None,
+        "cpu_delegate_version": (
+            CPU_DELEGATE_VERSION if is_cpu and not is_native else None
+        ),
         "recipe_passes": {"aten": [], "edge": [], "edge_manager": []},
         "backend_default_passes": [f"{p.__module__}.{p.__qualname__}" for p in passes],
         "preserved_ops": sorted(
             {
                 str(op)
-                for partitioner in recipe.lowering_recipe.partitioners
+                for partitioner in (
+                    recipe.lowering_recipe.partitioners if recipe is not None else []
+                )
                 for op in partitioner.ops_to_not_decompose(exported)[0]
             }
         ),
-        "stages": [stage.name for stage in session.get_stage_artifacts()],
-        "delegates": dict(Counter(d.id for d in program.execution_plan[0].delegates)),
+        "stages": stages,
+        "delegates": delegates,
         "semantic_nodes": semantic_nodes,
         "input": {
             "shape": list(image.shape),
@@ -159,6 +183,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path)
     parser.add_argument("--backend", choices=tuple(RECIPE_TYPES), default="cpu")
+    parser.add_argument("--runtime", choices=("et", "native"), default="et")
     parser.add_argument("--pt2", type=Path)
     parser.add_argument("--model")
     parser.add_argument("--image-size", type=int, default=None)
@@ -187,16 +212,30 @@ def main() -> None:
             parser.error(f"Unknown torchvision model {args.model!r}; see --list-models")
     if args.image_size is not None and args.image_size <= 0:
         parser.error("--image-size must be positive")
-    recipe_type = RECIPE_TYPES[args.backend]
+    if args.runtime == "native" and args.backend != "cpu":
+        parser.error(
+            "Native CPU export uses to_native defaults; CPU recipes are ET-only"
+        )
     spec = {
         "version": 1,
         "backend": args.backend,
-        "recipe": recipe_type.value,
+        "recipe": (
+            "native_default"
+            if args.runtime == "native"
+            else RECIPE_TYPES[args.backend].value
+        ),
         "kwargs": {},
     }
     args.output.mkdir(parents=True, exist_ok=True)
     exported, image = capture(args)
-    recipe = ExportRecipe.get_recipe(recipe_type)
+    if args.runtime == "native":
+        artifact = args.output / "model.ptn"
+        to_native(exported).save(str(artifact))
+        shutil.copyfile(args.output / "eager.bin", args.output / "golden.bin")
+        write_manifest(args, spec, exported, None, None, image)
+        logger.info("Exported Native program to %s", artifact)
+        return
+    recipe = ExportRecipe.get_recipe(RECIPE_TYPES[args.backend])
     session = export(exported, export_recipe=recipe)
     edge_module = session.get_edge_program_manager().exported_program().module()
     with torch.no_grad():
