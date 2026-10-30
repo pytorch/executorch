@@ -7,10 +7,14 @@
 """Op cases: a model and the inputs of each sample it is recorded with."""
 
 import inspect
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
 
 import torch
+from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
+from facto.inputgen.specs.model import Spec
+from facto.inputgen.utils.random_manager import seeded_random_manager
 
 Inputs = tuple[torch.Tensor, ...]
 
@@ -85,3 +89,16 @@ def suite_cases(module: ModuleType, samples: int) -> list[Case]:
     if not cases:
         raise ValueError(f"no test in {module.__name__} lowers a model")
     return cases
+
+
+def facto_cases(
+    spec: Spec, build: Callable[..., Case], keep: Callable[[int, tuple], bool]
+) -> list[Case]:
+    """One-sample cases `build(name, *args)` from FACTO's argument tuples for
+    `spec`, named by position, keeping those where `keep(position, args)`."""
+    seeded_random_manager.seed(0)
+    return [
+        build(f"facto_{i}", *args)
+        for i, (args, _, _) in enumerate(ArgumentTupleGenerator(spec).gen())
+        if keep(i, args)
+    ]
