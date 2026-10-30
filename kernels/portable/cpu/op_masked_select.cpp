@@ -7,7 +7,6 @@
  */
 #include <c10/util/irange.h>
 
-#include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -54,10 +53,11 @@ Tensor& masked_select_out(
     ET_KERNEL_CHECK_MSG(
         ctx, false, InvalidArgument, out, "Failed to broadcast input and mask");
   }
-  size_t broadcast_numel = 1;
-  for (const auto i : c10::irange(broadcast_ndim)) {
-    broadcast_numel *= broadcast_sizes[i];
-  }
+
+  // BroadcastIndexesRange only reads the output's sizes, dim, and numel, so a
+  // data-less tensor with the broadcast shape is enough.
+  TensorImpl broadcast_impl(in_type, broadcast_ndim, broadcast_sizes);
+  const Tensor broadcast_shape(&broadcast_impl);
 
   // Compute the number of out elements
   size_t mask_true_count = 0;
@@ -68,7 +68,7 @@ Tensor& masked_select_out(
     }
   }
   Tensor::SizesType out_numel =
-      mask_true_count * (broadcast_numel / mask.numel());
+      mask_true_count * (broadcast_shape.numel() / mask.numel());
 
   // Resize the out tensor
   ET_KERNEL_CHECK(
@@ -79,14 +79,10 @@ Tensor& masked_select_out(
   char* const out_data = reinterpret_cast<char*>(out.mutable_data_ptr());
   const auto elem_size = in.element_size();
 
-  // BroadcastIndexesRange iterates over an output tensor's index space, so
-  // describe the broadcast shape with a data-less tensor.
-  TensorImpl broadcast_impl(in_type, broadcast_ndim, broadcast_sizes);
-  const Tensor broadcast_shape(&broadcast_impl);
-
   size_t out_ix = 0;
   for (const auto [unused_index, in_index, mask_index] :
        BroadcastIndexesRange<2>(broadcast_shape, in, mask)) {
+    (void)unused_index;
     if (mask_data[mask_index]) {
       memcpy(
           out_data + out_ix * elem_size,
