@@ -698,6 +698,7 @@ TEST_F(CommonShimsSlimTest, ConsistentPointerReturn) {
 TEST_F(CommonShimsSlimTest, DTypeConstants) {
   // Verify dtype constants match expected PyTorch ScalarType values
   EXPECT_EQ(aoti_torch_dtype_float32(), 6); // ScalarType::Float
+  EXPECT_EQ(aoti_torch_dtype_float64(), 7); // ScalarType::Double
   EXPECT_EQ(aoti_torch_dtype_bfloat16(), 15); // ScalarType::BFloat16
   EXPECT_EQ(aoti_torch_dtype_int64(), 4); // ScalarType::Long
   EXPECT_EQ(aoti_torch_dtype_int32(), 3); // ScalarType::Int
