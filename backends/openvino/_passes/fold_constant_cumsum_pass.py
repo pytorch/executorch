@@ -107,23 +107,32 @@ class FoldConstantCumsumPass(PassBase):
             and n.target == exir_ops.edge.aten.cumsum.default
             and n.meta["val"].dtype == torch.int64
         ]
-        try:
-            values = _evaluate(graph_module, cumsums)
-        except RuntimeError as e:
-            # Some ops have modes the CPU lacks; OpenVINO still gets the cumsum.
-            logging.warning("OpenVINO: not folding constant cumsums: %s", e)
-            return PassResult(graph_module, False)
-
+        modified = False
+        # One at a time, so a cumsum that cannot be evaluated does not keep
+        # the others from being folded.
         for node in cumsums:
+            try:
+                value = _evaluate(graph_module, [node])[node]
+            except RuntimeError as e:
+                # Some ops have modes the CPU lacks.
+                logging.warning(
+                    "OpenVINO: could not fold %s, so on a CPU some OpenVINO "
+                    "releases give wrong results for it from the second "
+                    "inference on: %s",
+                    node.name,
+                    e,
+                )
+                continue
             name = f"_folded_cumsum_{node.name}"
             while hasattr(graph_module, name):
                 name += "_"
-            graph_module.register_buffer(name, values[node])
+            graph_module.register_buffer(name, value)
             with graph.inserting_before(node):
                 folded = graph.get_attr(name)
             folded.meta = node.meta.copy()
             node.replace_all_uses_with(folded)
-        if cumsums:
+            modified = True
+        if modified:
             graph.eliminate_dead_code()
             graph_module.recompile()
-        return PassResult(graph_module, bool(cumsums))
+        return PassResult(graph_module, modified)

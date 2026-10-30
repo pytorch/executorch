@@ -1,9 +1,13 @@
 # mypy: disable-error-code=import-not-found
 
 import unittest
+from unittest import mock
 
 import torch
-from executorch.backends.openvino._passes import FoldConstantCumsumPass
+from executorch.backends.openvino._passes import (
+    fold_constant_cumsum_pass,
+    FoldConstantCumsumPass,
+)
 from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
     BaseOpenvinoOpTest,
 )
@@ -101,6 +105,29 @@ class TestFoldConstantCumsumPass(unittest.TestCase):
         folded = self.fold(Model(), (x,))
         # The folded cumsum would have taken this name.
         self.assertTrue(hasattr(folded, "_folded_cumsum_aten_cumsum_default_"))
+        torch.testing.assert_close(folded(x), Model()(x))
+
+    def test_a_cumsum_that_cannot_be_evaluated_leaves_the_others_folded(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                ones = torch.ones(3, dtype=torch.int64)
+                return torch.cumsum(ones, 0) + torch.cumsum(ones * 2, 0) + x
+
+        evaluate = fold_constant_cumsum_pass._evaluate
+
+        def fail_on_the_doubled_one(graph_module, targets):
+            if any("mul" in str(n.args[0].target) for n in targets):
+                raise RuntimeError("not on the CPU")
+            return evaluate(graph_module, targets)
+
+        x = torch.zeros(3, dtype=torch.int64)
+        with mock.patch.object(
+            fold_constant_cumsum_pass, "_evaluate", side_effect=fail_on_the_doubled_one
+        ), self.assertLogs(level="WARNING") as logs:
+            folded = self.fold(Model(), (x,))
+        targets = [n.target for n in folded.graph.nodes]
+        self.assertEqual(targets.count(exir_ops.edge.aten.cumsum.default), 1)
+        self.assertIn("wrong results", logs.output[0])
         torch.testing.assert_close(folded(x), Model()(x))
 
     def test_float_cumsum_is_not_folded(self):
