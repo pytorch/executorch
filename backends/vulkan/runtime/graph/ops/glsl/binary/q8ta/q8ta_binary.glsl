@@ -40,6 +40,7 @@ layout(push_constant) uniform restrict Block {
   int input_b_zp;
   float output_inv_scale;
   int output_zp;
+  float alpha;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -129,7 +130,7 @@ void main() {
     vec4 in_texel_b = unpack_and_dequantize(
         in_block_b[row], input_b_scale, input_b_zp);
 
-    vec4 out_texel = op(in_texel_a, in_texel_b);
+    vec4 out_texel = op(in_texel_a, alpha * in_texel_b);
     out_block[row] = quantize_and_pack(out_texel, output_inv_scale, output_zp);
   }
 
