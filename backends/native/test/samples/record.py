@@ -22,7 +22,7 @@ from pathlib import Path
 
 import torch
 from executorch.backends.native.test.samples.cases import Case, Inputs, outputs
-from executorch.backends.native.test.samples.schemes import Scheme
+from executorch.backends.native.test.samples.schemes import int8_activations, Scheme
 from executorch.exir.native import Call, Sample, SampleSet, to_native, write_samples
 from torch.func import functional_call
 
@@ -51,7 +51,6 @@ def record(
     dtypes: Iterable[str] = tuple(DTYPES),
 ) -> None:
     """Writes no package, removing any at `path`, when the scheme fits no case."""
-    act_scheme = scheme.act_quant()
     programs, golden, precise, golden_act = {}, [], [], []
     for case in cases:
         if not scheme.fits(case.model):
@@ -65,9 +64,6 @@ def record(
             model = copy.deepcopy(case.model).to(dtype).eval()
             scheme.quantize(model)
             method = _Method({name: model})
-            if act_scheme is not None:
-                act_model = copy.deepcopy(case.model).to(dtype).eval()
-                act_scheme.quantize(act_model)
             state = {
                 k: scheme.decode(v).double() for k, v in method.state_dict().items()
             }
@@ -81,10 +77,11 @@ def record(
                         t.float() if t.is_floating_point() else t for t in outputs(ref)
                     ]
                     precise.append(Sample([Call(name, list(x), ref)]))
-                    if act_scheme is not None:
-                        golden_act.append(
-                            Sample([Call(name, list(x), outputs(act_model(*x)))])
-                        )
+                    if scheme.weight_only:
+                        with int8_activations(method):
+                            golden_act.append(
+                                Sample([Call(name, list(x), outputs(method(*x)))])
+                            )
     if not programs:
         logger.info(f"{path.name}: no case fits the scheme, not written")
         path.unlink(missing_ok=True)
@@ -99,7 +96,7 @@ def record(
             precise, "float64, weights dequantized, activations unquantized", source
         ),
     )
-    if act_scheme is not None:
+    if scheme.weight_only:
         write_samples(
             str(path),
             "golden-int8_act",

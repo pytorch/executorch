@@ -17,8 +17,11 @@ fbcode_target(
         "//caffe2:torch",
         "//executorch/backends/test/suite/operators:test_operators",
         "//executorch/exir/native:native",
+        "//executorch/extension/llm/export:gguf",
         "//pytorch/ao:torchao",
         "//pytorch/facto:facto",
+        "fbsource//third-party/pypi/gguf:gguf",
+        "fbsource//third-party/pypi/numpy:numpy",
     ],
 )
 
