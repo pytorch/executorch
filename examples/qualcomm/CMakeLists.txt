@@ -82,6 +82,14 @@ set(_common_include_directories
 # build qnn_executor_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/executor_runner)
 
+# build qnn_toy_model_trainer for the joint-graph training example
+option(BUILD_QNN_TRAINING_EXAMPLE "Build QNN/HTP joint-graph training example"
+       OFF
+)
+if(BUILD_QNN_TRAINING_EXAMPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/training/toy_model/on-device)
+endif()
+
 # build qnn_llama_runner for llama
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama)
 
