@@ -331,8 +331,7 @@ def _propose_partitions(
             new |= _find_nodes_of_partitions_without_tensor_inputs(
                 partitions, kept_inside, allow_partitions_without_inputs
             )
-        # The partitioner can put a node that was left out back, such as a
-        # getitem next to its producer, so only a new node makes progress.
+        # Stop once a round leaves out nothing new, so the loop always ends.
         new -= left_out
         if not new:
             return partitions, left_out
