@@ -156,6 +156,19 @@ class CudaDLPackTest(unittest.TestCase):
             ._method
         )
 
+    def _assert_no_stream_selected(self):
+        from executorch.runtime import Runtime
+
+        # A delegate that would replay a CUDA graph refuses a caller stream, so
+        # this call fails while this thread still has a stream selected.
+        registry = Runtime.get().backend_registry
+        registry.set_option("CudaBackend", {"enable_cuda_graph_for_method": "forward"})
+        try:
+            method = self._load_method(self.host_input_program)
+        finally:
+            registry.set_option("CudaBackend", {"enable_cuda_graph_for_method": ""})
+        method(torch.ones(self.shape))
+
     def _consumer_stream(self, device_index):
         if device_index not in self.consumer_streams:
             self.consumer_streams[device_index] = torch.cuda.Stream(
@@ -269,9 +282,10 @@ class CudaDLPackTest(unittest.TestCase):
         foreign = torch.cuda.Stream(device=self.device)
         with cuda.stream(foreign):
             method.execute([value])
-        # The default stream waits for every other stream, so it is refused.
+        # The legacy default stream, as 0 or cudaStreamLegacy, is refused.
         for default in (
             cuda.ExternalStream(0),
+            cuda.ExternalStream(1),
             torch.cuda.default_stream(self.device),
         ):
             with self.assertRaises(ValueError):
@@ -327,6 +341,7 @@ class CudaDLPackTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             stream.close()
         inner.__exit__(None, None, None)
+        self._assert_no_stream_selected()
         # The refused scope ended with the inner one, so it can be used again.
         with outer:
             pass
@@ -340,6 +355,54 @@ class CudaDLPackTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             with made_before_close:
                 pass
+
+    def test_stream_on_another_device_is_refused(self):
+        from executorch.runtime import cuda
+
+        can_check_device = cuda._bindings()._CallerStreamScope.can_check_device
+        # CI builds with the CUDA version of its torch, and runs on one GPU, so
+        # this is where CI notices a CUDA 13 build that cannot check the device.
+        if (
+            os.environ.get("EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA") == "1"
+            and int(torch.version.cuda.split(".")[0]) >= 13
+        ):
+            self.assertIs(
+                can_check_device,
+                True,
+                "CI expects a CUDA 13 build to check a stream's device",
+            )
+        if torch.cuda.device_count() < 2:
+            self.skipTest("needs two CUDA devices")
+
+        owned = cuda.Stream(device=1)
+        self.addCleanup(owned.close)
+        refused = [owned, cuda.ExternalStream(owned.cuda_stream)]
+        # These wrappers report no device or the current one, so only CUDA can
+        # tell that the stream is on device 1.
+        if can_check_device:
+            foreign = torch.cuda.Stream(device=1)
+            refused += [
+                cuda.ExternalStream(foreign.cuda_stream),
+                torch.cuda.ExternalStream(foreign.cuda_stream),
+            ]
+        for selected in refused:
+            with self.assertRaisesRegex(RuntimeError, "on CUDA device 0"):
+                with cuda.stream(selected):
+                    pass
+
+    def test_stream_block_leaves_a_graph_capture_intact(self):
+        from executorch.runtime import cuda
+
+        x = torch.ones(4, device="cuda")
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            y = x * 2
+            with cuda.stream(torch.cuda.current_stream()):
+                pass
+        x.fill_(3)
+        graph.replay()
+        torch.cuda.synchronize()
+        self.assertEqual(y.tolist(), [6.0] * 4)
 
     @staticmethod
     def _close_after_teardown(stream):
@@ -458,6 +521,44 @@ class CudaDLPackTest(unittest.TestCase):
         dropped.__enter__()
         del dropped
         gc.collect()
+        self._assert_no_stream_selected()
+        # The native scope keeps these rules for callers that use it directly.
+        for handle in (0, 1):
+            with self.assertRaisesRegex(ValueError, "legacy default CUDA stream"):
+                cuda._bindings()._CallerStreamScope(handle)
+        with self.assertRaises(TypeError):
+            cuda._bindings()._CallerStreamScope(None)
+        native = cuda._bindings()._CallerStreamScope(stream._native)
+        native.__enter__()
+        try:
+            with self.assertRaises(RuntimeError):
+                native.__enter__()
+            refused = []
+
+            def exit_elsewhere():
+                try:
+                    native.__exit__(None, None, None)
+                except RuntimeError:
+                    refused.append(True)
+
+            exiter = threading.Thread(target=exit_elsewhere)
+            exiter.start()
+            exiter.join()
+            self.assertEqual(refused, [True])
+        finally:
+            native.__exit__(None, None, None)
+        # A scope refused for ending out of order can be entered again once
+        # the block above it has ended.
+        outer = cuda._bindings()._CallerStreamScope(stream._native)
+        inner = cuda._bindings()._CallerStreamScope(stream._native)
+        outer.__enter__()
+        inner.__enter__()
+        with self.assertRaisesRegex(RuntimeError, "innermost first"):
+            outer.__exit__(None, None, None)
+        inner.__exit__(None, None, None)
+        self._assert_no_stream_selected()
+        outer.__enter__()
+        outer.__exit__(None, None, None)
         self._close_after_teardown(stream)
 
     def test_torch_free_caller_shares_one_stream_across_programs(self):
@@ -469,40 +570,54 @@ class CudaDLPackTest(unittest.TestCase):
             for index, module in enumerate((torch.nn.ReLU(), torch.nn.Tanh()))
         ]
         child = """
+import importlib.abc
+import re
 import sys
+from pathlib import Path
+
+class BlockTorch(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "torch" or fullname.startswith("torch."):
+            raise ImportError("torch is unavailable")
+
+sys.meta_path.insert(0, BlockTorch())
 import numpy as np
 from executorch.runtime import Runtime, cuda
 
+def load(path, data):
+    program = Runtime.get().load_program(path, data_path=data or None)
+    return program.load_method("forward")
+
+programs = list(zip(sys.argv[1::2], sys.argv[2::2]))
 value = np.linspace(-2, 2, 32, dtype=np.float32).reshape(4, 8)
 stream = cuda.Stream()
 with cuda.stream(stream):
-    outputs = [
-        np.asarray(
-            Runtime.get().load_program(path, data_path=data or None)
-            .load_method("forward").execute([value])[0]
-        )
-        for path, data in zip(sys.argv[1::2], sys.argv[2::2])
-    ]
+    outputs = [np.asarray(load(*program).execute([value])[0]) for program in programs]
 # A delegate that would replay a CUDA graph refuses a caller stream, so the
-# refusal shows that the selection reached both programs.
+# refusal shows that the selection reached both programs. Each runs outside
+# the block first, so that no other failure can pass for the refusal.
 Runtime.get().backend_registry.set_option(
     "CudaBackend", {"enable_cuda_graph_for_method": "forward"}
 )
-graphed = [
-    Runtime.get().load_program(path, data_path=data or None).load_method("forward")
-    for path, data in zip(sys.argv[1::2], sys.argv[2::2])
-]
+graphed = [load(*program) for program in programs]
+for method in graphed:
+    method.execute([value])
 with cuda.stream(stream):
     for method in graphed:
         try:
             method.execute([value])
-        except RuntimeError:
-            continue
+        except RuntimeError as error:
+            if "caller-provided CUDA stream" in str(error):
+                continue
+            raise
         raise AssertionError("A delegate did not see the selected stream")
 stream.close()
 np.testing.assert_allclose(outputs[0], np.maximum(value, 0), atol=1e-6)
 np.testing.assert_allclose(outputs[1], np.tanh(value), atol=1e-6)
 assert "torch" not in sys.modules
+assert re.search(
+    r"lib(?:torch|aten|c10)", Path("/proc/self/maps").read_text().lower()
+) is None
 """
         arguments = [item or "" for program in programs for item in program]
         result = subprocess.run(

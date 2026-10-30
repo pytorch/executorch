@@ -489,7 +489,6 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
       contains(needs.changed-files.outputs.changed-files, 'runtime/__init__.py') ||
-      contains(needs.changed-files.outputs.changed-files, 'runtime/cuda.py') ||
       contains(needs.changed-files.outputs.changed-files, 'exir/passes/convert_constant_dim_order_pass.py') ||
       contains(needs.changed-files.outputs.changed-files, 'exir/passes/insert_write_back_for_buffers_pass.py') ||
       contains(needs.changed-files.outputs.changed-files, 'exir/passes/propagate_device_config.py') ||
