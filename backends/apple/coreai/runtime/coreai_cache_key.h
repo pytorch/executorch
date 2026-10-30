@@ -17,14 +17,17 @@ class Manifest;
 class SelectedBundle;
 
 bool is_cache_key(NSString* key);
-NSString* cache_key_model_prefix(NSString* key);
+NSString* cache_key_bundle_identity(NSString* key);
 
-// Model identity excludes device and specialization so maintenance can find all
-// variants of one exported bundle.
-runtime::Result<NSString*> cache_model_key(
+// Bookmark files are named key + extension, which bounds the key length.
+inline constexpr char kBookmarkExtension[] = ".bookmark";
+
+// Bundle identity excludes device and specialization so maintenance can find
+// every runtime variant of one exported bundle.
+runtime::Result<NSString*> bundle_identity(
     const Manifest& manifest,
     NSString* bundle_name);
-runtime::Result<NSString*> cache_model_key(const SelectedBundle& bundle);
+runtime::Result<NSString*> bundle_identity(const SelectedBundle& bundle);
 // specialization_identity is stable, versioned plain data supplied by the SDK
 // boundary. This module does not depend on SDK types.
 runtime::Result<NSString*> cache_variant_key(

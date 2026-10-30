@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 #include <vector>
 #include "coreai_fault_scope.h"
 #include "coreai_file.h"
@@ -35,10 +36,36 @@ TEST(CoreAIStorageTest, DirectoryHelpersDoNotFollowSymlinks) {
   ASSERT_EQ(lstat_at(root.get(), "directory", &info), 0);
   EXPECT_TRUE(S_ISDIR(info.st_mode));
   EXPECT_EQ(open_directory_at(root.get(), "link"), -1);
+  EXPECT_EQ(
+      open_storage_directory(
+          root.get(), @"link", StorageCreationMode::OpenExisting)
+          .error(),
+      Error::AccessFailed);
   EXPECT_EQ(open_directory_at(root.get(), "missing"), -1);
   EXPECT_EQ(errno, ENOENT);
   EXPECT_EQ(lstat_at(root.get(), "missing", &info), -1);
   EXPECT_EQ(errno, ENOENT);
+}
+
+TEST(CoreAIStorageTest, FileDescriptorMovesTransferSingleOwnership) {
+  FileDescriptor source(open("/dev/null", O_RDONLY | O_CLOEXEC));
+  ASSERT_GE(source.get(), 0);
+  const int source_fd = source.get();
+  FileDescriptor moved(std::move(source));
+  EXPECT_EQ(source.get(), -1);
+  EXPECT_EQ(moved.get(), source_fd);
+
+  FileDescriptor destination(open("/dev/null", O_RDONLY | O_CLOEXEC));
+  ASSERT_GE(destination.get(), 0);
+  const int replaced_fd = destination.get();
+  destination = std::move(moved);
+  EXPECT_EQ(moved.get(), -1);
+  EXPECT_EQ(destination.get(), source_fd);
+  EXPECT_EQ(fcntl(replaced_fd, F_GETFD), -1);
+  EXPECT_EQ(errno, EBADF);
+
+  destination = std::move(destination);
+  EXPECT_EQ(destination.get(), source_fd);
 }
 
 TEST(CoreAIStorageTest, OpensDirectoriesAndReportsCreation) {
@@ -51,16 +78,17 @@ TEST(CoreAIStorageTest, OpensDirectoriesAndReportsCreation) {
   auto missing = open_storage_directory(
       root.get(), @"child", StorageCreationMode::OpenExisting);
   ASSERT_TRUE(missing.ok());
-  EXPECT_EQ(missing.get().fd, -1);
-  EXPECT_FALSE(missing.get().created);
+  EXPECT_FALSE(missing->descriptor.has_value());
+  EXPECT_FALSE(missing->created);
 
   StorageFaultScope sync_fault(FaultPoint::SyncDirectory);
   auto created =
       open_storage_directory(root.get(), @"child", StorageCreationMode::Create);
   ASSERT_TRUE(created.ok());
-  FileDescriptor first(created.get().fd);
+  ASSERT_TRUE(created->descriptor.has_value());
+  FileDescriptor first = std::move(*created->descriptor);
   ASSERT_GE(first.get(), 0);
-  EXPECT_TRUE(created.get().created);
+  EXPECT_TRUE(created->created);
   EXPECT_NE(fcntl(first.get(), F_GETFD) & FD_CLOEXEC, 0);
   EXPECT_EQ(sync_fault.matches, 0);
   struct stat original;
@@ -72,9 +100,10 @@ TEST(CoreAIStorageTest, OpensDirectoriesAndReportsCreation) {
        {StorageCreationMode::OpenExisting, StorageCreationMode::Create}) {
     auto reopened = open_storage_directory(root.get(), @"child", mode);
     ASSERT_TRUE(reopened.ok());
-    FileDescriptor next(reopened.get().fd);
+    ASSERT_TRUE(reopened->descriptor.has_value());
+    FileDescriptor next = std::move(*reopened->descriptor);
     ASSERT_GE(next.get(), 0);
-    EXPECT_FALSE(reopened.get().created);
+    EXPECT_FALSE(reopened->created);
     struct stat current;
     ASSERT_EQ(fstat(next.get(), &current), 0);
     EXPECT_EQ(current.st_ino, original.st_ino);
@@ -99,9 +128,10 @@ TEST(CoreAIStorageTest, ConcurrentDirectoryCreationIsNotReportedAsOwnCreation) {
   auto opened =
       open_storage_directory(root.get(), @"child", StorageCreationMode::Create);
   ASSERT_TRUE(opened.ok());
-  FileDescriptor directory(opened.get().fd);
+  ASSERT_TRUE(opened->descriptor.has_value());
+  FileDescriptor directory = std::move(*opened->descriptor);
   EXPECT_GE(directory.get(), 0);
-  EXPECT_FALSE(opened.get().created);
+  EXPECT_FALSE(opened->created);
 }
 
 TEST(CoreAIStorageTest, RejectsInvalidDirectoryComponents) {

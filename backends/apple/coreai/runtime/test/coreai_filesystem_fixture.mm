@@ -137,15 +137,15 @@ TestDirectory::~TestDirectory() {
           << "Filesystem snapshot changed: " << root.path.UTF8String;
 }
 
-NSArray<NSURL*>* staging_directories(NSURL* root) {
+NSArray<NSURL*>* pending_directories(NSURL* root) {
   if (root == nil) {
-    ADD_FAILURE() << "Missing staging root";
+    ADD_FAILURE() << "Missing cache root";
     return nil;
   }
-  NSURL* cache_staging = [root URLByAppendingPathComponent:@"staging"
+  NSURL* cache_sources = [root URLByAppendingPathComponent:@"sources"
                                                isDirectory:YES];
-  if ([NSFileManager.defaultManager fileExistsAtPath:cache_staging.path]) {
-    root = cache_staging;
+  if ([NSFileManager.defaultManager fileExistsAtPath:cache_sources.path]) {
+    root = cache_sources;
   }
   NSError* error = nil;
   NSArray<NSURL*>* children =
@@ -154,16 +154,16 @@ NSArray<NSURL*>* staging_directories(NSURL* root) {
                                                      options:0
                                                        error:&error];
   if (children == nil || error != nil) {
-    ADD_FAILURE() << "Cannot list staging directories: "
+    ADD_FAILURE() << "Cannot list pending directories: "
                   << root.path.UTF8String;
     return nil;
   }
-  NSMutableArray<NSURL*>* staging = [NSMutableArray array];
+  NSMutableArray<NSURL*>* pending = [NSMutableArray array];
   for (NSURL* child in children) {
-    if ([child.lastPathComponent hasPrefix:@".staging-"])
-      [staging addObject:child];
+    if ([child.lastPathComponent hasPrefix:@".pending-"])
+      [pending addObject:child];
   }
-  return staging;
+  return pending;
 }
 
 } // namespace executorch::backends::coreai::testing
