@@ -29,6 +29,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
 )
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
+    get_static_param_deps,
     is_depthwise_conv,
     is_getitem,
     is_node,
@@ -153,10 +154,11 @@ class GEMMConfig(XNNPartitionerConfig):
         if precision == ConfigPrecisionType.FP32:
             # First find the weight
             weight_node = get_input_node(node, self.weight_idx)
-            if not is_param_node(ep, weight_node):
+            weight_deps = get_static_param_deps(ep, weight_node, node)
+            if weight_deps is None:
                 why(node, "Expected weight to be a static param")
                 return (False, [])
-            gemm_deps.append(weight_node)
+            gemm_deps.extend(weight_deps)
 
             return (True, gemm_deps)
         else:
@@ -248,10 +250,11 @@ class GEMMConfig(XNNPartitionerConfig):
         if len(node.all_input_nodes) > 2 and self.bias_idx is not None:
             bias_node = get_input_node(node, self.bias_idx)
             if bias_node:
-                if not is_param_node(ep, bias_node):
+                bias_deps = get_static_param_deps(ep, bias_node, node)
+                if bias_deps is None:
                     why(node, "Expected bias to be a static param")
                     return (False, [])
-                gemm_deps.append(bias_node)
+                gemm_deps.extend(bias_deps)
 
         return (True, gemm_deps)
 
@@ -478,6 +481,12 @@ class AddmmConfig(GEMMConfig):
         )
         self.src_partitions = None
         self.linear_modules = [torch.nn.functional.linear, torch.nn.Linear]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if node.kwargs.get("alpha", 1) != 1 or node.kwargs.get("beta", 1) != 1:
+            why(node, "XNNPACK does not support addmm with alpha or beta")
+            return False
+        return super().check_constraints(node, ep)
 
     def _get_weight_deps(
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
