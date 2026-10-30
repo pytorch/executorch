@@ -33,6 +33,12 @@ namespace impl {
 namespace G3 {
 namespace native {
 
+namespace {
+// Upper bound on inputs for the xa_nn_cat path, whose per-input arrays live on
+// the DSP thread stack. Larger cats take the generic loop.
+constexpr size_t kMaxNnlibCatInputs = 16;
+} // namespace
+
 Tensor& cat_out(
     KernelRuntimeContext& ctx,
     ArrayRef<Tensor> tensors,
@@ -42,7 +48,7 @@ Tensor& cat_out(
     dim += out.dim();
   }
 
-  int kTensorDimensionLimit = executorch::runtime::kTensorDimensionLimit;
+  constexpr int kTensorDimensionLimit = executorch::runtime::kTensorDimensionLimit;
 
 #ifdef OP_ARG_CHECK
 
@@ -76,34 +82,6 @@ Tensor& cat_out(
     return out;
   }
 
-  const signed char* inp_tensors[tensors.size()];
-  const int* inp_tensors_shapes[tensors.size()];
-
-  int inp_shapes_size[tensors.size()];
-
-  int temp_sizes[tensors.size()][kTensorDimensionLimit];
-  ArrayRef<Tensor::SizesType> temp_size;
-
-  for (int i = 0; i < tensors.size(); i++) {
-    inp_tensors[i] = tensors[i].const_data_ptr<signed char>();
-    temp_size = tensors[i].sizes();
-
-    for (int j = 0; j < temp_size.size(); j++) {
-      temp_sizes[i][j] = temp_size[j];
-    }
-    inp_tensors_shapes[i] = temp_sizes[i]; // input shapes
-    inp_shapes_size[i] = temp_size.size(); // number of input dimensions
-  }
-
-  signed char* out_data = out.mutable_data_ptr<signed char>();
-
-  const ArrayRef<Tensor::SizesType> out_size = out.sizes();
-  int out_shapes[kTensorDimensionLimit];
-  for (int i = 0; i < out_size.size(); i++) // output shapes
-  {
-    out_shapes[i] = out_size[i];
-  }
-
   bool all_same_dtype = true;
   for (int i = 0; i < tensors.size(); i++) {
     if (out.scalar_type() != tensors[i].scalar_type()) {
@@ -120,7 +98,33 @@ Tensor& cat_out(
       out.scalar_type() == ScalarType::Byte ||
       out.scalar_type() == ScalarType::Float;
 
-  if (all_same_dtype && supported_dtype) {
+  if (all_same_dtype && supported_dtype &&
+      tensors.size() <= kMaxNnlibCatInputs) {
+    const signed char* inp_tensors[kMaxNnlibCatInputs];
+    const int* inp_tensors_shapes[kMaxNnlibCatInputs];
+    int inp_shapes_size[kMaxNnlibCatInputs];
+    int temp_sizes[kMaxNnlibCatInputs][kTensorDimensionLimit];
+
+    for (int i = 0; i < tensors.size(); i++) {
+      inp_tensors[i] = tensors[i].const_data_ptr<signed char>();
+      const ArrayRef<Tensor::SizesType> temp_size = tensors[i].sizes();
+
+      for (int j = 0; j < temp_size.size(); j++) {
+        temp_sizes[i][j] = temp_size[j];
+      }
+      inp_tensors_shapes[i] = temp_sizes[i]; // input shapes
+      inp_shapes_size[i] = temp_size.size(); // number of input dimensions
+    }
+
+    signed char* out_data = out.mutable_data_ptr<signed char>();
+
+    const ArrayRef<Tensor::SizesType> out_size = out.sizes();
+    int out_shapes[kTensorDimensionLimit];
+    for (int i = 0; i < out_size.size(); i++) // output shapes
+    {
+      out_shapes[i] = out_size[i];
+    }
+
     XT_KERNEL_CHECK(
         ctx,
         out,
