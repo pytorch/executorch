@@ -327,6 +327,8 @@ class TestPublishedSets(unittest.TestCase):
                     INSTALL_UTILS.platform, "system", return_value="Linux"
                 ), mock.patch.object(
                     INSTALL_UTILS.subprocess, "run", return_value=detected
+                ), mock.patch.dict(
+                    os.environ, {"CMAKE_ARGS": "-DEXECUTORCH_BUILD_CUDA=ON"}
                 ):
                     self.assertEqual(
                         INSTALL_UTILS.determine_torch_url(base_url),
