@@ -446,6 +446,31 @@ class TestCudaExport(unittest.TestCase):
             CheckModule().eval(), (torch.randn(4, 8),), strict=False
         )
 
+    def test_distribution_argument_check(self):
+        """A check that holds for every input must not fail while AOTI autotunes."""
+
+        class GaussianHead(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # With 14 actions, Inductor checks scale_tril in a kernel of its
+                # own, so the assert reads a bool that autotuning makes up.
+                self.mean = torch.nn.Linear(16, 14)
+                self.log_std = torch.nn.Linear(16, 14)
+
+            def forward(self, x: torch.Tensor, eps: torch.Tensor) -> torch.Tensor:
+                std = torch.clamp(torch.exp(self.log_std(x)), 1e-5, 10.0)
+                dist = torch.distributions.MultivariateNormal(
+                    self.mean(x), scale_tril=torch.diag_embed(std.sqrt())
+                )
+                return dist.loc + (dist.scale_tril @ eps[..., None])[..., 0]
+
+        # A strict export cannot trace torch.distributions.
+        self._export_to_cuda_with_lower(
+            GaussianHead().eval(),
+            (torch.randn(1, 16), torch.randn(1, 14)),
+            strict=False,
+        )
+
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""
 
