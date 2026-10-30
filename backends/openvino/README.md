@@ -48,6 +48,23 @@ print(_get_registered_backend_names())
 # Should include 'OpenvinoBackend'
 ```
 
+## Precision
+
+On a CPU, a program computes in float32 by default. On CPUs with bfloat16
+support, OpenVINO would otherwise compute in bfloat16, which is faster but keeps
+only about three significant digits. To trade that accuracy for speed, ask for
+it when lowering:
+
+```python
+OpenvinoPartitioner(
+    [CompileSpec("device", b"CPU"), CompileSpec("inference_precision", b"bf16")]
+)
+```
+
+The value is OpenVINO's `INFERENCE_PRECISION_HINT`, such as `f32`, `bf16` or
+`f16`; a CPU without support for the lower precision computes in float32.
+Other devices, such as GPUs, keep OpenVINO's default unless the option is set.
+
 ## Directory Structure
 
 ```

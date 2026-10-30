@@ -236,6 +236,7 @@ bool OpenvinoBackend::ensure_loaded() const {
     LOAD_SYM(core_free, ov_core_free)
     LOAD_SYM(core_get_available_devices, ov_core_get_available_devices)
     LOAD_SYM(available_devices_free, ov_available_devices_free)
+    LOAD_SYM(core_set_property, ov_core_set_property)
     LOAD_SYM(core_import_model, ov_core_import_model)
     LOAD_SYM(
         compiled_model_create_infer_request,
@@ -321,17 +322,43 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
   size_t data_size = processed->size();
 
   std::string device = "CPU";
+  std::string precision;
   for (auto& compile_spec : compile_specs) {
-    if (std::strcmp(compile_spec.key, "device") == 0) {
-      const char* buf = static_cast<const char*>(compile_spec.value.buffer);
-      size_t len = compile_spec.value.nbytes;
-      // Strip trailing null bytes that may be included in nbytes.
-      while (len > 0 && buf[len - 1] == '\0') {
-        --len;
-      }
-      if (len > 0) {
-        device.assign(buf, len);
-      }
+    const bool is_device = std::strcmp(compile_spec.key, "device") == 0;
+    if (!is_device &&
+        std::strcmp(compile_spec.key, "inference_precision") != 0) {
+      continue;
+    }
+    const char* buf = static_cast<const char*>(compile_spec.value.buffer);
+    size_t len = compile_spec.value.nbytes;
+    // Strip trailing null bytes that may be included in nbytes.
+    while (len > 0 && buf[len - 1] == '\0') {
+      --len;
+    }
+    if (len > 0) {
+      (is_device ? device : precision).assign(buf, len);
+    }
+  }
+
+  // OpenVINO picks the precision when it imports the model, and on CPUs with
+  // bfloat16 units it picks bfloat16. So on a CPU a program computes in
+  // float32 unless it asks for less. Other devices keep their own default.
+  if (precision.empty() && device.rfind("CPU", 0) == 0) {
+    precision = "f32";
+  }
+  if (!precision.empty()) {
+    status = ov_.core_set_property(
+        core, device.c_str(), "INFERENCE_PRECISION_HINT", precision.c_str());
+    if (status != OV_STATUS_OK) {
+      ET_LOG(
+          Error,
+          "OpenVINO: failed to set inference precision '%s' for device '%s' "
+          "(status=%d)",
+          precision.c_str(),
+          device.c_str(),
+          status);
+      ov_.core_free(core);
+      return exr::Error::InvalidArgument;
     }
   }
 

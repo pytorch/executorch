@@ -25,6 +25,7 @@ class BaseOpenvinoOpTest(unittest.TestCase):
         sample_inputs: tuple[torch.Tensor],
         expected_partitions: int = 1,
         assert_output_equal: bool = True,
+        compile_specs: tuple[CompileSpec, ...] = (),
     ):
 
         module = module.eval()
@@ -32,7 +33,7 @@ class BaseOpenvinoOpTest(unittest.TestCase):
         aten_dialect: ExportedProgram = export(module, sample_inputs)
 
         # Convert to edge dialect and lower the module to the backend with a custom partitioner
-        compile_spec = [CompileSpec("device", self.device.encode())]
+        compile_spec = [CompileSpec("device", self.device.encode()), *compile_specs]
         lowered_module: EdgeProgramManager = to_edge_transform_and_lower(
             aten_dialect,
             partitioner=[
