@@ -619,6 +619,21 @@ def flatten_output(gm: torch.fx.GraphModule) -> None:
     raise RuntimeError(f"Could not find an output node in {gm.graph}")
 
 
+def _var_mean_correction(
+    x: torch.Tensor,
+    dim: Optional[List[int]] = None,
+    *,
+    correction: Optional[float] = None,
+    keepdim: bool = False,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    # The only registered decomposition of aten.var_mean.correction is the
+    # torch._refs one, which produces prims ops.
+    return (
+        torch.ops.aten.var.correction(x, dim, correction=correction, keepdim=keepdim),
+        torch.ops.aten.mean.dim(x, dim, keepdim),
+    )
+
+
 def _empty_like(self: torch.Tensor, **kwargs: Any) -> torch.Tensor:
     # With preserve_format the buffer must get the layout its input has in the
     # Edge program, not its eager strides: a view becomes a contiguous copy. So
@@ -660,6 +675,9 @@ def _default_decomposition_table(
     ]
     additional_decomps = get_decompositions(additional_decomp_ops)
     decomps.update(additional_decomps)
+    # torch.var_mean and torch.std_mean export to this op, which is not in the core
+    # ATen opset nor in the core decomposition table.
+    decomps[torch.ops.aten.var_mean.correction] = _var_mean_correction
     decomps[torch.ops.aten.empty_like.default] = _empty_like
     # A program already decomposed with PyTorch's table has aten.empty_permuted
     # where it had aten.empty_like.
