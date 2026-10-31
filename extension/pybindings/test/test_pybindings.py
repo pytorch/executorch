@@ -14,7 +14,6 @@ import sys
 import tempfile
 import unittest
 import weakref
-from io import StringIO
 
 import numpy as np
 import torch
@@ -376,6 +375,113 @@ print("all calls finished")
             f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
         self.assertIn("all calls finished", completed.stdout)
+
+    def test_backend_logs_do_not_deadlock_other_threads(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("the script below uses the portable bindings")
+        if "XnnpackBackend" not in self.runtime._get_registered_backend_names():
+            self.skipTest("needs the XNNPACK backend")
+
+        script = """
+import sys
+import threading
+import time
+
+import torch
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+    XnnpackPartitioner,
+)
+from executorch.exir import to_edge_transform_and_lower
+from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+from executorch.exir.schema import (
+    BackendDelegateDataReference,
+    BackendDelegateInlineData,
+    DataLocation,
+)
+from executorch.extension.pybindings import portable_lib
+
+
+class Add(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
+
+
+inputs = [torch.ones(2, 2), torch.ones(2, 2)]
+program = to_edge_transform_and_lower(
+    torch.export.export(Add(), tuple(inputs)), partitioner=[XnnpackPartitioner()]
+).to_executorch()
+data = program.buffer
+# XNNPACK logs a broken payload while it holds its workspace lock, which the
+# global sharing mode shares between all methods.
+schema = program.executorch_program
+schema.execution_plan[0].delegates[0].processed = BackendDelegateDataReference(
+    location=DataLocation.INLINE, index=len(schema.backend_delegate_data)
+)
+schema.backend_delegate_data.append(BackendDelegateInlineData(data=b"\\x01" * 64))
+broken = portable_lib._load_program_from_buffer(
+    bytes(serialize_pte_binary(PTEFile(schema)))
+)
+portable_lib._set_option("XnnpackBackend", {"workspace_sharing_mode": 2})
+method = portable_lib._load_program_from_buffer(data).load_method("forward")
+
+running = threading.Event()
+done = threading.Event()
+
+
+def run():
+    while not done.is_set():
+        method(inputs)
+        running.set()
+
+
+worker = threading.Thread(target=run)
+worker.start()
+assert running.wait(timeout=60)
+
+
+class SlowStderr:
+    # A real write releases the GIL for its system call. Keep that window open
+    # so the other thread surely runs inside it.
+    writes = 0
+
+    def write(self, text):
+        SlowStderr.writes += 1
+        time.sleep(0.5)
+        return len(text)
+
+    def flush(self):
+        pass
+
+
+message = ""
+sys.stderr = SlowStderr()
+try:
+    broken.load_method("forward")
+except RuntimeError as error:
+    message = str(error)
+finally:
+    sys.stderr = sys.__stderr__
+    done.set()
+worker.join()
+assert "Failed to load method" in message, message
+# The runtime's logs did not go through Python.
+assert SlowStderr.writes == 0, SlowStderr.writes
+print("no deadlock")
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn("no deadlock", completed.stdout)
+        self.assertIn("Init failed for backend XnnpackBackend", completed.stderr)
 
     def test_bfloat16_output_preserves_dtype(self):
         class ModuleAddBFloat16(ModuleAdd):
@@ -1042,32 +1148,13 @@ print("CUDA DLPack roundtrip preserved device storage")
         expected = inputs[0] + inputs[0]
         self.assertEqual(str(expected), str(executorch_output))
 
-    def test_stderr_redirect(self):
-        class RedirectedStderr:
-            def __init__(self):
-                self._stderr = None
-                self._string_io = None
-
-            def __enter__(self):
-                self._stderr = sys.stderr
-                sys.stderr = self._string_io = StringIO()
-                return self
-
-            def __exit__(self, type, value, traceback):
-                sys.stderr = self._stderr
-
-            def __str__(self):
-                return self._string_io.getvalue()
-
-        with RedirectedStderr() as out:
-            try:
-                exported_program, inputs = create_program(ModuleAdd())
-                executorch_module = self.load_fn(exported_program.buffer)
-                executorch_module.run_method("missing", inputs)
-                self.assertFalse(True)  # should be unreachable
-            except Exception:
-                # The runtime's own log, routed to Python's stderr.
-                self.assertIn("No method named 'missing' in program", str(out))
+    def test_missing_method_error_says_why(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+        with self.assertRaisesRegex(
+            RuntimeError, "No method named 'missing' in program"
+        ):
+            executorch_module.run_method("missing", inputs)
 
     def test_quantized_ops(self):
         eager_module = ModuleAdd()
@@ -1702,31 +1789,13 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         expected = inputs[0] + inputs[0]
         self.assertEqual(str(expected), str(executorch_output))
 
-    def test_method_stderr_redirect(self):
-        class RedirectedStderr:
-            def __init__(self):
-                self._stderr = None
-                self._string_io = None
-
-            def __enter__(self):
-                self._stderr = sys.stderr
-                sys.stderr = self._string_io = StringIO()
-                return self
-
-            def __exit__(self, type, value, traceback):
-                sys.stderr = self._stderr
-
-            def __str__(self):
-                return self._string_io.getvalue()
-
-        with RedirectedStderr() as out:
-            try:
-                program, _ = create_program(ModuleAdd())
-                executorch_program = self.load_prog_fn(program.buffer)
-                executorch_program.load_method("missing")
-                self.assertFalse(True)  # should be unreachable
-            except Exception:
-                self.assertIn("No method named 'missing' in program", str(out))
+    def test_method_missing_method_error_says_why(self):
+        program, _ = create_program(ModuleAdd())
+        executorch_program = self.load_prog_fn(program.buffer)
+        with self.assertRaisesRegex(
+            RuntimeError, "No method named 'missing' in program"
+        ):
+            executorch_program.load_method("missing")
 
     def test_method_quantized_ops(self):
         eager_module = ModuleAdd()

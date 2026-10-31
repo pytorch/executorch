@@ -12,7 +12,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -4892,9 +4891,6 @@ py::dict get_option(const std::string& backend_name, const py::dict& options) {
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   // Gives each call its own record of runtime errors for its exceptions.
-  // Runtime logs reach Python through emit_log_message below rather than
-  // scoped_ostream_redirect, which mutates process-wide stream buffers and is
-  // not thread-safe when Python operations inside a binding release the GIL.
   auto call_guard = py::call_guard<RuntimeErrorScope>();
 
 #if defined(EXECUTORCH_PYBINDINGS_CUDA) && !defined(USE_ATEN_LIB)
@@ -5320,8 +5316,10 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 
 namespace {
 
-// Forward runtime logs to Python without mutating std::cerr's process-wide
-// stream buffer.
+// Writes runtime logs to the process's stderr, never through Python: a backend
+// can log while it holds its own lock, and a Python call there can hand the GIL
+// to a thread that then waits for that lock. C stdio is used because another
+// module can redirect std::cerr into Python.
 void emit_log_message(
     ET_UNUSED et_timestamp_t timestamp,
     et_pal_log_level_t level,
@@ -5345,17 +5343,8 @@ void emit_log_message(
       runtime_errors_size += prefix + copied;
     }
   }
-  if (Py_IsInitialized() && PyGILState_Check()) {
-    try {
-      py::gil_scoped_acquire gil;
-      py::module_::import("sys").attr("stderr").attr("write")(
-          formatted_message);
-      return;
-    } catch (py::error_already_set& error) {
-      error.clear();
-    }
-  }
-  std::cerr << formatted_message << std::flush;
+  std::fwrite(formatted_message.data(), 1, formatted_message.size(), stderr);
+  std::fflush(stderr);
 }
 
 runtime::PalImpl build_pal() {

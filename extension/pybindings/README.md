@@ -235,4 +235,8 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
 This class is currently empty and serves as a placeholder for future methods and attributes.
 - `verify_result_with_bundled_expected_output(method_name: str, testset_idx: int, rtol: float = 1e-5, atol: float = 1e-8)`: Verify result with bundled expected output.
 ## Note
-Runtime logs are forwarded to Python stderr.
+Runtime logs go straight to the process's stderr, not through Python's
+`sys.stderr`, because a backend can log while it holds a lock. To capture them
+from Python, capture file descriptor 2, for example with pytest's `capfd`. A
+failed call's exception includes the error lines the runtime logged on that
+thread during the call.
