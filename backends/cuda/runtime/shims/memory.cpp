@@ -82,6 +82,9 @@ AOTITorchError read_one_element(const SlimTensor* tensor, T* ret_value) {
       return narrow_to(tensor->item<float>(), ret_value);
     case ScalarType::Double:
       return narrow_to(tensor->item<double>(), ret_value);
+    case ScalarType::Half:
+      return narrow_to(
+          static_cast<float>(tensor->item<c10::Half>()), ret_value);
     case ScalarType::BFloat16:
       return narrow_to(
           static_cast<float>(tensor->item<c10::BFloat16>()), ret_value);
@@ -473,6 +476,7 @@ ET_CUDA_DEFINE_ITEM_SHIM(int32, int32_t)
 ET_CUDA_DEFINE_ITEM_SHIM(int64, int64_t)
 ET_CUDA_DEFINE_ITEM_SHIM(float32, float)
 ET_CUDA_DEFINE_ITEM_SHIM(float64, double)
+ET_CUDA_DEFINE_ITEM_SHIM(float16, c10::Half)
 ET_CUDA_DEFINE_ITEM_SHIM(bfloat16, c10::BFloat16)
 ET_CUDA_DEFINE_ITEM_SHIM(bool, bool)
 

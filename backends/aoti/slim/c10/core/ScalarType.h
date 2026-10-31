@@ -13,12 +13,14 @@
 #include <ostream>
 
 #include <executorch/runtime/core/portable_type/bfloat16.h>
+#include <executorch/runtime/core/portable_type/half.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch::backends::aoti::slim::c10 {
 
-// Import BFloat16 from ExecuTorch's portable_type
+// Import BFloat16 and Half from ExecuTorch's portable_type
 using BFloat16 = ::executorch::runtime::etensor::BFloat16;
+using Half = ::executorch::runtime::etensor::Half;
 
 /// Enum representing the scalar type (dtype) of tensor elements.
 /// Note: Enum values must match PyTorch's c10::ScalarType for compatibility.

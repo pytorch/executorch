@@ -208,16 +208,19 @@ class TestIndexShims(unittest.TestCase):
         index = torch.tensor([0] * 128 + [1] * 255)
         self._run(Mean(), [(x, index, torch.ones(383, dtype=torch.int8))])
 
-    def test_float64_values(self):
-        class Float64Values(torch.nn.Module):
+    def test_float64_and_float16_values(self):
+        class Values(torch.nn.Module):
             def forward(self, x, scale):
                 # Rows this long go to the sort shim, not to Triton.
                 values, indices = torch.sort(x, stable=True)
                 return values * scale.item(), indices
 
         torch.manual_seed(0)
-        x = torch.randn(4, 1000, dtype=torch.float64)
-        # A whole number works around an AOTInductor bug: its Triton launcher
-        # takes a float read with .item() as int64_t, so 1.5 would become 1.
-        scale = torch.tensor(2.0, dtype=torch.float64)
-        self._run(Float64Values(), [(x, scale)])
+        for dtype in (torch.float64, torch.float16):
+            with self.subTest(dtype=dtype):
+                x = torch.randn(4, 1000, dtype=dtype)
+                # A whole number works around an AOTInductor bug: its Triton
+                # launcher takes a float read with .item() as int64_t, so 1.5
+                # would become 1.
+                scale = torch.tensor(2.0, dtype=dtype)
+                self._run(Values(), [(x, scale)])
