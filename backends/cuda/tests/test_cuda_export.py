@@ -802,7 +802,9 @@ class TestCudaExport(unittest.TestCase):
         )
 
     def test_missing_scatter_kernel_fails_at_export(self):
-        """Inductor leaves an int64 scatter to an ATen kernel the CUDA shims lack."""
+        """The scatter fallback writes its kernel call itself, and the check for
+        missing kernels still sees it. Inductor leaves an int64 scatter to that
+        fallback, and the CUDA shims lack its kernel."""
 
         class Int64Scatter(torch.nn.Module):
             def forward(self, counts: torch.Tensor, idx: torch.Tensor):
