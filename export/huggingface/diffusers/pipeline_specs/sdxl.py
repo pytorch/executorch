@@ -29,7 +29,7 @@ class SDXLPipelineExportSpec(StableDiffusionPipelineExportSpec):
     """Compose SDXL components into exported PTE methods."""
 
     pipeline_behavior = SDXLPipelineBehavior()
-    default_max_sequence_lengths = (77, 77)
+    default_max_text_sequence_lengths = (77, 77)
     max_sequence_length_override_index = None
     default_size = (1024, 1024)
 
@@ -39,7 +39,7 @@ class SDXLPipelineExportSpec(StableDiffusionPipelineExportSpec):
         scale = vae_scale_factor(components.require("vae"))
         if config.model.height % scale or config.model.width % scale:
             raise ValueError(f"height and width must be multiples of {scale}")
-        if config.model.max_sequence_lengths != self.default_max_sequence_lengths:
+        if config.model.max_sequence_lengths != self.default_max_text_sequence_lengths:
             raise ValueError("SDXL requires sequence lengths of (77, 77)")
         return scale
 
@@ -94,6 +94,7 @@ class SDXLPipelineExportSpec(StableDiffusionPipelineExportSpec):
                 (prompt, pooled),
                 height=config.model.height,
                 width=config.model.width,
+                vae_scale_factor=scale,
                 dtype=config.model.denoiser_dtype,
                 guidance_scale=(
                     self.pipeline_behavior.default_guidance_scale

@@ -33,13 +33,21 @@ from executorch.export.huggingface.diffusers.pipeline_discovery import (
 from executorch.export.huggingface.diffusers.pipeline_specs import (
     DiffusionComponents,
     DiffusionModelInfo,
+    FluxPipelineExportSpec,
     ResolvedDiffusionPipeline,
     SD15PipelineExportSpec,
     SDXLPipelineExportSpec,
 )
-from executorch.export.huggingface.diffusers.wrappers import _guidance_scale_embedding
+from executorch.export.huggingface.diffusers.wrappers import (
+    _guidance_scale_embedding,
+    BoundedFluxPosEmbed,
+    freeze_flux_pos_embed,
+)
 
-from executorch.extension.diffusers.pipeline_behaviors import SD15PipelineBehavior
+from executorch.extension.diffusers.pipeline_behaviors import (
+    FluxPipelineBehavior,
+    SD15PipelineBehavior,
+)
 
 
 class TextEncoder(torch.nn.Module):
@@ -87,6 +95,16 @@ class VAE(torch.nn.Module):
 
     def decode(self, latents):
         return SimpleNamespace(sample=latents[:, :3])
+
+
+class FluxTransformer(torch.nn.Module):
+    def __init__(self, guidance_embeds: bool) -> None:
+        super().__init__()
+        self.config = SimpleNamespace(in_channels=16, guidance_embeds=guidance_embeds)
+
+    def forward(self, hidden_states, **kwargs):
+        image_ids = kwargs["img_ids"][:, :1].unsqueeze(0)
+        return (hidden_states + image_ids * 0,)
 
 
 def config(
@@ -149,7 +167,7 @@ class DiffusersExportTest(unittest.TestCase):
     def test_sequence_length_override_changes_only_supported_encoder(self):
         spec = SimpleNamespace(
             name="sd3",
-            default_max_sequence_lengths=(77, 77, 256),
+            default_max_text_sequence_lengths=(77, 77, 256),
             max_sequence_length_override_index=2,
         )
         self.assertEqual(
@@ -369,6 +387,147 @@ class DiffusersExportTest(unittest.TestCase):
         self.assertEqual(image.shape, (1, 3, 1, 1))
         torch.testing.assert_close(image, torch.full_like(image, 0.5))
 
+    def test_portable_flux_pte_runs_through_diffusion_runner(self):
+        from executorch.extension.diffusers.runner import DiffusionRunner
+        from executorch.runtime import Runtime, Verification
+
+        class Tokenizer:
+            def __init__(self, length):
+                self.model_max_length = length
+
+            def __call__(self, prompt, *, max_length, **kwargs):
+                return SimpleNamespace(
+                    input_ids=torch.zeros(1, max_length, dtype=torch.long)
+                )
+
+        class Scheduler:
+            config = SimpleNamespace(
+                prediction_type=None,
+                base_image_seq_len=1,
+                max_image_seq_len=4,
+                base_shift=0.5,
+                max_shift=1.0,
+            )
+
+            def set_timesteps(self, steps, *, sigmas, mu):
+                self.timesteps = torch.arange(steps - 1, -1, -1)
+
+            def step(self, prediction, timestep, latents, return_dict=False):
+                return (latents - prediction,)
+
+        components = DiffusionComponents(
+            {
+                "text_encoder": TextEncoder(3),
+                "text_encoder_2": TextEncoder(5),
+                "denoiser": FluxTransformer(False),
+                "vae": VAE(),
+            }
+        )
+        export_config = config(16, 16, (77, 8))
+        export_spec = FluxPipelineExportSpec()
+        model_info = export_spec.resolve_model_info(
+            components,
+            DiffusionModelInfo(
+                scheduler_name="FakeScheduler",
+                max_sequence_lengths=(77, 8),
+                zero_negative_prompt=False,
+            ),
+        )
+        pipeline = ResolvedDiffusionPipeline(export_spec, model_info)
+        edge_program = lower_programs(
+            export_programs(components, export_spec, export_config),
+            pipeline,
+            export_config,
+        )
+
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "tiny_flux.pte"
+            write_pte(edge_program, output)
+            program = Runtime.get().load_program(
+                str(output), verification=Verification.Minimal
+            )
+            image = DiffusionRunner(
+                program, [Tokenizer(77), Tokenizer(8)], Scheduler()
+            ).generate("cat", steps=1, seed=9)
+            del program
+
+        self.assertEqual(image.shape, (1, 3, 2, 2))
+        torch.testing.assert_close(image, torch.full_like(image, 0.5))
+
+    def test_dynamic_portable_flux_pte_runs_at_a_different_size(self):
+        from executorch.extension.diffusers.runner import DiffusionRunner
+        from executorch.runtime import Runtime, Verification
+
+        class Tokenizer:
+            def __init__(self, length):
+                self.model_max_length = length
+
+            def __call__(self, prompt, *, max_length, **kwargs):
+                return SimpleNamespace(
+                    input_ids=torch.zeros(1, max_length, dtype=torch.long)
+                )
+
+        class Scheduler:
+            config = SimpleNamespace(
+                prediction_type=None,
+                base_image_seq_len=1,
+                max_image_seq_len=64,
+                base_shift=0.5,
+                max_shift=1.0,
+            )
+
+            def set_timesteps(self, steps, *, sigmas, mu):
+                self.timesteps = torch.arange(steps - 1, -1, -1)
+
+            def step(self, prediction, timestep, latents, return_dict=False):
+                return (latents - prediction,)
+
+        components = DiffusionComponents(
+            {
+                "text_encoder": TextEncoder(3),
+                "text_encoder_2": TextEncoder(5),
+                "denoiser": FluxTransformer(False),
+                "vae": VAE(),
+            }
+        )
+        export_config = config(
+            64,
+            64,
+            (77, 8),
+            dynamic_shapes=True,
+            min_size=32,
+            max_size=96,
+        )
+        export_spec = FluxPipelineExportSpec()
+        model_info = export_spec.resolve_model_info(
+            components,
+            DiffusionModelInfo(
+                scheduler_name="FakeScheduler",
+                max_sequence_lengths=(77, 8),
+                zero_negative_prompt=False,
+            ),
+        )
+        pipeline = ResolvedDiffusionPipeline(export_spec, model_info)
+        edge_program = lower_programs(
+            export_programs(components, export_spec, export_config),
+            pipeline,
+            export_config,
+        )
+
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "dynamic_flux.pte"
+            write_pte(edge_program, output)
+            program = Runtime.get().load_program(
+                str(output), verification=Verification.Minimal
+            )
+            image = DiffusionRunner(
+                program, [Tokenizer(77), Tokenizer(8)], Scheduler()
+            ).generate("cat", steps=1, height=32, width=48, seed=9)
+            del program
+
+        self.assertEqual(image.shape, (1, 3, 4, 6))
+        torch.testing.assert_close(image, torch.full_like(image, 0.5))
+
     def test_sd15_exports_dynamic_spatial_shapes(self):
         components = DiffusionComponents(
             {
@@ -420,6 +579,239 @@ class DiffusersExportTest(unittest.TestCase):
         )
         self.assertIsInstance(sd15, SD15PipelineExportSpec)
         self.assertIsInstance(sdxl, SDXLPipelineExportSpec)
+
+        flux = pipeline_spec_from_model_index(
+            {
+                "_class_name": "FluxPipeline",
+                "scheduler": ["diffusers", "FlowMatchEulerDiscreteScheduler"],
+                "tokenizer": ["transformers", "CLIPTokenizer"],
+                "tokenizer_2": ["transformers", "T5TokenizerFast"],
+                "text_encoder": ["transformers", "CLIPTextModel"],
+                "text_encoder_2": ["transformers", "T5EncoderModel"],
+                "transformer": ["diffusers", "FluxTransformer2DModel"],
+                "vae": ["diffusers", "AutoencoderKL"],
+            }
+        )
+        self.assertIsInstance(flux, FluxPipelineExportSpec)
+
+    def test_flux_examples_use_packed_latents_and_position_ids(self):
+        components = DiffusionComponents(
+            {
+                "text_encoder": TextEncoder(3),
+                "text_encoder_2": TextEncoder(5),
+                "denoiser": FluxTransformer(True),
+                "vae": VAE(),
+            }
+        )
+        inputs = FluxPipelineExportSpec().example_inputs(
+            components, config(64, 80, (77, 128))
+        )["denoise"]
+        self.assertEqual(inputs[0].shape, (1, 20, 16))
+        self.assertEqual(inputs[2].shape, (1, 128, 5))
+        self.assertEqual(inputs[4].shape, (128, 3))
+        self.assertEqual(inputs[5].shape, (20, 3))
+        self.assertEqual(len(inputs), 7)
+
+    def test_flux_resolves_schnell_and_dev_defaults(self):
+        def resolve(guidance_embeds):
+            components = DiffusionComponents(
+                {
+                    "denoiser": FluxTransformer(guidance_embeds),
+                    "vae": VAE(),
+                }
+            )
+            return FluxPipelineExportSpec().resolve_model_info(
+                components,
+                DiffusionModelInfo(
+                    scheduler_name="FlowMatchEulerDiscreteScheduler",
+                    max_sequence_lengths=(77, 512),
+                    zero_negative_prompt=False,
+                ),
+            )
+
+        schnell, dev = resolve(False), resolve(True)
+        self.assertEqual(
+            (
+                schnell.default_inference_steps,
+                schnell.accepts_guidance_input,
+                schnell.default_guidance_scale,
+            ),
+            (4, False, 0.0),
+        )
+        self.assertEqual(
+            (
+                dev.default_inference_steps,
+                dev.accepts_guidance_input,
+                dev.default_guidance_scale,
+            ),
+            (28, True, 3.5),
+        )
+
+    def test_flux_rejects_invalid_static_and_dynamic_sizes(self):
+        components = DiffusionComponents(
+            {
+                "denoiser": FluxTransformer(False),
+                "vae": VAE(),
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "multiples of 16"):
+            FluxPipelineExportSpec().wrap_components(
+                components, config(64, 72, (77, 512))
+            )
+        with self.assertRaisesRegex(ValueError, "dynamic size bounds"):
+            FluxPipelineExportSpec().wrap_components(
+                components,
+                config(
+                    64,
+                    64,
+                    (77, 512),
+                    dynamic_shapes=True,
+                    min_size=48,
+                    max_size=100,
+                ),
+            )
+
+    def test_flux_exports_dynamic_image_tokens_and_decode_shape(self):
+        components = DiffusionComponents(
+            {
+                "text_encoder": TextEncoder(3),
+                "text_encoder_2": TextEncoder(5),
+                "denoiser": FluxTransformer(False),
+                "vae": VAE(),
+            }
+        )
+        export_config = config(
+            64,
+            64,
+            (77, 8),
+            dynamic_shapes=True,
+            min_size=32,
+            max_size=96,
+        )
+        programs = export_programs(components, FluxPipelineExportSpec(), export_config)
+        denoise = programs["denoise"].module()
+        output = denoise(
+            torch.zeros(1, 15, 16),
+            torch.zeros(1),
+            torch.zeros(1, 8, 5),
+            torch.zeros(1, 3),
+            torch.zeros(8, 3),
+            torch.zeros(15, 3),
+        )
+        self.assertEqual(output.shape, (1, 15, 16))
+        decoded = programs["decode"].module()(torch.zeros(1, 4, 6, 10))
+        self.assertEqual(decoded.shape, (1, 3, 6, 10))
+
+    def test_flux_position_embeddings_are_frozen_without_losing_precision(self):
+        class PositionEmbedding(torch.nn.Module):
+            axes_dim = (2, 2, 2)
+
+            def forward(self, ids):
+                frequencies = torch.arange(2, dtype=torch.float64)
+                angles = torch.cat(
+                    [
+                        ids[:, axis : axis + 1].double() * frequencies
+                        for axis in range(3)
+                    ],
+                    dim=-1,
+                )
+                return angles.cos().float(), angles.sin().float()
+
+        model = torch.nn.Module()
+        model.pos_embed = PositionEmbedding()
+        ids = torch.tensor([[0.0, 0.0, 0.0], [0.0, 1.0, 3.0]])
+        expected = model.pos_embed(ids)
+
+        freeze_flux_pos_embed(model, max_positions=4)
+
+        self.assertIsInstance(model.pos_embed, BoundedFluxPosEmbed)
+        actual = model.pos_embed(ids)
+        torch.testing.assert_close(actual[0], expected[0])
+        torch.testing.assert_close(actual[1], expected[1])
+        self.assertEqual(actual[0].dtype, torch.float32)
+
+    def test_flux_rope_tables_cover_static_and_dynamic_spatial_bounds(self):
+        class PositionEmbedding(torch.nn.Module):
+            axes_dim = (2, 2, 2)
+
+            def forward(self, ids):
+                values = ids.repeat_interleave(2, dim=-1).float()
+                return values, -values
+
+        for dynamic, bound in ((False, 5), (True, 6)):
+            with self.subTest(dynamic=dynamic):
+                transformer = FluxTransformer(False)
+                transformer.pos_embed = PositionEmbedding()
+                components = DiffusionComponents(
+                    {
+                        "text_encoder": TextEncoder(3),
+                        "text_encoder_2": TextEncoder(5),
+                        "denoiser": transformer,
+                        "vae": VAE(),
+                    }
+                )
+                FluxPipelineExportSpec().wrap_components(
+                    components,
+                    config(
+                        64,
+                        80,
+                        (77, 128),
+                        dynamic_shapes=dynamic,
+                        min_size=32,
+                        max_size=96,
+                    ),
+                )
+                self.assertIsInstance(transformer.pos_embed, BoundedFluxPosEmbed)
+                self.assertEqual(transformer.pos_embed.cos_2.shape, (bound, 2))
+                ids = torch.tensor([[0.0, 3.0, bound - 1]])
+                actual = transformer.pos_embed(ids)
+                expected = PositionEmbedding()(ids)
+                torch.testing.assert_close(actual, expected)
+
+    def test_bounded_flux_position_embeddings_gather_dynamic_ids(self):
+        class PositionEmbedding(torch.nn.Module):
+            axes_dim = (2, 2, 2)
+
+            def forward(self, ids):
+                parts = [ids[:, axis : axis + 1].repeat(1, 2) for axis in range(3)]
+                values = torch.cat(parts, dim=-1).float()
+                return values, -values
+
+        embedding = BoundedFluxPosEmbed(PositionEmbedding(), 8)
+        ids = torch.tensor([[0.0, 2.0, 3.0], [0.0, 4.0, 1.0]])
+        cos, sin = embedding(ids)
+        expected = torch.tensor(
+            [[0.0, 0.0, 2.0, 2.0, 3.0, 3.0], [0.0, 0.0, 4.0, 4.0, 1.0, 1.0]]
+        )
+        torch.testing.assert_close(cos, expected)
+        torch.testing.assert_close(sin, -expected)
+
+    def test_flux_rope_tables_preserve_coordinates_above_bfloat16_precision(self):
+        class PositionEmbedding(torch.nn.Module):
+            axes_dim = (2, 2, 2)
+
+            def forward(self, ids):
+                values = ids.repeat_interleave(2, dim=-1).float()
+                return values, -values
+
+        embedding = BoundedFluxPosEmbed(PositionEmbedding(), 260)
+        ids = torch.tensor([[0, 257, 259]])
+        torch.testing.assert_close(embedding(ids), PositionEmbedding()(ids))
+
+    def test_flux_rope_tables_expand_when_reusing_components(self):
+        class PositionEmbedding(torch.nn.Module):
+            axes_dim = (2, 2, 2)
+
+            def forward(self, ids):
+                values = ids.repeat_interleave(2, dim=-1).float()
+                return values, -values
+
+        model = torch.nn.Module()
+        model.pos_embed = PositionEmbedding()
+        freeze_flux_pos_embed(model, max_positions=2)
+        freeze_flux_pos_embed(model, max_positions=4)
+        ids = torch.tensor([[0, 1, 3]])
+        torch.testing.assert_close(model.pos_embed(ids), PositionEmbedding()(ids))
 
     def test_model_info_is_discovered_from_hugging_face(self):
         pipeline_config = {

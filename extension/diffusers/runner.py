@@ -312,7 +312,9 @@ class DiffusionRunner:
         ):
             raise ValueError("guidance_scale must be finite and non-negative")
         if guidance_scale is not None and not self.metadata.accepts_guidance_input:
-            raise ValueError("this program does not accept a guidance input")
+            if guidance_scale != 0:
+                raise ValueError("this program does not accept a guidance input")
+            guidance_scale = None
         if not 0 < strength <= 1:
             raise ValueError("strength must be in (0, 1]")
         if negative_prompt is not None and not self.metadata.supports_negative_prompt:
@@ -332,6 +334,7 @@ class DiffusionRunner:
             steps,
             height=output_height,
             width=output_width,
+            vae_scale_factor=self.metadata.vae_scale_factor,
         )
         dtype = getattr(torch, self.metadata.denoiser_dtype)
         vae_dtype = getattr(torch, self.metadata.vae_dtype)
@@ -394,6 +397,7 @@ class DiffusionRunner:
                         conditioning,
                         height=output_height,
                         width=output_width,
+                        vae_scale_factor=self.metadata.vae_scale_factor,
                         dtype=dtype,
                         guidance_scale=guidance_scale,
                     ),
