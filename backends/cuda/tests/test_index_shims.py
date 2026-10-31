@@ -168,8 +168,8 @@ class TestIndexShims(unittest.TestCase):
 
     def test_scatter_reduce(self):
         """Inductor adds atomically but has no atomic max, min or product, so
-        those reductions, and the mean, go to the shim. So does an int64 sum,
-        which Inductor cannot add atomically."""
+        those reductions, and the mean, go to the shim. So does a sum it cannot
+        add atomically: int64, or bfloat16 below sm_90."""
 
         class ScatterReduce(torch.nn.Module):
             def forward(self, x, index, src):
@@ -216,6 +216,7 @@ class TestIndexShims(unittest.TestCase):
 
         torch.manual_seed(0)
         x = torch.randn(4, 1000, dtype=torch.float64)
-        # A whole number: the generated kernel takes the scalar as an integer.
+        # A whole number works around an AOTInductor bug: its Triton launcher
+        # takes a float read with .item() as int64_t, so 1.5 would become 1.
         scale = torch.tensor(2.0, dtype=torch.float64)
         self._run(Float64Values(), [(x, scale)])
