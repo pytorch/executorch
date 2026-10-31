@@ -1,0 +1,116 @@
+{
+  "name": "q8ta conv2d routes",
+  "operator": "et_vk.q8ta_conv2d.default",
+  "target_ms": 10,
+  "benchmark_runs": 5,
+  "show_memory_throughput": true,
+  "show_compute_throughput": true,
+  "max_dispatches": 512,
+  "route_sweep": ["auto", "direct", "im2col"],
+  "args_sweep": [
+    [
+      {
+        "tensor": {
+          "name": "input",
+          "sizes": [1, 32, 16, 16],
+          "dtype": "int8x4",
+          "storage": "buffer",
+          "layout": "4w4c",
+          "data": {
+            "rand_uniform_int": [-8, 8]
+          }
+        }
+      },
+      {
+        "float": 0.25
+      },
+      {
+        "int": 0
+      },
+      {
+        "tensor": {
+          "name": "weight",
+          "sizes": [64, 288],
+          "dtype": "int8",
+          "storage": "constant",
+          "layout": "width",
+          "data": {
+            "rand_uniform_int": [-8, 8]
+          }
+        }
+      },
+      {
+        "tensor": {
+          "name": "weight_sums",
+          "sizes": [64],
+          "dtype": "int32",
+          "storage": "constant",
+          "layout": "width",
+          "data": {
+            "row_sum": "weight"
+          }
+        }
+      },
+      {
+        "tensor": {
+          "name": "weight_scales",
+          "sizes": [64],
+          "dtype": "float32",
+          "storage": "constant",
+          "layout": "width",
+          "data": {
+            "rand_uniform_float": [0.01, 0.1]
+          }
+        }
+      },
+      {
+        "float": 0.25
+      },
+      {
+        "int": 0
+      },
+      {
+        "tensor": {
+          "name": "bias",
+          "sizes": [64],
+          "dtype": "float32",
+          "storage": "constant",
+          "layout": "width",
+          "data": {
+            "rand_uniform_float": [-1, 1]
+          }
+        }
+      },
+      {
+        "int_list": [3, 3]
+      },
+      {
+        "int_list": [1, 1]
+      },
+      {
+        "int_list": [1, 1]
+      },
+      {
+        "int_list": [1, 1]
+      },
+      {
+        "int": 1
+      },
+      {
+        "string": "none"
+      },
+      {
+        "tensor": {
+          "name": "output",
+          "sizes": [1, 64, 16, 16],
+          "dtype": "int8x4",
+          "storage": "buffer",
+          "layout": "4w4c",
+          "data": {
+            "fill": 0
+          }
+        }
+      }
+    ]
+  ]
+}

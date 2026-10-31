@@ -1,0 +1,110 @@
+{
+  "name": "conv2d routes",
+  "operator": "aten.convolution.default",
+  "target_ms": 10,
+  "benchmark_runs": 5,
+  "show_memory_throughput": true,
+  "show_compute_throughput": true,
+  "max_dispatches": 512,
+  "route_sweep": [
+    "auto",
+    "direct",
+    "im2col",
+    {
+      "name": "im2col",
+      "options": {
+        "intermediate_storage": "buffer"
+      }
+    },
+    {
+      "name": "im2col",
+      "options": {
+        "intermediate_storage": "texture2d"
+      }
+    },
+    {
+      "name": "im2col",
+      "options": {
+        "intermediate_storage": "texture3d"
+      }
+    }
+  ],
+  "validation_method": {
+    "function": "is_close",
+    "atol": 0.05,
+    "rtol": 0.01
+  },
+  "sweep_variables": {
+    "v_DTYPE": ["float32", "float16"]
+  },
+  "args_sweep": [
+    [
+      {
+        "tensor": {
+          "name": "input",
+          "sizes": [1, 32, 32, 32],
+          "dtype": "v_DTYPE",
+          "storage": "texture3d",
+          "layout": "channels",
+          "data": {
+            "rand_uniform_float": [-1, 1]
+          }
+        }
+      },
+      {
+        "tensor": {
+          "name": "weight",
+          "sizes": [64, 32, 3, 3],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {
+            "rand_uniform_float": [-0.05, 0.05]
+          }
+        }
+      },
+      {
+        "tensor": {
+          "name": "bias",
+          "sizes": [64],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {
+            "rand_uniform_float": [-1, 1]
+          }
+        }
+      },
+      {
+        "int_list": [1, 1]
+      },
+      {
+        "int_list": [1, 1]
+      },
+      {
+        "int_list": [1, 1]
+      },
+      {
+        "bool": false
+      },
+      {
+        "int_list": [0, 0]
+      },
+      {
+        "int": 1
+      },
+      {
+        "tensor": {
+          "name": "output",
+          "sizes": [1, 64, 32, 32],
+          "dtype": "v_DTYPE",
+          "storage": "texture3d",
+          "layout": "channels",
+          "data": {
+            "fill": 0
+          }
+        }
+      }
+    ]
+  ]
+}
