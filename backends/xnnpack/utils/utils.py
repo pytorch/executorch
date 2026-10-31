@@ -20,6 +20,7 @@ from torch._export.utils import (
     is_lifted_tensor_constant,
     is_param,
 )
+from torch.fx.experimental.symbolic_shapes import has_free_symbols
 from torchao.quantization.pt2e.utils import _is_conv_node, _is_conv_transpose_node
 
 
@@ -56,6 +57,18 @@ def is_getitem(node: torch.fx.Node) -> bool:
 
 def get_input_node(node: torch.fx.Node, input_index: int) -> torch.fx.Node:
     return cast(torch.fx.Node, node.args[input_index])
+
+
+def is_dtype_cast(node: torch.fx.Node) -> bool:
+    """A _to_copy that changes dtype keeps the layout of its input and is
+    serialized as a convert node, not a transpose."""
+    src = node.args[0]
+    return (
+        isinstance(src, torch.fx.Node)
+        and "val" in src.meta
+        and "val" in node.meta
+        and node.meta["val"].dtype != src.meta["val"].dtype
+    )
 
 
 def normalize_mean_dims(mean_dims: Sequence[int] | int | None, rank: int) -> List[int]:
@@ -99,6 +112,31 @@ def normalize_pool2d_args(
     padding = pair(3, [0, 0])
     dilation = pair(4, [1, 1]) if has_dilation else [1, 1]
     return kernel, stride, padding, dilation
+
+
+def why_not_x2_nearest_upsample(node: torch.fx.Node) -> Optional[str]:
+    """
+    XNNPACK lowers upsample_nearest2d as concatenate4 + depth_to_space_2d,
+    which only expresses exact x2 scaling of a static 4D tensor. Returns the
+    reason a node cannot take that path, or None if it can. Shared by the
+    partitioner and the quantizer so they agree on which nodes are lowered.
+    """
+    in_shape = get_input_node(node, 0).meta["val"].shape
+    out_shape = node.meta["val"].shape
+    if has_free_symbols(in_shape) or has_free_symbols(out_shape):
+        return "dynamic output sizes are not supported"
+    if len(in_shape) != 4:
+        return "only 4D inputs are supported"
+    if out_shape[-2] != 2 * in_shape[-2] or out_shape[-1] != 2 * in_shape[-1]:
+        return "only x2 nearest upsampling is supported"
+    # PyTorch indexes with an explicit scale as given, so e.g. 2.004 doubles
+    # the size but picks different source pixels than x2.
+    scale_factors = (
+        node.args[2] if len(node.args) > 2 else node.kwargs.get("scale_factors")
+    )
+    if scale_factors is not None and any(s != 2.0 for s in scale_factors):
+        return "only an exact x2 scale factor is supported"
+    return None
 
 
 def get_relu_fused_node(node: torch.fx.Node) -> Optional[torch.fx.Node]:

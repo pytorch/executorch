@@ -958,6 +958,32 @@ TEST_F(ServingRuntimeTest, InvalidKeysAndMissingResetDoNotAllocateSlots) {
   EXPECT_EQ(executor.open_attempts.load(), 0);
 }
 
+TEST(ServingRuntimeConfigTest, AutomaticCaptureCapacityTracksConcurrency) {
+  ServingRuntimeConfig config;
+  config.max_sessions = 16;
+  config.max_requests = 8;
+  EXPECT_EQ(config.resolved_prefix_captures(), 0u);
+  config.prefix_cache_capacity = 1;
+  EXPECT_EQ(config.resolved_prefix_captures(), 8u);
+  config.max_sessions = 4;
+  EXPECT_EQ(config.resolved_prefix_captures(), 4u);
+  config.prefix_checkpoint_interval = 64;
+  EXPECT_EQ(config.resolved_prefix_captures(), 2u);
+  config.max_sessions = 1;
+  EXPECT_EQ(config.resolved_prefix_captures(), 1u);
+  config.max_sessions = 16;
+  config.prefix_checkpoint_interval = 0;
+  config.prefix_checkpoint_policy = [](const auto&, auto, bool) {
+    return std::vector<
+        executorch::extension::llm::batching::PrefixCheckpoint>{};
+  };
+  EXPECT_EQ(config.resolved_prefix_captures(), 2u);
+  config.max_prefix_captures = 3;
+  EXPECT_EQ(config.resolved_prefix_captures(), 3u);
+  config.prefix_cache_capacity = 0;
+  EXPECT_EQ(config.resolved_prefix_captures(), 0u);
+}
+
 TEST_F(ServingRuntimeTest, InvalidConfigurationIsInertWithoutExceptions) {
   for (const auto& config :
        {ServingRuntimeConfig{0, 128, 4}, ServingRuntimeConfig{1, 128, 0}}) {

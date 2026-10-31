@@ -37,6 +37,13 @@ The shared `KernelProvider` contract, `CPUPlan`, and `CpuBackend` remain in
 [`targets.bzl`](targets.bzl).
 
 The Buck `cpu_backend` target links the baseline XNNPACK and Reference providers.
+The CMake `cpu_backend` target (`-DEXECUTORCH_BUILD_CPU=ON`, which requires
+`-DEXECUTORCH_BUILD_XNNPACK=ON` and `-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON`)
+links the same composition, including the full optimized and portable kernel
+library for the Reference provider. Selective kernel builds are not supported.
+The CPU backend is disabled by default, including in Python wheels. Enable it
+for an editable install with
+`CMAKE_ARGS="-DEXECUTORCH_BUILD_CPU=ON" ./install_executorch.sh --editable`.
 Applications compose providers with [`cpu_backend()`](cpu_backend.bzl).
 
 `CPUPlan` retains selection, regions, storage requirements and prepared executables

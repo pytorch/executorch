@@ -1147,12 +1147,15 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
   for (size_t i = 0; i < spec_vars.size(); ++i) {
     ASSERT_TRUE(entries[i].constantID == i);
     ASSERT_TRUE(entries[i].offset == sv_size * i);
-    if (i != 4) {
-      ASSERT_TRUE(entries[i].size == 4);
-    } else {
-      ASSERT_TRUE(entries[i].size == 1);
-    }
+    ASSERT_TRUE(entries[i].size == sizeof(VkBool32));
   }
+
+  const vkapi::SpecVarList bool_vars{SV(false), SV(true)};
+  const auto bool_entries = bool_vars.generate_map_entries();
+  ASSERT_EQ(bool_entries[0].size, sizeof(VkBool32));
+  ASSERT_EQ(bool_entries[1].size, sizeof(VkBool32));
+  ASSERT_EQ(bool_vars.at(0).value.as_bool, VK_FALSE);
+  ASSERT_EQ(bool_vars.at(1).value.as_bool, VK_TRUE);
 
   // Check copy
   vkapi::SpecVarList spec_vars_copy(spec_vars);
@@ -1160,7 +1163,7 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
 
   // Check validity of the copied data
   const vkapi::SpecVar* copy_data = spec_vars_copy.data();
-  ASSERT_TRUE(*(reinterpret_cast<const bool*>(copy_data + 4)) == true);
+  ASSERT_TRUE(copy_data[4].value.as_bool == VK_TRUE);
   ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(copy_data + 2)) == 45);
   ASSERT_TRUE(*(reinterpret_cast<const float*>(copy_data + 6)) == 5.5f);
 }
@@ -4293,7 +4296,6 @@ TEST(VulkanWorkGroupSizeTest, lwg) {
   EXPECT_EQ(large_z_lwg.z(), 1024u);
 
   EXPECT_FALSE(LocalWorkGroup().is_valid());
-  EXPECT_THROW(LocalWorkGroup(3u, 2u, 1u), vkapi::Error);
 }
 
 TEST(VulkanWorkGroupSizeTest, lwg_validation) {

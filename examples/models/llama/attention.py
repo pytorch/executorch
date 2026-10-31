@@ -494,9 +494,13 @@ class AttentionMHA(Attention):
         if self.use_attn_o_norm:
             self.o_norm = ScalelessRMSNorm(self.head_dim, eps=args.norm_eps)
         if self.use_attn_o_gate:
-            self.og = nn.Linear(args.dim, self.n_heads * self.head_dim, bias=False)
+            self.og = _create_projection(
+                args, args.dim, self.n_heads * self.head_dim, ("og_proj",)
+            )
         if self.headwise_attn_output_gate:
-            self.og = nn.Linear(args.dim, self.n_local_heads, bias=False)
+            self.og = _create_projection(
+                args, args.dim, self.n_local_heads, ("og_proj",)
+            )
 
     def _init_projections(self, args: ModelArgs, q_out_dim: int) -> None:
         """Initialize Q/K/V/O projection layers."""

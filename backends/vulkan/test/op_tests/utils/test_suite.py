@@ -51,3 +51,4 @@ class VkTestSuite(TestSuite):
         self.force_io: bool = True
         self.arg_storage_types: Dict[str, str] = {}
         self.arg_memory_layouts: Dict[str, str] = {}
+        self.case_tolerances: Dict[int, Dict[str, tuple[float, float]]] = {}

@@ -416,6 +416,33 @@ def xfail_if_model_converter_version(
     )
 
 
+def xfail_if_emulation_layer_version(
+    specifier: str,
+    *,
+    reason: str,
+    strict: bool = True,
+    raises: type[Exception] | None = None,
+) -> pytest.MarkDecorator:
+    """Xfail for matching versions of the ML Emulation Layer for Vulkan.
+
+    EMULATION_LAYER_VERSION takes precedence for layers built from source, which
+    have no Python distribution metadata.
+
+    """
+    version = os.environ.get("EMULATION_LAYER_VERSION")
+    if version is None:
+        return xfail_if_dependency_version(
+            "ai-ml-emulation-layer-for-vulkan",
+            specifier,
+            reason=reason,
+            strict=strict,
+            raises=raises,
+        )
+    return xfail_if_version(
+        version, specifier, reason=reason, strict=strict, raises=raises
+    )
+
+
 xfail_type = str | tuple[str, type[Exception]] | pytest.MarkDecorator
 
 _P = ParamSpec("_P")

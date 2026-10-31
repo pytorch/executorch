@@ -1,0 +1,101 @@
+{
+  "name": "linear",
+  "operator": "aten.linear.default",
+  "target_ms": 10,
+  "benchmark_runs": 5,
+  "show_memory_throughput": true,
+  "show_compute_throughput": true,
+  "max_dispatches": 512,
+  "validation_method": {"function": "is_close", "atol": 0.05, "rtol": 0.01},
+  "sweep_variables": {
+    "v_DTYPE": ["float32", "float16"],
+    "v_M": [1, 16, 128],
+    "v_STORAGE": ["buffer", "texture3d"]
+  },
+  "args_sweep": [
+    [
+      {
+        "tensor": {
+          "name": "input",
+          "sizes": ["v_M", 2048],
+          "dtype": "v_DTYPE",
+          "storage": "v_STORAGE",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "weight",
+          "sizes": [2048, 2048],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-0.02, 0.02]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "bias",
+          "sizes": [2048],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "output",
+          "sizes": ["v_M", 2048],
+          "dtype": "v_DTYPE",
+          "storage": "v_STORAGE",
+          "layout": "width",
+          "data": {"fill": 0}
+        }
+      }
+    ],
+    [
+      {
+        "tensor": {
+          "name": "input",
+          "sizes": ["v_M", 2048],
+          "dtype": "v_DTYPE",
+          "storage": "v_STORAGE",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "weight",
+          "sizes": [8192, 2048],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-0.02, 0.02]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "bias",
+          "sizes": [8192],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "output",
+          "sizes": ["v_M", 8192],
+          "dtype": "v_DTYPE",
+          "storage": "v_STORAGE",
+          "layout": "width",
+          "data": {"fill": 0}
+        }
+      }
+    ]
+  ]
+}

@@ -20,8 +20,6 @@ namespace vkcompute {
 
 namespace {
 
-constexpr uint32_t kInvalidExponent = std::numeric_limits<uint32_t>::max();
-
 bool is_power_of_two(const uint32_t value) {
   return value > 0u && (value & (value - 1u)) == 0u;
 }
@@ -43,16 +41,6 @@ uint32_t power_of_two_exponent(uint32_t value) {
   }
   return exponent;
 #endif
-}
-
-uint32_t workgroup_size_exponent(const uint32_t value) {
-  if (value == 0u) {
-    return kInvalidExponent;
-  }
-  VK_CHECK_COND(
-      is_power_of_two(value),
-      "Local workgroup dimensions must be powers of two");
-  return power_of_two_exponent(value);
 }
 
 uint32_t useful_exponent_limit(
@@ -169,7 +157,7 @@ const LwgShape kCubeLwg{1u, 1u, 1u};
 
 LocalWorkGroup::LocalWorkGroup()
     : target_total_nthreads_exp_(power_of_two_exponent(64u)),
-      xyz_exponents_{kInvalidExponent, kInvalidExponent, kInvalidExponent},
+      xyz_sizes_{0u, 0u, 0u},
       target_lwg_shape_() {}
 
 LocalWorkGroup::LocalWorkGroup(
@@ -178,10 +166,7 @@ LocalWorkGroup::LocalWorkGroup(
     const uint32_t z,
     const uint32_t target_total_nthreads)
     : target_total_nthreads_exp_(power_of_two_exponent(target_total_nthreads)),
-      xyz_exponents_{
-          workgroup_size_exponent(x),
-          workgroup_size_exponent(y),
-          workgroup_size_exponent(z)},
+      xyz_sizes_{x, y, z},
       target_lwg_shape_() {}
 
 LocalWorkGroup::LocalWorkGroup(
@@ -193,10 +178,13 @@ LocalWorkGroup::LocalWorkGroup(
     const LwgShape& target_lwg_shape,
     const uint32_t target_total_nthreads)
     : target_total_nthreads_exp_(power_of_two_exponent(target_total_nthreads)),
-      xyz_exponents_{0u, 0u, 0u},
+      xyz_sizes_{1u, 1u, 1u},
       target_lwg_shape_(target_lwg_shape) {
-  xyz_exponents_ =
+  const utils::uvec3 exponents =
       target_lwg_shape_.distribute_exponents(target_total_nthreads_exp_);
+  for (uint32_t axis = 0; axis < 3; ++axis) {
+    xyz_sizes_[axis] = 1u << exponents[axis];
+  }
 }
 
 LocalWorkGroup::operator utils::uvec3() const {
@@ -204,12 +192,11 @@ LocalWorkGroup::operator utils::uvec3() const {
 }
 
 uint32_t LocalWorkGroup::operator[](const int idx) const {
-  const uint32_t exponent = xyz_exponents_[idx];
-  return exponent == kInvalidExponent ? 0u : 1u << exponent;
+  return xyz_sizes_[idx];
 }
 
 bool LocalWorkGroup::operator==(const LocalWorkGroup& other) const {
-  return xyz_exponents_ == other.xyz_exponents_;
+  return xyz_sizes_ == other.xyz_sizes_;
 }
 
 bool LocalWorkGroup::operator!=(const LocalWorkGroup& other) const {
@@ -237,7 +224,11 @@ bool LocalWorkGroup::is_valid() const {
 }
 
 uint32_t LocalWorkGroup::nthreads() const {
-  return x() * y() * z();
+  const uint64_t xy = uint64_t(x()) * y();
+  VK_CHECK_COND(
+      z() == 0 || xy <= std::numeric_limits<uint32_t>::max() / z(),
+      "Local workgroup invocation count exceeds uint32");
+  return static_cast<uint32_t>(xy * z());
 }
 
 void LocalWorkGroup::validate(
@@ -251,24 +242,25 @@ void LocalWorkGroup::validate(
 }
 
 void LocalWorkGroup::fit_to_global(const GlobalWorkGrid& gwg) {
+  // Explicit workgroups have no target shape and must keep their dimensions.
   if (!target_lwg_shape_.is_valid()) {
     return;
   }
 
+  utils::uvec3 exponents{};
   utils::uvec3 exponent_limits{};
   bool requires_refit = false;
 
   for (uint32_t axis = 0u; axis < 3u; ++axis) {
+    exponents[axis] = power_of_two_exponent(xyz_sizes_[axis]);
     exponent_limits[axis] =
         useful_exponent_limit(gwg.extents()[axis], target_total_nthreads_exp_);
-    requires_refit =
-        requires_refit || xyz_exponents_[axis] > exponent_limits[axis];
+    requires_refit = requires_refit || exponents[axis] > exponent_limits[axis];
   }
   if (!requires_refit) {
     return;
   }
 
-  utils::uvec3 exponents = xyz_exponents_;
   uint32_t excess_exponents = 0u;
   for (uint32_t axis = 0u; axis < 3u; ++axis) {
     if (exponents[axis] > exponent_limits[axis]) {
@@ -281,7 +273,9 @@ void LocalWorkGroup::fit_to_global(const GlobalWorkGrid& gwg) {
       excess_exponents, exponent_limits, exponents);
   allocate_by_exponent_capacity(excess_exponents, exponent_limits, exponents);
 
-  xyz_exponents_ = exponents;
+  for (uint32_t axis = 0; axis < 3; ++axis) {
+    xyz_sizes_[axis] = 1u << exponents[axis];
+  }
 }
 
 GlobalWorkGrid::GlobalWorkGrid(

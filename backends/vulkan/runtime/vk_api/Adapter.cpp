@@ -154,6 +154,29 @@ VkDevice create_logical_device(
   enabled_features.shaderFloat64 =
       physical_device.supports_float64_shader_types ? VK_TRUE : VK_FALSE;
 
+  enabled_features.shaderImageGatherExtended =
+      physical_device.shader_features.shaderImageGatherExtended;
+  enabled_features.shaderStorageImageMultisample =
+      physical_device.shader_features.shaderStorageImageMultisample;
+  enabled_features.shaderUniformBufferArrayDynamicIndexing =
+      physical_device.shader_features.shaderUniformBufferArrayDynamicIndexing;
+  enabled_features.shaderSampledImageArrayDynamicIndexing =
+      physical_device.shader_features.shaderSampledImageArrayDynamicIndexing;
+  enabled_features.shaderStorageBufferArrayDynamicIndexing =
+      physical_device.shader_features.shaderStorageBufferArrayDynamicIndexing;
+  enabled_features.shaderStorageImageArrayDynamicIndexing =
+      physical_device.shader_features.shaderStorageImageArrayDynamicIndexing;
+  enabled_features.imageCubeArray =
+      physical_device.shader_features.imageCubeArray;
+  enabled_features.shaderResourceMinLod =
+      physical_device.shader_features.shaderResourceMinLod;
+  enabled_features.shaderStorageImageExtendedFormats =
+      physical_device.shader_features.shaderStorageImageExtendedFormats;
+  enabled_features.shaderStorageImageReadWithoutFormat =
+      physical_device.shader_features.shaderStorageImageReadWithoutFormat;
+  enabled_features.shaderStorageImageWriteWithoutFormat =
+      physical_device.shader_features.shaderStorageImageWriteWithoutFormat;
+
   VkDeviceCreateInfo device_create_info{
       VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, // sType
       nullptr, // pNext
@@ -683,6 +706,124 @@ uint32_t resolve_required_subgroup_size(
         shader.kernel_name, VulkanExtension::SUBGROUP_SIZE_CONTROL);
   }
   return resolved;
+}
+
+bool Adapter::supports_spirv_capability(const uint32_t value) {
+  const auto capability = static_cast<SpirvCapability>(value);
+  switch (capability) {
+    case SpirvCapability::MATRIX:
+    case SpirvCapability::SHADER:
+    case SpirvCapability::SAMPLED_1D:
+    case SpirvCapability::IMAGE_1D:
+    case SpirvCapability::SAMPLED_BUFFER:
+    case SpirvCapability::IMAGE_BUFFER:
+    case SpirvCapability::IMAGE_QUERY:
+      return true;
+    default:
+      break;
+  }
+  const auto& features = physical_device_.shader_features;
+  switch (capability) {
+    case SpirvCapability::FLOAT16:
+      return supports_float16_shader_types();
+    case SpirvCapability::FLOAT64:
+      return supports_float64_shader_types();
+    case SpirvCapability::INT64:
+      return supports_int64_shader_types();
+    case SpirvCapability::INT16:
+      return supports_int16_shader_types();
+    case SpirvCapability::INT8:
+      return supports_int8_shader_types();
+    case SpirvCapability::IMAGE_GATHER_EXTENDED:
+      return features.shaderImageGatherExtended == VK_TRUE;
+    case SpirvCapability::STORAGE_IMAGE_MULTISAMPLE:
+      return features.shaderStorageImageMultisample == VK_TRUE;
+    case SpirvCapability::UNIFORM_BUFFER_ARRAY_DYNAMIC_INDEXING:
+      return features.shaderUniformBufferArrayDynamicIndexing == VK_TRUE;
+    case SpirvCapability::SAMPLED_IMAGE_ARRAY_DYNAMIC_INDEXING:
+      return features.shaderSampledImageArrayDynamicIndexing == VK_TRUE;
+    case SpirvCapability::STORAGE_BUFFER_ARRAY_DYNAMIC_INDEXING:
+      return features.shaderStorageBufferArrayDynamicIndexing == VK_TRUE;
+    case SpirvCapability::STORAGE_IMAGE_ARRAY_DYNAMIC_INDEXING:
+      return features.shaderStorageImageArrayDynamicIndexing == VK_TRUE;
+    case SpirvCapability::IMAGE_CUBE_ARRAY:
+    case SpirvCapability::SAMPLED_CUBE_ARRAY:
+      return features.imageCubeArray == VK_TRUE;
+    case SpirvCapability::MIN_LOD:
+      return features.shaderResourceMinLod == VK_TRUE;
+    case SpirvCapability::STORAGE_IMAGE_EXTENDED_FORMATS:
+      return features.shaderStorageImageExtendedFormats == VK_TRUE;
+    case SpirvCapability::STORAGE_IMAGE_READ_WITHOUT_FORMAT:
+      return features.shaderStorageImageReadWithoutFormat == VK_TRUE;
+    case SpirvCapability::STORAGE_IMAGE_WRITE_WITHOUT_FORMAT:
+      return features.shaderStorageImageWriteWithoutFormat == VK_TRUE;
+    case SpirvCapability::GROUP_NON_UNIFORM:
+      return supports_subgroup_compute_basic();
+    case SpirvCapability::GROUP_NON_UNIFORM_VOTE:
+      return supports_subgroup_compute_vote();
+    case SpirvCapability::GROUP_NON_UNIFORM_ARITHMETIC:
+      return supports_subgroup_compute_arithmetic();
+    case SpirvCapability::GROUP_NON_UNIFORM_BALLOT:
+      return supports_subgroup_compute_ballot();
+    case SpirvCapability::GROUP_NON_UNIFORM_SHUFFLE:
+      return supports_subgroup_compute_shuffle();
+    case SpirvCapability::GROUP_NON_UNIFORM_SHUFFLE_RELATIVE:
+      return supports_subgroup_compute_shuffle_relative();
+    case SpirvCapability::GROUP_NON_UNIFORM_CLUSTERED:
+      return supports_subgroup_compute_clustered();
+    case SpirvCapability::GROUP_NON_UNIFORM_QUAD:
+      return supports_subgroup_compute_quad();
+#if defined(VK_KHR_16bit_storage) && !defined(ETVK_FORCE_NO_EXTENSIONS)
+    case SpirvCapability::STORAGE_BUFFER_16_BIT_ACCESS:
+      return supports_16bit_storage_buffers();
+    case SpirvCapability::UNIFORM_AND_STORAGE_BUFFER_16_BIT_ACCESS:
+      return physical_device_.shader_16bit_storage
+                 .uniformAndStorageBuffer16BitAccess == VK_TRUE;
+    case SpirvCapability::STORAGE_PUSH_CONSTANT_16:
+      return physical_device_.shader_16bit_storage.storagePushConstant16 ==
+          VK_TRUE;
+    case SpirvCapability::STORAGE_INPUT_OUTPUT_16:
+      return physical_device_.shader_16bit_storage.storageInputOutput16 ==
+          VK_TRUE;
+#endif
+#if defined(VK_KHR_8bit_storage) && !defined(ETVK_FORCE_NO_EXTENSIONS)
+    case SpirvCapability::STORAGE_BUFFER_8_BIT_ACCESS:
+      return supports_8bit_storage_buffers();
+    case SpirvCapability::UNIFORM_AND_STORAGE_BUFFER_8_BIT_ACCESS:
+      return physical_device_.shader_8bit_storage
+                 .uniformAndStorageBuffer8BitAccess == VK_TRUE;
+    case SpirvCapability::STORAGE_PUSH_CONSTANT_8:
+      return physical_device_.shader_8bit_storage.storagePushConstant8 ==
+          VK_TRUE;
+#endif
+    case SpirvCapability::DOT_PRODUCT_INPUT_ALL:
+    case SpirvCapability::DOT_PRODUCT_INPUT_4X8_BIT:
+    case SpirvCapability::DOT_PRODUCT_INPUT_4X8_BIT_PACKED:
+    case SpirvCapability::DOT_PRODUCT:
+      return supports_int8_dot_product();
+    case SpirvCapability::COOPERATIVE_MATRIX_KHR:
+      return supports_cooperative_matrix();
+#if defined(VK_NV_cooperative_matrix2) && !defined(ETVK_FORCE_NO_EXTENSIONS)
+    case SpirvCapability::COOPERATIVE_MATRIX_REDUCTIONS_NV:
+      return physical_device_.cooperative_matrix2_features
+                 .cooperativeMatrixReductions == VK_TRUE;
+    case SpirvCapability::COOPERATIVE_MATRIX_CONVERSIONS_NV:
+      return physical_device_.cooperative_matrix2_features
+                 .cooperativeMatrixConversions == VK_TRUE;
+    case SpirvCapability::COOPERATIVE_MATRIX_PER_ELEMENT_OPERATIONS_NV:
+      return physical_device_.cooperative_matrix2_features
+                 .cooperativeMatrixPerElementOperations == VK_TRUE;
+    case SpirvCapability::COOPERATIVE_MATRIX_TENSOR_ADDRESSING_NV:
+      return physical_device_.cooperative_matrix2_features
+                 .cooperativeMatrixTensorAddressing == VK_TRUE;
+    case SpirvCapability::COOPERATIVE_MATRIX_BLOCK_LOADS_NV:
+      return physical_device_.cooperative_matrix2_features
+                 .cooperativeMatrixBlockLoads == VK_TRUE;
+#endif
+    default:
+      // Unhandled requirements have no logical-device feature enablement path.
+      return false;
+  }
 }
 
 } // namespace vkapi
