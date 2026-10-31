@@ -47,6 +47,8 @@ fbcode_target(
         "//executorch/backends/webgpu/test:tester",
         "//executorch/exir:lib",
         "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir:lowered_backend_module",
     ],
 )
 
