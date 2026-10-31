@@ -153,8 +153,10 @@ only host inputs and outputs waits depends on where it runs:
   the device, for example delegates running on another thread.
 
 In both cases, the CUDA delegate copies an output whose memory layout has to
-change through the legacy default stream, and loading a method's CUDA weights,
-which a first call may do, waits for the whole device.
+change through the legacy default stream. Loading a method's CUDA weights, which
+a first call may do, copies each one with a plain `cudaMemcpy`, so it waits for
+the legacy default stream and for blocking streams; weights an older export
+keeps in one blob wait for the whole device.
 
 The waits below, for CUDA inputs and outputs, are for the whole device
 (`cudaDeviceSynchronize`), not for one stream, so they also wait for unrelated
