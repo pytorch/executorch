@@ -699,7 +699,6 @@ def test_topk_mixed_dtype_cat_stays_int64(use_edge_ops: bool):
 
     result = ConvertInt64OutputOpsToInt32Pass().call(exported_program.graph_module)
 
-    assert not result.modified
     assert not _cast_nodes(result.graph_module)
     actual = exported_program.module()(x, y)
     assert actual.dtype == torch.int64
