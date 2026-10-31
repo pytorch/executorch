@@ -717,6 +717,23 @@ TEST_F(OpConvCorrectnessTest, InvalidBiasLength) {
           transposed_out));
 }
 
+TEST_F(OpConvCorrectnessTest, InvalidBiasDtype) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen accepts a Bool bias");
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Bool> tf_bool;
+
+  Tensor input = tf.ones({1, 2, 3, 3});
+  Tensor weight = tf.ones({4, 2, 2, 2});
+  Tensor bias = tf_bool.ones({4});
+  Tensor out = tf.zeros({1, 4, 2, 2});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, weight, bias, {1}, {0}, {1}, false, {0}, 1, out));
+}
+
 TEST_F(OpConvCorrectnessTest, InvalidGroups) {
   TensorFactory<ScalarType::Float> tf;
 
