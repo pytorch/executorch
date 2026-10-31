@@ -377,10 +377,8 @@ def export_mimi_decoder(
     encoded_results,
     pcm_chunk_size,
 ):
-    encoded_results_list = ""
     for index, encoder_result in enumerate(encoded_results):
         encoded_results[index] = encoder_result.to(torch.int32)
-        encoded_results_list += f"input_{index}_0.raw\n"
 
     logging.info("streaming decoding...")
     qnn_decode_res = None
@@ -417,7 +415,6 @@ def export_mimi_decoder(
                 args,
                 qnn_config,
                 encoded_results,
-                encoded_results_list,
                 pcm_chunk_size,
                 static_decoder_pte_filename,
             )
