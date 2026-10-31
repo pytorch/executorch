@@ -41,24 +41,37 @@ def _same_value(a: Any, b: Any) -> bool:
     Whether a and b are the same node, or the same deterministic op applied to
     the same values, as with ``x[m.view(-1)] = y[m.view(-1)]``.
     """
-    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
-        return len(a) == len(b) and all(map(_same_value, a, b))
-    if not isinstance(a, Node) or not isinstance(b, Node):
-        return not isinstance(a, Node) and not isinstance(b, Node) and a == b
-    if a is b:
-        return True
-    if a.op != "call_function" or a.target != b.target:
-        return False
-    if (
-        isinstance(a.target, (EdgeOpOverload, torch._ops.OpOverload))
-        and torch.Tag.nondeterministic_seeded in a.target.tags
-    ):
-        return False
-    return (
-        _same_value(a.args, b.args)
-        and a.kwargs.keys() == b.kwargs.keys()
-        and all(_same_value(a.kwargs[k], b.kwargs[k]) for k in a.kwargs)
-    )
+    # A work list, not recursion: two long mask computations would pass the
+    # recursion limit, and each node pair is compared once, since shared
+    # inputs would otherwise be compared again on every path that reaches them.
+    pending = [(a, b)]
+    compared = set()
+    while pending:
+        a, b = pending.pop()
+        if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+            if len(a) != len(b):
+                return False
+            pending.extend(zip(a, b))
+            continue
+        if not isinstance(a, Node) or not isinstance(b, Node):
+            if isinstance(a, Node) or isinstance(b, Node) or a != b:
+                return False
+            continue
+        if a is b or (a, b) in compared:
+            continue
+        compared.add((a, b))
+        if a.op != "call_function" or a.target != b.target:
+            return False
+        if (
+            isinstance(a.target, (EdgeOpOverload, torch._ops.OpOverload))
+            and torch.Tag.nondeterministic_seeded in a.target.tags
+        ):
+            return False
+        if a.kwargs.keys() != b.kwargs.keys():
+            return False
+        pending.append((a.args, b.args))
+        pending.extend((a.kwargs[k], b.kwargs[k]) for k in a.kwargs)
+    return True
 
 
 class ReplaceMaskedCopyWithWherePass(PassBase):
