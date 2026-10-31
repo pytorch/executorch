@@ -70,3 +70,21 @@ class TestArgValidator(unittest.TestCase):
                 "__ret_0": torch.complex64,
             },
         )
+
+    def test_edge_dialect_fails_on_later_tensor_list_dtype(self) -> None:
+        # Only the second tensor has another dtype, so checking the first misses it.
+        x = torch.randn(2, 3)
+        y = torch.randn(2, 3, dtype=torch.bfloat16)
+        graph = torch.fx.Graph()
+        tensors = [graph.placeholder("x"), graph.placeholder("y")]
+        cat = graph.call_function(ops.edge.aten.cat.default, (tensors,))
+        cat.meta["val"] = torch.cat([x, y])
+        graph.output(cat)
+
+        validator = EdgeOpArgValidator(torch.fx.GraphModule(torch.nn.Module(), graph))
+        validator.run(x, y)
+        self.assertEqual(len(validator.violating_ops), 1)
+        self.assertDictEqual(
+            validator.violating_ops[ops.edge.aten.cat.default][0],
+            {"tensors": torch.bfloat16, "__ret_0": torch.float32},
+        )

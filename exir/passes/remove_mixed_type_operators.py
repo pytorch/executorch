@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+from typing import Dict
+
 import torch
 from executorch.exir.pass_base import ExportPass, map_args, NodeMetadata, ProxyValue
 from torch import SymBool, SymFloat, SymInt
@@ -16,6 +18,11 @@ from torch.utils._pytree import PyTree
 class RemoveMixedTypeOperators(ExportPass):
     # pyre-ignore
     def call_operator(self, op, args, kwargs, meta: NodeMetadata):  # noqa: C901
+        if op in (torch.ops.aten.cat.default, torch.ops.aten.stack.default):
+            # Earlier passes edit the graph in place and can drop inputs, such as
+            # empty ones, so the output metadata still has eager's promoted dtype.
+            return self._cast_inputs(op, args, kwargs, meta, meta["val"].dtype)
+
         if len(args) <= 1:
             # Unary Operators are not mixed type
             return super().call_operator(op, args, kwargs, meta)
@@ -70,25 +77,39 @@ class RemoveMixedTypeOperators(ExportPass):
             type_promotion_kind=promotion_kind,
         )[1]
 
-        def try_coerce(value: PyTree, arg: torch.Argument) -> PyTree:
-            if not isinstance(arg.type, torch.TensorType):
-                return value
+        return self._cast_inputs(op, args, kwargs, meta, promote_dtype)
 
+    # pyre-ignore
+    def _cast_inputs(self, op, args, kwargs, meta: NodeMetadata, dtype: torch.dtype):
+        # Cast a tensor that appears twice, as in cat([x, y, x]), only once. Key by
+        # id() because constant tensors from ScalarToTensorPass have no node.
+        casts: Dict[int, PyTree] = {}
+
+        def coerce(value: PyTree) -> PyTree:
             if isinstance(value, ProxyValue):
                 if not value.is_tensor():
                     return value
-                if value.to_tensor().dtype == promote_dtype:
+                if value.to_tensor().dtype == dtype:
                     return value
 
-            if isinstance(value, torch.Tensor) and value.dtype == promote_dtype:
+            if isinstance(value, torch.Tensor) and value.dtype == dtype:
                 return value
 
-            return self.call_operator(
-                torch.ops.aten._to_copy.default,
-                (value,),
-                {"dtype": promote_dtype},
-                meta,
-            )
+            if id(value) not in casts:
+                casts[id(value)] = self.call_operator(
+                    torch.ops.aten._to_copy.default,
+                    (value,),
+                    {"dtype": dtype},
+                    meta,
+                )
+            return casts[id(value)]
+
+        def try_coerce(value: PyTree, arg: torch.Argument) -> PyTree:
+            if arg.type == torch.ListType.ofTensors():
+                return [coerce(v) for v in value]
+            if isinstance(arg.type, torch.TensorType):
+                return coerce(value)
+            return value
 
         args, kwargs = map_args(op, try_coerce, args, kwargs)
 

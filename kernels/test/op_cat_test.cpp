@@ -335,6 +335,19 @@ TEST_F(OpCatOutTest, MismatchedDtypesDies) {
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
+TEST_F(OpCatOutTest, MixedDtypesConvertToOutDtype) {
+  TensorFactory<ScalarType::Float> tf_float;
+  TensorFactory<ScalarType::Int> tf_int;
+  Tensor out = tf_float.zeros({1, 4});
+
+  // Int has the same size as Float, so copying its bytes would not convert it.
+  std::vector<Tensor> inputs = {
+      tf_float.make({1, 2}, {1.5, -2.5}), tf_int.make({1, 2}, {3, -4})};
+  op_cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
+
+  EXPECT_TENSOR_EQ(out, tf_float.make({1, 4}, {1.5, -2.5, 3, -4}));
+}
+
 TEST_F(OpCatOutTest, MismatchedDimensionsDies) {
   ET_SKIP_IF(
       torch::executor::testing::SupportedFeatures::get()->is_aten,
