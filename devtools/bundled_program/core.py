@@ -1,12 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
-import typing
-from typing import Dict, List, Optional, Sequence, Type, Union
+from typing import Dict, List, NamedTuple, Optional, Sequence, Type, Union
 
 import executorch.devtools.bundled_program.schema as bp_schema
 
@@ -19,7 +19,13 @@ from executorch.devtools.bundled_program.config import ConfigValue, MethodTestSu
 from executorch.devtools.bundled_program.version import BUNDLED_PROGRAM_SCHEMA_VERSION
 
 from executorch.exir import ExecutorchProgram, ExecutorchProgramManager
-from executorch.exir.tensor import get_scalar_type, scalar_type_enum, TensorSpec
+from executorch.exir._serialize._flatbuffer_program import (
+    _convert_from_flatbuffer_dataclass,
+    _patch_generated_flatbuffer_aliases,
+)
+from executorch.exir._serialize.generated.executorch_flatbuffer.EValue import EValueT
+from executorch.exir._serialize.generated.executorch_flatbuffer.Program import Program
+from executorch.exir.tensor import get_scalar_type, scalar_type_enum
 
 # pyre-ignore
 supported_program_type_table: Dict[Type[core_schema.KernelTypes], ConfigValue] = {
@@ -28,6 +34,11 @@ supported_program_type_table: Dict[Type[core_schema.KernelTypes], ConfigValue] =
     core_schema.Double: float,
     core_schema.Bool: bool,
 }
+
+
+class _MethodIO(NamedTuple):
+    inputs: List[core_schema.KernelTypes]
+    outputs: List[core_schema.KernelTypes]
 
 
 class BundledProgram:
@@ -91,26 +102,33 @@ class BundledProgram:
         if self._bundled_program_in_schema is not None:
             return self._bundled_program_in_schema
 
+        if self.executorch_program:
+            program = self._extract_program(self.executorch_program)
+            program_bytes = self.executorch_program.buffer
+        else:
+            assert self._pte_file_path is not None
+            with open(self._pte_file_path, "rb") as f:
+                program_bytes = f.read()
+            program = program_bytes
+        method_io = self._get_method_io(program)
+
         bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = []
 
         # Emit data and metadata of bundled tensor
         for method_test_suite in self.method_test_suites:
+            plan = method_io[method_test_suite.method_name]
             bundled_test_cases: List[bp_schema.BundledMethodTestCase] = []
 
             # emit I/O sets for each method test case
-            for i in range(len(method_test_suite.test_cases)):
+            for test_case in method_test_suite.test_cases:
                 inputs: List[bp_schema.Value] = []
                 expected_outputs: List[bp_schema.Value] = []
 
-                cur_plan_test_inputs = method_test_suite.test_cases[i].inputs
-                cur_plan_test_expected_outputs = method_test_suite.test_cases[
-                    i
-                ].expected_outputs
-
-                for input_val in cur_plan_test_inputs:
+                for input_idx, input_val in enumerate(test_case.inputs):
                     if type(input_val) is torch.Tensor:
                         self._emit_bundled_tensor(
-                            TensorSpec.from_tensor(input_val, const=True),
+                            input_val,
+                            plan.inputs[input_idx].dim_order,
                             inputs,
                         )
                     else:
@@ -118,12 +136,15 @@ class BundledProgram:
                             input_val,
                             inputs,
                         )
-                for expected_output_tensor in cur_plan_test_expected_outputs:
+                for output_idx, expected_output_tensor in enumerate(
+                    test_case.expected_outputs
+                ):
                     assert (
                         type(expected_output_tensor) is torch.Tensor
                     ), "Only tensor outputs are currently supported."
                     self._emit_bundled_tensor(
-                        TensorSpec.from_tensor(expected_output_tensor, const=True),
+                        expected_output_tensor,
+                        plan.outputs[output_idx].dim_order,
                         expected_outputs,
                     )
                 bundled_test_cases.append(
@@ -140,13 +161,6 @@ class BundledProgram:
                 )
             )
 
-        if self.executorch_program:
-            program_bytes = self.executorch_program.buffer
-        else:
-            assert self._pte_file_path is not None
-            with open(self._pte_file_path, "rb") as f:
-                program_bytes = f.read()
-
         self._bundled_program_in_schema = bp_schema.BundledProgram(
             version=BUNDLED_PROGRAM_SCHEMA_VERSION,
             method_test_suites=bundled_method_test_suites,
@@ -154,31 +168,25 @@ class BundledProgram:
         )
         return self._bundled_program_in_schema
 
+    @staticmethod
     def _emit_bundled_tensor(
-        self, spec: TensorSpec, bundled_values: List[bp_schema.Value]
+        tensor: torch.Tensor,
+        dim_order: List[int],
+        bundled_values: List[bp_schema.Value],
     ) -> None:
-        # QuantizedSchema in tensor has deprecated and may not be used anymore.
-        # So here we don't emit it.
-
-        if spec.allocated_memory == 0:
-            tensor_data: bytes = b""
-        else:
-            array_type = (
-                ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
-            )
-            spec_array = ctypes.cast(
-                typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
-                ctypes.POINTER(array_type),
-            ).contents
-            tensor_data: bytes = bytes(spec_array)
-
+        sizes = list(tensor.shape)
+        # Store bytes in the physical order declared by the method's I/O tensor.
+        tensor = tensor.permute(dim_order).contiguous().resolve_conj().resolve_neg()
+        tensor_data = (
+            ctypes.string_at(tensor.data_ptr(), tensor.nbytes) if tensor.nbytes else b""
+        )
         bundled_values.append(
             bp_schema.Value(
                 val=bp_schema.Tensor(
-                    scalar_type=scalar_type_enum(spec.dtype),
-                    sizes=spec.shape,
+                    scalar_type=scalar_type_enum(tensor.dtype),
+                    sizes=sizes,
                     data=tensor_data,
-                    dim_order=list(spec.dim_order),
+                    dim_order=list(dim_order),
                 ),
             )
         )
@@ -192,6 +200,42 @@ class BundledProgram:
             bundled_values.append(bp_schema.Value(val=bp_schema.Double(double_val=val)))
         else:
             assert 0, "Unsupported primitive type received."
+
+    def _get_method_io(
+        self, program: Union[core_schema.Program, bytes]
+    ) -> Dict[str, _MethodIO]:
+        if isinstance(program, core_schema.Program):
+            return {
+                plan.name: _MethodIO(
+                    inputs=[plan.values[index].val for index in plan.inputs],
+                    outputs=[plan.values[index].val for index in plan.outputs],
+                )
+                for plan in program.execution_plan
+            }
+
+        # Read only I/O metadata, without unpacking constants or delegate payloads.
+        _patch_generated_flatbuffer_aliases()
+        flatbuffer_program = Program.GetRootAs(program)
+        method_io = {}
+        for plan_index in range(flatbuffer_program.ExecutionPlanLength()):
+            plan = flatbuffer_program.ExecutionPlan(plan_index)
+            method_io[plan.Name().decode("utf-8")] = _MethodIO(
+                inputs=[
+                    _convert_from_flatbuffer_dataclass(
+                        EValueT.InitFromObj(plan.Values(plan.Inputs(index))),
+                        core_schema.EValue,
+                    ).val
+                    for index in range(plan.InputsLength())
+                ],
+                outputs=[
+                    _convert_from_flatbuffer_dataclass(
+                        EValueT.InitFromObj(plan.Values(plan.Outputs(index))),
+                        core_schema.EValue,
+                    ).val
+                    for index in range(plan.OutputsLength())
+                ],
+            )
+        return method_io
 
     def _get_program_input(
         self, program: core_schema.Program, plan_idx: int, input_idx: int
