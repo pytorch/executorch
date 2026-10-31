@@ -41,6 +41,7 @@ struct FakeBridgeState {
   std::atomic<int> sessions{0};
   std::atomic<int> prepared_models{0};
   std::atomic<int> loaders{0};
+  std::atomic<int> last_compute_unit{-1};
   std::atomic<const void*> last_input_bytes{nullptr};
   std::atomic<size_t> last_input_byte_count{0};
   std::atomic<unsigned char> last_input_first_byte{0};

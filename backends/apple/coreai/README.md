@@ -338,6 +338,29 @@ Use separate option maps to choose different cache directories for different mod
 The path names the cache directory, not a bundle. ExecuTorch option strings
 have a 255-byte limit.
 
+`coreai_compute_unit` selects the Core AI specialization options. Each value is
+one configuration the SDK provides:
+
+| Value | Core AI `SpecializationOptions` | Allowed compute units |
+|---|---|---|
+| `default` (or absent) | `.default` | CPU, GPU, Neural Engine |
+| `cpu_only` | `.cpuOnly` | CPU |
+| `prefer_cpu` | `init(preferredComputeUnitKind: .cpu)` | CPU, GPU, Neural Engine |
+| `prefer_gpu` | `init(preferredComputeUnitKind: .gpu)` | CPU, GPU, Neural Engine |
+| `prefer_neural_engine` | `init(preferredComputeUnitKind: .neuralEngine)` | CPU, GPU, Neural Engine |
+
+`cpu_only` is the only restriction: a preference maximizes use of that unit but
+falls back to any allowed unit for operations it cannot run. The SDK has no
+other combinations, such as CPU and Neural Engine only. Unknown values fail
+initialization with `InvalidArgument`. The selection is part of the cache key,
+so each value is specialized and cached separately; clearing a PTE removes every
+variant.
+
+```cpp
+BackendOptions<2> options;
+ET_CHECK_OK_OR_RETURN_ERROR(options.set_option("coreai_compute_unit", "cpu_only"));
+```
+
 ## SDK Bridge
 
 The private Swift module `CoreAIBridge` separates error/completion support,

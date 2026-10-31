@@ -537,9 +537,11 @@ NSString* ETCoreAIDeviceArchitectureName(void) {
   return current_context->state.device_architecture;
 }
 
-id<ETCoreAIModelLoading> ETCoreAICreateModelLoader(void) {
+id<ETCoreAIModelLoading> ETCoreAICreateModelLoader(
+    ETCoreAIComputeUnit computeUnit) {
   if (current_context == nil || current_context->state.fail_loader_factory) {
     return nil;
   }
+  current_context->state.last_compute_unit = static_cast<int>(computeUnit);
   return current_context->state.bookmark_loader ?: [[FakeLoader alloc] init];
 }

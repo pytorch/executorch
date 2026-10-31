@@ -255,7 +255,9 @@ Error clear_cache_entry(
   } else {
     if (loader == nil) {
       ET_CHECK_OK_OR_RETURN_ERROR(require_coreai_available());
-      loader = ETCoreAICreateModelLoader();
+      // Eviction targets the bookmark, so the loader's specialization is
+      // irrelevant.
+      loader = ETCoreAICreateModelLoader(ETCoreAIComputeUnitDefault);
       ET_CHECK_OR_RETURN_ERROR(
           loader != nil, Internal, "Cannot create Core AI model loader");
     }

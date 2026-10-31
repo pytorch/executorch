@@ -153,6 +153,28 @@ final class SwiftSpecializationTests: XCTestCase {
       loader.specializationIdentifier, try CoreAISpecialization(options: options).identifier)
   }
 
+  func testComputeUnitsMapToSDKSpecializationOptions() throws {
+    let expected: [(ETCoreAIComputeUnit, SpecializationOptions)] = [
+      (.default, .default),
+      (.cpuOnly, .cpuOnly),
+      (.preferCPU, SpecializationOptions(preferredComputeUnitKind: .cpu)),
+      (.preferGPU, SpecializationOptions(preferredComputeUnitKind: .gpu)),
+      (.preferNeuralEngine, SpecializationOptions(preferredComputeUnitKind: .neuralEngine)),
+    ]
+    var identifiers = Set<String>()
+    for (unit, options) in expected {
+      XCTAssertEqual(ETCoreAISwiftModelLoader.specializationOptions(for: unit), options)
+      let loader = try XCTUnwrap(ETCoreAISwiftModelLoader(computeUnit: unit))
+      XCTAssertEqual(
+        loader.specializationIdentifier, try CoreAISpecialization(options: options).identifier)
+      identifiers.insert(loader.specializationIdentifier)
+    }
+    XCTAssertEqual(identifiers.count, expected.count)
+    XCTAssertEqual(
+      ETCoreAISwiftModelLoader(computeUnit: .default)?.specializationIdentifier, "default")
+    XCTAssertNil(ETCoreAISwiftModelLoader(computeUnit: ETCoreAIComputeUnit(rawValue: 99)!))
+  }
+
   func testDescriptorIsVersionedAndUsesStableComputeUnitNames() throws {
     var options = SpecializationOptions(preferredComputeUnitKind: .gpu)
     options.expectFrequentReshapes = !SpecializationOptions.default.expectFrequentReshapes

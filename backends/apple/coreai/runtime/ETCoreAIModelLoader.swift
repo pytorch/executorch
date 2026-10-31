@@ -238,6 +238,28 @@ public final class ETCoreAISwiftModelLoader: NSObject, ETCoreAIModelLoading {
     super.init()
   }
 
+  @objc public convenience init?(computeUnit: ETCoreAIComputeUnit) {
+    guard let options = Self.specializationOptions(for: computeUnit),
+      let specialization = try? CoreAISpecialization(options: options)
+    else {
+      return nil
+    }
+    self.init(specialization: specialization)
+  }
+
+  static func specializationOptions(for computeUnit: ETCoreAIComputeUnit)
+    -> SpecializationOptions?
+  {
+    switch computeUnit {
+    case .default: return .default
+    case .cpuOnly: return .cpuOnly
+    case .preferCPU: return SpecializationOptions(preferredComputeUnitKind: .cpu)
+    case .preferGPU: return SpecializationOptions(preferredComputeUnitKind: .gpu)
+    case .preferNeuralEngine: return SpecializationOptions(preferredComputeUnitKind: .neuralEngine)
+    @unknown default: return nil
+    }
+  }
+
   public var specializationIdentifier: String { specialization.identifier }
 
   @objc public static var deviceArchitectureName: String { AIModel.deviceArchitectureName }

@@ -927,6 +927,58 @@ TEST_F(CoreAIDelegateTest, StorageOptionsRejectWrongTypeAndRelativePaths) {
   }
 }
 
+TEST_F(CoreAIDelegateTest, ComputeUnitOptionSelectsSpecialization) {
+  @autoreleasepool {
+    // A successful init frees the processed manifest, so each case gets a
+    // fresh fixture.
+    auto init_with_compute_unit = [&](const char* name) {
+      bridge.state().last_compute_unit = -1;
+      DelegateFixture fixture(backend, bridge);
+      BackendOptions<2> options;
+      EXPECT_EQ(
+          options.set_option(
+              "coreai_cache_dir", fixture.storage.url.path.UTF8String),
+          Error::Ok);
+      if (name != nullptr) {
+        EXPECT_EQ(options.set_option("coreai_compute_unit", name), Error::Ok);
+      }
+      return fixture.init_with_options(
+          {options.view().data(), options.view().size()});
+    };
+    {
+      SCOPED_TRACE("absent");
+      ASSERT_EQ(init_with_compute_unit(nullptr), Error::Ok);
+      EXPECT_EQ(
+          bridge.state().last_compute_unit.load(), ETCoreAIComputeUnitDefault);
+    }
+    const std::pair<const char*, ETCoreAIComputeUnit> valid[] = {
+        {"default", ETCoreAIComputeUnitDefault},
+        {"cpu_only", ETCoreAIComputeUnitCPUOnly},
+        {"prefer_cpu", ETCoreAIComputeUnitPreferCPU},
+        {"prefer_gpu", ETCoreAIComputeUnitPreferGPU},
+        {"prefer_neural_engine", ETCoreAIComputeUnitPreferNeuralEngine},
+    };
+    for (const auto& [name, unit] : valid) {
+      SCOPED_TRACE(name);
+      ASSERT_EQ(init_with_compute_unit(name), Error::Ok);
+      EXPECT_EQ(bridge.state().last_compute_unit.load(), unit);
+    }
+    for (const char* name : {"gpu", "neural_engine", "CPU_ONLY", ""}) {
+      SCOPED_TRACE(name);
+      EXPECT_EQ(init_with_compute_unit(name), Error::InvalidArgument);
+      EXPECT_EQ(bridge.state().last_compute_unit.load(), -1);
+    }
+    {
+      SCOPED_TRACE("integer compute unit");
+      DelegateFixture fixture(backend, bridge);
+      BackendOption wrong_type{"coreai_compute_unit", 1};
+      EXPECT_EQ(
+          fixture.init_with_options({&wrong_type, 1}), Error::InvalidArgument);
+      EXPECT_EQ(fixture.freed, 0);
+    }
+  }
+}
+
 TEST_F(CoreAIDelegateTest, ConfiguredSymlinkCacheDirectoryLoadsAndClears) {
   @autoreleasepool {
     DelegateFixture fixture(backend, bridge);
