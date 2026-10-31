@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from collections import defaultdict
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import torch
 from executorch.exir.dialects.edge._ops import EdgeDialectFunctionSchema, EdgeOpOverload
@@ -75,8 +75,8 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
                 raise RunHigherOrderOperatorError("Can't run delegate")
             return super().call_function(target, args, kwargs)  # pyre-fixme[6]
 
-        # TODO(gasoonjia): Update Optional[torch.dtype] to a concrete class to support mixed dtypes in tensorlist.
         tensor_arg_types: Dict[str, Optional[torch.dtype]] = {}
+        later_list_dtypes: List[Tuple[str, torch.dtype]] = []
         for i, schema_arg in enumerate(target._schema.arguments):
             if (
                 isinstance(schema_arg.type, torch.TensorType)
@@ -95,6 +95,9 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
                     continue
                 if len(kernel_arg):
                     tensor_arg_types[schema_arg.name] = kernel_arg[0].dtype
+                    later_list_dtypes += [
+                        (schema_arg.name, t.dtype) for t in kernel_arg[1:]
+                    ]
                 else:
                     # If kernel_arg is an empty list, treat its type as None.
                     # FunctionDtypeConstraint.validate will take None as any legal dtype.
@@ -134,7 +137,12 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
                     tensor_arg_types[name] = None
                 ret_index += 1
 
-        valid = target._schema.dtype_constraint.validate(tensor_arg_types)
-        if not valid:
-            self.violating_ops[target] = (tensor_arg_types, self.node)
+        # tensor_arg_types holds only the first tensor of each list, so check the
+        # other tensors the same way.
+        for types in [tensor_arg_types] + [
+            {**tensor_arg_types, name: dtype} for name, dtype in later_list_dtypes
+        ]:
+            if not target._schema.dtype_constraint.validate(types):
+                self.violating_ops[target] = (types, self.node)
+                break
         return super().call_function(target, args, kwargs)  # pyre-fixme[6]
