@@ -1,0 +1,710 @@
+[
+  {
+    "name": "q8ta/qdq/correctness quantize buffer",
+    "operator": "quantized_decomposed.quantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_SIZES": [
+        [144],
+        [90],
+        [1, 144],
+        [1, 90],
+        [1, 4],
+        [3, 32],
+        [1, 16, 32],
+        [1, 3, 64],
+        [1, 3, 16, 16],
+        [1, 8, 32, 32],
+        [1, 16, 24, 24],
+        [1, 32, 12, 12],
+        [1, 1, 64, 64],
+        [1, 3, 64, 64],
+        [1, 4, 16, 16],
+        [1, 8, 20, 20],
+        [1, 16, 14, 14],
+        [1, 8, 28, 28],
+        [1, 3, 15, 15],
+        [1, 13, 31, 31],
+        [1, 17, 23, 23],
+        [1, 64, 128, 128],
+        [1, 32, 64, 64],
+        [1, 128, 56, 56],
+        [2, 3, 16, 16],
+        [2, 8, 8, 8],
+        [2, 4, 8, 16],
+        [2, 3, 8, 8]
+      ],
+      "v_FLOAT_LAYOUT": ["width", "channels"],
+      "v_PACKED_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "v_FLOAT_LAYOUT",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "v_PACKED_LAYOUT",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/qdq/correctness quantize texture3d",
+    "operator": "quantized_decomposed.quantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_SIZES": [
+        [144],
+        [90],
+        [1, 144],
+        [1, 90],
+        [1, 4],
+        [3, 32],
+        [1, 16, 32],
+        [1, 3, 64],
+        [1, 3, 16, 16],
+        [1, 8, 32, 32],
+        [1, 16, 24, 24],
+        [1, 32, 12, 12],
+        [1, 1, 64, 64],
+        [1, 3, 64, 64],
+        [1, 4, 16, 16],
+        [1, 8, 20, 20],
+        [1, 16, 14, 14],
+        [1, 8, 28, 28],
+        [1, 3, 15, 15],
+        [1, 13, 31, 31],
+        [1, 17, 23, 23],
+        [1, 64, 128, 128],
+        [1, 32, 64, 64],
+        [1, 128, 56, 56]
+      ],
+      "v_FLOAT_LAYOUT": ["width", "channels"],
+      "v_PACKED_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "v_FLOAT_LAYOUT",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "v_PACKED_LAYOUT",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/qdq/correctness quantize buffer legacy_4w4c",
+    "operator": "quantized_decomposed.quantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "route": "legacy_4w4c",
+    "sweep_variables": {
+      "v_SIZES": [
+        [144],
+        [90],
+        [1, 144],
+        [1, 90],
+        [1, 4],
+        [3, 32],
+        [1, 16, 32],
+        [1, 3, 64],
+        [1, 3, 16, 16],
+        [1, 8, 32, 32],
+        [1, 16, 24, 24],
+        [1, 32, 12, 12],
+        [1, 1, 64, 64],
+        [1, 3, 64, 64],
+        [1, 4, 16, 16],
+        [1, 8, 20, 20],
+        [1, 16, 14, 14],
+        [1, 8, 28, 28],
+        [1, 3, 15, 15],
+        [1, 13, 31, 31],
+        [1, 17, 23, 23],
+        [1, 64, 128, 128],
+        [1, 32, 64, 64],
+        [1, 128, 56, 56]
+      ]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w4c",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/qdq/correctness quantize texture3d legacy_4w4c",
+    "operator": "quantized_decomposed.quantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "route": "legacy_4w4c",
+    "sweep_variables": {
+      "v_SIZES": [
+        [144],
+        [90],
+        [1, 144],
+        [1, 90],
+        [1, 4],
+        [3, 32],
+        [1, 16, 32],
+        [1, 3, 64],
+        [1, 3, 16, 16],
+        [1, 8, 32, 32],
+        [1, 16, 24, 24],
+        [1, 32, 12, 12],
+        [1, 1, 64, 64],
+        [1, 3, 64, 64],
+        [1, 4, 16, 16],
+        [1, 8, 20, 20],
+        [1, 16, 14, 14],
+        [1, 8, 28, 28],
+        [1, 3, 15, 15],
+        [1, 13, 31, 31],
+        [1, 17, 23, 23],
+        [1, 64, 128, 128],
+        [1, 32, 64, 64],
+        [1, 128, 56, 56]
+      ]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w4c",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/qdq/correctness dequantize buffer",
+    "operator": "quantized_decomposed.dequantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0072119999676942825,
+      "rtol": 0.0010000000474974513
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_SIZES": [
+        [144],
+        [90],
+        [1, 144],
+        [1, 90],
+        [1, 4],
+        [3, 32],
+        [1, 16, 32],
+        [1, 3, 64],
+        [1, 3, 16, 16],
+        [1, 8, 32, 32],
+        [1, 16, 24, 24],
+        [1, 32, 12, 12],
+        [1, 1, 64, 64],
+        [1, 3, 64, 64],
+        [1, 4, 16, 16],
+        [1, 8, 20, 20],
+        [1, 16, 14, 14],
+        [1, 8, 28, 28],
+        [1, 3, 15, 15],
+        [1, 13, 31, 31],
+        [1, 17, 23, 23],
+        [1, 64, 128, 128],
+        [1, 32, 64, 64],
+        [1, 128, 56, 56],
+        [2, 3, 16, 16],
+        [2, 8, 8, 8],
+        [2, 4, 8, 16],
+        [2, 3, 8, 8]
+      ],
+      "v_FLOAT_LAYOUT": ["width", "channels"],
+      "v_PACKED_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "v_PACKED_LAYOUT",
+            "data": {
+              "rand_uniform_int": [-128, 127]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "int": 10
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "v_FLOAT_LAYOUT",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/qdq/correctness dequantize texture3d",
+    "operator": "quantized_decomposed.dequantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0072119999676942825,
+      "rtol": 0.0010000000474974513
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_SIZES": [
+        [144],
+        [90],
+        [1, 144],
+        [1, 90],
+        [1, 4],
+        [3, 32],
+        [1, 16, 32],
+        [1, 3, 64],
+        [1, 3, 16, 16],
+        [1, 8, 32, 32],
+        [1, 16, 24, 24],
+        [1, 32, 12, 12],
+        [1, 1, 64, 64],
+        [1, 3, 64, 64],
+        [1, 4, 16, 16],
+        [1, 8, 20, 20],
+        [1, 16, 14, 14],
+        [1, 8, 28, 28],
+        [1, 3, 15, 15],
+        [1, 13, 31, 31],
+        [1, 17, 23, 23],
+        [1, 64, 128, 128],
+        [1, 32, 64, 64],
+        [1, 128, 56, 56]
+      ],
+      "v_FLOAT_LAYOUT": ["width", "channels"],
+      "v_PACKED_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "v_PACKED_LAYOUT",
+            "data": {
+              "rand_uniform_int": [-128, 127]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "int": 10
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "v_FLOAT_LAYOUT",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/qdq/correctness dequantize buffer legacy_4w4c",
+    "operator": "quantized_decomposed.dequantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0072119999676942825,
+      "rtol": 0.0010000000474974513
+    },
+    "route": "legacy_4w4c",
+    "sweep_variables": {
+      "v_SIZES": [
+        [144],
+        [90],
+        [1, 144],
+        [1, 90],
+        [1, 4],
+        [3, 32],
+        [1, 16, 32],
+        [1, 3, 64],
+        [1, 3, 16, 16],
+        [1, 8, 32, 32],
+        [1, 16, 24, 24],
+        [1, 32, 12, 12],
+        [1, 1, 64, 64],
+        [1, 3, 64, 64],
+        [1, 4, 16, 16],
+        [1, 8, 20, 20],
+        [1, 16, 14, 14],
+        [1, 8, 28, 28],
+        [1, 3, 15, 15],
+        [1, 13, 31, 31],
+        [1, 17, 23, 23],
+        [1, 64, 128, 128],
+        [1, 32, 64, 64],
+        [1, 128, 56, 56]
+      ]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w4c",
+            "data": {
+              "rand_uniform_int": [-128, 127]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "int": 10
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/qdq/correctness dequantize texture3d legacy_4w4c",
+    "operator": "quantized_decomposed.dequantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0072119999676942825,
+      "rtol": 0.0010000000474974513
+    },
+    "route": "legacy_4w4c",
+    "sweep_variables": {
+      "v_SIZES": [
+        [144],
+        [90],
+        [1, 144],
+        [1, 90],
+        [1, 4],
+        [3, 32],
+        [1, 16, 32],
+        [1, 3, 64],
+        [1, 3, 16, 16],
+        [1, 8, 32, 32],
+        [1, 16, 24, 24],
+        [1, 32, 12, 12],
+        [1, 1, 64, 64],
+        [1, 3, 64, 64],
+        [1, 4, 16, 16],
+        [1, 8, 20, 20],
+        [1, 16, 14, 14],
+        [1, 8, 28, 28],
+        [1, 3, 15, 15],
+        [1, 13, 31, 31],
+        [1, 17, 23, 23],
+        [1, 64, 128, 128],
+        [1, 32, 64, 64],
+        [1, 128, 56, 56]
+      ]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w4c",
+            "data": {
+              "rand_uniform_int": [-128, 127]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "int": 10
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  }
+]

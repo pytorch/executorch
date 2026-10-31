@@ -1,0 +1,922 @@
+[
+  {
+    "name": "embedding_q4gsw correctness",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "sweep_variables": {
+      "v_OUTPUT_DTYPE": ["float16", "float32"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [16, 16],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [16, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 32
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [4],
+            "dtype": "int32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 16
+              }
+            }
+          }
+        },
+        {
+          "bool": true
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4, 32],
+            "dtype": "v_OUTPUT_DTYPE",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "embedding_q4gsw correctness small_1d_texture_linear_weight texture3d",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [16, 16],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [16, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 32
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [4],
+            "dtype": "int32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 16
+              }
+            }
+          }
+        },
+        {
+          "bool": true
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4, 32],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "embedding_q4gsw correctness small_2d_linear_weight buffer",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [32, 32],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [32, 2],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 32
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [2, 3],
+            "dtype": "int32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 32
+              }
+            }
+          }
+        },
+        {
+          "bool": true
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [2, 3, 64],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "embedding_q4gsw correctness medium_multigroup_linear_weight buffer",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [100, 64],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [100, 4],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 32
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [4, 8],
+            "dtype": "int32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 100
+              }
+            }
+          }
+        },
+        {
+          "bool": true
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4, 8, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "embedding_q4gsw correctness (5)",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "sweep_variables": {
+      "v_SCALES_DTYPE": ["float16", "float32"],
+      "v_STORAGE": ["buffer", "texture3d"],
+      "v_OUTPUT_DTYPE": ["float16", "float32"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [16, 16],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [16, 1],
+            "dtype": "v_SCALES_DTYPE",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 32
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [4],
+            "dtype": "int32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 16
+              }
+            }
+          }
+        },
+        {
+          "bool": false
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4, 32],
+            "dtype": "v_OUTPUT_DTYPE",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "embedding_q4gsw correctness (6)",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "sweep_variables": {
+      "v_STORAGE": ["buffer", "texture3d"],
+      "v_OUTPUT_DTYPE": ["float16", "float32"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [32, 32],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [32, 2],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 32
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [2, 3],
+            "dtype": "int32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 32
+              }
+            }
+          }
+        },
+        {
+          "bool": false
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [2, 3, 64],
+            "dtype": "v_OUTPUT_DTYPE",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "embedding_q4gsw correctness (7)",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "sweep_variables": {
+      "v_OUTPUT_DTYPE": ["float16", "float32"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [32, 32],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [32, 2],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 32
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [2, 3],
+            "dtype": "int32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 32
+              }
+            }
+          }
+        },
+        {
+          "bool": false
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [2, 3, 64],
+            "dtype": "v_OUTPUT_DTYPE",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "embedding_q4gsw correctness (8)",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "sweep_variables": {
+      "v_STORAGE": ["buffer", "texture3d"],
+      "v_OUTPUT_DTYPE": ["float16", "float32"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [100, 64],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [100, 4],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 32
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [4, 8],
+            "dtype": "int32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 100
+              }
+            }
+          }
+        },
+        {
+          "bool": false
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4, 8, 128],
+            "dtype": "v_OUTPUT_DTYPE",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "embedding_q4gsw correctness (9)",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "sweep_variables": {
+      "v_OUTPUT_DTYPE": ["float16", "float32"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [100, 64],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [100, 4],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 32
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [4, 8],
+            "dtype": "int32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 100
+              }
+            }
+          }
+        },
+        {
+          "bool": false
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4, 8, 128],
+            "dtype": "v_OUTPUT_DTYPE",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "embedding_q4gsw correctness (10)",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "sweep_variables": {
+      "v_STORAGE": ["buffer", "texture3d"],
+      "v_OUTPUT_DTYPE": ["float16", "float32"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [50, 32],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [50, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 64
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [2, 4],
+            "dtype": "int32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 50
+              }
+            }
+          }
+        },
+        {
+          "bool": false
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [2, 4, 64],
+            "dtype": "v_OUTPUT_DTYPE",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "embedding_q4gsw correctness gemma4_token_embedding_per_row",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "sweep_variables": {
+      "v_STORAGE": ["buffer", "texture3d"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [16, 768],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [16],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 1536
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [1, 4],
+            "dtype": "int32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 16
+              }
+            }
+          }
+        },
+        {
+          "bool": true
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 4, 1536],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "embedding_q4gsw correctness gemma4_ple_embedding_per_row",
+    "operator": "et_vk.embedding_q4gsw.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "sweep_variables": {
+      "v_STORAGE": ["buffer", "texture3d"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [16, 4480],
+            "dtype": "uint8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [0, 255]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "scales",
+            "sizes": [16],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [0.005, 0.015]
+            }
+          }
+        },
+        {
+          "int": 8960
+        },
+        {
+          "tensor": {
+            "name": "indices",
+            "sizes": [1, 4],
+            "dtype": "int32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "abs_mod": {
+                "bounds": [-10, 10],
+                "mod": 16
+              }
+            }
+          }
+        },
+        {
+          "bool": true
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 4, 8960],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  }
+]

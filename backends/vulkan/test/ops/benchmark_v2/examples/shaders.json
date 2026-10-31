@@ -1,0 +1,79 @@
+[
+  {
+    "name": "buffer copy",
+    "shader": "buffer_to_buffer_float",
+    "gwg_size": [8, 1, 1],
+    "lwg_size": [8, 1, 1],
+    "target_ms": 10,
+    "benchmark_runs": 5,
+    "bindings": [
+      {
+        "buffer": {
+          "name": "output",
+          "sizes": [8],
+          "access": "write",
+          "data": {"fill": 0}
+        }
+      },
+      {
+        "buffer": {
+          "name": "input",
+          "sizes": [8],
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "meta_ubo": "output",
+        "field": "numel"
+      }
+    ],
+    "outputs": ["output"]
+  },
+  {
+    "name": "texture addition",
+    "shader": "binary_add_texture3d_float",
+    "gwg_size": "default_pick_gwg",
+    "lwg_size": "default_pick_lwg",
+    "target_ms": 10,
+    "benchmark_runs": 5,
+    "bindings": [
+      {
+        "texture3d": {
+          "name": "out",
+          "sizes": [1, 1, 1, 8],
+          "access": "write",
+          "data": {"fill": 0}
+        }
+      },
+      {
+        "texture3d": {
+          "name": "a",
+          "sizes": [1, 1, 1, 8],
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "texture3d": {
+          "name": "b",
+          "sizes": [1, 1, 1, 8],
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {"meta_ubo": "out"},
+      {"meta_ubo": "a"},
+      {"meta_ubo": "b"}
+    ],
+    "specialization_constants": [
+      {"layout": "out"},
+      {"layout": "a"},
+      {"layout": "b"}
+    ],
+    "push_constants": [
+      {
+        "dtype": "float32",
+        "data": [2]
+      }
+    ],
+    "outputs": ["out"]
+  }
+]
