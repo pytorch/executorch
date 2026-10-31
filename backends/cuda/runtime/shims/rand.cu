@@ -245,7 +245,7 @@ AOTITorchError aoti_torch_cuda_rand(
   ET_CHECK_OR_RETURN_ERROR(
       ensure_rng_init(stream),
       MemoryAllocationFailed,
-      "aoti_torch_cuda_rand: failed to allocate the RNG state");
+      "aoti_torch_cuda_rand: failed to set up the RNG state");
 
   constexpr int kThreads = 256;
   int blocks = static_cast<int>((numel + kThreads - 1) / kThreads);
@@ -308,7 +308,7 @@ AOTITorchError aoti_torch_cuda_randint_low_out(
   ET_CHECK_OR_RETURN_ERROR(
       ensure_rng_init(stream),
       MemoryAllocationFailed,
-      "aoti_torch_cuda_randint_low_out: failed to allocate the RNG state");
+      "aoti_torch_cuda_randint_low_out: failed to set up the RNG state");
 
   int64_t range = high - low;
   int64_t* out_data = static_cast<int64_t*>(out->data_ptr());
