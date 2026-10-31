@@ -972,12 +972,19 @@ __global__ void scatter_reduce_sorted_kernel(
     }
     if (reduction == Reduction::Mean) {
       const auto sum = static_cast<AccT>(static_cast<T>(result));
+      // ATen counts in T too, so a large count rounds or wraps, and a count
+      // that wraps to zero becomes one.
+      auto divisor = static_cast<AccT>(static_cast<T>(count));
+      if (divisor == AccT(0)) {
+        divisor = AccT(1);
+      }
       if constexpr (std::is_floating_point_v<AccT>) {
-        result = sum / static_cast<AccT>(count);
+        result = sum / divisor;
       } else {
         // Integers round down, as ATen's division with rounding_mode="floor".
-        const AccT quotient = sum / count;
-        result = quotient - (quotient * count != sum && sum < 0);
+        const AccT quotient = sum / divisor;
+        result = quotient -
+            (quotient * divisor != sum && (sum < 0) != (divisor < 0));
       }
     }
     out[offset] = static_cast<T>(result);
