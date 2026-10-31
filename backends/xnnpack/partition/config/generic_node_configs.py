@@ -16,11 +16,7 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
 )
-from executorch.backends.xnnpack.utils.quant_utils import (
-    is_dequant,
-    is_quant,
-    tag_as_implicit_q_dq,
-)
+from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
     get_param_tensor,
@@ -168,18 +164,6 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
             quantized_deps.append(node_output)
 
         return deps + quantized_deps
-
-    def get_partition(
-        self, node: torch.fx.Node, ep: ExportedProgram
-    ) -> List[torch.fx.Node]:
-        partition = super().get_partition(node, ep)
-        # Tag q/dq nodes as implicit only once the partition is taken. A rejected
-        # node keeps them as separate ops.
-        for dep in partition:
-            if dep is not node and (is_dequant(dep) or is_quant(dep)):
-                tag_as_implicit_q_dq(dep)
-
-        return partition
 
 
 class QuantizedPerTensorConfig(GenericNodePartitionerConfig):

@@ -14,6 +14,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
     is_qparam,
     is_quant,
+    tag_as_implicit_q_dq,
 )
 from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_MAX_TENSOR_DIMS
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
@@ -72,6 +73,13 @@ class XNNPartitionerConfig(PartitionerConfig):
         # A partition can take nodes that their own configs reject.
         if not all(self._check_tensor_ranks(n) for n in partitioned_nodes):
             return []
+
+        # Fold the q/dq nodes around the node only once its partition is taken, so
+        # a rejected node keeps them as separate ops. A q/dq node that is itself
+        # the partitioned node stays a separate op too.
+        for n in partitioned_nodes:
+            if n is not node and (is_quant(n) or is_dequant(n)):
+                tag_as_implicit_q_dq(n)
 
         # label partitioned nodes with the name of the partitioner config
         for node in partitioned_nodes:

@@ -25,7 +25,6 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_per_tensor,
     is_qparam,
     is_quant,
-    tag_as_implicit_q_dq,
 )
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
@@ -80,18 +79,6 @@ class GEMMConfig(XNNPartitionerConfig):
         partition = [node]
         _, deps = self.get_deps(node, ep)
         partition.extend(deps)
-
-        return partition
-
-    def get_partition(
-        self, node: torch.fx.Node, ep: ExportedProgram
-    ) -> List[torch.fx.Node]:
-        partition = super().get_partition(node, ep)
-        # Tag q/dq nodes as implicit only once the partition is taken. A rejected
-        # node keeps them as separate ops.
-        for n in partition:
-            if is_dequant(n) or is_quant(n):
-                tag_as_implicit_q_dq(n)
 
         return partition
 
