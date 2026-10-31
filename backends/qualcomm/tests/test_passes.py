@@ -31,7 +31,10 @@ from executorch.backends.qualcomm.builders.op_custom_op import (
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.builders.utils import is_parameter
-from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
+from executorch.backends.qualcomm.partition.qnn_partitioner import (
+    QnnOperatorSupport,
+    QnnPartitioner,
+)
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -1045,8 +1048,59 @@ class TestPasses(unittest.TestCase):
         self.assertIn(exir_ops.edge.aten.mul.Tensor, top_level_ops)
         self.assertIn(exir_ops.edge.aten.sub.Tensor, top_level_ops)
         self.assertNotIn(exir_ops.edge.aten.add.Tensor, top_level_ops)
+        self.assertNotIn(exir_ops.edge.aten.linear.default, top_level_ops)
         self.assertIn(torch.ops.higher_order.executorch_call_delegate, top_level_ops)
         edge.to_executorch()
+
+    def test_htp_keeps_whole_only_ops_that_read_a_runtime_input(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.randn(4, 16))
+                self.register_buffer("weight", torch.randn(16, 16))
+                self.register_buffer(
+                    "qweight", torch.randint(-8, 8, (16, 32), dtype=torch.int8)
+                )
+                self.register_buffer("scales", torch.rand(16, 2) + 0.1)
+                self.register_buffer("zero_points", torch.zeros(16, 2).long())
+
+            def forward(self, x, y):
+                weight = torch.ops.quantized_decomposed.dequantize_per_channel_group(
+                    self.qweight,
+                    self.scales,
+                    self.zero_points,
+                    -8,
+                    7,
+                    torch.int8,
+                    16,
+                    torch.float32,
+                )
+                table = torch.nn.functional.linear(self.table, self.weight)
+                return torch.nn.functional.linear(x, self.weight) + table, (
+                    torch.nn.functional.linear(y, weight)
+                )
+
+        ep = torch.export.export(Model(), (torch.randn(4, 16), torch.randn(4, 32)))
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        _, keep_whole = QnnPartitioner(compiler_specs).ops_to_not_decompose(ep)
+        linears = {
+            node.args[0].name: node
+            for node in ep.graph.nodes
+            if node.target == torch.ops.aten.linear.default
+        }
+        placeholders = {b: p for p, b in ep.graph_signature.inputs_to_buffers.items()}
+        self.assertFalse(keep_whole(linears[placeholders["table"]]))
+        self.assertTrue(keep_whole(linears["x"]))
+        (dequantize,) = (
+            node
+            for node in ep.graph.nodes
+            if node.target
+            == torch.ops.quantized_decomposed.dequantize_per_channel_group.default
+        )
+        self.assertTrue(keep_whole(dequantize))
 
     def test_partitioner_falls_back_on_bfloat16(self):
         class Bf16Region(torch.nn.Module):
