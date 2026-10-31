@@ -773,7 +773,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             with kgb.spy_on(
-                calibrate_and_quantize, call_original=True
+                NeutronQuantizer.annotate, call_original=True
             ) as quantizer_spy:
                 input_shape = (1, 8, 8, 8)
                 model = ConvActivationConcatModule(
@@ -847,7 +847,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             with kgb.spy_on(
-                calibrate_and_quantize, call_original=True
+                NeutronQuantizer.annotate, call_original=True
             ) as quantizer_spy:
                 input_shape = (1, 8)
                 model = LinearActivationConcatModule(

@@ -8,7 +8,6 @@
 import itertools
 from copy import deepcopy
 
-import executorch.backends.nxp.tests.executorch_pipeline as executorch_pipeline
 import executorch.backends.nxp.tests.simple_models as models
 import numpy as np
 
@@ -454,7 +453,7 @@ def test_quantizers_order_invariance():
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__linear_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
+    quantizer_spy = mocker.spy(NeutronQuantizer, "annotate")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
@@ -502,7 +501,7 @@ def test_quantizer__linear_w_activation(mocker, activation, inplace, use_qat):
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__addmm_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
+    quantizer_spy = mocker.spy(NeutronQuantizer, "annotate")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
@@ -547,7 +546,7 @@ def test_quantizer__addmm_w_activation(mocker, activation, inplace, use_qat):
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__mm_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
+    quantizer_spy = mocker.spy(NeutronQuantizer, "annotate")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
@@ -592,7 +591,7 @@ def test_quantizer__mm_w_activation(mocker, activation, inplace, use_qat):
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__conv_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
+    quantizer_spy = mocker.spy(NeutronQuantizer, "annotate")
 
     input_shape = (1, 4, 8, 8)
     model = models.ConvActivationModule(
