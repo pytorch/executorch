@@ -9,6 +9,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeColIm,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
+    FoldConstantViews,
     FoldQDQ,
     InsertIOQDQ,
     InsertReshapeForReduceOps,
@@ -390,6 +391,32 @@ class TestPasses(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "symmetric"):
             visitor.make_qnn_per_block_config(parameter_node, quant_attrs)
+
+    def test_fold_constant_views_mha_in_proj(self):
+        # With query != value, nn.MultiheadAttention splits in_proj_weight at
+        # runtime; each projection must get its own constant weight.
+        class CrossAttention(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.attn = torch.nn.MultiheadAttention(16, 2, batch_first=True)
+
+            def forward(self, x):
+                q = x.sigmoid()
+                return self.attn(q, q, x, need_weights=False)[0]
+
+        mod = CrossAttention().eval()
+        x = torch.randn(1, 5, 16)
+        gm = torch.export.export(mod, (x,)).module()
+        FoldConstantViews()(gm)
+
+        weights = [
+            n.args[1]
+            for n in gm.graph.nodes
+            if n.target == torch.ops.aten.linear.default
+        ]
+        self.assertTrue(weights)
+        self.assertTrue(all(w.op == "get_attr" for w in weights))
+        self.assertTrue(torch.allclose(gm(x), mod(x)))
 
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):
