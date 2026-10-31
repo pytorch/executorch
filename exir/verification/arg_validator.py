@@ -137,8 +137,8 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
                     tensor_arg_types[name] = None
                 ret_index += 1
 
-        # tensor_arg_types holds only the first tensor of each list, so check the
-        # other tensors the same way.
+        # tensor_arg_types holds only the first tensor of each input list, so check
+        # the other tensors the same way.
         for types in [tensor_arg_types] + [
             {**tensor_arg_types, name: dtype} for name, dtype in later_list_dtypes
         ]:
