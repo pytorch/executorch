@@ -153,8 +153,10 @@ only host inputs and outputs waits depends on where it runs:
   the device, for example delegates running on another thread.
 
 In both cases, the CUDA delegate copies an output whose memory layout has to
-change through the legacy default stream, and loading a method's CUDA weights,
-which a first call may do, waits for the whole device.
+change through the legacy default stream. Loading a method's CUDA weights, which
+a first call may do, copies each one with a plain `cudaMemcpy`, so it waits for
+the legacy default stream and for blocking streams; weights an older export
+keeps in one blob wait for the whole device.
 
 The waits below, for CUDA inputs and outputs, are for the whole device
 (`cudaDeviceSynchronize`), not for one stream, so they also wait for unrelated
@@ -199,10 +201,7 @@ The CUDA build workflow runs `test_pybindings_cuda_dlpack.py` in both output
 modes on a GPU. It checks device allocations, DLPack stream ordering, channels
 last views, cloning, and borrowed output lifetimes using a CUDA delegate.
 Set `EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1` when running this test to treat missing
-GPU hardware or a missing CUDA backend as a failure. The CUDA delegate's kernels
-need the OpenMP runtime (`libgomp.so.1` on Linux). PyTorch ships one; without PyTorch,
-install it from the system, or the two tests that run without PyTorch fail
-under this setting.
+GPU hardware or a missing CUDA backend as a failure.
 
 # Link Backends
 

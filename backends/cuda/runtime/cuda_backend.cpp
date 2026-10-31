@@ -493,6 +493,22 @@ class ET_EXPERIMENTAL CudaBackend final
          to_string(so_file_counter.fetch_add(1, std::memory_order_relaxed)) +
          ".so");
 
+    // A failed init returns no handle, so destroy() never runs for it. Remove
+    // the file here unless init succeeds.
+    bool keep_so_file = false;
+    executorch::backends::aoti::ScopeGuard remove_so_file([&]() noexcept {
+      if (keep_so_file) {
+        return;
+      }
+      std::error_code remove_error;
+      filesystem::remove(so_path, remove_error);
+      ET_CHECK_OR_LOG_ERROR(
+          !remove_error,
+          "Failed to remove temporary shared library %s: %s",
+          so_path.c_str(),
+          remove_error.message().c_str());
+    });
+
     // Create a temporary file
     ofstream outfile(so_path, ios::binary);
 
@@ -614,7 +630,18 @@ class ET_EXPERIMENTAL CudaBackend final
     // Initialize CUDA graph state if enabled for this method. Not on a device
     // without memory pools, where the method runs without a graph.
     if (should_use_cuda_graph_for_method(method_name)) {
-      if (handle->cuda_graph_state.start_warmup()) {
+      const std::string host_constants = describe_host_constants(handle);
+      if (!host_constants.empty()) {
+        // A graph records only the device work of the capture call. Host code,
+        // such as the choice of a torch.cond branch on a flag in host memory,
+        // would be fixed at its value from that call.
+        ET_LOG(
+            Info,
+            "CUDA graph requested for method '%s', but %s; running without a "
+            "CUDA graph",
+            method_name.c_str(),
+            host_constants.c_str());
+      } else if (handle->cuda_graph_state.start_warmup()) {
         ET_LOG(
             Info,
             "CUDA graph enabled for method '%s' (warmup=%d)",
@@ -633,6 +660,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
     live_handles_.fetch_add(1, std::memory_order_acq_rel);
 
+    keep_so_file = true;
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -768,14 +796,26 @@ class ET_EXPERIMENTAL CudaBackend final
       // Copy new input data (GPU-resident) into static input buffers (D2D)
       for (size_t i = 0; i < n_inputs; i++) {
         auto* et_input = &(args[i]->toTensor());
+        const auto sizes = et_input->sizes();
+        const auto& captured = handle->cuda_graph_state.static_input_sizes[i];
         ET_CHECK_OR_RETURN_ERROR(
-            et_input->nbytes() ==
-                handle->cuda_graph_state.static_input_nbytes[i],
+            sizes.size() == captured.size(),
             InvalidArgument,
-            "CUDA graph replay: input %zu size mismatch (expected %zu, got %zu)",
+            "CUDA graph replay: input %zu has %zu dims, captured with %zu",
             i,
-            handle->cuda_graph_state.static_input_nbytes[i],
-            et_input->nbytes());
+            sizes.size(),
+            captured.size());
+        for (size_t d = 0; d < sizes.size(); d++) {
+          ET_CHECK_OR_RETURN_ERROR(
+              sizes[d] == captured[d],
+              InvalidArgument,
+              "CUDA graph replay: input %zu has size %lld in dim %zu, "
+              "captured with %lld",
+              i,
+              static_cast<long long>(sizes[d]),
+              d,
+              static_cast<long long>(captured[d]));
+        }
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
             handle->cuda_graph_state.static_input_ptrs[i],
             et_input->const_data_ptr(),
@@ -808,13 +848,129 @@ class ET_EXPERIMENTAL CudaBackend final
       return commit_offgraph_kv_step(handle, kv_step_width);
     }
 
-    // ---------------------------------------------------------------
-    // Normal path (also used for WARMUP and CAPTURE phases)
-    // ---------------------------------------------------------------
-    bool is_capture_step =
+    const bool is_capture_step =
         (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
          handle->cuda_graph_state.warmup_remaining == 0);
+    bool graph_ran = false;
+    Error error =
+        run_once(handle, args, n_inputs, n_outputs, is_capture_step, graph_ran);
+    if (error != Error::Ok && is_capture_step && !graph_ran) {
+      // A capture records kernels without running them, so until the new graph
+      // runs, the inputs and any state the program updates are untouched. A
+      // program that keeps state in host memory, where host code does run
+      // during a capture, never gets here: init leaves its graph off.
+      ET_LOG(
+          Info,
+          "CUDA graph: capture failed for '%s'; running this call and later "
+          "ones without a graph",
+          handle->method_name.c_str());
+      // The capture guard turned graphs off, so later calls run eagerly too.
+      ET_DCHECK(handle->cuda_graph_state.phase == CudaGraphPhase::Disabled);
+      error = run_once(
+          handle,
+          args,
+          n_inputs,
+          n_outputs,
+          /*is_capture_step=*/false,
+          graph_ran);
+    }
+    ET_CHECK_OK_OR_RETURN_ERROR(error);
+    return commit_offgraph_kv_step(handle, kv_step_width);
+  }
 
+  void destroy(DelegateHandle* handle_) const override {
+    if (handle_ == nullptr) {
+      return;
+    }
+    cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
+
+    mutable_state_forget_handle(handle);
+    if (handle->kv_cache != nullptr) {
+      handle->kv_cache->forget_handle(handle);
+    }
+
+    // NOTE: AOTInductorModelContainerDelete does not work correctly with
+    // multiple .so files. Deleting one container frees shared resources,
+    // which causes segmentation faults when attempting to delete other
+    // containers. As a workaround, we skip explicit container deletion and
+    // defer cleanup to the OS. The corresponding shared library must remain
+    // loaded as well: the leaked container still owns objects whose code and
+    // process-wide state live in that library, so dlclose/FreeLibrary can
+    // invalidate them and crash during multi-method teardown.
+    // TODO(gasoonjia): Find a proper solution for safe container deletion.
+    // AOTInductorModelContainerDelete(handle->container_handle);
+
+    // Remove the temporary shared library file
+    if (!handle->so_path.empty()) {
+      std::error_code remove_error;
+      std::filesystem::remove(handle->so_path, remove_error);
+      ET_CHECK_OR_LOG_ERROR(
+          !remove_error,
+          "Failed to remove temporary shared library %s: %s",
+          handle->so_path.c_str(),
+          remove_error.message().c_str());
+    }
+
+    delete handle;
+
+    // The allocator lets the device pool keep freed memory so that repeated
+    // delegate execution does not pay to map it again. Nothing is running on
+    // this backend once the last handle is gone, so hand that memory back
+    // rather than hold it for the life of the process.
+    if (live_handles_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      // Only frees the driver has already observed can be released, so without
+      // this the trim gives back nothing rather than less. A device wait rather
+      // than a stream wait because the frees went to whichever stream was
+      // current when the storage was released, which is not necessarily one
+      // this handle recorded, and teardown is not bound to the thread that ran
+      // the method either.
+      const cudaError_t sync_err = cudaDeviceSynchronize();
+      if (sync_err != cudaSuccess) {
+        ET_LOG(
+            Error,
+            "cudaDeviceSynchronize before releasing the pool failed: %s.",
+            cudaGetErrorString(sync_err));
+        (void)cudaGetLastError();
+      }
+      // This also releases unused blocks cached by other allocator users.
+      CudaAllocator::release_cached_memory(-1);
+    }
+  }
+
+ private:
+  // Names a constant of the program in host memory, or says that the
+  // constants could not be listed, since unknown counts as host memory.
+  // Empty when every constant is on the device.
+  static std::string describe_host_constants(cuda::CudaDelegateHandle* handle) {
+    const char* unlisted = "its constants could not be listed";
+    if (handle->extract_constants_map == nullptr) {
+      return unlisted;
+    }
+    std::unordered_map<std::string, AtenTensorHandle> constants;
+    if (handle->extract_constants_map(
+            handle->container_handle,
+            reinterpret_cast<AOTInductorConstantMapHandle>(&constants),
+            /*use_inactive=*/false) != Error::Ok) {
+      return unlisted;
+    }
+    for (const auto& [fqn, tensor] : constants) {
+      if (reinterpret_cast<SlimTensor*>(tensor)->is_cpu()) {
+        return "constant '" + fqn + "' is in host memory";
+      }
+    }
+    return "";
+  }
+
+  // Runs the program once. On the capture step it captures the CUDA graph
+  // instead, then launches it once, and sets graph_ran once that launch is
+  // queued.
+  Error run_once(
+      cuda::CudaDelegateHandle* handle,
+      Span<EValue*> args,
+      size_t n_inputs,
+      size_t n_outputs,
+      bool is_capture_step,
+      bool& graph_ran) const {
     // Wrrap them as SlimTensors for AOTI execution without any host<->device
     // copies.
     std::vector<SlimTensor*> slim_inputs(n_inputs);
@@ -841,25 +997,10 @@ class ET_EXPERIMENTAL CudaBackend final
           return;
         }
         // Free what this attempt pinned and disable graphs for this method, so
-        // a capture that cannot succeed costs one error rather than one on
-        // every fourth call for the life of the process. Eager execution is
-        // correct, just slower.
-        for (void* ptr : state_->static_input_ptrs) {
-          (void)cudaFree(ptr);
-        }
-        state_->static_input_ptrs.clear();
-        state_->static_output_ptrs.clear();
-        state_->static_input_nbytes.clear();
-        state_->static_output_nbytes.clear();
-        // Same order as ~CudaGraphState: the exec depends on the graph.
-        if (state_->graph_exec != nullptr) {
-          (void)cudaGraphExecDestroy(state_->graph_exec);
-          state_->graph_exec = nullptr;
-        }
-        if (state_->graph != nullptr) {
-          (void)cudaGraphDestroy(state_->graph);
-          state_->graph = nullptr;
-        }
+        // a capture that cannot succeed is tried once rather than on every
+        // later call for the life of the process. Eager execution is correct,
+        // just slower.
+        state_->release();
         state_->phase = CudaGraphPhase::Disabled;
         state_->warmup_remaining = 0;
         (void)cudaGetLastError();
@@ -903,6 +1044,8 @@ class ET_EXPERIMENTAL CudaBackend final
         // through the guard instead of leaking this allocation.
         handle->cuda_graph_state.static_input_ptrs.push_back(static_ptr);
         handle->cuda_graph_state.static_input_nbytes.push_back(nbytes);
+        handle->cuda_graph_state.static_input_sizes.emplace_back(
+            et_input->sizes().begin(), et_input->sizes().end());
 
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
             static_ptr,
@@ -1034,11 +1177,23 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
-    ET_CHECK_OR_RETURN_ERROR(
-        error == Error::Ok,
-        Internal,
-        "AOTInductorModelContainerRun failed with error code %d",
-        error);
+    if (error != Error::Ok) {
+      // A failed capture is retried without a graph, which reports a real
+      // failure at Error.
+      if (is_capture_step) {
+        ET_LOG(
+            Info,
+            "AOTInductorModelContainerRun failed during CUDA graph capture "
+            "with error code %d",
+            error);
+      } else {
+        ET_LOG(
+            Error,
+            "AOTInductorModelContainerRun failed with error code %d",
+            error);
+      }
+      return Error::Internal;
+    }
 
     if (is_capture_step) {
       // End capture → instantiate graph
@@ -1061,9 +1216,9 @@ class ET_EXPERIMENTAL CudaBackend final
                 slim_outputs[i], &(args[i + n_inputs]->toTensor()))) {
           std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
           ET_LOG(
-              Error,
+              Info,
               "CUDA graph: output %zu of '%s' is not laid out like its "
-              "ETensor; this call fails and later calls run without a graph",
+              "ETensor",
               i,
               handle->method_name.c_str());
           return Error::NotSupported;
@@ -1076,9 +1231,9 @@ class ET_EXPERIMENTAL CudaBackend final
         if (resize_err != Error::Ok) {
           std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
           ET_LOG(
-              Error,
+              Info,
               "CUDA graph: cannot resize output %zu of '%s' to its captured "
-              "shape; this call fails and later calls run without a graph",
+              "shape",
               i,
               handle->method_name.c_str());
           return resize_err;
@@ -1094,7 +1249,6 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphInstantiate failed: %s",
           cudaGetErrorString(gerr));
-      handle->cuda_graph_state.note_graph_allocations();
 
       // Record static output pointers (stable under graph replay). Releasing
       // them from slim_outputs here, before the copies below, keeps the cleanup
@@ -1120,6 +1274,8 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphLaunch (first replay) failed: %s",
           cudaGetErrorString(gerr));
+      graph_ran = true;
+      handle->cuda_graph_state.note_graph_allocations();
 
       // Copy capture-step outputs into the planned GPU ET buffers (D2D).
       for (size_t i = 0; i < n_outputs; i++) {
@@ -1136,7 +1292,7 @@ class ET_EXPERIMENTAL CudaBackend final
       // Last failure point is behind us, so the captured state is now the state
       // the next call should replay from.
       capture_guard.disarm();
-      return commit_offgraph_kv_step(handle, kv_step_width);
+      return Error::Ok;
     }
 
     // ----- Normal / WARMUP execution continues here -----
@@ -1193,69 +1349,9 @@ class ET_EXPERIMENTAL CudaBackend final
       slim_outputs[i] = nullptr;
     }
 
-    return commit_offgraph_kv_step(handle, kv_step_width);
+    return Error::Ok;
   }
 
-  void destroy(DelegateHandle* handle_) const override {
-    if (handle_ == nullptr) {
-      return;
-    }
-    cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
-
-    mutable_state_forget_handle(handle);
-    if (handle->kv_cache != nullptr) {
-      handle->kv_cache->forget_handle(handle);
-    }
-
-    // NOTE: AOTInductorModelContainerDelete does not work correctly with
-    // multiple .so files. Deleting one container frees shared resources,
-    // which causes segmentation faults when attempting to delete other
-    // containers. As a workaround, we skip explicit container deletion and
-    // defer cleanup to the OS. The corresponding shared library must remain
-    // loaded as well: the leaked container still owns objects whose code and
-    // process-wide state live in that library, so dlclose/FreeLibrary can
-    // invalidate them and crash during multi-method teardown.
-    // TODO(gasoonjia): Find a proper solution for safe container deletion.
-    // AOTInductorModelContainerDelete(handle->container_handle);
-
-    // Remove the temporary shared library file
-    if (!handle->so_path.empty()) {
-      std::error_code remove_error;
-      std::filesystem::remove(handle->so_path, remove_error);
-      ET_CHECK_OR_LOG_ERROR(
-          !remove_error,
-          "Failed to remove temporary shared library %s: %s",
-          handle->so_path.c_str(),
-          remove_error.message().c_str());
-    }
-
-    delete handle;
-
-    // The allocator lets the device pool keep freed memory so that repeated
-    // delegate execution does not pay to map it again. Nothing is running on
-    // this backend once the last handle is gone, so hand that memory back
-    // rather than hold it for the life of the process.
-    if (live_handles_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-      // Only frees the driver has already observed can be released, so without
-      // this the trim gives back nothing rather than less. A device wait rather
-      // than a stream wait because the frees went to whichever stream was
-      // current when the storage was released, which is not necessarily one
-      // this handle recorded, and teardown is not bound to the thread that ran
-      // the method either.
-      const cudaError_t sync_err = cudaDeviceSynchronize();
-      if (sync_err != cudaSuccess) {
-        ET_LOG(
-            Error,
-            "cudaDeviceSynchronize before releasing the pool failed: %s.",
-            cudaGetErrorString(sync_err));
-        (void)cudaGetLastError();
-      }
-      // This also releases unused blocks cached by other allocator users.
-      CudaAllocator::release_cached_memory(-1);
-    }
-  }
-
- private:
   mutable std::mutex cuda_graph_method_mutex_;
   std::string cuda_graph_method_;
 

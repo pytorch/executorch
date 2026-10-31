@@ -145,6 +145,10 @@ int32_t aoti_torch_dtype_float32() {
   return 6; // ScalarType::Float
 }
 
+int32_t aoti_torch_dtype_float64() {
+  return 7; // ScalarType::Double
+}
+
 int32_t aoti_torch_dtype_bfloat16() {
   return 15; // ScalarType::BFloat16
 }

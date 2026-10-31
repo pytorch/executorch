@@ -53,6 +53,21 @@ def _checked_data_name(data_name: str) -> str:
     return data_name
 
 
+def _written_buffer_options(program: ExportedProgram) -> Dict[str, Any]:
+    """Inductor options that keep the buffers a program writes out of constant
+    folding.
+
+    Before torch 2.15, Inductor can fold the update of a one-element buffer,
+    such as a counter, to its value at export, so every call writes that same
+    value (https://github.com/pytorch/pytorch/pull/185077).
+
+    TODO: remove once the pinned torch is 2.15 or newer.
+    """
+    if program.graph_signature.buffers_to_mutate:
+        return {"joint_graph_constant_folding": False}
+    return {}
+
+
 @experimental(
     "This API and all of aoti-driven backend related functionality are experimental."
 )
@@ -286,9 +301,13 @@ class AotiBackend(ABC):
         Preprocess the edge program and compile it using AOTInductor.
         Weights are always separated from the SO file.
         """
+        # First, so that a backend keeping its data in the .pte refuses a data
+        # name before anything is compiled.
+        data_name = cls.data_name_from_compile_specs(compile_specs)
         device_name = cls.get_device_name()
         decomposition_table = cls.get_decomposition_table()
         options = cls.get_aoti_compile_options(compile_specs)
+        options.update(_written_buffer_options(edge_program))
 
         # Move the edge_program to the target device. Routed through a hook so
         # backends can keep large non-parameter tensors (e.g. KV-cache buffers)
@@ -390,11 +409,7 @@ class AotiBackend(ABC):
         named_data_store.add_named_data(so_blob_key, so_data, 1, None)
         # Determine whether to save named data externally based on backend setting
         # External: save to separate .ptd file, otherwise merge with .pte file
-        external_tag = (
-            cls.data_name_from_compile_specs(compile_specs)
-            if cls.save_data_externally()
-            else None
-        )
+        external_tag = data_name if cls.save_data_externally() else None
 
         named_data_store.add_named_data(weights_blob_key, blob_data, 1, external_tag)
 
@@ -435,11 +450,7 @@ class AotiBackend(ABC):
         Generate a CompileSpec that names the external data file, written as
         ``<data_name>.ptd``, so several programs can share a folder.
         """
-        if not cls.save_data_externally():
-            raise ValueError(
-                f"{cls.__name__} keeps its data in the .pte file, so it takes no "
-                "data name"
-            )
+        cls._check_saves_data_externally()
         return CompileSpec(
             COMPILE_SPEC_KEYS.DATA_NAME.value,
             _checked_data_name(data_name).encode("utf-8"),
@@ -453,8 +464,17 @@ class AotiBackend(ABC):
         """
         for spec in compile_specs:
             if spec.key == COMPILE_SPEC_KEYS.DATA_NAME.value:
+                cls._check_saves_data_externally()
                 return _checked_data_name(spec.value.decode("utf-8"))
         return f"aoti_{cls.get_device_name()}_blob"
+
+    @classmethod
+    def _check_saves_data_externally(cls) -> None:
+        if not cls.save_data_externally():
+            raise ValueError(
+                f"{cls.__name__} keeps its data in the .pte file, so it takes no "
+                "data name"
+            )
 
     @classmethod
     def method_name_from_compile_specs(

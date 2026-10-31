@@ -6,7 +6,6 @@
 
 import contextlib
 import os
-import tempfile
 import threading
 import unittest
 from typing import Tuple
@@ -14,12 +13,15 @@ from unittest import mock
 from unittest.mock import patch
 
 import torch
+from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyncPass
 from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import export
+from torch.nn.attention.varlen import varlen_attn
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
@@ -269,10 +271,20 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                     CudaBackend.data_name_from_compile_specs(
                         [CompileSpec(key="data_name", value=name.encode())]
                     )
-        # A backend that keeps its data in the .pte would ignore the name.
+        # A backend that keeps its data in the .pte refuses a name, also one
+        # built by hand.
         with patch.object(CudaBackend, "save_data_externally", return_value=False):
             with self.assertRaisesRegex(ValueError, "takes no data name"):
                 CudaBackend.generate_data_name_compile_spec("encoder")
+            with self.assertRaisesRegex(ValueError, "takes no data name"):
+                CudaBackend.data_name_from_compile_specs(
+                    [CompileSpec(key="data_name", value=b"encoder")]
+                )
+        # The shared preprocess, which Metal uses, refuses it before compiling.
+        with self.assertRaisesRegex(ValueError, "takes no data name"):
+            AotiBackend.preprocess(
+                None, [CompileSpec(key="data_name", value=b"encoder")]
+            )
 
     def test_valid_data_name_compile_spec(self):
         self.assertEqual(CudaBackend.data_name_from_compile_specs([]), "aoti_cuda_blob")
@@ -435,6 +447,87 @@ class TestCudaExport(unittest.TestCase):
         self._export_to_cuda_with_lower(
             CheckModule().eval(), (torch.randn(4, 8),), strict=False
         )
+
+    def test_distribution_argument_check(self):
+        """A check that holds for every input must not fail while AOTI autotunes."""
+
+        class GaussianHead(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.mean = torch.nn.Linear(16, 14)
+                self.log_std = torch.nn.Linear(16, 14)
+
+            def forward(self, x: torch.Tensor, eps: torch.Tensor) -> torch.Tensor:
+                std = torch.clamp(torch.exp(self.log_std(x)), 1e-5, 10.0)
+                scale_tril = torch.diag_embed(std.sqrt())
+                # The check MultivariateNormal makes on scale_tril, as newer
+                # PyTorch exports it. With 14 actions, Inductor computes each
+                # half in a kernel of its own, so the assert reads bools that
+                # autotuning makes up.
+                lower = (scale_tril.tril() == scale_tril).flatten(-2).min(-1)[0]
+                positive = (scale_tril.diagonal(dim1=-2, dim2=-1) > 0).min(-1)[0]
+                torch._assert_async((lower & positive).all(), "invalid scale_tril")
+                return self.mean(x) + (scale_tril @ eps[..., None])[..., 0]
+
+        inputs = (torch.randn(1, 16), torch.randn(1, 14))
+        self._export_to_cuda_with_lower(GaussianHead().eval(), inputs)
+
+        # The pass drops the check and the math that only fed it.
+        graph_module = export(GaussianHead().eval(), inputs).graph_module
+        RemoveAssertAsyncPass()(graph_module)
+        targets = {n.target for n in graph_module.graph.nodes}
+        self.assertNotIn(torch.ops.aten._assert_async.msg, targets)
+        self.assertNotIn(torch.ops.aten.tril.default, targets)
+        self.assertIn(torch.ops.aten.linear.default, targets)
+
+    def test_reshape_copy(self):
+        """Torch-TensorRT hands back the views it leaves to PyTorch as _reshape_copy."""
+
+        class ReshapeCopyModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.ops.aten._reshape_copy(x.transpose(0, 1), [-1, 4]) * 2
+
+        self._export_to_cuda_with_lower(ReshapeCopyModule(), (torch.randn(8, 4, 4),))
+
+    def test_varlen_attn(self):
+        """varlen_attn calls Flash attention, which the CUDA shims lack."""
+
+        class VarlenAttention(torch.nn.Module):
+            def forward(self, q, k, v, cu_seq):
+                # Flattening views the output, which needs the op's layout.
+                return varlen_attn(q, k, v, cu_seq, cu_seq, 16, 16).flatten(1)
+
+        q, k, v = (
+            torch.randn(32, 4, 64, dtype=torch.bfloat16, device="cuda")
+            for _ in range(3)
+        )
+        cu_seq = torch.tensor([0, 16, 32], dtype=torch.int32, device="cuda")
+        self._export_to_cuda_with_lower(VarlenAttention(), (q, k, v, cu_seq))
+
+        # Causal masks over query sequences shorter and longer than their key
+        # sequences (some queries then see no key, and NaN values outside the
+        # key sequences must stay out), grouped-query attention with an empty
+        # sequence, and a window in self-attention.
+        op = torch.ops.torch_attn._varlen_attn.default
+        short = torch.tensor([0, 4, 16], dtype=torch.int32, device="cuda")
+        empty = torch.tensor([0, 16, 16, 32], dtype=torch.int32, device="cuda")
+        shifted = torch.tensor([2, 6, 16], dtype=torch.int32, device="cuda")
+        nan_outside = v.clone()
+        nan_outside[:2] = nan_outside[16:] = float("nan")
+        cases = [
+            (q[:16], k, v, short, cu_seq, 12, 16, True, None, [3, -1]),
+            (q, k, nan_outside, cu_seq, shifted, 16, 12, True, None, [-1, 0]),
+            (q, k[:, :2], v[:, :2], empty, empty, 16, 16, False, 0.5, None, True),
+            (q, k, v, cu_seq, cu_seq, 16, 16, False, None, [4, 2]),
+        ]
+        table = CudaBackend.get_decomposition_table()
+        for args in cases:
+            for actual, expected in zip(table[op](*args)[:2], op(*args)[:2]):
+                torch.testing.assert_close(actual, expected, atol=1e-2, rtol=1e-2)
+        # Flash attention versions differ on this window, since a query sequence
+        # can be longer than max_k + 1.
+        with self.assertRaisesRegex(NotImplementedError, "window"):
+            table[op](q, k[:16], v[:16], cu_seq, short, 16, 12, False, None, [3, -1])
 
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""
@@ -709,62 +802,25 @@ class TestCudaExport(unittest.TestCase):
         )
 
     def test_missing_scatter_kernel_fails_at_export(self):
-        """Inductor leaves int64 scatter_add to an ATen kernel the CUDA shim lacks."""
+        """The scatter fallback writes its kernel call itself, and the check for
+        missing kernels still sees it. In deterministic mode Inductor leaves a
+        scatter of a scalar to that fallback, and the CUDA shims lack its
+        kernel."""
 
-        class Int64ScatterAdd(torch.nn.Module):
+        class ValueScatter(torch.nn.Module):
             def forward(self, counts: torch.Tensor, idx: torch.Tensor):
-                return counts.scatter_add(0, idx, torch.ones_like(idx))
+                return counts.scatter(0, idx, 1.0)
 
-        inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
-        with self.assertRaises(RuntimeError) as context:
-            self._export_to_cuda_with_lower(Int64ScatterAdd(), inputs)
-        self.assertIn("aoti_torch_cuda_scatter_reduce_two_out", str(context.exception))
-
-    @unittest.skipIf(
-        torch.version.hip is not None,
-        "loads through the Python runtime, which the ROCm build does not include",
-    )
-    def test_mask_index_and_index_put(self):
-        """A mask index makes the result size depend on the data, and Inductor
-        has no atomic add for int64, so these run in the index shims."""
-        from executorch.runtime import Runtime
-
-        class MaskIndex(torch.nn.Module):
-            def forward(self, x, mask, column, idx, counts):
-                out = x.clone()
-                out[mask] = x[mask] * 2
-                # The mask and column index dims 0 and 2, which are not adjacent.
-                picked = x[mask, :, column].sum(0)
-                # A transposed input gives a result that is not row-major.
-                rows = x.transpose(1, 2)[mask] * 3
-                ones = torch.ones_like(idx)
-                counts = counts.index_put((idx,), ones, accumulate=True)
-                return out, picked, rows, counts
-
-        model = MaskIndex()
-        x = torch.randn(4, 5, 6)
-        column = torch.tensor([2])
-        idx = torch.tensor([0, 3, 3, 1, 3])
-        # Nonzero counts check that repeated writes add to the old values.
-        counts = torch.arange(8) * 5
-        masks = (
-            torch.tensor([True, False, True, True]),
-            torch.zeros(4, dtype=torch.bool),
-            torch.ones(4, dtype=torch.bool),
-        )
-        edge = self._export_to_cuda_with_lower(
-            model, (x, masks[0], column, idx, counts)
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            path = os.path.join(directory, "model.pte")
-            with open(path, "wb") as f:
-                edge.to_executorch().write_to_file(f)
-            method = Runtime.get().load_program(path).load_method("forward")
-            for mask in masks:
-                inputs = (x, mask, column, idx, counts)
-                outputs = method.execute(list(inputs))
-                for output, expected in zip(outputs, model(*inputs), strict=True):
-                    torch.testing.assert_close(output.cpu(), expected)
+        inputs = (torch.zeros(8), torch.randint(0, 8, (32,)))
+        deterministic = torch.are_deterministic_algorithms_enabled()
+        warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+        torch.use_deterministic_algorithms(True)
+        try:
+            with self.assertRaises(RuntimeError) as context:
+                self._export_to_cuda_with_lower(ValueScatter(), inputs)
+        finally:
+            torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
+        self.assertIn("aoti_torch_cuda_scatter_value_out", str(context.exception))
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """

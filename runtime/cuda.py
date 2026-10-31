@@ -27,10 +27,11 @@ GPU memory. A call then waits for ``s``. If ``s`` is non-blocking, as a
 blocking ``s``, such as a ``cupy.cuda.Stream()`` with default flags, also
 waits for work on the legacy default stream. Some steps still wait for more:
 the CUDA delegate copies an output whose memory layout has to change through
-the legacy default stream, and loading a method's CUDA weights waits for the
-whole GPU. A call with GPU inputs or outputs, and
-``ExecuTorchResult.to_host()``, also wait for the whole GPU, so GPU data
-written on other streams stays safe.
+the legacy default stream, and loading a method's CUDA weights copies each one
+with a plain ``cudaMemcpy``, which waits for the legacy default stream and for
+blocking streams. Weights an older export keeps in one blob wait for the whole
+GPU. A call with GPU inputs or outputs, and ``ExecuTorchResult.to_host()``,
+also wait for the whole GPU, so GPU data written on other streams stays safe.
 
 Limits for now: a stream known to be on a CUDA device other than 0 is refused,
 so is the legacy default stream (handle 0, or 1 for ``cudaStreamLegacy``), and
