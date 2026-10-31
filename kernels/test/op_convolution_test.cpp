@@ -667,6 +667,10 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
   const int64_t zero[] = {0};
   const int64_t four_ones[] = {1, 1, 1, 1};
   const int64_t four_zeros[] = {0, 0, 0, 0};
+  // Single values apply to every spatial dim, so this call succeeds and the
+  // calls below fail only because of their four-element lists.
+  conv_3d(one, zero, one);
+  EXPECT_TENSOR_EQ(out_3d, tf.full({1, 4, 2, 2, 2}, 16));
   ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(four_ones, zero, one));
   ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(one, four_zeros, one));
   ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(one, zero, four_ones));
@@ -1218,10 +1222,19 @@ TEST_F(OpConvCorrectnessTest, Grouped3DStridePaddingDilation) {
       tf.make({1, 2, 2, 3, 2}, {-52, -34, -31, 64,  86, 62,   -38, -87,
                                 81,  0,   19,  62,  56, -21,  -19, -60,
                                 49,  26,  -63, -44, 40, -173, 24,  74});
-  auto out = tf.zeros_like(expected);
-  op_convolution_out(
-      input, weight, bias, stride, padding, dilation, false, {0}, 2, out);
-  EXPECT_TENSOR_EQ(out, expected);
+  for (const bool channels_last : {false, true}) {
+    SCOPED_TRACE(channels_last);
+    auto in = channels_last ? tf.channels_last_like(input) : input;
+    auto w = channels_last ? tf.channels_last_like(weight) : weight;
+    auto exp = channels_last ? tf.channels_last_like(expected) : expected;
+    auto out = tf.zeros_like(exp);
+    if (channels_last) {
+      out = tf.channels_last_like(out);
+    }
+    op_convolution_out(
+        in, w, bias, stride, padding, dilation, false, {0}, 2, out);
+    EXPECT_TENSOR_EQ(out, exp);
+  }
 }
 
 TEST_F(OpConvCorrectnessTest, GroupedTransposed3DStridePaddingDilation) {
@@ -1241,17 +1254,17 @@ TEST_F(OpConvCorrectnessTest, GroupedTransposed3DStridePaddingDilation) {
       {1,  1,  1,  1,  12, 8,  54,  -48, 1,  1,  1,  1,  -30, -10, -5,  20,
        1,  1,  1,  1,  19, 19, -16, 9,   -1, -1, -1, -1, -30, 36,  -11, -3,
        -1, -1, -1, -1, 8,  -6, -4,  -24, -1, -1, -1, -1, -20, 30,  -15, -9});
-  auto out = tf.zeros_like(expected);
-  op_convolution_out(
-      input,
-      weight,
-      bias,
-      stride,
-      padding,
-      dilation,
-      true,
-      output_padding,
-      2,
-      out);
-  EXPECT_TENSOR_EQ(out, expected);
+  for (const bool channels_last : {false, true}) {
+    SCOPED_TRACE(channels_last);
+    auto in = channels_last ? tf.channels_last_like(input) : input;
+    auto w = channels_last ? tf.channels_last_like(weight) : weight;
+    auto exp = channels_last ? tf.channels_last_like(expected) : expected;
+    auto out = tf.zeros_like(exp);
+    if (channels_last) {
+      out = tf.channels_last_like(out);
+    }
+    op_convolution_out(
+        in, w, bias, stride, padding, dilation, true, output_padding, 2, out);
+    EXPECT_TENSOR_EQ(out, exp);
+  }
 }
