@@ -776,6 +776,58 @@ TEST_F(OpConvCorrectnessTest, KernelLargerThanPaddedInput) {
           input, weight, bias, stride, {0}, dilation, false, {0}, 1, out));
 }
 
+TEST_F(OpConvCorrectnessTest, HugeStridePaddingDilation) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen does not reject these values");
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.ones({1, 1, 3});
+  Tensor weight = tf.ones({1, 1, 3});
+  Tensor point_weight = tf.ones({1, 1, 1});
+  optional<Tensor> bias;
+  Tensor out = tf.zeros({1, 1, 3});
+  Tensor point_out = tf.zeros({1, 1, 1});
+  const int64_t above_int32[] = {int64_t{1} << 31};
+  const int64_t huge[] = {std::numeric_limits<int64_t>::max() / 2 + 1};
+
+  // The dilated kernel size wraps around to a negative number.
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, weight, bias, {1}, {0}, huge, false, {0}, 1, out));
+
+  // These output sizes are 2^32 + 1, which a 32-bit size truncates to 1.
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          weight,
+          bias,
+          {1},
+          above_int32,
+          {1},
+          false,
+          {0},
+          1,
+          point_out));
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          point_weight,
+          bias,
+          above_int32,
+          {0},
+          {1},
+          true,
+          {0},
+          1,
+          point_out));
+}
+
 TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
   TensorFactory<ScalarType::Float> tf;
 

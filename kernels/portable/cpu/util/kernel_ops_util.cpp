@@ -468,6 +468,16 @@ bool check_convolution_args(
   ET_LOG_AND_RETURN_IF_FALSE(
       padding_is_valid(padding, {kernel_size, kernel_ndim}, kernel_ndim));
   ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(dilation, kernel_ndim));
+  // Larger values would overflow int64_t in the kernel size check below and in
+  // the output size math.
+  for (const IntArrayRef param : {stride, padding, dilation}) {
+    for (const int64_t value : param) {
+      ET_CHECK_OR_RETURN_FALSE(
+          value <= std::numeric_limits<int32_t>::max(),
+          "Expected stride, padding and dilation to fit in 32 bits, but got %" PRId64,
+          value);
+    }
+  }
   if (transposed) {
     ET_LOG_AND_RETURN_IF_FALSE(
         output_padding_is_valid(output_padding, stride, dilation, kernel_ndim));
