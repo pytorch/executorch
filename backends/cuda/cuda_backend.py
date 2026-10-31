@@ -183,9 +183,8 @@ def _link_libraries_as_needed():
 
     Only threads inside this context get the flag.
 
-    TODO: remove once Inductor does this for AOTI builds that do not link
-    libtorch, as it already does on macOS
-    (https://github.com/pytorch/pytorch/pull/198232).
+    TODO: remove once the pinned PyTorch has the same flag in Inductor
+    (https://github.com/pytorch/pytorch/pull/202902).
     """
     from torch._inductor import cpp_builder
 
