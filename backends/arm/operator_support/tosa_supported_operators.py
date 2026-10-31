@@ -1345,7 +1345,13 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
 
         input_node = typing.cast(torch.fx.Node, node.args[0])
         input_tensor = get_first_fake_tensor(input_node)
-        if not self._is_tosa_argmax_dtype_supported(node, input_tensor.dtype):
+        input_dtype = input_tensor.dtype
+        if input_node.target in DQ_OPS:
+            # The quantizer annotated argmax's input: the dequantize is folded
+            # before lowering and TOSA ARGMAX sees the quantized dtype.
+            dq_input = typing.cast(torch.fx.Node, input_node.args[0])
+            input_dtype = get_first_fake_tensor(dq_input).dtype
+        if not self._is_tosa_argmax_dtype_supported(node, input_dtype):
             return False
 
         input_rank = len(input_tensor.shape)
