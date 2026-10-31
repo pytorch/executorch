@@ -19,8 +19,8 @@ class RemoveMixedTypeOperators(ExportPass):
     # pyre-ignore
     def call_operator(self, op, args, kwargs, meta: NodeMetadata):  # noqa: C901
         if op in (torch.ops.aten.cat.default, torch.ops.aten.stack.default):
-            # Earlier passes can drop inputs, such as empty ones, without updating
-            # the node, so read the dtype eager promoted to from its output.
+            # Earlier passes edit the graph in place and can drop inputs, such as
+            # empty ones, so the output metadata still has eager's promoted dtype.
             return self._cast_inputs(op, args, kwargs, meta, meta["val"].dtype)
 
         if len(args) <= 1:

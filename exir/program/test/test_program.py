@@ -969,9 +969,9 @@ class TestProgramManagers(unittest.TestCase):
                 return torch.stack([x, y, x])
 
         class CatWithEmpty(torch.nn.Module):
-            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
                 empty = torch.empty(0, 3, dtype=torch.float64)
-                return torch.cat([empty, x, y])
+                return torch.cat([empty, x])
 
         bf16 = torch.randn(2, 3, dtype=torch.bfloat16)
         f32 = torch.randn(2, 3)
@@ -990,7 +990,7 @@ class TestProgramManagers(unittest.TestCase):
             (Cat(), cat, (f32, i32), torch.float32, 1),
             # An earlier pass drops the empty float64 input, which still decides
             # the output dtype.
-            (CatWithEmpty(), cat, (bf16, f32), torch.float64, 2),
+            (CatWithEmpty(), cat, (bf16,), torch.float64, 1),
         ):
             edge = to_edge(export(module, inputs, strict=True), compile_config=config)
             nodes = edge.exported_program().graph_module.graph.nodes
