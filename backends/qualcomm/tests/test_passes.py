@@ -215,37 +215,43 @@ class TestPasses(unittest.TestCase):
                 Autocast(),
                 (torch.randn(4, 8), torch.randn(4, 8)),
                 torch._higher_order_ops.wrap.wrap_with_autocast,
-                "t_1",
             ),
             (
                 Attention(),
                 tuple(torch.randn(1, 2, 4, 8) for _ in range(4)),
                 torch.ops.aten.scaled_dot_product_attention.default,
-                "mul_1",
             ),
         )
-        stale_names = []
-        for model, inputs, decomposed_op, reused_name in cases:
+        no_collision = []
+        for model, inputs, decomposed_op in cases:
             with self.subTest(model=type(model).__name__):
                 ep = torch.export.export(model.eval(), inputs)
                 self.assertIn(decomposed_op, [n.target for n in ep.graph.nodes])
-                unrecorded_names = {
-                    n.name for n in ep.graph.nodes
-                } - ep.graph._graph_namespace._used_names
                 ep = get_qnn_pass_manager_cls()().transform_for_export_pipeline(ep)
                 self.assertNotIn(decomposed_op, [n.target for n in ep.graph.nodes])
                 # ep.module() copies the graph and renames duplicates, so lint
                 # the graph the passes produced.
                 ep.graph.lint()
                 torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
-                if reused_name not in unrecorded_names:
-                    stale_names.append(reused_name)
-        # A skip, not a failure: a torch update that changes these names is fine.
-        if stale_names:
+                ep = torch.export.export(model.eval(), inputs)
+                with patch(
+                    "executorch.backends.qualcomm._passes.qnn_pass_manager."
+                    "reserve_node_names"
+                ):
+                    try:
+                        get_qnn_pass_manager_cls()().transform_for_export_pipeline(
+                            ep
+                        ).graph.lint()
+                    except Exception as e:
+                        # The pass manager wraps the lint error in its own.
+                        self.assertIn("Node redefined name", str(e.__cause__ or e))
+                    else:
+                        no_collision.append(type(model).__name__)
+        # A skip, not a failure: a torch update that removes the collision is fine.
+        if no_collision:
             self.skipTest(
-                f"torch.export now records {stale_names} or no longer produces "
-                "them, so those cases no longer test the reservation in "
-                "QnnPassManager._transform"
+                f"{no_collision} no longer collide without reserve_node_names, so "
+                "those cases no longer test it"
             )
 
     def test_build_op_wrappers_returns_context_binary(self):
