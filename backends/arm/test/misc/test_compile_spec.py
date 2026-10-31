@@ -334,3 +334,24 @@ def test_ethosu_persistent_region_extra_flag_does_not_delegate_buffers_u85_INT()
     roundtripped = EthosUCompileSpec._from_list(compile_spec._to_list())
     assert not compile_spec.delegate_mutable_buffers
     assert not roundtripped.delegate_mutable_buffers
+
+
+@mark.parametrize("plan_delegate_scratch", [False, True])
+def test_ethosu_planned_scratch_roundtrip(plan_delegate_scratch):
+    compile_spec = EthosUCompileSpec(
+        "ethos-u55-128", plan_delegate_scratch=plan_delegate_scratch
+    )
+    serialized = compile_spec._to_list()
+    roundtripped = EthosUCompileSpec._from_list(serialized)
+    assert roundtripped.plan_delegate_scratch is plan_delegate_scratch
+    assert (
+        roundtripped.compiler_flags == EthosUCompileSpec("ethos-u55-128").compiler_flags
+    )
+    if not plan_delegate_scratch:
+        assert all(spec.key != "plan_delegate_scratch" for spec in serialized)
+
+
+@mark.parametrize("plan_delegate_scratch", [None, 0, 1, "True"])
+def test_ethosu_planned_scratch_rejects_invalid_values(plan_delegate_scratch):
+    with raises(ValueError, match="plan_delegate_scratch must be a boolean"):
+        EthosUCompileSpec("ethos-u55-128", plan_delegate_scratch=plan_delegate_scratch)

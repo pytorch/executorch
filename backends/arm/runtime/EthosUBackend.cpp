@@ -126,6 +126,65 @@ class EthosUBackendExecuteCallbacks {
   }
 };
 
+namespace {
+
+/**
+ * Returns supported planned scratch, allocates temporary addressable scratch
+ * when required, or returns empty scratch for driver-managed platforms.
+ */
+Result<Span<uint8_t>> get_ethosu_scratch(
+    BackendExecutionContext& context,
+    const VelaHandles& handles,
+    bool needs_scratch_allocation) {
+  auto planned_scratch = context.scratch_buffers();
+  // Use planned scratch when the PTE provides it and the platform needs it.
+  if (!planned_scratch.empty() && needs_scratch_allocation) {
+    if (planned_scratch.size() != 1) {
+      ET_LOG(Error, "Ethos-U requires exactly one planned scratch buffer");
+      return Error::InvalidProgram;
+    }
+    Span<uint8_t> scratch = planned_scratch[0];
+    if (scratch.size() < handles.scratch_data_size ||
+        (scratch.size() > 0 && scratch.data() == nullptr) ||
+        reinterpret_cast<uintptr_t>(scratch.data()) %
+                ETHOSU_SCRATCH_ALIGNMENT !=
+            0) {
+      ET_LOG(
+          Error,
+          "Ethos-U planned scratch is invalid: %zu bytes, expected at least %zu bytes aligned to 16 bytes",
+          scratch.size(),
+          handles.scratch_data_size);
+      return Error::InvalidProgram;
+    }
+    return scratch;
+  }
+
+  // Driver-managed or empty scratch requires no allocation here.
+  if (!needs_scratch_allocation || handles.scratch_data_size == 0) {
+    return Span<uint8_t>();
+  }
+
+  // Use temporary scratch when the PTE does not provide planned scratch.
+  MemoryAllocator* temp_allocator = context.get_temp_allocator();
+  if (temp_allocator == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+  void* scratch_data = temp_allocator->allocate(
+      handles.scratch_data_size, ETHOSU_SCRATCH_ALIGNMENT);
+  if (scratch_data == nullptr) {
+    ET_LOG(
+        Error,
+        "Failed to allocate scratch buffer of %zu bytes from temp_allocator",
+        handles.scratch_data_size);
+    return Error::MemoryAllocationFailed;
+  }
+
+  return Span<uint8_t>(
+      static_cast<uint8_t*>(scratch_data), handles.scratch_data_size);
+}
+
+} // namespace
+
 class EthosUBackend final : public ::executorch::runtime::BackendInterface {
  public:
   EthosUBackend() {}
@@ -332,23 +391,13 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    char* ethosu_scratch = nullptr;
-    if (needs_scratch_allocation()) {
-      MemoryAllocator* temp_allocator = context.get_temp_allocator();
-      // Use a temporary allocator for the intermediate tensors of the
-      // computation. The allocator is released in runtime/executor/method.cpp
-      // at the end of the execution of the Ethos-U custom delegate. Ethos-U
-      // driver requires 16 bit alignment.
-      ethosu_scratch = static_cast<char*>(
-          temp_allocator->allocate(handles.scratch_data_size, 16UL));
-      if (ethosu_scratch == nullptr) {
-        ET_LOG(
-            Error,
-            "Failed to allocate scratch buffer of %lu bytes from temp_allocator",
-            static_cast<printf_size_t>(handles.scratch_data_size));
-        return Error::MemoryAllocationFailed;
-      }
+    const bool needs_scratch = needs_scratch_allocation();
+    Result<Span<uint8_t>> scratch_result =
+        get_ethosu_scratch(context, handles, needs_scratch);
+    if (!scratch_result.ok()) {
+      return scratch_result.error();
     }
+    char* ethosu_scratch = reinterpret_cast<char*>(scratch_result->data());
 
     ET_LOG(
         Debug,
@@ -401,7 +450,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         return Error::InvalidProgram;
       }
 
-      if (needs_scratch_allocation()) {
+      if (needs_scratch) {
         // The offset comes from the (potentially malformed) delegate blob and
         // is used as a memcpy destination; reject anything that would write
         // outside the scratch buffer.
@@ -432,17 +481,19 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
 
         if (both_char || both_int || both_short || both_bool) {
           char* scratch_addr = ethosu_scratch + io_offset;
-          EXECUTORCH_PROF_SCOPE(
-              event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
-          // Sizes match and elt size matches so memcpy.
-          // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+          const char* input_data = tensor_in.const_data_ptr<char>();
+          if (scratch_addr != input_data) {
+            EXECUTORCH_PROF_SCOPE(
+                event_tracer,
+                "+EthosUBackend::execute()handles.input.memcpy()");
+            // Sizes match and elt size matches so memcpy.
+            // Routed through arm_ethos_io_memcpy so firmware can
+            // DMA-accelerate.
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
-          EthosUBackend_input_memcpy(tensor_in.nbytes());
+            EthosUBackend_input_memcpy(tensor_in.nbytes());
 #endif
-          arm_ethos_io_memcpy(
-              scratch_addr,
-              tensor_in.mutable_data_ptr<char>(),
-              tensor_in.nbytes());
+            arm_ethos_io_memcpy(scratch_addr, input_data, tensor_in.nbytes());
+          }
         } else {
           ET_LOG(Error, "No matching input copy routine");
           return Error::InvalidProgram;
