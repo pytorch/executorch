@@ -14,7 +14,9 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
 from executorch.backends.nxp.backend.ops_aliases import MulTensor
-from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.dataset_creators.synthetic_creators import (
+    RandomDatasetCreator,
+)
 from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier

@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 
-from executorch.backends.nxp.tests.dataset_creator import (
+from executorch.backends.nxp.tests.dataset_creators.real_dataset_creators import (
     FromCalibrationDataDatasetCreator,
 )
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
