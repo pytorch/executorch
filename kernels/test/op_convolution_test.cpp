@@ -643,6 +643,37 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
           out));
 }
 
+TEST_F(OpConvCorrectnessTest, InvalidBiasLength) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.ones({1, 2, 3, 3});
+  Tensor bias = tf.ones({1});
+
+  Tensor weight = tf.ones({4, 2, 2, 2});
+  Tensor out = tf.zeros({1, 4, 2, 2});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, weight, bias, {1}, {0}, {1}, false, {0}, 1, out));
+
+  Tensor transposed_weight = tf.ones({2, 4, 2, 2});
+  Tensor transposed_out = tf.zeros({1, 4, 4, 4});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          transposed_weight,
+          bias,
+          {1},
+          {0},
+          {1},
+          true,
+          {0},
+          1,
+          transposed_out));
+}
+
 TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
   TensorFactory<ScalarType::Float> tf;
 
