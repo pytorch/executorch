@@ -106,6 +106,7 @@ _AOTI_SHIM_SYMBOLS = (
     "aoti_torch_cuda_index_Tensor",
     "aoti_torch_index_put_out",
     "aoti_torch_cuda_scatter_reduce_two_out",
+    "aoti_torch_cuda_scatter_src_out",
 )
 
 _QUANTIZED_KERNEL_SYMBOLS = (
