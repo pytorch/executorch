@@ -31,7 +31,10 @@ from executorch.backends.qualcomm.builders.op_custom_op import (
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.builders.utils import is_parameter
-from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
+from executorch.backends.qualcomm.partition.qnn_partitioner import (
+    QnnOperatorSupport,
+    QnnPartitioner,
+)
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -187,6 +190,73 @@ class TestPasses(unittest.TestCase):
                     )
                 )
                 torch.testing.assert_close(gm(x), model(x))
+
+    def test_export_pipeline_keeps_node_names_unique(self):
+        # torch.export leaves the input name t_1 unrecorded, and renames q * 2
+        # to mul_1 to make room for the input mul without recording that
+        # either. The decompositions would otherwise reuse those names.
+        class Autocast(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(8, 8))
+
+            def forward(self, x, t_1):
+                with torch.autocast("cpu", dtype=torch.bfloat16):
+                    # The second transpose is named t_1 inside the region, and
+                    # the decomposition copies it next to the input t_1.
+                    y = x @ self.w.t() @ self.w.t()
+                return y.float() + t_1
+
+        class Attention(torch.nn.Module):
+            def forward(self, q, k, v, mul):
+                return (
+                    torch.nn.functional.scaled_dot_product_attention(q * 2, k, v) + mul
+                )
+
+        cases = (
+            (
+                Autocast(),
+                (torch.randn(4, 8), torch.randn(4, 8)),
+                torch._higher_order_ops.wrap.wrap_with_autocast,
+            ),
+            (
+                Attention(),
+                tuple(torch.randn(1, 2, 4, 8) for _ in range(4)),
+                torch.ops.aten.scaled_dot_product_attention.default,
+            ),
+        )
+        no_collision = []
+        for model, inputs, decomposed_op in cases:
+            with self.subTest(model=type(model).__name__):
+                ep = torch.export.export(model.eval(), inputs)
+                self.assertIn(decomposed_op, [n.target for n in ep.graph.nodes])
+                ep = get_qnn_pass_manager_cls()().transform_for_export_pipeline(ep)
+                self.assertNotIn(decomposed_op, [n.target for n in ep.graph.nodes])
+                # ep.module() copies the graph and renames duplicates, so lint
+                # the graph the passes produced.
+                ep.graph.lint()
+                torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+                ep = torch.export.export(model.eval(), inputs)
+                with patch(
+                    "executorch.backends.qualcomm._passes.qnn_pass_manager."
+                    "reserve_node_names"
+                ) as reserve:
+                    try:
+                        get_qnn_pass_manager_cls()().transform_for_export_pipeline(
+                            ep
+                        ).graph.lint()
+                    except Exception as e:
+                        # The pass manager wraps the lint error in its own.
+                        self.assertIn("Node redefined name", str(e.__cause__ or e))
+                    else:
+                        no_collision.append(type(model).__name__)
+                    reserve.assert_called_once()
+        # A skip, not a failure: a torch update that removes the collision is fine.
+        if no_collision:
+            self.skipTest(
+                f"{no_collision} no longer collide without reserve_node_names, so "
+                "those cases no longer test it"
+            )
 
     def test_build_op_wrappers_returns_context_binary(self):
         op_name = "ctx_loader_build"
@@ -946,16 +1016,19 @@ class TestPasses(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.register_buffer("table", torch.randn(4, 16))
+                self.register_buffer("weight", torch.randn(16, 16))
 
             def forward(self, x):
-                return x + torch.relu(self.table * 2 - 1)
+                table = torch.nn.functional.linear(self.table, self.weight)
+                return x + torch.relu(table * 2 - 1)
 
         sample_input = (torch.randn(4, 16),)
         compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=QcomChipset.SM8650,
             backend_options=generate_htp_compiler_spec(use_fp16=True),
         )
-        # With relu on CPU, table * 2 - 1 reads nothing at runtime.
+        # With relu on CPU, the branch before it reads nothing at runtime. It
+        # also holds linear, which QNN otherwise keeps from decomposing.
         try:
             edge = to_edge_transform_and_lower_to_qnn(
                 ConstantBranch().eval(),
@@ -967,7 +1040,85 @@ class TestPasses(unittest.TestCase):
             if "Failed to initialize QNN backend" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
             raise
+        top_level_ops = {
+            node.target
+            for node in edge.exported_program().graph.nodes
+            if node.op == "call_function"
+        }
+        self.assertIn(exir_ops.edge.aten.mul.Tensor, top_level_ops)
+        self.assertIn(exir_ops.edge.aten.sub.Tensor, top_level_ops)
+        self.assertNotIn(exir_ops.edge.aten.add.Tensor, top_level_ops)
+        self.assertNotIn(exir_ops.edge.aten.linear.default, top_level_ops)
+        self.assertIn(torch.ops.higher_order.executorch_call_delegate, top_level_ops)
         edge.to_executorch()
+
+    def test_htp_keeps_whole_only_ops_that_read_a_runtime_input(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.randn(4, 16))
+                self.register_buffer("weight", torch.randn(16, 16))
+                self.register_buffer(
+                    "qweight", torch.randint(-8, 8, (16, 32), dtype=torch.int8)
+                )
+                self.register_buffer("scales", torch.rand(16, 2) + 0.1)
+                self.register_buffer("zero_points", torch.zeros(16, 2).long())
+
+            def forward(self, x, y):
+                weight = torch.ops.quantized_decomposed.dequantize_per_channel_group(
+                    self.qweight,
+                    self.scales,
+                    self.zero_points,
+                    -8,
+                    7,
+                    torch.int8,
+                    16,
+                    torch.float32,
+                )
+                table = torch.nn.functional.linear(self.table, self.weight)
+                return torch.nn.functional.linear(x, self.weight) + table, (
+                    torch.nn.functional.linear(y, weight)
+                )
+
+        ep = torch.export.export(Model(), (torch.randn(4, 16), torch.randn(4, 32)))
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        _, keep_whole = QnnPartitioner(compiler_specs).ops_to_not_decompose(ep)
+        linears = {
+            node.args[0].name: node
+            for node in ep.graph.nodes
+            if node.target == torch.ops.aten.linear.default
+        }
+        placeholders = {b: p for p, b in ep.graph_signature.inputs_to_buffers.items()}
+        self.assertFalse(keep_whole(linears[placeholders["table"]]))
+        self.assertTrue(keep_whole(linears["x"]))
+        (dequantize,) = (
+            node
+            for node in ep.graph.nodes
+            if node.target
+            == torch.ops.quantized_decomposed.dequantize_per_channel_group.default
+        )
+        self.assertTrue(keep_whole(dequantize))
+        # After lowering, exir uses the filter to report a kept-whole op left
+        # on CPU, so there it must not let a constant-only one through.
+        edge = to_edge(
+            ep,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                preserve_ops=[torch.ops.aten.linear.default],
+            ),
+        ).exported_program()
+        _, keep_whole = QnnPartitioner(compiler_specs).ops_to_not_decompose(edge)
+        placeholders = {b: p for p, b in edge.graph_signature.inputs_to_buffers.items()}
+        (constant_linear,) = (
+            node
+            for node in edge.graph.nodes
+            if node.target == exir_ops.edge.aten.linear.default
+            and node.args[0].name == placeholders["table"]
+        )
+        self.assertTrue(keep_whole(constant_linear))
 
     def test_partitioner_falls_back_on_bfloat16(self):
         class Bf16Region(torch.nn.Module):

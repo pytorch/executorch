@@ -68,6 +68,15 @@ from .utils import (
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+
+def _is_runtime_input(
+    node: torch.fx.Node, edge_program: torch.export.ExportedProgram
+) -> bool:
+    return not is_parameter(node, edge_program) or is_mutable_buffer_input(
+        node, edge_program
+    )
+
+
 # dequantize ops with a CPU out variant; others cannot fall back
 CPU_DQ_OPS = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
@@ -319,17 +328,11 @@ class QnnPartitioner(Partitioner):
         only by constants once a CPU op splits it from the rest. Such a
         partition stays on CPU.
         """
-
-        def is_runtime_input(node: torch.fx.Node) -> bool:
-            return not is_parameter(node, edge_program) or is_mutable_buffer_input(
-                node, edge_program
-            )
-
         return [
             partition
             for partition in partitions
             if any(
-                is_runtime_input(arg)
+                _is_runtime_input(arg, edge_program)
                 for node in partition.nodes
                 for arg in node.all_input_nodes
                 if arg not in partition.nodes
@@ -396,7 +399,37 @@ class QnnPartitioner(Partitioner):
         """
         Determines which op should not be decomposed during partitioning.
         The list of operators is obtained from `get_skip_decomp_table()`.
-        The filter function (`filter_fn`) can be used to further refine which nodes are not decomposed. (advanced use case)
+        The filter is `filter_fn`. On HTP, ops that read only constants are also
+        decomposed, except quantize and dequantize ops.
         """
         do_not_decompose = get_skip_decomp_table()
-        return (do_not_decompose, filter_fn)
+        # On the lowered program this filter tells exir which kept-whole ops
+        # may stay on CPU, and none may, so it stays plain filter_fn there.
+        if self.backend != QnnExecuTorchBackendType.kHtpBackend or ep.dialect == "EDGE":
+            return (do_not_decompose, filter_fn)
+        # An op that reads only constants can end up in a partition that
+        # _drop_partitions_without_runtime_inputs keeps on CPU after
+        # decomposition, so every such op is decomposed. Partitions are not
+        # known yet, so this also decomposes ones whose partition stays
+        # delegated; folding constant-only subgraphs first would avoid that.
+        constant_only = set()
+        for node in ep.graph.nodes:
+            if node.op == "placeholder":
+                if not _is_runtime_input(node, ep):
+                    constant_only.add(node)
+            elif node.op == "call_function" and all(
+                arg in constant_only for arg in node.all_input_nodes
+            ):
+                constant_only.add(node)
+        # Quantize and dequantize ops stay whole: QNN builds weight encodings
+        # from them.
+        quant_ops = {
+            op
+            for op in do_not_decompose
+            if op.namespace in ("quantized_decomposed", "torchao")
+        }
+        return (
+            do_not_decompose,
+            lambda node: (node not in constant_only or node.target in quant_ops)
+            and filter_fn(node),
+        )
