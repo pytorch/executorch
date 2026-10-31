@@ -66,6 +66,7 @@ class Context final {
   vkapi::FencePool fences_;
   // Diagnostics
   vkapi::QueryPool querypool_;
+  bool shader_profiling_enabled_ = true;
   // Command buffers submission
   std::mutex cmd_mutex_;
   vkapi::CommandBuffer cmd_;
@@ -136,6 +137,13 @@ class Context final {
    * This function triggers the querypool to be created via vkCreateQueryPool.
    */
   void initialize_querypool();
+
+  void set_shader_profiling_enabled(bool enabled) {
+    // Call outside dispatch_lock(); mode changes wait for paired timestamp
+    // recording to finish under the command mutex.
+    std::lock_guard<std::mutex> cmd_lock(cmd_mutex_);
+    shader_profiling_enabled_ = enabled;
+  }
 
   /*
    * Encodes a vkResetQueryPool command to the current command buffer, and reset

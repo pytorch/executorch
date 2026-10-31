@@ -76,13 +76,15 @@ void Context::report_shader_dispatch_start(
     const GlobalWorkGrid& gwg,
     const LocalWorkGroup& lwg,
     const uint32_t dispatch_id) {
-  if (querypool_) {
+  // Dispatch encoding and mode changes hold cmd_mutex_, keeping this flag
+  // unchanged until the paired dispatch end.
+  if (querypool_ && shader_profiling_enabled_) {
     querypool_.shader_profile_begin(cmd_, dispatch_id, shader_name, gwg, lwg);
   }
 }
 
 void Context::report_shader_dispatch_end() {
-  if (querypool_) {
+  if (querypool_ && shader_profiling_enabled_) {
     querypool_.shader_profile_end(cmd_);
   }
 }
