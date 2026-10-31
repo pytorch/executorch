@@ -425,17 +425,6 @@ bool check_convolution_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, in.dim()));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, in.dim()));
 
-  if (bias.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
-    ET_CHECK_OR_RETURN_FALSE(
-        bias.value().size(0) ==
-            (transposed ? groups * weight.size(1) : weight.size(0)),
-        "bias length must equal number of output channels, but got %" ET_PRI_TENSOR_SIZE
-        "; expected %" PRId64,
-        bias.value().size(0),
-        transposed ? groups * weight.size(1) : weight.size(0));
-  }
-
   int64_t kernel_size[kTensorDimensionLimit];
   const size_t kernel_ndim = weight.dim() - 2;
   for (const auto i : c10::irange(kernel_ndim)) {
@@ -467,6 +456,17 @@ bool check_convolution_args(
       groups,
       groups,
       weight.size(0));
+
+  if (bias.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
+    ET_CHECK_OR_RETURN_FALSE(
+        bias.value().size(0) ==
+            (transposed ? groups * weight.size(1) : weight.size(0)),
+        "bias length must equal number of output channels, but got %" ET_PRI_TENSOR_SIZE
+        "; expected %" PRId64,
+        bias.value().size(0),
+        transposed ? groups * weight.size(1) : weight.size(0));
+  }
 
   if (!transposed) {
     ET_CHECK_OR_RETURN_FALSE(
