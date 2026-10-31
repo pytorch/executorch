@@ -750,6 +750,31 @@ TEST_F(OpConvCorrectnessTest, InvalidGroups) {
           transposed_out));
 }
 
+TEST_F(OpConvCorrectnessTest, KernelLargerThanPaddedInput) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // Depth dilation 2 stretches the kernel depth of 2 to 3.
+  Tensor input = tf.ones({1, 1, 2, 2, 2});
+  Tensor weight = tf.ones({1, 1, 2, 2, 2});
+  optional<Tensor> bias;
+  Tensor out = tf.zeros({1, 1, 1, 1, 1});
+  const int64_t stride[] = {2, 1, 1};
+  const int64_t dilation[] = {2, 1, 1};
+
+  // Padding makes the input depth 4, so the kernel fits.
+  const int64_t padding[] = {1, 0, 0};
+  op_convolution_out(
+      input, weight, bias, stride, padding, dilation, false, {0}, 1, out);
+  EXPECT_TENSOR_EQ(out, tf.full({1, 1, 1, 1, 1}, 4));
+
+  // Without padding the input depth of 2 is too small. Stride 2 must not round
+  // the output depth up to 1.
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, weight, bias, stride, {0}, dilation, false, {0}, 1, out));
+}
+
 TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
   TensorFactory<ScalarType::Float> tf;
 
