@@ -52,8 +52,9 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_index_Tensor(
  * index that is a mask, for accumulation into a dtype its generated code
  * cannot add atomically, and in deterministic mode. Writes that land on the
  * same element are applied in index order, and half and bfloat16 values are
- * summed in float, so the result is deterministic and small terms are not
- * lost. A mask makes this call wait for the stream. Indices are checked as
+ * summed in float, so the result is deterministic and less is lost to
+ * rounding, though a term far smaller than the running sum can still vanish.
+ * A mask makes this call wait for the stream. Indices are checked as
  * for aoti_torch_cuda_index_Tensor.
  *
  * @param out Tensor to write (CUDA device, up to 16 dims, as for
