@@ -562,6 +562,22 @@ TEST_F(OpDivOutTest, DISABLED_DynamicShapeUnbound) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
+TEST_F(OpDivOutTest, TruncModeKeepsInt64Precision) {
+  TensorFactory<ScalarType::Long> tf;
+  // Values above 2^53, which a double cannot hold exactly.
+  Tensor a = tf.make(
+      {3},
+      {(int64_t{1} << 62) + 3, -((int64_t{1} << 62) + 3), 9007199254740993});
+  Tensor b = tf.make({3}, {3, 3, 1});
+  Tensor out = tf.zeros({3});
+
+  torch::executor::aten::div_outf(context_, a, b, "trunc", out);
+  EXPECT_TENSOR_EQ(
+      out,
+      tf.make(
+          {3}, {1537228672809129302, -1537228672809129302, 9007199254740993}));
+}
+
 TEST_F(OpDivScalarOutTest, SanityCheckIntScalar) {
   TensorFactory<ScalarType::Int> tf_a;
   TensorFactory<ScalarType::Float> tf_out;
@@ -588,6 +604,39 @@ TEST_F(OpDivScalarOutTest, SanityCheckFloatScalar) {
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.5, 1.0, 2.0, -4.5}));
+}
+
+TEST_F(OpDivScalarOutTest, TruncModeKeepsInt64Precision) {
+  TensorFactory<ScalarType::Long> tf;
+  // Values above 2^53, which a double cannot hold exactly.
+  Tensor a = tf.make(
+      {3},
+      {(int64_t{1} << 62) + 3, -((int64_t{1} << 62) + 3), 9007199254740993});
+  Tensor out = tf.zeros({3});
+
+  torch::executor::aten::div_outf(context_, a, Scalar(3), "trunc", out);
+  EXPECT_TENSOR_EQ(
+      out,
+      tf.make(
+          {3}, {1537228672809129302, -1537228672809129302, 3002399751580331}));
+}
+
+TEST_F(OpDivScalarOutTest, ModeIntegerScalarIsCastToTensorDtype) {
+  TensorFactory<ScalarType::Char> tf;
+  Tensor a = tf.make({3}, {5, -7, 100});
+  Tensor out = tf.zeros({3});
+
+  // Like ATen, the scalar takes the tensor's dtype: 255 is -1 as int8.
+  torch::executor::aten::div_outf(context_, a, Scalar(255), "trunc", out);
+  EXPECT_TENSOR_EQ(out, tf.make({3}, {-5, 7, -100}));
+
+  // 256 is 0 as int8.
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      torch::executor::aten::div_outf(context_, a, Scalar(256), "trunc", out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      torch::executor::aten::div_outf(context_, a, Scalar(256), "floor", out));
 }
 
 TEST_F(OpDivScalarOutTest, OptimizedSanityCheck) {
