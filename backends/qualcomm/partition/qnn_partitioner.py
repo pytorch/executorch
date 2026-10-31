@@ -399,14 +399,17 @@ class QnnPartitioner(Partitioner):
         """
         Determines which op should not be decomposed during partitioning.
         The list of operators is obtained from `get_skip_decomp_table()`.
-        The filter function (`filter_fn`) can be used to further refine which nodes are not decomposed. (advanced use case)
+        The filter refines which nodes are not decomposed: `filter_fn`, and on
+        HTP it also leaves out ops that read only constants.
         """
         do_not_decompose = get_skip_decomp_table()
         if self.backend != QnnExecuTorchBackendType.kHtpBackend:
             return (do_not_decompose, filter_fn)
         # An op that reads only constants can end up in a partition that
-        # _drop_partitions_without_runtime_inputs keeps on CPU, so it must be
-        # decomposed like any other CPU op.
+        # _drop_partitions_without_runtime_inputs keeps on CPU after
+        # decomposition, so every such op is decomposed. Partitions are not
+        # known yet, so this also decomposes ones whose partition stays
+        # delegated; folding constant-only subgraphs first would avoid that.
         constant_only = set()
         for node in ep.graph.nodes:
             if node.op == "placeholder":
