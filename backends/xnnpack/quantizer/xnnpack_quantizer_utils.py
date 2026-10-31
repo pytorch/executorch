@@ -241,8 +241,7 @@ def _annotate_linear_relu(
 
 
 def _is_1d_or_2d_conv(weight: Node) -> bool:
-    # XNNPACK runs no other convs, and the weight rank is the only reliable
-    # indicator of the conv dimensionality.
+    # XNNPACK runs no other convs.
     weight_shape = getattr(weight.meta.get("val"), "shape", None)
     return weight_shape is None or len(weight_shape) <= 4
 
