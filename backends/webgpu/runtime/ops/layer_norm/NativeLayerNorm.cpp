@@ -13,9 +13,11 @@
 
 #include <webgpu/webgpu.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 namespace executorch::backends::webgpu {
 
@@ -30,6 +32,59 @@ struct LayerNormParams {
 static_assert(
     sizeof(LayerNormParams) == 16,
     "LayerNormParams must be 16 bytes");
+
+// What the resize hook needs to re-derive the row count, the uniform, and the
+// workgroup grid for a live input shape.
+struct LayerNormResizeState {
+  int in_id;
+  int out_id;
+  int mean_id;
+  int rstd_id;
+  uint32_t row_width;
+  uint32_t max_rows;
+  uint32_t stride_x;
+  float epsilon;
+  uint32_t has_affine;
+  size_t dispatch_idx;
+  WGPUBuffer params_buf;
+};
+
+// Normalization is over the last dim only, so mean/rstd keep every leading dim
+// and have size 1 in the last one.
+std::vector<int64_t> layer_norm_stat_dims(const std::vector<int64_t>& in_dims) {
+  std::vector<int64_t> stat_dims = in_dims;
+  stat_dims.back() = 1;
+  return stat_dims;
+}
+
+// The row grid keeps the stride_x baked into the pipeline at build time (the
+// max row count); fewer live rows only shrink count_x/count_y, and the shader
+// already skips row_idx >= num_rows.
+void resize_native_layer_norm(WebGPUGraph& g, const LayerNormResizeState& s) {
+  const auto& d = g.cur_dims(s.in_id);
+  if (d.empty() || d.back() != static_cast<int64_t>(s.row_width)) {
+    throw std::runtime_error(
+        "WebGPU native_layer_norm(resize): normalized dim changed");
+  }
+  const uint64_t rows = utils::numel_of(d) / s.row_width;
+  if (rows == 0 || rows > s.max_rows) {
+    throw std::runtime_error(
+        "WebGPU native_layer_norm(resize): row count out of range");
+  }
+  LayerNormParams p = {};
+  p.num_rows = static_cast<uint32_t>(rows);
+  p.row_width = s.row_width;
+  p.epsilon = s.epsilon;
+  p.has_affine = s.has_affine;
+  wgpuQueueWriteBuffer(g.queue(), s.params_buf, 0, &p, sizeof(p));
+  auto& dispatch = g.dispatch_at(s.dispatch_idx);
+  dispatch.workgroup_count_x = std::min(p.num_rows, s.stride_x);
+  dispatch.workgroup_count_y = utils::div_up(p.num_rows, s.stride_x);
+  g.set_cur_dims(s.out_id, d);
+  const std::vector<int64_t> stat_dims = layer_norm_stat_dims(d);
+  g.set_cur_dims(s.mean_id, stat_dims);
+  g.set_cur_dims(s.rstd_id, stat_dims);
+}
 
 // aten.native_layer_norm.default args: [in, normalized_shape, weight, bias,
 // eps, out] where out is a ValueList [out, mean, rstd] (mirrors Vulkan
@@ -82,6 +137,18 @@ void native_layer_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("WebGPU native_layer_norm: zero rows");
   }
 
+  // The kernel normalizes over the last dim only, so a multi-dim
+  // normalized_shape (whose mean/rstd drop more than the last dim) is rejected.
+  const auto& out_tensor = graph.get_tensor(out_id);
+  const auto& mean_tensor = graph.get_tensor(mean_id);
+  const auto& rstd_tensor = graph.get_tensor(rstd_id);
+  if (mean_tensor.dims != layer_norm_stat_dims(in_tensor.dims) ||
+      rstd_tensor.dims != mean_tensor.dims) {
+    throw std::runtime_error(
+        "WebGPU native_layer_norm: mean/rstd must be the input shape with a "
+        "size-1 last dim");
+  }
+
   // Near-square 2D grid of workgroups (1 workgroup = 1 row) past the 65535
   // per-dimension ceiling; stride_x lets the shader decode a flat row index
   // as workgroup_id.y * stride_x + workgroup_id.x.
@@ -101,13 +168,8 @@ void native_layer_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   params.epsilon = epsilon;
   params.has_affine = has_affine ? 1u : 0u;
 
-  WGPUBuffer uniform_buffer =
-      utils::make_uniform(device, &params, sizeof(LayerNormParams));
-  graph.add_uniform_buffer_bytes(sizeof(LayerNormParams));
-
-  const auto& out_tensor = graph.get_tensor(out_id);
-  const auto& mean_tensor = graph.get_tensor(mean_id);
-  const auto& rstd_tensor = graph.get_tensor(rstd_id);
+  // Graph-owned so the resize hook can rewrite it; freed in the dtor.
+  WGPUBuffer uniform_buffer = graph.create_params_buffer(params);
 
   utils::OptionalBinding weight = utils::make_optional_binding(
       device,
@@ -162,10 +224,25 @@ void native_layer_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   static_assert(
       kNativeLayerNormWorkgroupSizeX == 64,
       "must match @workgroup_size and WG_SIZE in native_layer_norm.wgsl");
-  graph.add_dispatch_2d(
+  const size_t dispatch_idx = graph.add_dispatch_2d(
       bundle.pipeline, bundle.bind_group, grid.count_x, grid.count_y);
 
-  wgpuBufferRelease(uniform_buffer);
+  const LayerNormResizeState resize_state = {
+      in_id,
+      out_id,
+      mean_id,
+      rstd_id,
+      row_width,
+      num_rows,
+      grid.stride_x,
+      epsilon,
+      params.has_affine,
+      dispatch_idx,
+      uniform_buffer};
+  graph.add_tensor_resize_hook(in_id, [resize_state](WebGPUGraph& g) {
+    resize_native_layer_norm(g, resize_state);
+  });
+
   if (weight.owned_dummy != nullptr) {
     wgpuBufferRelease(weight.owned_dummy);
   }

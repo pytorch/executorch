@@ -96,10 +96,8 @@ void reduce_impl(
   const auto& in = graph.get_tensor(in_id);
   const auto& out = graph.get_tensor(out_id);
 
-  bool keepdim = false;
-  if (graph.get_value_type(keepdim_id) == WebGPUGraph::ValueType::Int) {
-    keepdim = graph.get_int(keepdim_id) != 0;
-  }
+  const bool keepdim =
+      utils::get_bool_or_int(graph, keepdim_id, "WebGPU reduce: keepdim");
 
   if (in.dims.empty()) {
     throw std::runtime_error("WebGPU reduce: scalar input unsupported");
@@ -118,6 +116,12 @@ void reduce_impl(
   decompose_dims(in.dims, reduce_dims, outer, r, inner);
   if (outer == 0 || r == 0 || inner == 0) {
     throw std::runtime_error("WebGPU reduce: zero-sized reduction");
+  }
+  const size_t expected_out_rank =
+      keepdim ? in.dims.size() : in.dims.size() - reduce_dims.size();
+  if (out.dims.size() != expected_out_rank) {
+    throw std::runtime_error(
+        "WebGPU reduce: output rank does not match keepdim");
   }
 
   uint64_t in_numel = 1;

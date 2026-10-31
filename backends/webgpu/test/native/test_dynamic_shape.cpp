@@ -20,6 +20,7 @@
 //   M  dyn_sigmoid   N dyn_select (select_copy(0,-1), dynamic S)
 //   O  ONE dyn_conv1d graph reused across live input lengths
 //   P  ONE dyn_gelu graph reused above -> at -> above the old 1D dispatch cap
+//   Q  dyn_layer_norm(_rows)   R dyn_mean_keepdim (reused graphs)
 // .pte + goldens from test/ops/dynamic_shape/test_dynamic_shape_export.py.
 //
 // Artifacts dir: $WEBGPU_DYNAMIC_SHAPE_DIR, else argv[1], else
@@ -128,6 +129,55 @@ void check_s(Module& m, const std::string& prefix, int s) {
   EXPECT_LT(e, 1e-3f) << prefix << " S=" << s << " max_err=" << e
                       << " (got.size=" << got.size()
                       << " golden.size=" << golden.size() << ")";
+}
+
+void expect_output(
+    const executorch::aten::Tensor& out,
+    const std::vector<int64_t>& expected_sizes,
+    const std::string& golden_path,
+    float tol,
+    const std::string& label) {
+  const std::vector<int64_t> sizes(out.sizes().begin(), out.sizes().end());
+  ASSERT_EQ(sizes, expected_sizes) << label << " output shape";
+  const float* d = out.const_data_ptr<float>();
+  const std::vector<float> got(d, d + out.numel());
+  const float e = max_err(got, read_bin(golden_path));
+  EXPECT_LT(e, tol) << label << " max_err=" << e;
+}
+
+// Runs <prefix>.S<s>.input.bin through `m` and checks every output's shape and
+// values against <prefix>.S<s>.golden<i>.bin.
+void check_outputs(
+    Module& m,
+    const std::string& prefix,
+    int s,
+    const std::vector<int64_t>& in_shape,
+    const std::vector<std::vector<int64_t>>& out_shapes,
+    float tol) {
+  const std::string base =
+      g_dir + "/" + prefix + ".S" + std::to_string(s) + ".";
+  const std::string label = prefix + " S=" + std::to_string(s);
+  auto input = read_bin(base + "input.bin");
+  size_t numel = 1;
+  for (int64_t d : in_shape) {
+    numel *= static_cast<size_t>(d);
+  }
+  ASSERT_EQ(input.size(), numel) << label << " input size";
+  std::vector<executorch::aten::SizesType> sizes(
+      in_shape.begin(), in_shape.end());
+  auto t = make_tensor_ptr(sizes, std::move(input));
+  auto r = m.forward({EValue(t)});
+  ASSERT_TRUE(r.ok()) << label << " forward failed";
+  ASSERT_EQ(r.get().size(), out_shapes.size()) << label << " output count";
+  for (size_t i = 0; i < out_shapes.size(); ++i) {
+    ASSERT_TRUE(r.get()[i].isTensor()) << label << " output " << i;
+    expect_output(
+        r.get()[i].toTensor(),
+        out_shapes[i],
+        base + "golden" + std::to_string(i) + ".bin",
+        tol,
+        label + " output " + std::to_string(i));
+  }
 }
 
 constexpr int kConv1dInChannels = 3;
@@ -1847,6 +1897,57 @@ TEST(DynamicShape, SigmoidReusedGraph) {
   ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_sigmoid.pte";
   for (int s : {128, 32, 1, 128}) {
     check_s(m, "dyn_sigmoid", s);
+  }
+}
+
+// Q: native_layer_norm (out + x, mean, rstd) on ONE loaded graph built at
+// S = 128, run at S = 7 -> 1 -> 125 -> 128 -> 7. Without a resize hook its
+// outputs stay at S = 128 and the add fails to resize.
+TEST(DynamicShape, LayerNormReusedGraph) {
+  Module m(g_dir + "/dyn_layer_norm.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_layer_norm.pte";
+  for (int s : {7, 1, 125, 128, 7}) {
+    check_outputs(
+        m,
+        "dyn_layer_norm",
+        s,
+        {1, 1, s, kHidden},
+        {{1, 1, s, kHidden}, {1, 1, s, 1}, {1, 1, s, 1}},
+        1e-4f);
+  }
+}
+
+// Q2: native_layer_norm built at 70000 rows (a 2D row grid past the 65535
+// limit), run at 1000 -> 1 -> 70000 -> 1000 rows on ONE loaded graph.
+TEST(DynamicShape, LayerNormRowGridReusedGraph) {
+  Module m(g_dir + "/dyn_layer_norm_rows.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_layer_norm_rows.pte";
+  for (int s : {1000, 1, 70000, 1000}) {
+    check_outputs(
+        m,
+        "dyn_layer_norm_rows",
+        s,
+        {1, s, 4},
+        {{1, s, 4}, {1, s, 1}, {1, s, 1}},
+        1e-4f);
+  }
+}
+
+// R: mean.dim(keepdim=True) over the hidden dim ([1,1,S,1]) and the dynamic S
+// dim ([1,1,1,kHidden]), x - mean(x, -1, keepdim=True), and a keepdim=False
+// mean ([1,1,S]) on ONE loaded graph. keepdim is serialized as a Bool, so a
+// resize that ignored it would drop the kept dim.
+TEST(DynamicShape, MeanKeepdimReusedGraph) {
+  Module m(g_dir + "/dyn_mean_keepdim.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_mean_keepdim.pte";
+  for (int s : {7, 1, 125, 128, 7}) {
+    check_outputs(
+        m,
+        "dyn_mean_keepdim",
+        s,
+        {1, 1, s, kHidden},
+        {{1, 1, s, 1}, {1, 1, 1, kHidden}, {1, 1, s, kHidden}, {1, 1, s}},
+        1e-5f);
   }
 }
 
