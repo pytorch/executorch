@@ -23,6 +23,7 @@ import os
 import tempfile
 import unittest
 from typing import Optional
+from unittest.mock import patch
 
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -167,10 +168,16 @@ class TestMissingWeightsBlob(unittest.TestCase):
             # exception carries only the method name and the error number, so the
             # cause is asserted through the rewrite check above rather than here.
             program = Runtime.get().load_program(path)
-            with self.assertRaisesRegex(
-                RuntimeError, r"Failed to load method forward, error: 0x:?20"
+            # The failed load leaves no handle to destroy, so it has to remove the
+            # library it wrote itself. An empty temporary directory shows that.
+            with tempfile.TemporaryDirectory() as tmp, patch.dict(
+                os.environ, {"TMPDIR": tmp}
             ):
-                program.load_method("forward")
+                with self.assertRaisesRegex(
+                    RuntimeError, r"Failed to load method forward, error: 0x:?20"
+                ):
+                    program.load_method("forward")
+                self.assertEqual(os.listdir(tmp), [])
 
     def test_load_fails_with_another_programs_blob(self) -> None:
         from executorch.runtime import Runtime
