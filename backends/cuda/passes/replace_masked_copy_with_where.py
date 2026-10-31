@@ -32,7 +32,6 @@ from torch.utils._sympy.value_ranges import bound_sympy, ValueRanges
 
 _INDEX = exir_ops.edge.aten.index.Tensor
 _INDEX_PUT = exir_ops.edge.aten.index_put.default
-_SYM_SIZE = torch.ops.aten.sym_size.int
 _ASSERT_SCALAR = torch.ops.aten._assert_scalar.default
 
 
@@ -164,8 +163,8 @@ class ReplaceMaskedCopyWithWherePass(PassBase):
     ) -> Optional[List[Node]]:
         """
         The index and everything that reads it, in graph order, if all that
-        reads it is a check that its count, its size at ``position``, is in
-        [0, mask.numel()], else None.
+        reads it is symbolic math on its sizes and checks that hold for every
+        count, its size at ``position``, in [0, mask.numel()], else None.
         """
         count = index.meta["val"].shape[position]
         if not isinstance(count, torch.SymInt):
@@ -193,8 +192,6 @@ class ReplaceMaskedCopyWithWherePass(PassBase):
                 bounds = bound_sympy(expr, {count.node.expr: within})
                 if not (bounds.is_singleton() and bounds.lower == sympy.true):
                     return None
-            elif user.target == _SYM_SIZE and user.args[0] is index:
-                pass
             # Computing a symbolic value has no effect of its own, and its
             # readers are visited in turn.
             elif not isinstance(user.meta.get("val"), (torch.SymInt, torch.SymBool)):
