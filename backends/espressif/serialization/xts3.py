@@ -11,10 +11,12 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 from enum import IntEnum
-from math import frexp, prod
+from math import prod
 
 import torch
-
+from executorch.backends.espressif.utils.quantization import (
+    quantize_multiplier as _quantize_multiplier,
+)
 
 MAGIC = b"XTS3"
 XTS3_VERSION = 6
@@ -827,25 +829,6 @@ def _is_relu6(node) -> bool:
         return False
 
     return minimum == 0.0 and maximum == 6.0
-
-
-def _quantize_multiplier(real_multiplier: float) -> tuple[int, int]:
-    if not real_multiplier > 0.0:
-        raise ValueError(
-            f"Quantized multiplier must be positive, got {real_multiplier}"
-        )
-    significand, exponent = frexp(real_multiplier)
-    multiplier = round(significand * (1 << 31))
-    if multiplier == (1 << 31):
-        multiplier >>= 1
-        exponent += 1
-    if multiplier > 0x7FFFFFFF:
-        multiplier = 0x7FFFFFFF
-    if exponent < -31 or exponent > 30:
-        raise ValueError(
-            f"Requantization multiplier {real_multiplier} is outside the ESP-NN shift range"
-        )
-    return int(multiplier), int(exponent)
 
 
 def _quantize_multiplier_smaller_than_one(real_multiplier: float) -> tuple[int, int]:

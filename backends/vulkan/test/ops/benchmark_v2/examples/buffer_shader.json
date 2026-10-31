@@ -1,0 +1,29 @@
+{
+  "shader": "buffer_to_buffer_float",
+  "gwg_size": "default_pick_gwg",
+  "lwg_size": "default_pick_lwg",
+  "target_ms": 10,
+  "benchmark_runs": 5,
+  "bindings": [
+    {
+      "buffer": {
+        "name": "output",
+        "sizes": [8],
+        "access": "write",
+        "data": {"fill": 0}
+      }
+    },
+    {
+      "buffer": {
+        "name": "input",
+        "sizes": [8],
+        "data": {"rand_uniform_float": [-1, 1]}
+      }
+    },
+    {
+      "meta_ubo": "output",
+      "field": "numel"
+    }
+  ],
+  "outputs": ["output"]
+}

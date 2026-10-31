@@ -27,7 +27,12 @@ jobs:
     uses: ./.github/workflows/_docker-image.yml
 
   test-esp32s3:
+    name: ESP32-S3 (${{ matrix.kernels }})
     needs: docker-image
+    strategy:
+      fail-fast: false
+      matrix:
+        kernels: [optimized, ansi]
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
@@ -38,11 +43,11 @@ jobs:
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 45
-      upload-artifact: test-report-esp32s3
+      upload-artifact: test-report-esp32s3-${{ matrix.kernels }}
       script: |
         set -euo pipefail
         CONDA_ENV=$(conda env list --json | jq -r '.envs | .[-1]')
         conda activate "${CONDA_ENV}"
         source .ci/scripts/utils.sh
         install_executorch --use-pt-pinned-commit --minimal
-        bash .ci/scripts/test_espressif.sh
+        ESPRESSIF_NN_KERNELS="${{ matrix.kernels }}" bash .ci/scripts/test_espressif.sh

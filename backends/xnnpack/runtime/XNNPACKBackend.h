@@ -19,6 +19,13 @@ const char workspace_sharing_mode_option_key[] = "workspace_sharing_mode";
 // across delegate instances. Changes only affect subsequently loaded models.
 const char weight_cache_option_key[] = "weight_cache_enabled";
 
+/// The key for disabling packed-LHS graph rewrites. When enabled, XNNPACK
+/// preserves explicit dynamic-quantization nodes instead of folding them into
+/// packed-LHS consumers.
+// Must remain a C array for the BackendOptions template overloads.
+// @lint-ignore CLANGTIDY facebook-hte-CArray
+const char disable_packed_lhs_option_key[] = "disable_packed_lhs";
+
 /// Path for the packed weight file. When set, reserve_space() allocates from
 /// a MAP_SHARED file instead of heap; msync makes pages clean on iOS.
 // Must remain a C array (not const char*) so it can bind to the

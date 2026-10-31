@@ -7,6 +7,7 @@
  */
 
 #include <algorithm>
+#include <atomic>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
@@ -35,6 +36,9 @@
 #include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/pybindings/pybindings_cuda.h>
+#ifdef EXECUTORCH_PYBINDINGS_CUDA
+#include <executorch/extension/cuda/caller_stream.h>
+#endif
 #include <executorch/extension/pybindings/pybindings_data_loader.h>
 #include <executorch/extension/pybindings/pybindings_dlpack.h>
 #include <executorch/extension/pybindings/pybindings_executorch_result.h>
@@ -1688,6 +1692,267 @@ void synchronize_tensor_devices(const Method& method) {
     synchronize_device(index);
   }
 }
+
+#ifdef EXECUTORCH_PYBINDINGS_CUDA
+// A stream made by executorch.runtime.cuda.Stream. Selection and destruction
+// share one lock, so no thread can destroy it while any thread has it selected.
+class PyCudaStream final {
+ public:
+  explicit PyCudaStream(int device) {
+    const auto create = [this] {
+      auto status = cudaGetDevice(&device_);
+      if (status == cudaSuccess) {
+        status = cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking);
+      }
+      if (status != cudaSuccess) {
+        throw std::runtime_error(
+            std::string("Failed to create a CUDA stream: ") +
+            cudaGetErrorString(status));
+      }
+    };
+    device < 0 ? create() : with_cuda_device(device, create);
+  }
+
+  ~PyCudaStream() {
+    try {
+      close();
+    } catch (const std::exception&) {
+    }
+  }
+
+  uintptr_t handle() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return reinterpret_cast<uintptr_t>(stream_);
+  }
+
+  int device() const {
+    return device_;
+  }
+
+  cudaStream_t select() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (stream_ == nullptr) {
+      throw std::runtime_error("This CUDA stream is closed");
+    }
+    // The CUDA delegate installs a caller stream for device 0 only.
+    if (device_ != 0) {
+      throw std::runtime_error(
+          "Only a stream on CUDA device 0 can be selected for now");
+    }
+    ++selected_;
+    return stream_;
+  }
+
+  void deselect() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    --selected_;
+  }
+
+  void close() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (selected_ != 0) {
+      throw std::runtime_error(
+          "Cannot close a CUDA stream while it is selected");
+    }
+    if (stream_ != nullptr) {
+      // A stream is destroyed on its own device, which another thread may not
+      // have current.
+      const auto status = with_cuda_device(
+          device_, [this] { return cudaStreamDestroy(stream_); });
+      if (status != cudaSuccess) {
+        throw std::runtime_error(
+            std::string("Failed to destroy a CUDA stream: ") +
+            cudaGetErrorString(status));
+      }
+      stream_ = nullptr;
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  cudaStream_t stream_ = nullptr;
+  int device_ = 0;
+  int selected_ = 0;
+};
+
+// A thread's active stream scopes, innermost last. They live here rather than
+// in the scope objects, so a scope that ends out of order, or is dropped on
+// another thread, never restores the wrong selection.
+struct CallerStreamScopes {
+  struct Entry {
+    uint64_t id;
+    std::shared_ptr<PyCudaStream> owner;
+    std::unique_ptr<executorch::extension::cuda::CallerStreamGuard> guard;
+    // Refused or abandoned; ends as soon as every scope above it has ended.
+    bool retired = false;
+  };
+  std::vector<Entry> active;
+
+  // A guard restores the selection it replaced, so scopes end innermost first.
+  void pop_finished() {
+    do {
+      Entry entry = std::move(active.back());
+      active.pop_back();
+      entry.guard.reset();
+      if (entry.owner) {
+        entry.owner->deselect();
+      }
+    } while (!active.empty() && active.back().retired);
+  }
+
+  ~CallerStreamScopes() {
+    for (auto& entry : active) {
+      entry.retired = true;
+    }
+    if (!active.empty()) {
+      pop_finished();
+    }
+  }
+};
+thread_local CallerStreamScopes caller_stream_scopes;
+
+// Selects a CUDA stream for the delegates of a Python with-block. Scopes are
+// told apart by a number that is never reused, unlike a guard's address.
+class PyCallerStreamScope final {
+ public:
+  explicit PyCallerStreamScope(std::shared_ptr<PyCudaStream> owner)
+      : owner_(std::move(owner)) {}
+  explicit PyCallerStreamScope(uintptr_t stream)
+      : stream_(reinterpret_cast<cudaStream_t>(stream)) {
+    // 0 and cudaStreamLegacy (1) both name the legacy default stream, which
+    // waits for every blocking stream, so selecting it would defeat the point
+    // of choosing a stream. The CUDA delegate also refuses a null stream.
+    if (stream == 0 || stream == 1) {
+      throw std::invalid_argument(
+          "The legacy default CUDA stream (handle 0 or 1) cannot be selected; "
+          "select a stream created for this, such as cuda.Stream()");
+    }
+  }
+
+  // Losing the scope on the thread that entered it ends it at once, or when
+  // the blocks started after it end. Another thread cannot change the
+  // entering thread's selection, which then lasts until that thread ends.
+  // home_ is compared, never dereferenced: the entering thread may have ended.
+  ~PyCallerStreamScope() {
+    if (id_ != 0 && home_ == &caller_stream_scopes) {
+      end(/*refuse_out_of_order=*/false);
+    }
+  }
+
+  // Whether enter() can check the device of a stream it did not create. Fixed
+  // when the bindings are built; see stream_device().
+  static constexpr bool kCanCheckDevice =
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 13000
+      true;
+#else
+      false;
+#endif
+
+  void enter() {
+    static std::atomic<uint64_t> next_id{1};
+    if (id_ != 0) {
+      throw std::runtime_error(
+          "This CUDA stream scope was entered and has not exited");
+    }
+    int device = 0;
+    if (!owner_ && stream_device(stream_, &device) && device != 0) {
+      throw std::runtime_error(
+          "Only a stream on CUDA device 0 can be selected for now");
+    }
+    const cudaStream_t stream = owner_ ? owner_->select() : stream_;
+    try {
+      auto guard =
+          std::make_unique<executorch::extension::cuda::CallerStreamGuard>(
+              stream);
+      const uint64_t id = next_id++;
+      caller_stream_scopes.active.push_back({id, owner_, std::move(guard)});
+      id_ = id;
+      home_ = &caller_stream_scopes;
+    } catch (...) {
+      if (owner_) {
+        owner_->deselect();
+      }
+      throw;
+    }
+  }
+
+  void exit() {
+    if (id_ == 0) {
+      return;
+    }
+    if (home_ != &caller_stream_scopes) {
+      throw std::runtime_error(
+          "This CUDA stream scope was entered on another thread");
+    }
+    end(/*refuse_out_of_order=*/true);
+  }
+
+ private:
+  // Asks CUDA for the device of a stream rather than trusting the device a
+  // wrapper reports. Returns false when it cannot ask: in a CUDA 12 build, or
+  // while the stream captures a CUDA graph.
+  static bool stream_device(cudaStream_t stream, int* device) {
+    // cudaStreamGetDevice came in CUDA 12.8, but a CUDA 12 build may load any
+    // CUDA 12 runtime, where a missing symbol would fail the import. Every
+    // CUDA 13 runtime has it, and runs only on a driver that supports it.
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 13000
+    // CUDA refuses cudaStreamGetDevice on a capturing stream, and the refusal
+    // also ends the caller's capture.
+    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+    auto status = cudaStreamIsCapturing(stream, &capture);
+    if (status == cudaSuccess && capture != cudaStreamCaptureStatusNone) {
+      return false;
+    }
+    if (status == cudaSuccess) {
+      status = cudaStreamGetDevice(stream, device);
+    }
+    if (status != cudaSuccess) {
+      // A failed call leaves an error pending that the next CUDA call, even
+      // in another library, would report.
+      (void)cudaGetLastError();
+      throw std::runtime_error(
+          std::string("Failed to find the device of a CUDA stream: ") +
+          cudaGetErrorString(status));
+    }
+    return true;
+#else
+    (void)stream;
+    (void)device;
+    return false;
+#endif
+  }
+
+  void end(bool refuse_out_of_order) {
+    auto& scopes = caller_stream_scopes;
+    const auto it = std::find_if(
+        scopes.active.begin(), scopes.active.end(), [this](const auto& e) {
+          return e.id == id_;
+        });
+    if (it == scopes.active.end()) {
+      id_ = 0; // Ended with the thread that entered it.
+      return;
+    }
+    if (it + 1 != scopes.active.end()) {
+      // Ends with the scopes above it, so this object can be entered again.
+      it->retired = true;
+      id_ = 0;
+      if (refuse_out_of_order) {
+        throw std::runtime_error(
+            "CUDA stream scopes must end innermost first; this one ends "
+            "when the scopes started after it end");
+      }
+      return;
+    }
+    scopes.pop_finished();
+    id_ = 0;
+  }
+
+  std::shared_ptr<PyCudaStream> owner_;
+  cudaStream_t stream_ = nullptr;
+  uint64_t id_ = 0;
+  const CallerStreamScopes* home_ = nullptr;
+};
+#endif
 
 py::object portable_tensor_result(
     const executorch::aten::Tensor& tensor,
@@ -4631,6 +4896,33 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   // scoped_ostream_redirect, which mutates process-wide stream buffers and is
   // not thread-safe when Python operations inside a binding release the GIL.
   auto call_guard = py::call_guard<RuntimeErrorScope>();
+
+#if defined(EXECUTORCH_PYBINDINGS_CUDA) && !defined(USE_ATEN_LIB)
+  // Back executorch.runtime.cuda, which keeps the runtime free of PyTorch.
+  py::class_<PyCudaStream, std::shared_ptr<PyCudaStream>>(
+      m, "_CudaStream", py::module_local())
+      .def(py::init<int>(), py::arg("device"))
+      .def_property_readonly("handle", &PyCudaStream::handle)
+      .def_property_readonly("device", &PyCudaStream::device)
+      .def("close", &PyCudaStream::close);
+  py::class_<PyCallerStreamScope>(m, "_CallerStreamScope", py::module_local())
+      .def(
+          py::init<std::shared_ptr<PyCudaStream>>(),
+          py::arg("stream").none(false))
+      .def(py::init<uintptr_t>(), py::arg("stream"))
+      .def_property_readonly_static(
+          "can_check_device",
+          [](const py::object&) {
+            return PyCallerStreamScope::kCanCheckDevice;
+          })
+      .def("__enter__", &PyCallerStreamScope::enter)
+      .def(
+          "__exit__",
+          [](PyCallerStreamScope& scope,
+             const py::object&,
+             const py::object&,
+             const py::object&) { scope.exit(); });
+#endif
 
 #ifdef USE_ATEN_LIB
   m.attr("_uses_aten") = true;

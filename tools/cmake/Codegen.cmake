@@ -591,6 +591,7 @@ function(executorch_load_build_variables)
       XNN_EXECUTOR_RUNNER_SRCS
       XNNPACK_BACKEND_SRCS
       XNNPACK_SCHEMA_SRCS
+      CPU_BACKEND_SRCS
       VULKAN_SCHEMA_SRCS
       CUSTOM_OPS_SRCS
       LLAMA_RUNNER_SRCS
@@ -622,6 +623,7 @@ function(executorch_load_build_variables)
       _xnn_executor_runner__srcs
       _xnnpack_backend__srcs
       _xnnpack_schema__srcs
+      _cpu_backend__srcs
       _vulkan_schema__srcs
       _custom_ops__srcs
       _llama_runner__srcs

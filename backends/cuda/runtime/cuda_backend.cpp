@@ -87,28 +87,6 @@ constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
 constexpr char kEnableCudaGraphForMethod[] = "enable_cuda_graph_for_method";
 constexpr int kCudaGraphWarmupSteps = 3;
 constexpr char kWeightSharingAcrossMethods[] = "weight_sharing_across_methods";
-
-// A CUDA graph replay copies an output's raw bytes into its ETensor, which is
-// right only when every element sits at the same offset in both. Size-1 dims
-// never move an element, so their strides may differ.
-bool output_is_raw_copyable(const SlimTensor* output, const Tensor* et_output) {
-  if (!output->is_contiguous() ||
-      output->dim() != static_cast<size_t>(et_output->dim())) {
-    return false;
-  }
-  // The ETensor still has its previous shape here, so its strides can be stale
-  // for dynamic shapes; the default dim order is enough on its own.
-  if (executorch::runtime::is_contiguous_dim_order(
-          et_output->dim_order().data(), et_output->dim())) {
-    return true;
-  }
-  for (size_t d = 0; d < output->dim(); d++) {
-    if (output->size(d) != 1 && output->stride(d) != et_output->strides()[d]) {
-      return false;
-    }
-  }
-  return true;
-}
 } // anonymous namespace
 
 bool CudaGraphState::start_warmup() {
@@ -1089,6 +1067,21 @@ class ET_EXPERIMENTAL CudaBackend final
               i,
               handle->method_name.c_str());
           return Error::NotSupported;
+        }
+        // Replay copies raw bytes and never resizes, so the ETensor takes the
+        // captured shape here and keeps it for every replay.
+        const Error resize_err =
+            executorch::ET_RUNTIME_NAMESPACE::resize_tensor(
+                args[i + n_inputs]->toTensor(), slim_outputs[i]->sizes());
+        if (resize_err != Error::Ok) {
+          std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
+          ET_LOG(
+              Error,
+              "CUDA graph: cannot resize output %zu of '%s' to its captured "
+              "shape; this call fails and later calls run without a graph",
+              i,
+              handle->method_name.c_str());
+          return resize_err;
         }
       }
 

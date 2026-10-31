@@ -27,6 +27,7 @@ from executorch.backends.xnnpack.utils.utils import (
     is_param_node,
     normalize_mean_dims,
     normalize_pool2d_args,
+    why_not_x2_nearest_upsample,
 )
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
@@ -528,6 +529,26 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
         return torch.ops.aten.upsample_bilinear2d.vec
 
 
+class UpsampleNearest2dConfig(GenericNodePartitionerConfig):
+    target_name = "upsample_nearest2d.vec"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        reason = why_not_x2_nearest_upsample(node)
+        if reason is not None:
+            why(node, reason=reason)
+            return False
+        return True
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.upsample_nearest2d.vec
+
+
 class ExpConfig(GenericNodePartitionerConfig):
     target_name = "exp.default"
 
@@ -645,13 +666,22 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
         input_dtype = input_node.meta["val"].dtype
         output_dtype = node.meta["val"].dtype
 
-        # Return False if doing dtype conversion
         if input_dtype != output_dtype:
-            why(
-                node,
-                reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
+            # A dtype cast is lowered to an XNNPACK convert node, as long as
+            # the op does not change the dim order at the same time.
+            supported_cast = {input_dtype, output_dtype} <= {
+                torch.float32,
+                torch.float16,
+            }
+            same_dim_order = list(input_node.meta["val"].dim_order()) == list(
+                node.meta["val"].dim_order()
             )
-            return False
+            if not (supported_cast and same_dim_order):
+                why(
+                    node,
+                    reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
+                )
+                return False
 
         return True
 

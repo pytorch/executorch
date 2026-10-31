@@ -24,6 +24,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_COREML "Build the Core ML backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_COREAI "Build the Core AI backend (Apple SDK 27+)" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT
   "Exir lets users set the alignment of tensor data embedded in the flatbuffer, and some users need an alignment larger than the default, which is typically 32."
   STRING
@@ -175,12 +178,17 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" BOOL OFF
 )
+define_overridable_option(EXECUTORCH_BUILD_CPU "Build the CPU backend" BOOL OFF)
 define_overridable_option(
   EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_NATIVE "Build the engine-independent native runtime" BOOL
   OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_CPU "Build the native CPU engine" OFF
+  "EXECUTORCH_BUILD_NATIVE" OFF
 )
 cmake_dependent_option(
   EXECUTORCH_BUILD_NATIVE_VULKAN "Build the native Vulkan engine" OFF
@@ -192,13 +200,16 @@ cmake_dependent_option(
 )
 cmake_dependent_option(
   EXECUTORCH_BUILD_NATIVE_VISION_RUNNER
-  "Build the native vision classification runner (run_classification)" OFF
-  "EXECUTORCH_BUILD_NATIVE_VULKAN" OFF
+  "Build the native vision classification runners"
+  OFF
+  "EXECUTORCH_BUILD_NATIVE_CPU OR EXECUTORCH_BUILD_NATIVE_VULKAN OR EXECUTORCH_BUILD_NATIVE_GGML"
+  OFF
 )
 cmake_dependent_option(
   EXECUTORCH_BUILD_NATIVE_LLM_RUNNER "Build the native LLM runners" OFF
   "EXECUTORCH_BUILD_NATIVE_VULKAN OR EXECUTORCH_BUILD_NATIVE_GGML" OFF
 )
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_CPU)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_VULKAN)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_GGML)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_VISION_RUNNER)
@@ -443,6 +454,10 @@ check_required_options_on(
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_COREAI REQUIRES EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+)
+
+check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_MODULE REQUIRES
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
   EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP
@@ -497,6 +512,24 @@ check_required_options_on(
   EXECUTORCH_BUILD_PTHREADPOOL
 )
 
+# The default composition uses XNNPACK and the full Reference kernel library.
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_CPU REQUIRES EXECUTORCH_BUILD_XNNPACK
+  EXECUTORCH_BUILD_KERNELS_OPTIMIZED
+)
+
+if(EXECUTORCH_BUILD_CPU)
+  if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
+     OR NOT EXECUTORCH_SELECT_OPS_LIST STREQUAL ""
+     OR NOT EXECUTORCH_SELECT_OPS_MODEL STREQUAL ""
+  )
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_CPU does not support selective kernel builds"
+    )
+  endif()
+endif()
+
 check_conflicting_options_on(
   IF_ON EXECUTORCH_BUILD_ARM_BAREMETAL CONFLICTS_WITH
   EXECUTORCH_BUILD_PTHREADPOOL EXECUTORCH_BUILD_CPUINFO
@@ -541,6 +574,11 @@ check_conflicting_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_METAL REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_NATIVE_CPU REQUIRES EXECUTORCH_BUILD_XNNPACK
+  EXECUTORCH_BUILD_KERNELS_OPTIMIZED
 )
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})

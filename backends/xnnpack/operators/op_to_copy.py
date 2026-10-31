@@ -16,6 +16,7 @@ from executorch.backends.xnnpack.operators.node_visitor import (
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
+    XNNConvert,
     XNNGraph,
     XNNStaticTranspose,
     XNode,
@@ -23,13 +24,17 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
 from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
     get_input_node,
+    is_dtype_cast,
     PERM_NCHW_TO_NHWC,
     PERM_NHWC_TO_NCHW,
 )
 
 
 @register_node_visitor
-class ConvertMemoryFormat(NodeVisitor):
+class ToCopyVisitor(NodeVisitor):
+    """Serializes _to_copy as a static transpose when it changes the layout
+    and as a convert node when it changes the dtype."""
+
     target = "aten._to_copy.default"
 
     def __init__(self, *args) -> None:
@@ -42,6 +47,23 @@ class ConvertMemoryFormat(NodeVisitor):
         vals_to_ids: Dict[torch.fx.Node, int],
         debug_handle: int,
     ) -> None:
+        input_node = get_input_node(node, 0)
+        if is_dtype_cast(node):
+            # The layout follows the tags on the two tensors.
+            self.define_tensor(input_node, xnn_graph, vals_to_ids)
+            self.define_tensor(node, xnn_graph, vals_to_ids)
+            xnn_graph.xnodes.append(
+                XNode(
+                    xnode_union=XNNConvert(
+                        input_id=vals_to_ids[input_node],
+                        output_id=vals_to_ids[node],
+                        flags=0,
+                    ),
+                    debug_handle=debug_handle,
+                )
+            )
+            return
+
         memory_format_target = node.kwargs.get("memory_format", torch.contiguous_format)
         to_channels_last = bool(memory_format_target == torch.channels_last)
         to_contiguous = bool(memory_format_target == torch.contiguous_format)
@@ -50,7 +72,6 @@ class ConvertMemoryFormat(NodeVisitor):
             "Unsupported Memory Format for XNNPACK",
         )
 
-        input_node = get_input_node(node, 0)
         input_quant_params = QuantParams.from_inputs(input_node, self._exported_program)
         output_quant_params = QuantParams.from_outputs(node)
 

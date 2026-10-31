@@ -22,6 +22,7 @@ rewriting the payload of a real export into the older shape in place.
 import os
 import tempfile
 import unittest
+from typing import Optional
 
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -51,14 +52,25 @@ class ModuleWithConstants(torch.nn.Module):
     "loads through the Python runtime, which the ROCm build does not include",
 )
 class TestMissingWeightsBlob(unittest.TestCase):
-    def _lower(self, outdir: str, seed: int = 0, name: str = "model.pte") -> str:
+    def _lower(
+        self,
+        outdir: str,
+        seed: int = 0,
+        name: str = "model.pte",
+        data_name: Optional[str] = None,
+        module: Optional[torch.nn.Module] = None,
+    ) -> str:
         torch.manual_seed(seed)
-        module = ModuleWithConstants().eval().cuda()
+        if module is None:
+            module = ModuleWithConstants()
+        module = module.eval().cuda()
         inputs = (torch.randn(4, 64, device="cuda"),)
         exported = export(module, inputs)
-        spec = CudaBackend.generate_method_name_compile_spec("forward")
+        specs = [CudaBackend.generate_method_name_compile_spec("forward")]
+        if data_name is not None:
+            specs.append(CudaBackend.generate_data_name_compile_spec(data_name))
         lowered = to_edge_transform_and_lower(
-            exported, partitioner=[CudaPartitioner([spec])]
+            exported, partitioner=[CudaPartitioner(specs)]
         )
         program = lowered.to_executorch()
         path = os.path.join(outdir, name)
@@ -176,6 +188,39 @@ class TestMissingWeightsBlob(unittest.TestCase):
                 RuntimeError, r"Failed to load method forward, error: 0x:?20"
             ):
                 program.load_method("forward")
+
+    def test_programs_with_their_own_data_names_share_a_folder(self) -> None:
+        from executorch.runtime import Runtime
+
+        with tempfile.TemporaryDirectory() as outdir:
+            for seed, name in ((0, "first"), (1, "second")):
+                self._lower(outdir, seed=seed, name=f"{name}.pte", data_name=name)
+            # A program with no constants still writes a data file.
+            self._lower(
+                outdir, name="third.pte", data_name="third", module=torch.nn.ReLU()
+            )
+            self.assertEqual(
+                sorted(f for f in os.listdir(outdir) if f.endswith(".ptd")),
+                ["first.ptd", "second.ptd", "third.ptd"],
+            )
+            for seed, name in ((0, "first"), (1, "second")):
+                # The same draws _lower made, so the same weights and input.
+                torch.manual_seed(seed)
+                module = ModuleWithConstants().eval().cuda()
+                value = torch.randn(4, 64, device="cuda")
+                method = (
+                    Runtime.get()
+                    .load_program(
+                        os.path.join(outdir, f"{name}.pte"),
+                        data_path=os.path.join(outdir, f"{name}.ptd"),
+                    )
+                    .load_method("forward")
+                )
+                out = method.execute([value.cpu()])
+                torch.testing.assert_close(
+                    (out[0] if isinstance(out, (list, tuple)) else out).cpu(),
+                    module(value).cpu(),
+                )
 
     def test_load_succeeds_when_the_model_has_no_constants(self) -> None:
         """A model with nothing to bind still loads without its weights blob.

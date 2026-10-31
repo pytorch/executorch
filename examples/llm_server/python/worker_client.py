@@ -186,6 +186,7 @@ class WorkerClient:
     """
 
     supports_multiplexing = False
+    supports_ignore_eos = False
 
     def __init__(
         self,
@@ -475,6 +476,11 @@ class WorkerClient:
         stats_callback=None,
         request_id: Optional[int] = None,
     ):
+        if getattr(config, "ignore_eos", False):
+            raise WorkerError(
+                "ignore_eos requires a multiplexed batching worker",
+                code="unsupported_parameter",
+            )
         request = {
             "max_new_tokens": getattr(config, "max_new_tokens", -1),
             "temperature": getattr(config, "temperature", 0.0),
