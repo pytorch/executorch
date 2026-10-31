@@ -724,6 +724,26 @@ TEST_F(OpConvCorrectnessTest, InvalidGroups) {
       context_,
       op_convolution_out(
           input, weight, bias, {1}, {0}, {1}, false, {0}, 0, out));
+
+  // A transposed bias has groups * weight.size(1) elements, so groups must be
+  // in range before that product is formed.
+  Tensor transposed_weight = tf.ones({2, 4, 2, 2});
+  Tensor transposed_bias = tf.ones({4});
+  Tensor transposed_out = tf.zeros({1, 4, 4, 4});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          transposed_weight,
+          transposed_bias,
+          {1},
+          {0},
+          {1},
+          true,
+          {0},
+          std::numeric_limits<int64_t>::max(),
+          transposed_out));
 }
 
 TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
