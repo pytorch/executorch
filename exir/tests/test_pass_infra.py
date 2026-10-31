@@ -11,7 +11,6 @@ import copy
 import unittest
 from typing import Any
 
-import executorch.exir as exir
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import (
@@ -36,6 +35,15 @@ from torch.fx.experimental.symbolic_shapes import (
     ShapeEnv,
 )
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
+
+
+class _FunctionModule(torch.nn.Module):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, *args):
+        return self.fn(*args)
 
 
 class TestPassInfra(unittest.TestCase):
@@ -258,11 +266,9 @@ class TestExportedProgramPassManager(unittest.TestCase):
             z = torch.add(y, x)
             return z
 
-        exported_program = (
-            exir.capture(f, (torch.randn(10),), exir.CaptureConfig())
-            .to_edge()
-            .exported_program
-        )
+        exported_program = to_edge(
+            export(_FunctionModule(f), (torch.randn(10),), strict=True)
+        ).exported_program()
 
         pm = ExportedProgramPassManager(passes=[replace_add_with_mul])
         result = pm(exported_program)
@@ -448,11 +454,9 @@ class TestExportedProgramPassManager(unittest.TestCase):
             y = torch.add(x, x)
             return y
 
-        exported_program = (
-            exir.capture(f, (torch.randn(10),), exir.CaptureConfig())
-            .to_edge()
-            .exported_program
-        )
+        exported_program = to_edge(
+            export(_FunctionModule(f), (torch.randn(10),), strict=True)
+        ).exported_program()
 
         pm = ExportedProgramPassManager(
             passes=[introduce_call_method], run_checks_after_each_pass=True

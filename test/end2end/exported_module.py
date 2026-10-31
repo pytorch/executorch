@@ -15,7 +15,7 @@ from typing import Callable, Sequence, Type
 import executorch.exir as exir
 import torch
 from executorch.exir import ExecutorchBackendConfig, ExecutorchProgramManager, to_edge
-from executorch.exir.capture._capture import patch_forward
+from executorch.exir.capture._utils import patch_forward
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.passes import (
     DebugPass,

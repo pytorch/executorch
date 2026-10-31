@@ -446,7 +446,7 @@ Args:
 * `graph_module (fx.GraphModule)`: Module that we want to partition
 * `patterns (List[torch.fx.Graph])`: A list of patterns in the form of
    torch.fx.Graph. These graphs can be obtained through the `graph` field from a
-   GraphModule obtained by exir.capture (recommended) or symbolic tracing (which
+   GraphModule obtained by torch.export (recommended) or symbolic tracing (which
    might not result in an accurate edge dialect graph), or by manual crafting a
    graph module.
 * `op_support (OperatorSupportBase)`: A OperatorSupportBase that can be created

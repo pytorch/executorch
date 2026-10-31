@@ -6,23 +6,9 @@
 
 # pyre-strict
 
-from executorch.exir.capture._capture import (
-    _capture_legacy_do_not_use,
-    CallSpec,
-    capture,
-)
-
-from executorch.exir.capture._config import (
-    CaptureConfig,
-    EdgeCompileConfig,
-    ExecutorchBackendConfig,
-)
+from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 
 __all__ = [
-    "CallSpec",
-    "capture",
-    "_capture_legacy_do_not_use",
-    "CaptureConfig",
     "EdgeCompileConfig",
     "ExecutorchBackendConfig",
 ]
