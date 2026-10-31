@@ -240,6 +240,13 @@ def _annotate_linear_relu(
     return annotated_partitions
 
 
+def _is_1d_or_2d_conv(weight: Node) -> bool:
+    # XNNPACK runs no other convs, and the weight rank is the only reliable
+    # indicator of the conv dimensionality.
+    weight_shape = getattr(weight.meta.get("val"), "shape", None)
+    return weight_shape is None or len(weight_shape) <= 4
+
+
 def _do_annotate_conv(
     gm: torch.fx.GraphModule,
     quantization_config: Optional[QuantizationConfig],
@@ -277,6 +284,7 @@ def _do_annotate_conv(
 
         # skip if transposed conv has more than 1 group
         skip = skip or (is_conv_transpose and num_groups != 1)
+        skip = skip or not _is_1d_or_2d_conv(weight)
 
         if is_conv_transpose:
             # transposed convs per output channel quantization
@@ -371,7 +379,7 @@ def _do_annotate_conv_relu(
         if _is_annotated(partition):
             continue
 
-        if is_conv_transpose and groups != 1:
+        if (is_conv_transpose and groups != 1) or not _is_1d_or_2d_conv(weight):
             continue
 
         if filter_fn and not filter_fn(conv_node):

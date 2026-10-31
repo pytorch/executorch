@@ -356,6 +356,19 @@ class TestConv2d(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    def test_qs8_conv3d_not_quantized(self) -> None:
+        # XNNPACK has no conv3d support, so its quantizer leaves 3d convs in float,
+        # with or without a fused relu.
+        m = torch.nn.Sequential(
+            torch.nn.Conv3d(2, 2, 2), torch.nn.ReLU(), torch.nn.ConvTranspose3d(2, 2, 2)
+        )
+        (
+            Tester(m.eval(), (torch.randn(1, 2, 4, 4, 4),))
+            .quantize()
+            .export()
+            .check_not(["torch.ops.quantized_decomposed"])
+        )
+
     def test_fp32_conv2d_permute(self) -> None:
         for transpose in (True, False):
             for perm_order in list(itertools.permutations([0, 1, 2, 3])):
