@@ -199,10 +199,10 @@ class TestFoldConstantCumsumPass(unittest.TestCase):
 
         evaluate = fold_constant_cumsum_pass._evaluate
 
-        def fail_on_the_doubled_one(graph_module, targets):
-            if any("mul" in str(n.args[0].target) for n in targets):
+        def fail_on_the_doubled_one(graph_module, target):
+            if "mul" in str(target.args[0].target):
                 raise RuntimeError("not on the CPU")
-            return evaluate(graph_module, targets)
+            return evaluate(graph_module, target)
 
         x = torch.zeros(3, dtype=torch.int64)
         with mock.patch.object(
