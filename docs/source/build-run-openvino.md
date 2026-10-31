@@ -136,9 +136,10 @@ in float32 unless you lower it with `inference_precision`.
 
 On x86 CPUs, OpenVINO applies the precision when the runtime loads a program.
 So a program lowered without `inference_precision` computes in float32, even
-one exported with an ExecuTorch release that did not have this default. That
-is slower and can use more memory. Export it again with `inference_precision`
-set to `bf16` to get the earlier speed. On ARM CPUs, OpenVINO applies the
+one exported with an ExecuTorch release that did not have this default. On an
+x86 CPU with bfloat16 units that is slower and can use more memory; export it
+again with `inference_precision` set to `bf16` to get the earlier speed. Other
+x86 CPUs already computed such a program in float32. On ARM CPUs, OpenVINO applies the
 precision when the program is lowered, so a program exported with such an
 earlier release keeps computing in float16 until it is exported again.
 
