@@ -12,6 +12,7 @@ import logging
 import math
 import os
 import shutil
+import sys
 import threading
 import typing
 import weakref
@@ -161,6 +162,57 @@ def _allow_triton_templates_on_small_gpus():
     finally:
         _SMALL_GPU_GUARD.active = prev_active
         inductor_utils.is_big_gpu = orig_is_big_gpu
+
+
+_AS_NEEDED_GUARD = threading.local()
+
+
+@contextlib.contextmanager
+def _link_libraries_as_needed():
+    """Record only the shared libraries the compiled program calls into.
+
+    Inductor puts OpenMP on every Linux link. Unless the compiler asks the
+    linker to link as needed, as Ubuntu's GCC does by default, the linker
+    records libgomp even when nothing in the program calls OpenMP. Torch ships
+    a libgomp, which hides this whenever torch is loaded, but a process without
+    torch then fails to load the program on a machine with no system libgomp.
+    ``--as-needed`` drops only libraries nothing references, so a program that
+    does call OpenMP keeps it. Links with libtorch are left alone: a library
+    there can be needed without being referenced, because its static
+    initializers register something.
+
+    Only threads inside this context get the flag.
+
+    TODO: remove once Inductor does this for AOTI builds that do not link
+    libtorch, as it already does on macOS
+    (https://github.com/pytorch/pytorch/pull/198232).
+    """
+    from torch._inductor import cpp_builder
+
+    orig_device_options = cpp_builder.get_cpp_torch_device_options
+
+    def _device_options(device_type, aot_mode=False, *args, **kwargs):
+        definitions, include_dirs, cflags, ldflags, *rest = orig_device_options(
+            device_type, aot_mode, *args, **kwargs
+        )
+        if (
+            aot_mode
+            and getattr(_AS_NEEDED_GUARD, "active", False)
+            and sys.platform.startswith("linux")
+            and not torch._inductor.config.aot_inductor.link_libtorch
+            and torch._inductor.config.aot_inductor.cross_target_platform is None
+        ):
+            ldflags = [*ldflags, "Wl,--as-needed"]
+        return (definitions, include_dirs, cflags, ldflags, *rest)
+
+    prev_active = getattr(_AS_NEEDED_GUARD, "active", False)
+    cpp_builder.get_cpp_torch_device_options = _device_options
+    _AS_NEEDED_GUARD.active = True
+    try:
+        yield
+    finally:
+        _AS_NEEDED_GUARD.active = prev_active
+        cpp_builder.get_cpp_torch_device_options = orig_device_options
 
 
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
@@ -1299,6 +1351,9 @@ class CudaBackend(AotiBackend, BackendDetails):
                 stack.enter_context(torch.nn.attention.sdpa_kernel([SDPBackend.MATH]))
                 stack.enter_context(triton_mutation_cache.enabled())
                 stack.enter_context(target_smem_context())
+                # Keep an unused libgomp out of the program, so it loads in a
+                # process without torch. See `_link_libraries_as_needed`.
+                stack.enter_context(_link_libraries_as_needed())
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
                     stack.enter_context(_allow_triton_templates_on_small_gpus())

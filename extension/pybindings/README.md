@@ -201,10 +201,7 @@ The CUDA build workflow runs `test_pybindings_cuda_dlpack.py` in both output
 modes on a GPU. It checks device allocations, DLPack stream ordering, channels
 last views, cloning, and borrowed output lifetimes using a CUDA delegate.
 Set `EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1` when running this test to treat missing
-GPU hardware or a missing CUDA backend as a failure. The CUDA delegate's kernels
-need the OpenMP runtime (`libgomp.so.1` on Linux). PyTorch ships one; without PyTorch,
-install it from the system, or the two tests that run without PyTorch fail
-under this setting.
+GPU hardware or a missing CUDA backend as a failure.
 
 # Link Backends
 
