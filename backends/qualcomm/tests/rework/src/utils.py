@@ -79,6 +79,19 @@ class _UtilsModel(torch.nn.Module):
         return c, a
 
 
+class _ConvBnModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(8, 16, kernel_size=3, padding=1)
+        self.bn = torch.nn.BatchNorm2d(16)
+        self.conv2 = torch.nn.Conv2d(16, 16, kernel_size=1)
+        self.linear = torch.nn.Linear(16, 4)
+
+    def forward(self, x):
+        x = self.conv2(torch.relu(self.bn(self.conv1(x))))
+        return self.linear(x.mean(dim=(2, 3)))
+
+
 class _CompositeDelegateModule(torch.nn.Module):
     def __init__(
         self,
@@ -796,6 +809,36 @@ class QAT:
             ), "no PerBlockParamFakeQuantize found for 16a4w_block"
             # should complete without error
             __class__._get_converted_module(module, prepared, inputs)
+
+        with subtests.test(msg="16a4w_block_per_node"):
+            # Conv+BN is claimed by conv_bn.py, apart from the per-node annotators.
+            # Each node must keep its own block size, not share the last one written.
+            bn_module = _ConvBnModel()
+            bn_inputs = (torch.randn(2, 8, 8, 8),)
+            exported = torch.export.export(bn_module, bn_inputs, strict=True).module()
+            names = [
+                n.name
+                for n in exported.graph.nodes
+                if n.target
+                in (torch.ops.aten.conv2d.default, torch.ops.aten.linear.default)
+            ]
+            block_size_map = dict(zip(names, [(1, 4, 1, 1), (1, 8, 1, 1), (1, 2)]))
+            q = __class__._make_qat_quantizer(
+                QuantDtype.use_16a4w_block, block_size_map=block_size_map
+            )
+            prepared = prepare_qat_pt2e(exported, q)
+            block_sizes = sorted(
+                tuple(m.block_size)
+                for m in prepared.modules()
+                if isinstance(m, PerBlockParamFakeQuantize)
+            )
+            # V69+ lowers a per-block linear as a 1x1 conv2d, padding its block size
+            expected = sorted(
+                tuple(size) + (1,) * (4 - len(size)) for size in block_size_map.values()
+            )
+            assert block_sizes == expected, f"{block_sizes} != {expected}"
+            prepared(*bn_inputs)
+            convert_pt2e(prepared)
 
         with subtests.test(msg="fp16a8w"):
             # activation: None (FP16 — no activation quantization)
