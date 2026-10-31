@@ -53,12 +53,14 @@ class OpenvinoBackend final : public ::exr::BackendInterface {
  private:
   bool ensure_loaded() const;
   ov_element_type_e convert_to_openvino_type(exa::ScalarType scalar_type) const;
-  // With own_memory, the OpenVINO tensor gets its own buffer instead of
-  // borrowing the tensor's. That buffer starts empty, with the tensor's rank,
-  // and OpenVINO grows it to the size it writes.
-  exr::Result<ov_tensor_t*> create_ov_tensor(
-      const exa::Tensor& tensor,
-      bool own_memory = false) const;
+  exr::Result<ov_tensor_t*> create_ov_tensor(const exa::Tensor& tensor) const;
+  // Creates a buffer OpenVINO owns and grows for an output whose size can
+  // change. It starts with the shape OpenVINO compiled for that output.
+  exr::Error create_owned_output(
+      ov_infer_request_t* infer_request,
+      size_t index,
+      const exa::Tensor& output,
+      ov_tensor_t** owned) const;
   exr::Error copy_output(
       const ov_tensor_t* ov_output,
       const exa::Tensor& output) const;
