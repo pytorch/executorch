@@ -192,6 +192,21 @@ class TestIndexShims(unittest.TestCase):
                     src[1, 2] = float("nan")
                 self._run(ScatterReduce(), [(x, index, src)])
 
+    def test_scatter_mean_counts_in_its_dtype(self):
+        """ATen counts a mean's terms in the tensor's own dtype, so 128 int8
+        terms count as -128."""
+
+        class Mean(torch.nn.Module):
+            def forward(self, x, index, src):
+                return tuple(
+                    x.scatter_reduce(0, index, src, "mean", include_self=include)
+                    for include in (True, False)
+                )
+
+        x = torch.zeros(2, dtype=torch.int8)
+        index = torch.zeros(128, dtype=torch.long)
+        self._run(Mean(), [(x, index, torch.ones(128, dtype=torch.int8))])
+
     def test_float64_sort(self):
         class Sort(torch.nn.Module):
             def forward(self, x):
