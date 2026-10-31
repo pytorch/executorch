@@ -391,6 +391,22 @@ class TestPasses(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "symmetric"):
             visitor.make_qnn_per_block_config(parameter_node, quant_attrs)
 
+    def test_remove_redundancy_single_chunk_split(self):
+        # QNN's Split rejects a single output; a one-chunk split is its input.
+        class SingleChunkSplit(torch.nn.Module):
+            def forward(self, x):
+                (y,) = x.sigmoid().split([x.shape[1]], dim=1)
+                return y.relu()
+
+        x = torch.randn(1, 4, 3)
+        ep = to_edge(torch.export.export(SingleChunkSplit(), (x,))).exported_program()
+        RemoveRedundancy()(ep.graph_module)
+
+        targets = [n.target for n in ep.graph.nodes]
+        self.assertNotIn(exir_ops.edge.aten.split_with_sizes_copy.default, targets)
+        (out,) = ep.graph_module(x)
+        self.assertTrue(torch.equal(out, SingleChunkSplit()(x)))
+
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):
             def forward(self, x):
