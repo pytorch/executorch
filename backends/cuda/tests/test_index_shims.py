@@ -207,11 +207,15 @@ class TestIndexShims(unittest.TestCase):
         index = torch.zeros(128, dtype=torch.long)
         self._run(Mean(), [(x, index, torch.ones(128, dtype=torch.int8))])
 
-    def test_float64_sort(self):
-        class Sort(torch.nn.Module):
-            def forward(self, x):
+    def test_float64_values(self):
+        class Float64Values(torch.nn.Module):
+            def forward(self, x, scale):
                 # Rows this long go to the sort shim, not to Triton.
-                return torch.sort(x, stable=True)
+                values, indices = torch.sort(x, stable=True)
+                return values * scale.item(), indices
 
         torch.manual_seed(0)
-        self._run(Sort(), [(torch.randn(4, 1000, dtype=torch.float64),)])
+        x = torch.randn(4, 1000, dtype=torch.float64)
+        # A whole number: the generated kernel takes the scalar as an integer.
+        scale = torch.tensor(2.0, dtype=torch.float64)
+        self._run(Float64Values(), [(x, scale)])
