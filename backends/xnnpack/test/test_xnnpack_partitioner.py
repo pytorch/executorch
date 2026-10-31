@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -58,6 +59,8 @@ class TestXnnpackPartitioner(unittest.TestCase):
         log_contents = log_capture_string.getvalue()
         self.assertIn("DEPRECATION WARNING", log_contents)
         self.assertIn("to_edge() + to_backend()", log_contents)
+        self.assertIn("does not run pre-decomposition transforms", log_contents)
+        self.assertIn("constant cat/split folding", log_contents)
         self.assertIn("to_edge_transform_and_lower()", log_contents)
 
     def test_no_warning_for_to_edge_transform_and_lower_workflow(self):
