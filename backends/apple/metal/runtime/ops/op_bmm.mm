@@ -149,9 +149,10 @@ AOTITorchError aoti_torch_mps_bmm_out(
       }
 
       // Get Metal buffers for input and output tensors
-      id<MTLBuffer> self_buffer = get_mtl_buffer(self_tensor, "aoti_torch_mps_bmm_out", "self");
-      id<MTLBuffer> mat2_buffer = get_mtl_buffer(mat2_tensor, "aoti_torch_mps_bmm_out", "mat2");
-      id<MTLBuffer> out_buffer = get_mtl_buffer(out_tensor, "aoti_torch_mps_bmm_out", "out");
+      bool settle_aliases = false;
+      id<MTLBuffer> self_buffer = get_mtl_buffer(self_tensor, "aoti_torch_mps_bmm_out", "self", &settle_aliases);
+      id<MTLBuffer> mat2_buffer = get_mtl_buffer(mat2_tensor, "aoti_torch_mps_bmm_out", "mat2", &settle_aliases);
+      id<MTLBuffer> out_buffer = get_mtl_buffer(out_tensor, "aoti_torch_mps_bmm_out", "out", &settle_aliases);
 
       // Validate buffers are non-null
       if (!self_buffer || !mat2_buffer || !out_buffer) {
@@ -278,7 +279,7 @@ AOTITorchError aoti_torch_mps_bmm_out(
 
       // Execute the batched matrix multiplication
       @try {
-        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT);
+        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT, settle_aliases);
       } @catch (NSException *exception) {
         ET_LOG(Error, "aoti_torch_mps_bmm_out: NSException caught during executeMPSGraph: %s - %s",
               [[exception name] UTF8String], [[exception reason] UTF8String]);

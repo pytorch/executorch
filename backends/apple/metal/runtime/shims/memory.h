@@ -70,6 +70,12 @@ AOTITorchError aoti_torch_new_tensor_handle(
 
 void cleanup_memory();
 
+// The memory at [ptr, ptr + nbytes) is freed (aoti_torch_mps_free) while
+// handles in it may live on. They keep nothing there any more: deleting one
+// later only drops the handle, so it cannot unregister or uncount what a later
+// allocation puts at its address. No handle may own memory there.
+void retire_handles_within(void* ptr, size_t nbytes);
+
 } // extern "C"
 
 } // namespace metal
