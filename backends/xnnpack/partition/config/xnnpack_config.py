@@ -69,6 +69,10 @@ class XNNPartitionerConfig(PartitionerConfig):
         with the partitioner config which returned them
         """
         partitioned_nodes = self.get_node_and_deps(node, ep)
+        # A partition can take nodes that their own configs reject.
+        if not all(self._check_tensor_ranks(n) for n in partitioned_nodes):
+            return []
+
         # label partitioned nodes with the name of the partitioner config
         for node in partitioned_nodes:
             if "xnn_partitioner_config" in node.meta:

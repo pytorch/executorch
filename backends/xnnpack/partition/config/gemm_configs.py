@@ -569,8 +569,6 @@ class AddmmConfig(GEMMConfig):
             not in (src_partition.nodes + src_partition.input_nodes)
             # there can only be a single output node in partition
             or len(src_partition.output_nodes) != 1
-            # this partition takes these nodes even if their configs reject them
-            or not all(self._check_tensor_ranks(n) for n in src_partition.nodes)
         ):
             why(node, "invalid source partition")
             return (False, [])
@@ -585,11 +583,14 @@ class AddmmConfig(GEMMConfig):
         node.users = old_users
 
         # When using force_non_static_weights_for_f32_linear, we want to get_deps to overwrite the source partition nodes.
-        # Else we want to be greedy.
+        # Else we want to be greedy, but leave out views XNNPACK cannot hold.
         ret_deps = (
             list(set(deps) & set(src_partition.nodes))
             if self.force_non_static_weights_for_f32_linear
-            else list(set(deps) | set(src_partition.nodes))
+            else list(
+                set(deps)
+                | {n for n in src_partition.nodes if self._check_tensor_ranks(n)}
+            )
         )
 
         return valid_deps, ret_deps
