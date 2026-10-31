@@ -343,9 +343,7 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
     while (len > 0 && buf[len - 1] == '\0') {
       --len;
     }
-    if (len > 0) {
-      (is_device ? device : precision).assign(buf, len);
-    }
+    (is_device ? device : precision).assign(buf, len);
   }
 
   // The same rule as preprocess.py, because on x86 CPUs OpenVINO applies the
