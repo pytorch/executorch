@@ -593,7 +593,8 @@ def _varlen_attn(
     for every pair of packed tokens, 1 GiB for 16 heads and 4096 tokens. As in
     Flash attention, a causal mask or a window lines up the ends of each query
     and key sequence, and a query with no key to attend to gets zeros and an
-    infinite log-sum-exp.
+    infinite log-sum-exp. Unlike in Flash attention, a NaN or inf in one
+    sequence's values also reaches the other sequences.
     """
     if cu_seq_k is None or seqused_k is not None or block_table is not None:
         raise NotImplementedError(
@@ -619,8 +620,9 @@ def _varlen_attn(
 
     def sequence_ends(cu: torch.Tensor, total: int):
         # Each token's index in cu of its sequence's end, and its (negative)
-        # distance from that end. Tokens past cu[-1] are in no sequence, and
-        # the clamp keeps their lookup in range.
+        # distance from that end. Tokens before cu[0] and past cu[-1] get the
+        # index 0 and cu.numel(), so they form two more sequences, and the
+        # clamp keeps the lookup in range.
         token = torch.arange(total, dtype=cu.dtype, device=cu.device)
         end = torch.searchsorted(cu, token, right=True)
         return end, token - cu[end.clamp(max=cu.numel() - 1)]
@@ -633,6 +635,10 @@ def _varlen_attn(
         allowed = allowed & (offset >= -left)
     if right >= 0:
         allowed = allowed & (offset <= right)
+    # Masked keys get zero weight, but NaN * 0 is NaN. Zero the values outside
+    # the key sequences so that a NaN or inf there stays out of them.
+    outside = (end_k == 0) | (end_k == cu_seq_k.numel())
+    value = value.masked_fill(outside[:, None, None], 0)
 
     if enable_gqa:
         key, value = (
