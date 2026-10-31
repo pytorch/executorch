@@ -150,6 +150,20 @@ class TestMLXPartitionerConstantInputs(unittest.TestCase):
                         builder.build()
 
 
+class TestMLXPartitionerUnsupportedDtypes(unittest.TestCase):
+    def test_float64_tensor_list_stays_off_the_delegate(self):
+        class Float64Cat(nn.Module):
+            def forward(self, x, y):
+                return x + torch.cat([y.sin(), y.cos()]).float()
+
+        _, delegates, err = _run(
+            Float64Cat().eval(),
+            (torch.randn(8), torch.randn(4, dtype=torch.float64)),
+        )
+        self.assertGreater(delegates, 0)
+        self.assertLess(err, 1e-6)
+
+
 class Sdpa(nn.Module):
     def __init__(self, is_causal: bool = False):
         super().__init__()
@@ -323,6 +337,23 @@ class TestMLXPartitionerSdpaShapes(unittest.TestCase):
             self.assertEqual(get_mlx_node_counts(path).get("SdpaNode", 0), 0)
 
 
+class TestMLXPartitionerSharedConstants(unittest.TestCase):
+    def test_weight_used_twice_in_one_delegate_and_once_in_another(self):
+        class SharedLinear(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(4, 4)
+
+            def forward(self, x):
+                y = self.linear(x) + self.linear(x * 2)
+                # elu is not lowered, so the last use lands in a second delegate.
+                return self.linear(torch.nn.functional.elu(y))
+
+        _, delegates, err = _run(SharedLinear().eval(), (torch.randn(2, 4),))
+        self.assertGreater(delegates, 1)
+        self.assertLess(err, 1e-5)
+
+
 class TestMLXPartitionerGroupedKeys(unittest.TestCase):
     """Repeated KV heads are fused only when the caller enables the shared passes."""
 
@@ -395,6 +426,21 @@ class TestMLXPartitionerSdpaCausal(unittest.TestCase):
         self.assertEqual(counts.get("SdpaNode", 0), 1)
         self.assertEqual(counts.get("SliceNode", 0), 2)
         self.assertLess(err, 1e-4)
+
+
+class TestMLXPartitionerConstantBase(unittest.TestCase):
+    def test_slice_scatter_into_a_buffer(self):
+        class ScatterIntoBuffer(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("base", torch.zeros(4, 8))
+
+            def forward(self, x):
+                return torch.slice_scatter(self.base, x, 1, 0, 2) * 2
+
+        counts, _, err = _run(ScatterIntoBuffer().eval(), (torch.randn(4, 2),))
+        self.assertEqual(counts.get("SliceUpdateNode", 0), 1)
+        self.assertLess(err, 1e-6)
 
 
 class TestMLXPartitionerMixedSupport(unittest.TestCase):

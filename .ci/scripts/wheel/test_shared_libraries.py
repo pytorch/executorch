@@ -104,6 +104,8 @@ _AOTI_SHIM_SYMBOLS = (
     "aoti_torch_cuda_randint_low_out",
     "aoti_torch_cuda_sort_stable",
     "aoti_torch_cuda_guard_set_index",
+    "aoti_torch_cuda_index_Tensor",
+    "aoti_torch_index_put_out",
 )
 
 _QUANTIZED_KERNEL_SYMBOLS = (

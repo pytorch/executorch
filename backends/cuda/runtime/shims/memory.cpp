@@ -387,6 +387,22 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_as_strided(
+    SlimTensor* self,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    SlimTensor** ret_new_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr, InvalidArgument, "aoti_torch_as_strided: self is null");
+  return aoti_torch__reinterpret_tensor(
+      self,
+      static_cast<int64_t>(self->dim()),
+      sizes_ptr,
+      strides_ptr,
+      self->storage_offset(),
+      ret_new_tensor);
+}
+
 AOTITorchError
 aoti_torch_copy_(SlimTensor* self, SlimTensor* src, int32_t non_blocking) {
   (void)non_blocking; // SlimTensor::copy_() is always synchronous for now

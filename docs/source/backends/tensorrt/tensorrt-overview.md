@@ -170,9 +170,11 @@ The Torch-TensorRT docs call such a program *coalesced*.
 
 The export writes the weights of the CUDA part to a data file, `aoti_cuda_blob.ptd`, next to the
 `.pte`. Pass that file when you load the program: if the CUDA part has weights, loading fails
-without it. The file has the same name for every model, so a second export into the same directory
-overwrites the first one's weights, and the first model can then return wrong answers with no
-error. Save each model into its own directory.
+without it. By default the file has the same name for every model, so a second export into the
+same directory overwrites the first one's weights, and the first model then fails to load. To keep
+several models in one directory, give each its own data file name with
+`CudaBackend.generate_data_name_compile_spec`, as the
+[CUDA backend page](../cuda/cuda-overview.md) shows, or save each model into its own directory.
 
 ### Keeping inputs and outputs on the GPU
 
@@ -432,7 +434,8 @@ shows how to set the options that apply at run time, from C++ or from Python.
   Pass `external_engine_data="engines"` to `torch_tensorrt.save` to write the engines to
   `engines.ptd` instead of the `.pte`, and pass that file when you load the program.
   The Python loader takes one data file, so for a program that also uses the CUDA backend, pass
-  `external_engine_data="aoti_cuda_blob"` to share its file.
+  the name of the CUDA data file to share it: `external_engine_data="aoti_cuda_blob"` by default,
+  or the name given to `CudaBackend.generate_data_name_compile_spec`.
 - [**Optimization profiles.**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#optimization-profiles)
   One engine can be tuned for several ranges of input shapes, for example one for decoding one
   token at a time and one for a long prompt. A C++ application picks the profile for each call

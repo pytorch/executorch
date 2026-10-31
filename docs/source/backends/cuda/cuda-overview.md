@@ -81,6 +81,27 @@ save_pte_program(exec_program, model_name, "./output_dir")
 ```
 This generates `.pte` and `.ptd` files that can be executed on CUDA devices.
 
+By default, the weights go to a data file named `aoti_cuda_blob.ptd`. To export several programs into one folder, give each program its own
+data file name. This partitioner writes `encoder.ptd`:
+
+```python
+partitioner = CudaPartitioner([
+    CudaBackend.generate_method_name_compile_spec("forward"),
+    CudaBackend.generate_data_name_compile_spec("encoder"),
+])
+```
+
+The name can have up to 200 ASCII letters, digits, `_`, `-` and `.`. It cannot start with `.` or `-`, cannot end with `.ptd`
+(the export adds it), and cannot be a Windows device name such as `NUL`. Windows and macOS usually treat names that differ
+only in case, such as `Encoder` and `encoder`, as the same file, so give programs that share a folder names that differ in
+more than case. Load each program with its own data file:
+
+```python
+from executorch.runtime import Runtime
+
+program = Runtime.get().load_program("encoder.pte", data_path="encoder.ptd")
+```
+
 For a complete working example, see the [CUDA export script](https://github.com/pytorch/executorch/blob/main/examples/cuda/scripts/export.py).
 
 
