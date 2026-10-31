@@ -8,6 +8,8 @@
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
+#include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -897,4 +899,47 @@ TEST_F(OpEmbeddingBagOutTest, NonFloatingWeightRejectedWithEmptyOutput) {
           offset2bag,
           bag_size,
           max_indices));
+}
+
+TEST_F(OpEmbeddingBagOutTest, OffsetsDtypeAuxiliaryOutputs) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen requires the promoted indices/offsets dtype");
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  TensorFactory<ScalarType::Int> to;
+  auto weight = tf.make({2, 2}, {1, 2, 3, 4});
+  auto indices = ti.make({3}, {0, 1, 1});
+  auto offsets = to.make({2}, {0, 1});
+  for (int64_t mode = 0; mode < 3; ++mode) {
+    SCOPED_TRACE(mode);
+    auto out = tf.zeros({2, 2});
+    // Export allocates these with the offsets dtype, not the promoted one.
+    auto offset2bag = to.full({3}, -99);
+    auto bag_size = to.zeros({2});
+    auto max_indices = mode == 2 ? to.zeros({2, 2}) : to.zeros({2});
+    op_embedding_bag_out(
+        weight,
+        indices,
+        offsets,
+        mode,
+        {},
+        false,
+        -1,
+        out,
+        offset2bag,
+        bag_size,
+        max_indices);
+    ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+    EXPECT_TENSOR_EQ(
+        out,
+        mode == 0 ? tf.make({2, 2}, {1, 2, 6, 8})
+                  : tf.make({2, 2}, {1, 2, 3, 4}));
+    EXPECT_TENSOR_EQ(offset2bag, to.make({3}, {0, 1, 1}));
+    EXPECT_TENSOR_EQ(
+        bag_size, mode == 0 ? to.make({2}, {0, 0}) : to.make({2}, {1, 2}));
+    if (mode == 2) {
+      EXPECT_TENSOR_EQ(max_indices, to.make({2, 2}, {0, 0, 1, 1}));
+    }
+  }
 }

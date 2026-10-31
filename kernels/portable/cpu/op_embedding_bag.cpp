@@ -82,14 +82,12 @@ bool check_embedding_bag_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(weight));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(weight, out));
 
-  // Like ATen, mixed Int/Long indices and offsets promote to Long.
-  const ScalarType index_type =
-      promoteTypes(indices.scalar_type(), offsets.scalar_type());
+  // Eager ATen gives these the promoted indices/offsets dtype, but export
+  // plans them with meta_embedding_bag, which uses the offsets dtype.
   for (const Tensor* t : {&offset2bag, &bag_size, &max_indices}) {
     ET_CHECK_OR_RETURN_FALSE(
-        t->scalar_type() == index_type,
-        "index outputs must have the promoted indices/offsets dtype %s, but got %s",
-        toString(index_type),
+        is_index_dtype(t->scalar_type()),
+        "index outputs must be Long or Int; got %s",
         toString(t->scalar_type()));
   }
 
@@ -237,8 +235,8 @@ std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
   // ATen skips offset2bag only for sum on its fast path, but export sizes it
   // with meta_embedding_bag, whose fast path differs (e.g. for BFloat16). Sum
   // never reads it, so keep a caller-allocated num_indices layout and fill it.
-  const bool fills_offset2bag = mode != kModeSum || !fast_path ||
-      offset2bag.numel() == num_indices;
+  const bool fills_offset2bag =
+      mode != kModeSum || !fast_path || offset2bag.numel() == num_indices;
   // With include_last_offset, ATen's fast path stops the last sum/mean bag at
   // the final offset; every other path gives it all remaining indices.
   const bool truncate_last_bag =
