@@ -21,6 +21,17 @@ typedef NS_ENUM(NSInteger, ETCoreAIScalarType) {
   ETCoreAIScalarTypeBool = 3,
 };
 
+// One value per Core AI SpecializationOptions configuration: the default (all
+// compute units), cpuOnly, or a preferred compute unit kind. Preferences still
+// allow every unit for operations the preferred unit cannot run.
+typedef NS_ENUM(NSInteger, ETCoreAIComputeUnit) {
+  ETCoreAIComputeUnitDefault = 0,
+  ETCoreAIComputeUnitCPUOnly = 1,
+  ETCoreAIComputeUnitPreferCPU = 2,
+  ETCoreAIComputeUnitPreferGPU = 3,
+  ETCoreAIComputeUnitPreferNeuralEngine = 4,
+};
+
 typedef NS_ENUM(NSInteger, ETCoreAIErrorCode) {
   // Invalid model descriptors, functions or bindings.
   ETCoreAIErrorInvalidModel = 1,
@@ -136,7 +147,8 @@ extern "C" {
 #endif
 BOOL ETCoreAIIsAvailable(void);
 NSString* _Nullable ETCoreAIDeviceArchitectureName(void);
-id<ETCoreAIModelLoading> ETCoreAICreateModelLoader(void);
+id<ETCoreAIModelLoading> ETCoreAICreateModelLoader(
+    ETCoreAIComputeUnit computeUnit);
 #ifdef __cplusplus
 }
 #endif

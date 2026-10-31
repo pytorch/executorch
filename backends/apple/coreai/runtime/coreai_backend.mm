@@ -14,6 +14,7 @@
 #import "coreai_tensor_io.h"
 
 #include <executorch/runtime/backend/interface.h>
+#include <cstring>
 #include <memory>
 #include <new>
 
@@ -40,6 +41,41 @@ Result<NSString*> cache_directory_option(BackendInitContext& context) {
       InvalidArgument,
       "Core AI cache directory option must not be null");
   return cache_directory_path(option.get());
+}
+
+Result<ETCoreAIComputeUnit> compute_unit_option(BackendInitContext& context) {
+  auto option = context.get_runtime_spec<const char*>("coreai_compute_unit");
+  if (!option.ok()) {
+    if (option.error() == Error::NotFound) {
+      return ETCoreAIComputeUnitDefault;
+    }
+    return option.error();
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      option.get() != nullptr,
+      InvalidArgument,
+      "Core AI compute unit option must not be null");
+  static constexpr struct {
+    const char* name;
+    ETCoreAIComputeUnit value;
+  } kComputeUnits[] = {
+      {"default", ETCoreAIComputeUnitDefault},
+      {"cpu_only", ETCoreAIComputeUnitCPUOnly},
+      {"prefer_cpu", ETCoreAIComputeUnitPreferCPU},
+      {"prefer_gpu", ETCoreAIComputeUnitPreferGPU},
+      {"prefer_neural_engine", ETCoreAIComputeUnitPreferNeuralEngine},
+  };
+  for (const auto& unit : kComputeUnits) {
+    if (std::strcmp(option.get(), unit.name) == 0) {
+      return unit.value;
+    }
+  }
+  ET_LOG(
+      Error,
+      "Unknown Core AI compute unit '%s'; expected default, cpu_only, "
+      "prefer_cpu, prefer_gpu or prefer_neural_engine",
+      option.get());
+  return Error::InvalidArgument;
 }
 
 Result<id<ETCoreAISession>> bind_session(
@@ -97,7 +133,12 @@ class CoreAIBackend final : public BackendInterface {
       if (!configured.ok()) {
         return configured.error();
       }
-      id<ETCoreAIModelLoading> loader = ETCoreAICreateModelLoader();
+      auto compute_unit = compute_unit_option(context);
+      if (!compute_unit.ok()) {
+        return compute_unit.error();
+      }
+      id<ETCoreAIModelLoading> loader =
+          ETCoreAICreateModelLoader(compute_unit.get());
       ET_CHECK_OR_RETURN_ERROR(
           loader != nil, Internal, "Cannot create Core AI loader");
       auto cache_directory = create_cache_directory(configured.get());
