@@ -16,6 +16,15 @@ from torch.utils._pytree import PyTree
 class RemoveMixedTypeOperators(ExportPass):
     # pyre-ignore
     def call_operator(self, op, args, kwargs, meta: NodeMetadata):  # noqa: C901
+        if op in (torch.ops.aten.cat.default, torch.ops.aten.stack.default):
+            # Earlier passes can drop inputs, such as empty ones, without updating
+            # the node, so read the dtype eager promoted to from its output.
+            return self._cast_inputs(op, args, kwargs, meta, meta["val"].dtype)
+
+        if len(args) <= 1:
+            # Unary Operators are not mixed type
+            return super().call_operator(op, args, kwargs, meta)
+
         promotion_type_allow_list = {
             torch.ops.aten.add.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.mul.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
@@ -25,8 +34,6 @@ class RemoveMixedTypeOperators(ExportPass):
             torch.ops.aten.div.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT,
             torch.ops.aten.div.Tensor_mode: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.minimum.default: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
-            torch.ops.aten.cat.default: ELEMENTWISE_TYPE_PROMOTION_KIND.NO_OPMATH,
-            torch.ops.aten.stack.default: ELEMENTWISE_TYPE_PROMOTION_KIND.NO_OPMATH,
         }
 
         if op in promotion_type_allow_list:
@@ -40,20 +47,9 @@ class RemoveMixedTypeOperators(ExportPass):
             # Not in allow list, do nothing
             return super().call_operator(op, args, kwargs, meta)
 
-        # PyTorch promotes across every tensor in a list, such as the inputs of cat.
-        operands = []
-        for arg, schema_arg in zip(args, op._schema.arguments):
-            if schema_arg.type == torch.ListType.ofTensors():
-                operands.extend(arg)
-            elif isinstance(schema_arg.type, torch.TensorType):
-                operands.append(arg)
-        if len(operands) <= 1:
-            # A single operand cannot have mixed types
-            return super().call_operator(op, args, kwargs, meta)
-
         # Using tensors for type information only
         arg_tensor = []
-        for arg in operands:
+        for arg in args:
             if isinstance(arg, ProxyValue) and arg.is_tensor():
                 arg_tensor.append(arg.to_tensor())
             elif isinstance(arg, ProxyValue) and isinstance(
@@ -79,20 +75,24 @@ class RemoveMixedTypeOperators(ExportPass):
             type_promotion_kind=promotion_kind,
         )[1]
 
+        return self._cast_inputs(op, args, kwargs, meta, promote_dtype)
+
+    # pyre-ignore
+    def _cast_inputs(self, op, args, kwargs, meta: NodeMetadata, dtype: torch.dtype):
         def coerce(value: PyTree) -> PyTree:
             if isinstance(value, ProxyValue):
                 if not value.is_tensor():
                     return value
-                if value.to_tensor().dtype == promote_dtype:
+                if value.to_tensor().dtype == dtype:
                     return value
 
-            if isinstance(value, torch.Tensor) and value.dtype == promote_dtype:
+            if isinstance(value, torch.Tensor) and value.dtype == dtype:
                 return value
 
             return self.call_operator(
                 torch.ops.aten._to_copy.default,
                 (value,),
-                {"dtype": promote_dtype},
+                {"dtype": dtype},
                 meta,
             )
 
