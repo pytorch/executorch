@@ -32,6 +32,11 @@
     - arg_meta: null
       kernel_name: torch::executor::_conj_physical_out
 
+- op: _embedding_bag.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_embedding_bag_out
+
 - op: _fft_r2c.out
   kernels:
     - arg_meta: null

@@ -345,6 +345,37 @@ class TestProgramManagers(unittest.TestCase):
 
         to_edge(export(M(), (torch.randn(4),))).to_executorch()
 
+    def test_embedding_bag_frozen_weight(self):
+        model = torch.nn.EmbeddingBag(10, 3, mode="sum").requires_grad_(False)
+        inputs = (torch.tensor([1, 2, 4, 5, 4, 3]), torch.tensor([0, 2, 4]))
+        executorch_module = _load_for_executorch_from_buffer(
+            to_edge(export(model, inputs)).to_executorch().buffer
+        )
+        self.assertTrue(
+            torch.allclose(
+                executorch_module.run_method("forward", inputs)[0], model(*inputs)
+            )
+        )
+
+    def test_embedding_bag_int32_offsets(self):
+        # Export allocates the auxiliary outputs with the offsets dtype.
+        inputs = (
+            torch.tensor([1, 2, 4, 5, 4, 3]),
+            torch.tensor([0, 2, 4], dtype=torch.int32),
+        )
+        for mode in ("sum", "mean", "max"):
+            with self.subTest(mode=mode):
+                model = torch.nn.EmbeddingBag(10, 3, mode=mode)
+                executorch_module = _load_for_executorch_from_buffer(
+                    to_edge(export(model, inputs)).to_executorch().buffer
+                )
+                self.assertTrue(
+                    torch.allclose(
+                        executorch_module.run_method("forward", inputs)[0],
+                        model(*inputs),
+                    )
+                )
+
     def test_float_sym_max_min_rejected(self):
         # The runtime's sym_max and sym_min kernels only take ints.
         def model(sym_op):
