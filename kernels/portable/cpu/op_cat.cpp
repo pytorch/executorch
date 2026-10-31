@@ -83,7 +83,7 @@ Tensor& cat_out(
       for (size_t i = 0; i < outer; ++i) {
         for (size_t j = 0; j < ninputs; ++j) {
           if (tensors[j].numel() == 0) {
-            return;
+            continue;
           }
           size_t inner = tensors[j].size(dim) * dim_stride;
           const CTYPE* const in_ptr =

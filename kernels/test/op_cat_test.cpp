@@ -130,6 +130,15 @@ class OpCatOutTest : public OperatorTest {
          CTYPE(0.31, 2.33),
          CTYPE(4.35, 6.37)});
     EXPECT_TENSOR_EQ(out_1, expected_1);
+
+    // An empty input must not stop the copy of the inputs after it.
+    std::vector<Tensor> inputs_with_empty = {x, tf.make({0, 2}, {}), y};
+    Tensor out_2 = tf.full({4, 2}, CTYPE{0, 0});
+    op_cat_out(
+        ArrayRef<Tensor>(inputs_with_empty.data(), inputs_with_empty.size()),
+        /*dim=*/0,
+        out_2);
+    EXPECT_TENSOR_EQ(out_2, expected_0);
   }
 };
 
