@@ -266,16 +266,10 @@ def delete_constant_placeholder(exp_program: ExportedProgram, node: torch.fx.Nod
             f"Cannot delete input node {node.name} since it is not a parameter, a buffer, nor a lifted tensor constant."
         )
 
-    # Remove input from graph signature
-    input_specs = [
-        spec
-        for spec in exp_program.graph_signature.input_specs
-        if spec.arg.name != node.name
-    ]
-    new_graph_signature = ExportGraphSignature(
-        input_specs, exp_program.graph_signature.output_specs
-    )
-    exp_program._graph_signature = new_graph_signature
+    # Edit the spec list in place: ExportedProgramPassManager runs passes on a
+    # shallow copy of the program, which would not see a replaced signature.
+    input_specs = exp_program.graph_signature.input_specs
+    input_specs[:] = [spec for spec in input_specs if spec.arg.name != node.name]
 
     # Copies made by duplicate_constant_node keep the original target, so keep
     # the tensor while another placeholder still refers to it.
