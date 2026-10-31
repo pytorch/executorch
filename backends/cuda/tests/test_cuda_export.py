@@ -16,6 +16,7 @@ import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyncPass
 from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -453,24 +454,31 @@ class TestCudaExport(unittest.TestCase):
         class GaussianHead(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                # With 14 actions, Inductor checks scale_tril in a kernel of its
-                # own, so the assert reads a bool that autotuning makes up.
                 self.mean = torch.nn.Linear(16, 14)
                 self.log_std = torch.nn.Linear(16, 14)
 
             def forward(self, x: torch.Tensor, eps: torch.Tensor) -> torch.Tensor:
                 std = torch.clamp(torch.exp(self.log_std(x)), 1e-5, 10.0)
-                dist = torch.distributions.MultivariateNormal(
-                    self.mean(x), scale_tril=torch.diag_embed(std.sqrt())
-                )
-                return dist.loc + (dist.scale_tril @ eps[..., None])[..., 0]
+                scale_tril = torch.diag_embed(std.sqrt())
+                # The check MultivariateNormal makes on scale_tril, as newer
+                # PyTorch exports it. With 14 actions, Inductor computes each
+                # half in a kernel of its own, so the assert reads bools that
+                # autotuning makes up.
+                lower = (scale_tril.tril() == scale_tril).flatten(-2).min(-1)[0]
+                positive = (scale_tril.diagonal(dim1=-2, dim2=-1) > 0).min(-1)[0]
+                torch._assert_async((lower & positive).all(), "invalid scale_tril")
+                return self.mean(x) + (scale_tril @ eps[..., None])[..., 0]
 
-        # A strict export cannot trace torch.distributions.
-        self._export_to_cuda_with_lower(
-            GaussianHead().eval(),
-            (torch.randn(1, 16), torch.randn(1, 14)),
-            strict=False,
-        )
+        inputs = (torch.randn(1, 16), torch.randn(1, 14))
+        self._export_to_cuda_with_lower(GaussianHead().eval(), inputs)
+
+        # The pass drops the check and the math that only fed it.
+        graph_module = export(GaussianHead().eval(), inputs).graph_module
+        RemoveAssertAsyncPass()(graph_module)
+        targets = {n.target for n in graph_module.graph.nodes}
+        self.assertNotIn(torch.ops.aten._assert_async.msg, targets)
+        self.assertNotIn(torch.ops.aten.tril.default, targets)
+        self.assertIn(torch.ops.aten.linear.default, targets)
 
     def test_reshape_copy(self):
         """Torch-TensorRT hands back the views it leaves to PyTorch as _reshape_copy."""
