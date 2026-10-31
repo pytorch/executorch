@@ -100,11 +100,8 @@ from torch.fx.passes.infra.pass_manager import this_before_that_pass_constraint
 class QnnPassManager(PassManager):
 
     def _transform(self, graph_module: GraphModule):
-        # TODO: Remove once torch.export records the node names it assigns.
-        # Until then a pass could reuse one of them. Export assigns input names
-        # and renames ops to make room for them, so every node is reserved, not
-        # only the inputs. torch.fx cannot reserve a name publicly, so this
-        # writes the namespace's private name set.
+        # TODO: Remove once torch.export records the names it gives inputs and
+        # the ops it renames for them. torch.fx has no public way to reserve one.
         namespace = graph_module.graph._graph_namespace
         for node in graph_module.graph.nodes:
             namespace._used_names.add(node.name)
