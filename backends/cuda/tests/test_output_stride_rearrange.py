@@ -485,10 +485,6 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                     self.assertIsInstance(out, torch.Tensor)
                     torch.testing.assert_close(out, module(*args))
 
-    @unittest.skipIf(
-        tuple(map(int, torch.__version__.split(".")[:2])) < (2, 15),
-        "with torch 2.14 the program does not keep a buffer update across calls",
-    )
     def test_mask_retry_updates_state_once(self):
         # The capture call runs again without a graph, so its update to the
         # count must not land twice.
