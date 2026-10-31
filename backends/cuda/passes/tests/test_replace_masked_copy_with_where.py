@@ -63,7 +63,7 @@ class TestReplaceMaskedCopyWithWherePass(unittest.TestCase):
 
     def test_other_writes_are_kept(self):
         class Kept(torch.nn.Module):
-            def forward(self, x, mask):
+            def forward(self, x, mask, idx):
                 scaled = torch.zeros_like(x)
                 # The values are not the mask's picks of a tensor.
                 scaled[mask] = x[mask] * 2
@@ -76,19 +76,29 @@ class TestReplaceMaskedCopyWithWherePass(unittest.TestCase):
                 summed.index_put_((mask,), x[mask], accumulate=True)
                 other = torch.zeros_like(x)
                 other[mask] = x[mask.logical_not()]
-                return scaled, checked, summed, other
+                # An integer index is not a mask, so where cannot take it.
+                rows = torch.zeros_like(x)
+                rows[idx] = x[idx]
+                # The picks are also read elsewhere, so the index stays.
+                shared = torch.zeros_like(x)
+                read = x[mask]
+                shared[mask] = read
+                return scaled, checked, summed, other, rows, shared, read.sum()
 
         x = torch.randn(4, 3)
         mask = torch.tensor([True, False, True, False])
-        program = to_edge(export(Kept(), (x, mask))).exported_program()
+        idx = torch.tensor([2, 0])
+        program = to_edge(export(Kept(), (x, mask, idx))).exported_program()
         ReplaceMaskedCopyWithWherePass()(program.graph_module)
 
         targets = _targets(program.graph_module)
-        self.assertEqual(targets.count(exir_ops.edge.aten.index_put.default), 3)
-        self.assertEqual(targets.count(exir_ops.edge.aten.where.self), 1)
-        # The index stays for the checked count.
-        self.assertIn(exir_ops.edge.aten.index.Tensor, targets)
-        for got, expected in zip(program.module()(x, mask), Kept()(x, mask)):
+        self.assertEqual(targets.count(exir_ops.edge.aten.index_put.default), 4)
+        self.assertEqual(targets.count(exir_ops.edge.aten.where.self), 2)
+        # The index stays for the checked count and for the shared picks.
+        self.assertEqual(targets.count(exir_ops.edge.aten.index.Tensor), 5)
+        for got, expected in zip(
+            program.module()(x, mask, idx), Kept()(x, mask, idx), strict=True
+        ):
             torch.testing.assert_close(got, expected, rtol=0, atol=0)
 
     def test_check_on_another_size_keeps_the_index(self):
