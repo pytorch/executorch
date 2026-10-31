@@ -620,9 +620,9 @@ def _varlen_attn(
 
     def sequence_ends(cu: torch.Tensor, total: int):
         # Each token's index in cu of its sequence's end, and its (negative)
-        # distance from that end. Tokens before cu[0] and past cu[-1] get the
-        # index 0 and cu.numel(), so they form two more sequences, and the
-        # clamp keeps the lookup in range.
+        # distance from that end. Tokens before cu[0] get the index 0, and
+        # tokens past cu[-1] get cu.numel() and, through the clamp, their
+        # distance from cu[-1]. So each group forms one more sequence.
         token = torch.arange(total, dtype=cu.dtype, device=cu.device)
         end = torch.searchsorted(cu, token, right=True)
         return end, token - cu[end.clamp(max=cu.numel() - 1)]
@@ -653,8 +653,10 @@ def _varlen_attn(
     probs = torch.exp(scores - lse[..., None])
     out = torch.einsum("hqk,khd->qhd", probs, value.float()).to(query.dtype)
     rng_state = torch.zeros(2, dtype=torch.uint64, device=query.device)
-    # einsum gives a permuted view, but the op's output is contiguous, and
-    # later views of it in the program rely on that.
+    # einsum gives a permuted view. The op lays out its output in the
+    # query's dimension order, so a query in the usual (T, H, D) order, even
+    # a slice of a packed tensor, gives a contiguous output. Later views of
+    # it rely on that.
     return out.contiguous(), lse, rng_state
 
 
