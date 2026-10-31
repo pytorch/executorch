@@ -96,7 +96,6 @@ fbcode_target(_kind = runtime.python_test,
         "test_xnnpack_utils.py",
     ],
     supports_static_listing = False,
-    preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         "fbsource//third-party/pypi/parameterized:parameterized",
         "//executorch/backends/test/harness:tester",
