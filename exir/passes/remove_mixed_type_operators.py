@@ -16,10 +16,6 @@ from torch.utils._pytree import PyTree
 class RemoveMixedTypeOperators(ExportPass):
     # pyre-ignore
     def call_operator(self, op, args, kwargs, meta: NodeMetadata):  # noqa: C901
-        if len(args) <= 1:
-            # Unary Operators are not mixed type
-            return super().call_operator(op, args, kwargs, meta)
-
         promotion_type_allow_list = {
             torch.ops.aten.add.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.mul.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
@@ -29,6 +25,8 @@ class RemoveMixedTypeOperators(ExportPass):
             torch.ops.aten.div.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT,
             torch.ops.aten.div.Tensor_mode: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.minimum.default: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            torch.ops.aten.cat.default: ELEMENTWISE_TYPE_PROMOTION_KIND.NO_OPMATH,
+            torch.ops.aten.stack.default: ELEMENTWISE_TYPE_PROMOTION_KIND.NO_OPMATH,
         }
 
         if op in promotion_type_allow_list:
@@ -42,9 +40,20 @@ class RemoveMixedTypeOperators(ExportPass):
             # Not in allow list, do nothing
             return super().call_operator(op, args, kwargs, meta)
 
+        # PyTorch promotes across every tensor in a list, such as the inputs of cat.
+        operands = []
+        for arg, schema_arg in zip(args, op._schema.arguments):
+            if schema_arg.type == torch.ListType.ofTensors():
+                operands.extend(arg)
+            elif isinstance(schema_arg.type, torch.TensorType):
+                operands.append(arg)
+        if len(operands) <= 1:
+            # A single operand cannot have mixed types
+            return super().call_operator(op, args, kwargs, meta)
+
         # Using tensors for type information only
         arg_tensor = []
-        for arg in args:
+        for arg in operands:
             if isinstance(arg, ProxyValue) and arg.is_tensor():
                 arg_tensor.append(arg.to_tensor())
             elif isinstance(arg, ProxyValue) and isinstance(
@@ -70,10 +79,7 @@ class RemoveMixedTypeOperators(ExportPass):
             type_promotion_kind=promotion_kind,
         )[1]
 
-        def try_coerce(value: PyTree, arg: torch.Argument) -> PyTree:
-            if not isinstance(arg.type, torch.TensorType):
-                return value
-
+        def coerce(value: PyTree) -> PyTree:
             if isinstance(value, ProxyValue):
                 if not value.is_tensor():
                     return value
@@ -89,6 +95,13 @@ class RemoveMixedTypeOperators(ExportPass):
                 {"dtype": promote_dtype},
                 meta,
             )
+
+        def try_coerce(value: PyTree, arg: torch.Argument) -> PyTree:
+            if arg.type == torch.ListType.ofTensors():
+                return [coerce(v) for v in value]
+            if isinstance(arg.type, torch.TensorType):
+                return coerce(value)
+            return value
 
         args, kwargs = map_args(op, try_coerce, args, kwargs)
 
