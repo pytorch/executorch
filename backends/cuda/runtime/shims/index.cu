@@ -1248,6 +1248,9 @@ AOTITorchError aoti_torch_index_put_out(
     case ScalarType::Float:
       return put<float, float, true>(
           plan, numel, may_repeat, dst, src, scratch, stream);
+    case ScalarType::Double:
+      return put<double, double, true>(
+          plan, numel, may_repeat, dst, src, scratch, stream);
     case ScalarType::Half:
       return put<__half, float, true>(
           plan, numel, may_repeat, dst, src, scratch, stream);
