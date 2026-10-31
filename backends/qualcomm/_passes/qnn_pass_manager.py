@@ -101,8 +101,9 @@ class QnnPassManager(PassManager):
 
     def _transform(self, graph_module: GraphModule):
         # TODO: Remove once torch.export records the node names it assigns.
-        # Until then a pass could reuse one, and since torch.fx cannot reserve
-        # a name publicly, this writes the namespace's private name set.
+        # Until then a pass could reuse one. That covers input names and ops
+        # export renamed to make room for them, so every node is reserved.
+        # torch.fx cannot reserve a name publicly, so this writes its private set.
         namespace = graph_module.graph._graph_namespace
         for node in graph_module.graph.nodes:
             namespace._used_names.add(node.name)

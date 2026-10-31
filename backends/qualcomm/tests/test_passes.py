@@ -189,8 +189,9 @@ class TestPasses(unittest.TestCase):
                 torch.testing.assert_close(gm(x), model(x))
 
     def test_export_pipeline_keeps_node_names_unique(self):
-        # torch.export names the inputs t_1 and mul, which the autocast and
-        # attention decompositions would otherwise give to new nodes too.
+        # torch.export leaves the input name t_1 unrecorded, and renames q * 2
+        # to mul_1 to make room for the input mul without recording that
+        # either. The decompositions would otherwise reuse those names.
         class Autocast(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -203,8 +204,9 @@ class TestPasses(unittest.TestCase):
 
         class Attention(torch.nn.Module):
             def forward(self, q, k, v, mul):
-                attention = torch.nn.functional.scaled_dot_product_attention(q, k, v)
-                return attention + mul
+                return (
+                    torch.nn.functional.scaled_dot_product_attention(q * 2, k, v) + mul
+                )
 
         cases = (
             (
@@ -217,7 +219,7 @@ class TestPasses(unittest.TestCase):
                 Attention(),
                 tuple(torch.randn(1, 2, 4, 8) for _ in range(4)),
                 torch.ops.aten.scaled_dot_product_attention.default,
-                "mul",
+                "mul_1",
             ),
         )
         for model, inputs, decomposed_op, reused_name in cases:
@@ -231,7 +233,7 @@ class TestPasses(unittest.TestCase):
                 self.assertNotIn(decomposed_op, [n.target for n in ep.graph.nodes])
                 # ep.module() copies the graph and renames duplicates, so lint
                 # the graph the passes produced.
-                ep.graph_module.graph.lint()
+                ep.graph.lint()
                 torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
                 # Checked last so the checks above still run once torch.export
                 # records the name.
