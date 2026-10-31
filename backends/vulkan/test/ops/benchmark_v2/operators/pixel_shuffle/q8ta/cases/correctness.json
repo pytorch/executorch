@@ -1,6 +1,6 @@
 [
   {
-    "name": "q8ta/pixel_shuffle/correctness [0]",
+    "name": "q8ta/pixel_shuffle/correctness",
     "operator": "et_vk.q8ta_pixel_shuffle.default",
     "target_ms": 100,
     "benchmark_runs": 1,
@@ -11,25 +11,21 @@
       "atol": 1.014060718249784,
       "rtol": 0
     },
+    "sweep_variables": {
+      "v_INPUT_LAYOUT": ["4w4c", "4c1w"],
+      "v_OUTPUT_LAYOUT": ["4w4c", "4c1w"]
+    },
     "args_sweep": [
       [
         {
           "tensor": {
             "name": "input",
-            "sizes": [
-              1,
-              16,
-              4,
-              4
-            ],
+            "sizes": [1, 16, 4, 4],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4w4c",
+            "layout": "v_INPUT_LAYOUT",
             "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
+              "rand_uniform_int": [-128, 127]
             }
           }
         },
@@ -51,15 +47,10 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              4,
-              8,
-              8
-            ],
+            "sizes": [1, 4, 8, 8],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4w4c",
+            "layout": "v_OUTPUT_LAYOUT",
             "data": {
               "fill": 0
             }
@@ -69,7 +60,7 @@
     ]
   },
   {
-    "name": "q8ta/pixel_shuffle/correctness [1]",
+    "name": "q8ta/pixel_shuffle/correctness (2)",
     "operator": "et_vk.q8ta_pixel_shuffle.default",
     "target_ms": 100,
     "benchmark_runs": 1,
@@ -80,25 +71,21 @@
       "atol": 1.014060718249784,
       "rtol": 0
     },
+    "sweep_variables": {
+      "v_INPUT_LAYOUT": ["4w4c", "4c1w"],
+      "v_OUTPUT_LAYOUT": ["4w4c", "4c1w"]
+    },
     "args_sweep": [
       [
         {
           "tensor": {
             "name": "input",
-            "sizes": [
-              1,
-              16,
-              4,
-              4
-            ],
+            "sizes": [1, 24, 8, 4],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4w4c",
+            "layout": "v_INPUT_LAYOUT",
             "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
+              "rand_uniform_int": [-128, 127]
             }
           }
         },
@@ -120,15 +107,10 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              4,
-              8,
-              8
-            ],
+            "sizes": [1, 6, 16, 8],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4c1w",
+            "layout": "v_OUTPUT_LAYOUT",
             "data": {
               "fill": 0
             }
@@ -138,7 +120,7 @@
     ]
   },
   {
-    "name": "q8ta/pixel_shuffle/correctness [2]",
+    "name": "q8ta/pixel_shuffle/correctness (3)",
     "operator": "et_vk.q8ta_pixel_shuffle.default",
     "target_ms": 100,
     "benchmark_runs": 1,
@@ -149,25 +131,21 @@
       "atol": 1.014060718249784,
       "rtol": 0
     },
+    "sweep_variables": {
+      "v_INPUT_LAYOUT": ["4w4c", "4c1w"],
+      "v_OUTPUT_LAYOUT": ["4w4c", "4c1w"]
+    },
     "args_sweep": [
       [
         {
           "tensor": {
             "name": "input",
-            "sizes": [
-              1,
-              16,
-              4,
-              4
-            ],
+            "sizes": [1, 32, 12, 8],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4c1w",
+            "layout": "v_INPUT_LAYOUT",
             "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
+              "rand_uniform_int": [-128, 127]
             }
           }
         },
@@ -189,15 +167,10 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              4,
-              8,
-              8
-            ],
+            "sizes": [1, 8, 24, 16],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4w4c",
+            "layout": "v_OUTPUT_LAYOUT",
             "data": {
               "fill": 0
             }
@@ -207,7 +180,7 @@
     ]
   },
   {
-    "name": "q8ta/pixel_shuffle/correctness [3]",
+    "name": "q8ta/pixel_shuffle/correctness (4)",
     "operator": "et_vk.q8ta_pixel_shuffle.default",
     "target_ms": 100,
     "benchmark_runs": 1,
@@ -218,25 +191,21 @@
       "atol": 1.014060718249784,
       "rtol": 0
     },
+    "sweep_variables": {
+      "v_INPUT_LAYOUT": ["4w4c", "4c1w"],
+      "v_OUTPUT_LAYOUT": ["4w4c", "4c1w"]
+    },
     "args_sweep": [
       [
         {
           "tensor": {
             "name": "input",
-            "sizes": [
-              1,
-              16,
-              4,
-              4
-            ],
+            "sizes": [1, 96, 16, 9],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4c1w",
+            "layout": "v_INPUT_LAYOUT",
             "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
+              "rand_uniform_int": [-128, 127]
             }
           }
         },
@@ -258,15 +227,10 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              4,
-              8,
-              8
-            ],
+            "sizes": [1, 24, 32, 18],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4c1w",
+            "layout": "v_OUTPUT_LAYOUT",
             "data": {
               "fill": 0
             }
@@ -276,7 +240,7 @@
     ]
   },
   {
-    "name": "q8ta/pixel_shuffle/correctness [4]",
+    "name": "q8ta/pixel_shuffle/correctness (5)",
     "operator": "et_vk.q8ta_pixel_shuffle.default",
     "target_ms": 100,
     "benchmark_runs": 1,
@@ -287,25 +251,21 @@
       "atol": 1.0076922944664253,
       "rtol": 0
     },
+    "sweep_variables": {
+      "v_INPUT_LAYOUT": ["4w4c", "4c1w"],
+      "v_OUTPUT_LAYOUT": ["4w4c", "4c1w"]
+    },
     "args_sweep": [
       [
         {
           "tensor": {
             "name": "input",
-            "sizes": [
-              1,
-              16,
-              4,
-              4
-            ],
+            "sizes": [1, 16, 4, 4],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4w4c",
+            "layout": "v_INPUT_LAYOUT",
             "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
+              "rand_uniform_int": [-128, 127]
             }
           }
         },
@@ -327,15 +287,10 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              4,
-              8,
-              8
-            ],
+            "sizes": [1, 4, 8, 8],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4w4c",
+            "layout": "v_OUTPUT_LAYOUT",
             "data": {
               "fill": 0
             }
@@ -345,7 +300,7 @@
     ]
   },
   {
-    "name": "q8ta/pixel_shuffle/correctness [5]",
+    "name": "q8ta/pixel_shuffle/correctness (6)",
     "operator": "et_vk.q8ta_pixel_shuffle.default",
     "target_ms": 100,
     "benchmark_runs": 1,
@@ -356,25 +311,21 @@
       "atol": 1.0076922944664253,
       "rtol": 0
     },
+    "sweep_variables": {
+      "v_INPUT_LAYOUT": ["4w4c", "4c1w"],
+      "v_OUTPUT_LAYOUT": ["4w4c", "4c1w"]
+    },
     "args_sweep": [
       [
         {
           "tensor": {
             "name": "input",
-            "sizes": [
-              1,
-              16,
-              4,
-              4
-            ],
+            "sizes": [1, 24, 8, 4],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4w4c",
+            "layout": "v_INPUT_LAYOUT",
             "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
+              "rand_uniform_int": [-128, 127]
             }
           }
         },
@@ -396,15 +347,10 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              4,
-              8,
-              8
-            ],
+            "sizes": [1, 6, 16, 8],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4c1w",
+            "layout": "v_OUTPUT_LAYOUT",
             "data": {
               "fill": 0
             }
@@ -414,7 +360,7 @@
     ]
   },
   {
-    "name": "q8ta/pixel_shuffle/correctness [6]",
+    "name": "q8ta/pixel_shuffle/correctness (7)",
     "operator": "et_vk.q8ta_pixel_shuffle.default",
     "target_ms": 100,
     "benchmark_runs": 1,
@@ -425,25 +371,21 @@
       "atol": 1.0076922944664253,
       "rtol": 0
     },
+    "sweep_variables": {
+      "v_INPUT_LAYOUT": ["4w4c", "4c1w"],
+      "v_OUTPUT_LAYOUT": ["4w4c", "4c1w"]
+    },
     "args_sweep": [
       [
         {
           "tensor": {
             "name": "input",
-            "sizes": [
-              1,
-              16,
-              4,
-              4
-            ],
+            "sizes": [1, 32, 12, 8],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4c1w",
+            "layout": "v_INPUT_LAYOUT",
             "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
+              "rand_uniform_int": [-128, 127]
             }
           }
         },
@@ -465,15 +407,10 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              4,
-              8,
-              8
-            ],
+            "sizes": [1, 8, 24, 16],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4w4c",
+            "layout": "v_OUTPUT_LAYOUT",
             "data": {
               "fill": 0
             }
@@ -483,7 +420,7 @@
     ]
   },
   {
-    "name": "q8ta/pixel_shuffle/correctness [7]",
+    "name": "q8ta/pixel_shuffle/correctness (8)",
     "operator": "et_vk.q8ta_pixel_shuffle.default",
     "target_ms": 100,
     "benchmark_runs": 1,
@@ -494,25 +431,21 @@
       "atol": 1.0076922944664253,
       "rtol": 0
     },
+    "sweep_variables": {
+      "v_INPUT_LAYOUT": ["4w4c", "4c1w"],
+      "v_OUTPUT_LAYOUT": ["4w4c", "4c1w"]
+    },
     "args_sweep": [
       [
         {
           "tensor": {
             "name": "input",
-            "sizes": [
-              1,
-              16,
-              4,
-              4
-            ],
+            "sizes": [1, 96, 16, 9],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4c1w",
+            "layout": "v_INPUT_LAYOUT",
             "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
+              "rand_uniform_int": [-128, 127]
             }
           }
         },
@@ -534,1671 +467,10 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              4,
-              8,
-              8
-            ],
+            "sizes": [1, 24, 32, 18],
             "dtype": "int8x4",
             "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [8]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              24,
-              8,
-              4
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              6,
-              16,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [9]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              24,
-              8,
-              4
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              6,
-              16,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [10]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              24,
-              8,
-              4
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              6,
-              16,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [11]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              24,
-              8,
-              4
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              6,
-              16,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [12]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              24,
-              8,
-              4
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              6,
-              16,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [13]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              24,
-              8,
-              4
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              6,
-              16,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [14]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              24,
-              8,
-              4
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              6,
-              16,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [15]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              24,
-              8,
-              4
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              6,
-              16,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [16]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              32,
-              12,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              8,
-              24,
-              16
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [17]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              32,
-              12,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              8,
-              24,
-              16
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [18]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              32,
-              12,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              8,
-              24,
-              16
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [19]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              32,
-              12,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              8,
-              24,
-              16
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [20]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              32,
-              12,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              8,
-              24,
-              16
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [21]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              32,
-              12,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              8,
-              24,
-              16
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [22]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              32,
-              12,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              8,
-              24,
-              16
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [23]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              32,
-              12,
-              8
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              8,
-              24,
-              16
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [24]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              96,
-              16,
-              9
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              24,
-              32,
-              18
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [25]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              96,
-              16,
-              9
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              24,
-              32,
-              18
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [26]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              96,
-              16,
-              9
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              24,
-              32,
-              18
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [27]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.014060718249784,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              96,
-              16,
-              9
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 140.607421875
-        },
-        {
-          "int": 0
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              24,
-              32,
-              18
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [28]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              96,
-              16,
-              9
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              24,
-              32,
-              18
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [29]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              96,
-              16,
-              9
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              24,
-              32,
-              18
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [30]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              96,
-              16,
-              9
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              24,
-              32,
-              18
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4w4c",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "q8ta/pixel_shuffle/correctness [31]",
-    "operator": "et_vk.q8ta_pixel_shuffle.default",
-    "target_ms": 100,
-    "benchmark_runs": 1,
-    "warmup_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0076922944664253,
-      "rtol": 0
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              1,
-              96,
-              16,
-              9
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
-            "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
-            }
-          }
-        },
-        {
-          "float": 0.00711200013756752
-        },
-        {
-          "int": 0
-        },
-        {
-          "float": 76.9230728149414
-        },
-        {
-          "int": 5
-        },
-        {
-          "int": 2
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              24,
-              32,
-              18
-            ],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "4c1w",
+            "layout": "v_OUTPUT_LAYOUT",
             "data": {
               "fill": 0
             }

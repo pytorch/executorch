@@ -5,8 +5,21 @@
   "target_ms": 10,
   "benchmark_runs": 5,
   "bindings": [
-    {"buffer": {"name": "output", "sizes": [8], "access": "write", "data": {"fill": 0}}},
-    {"buffer": {"name": "input", "sizes": [8], "data": {"rand_uniform_float": [-1, 1]}}},
+    {
+      "buffer": {
+        "name": "output",
+        "sizes": [8],
+        "access": "write",
+        "data": {"fill": 0}
+      }
+    },
+    {
+      "buffer": {
+        "name": "input",
+        "sizes": [8],
+        "data": {"rand_uniform_float": [-1, 1]}
+      }
+    },
     {
       "meta_ubo": "output",
       "field": "numel"

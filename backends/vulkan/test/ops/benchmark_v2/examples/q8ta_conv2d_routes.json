@@ -6,11 +6,7 @@
   "show_memory_throughput": true,
   "show_compute_throughput": true,
   "max_dispatches": 512,
-  "route_sweep": [
-    "auto",
-    "direct",
-    "im2col"
-  ],
+  "route_sweep": ["auto", "direct", "im2col"],
   "args_sweep": [
     [
       {

@@ -16,60 +16,36 @@
         {
           "tensor": {
             "name": "q",
-            "sizes": [
-              1,
-              512,
-              32,
-              64
-            ],
+            "sizes": [1, 512, 32, 64],
             "dtype": "float16",
             "storage": "texture3d",
             "layout": "width",
             "data": {
-              "rand_uniform_float": [
-                -1,
-                1
-              ]
+              "rand_uniform_float": [-1, 1]
             }
           }
         },
         {
           "tensor": {
             "name": "k_cache",
-            "sizes": [
-              1,
-              512,
-              8,
-              64
-            ],
+            "sizes": [1, 512, 8, 64],
             "dtype": "float16",
             "storage": "texture3d",
             "layout": "width",
             "data": {
-              "rand_uniform_float": [
-                -1,
-                1
-              ]
+              "rand_uniform_float": [-1, 1]
             }
           }
         },
         {
           "tensor": {
             "name": "value_cache",
-            "sizes": [
-              1,
-              512,
-              8,
-              64
-            ],
+            "sizes": [1, 512, 8, 64],
             "dtype": "float16",
             "storage": "texture3d",
             "layout": "width",
             "data": {
-              "rand_uniform_float": [
-                -1,
-                1
-              ]
+              "rand_uniform_float": [-1, 1]
             }
           }
         },
@@ -87,12 +63,7 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              512,
-              32,
-              64
-            ],
+            "sizes": [1, 512, 32, 64],
             "dtype": "float16",
             "storage": "texture3d",
             "layout": "width",
@@ -105,7 +76,7 @@
     ]
   },
   {
-    "name": "sdpa Qwen3-0.6B prefill D128 H16 Hkv8 S512 C512 P0 float16 texture3d default",
+    "name": "sdpa",
     "operator": "llama.custom_sdpa.default",
     "target_ms": 100,
     "warmup_runs": 3,
@@ -116,170 +87,47 @@
       "atol": 0.01,
       "rtol": 0.01
     },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "q",
-            "sizes": [
-              1,
-              512,
-              16,
-              128
-            ],
-            "dtype": "float16",
-            "storage": "texture3d",
-            "layout": "width",
-            "data": {
-              "rand_uniform_float": [
-                -1,
-                1
-              ]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "k_cache",
-            "sizes": [
-              1,
-              512,
-              8,
-              128
-            ],
-            "dtype": "float16",
-            "storage": "texture3d",
-            "layout": "width",
-            "data": {
-              "rand_uniform_float": [
-                -1,
-                1
-              ]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "value_cache",
-            "sizes": [
-              1,
-              512,
-              8,
-              128
-            ],
-            "dtype": "float16",
-            "storage": "texture3d",
-            "layout": "width",
-            "data": {
-              "rand_uniform_float": [
-                -1,
-                1
-              ]
-            }
-          }
-        },
-        {
-          "int": 0
-        },
-        null,
-        {
-          "float": 0.0
-        },
-        {
-          "bool": true
-        },
-        null,
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [
-              1,
-              512,
-              16,
-              128
-            ],
-            "dtype": "float16",
-            "storage": "texture3d",
-            "layout": "width",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+    "sweep_variables": {
+      "v_SIZES": [
+        [1, 512, 16, 128],
+        [1, 512, 24, 128]
       ]
-    ]
-  },
-  {
-    "name": "sdpa Phi-4-mini prefill D128 H24 Hkv8 S512 C512 P0 float16 texture3d default",
-    "operator": "llama.custom_sdpa.default",
-    "target_ms": 100,
-    "warmup_runs": 3,
-    "benchmark_runs": 10,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 0.01,
-      "rtol": 0.01
     },
     "args_sweep": [
       [
         {
           "tensor": {
             "name": "q",
-            "sizes": [
-              1,
-              512,
-              24,
-              128
-            ],
+            "sizes": "v_SIZES",
             "dtype": "float16",
             "storage": "texture3d",
             "layout": "width",
             "data": {
-              "rand_uniform_float": [
-                -1,
-                1
-              ]
+              "rand_uniform_float": [-1, 1]
             }
           }
         },
         {
           "tensor": {
             "name": "k_cache",
-            "sizes": [
-              1,
-              512,
-              8,
-              128
-            ],
+            "sizes": [1, 512, 8, 128],
             "dtype": "float16",
             "storage": "texture3d",
             "layout": "width",
             "data": {
-              "rand_uniform_float": [
-                -1,
-                1
-              ]
+              "rand_uniform_float": [-1, 1]
             }
           }
         },
         {
           "tensor": {
             "name": "value_cache",
-            "sizes": [
-              1,
-              512,
-              8,
-              128
-            ],
+            "sizes": [1, 512, 8, 128],
             "dtype": "float16",
             "storage": "texture3d",
             "layout": "width",
             "data": {
-              "rand_uniform_float": [
-                -1,
-                1
-              ]
+              "rand_uniform_float": [-1, 1]
             }
           }
         },
@@ -297,12 +145,7 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              512,
-              24,
-              128
-            ],
+            "sizes": "v_SIZES",
             "dtype": "float16",
             "storage": "texture3d",
             "layout": "width",

@@ -17,20 +17,12 @@
         {
           "tensor": {
             "name": "input",
-            "sizes": [
-              1,
-              32,
-              9,
-              9
-            ],
+            "sizes": [1, 32, 9, 9],
             "dtype": "int8x4",
             "storage": "buffer",
             "layout": "4c",
             "data": {
-              "rand_uniform_int": [
-                -121,
-                125
-              ]
+              "rand_uniform_int": [-121, 125]
             }
           }
         },
@@ -43,27 +35,19 @@
         {
           "tensor": {
             "name": "weight",
-            "sizes": [
-              64,
-              288
-            ],
+            "sizes": [64, 288],
             "dtype": "int8",
             "storage": "constant",
             "layout": "width",
             "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
+              "rand_uniform_int": [-128, 127]
             }
           }
         },
         {
           "tensor": {
             "name": "weight_sums",
-            "sizes": [
-              64
-            ],
+            "sizes": [64],
             "dtype": "int32",
             "storage": "constant",
             "layout": "width",
@@ -75,17 +59,12 @@
         {
           "tensor": {
             "name": "weight_scales",
-            "sizes": [
-              64
-            ],
+            "sizes": [64],
             "dtype": "float32",
             "storage": "constant",
             "layout": "width",
             "data": {
-              "rand_uniform_float": [
-                0.004999999888241291,
-                0.014999999664723873
-              ]
+              "rand_uniform_float": [0.004999999888241291, 0.014999999664723873]
             }
           }
         },
@@ -98,42 +77,26 @@
         {
           "tensor": {
             "name": "bias",
-            "sizes": [
-              64
-            ],
+            "sizes": [64],
             "dtype": "float32",
             "storage": "constant",
             "layout": "width",
             "data": {
-              "repeat": [
-                0
-              ]
+              "repeat": [0]
             }
           }
         },
         {
-          "int_list": [
-            3,
-            3
-          ]
+          "int_list": [3, 3]
         },
         {
-          "int_list": [
-            1,
-            1
-          ]
+          "int_list": [1, 1]
         },
         {
-          "int_list": [
-            1,
-            1
-          ]
+          "int_list": [1, 1]
         },
         {
-          "int_list": [
-            1,
-            1
-          ]
+          "int_list": [1, 1]
         },
         {
           "int": 1
@@ -144,12 +107,7 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              64,
-              9,
-              9
-            ],
+            "sizes": [1, 64, 9, 9],
             "dtype": "int8x4",
             "storage": "buffer",
             "layout": "4c",
@@ -179,20 +137,12 @@
         {
           "tensor": {
             "name": "input",
-            "sizes": [
-              1,
-              32,
-              7,
-              7
-            ],
+            "sizes": [1, 32, 7, 7],
             "dtype": "int8x4",
             "storage": "buffer",
             "layout": "4c",
             "data": {
-              "rand_uniform_int": [
-                -121,
-                125
-              ]
+              "rand_uniform_int": [-121, 125]
             }
           }
         },
@@ -205,27 +155,19 @@
         {
           "tensor": {
             "name": "weight",
-            "sizes": [
-              128,
-              288
-            ],
+            "sizes": [128, 288],
             "dtype": "int8",
             "storage": "constant",
             "layout": "width",
             "data": {
-              "rand_uniform_int": [
-                -128,
-                127
-              ]
+              "rand_uniform_int": [-128, 127]
             }
           }
         },
         {
           "tensor": {
             "name": "weight_sums",
-            "sizes": [
-              128
-            ],
+            "sizes": [128],
             "dtype": "int32",
             "storage": "constant",
             "layout": "width",
@@ -237,17 +179,12 @@
         {
           "tensor": {
             "name": "weight_scales",
-            "sizes": [
-              128
-            ],
+            "sizes": [128],
             "dtype": "float32",
             "storage": "constant",
             "layout": "width",
             "data": {
-              "rand_uniform_float": [
-                0.004999999888241291,
-                0.014999999664723873
-              ]
+              "rand_uniform_float": [0.004999999888241291, 0.014999999664723873]
             }
           }
         },
@@ -260,42 +197,26 @@
         {
           "tensor": {
             "name": "bias",
-            "sizes": [
-              128
-            ],
+            "sizes": [128],
             "dtype": "float32",
             "storage": "constant",
             "layout": "width",
             "data": {
-              "repeat": [
-                0
-              ]
+              "repeat": [0]
             }
           }
         },
         {
-          "int_list": [
-            3,
-            3
-          ]
+          "int_list": [3, 3]
         },
         {
-          "int_list": [
-            1,
-            1
-          ]
+          "int_list": [1, 1]
         },
         {
-          "int_list": [
-            1,
-            1
-          ]
+          "int_list": [1, 1]
         },
         {
-          "int_list": [
-            1,
-            1
-          ]
+          "int_list": [1, 1]
         },
         {
           "int": 1
@@ -306,12 +227,7 @@
         {
           "tensor": {
             "name": "output",
-            "sizes": [
-              1,
-              128,
-              7,
-              7
-            ],
+            "sizes": [1, 128, 7, 7],
             "dtype": "int8x4",
             "storage": "buffer",
             "layout": "4c",

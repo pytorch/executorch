@@ -14,16 +14,88 @@
   },
   "args_sweep": [
     [
-      {"tensor": {"name": "input", "sizes": ["v_M", 2048], "dtype": "v_DTYPE", "storage": "v_STORAGE", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
-      {"tensor": {"name": "weight", "sizes": [2048, 2048], "dtype": "v_DTYPE", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-0.02, 0.02]}}},
-      {"tensor": {"name": "bias", "sizes": [2048], "dtype": "v_DTYPE", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
-      {"tensor": {"name": "output", "sizes": ["v_M", 2048], "dtype": "v_DTYPE", "storage": "v_STORAGE", "layout": "width", "data": {"fill": 0}}}
+      {
+        "tensor": {
+          "name": "input",
+          "sizes": ["v_M", 2048],
+          "dtype": "v_DTYPE",
+          "storage": "v_STORAGE",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "weight",
+          "sizes": [2048, 2048],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-0.02, 0.02]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "bias",
+          "sizes": [2048],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "output",
+          "sizes": ["v_M", 2048],
+          "dtype": "v_DTYPE",
+          "storage": "v_STORAGE",
+          "layout": "width",
+          "data": {"fill": 0}
+        }
+      }
     ],
     [
-      {"tensor": {"name": "input", "sizes": ["v_M", 2048], "dtype": "v_DTYPE", "storage": "v_STORAGE", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
-      {"tensor": {"name": "weight", "sizes": [8192, 2048], "dtype": "v_DTYPE", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-0.02, 0.02]}}},
-      {"tensor": {"name": "bias", "sizes": [8192], "dtype": "v_DTYPE", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
-      {"tensor": {"name": "output", "sizes": ["v_M", 8192], "dtype": "v_DTYPE", "storage": "v_STORAGE", "layout": "width", "data": {"fill": 0}}}
+      {
+        "tensor": {
+          "name": "input",
+          "sizes": ["v_M", 2048],
+          "dtype": "v_DTYPE",
+          "storage": "v_STORAGE",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "weight",
+          "sizes": [8192, 2048],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-0.02, 0.02]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "bias",
+          "sizes": [8192],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "output",
+          "sizes": ["v_M", 8192],
+          "dtype": "v_DTYPE",
+          "storage": "v_STORAGE",
+          "layout": "width",
+          "data": {"fill": 0}
+        }
+      }
     ]
   ]
 }

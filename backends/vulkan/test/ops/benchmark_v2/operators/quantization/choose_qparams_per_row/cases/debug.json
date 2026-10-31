@@ -1,6 +1,6 @@
 [
   {
-    "name": "choose_qparams_per_row debug [4, 8] texture3d",
+    "name": "choose_qparams_per_row debug [4, 8]",
     "operator": "etvk.choose_qparams_per_row.default",
     "target_ms": 100,
     "warmup_runs": 1,
@@ -11,23 +11,20 @@
       "atol": 0.002,
       "rtol": 0.001
     },
+    "sweep_variables": {
+      "v_INPUT_STORAGE": ["texture3d", "buffer"]
+    },
     "args_sweep": [
       [
         {
           "tensor": {
             "name": "input",
-            "sizes": [
-              4,
-              8
-            ],
+            "sizes": [4, 8],
             "dtype": "float32",
-            "storage": "texture3d",
+            "storage": "v_INPUT_STORAGE",
             "layout": "width",
             "data": {
-              "rand_uniform_float": [
-                -1,
-                1
-              ]
+              "rand_uniform_float": [-1, 1]
             }
           }
         },
@@ -40,9 +37,7 @@
         {
           "tensor": {
             "name": "scale",
-            "sizes": [
-              4
-            ],
+            "sizes": [4],
             "dtype": "float32",
             "storage": "texture3d",
             "layout": "width",
@@ -54,78 +49,7 @@
         {
           "tensor": {
             "name": "zero_point",
-            "sizes": [
-              4
-            ],
-            "dtype": "int8",
-            "storage": "texture3d",
-            "layout": "width",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
-      ]
-    ]
-  },
-  {
-    "name": "choose_qparams_per_row debug [4, 8] buffer",
-    "operator": "etvk.choose_qparams_per_row.default",
-    "target_ms": 100,
-    "warmup_runs": 1,
-    "benchmark_runs": 1,
-    "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 0.002,
-      "rtol": 0.001
-    },
-    "args_sweep": [
-      [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [
-              4,
-              8
-            ],
-            "dtype": "float32",
-            "storage": "buffer",
-            "layout": "width",
-            "data": {
-              "rand_uniform_float": [
-                -1,
-                1
-              ]
-            }
-          }
-        },
-        {
-          "int": -128
-        },
-        {
-          "int": 127
-        },
-        {
-          "tensor": {
-            "name": "scale",
-            "sizes": [
-              4
-            ],
-            "dtype": "float32",
-            "storage": "texture3d",
-            "layout": "width",
-            "data": {
-              "fill": 0
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "zero_point",
-            "sizes": [
-              4
-            ],
+            "sizes": [4],
             "dtype": "int8",
             "storage": "texture3d",
             "layout": "width",

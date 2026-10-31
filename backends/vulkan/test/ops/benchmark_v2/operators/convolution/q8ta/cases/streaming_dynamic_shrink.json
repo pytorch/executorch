@@ -20,20 +20,12 @@
           {
             "tensor": {
               "name": "input",
-              "sizes": [
-                10,
-                64,
-                30,
-                99
-              ],
+              "sizes": [10, 64, 30, 99],
               "dtype": "int8x4",
               "storage": "buffer",
               "layout": "4w4c",
               "data": {
-                "rand_uniform_int": [
-                  -8,
-                  12
-                ]
+                "rand_uniform_int": [-8, 12]
               }
             }
           },
@@ -46,27 +38,19 @@
           {
             "tensor": {
               "name": "weight",
-              "sizes": [
-                4,
-                576
-              ],
+              "sizes": [4, 576],
               "dtype": "int8",
               "storage": "constant",
               "layout": "width",
               "data": {
-                "rand_uniform_int": [
-                  -128,
-                  127
-                ]
+                "rand_uniform_int": [-128, 127]
               }
             }
           },
           {
             "tensor": {
               "name": "weight_sums",
-              "sizes": [
-                4
-              ],
+              "sizes": [4],
               "dtype": "int32",
               "storage": "constant",
               "layout": "width",
@@ -78,16 +62,13 @@
           {
             "tensor": {
               "name": "weight_scales",
-              "sizes": [
-                4
-              ],
+              "sizes": [4],
               "dtype": "float32",
               "storage": "constant",
               "layout": "width",
               "data": {
                 "rand_uniform_float": [
-                  0.004999999888241291,
-                  0.014999999664723873
+                  0.004999999888241291, 0.014999999664723873
                 ]
               }
             }
@@ -101,42 +82,26 @@
           {
             "tensor": {
               "name": "bias",
-              "sizes": [
-                4
-              ],
+              "sizes": [4],
               "dtype": "float32",
               "storage": "constant",
               "layout": "width",
               "data": {
-                "repeat": [
-                  0
-                ]
+                "repeat": [0]
               }
             }
           },
           {
-            "int_list": [
-              3,
-              3
-            ]
+            "int_list": [3, 3]
           },
           {
-            "int_list": [
-              1,
-              1
-            ]
+            "int_list": [1, 1]
           },
           {
-            "int_list": [
-              1,
-              1
-            ]
+            "int_list": [1, 1]
           },
           {
-            "int_list": [
-              1,
-              1
-            ]
+            "int_list": [1, 1]
           },
           {
             "int": 1
@@ -147,12 +112,7 @@
           {
             "tensor": {
               "name": "output",
-              "sizes": [
-                10,
-                4,
-                30,
-                99
-              ],
+              "sizes": [10, 4, 30, 99],
               "dtype": "int8x4",
               "storage": "buffer",
               "layout": "4w4c",
@@ -182,138 +142,58 @@
   "validation_steps": [
     {
       "tensor_sizes": {
-        "input": [
-          10,
-          64,
-          30,
-          99
-        ]
+        "input": [10, 64, 30, 99]
       },
-      "expected_output_sizes": [
-        10,
-        4,
-        30,
-        99
-      ],
+      "expected_output_sizes": [10, 4, 30, 99],
       "validate_output": false
     },
     {
       "tensor_sizes": {
-        "input": [
-          1,
-          64,
-          20,
-          51
-        ]
+        "input": [1, 64, 20, 51]
       },
-      "expected_output_sizes": [
-        1,
-        4,
-        20,
-        51
-      ],
+      "expected_output_sizes": [1, 4, 20, 51],
       "validate_output": true
     },
     {
       "tensor_sizes": {
-        "input": [
-          10,
-          64,
-          30,
-          99
-        ]
+        "input": [10, 64, 30, 99]
       },
-      "expected_output_sizes": [
-        10,
-        4,
-        30,
-        99
-      ],
+      "expected_output_sizes": [10, 4, 30, 99],
       "validate_output": false
     },
     {
       "tensor_sizes": {
-        "input": [
-          1,
-          64,
-          20,
-          51
-        ]
+        "input": [1, 64, 20, 51]
       },
-      "expected_output_sizes": [
-        1,
-        4,
-        20,
-        51
-      ],
+      "expected_output_sizes": [1, 4, 20, 51],
       "validate_output": true
     },
     {
       "tensor_sizes": {
-        "input": [
-          10,
-          64,
-          30,
-          99
-        ]
+        "input": [10, 64, 30, 99]
       },
-      "expected_output_sizes": [
-        10,
-        4,
-        30,
-        99
-      ],
+      "expected_output_sizes": [10, 4, 30, 99],
       "validate_output": false
     },
     {
       "tensor_sizes": {
-        "input": [
-          1,
-          64,
-          20,
-          51
-        ]
+        "input": [1, 64, 20, 51]
       },
-      "expected_output_sizes": [
-        1,
-        4,
-        20,
-        51
-      ],
+      "expected_output_sizes": [1, 4, 20, 51],
       "validate_output": true
     },
     {
       "tensor_sizes": {
-        "input": [
-          10,
-          64,
-          30,
-          99
-        ]
+        "input": [10, 64, 30, 99]
       },
-      "expected_output_sizes": [
-        10,
-        4,
-        30,
-        99
-      ],
+      "expected_output_sizes": [10, 4, 30, 99],
       "validate_output": false
     },
     {
       "tensor_sizes": {
-        "input": [
-          1,
-          64,
-          20,
-          51
-        ]
+        "input": [1, 64, 20, 51]
       },
-      "expected_output_sizes": [
-        1,
-        4,
-        20,
-        51
-      ],
+      "expected_output_sizes": [1, 4, 20, 51],
       "validate_output": true
     }
   ]

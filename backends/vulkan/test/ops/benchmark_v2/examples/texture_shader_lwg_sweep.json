@@ -3,16 +3,8 @@
   "shader": "binary_add_texture3d_float",
   "gwg_size": "default_pick_gwg",
   "lwg_size": [
-    [
-      8,
-      8,
-      1
-    ],
-    [
-      10,
-      10,
-      1
-    ]
+    [8, 8, 1],
+    [10, 10, 1]
   ],
   "target_ms": 10,
   "benchmark_runs": 5,
@@ -28,12 +20,7 @@
     {
       "texture3d": {
         "name": "out",
-        "sizes": [
-          1,
-          16,
-          64,
-          64
-        ],
+        "sizes": [1, 16, 64, 64],
         "access": "write",
         "data": {
           "fill": 0
@@ -43,34 +30,18 @@
     {
       "texture3d": {
         "name": "a",
-        "sizes": [
-          1,
-          16,
-          64,
-          64
-        ],
+        "sizes": [1, 16, 64, 64],
         "data": {
-          "rand_uniform_float": [
-            -1,
-            1
-          ]
+          "rand_uniform_float": [-1, 1]
         }
       }
     },
     {
       "texture3d": {
         "name": "b",
-        "sizes": [
-          1,
-          16,
-          64,
-          64
-        ],
+        "sizes": [1, 16, 64, 64],
         "data": {
-          "rand_uniform_float": [
-            -1,
-            1
-          ]
+          "rand_uniform_float": [-1, 1]
         }
       }
     },
@@ -98,12 +69,8 @@
   "push_constants": [
     {
       "dtype": "float32",
-      "data": [
-        2
-      ]
+      "data": [2]
     }
   ],
-  "outputs": [
-    "out"
-  ]
+  "outputs": ["out"]
 }

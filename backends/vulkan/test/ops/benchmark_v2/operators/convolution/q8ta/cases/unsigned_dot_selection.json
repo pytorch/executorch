@@ -3,9 +3,6 @@
   "check": "q8ta_unsigned_dot_selection",
   "parameters": {
     "accumulator_limit_bytes": 33025,
-    "test_kernel_sizes": [
-      33025,
-      33026
-    ]
+    "test_kernel_sizes": [33025, 33026]
   }
 }
