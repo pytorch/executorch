@@ -22,6 +22,7 @@
 #include <mutex>
 #include <new>
 #include <random>
+#include <stdexcept>
 #include <vector>
 
 namespace executorch::backends::cuda {
@@ -82,12 +83,18 @@ bool ensure_rng_init(cudaStream_t stream) {
       if (!rng.ok()) {
         throw std::bad_alloc();
       }
-      d_rng = static_cast<RngState*>(rng.get());
-      cudaMemcpyAsync(
-          d_rng, &h, sizeof(RngState), cudaMemcpyHostToDevice, stream);
       // Synchronize to ensure the copy completes before we return
       // (the host-side RngState `h` is on the stack).
-      cudaStreamSynchronize(stream);
+      cudaError_t err = cudaMemcpyAsync(
+          rng.get(), &h, sizeof(RngState), cudaMemcpyHostToDevice, stream);
+      if (err == cudaSuccess) {
+        err = cudaStreamSynchronize(stream);
+      }
+      if (err != cudaSuccess) {
+        (void)CudaAllocator::deallocate_stream_ordered(rng.get(), -1, stream);
+        throw std::runtime_error(cudaGetErrorString(err));
+      }
+      d_rng = static_cast<RngState*>(rng.get());
     });
   } catch (const std::exception& e) {
     // std::random_device throws an implementation-defined std::exception.
