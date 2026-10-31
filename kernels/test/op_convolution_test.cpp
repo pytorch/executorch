@@ -641,6 +641,44 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
           executorch::aten::ArrayRef<int64_t>{output_padding, 1},
           groups,
           out));
+
+  // A 3-D convolution takes one stride, padding and dilation for all spatial
+  // dims or one per dim, and no input has more than three spatial dims.
+  Tensor input_3d = tf.ones({1, 2, 3, 3, 3});
+  Tensor weight_3d = tf.ones({4, 2, 2, 2, 2});
+  Tensor out_3d = tf.zeros({1, 4, 2, 2, 2});
+  auto conv_3d = [&](executorch::aten::ArrayRef<int64_t> stride_3d,
+                     executorch::aten::ArrayRef<int64_t> padding_3d,
+                     executorch::aten::ArrayRef<int64_t> dilation_3d) {
+    context_ = torch::executor::KernelRuntimeContext();
+    return op_convolution_out(
+        input_3d,
+        weight_3d,
+        bias,
+        stride_3d,
+        padding_3d,
+        dilation_3d,
+        false,
+        {0},
+        1,
+        out_3d);
+  };
+  const int64_t one[] = {1};
+  const int64_t zero[] = {0};
+  const int64_t four_ones[] = {1, 1, 1, 1};
+  const int64_t four_zeros[] = {0, 0, 0, 0};
+  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(four_ones, zero, one));
+  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(one, four_zeros, one));
+  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(one, zero, four_ones));
+
+  Tensor input_6d = tf.ones({1, 2, 3, 3, 3, 3});
+  Tensor weight_6d = tf.ones({4, 2, 2, 2, 2, 2});
+  Tensor out_6d = tf.zeros({1, 4, 2, 2, 2, 2});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input_6d, weight_6d, bias, {1}, {0}, {1}, false, {0}, 1, out_6d));
 }
 
 TEST_F(OpConvCorrectnessTest, InvalidBiasLength) {
@@ -1129,4 +1167,71 @@ TEST_F(OpConvCorrectnessTest, TransposedOutputTiles) {
         in, w, bias, stride, padding, dilation, true, output_padding, 1, out);
     EXPECT_TENSOR_EQ(out, exp);
   }
+}
+
+namespace {
+// Small integers that keep every sum exact in float. The tests pick periods
+// that leave no repeats along any dim, so reading the wrong element changes the
+// result.
+std::vector<float> cycling_values(size_t count, int period) {
+  std::vector<float> values(count);
+  for (size_t i = 0; i < count; ++i) {
+    values[i] = static_cast<float>(static_cast<int>(i) % period - period / 2);
+  }
+  return values;
+}
+} // namespace
+
+TEST_F(OpConvCorrectnessTest, Grouped3DStridePaddingDilation) {
+  TensorFactory<ScalarType::Float> tf;
+  // Each spatial dim has its own size, kernel size, stride, padding and
+  // dilation, none of which is 1 (or 0 for padding), so mixing up dims or
+  // dropping a factor changes the result.
+  const int64_t stride[] = {2, 3, 4};
+  const int64_t padding[] = {1, 2, 3};
+  const int64_t dilation[] = {3, 4, 2};
+  auto input = tf.make({1, 4, 10, 8, 5}, cycling_values(1600, 23));
+  auto weight = tf.make({2, 2, 4, 2, 3}, cycling_values(96, 11));
+  auto bias = tf.make({2}, {1, -1});
+  // PyTorch reference.
+  auto expected =
+      tf.make({1, 2, 2, 3, 2}, {-52, -34, -31, 64,  86, 62,   -38, -87,
+                                81,  0,   19,  62,  56, -21,  -19, -60,
+                                49,  26,  -63, -44, 40, -173, 24,  74});
+  auto out = tf.zeros_like(expected);
+  op_convolution_out(
+      input, weight, bias, stride, padding, dilation, false, {0}, 2, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, GroupedTransposed3DStridePaddingDilation) {
+  TensorFactory<ScalarType::Float> tf;
+  // Depth has its own stride, padding, dilation and output padding, and height
+  // and width have their own padding and dilation.
+  const int64_t stride[] = {2, 1, 1};
+  const int64_t padding[] = {3, 1, 2};
+  const int64_t dilation[] = {4, 2, 3};
+  const int64_t output_padding[] = {1, 0, 0};
+  auto input = tf.make({1, 4, 4, 2, 3}, cycling_values(96, 13));
+  auto weight = tf.make({4, 1, 2, 2, 2}, cycling_values(32, 11));
+  auto bias = tf.make({2}, {1, -1});
+  // PyTorch reference. Even output depths get only the bias.
+  auto expected = tf.make(
+      {1, 2, 6, 2, 2},
+      {1,  1,  1,  1,  12, 8,  54,  -48, 1,  1,  1,  1,  -30, -10, -5,  20,
+       1,  1,  1,  1,  19, 19, -16, 9,   -1, -1, -1, -1, -30, 36,  -11, -3,
+       -1, -1, -1, -1, 8,  -6, -4,  -24, -1, -1, -1, -1, -20, 30,  -15, -9});
+  auto out = tf.zeros_like(expected);
+  op_convolution_out(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      true,
+      output_padding,
+      2,
+      out);
+  EXPECT_TENSOR_EQ(out, expected);
 }

@@ -50,17 +50,6 @@ bool output_size_is_valid(
     executorch::aten::ArrayRef<executorch::aten::SizesType> output_size,
     size_t kernel_ndim);
 
-void get_unsqueezed_sizes(
-    const Tensor& t,
-    int64_t unsqueeze_dim,
-    executorch::aten::SizesType* sizes_arr,
-    size_t& ndim);
-
-void get_unsqueezed_dim_order(
-    const Tensor& t,
-    executorch::aten::DimOrderType unsqueeze_dim,
-    executorch::aten::DimOrderType* dim_order_arr);
-
 /**
  * Given an input tensor and N-dim kernel parameters, calculates the output size
  * of the N-dim kernel region.

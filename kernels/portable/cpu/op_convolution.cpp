@@ -12,7 +12,6 @@
 
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
-#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/compiler.h>
 
@@ -24,8 +23,6 @@ using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
 using SizesArrayRef = executorch::aten::ArrayRef<executorch::aten::SizesType>;
-using DimOrderArrayRef =
-    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
 using StridesArrayRef =
     executorch::aten::ArrayRef<executorch::aten::StridesType>;
 
@@ -65,7 +62,7 @@ IndexRange transposed_input_range(
 
 // Keep the tile buffer out of the regular convolution's stack frame.
 template <typename CTYPE, typename LoadFn = CTYPE (*)(const void*)>
-ET_NOINLINE void transposed_conv2d_impl(
+ET_NOINLINE void transposed_conv3d_impl(
     const CTYPE* const in_ptr,
     SizesArrayRef in_sizes,
     StridesArrayRef in_strides,
@@ -88,13 +85,17 @@ ET_NOINLINE void transposed_conv2d_impl(
   size_t in_C = in_sizes[1];
   size_t out_C = out_sizes[1];
 
-  int64_t out_H = out_sizes[2];
-  int64_t in_H = in_sizes[2];
-  int64_t w_H = w_sizes[2];
+  int64_t out_D = out_sizes[2];
+  int64_t in_D = in_sizes[2];
+  int64_t w_D = w_sizes[2];
 
-  int64_t out_W = out_sizes[3];
-  int64_t in_W = in_sizes[3];
-  int64_t w_W = w_sizes[3];
+  int64_t out_H = out_sizes[3];
+  int64_t in_H = in_sizes[3];
+  int64_t w_H = w_sizes[3];
+
+  int64_t out_W = out_sizes[4];
+  int64_t in_W = in_sizes[4];
+  int64_t w_W = w_sizes[4];
 
   size_t in_C_per_group = in_C / groups;
   size_t in_c_start = group * in_C_per_group;
@@ -102,73 +103,94 @@ ET_NOINLINE void transposed_conv2d_impl(
   size_t out_C_per_group = out_C / groups;
   size_t out_c_start = group * out_C_per_group;
 
-  const int64_t stride_y = val_at(stride, 0);
-  const int64_t padding_y = val_at(padding, 0, /*default_value=*/0);
-  const int64_t dilation_y = val_at(dilation, 0);
-  const int64_t stride_x = val_at(stride, 1);
-  const int64_t padding_x = val_at(padding, 1, /*default_value=*/0);
-  const int64_t dilation_x = val_at(dilation, 1);
+  const int64_t stride_z = stride[0];
+  const int64_t padding_z = padding[0];
+  const int64_t dilation_z = dilation[0];
+  const int64_t stride_y = stride[1];
+  const int64_t padding_y = padding[1];
+  const int64_t dilation_y = dilation[1];
+  const int64_t stride_x = stride[2];
+  const int64_t padding_x = padding[2];
+  const int64_t dilation_x = dilation[2];
 
   using COMPUTE_T =
       typename executorch::runtime::promote_types<CTYPE, CTYPE, true>::type;
   // Reuse weights across a bounded tile, narrowing only after reduction.
   constexpr int64_t kTileHeight = 8;
   constexpr int64_t kTileWidth = 32;
-  for (int64_t tile_y = 0; tile_y < out_H; tile_y += kTileHeight) {
-    const int64_t tile_y_end = std::min(out_H, tile_y + kTileHeight);
-    const auto kernel_y = transposed_kernel_range(
-        tile_y, tile_y_end, in_H, w_H, stride_y, padding_y, dilation_y);
-    for (int64_t tile_x = 0; tile_x < out_W; tile_x += kTileWidth) {
-      const int64_t tile_x_end = std::min(out_W, tile_x + kTileWidth);
-      const auto kernel_x = transposed_kernel_range(
-          tile_x, tile_x_end, in_W, w_W, stride_x, padding_x, dilation_x);
-      COMPUTE_T accum[kTileHeight * kTileWidth] = {};
-      for (int64_t w_y = kernel_y.begin; w_y < kernel_y.end; ++w_y) {
-        const int64_t offset_y = w_y * dilation_y - padding_y;
-        const auto input_y = transposed_input_range(
-            tile_y, tile_y_end, in_H, offset_y, stride_y);
-        if (input_y.begin >= input_y.end) {
-          continue;
-        }
-        for (int64_t w_x = kernel_x.begin; w_x < kernel_x.end; ++w_x) {
-          const int64_t offset_x = w_x * dilation_x - padding_x;
-          const auto input_x = transposed_input_range(
-              tile_x, tile_x_end, in_W, offset_x, stride_x);
-          if (input_x.begin >= input_x.end) {
+  for (int64_t out_z = 0; out_z < out_D; ++out_z) {
+    const auto kernel_z = transposed_kernel_range(
+        out_z, out_z + 1, in_D, w_D, stride_z, padding_z, dilation_z);
+    for (int64_t tile_y = 0; tile_y < out_H; tile_y += kTileHeight) {
+      const int64_t tile_y_end = std::min(out_H, tile_y + kTileHeight);
+      const auto kernel_y = transposed_kernel_range(
+          tile_y, tile_y_end, in_H, w_H, stride_y, padding_y, dilation_y);
+      for (int64_t tile_x = 0; tile_x < out_W; tile_x += kTileWidth) {
+        const int64_t tile_x_end = std::min(out_W, tile_x + kTileWidth);
+        const auto kernel_x = transposed_kernel_range(
+            tile_x, tile_x_end, in_W, w_W, stride_x, padding_x, dilation_x);
+        COMPUTE_T accum[kTileHeight * kTileWidth] = {};
+        for (int64_t w_z = kernel_z.begin; w_z < kernel_z.end; ++w_z) {
+          // A tile is one output deep, so at most one input depth lands on it.
+          const auto input_z = transposed_input_range(
+              out_z, out_z + 1, in_D, w_z * dilation_z - padding_z, stride_z);
+          if (input_z.begin >= input_z.end) {
             continue;
           }
-          for (const auto in_c :
-               c10::irange(in_c_start, in_c_start + in_C_per_group)) {
-            const size_t w_idx = in_c * w_strides[0] +
-                (out_c - out_c_start) * w_strides[1] + w_y * w_strides[2] +
-                w_x * w_strides[3];
-            const COMPUTE_T w_val = w_ptr[w_idx];
-            int64_t out_y = input_y.begin * stride_y + offset_y - tile_y;
-            for (int64_t in_y = input_y.begin; in_y < input_y.end; ++in_y) {
-              size_t in_idx = batch * in_strides[0] + in_c * in_strides[1] +
-                  in_y * in_strides[2] + input_x.begin * in_strides[3];
-              int64_t out_x = input_x.begin * stride_x + offset_x - tile_x;
-              for (int64_t in_x = input_x.begin; in_x < input_x.end; ++in_x) {
-                const COMPUTE_T in_val = in_ptr[in_idx];
-                accum[out_y * kTileWidth + out_x] += in_val * w_val;
-                in_idx += in_strides[3];
-                out_x += stride_x;
+          const size_t in_z_idx =
+              batch * in_strides[0] + input_z.begin * in_strides[2];
+          const size_t w_z_idx =
+              (out_c - out_c_start) * w_strides[1] + w_z * w_strides[2];
+          for (int64_t w_y = kernel_y.begin; w_y < kernel_y.end; ++w_y) {
+            const int64_t offset_y = w_y * dilation_y - padding_y;
+            const auto input_y = transposed_input_range(
+                tile_y, tile_y_end, in_H, offset_y, stride_y);
+            if (input_y.begin >= input_y.end) {
+              continue;
+            }
+            for (int64_t w_x = kernel_x.begin; w_x < kernel_x.end; ++w_x) {
+              const int64_t offset_x = w_x * dilation_x - padding_x;
+              const auto input_x = transposed_input_range(
+                  tile_x, tile_x_end, in_W, offset_x, stride_x);
+              if (input_x.begin >= input_x.end) {
+                continue;
               }
-              out_y += stride_y;
+              for (const auto in_c :
+                   c10::irange(in_c_start, in_c_start + in_C_per_group)) {
+                const size_t w_idx = w_z_idx + in_c * w_strides[0] +
+                    w_y * w_strides[3] + w_x * w_strides[4];
+                const COMPUTE_T w_val = w_ptr[w_idx];
+                int64_t out_y = input_y.begin * stride_y + offset_y - tile_y;
+                for (int64_t in_y = input_y.begin; in_y < input_y.end; ++in_y) {
+                  size_t in_idx = in_z_idx + in_c * in_strides[1] +
+                      in_y * in_strides[3] + input_x.begin * in_strides[4];
+                  int64_t out_x = input_x.begin * stride_x + offset_x - tile_x;
+                  for (int64_t in_x = input_x.begin; in_x < input_x.end;
+                       ++in_x) {
+                    const COMPUTE_T in_val = in_ptr[in_idx];
+                    accum[out_y * kTileWidth + out_x] += in_val * w_val;
+                    in_idx += in_strides[4];
+                    out_x += stride_x;
+                  }
+                  out_y += stride_y;
+                }
+              }
             }
           }
         }
-      }
-      const COMPUTE_T bias_val = bias_ptr == nullptr
-          ? COMPUTE_T{0}
-          : load_bias(&bias_ptr[out_c * bias.value().element_size()]);
-      for (int64_t out_y = tile_y; out_y < tile_y_end; ++out_y) {
-        size_t out_idx = batch * out_strides[0] + out_c * out_strides[1] +
-            out_y * out_strides[2] + tile_x * out_strides[3];
-        for (int64_t out_x = tile_x; out_x < tile_x_end; ++out_x) {
-          out_ptr[out_idx] =
-              accum[(out_y - tile_y) * kTileWidth + out_x - tile_x] + bias_val;
-          out_idx += out_strides[3];
+        const COMPUTE_T bias_val = bias_ptr == nullptr
+            ? COMPUTE_T{0}
+            : load_bias(&bias_ptr[out_c * bias.value().element_size()]);
+        for (int64_t out_y = tile_y; out_y < tile_y_end; ++out_y) {
+          size_t out_idx = batch * out_strides[0] + out_c * out_strides[1] +
+              out_z * out_strides[2] + out_y * out_strides[3] +
+              tile_x * out_strides[4];
+          for (int64_t out_x = tile_x; out_x < tile_x_end; ++out_x) {
+            out_ptr[out_idx] =
+                accum[(out_y - tile_y) * kTileWidth + out_x - tile_x] +
+                bias_val;
+            out_idx += out_strides[4];
+          }
         }
       }
     }
@@ -176,7 +198,7 @@ ET_NOINLINE void transposed_conv2d_impl(
 }
 
 template <typename CTYPE, typename LoadFn = CTYPE (*)(const void*)>
-void conv2d_impl(
+void conv3d_impl(
     const CTYPE* const in_ptr,
     SizesArrayRef in_sizes,
     StridesArrayRef in_strides,
@@ -198,7 +220,7 @@ void conv2d_impl(
     const size_t out_c,
     bool transposed) {
   if (transposed) {
-    transposed_conv2d_impl(
+    transposed_conv3d_impl(
         in_ptr,
         in_sizes,
         in_strides,
@@ -222,75 +244,99 @@ void conv2d_impl(
   }
   size_t in_C = in_sizes[1];
 
-  int64_t out_H = out_sizes[2];
-  int64_t in_H = in_sizes[2];
-  int64_t w_H = w_sizes[2];
+  int64_t out_D = out_sizes[2];
+  int64_t in_D = in_sizes[2];
+  int64_t w_D = w_sizes[2];
 
-  int64_t out_W = out_sizes[3];
-  int64_t in_W = in_sizes[3];
-  int64_t w_W = w_sizes[3];
+  int64_t out_H = out_sizes[3];
+  int64_t in_H = in_sizes[3];
+  int64_t w_H = w_sizes[3];
+
+  int64_t out_W = out_sizes[4];
+  int64_t in_W = in_sizes[4];
+  int64_t w_W = w_sizes[4];
 
   size_t in_C_per_group = in_C / groups;
   size_t in_c_start = group * in_C_per_group;
 
-  executorch::aten::SizesType in_coord[kTensorDimensionLimit];
-  in_coord[0] = batch;
-  executorch::aten::SizesType out_coord[kTensorDimensionLimit];
-  out_coord[0] = batch;
-  out_coord[1] = out_c;
-  executorch::aten::SizesType w_coord[kTensorDimensionLimit];
-
-  const int64_t stride_y = val_at(stride, 0);
-  const int64_t padding_y = val_at(padding, 0, /*default_value=*/0);
-  const int64_t dilation_y = val_at(dilation, 0);
-  const int64_t stride_x = val_at(stride, 1);
-  const int64_t padding_x = val_at(padding, 1, /*default_value=*/0);
-  const int64_t dilation_x = val_at(dilation, 1);
+  const int64_t stride_z = stride[0];
+  const int64_t padding_z = padding[0];
+  const int64_t dilation_z = dilation[0];
+  const int64_t stride_y = stride[1];
+  const int64_t padding_y = padding[1];
+  const int64_t dilation_y = dilation[1];
+  const int64_t stride_x = stride[2];
+  const int64_t padding_x = padding[2];
+  const int64_t dilation_x = dilation[2];
 
   using COMPUTE_T =
       typename executorch::runtime::promote_types<CTYPE, CTYPE, true>::type;
+  const COMPUTE_T bias_val = bias_ptr == nullptr
+      ? COMPUTE_T{0}
+      : load_bias(&bias_ptr[out_c * bias.value().element_size()]);
 
-  for (const auto out_y : c10::irange(out_H)) {
-    out_coord[2] = out_y;
-    for (const auto out_x : c10::irange(out_W)) {
-      out_coord[3] = out_x;
-      COMPUTE_T accum = 0;
-      for (const auto in_c :
-           c10::irange(in_c_start, in_c_start + in_C_per_group)) {
-        in_coord[1] = in_c;
-        w_coord[0] = out_c;
-        w_coord[1] = in_c - in_c_start;
-        for (const auto w_y : c10::irange(w_H)) {
-          w_coord[2] = w_y;
-          int64_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
-          if (in_y < 0 || in_y >= in_H) {
+  for (const auto out_z : c10::irange(out_D)) {
+    for (const auto out_y : c10::irange(out_H)) {
+      for (const auto out_x : c10::irange(out_W)) {
+        COMPUTE_T accum = 0;
+        // Depth taps sit outside the channel loop, so lower ranks, whose depth
+        // is 1, add no work per channel.
+        for (const auto w_z : c10::irange(w_D)) {
+          int64_t in_z = stride_z * out_z + dilation_z * w_z - padding_z;
+          if (in_z < 0 || in_z >= in_D) {
             continue;
           }
-          in_coord[2] = in_y;
-          for (const auto w_x : c10::irange(w_W)) {
-            w_coord[3] = w_x;
-            int64_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
-            if (in_x < 0 || in_x >= in_W) {
-              continue;
+          for (const auto in_c :
+               c10::irange(in_c_start, in_c_start + in_C_per_group)) {
+            const int64_t in_plane_idx = batch * in_strides[0] +
+                in_c * in_strides[1] + in_z * in_strides[2];
+            const int64_t w_plane_idx = out_c * w_strides[0] +
+                (in_c - in_c_start) * w_strides[1] + w_z * w_strides[2];
+            for (const auto w_y : c10::irange(w_H)) {
+              int64_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
+              if (in_y < 0 || in_y >= in_H) {
+                continue;
+              }
+              int64_t in_x = stride_x * out_x - padding_x;
+              int64_t in_idx =
+                  in_plane_idx + in_y * in_strides[3] + in_x * in_strides[4];
+              int64_t w_idx = w_plane_idx + w_y * w_strides[3];
+              for (int64_t w_x = 0; w_x < w_W; ++w_x) {
+                if (in_x >= 0 && in_x < in_W) {
+                  const COMPUTE_T in_val = in_ptr[in_idx];
+                  const COMPUTE_T w_val = w_ptr[w_idx];
+                  accum += in_val * w_val;
+                }
+                in_x += dilation_x;
+                in_idx += dilation_x * in_strides[4];
+                w_idx += w_strides[4];
+              }
             }
-            in_coord[3] = in_x;
-            const size_t in_idx =
-                calculate_linear_index(in_coord, in_strides.data(), 4);
-            const size_t w_idx =
-                calculate_linear_index(w_coord, w_strides.data(), 4);
-            const COMPUTE_T in_val = in_ptr[in_idx];
-            const COMPUTE_T w_val = w_ptr[w_idx];
-            accum += in_val * w_val;
           }
         }
+        const int64_t out_idx = batch * out_strides[0] +
+            out_c * out_strides[1] + out_z * out_strides[2] +
+            out_y * out_strides[3] + out_x * out_strides[4];
+        out_ptr[out_idx] = accum + bias_val;
       }
-      if (bias_ptr != nullptr) {
-        accum += load_bias(&bias_ptr[out_c * bias.value().element_size()]);
-      }
-      const size_t out_idx =
-          calculate_linear_index(out_coord, out_strides.data(), 4);
-      out_ptr[out_idx] = accum;
     }
+  }
+}
+
+// Views t as (N, C, D, H, W) by inserting leading spatial dims of size 1.
+void get_3d_view(
+    const Tensor& t,
+    executorch::aten::SizesType* sizes,
+    executorch::aten::StridesType* strides) {
+  for (const auto d : c10::irange(5)) {
+    sizes[d] = 1;
+    strides[d] = 0;
+  }
+  const ssize_t added_dims = 5 - t.dim();
+  for (const auto d : c10::irange(t.dim())) {
+    const ssize_t view_d = d < 2 ? d : d + added_dims;
+    sizes[view_d] = t.size(d);
+    strides[view_d] = t.strides()[d];
   }
 }
 
@@ -307,86 +353,29 @@ ET_NOINLINE void convolution_wrapper(
     bool transposed,
     int64_t groups,
     Tensor& out) {
-  SizesArrayRef in_sizes = in.sizes();
-  SizesArrayRef weight_sizes = weight.sizes();
-  SizesArrayRef out_sizes = out.sizes();
+  // A 1-D or 2-D convolution is a 3-D one whose leading spatial dims have size
+  // 1, stride 1, padding 0 and dilation 1, so every rank shares the 3-D
+  // implementation.
+  executorch::aten::SizesType in_sizes[5];
+  executorch::aten::StridesType in_strides[5];
+  get_3d_view(in, in_sizes, in_strides);
+  executorch::aten::SizesType weight_sizes[5];
+  executorch::aten::StridesType weight_strides[5];
+  get_3d_view(weight, weight_sizes, weight_strides);
+  executorch::aten::SizesType out_sizes[5];
+  executorch::aten::StridesType out_strides[5];
+  get_3d_view(out, out_sizes, out_strides);
 
-  DimOrderArrayRef in_dim_order = in.dim_order();
-  DimOrderArrayRef weight_dim_order = weight.dim_order();
-  DimOrderArrayRef out_dim_order = out.dim_order();
-
-  IntArrayRef stride_ = stride;
-  IntArrayRef padding_ = padding;
-  IntArrayRef dilation_ = dilation;
-
-  // Define arrays for modified sizes, etc. which will potentially be used
-  executorch::aten::SizesType in_sizes_arr[kTensorDimensionLimit];
-  executorch::aten::DimOrderType in_dim_order_arr[kTensorDimensionLimit];
-  size_t in_ndim;
-  executorch::aten::SizesType weight_sizes_arr[kTensorDimensionLimit];
-  executorch::aten::DimOrderType weight_dim_order_arr[kTensorDimensionLimit];
-  size_t weight_ndim;
-  executorch::aten::SizesType out_sizes_arr[kTensorDimensionLimit];
-  executorch::aten::DimOrderType out_dim_order_arr[kTensorDimensionLimit];
-  size_t out_ndim;
-
-  int64_t stride_arr[2];
-  int64_t padding_arr[2];
-  int64_t dilation_arr[2];
-
-  // If in has a dim of 3, then a 1D convolution will be performed. A 1D
-  // convolution is equivalent to a 2D convolution where the height dim of
-  // all tensors is 1, and stride = 1, padding = 0, and dilation = 1 for
-  // the height dimension. Therefore the tensor sizes are unsqueezed and
-  // the stride, padding, and dilation are adjusted so that a 2D
-  // convolution implementation can be used.
-  if (in.dim() == 3) {
-    get_unsqueezed_sizes(in, 2, in_sizes_arr, in_ndim);
-    in_sizes = {in_sizes_arr, in_ndim};
-    get_unsqueezed_dim_order(in, 2, in_dim_order_arr);
-    in_dim_order = {in_dim_order_arr, in_ndim};
-
-    get_unsqueezed_sizes(weight, 2, weight_sizes_arr, weight_ndim);
-    weight_sizes = {weight_sizes_arr, weight_ndim};
-    get_unsqueezed_dim_order(weight, 2, weight_dim_order_arr);
-    weight_dim_order = {weight_dim_order_arr, weight_ndim};
-
-    get_unsqueezed_sizes(out, 2, out_sizes_arr, out_ndim);
-    out_sizes = {out_sizes_arr, out_ndim};
-    get_unsqueezed_dim_order(out, 2, out_dim_order_arr);
-    out_dim_order = {out_dim_order_arr, out_ndim};
-
-    stride_arr[0] = 1;
-    stride_arr[1] = stride[0];
-    stride_ = {stride_arr, 2};
-
-    padding_arr[0] = 0;
-    padding_arr[1] = padding[0];
-    padding_ = {padding_arr, 2};
-
-    dilation_arr[0] = 1;
-    if (dilation.size() > 0) {
-      dilation_arr[1] = dilation[0];
-    } else {
-      dilation_arr[1] = 1;
-    }
-    dilation_ = {dilation_arr, 2};
+  int64_t stride_3d[] = {1, 1, 1};
+  int64_t padding_3d[] = {0, 0, 0};
+  int64_t dilation_3d[] = {1, 1, 1};
+  const ssize_t spatial_dims = in.dim() - 2;
+  for (const auto i : c10::irange(spatial_dims)) {
+    const ssize_t d = 3 - spatial_dims + i;
+    stride_3d[d] = val_at(stride, i);
+    padding_3d[d] = val_at(padding, i, /*default_value=*/0);
+    dilation_3d[d] = val_at(dilation, i);
   }
-
-  executorch::aten::StridesType in_strides[kTensorDimensionLimit];
-  dim_order_to_stride_nocheck(
-      in_sizes.data(), in_dim_order.data(), in_sizes.size(), in_strides);
-
-  executorch::aten::StridesType weight_strides[kTensorDimensionLimit];
-  dim_order_to_stride_nocheck(
-      weight_sizes.data(),
-      weight_dim_order.data(),
-      weight_sizes.size(),
-      weight_strides);
-
-  executorch::aten::StridesType out_strides[kTensorDimensionLimit];
-  dim_order_to_stride_nocheck(
-      out_sizes.data(), out_dim_order.data(), out_sizes.size(), out_strides);
 
   CTYPE* const out_ptr = out.mutable_data_ptr<CTYPE>();
   const CTYPE* const in_ptr = in.const_data_ptr<CTYPE>();
@@ -406,23 +395,23 @@ ET_NOINLINE void convolution_wrapper(
       // Populate all the out channels in the group
       for (const auto out_c :
            c10::irange(out_c_start, out_c_start + out_C_per_group)) {
-        conv2d_impl(
+        conv3d_impl(
             in_ptr,
             in_sizes,
-            {in_strides, 4},
+            in_strides,
             w_ptr,
             weight_sizes,
-            {weight_strides, 4},
+            weight_strides,
             bias,
             bias_ptr,
             load_bias,
-            stride_,
-            padding_,
-            dilation_,
+            stride_3d,
+            padding_3d,
+            dilation_3d,
             groups,
             out_ptr,
             out_sizes,
-            {out_strides, 4},
+            out_strides,
             batch,
             group,
             out_c,
