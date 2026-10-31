@@ -8,6 +8,7 @@
 
 #include <executorch/runtime/executor/program.h>
 
+#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 
@@ -219,7 +220,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
                 program_data->size() - sizeof(flatbuffers::soffset_t),
         InvalidProgram,
         "Root table offset %u is invalid for program size %zu",
-        root_offset,
+        static_cast<unsigned>(root_offset),
         program_data->size());
   }
   // Get the pointer to the root flatbuffer table.
@@ -235,9 +236,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   ET_CHECK_OR_RETURN_ERROR(
       flatbuffer_program->version() <= kMaxSupportedSchemaVersion,
       InvalidProgram,
-      "Program schema version %u is newer than the highest this runtime "
-      "supports (%u). Export the model with an older ExecuTorch, or update "
-      "the runtime.",
+      "Program schema version %" PRIu32
+      " is newer than the highest this "
+      "runtime supports (%" PRIu32
+      "). Export the model with an older ExecuTorch, or update the runtime.",
       flatbuffer_program->version(),
       kMaxSupportedSchemaVersion);
 

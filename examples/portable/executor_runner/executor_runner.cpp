@@ -458,7 +458,7 @@ int main(int argc, char** argv) {
 
     ET_CHECK_MSG(
         status == Error::Ok,
-        "get_program_data() from bundle PTE failed: 0x%x" PRIx32,
+        "get_program_data() from bundle PTE failed: 0x%" PRIx32,
         static_cast<uint32_t>(status));
   } else {
     ET_LOG(Debug, "PTE Model has no bundled IO");
@@ -943,7 +943,8 @@ int main(int argc, char** argv) {
                 i,
                 j,
                 tensor.const_data_ptr<int8_t>()[j] ? "true " : "false",
-                tensor.const_data_ptr<int8_t>()[j]);
+                static_cast<unsigned int>(
+                    static_cast<uint8_t>(tensor.const_data_ptr<int8_t>()[j])));
           }
         }
       } else {
@@ -983,8 +984,7 @@ int main(int argc, char** argv) {
     } else {
       ET_LOG(
           Info,
-          "=== Error calculating stats for testset %zu ERROR: 0x%x" PRIx32
-          "===",
+          "=== Error calculating stats for testset %zu ERROR: 0x%" PRIx32 "===",
           testset_idx,
           static_cast<uint32_t>(stats.status));
     }

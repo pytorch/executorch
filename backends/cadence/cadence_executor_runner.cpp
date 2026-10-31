@@ -110,7 +110,7 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Program::load failed: 0x%" PRIx32, program.error());
     return 1;
   }
-  ET_LOG(Info, "Model buffer loaded, has %u methods", program->num_methods());
+  ET_LOG(Info, "Model buffer loaded, has %zu methods", program->num_methods());
 
   const char* method_name = nullptr;
   {
