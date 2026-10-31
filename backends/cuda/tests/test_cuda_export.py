@@ -494,7 +494,8 @@ class TestCudaExport(unittest.TestCase):
 
         class VarlenAttention(torch.nn.Module):
             def forward(self, q, k, v, cu_seq):
-                return varlen_attn(q, k, v, cu_seq, cu_seq, 16, 16)
+                # Flattening views the output, which needs the op's layout.
+                return varlen_attn(q, k, v, cu_seq, cu_seq, 16, 16).flatten(1)
 
         q, k, v = (
             torch.randn(32, 4, 64, dtype=torch.bfloat16, device="cuda")

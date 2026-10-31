@@ -633,7 +633,9 @@ def _varlen_attn(
     probs = torch.exp(scores - lse[..., None])
     out = torch.einsum("hqk,khd->qhd", probs, value.float()).to(query.dtype)
     rng_state = torch.zeros(2, dtype=torch.uint64, device=query.device)
-    return out, lse, rng_state
+    # einsum gives a permuted view, but the op's output is contiguous, and
+    # later views of it in the program rely on that.
+    return out.contiguous(), lse, rng_state
 
 
 def _linear_kernel(x: torch.Tensor) -> torch.Tensor:
