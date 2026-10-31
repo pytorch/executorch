@@ -204,8 +204,9 @@ class TestIndexShims(unittest.TestCase):
                 )
 
         x = torch.zeros(2, dtype=torch.int8)
-        index = torch.zeros(128, dtype=torch.long)
-        self._run(Mean(), [(x, index, torch.ones(128, dtype=torch.int8))])
+        # With self, the second element counts 256, which wraps to 0.
+        index = torch.tensor([0] * 128 + [1] * 255)
+        self._run(Mean(), [(x, index, torch.ones(383, dtype=torch.int8))])
 
     def test_float64_values(self):
         class Float64Values(torch.nn.Module):
