@@ -13,6 +13,9 @@ from executorch.backends.cortex_m.passes.cortex_m_pass_manager import (
     CortexMPassManager,
     LiftConstantTensorsPass,
 )
+from executorch.backends.cortex_m.passes.explicit_layout_pass import (
+    CortexMPostponeLayoutCopyBelowSqueezePass,
+)
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 from executorch.backends.cortex_m.test.tester import (
@@ -20,7 +23,9 @@ from executorch.backends.cortex_m.test.tester import (
     CortexMRunPasses,
     CortexMTester,
 )
+from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.backends.test.harness.stages import Quantize, StageType
+from executorch.backends.transforms.channels_last_layout import LAYOUT_PERMUTE_COPY
 from executorch.backends.transforms.remove_unused_constants_pass import (
     RemoveUnusedConstantsPass,
 )
@@ -86,6 +91,18 @@ class TanhConvReshapeConv(torch.nn.Module):
 
     def forward(self, x):
         return self.conv2(self.conv1(torch.tanh(x)).view(1, 4, 32))
+
+
+class Conv1dChain(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv1 = torch.nn.Conv1d(8, 8, 3, padding=1)
+        self.conv2 = torch.nn.Conv1d(8, 8, 3, padding=1)
+        self.conv3 = torch.nn.Conv1d(8, 8, 1)
+
+    def forward(self, x):
+        y = torch.tanh(self.conv1(x))
+        return self.conv3(torch.relu(self.conv2(y) + y))
 
 
 class Apply(torch.nn.Module):
@@ -546,14 +563,185 @@ def test_convs_around_a_reshape_behind_lut_activation_lower_to_cmsis_nn():
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
 
-def test_explicit_layout_rejects_float_input_to_int8_conv():
+def test_explicit_layout_lowers_conv_on_a_quantized_constant():
+    inputs = (torch.randn(1, 8, 16),)
     model = ThenConv1d(lambda x: torch.full_like(x, 0.5, dtype=torch.float32))
-    tester = CortexMTester(model.eval(), (torch.randn(1, 8, 16),))
+    tester = _run_explicit_layout_passes(CortexMTester(model.eval(), inputs))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
-    with pytest.raises(Exception) as caught:
-        _run_explicit_layout_passes(tester)
+    assert _count(program, exir_ops.edge.aten.full_like.default) == 0
+    assert _count(program, exir_ops.edge.aten.full.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
-    error = caught.value
-    while error.__cause__ is not None:
-        error = error.__cause__
-    assert "must move an int8 tensor" in str(error)
+
+@pytest.mark.parametrize("use_explicit_layout", [False, True])
+@pytest.mark.parametrize(
+    "constant,constant_op,shape",
+    [
+        (
+            lambda: torch.arange(-1.0, 1.0, 0.125),
+            exir_ops.edge.aten.arange.start_step,
+            (16,),
+        ),
+        (
+            lambda: torch.scalar_tensor(0.5),
+            torch.ops.aten.scalar_tensor.default,
+            (),
+        ),
+    ],
+    ids=["arange", "scalar_tensor"],
+)
+def test_quantized_constant_is_computed_before_quantizing(
+    use_explicit_layout, constant, constant_op, shape
+):
+    torch.manual_seed(0)
+    inputs = (torch.randn(shape),)
+    tester = CortexMTester(Apply(lambda x: x + constant()).eval(), inputs)
+    tester.quantize(Quantize(CortexMQuantizer(use_explicit_layout=use_explicit_layout)))
+    tester.export().to_edge()
+    program = _run_passes(tester, use_explicit_layout)
+
+    assert _count(program, constant_op) == 0
+    assert _count(program, exir_ops.edge.cortex_m.quantized_add.default) == 1
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+@pytest.mark.parametrize("use_explicit_layout", [False, True])
+@pytest.mark.parametrize(
+    "fill",
+    [lambda x: torch.full((1, 8, 16), 0.5), lambda x: torch.full_like(x, 0.5)],
+    ids=["full", "full_like"],
+)
+def test_quantized_fill_stays_a_runtime_int8_full(use_explicit_layout, fill):
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 8, 16),)
+    tester = CortexMTester(Apply(lambda x: x + fill(x)).eval(), inputs)
+    tester.quantize(Quantize(CortexMQuantizer(use_explicit_layout=use_explicit_layout)))
+    tester.export().to_edge()
+    program = _run_passes(tester, use_explicit_layout)
+
+    (full,) = program.graph.find_nodes(
+        op="call_function", target=exir_ops.edge.aten.full.default
+    )
+    assert full.meta["val"].dtype == torch.int8
+    assert _count(program, exir_ops.edge.aten.full_like.default) == 0
+    assert _count(program, exir_ops.edge.cortex_m.quantized_add.default) == 1
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+@pytest.mark.parametrize("use_explicit_layout", [False, True])
+def test_clamp_with_constant_tensor_bounds_quantizes_them_once(use_explicit_layout):
+    torch.manual_seed(0)
+    inputs = (torch.randn(2, 3, 4, 5),)
+    tester = CortexMTester(
+        Apply(
+            lambda x: torch.clamp(x, torch.full_like(x, -1.0), torch.full_like(x, 1.0))
+        ).eval(),
+        inputs,
+    )
+    tester.quantize(Quantize(CortexMQuantizer(use_explicit_layout=use_explicit_layout)))
+    tester.export().to_edge()
+    program = _run_passes(tester, use_explicit_layout)
+
+    (clamp,) = program.graph.find_nodes(
+        op="call_function", target=exir_ops.edge.aten.clamp.default
+    )
+    qparams = clamp.meta["output_qparams"][0]
+    expected = tuple(
+        int(qparams.quantize_value(torch.tensor(bound)).item()) for bound in (-1.0, 1.0)
+    )
+    assert tuple(clamp.args[1:]) == expected
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+@pytest.mark.parametrize("use_explicit_layout", [False, True])
+def test_unquantized_full_like_keeps_int8_after_float_promoting_op(use_explicit_layout):
+    inputs = (torch.randn(1, 8, 16),)
+    tester = CortexMTester(
+        Apply(
+            lambda x: (
+                torch.sigmoid(x).permute(0, 2, 1),
+                torch.full_like(x, 2, dtype=torch.int32),
+            )
+        ).eval(),
+        inputs,
+    )
+    tester.quantize(Quantize(CortexMQuantizer(use_explicit_layout=use_explicit_layout)))
+    tester.export().to_edge()
+    program = _run_passes(tester, use_explicit_layout)
+
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 1
+    assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
+
+
+@pytest.mark.parametrize("use_explicit_layout", [False, True])
+def test_unquantized_constant_is_not_precomputed(use_explicit_layout):
+    inputs = (torch.randn(1, 8, 16),)
+    tester = CortexMTester(
+        Apply(lambda x: x + torch.full((1, 8, 16), 0.5)).eval(), inputs
+    )
+    tester.export().to_edge()
+    program = _run_passes(tester, use_explicit_layout)
+
+    assert _count(program, exir_ops.edge.aten.full.default) == 1
+    tester.run_method_and_compare_outputs(inputs=inputs)
+
+
+def test_conv1d_chain_keeps_only_the_boundary_layout_copies():
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 8, 16),)
+    tester = _run_explicit_layout_passes(CortexMTester(Conv1dChain().eval(), inputs))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 3
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 2
+    assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+def _permute_then_view(permute, shape, view_shape) -> torch.fx.GraphModule:
+    builder = GraphBuilder()
+    x = builder.placeholder("x", torch.randn(shape))
+    permuted = builder.call_operator(op=permute, args=(x, [0, 3, 1, 2]))
+    view = builder.call_operator(
+        op=exir_ops.edge.aten.view_copy.default, args=(permuted, view_shape)
+    )
+    builder.output([view])
+    return builder.get_graph_module()
+
+
+def test_layout_copy_is_sunk_below_a_squeeze():
+    x = torch.randn(1, 1, 4, 6)
+    graph_module = _permute_then_view(LAYOUT_PERMUTE_COPY, x.shape, [1, 6, 4])
+
+    result = CortexMPostponeLayoutCopyBelowSqueezePass()(graph_module)
+
+    assert result.modified
+    assert [
+        (node.target, node.args[1])
+        for node in result.graph_module.graph.nodes
+        if node.op == "call_function"
+    ] == [
+        (exir_ops.edge.aten.view_copy.default, [1, 4, 6]),
+        (LAYOUT_PERMUTE_COPY, [0, 2, 1]),
+    ]
+    torch.testing.assert_close(
+        result.graph_module(x)[0], x.permute(0, 3, 1, 2).reshape(1, 6, 4)
+    )
+
+
+@pytest.mark.parametrize(
+    "permute,shape,view_shape",
+    [
+        (LAYOUT_PERMUTE_COPY, (1, 5, 4, 6), [1, 1, 6, 5, 4]),
+        (exir_ops.edge.aten.permute_copy.default, (1, 1, 4, 6), [1, 6, 4]),
+    ],
+    ids=["layout_copy_unsqueeze", "user_permute_squeeze"],
+)
+def test_other_permutes_are_not_sunk(permute, shape, view_shape):
+    graph_module = _permute_then_view(permute, shape, view_shape)
+
+    result = CortexMPostponeLayoutCopyBelowSqueezePass()(graph_module)
+
+    assert not result.modified

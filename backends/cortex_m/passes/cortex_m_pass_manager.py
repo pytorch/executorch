@@ -10,6 +10,7 @@ from typing import Any, Optional, Type
 
 import torch
 from executorch.backends.arm._passes import (
+    ConvertFullLikeToFullPass,
     DeduplicateGetAttrPass,
     FoldAndAnnotateQParamsPass,
     ScalarsToAttributePass,
@@ -48,11 +49,13 @@ from torch.fx import GraphModule
 from .activation_fusion_pass import ActivationFusionPass
 from .aten_to_cortex_m_pass import AtenToCortexMPass
 from .clamp_hardswish_pass import ClampHardswishPass
+from .compute_quantized_constant_ops_pass import ComputeQuantizedConstantOpsPass
 from .decompose_hardswish_pass import DecomposeHardswishPass
 from .decompose_mean_pass import DecomposeMeanPass
 from .decompose_sdpa_pass import DecomposeSDPAPass
 from .explicit_layout_pass import (
     CortexMCanonicalizeViewCopyPermutePass,
+    CortexMPostponeLayoutCopyBelowSqueezePass,
     CortexMReplaceOpsWithChannelsLastVariants,
     ValidateCortexMExplicitLayoutPass,
 )
@@ -149,6 +152,8 @@ class CortexMPassManager(ExportedProgramPassManager):
         FoldAndAnnotateQParamsPass,
         ActivationFusionPass,
         QuantizedClampActivationPass,
+        ConvertFullLikeToFullPass,
+        ComputeQuantizedConstantOpsPass,
         DecomposeHardswishPass,
         AtenToCortexMPass,
         # Retrace only after quantized ATen ops have become Cortex-M kernels.
@@ -165,10 +170,14 @@ class CortexMPassManager(ExportedProgramPassManager):
         ReplaceScalarWithTensorArgPass,
         ActivationFusionPass,
         QuantizedClampActivationPass,
+        ConvertFullLikeToFullPass,
+        ComputeQuantizedConstantOpsPass,
         DecomposeHardswishPass,
         ConvertConv1dToConv2dPass,
         CortexMReplaceOpsWithChannelsLastVariants,
         ReplaceSqueezeAndUnsqueezeWithViewPass,
+        # Let elementwise regions meet layout copies of their own rank.
+        CortexMPostponeLayoutCopyBelowSqueezePass,
         # Move layout copies across pads before singleton permutations become views.
         RemovePermutesAroundElementwiseOps,
         CortexMCanonicalizeViewCopyPermutePass,

@@ -19,12 +19,16 @@ from executorch.backends.transforms.channels_last_layout import (
     LAYOUT_PERMUTE_COPY,
     PERMUTE_COPY_TARGETS,
 )
+from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
+    PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
+)
 from executorch.backends.transforms.replace_ops_with_channels_last_variants import (
     ChannelsLastOpSpec,
     ReplaceOpsWithChannelsLastVariants,
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 from torch.fx.node import Target
@@ -115,6 +119,33 @@ class CortexMCanonicalizeViewCopyPermutePass(CanonicalizeViewCopyPermutePass):
             node.meta["val"] = input_value.new_empty(
                 tuple(input_value.shape[dim] for dim in dims)
             )
+
+
+class CortexMPostponeLayoutCopyBelowSqueezePass(
+    PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView
+):
+    """Sink a layout copy below a following squeeze, never below an unsqueeze.
+
+    Only the layout copies this pipeline inserts are moved; user permutes keep
+    their place. Sinking below an unsqueeze would raise the copy's rank, up to
+    a rank-5 layout copy that Cortex-M cannot run.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [LAYOUT_PERMUTE_COPY]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        users = list(node.users)
+        user_value = users[0].meta.get("val") if len(users) == 1 else None
+        value = node.meta.get("val")
+        if (
+            isinstance(user_value, torch.Tensor)
+            and isinstance(value, torch.Tensor)
+            and user_value.dim() > value.dim()
+        ):
+            return False
+        return super().maybe_remove_or_replace(node)
 
 
 class ValidateCortexMExplicitLayoutPass(ExportPass):
