@@ -92,7 +92,9 @@ earlier release keeps computing in float16 until it is exported again.
 OpenVINO's CPU plugin computes 64-bit integers in 32 bits. An integer result
 outside the int32 range wraps around without an error. This applies to every
 int64 tensor, including the int64 result of `cumsum` and `prod` over smaller
-integer types.
+integer types. `sum` is less exact still: it adds int64 values in float32, so
+a sum above 16,777,216 (2^24) can be off even inside the int32 range, for
+example 16,777,216 + 1 gives 16,777,216.
 
 ## Directory Structure
 
