@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,7 +13,7 @@ from executorch.backends.cortex_m.edge_compile_config import (
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
-from executorch.exir import to_edge, to_edge_transform_and_lower
+from executorch.exir import memory, to_edge, to_edge_transform_and_lower
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -166,3 +167,50 @@ def test_empty_pass_list_preserves_unlifted_constants():
     assert any(node.op == "get_attr" for node in program.graph.nodes)
     assert not program.graph_signature.buffers
     torch.testing.assert_close(program.module()(*inputs), torch.tensor([2.0, 4.0]))
+
+
+@pytest.mark.parametrize(
+    "channels_last,use_explicit_layout",
+    [(False, False), (True, False), (False, True)],
+)
+def test_flatten_preserves_patch_tokens(channels_last, use_explicit_layout):
+    class PatchTokens(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 4, 2, stride=2)
+
+        def forward(self, x):
+            return self.conv(x).flatten(2).transpose(1, 2)
+
+    torch.manual_seed(0)
+    model = PatchTokens().eval()
+    inputs = (torch.randn(1, 3, 6, 6),)
+    if channels_last:
+        model = model.to(memory_format=torch.channels_last)
+        inputs = (inputs[0].to(memory_format=torch.channels_last),)
+    exported, expected, scale = _quantize(model, inputs, use_explicit_layout)
+    edge = to_edge_transform_and_lower(
+        exported,
+        compile_config=cortex_m_edge_compile_config(),
+        transform_passes=CortexMPassManager(use_explicit_layout=use_explicit_layout),
+    )
+    torch.testing.assert_close(
+        edge.exported_program().module()(*inputs), expected, rtol=0, atol=2 * scale
+    )
+    program = edge.to_executorch().exported_program()
+    views = [node for node in program.graph.nodes if node.target == memory.view]
+    view_copies = [
+        node
+        for node in program.graph.nodes
+        if node.target == torch.ops.aten.view_copy.out
+    ]
+    assert views or view_copies
+    for node in views:
+        assert (
+            node.args[0].meta["val"].is_contiguous()
+        ), "Runtime views must not alias channels-last storage as NCHW"
+    if use_explicit_layout:
+        assert not any(
+            node.target == torch.ops.dim_order_ops._to_dim_order_copy.out
+            for node in program.graph.nodes
+        )
