@@ -399,8 +399,8 @@ class QnnPartitioner(Partitioner):
         """
         Determines which op should not be decomposed during partitioning.
         The list of operators is obtained from `get_skip_decomp_table()`.
-        The filter refines which nodes are not decomposed: `filter_fn`, and on
-        HTP it also leaves out ops that read only constants.
+        The filter is `filter_fn`. On HTP, ops that read only constants are also
+        decomposed.
         """
         do_not_decompose = get_skip_decomp_table()
         if self.backend != QnnExecuTorchBackendType.kHtpBackend:

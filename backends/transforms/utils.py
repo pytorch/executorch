@@ -61,8 +61,8 @@ def _get_fake_tensor_mode(graph: torch.fx.Graph, data: torch.Tensor) -> torch.Te
 
 def reserve_node_names(graph_module: torch.fx.GraphModule) -> None:
     """
-    Records every node name in the graph's namespace, so that nodes a pass adds
-    later get names that are not already taken.
+    Records every node name of the top-level graph in its namespace, so that
+    nodes a pass adds there later get names that are not already taken.
     """
     # TODO: Remove once torch.export records the names it gives inputs and the
     # ops it renames for them. torch.fx has no public way to reserve a name.
