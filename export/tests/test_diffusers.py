@@ -44,10 +44,7 @@ from executorch.export.huggingface.diffusers.wrappers import (
     freeze_flux_pos_embed,
 )
 
-from executorch.extension.diffusers.pipeline_behaviors import (
-    FluxPipelineBehavior,
-    SD15PipelineBehavior,
-)
+from executorch.extension.diffusers.pipeline_behaviors import SD15PipelineBehavior
 
 
 class TextEncoder(torch.nn.Module):

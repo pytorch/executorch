@@ -13,7 +13,6 @@ import torch
 
 from executorch.extension.diffusers.pipeline_behaviors import FluxPipelineBehavior
 
-from ..config import DiffusionConfig
 from ..wrappers import (
     CLIPPooledTextEncoder,
     FluxDenoiser,
@@ -22,7 +21,7 @@ from ..wrappers import (
     vae_scale_factor,
     VAEDecoder,
 )
-from .base import DiffusionComponents, DiffusionModelInfo, DiffusionPipelineExportSpec
+from .base import DiffusionComponents, DiffusionPipelineExportSpec
 
 
 class FluxPipelineExportSpec(DiffusionPipelineExportSpec):
