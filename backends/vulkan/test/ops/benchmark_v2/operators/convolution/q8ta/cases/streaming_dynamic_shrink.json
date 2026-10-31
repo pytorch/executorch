@@ -1,0 +1,200 @@
+{
+  "name": "q8ta/conv2d/streaming_dynamic_shrink",
+  "check": "q8ta_streaming_dynamic_shrink",
+  "parameters": {
+    "operator_case": {
+      "name": "q8ta streaming dynamic shrink operator",
+      "operator": "et_vk.q8ta_conv2d.default",
+      "target_ms": 100,
+      "benchmark_runs": 1,
+      "warmup_runs": 1,
+      "max_dispatches": 200,
+      "validation_method": {
+        "function": "is_close",
+        "atol": 1.0018818534756524,
+        "rtol": 0
+      },
+      "route": "im2col_auto",
+      "args_sweep": [
+        [
+          {
+            "tensor": {
+              "name": "input",
+              "sizes": [10, 64, 30, 99],
+              "dtype": "int8x4",
+              "storage": "buffer",
+              "layout": "4w4c",
+              "data": {
+                "rand_uniform_int": [-8, 12]
+              }
+            }
+          },
+          {
+            "float": 1.0
+          },
+          {
+            "int": 2
+          },
+          {
+            "tensor": {
+              "name": "weight",
+              "sizes": [4, 576],
+              "dtype": "int8",
+              "storage": "constant",
+              "layout": "width",
+              "data": {
+                "rand_uniform_int": [-128, 127]
+              }
+            }
+          },
+          {
+            "tensor": {
+              "name": "weight_sums",
+              "sizes": [4],
+              "dtype": "int32",
+              "storage": "constant",
+              "layout": "width",
+              "data": {
+                "row_sum": "weight"
+              }
+            }
+          },
+          {
+            "tensor": {
+              "name": "weight_scales",
+              "sizes": [4],
+              "dtype": "float32",
+              "storage": "constant",
+              "layout": "width",
+              "data": {
+                "rand_uniform_float": [
+                  0.004999999888241291, 0.014999999664723873
+                ]
+              }
+            }
+          },
+          {
+            "float": 0.05313999950885773
+          },
+          {
+            "int": -1
+          },
+          {
+            "tensor": {
+              "name": "bias",
+              "sizes": [4],
+              "dtype": "float32",
+              "storage": "constant",
+              "layout": "width",
+              "data": {
+                "repeat": [0]
+              }
+            }
+          },
+          {
+            "int_list": [3, 3]
+          },
+          {
+            "int_list": [1, 1]
+          },
+          {
+            "int_list": [1, 1]
+          },
+          {
+            "int_list": [1, 1]
+          },
+          {
+            "int": 1
+          },
+          {
+            "string": "none"
+          },
+          {
+            "tensor": {
+              "name": "output",
+              "sizes": [10, 4, 30, 99],
+              "dtype": "int8x4",
+              "storage": "buffer",
+              "layout": "4w4c",
+              "data": {
+                "fill": 0
+              }
+            }
+          }
+        ]
+      ]
+    },
+    "input_name": "input",
+    "output_name": "output",
+    "stream_plan": {
+      "batch": 10,
+      "flattened_kernel_size": 576,
+      "out_height": 30,
+      "out_width": 99,
+      "scratch_budget_bytes": 16777216
+    },
+    "expected_plan": {
+      "num_tiles": 2,
+      "min_rows_per_tile": 21
+    },
+    "resized_width": 51
+  },
+  "validation_steps": [
+    {
+      "tensor_sizes": {
+        "input": [10, 64, 30, 99]
+      },
+      "expected_output_sizes": [10, 4, 30, 99],
+      "validate_output": false
+    },
+    {
+      "tensor_sizes": {
+        "input": [1, 64, 20, 51]
+      },
+      "expected_output_sizes": [1, 4, 20, 51],
+      "validate_output": true
+    },
+    {
+      "tensor_sizes": {
+        "input": [10, 64, 30, 99]
+      },
+      "expected_output_sizes": [10, 4, 30, 99],
+      "validate_output": false
+    },
+    {
+      "tensor_sizes": {
+        "input": [1, 64, 20, 51]
+      },
+      "expected_output_sizes": [1, 4, 20, 51],
+      "validate_output": true
+    },
+    {
+      "tensor_sizes": {
+        "input": [10, 64, 30, 99]
+      },
+      "expected_output_sizes": [10, 4, 30, 99],
+      "validate_output": false
+    },
+    {
+      "tensor_sizes": {
+        "input": [1, 64, 20, 51]
+      },
+      "expected_output_sizes": [1, 4, 20, 51],
+      "validate_output": true
+    },
+    {
+      "tensor_sizes": {
+        "input": [10, 64, 30, 99]
+      },
+      "expected_output_sizes": [10, 4, 30, 99],
+      "validate_output": false
+    },
+    {
+      "tensor_sizes": {
+        "input": [1, 64, 20, 51]
+      },
+      "expected_output_sizes": [1, 4, 20, 51],
+      "validate_output": true
+    }
+  ]
+}
