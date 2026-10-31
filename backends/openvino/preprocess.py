@@ -22,9 +22,12 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
-from openvino.frontend.pytorch.torchdynamo.compile import (  # type: ignore[import-untyped]
-    openvino_compile,
+from openvino import compile_model, opset13  # type: ignore[import-untyped]
+from openvino.frontend import FrontEndManager  # type: ignore[import-untyped]
+from openvino.frontend.pytorch.fx_decoder import (  # type: ignore[import-untyped]
+    TorchFXPythonDecoder,
 )
+from openvino.preprocess import PrePostProcessor  # type: ignore[import-untyped]
 
 # The values of the inference_precision compile spec. The runtime
 # (OpenvinoBackend.cpp) accepts the same ones.
@@ -72,10 +75,26 @@ class OpenvinoBackend(BackendDetails):
                 edge_program._graph_module = result.graph_module
 
         input_names = edge_program.graph_signature.user_inputs
-        args = []
+        input_types = []
+        input_shapes = []
+        int_inputs = []
         for node in edge_program.graph.nodes:
             if node.target in input_names:
-                args.append(node.meta["val"])
+                val = node.meta["val"]
+                if isinstance(val, torch.Tensor):
+                    input_types.append(val.dtype)
+                    input_shapes.append(
+                        [d if isinstance(d, int) else -1 for d in val.shape]
+                    )
+                elif isinstance(val, (int, torch.SymInt)) and not isinstance(val, bool):
+                    int_inputs.append(len(input_types))
+                    input_types.append(torch.int64)
+                    input_shapes.append([])
+                else:
+                    raise RuntimeError(
+                        f"OpenVINO backend: partition input {node.target} is a "
+                        f"{type(val).__name__}; only tensors and ints are supported"
+                    )
 
         # The converter chooses some lowerings (e.g. boolean-mask indexing) from
         # the input types, so they must be known before conversion starts.

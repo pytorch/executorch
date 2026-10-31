@@ -243,24 +243,24 @@ def delete_constant_placeholder(exp_program: ExportedProgram, node: torch.fx.Nod
             f"Cannot delete input node {node.name} since it has users in the graph."
         )
 
-    # Remove tensor from state_dict/ constants
+    # Find the state_dict/ constants entry holding the tensor
     if node.name in exp_program.graph_signature.inputs_to_parameters:
         target = exp_program.graph_signature.inputs_to_parameters[node.name]
-        del exp_program.state_dict[target]
+        tensors = exp_program.state_dict
 
     elif node.name in exp_program.graph_signature.inputs_to_buffers:
         target = exp_program.graph_signature.inputs_to_buffers[node.name]
 
         if target in exp_program.graph_signature.non_persistent_buffers:
-            del exp_program.constants[target]
+            tensors = exp_program.constants
         else:
-            del exp_program.state_dict[target]
+            tensors = exp_program.state_dict
 
     elif node.name in exp_program.graph_signature.inputs_to_lifted_tensor_constants:
         target = exp_program.graph_signature.inputs_to_lifted_tensor_constants[
             node.name
         ]
-        del exp_program.constants[target]
+        tensors = exp_program.constants
     else:
         raise RuntimeError(
             f"Cannot delete input node {node.name} since it is not a parameter, a buffer, nor a lifted tensor constant."
@@ -276,6 +276,11 @@ def delete_constant_placeholder(exp_program: ExportedProgram, node: torch.fx.Nod
         input_specs, exp_program.graph_signature.output_specs
     )
     exp_program._graph_signature = new_graph_signature
+
+    # Copies made by duplicate_constant_node keep the original target, so keep
+    # the tensor while another placeholder still refers to it.
+    if all(spec.target != target for spec in input_specs):
+        del tensors[target]
 
     # Remove node from graph
     node.graph.erase_node(node)
