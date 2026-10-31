@@ -47,12 +47,17 @@ class TestAddMMOperator(BaseOpenvinoOpTest):
         self.execute_layer_test(self.create_model(), sample_input)
         # On x86 only the runtime passes the precision on, so this fails if it
         # drops an explicit one.
+        bf16 = CompileSpec("inference_precision", b"bf16")
         with self.assertRaisesRegex(AssertionError, "ref_output"):
             self.execute_layer_test(
-                self.create_model(),
-                sample_input,
-                compile_specs=(CompileSpec("inference_precision", b"bf16"),),
+                self.create_model(), sample_input, compile_specs=(bf16,)
             )
+        # The last value wins, as in lowering, and an empty one is the default.
+        self.execute_layer_test(
+            self.create_model(),
+            sample_input,
+            compile_specs=(bf16, CompileSpec("inference_precision", b"")),
+        )
 
     def test_addmm_passes_the_precision_to_openvino(self):
         if not self.device.startswith("CPU"):
