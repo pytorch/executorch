@@ -851,18 +851,6 @@ class TestCudaExport(unittest.TestCase):
         for output, reference in zip(outputs, model(*inputs), strict=True):
             torch.testing.assert_close(output, reference.cpu(), atol=2e-2, rtol=2e-2)
 
-    def test_missing_scatter_kernel_fails_at_export(self):
-        """Inductor leaves int64 scatter_add to an ATen kernel the CUDA shim lacks."""
-
-        class Int64ScatterAdd(torch.nn.Module):
-            def forward(self, counts: torch.Tensor, idx: torch.Tensor):
-                return counts.scatter_add(0, idx, torch.ones_like(idx))
-
-        inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
-        with self.assertRaises(RuntimeError) as context:
-            self._export_to_cuda_with_lower(Int64ScatterAdd(), inputs)
-        self.assertIn("aoti_torch_cuda_scatter_reduce_two_out", str(context.exception))
-
     @unittest.skipIf(
         torch.version.hip is not None,
         "loads through the Python runtime, which the ROCm build does not include",

@@ -166,13 +166,14 @@ class TestIndexShims(unittest.TestCase):
 
     def test_scatter_reduce(self):
         """Inductor adds atomically but has no atomic max, min or product, so
-        those reductions, and the mean, go to the shim."""
+        those reductions, and the mean, go to the shim. So does an int64 sum,
+        which Inductor cannot add atomically."""
 
         class ScatterReduce(torch.nn.Module):
             def forward(self, x, index, src):
                 return tuple(
                     x.scatter_reduce(1, index, src, reduce, include_self=include)
-                    for reduce in ("amax", "amin", "prod", "mean")
+                    for reduce in ("sum", "amax", "amin", "prod", "mean")
                     for include in (True, False)
                 )
 
