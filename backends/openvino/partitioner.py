@@ -33,10 +33,32 @@ class PatternNode:
         self.op_types = {}
 
 
+def _reads_only_bool(node: torch.fx.Node) -> bool:
+    """Whether OpenVINO would compute the node in bool. It promotes mixed
+    inputs, so maximum(bool, float) is computed in float and converts fine."""
+    vals = [arg.meta.get("val") for arg in node.args if isinstance(arg, torch.fx.Node)]
+    tensors = [val for val in vals if isinstance(val, torch.Tensor)]
+    return bool(tensors) and all(t.dtype == torch.bool for t in tensors)
+
+
 class OpenvinoOperatorsSupport(OperatorSupportBase):
     extended_support_dict = {
         "torch.ops.dim_order_ops._clone_dim_order.default": None,
         "torch.ops.dim_order_ops._to_dim_order_copy.default": None,
+    }
+    # OpenVINO converts these to ReduceMin, ReduceMax, Minimum, Maximum or Sign,
+    # none of which take bool tensors.
+    bool_unsupported_ops = {
+        "aten.amax.default",
+        "aten.amin.default",
+        "aten.clamp.default",
+        "aten.max.default",
+        "aten.max.dim",
+        "aten.maximum.default",
+        "aten.min.default",
+        "aten.min.dim",
+        "aten.minimum.default",
+        "aten.sign.default",
     }
 
     def __init__(
@@ -86,6 +108,10 @@ class OpenvinoOperatorsSupport(OperatorSupportBase):
         )
         if op_type == "getitem":
             return True
+
+        if op_type in self.bool_unsupported_ops and _reads_only_bool(node):
+            print("Op not supported for bool tensors: ", "torch.ops." + str(op_type))
+            return False
 
         if "torch.ops." + str(op_type) in supported_ops:
             return True

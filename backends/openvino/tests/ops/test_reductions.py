@@ -112,6 +112,43 @@ class TestIntegerReductions(BaseOpenvinoOpTest):
         )
 
 
+class TestBoolMinMax(BaseOpenvinoOpTest):
+    """OpenVINO has no bool form of min, max, clamp or sign."""
+
+    def test_bool_ops_run_on_the_cpu(self):
+        class BoolMinMax(torch.nn.Module):
+            def forward(self, x):
+                m = x > 0
+                n = m.flip(1)
+                return (
+                    m.min(1).values,
+                    m.max(1).values,
+                    m.amin(1),
+                    m.amax(1),
+                    m.min(),
+                    m.max(),
+                    torch.minimum(m, n),
+                    torch.maximum(m, n),
+                    torch.sign(m),
+                    m.clamp(min=0.5),
+                )
+
+        # One row all true and one all false, so min and max differ by row.
+        x = torch.randn(3, 7)
+        x[0] = x[0].abs() + 0.1
+        x[1] = -x[1].abs() - 0.1
+        self.execute_layer_test(BoolMinMax(), (x,), expected_partitions=2)
+
+    def test_maximum_of_bool_and_float_stays_with_openvino(self):
+        class Maximum(torch.nn.Module):
+            def forward(self, mask, x):
+                return torch.maximum(mask, x)
+
+        # Computed in float, which OpenVINO converts.
+        x = torch.randn(2, 7)
+        self.execute_layer_test(Maximum(), (x > 0, x))
+
+
 class TestFoldConstantCumsumPass(unittest.TestCase):
     def fold(self, module, inputs):
         """Edge program module of module, with constant cumsums folded."""
