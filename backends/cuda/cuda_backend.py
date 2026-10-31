@@ -19,6 +19,9 @@ from importlib import resources
 from typing import Any, Dict, final, List, Optional
 
 import torch
+
+# Registers torch_attn._varlen_attn, which the decomposition table names.
+import torch.nn.attention.varlen  # noqa: F401
 from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.autotune.cuda_graph_timing import cuda_graph_timing
 from executorch.backends.cuda.autotune.inputs import autotune_input_scenarios
@@ -565,6 +568,74 @@ def _reshape_copy(x: torch.Tensor, size: List[int]) -> torch.Tensor:
     return x.clone(memory_format=torch.contiguous_format).view(size)
 
 
+def _varlen_attn(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    cu_seq_q: torch.Tensor,
+    cu_seq_k: Optional[torch.Tensor],
+    max_q: int,
+    max_k: int,
+    is_causal: bool = False,
+    scale: Optional[float] = None,
+    window_size: Optional[List[int]] = None,
+    enable_gqa: bool = False,
+    seqused_k: Optional[torch.Tensor] = None,
+    block_table: Optional[torch.Tensor] = None,
+    num_splits: Optional[int] = None,
+    backend: Optional[int] = None,
+) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    varlen_attn runs Flash or cuDNN attention, and this backend has a kernel
+    for neither. Attend over all the packed tokens instead, with a mask that
+    keeps each query in its own sequence. This holds a float32 score per head
+    for every pair of packed tokens, 1 GiB for 16 heads and 4096 tokens. As in
+    Flash attention, a causal mask or a window lines up the ends of each query
+    and key sequence, and a query with no key to attend to gets zeros and an
+    infinite log-sum-exp.
+    """
+    if cu_seq_k is None or seqused_k is not None or block_table is not None:
+        raise NotImplementedError(
+            "The CUDA backend lowers varlen_attn only with cu_seq_k and without "
+            "seqused_k or block_table."
+        )
+
+    def sequence_ends(cu: torch.Tensor, total: int):
+        # Each token's index in cu of its sequence's end, and its (negative)
+        # distance from that end. Tokens past cu[-1] are in no sequence, and
+        # the clamp keeps their lookup in range.
+        token = torch.arange(total, dtype=cu.dtype, device=cu.device)
+        end = torch.searchsorted(cu, token, right=True)
+        return end, token - cu[end.clamp(max=cu.numel() - 1)]
+
+    end_q, from_end_q = sequence_ends(cu_seq_q, query.size(0))
+    end_k, from_end_k = sequence_ends(cu_seq_k, key.size(0))
+    allowed = end_q[:, None] == end_k[None, :]
+    left, right = window_size if window_size is not None else (-1, -1)
+    if is_causal:
+        right = 0
+    offset = from_end_k[None, :] - from_end_q[:, None]
+    if left >= 0:
+        allowed = allowed & (offset >= -left)
+    if right >= 0:
+        allowed = allowed & (offset <= right)
+
+    if enable_gqa:
+        key, value = (
+            t.repeat_interleave(query.size(1) // t.size(1), dim=1) for t in (key, value)
+        )
+    if scale is None:
+        scale = query.size(-1) ** -0.5
+    scores = torch.einsum("qhd,khd->hqk", query.float(), key.float()) * scale
+    scores = scores.masked_fill(~allowed, float("-inf"))
+    lse = scores.logsumexp(-1)
+    lse = lse.masked_fill(lse == float("-inf"), float("inf"))
+    probs = torch.exp(scores - lse[..., None])
+    out = torch.einsum("hqk,khd->qhd", probs, value.float()).to(query.dtype)
+    rng_state = torch.zeros(2, dtype=torch.uint64, device=query.device)
+    return out, lse, rng_state
+
+
 def _linear_kernel(x: torch.Tensor) -> torch.Tensor:
     return torch.clamp(1 - x.abs(), min=0)
 
@@ -993,6 +1064,7 @@ class CudaBackend(AotiBackend, BackendDetails):
             # for it and the shim no fallback kernel.
             torch.ops.aten._is_all_true.default: torch.ops.aten.all.default,
             torch.ops.aten._reshape_copy.default: _reshape_copy,
+            torch.ops.torch_attn._varlen_attn.default: _varlen_attn,
         }
         for resize, support, kernel in (
             (torch.ops.aten._upsample_bilinear2d_aa, 1, _linear_kernel),

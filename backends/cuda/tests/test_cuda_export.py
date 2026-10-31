@@ -20,6 +20,7 @@ from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import export
+from torch.nn.attention.varlen import varlen_attn
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
@@ -479,6 +480,36 @@ class TestCudaExport(unittest.TestCase):
                 return torch.ops.aten._reshape_copy(x.transpose(0, 1), [-1, 4]) * 2
 
         self._export_to_cuda_with_lower(ReshapeCopyModule(), (torch.randn(8, 4, 4),))
+
+    def test_varlen_attn(self):
+        """varlen_attn calls Flash attention, which the CUDA shims lack."""
+
+        class VarlenAttention(torch.nn.Module):
+            def forward(self, q, k, v, cu_seq):
+                return varlen_attn(q, k, v, cu_seq, cu_seq, 16, 16)
+
+        q, k, v = (
+            torch.randn(32, 4, 64, dtype=torch.bfloat16, device="cuda")
+            for _ in range(3)
+        )
+        cu_seq = torch.tensor([0, 16, 32], dtype=torch.int32, device="cuda")
+        self._export_to_cuda_with_lower(VarlenAttention(), (q, k, v, cu_seq))
+
+        # Causal masks over query sequences shorter and longer than their key
+        # sequences (some queries then see no key), grouped-query attention
+        # and an empty sequence.
+        op = torch.ops.torch_attn._varlen_attn.default
+        short = torch.tensor([0, 4, 16], dtype=torch.int32, device="cuda")
+        empty = torch.tensor([0, 16, 16, 32], dtype=torch.int32, device="cuda")
+        cases = [
+            (q[:16], k, v, short, cu_seq, 12, 16, True, None, [3, -1]),
+            (q, k[:16], v[:16], cu_seq, short, 16, 12, True, None, [-1, 0]),
+            (q, k[:, :2], v[:, :2], empty, empty, 16, 16, False, 0.5, None, True),
+        ]
+        table = CudaBackend.get_decomposition_table()
+        for args in cases:
+            for actual, expected in zip(table[op](*args)[:2], op(*args)[:2]):
+                torch.testing.assert_close(actual, expected, atol=1e-2, rtol=1e-2)
 
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""
