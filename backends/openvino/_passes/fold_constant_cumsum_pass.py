@@ -64,10 +64,12 @@ def _constant_nodes(graph_module: torch.fx.GraphModule) -> set:
     return constants
 
 
-def _evaluate(graph_module: torch.fx.GraphModule, targets: list) -> dict:
-    """Values of targets, computing only what they read, on the CPU."""
+def _evaluate(
+    graph_module: torch.fx.GraphModule, target: torch.fx.Node
+) -> torch.Tensor:
+    """Value of target, computing only what it reads, on the CPU."""
     needed = set()
-    stack = list(targets)
+    stack: list = [target]
     while stack:
         node = stack.pop()
         if node not in needed:
@@ -98,9 +100,9 @@ def _evaluate(graph_module: torch.fx.GraphModule, targets: list) -> dict:
             kwargs = {**kwargs, "pin_memory": False}
         values[node] = node.target(*args, **kwargs)
         for i in _inputs(node):
-            if last_use[i] is node and i not in targets:
+            if last_use[i] is node:
                 del values[i]
-    return values
+    return values[target]
 
 
 class FoldConstantCumsumPass(PassBase):
@@ -133,7 +135,7 @@ class FoldConstantCumsumPass(PassBase):
         # the others from being folded.
         for node in cumsums:
             try:
-                value = _evaluate(graph_module, [node])[node]
+                value = _evaluate(graph_module, node)
             except RuntimeError as e:
                 # Some ops have modes the CPU lacks.
                 logging.warning(
