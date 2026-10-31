@@ -118,6 +118,15 @@ class LayerNormStatsModule(torch.nn.Module):
         return (out + x if self.residual else out), mean, rstd
 
 
+class MeanKeepdimModule(torch.nn.Module):
+    """mean.dim with keepdim=True over the hidden dim and the dynamic S dim, a
+    broadcast consumer of the kept dim, and a keepdim=False mean."""
+
+    def forward(self, x: torch.Tensor):
+        m = x.mean(dim=-1, keepdim=True)
+        return m, x.mean(dim=2, keepdim=True), x - m, x.mean(dim=-1)
+
+
 class SwiGluModule(torch.nn.Module):
     def __init__(
         self,
@@ -374,6 +383,18 @@ def export_dynamic_layer_norm_cases(out_dir: str, s_dim) -> None:
     )
 
 
+def export_dynamic_mean_keepdim_cases(out_dir: str, s_dim) -> None:
+    _export_multi_output_case(
+        MeanKeepdimModule(),
+        "dyn_mean_keepdim",
+        out_dir,
+        lambda s: (1, 1, s, HIDDEN),
+        2,
+        s_dim,
+        (MAXS, 125, 7, 1),
+    )
+
+
 def export_dynamic_gelu_boundary_cases(out_dir: str) -> None:
     """Write a dynamic GELU fixture crossing the old 1D dispatch cap."""
     os.makedirs(out_dir, exist_ok=True)
@@ -506,6 +527,9 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     # 2h.1) native_layer_norm (out + x, mean, rstd) with a DYNAMIC seq-len S,
     # and with a dynamic row count past the 1D grid limit.
     export_dynamic_layer_norm_cases(out_dir, s_dim)
+
+    # 2h.2) mean.dim(keepdim=True/False) over the hidden dim and the DYNAMIC S.
+    export_dynamic_mean_keepdim_cases(out_dir, s_dim)
 
     # 2i) Dynamic SwiGLU graph patterns. The Llama-width fixture forces a 2D
     # fused dispatch at M=512; compact variants isolate commutative matching and
@@ -1713,6 +1737,11 @@ class TestDynamicShapeExport(unittest.TestCase):
                 "dyn_layer_norm_rows.pte",
                 "dyn_layer_norm_rows.S70000.input.bin",
                 "dyn_layer_norm_rows.S1000.golden2.bin",
+                "dyn_mean_keepdim.pte",
+                "dyn_mean_keepdim.S125.input.bin",
+                "dyn_mean_keepdim.S125.golden0.bin",
+                "dyn_mean_keepdim.S125.golden3.bin",
+                "dyn_mean_keepdim.S7.golden2.bin",
                 "dyn_linear_bk64.pte",
                 "dyn_linear_bk64.S512.input.bin",
                 "dyn_linear_bk64.S512.golden.bin",

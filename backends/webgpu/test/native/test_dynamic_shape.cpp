@@ -20,7 +20,7 @@
 //   M  dyn_sigmoid   N dyn_select (select_copy(0,-1), dynamic S)
 //   O  ONE dyn_conv1d graph reused across live input lengths
 //   P  ONE dyn_gelu graph reused above -> at -> above the old 1D dispatch cap
-//   Q  dyn_layer_norm(_rows) (reused graphs)
+//   Q  dyn_layer_norm(_rows)   R dyn_mean_keepdim (reused graphs)
 // .pte + goldens from test/ops/dynamic_shape/test_dynamic_shape_export.py.
 //
 // Artifacts dir: $WEBGPU_DYNAMIC_SHAPE_DIR, else argv[1], else
@@ -1930,6 +1930,24 @@ TEST(DynamicShape, LayerNormRowGridReusedGraph) {
         {1, s, 4},
         {{1, s, 4}, {1, s, 1}, {1, s, 1}},
         1e-4f);
+  }
+}
+
+// R: mean.dim(keepdim=True) over the hidden dim ([1,1,S,1]) and the dynamic S
+// dim ([1,1,1,kHidden]), x - mean(x, -1, keepdim=True), and a keepdim=False
+// mean ([1,1,S]) on ONE loaded graph. keepdim is serialized as a Bool, so a
+// resize that ignored it would drop the kept dim.
+TEST(DynamicShape, MeanKeepdimReusedGraph) {
+  Module m(g_dir + "/dyn_mean_keepdim.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_mean_keepdim.pte";
+  for (int s : {7, 1, 125, 128, 7}) {
+    check_outputs(
+        m,
+        "dyn_mean_keepdim",
+        s,
+        {1, 1, s, kHidden},
+        {{1, 1, s, 1}, {1, 1, 1, kHidden}, {1, 1, s, kHidden}, {1, 1, s}},
+        1e-5f);
   }
 }
 
