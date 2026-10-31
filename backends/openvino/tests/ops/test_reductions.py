@@ -96,6 +96,21 @@ class TestIntegerReductions(BaseOpenvinoOpTest):
                     more_inputs=((pad_masks(700),),),
                 )
 
+    def test_cumsum_over_ones_like_of_inputs_read_nowhere_else(self):
+        class Positions(torch.nn.Module):
+            def forward(self, input_ids, offset, mask):
+                positions = torch.cumsum(torch.ones_like(input_ids), 1) - 1
+                return positions + offset * torch.cumsum(torch.ones_like(mask), 1)
+
+        # Once the cumsums are folded, nothing in the partition reads input_ids
+        # or mask: the first input and one after it.
+        input_ids = torch.zeros(1, 8, dtype=torch.int64)
+        mask = torch.zeros(1, 8, dtype=torch.int32)
+        self.execute_layer_test(
+            Positions(),
+            (input_ids, torch.arange(8)[None], mask),
+        )
+
 
 class TestFoldConstantCumsumPass(unittest.TestCase):
     def fold(self, module, inputs):
