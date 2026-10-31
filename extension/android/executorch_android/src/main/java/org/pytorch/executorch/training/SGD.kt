@@ -10,8 +10,7 @@ package org.pytorch.executorch.training
 
 import com.facebook.jni.HybridData
 import com.facebook.jni.annotations.DoNotStrip
-import com.facebook.soloader.nativeloader.NativeLoader
-import com.facebook.soloader.nativeloader.SystemDelegate
+import org.pytorch.executorch.ExecuTorchRuntime
 import org.pytorch.executorch.Tensor
 import org.pytorch.executorch.annotations.Experimental
 
@@ -48,10 +47,9 @@ private constructor(
 
   companion object {
     init {
-      if (!NativeLoader.isInitialized()) {
-        NativeLoader.init(SystemDelegate())
-      }
-      NativeLoader.loadLibrary("executorch")
+      // Goes through the runtime so that a backend built as its own shared
+      // library is loaded too, and after libexecutorch.so.
+      ExecuTorchRuntime.getRuntime()
     }
 
     @DoNotStrip
