@@ -503,8 +503,9 @@ AOTITorchError aoti_torch_mps_convolution(
       NSMutableDictionary* feeds = [NSMutableDictionary dictionary];
 
       // Get Metal buffers from tensors
-      id<MTLBuffer> input_buffer = get_mtl_buffer(input_tensor, "aoti_torch_mps_convolution", "input");
-      id<MTLBuffer> weight_buffer = get_mtl_buffer(weight_tensor, "aoti_torch_mps_convolution", "weight");
+      bool settle_aliases = false;
+      id<MTLBuffer> input_buffer = get_mtl_buffer(input_tensor, "aoti_torch_mps_convolution", "input", &settle_aliases);
+      id<MTLBuffer> weight_buffer = get_mtl_buffer(weight_tensor, "aoti_torch_mps_convolution", "weight", &settle_aliases);
 
       ET_LOG(Debug, "aoti_torch_mps_convolution: Using existing Metal buffers - input=%p, weight=%p",
               input_buffer, weight_buffer);
@@ -524,7 +525,7 @@ AOTITorchError aoti_torch_mps_convolution(
 
       // Add bias data to feeds if provided
       if (bias_tensor && biasPlaceholder) {
-        id<MTLBuffer> bias_buffer = get_mtl_buffer(bias_tensor, "aoti_torch_mps_convolution", "bias");
+        id<MTLBuffer> bias_buffer = get_mtl_buffer(bias_tensor, "aoti_torch_mps_convolution", "bias", &settle_aliases);
 
         NSArray<NSNumber*>* biasShape = @[@(C_out)];
         biasData = [[MPSGraphTensorData alloc] initWithMTLBuffer:bias_buffer
@@ -558,7 +559,7 @@ AOTITorchError aoti_torch_mps_convolution(
 
       @try {
         // Use stream helper to encode and synchronize correctly
-        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT);
+        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT, settle_aliases);
       } @catch (NSException *exception) {
         ET_LOG(Error, "aoti_torch_mps_convolution: NSException caught during executeMPSGraph: %s - %s",
               [[exception name] UTF8String], [[exception reason] UTF8String]);
@@ -650,6 +651,8 @@ AOTITorchError aoti_torch_mps_convolution(
 
       if (actual_numel != expected_numel) {
         ET_LOG(Error, "aoti_torch_mps_convolution: Tensor size mismatch. Expected %zu, got %zu", expected_numel, actual_numel);
+        // The handle goes first: it does not own the memory yet.
+        aoti_torch_delete_tensor_object(output_tensor_handle);
         aoti_torch_mps_free(tensor_data);  // Free the allocated GPU memory on failure
         throw std::runtime_error("Tensor size mismatch");
       }

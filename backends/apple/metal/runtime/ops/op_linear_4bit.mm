@@ -1865,7 +1865,7 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
           kernel_func->setArg(1, *s_tensor);     // scales
           kernel_func->setArg(2, *z_tensor);     // biases
           kernel_func->setArg(3, *a_tensor);     // x
-          kernel_func->setArg(4, *out_tensor);   // y
+          kernel_func->setArg(4, *out_tensor, ETMetalKernelFunction::ArgAccess::kWrite);   // y
           int32_t K_val = K, N_val = N, M_val = M;
           kernel_func->setArg(5, &K_val, sizeof(int32_t));
           kernel_func->setArg(6, &N_val, sizeof(int32_t));
@@ -1882,7 +1882,7 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
           kernel_func->setArg(1, *b_tensor);
           kernel_func->setArg(2, *s_tensor);
           kernel_func->setArg(3, *z_tensor);
-          kernel_func->setArg(4, *out_tensor);
+          kernel_func->setArg(4, *out_tensor, ETMetalKernelFunction::ArgAccess::kWrite);
           kernel_func->setArg(5, sizes.data(), sizeof(uint32_t) * sizes.size());
         }
 

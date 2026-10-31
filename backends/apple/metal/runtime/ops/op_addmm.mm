@@ -112,14 +112,15 @@ AOTITorchError aoti_torch_mps_addmm_out(
         throw std::runtime_error("Failed to get Metal device");
       }
 
+      bool settle_aliases = false;
       id<MTLBuffer> bias_buffer =
-          get_mtl_buffer(bias_tensor, "aoti_torch_mps_addmm_out", "self");
+          get_mtl_buffer(bias_tensor, "aoti_torch_mps_addmm_out", "self", &settle_aliases);
       id<MTLBuffer> mat1_buffer =
-          get_mtl_buffer(mat1_tensor, "aoti_torch_mps_addmm_out", "mat1");
+          get_mtl_buffer(mat1_tensor, "aoti_torch_mps_addmm_out", "mat1", &settle_aliases);
       id<MTLBuffer> mat2_buffer =
-          get_mtl_buffer(mat2_tensor, "aoti_torch_mps_addmm_out", "mat2");
+          get_mtl_buffer(mat2_tensor, "aoti_torch_mps_addmm_out", "mat2", &settle_aliases);
       id<MTLBuffer> out_buffer =
-          get_mtl_buffer(out_tensor, "aoti_torch_mps_addmm_out", "out");
+          get_mtl_buffer(out_tensor, "aoti_torch_mps_addmm_out", "out", &settle_aliases);
 
       stream->endKernelCoalescing();
 
@@ -272,7 +273,7 @@ AOTITorchError aoti_torch_mps_addmm_out(
       NSDictionary* results = @{addmmOutput : outputData};
 
       @try {
-        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT);
+        stream->executeMPSGraph(mpsGraph, feeds, results, SyncType::COMMIT, settle_aliases);
       } @catch (NSException* exception) {
         ET_LOG(
             Error,
