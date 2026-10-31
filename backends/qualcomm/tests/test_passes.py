@@ -240,11 +240,12 @@ class TestPasses(unittest.TestCase):
                 torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
                 if reused_name not in unrecorded_names:
                     stale_names.append(reused_name)
-        # A skip, not a failure: a torch update that records these names is fine.
+        # A skip, not a failure: a torch update that changes these names is fine.
         if stale_names:
             self.skipTest(
-                f"torch.export no longer leaves {stale_names} unrecorded, so those "
-                "cases no longer test the reservation in QnnPassManager._transform"
+                f"torch.export now records {stale_names} or no longer produces "
+                "them, so those cases no longer test the reservation in "
+                "QnnPassManager._transform"
             )
 
     def test_build_op_wrappers_returns_context_binary(self):
