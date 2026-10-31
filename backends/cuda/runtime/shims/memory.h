@@ -262,6 +262,10 @@ aoti_torch_item_float64(SlimTensor* tensor, double* ret_value);
 
 /// See aoti_torch_item_uint8.
 AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_float16(SlimTensor* tensor, c10::Half* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_item_bfloat16(SlimTensor* tensor, c10::BFloat16* ret_value);
 
 /**
