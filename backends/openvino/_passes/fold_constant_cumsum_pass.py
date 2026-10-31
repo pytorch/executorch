@@ -108,7 +108,7 @@ def _evaluate(
 class FoldConstantCumsumPass(PassBase):
     """Replace an integer cumsum that reads only constants with its result.
 
-    With an integer cumsum over a constant, OpenVINO's CPU plugin (2025.4 to
+    With an integer cumsum over a constant, OpenVINO's CPU plugin (2025.1 to
     2026.4) gives wrong results from the second inference on: masks built from
     it keep only what earlier calls allowed. pi0 builds its attention masks
     this way. The OpenVINO nightly no longer does this, so the pass can go once
