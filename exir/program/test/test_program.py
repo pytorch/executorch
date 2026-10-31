@@ -978,22 +978,25 @@ class TestProgramManagers(unittest.TestCase):
         i32 = torch.randint(-9, 9, (2, 3), dtype=torch.int32)
         cat = exir_ops.edge.aten.cat.default
         stack = exir_ops.edge.aten.stack.default
+        cast = exir_ops.edge.dim_order_ops._to_dim_order_copy.default
         # Without preserving it, stack would decompose into cat.
         config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.stack.default])
-        # Each case: module, op, inputs, dtype of every op input.
-        for module, op, inputs, dtype in (
-            (Cat(), cat, (bf16, f32), torch.float32),
-            (Stack(), stack, (bf16, f32), torch.float32),
+        # Each case: module, op, inputs, dtype of every op input, number of casts.
+        for module, op, inputs, dtype, num_casts in (
+            # The repeated bfloat16 input is cast once.
+            (Cat(), cat, (bf16, f32), torch.float32, 1),
+            (Stack(), stack, (bf16, f32), torch.float32, 1),
             # Only an input after the first one has another dtype.
-            (Cat(), cat, (f32, i32), torch.float32),
+            (Cat(), cat, (f32, i32), torch.float32, 1),
             # An earlier pass drops the empty float64 input, which still decides
             # the output dtype.
-            (CatWithEmpty(), cat, (bf16, f32), torch.float64),
+            (CatWithEmpty(), cat, (bf16, f32), torch.float64, 2),
         ):
             edge = to_edge(export(module, inputs, strict=True), compile_config=config)
             nodes = edge.exported_program().graph_module.graph.nodes
             node = next(n for n in nodes if n.target == op)
             self.assertEqual({t.meta["val"].dtype for t in node.args[0]}, {dtype})
+            self.assertEqual(sum(n.target == cast for n in nodes), num_casts)
             torch.testing.assert_close(
                 edge.exported_program().module()(*inputs), module(*inputs)
             )

@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+from typing import Dict
+
 import torch
 from executorch.exir.pass_base import ExportPass, map_args, NodeMetadata, ProxyValue
 from torch import SymBool, SymFloat, SymInt
@@ -79,6 +81,10 @@ class RemoveMixedTypeOperators(ExportPass):
 
     # pyre-ignore
     def _cast_inputs(self, op, args, kwargs, meta: NodeMetadata, dtype: torch.dtype):
+        # Cast a tensor that appears twice, as in cat([x, y, x]), only once. Key by
+        # id() because constant tensors from ScalarToTensorPass have no node.
+        casts: Dict[int, PyTree] = {}
+
         def coerce(value: PyTree) -> PyTree:
             if isinstance(value, ProxyValue):
                 if not value.is_tensor():
@@ -89,12 +95,14 @@ class RemoveMixedTypeOperators(ExportPass):
             if isinstance(value, torch.Tensor) and value.dtype == dtype:
                 return value
 
-            return self.call_operator(
-                torch.ops.aten._to_copy.default,
-                (value,),
-                {"dtype": dtype},
-                meta,
-            )
+            if id(value) not in casts:
+                casts[id(value)] = self.call_operator(
+                    torch.ops.aten._to_copy.default,
+                    (value,),
+                    {"dtype": dtype},
+                    meta,
+                )
+            return casts[id(value)]
 
         def try_coerce(value: PyTree, arg: torch.Argument) -> PyTree:
             if arg.type == torch.ListType.ofTensors():
