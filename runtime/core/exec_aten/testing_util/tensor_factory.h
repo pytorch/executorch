@@ -367,7 +367,8 @@ class TensorFactory {
       const at::Tensor& input,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
     ET_CHECK_MSG(
-        input.sizes().size() == 4, "Only 4D tensors can be channels last");
+        input.sizes().size() == 4 || input.sizes().size() == 5,
+        "Only 4D and 5D tensors can be channels last");
 
     const std::vector<int32_t> sizes(
         input.sizes().begin(), input.sizes().end());
@@ -387,8 +388,10 @@ class TensorFactory {
 
     int32_t N = sizes[0];
     int32_t C = sizes[1];
-    int32_t H = sizes[2];
-    int32_t W = sizes[3];
+    // Depth and height are adjacent in both layouts, so a 5-D tensor is
+    // permuted like a 4-D one whose height covers both.
+    int32_t H = sizes.size() == 5 ? sizes[2] * sizes[3] : sizes[2];
+    int32_t W = sizes.back();
 
     std::vector<ctype> contiguous_data(
         input.data_ptr<ctype>(), input.data_ptr<ctype>() + input.numel());
@@ -891,14 +894,18 @@ class TensorFactory {
     const std::vector<int32_t> sizes(
         input.sizes().begin(), input.sizes().end());
 
-    ET_CHECK_MSG(sizes.size() == 4, "Only 4D tensors can be channels last");
+    ET_CHECK_MSG(
+        sizes.size() == 4 || sizes.size() == 5,
+        "Only 4D and 5D tensors can be channels last");
     ET_CHECK_MSG(
         is_contiguous_dim_order(input.dim_order().data(), input.dim()) == true,
         "Input tensor is not contiguous");
     int32_t N = sizes[0];
     int32_t C = sizes[1];
-    int32_t H = sizes[2];
-    int32_t W = sizes[3];
+    // Depth and height are adjacent in both layouts, so a 5-D tensor is
+    // permuted like a 4-D one whose height covers both.
+    int32_t H = sizes.size() == 5 ? sizes[2] * sizes[3] : sizes[2];
+    int32_t W = sizes.back();
 
     std::vector<ctype> contiguous_data(
         input.data_ptr<ctype>(), input.data_ptr<ctype>() + input.numel());
