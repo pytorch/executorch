@@ -197,7 +197,8 @@ class TestIndexShims(unittest.TestCase):
         """Inductor writes a scatter from a tensor itself only in a dtype it can
         add atomically, so int64, bool and, below sm_90, bfloat16 go to the
         shim. Of repeated writes the last in index order wins, as in eager's
-        deterministic mode, which also sends every dtype to the shim."""
+        deterministic mode, which also sends every dtype to the shim. As in
+        ATen, the index can be int32."""
 
         class Scatter(torch.nn.Module):
             def forward(self, x, index, src):
@@ -212,10 +213,15 @@ class TestIndexShims(unittest.TestCase):
         warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
         torch.use_deterministic_algorithms(True)
         try:
-            for dtype in (torch.bfloat16, torch.int64, torch.bool):
-                with self.subTest(dtype=dtype):
+            for dtype, index_dtype in (
+                (torch.bfloat16, torch.int64),
+                (torch.int64, torch.int32),
+                (torch.bool, torch.int64),
+            ):
+                with self.subTest(dtype=dtype, index_dtype=index_dtype):
                     values = src % 2 if dtype == torch.bool else src
-                    self._run(Scatter(), [(x.to(dtype), index, values.to(dtype))])
+                    inputs = (x.to(dtype), index.to(index_dtype), values.to(dtype))
+                    self._run(Scatter(), [inputs])
         finally:
             torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
 

@@ -91,8 +91,8 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_index_put_out(
  * @param out Tensor to update (CUDA device, up to 16 dims)
  * @param self Must be out; AOTInductor passes the tensor it updates as both
  * @param dim Dimension of out that index addresses
- * @param index int64 tensor with as many dims as out, no larger than src, and
- * no larger than out except at dim
+ * @param index int64 or int32 tensor with as many dims as out, no larger than
+ * src, and no larger than out except at dim
  * @param src Values to write, same dtype as out. Float, double, half,
  * bfloat16, the integer dtypes and bool are supported.
  * @return AOTITorchError
@@ -120,8 +120,8 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_scatter_src_out(
  * @param out Tensor to update (CUDA device, up to 16 dims)
  * @param self Must be out; AOTInductor passes the tensor it updates as both
  * @param dim Dimension of out that index addresses
- * @param index int64 tensor with as many dims as out, no larger than src, and
- * no larger than out except at dim
+ * @param index int64 or int32 tensor with as many dims as out, no larger than
+ * src, and no larger than out except at dim
  * @param src Values to reduce, same dtype as out. Float, double, half,
  * bfloat16 and the integer dtypes are supported, and bool for "sum" only, as
  * in ATen.

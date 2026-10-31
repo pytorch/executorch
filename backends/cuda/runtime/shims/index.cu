@@ -884,12 +884,13 @@ struct ScatterPlan {
   int64_t src_strides[kMaxDims];
   int64_t dim_size; // of out
   int64_t max_out_offset;
+  bool index_is_int32;
 };
 
 __global__ void scatter_offsets_kernel(
     const ScatterPlan plan,
     int64_t points,
-    const int64_t* __restrict__ index,
+    const void* __restrict__ index,
     int64_t* __restrict__ out_offsets,
     int64_t* __restrict__ src_offsets) {
   for (int64_t point =
@@ -909,7 +910,9 @@ __global__ void scatter_offsets_kernel(
         out_offset += coordinate * plan.out_strides[d];
       }
     }
-    const int64_t position = index[index_offset];
+    const int64_t position = plan.index_is_int32
+        ? static_cast<const int32_t*>(index)[index_offset]
+        : static_cast<const int64_t*>(index)[index_offset];
     // As in ATen, a negative index is out of range, not counted from the end.
     CUDA_KERNEL_ASSERT_MSG(
         position >= 0 && position < plan.dim_size, "index out of bounds");
@@ -1023,7 +1026,7 @@ template <typename T, typename AccT>
 Error scatter_reduce(
     const ScatterPlan& plan,
     int64_t points,
-    const int64_t* index,
+    const void* index,
     void* out,
     const void* src,
     Reduction reduction,
@@ -1134,9 +1137,9 @@ Error scatter(
     return Error::Ok;
   }
   ET_CHECK_OR_RETURN_ERROR(
-      index->dtype() == ScalarType::Long,
+      index->dtype() == ScalarType::Long || index->dtype() == ScalarType::Int,
       InvalidArgument,
-      "%s: index must be int64",
+      "%s: index must be int64 or int32",
       name);
   ET_CHECK_OR_RETURN_ERROR(
       std::max<int64_t>(index->dim(), 1) == ndim &&
@@ -1154,6 +1157,7 @@ Error scatter(
   plan.ndim = static_cast<int>(ndim);
   plan.dim = static_cast<int>(dim);
   plan.dim_size = size(out, dim);
+  plan.index_is_int32 = index->dtype() == ScalarType::Int;
   int64_t points = 1;
   for (int64_t d = 0; d < ndim; ++d) {
     plan.max_out_offset +=
@@ -1184,7 +1188,7 @@ Error scatter(
     return scatter_reduce<T, AccT>(
         plan,
         points,
-        static_cast<const int64_t*>(index->data_ptr()),
+        index->data_ptr(),
         out->data_ptr(),
         src->data_ptr(),
         reduction,
