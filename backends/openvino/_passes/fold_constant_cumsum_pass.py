@@ -82,7 +82,10 @@ def _evaluate(graph_module: torch.fx.GraphModule, targets: list) -> dict:
             continue
         if _reads_only_shape(node):
             like = node.args[0].meta["val"]
-            args = (torch.empty(like.shape, dtype=like.dtype), *node.args[1:])
+            args = (
+                torch.empty(like.shape, dtype=like.dtype, device="cpu"),
+                *node.args[1:],
+            )
             kwargs = dict(node.kwargs)
         else:
             args, kwargs = torch.fx.node.map_arg(
