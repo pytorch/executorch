@@ -664,16 +664,17 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
         out_3d);
   };
   const int64_t one[] = {1};
-  const int64_t zero[] = {0};
+  const int64_t two[] = {2};
   const int64_t four_ones[] = {1, 1, 1, 1};
-  const int64_t four_zeros[] = {0, 0, 0, 0};
-  // Single values apply to every spatial dim, so this call succeeds and the
-  // calls below fail only because of their four-element lists.
-  conv_3d(one, zero, one);
-  EXPECT_TENSOR_EQ(out_3d, tf.full({1, 4, 2, 2, 2}, 16));
-  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(four_ones, zero, one));
-  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(one, four_zeros, one));
-  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(one, zero, four_ones));
+  const int64_t four_twos[] = {2, 2, 2, 2};
+  // Single values apply to every spatial dim. With stride 2, padding 1 and
+  // dilation 2, each output sees one kernel tap per dim. The calls below differ
+  // only in the length of one list.
+  conv_3d(two, one, two);
+  EXPECT_TENSOR_EQ(out_3d, tf.full({1, 4, 2, 2, 2}, 2));
+  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(four_twos, one, two));
+  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(two, four_ones, two));
+  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(two, one, four_twos));
 
   Tensor input_6d = tf.ones({1, 2, 3, 3, 3, 3});
   Tensor weight_6d = tf.ones({4, 2, 2, 2, 2, 2});
@@ -1265,20 +1266,24 @@ TEST_F(OpConvCorrectnessTest, Grouped3DStridePaddingDilation) {
 TEST_F(OpConvCorrectnessTest, GroupedTransposed3DStridePaddingDilation) {
   TensorFactory<ScalarType::Float> tf;
   // Depth has its own stride, padding, dilation and output padding, and height
-  // and width have their own padding and dilation.
+  // and width have their own padding and dilation. Two output channels per
+  // group make every weight stride matter in the channels-last layout.
   const int64_t stride[] = {2, 1, 1};
   const int64_t padding[] = {3, 1, 2};
   const int64_t dilation[] = {4, 2, 3};
   const int64_t output_padding[] = {1, 0, 0};
   auto input = tf.make({1, 4, 4, 2, 3}, cycling_values(96, 13));
-  auto weight = tf.make({4, 1, 2, 2, 2}, cycling_values(32, 11));
-  auto bias = tf.make({2}, {1, -1});
+  auto weight = tf.make({4, 2, 2, 2, 2}, cycling_values(64, 11));
+  auto bias = tf.make({4}, {1, -1, 2, -2});
   // PyTorch reference. Even output depths get only the bias.
   auto expected = tf.make(
-      {1, 2, 6, 2, 2},
-      {1,  1,  1,  1,  12, 8,  54,  -48, 1,  1,  1,  1,  -30, -10, -5,  20,
-       1,  1,  1,  1,  19, 19, -16, 9,   -1, -1, -1, -1, -30, 36,  -11, -3,
-       -1, -1, -1, -1, 8,  -6, -4,  -24, -1, -1, -1, -1, -20, 30,  -15, -9});
+      {1, 4, 6, 2, 2},
+      {1,  1,  1,  1,  0,   -14, 54,  -31, 1,  1,  1,  1,  -12, -2,  -2,  2,
+       1,  1,  1,  1,  -13, -29, -34, -3,  -1, -1, -1, -1, 6,   -6,  -42, -5,
+       -1, -1, -1, -1, -12, 0,   1,   -4,  -1, -1, -1, -1, 3,   -1,  27,  9,
+       2,  2,  2,  2,  -5,  -13, 3,   -6,  2,  2,  2,  2,  -1,  1,   -11, 55,
+       2,  2,  2,  2,  29,  9,   12,  4,   -2, -2, -2, -2, -9,  -16, 1,   5,
+       -2, -2, -2, -2, 1,   5,   -6,  -43, -2, -2, -2, -2, 28,  -19, -10, -6});
   for (const bool channels_last : {false, true}) {
     SCOPED_TRACE(channels_last);
     auto in = channels_last ? tf.channels_last_like(input) : input;
