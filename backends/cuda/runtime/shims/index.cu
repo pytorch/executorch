@@ -1028,6 +1028,7 @@ T reduction_identity(Reduction reduction) {
 
 template <typename T, typename AccT>
 Error scatter_reduce(
+    const char* name,
     const ScatterPlan& plan,
     int64_t points,
     const void* index,
@@ -1041,14 +1042,16 @@ Error scatter_reduce(
   ET_CHECK_OR_RETURN_ERROR(
       points <= INT_MAX,
       NotSupported,
-      "scatter_reduce: more than %d index elements are not supported",
+      "%s: more than %d index elements are not supported",
+      name,
       INT_MAX);
   auto* offsets =
       static_cast<int64_t*>(scratch.allocate(4 * points * sizeof(int64_t)));
   ET_CHECK_OR_RETURN_ERROR(
       offsets != nullptr,
       MemoryAllocationFailed,
-      "scatter_reduce: allocating the offsets failed");
+      "%s: allocating the offsets failed",
+      name);
   int64_t* out_offsets = offsets;
   int64_t* src_offsets = offsets + points;
   int64_t* sorted_out_offsets = offsets + 2 * points;
@@ -1070,7 +1073,7 @@ Error scatter_reduce(
       end_bit,
       scratch,
       stream,
-      "scatter_reduce"));
+      name));
   scatter_reduce_sorted_kernel<T, AccT>
       <<<grid_size(points), kThreads, 0, stream>>>(
           points,
@@ -1190,6 +1193,7 @@ Error scatter(
     using T = decltype(value);
     using AccT = decltype(accumulator);
     return scatter_reduce<T, AccT>(
+        name,
         plan,
         points,
         index->data_ptr(),
