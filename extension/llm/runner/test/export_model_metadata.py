@@ -29,6 +29,35 @@ class Identity(torch.nn.Module):
         return value
 
 
+class TokenInput(torch.nn.Module):
+    """A decoder's input signature (tokens, input_pos); returns the tokens."""
+
+    def forward(self, tokens: torch.Tensor, input_pos: torch.Tensor) -> torch.Tensor:
+        return tokens
+
+
+def write_prefill_chunk_fixtures(output_dir: Path) -> None:
+    """Token inputs bounded below and at get_max_seq_len, as export_llm and the
+    MLX exporter produce them."""
+    max_seq_len = 8
+    example = (torch.ones(1, 3, dtype=torch.long), torch.zeros(1, dtype=torch.long))
+    for name, bound in (("bounded", max_seq_len - 1), ("full", max_seq_len)):
+        exported = torch.export.export(
+            TokenInput(),
+            example,
+            dynamic_shapes=({1: torch.export.Dim("token_dim", max=bound)}, None),
+            strict=True,
+        )
+        program = to_edge(
+            exported,
+            constant_methods={
+                **write_max_seq_len(max_seq_len),
+                **write_max_context_len(32),
+            },
+        ).to_executorch()
+        (output_dir / f"PrefillChunk_{name}.pte").write_bytes(program.buffer)
+
+
 def all_methods(logits_to_keep: str, activation_dtype: str) -> dict[str, object]:
     """Compose the full metadata set from the individual per-constant writers."""
     return {
@@ -98,6 +127,8 @@ def main() -> None:
     # No constant methods: exercises rejection of missing required fields.
     missing_program = to_edge(exported).to_executorch()
     (output_dir / "ModelMetadata_missing.pte").write_bytes(missing_program.buffer)
+
+    write_prefill_chunk_fixtures(output_dir)
 
 
 if __name__ == "__main__":

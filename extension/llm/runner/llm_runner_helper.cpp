@@ -154,6 +154,49 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
   return metadata;
 }
 
+int64_t get_max_prefill_chunk_size(
+    Module* module,
+    const std::string& method_name,
+    int64_t max_seq_len) {
+  // Best effort: if the bound cannot be read, keep get_max_seq_len, which is
+  // what the prefiller used before; a real problem with the method surfaces
+  // when it is loaded or run.
+  auto method_meta = module->method_meta(method_name);
+  if (!method_meta.ok() || method_meta->num_inputs() < 1) {
+    ET_LOG(
+        Info,
+        "Prefill chunk size: no input metadata for %s, using "
+        "get_max_seq_len %" PRId64,
+        method_name.c_str(),
+        max_seq_len);
+    return max_seq_len;
+  }
+  // For a bounded dynamic dimension the serialized sizes hold its upper bound.
+  auto input_meta = method_meta->input_tensor_meta(0);
+  if (!input_meta.ok() || input_meta->sizes().size() < 2) {
+    ET_LOG(
+        Info,
+        "Prefill chunk size: %s input 0 is not a [batch, tokens] tensor, "
+        "using get_max_seq_len %" PRId64,
+        method_name.c_str(),
+        max_seq_len);
+    return max_seq_len;
+  }
+  const int64_t token_bound = input_meta->sizes()[1];
+  if (token_bound <= 0 || token_bound >= max_seq_len) {
+    return max_seq_len;
+  }
+  ET_LOG(
+      Info,
+      "Prefill chunk size %" PRId64 ": %s accepts at most %" PRId64
+      " tokens per call, get_max_seq_len is %" PRId64,
+      token_bound,
+      method_name.c_str(),
+      token_bound,
+      max_seq_len);
+  return token_bound;
+}
+
 std::unordered_set<uint64_t> get_eos_ids(
     tokenizers::Tokenizer* tokenizer,
     Module* module) {
@@ -316,12 +359,21 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       ? decode_text_decoder_runner.get()
       : text_decoder_runner.get();
 
+  // Size prefill chunks by what the prefill method accepts, not only by
+  // get_max_seq_len: a chunk larger than the token input's bound fails to
+  // resize the input. The metadata keeps its meaning for every other check.
+  int64_t prefill_chunk_size = metadata.at(kMaxSeqLen);
+  if (metadata.at(kUseKVCache) && metadata.at(kEnableDynamicShape)) {
+    prefill_chunk_size = get_max_prefill_chunk_size(
+        module.get(), prefill_method_name, prefill_chunk_size);
+  }
+
   // Create text_prefiller
   auto text_prefiller = std::make_unique<TextPrefiller>(
       text_decoder_runner.get(),
       metadata.at(kUseKVCache),
       metadata.at(kEnableDynamicShape),
-      metadata.at(kMaxSeqLen));
+      prefill_chunk_size);
 
   // Create text_token_generator with stats
   auto text_token_generator = std::make_unique<TextTokenGenerator>(
