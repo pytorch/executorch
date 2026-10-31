@@ -674,6 +674,20 @@ TEST_F(OpConvCorrectnessTest, InvalidBiasLength) {
           transposed_out));
 }
 
+TEST_F(OpConvCorrectnessTest, InvalidGroups) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.ones({1, 2, 3, 3});
+  Tensor weight = tf.ones({4, 2, 2, 2});
+  optional<Tensor> bias;
+  Tensor out = tf.zeros({1, 4, 2, 2});
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, weight, bias, {1}, {0}, {1}, false, {0}, 0, out));
+}
+
 TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
   TensorFactory<ScalarType::Float> tf;
 
