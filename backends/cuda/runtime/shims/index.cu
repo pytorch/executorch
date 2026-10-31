@@ -870,7 +870,7 @@ Error put(
   return Error::Ok;
 }
 
-// Assign is a scatter without a reduction: every write replaces the last.
+// Assign is a plain scatter: each write replaces the one before it.
 enum class Reduction { Sum, Prod, Mean, Max, Min, Assign };
 
 // A scatter visits every element of index. Dim `dim` of out is addressed by
@@ -936,21 +936,19 @@ combine(Reduction reduction, AccT result, AccT value) {
       return value_is_nan || result < value ? value : result;
     case Reduction::Min:
       return value_is_nan || value < result ? value : result;
-    case Reduction::Assign:
-      return value;
     default:
       return result + value;
   }
 }
 
 // After a stable sort of the points by the element they write, the points of
-// one element are a run in index order. Each run is reduced by one thread in
-// that order and written once, so the result does not depend on scheduling,
-// and an assignment keeps the last write, as ATen's deterministic scatter does.
-// A sum adds in AccT, as ATen does in deterministic mode, so half and
-// bfloat16 lose less to rounding. A product rounds to T at every step and a
-// mean rounds its sum to T before dividing, as ATen does, so half overflows to
-// infinity and integers wrap where ATen's do.
+// one element are a run in index order, and each element is written once, so
+// the result does not depend on scheduling. An assignment keeps the last point
+// of its run, as ATen's deterministic scatter does. Any other reduction walks
+// its run in one thread. A sum adds in AccT, as ATen does in deterministic
+// mode, so half and bfloat16 lose less to rounding. A product rounds to T at
+// every step and a mean rounds its sum to T before dividing, as ATen does, so
+// half overflows to infinity and integers wrap where ATen's do.
 template <typename T, typename AccT>
 __global__ void scatter_reduce_sorted_kernel(
     int64_t points,
@@ -965,6 +963,12 @@ __global__ void scatter_reduce_sorted_kernel(
        i < points;
        i += static_cast<int64_t>(gridDim.x) * blockDim.x) {
     const int64_t offset = out_offsets[i];
+    if (reduction == Reduction::Assign) {
+      if (i + 1 == points || out_offsets[i + 1] != offset) {
+        out[offset] = src[src_offsets[i]];
+      }
+      continue;
+    }
     if (i > 0 && out_offsets[i - 1] == offset) {
       continue;
     }
