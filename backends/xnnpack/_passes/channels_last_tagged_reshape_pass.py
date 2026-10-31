@@ -10,6 +10,7 @@ from enum import Enum
 from typing import List, Optional, Tuple
 
 import torch
+from executorch.backends.transforms.utils import set_param_tensor
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
     extract_qdq_affine_op_args_for_decomposed_ops,
@@ -19,9 +20,14 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_tagged_as_implicit_q_dq,
     tag_as_implicit_q_dq,
 )
-from executorch.backends.xnnpack.utils.utils import is_dtype_cast, is_param_node
+from executorch.backends.xnnpack.utils.utils import (
+    get_param_tensor,
+    is_dtype_cast,
+    is_param_node,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
+from torch.fx.experimental.symbolic_shapes import has_free_symbols
 
 
 class InputDimOrder(Enum):
@@ -77,7 +83,9 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         exir_ops.edge.aten.linear.default,
     }
 
-    # Broadcasting binary ops whose operands must share one memory format. A
+    # Broadcasting binary ops whose operands must share one memory format.
+    # Single-element operands take no part in the layout decision, and rank < 4
+    # operands are reshaped to 4D so they can follow an NHWC operand. A
     # dynamic-quant input_to_nhwc may blanket-replace a shared activation
     # (replace_all_uses_with), switching one operand of an already-processed
     # binary op to NHWC while its other (e.g. per-channel constant) operand
@@ -87,6 +95,8 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.div.Tensor,
+        exir_ops.edge.aten.maximum.default,
+        exir_ops.edge.aten.minimum.default,
     }
 
     # Tag which is added to a node's meta to indicate that it uses NHWC format.
@@ -173,6 +183,137 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
 
     def _is_nhwc(self, tensor: torch.Tensor) -> bool:
         return ChannelsLastTaggedReshapePass._is_nhwc_tensor(tensor)
+
+    @staticmethod
+    def static_tensor_val(node: torch.fx.Node) -> Optional[torch.Tensor]:
+        val = node.meta.get("val", None)
+        if isinstance(val, torch.Tensor) and not has_free_symbols(val.shape):
+            return val
+        return None
+
+    @staticmethod
+    def is_single_element(node: torch.fx.Node) -> bool:
+        # A rank > 4 operand makes the op output rank > 4, which cannot be
+        # NHWC, so such an operand must still take part in the layout decision.
+        val = ChannelsLastTaggedReshapePass.static_tensor_val(node)
+        return val is not None and val.numel() == 1 and val.dim() <= 4
+
+    @staticmethod
+    def is_lower_rank_broadcast_operand(node: torch.fx.Node) -> bool:
+        # A symbolic shape cannot be expressed in XNNStaticReshape, so such an
+        # operand takes the NCHW path.
+        val = ChannelsLastTaggedReshapePass.static_tensor_val(node)
+        return (
+            val is not None
+            and 0 < val.dim() < 4
+            and val.numel() > 1
+            and not ChannelsLastTaggedReshapePass.is_nhwc_node(node)
+            # A view between dequantize and the op would carry no qparams.
+            and not is_dequant(node)
+        )
+
+    def is_foldable_constant(self, node: torch.fx.Node) -> bool:
+        """
+        A lifted constant with a single user can be reshaped and laid out as
+        NHWC ahead of time instead of at every inference.
+        """
+        return (
+            node.op == "placeholder"
+            and is_param_node(self.exported_program, node)
+            and len(node.users) == 1
+        )
+
+    def constant_to_4d_nhwc(self, input_node: torch.fx.Node) -> torch.fx.Node:
+        """
+        Reshape a rank < 4 constant operand to 4D in place and tag it NHWC, so
+        the serializer writes its data in channels_last and the graph carries
+        no reshape or transpose for it.
+        """
+        val = input_node.meta["val"]
+        new_shape = [1] * (4 - val.dim()) + list(val.shape)
+        data = get_param_tensor(self.exported_program, input_node)
+        assert data is not None
+        set_param_tensor(
+            self.exported_program, input_node, data.reshape(new_shape).contiguous()
+        )
+        input_node.meta["val"] = val.reshape(new_shape)
+        self.mark_as_nhwc_node(input_node)
+        return input_node
+
+    def converge_layouts(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.Node,
+        layout_inputs: List[torch.fx.Node],
+    ) -> None:
+        """
+        Bring operands of mixed layouts to one: NHWC if every operand can be
+        converted, NCHW otherwise. A lower-rank operand of a broadcasting op
+        (e.g. a [H, W] map added to [N, C, H, W]) can follow the NHWC operand
+        once reshaped to 4D, so the layout is decided on the other operands
+        first and only then is the graph or the constant touched.
+        """
+        lower_rank = [
+            node.target in self.broadcast_binary_ops
+            and self.is_lower_rank_broadcast_operand(input_node)
+            for input_node in layout_inputs
+        ]
+        if all(
+            is_lower_rank or self.can_be_converted_to_nhwc(input_node)
+            for input_node, is_lower_rank in zip(layout_inputs, lower_rank)
+        ):
+            for input_node, is_lower_rank in zip(layout_inputs, lower_rank):
+                if is_lower_rank:
+                    input_node = self.unsqueeze_to_4d(graph_module, input_node, node)
+                # A constant folded to NHWC needs no copy.
+                if not ChannelsLastTaggedReshapePass.is_nhwc_node(input_node):
+                    self.input_to_nhwc(graph_module, input_node, node)
+            self.mark_as_nhwc_node(node)
+        else:
+            for input_node in layout_inputs:
+                self.input_to_nchw(graph_module, input_node, node)
+
+    def unsqueeze_to_4d(
+        self,
+        graph_module: torch.fx.GraphModule,
+        input_node: torch.fx.Node,
+        target_node: torch.fx.Node,
+    ) -> torch.fx.Node:
+        """
+        Reshape a rank < 4 operand of `target_node` to 4D by prepending ones,
+        which is how broadcasting aligns it, so it can be converted to NHWC.
+        """
+        if self.is_foldable_constant(input_node):
+            return self.constant_to_4d_nhwc(input_node)
+        val = input_node.meta["val"]
+        new_shape = [1] * (4 - val.dim()) + list(val.shape)
+        with graph_module.graph.inserting_before(target_node):
+            view = self.create_call_function_node(
+                graph_module=graph_module,
+                target=exir_ops.edge.aten.view_copy.default,
+                args=(input_node, new_shape),
+            )
+        view.meta["val"] = val.reshape(new_shape)
+        # Left untagged on purpose: it is NCHW, and the view_copy visitor
+        # treats the presence of the tag key as "permute the shape".
+        target_node.replace_input_with(input_node, view)
+        return view
+
+    def layout_inputs(self, node: torch.fx.Node) -> List[torch.fx.Node]:
+        """
+        Inputs that take part in the layout decision of `node`. Single-element
+        operands of a broadcasting binary op (e.g. the scalar in `x * 1.4142`)
+        broadcast the same way in either layout, so they must not force an
+        NHWC activation back to NCHW.
+        """
+        return [
+            input_node
+            for input_node in node.all_input_nodes
+            if not (
+                node.target in self.broadcast_binary_ops
+                and self.is_single_element(input_node)
+            )
+        ]
 
     def requires_nhwc_input(self, node: torch.fx.Node) -> bool:
         return node.target in self.memory_sensitive_ops_nhwc
@@ -571,29 +712,19 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             else:
                 # The node can have inputs in any format (but all must be the
                 # same format)
+                layout_inputs = self.layout_inputs(node)
                 is_or_isnt_nhwc_node = [
                     ChannelsLastTaggedReshapePass.is_nhwc_node(input_node)
-                    for input_node in node.all_input_nodes
+                    for input_node in layout_inputs
                 ]
-                if all(is_or_isnt_nhwc_node):
+                if is_or_isnt_nhwc_node and all(is_or_isnt_nhwc_node):
                     # All inputs are nhwc so this node's output is nhwc too
                     self.mark_as_nhwc_node(node)
                 elif any(is_or_isnt_nhwc_node):
                     # There is at least one node of each format, so we need to
                     # convert some of them to another format such that all
                     # are the same.
-                    # If all nodes can be converted to nhwc, then convert them
-                    # all to nhwc. Otherwise, convert all to nchw
-                    if all(
-                        self.can_be_converted_to_nhwc(input_node)
-                        for input_node in node.all_input_nodes
-                    ):
-                        for input_node in node.all_input_nodes:
-                            self.input_to_nhwc(graph_module, input_node, node)
-                        self.mark_as_nhwc_node(node)
-                    else:
-                        for input_node in node.all_input_nodes:
-                            self.input_to_nchw(graph_module, input_node, node)
+                    self.converge_layouts(graph_module, node, layout_inputs)
 
         graph_module.recompile()
 
@@ -616,7 +747,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 or node.target not in ChannelsLastTaggedReshapePass.broadcast_binary_ops
             ):
                 continue
-            input_nodes = node.all_input_nodes
+            input_nodes = self.layout_inputs(node)
             if len(input_nodes) != 2:
                 continue
             layouts = [
@@ -625,15 +756,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             ]
             if layouts[0] == layouts[1]:
                 continue
-            if all(
-                self.can_be_converted_to_nhwc(input_node) for input_node in input_nodes
-            ):
-                for input_node in input_nodes:
-                    self.input_to_nhwc(graph_module, input_node, node)
-                self.mark_as_nhwc_node(node)
-            else:
-                for input_node in input_nodes:
-                    self.input_to_nchw(graph_module, input_node, node)
+            self.converge_layouts(graph_module, node, input_nodes)
             reconverged = True
 
         if reconverged:
