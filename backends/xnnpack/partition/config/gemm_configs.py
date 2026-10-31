@@ -83,6 +83,18 @@ class GEMMConfig(XNNPartitionerConfig):
 
         return partition
 
+    def get_partition(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        partition = super().get_partition(node, ep)
+        # Tag q/dq nodes as implicit only once the partition is taken. A rejected
+        # node keeps them as separate ops.
+        for n in partition:
+            if is_dequant(n) or is_quant(n):
+                tag_as_implicit_q_dq(n)
+
+        return partition
+
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return None
 
@@ -138,11 +150,6 @@ class GEMMConfig(XNNPartitionerConfig):
 
         valid_deps = valid_bias and valid_weight and valid_act and valid_output
         deps = list(chain(bias_deps, weight_deps, act_deps, output_deps))
-
-        # Tag q/dq nodes as implicit q/dq nodes
-        for dep in deps:
-            if is_dequant(dep) or is_quant(dep):
-                tag_as_implicit_q_dq(dep)
 
         return valid_deps, deps
 
@@ -576,11 +583,14 @@ class AddmmConfig(GEMMConfig):
         node.users = old_users
 
         # When using force_non_static_weights_for_f32_linear, we want to get_deps to overwrite the source partition nodes.
-        # Else we want to be greedy.
+        # Else we want to be greedy, but leave out views XNNPACK cannot hold.
         ret_deps = (
             list(set(deps) & set(src_partition.nodes))
             if self.force_non_static_weights_for_f32_linear
-            else list(set(deps) | set(src_partition.nodes))
+            else list(
+                set(deps)
+                | {n for n in src_partition.nodes if self._check_tensor_ranks(n)}
+            )
         )
 
         return valid_deps, ret_deps

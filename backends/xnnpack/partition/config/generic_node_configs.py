@@ -165,18 +165,21 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
                 # Expected node --> fused_act (optional) --> dequant
                 return deps
 
-            # Tag input nodes (dq nodes) as implicit q/dq nodes
-            for dq_input in node.all_input_nodes:
-                if is_dequant(dq_input):
-                    tag_as_implicit_q_dq(dq_input)
-
-            # Tag node_output (q node) as an implicit q/dq node
-            if is_quant(node_output):
-                tag_as_implicit_q_dq(node_output)
-
             quantized_deps.append(node_output)
 
         return deps + quantized_deps
+
+    def get_partition(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        partition = super().get_partition(node, ep)
+        # Tag q/dq nodes as implicit only once the partition is taken. A rejected
+        # node keeps them as separate ops.
+        for dep in partition:
+            if dep is not node and (is_dequant(dep) or is_quant(dep)):
+                tag_as_implicit_q_dq(dep)
+
+        return partition
 
 
 class QuantizedPerTensorConfig(GenericNodePartitionerConfig):
