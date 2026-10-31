@@ -461,8 +461,8 @@ bool check_convolution_args(
   if (bias.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
     ET_CHECK_OR_RETURN_FALSE(
-        bias.value().size(0) == transposed ? groups * weight.size(1)
-                                           : weight.size(0),
+        bias.value().size(0) ==
+            (transposed ? groups * weight.size(1) : weight.size(0)),
         "bias length must equal number of output channels, but got %" ET_PRI_TENSOR_SIZE
         "; expected %" PRId64,
         bias.value().size(0),
