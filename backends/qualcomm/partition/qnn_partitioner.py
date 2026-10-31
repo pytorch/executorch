@@ -400,7 +400,8 @@ class QnnPartitioner(Partitioner):
         Determines which op should not be decomposed during partitioning.
         The list of operators is obtained from `get_skip_decomp_table()`.
         The filter refines which nodes are not decomposed: `filter_fn`, and on
-        HTP it also leaves out ops that read only constants.
+        HTP it also leaves out ops that read only constants, except quantize
+        and dequantize ops.
         """
         do_not_decompose = get_skip_decomp_table()
         if self.backend != QnnExecuTorchBackendType.kHtpBackend:
@@ -419,7 +420,15 @@ class QnnPartitioner(Partitioner):
                 arg in constant_only for arg in node.all_input_nodes
             ):
                 constant_only.add(node)
+        # Quantize and dequantize ops stay whole: QNN builds weight encodings
+        # from them.
+        quant_ops = {
+            op
+            for op in do_not_decompose
+            if op.namespace in ("quantized_decomposed", "torchao")
+        }
         return (
             do_not_decompose,
-            lambda node: node not in constant_only and filter_fn(node),
+            lambda node: (node not in constant_only or node.target in quant_ops)
+            and filter_fn(node),
         )
