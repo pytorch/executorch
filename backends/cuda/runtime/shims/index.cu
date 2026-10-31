@@ -941,8 +941,8 @@ combine(Reduction reduction, AccT result, AccT value) {
 // one element are a run in index order. Each run is reduced by one thread in
 // that order and written once, so the result does not depend on scheduling.
 // A sum adds in AccT, as ATen does in deterministic mode, so half and
-// bfloat16 keep small terms. A product rounds to T at every step and a mean
-// rounds its sum to T before dividing, as ATen does, so half overflows to
+// bfloat16 lose less to rounding. A product rounds to T at every step and a
+// mean rounds its sum to T before dividing, as ATen does, so half overflows to
 // infinity and integers wrap where ATen's do.
 template <typename T, typename AccT>
 __global__ void scatter_reduce_sorted_kernel(
