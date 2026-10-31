@@ -913,7 +913,8 @@ __global__ void scatter_offsets_kernel(
     const int64_t position = plan.index_is_int32
         ? static_cast<const int32_t*>(index)[index_offset]
         : static_cast<const int64_t*>(index)[index_offset];
-    // As in ATen, a negative index is out of range, not counted from the end.
+    // As in ATen's default CUDA kernel, a negative index is out of range, not
+    // counted from the end.
     CUDA_KERNEL_ASSERT_MSG(
         position >= 0 && position < plan.dim_size, "index out of bounds");
     out_offsets[point] = out_offset + position * plan.out_strides[plan.dim];
