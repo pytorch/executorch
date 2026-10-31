@@ -27,6 +27,9 @@ from openvino.frontend import FrontEndManager  # type: ignore[import-untyped]
 from openvino.frontend.pytorch.fx_decoder import (  # type: ignore[import-untyped]
     TorchFXPythonDecoder,
 )
+from openvino.frontend.pytorch.utils import (  # type: ignore[import-untyped]
+    pt_to_ov_type_map,
+)
 from openvino.preprocess import PrePostProcessor  # type: ignore[import-untyped]
 
 # The values of the inference_precision compile spec. The runtime
@@ -104,7 +107,19 @@ class OpenvinoBackend(BackendDetails):
             module, input_shapes=input_shapes, input_types=input_types
         )
         frontend = FrontEndManager().load_by_framework("pytorch")
-        ppp = PrePostProcessor(frontend.convert(frontend.load(decoder)))
+        model = frontend.convert(frontend.load(decoder))
+        # The converter takes an unused first input for forward's self and
+        # removes it, but the runtime passes every partition input. The cumsum
+        # fold can leave the first input unused.
+        parameters = list(model.get_parameters())
+        if len(parameters) == len(input_types) - 1:
+            for parameter in parameters:
+                model.remove_parameter(parameter)
+            first = opset13.parameter(
+                input_shapes[0], pt_to_ov_type_map[str(input_types[0])]
+            )
+            model.add_parameters([first, *parameters])
+        ppp = PrePostProcessor(model)
         # The converter takes an int input, like a SymInt size, as a scalar, but
         # the runtime passes it as an int64 tensor of shape [1].
         for i in int_inputs:
