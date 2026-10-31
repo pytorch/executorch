@@ -493,6 +493,22 @@ class ET_EXPERIMENTAL CudaBackend final
          to_string(so_file_counter.fetch_add(1, std::memory_order_relaxed)) +
          ".so");
 
+    // A failed init returns no handle, so destroy() never runs for it. Remove
+    // the file here unless init succeeds.
+    bool keep_so_file = false;
+    executorch::backends::aoti::ScopeGuard remove_so_file([&]() noexcept {
+      if (keep_so_file) {
+        return;
+      }
+      std::error_code remove_error;
+      filesystem::remove(so_path, remove_error);
+      ET_CHECK_OR_LOG_ERROR(
+          !remove_error,
+          "Failed to remove temporary shared library %s: %s",
+          so_path.c_str(),
+          remove_error.message().c_str());
+    });
+
     // Create a temporary file
     ofstream outfile(so_path, ios::binary);
 
@@ -644,6 +660,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
     live_handles_.fetch_add(1, std::memory_order_acq_rel);
 
+    keep_so_file = true;
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
