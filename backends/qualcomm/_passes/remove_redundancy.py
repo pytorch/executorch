@@ -66,7 +66,24 @@ class RemoveRedundancy(ExportPass):
                     user_n.replace_input_with(n, n.args[0])
                 graph_module.graph.erase_node(to_be_remove)
 
+    def _remove_single_chunk_splits(self, graph_module: torch.fx.GraphModule):
+        # A split into one chunk returns its input, and QNN's Split rejects a
+        # single output, so it would otherwise fall back to the CPU.
+        split_ops = {
+            torch.ops.aten.split_with_sizes.default,
+            exir_ops.edge.aten.split_with_sizes.default,
+            exir_ops.edge.aten.split_with_sizes_copy.default,
+        }
+        for n in list(graph_module.graph.nodes):
+            if n.target not in split_ops or len(n.args[1]) != 1:
+                continue
+            for user_n in list(n.users.keys()):
+                user_n.replace_all_uses_with(n.args[0])
+                graph_module.graph.erase_node(user_n)
+            graph_module.graph.erase_node(n)
+
     def call(self, graph_module: torch.fx.GraphModule):
+        self._remove_single_chunk_splits(graph_module)
         self._remove(graph_module)
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
