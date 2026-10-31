@@ -1,0 +1,18 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+fbcode_target(
+    _kind = python_unittest,
+    name = "test_affine_weights",
+    srcs = ["test_affine_weights.py"],
+    deps = [
+        "//caffe2:torch",
+        "fbsource//third-party/tosa_tools:serializer",
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/backends/arm/operators:ops",
+        "//executorch/backends/arm/quantizer:lib",
+        "//pytorch/ao:torchao",
+    ],
+)
