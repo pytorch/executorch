@@ -280,6 +280,22 @@ class DiffusionRunner:
             )
         return output_height, output_width
 
+    def _resolve_guidance_scale(self, guidance_scale: float | None) -> float | None:
+        guidance_scale = (
+            self.metadata.default_guidance_scale
+            if guidance_scale is None
+            else guidance_scale
+        )
+        if guidance_scale is not None and (
+            not math.isfinite(guidance_scale) or guidance_scale < 0
+        ):
+            raise ValueError("guidance_scale must be finite and non-negative")
+        if guidance_scale is not None and not self.metadata.accepts_guidance_input:
+            if guidance_scale != 0:
+                raise ValueError("this program does not accept a guidance input")
+            guidance_scale = None
+        return guidance_scale
+
     def generate(
         self,
         prompt: str,
@@ -296,25 +312,13 @@ class DiffusionRunner:
     ) -> torch.Tensor:
         steps = self.metadata.default_inference_steps if steps is None else steps
         cfg_scale = self.metadata.default_cfg_scale if cfg_scale is None else cfg_scale
-        guidance_scale = (
-            self.metadata.default_guidance_scale
-            if guidance_scale is None
-            else guidance_scale
-        )
         if steps <= 0:
             raise ValueError("steps must be positive")
         if not math.isfinite(cfg_scale) or cfg_scale < 0:
             raise ValueError("cfg_scale must be finite and non-negative")
         if cfg_scale > 1 and not self.metadata.supports_cfg:
             raise ValueError("this program does not support CFG")
-        if guidance_scale is not None and (
-            not math.isfinite(guidance_scale) or guidance_scale < 0
-        ):
-            raise ValueError("guidance_scale must be finite and non-negative")
-        if guidance_scale is not None and not self.metadata.accepts_guidance_input:
-            if guidance_scale != 0:
-                raise ValueError("this program does not accept a guidance input")
-            guidance_scale = None
+        guidance_scale = self._resolve_guidance_scale(guidance_scale)
         if not 0 < strength <= 1:
             raise ValueError("strength must be in (0, 1]")
         if negative_prompt is not None and not self.metadata.supports_negative_prompt:
