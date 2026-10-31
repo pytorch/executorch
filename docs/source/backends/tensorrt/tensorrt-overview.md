@@ -171,8 +171,8 @@ The Torch-TensorRT docs call such a program *coalesced*.
 The export writes the weights of the CUDA part to a data file, `aoti_cuda_blob.ptd`, next to the
 `.pte`. Pass that file when you load the program: if the CUDA part has weights, loading fails
 without it. The file has the same name for every model, so a second export into the same directory
-overwrites the first one's weights, and the first model can then return wrong answers with no
-error. Save each model into its own directory.
+overwrites the first one's weights, and the first model then fails to load. Save each model into
+its own directory.
 
 ### Keeping inputs and outputs on the GPU
 

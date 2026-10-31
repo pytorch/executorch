@@ -664,6 +664,8 @@ def _default_decomposition_table(
     # A program already decomposed with PyTorch's table has aten.empty_permuted
     # where it had aten.empty_like.
     decomps[torch.ops.aten.empty_permuted.default] = _empty_permuted
+    # torch._check_tensor_all exports to this op, which has no decomposition in core.
+    decomps[torch.ops.aten._is_all_true.default] = torch.ops.aten.all.default
     # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
 
     never_decompose = []
