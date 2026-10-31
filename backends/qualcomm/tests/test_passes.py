@@ -207,35 +207,41 @@ class TestPasses(unittest.TestCase):
                 return attention + mul
 
         cases = (
-            (Autocast(), (torch.randn(4, 8), torch.randn(4, 8)), "t_1"),
-            (Attention(), tuple(torch.randn(1, 2, 4, 8) for _ in range(4)), "mul"),
+            (
+                Autocast(),
+                (torch.randn(4, 8), torch.randn(4, 8)),
+                torch._higher_order_ops.wrap.wrap_with_autocast,
+                "t_1",
+            ),
+            (
+                Attention(),
+                tuple(torch.randn(1, 2, 4, 8) for _ in range(4)),
+                torch.ops.aten.scaled_dot_product_attention.default,
+                "mul",
+            ),
         )
-        for model, inputs, name in cases:
+        for model, inputs, decomposed_op, reused_name in cases:
             with self.subTest(model=type(model).__name__):
                 ep = torch.export.export(model.eval(), inputs)
-                # Guard against a vacuous test: the colliding name has to be
-                # an input's, and torch.export must leave it unrecorded.
-                self.assertIn(
-                    name, [n.name for n in ep.graph.nodes if n.op == "placeholder"]
-                )
-                self.assertNotIn(
-                    name,
-                    ep.graph._graph_namespace._used_names,
-                    "torch.export now records the names it assigns, so the "
-                    "reservation in QnnPassManager._transform can go",
-                )
+                self.assertIn(decomposed_op, [n.target for n in ep.graph.nodes])
+                unrecorded_names = {
+                    n.name for n in ep.graph.nodes
+                } - ep.graph._graph_namespace._used_names
                 ep = get_qnn_pass_manager_cls()().transform_for_export_pipeline(ep)
-                # The decompositions that add the colliding nodes have run.
-                sdpa = torch.ops.aten.scaled_dot_product_attention.default
-                for n in ep.graph.nodes:
-                    self.assertNotIsInstance(
-                        n.target, torch._higher_order_ops.wrap.WrapWithAutocast
-                    )
-                    self.assertNotEqual(n.target, sdpa)
+                self.assertNotIn(decomposed_op, [n.target for n in ep.graph.nodes])
                 # ep.module() copies the graph and renames duplicates, so lint
                 # the graph the passes produced.
                 ep.graph_module.graph.lint()
                 torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+                # Checked last so the checks above still run once torch.export
+                # records the name.
+                self.assertIn(
+                    reused_name,
+                    unrecorded_names,
+                    f"torch.export no longer leaves {reused_name} unrecorded, so "
+                    "this case no longer tests the reservation in "
+                    "QnnPassManager._transform",
+                )
 
     def test_build_op_wrappers_returns_context_binary(self):
         op_name = "ctx_loader_build"
