@@ -168,12 +168,6 @@ Now, we can start to fill in the function body:
             if _is_annotated([node]):
                 return
 
-            # block quantization
-            if quantization_config.block_size is not None:
-                quantization_config.weight.observer_or_fake_quant_ctr.p.keywords.update(
-                    {QCOM_BLOCK_SIZE: quantization_config.block_size}
-                )
-
             input_qspec_map = {}
 
             # annotate input activation
@@ -181,9 +175,9 @@ Now, we can start to fill in the function body:
             input_spec = quantization_config.input_activation
             input_qspec_map[input_act] = input_spec
 
-            # annotate kernel
+            # annotate kernel (get_weight_qspec carries this node's block size, if any)
             kernel = node.args[1]
-            input_qspec_map[kernel] = quantization_config.weight
+            input_qspec_map[kernel] = get_weight_qspec(quantization_config)
 
             # annotate bias
             if len(node.args) > 2:
