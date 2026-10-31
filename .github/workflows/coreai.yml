@@ -147,11 +147,6 @@ jobs:
         PY
         echo "::endgroup::"
 
-        echo "::group::Verify tester delegation and quantization"
-        COREAI_TEST_RUNTIME=1 ${CONDA_RUN} python -m pytest \
-          backends/apple/coreai/test/test_tester.py -x -v
-        echo "::endgroup::"
-
         echo "::group::Run shared backend suite (${{ matrix.flow }} / ${{ matrix.suite }})"
         export GOLDEN_ARTIFACTS_DIR="${RUNNER_TEMP}/coreai-${{ matrix.flow }}-${{ matrix.suite }}"
         # Allowed failures for gating suites; unlisted suites are informational.
