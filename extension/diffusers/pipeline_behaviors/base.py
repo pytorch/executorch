@@ -47,7 +47,7 @@ class DiffusionPipelineBehavior(ABC):
         *,
         height: int,
         width: int,
-        vae_scale_factor: int,
+        vae_scale_factor: int = 8,
         generator: torch.Generator,
         dtype: torch.dtype,
         scheduler: Any,
@@ -90,6 +90,7 @@ class DiffusionPipelineBehavior(ABC):
         *,
         height: int,
         width: int,
+        vae_scale_factor: int = 8,
     ) -> torch.Tensor:
         """Configure the scheduler and return its inference timesteps."""
         scheduler.set_timesteps(steps)
@@ -117,6 +118,7 @@ class DiffusionPipelineBehavior(ABC):
         width: int,
         dtype: torch.dtype,
         guidance_scale: float | None,
+        vae_scale_factor: int = 8,
     ) -> tuple[torch.Tensor, ...]:
         """Assemble one invocation of the exported denoiser method."""
         ...

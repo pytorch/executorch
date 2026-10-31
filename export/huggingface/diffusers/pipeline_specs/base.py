@@ -40,7 +40,7 @@ class DiffusionPipelineExportSpec(ABC):
     """Hugging Face loading and graph-export contract for one pipeline."""
 
     pipeline_behavior: DiffusionPipelineBehavior
-    default_max_sequence_lengths: tuple[int, ...]
+    default_max_text_sequence_lengths: tuple[int, ...]
     max_sequence_length_override_index: int | None
     default_size: tuple[int, int]
 
@@ -101,6 +101,8 @@ class DiffusionModelInfo:
     supports_cfg: bool = True
     accepts_guidance_input: bool = False
     guidance_input_dim: int = 0
+    default_inference_steps: int | None = None
+    default_guidance_scale: float | None = None
 
     def __post_init__(self) -> None:
         """Validate discovered model facts."""
