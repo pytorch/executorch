@@ -13,6 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/QuantizedLinear.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/dq8ca_q4gsw/Dq8caQ4gswLinearWmma.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -153,6 +154,12 @@ void add_linear_dqa_qw_node(
 void linear_dq8ca_q4gsw(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
+  // Devices of a cooperative-matrix family (CoopmatFamily.h) take the
+  // family's kernels where one of its rows applies.
+  if (try_add_dq8ca_q4gsw_linear_wmma_node(graph, args)) {
+    return;
+  }
+
   int32_t idx = 0;
   const ValueRef fp_input = args.at(idx++);
   const ValueRef input_scale = args.at(idx++);

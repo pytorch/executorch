@@ -47,6 +47,10 @@ PhysicalDevice::PhysicalDevice(
       handle(physical_device_handle),
       properties{},
       memory_properties{},
+#ifdef VK_KHR_vulkan_memory_model
+      vulkan_memory_model_features{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES_KHR},
+#endif /* VK_KHR_vulkan_memory_model */
 #ifdef VK_KHR_16bit_storage
       shader_16bit_storage{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES,
@@ -74,6 +78,7 @@ PhysicalDevice::PhysicalDevice(
       cooperative_matrix_features{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR},
       supports_int8_coopmat{false},
+      cooperative_matrix_properties{},
 #endif /* VK_KHR_cooperative_matrix */
 #ifdef VK_NV_cooperative_matrix2
       cooperative_matrix2_features{
@@ -107,7 +112,8 @@ PhysicalDevice::PhysicalDevice(
       supports_subgroup_size_control(false),
       supports_compute_full_subgroups(false),
       device_name{},
-      device_type{DeviceType::UNKNOWN} {
+      device_type{DeviceType::UNKNOWN},
+      driver_id(0) {
   // Extract physical device properties
   vkGetPhysicalDeviceProperties(handle, &properties);
 
@@ -262,6 +268,19 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   // Create linked list to query availability of extensions
   void* extension_list_top = nullptr;
 
+#ifdef VK_KHR_vulkan_memory_model
+  // Runtime requests Vulkan 1.1, so use the advertised extension even on 1.2+.
+  std::vector<const char*> memory_model_extensions;
+  find_requested_device_extensions(
+      handle,
+      memory_model_extensions,
+      {VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME});
+  if (!memory_model_extensions.empty()) {
+    vulkan_memory_model_features.pNext = extension_list_top;
+    extension_list_top = &vulkan_memory_model_features;
+  }
+#endif /* VK_KHR_vulkan_memory_model */
+
 #ifdef VK_KHR_16bit_storage
   shader_16bit_storage.pNext = extension_list_top;
   extension_list_top = &shader_16bit_storage;
@@ -340,13 +359,15 @@ void PhysicalDevice::query_extensions_vk_1_1() {
           p.sType = VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR;
           p.pNext = nullptr;
         }
-        vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn(
-            handle, &count, props.data());
-        for (const auto& p : props) {
-          if (p.AType == VK_COMPONENT_TYPE_SINT8_KHR) {
-            supports_int8_coopmat = true;
-            break;
+        if (vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn(
+                handle, &count, props.data()) == VK_SUCCESS) {
+          props.resize(count);
+          for (const auto& p : props) {
+            if (p.AType == VK_COMPONENT_TYPE_SINT8_KHR) {
+              supports_int8_coopmat = true;
+            }
           }
+          cooperative_matrix_properties = std::move(props);
         }
       }
     }
@@ -374,9 +395,33 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   properties_list_top = &subgroup_size_control_properties;
 #endif /* VK_EXT_subgroup_size_control */
 
+  // VkPhysicalDeviceDriverProperties is core in Vulkan 1.2; on a 1.1 device it
+  // needs VK_KHR_driver_properties.
+  VkPhysicalDeviceDriverProperties driver_properties{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+  bool query_driver_properties = properties.apiVersion >= VK_API_VERSION_1_2;
+#ifdef VK_KHR_driver_properties
+  if (!query_driver_properties) {
+    std::vector<const char*> driver_properties_extensions;
+    find_requested_device_extensions(
+        handle,
+        driver_properties_extensions,
+        {VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME});
+    query_driver_properties = !driver_properties_extensions.empty();
+  }
+#endif /* VK_KHR_driver_properties */
+  if (query_driver_properties) {
+    driver_properties.pNext = properties_list_top;
+    properties_list_top = &driver_properties;
+  }
+
   properties2.pNext = properties_list_top;
 
   vkGetPhysicalDeviceProperties2(handle, &properties2);
+
+  if (query_driver_properties) {
+    driver_id = static_cast<uint32_t>(driver_properties.driverID);
+  }
 
   subgroup_size = subgroup_properties.subgroupSize;
   supported_subgroup_ops = subgroup_properties.supportedOperations;
