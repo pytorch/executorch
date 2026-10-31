@@ -1101,6 +1101,24 @@ class TestPasses(unittest.TestCase):
             == torch.ops.quantized_decomposed.dequantize_per_channel_group.default
         )
         self.assertTrue(keep_whole(dequantize))
+        # After lowering, exir uses the filter to report a kept-whole op left
+        # on CPU, so there it must not let a constant-only one through.
+        edge = to_edge(
+            ep,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                preserve_ops=[torch.ops.aten.linear.default],
+            ),
+        ).exported_program()
+        _, keep_whole = QnnPartitioner(compiler_specs).ops_to_not_decompose(edge)
+        placeholders = {b: p for p, b in edge.graph_signature.inputs_to_buffers.items()}
+        (constant_linear,) = (
+            node
+            for node in edge.graph.nodes
+            if node.target == exir_ops.edge.aten.linear.default
+            and node.args[0].name == placeholders["table"]
+        )
+        self.assertTrue(keep_whole(constant_linear))
 
     def test_partitioner_falls_back_on_bfloat16(self):
         class Bf16Region(torch.nn.Module):
