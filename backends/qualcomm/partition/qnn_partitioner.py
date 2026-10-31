@@ -68,6 +68,15 @@ from .utils import (
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+
+def _is_runtime_input(
+    node: torch.fx.Node, edge_program: torch.export.ExportedProgram
+) -> bool:
+    return not is_parameter(node, edge_program) or is_mutable_buffer_input(
+        node, edge_program
+    )
+
+
 # dequantize ops with a CPU out variant; others cannot fall back
 CPU_DQ_OPS = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
@@ -319,17 +328,11 @@ class QnnPartitioner(Partitioner):
         only by constants once a CPU op splits it from the rest. Such a
         partition stays on CPU.
         """
-
-        def is_runtime_input(node: torch.fx.Node) -> bool:
-            return not is_parameter(node, edge_program) or is_mutable_buffer_input(
-                node, edge_program
-            )
-
         return [
             partition
             for partition in partitions
             if any(
-                is_runtime_input(arg)
+                _is_runtime_input(arg, edge_program)
                 for node in partition.nodes
                 for arg in node.all_input_nodes
                 if arg not in partition.nodes
@@ -399,4 +402,21 @@ class QnnPartitioner(Partitioner):
         The filter function (`filter_fn`) can be used to further refine which nodes are not decomposed. (advanced use case)
         """
         do_not_decompose = get_skip_decomp_table()
-        return (do_not_decompose, filter_fn)
+        if self.backend != QnnExecuTorchBackendType.kHtpBackend:
+            return (do_not_decompose, filter_fn)
+        # An op that reads only constants can end up in a partition that
+        # _drop_partitions_without_runtime_inputs keeps on CPU, so it must be
+        # decomposed like any other CPU op.
+        constant_only = set()
+        for node in ep.graph.nodes:
+            if node.op == "placeholder":
+                if not _is_runtime_input(node, ep):
+                    constant_only.add(node)
+            elif node.op == "call_function" and all(
+                arg in constant_only for arg in node.all_input_nodes
+            ):
+                constant_only.add(node)
+        return (
+            do_not_decompose,
+            lambda node: node not in constant_only and filter_fn(node),
+        )

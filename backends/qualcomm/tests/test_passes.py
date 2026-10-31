@@ -1006,16 +1006,19 @@ class TestPasses(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.register_buffer("table", torch.randn(4, 16))
+                self.register_buffer("weight", torch.randn(16, 16))
 
             def forward(self, x):
-                return x + torch.relu(self.table * 2 - 1)
+                table = torch.nn.functional.linear(self.table, self.weight)
+                return x + torch.relu(table * 2 - 1)
 
         sample_input = (torch.randn(4, 16),)
         compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=QcomChipset.SM8650,
             backend_options=generate_htp_compiler_spec(use_fp16=True),
         )
-        # With relu on CPU, table * 2 - 1 reads nothing at runtime.
+        # With relu on CPU, the branch before it reads nothing at runtime. It
+        # also holds linear, which QNN otherwise keeps from decomposing.
         try:
             edge = to_edge_transform_and_lower_to_qnn(
                 ConstantBranch().eval(),
