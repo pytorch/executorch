@@ -61,6 +61,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._decomp import decomposition_table
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch._prims_common import suggest_memory_format
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.nn.attention import SDPBackend
 
 # ---------------------------------------------------------------------------
@@ -599,6 +600,22 @@ def _varlen_attn(
             "The CUDA backend lowers varlen_attn only with cu_seq_k and without "
             "seqused_k or block_table."
         )
+    left, right = window_size if window_size is not None else (-1, -1)
+    if is_causal:
+        right = 0
+    # Flash attention 2, PyTorch's default, drops a window side of max_k or
+    # more and gives a left side alone a right side of max_k, while later
+    # versions keep the window. That only matters for a query sequence
+    # longer than max_k + 1.
+    if (right > 0 or (right < 0 and left >= 0)) and not statically_known_true(
+        max_q <= max_k + 1
+    ):
+        raise NotImplementedError(
+            "The CUDA backend lowers a varlen_attn window other than (left, 0) "
+            "only when max_q <= max_k + 1 is known, since Flash attention "
+            "versions differ on it for longer query sequences. Got "
+            f"window_size={window_size}, max_q={max_q}, max_k={max_k}."
+        )
 
     def sequence_ends(cu: torch.Tensor, total: int):
         # Each token's index in cu of its sequence's end, and its (negative)
@@ -611,9 +628,6 @@ def _varlen_attn(
     end_q, from_end_q = sequence_ends(cu_seq_q, query.size(0))
     end_k, from_end_k = sequence_ends(cu_seq_k, key.size(0))
     allowed = end_q[:, None] == end_k[None, :]
-    left, right = window_size if window_size is not None else (-1, -1)
-    if is_causal:
-        right = 0
     offset = from_end_k[None, :] - from_end_q[:, None]
     if left >= 0:
         allowed = allowed & (offset >= -left)

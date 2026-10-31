@@ -506,7 +506,7 @@ class TestCudaExport(unittest.TestCase):
 
         # Causal masks over query sequences shorter and longer than their key
         # sequences (some queries then see no key), grouped-query attention
-        # and an empty sequence.
+        # with an empty sequence, and a window in self-attention.
         op = torch.ops.torch_attn._varlen_attn.default
         short = torch.tensor([0, 4, 16], dtype=torch.int32, device="cuda")
         empty = torch.tensor([0, 16, 16, 32], dtype=torch.int32, device="cuda")
@@ -514,11 +514,16 @@ class TestCudaExport(unittest.TestCase):
             (q[:16], k, v, short, cu_seq, 12, 16, True, None, [3, -1]),
             (q, k[:16], v[:16], cu_seq, short, 16, 12, True, None, [-1, 0]),
             (q, k[:, :2], v[:, :2], empty, empty, 16, 16, False, 0.5, None, True),
+            (q, k, v, cu_seq, cu_seq, 16, 16, False, None, [4, 2]),
         ]
         table = CudaBackend.get_decomposition_table()
         for args in cases:
             for actual, expected in zip(table[op](*args)[:2], op(*args)[:2]):
                 torch.testing.assert_close(actual, expected, atol=1e-2, rtol=1e-2)
+        # Flash attention versions differ on this window, since a query sequence
+        # can be longer than max_k + 1.
+        with self.assertRaisesRegex(NotImplementedError, "window"):
+            table[op](q, k[:16], v[:16], cu_seq, short, 16, 12, False, None, [3, -1])
 
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""
