@@ -4,13 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Mask indexing, index_put and scatter_reduce in the CUDA backend's index shims.
+"""Mask indexing, index_put, scatter and scatter_reduce in the CUDA backend's
+index shims.
 
 A mask index makes a result size depend on the data, so Inductor leaves it,
 and an index_put with a mask, to the backend's own index shims. Inductor also
-leaves them every scatter_reduce it cannot write with an atomic add. These
-tests lower real programs, run them through the Python runtime, and compare
-with eager PyTorch on CUDA.
+leaves them every scatter and scatter_reduce it cannot write with an atomic
+add. These tests lower real programs, run them through the Python runtime,
+and compare with eager PyTorch on CUDA.
 """
 
 import os

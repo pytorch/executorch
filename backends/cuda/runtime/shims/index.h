@@ -85,8 +85,8 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_index_put_out(
  * bool, and bfloat16 on GPUs older than sm_90), and in deterministic mode.
  * When values land on the same element, the last one in index order wins, as
  * in ATen's deterministic mode; ATen's default CUDA kernel keeps any one of
- * them. As in ATen, an index out of range, negative ones included, triggers a
- * device-side assert.
+ * them. As in that default kernel, an index out of range, negative ones
+ * included, triggers a device-side assert.
  *
  * @param out Tensor to update (CUDA device, up to 16 dims)
  * @param self Must be out; AOTInductor passes the tensor it updates as both
@@ -114,8 +114,8 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_scatter_src_out(
  * are reduced in index order, so the result is deterministic. Half and
  * bfloat16 sums add in float, as in ATen's deterministic mode. A product
  * rounds to the dtype of out at every step and a mean rounds its sum before
- * dividing, as in ATen. As in ATen, an index out of range, negative ones
- * included, triggers a device-side assert.
+ * dividing, as in ATen. As in ATen's default CUDA kernel, an index out of
+ * range, negative ones included, triggers a device-side assert.
  *
  * @param out Tensor to update (CUDA device, up to 16 dims)
  * @param self Must be out; AOTInductor passes the tensor it updates as both
