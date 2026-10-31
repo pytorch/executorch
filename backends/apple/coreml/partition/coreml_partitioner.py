@@ -63,6 +63,65 @@ _UNSUPPORTED_OP_TARGETS = frozenset(
 )
 
 
+# Ops that coremltools can carry through a tensor above rank 5, by rewriting a
+# reshape -> transpose -> reshape chain into rank 4 steps.
+_HIGH_RANK_LAYOUT_TARGETS = frozenset(
+    [
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
+    ]
+)
+
+
+def _produces_tensor_above_rank_5(node: torch.fx.Node) -> bool:
+    val = node.meta.get("val")
+    vals = list(val) if isinstance(val, (list, tuple)) else [val]
+    return any(isinstance(v, torch.Tensor) and v.dim() > 5 for v in vals)
+
+
+def _touches_unsupported_high_rank_tensor(
+    node: torch.fx.Node, is_skipped: Callable[[torch.fx.Node], bool]
+) -> bool:
+    """Core ML tensors have at most rank 5.
+
+    coremltools 9.0 raises "Core ML only supports tensors with rank <= 5" for
+    any tensor above rank 5 that it cannot rewrite away. It only rewrites a
+    static, unbranched layout chain, so such a tensor is fine only when every
+    node connected to it through tensors above rank 5 is a delegated view,
+    permute or clone, and every node producing such a tensor has a static shape
+    and a single user.
+    """
+    seen, todo = set(), [node]
+    while todo:
+        n = todo.pop()
+        if n in seen:
+            continue
+        seen.add(n)
+        high_rank_inputs = [
+            arg for arg in n.all_input_nodes if _produces_tensor_above_rank_5(arg)
+        ]
+        high_rank_output = _produces_tensor_above_rank_5(n)
+        if not high_rank_inputs and not high_rank_output:
+            continue
+        if (
+            n.op != "call_function"
+            or n.target not in _HIGH_RANK_LAYOUT_TARGETS
+            or is_skipped(n)
+        ):
+            return True
+        if high_rank_output and (
+            len(n.users) != 1
+            or any(isinstance(d, torch.SymInt) for d in n.meta["val"].shape)
+        ):
+            return True
+        todo += high_rank_inputs
+        if high_rank_output:
+            todo += list(n.users)
+    return False
+
+
 _ARG_MIN_MAX_TARGETS = (
     torch.ops.aten.argmax.default,
     torch.ops.aten.argmin.default,
@@ -81,6 +140,18 @@ def _is_arg_min_max_over_flattened_input(node: torch.fx.Node) -> bool:
         return False
     dim = node.args[1] if len(node.args) >= 2 else node.kwargs.get("dim", None)
     return dim is None
+
+
+def _reads_or_produces_bfloat16(node: torch.fx.Node) -> bool:
+    """coremltools 9.0 has no bfloat16 type.
+
+    It raises ``KeyError: torch.bfloat16`` on any op that reads or produces a
+    bfloat16 tensor, instead of reporting the op as unsupported.
+    """
+    val = node.meta.get("val")
+    vals = list(val) if isinstance(val, (list, tuple)) else [val]
+    vals += [arg.meta.get("val") for arg in node.all_input_nodes]
+    return any(isinstance(v, torch.Tensor) and v.dtype == torch.bfloat16 for v in vals)
 
 
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
@@ -152,10 +223,29 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             )
             return True
 
+        if _touches_unsupported_high_rank_tensor(
+            node,
+            lambda n: self.should_skip_op_for_delegation(
+                getattr(n.target, "__name__", "").lower()
+            ),
+        ):
+            self.log_once(
+                f"{node.target} on a tensor above rank 5 is not supported by "
+                "CoreML.  Overriding op support."
+            )
+            return True
+
         if _is_arg_min_max_over_flattened_input(node):
             self.log_once(
                 "torch.ops.aten.{argmax, argmin}.default with dim=None is "
                 "not supported by CoreML.  Overriding op support."
+            )
+            return True
+
+        if _reads_or_produces_bfloat16(node):
+            self.log_once(
+                f"{node.target} on a bfloat16 tensor is not supported by CoreML.  "
+                "Overriding op support."
             )
             return True
 
@@ -362,21 +452,26 @@ class CoreMLPartitioner(Partitioner):
             torch.ops.aten.repeat_interleave.self_int,
             torch.ops.aten.repeat_interleave.self_Tensor,
         ]
+        rejected = set()
         for node in ep.graph.nodes:
             if node.op == "call_function" and isinstance(
                 node.target, torch._ops.OpOverload
             ):
                 try:
-                    if (
-                        op_support.is_node_supported(None, node)
-                        and node.target not in do_not_decompose_blocklist
-                        and not _is_view_op(node.target)
-                    ):
-                        do_not_decompose.append(node.target)
+                    supported = op_support.is_node_supported(None, node)
                 except Exception as e:
                     # CoreML's op_support.is_node_supported will sometimes throw
                     # for unsupported ops, rather than returning False
                     self.log_once(
                         f"Encountered exception when checking node support, treating node as unsupported: {e}"
                     )
-        return do_not_decompose, None
+                    supported = False
+                if not supported:
+                    rejected.add(node.target)
+                elif node.target not in do_not_decompose_blocklist and not _is_view_op(
+                    node.target
+                ):
+                    do_not_decompose.append(node.target)
+        # Without a per-node filter, a preserved op stays whole at every call, so
+        # one rejected call would be left with no kernel.
+        return [op for op in do_not_decompose if op not in rejected], None
