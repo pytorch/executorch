@@ -33,7 +33,9 @@ struct IndexRange {
   int64_t end;
 };
 
-IndexRange transposed_kernel_range(
+// The range helpers do not depend on the dtype, so out of line one copy serves
+// every dtype and spatial dim.
+ET_NOINLINE IndexRange transposed_kernel_range(
     int64_t begin,
     int64_t end,
     int64_t input_size,
@@ -49,7 +51,7 @@ IndexRange transposed_kernel_range(
       std::min(kernel_size, (end - 1 + padding) / dilation + 1)};
 }
 
-IndexRange transposed_input_range(
+ET_NOINLINE IndexRange transposed_input_range(
     int64_t begin,
     int64_t end,
     int64_t input_size,
