@@ -880,6 +880,7 @@ void ComputeGraph::register_pipeline_to_create(
     const LocalWorkGroup& lwg,
     const vkapi::SpecVarList& spec_vars,
     const std::vector<PushConstantDataInfo>& push_constants) {
+  context()->check_device_capabilities(shader_info);
   VkDescriptorSetLayout shader_layout =
       context()->shader_layout_cache().retrieve(shader_info.kernel_layout);
 
