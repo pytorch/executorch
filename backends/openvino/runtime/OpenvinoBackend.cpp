@@ -670,8 +670,8 @@ exr::Error OpenvinoBackend::create_owned_output(
     return exr::Error::NotSupported;
   }
   // The request's own output has the compiled shape, empty along each dynamic
-  // dimension. OpenVINO refuses any other shape for a dimension it fixed,
-  // even when ExecuTorch planned that output with a dynamic size.
+  // dimension. OpenVINO refuses any other shape for an output it compiled
+  // with a fixed shape, even when ExecuTorch planned it with a dynamic size.
   ov_tensor_t* current = nullptr;
   ov_shape_t shape = {};
   ov_status_e status = ov_.infer_request_get_output_tensor_by_index(
