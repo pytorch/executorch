@@ -4413,6 +4413,14 @@ class LiftConstantScalarOperands:
                 y = x + 1
             return y * 2
 
+    class _IntFloorDivScalar(torch.nn.Module):
+        def __init__(self, divisor):
+            super().__init__()
+            self.divisor = divisor
+
+        def forward(self, x):
+            return x // self.divisor
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
@@ -4429,7 +4437,7 @@ class LiftConstantScalarOperands:
         # Mirror production stage selection: the annotation pipeline only runs
         # under prepare_pt2e (quantizer present). Without a quantizer (GPU,
         # htp_fp16) this pass runs in the export pipeline instead.
-        def lower(module):
+        def lower(module, inputs=inputs):
             if quantizer is None:
                 return pass_pipeline.lower_export_gm(
                     module=module,
@@ -4481,6 +4489,28 @@ class LiftConstantScalarOperands:
                     f"lifted scalar {n.name} expected float32, "
                     f"got {n.meta['val'].dtype} (use_self_dtype broken?)"
                 )
+
+        # Python scalar divisor, as in `indices // num_classes`
+        int_inputs = (torch.randint(-10, 10, (3, 4), dtype=torch.int32),)
+        for divisor in (3, -4):
+            with subtests.test(msg=f"int_floor_divide_scalar_{divisor}"):
+                module = LiftConstantScalarOperands._IntFloorDivScalar(divisor)
+                gm = lower(module, int_inputs)
+                floor_divide = next(
+                    n
+                    for n in gm.graph.nodes
+                    if n.op == "call_function"
+                    and n.target is torch.ops.aten.floor_divide.default
+                )
+                lifted = floor_divide.args[1]
+                assert (
+                    isinstance(lifted, torch.fx.Node) and lifted.op == "get_attr"
+                ), f"divisor should be a lifted get_attr, got {lifted}"
+                constant = getattr(gm, lifted.target)
+                assert constant.dtype == torch.int32 and constant.item() == divisor
+                output = gm(*int_inputs)
+                output = output[0] if isinstance(output, (tuple, list)) else output
+                torch.testing.assert_close(output, module(*int_inputs))
 
         with subtests.test(msg="skip_higher_order_ops"):
             # The pass reads node.target._schema; a higher-order op has none, so it
