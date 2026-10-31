@@ -489,6 +489,8 @@ bool check_convolution_args(
   }
 
   ET_CHECK_OR_RETURN_FALSE(
+      groups > 0, "groups must be positive, but got %" PRId64, groups);
+  ET_CHECK_OR_RETURN_FALSE(
       weight.size(0) >= groups,
       "Given groups=%" PRId64 ", expected weight to be at least %" PRId64
       " at dimension 0, but got weight.size(0) = %zd instead",
