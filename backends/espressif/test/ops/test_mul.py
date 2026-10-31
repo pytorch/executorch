@@ -99,12 +99,30 @@ test_cases = {
         EspBroadcastMul(),
         (ramp_tensor(-1, 1, (2, 3)), ramp_tensor(-2, 2, (3,))),
     ),
+    "portable_add": EspTestCase(
+        EspMulAdd(),
+        (ramp_tensor(-1, 1, (17,)), ramp_tensor(2, -2, (17,))),
+    ),
+    "saturation": EspTestCase(
+        EspMul(),
+        (torch.tensor([-2.0, -2.0, 2.0, 2.0]), torch.tensor([-2.0, 2.0, -2.0, 2.0])),
+        calibration_samples=[
+            (
+                torch.tensor([-2.0, 2.0, 0.0, 0.0]),
+                torch.tensor([0.25, 0.25, -2.0, 2.0]),
+            )
+        ],
+    ),
 }
 
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_dialect_mul(test_case):
-    tester = EspTester(test_case.model, test_case.example_inputs)
+    tester = EspTester(
+        test_case.model,
+        test_case.example_inputs,
+        calibration_samples=test_case.calibration_samples,
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
@@ -112,6 +130,13 @@ def test_dialect_mul(test_case):
         atol=0,
         rtol=torch.finfo(torch.float32).eps,
     )
+    for node in tester.get_artifact().exported_program().graph.nodes:
+        if node.target == exir_ops.edge.aten.add.Tensor:
+            assert all(
+                arg.target
+                == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+                for arg in node.args[:2]
+            )
     tester.to_executorch().serialize()
     program = deserialize_pte_binary(tester.get_artifact()).program
     assert not program.execution_plan[0].delegates
@@ -121,20 +146,13 @@ def test_dialect_mul(test_case):
     )
 
 
-def test_mul_keeps_dequantization_for_portable_add():
-    model = EspMulAdd()
-    inputs = (ramp_tensor(-1, 1, (17,)), ramp_tensor(2, -2, (17,)))
-    tester = EspTester(model, inputs)
-    tester.test_dialect(
-        model.ops_before_transforms, model.ops_after_transforms, qtol=1, atol=0, rtol=0
+@pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
+def test_implementation_mul(test_case, pytestconfig):
+    tester = EspTester(
+        test_case.model,
+        test_case.example_inputs,
+        calibration_samples=test_case.calibration_samples,
     )
-    add = next(
-        node
-        for node in tester.get_artifact().exported_program().graph.nodes
-        if node.target == exir_ops.edge.aten.add.Tensor
+    tester.test_implementation(
+        pytestconfig.rootpath, rtol=torch.finfo(torch.float32).eps
     )
-    assert all(
-        arg.target == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
-        for arg in add.args[:2]
-    )
-    tester.to_executorch().serialize()
