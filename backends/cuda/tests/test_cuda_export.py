@@ -803,17 +803,24 @@ class TestCudaExport(unittest.TestCase):
 
     def test_missing_scatter_kernel_fails_at_export(self):
         """The scatter fallback writes its kernel call itself, and the check for
-        missing kernels still sees it. Inductor leaves an int64 scatter to that
-        fallback, and the CUDA shims lack its kernel."""
+        missing kernels still sees it. In deterministic mode Inductor leaves a
+        scatter of a scalar to that fallback, and the CUDA shims lack its
+        kernel."""
 
-        class Int64Scatter(torch.nn.Module):
+        class ValueScatter(torch.nn.Module):
             def forward(self, counts: torch.Tensor, idx: torch.Tensor):
-                return counts.scatter(0, idx, torch.ones_like(idx))
+                return counts.scatter(0, idx, 1.0)
 
-        inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
-        with self.assertRaises(RuntimeError) as context:
-            self._export_to_cuda_with_lower(Int64Scatter(), inputs)
-        self.assertIn("aoti_torch_cuda_scatter_src_out", str(context.exception))
+        inputs = (torch.zeros(8), torch.randint(0, 8, (32,)))
+        deterministic = torch.are_deterministic_algorithms_enabled()
+        warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+        torch.use_deterministic_algorithms(True)
+        try:
+            with self.assertRaises(RuntimeError) as context:
+                self._export_to_cuda_with_lower(ValueScatter(), inputs)
+        finally:
+            torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
+        self.assertIn("aoti_torch_cuda_scatter_value_out", str(context.exception))
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """

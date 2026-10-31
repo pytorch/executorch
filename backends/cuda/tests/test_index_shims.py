@@ -193,6 +193,32 @@ class TestIndexShims(unittest.TestCase):
                     src[1, 2] = float("nan")
                 self._run(ScatterReduce(), [(x, index, src)])
 
+    def test_scatter_with_tensor_source(self):
+        """Inductor writes a scatter from a tensor itself only in a dtype it can
+        add atomically, so int64, bool and, below sm_90, bfloat16 go to the
+        shim. Of repeated writes the last in index order wins, as in eager's
+        deterministic mode, which also sends every dtype to the shim."""
+
+        class Scatter(torch.nn.Module):
+            def forward(self, x, index, src):
+                return (x.scatter(1, index, src),)
+
+        # Smaller than src, with repeats, and column 4 is never written.
+        index = torch.tensor([[0, 2, 2, 5], [1, 1, 1, 0], [5, 3, 0, 5]])
+        x = torch.full((5, 6), -1)
+        # Repeated writes differ from the write before them, also as bool.
+        src = torch.arange(20).reshape(4, 5)
+        deterministic = torch.are_deterministic_algorithms_enabled()
+        warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+        torch.use_deterministic_algorithms(True)
+        try:
+            for dtype in (torch.bfloat16, torch.int64, torch.bool):
+                with self.subTest(dtype=dtype):
+                    values = src % 2 if dtype == torch.bool else src
+                    self._run(Scatter(), [(x.to(dtype), index, values.to(dtype))])
+        finally:
+            torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
+
     def test_scatter_mean_counts_in_its_dtype(self):
         """ATen counts a mean's terms in the tensor's own dtype, so 128 int8
         terms count as -128."""

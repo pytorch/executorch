@@ -870,7 +870,8 @@ Error put(
   return Error::Ok;
 }
 
-enum class Reduction { Sum, Prod, Mean, Max, Min };
+// Assign is a scatter without a reduction: every write replaces the last.
+enum class Reduction { Sum, Prod, Mean, Max, Min, Assign };
 
 // A scatter visits every element of index. Dim `dim` of out is addressed by
 // the index value, every other dim of out and src by the element's position.
@@ -932,6 +933,8 @@ combine(Reduction reduction, AccT result, AccT value) {
       return value_is_nan || result < value ? value : result;
     case Reduction::Min:
       return value_is_nan || value < result ? value : result;
+    case Reduction::Assign:
+      return value;
     default:
       return result + value;
   }
@@ -939,7 +942,8 @@ combine(Reduction reduction, AccT result, AccT value) {
 
 // After a stable sort of the points by the element they write, the points of
 // one element are a run in index order. Each run is reduced by one thread in
-// that order and written once, so the result does not depend on scheduling.
+// that order and written once, so the result does not depend on scheduling,
+// and an assignment keeps the last write, as ATen's deterministic scatter does.
 // A sum adds in AccT, as ATen does in deterministic mode, so half and
 // bfloat16 lose less to rounding. A product rounds to T at every step and a
 // mean rounds its sum to T before dividing, as ATen does, so half overflows to
@@ -1072,6 +1076,152 @@ Error scatter_reduce(
           reduction_identity<T, AccT>(reduction));
   ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
   return Error::Ok;
+}
+
+// Runs the scatter shim called `name`, with the checks ATen applies to
+// aten::scatter and aten::scatter_reduce.
+Error scatter(
+    const char* name,
+    Tensor* out,
+    Tensor* self,
+    int64_t dim,
+    Tensor* index,
+    Tensor* src,
+    Reduction reduction,
+    bool include_self) {
+  ET_CHECK_OR_RETURN_ERROR(
+      out != nullptr && index != nullptr && src != nullptr,
+      InvalidArgument,
+      "%s: null argument",
+      name);
+  ET_CHECK_OR_RETURN_ERROR(
+      out == self,
+      NotSupported,
+      "%s: out must be self, as AOTInductor calls it",
+      name);
+  ET_CHECK_OR_RETURN_ERROR(
+      out->is_cuda() && index->is_cuda() && src->is_cuda(),
+      NotSupported,
+      "%s: tensors must be on the CUDA device",
+      name);
+  ET_CHECK_OR_RETURN_ERROR(
+      src->dtype() == out->dtype(),
+      InvalidArgument,
+      "%s: src and self must have the same dtype",
+      name);
+  ET_CHECK_OR_RETURN_ERROR(
+      out->dtype() != ScalarType::Bool || reduction == Reduction::Sum ||
+          reduction == Reduction::Assign,
+      NotSupported,
+      "%s: bool supports only sum, as in ATen",
+      name);
+
+  // As in ATen, a 0-dim tensor counts as one of size 1.
+  const auto ndim = std::max<int64_t>(out->dim(), 1);
+  ET_CHECK_OR_RETURN_ERROR(
+      ndim <= kMaxDims,
+      NotSupported,
+      "%s: tensors with more than %d dims are not supported",
+      name,
+      kMaxDims);
+  if (dim < 0) {
+    dim += ndim;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      dim >= 0 && dim < ndim, InvalidArgument, "%s: dim out of range", name);
+  // ATen checks the index only when it has elements.
+  if (index->numel() == 0) {
+    return Error::Ok;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      index->dtype() == ScalarType::Long,
+      InvalidArgument,
+      "%s: index must be int64",
+      name);
+  ET_CHECK_OR_RETURN_ERROR(
+      std::max<int64_t>(index->dim(), 1) == ndim &&
+          std::max<int64_t>(src->dim(), 1) == ndim,
+      InvalidArgument,
+      "%s: index and src must have as many dims as self",
+      name);
+  auto size = [](const Tensor* tensor, int64_t d) -> int64_t {
+    return tensor->dim() == 0 ? 1 : tensor->size(d);
+  };
+  auto stride = [](const Tensor* tensor, int64_t d) -> int64_t {
+    return tensor->dim() == 0 ? 0 : tensor->stride(d);
+  };
+  ScatterPlan plan{};
+  plan.ndim = static_cast<int>(ndim);
+  plan.dim = static_cast<int>(dim);
+  plan.dim_size = size(out, dim);
+  int64_t points = 1;
+  for (int64_t d = 0; d < ndim; ++d) {
+    plan.max_out_offset +=
+        std::max<int64_t>(size(out, d) - 1, 0) * stride(out, d);
+    const int64_t index_size = size(index, d);
+    ET_CHECK_OR_RETURN_ERROR(
+        index_size <= size(src, d) && (d == dim || index_size <= size(out, d)),
+        InvalidArgument,
+        "%s: index is larger than src, or than self, at dim %" PRId64,
+        name,
+        d);
+    plan.sizes[d] = index_size;
+    plan.index_strides[d] = stride(index, d);
+    plan.out_strides[d] = stride(out, d);
+    plan.src_strides[d] = stride(src, d);
+    points *= index_size;
+  }
+
+  const auto device = static_cast<int32_t>(out->device_index());
+  auto stream_result = getCurrentCUDAStream(out->device_index());
+  ET_CHECK_OR_RETURN_ERROR(
+      stream_result.ok(), Internal, "%s: failed to get CUDA stream", name);
+  cudaStream_t stream = stream_result.get();
+  Scratch scratch(device, stream);
+  auto run = [&](auto value, auto accumulator) {
+    using T = decltype(value);
+    using AccT = decltype(accumulator);
+    return scatter_reduce<T, AccT>(
+        plan,
+        points,
+        static_cast<const int64_t*>(index->data_ptr()),
+        out->data_ptr(),
+        src->data_ptr(),
+        reduction,
+        include_self,
+        scratch,
+        stream);
+  };
+  // Half and bfloat16 compute in float, and integers in int64.
+  switch (out->dtype()) {
+    case ScalarType::Float:
+      return run(float{}, float{});
+    case ScalarType::Double:
+      return run(double{}, double{});
+    case ScalarType::Half:
+      return run(__half{}, float{});
+    case ScalarType::BFloat16:
+      return run(__nv_bfloat16{}, float{});
+    case ScalarType::Long:
+      return run(int64_t{}, int64_t{});
+    case ScalarType::Int:
+      return run(int32_t{}, int64_t{});
+    case ScalarType::Short:
+      return run(int16_t{}, int64_t{});
+    case ScalarType::Char:
+      return run(int8_t{}, int64_t{});
+    case ScalarType::Byte:
+      return run(uint8_t{}, int64_t{});
+    case ScalarType::Bool:
+      return run(bool{}, bool{});
+    default:
+      ET_LOG(
+          Error,
+          "%s: unsupported dtype %d",
+          name,
+          static_cast<int>(out->dtype()));
+      return Error::NotSupported;
+  }
 }
 
 } // namespace
@@ -1291,6 +1441,23 @@ AOTITorchError aoti_torch_index_put_out(
   }
 }
 
+AOTITorchError aoti_torch_cuda_scatter_src_out(
+    Tensor* out,
+    Tensor* self,
+    int64_t dim,
+    Tensor* index,
+    Tensor* src) {
+  return scatter(
+      "aoti_torch_cuda_scatter_src_out",
+      out,
+      self,
+      dim,
+      index,
+      src,
+      Reduction::Assign,
+      /*include_self=*/false);
+}
+
 AOTITorchError aoti_torch_cuda_scatter_reduce_two_out(
     Tensor* out,
     Tensor* self,
@@ -1300,21 +1467,9 @@ AOTITorchError aoti_torch_cuda_scatter_reduce_two_out(
     const char* reduce,
     int32_t include_self) {
   ET_CHECK_OR_RETURN_ERROR(
-      out != nullptr && index != nullptr && src != nullptr && reduce != nullptr,
+      reduce != nullptr,
       InvalidArgument,
       "aoti_torch_cuda_scatter_reduce_two_out: null argument");
-  ET_CHECK_OR_RETURN_ERROR(
-      out == self,
-      NotSupported,
-      "aoti_torch_cuda_scatter_reduce_two_out: out must be self, as AOTInductor calls it");
-  ET_CHECK_OR_RETURN_ERROR(
-      out->is_cuda() && index->is_cuda() && src->is_cuda(),
-      NotSupported,
-      "aoti_torch_cuda_scatter_reduce_two_out: tensors must be on the CUDA device");
-  ET_CHECK_OR_RETURN_ERROR(
-      src->dtype() == out->dtype(),
-      InvalidArgument,
-      "aoti_torch_cuda_scatter_reduce_two_out: src and self must have the same dtype");
   const std::string_view name(reduce);
   Reduction reduction;
   if (name == "sum") {
@@ -1334,116 +1489,15 @@ AOTITorchError aoti_torch_cuda_scatter_reduce_two_out(
         reduce);
     return Error::InvalidArgument;
   }
-  ET_CHECK_OR_RETURN_ERROR(
-      out->dtype() != ScalarType::Bool || reduction == Reduction::Sum,
-      NotSupported,
-      "aoti_torch_cuda_scatter_reduce_two_out: bool supports only sum, as in ATen");
-
-  // As in ATen, a 0-dim tensor counts as one of size 1.
-  const auto ndim = std::max<int64_t>(out->dim(), 1);
-  ET_CHECK_OR_RETURN_ERROR(
-      ndim <= kMaxDims,
-      NotSupported,
-      "aoti_torch_cuda_scatter_reduce_two_out: tensors with more than %d dims are not supported",
-      kMaxDims);
-  if (dim < 0) {
-    dim += ndim;
-  }
-  ET_CHECK_OR_RETURN_ERROR(
-      dim >= 0 && dim < ndim,
-      InvalidArgument,
-      "aoti_torch_cuda_scatter_reduce_two_out: dim out of range");
-  // ATen checks the index only when it has elements.
-  if (index->numel() == 0) {
-    return Error::Ok;
-  }
-  ET_CHECK_OR_RETURN_ERROR(
-      index->dtype() == ScalarType::Long,
-      InvalidArgument,
-      "aoti_torch_cuda_scatter_reduce_two_out: index must be int64");
-  ET_CHECK_OR_RETURN_ERROR(
-      std::max<int64_t>(index->dim(), 1) == ndim &&
-          std::max<int64_t>(src->dim(), 1) == ndim,
-      InvalidArgument,
-      "aoti_torch_cuda_scatter_reduce_two_out: index and src must have as many dims as self");
-  auto size = [](const Tensor* tensor, int64_t d) -> int64_t {
-    return tensor->dim() == 0 ? 1 : tensor->size(d);
-  };
-  auto stride = [](const Tensor* tensor, int64_t d) -> int64_t {
-    return tensor->dim() == 0 ? 0 : tensor->stride(d);
-  };
-  ScatterPlan plan{};
-  plan.ndim = static_cast<int>(ndim);
-  plan.dim = static_cast<int>(dim);
-  plan.dim_size = size(out, dim);
-  int64_t points = 1;
-  for (int64_t d = 0; d < ndim; ++d) {
-    plan.max_out_offset +=
-        std::max<int64_t>(size(out, d) - 1, 0) * stride(out, d);
-    const int64_t index_size = size(index, d);
-    ET_CHECK_OR_RETURN_ERROR(
-        index_size <= size(src, d) && (d == dim || index_size <= size(out, d)),
-        InvalidArgument,
-        "aoti_torch_cuda_scatter_reduce_two_out: index is larger than src, or than self, at dim %" PRId64,
-        d);
-    plan.sizes[d] = index_size;
-    plan.index_strides[d] = stride(index, d);
-    plan.out_strides[d] = stride(out, d);
-    plan.src_strides[d] = stride(src, d);
-    points *= index_size;
-  }
-
-  const auto device = static_cast<int32_t>(out->device_index());
-  auto stream_result = getCurrentCUDAStream(out->device_index());
-  ET_CHECK_OR_RETURN_ERROR(
-      stream_result.ok(),
-      Internal,
-      "aoti_torch_cuda_scatter_reduce_two_out: failed to get CUDA stream");
-  cudaStream_t stream = stream_result.get();
-  Scratch scratch(device, stream);
-  auto run = [&](auto value, auto accumulator) {
-    using T = decltype(value);
-    using AccT = decltype(accumulator);
-    return scatter_reduce<T, AccT>(
-        plan,
-        points,
-        static_cast<const int64_t*>(index->data_ptr()),
-        out->data_ptr(),
-        src->data_ptr(),
-        reduction,
-        include_self != 0,
-        scratch,
-        stream);
-  };
-  // Half and bfloat16 compute in float, and integers in int64.
-  switch (out->dtype()) {
-    case ScalarType::Float:
-      return run(float{}, float{});
-    case ScalarType::Double:
-      return run(double{}, double{});
-    case ScalarType::Half:
-      return run(__half{}, float{});
-    case ScalarType::BFloat16:
-      return run(__nv_bfloat16{}, float{});
-    case ScalarType::Long:
-      return run(int64_t{}, int64_t{});
-    case ScalarType::Int:
-      return run(int32_t{}, int64_t{});
-    case ScalarType::Short:
-      return run(int16_t{}, int64_t{});
-    case ScalarType::Char:
-      return run(int8_t{}, int64_t{});
-    case ScalarType::Byte:
-      return run(uint8_t{}, int64_t{});
-    case ScalarType::Bool:
-      return run(bool{}, bool{});
-    default:
-      ET_LOG(
-          Error,
-          "aoti_torch_cuda_scatter_reduce_two_out: unsupported dtype %d",
-          static_cast<int>(out->dtype()));
-      return Error::NotSupported;
-  }
+  return scatter(
+      "aoti_torch_cuda_scatter_reduce_two_out",
+      out,
+      self,
+      dim,
+      index,
+      src,
+      reduction,
+      include_self != 0);
 }
 
 #ifdef __cplusplus
