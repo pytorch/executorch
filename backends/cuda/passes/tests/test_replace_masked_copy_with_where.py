@@ -61,6 +61,28 @@ class TestReplaceMaskedCopyWithWherePass(unittest.TestCase):
                 program.module()(x, mask), Copy()(x, mask), rtol=0, atol=0
             )
 
+    def test_long_equal_masks(self):
+        """Two long computations of one mask, with inputs shared many times."""
+
+        class Copy(torch.nn.Module):
+            def forward(self, x, mask):
+                def compute(m):
+                    for _ in range(1200):
+                        m = m.logical_not()
+                    for _ in range(30):
+                        m = m & m
+                    return m
+
+                out = torch.zeros_like(x)
+                out[compute(mask)] = x[compute(mask)]
+                return out
+
+        x = torch.randn(4, 3)
+        mask = torch.tensor([True, False, True, False])
+        program = to_edge(export(Copy(), (x, mask))).exported_program()
+        ReplaceMaskedCopyWithWherePass()(program.graph_module)
+        self.assertIn(exir_ops.edge.aten.where.self, _targets(program.graph_module))
+
     def test_other_writes_are_kept(self):
         class Kept(torch.nn.Module):
             def forward(self, x, mask, idx):
