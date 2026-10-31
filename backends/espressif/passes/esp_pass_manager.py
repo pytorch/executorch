@@ -6,9 +6,11 @@
 
 from executorch.exir.pass_manager import ExportedProgramPassManager
 
+from .aten_to_esp_pass import AtenToEspPass
+
 
 class EspPassManager(ExportedProgramPassManager):
     """Run Espressif operator-library transformations on an Edge program."""
 
     def __init__(self) -> None:
-        super().__init__(passes=[])
+        super().__init__(passes=[AtenToEspPass()])

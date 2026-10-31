@@ -144,7 +144,7 @@ class PortablePreprocessTest(unittest.TestCase):
         out = result.data_store_output
         self.assertIsNotNone(out)
         for rel in manifest["files"]:
-            self.assertIn(f"coreai/{manifest['hash']}/{rel}", out.pte_data)
+            self.assertIn(f"coreai/{manifest['export_hash']}/{rel}", out.pte_data)
         self.assertEqual(out.external_data, {})  # nothing external for inline
 
     def test_inline_keys_keep_the_bundle_directory(self):
@@ -188,7 +188,7 @@ class AssetMetadataTest(unittest.TestCase):
                 result = CoreAIBackend.preprocess(_edge_program(), specs)
                 manifest = json.loads(result.processed_bytes)
                 out = result.data_store_output
-                prefix = f"coreai/{manifest['hash']}/"
+                prefix = f"coreai/{manifest['export_hash']}/"
                 embedded = {
                     key[len(prefix) :]: len(out.buffers[entry.buffer_index])
                     for key, entry in out.pte_data.items()
@@ -324,7 +324,7 @@ class CompiledPreprocessTest(unittest.TestCase):
         result = CoreAIBackend.preprocess(_edge_program(), [_aot_spec(config)])
         manifest = json.loads(result.processed_bytes)
         for arch, rel in manifest["archs"].items():
-            self.assertEqual(rel, f"{manifest['hash']}/model.{arch}.aimodelc")
+            self.assertEqual(rel, f"{manifest['export_hash']}/model.{arch}.aimodelc")
             self.assertIn(f"coreai/{rel}/model.mil", result.data_store_output.pte_data)
 
     @mock.patch(_MOCK_BUILD, side_effect=_fake_run_coreai_build)
@@ -348,7 +348,7 @@ class CompiledPreprocessTest(unittest.TestCase):
         )
         lbms = get_lowered_backend_modules(lowered.exported_program().graph_module)
         self.assertEqual(len(lbms), 2)
-        hashes = {json.loads(bytes(lbm.processed_bytes))["hash"] for lbm in lbms}
+        hashes = {json.loads(bytes(lbm.processed_bytes))["export_hash"] for lbm in lbms}
         self.assertEqual(len(hashes), 2)
 
 
