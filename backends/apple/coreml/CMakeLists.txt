@@ -9,6 +9,7 @@ if(APPLE)
   find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
   find_library(ACCELERATE_FRAMEWORK Accelerate REQUIRED)
   find_library(COREML_FRAMEWORK CoreML REQUIRED)
+  find_library(COREVIDEO_FRAMEWORK CoreVideo REQUIRED)
   find_library(SQLITE_LIBRARY sqlite3 REQUIRED)
 endif()
 
@@ -257,8 +258,9 @@ if(APPLE)
   endif()
 
   target_link_libraries(
-    coremldelegate PRIVATE ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
-                           ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
+    coremldelegate
+    PRIVATE ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK} ${COREVIDEO_FRAMEWORK}
+            ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
   )
   if(EXECUTORCH_BUILD_SHARED)
     set_target_properties(

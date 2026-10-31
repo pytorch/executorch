@@ -21,6 +21,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 #include "OpenvinoBackend.h"
 
@@ -236,6 +237,7 @@ bool OpenvinoBackend::ensure_loaded() const {
     LOAD_SYM(core_free, ov_core_free)
     LOAD_SYM(core_get_available_devices, ov_core_get_available_devices)
     LOAD_SYM(available_devices_free, ov_available_devices_free)
+    LOAD_SYM(core_set_property, ov_core_set_property)
     LOAD_SYM(core_import_model, ov_core_import_model)
     LOAD_SYM(
         compiled_model_create_infer_request,
@@ -250,9 +252,16 @@ bool OpenvinoBackend::ensure_loaded() const {
         infer_request_set_output_tensor_by_index,
         ov_infer_request_set_output_tensor_by_index)
     LOAD_SYM(infer_request_infer, ov_infer_request_infer)
+    LOAD_SYM(
+        infer_request_get_output_tensor_by_index,
+        ov_infer_request_get_output_tensor_by_index)
     LOAD_SYM(infer_request_free, ov_infer_request_free)
     LOAD_SYM(tensor_create_from_host_ptr, ov_tensor_create_from_host_ptr)
+    LOAD_SYM(tensor_create, ov_tensor_create)
     LOAD_SYM(tensor_free, ov_tensor_free)
+    LOAD_SYM(tensor_get_shape, ov_tensor_get_shape)
+    LOAD_SYM(tensor_get_byte_size, ov_tensor_get_byte_size)
+    LOAD_SYM(tensor_data, ov_tensor_data)
     LOAD_SYM(shape_create, ov_shape_create)
     LOAD_SYM(shape_free, ov_shape_free)
 
@@ -321,17 +330,55 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
   size_t data_size = processed->size();
 
   std::string device = "CPU";
+  std::string precision;
   for (auto& compile_spec : compile_specs) {
-    if (std::strcmp(compile_spec.key, "device") == 0) {
-      const char* buf = static_cast<const char*>(compile_spec.value.buffer);
-      size_t len = compile_spec.value.nbytes;
-      // Strip trailing null bytes that may be included in nbytes.
-      while (len > 0 && buf[len - 1] == '\0') {
-        --len;
-      }
-      if (len > 0) {
-        device.assign(buf, len);
-      }
+    const bool is_device = std::strcmp(compile_spec.key, "device") == 0;
+    if (!is_device &&
+        std::strcmp(compile_spec.key, "inference_precision") != 0) {
+      continue;
+    }
+    const char* buf = static_cast<const char*>(compile_spec.value.buffer);
+    size_t len = compile_spec.value.nbytes;
+    // Strip trailing null bytes that may be included in nbytes.
+    while (len > 0 && buf[len - 1] == '\0') {
+      --len;
+    }
+    if (len > 0) {
+      (is_device ? device : precision).assign(buf, len);
+    }
+  }
+
+  // The same rule as preprocess.py, because on x86 CPUs OpenVINO applies the
+  // precision here, on import.
+  if (precision.empty() && device.rfind("CPU", 0) == 0) {
+    precision = "f32";
+  }
+  // The same values as in preprocess.py. Some OpenVINO releases accept an
+  // unknown value, and others only reject it on import, with a generic
+  // error.
+  if (!precision.empty() && precision != "f32" && precision != "f16" &&
+      precision != "bf16") {
+    ET_LOG(
+        Error,
+        "OpenVINO: unsupported inference_precision '%s', expected one of "
+        "f32, f16, bf16",
+        precision.c_str());
+    ov_.core_free(core);
+    return exr::Error::InvalidArgument;
+  }
+  if (!precision.empty()) {
+    status = ov_.core_set_property(
+        core, device.c_str(), "INFERENCE_PRECISION_HINT", precision.c_str());
+    if (status != OV_STATUS_OK) {
+      ET_LOG(
+          Error,
+          "OpenVINO: failed to set inference precision '%s' for device '%s' "
+          "(status=%d)",
+          precision.c_str(),
+          device.c_str(),
+          status);
+      ov_.core_free(core);
+      return exr::Error::InvalidArgument;
     }
   }
 
@@ -379,9 +426,26 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
     ov_.compiled_model_free(compiled_model);
     return exr::Error::MemoryAllocationFailed;
   }
+  size_t num_outputs = 0;
+  status = ov_.compiled_model_outputs_size(compiled_model, &num_outputs);
+  ov_tensor_t** owned_outputs = nullptr;
+  if (status == OV_STATUS_OK && num_outputs > 0) {
+    owned_outputs = allocator->allocateList<ov_tensor_t*>(num_outputs);
+  }
+  if (status != OV_STATUS_OK || (num_outputs > 0 && !owned_outputs)) {
+    ET_LOG(Error, "OpenVINO: failed to set up outputs (status=%d)", status);
+    ov_.infer_request_free(infer_request);
+    ov_.compiled_model_free(compiled_model);
+    return exr::Error::Internal;
+  }
+  for (size_t i = 0; i < num_outputs; i++) {
+    owned_outputs[i] = nullptr;
+  }
   new (handle) ExecutionHandle;
   handle->compiled_model = compiled_model;
   handle->infer_request = infer_request;
+  handle->owned_outputs = owned_outputs;
+  handle->num_outputs = num_outputs;
 
   return handle;
 }
@@ -469,16 +533,35 @@ exr::Error OpenvinoBackend::execute(
         "OpenVINO: expected tensor for output %zu",
         i);
     auto output_tensor = args[num_inputs + i]->toTensor();
-    auto result = create_ov_tensor(output_tensor);
-    if (!result.ok()) {
-      return result.error();
+    ov_tensor_t*& owned = execution_handle->owned_outputs[i];
+    ov_tensor_t* tensor = nullptr;
+    if (output_tensor.shape_dynamism() == exa::TensorShapeDynamism::STATIC) {
+      auto result = create_ov_tensor(output_tensor);
+      if (!result.ok()) {
+        return result.error();
+      }
+      tensor = result.get();
+    } else {
+      // OpenVINO cannot write more than a borrowed buffer's shape holds, and
+      // an earlier call may have shrunk that shape. So an output whose size
+      // can change goes to a buffer OpenVINO owns and grows, and is copied
+      // out after inference.
+      if (!owned) {
+        auto result = create_ov_tensor(output_tensor, /*own_memory=*/true);
+        if (!result.ok()) {
+          return result.error();
+        }
+        owned = result.get();
+      }
+      tensor = owned;
     }
-    ov_tensor_t* tensor = result.get();
 
     status = ov_.infer_request_set_output_tensor_by_index(
         execution_handle->infer_request, i, tensor);
     // Safe to free: see shared_ptr ownership comment on input tensor above.
-    ov_.tensor_free(tensor);
+    if (tensor != owned) {
+      ov_.tensor_free(tensor);
+    }
     if (status != OV_STATUS_OK) {
       return exr::Error::Internal;
     }
@@ -488,6 +571,27 @@ exr::Error OpenvinoBackend::execute(
   if (status != OV_STATUS_OK) {
     ET_LOG(Error, "OpenVINO: inference failed (status=%d)", status);
     return exr::Error::Internal;
+  }
+
+  for (size_t i = 0; i < num_outputs; i++) {
+    auto output_tensor = args[num_inputs + i]->toTensor();
+    if (output_tensor.shape_dynamism() == exa::TensorShapeDynamism::STATIC) {
+      continue;
+    }
+    ov_tensor_t* ov_output = nullptr;
+    status = ov_.infer_request_get_output_tensor_by_index(
+        execution_handle->infer_request, i, &ov_output);
+    if (status != OV_STATUS_OK) {
+      ET_LOG(
+          Error, "OpenVINO: failed to get output %zu (status=%d)", i, status);
+      return exr::Error::Internal;
+    }
+    exr::Error error = copy_output(ov_output, output_tensor);
+    ov_.tensor_free(ov_output);
+    if (error != exr::Error::Ok) {
+      ET_LOG(Error, "OpenVINO: failed to copy output %zu", i);
+      return error;
+    }
   }
 
   return exr::Error::Ok;
@@ -504,6 +608,13 @@ void OpenvinoBackend::destroy(exr::DelegateHandle* handle) const {
 
   ExecutionHandle* execution_handle = static_cast<ExecutionHandle*>(handle);
 
+  for (size_t i = 0; i < execution_handle->num_outputs; i++) {
+    if (execution_handle->owned_outputs[i] && ov_.tensor_free) {
+      ov_.tensor_free(execution_handle->owned_outputs[i]);
+      execution_handle->owned_outputs[i] = nullptr;
+    }
+  }
+
   if (execution_handle->infer_request && ov_.infer_request_free) {
     ov_.infer_request_free(execution_handle->infer_request);
     execution_handle->infer_request = nullptr;
@@ -515,8 +626,45 @@ void OpenvinoBackend::destroy(exr::DelegateHandle* handle) const {
   }
 }
 
+exr::Error OpenvinoBackend::copy_output(
+    const ov_tensor_t* ov_output,
+    const exa::Tensor& output) const {
+  ov_shape_t shape = {};
+  ov_status_e status = ov_.tensor_get_shape(ov_output, &shape);
+  if (status != OV_STATUS_OK) {
+    ET_LOG(
+        Error, "OpenVINO: failed to get an output shape (status=%d)", status);
+    return exr::Error::Internal;
+  }
+  exr::Error error = exr::resize_tensor(
+      output,
+      exa::ArrayRef<int64_t>(shape.dims, static_cast<size_t>(shape.rank)));
+  ov_.shape_free(&shape);
+  if (error != exr::Error::Ok) {
+    return error;
+  }
+  size_t nbytes = 0;
+  void* data = nullptr;
+  if (ov_.tensor_get_byte_size(ov_output, &nbytes) != OV_STATUS_OK ||
+      ov_.tensor_data(ov_output, &data) != OV_STATUS_OK) {
+    ET_LOG(Error, "OpenVINO: failed to read an output");
+    return exr::Error::Internal;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      nbytes == output.nbytes(),
+      Internal,
+      "OpenVINO: output has %zu bytes, expected %zu",
+      nbytes,
+      output.nbytes());
+  if (nbytes > 0) {
+    std::memcpy(output.mutable_data_ptr(), data, nbytes);
+  }
+  return exr::Error::Ok;
+}
+
 exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
-    const exa::Tensor& tensor) const {
+    const exa::Tensor& tensor,
+    bool own_memory) const {
   ov_element_type_e ov_type = convert_to_openvino_type(tensor.scalar_type());
   if (ov_type == OV_ELEMENT_UNDEFINED) {
     return exr::Error::NotSupported;
@@ -537,22 +685,33 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
     dims = dims_heap.get();
   }
   for (int64_t d = 0; d < rank; d++) {
-    dims[d] = sizes[d];
+    dims[d] = own_memory ? 0 : sizes[d];
   }
-  // shape is zero-initialized; shape_free is only needed after a successful
-  // shape_create (the zero state is safe to skip).
+  // shape_create refuses rank 0, so a 0-d tensor keeps the zero-initialized
+  // shape, which describes a scalar.
   ov_shape_t shape = {};
-  ov_status_e status = ov_.shape_create(rank, dims, &shape);
+  ov_status_e status = OV_STATUS_OK;
+  if (rank > 0) {
+    status = ov_.shape_create(rank, dims, &shape);
+  }
   dims_heap.reset(); // Release heap dims (no-op if stack was used).
   if (status != OV_STATUS_OK) {
+    ET_LOG(
+        Error,
+        "OpenVINO: failed to create a shape of rank %" PRId64 " (status=%d)",
+        rank,
+        status);
     return exr::Error::Internal;
   }
 
   ov_tensor_t* ov_tensor = nullptr;
-  status = ov_.tensor_create_from_host_ptr(
-      ov_type, shape, tensor.mutable_data_ptr(), &ov_tensor);
+  status = own_memory
+      ? ov_.tensor_create(ov_type, shape, &ov_tensor)
+      : ov_.tensor_create_from_host_ptr(
+            ov_type, shape, tensor.mutable_data_ptr(), &ov_tensor);
   ov_.shape_free(&shape);
   if (status != OV_STATUS_OK || !ov_tensor) {
+    ET_LOG(Error, "OpenVINO: failed to create a tensor (status=%d)", status);
     return exr::Error::Internal;
   }
   return ov_tensor;
