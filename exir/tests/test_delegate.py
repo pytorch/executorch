@@ -11,6 +11,7 @@ import executorch.exir.tests.models as models
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.lowered_backend_module import (
     create_submodule_from_nodes,
     LoweredBackendModule,
@@ -245,6 +246,33 @@ class TestDelegate(unittest.TestCase):
 
         new_res = prog.exported_program().module()(*inputs)
         self.assertTrue(torch.allclose(new_res, orig_res))
+
+    def test_create_submodule_keeps_output_last(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                y = x * 2
+                torch._check((y > -1e9).all().item())
+                return y
+
+        inputs = (torch.randn(4),)
+        prog = to_edge(
+            export(Model(), inputs),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        gm = prog.exported_program().graph_module
+
+        # The tensor ops are delegated; item() and the check on it are not.
+        node_list = [
+            node
+            for node in gm.graph.nodes
+            if node.op == "call_function" and isinstance(node.target, EdgeOpOverload)
+        ]
+        create_submodule_from_nodes(gm, node_list, "tag")
+
+        self.assertEqual(list(gm.graph.nodes)[-1].op, "output")
+        self.assertTrue(
+            torch.allclose(prog.exported_program().module()(*inputs), inputs[0] * 2)
+        )
 
     def test_create_submodule_list_return(self) -> None:
         """

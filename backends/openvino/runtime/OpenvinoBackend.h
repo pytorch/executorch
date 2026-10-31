@@ -28,6 +28,10 @@ namespace openvino {
 struct ExecutionHandle {
   ov_compiled_model_t* compiled_model = nullptr;
   ov_infer_request_t* infer_request = nullptr;
+  // A buffer OpenVINO owns for each output whose size can change, made on
+  // first use and reused by every call; null for the others.
+  ov_tensor_t** owned_outputs = nullptr;
+  size_t num_outputs = 0;
 };
 
 class OpenvinoBackend final : public ::exr::BackendInterface {
@@ -49,12 +53,22 @@ class OpenvinoBackend final : public ::exr::BackendInterface {
  private:
   bool ensure_loaded() const;
   ov_element_type_e convert_to_openvino_type(exa::ScalarType scalar_type) const;
-  exr::Result<ov_tensor_t*> create_ov_tensor(const exa::Tensor& tensor) const;
+  // With own_memory, the OpenVINO tensor gets its own buffer instead of
+  // borrowing the tensor's. That buffer starts empty, with the tensor's rank,
+  // and OpenVINO grows it to the size it writes.
+  exr::Result<ov_tensor_t*> create_ov_tensor(
+      const exa::Tensor& tensor,
+      bool own_memory = false) const;
+  exr::Error copy_output(
+      const ov_tensor_t* ov_output,
+      const exa::Tensor& output) const;
 
   mutable DlHandle lib_handle_;
   mutable OpenvinoFunctions ov_;
   mutable std::once_flag load_flag_;
   mutable bool loaded_ = false;
+  // Whether core_import_model copies the blob, so init can free it.
+  mutable bool import_copies_blob_ = false;
 };
 
 } // namespace openvino
