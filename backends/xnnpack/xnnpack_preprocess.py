@@ -6,7 +6,7 @@
 
 import logging
 from dataclasses import dataclass, replace
-from typing import Dict, final, List
+from typing import Dict, final, List, Tuple
 
 import torch
 
@@ -19,6 +19,7 @@ from executorch.backends.xnnpack.operators.node_visitor import get_node_visitors
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     ConstantDataOffset,
+    PerTensorQuant,
     XNNGraph,
     XNNQuantizedTensorValue,
     XNNStaticTranspose,
@@ -37,12 +38,13 @@ from executorch.backends.xnnpack.utils.xnnpack_constants import (
     XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
 )
 from executorch.exir._serialize._named_data_store import NamedDataStore
-
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
     PreprocessResult,
 )
+
+from executorch.exir.tensor import dim_order_from_stride
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from torch.export.exported_program import ExportedProgram
 
@@ -91,18 +93,44 @@ def generate_node_to_external_map(
     return node_to_external_map
 
 
+def get_external_dim_orders(
+    exported_program: ExportedProgram,
+) -> List[Tuple[int, ...]]:
+    """
+    The dim order the runtime gives each external, in external id order (inputs,
+    then outputs). Read before the XNNPACK passes, which can change an output's
+    layout, and from strides like the emitter. NHWC externals are left to
+    ChannelsLastTaggedReshapePass, so they get the default order here.
+    """
+    graph = exported_program.graph_module.graph
+    nodes = [
+        node
+        for node in graph.nodes
+        if node.op == "placeholder" and not is_param_node(exported_program, node)
+    ]
+    nodes += list(graph.output_node().args[0])
+    dim_orders = []
+    for node in nodes:
+        val = node.meta.get("val", None)
+        if not isinstance(val, torch.Tensor):
+            raise RuntimeError(f"XNNPACK external {node} has no tensor value")
+        if ChannelsLastTaggedReshapePass.is_nhwc_tensor(val):
+            dim_orders.append(tuple(range(val.dim())))
+        else:
+            dim_orders.append(
+                tuple(int(d) for d in dim_order_from_stride(val.stride(), val.shape))
+            )
+    return dim_orders
+
+
 def define_externals_in_memory_order(
-    xnn_graph: XNNGraph,
-    node_to_external_map: Dict[torch.fx.Node, ExternalMeta],
+    xnn_graph: XNNGraph, dim_orders: List[Tuple[int, ...]]
 ) -> None:
     """
     XNNExecutor shapes external tensors in dim order, so declare the ones whose
-    dim order is neither contiguous nor NHWC in memory order, transposed to and
-    from the logical layout the graph is built in.
+    dim order is not the default in memory order, transposed to and from the
+    logical layout the graph is built in.
     """
-    nodes_by_external_id = {
-        meta.external_id: node for node, meta in node_to_external_map.items()
-    }
     prologue, epilogue = [], []
     for xvalue in list(xnn_graph.xvalues):
         union = xvalue.xvalue_union
@@ -111,13 +139,8 @@ def define_externals_in_memory_order(
         is_input = logical.flags & XNN_VALUE_FLAG_EXTERNAL_INPUT
         if not is_input and not logical.flags & XNN_VALUE_FLAG_EXTERNAL_OUTPUT:
             continue
-        val = nodes_by_external_id[logical.external_id].meta.get("val", None)
-        if not isinstance(val, torch.Tensor):
-            continue
-        dim_order = tuple(val.dim_order())
-        if dim_order == tuple(range(val.dim())) or (
-            ChannelsLastTaggedReshapePass.is_nhwc_tensor(val)
-        ):
+        dim_order = dim_orders[logical.external_id]
+        if dim_order == tuple(range(len(dim_order))):
             continue
 
         # Memory dim j is logical dim dim_order[j].
@@ -126,13 +149,15 @@ def define_externals_in_memory_order(
             logical, dims=[logical.dims[d] for d in dim_order], id_out=memory_id
         )
         if quantized:
-            quant_params = union.quant_params
-            if hasattr(quant_params, "channel_dim"):
-                quant_params = replace(
-                    quant_params, channel_dim=dim_order.index(quant_params.channel_dim)
+            # Activations are quantized per tensor, so the transpose keeps the
+            # quant params as they are.
+            if not isinstance(union.quant_params, PerTensorQuant):
+                raise RuntimeError(
+                    f"XNNPACK external {logical.external_id} with dim order "
+                    f"{dim_order} must be quantized per tensor"
                 )
             memory = XNNQuantizedTensorValue(
-                tensor_value=memory, quant_params=quant_params
+                tensor_value=memory, quant_params=union.quant_params
             )
         xnn_graph.xvalues.append(XValue(xvalue_union=memory))
         logical.external_id = XNN_INVALID_VALUE_ID
@@ -196,11 +221,16 @@ class XnnpackBackend(BackendDetails):
                 passes.append(ConvertToLinearPass)
 
         passes = passes if len(passes) > 0 else None
+        external_dim_orders = get_external_dim_orders(ep)
         # XNNPACK Delegate Specific Passes
         ep = XNNPACKPassManager(ep, passes=passes).transform()
         graph_module = ep.graph_module
 
         node_to_external_map = generate_node_to_external_map(ep, graph_module)
+        assert len(external_dim_orders) == len(node_to_external_map), (
+            f"{len(external_dim_orders)} externals before the XNNPACK passes, "
+            f"{len(node_to_external_map)} after"
+        )
 
         # TODO retrace the graph module to lift the new params may have
         # been added to the graph in passes
@@ -242,7 +272,7 @@ class XnnpackBackend(BackendDetails):
             else:
                 raise RuntimeError(f"{node.op} is not supported in XNNPACK")
 
-        define_externals_in_memory_order(xnnpack_graph, node_to_external_map)
+        define_externals_in_memory_order(xnnpack_graph, external_dim_orders)
         return PreprocessResult(
             processed_bytes=serialize_xnnpack_binary(
                 xnnpack_graph, constant_data_bytes

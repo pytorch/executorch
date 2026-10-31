@@ -18,6 +18,7 @@ from executorch.exir.passes.quantize_io_pass import (
     get_config_method_name,
     QuantizeInputs,
 )
+from executorch.exir.tensor import dim_order_from_stride
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
@@ -37,6 +38,19 @@ class TestIODimOrder(unittest.TestCase):
     class Add(torch.nn.Module):
         def forward(self, x, y):
             return x + y
+
+    class AddConv(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, 3, padding=1)
+
+        def forward(self, x, y):
+            return y + self.conv(x)
+
+    @staticmethod
+    def _dim_order(tensor):
+        # The order the runtime uses, which breaks size-1 ties unlike dim_order()
+        return tuple(dim_order_from_stride(tensor.stride(), tuple(tensor.shape)))
 
     def _test(self, module, inputs, dynamic_shapes=None):
         # The harness only generates contiguous or channels-last random inputs,
@@ -68,15 +82,31 @@ class TestIODimOrder(unittest.TestCase):
         )
 
     def test_fp32_add_transposed_input_and_output(self):
-        x = torch.randn(1, 8, 4, 16).transpose(1, 2)
+        x, y = torch.randn(1, 8, 4, 16).transpose(1, 2), torch.randn(1, 4, 8, 16)
+        self.assertEqual(self._dim_order(x), (0, 2, 1, 3))
+        self.assertEqual(self._dim_order(self.Add()(x, y)), (0, 2, 1, 3))
+        self._test(self.Add(), [(x, y)])
+
+    def test_fp32_add_transposed_size_one_dims(self):
+        x = torch.randn(1, 8, 1, 16).transpose(1, 2)
         self.assertEqual(x.dim_order(), (0, 2, 1, 3))
-        self._test(self.Add(), [(x, torch.randn(1, 4, 8, 16))])
+        self.assertEqual(self._dim_order(x), (0, 1, 2, 3))
+        self._test(self.Add(), [(x, torch.randn(1, 1, 8, 16))])
+
+    def test_fp32_conv_feeds_transposed_output(self):
+        # The add is NHWC after the conv, so the XNNPACK passes copy it back to
+        # contiguous before the output, while the runtime keeps y's dim order.
+        module = self.AddConv().eval()
+        x, y = torch.randn(1, 3, 8, 16), torch.randn(1, 8, 8, 16).transpose(1, 2)
+        self.assertEqual(self._dim_order(module(x, y)), (0, 2, 1, 3))
+        self._test(module, [(x, y)])
 
     def test_fp32_add_channels_last_3d(self):
         x = torch.randn(1, 3, 4, 5, 6).to(memory_format=torch.channels_last_3d)
         self._test(self.Add(), [(x, torch.randn(1, 3, 4, 5, 6))])
 
     def test_qs8_add_quantized_permuted_input(self):
+        torch.manual_seed(0)
         x, y = self._permuted(), torch.randn(4, 8, 16)
         quantizer = XNNPACKQuantizer()
         quantizer.set_global(get_symmetric_quantization_config())
@@ -95,6 +125,16 @@ class TestIODimOrder(unittest.TestCase):
             [QuantizeInputs(edge, quantized_inputs_idx=[0], method_name="forward")]
         )
         program = edge.to_backend(XnnpackPartitioner()).to_executorch()
+        graph = program.exported_program().graph
+        delegates = [
+            n
+            for n in graph.nodes
+            if n.target == torch.ops.higher_order.executorch_call_delegate
+        ]
+        self.assertEqual(len(delegates), 1)
+        x_node = next(n for n in graph.nodes if n.op == "placeholder")
+        self.assertIn(x_node, delegates[0].args)
+        self.assertEqual(x_node.meta["val"].dtype, torch.int8)
 
         qparams = edge._config_methods
         quantized_x = torch.ops.quantized_decomposed.quantize_per_tensor.default(
@@ -108,4 +148,10 @@ class TestIODimOrder(unittest.TestCase):
         out = _load_for_executorch_from_buffer(program.buffer).run_method(
             "forward", (quantized_x, y)
         )[0]
-        self.assertTrue(torch.allclose(out, module(x, y), atol=1e-5))
+        # XNNPACK may round the requantized sum one step away from the reference.
+        output_scale = next(
+            n.args[1]
+            for n in reversed(module.graph.nodes)
+            if n.target == torch.ops.quantized_decomposed.quantize_per_tensor.default
+        )
+        torch.testing.assert_close(out, module(x, y), atol=1.5 * output_scale, rtol=0)
