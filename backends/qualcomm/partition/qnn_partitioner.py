@@ -404,7 +404,9 @@ class QnnPartitioner(Partitioner):
         and dequantize ops.
         """
         do_not_decompose = get_skip_decomp_table()
-        if self.backend != QnnExecuTorchBackendType.kHtpBackend:
+        # On the lowered program this filter tells exir which kept-whole ops
+        # may stay on CPU, and none may, so it stays plain filter_fn there.
+        if self.backend != QnnExecuTorchBackendType.kHtpBackend or ep.dialect == "EDGE":
             return (do_not_decompose, filter_fn)
         # An op that reads only constants can end up in a partition that
         # _drop_partitions_without_runtime_inputs keeps on CPU after
