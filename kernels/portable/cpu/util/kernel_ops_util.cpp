@@ -164,39 +164,6 @@ bool output_size_is_valid(
   return valid;
 }
 
-void get_unsqueezed_sizes(
-    const Tensor& t,
-    int64_t unsqueeze_dim,
-    executorch::aten::SizesType* sizes_arr,
-    size_t& ndim) {
-  ndim = t.dim() + 1;
-  for (const auto d : c10::irange(unsqueeze_dim)) {
-    sizes_arr[d] = t.size(d);
-  }
-  sizes_arr[unsqueeze_dim] = 1;
-  for (const auto d : c10::irange(unsqueeze_dim + 1, ndim)) {
-    sizes_arr[d] = t.size(d - 1);
-  }
-}
-
-void get_unsqueezed_dim_order(
-    const Tensor& t,
-    executorch::aten::DimOrderType unsqueeze_dim,
-    executorch::aten::DimOrderType* dim_order_arr) {
-  int offset = 0;
-  for (const auto i : c10::irange(t.dim())) {
-    executorch::aten::DimOrderType dim = t.dim_order()[i];
-    if (dim == unsqueeze_dim) {
-      dim_order_arr[i] = dim;
-      dim_order_arr[i + 1] = dim + 1;
-      offset = 1;
-    } else {
-      dim_order_arr[i + offset] = dim > unsqueeze_dim ? dim + 1 : dim;
-    }
-  }
-  return;
-}
-
 int64_t _kernel_output_size_helper(
     size_t inputSize,
     int64_t kernelSize,
@@ -452,8 +419,8 @@ bool check_convolution_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
   ET_CHECK_OR_RETURN_FALSE(
-      in.dim() == 3 || in.dim() == 4,
-      "Expect input tensor to be 3-D or 4-D, but got, %zu.",
+      in.dim() >= 3 && in.dim() <= 5,
+      "Expect input tensor to be 3-D, 4-D or 5-D, but got, %zu.",
       static_cast<size_t>(in.dim()));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, in.dim()));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, in.dim()));
@@ -469,14 +436,10 @@ bool check_convolution_args(
         transposed ? groups * weight.size(1) : weight.size(0));
   }
 
-  int64_t kernel_size[2];
-  size_t kernel_ndim = 2;
-  if (weight.dim() == 3) {
-    kernel_size[0] = weight.size(2);
-    kernel_ndim = 1;
-  } else {
-    kernel_size[0] = weight.size(2);
-    kernel_size[1] = weight.size(3);
+  int64_t kernel_size[kTensorDimensionLimit];
+  const size_t kernel_ndim = weight.dim() - 2;
+  for (const auto i : c10::irange(kernel_ndim)) {
+    kernel_size[i] = weight.size(i + 2);
   }
   ET_LOG_AND_RETURN_IF_FALSE(
       stride_is_valid(stride, kernel_ndim, /*allow_empty=*/false));
@@ -549,14 +512,10 @@ void get_convolution_out_target_size(
     out_sizes[1] = in.size(1) == 0 ? 0 : groups * weight.size(1);
   }
 
-  int64_t kernel_size[2];
-  size_t kernel_ndim = 2;
-  if (weight.dim() == 3) {
-    kernel_size[0] = weight.size(2);
-    kernel_ndim = 1;
-  } else {
-    kernel_size[0] = weight.size(2);
-    kernel_size[1] = weight.size(3);
+  int64_t kernel_size[kTensorDimensionLimit];
+  const size_t kernel_ndim = weight.dim() - 2;
+  for (const auto i : c10::irange(kernel_ndim)) {
+    kernel_size[i] = weight.size(i + 2);
   }
   calculate_kernel_output_sizes(
       in,
