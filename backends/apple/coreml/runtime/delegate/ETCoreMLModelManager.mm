@@ -154,7 +154,24 @@ std::optional<MultiArray::DataType> get_data_type(MLMultiArrayDataType data_type
     }
 }
 
-void copy(MLMultiArray *src, executorchcoreml::MultiArray& dst) {
+BOOL copy(ETCoreMLModel *model,
+          MLMultiArray *src,
+          executorchcoreml::MultiArray& dst,
+          NSError * __autoreleasing *error) {
+    // When Core ML didn't write into a bound pixel buffer itself, the copy has to follow the
+    // buffer's row stride rather than dst's strides.
+    MLMultiArray *pixel_buffer_dst = nil;
+    if (![model getPixelBufferMultiArray:&pixel_buffer_dst forArg:dst error:error]) {
+        return NO;
+    }
+    if (pixel_buffer_dst) {
+        // Core ML returns the output backing itself when it wrote into it.
+        if (src != pixel_buffer_dst) {
+            ::copy(src, pixel_buffer_dst);
+        }
+        return YES;
+    }
+
     void (^copy_data)(void *) = ^(void *bytes) {
         if (bytes == dst.data()) {
             return;
@@ -174,15 +191,23 @@ void copy(MLMultiArray *src, executorchcoreml::MultiArray& dst) {
     } else {
         copy_data(src.dataPointer);
     }
+
+    return YES;
 }
 
-void set_outputs(std::vector<executorchcoreml::MultiArray>& outputs,
-                 NSArray<MLMultiArray *> *model_outputs) {
+BOOL set_outputs(ETCoreMLModel *model,
+                 std::vector<executorchcoreml::MultiArray>& outputs,
+                 NSArray<MLMultiArray *> *model_outputs,
+                 NSError * __autoreleasing *error) {
     NSEnumerator<MLMultiArray *> *enumerator = [model_outputs objectEnumerator];
     for (auto& output : outputs) {
         MLMultiArray *model_output = [enumerator nextObject];
-        ::copy(model_output, output);
+        if (!::copy(model, model_output, output, error)) {
+            return NO;
+        }
     }
+
+    return YES;
 }
 
 NSData * _Nullable get_file_data(const inmemoryfs::InMemoryFileSystem *inMemoryFS,
@@ -1176,8 +1201,7 @@ NSString *raw_model_identifier(NSString *identifier) {
                         outputArgs[i].resize(new_size);
                         argsVec[model.orderedInputNames.count + i].resize(new_size);
                     }
-                    ::set_outputs(outputArgs, modelOutputs);
-                    result = YES;
+                    result = ::set_outputs(model, outputArgs, modelOutputs, &localError);
                 }
             }
         }
