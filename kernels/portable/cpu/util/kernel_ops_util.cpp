@@ -471,6 +471,24 @@ bool check_convolution_args(
   if (transposed) {
     ET_LOG_AND_RETURN_IF_FALSE(
         output_padding_is_valid(output_padding, stride, dilation, kernel_ndim));
+  } else {
+    // Like PyTorch, reject a dilated kernel larger than the padded input. The
+    // output size math would otherwise round such a size up to 1 for strides
+    // above 1.
+    for (const auto i : c10::irange(kernel_ndim)) {
+      const int64_t padded_input_size =
+          in.size(i + 2) + 2 * val_at(padding, i, /*default_value=*/0);
+      const int64_t dilated_kernel_size =
+          val_at(dilation, i, /*default_value=*/1) * (kernel_size[i] - 1) + 1;
+      ET_CHECK_OR_RETURN_FALSE(
+          padded_input_size >= dilated_kernel_size,
+          "Padded input size %" PRId64
+          " is smaller than the dilated kernel size %" PRId64
+          " in spatial dim %zu",
+          padded_input_size,
+          dilated_kernel_size,
+          i);
+    }
   }
 
   ET_CHECK_OR_RETURN_FALSE(
