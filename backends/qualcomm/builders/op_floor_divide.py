@@ -11,6 +11,7 @@ import torch
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
+from .op_remainder import is_mod_supported
 from .qnn_constants import (
     OpElementWiseDivide,
     OpElementWiseMod,
@@ -29,6 +30,8 @@ def define_int_floor_divide(
     x - x mod y is a multiple of y, so the integer Divide's rounding mode does not
     matter, and Mod takes the divisor's sign like torch.
     """
+    if not is_mod_supported(node):
+        return None
     out_tensor = visitor.get_tensor(node, node)
     x, y = (
         visitor.define_tensor(

@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
@@ -12,6 +13,17 @@ import torch
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpElementWiseMod, QNN_OP_PACKAGE_NAME_QTI_AISW
+
+
+def is_mod_supported(node: torch.fx.Node) -> bool:
+    """HTP's Mod is int32 up to rank 4; higher ranks stay on the exact CPU kernel."""
+    if len(node.meta["val"].shape) <= 4:
+        return True
+    warnings.warn(
+        f"[QNN Delegate Op Builder]: {node.name} needs Mod above rank 4, fallback op",
+        stacklevel=1,
+    )
+    return False
 
 
 @register_node_visitor
@@ -32,7 +44,7 @@ class Remainder(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
         out_tensor = self.get_tensor(node, node)
-        if out_tensor.is_floating_point():
+        if out_tensor.is_floating_point() or not is_mod_supported(node):
             return None
 
         input_tensors = []
