@@ -87,6 +87,7 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
+from executorch.backends.transforms.utils import reserve_node_names
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.program._program import (
@@ -100,11 +101,7 @@ from torch.fx.passes.infra.pass_manager import this_before_that_pass_constraint
 class QnnPassManager(PassManager):
 
     def _transform(self, graph_module: GraphModule):
-        # TODO: Remove once torch.export records the names it gives inputs and
-        # the ops it renames for them. torch.fx has no public way to reserve one.
-        namespace = graph_module.graph._graph_namespace
-        for node in graph_module.graph.nodes:
-            namespace._used_names.add(node.name)
+        reserve_node_names(graph_module)
         return self(graph_module).graph_module
 
     def _reset(self):

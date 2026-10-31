@@ -59,6 +59,18 @@ def _get_fake_tensor_mode(graph: torch.fx.Graph, data: torch.Tensor) -> torch.Te
     return FakeTensorConverter().from_real_tensor(example_fake_tensor.fake_mode, t=data)
 
 
+def reserve_node_names(graph_module: torch.fx.GraphModule) -> None:
+    """
+    Records every node name in the graph's namespace, so that nodes a pass adds
+    later get names that are not already taken.
+    """
+    # TODO: Remove once torch.export records the names it gives inputs and the
+    # ops it renames for them. torch.fx has no public way to reserve a name.
+    namespace = graph_module.graph._graph_namespace
+    for node in graph_module.graph.nodes:
+        namespace._used_names.add(node.name)
+
+
 def is_get_attr_node(node: torch.fx.Node) -> bool:
     """
     Returns true if the given node is a get attr node for a tensor of the model
