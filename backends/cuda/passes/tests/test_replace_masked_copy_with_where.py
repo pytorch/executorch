@@ -86,14 +86,15 @@ class TestReplaceMaskedCopyWithWherePass(unittest.TestCase):
     def test_other_writes_are_kept(self):
         class Kept(torch.nn.Module):
             def forward(self, x, mask, idx):
-                scaled = torch.zeros_like(x)
-                # The values are not the mask's picks of a tensor.
-                scaled[mask] = x[mask] * 2
                 checked = torch.zeros_like(x)
+                # First, since export attaches the check to the first x[mask].
                 picked = x[mask]
                 # A check on the count that does not hold for every mask.
                 torch._check(picked.shape[0] >= 1)
                 checked[mask] = picked
+                scaled = torch.zeros_like(x)
+                # The values are not the mask's picks of a tensor.
+                scaled[mask] = x[mask] * 2
                 summed = torch.ones_like(x)
                 summed.index_put_((mask,), x[mask], accumulate=True)
                 other = torch.zeros_like(x)
@@ -116,8 +117,8 @@ class TestReplaceMaskedCopyWithWherePass(unittest.TestCase):
         targets = _targets(program.graph_module)
         self.assertEqual(targets.count(exir_ops.edge.aten.index_put.default), 4)
         self.assertEqual(targets.count(exir_ops.edge.aten.where.self), 2)
-        # The index stays for the checked count and for the shared picks.
-        self.assertEqual(targets.count(exir_ops.edge.aten.index.Tensor), 5)
+        # The checked count and the shared picks keep their index.
+        self.assertEqual(targets.count(exir_ops.edge.aten.index.Tensor), 6)
         for got, expected in zip(
             program.module()(x, mask, idx), Kept()(x, mask, idx), strict=True
         ):
