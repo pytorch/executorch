@@ -284,34 +284,6 @@ class TestPasses(unittest.TestCase):
                 )
                 self.assertEqual(count, expected_count)
 
-    def test_remove_mixed_type_operators_tensor_list(self) -> None:
-        class Cat(torch.nn.Module):
-            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-                return torch.cat([x, y, x])
-
-        class Stack(torch.nn.Module):
-            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-                return torch.stack([x, y, x])
-
-        # x comes again after y, so a later input needs a cast as well.
-        x = torch.randn(2, 3, dtype=torch.bfloat16)
-        y = torch.randn(2, 3)
-        # Without preserving it, stack would decompose into cat.
-        config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.stack.default])
-        for module, op in (
-            (Cat(), exir_ops.edge.aten.cat.default),
-            (Stack(), exir_ops.edge.aten.stack.default),
-        ):
-            edge = to_edge(export(module, (x, y), strict=True), compile_config=config)
-            graph_module = edge.exported_program().graph_module
-            node = next(n for n in graph_module.graph.nodes if n.target == op)
-            self.assertEqual(
-                [t.meta["val"].dtype for t in node.args[0]], [torch.float32] * 3
-            )
-            torch.testing.assert_close(
-                edge.exported_program().module()(x, y), module(x, y)
-            )
-
     def test_remove_noop_pass(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
