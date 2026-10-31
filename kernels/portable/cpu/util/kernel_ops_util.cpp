@@ -164,6 +164,39 @@ bool output_size_is_valid(
   return valid;
 }
 
+void get_unsqueezed_sizes(
+    const Tensor& t,
+    int64_t unsqueeze_dim,
+    executorch::aten::SizesType* sizes_arr,
+    size_t& ndim) {
+  ndim = t.dim() + 1;
+  for (const auto d : c10::irange(unsqueeze_dim)) {
+    sizes_arr[d] = t.size(d);
+  }
+  sizes_arr[unsqueeze_dim] = 1;
+  for (const auto d : c10::irange(unsqueeze_dim + 1, ndim)) {
+    sizes_arr[d] = t.size(d - 1);
+  }
+}
+
+void get_unsqueezed_dim_order(
+    const Tensor& t,
+    executorch::aten::DimOrderType unsqueeze_dim,
+    executorch::aten::DimOrderType* dim_order_arr) {
+  int offset = 0;
+  for (const auto i : c10::irange(t.dim())) {
+    executorch::aten::DimOrderType dim = t.dim_order()[i];
+    if (dim == unsqueeze_dim) {
+      dim_order_arr[i] = dim;
+      dim_order_arr[i + 1] = dim + 1;
+      offset = 1;
+    } else {
+      dim_order_arr[i + offset] = dim > unsqueeze_dim ? dim + 1 : dim;
+    }
+  }
+  return;
+}
+
 int64_t _kernel_output_size_helper(
     size_t inputSize,
     int64_t kernelSize,
