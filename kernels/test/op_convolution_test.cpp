@@ -748,7 +748,8 @@ TEST_F(OpConvCorrectnessTest, InvalidGroups) {
           input, weight, bias, {1}, {0}, {1}, false, {0}, 0, out));
 
   // A transposed bias has groups * weight.size(1) elements, so groups must be
-  // in range before that product is formed.
+  // in range before that product is formed. Only an UndefinedBehaviorSanitizer
+  // build that halts on errors fails here when the order is wrong.
   Tensor transposed_weight = tf.ones({2, 4, 2, 2});
   Tensor transposed_bias = tf.ones({4});
   Tensor transposed_out = tf.zeros({1, 4, 4, 4});
