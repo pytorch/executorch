@@ -99,10 +99,10 @@ class OpenvinoBackend(BackendDetails):
                         f"{type(val).__name__}; only tensors and ints are supported"
                     )
 
-        # The converter chooses some lowerings (e.g. boolean-mask indexing) from
-        # the input types, so they must be known before conversion starts.
         module = edge_program.module()
         FoldConstantCumsumPass()(module)
+        # The converter chooses some lowerings (e.g. boolean-mask indexing) from
+        # the input types, so they must be known before conversion starts.
         decoder = TorchFXPythonDecoder(
             module, input_shapes=input_shapes, input_types=input_types
         )
