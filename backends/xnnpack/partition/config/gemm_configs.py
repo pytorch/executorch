@@ -231,9 +231,12 @@ class GEMMConfig(XNNPartitionerConfig):
             node_users = list(node.users.keys())
             if len(node_users) == 1:
                 n_output = node_users[0]
+                # After a decomposed linear, the activation can have more dims than
+                # XNNPACK allows even when the 2-D matmul does not. Leave it out then.
                 if (
                     n_output.op == "call_function"
                     and format_target_name(n_output.target.__name__) in self.fused_acts
+                    and self._check_tensor_ranks(n_output)
                 ):
                     gemm_deps.append(n_output)
 

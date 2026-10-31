@@ -99,12 +99,15 @@ class TestPermute(unittest.TestCase):
         )
 
     class LinearPermute8d(torch.nn.Module):
-        def __init__(self):
+        def __init__(self, relu=False):
             super().__init__()
             self.linear = torch.nn.Linear(4, 4)
+            self.relu = relu
 
         def forward(self, x):
             y = self.linear(x.reshape(2, 2, 2, 2, 2, 2, 2, 4))
+            if self.relu:
+                y = torch.relu(y)
             return y.permute(0, 2, 5, 3, 6, 1, 4, 7).reshape(2, 64, -1) * 2
 
     def test_fp32_permute_max_rank(self):
@@ -124,11 +127,13 @@ class TestPermute(unittest.TestCase):
                 .run_method_and_compare_outputs()
             )
 
-    def _test_permute_above_max_rank(self, quant_config=None, partitioner=None):
+    def _test_permute_above_max_rank(
+        self, quant_config=None, partitioner=None, relu=False
+    ):
         # A delegate that holds a tensor above 6 dims fails to load, so the 8-D
         # views and permute stay outside and the mul is delegated. The linear's
         # 2-D matmul is delegated too, unless its activation is quantized in 8-D.
-        tester = Tester(self.LinearPermute8d().eval(), (torch.randn(2, 64, 4),))
+        tester = Tester(self.LinearPermute8d(relu).eval(), (torch.randn(2, 64, 4),))
         if quant_config is not None:
             tester.quantize(Quantize(quantization_config=quant_config))
         tester.export().to_edge_transform_and_lower(
@@ -154,11 +159,13 @@ class TestPermute(unittest.TestCase):
 
     def test_fp32_permute_above_max_rank(self):
         for force_non_static_weights in (False, True):
-            self._test_permute_above_max_rank(
-                partitioner=XnnpackPartitioner(
-                    force_non_static_weights_for_f32_linear=force_non_static_weights
+            for relu in (False, True):
+                self._test_permute_above_max_rank(
+                    partitioner=XnnpackPartitioner(
+                        force_non_static_weights_for_f32_linear=force_non_static_weights
+                    ),
+                    relu=relu,
                 )
-            )
 
     def test_qs8_permute_above_max_rank(self):
         self._test_permute_above_max_rank(get_symmetric_quantization_config())
