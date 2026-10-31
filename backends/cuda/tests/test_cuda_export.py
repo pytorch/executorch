@@ -792,23 +792,16 @@ class TestCudaExport(unittest.TestCase):
         )
 
     def test_missing_scatter_kernel_fails_at_export(self):
-        """The scatter fallback writes its kernel call directly, and the check
-        for missing kernels still sees it."""
+        """Inductor leaves an int64 scatter to an ATen kernel the CUDA shims lack."""
 
-        class Int64ScatterAdd(torch.nn.Module):
+        class Int64Scatter(torch.nn.Module):
             def forward(self, counts: torch.Tensor, idx: torch.Tensor):
-                return counts.scatter_add(0, idx, torch.ones_like(idx))
+                return counts.scatter(0, idx, torch.ones_like(idx))
 
-        # The backend ships this kernel, so take it off the list.
-        kernel = "aoti_torch_cuda_scatter_reduce_two_out"
-        kernels = CudaBackend.get_supported_fallback_kernels()
-        del kernels[kernel]
         inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
-        with mock.patch.object(
-            CudaBackend, "get_supported_fallback_kernels", return_value=kernels
-        ), self.assertRaises(RuntimeError) as context:
-            self._export_to_cuda_with_lower(Int64ScatterAdd(), inputs)
-        self.assertIn(kernel, str(context.exception))
+        with self.assertRaises(RuntimeError) as context:
+            self._export_to_cuda_with_lower(Int64Scatter(), inputs)
+        self.assertIn("aoti_torch_cuda_scatter_src_out", str(context.exception))
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """
