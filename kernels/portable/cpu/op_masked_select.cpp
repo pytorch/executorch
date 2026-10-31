@@ -53,10 +53,11 @@ Tensor& masked_select_out(
     ET_KERNEL_CHECK_MSG(
         ctx, false, InvalidArgument, out, "Failed to broadcast input and mask");
   }
-  size_t broadcast_numel = 1;
-  for (const auto i : c10::irange(broadcast_ndim)) {
-    broadcast_numel *= broadcast_sizes[i];
-  }
+
+  // BroadcastIndexesRange only reads the output's sizes, dim, and numel, so a
+  // data-less tensor with the broadcast shape is enough.
+  TensorImpl broadcast_impl(in_type, broadcast_ndim, broadcast_sizes);
+  const Tensor broadcast_shape(&broadcast_impl);
 
   // Compute the number of out elements
   size_t mask_true_count = 0;
@@ -67,7 +68,7 @@ Tensor& masked_select_out(
     }
   }
   Tensor::SizesType out_numel =
-      mask_true_count * (broadcast_numel / mask.numel());
+      mask_true_count * (broadcast_shape.numel() / mask.numel());
 
   // Resize the out tensor
   ET_KERNEL_CHECK(
@@ -78,64 +79,14 @@ Tensor& masked_select_out(
   char* const out_data = reinterpret_cast<char*>(out.mutable_data_ptr());
   const auto elem_size = in.element_size();
 
-  // Figure out if `in` is broadcasted
-  bool in_is_broadcasted = false;
-  if (in.dim() != static_cast<ssize_t>(broadcast_ndim)) {
-    in_is_broadcasted = true;
-  } else {
-    for (const auto i : c10::irange(in.dim())) {
-      if (in.size(i) != broadcast_sizes[i]) {
-        in_is_broadcasted = true;
-      }
-    }
-  }
-
-  // Figure out if `mask` is broadcasted
-  bool mask_is_broadcasted = false;
-  if (mask.dim() != static_cast<ssize_t>(broadcast_ndim)) {
-    mask_is_broadcasted = true;
-  } else {
-    for (const auto i : c10::irange(mask.dim())) {
-      if (mask.size(i) != broadcast_sizes[i]) {
-        mask_is_broadcasted = true;
-      }
-    }
-  }
-
-  // Figure out if either `in` or `mask` is broadcasted
-  bool any_is_broadcasted = (in_is_broadcasted || mask_is_broadcasted);
-
   size_t out_ix = 0;
-  for (const auto i : c10::irange(broadcast_numel)) {
-    size_t in_linear_index = i;
-    size_t mask_linear_index = i;
-
-    // If either `in` or `mask` is broadcasted, we need to compute the indexes
-    // in the broadcasted space.
-    if (any_is_broadcasted) {
-      size_t broadcast_indexes[kTensorDimensionLimit];
-      delinearize_index(
-          i,
-          {broadcast_sizes, broadcast_ndim},
-          broadcast_indexes,
-          kTensorDimensionLimit);
-
-      if (in_is_broadcasted) {
-        in_linear_index =
-            linearize_access_indexes(broadcast_indexes, broadcast_ndim, in);
-      }
-      if (mask_is_broadcasted) {
-        mask_linear_index =
-            linearize_access_indexes(broadcast_indexes, broadcast_ndim, mask);
-      }
-    }
-
-    // If the mask is true, copy the value from `in` to `out` and increment the
-    // `out_ix`
-    if (mask_data[mask_linear_index]) {
+  for (const auto [unused_index, in_index, mask_index] :
+       BroadcastIndexesRange<2>(broadcast_shape, in, mask)) {
+    (void)unused_index;
+    if (mask_data[mask_index]) {
       memcpy(
           out_data + out_ix * elem_size,
-          in_data + in_linear_index * elem_size,
+          in_data + in_index * elem_size,
           elem_size);
       out_ix++;
     }
