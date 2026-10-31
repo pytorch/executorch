@@ -84,7 +84,9 @@ class TestIndexShims(unittest.TestCase):
                 rows = x.transpose(1, 2)[mask] * 3
                 ones = torch.ones_like(idx)
                 counts = counts.index_put((idx,), ones, accumulate=True)
-                return out, picked, rows, counts
+                wide = x.double()
+                wide = wide.index_put((mask,), wide[mask], accumulate=True)
+                return out, picked, rows, counts, wide
 
         x = torch.randn(4, 5, 6)
         column = torch.tensor([2])
@@ -189,3 +191,12 @@ class TestIndexShims(unittest.TestCase):
                     # Lands on x[1, 1]; every reduction keeps the NaN.
                     src[1, 2] = float("nan")
                 self._run(ScatterReduce(), [(x, index, src)])
+
+    def test_float64_sort(self):
+        class Sort(torch.nn.Module):
+            def forward(self, x):
+                # Rows this long go to the sort shim, not to Triton.
+                return torch.sort(x, stable=True)
+
+        torch.manual_seed(0)
+        self._run(Sort(), [(torch.randn(4, 1000, dtype=torch.float64),)])
