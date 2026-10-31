@@ -284,10 +284,12 @@ TEST_F(MethodMetaTest, MethodMetaBufferDeviceReturnsCudaForDeviceBuffer) {
       Error::InvalidArgument);
 }
 
-TEST_F(MethodMetaTest, UsesBackendOnUnsetDelegatesReturnsFalse) {
-  // Construct a minimal schema-valid FlatBuffer program where delegates is
-  // unset (nullptr).
-  flatbuffers::FlatBufferBuilder fbb;
+// Builds a minimal schema-valid FlatBuffer program whose "forward" plan has
+// `delegates`, which may be null to leave them unset.
+std::vector<uint8_t> program_with_delegates(
+    flatbuffers::FlatBufferBuilder& fbb,
+    const std::vector<flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>*
+        delegates) {
   std::vector<int32_t> empty_inputs = {};
   std::vector<int32_t> empty_outputs = {};
   std::vector<int64_t> non_const_buffer_sizes = {0};
@@ -300,7 +302,7 @@ TEST_F(MethodMetaTest, UsesBackendOnUnsetDelegatesReturnsFalse) {
       /*outputs=*/&empty_outputs,
       /*chains=*/nullptr,
       /*operators=*/nullptr,
-      /*delegates=*/nullptr,
+      /*delegates=*/delegates,
       /*non_const_buffer_sizes=*/&non_const_buffer_sizes,
       /*non_const_buffer_device=*/nullptr);
   std::vector<flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>> plans =
@@ -328,6 +330,13 @@ TEST_F(MethodMetaTest, UsesBackendOnUnsetDelegatesReturnsFalse) {
   if (buffer.size() < Program::kMinHeadBytes) {
     buffer.resize(Program::kMinHeadBytes, 0);
   }
+  return buffer;
+}
+
+TEST_F(MethodMetaTest, UsesBackendOnUnsetDelegatesReturnsFalse) {
+  flatbuffers::FlatBufferBuilder fbb;
+  std::vector<uint8_t> buffer =
+      program_with_delegates(fbb, /*delegates=*/nullptr);
 
   BufferDataLoader loader(buffer.data(), buffer.size());
   Result<Program> prog = Program::load(&loader, Program::Verification::Minimal);
@@ -337,4 +346,21 @@ TEST_F(MethodMetaTest, UsesBackendOnUnsetDelegatesReturnsFalse) {
   ASSERT_EQ(method_meta.error(), Error::Ok);
 
   EXPECT_FALSE(method_meta->uses_backend("xnnpack"));
+}
+
+TEST_F(MethodMetaTest, GetBackendNameOfDelegateWithoutIdReturnsError) {
+  flatbuffers::FlatBufferBuilder fbb;
+  std::vector<flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>
+      delegates = {executorch_flatbuffer::CreateBackendDelegate(fbb)};
+  std::vector<uint8_t> buffer = program_with_delegates(fbb, &delegates);
+
+  BufferDataLoader loader(buffer.data(), buffer.size());
+  Result<Program> prog = Program::load(&loader, Program::Verification::Minimal);
+  ASSERT_EQ(prog.error(), Error::Ok);
+
+  Result<MethodMeta> method_meta = prog->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+
+  ASSERT_EQ(method_meta->num_backends(), 1);
+  EXPECT_EQ(method_meta->get_backend_name(0).error(), Error::InvalidProgram);
 }
