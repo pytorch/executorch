@@ -244,17 +244,23 @@ class TestFoldConstantCumsumPass(unittest.TestCase):
 
     def test_cumsum_over_a_split_constant_is_folded(self):
         class Model(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
             def forward(self, x):
                 part = torch.ones(6, dtype=torch.int64).split(3)[1]
-                return torch.cumsum(part, 0) + x
+                return torch.cumsum(part, 0, dtype=self.dtype) + x
 
         x = torch.zeros(3, dtype=torch.int64)
-        folded = self.fold(Model(), (x,))
-        self.assertNotIn(
-            exir_ops.edge.aten.cumsum.default,
-            [n.target for n in folded.graph.nodes],
-        )
-        torch.testing.assert_close(folded(x), Model()(x))
+        for dtype in (torch.int64, torch.int32):
+            with self.subTest(dtype=dtype):
+                folded = self.fold(Model(dtype), (x,))
+                self.assertNotIn(
+                    exir_ops.edge.aten.cumsum.default,
+                    [n.target for n in folded.graph.nodes],
+                )
+                torch.testing.assert_close(folded(x), Model(dtype)(x))
 
     def test_constants_are_folded_without_a_gpu(self):
         class Model(torch.nn.Module):
