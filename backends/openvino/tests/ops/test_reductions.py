@@ -233,3 +233,19 @@ class TestFoldConstantCumsumPass(unittest.TestCase):
             [n.target for n in folded.graph.nodes],
         )
         torch.testing.assert_close(folded(x), torch.tensor([2, 4, 6]))
+
+    def test_full_like_is_folded_under_another_default_device(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.cumsum(torch.ones_like(x), 0) + x
+
+        x = torch.zeros(3, dtype=torch.int64)
+        folded = to_edge(torch.export.export(Model(), (x,))).exported_program().module()
+        # Meta, unlike CUDA, fails on every build: it never reaches the CPU.
+        with torch.device("meta"):
+            FoldConstantCumsumPass()(folded)
+        self.assertNotIn(
+            exir_ops.edge.aten.cumsum.default,
+            [n.target for n in folded.graph.nodes],
+        )
+        torch.testing.assert_close(folded(x), torch.tensor([1, 2, 3]))
