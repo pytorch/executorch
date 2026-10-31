@@ -717,8 +717,14 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     new (compute_graph) ComputeGraph(graph_config);
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
-    Error err = compileModel(
-        processed->data(), processed->size(), compute_graph, named_data_map);
+    Error err = Error::Ok;
+    try {
+      err = compileModel(
+          processed->data(), processed->size(), compute_graph, named_data_map);
+    } catch (const vkapi::ShaderNotSupportedError& error) {
+      ET_LOG(Error, "Unsupported Vulkan shader: %s", error.what());
+      err = Error::NotSupported;
+    }
 
     // This backend does not need its processed data after compiling the
     // model.

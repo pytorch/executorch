@@ -91,10 +91,10 @@ enum class VulkanExtension : uint8_t {
 class ShaderNotSupportedError : public std::exception {
  public:
   ShaderNotSupportedError(std::string shader_name, VulkanExtension extension);
+  ShaderNotSupportedError(std::string shader_name, std::string requirement);
 
  private:
   std::string shader_name_;
-  VulkanExtension extension_;
   std::string what_;
 
  public:
