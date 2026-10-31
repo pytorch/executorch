@@ -237,7 +237,7 @@ class TestPasses(unittest.TestCase):
                 with patch(
                     "executorch.backends.qualcomm._passes.qnn_pass_manager."
                     "reserve_node_names"
-                ):
+                ) as reserve:
                     try:
                         get_qnn_pass_manager_cls()().transform_for_export_pipeline(
                             ep
@@ -247,6 +247,7 @@ class TestPasses(unittest.TestCase):
                         self.assertIn("Node redefined name", str(e.__cause__ or e))
                     else:
                         no_collision.append(type(model).__name__)
+                    reserve.assert_called_once()
         # A skip, not a failure: a torch update that removes the collision is fine.
         if no_collision:
             self.skipTest(
