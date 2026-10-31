@@ -16,6 +16,7 @@ from executorch.backends.apple.coreai.partition.partitioner import (
     do_not_delegate,
     DO_NOT_DELEGATE_TAG,
     is_coreai_supported_target,
+    is_coreai_supported_variant,
 )
 from executorch.exir import to_edge, to_edge_transform_and_lower
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -102,6 +103,125 @@ class OperatorSupportTest(unittest.TestCase):
         self.assertTrue(self.support.is_node_supported({}, node))
         do_not_delegate(node)
         self.assertFalse(self.support.is_node_supported({}, node))
+
+
+def _edge_node(module, inputs, target, dynamic_shapes=None):
+    ep = torch.export.export(module.eval(), inputs, dynamic_shapes=dynamic_shapes)
+    gm = to_edge(ep, compile_config=get_default_compile_config()).exported_program()
+    return next(n for n in gm.graph.nodes if n.target == target)
+
+
+class IsSupportedVariantTest(unittest.TestCase):
+    def test_convolution(self):
+        conv = exir_ops.edge.aten.convolution.default
+        for module, shape, supported in (
+            (nn.Conv3d(2, 3, 2), (1, 2, 4, 4, 4), True),
+            (nn.ConvTranspose2d(2, 3, 2), (1, 2, 4, 4), True),
+            (nn.ConvTranspose3d(2, 3, 2), (1, 2, 4, 4, 4), False),
+        ):
+            with self.subTest(module=type(module).__name__):
+                node = _edge_node(module, (torch.randn(shape),), conv)
+                self.assertEqual(is_coreai_supported_variant(node), supported)
+
+    def test_add_sub_requires_unit_alpha(self):
+        for target in (
+            torch.ops.aten.add.Tensor,
+            torch.ops.aten.sub.Scalar,
+            exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.sub.Tensor,
+        ):
+            for kwargs, supported in (
+                ({}, True),
+                ({"alpha": 1}, True),
+                ({"alpha": 1.0}, True),
+                ({"alpha": 2}, False),
+                ({"alpha": 0.5}, False),
+            ):
+                with self.subTest(target=target, kwargs=kwargs):
+                    node = torch.fx.Graph().call_function(target, (), kwargs)
+                    self.assertEqual(is_coreai_supported_variant(node), supported)
+
+    def test_index_put_requires_accumulate_false(self):
+        for target in (
+            torch.ops.aten.index_put.default,
+            exir_ops.edge.aten.index_put.default,
+        ):
+            for extra_args, kwargs, supported in (
+                ((), {}, True),
+                ((False,), {}, True),
+                ((True,), {}, False),
+                ((), {"accumulate": False}, True),
+                ((), {"accumulate": True}, False),
+            ):
+                with self.subTest(target=target, args=extra_args, kwargs=kwargs):
+                    graph = torch.fx.Graph()
+                    x = graph.placeholder("x")
+                    x.meta["val"] = torch.zeros(4)
+                    indices = graph.placeholder("indices")
+                    indices.meta["val"] = torch.tensor([0, 1])
+                    values = graph.placeholder("values")
+                    values.meta["val"] = torch.zeros(2)
+                    node = graph.call_function(
+                        target, (x, [indices], values) + extra_args, kwargs
+                    )
+                    self.assertEqual(is_coreai_supported_variant(node), supported)
+
+    def test_index_put_requires_static_non_batch_dims(self):
+        class Model(nn.Module):
+            def forward(self, x, rows, cols, values):
+                return torch.index_put(x, (rows, cols), values)
+
+        inputs = (
+            torch.zeros(4, 3),
+            torch.tensor([0, 2], dtype=torch.int32),
+            torch.tensor([1, 2], dtype=torch.int32),
+            torch.ones(2),
+        )
+        index_put = exir_ops.edge.aten.index_put.default
+        batch, cols = torch.export.Dim("batch"), torch.export.Dim("cols")
+        for dynamic_shapes, supported in (
+            (None, True),
+            (({0: batch}, None, None, None), True),
+            (({1: cols}, None, None, None), False),
+        ):
+            with self.subTest(dynamic_shapes=dynamic_shapes):
+                node = _edge_node(Model(), inputs, index_put, dynamic_shapes)
+                self.assertEqual(is_coreai_supported_variant(node), supported)
+
+    def test_index_put_rejects_partial_integer_indexing(self):
+        rows = torch.tensor([0, 2])
+        mask_2d = torch.zeros(4, 3, dtype=torch.bool)
+        for name, x_shape, index_vals, supported in (
+            ("1d_point", (4,), [rows], True),
+            ("2d_point", (4, 3), [rows, rows], True),
+            ("2d_rows", (4, 3), [rows], False),
+            ("2d_slice_then_index", (4, 3), [None, rows], False),
+            ("2d_full_mask", (4, 3), [mask_2d], True),
+            ("3d_mask_then_index", (4, 3, 5), [mask_2d, rows], True),
+            ("3d_partial_mask_only", (4, 3, 5), [mask_2d], True),
+        ):
+            with self.subTest(case=name):
+                graph = torch.fx.Graph()
+                x = graph.placeholder("x")
+                x.meta["val"] = torch.zeros(x_shape)
+                indices = []
+                for i, val in enumerate(index_vals):
+                    if val is None:
+                        indices.append(None)
+                        continue
+                    index = graph.placeholder(f"i{i}")
+                    index.meta["val"] = val
+                    indices.append(index)
+                values = graph.placeholder("values")
+                values.meta["val"] = torch.zeros(2)
+                node = graph.call_function(
+                    torch.ops.aten.index_put.default, (x, indices, values)
+                )
+                self.assertEqual(is_coreai_supported_variant(node), supported)
+
+    def test_unchecked_op_is_supported(self):
+        node = _make_node("call_function", torch.ops.aten.add.Tensor)
+        self.assertTrue(is_coreai_supported_variant(node))
 
 
 class OpsToNotDecomposeTest(unittest.TestCase):
@@ -224,6 +344,27 @@ class LinearE2ETest(unittest.TestCase):
         do_not_delegate(node)
         self.assertIn(DO_NOT_DELEGATE_TAG, node.meta)
         self.assertFalse(support.is_node_supported({}, node))
+
+    def test_python_scalar_nodes_not_supported(self):
+        support = _OperatorsSupportedForCoreAIBackend()
+        for val, dtype in ((1, torch.int32), (1.5, torch.float32), (True, torch.bool)):
+            with self.subTest(dtype=dtype):
+                graph = torch.fx.Graph()
+                x = graph.placeholder("x")
+                x.meta["val"] = torch.tensor(val, dtype=dtype)
+                scalar = graph.call_function(
+                    torch.ops.aten._local_scalar_dense.default, (x,)
+                )
+                scalar.meta["val"] = val
+                add = graph.call_function(torch.ops.aten.add.Tensor, (x, scalar))
+                add.meta["val"] = x.meta["val"]
+                for node in (scalar, add):
+                    self.assertTrue(is_coreai_supported_target(node.target))
+                    self.assertFalse(support.is_node_supported({}, node))
+
+                literal_add = graph.call_function(torch.ops.aten.add.Tensor, (x, val))
+                literal_add.meta["val"] = x.meta["val"]
+                self.assertTrue(support.is_node_supported({}, literal_add))
 
     def test_symint_operand_not_supported(self):
         # add.Tensor is in coreai's resolver, but an operand that is a scalar

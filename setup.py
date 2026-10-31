@@ -2950,6 +2950,8 @@ class CustomBuild(build):
                 cmake_build_args += ["--target", "etdump"]
                 if cmake_cache.is_enabled("EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT"):
                     cmake_build_args += ["--target", "coremldelegate"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREAI"):
+                    cmake_build_args += ["--target", "coreaidelegate"]
                 if cmake_cache.is_enabled(
                     "EXECUTORCH_BUILD_PTHREADPOOL"
                 ) and cmake_cache.is_enabled("EXECUTORCH_BUILD_CPUINFO"):
@@ -3250,6 +3252,16 @@ setup(
                         # extension on non-Apple platforms, where this shared library
                         # is not built. This flag is set only when it actually is.
                         "EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT",
+                    ],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/apple/coreai/",
+                    src_name=get_dynamic_lib_name("executorch_backend_coreai"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_coreai"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_COREAI",
                     ],
                 ),
                 *_windows_import_libraries(),

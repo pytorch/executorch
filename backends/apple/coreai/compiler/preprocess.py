@@ -158,7 +158,7 @@ def _get_compile_spec(
 
 
 def _nds_key(export_hash: str, relative_path: str) -> str:
-    # Identical exports share embedded assets under their export hash.
+    # Byte-identical exports share embedded assets under their content hash.
     return f"coreai/{export_hash}/{relative_path}"
 
 
@@ -193,7 +193,6 @@ def _asset_metadata(staging: Path) -> Dict[str, Any]:
 
 def _deliver(
     staging: Path,
-    export_hash: str,
     packaging: AssetPackaging,
     manifest_extra: Dict[str, Any],
 ) -> PreprocessResult:
@@ -201,14 +200,26 @@ def _deliver(
 
     ``staging`` holds the ``.aimodel`` / ``.aimodelc`` bundles, never their
     contents, so assets land under ``coreai/<export_hash>/<bundle>/`` in the
-    NamedDataStore.
+    NamedDataStore. ``manifest_extra`` paths are staging-relative bundle names.
     """
+    metadata = _asset_metadata(staging)
+    # The SDK program hash excludes metadata such as creation timestamps.
+    export_hash = hashlib.sha256(
+        json.dumps(metadata["bundle_digests"], sort_keys=True).encode("utf-8")
+    ).hexdigest()
     manifest = {
         "packaging": packaging.value,
         "export_hash": export_hash,
         **manifest_extra,
-        **_asset_metadata(staging),
+        **metadata,
     }
+    if packaging == AssetPackaging.INLINE:
+        manifest["path"] = f"{export_hash}/{manifest['path']}"
+    else:
+        manifest["archs"] = {
+            arch: f"{export_hash}/{bundle}"
+            for arch, bundle in manifest["archs"].items()
+        }
     return _embed_dir_inline(staging, export_hash, manifest)
 
 
@@ -363,12 +374,6 @@ def _save_asset(program, path: Path, min_os) -> None:
         program.save_asset(path, minimum_os=min_os)
 
 
-def _save_and_hash(program, path: Path, min_os=None) -> str:
-    """Save the ``.aimodel`` and return its content hash (``main.hash``)."""
-    _save_asset(program, path, min_os)
-    return (path / f"{MAIN_ENTRYPOINT}.hash").read_bytes().hex()
-
-
 def _run_coreai_build(aimodel_path: Path, out_dir: Path, opts: Dict[str, Any]) -> None:
     """Invoke ``xcrun coreai-build compile`` to produce per-arch .aimodelc."""
     cmd = [
@@ -422,18 +427,18 @@ def _compiled_arch_bundles(out_dir: Path) -> List[Tuple[str, Path]]:
     return bundles
 
 
-def _compile_aot(program, opts: Dict[str, Any], tmp_dir: Path) -> Tuple[str, Path]:
+def _compile_aot(program, opts: Dict[str, Any], tmp_dir: Path) -> Path:
     """Save the intermediate ``.aimodel`` and AOT-compile it to ``.aimodelc``.
 
-    Returns ``(export_hash, compiled_out_dir)``. The intermediate ``.aimodel``
+    Returns the compiled output directory. The intermediate ``.aimodel``
     keeps the default OS floor; ``min_deployment_version`` targets the compiled
     ``.aimodelc`` via ``coreai-build``, so it is not double-specified.
     """
-    export_hash = _save_and_hash(program, tmp_dir / "model.aimodel")
+    _save_asset(program, tmp_dir / "model.aimodel", None)
     out = tmp_dir / "compiled"
     out.mkdir()
     _run_coreai_build(tmp_dir / "model.aimodel", out, opts)
-    return export_hash, out
+    return out
 
 
 @final
@@ -512,15 +517,14 @@ class CoreAIBackend(BackendDetails):
         program, min_os, bindings: Dict[str, Any]
     ) -> PreprocessResult:
         with TemporaryDirectory() as tmp:
-            export_hash = _save_and_hash(program, Path(tmp) / "model.aimodel", min_os)
+            _save_asset(program, Path(tmp) / "model.aimodel", min_os)
             return _deliver(
                 Path(tmp),
-                export_hash,
                 AssetPackaging.INLINE,
                 {
                     **bindings,
                     # relative path the runtime resolves against its base
-                    "path": f"{export_hash}/model.aimodel",
+                    "path": "model.aimodel",
                     "min_deployment_version": _os_version_text(min_os),
                 },
             )
@@ -531,17 +535,16 @@ class CoreAIBackend(BackendDetails):
         program, opts: Dict[str, Any], bindings: Dict[str, Any]
     ) -> PreprocessResult:
         with TemporaryDirectory() as tmp:
-            export_hash, out = _compile_aot(program, opts, Path(tmp))
+            out = _compile_aot(program, opts, Path(tmp))
             return _deliver(
                 out,
-                export_hash,
                 AssetPackaging.AOT_COMPILED_INLINE,
                 {
                     **bindings,
                     "platform": opts["platform"],
                     "min_deployment_version": opts["min_deployment_version"],
                     "archs": {
-                        arch: f"{export_hash}/{bundle.name}"
+                        arch: bundle.name
                         for arch, bundle in _compiled_arch_bundles(out)
                     },
                 },

@@ -21,10 +21,26 @@ def get_default_passes() -> List[PassType]:
     ``NarrowToCoreAIDtypesPass`` casts int64/float64 graph inputs to 32-bit at
     the boundary (preserving the model's external I/O dtype) so index-style
     inputs can be delegated. Core AI supports only up-to-32-bit dtypes.
-    """
-    from executorch.backends.apple.coreai.passes import NarrowToCoreAIDtypesPass
 
-    return [NarrowToCoreAIDtypesPass()]
+    ``DecomposeAddSubAlphaPass`` rewrites add/sub with a non-unit ``alpha``
+    into a multiply plus a plain add/sub, since coreai-torch ignores ``alpha``.
+    It runs after narrowing so its alpha constant takes the narrowed dtype.
+
+    ``NormalizeCoreAIOpArgsPass`` spells out op arguments coreai-torch misreads
+    when left implicit (omitted reduction dims, avg_pool defaults, no-op
+    squeeze dims).
+    """
+    from executorch.backends.apple.coreai.passes import (
+        DecomposeAddSubAlphaPass,
+        NarrowToCoreAIDtypesPass,
+        NormalizeCoreAIOpArgsPass,
+    )
+
+    return [
+        NarrowToCoreAIDtypesPass(),
+        DecomposeAddSubAlphaPass(),
+        NormalizeCoreAIOpArgsPass(),
+    ]
 
 
 def get_default_compile_config() -> EdgeCompileConfig:
