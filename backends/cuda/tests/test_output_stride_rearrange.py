@@ -18,6 +18,7 @@ Usage:
     python -m pytest backends/cuda/tests/test_output_stride_rearrange.py -v
 """
 
+import contextlib
 import glob
 import os
 import subprocess
@@ -327,6 +328,29 @@ class _Double(nn.Module):
         return (x * 2).contiguous(memory_format=self.memory_format)
 
 
+class _RuntimeLog:
+    """Collects the runtime's log lines. They go to sys.stderr while the
+    caller holds the GIL, and straight to file descriptor 2 otherwise."""
+
+    def __enter__(self):
+        sys.stderr.flush()
+        self._file = tempfile.TemporaryFile(mode="w+")
+        self._saved = os.dup(2)
+        os.dup2(self._file.fileno(), 2)
+        self._redirect = contextlib.redirect_stderr(self._file)
+        self._redirect.__enter__()
+        return self
+
+    def __exit__(self, *exc):
+        self._redirect.__exit__(*exc)
+        self._file.flush()
+        os.dup2(self._saved, 2)
+        os.close(self._saved)
+        self._file.seek(0)
+        self.text = self._file.read()
+        self._file.close()
+
+
 class TestStridedOutputWithCudaGraph(unittest.TestCase):
     """A CUDA graph replay copies raw bytes, so a strided output must not reach it."""
 
@@ -451,18 +475,30 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
         torch.manual_seed(0)
         inputs = [(torch.randn(8, 4), torch.rand(8) > 0.5) for _ in range(6)]
         for module in (_MaskedRows().eval(), _MaskedAdd().eval()):
-            outputs = self._run_with_cuda_graph(module, inputs[0], inputs)
+            with _RuntimeLog() as log:
+                outputs = self._run_with_cuda_graph(module, inputs[0], inputs)
+            # Eager calls give the same values, so only the log shows the
+            # capture was tried.
+            self.assertIn("capture failed for 'forward'", log.text)
             for i, (args, out) in enumerate(zip(inputs, outputs)):
                 with self.subTest(module=type(module).__name__, call=i):
                     self.assertIsInstance(out, torch.Tensor)
                     torch.testing.assert_close(out, module(*args))
 
+    @unittest.skipIf(
+        tuple(map(int, torch.__version__.split(".")[:2])) < (2, 15),
+        "with torch 2.14 the program does not keep a buffer update across calls",
+    )
     def test_mask_retry_updates_state_once(self):
         # The capture call runs again without a graph, so its update to the
         # count must not land twice.
         torch.manual_seed(0)
         inputs = [(torch.randn(8, 4), torch.rand(8) > 0.5) for _ in range(6)]
-        outputs = self._run_with_cuda_graph(_MaskedCounter().eval(), inputs[0], inputs)
+        with _RuntimeLog() as log:
+            outputs = self._run_with_cuda_graph(
+                _MaskedCounter().eval(), inputs[0], inputs
+            )
+        self.assertIn("capture failed for 'forward'", log.text)
         for i, out in enumerate(outputs):
             with self.subTest(call=i):
                 self.assertIsInstance(out, torch.Tensor)
