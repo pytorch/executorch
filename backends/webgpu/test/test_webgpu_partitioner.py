@@ -7,7 +7,7 @@
 # pyre-strict
 
 import unittest
-from typing import List
+from typing import List, Tuple
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
@@ -19,7 +19,9 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
+from executorch.exir.backend.utils import get_non_lowered_nodes
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 from torch.export import ExportedProgram
 
 
@@ -233,6 +235,49 @@ class TestWebGPUPartitioner(unittest.TestCase):
                     self._arange_is_delegated(
                         VulkanPartitioner(), module, example_input, dynamic_shapes
                     )
+                )
+
+    def _lower_split(
+        self,
+        partitioner: Partitioner,
+        module: torch.nn.Module,
+        inputs: Tuple[torch.Tensor, ...],
+        dynamic_shapes: object = None,
+    ) -> Tuple[List[torch.fx.Node], List[object]]:
+        """Returns the non-lowered nodes and the targets inside the delegates."""
+        exported_program = torch.export.export(
+            module, inputs, dynamic_shapes=dynamic_shapes
+        )
+        edge = to_edge_transform_and_lower(exported_program, partitioner=[partitioner])
+        graph_module = edge.exported_program().graph_module
+        delegated_targets = [
+            node.target
+            for _, lowered, _ in get_lowered_submodules(graph_module)
+            for node in lowered.original_module.graph.nodes
+            if node.op == "call_function"
+        ]
+        return get_non_lowered_nodes(graph_module.graph), delegated_targets
+
+    def _targets(self, nodes: List[torch.fx.Node]) -> List[object]:
+        return [node.target for node in nodes]
+
+    def test_layer_norm_over_last_dim_only(self) -> None:
+        layer_norm = exir_ops.edge.aten.native_layer_norm.default
+        cases = {
+            "last_dim": ([16], (2, 8, 16), True),
+            "unit_leading_dim": ([1, 16], (2, 1, 16), True),
+            "multi_dim": ([4, 3, 8], (1, 4, 3, 8), False),
+        }
+        for name, (normalized_shape, shape, delegated) in cases.items():
+            with self.subTest(case=name):
+                non_lowered, in_delegate = self._lower_split(
+                    WebGPUPartitioner(),
+                    torch.nn.LayerNorm(normalized_shape),
+                    (torch.randn(*shape),),
+                )
+                self.assertEqual(layer_norm in in_delegate, delegated)
+                self.assertEqual(
+                    layer_norm in self._targets(non_lowered), not delegated
                 )
 
 
