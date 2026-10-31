@@ -224,7 +224,7 @@ class TestPasses(unittest.TestCase):
                 "mul_1",
             ),
         )
-        recorded_names = []
+        stale_names = []
         for model, inputs, decomposed_op, reused_name in cases:
             with self.subTest(model=type(model).__name__):
                 ep = torch.export.export(model.eval(), inputs)
@@ -239,13 +239,12 @@ class TestPasses(unittest.TestCase):
                 ep.graph.lint()
                 torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
                 if reused_name not in unrecorded_names:
-                    recorded_names.append(reused_name)
-        # A skip, not a failure: a torch update that records these names is
-        # fine, it only means the reservation in QnnPassManager._transform can go.
-        if recorded_names:
+                    stale_names.append(reused_name)
+        # A skip, not a failure: a torch update that records these names is fine.
+        if stale_names:
             self.skipTest(
-                f"torch.export now records {recorded_names}, so these cases no "
-                "longer test the reservation in QnnPassManager._transform"
+                f"torch.export no longer leaves {stale_names} unrecorded, so those "
+                "cases no longer test the reservation in QnnPassManager._transform"
             )
 
     def test_build_op_wrappers_returns_context_binary(self):
