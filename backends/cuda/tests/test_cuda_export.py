@@ -791,6 +791,25 @@ class TestCudaExport(unittest.TestCase):
             "SDPA kernel export with triton_kernel_mode=OFF failed",
         )
 
+    def test_missing_scatter_kernel_fails_at_export(self):
+        """The scatter fallback writes its kernel call directly, and the check
+        for missing kernels still sees it."""
+
+        class Int64ScatterAdd(torch.nn.Module):
+            def forward(self, counts: torch.Tensor, idx: torch.Tensor):
+                return counts.scatter_add(0, idx, torch.ones_like(idx))
+
+        # The backend ships this kernel, so take it off the list.
+        kernel = "aoti_torch_cuda_scatter_reduce_two_out"
+        kernels = CudaBackend.get_supported_fallback_kernels()
+        del kernels[kernel]
+        inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
+        with mock.patch.object(
+            CudaBackend, "get_supported_fallback_kernels", return_value=kernels
+        ), self.assertRaises(RuntimeError) as context:
+            self._export_to_cuda_with_lower(Int64ScatterAdd(), inputs)
+        self.assertIn(kernel, str(context.exception))
+
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """
         Verify that, for a CUDA-delegated graph, every memory-planned tensor's
