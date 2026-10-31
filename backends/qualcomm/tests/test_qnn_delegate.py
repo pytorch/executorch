@@ -834,6 +834,15 @@ class TestQNNFloatingPointOperator(TestQNN):
                     ),
                 ],
             },
+            {
+                QCOM_MODULE: [DivMode(rounding_mode="floor")],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.randint(-30000, 30000, (2, 3)),
+                        torch.tensor([80, -7, 3, 100, 9, -80]).reshape(2, 3),
+                    ),
+                ],
+            },
         ]
 
         index = 0
@@ -843,6 +852,19 @@ class TestQNNFloatingPointOperator(TestQNN):
                     with self.subTest(i=index):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
+
+        # HTP's Mod stops at rank 4, so rank-5 integer division stays on CPU.
+        # int32, since rank-5 int64 inputs fail on their own I64toI32 casts.
+        rank5 = (2, 2, 3, 4, 5)
+        with self.subTest(i=index):
+            self.lower_module_and_test_output(
+                DivMode(rounding_mode="floor"),  # noqa: F405
+                (
+                    torch.randint(-30000, 30000, rank5, dtype=torch.int32),
+                    torch.full(rank5, -7, dtype=torch.int32),
+                ),
+                expected_partitions=0,
+            )
 
     def test_qnn_backend_div_scalar_mode(self):
         test_comb = [
@@ -1238,8 +1260,9 @@ class TestQNNFloatingPointOperator(TestQNN):
                         torch.randint(-100, 100, (10, 10)).float(),
                         torch.full((10, 10), 2.5),
                     ),
-                    # TODO: this test case exists rounding issue
-                    # (torch.randint(-1000, 1000, (10, 10)), torch.full((10, 10), 100)),
+                    (torch.randint(-1000, 1000, (10, 10)), torch.full((10, 10), 100)),
+                    (torch.randint(0, 24000, (300,)), torch.full((300,), 80)),
+                    (torch.randint(-30000, 30000, (10, 10)), torch.full((10, 10), -7)),
                     (torch.tensor([10]), torch.arange(1, 5)),  # Failed
                     (torch.arange(-10, 10), torch.tensor([2])),
                     (torch.randint(-100, 100, (20,)), torch.full((20,), 2)),
@@ -1257,6 +1280,13 @@ class TestQNNFloatingPointOperator(TestQNN):
                 QCOM_MODULE: [FloorDivConstantFloat()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
+            {
+                QCOM_MODULE: [
+                    FloorDivConstantInt(),  # noqa: F405
+                    FloorDivConstantInt(constant=-4),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randint(-24000, 24000, (300,)),)],
+            },
         ]
 
         index = 0
@@ -1266,6 +1296,19 @@ class TestQNNFloatingPointOperator(TestQNN):
                     with self.subTest(i=index):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
+
+        # HTP's Mod stops at rank 4, so rank-5 integer division stays on CPU.
+        # int32, since rank-5 int64 inputs fail on their own I64toI32 casts.
+        rank5 = (2, 2, 3, 4, 5)
+        with self.subTest(i=index):
+            self.lower_module_and_test_output(
+                FloorDiv(),  # noqa: F405
+                (
+                    torch.randint(-30000, 30000, rank5, dtype=torch.int32),
+                    torch.full(rank5, -7, dtype=torch.int32),
+                ),
+                expected_partitions=0,
+            )
 
     def test_qnn_backend_fold(self):
         sample_input = (torch.randn(3, 512, 256),)
@@ -2315,7 +2358,11 @@ class TestQNNFloatingPointOperator(TestQNN):
                     (
                         torch.tensor([7.0, 5.0, 4.0, -3.0, 8.0, 1.0]).reshape(2, 3),
                         torch.tensor([2.0, 3.0, 1.5, 2.0, 3.0, 4.0]).reshape(2, 3),
-                    )
+                    ),
+                    (
+                        torch.randint(-30000, 30000, (2, 3)),
+                        torch.tensor([80, -7, 3, 100, 9, -80]).reshape(2, 3),
+                    ),
                 ],
             },
             {
@@ -2336,6 +2383,19 @@ class TestQNNFloatingPointOperator(TestQNN):
                     with self.subTest(i=index):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
+
+        # HTP's Mod stops at rank 4, so rank-5 integer division stays on CPU.
+        # int32, since rank-5 int64 inputs fail on their own I64toI32 casts.
+        rank5 = (2, 2, 3, 4, 5)
+        with self.subTest(i=index):
+            self.lower_module_and_test_output(
+                RemainderTensor(),  # noqa: F405
+                (
+                    torch.randint(-30000, 30000, rank5, dtype=torch.int32),
+                    torch.full(rank5, -7, dtype=torch.int32),
+                ),
+                expected_partitions=0,
+            )
 
     def test_qnn_backend_reshape(self):
         module = Reshape()  # noqa: F405
@@ -4442,6 +4502,8 @@ class TestQNNQuantizedOperator(TestQNN):
                         torch.full((10, 10), 2.5),
                     ),
                     (torch.randint(-1000, 1000, (10, 10)), torch.full((10, 10), 100)),
+                    (torch.randint(0, 24000, (300,)), torch.full((300,), 80)),
+                    (torch.randint(-30000, 30000, (10, 10)), torch.full((10, 10), -7)),
                     (torch.tensor([10]), torch.arange(1, 5)),
                     (torch.arange(-10, 10), torch.tensor([2])),
                     (torch.randint(-100, 100, (20,)), torch.full((20,), 2)),
@@ -4458,6 +4520,13 @@ class TestQNNQuantizedOperator(TestQNN):
             {
                 QCOM_MODULE: [FloorDivConstantFloat()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
+            },
+            {
+                QCOM_MODULE: [
+                    FloorDivConstantInt(),  # noqa: F405
+                    FloorDivConstantInt(constant=-4),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randint(-24000, 24000, (300,)),)],
             },
         ]
 

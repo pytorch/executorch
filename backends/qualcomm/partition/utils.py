@@ -221,6 +221,13 @@ def filter_fn(node: torch.fx.Node) -> bool:
         2 <= node.meta["val"].dim() <= 5
     ):
         return False
+    # HTP FloorDiv and Mod stop at rank 4; a higher-rank floor_divide runs on CPU,
+    # which needs it decomposed.
+    if (
+        node.target == torch.ops.aten.floor_divide.default
+        and node.meta["val"].dim() > 4
+    ):
+        return False
     # QNN Stft only produces the real-valued spectrum and has no normalization.
     # ConvertComplexStft rewrites the supported complex cases into this form.
     # Without a window, QNN's rectangular default spans n_fft rather than
