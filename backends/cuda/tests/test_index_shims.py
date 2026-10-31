@@ -89,7 +89,8 @@ class TestIndexShims(unittest.TestCase):
                 return out, picked, rows, counts, wide
 
         x = torch.randn(4, 5, 6)
-        column = torch.tensor([2])
+        # Negative and int32: the shims wrap the index and read it as int32.
+        column = torch.tensor([-4], dtype=torch.int32)
         idx = torch.tensor([0, 3, 3, 1, 3])
         # Nonzero counts check that repeated writes add to the old values.
         counts = torch.arange(8) * 5
