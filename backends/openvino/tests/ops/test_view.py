@@ -68,6 +68,15 @@ class TestViewOperator(BaseOpenvinoOpTest):
                     more_inputs=((x, torch.tensor(4)),),
                 )
 
+    def test_dynamic_size_output_that_openvino_makes_static(self):
+        class Select(torch.nn.Module):
+            def forward(self, x):
+                return x[torch.ones(4, dtype=torch.bool)]
+
+        # ExecuTorch plans the output with a dynamic size, but OpenVINO folds
+        # the mask and compiles a fixed output shape.
+        self.execute_layer_test(Select(), (torch.randn(4, 8),))
+
     def test_one_delegate_called_with_different_output_sizes(self):
         class Double(torch.nn.Module):
             def forward(self, x):

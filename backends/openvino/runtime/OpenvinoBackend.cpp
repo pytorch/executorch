@@ -547,11 +547,11 @@ exr::Error OpenvinoBackend::execute(
       // can change goes to a buffer OpenVINO owns and grows, and is copied
       // out after inference.
       if (!owned) {
-        auto result = create_ov_tensor(output_tensor, /*own_memory=*/true);
-        if (!result.ok()) {
-          return result.error();
+        exr::Error error = create_owned_output(
+            execution_handle->infer_request, i, output_tensor, &owned);
+        if (error != exr::Error::Ok) {
+          return error;
         }
-        owned = result.get();
       }
       tensor = owned;
     }
@@ -662,9 +662,43 @@ exr::Error OpenvinoBackend::copy_output(
   return exr::Error::Ok;
 }
 
+exr::Error OpenvinoBackend::create_owned_output(
+    ov_infer_request_t* infer_request,
+    size_t index,
+    const exa::Tensor& output,
+    ov_tensor_t** owned) const {
+  ov_element_type_e ov_type = convert_to_openvino_type(output.scalar_type());
+  if (ov_type == OV_ELEMENT_UNDEFINED) {
+    return exr::Error::NotSupported;
+  }
+  // The request's own output has the compiled shape, empty along each dynamic
+  // dimension. OpenVINO refuses any other shape for a dimension it fixed,
+  // even when ExecuTorch planned that output with a dynamic size.
+  ov_tensor_t* current = nullptr;
+  ov_shape_t shape = {};
+  ov_status_e status = ov_.infer_request_get_output_tensor_by_index(
+      infer_request, index, &current);
+  if (status == OV_STATUS_OK) {
+    status = ov_.tensor_get_shape(current, &shape);
+    ov_.tensor_free(current);
+  }
+  if (status == OV_STATUS_OK) {
+    status = ov_.tensor_create(ov_type, shape, owned);
+    ov_.shape_free(&shape);
+  }
+  if (status != OV_STATUS_OK || !*owned) {
+    ET_LOG(
+        Error,
+        "OpenVINO: failed to create a buffer for output %zu (status=%d)",
+        index,
+        status);
+    return exr::Error::Internal;
+  }
+  return exr::Error::Ok;
+}
+
 exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
-    const exa::Tensor& tensor,
-    bool own_memory) const {
+    const exa::Tensor& tensor) const {
   ov_element_type_e ov_type = convert_to_openvino_type(tensor.scalar_type());
   if (ov_type == OV_ELEMENT_UNDEFINED) {
     return exr::Error::NotSupported;
@@ -685,7 +719,7 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
     dims = dims_heap.get();
   }
   for (int64_t d = 0; d < rank; d++) {
-    dims[d] = own_memory ? 0 : sizes[d];
+    dims[d] = sizes[d];
   }
   // shape_create refuses rank 0, so a 0-d tensor keeps the zero-initialized
   // shape, which describes a scalar.
@@ -705,10 +739,8 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
   }
 
   ov_tensor_t* ov_tensor = nullptr;
-  status = own_memory
-      ? ov_.tensor_create(ov_type, shape, &ov_tensor)
-      : ov_.tensor_create_from_host_ptr(
-            ov_type, shape, tensor.mutable_data_ptr(), &ov_tensor);
+  status = ov_.tensor_create_from_host_ptr(
+      ov_type, shape, tensor.mutable_data_ptr(), &ov_tensor);
   ov_.shape_free(&shape);
   if (status != OV_STATUS_OK || !ov_tensor) {
     ET_LOG(Error, "OpenVINO: failed to create a tensor (status=%d)", status);
