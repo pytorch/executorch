@@ -10,7 +10,11 @@ on:
   pull_request:
     paths:
       - .github/workflows/coreai.yml
+      - .clang-format
+      - CMakeLists.txt
       - backends/apple/coreai/**
+      - runtime/**
+      - tools/cmake/**
   workflow_dispatch:
 
 concurrency:
@@ -59,10 +63,36 @@ jobs:
 
         echo "::group::Install ExecuTorch and Core AI requirements"
         ${CONDA_RUN} python install_executorch.py --editable > /dev/null
-        ${CONDA_RUN} pip install -r backends/apple/coreai/requirements.txt
+        ${CONDA_RUN} pip install -r backends/apple/coreai/requirements.txt "cmake>=3.31,<4" ninja clang-format==18.1.3
         ${CONDA_RUN} pip list
+        echo "::endgroup::"
+
+        echo "::group::Check Core AI formatting"
+        ${CONDA_RUN} python - <<'PY'
+        from pathlib import Path
+        import subprocess
+        import yaml
+
+        root = yaml.safe_load(Path(".clang-format").read_text())
+        coreai = yaml.safe_load(Path("backends/apple/coreai/.clang-format").read_text())
+        root.pop("Language")
+        assert coreai == root, "Sync the Core AI clang-format configuration with the root style (without Language)"
+        sources = sorted(Path("backends/apple/coreai").rglob("*.mm"))
+        subprocess.run(["clang-format", "--dry-run", "--Werror", *map(str, sources)], check=True)
+        PY
         echo "::endgroup::"
 
         echo "::group::Run Core AI export tests"
         ${CONDA_RUN} python -m pytest backends/apple/coreai
+        echo "::endgroup::"
+
+        echo "::group::Build and run Core AI runtime tests"
+        ${CONDA_RUN} cmake -S . -B cmake-out-coreai -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=27.0 \
+          -DEXECUTORCH_BUILD_COREAI=ON \
+          -DEXECUTORCH_BUILD_TESTS=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+        ${CONDA_RUN} cmake --build cmake-out-coreai --target backends/apple/coreai/all -j$(sysctl -n hw.ncpu)
+        ${CONDA_RUN} ctest --test-dir cmake-out-coreai/backends/apple/coreai --output-on-failure --no-tests=error
         echo "::endgroup::"

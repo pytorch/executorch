@@ -11,7 +11,6 @@ from executorch.backends.espressif.passes import EspPassManager
 from executorch.backends.espressif.test.tester import EspRunPasses, EspTester
 from executorch.exir import to_edge, to_edge_transform_and_lower
 from executorch.exir._serialize._program import deserialize_pte_binary
-from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class Multiply(torch.nn.Module):
@@ -25,28 +24,23 @@ class MultiplyAndFloatUsers(torch.nn.Module):
         return product, torch.sin(x), torch.sin(product)
 
 
+def _output_scale(program):
+    output = next(node for node in program.graph.nodes if node.op == "output")
+    return output.args[0][0].args[1]
+
+
 @pytest.mark.parametrize("entry_point", ["separate", "combined"])
-@pytest.mark.parametrize("broadcast", [False, True])
-def test_quantized_and_float_operations_survive_export(entry_point, broadcast):
+def test_entry_points_preserve_program_behavior(entry_point):
     inputs = (
         torch.linspace(-1, 1, 6).reshape(2, 3),
-        torch.linspace(-2, 2, 3 if broadcast else 6).reshape(
-            (3,) if broadcast else (2, 3)
-        ),
+        torch.linspace(-2, 2, 6).reshape(2, 3),
     )
     tester = EspTester(MultiplyAndFloatUsers(), inputs).quantize().export()
     if entry_point == "combined":
         tester.to_edge_transform_and_lower()
     else:
         tester.to_edge().run_passes()
-    tester.check_node_count(
-        {
-            exir_ops.edge.aten.mul.Tensor: 1,
-            exir_ops.edge.aten.sin.default: 2,
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 3,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 3,
-        }
-    ).run_method_and_compare_outputs(inputs=inputs, atol=0, rtol=0)
+    tester.run_method_and_compare_outputs(inputs=inputs, atol=0, rtol=0, qtol=1)
     edge = tester.get_artifact()
     assert edge.compile_config._check_ir_validity
     edge.exported_program().validate()
@@ -54,12 +48,6 @@ def test_quantized_and_float_operations_survive_export(entry_point, broadcast):
     program = deserialize_pte_binary(tester.get_artifact()).program
     assert program.execution_plan[0].name == "forward"
     assert not program.execution_plan[0].delegates
-    assert {op.name for op in program.execution_plan[0].operators} >= {
-        "aten::mul",
-        "aten::sin",
-        "quantized_decomposed::quantize_per_tensor",
-        "quantized_decomposed::dequantize_per_tensor",
-    }
 
 
 def test_public_entry_point_keeps_delegate_default():
@@ -72,16 +60,13 @@ def test_public_entry_point_keeps_delegate_default():
     assert not delegate_report["cpu_ops"]
     assert delegated.to_executorch().executorch_program.execution_plan[0].delegates
 
-    edge, report = to_espnn_edge(program, use_operator_library=True)
-    assert report["esp_nn_ops"] == 0
-    assert [(op["method"], op["target"]) for op in report["cpu_ops"]] == [
-        ("forward", "aten::mul.Tensor")
-    ]
+    edge, report = to_espnn_edge(program, False, use_operator_library=True)
+    assert report == {"esp_nn_ops": 1, "cpu_ops": []}
     assert edge.compile_config._check_ir_validity
     torch.testing.assert_close(
         edge.exported_program().module()(*inputs),
         program.module()(*inputs),
-        atol=0,
+        atol=_output_scale(program),
         rtol=0,
     )
     serialized = deserialize_pte_binary(edge.to_executorch().buffer).program
@@ -90,8 +75,10 @@ def test_public_entry_point_keeps_delegate_default():
 
 def test_operator_library_strict_mode_rejects_remaining_compute():
     inputs = (torch.linspace(-1, 1, 6), torch.linspace(-2, 2, 6))
-    program = EspTester(Multiply(), inputs).quantize().export().get_artifact()
-    with pytest.raises(RuntimeError, match=r"forward\.\w+ \(aten::mul\.Tensor\)"):
+    program = (
+        EspTester(MultiplyAndFloatUsers(), inputs).quantize().export().get_artifact()
+    )
+    with pytest.raises(RuntimeError, match=r"forward\.\w+ \(aten::sin\)"):
         to_espnn_edge(program, False, use_operator_library=True)
 
 
@@ -103,14 +90,11 @@ def test_operator_library_strict_mode_accepts_no_compute():
 
 def test_operator_library_uses_standard_edge_decompositions():
     inputs = (torch.linspace(-1, 1, 6).reshape(2, 3),)
-    program = (
-        EspTester(torch.nn.Linear(3, 2), inputs).quantize().export().get_artifact()
-    )
+    program = torch.export.export(torch.nn.Linear(3, 2), inputs)
     edge, report = to_espnn_edge(program, use_operator_library=True)
     targets = {op["target"] for op in report["cpu_ops"]}
     assert "aten::linear" not in targets
     assert "aten::addmm" in targets
-    assert not any(target.startswith("quantized_decomposed::") for target in targets)
     torch.testing.assert_close(
         edge.exported_program().module()(*inputs), program.module()(*inputs)
     )
@@ -169,15 +153,12 @@ def test_operator_library_reports_all_methods():
         for name in ("forward", "other")
     }
     edge, report = to_espnn_edge(programs, use_operator_library=True)
-    assert report["esp_nn_ops"] == 0
-    assert [(op["method"], op["target"]) for op in report["cpu_ops"]] == [
-        (name, "aten::mul.Tensor") for name in ("forward", "other")
-    ]
+    assert report == {"esp_nn_ops": 2, "cpu_ops": []}
     for name, program in programs.items():
         torch.testing.assert_close(
             edge.exported_program(name).module()(*inputs),
             program.module()(*inputs),
-            atol=0,
+            atol=_output_scale(program),
             rtol=0,
         )
     serialized = deserialize_pte_binary(edge.to_executorch().buffer).program

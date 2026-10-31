@@ -234,6 +234,7 @@ def define_common_targets(is_fbcode = False):
             fbobjc_frameworks = [
                 "Accelerate",
                 "CoreML",
+                "CoreVideo",
                 "Foundation",
             ],
             include_directories = [
@@ -307,6 +308,39 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/backend:backend_options",
                 "//executorch/runtime/backend:backend_options_map",
                 "//executorch/runtime/core:core",
+            ],
+        )
+
+        runtime.cxx_test(
+            name = "pixel_buffer_binding_test",
+            srcs = [
+                "runtime/test/pixel_buffer_binding_test.mm",
+            ],
+            headers = glob([
+                "runtime/delegate/*.h",
+                "runtime/inmemoryfs/*.hpp",
+                "runtime/kvstore/*.hpp",
+            ]),
+            compiler_flags = [
+                "-fobjc-arc",
+            ],
+            fbobjc_frameworks = [
+                "CoreML.framework",
+                "CoreVideo.framework",
+                "Foundation.framework",
+            ],
+            include_directories = [
+                "runtime/delegate",
+                "runtime/inmemoryfs",
+                "runtime/kvstore",
+            ],
+            platforms = [APPLE],
+            deps = [
+                ":coreml",
+                ":proto",
+                "//executorch/runtime/backend:backend_options",
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/platform:platform",
             ],
         )
 
