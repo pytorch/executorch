@@ -844,6 +844,9 @@ TEST_F(OpEmbeddingBagOutTest, PartialFinalOffsetMaxWithEmptyBag) {
 }
 
 TEST_F(OpEmbeddingBagOutTest, SumStaticOffset2BagAllDtypes) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen resizes offset2bag to [0] for sum on its fast path");
 #define TEST_ENTRY(CTYPE, DTYPE) \
   test_sum_static_offset2bag<ScalarType::DTYPE>();
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
