@@ -294,7 +294,8 @@ class _MaskedAdd(nn.Module):
 
 
 class _MaskedCounter(nn.Module):
-    """Counts its calls in a device buffer, and reads a mask's count."""
+    """Counts its calls in a device buffer, and reads a mask's count. The
+    buffer has one element, the case torch 2.14 can fold into a constant."""
 
     def __init__(self):
         super().__init__()
