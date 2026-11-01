@@ -358,20 +358,23 @@ class TestConv2d(unittest.TestCase):
 
     def test_qs8_quantizer_skips_conv3d(self) -> None:
         # XNNPACK has no conv3d support, so its quantizer leaves 3d convs in float,
-        # with or without a fused relu. The same model in 2d is still quantized.
-        for dims, conv, conv_transpose in (
-            (2, torch.nn.Conv2d, torch.nn.ConvTranspose2d),
-            (3, torch.nn.Conv3d, torch.nn.ConvTranspose3d),
+        # with or without a fused relu. Each conv of the same model in 2d gets its
+        # weight quantized.
+        quant_config = get_symmetric_quantization_config(is_per_channel=True)
+        weight_dq = "torch.ops.quantized_decomposed.dequantize_per_channel.default"
+        for dims, conv, conv_transpose, quantized_convs in (
+            (2, torch.nn.Conv2d, torch.nn.ConvTranspose2d, 3),
+            (3, torch.nn.Conv3d, torch.nn.ConvTranspose3d, 0),
         ):
             m = torch.nn.Sequential(
                 conv(2, 2, 2), torch.nn.ReLU(), conv(2, 2, 2), conv_transpose(2, 2, 2)
             )
-            tester = Tester(m.eval(), (torch.randn([1, 2] + [4] * dims),))
-            tester.quantize().export()
-            if dims == 2:
-                tester.check(["torch.ops.quantized_decomposed"])
-            else:
-                tester.check_not(["torch.ops.quantized_decomposed"])
+            (
+                Tester(m.eval(), (torch.randn([1, 2] + [4] * dims),))
+                .quantize(Quantize(quantization_config=quant_config))
+                .export()
+                .check_count({weight_dq: quantized_convs})
+            )
 
     def test_fp32_conv2d_permute(self) -> None:
         for transpose in (True, False):
