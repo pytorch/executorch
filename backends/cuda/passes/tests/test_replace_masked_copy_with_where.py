@@ -154,6 +154,21 @@ class TestReplaceMaskedCopyWithWherePass(unittest.TestCase):
         ):
             torch.testing.assert_close(got, expected, rtol=0, atol=0)
 
+    def test_random_masks_are_kept(self):
+        """Two draws of a random mask are different masks."""
+
+        class Copy(torch.nn.Module):
+            def forward(self, x):
+                out = torch.zeros_like(x)
+                out[torch.rand(4) > 0.5] = x[torch.rand(4) > 0.5]
+                return out
+
+        program = to_edge(export(Copy(), (torch.randn(4, 3),))).exported_program()
+        ReplaceMaskedCopyWithWherePass()(program.graph_module)
+        self.assertIn(
+            exir_ops.edge.aten.index_put.default, _targets(program.graph_module)
+        )
+
     def test_check_on_another_size_keeps_the_index(self):
         """A check that reads the count but tests another size does not hold
         for every mask."""
