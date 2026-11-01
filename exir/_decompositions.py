@@ -68,7 +68,10 @@ def _antialias_taps(
     # and end is positive), and more backends support it.
     first = torch.clamp(torch.floor(center - support * widen + 0.5), min=0)
     end = torch.clamp(torch.floor(center + support * widen + 0.5), max=in_size)
-    position = first[:, None] + torch.arange(2 * reach + 1, dtype=dtype, device=device)
+    # A window never holds more than in_size pixels, which also bounds the
+    # memory planned for dynamic sizes.
+    tap_count = torch.sym_min(2 * reach + 1, in_size)
+    position = first[:, None] + torch.arange(tap_count, dtype=dtype, device=device)
     inside = position < end[:, None]
     weights = _cubic_filter((position - center[:, None] + 0.5) * (1.0 / widen))
     weights = torch.where(inside, weights, 0)
