@@ -29,6 +29,7 @@ from executorch.backends.cuda.passes.replace_masked_copy_with_where import (
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
+from torch.testing._internal.common_utils import DeterministicGuard
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "requires CUDA")
@@ -156,17 +157,12 @@ class TestIndexShims(unittest.TestCase):
                 return summed, written
 
         idx = torch.tensor([0, 3, 3, 1, 3])
-        deterministic = torch.are_deterministic_algorithms_enabled()
-        warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
-        torch.use_deterministic_algorithms(True)
-        try:
+        with DeterministicGuard(True):
             for dtype in (torch.float16, torch.bfloat16):
                 with self.subTest(dtype=dtype):
                     x = torch.arange(8, dtype=dtype)
                     values = torch.arange(1, 6, dtype=dtype)
                     self._run(Put(), [(x, idx, values)])
-        finally:
-            torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
 
     def test_scatter_reduce(self):
         """Inductor adds atomically but has no atomic max, min or product, so
@@ -210,21 +206,41 @@ class TestIndexShims(unittest.TestCase):
         x = torch.full((5, 6), -1)
         # Repeated writes differ from the write before them, also as bool.
         src = torch.arange(20).reshape(4, 5)
-        deterministic = torch.are_deterministic_algorithms_enabled()
-        warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
-        torch.use_deterministic_algorithms(True)
-        try:
+        with DeterministicGuard(True):
             for dtype, index_dtype in (
                 (torch.bfloat16, torch.int64),
                 (torch.int64, torch.int32),
                 (torch.bool, torch.int64),
+                (torch.float32, torch.int64),
+                (torch.float16, torch.int64),
             ):
                 with self.subTest(dtype=dtype, index_dtype=index_dtype):
                     values = src % 2 if dtype == torch.bool else src
                     inputs = (x.to(dtype), index.to(index_dtype), values.to(dtype))
                     self._run(Scatter(), [inputs])
-        finally:
-            torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
+
+    def test_scatter_strides(self):
+        """Scatters along the middle dim of a 3-D tensor, given as a negative
+        dim, from a strided source and from transposed operands, so the shims
+        walk strides that differ between their tensors."""
+
+        class Strided(torch.nn.Module):
+            def forward(self, x, index, src):
+                picked = src[:, ::2]
+                return (
+                    x.scatter(-2, index, picked),
+                    x.scatter_reduce(-2, index, picked, "amax"),
+                    x.transpose(0, 2).scatter(
+                        1, index.transpose(0, 2), picked.transpose(0, 2)
+                    ),
+                )
+
+        torch.manual_seed(0)
+        x = torch.randn(4, 6, 5)
+        index = torch.randint(0, 6, (3, 4, 5))
+        src = torch.randn(3, 8, 5)
+        with DeterministicGuard(True):
+            self._run(Strided(), [(x, index, src)])
 
     def test_scatter_mean_counts_in_its_dtype(self):
         """ATen counts a mean's terms in the tensor's own dtype, so 128 int8
@@ -241,6 +257,43 @@ class TestIndexShims(unittest.TestCase):
         # With self, the second element counts 256, which wraps to 0.
         index = torch.tensor([0] * 128 + [1] * 255)
         self._run(Mean(), [(x, index, torch.ones(383, dtype=torch.int8))])
+
+    def test_scatter_reduce_edge_cases(self):
+        """A bool sum, products that overflow int32 and half, and an empty
+        index."""
+
+        class EdgeCases(torch.nn.Module):
+            def forward(self, flags, ints, index, empty):
+                halves = ints.half()
+                return (
+                    flags.scatter_reduce(0, index, flags, "sum"),
+                    # As in ATen, int32 wraps and half overflows to infinity.
+                    ints.scatter_reduce(0, index, ints, "prod"),
+                    halves.scatter_reduce(0, index, halves, "prod"),
+                    halves.scatter_reduce(0, empty, halves[:0], "mean"),
+                )
+
+        flags = torch.tensor([True, False, False, True, False])
+        ints = torch.tensor([300, -7, 46341, 300, 5], dtype=torch.int32)
+        index = torch.tensor([0, 2, 2, 0, 1])
+        empty = torch.zeros(0, dtype=torch.long)
+        self._run(EdgeCases(), [(flags, ints, index, empty)])
+
+    def test_scatter_reduce_sum_adds_in_float(self):
+        """Deterministic mode sends half and bfloat16 sums to the shim, which
+        adds in float, as ATen does there, so many small terms add up."""
+
+        class Sum(torch.nn.Module):
+            def forward(self, index, src):
+                return tuple(
+                    torch.zeros(3, dtype=dtype, device=src.device).scatter_reduce(
+                        0, index, src.to(dtype), "sum"
+                    )
+                    for dtype in (torch.float16, torch.bfloat16)
+                )
+
+        with DeterministicGuard(True):
+            self._run(Sum(), [(torch.arange(1000) % 3, torch.full((1000,), 0.1))])
 
     def test_float64_and_float16_values(self):
         class Values(torch.nn.Module):

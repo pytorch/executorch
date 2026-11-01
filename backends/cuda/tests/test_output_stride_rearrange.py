@@ -298,6 +298,11 @@ class _ScaledByCount(nn.Module):
         return x * mask.sum().item()
 
 
+class _ScatterMax(nn.Module):
+    def forward(self, x, index, src):
+        return x.scatter_reduce(1, index, src, "amax")
+
+
 class _MaskedCounter(nn.Module):
     """Counts its calls in a device buffer, and reads a mask's count. The
     buffer has one element, the case torch 2.14 can fold into a constant."""
@@ -495,6 +500,21 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                 with self.subTest(module=type(module).__name__, call=i):
                     self.assertIsInstance(out, torch.Tensor)
                     torch.testing.assert_close(out, module(*args))
+
+    def test_scatter_reduce_replays_in_a_graph(self):
+        # The shim sorts its writes in scratch memory, which the capture has to
+        # record as well.
+        torch.manual_seed(0)
+        index = torch.tensor([[0, 2, 2, 5], [1, 1, 1, 0], [5, 3, 0, 5]])
+        inputs = [(torch.randn(5, 6), index, torch.randn(4, 5)) for _ in range(6)]
+        module = _ScatterMax().eval()
+        with _RuntimeLog() as log:
+            outputs = self._run_with_cuda_graph(module, inputs[0], inputs)
+        self.assertIn("captured and instantiated for 'forward'", log.text)
+        for i, (args, out) in enumerate(zip(inputs, outputs)):
+            with self.subTest(call=i):
+                self.assertIsInstance(out, torch.Tensor)
+                torch.testing.assert_close(out, module(*args))
 
     def test_mask_retry_updates_state_once(self):
         # The capture call runs again without a graph, so its update to the
