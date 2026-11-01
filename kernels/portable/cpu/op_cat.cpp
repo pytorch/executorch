@@ -107,7 +107,7 @@ Tensor& cat_out(
             const CTYPE_IN* const in_ptr =
                 tensors[j].const_data_ptr<CTYPE_IN>() + i * inner;
 
-            if (sizeof(CTYPE_IN) == sizeof(CTYPE_OUT)) {
+            if constexpr (std::is_same_v<CTYPE_IN, CTYPE_OUT>) {
               memcpy(out_ptr, in_ptr, inner * sizeof(CTYPE_IN));
             } else {
               for (size_t k = 0; k < inner; ++k) {
