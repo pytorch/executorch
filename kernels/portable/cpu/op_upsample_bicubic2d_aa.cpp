@@ -48,6 +48,16 @@ struct Weights {
   T* values;
 };
 
+// The same in fixed point with `precision` fraction bits, as ATen's uint8 path
+// uses them.
+struct FixedPointWeights {
+  int64_t max_size;
+  int64_t* first;
+  int64_t* size;
+  int16_t* values;
+  int precision;
+};
+
 // Returns null when the memory is not available, including when its size does
 // not fit in size_t.
 template <typename U>
@@ -127,6 +137,53 @@ Error compute_weights(
   return Error::Ok;
 }
 
+// Computes the weights in double and converts them as ATen's uint8 path does,
+// with the most fraction bits, up to 22, that keep twice the largest weight
+// below 2^15.
+Error compute_weights(
+    KernelRuntimeContext& ctx,
+    int64_t in_size,
+    int64_t out_size,
+    bool align_corners,
+    const optional<double> scale,
+    FixedPointWeights& weights) {
+  Weights<double> exact{};
+  ET_CHECK_OK_OR_RETURN_ERROR(compute_weights<double>(
+      ctx, in_size, out_size, align_corners, scale, exact));
+  double max_weight = 0;
+  for (const auto o : c10::irange(out_size)) {
+    for (const auto j : c10::irange(exact.size[o])) {
+      max_weight = std::max(max_weight, exact.values[o * exact.max_size + j]);
+    }
+  }
+  int precision = 0;
+  while (precision < 22 &&
+         static_cast<int>(0.5 + max_weight * (1 << (precision + 1))) <
+             (1 << 15)) {
+    ++precision;
+  }
+  weights.values = allocate_temp<int16_t>(ctx, out_size * exact.max_size);
+  ET_CHECK_OR_RETURN_ERROR(
+      weights.values != nullptr,
+      MemoryAllocationFailed,
+      "_upsample_bicubic2d_aa could not get temporary memory for its "
+      "weights");
+  for (const auto o : c10::irange(out_size)) {
+    for (const auto j : c10::irange(exact.size[o])) {
+      const int64_t i = o * exact.max_size + j;
+      const double value = exact.values[i] * (1 << precision);
+      weights.values[i] = static_cast<int16_t>(
+          value < 0 ? static_cast<int>(-0.5 + value)
+                    : static_cast<int>(0.5 + value));
+    }
+  }
+  weights.max_size = exact.max_size;
+  weights.first = exact.first;
+  weights.size = exact.size;
+  weights.precision = precision;
+  return Error::Ok;
+}
+
 // The value of output `o`, from the inputs it reads. They start at `in` and
 // are `step` elements apart.
 template <typename T, typename CTYPE_IN>
@@ -143,9 +200,25 @@ T weighted_sum(
   return sum;
 }
 
+// ATen's uint8 sum: starts at one half so that dropping the fraction bits
+// rounds, and clamps the result.
+uint8_t weighted_sum(
+    const uint8_t* in,
+    int64_t step,
+    const FixedPointWeights& weights,
+    int64_t o) {
+  const int16_t* values = weights.values + o * weights.max_size;
+  int sum = 1 << (weights.precision - 1);
+  for (const auto j : c10::irange(weights.size[o])) {
+    sum += in[j * step] * values[j];
+  }
+  return static_cast<uint8_t>(std::clamp(sum >> weights.precision, 0, 255));
+}
+
 // Like ATen, resizes the width first and then the height, and copies a dim
 // whose size does not change. Half precision is computed in float and the
-// result is rounded once. ATen's CPU kernel gives every row the first row's
+// result is rounded once. uint8 follows ATen's fixed-point path and rounds
+// after each pass. ATen's generic CPU path gives every row the first row's
 // values when the input is contiguous, the output width is 1 and the height
 // changes, because basic_loop_separable_1d_vertical in
 // aten/src/ATen/native/cpu/UpSampleKernel.cpp reuses the first row's weights
@@ -159,7 +232,11 @@ void upsample_bicubic2d_aa_kernel_impl(
     const optional<double> scale_h,
     const optional<double> scale_w,
     Tensor& out) {
+  constexpr bool is_byte = std::is_same_v<CTYPE, uint8_t>;
   using T = std::conditional_t<std::is_same_v<CTYPE, double>, double, float>;
+  using W = std::conditional_t<is_byte, FixedPointWeights, Weights<T>>;
+  // uint8 keeps the rows between the passes in uint8, as ATen does.
+  using Row = std::conditional_t<is_byte, uint8_t, T>;
   const int64_t in_h = in.size(2);
   const int64_t out_h = out.size(2);
   const int64_t out_w = out.size(3);
@@ -173,15 +250,15 @@ void upsample_bicubic2d_aa_kernel_impl(
     return;
   }
 
-  Weights<T> weights_h{};
-  Weights<T> weights_w{};
+  W weights_h{};
+  W weights_w{};
   Error error = Error::Ok;
   if (resize_h) {
     error =
-        compute_weights<T>(ctx, in_h, out_h, align_corners, scale_h, weights_h);
+        compute_weights(ctx, in_h, out_h, align_corners, scale_h, weights_h);
   }
   if (error == Error::Ok && resize_w) {
-    error = compute_weights<T>(
+    error = compute_weights(
         ctx, in.size(3), out_w, align_corners, scale_w, weights_w);
   }
   if (error != Error::Ok) {
@@ -196,9 +273,9 @@ void upsample_bicubic2d_aa_kernel_impl(
   // Otherwise all rows are kept, once each.
   const bool ring_wraps = 2 * weights_h.max_size < in_h;
   const int64_t ring_size = ring_wraps ? weights_h.max_size : in_h;
-  T* ring = nullptr;
+  Row* ring = nullptr;
   if (resize_h && resize_w) {
-    ring = allocate_temp<T>(ctx, (ring_wraps ? 2 : 1) * ring_size * out_w);
+    ring = allocate_temp<Row>(ctx, (ring_wraps ? 2 : 1) * ring_size * out_w);
     ET_KERNEL_CHECK_MSG(
         ctx,
         ring != nullptr,
@@ -243,7 +320,7 @@ void upsample_bicubic2d_aa_kernel_impl(
         const int64_t end = first + weights_h.size[h];
         for (int64_t row = std::max(next_row, first); row < end; ++row) {
           const CTYPE* in_row = in_plane + row * in_strides[2];
-          T* resized = ring + (row % ring_size) * out_w;
+          Row* resized = ring + (row % ring_size) * out_w;
           for (const auto w : c10::irange(out_w)) {
             resized[w] = weighted_sum(
                 in_row + weights_w.first[w] * in_strides[3],
@@ -256,7 +333,7 @@ void upsample_bicubic2d_aa_kernel_impl(
           }
         }
         next_row = std::max(next_row, end);
-        const T* rows = ring + (first % ring_size) * out_w;
+        const Row* rows = ring + (first % ring_size) * out_w;
         for (const auto w : c10::irange(out_w)) {
           out_row[w * out_strides[3]] =
               static_cast<CTYPE>(weighted_sum(rows + w, out_w, weights_h, h));
@@ -298,10 +375,10 @@ Tensor& _upsample_bicubic2d_aa_out(
       out,
       "Failed to resize output tensor");
 
-  // Keep in sync with _check_bicubic_aa_inputs_are_float in
+  // Keep in sync with _check_bicubic_aa_input_dtype in
   // exir/verification/verifier.py, which rejects other dtypes at to_edge.
-  ET_SWITCH_FLOATHBF16_TYPES(
-      in.scalar_type(), ctx, "_upsample_bicubic2d_aa.out", CTYPE, [&]() {
+  ET_SWITCH_FLOATHBF16_TYPES_AND(
+      Byte, in.scalar_type(), ctx, "_upsample_bicubic2d_aa.out", CTYPE, [&]() {
         upsample_bicubic2d_aa_kernel_impl<CTYPE>(
             ctx, in, align_corners, scale_h, scale_w, out);
       });

@@ -362,13 +362,20 @@ class TestProgramManagers(unittest.TestCase):
                     ),
                 )
 
-        x = torch.randn(1, 3, 24, 32)
+        def image(h, w, dtype, memory_format=torch.contiguous_format):
+            if dtype == torch.uint8:
+                t = torch.randint(0, 256, (1, 3, h, w), dtype=dtype)
+            else:
+                t = torch.randn(1, 3, h, w)
+            return t.to(memory_format=memory_format)
+
         dims = {"x": {2: Dim("h", min=8, max=64), 3: Dim("w", min=8, max=64)}}
         sizes = [(24, 32), (8, 8), (13, 64), (37, 51), (64, 8)]
-        cases = [(None, [x])] + [
-            (dims, [torch.randn(1, 3, h, w).to(memory_format=f) for h, w in sizes])
-            for f in (torch.contiguous_format, torch.channels_last)
-        ]
+        cases = []
+        for dtype in (torch.float32, torch.uint8):
+            cases.append((None, [image(24, 32, dtype)]))
+            for f in (torch.contiguous_format, torch.channels_last):
+                cases.append((dims, [image(h, w, dtype, f) for h, w in sizes]))
         for dynamic_shapes, inputs in cases:
             edge = to_edge(
                 export(Resize(), (inputs[0],), dynamic_shapes=dynamic_shapes)
@@ -384,28 +391,29 @@ class TestProgramManagers(unittest.TestCase):
             program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
             for t in inputs:
                 with self.subTest(
+                    dtype=t.dtype,
                     dynamic=dynamic_shapes is not None,
                     shape=t.shape,
                     channels_last=t.is_contiguous(memory_format=torch.channels_last),
                 ):
+                    # uint8 follows ATen's fixed-point path exactly.
+                    tol = 0 if t.dtype == torch.uint8 else 1e-5
                     for actual, expected in zip(program.forward((t,)), Resize()(t)):
-                        torch.testing.assert_close(
-                            actual, expected, atol=1e-5, rtol=1e-5
-                        )
+                        torch.testing.assert_close(actual, expected, atol=tol, rtol=tol)
 
-        # The portable kernel only takes floating-point inputs, unless the
-        # config leaves the op to another kernel.
+        # The portable kernel only takes floating-point and uint8 inputs, unless
+        # the config leaves the op to another kernel.
         class CondResize(torch.nn.Module):
             def forward(self, pred, x):
                 return torch.cond(
                     pred, lambda x: Resize()(x)[0], lambda x: x.clone(), (x,)
                 )
 
-        image = torch.randint(0, 256, (1, 3, 24, 18), dtype=torch.uint8)
+        ints = torch.randint(0, 256, (1, 3, 24, 18), dtype=torch.int32)
         op = torch.ops.aten._upsample_bicubic2d_aa.default
         for program in (
-            export(Resize(), (image,)),
-            export(CondResize(), (torch.tensor(True), image)),
+            export(Resize(), (ints,)),
+            export(CondResize(), (torch.tensor(True), ints)),
         ):
             with self.assertRaisesRegex(SpecViolationError, "only takes float32"):
                 to_edge(program)

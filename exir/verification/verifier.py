@@ -72,10 +72,10 @@ def _check_sym_max_min_args_are_ints(gm: GraphModule) -> None:
                     )
 
 
-def _check_bicubic_aa_inputs_are_float(gm: GraphModule) -> None:
+def _check_bicubic_aa_input_dtype(gm: GraphModule) -> None:
     # The built-in exception for _upsample_bicubic2d_aa only covers the dtypes
     # its portable kernel takes.
-    dtypes = (torch.float32, torch.float64, torch.float16, torch.bfloat16)
+    dtypes = (torch.float32, torch.float64, torch.float16, torch.bfloat16, torch.uint8)
     for module in gm.modules():
         if not isinstance(module, GraphModule):
             continue
@@ -92,7 +92,7 @@ def _check_bicubic_aa_inputs_are_float(gm: GraphModule) -> None:
             if isinstance(val, torch.Tensor) and val.dtype not in dtypes:
                 raise SpecViolationError(
                     "The portable _upsample_bicubic2d_aa kernel only takes float32, "
-                    f"float64, float16 and bfloat16 inputs, but {node.name} has "
+                    f"float64, float16, bfloat16 and uint8 inputs, but {node.name} has "
                     f"{val.dtype}. Cast the input to one of them before the resize. "
                     "If another kernel runs the op, list it in EdgeCompileConfig's "
                     "_core_aten_ops_exception_list or preserve_ops.\n"
@@ -374,7 +374,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             if torch.ops.aten._upsample_bicubic2d_aa.default not in (
                 self._core_aten_ops_exception_list + self._preserve_ops
             ):
-                _check_bicubic_aa_inputs_are_float(gm)
+                _check_bicubic_aa_input_dtype(gm)
             _check_tensor_args_matching_op_allowed_dtype(gm)
 
         def is_valid(self, gm: GraphModule) -> bool:

@@ -132,6 +132,27 @@ const std::vector<float> kOppositeRows = {
 const std::vector<float> kAveraged =
     {1.33681488, 0.797298431, -0.77734375, -0.417949677, 1.00313568};
 
+// Shape [1, 1, 6, 8] of uint8 with sharp edges, so the width pass overshoots
+// and only rounding and clamping it before the height pass, as ATen does,
+// gives ATen's result.
+const std::vector<float> kUint8Input = {
+    38,  23,  25, 15,  225, 222, 220, 13,  247, 38,  223, 239,
+    39,  0,   38, 251, 252, 250, 239, 251, 227, 254, 247, 15,
+    249, 9,   17, 237, 255, 0,   252, 38,  26,  20,  4,   228,
+    236, 244, 7,  14,  1,   7,   247, 2,   0,   247, 251, 9};
+
+// kUint8Input resized to (5, 7).
+const std::vector<float> kUint8Shrunk = {
+    62,  24,  46,  119, 190, 184, 73,  236, 143, 255, 172, 78,
+    93,  174, 251, 133, 169, 253, 164, 244, 47,  86,  0,   74,
+    255, 192, 90,  26,  0,   61,  159, 37,  181, 220, 28};
+
+// kUint8Input resized to (2, 10). One fraction bit more or less in the
+// fixed-point weights changes it.
+const std::vector<float> kUint8Wide = {201, 115, 112, 163, 187, 170, 133,
+                                       144, 150, 97,  109, 58,  68,  126,
+                                       182, 176, 178, 173, 126, 13};
+
 } // namespace
 
 class OpUpsampleBicubic2dAAOutTest : public OperatorTest {
@@ -194,6 +215,8 @@ class OpUpsampleBicubic2dAAOutTest : public OperatorTest {
       EXPECT_TENSOR_CLOSE_WITH_TOL(out, want, 1.0 / 1024, 1e-6);
     } else if constexpr (DTYPE == ScalarType::BFloat16) {
       EXPECT_TENSOR_CLOSE_WITH_TOL(out, want, 1.0 / 128, 1e-6);
+    } else if constexpr (DTYPE == ScalarType::Byte) {
+      EXPECT_TENSOR_EQ(out, want);
     } else {
       EXPECT_TENSOR_CLOSE_WITH_TOL(out, want, 1e-5, 1e-5);
     }
@@ -411,6 +434,25 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, DoubleMatchesFloat64ATen) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(out, want, 1e-12, 1e-12);
 }
 
+TEST_F(OpUpsampleBicubic2dAAOutTest, Uint8MatchesATenExactly) {
+  expect_resize<ScalarType::Byte>(
+      {1, 1, 6, 8},
+      kUint8Input,
+      {5, 7},
+      false,
+      std::nullopt,
+      std::nullopt,
+      kUint8Shrunk);
+  expect_resize<ScalarType::Byte>(
+      {1, 1, 6, 8},
+      kUint8Input,
+      {2, 10},
+      false,
+      std::nullopt,
+      std::nullopt,
+      kUint8Wide);
+}
+
 TEST_F(OpUpsampleBicubic2dAAOutTest, ResizesDynamicOutput) {
   TensorFactory<ScalarType::Float> tf;
   Tensor in = tf.make({1, 2, 6, 8}, kInput);
@@ -428,7 +470,7 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, ResizesDynamicOutput) {
 }
 
 TEST_F(OpUpsampleBicubic2dAAOutTest, RejectsIntegerInput) {
-  TensorFactory<ScalarType::Byte> tf;
+  TensorFactory<ScalarType::Int> tf;
   Tensor in = tf.zeros({1, 1, 4, 4});
   Tensor out = tf.zeros({1, 1, 2, 2});
   const std::vector<int64_t> output_size = {2, 2};
