@@ -141,15 +141,14 @@ class TestPermute(unittest.TestCase):
         )
         addmm = ["executorch_exir_dialects_edge__ops_aten_addmm_default"]
         if quant_config is None:
-            tester.check_not(addmm)
+            tester.check_not(addmm).check_count(
+                {"torch.ops.higher_order.executorch_call_delegate": 2}
+            )
         else:
             tester.check(addmm)
         (
             tester.check_count(
-                {
-                    "torch.ops.higher_order.executorch_call_delegate": 2,
-                    "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
-                }
+                {"executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1}
             )
             .check_not(["executorch_exir_dialects_edge__ops_aten_mul_Tensor"])
             .to_executorch()
