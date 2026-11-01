@@ -27,6 +27,8 @@ void compute_var_mean(
     optional<ArrayRef<int64_t>> dim_list,
     const size_t num,
     const double denominator) {
+  using ACC = typename executorch::runtime::
+      promote_types<CTYPE_OUT, CTYPE_OUT, /*half_to_float=*/true>::type;
   CTYPE_OUT* var_data = var_out.mutable_data_ptr<CTYPE_OUT>();
   CTYPE_OUT* mean_data = mean_out.mutable_data_ptr<CTYPE_OUT>();
   if (num == 0 || denominator <= 0) {
@@ -46,25 +48,25 @@ void compute_var_mean(
         used_fast_path = true;
         const int64_t reduce_size = in.size(d);
         const int64_t outer_size = in.numel() / reduce_size;
-        const CTYPE_OUT cnum = static_cast<CTYPE_OUT>(num);
-        const CTYPE_OUT cdenom = static_cast<CTYPE_OUT>(denominator);
+        const ACC cnum = static_cast<ACC>(num);
+        const ACC cdenom = static_cast<ACC>(denominator);
         const CTYPE_IN* in_data = in.const_data_ptr<CTYPE_IN>();
         for (int64_t i = 0; i < outer_size; i++) {
           const CTYPE_IN* row = in_data + i * reduce_size;
           // Pass 1: compute mean
-          CTYPE_OUT sum = 0;
+          ACC sum = 0;
           for (int64_t j = 0; j < reduce_size; j++) {
-            sum += static_cast<CTYPE_OUT>(row[j]);
+            sum += static_cast<ACC>(row[j]);
           }
-          CTYPE_OUT mean = sum / cnum;
-          mean_data[i] = mean;
+          ACC mean = sum / cnum;
+          mean_data[i] = static_cast<CTYPE_OUT>(mean);
           // Pass 2: compute variance
-          CTYPE_OUT sum2 = 0;
+          ACC sum2 = 0;
           for (int64_t j = 0; j < reduce_size; j++) {
-            CTYPE_OUT diff = static_cast<CTYPE_OUT>(row[j]) - mean;
+            ACC diff = static_cast<ACC>(row[j]) - mean;
             sum2 += diff * diff;
           }
-          var_data[i] = sum2 / cdenom;
+          var_data[i] = static_cast<CTYPE_OUT>(sum2 / cdenom);
         }
       }
     }
@@ -74,22 +76,22 @@ void compute_var_mean(
           in, dim_list, var_out, [&](const auto begin, const auto end) {
             for (const auto out_ix : c10::irange(begin, end)) {
               // Pass 1: compute sum -> mean
-              CTYPE_OUT sum = plan.execute<CTYPE_IN, CTYPE_OUT>(
-                  [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
-                  [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
+              ACC sum = plan.execute<CTYPE_IN, ACC>(
+                  [](CTYPE_IN v) { return static_cast<ACC>(v); },
+                  [](ACC outv, ACC acc) { return acc + outv; },
                   out_ix);
-              CTYPE_OUT mean = sum / static_cast<CTYPE_OUT>(num);
-              mean_data[out_ix] = mean;
+              ACC mean = sum / static_cast<ACC>(num);
+              mean_data[out_ix] = static_cast<CTYPE_OUT>(mean);
               // Pass 2: compute sum of squared deviations
-              CTYPE_OUT sum2 = plan.execute<CTYPE_IN, CTYPE_OUT>(
+              ACC sum2 = plan.execute<CTYPE_IN, ACC>(
                   [mean](CTYPE_IN v) {
                     return (
-                        (static_cast<CTYPE_OUT>(v) - mean) *
-                        (static_cast<CTYPE_OUT>(v) - mean));
+                        (static_cast<ACC>(v) - mean) *
+                        (static_cast<ACC>(v) - mean));
                   },
-                  [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
+                  [](ACC outv, ACC acc) { return acc + outv; },
                   out_ix);
-              var_data[out_ix] = sum2 / denominator;
+              var_data[out_ix] = static_cast<CTYPE_OUT>(sum2 / denominator);
             }
           });
       ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");

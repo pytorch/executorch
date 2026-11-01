@@ -385,6 +385,42 @@ TEST_F(OpVarMeanCorrectionOutTest, SmokeTest) {
 #undef TEST_ENTRY
 }
 
+TEST_F(OpVarMeanCorrectionOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // 1, 2, 1, 2, ... has mean 1.5 and variance 0.25. Each sum has 1024 terms,
+  // and a BFloat16 running sum would stop growing long before the last one.
+  constexpr int N = 1024;
+  std::vector<executorch::aten::BFloat16> data(N);
+  for (int i = 0; i < N; ++i) {
+    data[i] = i % 2 == 0 ? 1.0f : 2.0f;
+  }
+  optional<Scalar> correction(0);
+  Tensor var_out = tf.zeros({1});
+  Tensor mean_out = tf.zeros({1});
+  Tensor expected_var = tf.full({1}, 0.25);
+  Tensor expected_mean = tf.full({1}, 1.5);
+
+  // The last dim of a contiguous tensor takes a fast path, dim 0 does not.
+  op_var_mean_correction_out(
+      tf.make({1, N}, data),
+      ArrayRef<int64_t>{1},
+      correction,
+      /*keepdim=*/false,
+      var_out,
+      mean_out);
+  EXPECT_TENSOR_CLOSE(var_out, expected_var);
+  EXPECT_TENSOR_CLOSE(mean_out, expected_mean);
+  op_var_mean_correction_out(
+      tf.make({N, 1}, data),
+      ArrayRef<int64_t>{0},
+      correction,
+      /*keepdim=*/false,
+      var_out,
+      mean_out);
+  EXPECT_TENSOR_CLOSE(var_out, expected_var);
+  EXPECT_TENSOR_CLOSE(mean_out, expected_mean);
+}
+
 TEST_F(OpVarMeanCorrectionOutTest, KeepDim) {
   ET_SKIP_IF(
       torch::executor::testing::SupportedFeatures::get()->is_aten,

@@ -10,10 +10,11 @@
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <type_traits>
 // #include <cstdint>
-// #include <type_traits>
 
 namespace torch {
 namespace executor {
@@ -34,6 +35,11 @@ namespace {
  * This approach ensures that computations are sequential rather than jumpy at
  * the memory level, thereby increasing the speed of memory IO as
  * well as reducing the number of cache misses.
+ *
+ * Half and BFloat16 cannot keep their running sums in out, because rounding
+ * every partial sum to 16 bits makes long sums stop growing. They keep the
+ * sums of a block of trailing positions in float instead, and walk the rows in
+ * the same order.
  */
 template <typename CTYPE_OUT, typename LoadFn = CTYPE_OUT (*)(const void*)>
 void cumsum_tensors(
@@ -58,22 +64,45 @@ void cumsum_tensors(
   const size_t leading_dims = getLeadingDims(self, dim);
   const size_t trailing_dims = getTrailingDims(self, dim);
 
-  for (size_t i = 0; i < leading_dims; i++) {
-    size_t start_loc = i * (trailing_dims * dim_size);
+  using ACC = typename executorch::runtime::
+      promote_types<CTYPE_OUT, CTYPE_OUT, /*half_to_float=*/true>::type;
+  if constexpr (std::is_same_v<ACC, CTYPE_OUT>) {
+    for (size_t i = 0; i < leading_dims; i++) {
+      size_t start_loc = i * (trailing_dims * dim_size);
 
-    for (size_t idx = 0; idx < trailing_dims; idx++) {
-      output_data_base[start_loc + idx] =
-          load_self(&input_data_base[(start_loc + idx) * self.element_size()]);
-    }
-
-    for (size_t j = 1; j < dim_size; j++) {
-      size_t cur_round_base = start_loc + j * trailing_dims;
-      size_t prev_round_base = start_loc + (j - 1) * trailing_dims;
       for (size_t idx = 0; idx < trailing_dims; idx++) {
-        output_data_base[cur_round_base + idx] =
-            load_self(&input_data_base
-                          [(cur_round_base + idx) * self.element_size()]) +
-            output_data_base[prev_round_base + idx];
+        output_data_base[start_loc + idx] = load_self(
+            &input_data_base[(start_loc + idx) * self.element_size()]);
+      }
+
+      for (size_t j = 1; j < dim_size; j++) {
+        size_t cur_round_base = start_loc + j * trailing_dims;
+        size_t prev_round_base = start_loc + (j - 1) * trailing_dims;
+        for (size_t idx = 0; idx < trailing_dims; idx++) {
+          output_data_base[cur_round_base + idx] =
+              load_self(&input_data_base
+                            [(cur_round_base + idx) * self.element_size()]) +
+              output_data_base[prev_round_base + idx];
+        }
+      }
+    }
+  } else {
+    constexpr size_t kBlock = 64;
+    ACC sums[kBlock];
+    for (size_t i = 0; i < leading_dims; i++) {
+      const size_t start_loc = i * (trailing_dims * dim_size);
+      for (size_t first = 0; first < trailing_dims; first += kBlock) {
+        const size_t block = std::min(kBlock, trailing_dims - first);
+        for (size_t j = 0; j < dim_size; j++) {
+          const size_t round_base = start_loc + j * trailing_dims + first;
+          for (size_t idx = 0; idx < block; idx++) {
+            const ACC value = load_self(
+                &input_data_base[(round_base + idx) * self.element_size()]);
+            sums[idx] = j == 0 ? value : sums[idx] + value;
+            output_data_base[round_base + idx] =
+                static_cast<CTYPE_OUT>(sums[idx]);
+          }
+        }
       }
     }
   }

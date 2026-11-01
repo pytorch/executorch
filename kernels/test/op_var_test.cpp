@@ -470,6 +470,25 @@ TEST_F(OpVarCorrectionOutTest, SmokeTest) {
 #undef TEST_ENTRY
 }
 
+TEST_F(OpVarOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // 1, 2, 1, 2, ... has mean 1.5 and variance 0.25. Each sum has 1024 terms,
+  // and a BFloat16 running sum would stop growing long before the last one.
+  constexpr int N = 1024;
+  std::vector<executorch::aten::BFloat16> data(N);
+  for (int i = 0; i < N; ++i) {
+    data[i] = i % 2 == 0 ? 1.0f : 2.0f;
+  }
+  Tensor out = tf.zeros({1});
+  op_var_out(
+      tf.make({1, N}, data),
+      ArrayRef<int64_t>{1},
+      /*unbiased=*/false,
+      /*keepdim=*/false,
+      out);
+  EXPECT_TENSOR_CLOSE(out, tf.full({1}, 0.25));
+}
+
 TEST_F(OpVarOutTest, EmptyInput) {
   TensorFactory<ScalarType::Float> tf;
 

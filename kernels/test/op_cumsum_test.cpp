@@ -134,9 +134,9 @@ TEST_F(OpCumSumOutTest, EnforcedDtypePasses) {
   test_cumsum_out_dtype<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
 
 #define TEST_ENTRY(INPUT_CTYPE, INPUT_DTYPE) \
-  ET_FORALL_REAL_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
+  ET_FORALL_REALHBF16_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
 
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }
@@ -206,6 +206,22 @@ TEST_F(OpCumSumOutTest, SimpleGeneratedCase) {
   Tensor out = tf.zeros({10, 10});
   Tensor ret = op_cumsum_out(x, 1, ScalarType::Float, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST_F(OpCumSumOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // Each of the 65 columns sums 512 ones. A BFloat16 running sum stops growing
+  // at 256, so without float accumulation the later rows would stay at 256.
+  // 65 columns also need more than one block of running sums.
+  constexpr int N = 512;
+  constexpr int C = 65;
+  std::vector<executorch::aten::BFloat16> expected;
+  for (int i = 1; i <= N; ++i) {
+    expected.insert(expected.end(), C, static_cast<float>(i));
+  }
+  Tensor out = tf.zeros({N, C});
+  op_cumsum_out(tf.ones({N, C}), /*dim=*/0, /*enforced_dtype=*/{}, out);
+  EXPECT_TENSOR_EQ(out, tf.make({N, C}, expected));
 }
 
 TEST_F(OpCumSumOutTest, DynamicShapeUpperBoundSameAsExpected) {
