@@ -39,6 +39,7 @@ void test_dtype() {
   TensorFactory<ScalarType::Char> tf_char;
   TensorFactory<DTYPE_OUT> tf_out;
 
+  // Every value here, and the result, is exact in Half.
   Tensor input = tf.make(
       /*sizes=*/{1, 3},
       /*data=*/{1.0, 1.5, 2.0});
@@ -47,7 +48,7 @@ void test_dtype() {
       /*data=*/{5, 3, 1, 4, 2, 1});
   Tensor weight_scales = tf.make(
       /*sizes=*/{2},
-      /*data=*/{0.2, 0.4});
+      /*data=*/{0.25, 0.5});
   const optional<Tensor> opt_weight_zp{};
   const optional<ScalarType> opt_dtype_out{};
 
@@ -55,7 +56,7 @@ void test_dtype() {
 
   Tensor expected = tf_out.make(
       /*sizes=*/{1, 2},
-      /*data=*/{2.3, 3.6});
+      /*data=*/{2.875, 4.5});
 
   KernelRuntimeContext ctx{};
 
@@ -102,22 +103,17 @@ TEST_F(OpQuantizedMixedDtypeLinearTest, HalfComputesInFloat) {
   EXPECT_TENSOR_CLOSE(small_out, tf.full({1, 1}, 762));
 }
 
-#if 0
-// need <<
 TEST_F(OpQuantizedMixedDtypeLinearTest, FloatInputHalfOutput) {
   test_dtype<ScalarType::Float, ScalarType::Half>();
 }
 
-// need to relax tolerance
 TEST_F(OpQuantizedMixedDtypeLinearTest, HalfInputFloatOutput) {
   test_dtype<ScalarType::Half, ScalarType::Float>();
 }
 
-// need <<
 TEST_F(OpQuantizedMixedDtypeLinearTest, HalfInputHalfOutput) {
   test_dtype<ScalarType::Half, ScalarType::Half>();
 }
-#endif
 
 template <ScalarType DTYPE, ScalarType DTYPE_OUT>
 void test_dtype_partials() {
