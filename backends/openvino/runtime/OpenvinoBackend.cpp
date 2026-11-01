@@ -545,11 +545,12 @@ exr::Error OpenvinoBackend::execute(
       // can change goes to a buffer OpenVINO owns and grows, and is copied
       // out after inference.
       if (!owned) {
-        exr::Error error = create_owned_output(
-            execution_handle->infer_request, i, output_tensor, &owned);
-        if (error != exr::Error::Ok) {
-          return error;
+        auto result = create_owned_output(
+            execution_handle->infer_request, i, output_tensor.scalar_type());
+        if (!result.ok()) {
+          return result.error();
         }
+        owned = result.get();
       }
       tensor = owned;
     }
@@ -660,12 +661,11 @@ exr::Error OpenvinoBackend::copy_output(
   return exr::Error::Ok;
 }
 
-exr::Error OpenvinoBackend::create_owned_output(
+exr::Result<ov_tensor_t*> OpenvinoBackend::create_owned_output(
     ov_infer_request_t* infer_request,
     size_t index,
-    const exa::Tensor& output,
-    ov_tensor_t** owned) const {
-  ov_element_type_e ov_type = convert_to_openvino_type(output.scalar_type());
+    exa::ScalarType scalar_type) const {
+  ov_element_type_e ov_type = convert_to_openvino_type(scalar_type);
   if (ov_type == OV_ELEMENT_UNDEFINED) {
     return exr::Error::NotSupported;
   }
@@ -680,11 +680,12 @@ exr::Error OpenvinoBackend::create_owned_output(
     status = ov_.tensor_get_shape(current, &shape);
     ov_.tensor_free(current);
   }
+  ov_tensor_t* owned = nullptr;
   if (status == OV_STATUS_OK) {
-    status = ov_.tensor_create(ov_type, shape, owned);
+    status = ov_.tensor_create(ov_type, shape, &owned);
     ov_.shape_free(&shape);
   }
-  if (status != OV_STATUS_OK || !*owned) {
+  if (status != OV_STATUS_OK || !owned) {
     ET_LOG(
         Error,
         "OpenVINO: failed to create a buffer for output %zu (status=%d)",
@@ -692,7 +693,7 @@ exr::Error OpenvinoBackend::create_owned_output(
         status);
     return exr::Error::Internal;
   }
-  return exr::Error::Ok;
+  return owned;
 }
 
 exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(

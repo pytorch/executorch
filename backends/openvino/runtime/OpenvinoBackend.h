@@ -56,11 +56,10 @@ class OpenvinoBackend final : public ::exr::BackendInterface {
   exr::Result<ov_tensor_t*> create_ov_tensor(const exa::Tensor& tensor) const;
   // Creates a buffer OpenVINO owns and grows for an output whose size can
   // change. It starts with the shape OpenVINO compiled for that output.
-  exr::Error create_owned_output(
+  exr::Result<ov_tensor_t*> create_owned_output(
       ov_infer_request_t* infer_request,
       size_t index,
-      const exa::Tensor& output,
-      ov_tensor_t** owned) const;
+      exa::ScalarType scalar_type) const;
   exr::Error copy_output(
       const ov_tensor_t* ov_output,
       const exa::Tensor& output) const;
