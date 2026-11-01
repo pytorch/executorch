@@ -127,62 +127,48 @@ class TestPermute(unittest.TestCase):
                 .run_method_and_compare_outputs()
             )
 
-    def _test_permute_above_max_rank(
-        self, quant_config=None, partitioner=None, relu=False
-    ):
+    def _test_permute_above_max_rank(self, quant_config=None, relu=False):
         # A delegate that holds a tensor above 6 dims fails to load, so the 8-D
         # views and permute stay outside and the mul is delegated. The linear's
         # 2-D matmul is delegated too, unless its activation is quantized in 8-D.
-        tester = Tester(self.LinearPermute8d(relu).eval(), (torch.randn(2, 64, 4),))
-        if quant_config is not None:
-            tester.quantize(Quantize(quantization_config=quant_config))
-        tester.export().to_edge_transform_and_lower(
-            ToEdgeTransformAndLower([partitioner]) if partitioner else None
-        )
-        addmm = ["executorch_exir_dialects_edge__ops_aten_addmm_default"]
-        if quant_config is None:
-            tester.check_not(addmm).check_count(
-                {"torch.ops.higher_order.executorch_call_delegate": 2}
+        for force_non_static_weights in (False, True):
+            tester = Tester(self.LinearPermute8d(relu).eval(), (torch.randn(2, 64, 4),))
+            if quant_config is not None:
+                tester.quantize(Quantize(quantization_config=quant_config))
+            partitioner = XnnpackPartitioner(
+                force_non_static_weights_for_f32_linear=force_non_static_weights
             )
-        else:
-            tester.check(addmm)
-        (
-            tester.check_count(
-                {"executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1}
+            tester.export().to_edge_transform_and_lower(
+                ToEdgeTransformAndLower([partitioner])
             )
-            .check_not(["executorch_exir_dialects_edge__ops_aten_mul_Tensor"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs(qtol=1)
-        )
+            addmm = ["executorch_exir_dialects_edge__ops_aten_addmm_default"]
+            if quant_config is None:
+                tester.check_not(addmm).check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 2}
+                )
+            else:
+                tester.check(addmm)
+            (
+                tester.check_count(
+                    {"executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1}
+                )
+                .check_not(["executorch_exir_dialects_edge__ops_aten_mul_Tensor"])
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs(qtol=1)
+            )
 
     def test_fp32_permute_above_max_rank(self):
-        for force_non_static_weights in (False, True):
-            for relu in (False, True):
-                self._test_permute_above_max_rank(
-                    partitioner=XnnpackPartitioner(
-                        force_non_static_weights_for_f32_linear=force_non_static_weights
-                    ),
-                    relu=relu,
-                )
+        for relu in (False, True):
+            self._test_permute_above_max_rank(relu=relu)
 
     def test_qs8_permute_above_max_rank(self):
-        for force_non_static_weights in (False, True):
-            self._test_permute_above_max_rank(
-                get_symmetric_quantization_config(),
-                partitioner=XnnpackPartitioner(
-                    force_non_static_weights_for_f32_linear=force_non_static_weights
-                ),
-            )
+        self._test_permute_above_max_rank(get_symmetric_quantization_config())
 
     def test_qd8_permute_above_max_rank(self):
-        for force_non_static_weights in (False, True):
-            self._test_permute_above_max_rank(
-                get_symmetric_quantization_config(is_per_channel=True, is_dynamic=True),
-                partitioner=XnnpackPartitioner(
-                    force_non_static_weights_for_f32_linear=force_non_static_weights
-                ),
-            )
+        self._test_permute_above_max_rank(
+            get_symmetric_quantization_config(is_per_channel=True, is_dynamic=True)
+        )
 
     def test_qs8_permute(self):
         inputs = (torch.randn(1, 1, 4, 4),)
