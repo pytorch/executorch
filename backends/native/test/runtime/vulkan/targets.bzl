@@ -1,3 +1,4 @@
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 
 def define_common_targets():
@@ -19,13 +20,37 @@ def define_common_targets():
         cmd = "mkdir -p $OUT && cp $(location fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_so)/libvulkan.so.1 $OUT/libvk_swiftshader.so",
     )
 
+    runtime.cxx_library(
+        name = "vulkan_engine_host",
+        srcs = ["vulkan_ptn_runner.cpp"],
+        link_whole = True,
+        visibility = ["//executorch/backends/native/test/..."],
+        exported_deps = ["//executorch/backends/native/test/runtime:engine_host"],
+        deps = ["//executorch/backends/native/runtime/vulkan:vulkan_engine"],
+    )
+
     runtime.cxx_binary(
         name = "vulkan_ptn_runner",
-        srcs = ["vulkan_ptn_runner.cpp"],
         visibility = ["//executorch/backends/native/test/..."],
         deps = [
-            "//executorch/backends/native/runtime/vulkan:vulkan_engine",
+            ":vulkan_engine_host",
             "//executorch/backends/native/test/runtime:ptn_runner_main",
+            "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
+        ],
+    )
+
+    # TODO: run in CI once it passes on SwiftShader.
+    runtime.cxx_test(
+        name = "vulkan_sample_test",
+        args = ["--packages=$(location //executorch/backends/native/test/samples:op_samples)"],
+        env = {
+            "ASAN_OPTIONS": "detect_leaks=0",
+            "LD_LIBRARY_PATH": "$(location :vulkan_test_driver)",
+        },
+        labels = ci.labels(ci.map(ci.skip_test())),
+        test_main = "//executorch/backends/native/test/samples:sample_test_main",
+        deps = [
+            ":vulkan_engine_host",
             "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
         ],
     )

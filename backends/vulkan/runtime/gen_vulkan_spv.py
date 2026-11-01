@@ -353,6 +353,38 @@ layout(set = 0, binding = {get_slot_val(slot)}) buffer {precision} restrict {get
     return out_str
 
 
+# Vulkan leaves the rounding of a store to an rgba16f image to the device, and
+# some devices round toward zero. Rounding to the nearest f16, ties to even, in
+# the shader makes the store exact. Integer texels are stored as is, but stores
+# to rgba32f images would be rounded too, so a shader may not write both.
+ROUND_F16_IMAGE_STORES = """
+#ifdef WRITES_RGBA32F_IMAGE
+#error "A shader cannot write both rgba16f and rgba32f images"
+#endif
+#ifndef WRITES_RGBA16F_IMAGE
+#define WRITES_RGBA16F_IMAGE
+vec4 round_to_f16(const vec4 v) {
+  const uvec4 u = floatBitsToUint(v);
+  // Keep 10 mantissa bits: add just under half an f16 ulp, plus one when the
+  // kept lowest bit is odd so ties go to even, then clear the 13 dropped bits.
+  vec4 r = uintBitsToFloat((u + 0xFFFu + ((u >> 13) & 1u)) & ~0x1FFFu);
+  // Below the smallest normal f16, round to a multiple of 2^-24.
+  r = mix(r, roundEven(v * 16777216.0) * 5.9604644775390625e-8, lessThan(abs(v), vec4(6.103515625e-5)));
+  r = mix(r, uintBitsToFloat((u & 0x80000000u) | 0x7F800000u), greaterThan(abs(r), vec4(65504.0)));
+  return mix(r, v, isnan(v));
+}
+ivec4 round_to_f16(const ivec4 v) { return v; }
+uvec4 round_to_f16(const uvec4 v) { return v; }
+#define imageStore(image, pos, texel) imageStore(image, pos, round_to_f16(texel))
+#endif"""
+
+WRITES_RGBA32F_IMAGE = """
+#ifdef WRITES_RGBA16F_IMAGE
+#error "A shader cannot write both rgba16f and rgba32f images"
+#endif
+#define WRITES_RGBA32F_IMAGE"""
+
+
 def layout_declare_image(
     slot: Union[int, List[int]],
     access_type: str,
@@ -365,6 +397,11 @@ def layout_declare_image(
     image_type = TYPE_MAPPINGS["IMAGE_T"][image_ndim][dtype]
 
     ret_str = f"layout(set = 0, binding = {get_slot_val(slot)}, {image_format}) uniform {precision} restrict {get_access_qualifier(access_type)} {image_type} {var_name};"
+    if access_type.lower() != "r":
+        if image_format == "rgba16f":
+            ret_str += ROUND_F16_IMAGE_STORES
+        elif image_format == "rgba32f":
+            ret_str += WRITES_RGBA32F_IMAGE
 
     if isinstance(slot, list):
         slot[0] = slot[0] + 1
