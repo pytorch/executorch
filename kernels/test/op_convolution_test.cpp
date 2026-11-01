@@ -684,6 +684,26 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
       context_,
       op_convolution_out(
           input_6d, weight_6d, bias, {1}, {0}, {1}, false, {0}, 1, out_6d));
+
+  // Like PyTorch, an empty spatial dim is rejected even when padding would
+  // give it an output.
+  Tensor empty_input = tf.ones({1, 1, 0});
+  Tensor point_weight = tf.ones({1, 1, 1});
+  Tensor padded_out = tf.zeros({1, 1, 2});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          empty_input,
+          point_weight,
+          bias,
+          {1},
+          {1},
+          {1},
+          false,
+          {0},
+          1,
+          padded_out));
 }
 
 TEST_F(OpConvCorrectnessTest, InvalidBiasLength) {
@@ -806,25 +826,26 @@ TEST_F(OpConvCorrectnessTest, HugeStridePaddingDilation) {
   optional<Tensor> bias;
   Tensor out = tf.zeros({1, 1, 3});
   Tensor point_out = tf.zeros({1, 1, 1});
+  const int64_t int32_max[] = {std::numeric_limits<int32_t>::max()};
   const int64_t above_int32[] = {int64_t{1} << 31};
   const int64_t huge[] = {std::numeric_limits<int64_t>::max() / 2 + 1};
 
-  // The dilated kernel size wraps around to a negative number.
+  // The dilated kernel size would wrap around to a negative number.
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_convolution_out(
           input, weight, bias, {1}, {0}, huge, false, {0}, 1, out));
 
-  // These output sizes are 2^32 + 1, which a 32-bit size truncates to 1.
+  // These output sizes are 2^32 + 1, which 32-bit sizes would cut to 1.
   context_ = torch::executor::KernelRuntimeContext();
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_convolution_out(
           input,
-          weight,
+          point_weight,
           bias,
           {1},
-          above_int32,
+          int32_max,
           {1},
           false,
           {0},

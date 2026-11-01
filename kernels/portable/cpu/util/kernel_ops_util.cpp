@@ -468,8 +468,7 @@ bool check_convolution_args(
   ET_LOG_AND_RETURN_IF_FALSE(
       padding_is_valid(padding, {kernel_size, kernel_ndim}, kernel_ndim));
   ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(dilation, kernel_ndim));
-  // Larger values would overflow int64_t in the kernel size check below and in
-  // the output size math.
+  // Larger values would overflow int64_t in the size math below.
   for (const IntArrayRef param : {stride, padding, dilation}) {
     for (const int64_t value : param) {
       ET_CHECK_OR_RETURN_FALSE(
@@ -481,15 +480,20 @@ bool check_convolution_args(
   if (transposed) {
     ET_LOG_AND_RETURN_IF_FALSE(
         output_padding_is_valid(output_padding, stride, dilation, kernel_ndim));
-  } else {
-    // Like PyTorch, reject a dilated kernel larger than the padded input. The
-    // output size math would otherwise round such a size up to 1 for strides
-    // above 1.
-    for (const auto i : c10::irange(kernel_ndim)) {
-      const int64_t padded_input_size =
-          in.size(i + 2) + 2 * val_at(padding, i, /*default_value=*/0);
-      const int64_t dilated_kernel_size =
-          val_at(dilation, i, /*default_value=*/1) * (kernel_size[i] - 1) + 1;
+  }
+  for (const auto i : c10::irange(kernel_ndim)) {
+    const int64_t input_size = in.size(i + 2);
+    const int64_t pad = val_at(padding, i, /*default_value=*/0);
+    const int64_t dil = val_at(dilation, i, /*default_value=*/1);
+    // Like PyTorch, only the batch and channel dims may be empty.
+    ET_CHECK_OR_RETURN_FALSE(
+        input_size > 0, "Expected input spatial dim %zu to be non-empty", i);
+    if (!transposed) {
+      // Like PyTorch, reject a dilated kernel larger than the padded input. The
+      // output size math would otherwise round such a size up to 1 for strides
+      // above 1.
+      const int64_t padded_input_size = input_size + 2 * pad;
+      const int64_t dilated_kernel_size = dil * (kernel_size[i] - 1) + 1;
       ET_CHECK_OR_RETURN_FALSE(
           padded_input_size >= dilated_kernel_size,
           "Padded input size %" PRId64
@@ -499,6 +503,21 @@ bool check_convolution_args(
           dilated_kernel_size,
           i);
     }
+    // calculate_kernel_output_sizes narrows the output sizes to SizesType.
+    const int64_t output_size = _kernel_output_size_helper(
+        input_size,
+        kernel_size[i],
+        pad,
+        val_at(stride, i),
+        dil,
+        /*ceil_mode=*/false,
+        transposed,
+        transposed ? val_at(output_padding, i, /*default_value=*/0) : 0);
+    ET_CHECK_OR_RETURN_FALSE(
+        output_size <= std::numeric_limits<executorch::aten::SizesType>::max(),
+        "Output size %" PRId64 " in spatial dim %zu is too large",
+        output_size,
+        i);
   }
 
   ET_CHECK_OR_RETURN_FALSE(
