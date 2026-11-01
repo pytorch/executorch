@@ -213,6 +213,31 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 seen["inside"] = inductor_utils.is_big_gpu(0)
         self.assertEqual({"inside": True, "other": False}, seen)
 
+    def test_small_gpu_override_survives_a_thread_that_leaves_first(self):
+        from executorch.backends.cuda.cuda_backend import (
+            _allow_triton_templates_on_small_gpus,
+        )
+        from torch._inductor import utils as inductor_utils
+
+        entered, leave = threading.Event(), threading.Event()
+
+        def overlap():
+            with _allow_triton_templates_on_small_gpus():
+                entered.set()
+                leave.wait(timeout=10)
+
+        with mock.patch.object(
+            inductor_utils, "is_big_gpu", return_value=False
+        ) as is_big_gpu:
+            other = threading.Thread(target=overlap)
+            other.start()
+            entered.wait(timeout=10)
+            with _allow_triton_templates_on_small_gpus():
+                leave.set()
+                other.join(timeout=10)
+                self.assertTrue(inductor_utils.is_big_gpu(0))
+            self.assertIs(inductor_utils.is_big_gpu, is_big_gpu)
+
     def test_cuda_include_ptx_compile_spec(self):
         with mock.patch.object(
             CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True

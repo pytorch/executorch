@@ -8,6 +8,7 @@
 import contextlib
 import copy
 import functools
+import importlib
 import logging
 import math
 import os
@@ -133,11 +134,58 @@ def _keep_triton_reduction_loads_loop_scoped():
         IndexingOptions.has_rmask = orig_has_rmask
 
 
-_SMALL_GPU_GUARD = threading.local()
+class _ThreadScopedPatch:
+    """Makes ``<module>.<name>`` call ``replace(original, *args, **kwargs)`` in
+    the threads inside ``scope()``, while every other thread keeps the
+    original.
+
+    Threads can lower at the same time. The first scope to enter installs the
+    swap and the last one to leave restores the original, so a thread that
+    leaves first does not take the swap away from one still inside.
+    """
+
+    def __init__(
+        self, module: str, name: str, replace: typing.Callable[..., Any]
+    ) -> None:
+        self._module = module
+        self._name = name
+        self._replace = replace
+        self._lock = threading.Lock()
+        self._scopes = 0
+        self._original: Any = None
+        self._depth = threading.local()
+
+    @contextlib.contextmanager
+    def scope(self) -> typing.Iterator[None]:
+        owner = importlib.import_module(self._module)
+        with self._lock:
+            if self._scopes == 0:
+                self._original = original = getattr(owner, self._name)
+
+                def dispatch(*args: Any, **kwargs: Any) -> Any:
+                    if getattr(self._depth, "value", 0):
+                        return self._replace(original, *args, **kwargs)
+                    return original(*args, **kwargs)
+
+                setattr(owner, self._name, dispatch)
+            self._scopes += 1
+        self._depth.value = getattr(self._depth, "value", 0) + 1
+        try:
+            yield
+        finally:
+            self._depth.value -= 1
+            with self._lock:
+                self._scopes -= 1
+                if self._scopes == 0:
+                    setattr(owner, self._name, self._original)
 
 
-@contextlib.contextmanager
-def _allow_triton_templates_on_small_gpus():
+_SMALL_GPU_TEMPLATES = _ThreadScopedPatch(
+    "torch._inductor.utils", "is_big_gpu", lambda original, *args, **kwargs: True
+)
+
+
+def _allow_triton_templates_on_small_gpus() -> typing.ContextManager[None]:
     """Let Inductor use Triton templates on GPUs below its 68-SM floor. This
     backend autotunes with Triton only, so otherwise a matmul or convolution
     has no Triton choices left.
@@ -148,30 +196,29 @@ def _allow_triton_templates_on_small_gpus():
     TODO: remove once Inductor skips the floor when ATen is not an allowed
     backend (https://github.com/pytorch/pytorch/issues/141690).
     """
-    from torch._inductor import utils as inductor_utils
-
-    orig_is_big_gpu = inductor_utils.is_big_gpu
-
-    def _is_big_gpu(index_or_device=0) -> bool:
-        return getattr(_SMALL_GPU_GUARD, "active", False) or orig_is_big_gpu(
-            index_or_device
-        )
-
-    prev_active = getattr(_SMALL_GPU_GUARD, "active", False)
-    inductor_utils.is_big_gpu = _is_big_gpu
-    _SMALL_GPU_GUARD.active = True
-    try:
-        yield
-    finally:
-        _SMALL_GPU_GUARD.active = prev_active
-        inductor_utils.is_big_gpu = orig_is_big_gpu
+    return _SMALL_GPU_TEMPLATES.scope()
 
 
-_AS_NEEDED_GUARD = threading.local()
+def _with_as_needed(original, device_type, aot_mode=False, *args, **kwargs):
+    definitions, include_dirs, cflags, ldflags, *rest = original(
+        device_type, aot_mode, *args, **kwargs
+    )
+    if (
+        aot_mode
+        and sys.platform.startswith("linux")
+        and not torch._inductor.config.aot_inductor.link_libtorch
+        and torch._inductor.config.aot_inductor.cross_target_platform is None
+    ):
+        ldflags = [*ldflags, "Wl,--as-needed"]
+    return (definitions, include_dirs, cflags, ldflags, *rest)
 
 
-@contextlib.contextmanager
-def _link_libraries_as_needed():
+_AS_NEEDED_LINKS = _ThreadScopedPatch(
+    "torch._inductor.cpp_builder", "get_cpp_torch_device_options", _with_as_needed
+)
+
+
+def _link_libraries_as_needed() -> typing.ContextManager[None]:
     """Record only the shared libraries the compiled program calls into.
 
     Inductor puts OpenMP on every Linux link. Unless the compiler asks the
@@ -189,32 +236,7 @@ def _link_libraries_as_needed():
     TODO: remove once the pinned PyTorch has the same flag in Inductor
     (https://github.com/pytorch/pytorch/pull/202902).
     """
-    from torch._inductor import cpp_builder
-
-    orig_device_options = cpp_builder.get_cpp_torch_device_options
-
-    def _device_options(device_type, aot_mode=False, *args, **kwargs):
-        definitions, include_dirs, cflags, ldflags, *rest = orig_device_options(
-            device_type, aot_mode, *args, **kwargs
-        )
-        if (
-            aot_mode
-            and getattr(_AS_NEEDED_GUARD, "active", False)
-            and sys.platform.startswith("linux")
-            and not torch._inductor.config.aot_inductor.link_libtorch
-            and torch._inductor.config.aot_inductor.cross_target_platform is None
-        ):
-            ldflags = [*ldflags, "Wl,--as-needed"]
-        return (definitions, include_dirs, cflags, ldflags, *rest)
-
-    prev_active = getattr(_AS_NEEDED_GUARD, "active", False)
-    cpp_builder.get_cpp_torch_device_options = _device_options
-    _AS_NEEDED_GUARD.active = True
-    try:
-        yield
-    finally:
-        _AS_NEEDED_GUARD.active = prev_active
-        cpp_builder.get_cpp_torch_device_options = orig_device_options
+    return _AS_NEEDED_LINKS.scope()
 
 
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
