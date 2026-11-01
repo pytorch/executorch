@@ -18,12 +18,6 @@
 
 #include <cpuinfo.h>
 
-#if defined(__linux__) && !defined(__ANDROID__)
-#include <sched.h>
-
-#include <cerrno>
-#endif
-
 // At most one mode should be set.
 #if (                                                       \
     defined(EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES) && \
@@ -128,34 +122,6 @@ void ThreadPool::run(
       0u);
 }
 
-namespace {
-// The number of CPUs in the calling thread's affinity mask, or 0 where that is
-// not known. taskset and cgroup cpusets shrink the mask, CPU quotas do not.
-// Android is left out: it moves apps between cpusets as they go to the
-// background and back, while the pool is sized only once.
-uint32_t get_num_allowed_cpus() {
-#if defined(__linux__) && !defined(__ANDROID__)
-  // The kernel rejects a mask smaller than its possible CPU count, which can
-  // exceed the CPU_SETSIZE CPUs a cpu_set_t holds, so grow it until it fits.
-  for (int num_cpus = CPU_SETSIZE; num_cpus <= (1 << 20); num_cpus *= 2) {
-    std::unique_ptr<cpu_set_t, void (*)(cpu_set_t*)> cpus(
-        CPU_ALLOC(num_cpus), [](cpu_set_t* set) { CPU_FREE(set); });
-    if (!cpus) {
-      break;
-    }
-    const size_t size = CPU_ALLOC_SIZE(num_cpus);
-    if (sched_getaffinity(0, size, cpus.get()) == 0) {
-      return static_cast<uint32_t>(CPU_COUNT_S(size, cpus.get()));
-    }
-    if (errno != EINVAL) {
-      break;
-    }
-  }
-#endif
-  return 0;
-}
-} // namespace
-
 // get_threadpool is not thread safe due to leak_corrupted_threadpool
 // Make this part threadsafe: TODO(kimishpatel)
 ThreadPool* get_threadpool() {
@@ -177,7 +143,8 @@ ThreadPool* get_threadpool() {
     // Never start more threads than the CPUs this process may run on, and use
     // that number when the count is unknown (0), which pthreadpool would fill
     // in with every online CPU, past the cap below.
-    const auto allowed = get_num_allowed_cpus();
+    const auto allowed =
+        ::executorch::extension::cpuinfo::get_num_allowed_cpus();
     if (allowed > 0) {
       result = result == 0 ? allowed : std::min(result, allowed);
     }

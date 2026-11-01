@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/platform/runtime.h>
 
@@ -78,13 +79,35 @@ void run_lambda_with_size(
 
 // The pool has no more threads than the CPUs this process may run on.
 bool may_use_more_than_one_cpu() {
-#if defined(__linux__) && !defined(__ANDROID__)
-  cpu_set_t cpus;
-  return sched_getaffinity(0, sizeof(cpus), &cpus) != 0 || CPU_COUNT(&cpus) > 1;
-#else
-  return true;
-#endif
+  return ::executorch::extension::cpuinfo::get_num_allowed_cpus() != 1;
 }
+
+#if defined(__linux__) && !defined(__ANDROID__)
+// Limits this thread to the CPU it runs on, then exits with the larger of the
+// default pool size and the performance core count, at most 255. Exiting with
+// 1 means both follow the limit. Failing to set the limit aborts instead.
+[[noreturn]] void exit_with_counts_on_one_cpu() {
+  const int cpu = sched_getcpu();
+  if (cpu < 0) {
+    std::abort();
+  }
+  std::unique_ptr<cpu_set_t, void (*)(cpu_set_t*)> cpus(
+      CPU_ALLOC(cpu + 1), [](cpu_set_t* set) { CPU_FREE(set); });
+  if (!cpus) {
+    std::abort();
+  }
+  const size_t size = CPU_ALLOC_SIZE(cpu + 1);
+  CPU_ZERO_S(size, cpus.get());
+  CPU_SET_S(cpu, size, cpus.get());
+  if (sched_setaffinity(0, size, cpus.get()) != 0) {
+    std::abort();
+  }
+  const size_t count = std::max<size_t>(
+      ::executorch::extension::threadpool::get_threadpool()->get_thread_count(),
+      ::executorch::extension::cpuinfo::get_num_performant_cores());
+  std::exit(static_cast<int>(std::min<size_t>(count, 255)));
+}
+#endif
 } // namespace
 
 TEST(ThreadPoolTest, ParallelAdd) {
@@ -223,26 +246,11 @@ TEST(TestNoThreadPoolGuard, TestRunWithGuard) {
 }
 
 #if defined(__linux__) && !defined(__ANDROID__)
-// The pool is created once per process, so it is checked in a fresh one whose
-// exit code is the pool's thread count. Failing to limit the CPUs aborts, so
-// it cannot pass for a pool size.
+// The pool is created once per process, so it is checked in a fresh one.
 TEST(ThreadPoolDeathTest, DefaultSizeHonorsCpuAffinity) {
   executorch::runtime::runtime_init();
 
   ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
-  EXPECT_EXIT(
-      {
-        cpu_set_t cpus;
-        CPU_ZERO(&cpus);
-        CPU_SET(sched_getcpu(), &cpus);
-        if (sched_setaffinity(0, sizeof(cpus), &cpus) != 0) {
-          std::abort();
-        }
-        std::exit(static_cast<int>(
-            ::executorch::extension::threadpool::get_threadpool()
-                ->get_thread_count()));
-      },
-      ExitedWithCode(1),
-      "");
+  EXPECT_EXIT(exit_with_counts_on_one_cpu(), ExitedWithCode(1), "");
 }
 #endif

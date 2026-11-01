@@ -9,6 +9,7 @@
 #include <c10/util/irange.h>
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 
+#include <algorithm>
 #include <fstream>
 #include <mutex>
 #include <string>
@@ -18,6 +19,13 @@
 
 #if defined(__APPLE__) && defined(__aarch64__)
 #include <sys/sysctl.h>
+#endif
+
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <sched.h>
+
+#include <cerrno>
+#include <memory>
 #endif
 
 namespace executorch::extension::cpuinfo {
@@ -143,9 +151,7 @@ uint32_t _get_num_performant_cores() {
 }
 #endif
 
-} // namespace
-
-uint32_t get_num_performant_cores() {
+uint32_t count_performant_cores() {
   ET_CHECK_MSG(cpuinfo_initialize(), "cpuinfo cannot be initialized.");
 #if defined(__linux__) && (CPUINFO_ARCH_ARM || CPUINFO_ARCH_ARM64)
   // First try and see if we have number of cores profiled for this specific
@@ -204,6 +210,36 @@ uint32_t get_num_performant_cores() {
     return 0;
 #endif
   }
+}
+
+} // namespace
+
+uint32_t get_num_allowed_cpus() {
+#if defined(__linux__) && !defined(__ANDROID__)
+  // The kernel rejects a mask smaller than its possible CPU count, which can
+  // exceed the CPU_SETSIZE CPUs a cpu_set_t holds, so grow it until it fits.
+  for (int num_cpus = CPU_SETSIZE; num_cpus <= (1 << 20); num_cpus *= 2) {
+    std::unique_ptr<cpu_set_t, void (*)(cpu_set_t*)> cpus(
+        CPU_ALLOC(num_cpus), [](cpu_set_t* set) { CPU_FREE(set); });
+    if (!cpus) {
+      break;
+    }
+    const size_t size = CPU_ALLOC_SIZE(num_cpus);
+    if (sched_getaffinity(0, size, cpus.get()) == 0) {
+      return static_cast<uint32_t>(CPU_COUNT_S(size, cpus.get()));
+    }
+    if (errno != EINVAL) {
+      break;
+    }
+  }
+#endif
+  return 0;
+}
+
+uint32_t get_num_performant_cores() {
+  const uint32_t count = count_performant_cores();
+  const uint32_t allowed = get_num_allowed_cpus();
+  return count > 0 && allowed > 0 ? std::min(count, allowed) : count;
 }
 
 } // namespace executorch::extension::cpuinfo
