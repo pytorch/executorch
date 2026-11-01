@@ -166,6 +166,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch and Supertonic requirements"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -253,6 +255,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -334,6 +338,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -366,7 +372,7 @@ jobs:
         BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
         ${CONDA_RUN} cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
           -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
-        ${CONDA_RUN} cmake --build "${BATCHING_BIN_DIR}" --target muse_glimmer_batching_test --parallel
+        ${CONDA_RUN} cmake --build "${BATCHING_BIN_DIR}" --target muse_glimmer_batching_test
         ${CONDA_RUN} ctest --test-dir "${BATCHING_BIN_DIR}" \
           -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
@@ -390,6 +396,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
         ${CONDA_RUN} python install_executorch.py > /dev/null
         ${CONDA_RUN} make nemotron3-diarization-mlx
         BIN_DIR=cmake-out/examples/models/nemotron3_diarization
@@ -465,6 +473,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -528,6 +538,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -592,6 +604,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
         # Disable HF Xet storage to avoid stalled downloads on CI runners
         export HF_HUB_DISABLE_XET=1
 
@@ -726,6 +740,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
