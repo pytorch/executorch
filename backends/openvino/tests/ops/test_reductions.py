@@ -298,7 +298,9 @@ class TestFoldConstantCumsumPass(unittest.TestCase):
 
         x = torch.zeros(3, dtype=torch.int64)
         folded = to_edge(torch.export.export(Model(), (x,))).exported_program().module()
-        # Meta, unlike CUDA, fails on every build: it never reaches the CPU.
+        # Without the fix, the meta device keeps the cumsum unfolded on every
+        # build, because a meta tensor has no data to copy to the CPU. CUDA
+        # would only show it on a build without CUDA.
         with torch.device("meta"):
             FoldConstantCumsumPass()(folded)
         self.assertNotIn(
