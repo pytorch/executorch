@@ -54,12 +54,13 @@ def _checked_data_name(data_name: str) -> str:
 
 
 def _written_buffer_options(program: ExportedProgram) -> Dict[str, Any]:
-    """Inductor options that keep the buffers a program writes out of constant
-    folding.
+    """Inductor options for a program that writes a buffer.
 
-    Before torch 2.15, Inductor can fold the update of a one-element buffer,
-    such as a counter, to its value at export, so every call writes that same
-    value (https://github.com/pytorch/pytorch/pull/185077).
+    They turn off Inductor's joint-graph constant folding for the whole
+    program, not only for the buffers it writes. Before torch 2.15, that
+    folding can turn the update of a one-element buffer, such as a counter,
+    into its value at export, so every call writes that same value
+    (https://github.com/pytorch/pytorch/pull/185077).
 
     TODO: remove once the pinned torch is 2.15 or newer.
     """
