@@ -1000,6 +1000,79 @@ class TestCudaExport(unittest.TestCase):
                 for output, expected in zip(outputs, model(x), strict=True):
                     torch.testing.assert_close(output.cpu(), expected)
 
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_complex_rotary_embedding(self):
+        """Inductor generates no code for complex numbers, so the backend
+        computes a rotary embedding written with them on real numbers."""
+        from executorch.runtime import Runtime
+
+        class ComplexRope(torch.nn.Module):
+            def __init__(self, precision):
+                super().__init__()
+                self.precision = precision
+                angles = torch.outer(torch.arange(4.0), torch.rand(12)).to(precision)
+                self.register_buffer(
+                    "freqs", torch.polar(torch.ones_like(angles), angles)
+                )
+
+            def forward(self, x, angles):
+                # A grid of positions takes each axis's part of the frequencies.
+                rows, cols = self.freqs.split([8, 4], dim=1)
+                grid = torch.cat(
+                    [
+                        rows[:2].view(2, 1, -1).expand(2, 2, -1),
+                        cols[:2].view(1, 2, -1).expand(2, 2, -1),
+                    ],
+                    dim=-1,
+                ).view(4, 1, -1)
+                spin = torch.polar(angles.abs(), angles)
+                pairs = torch.view_as_complex(
+                    x.to(self.precision).unflatten(-1, (-1, 2))
+                )
+                rotated = torch.view_as_real(pairs * grid * spin.unsqueeze(1) * 0.5)
+                # A view_as_real can also be an output of the program, and two
+                # of one complex tensor become one output in two slots.
+                return (
+                    rotated.flatten(-2).type_as(x),
+                    torch.view_as_real(spin),
+                    torch.view_as_real(spin),
+                )
+
+        angles = torch.randn(4, 12)
+        # Rotary embeddings are often computed in float64, so in complex128.
+        for dtype, precision in (
+            (torch.float32, torch.float32),
+            (torch.bfloat16, torch.float32),
+            (torch.float32, torch.float64),
+        ):
+            with self.subTest(dtype=dtype, precision=precision):
+                model = ComplexRope(precision)
+                x = torch.randn(4, 3, 24, dtype=dtype)
+                program = self._export_to_cuda_with_lower(
+                    model, (x, angles)
+                ).to_executorch()
+                with tempfile.TemporaryDirectory() as directory:
+                    path = os.path.join(directory, "model.pte")
+                    with open(path, "wb") as f:
+                        program.write_to_file(f)
+                    program.write_tensor_data_to_file(directory)
+                    (data,) = [
+                        os.path.join(directory, name)
+                        for name in os.listdir(directory)
+                        if name.endswith(".ptd")
+                    ]
+                    method = (
+                        Runtime.get()
+                        .load_program(path, data_path=data)
+                        .load_method("forward")
+                    )
+                    outputs = method.execute([x, angles])
+                for output, expected in zip(outputs, model(x, angles), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected)
+
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """
         Verify that, for a CUDA-delegated graph, every memory-planned tensor's
