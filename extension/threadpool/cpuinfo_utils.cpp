@@ -112,7 +112,7 @@ bool populate_available_cpu_mids() {
     if (midr_file.is_open()) {
       std::string x;
       std::getline(midr_file, x);
-      tmp = std::stoi(x, nullptr, 16);
+      tmp = static_cast<uint32_t>(std::stoul(x, nullptr, 16));
       (*cpu_midrs)[i] = tmp;
     } else {
       ET_LOG(Info, "Failed to open midr file %s", midr_file_path.c_str());
