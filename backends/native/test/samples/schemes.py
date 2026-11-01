@@ -102,20 +102,20 @@ class Torchao(Scheme):
 
 
 # Families of fp16 super-block scales by byte offset in each block: powers of
-# two, where q4_k's dmin of 8 d centers random weights near zero, then zero d,
-# negative, rounded and subnormal ones. A model's i-th nn.Linear takes the i-th
-# family, so one nn.Linear per family isolates each in its own output.
+# two, where q4_k's dmin of 8 d centers random weights near zero, then negative,
+# rounded and subnormal ones. A model's i-th nn.Linear takes the i-th family, so
+# one nn.Linear per family isolates each in its own output.
+# TODO: Add a zero-d family once OutputCheck's bias standard error stops
+# assuming independent outputs.
 GGUF_SUPER_SCALES = {
     "q4_k": [
         {0: 2**-12, 2: 2**-9},
-        {0: 0.0, 2: 2**-9},
         {0: -(2**-12), 2: -(2**-9)},
         {0: 3.1e-4, 2: 2.3e-3},
         {0: 3 * 2**-21, 2: 3 * 2**-18},
     ],
     "q6_k": [
         {208: 2**-12},
-        {208: 0.0},
         {208: -(2**-12)},
         {208: 3.1e-4},
         {208: 3 * 2**-21},
