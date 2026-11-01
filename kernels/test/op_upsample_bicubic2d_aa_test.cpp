@@ -209,8 +209,10 @@ class OpUpsampleBicubic2dAAOutTest : public OperatorTest {
         scales_h,
         scales_w,
         out);
-    // Half types are computed in float and rounded once, so they are at most
-    // one unit in the last place from the rounded float32 result.
+    // Half types are computed in float and rounded once, so they can be one
+    // unit in the last place from the rounded float32 result. As a relative
+    // tolerance, that unit is 2^-10 for half and 2^-7 for bfloat16 at a power
+    // of two, so the check allows up to two units just below the next one.
     if constexpr (DTYPE == ScalarType::Half) {
       EXPECT_TENSOR_CLOSE_WITH_TOL(out, want, 1.0 / 1024, 1e-6);
     } else if constexpr (DTYPE == ScalarType::BFloat16) {
@@ -326,6 +328,29 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, ScalesMatchATen) {
        0.0734110475,
        0.270127088,
        -0.00814000517,
+       0,
+       0});
+  // The same for the last two rows, while the width changes too.
+  expect_resize<ScalarType::Float>(
+      {1, 1, 3, 4},
+      kSmallInput,
+      {5, 3},
+      false,
+      0.4,
+      std::nullopt,
+      {0.225569099,
+       0.0334828235,
+       -0.313413143,
+       0.543530881,
+       -0.355477989,
+       0.389086157,
+       0.421826512,
+       -0.290672064,
+       0.340768456,
+       0,
+       0,
+       0,
+       0,
        0,
        0});
 }
@@ -491,6 +516,24 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, FailsWithoutTempMemory) {
   Tensor in = tf.make({1, 2, 6, 8}, kInput);
   Tensor out = tf.zeros({1, 2, 6, 5});
   const std::vector<int64_t> output_size = {6, 5};
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_upsample_bicubic2d_aa_out(
+          in,
+          ArrayRef<int64_t>(output_size.data(), output_size.size()),
+          false,
+          std::nullopt,
+          std::nullopt,
+          out));
+}
+
+TEST_F(OpUpsampleBicubic2dAAOutTest, FailsWhenTempMemoryRunsOut) {
+  // The weights fit in the fixture's 16 KiB, but the rows between the passes
+  // do not.
+  TensorFactory<ScalarType::Float> tf;
+  Tensor in = tf.zeros({1, 1, 3, 600});
+  Tensor out = tf.zeros({1, 1, 2, 300});
+  const std::vector<int64_t> output_size = {2, 300};
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_upsample_bicubic2d_aa_out(
