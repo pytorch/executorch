@@ -176,9 +176,13 @@ class TestPermute(unittest.TestCase):
             )
 
     def test_qd8_permute_above_max_rank(self):
-        self._test_permute_above_max_rank(
-            get_symmetric_quantization_config(is_per_channel=True, is_dynamic=True)
-        )
+        for force_non_static_weights in (False, True):
+            self._test_permute_above_max_rank(
+                get_symmetric_quantization_config(is_per_channel=True, is_dynamic=True),
+                partitioner=XnnpackPartitioner(
+                    force_non_static_weights_for_f32_linear=force_non_static_weights
+                ),
+            )
 
     def test_qs8_permute(self):
         inputs = (torch.randn(1, 1, 4, 4),)
