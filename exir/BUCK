@@ -16,6 +16,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
     deps = [
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
+        ":_decompositions",
         ":common",
         ":error",
         ":graph_module",
@@ -24,6 +25,16 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir/operator:convert",
         "//executorch/exir/operator:util",
         "//executorch/extension/pytree:pylib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "_decompositions",
+    srcs = [
+        "_decompositions.py",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )
 
