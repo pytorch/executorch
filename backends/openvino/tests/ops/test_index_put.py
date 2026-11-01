@@ -1,3 +1,5 @@
+# mypy: disable-error-code=import-not-found
+
 import torch
 from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
     BaseOpenvinoOpTest,
