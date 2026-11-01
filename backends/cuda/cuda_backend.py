@@ -135,9 +135,9 @@ def _keep_triton_reduction_loads_loop_scoped():
 
 
 class _ThreadScopedPatch:
-    """Makes ``<module>.<name>`` call ``replace(original, *args, **kwargs)`` in
+    """Makes ``<owner>.<name>`` call ``replace(original, *args, **kwargs)`` in
     the threads inside ``scope()``, while every other thread keeps the
-    original.
+    original. ``owner`` names a module, or a class in it as ``module:Class``.
 
     Threads can lower at the same time. The first scope to enter installs the
     swap and the last one to leave restores the original, so a thread that
@@ -145,9 +145,9 @@ class _ThreadScopedPatch:
     """
 
     def __init__(
-        self, module: str, name: str, replace: typing.Callable[..., Any]
+        self, owner: str, name: str, replace: typing.Callable[..., Any]
     ) -> None:
-        self._module = module
+        self._owner = owner
         self._name = name
         self._replace = replace
         self._lock = threading.Lock()
@@ -157,7 +157,10 @@ class _ThreadScopedPatch:
 
     @contextlib.contextmanager
     def scope(self) -> typing.Iterator[None]:
-        owner = importlib.import_module(self._module)
+        module, _, attribute = self._owner.partition(":")
+        owner = importlib.import_module(module)
+        if attribute:
+            owner = getattr(owner, attribute)
         with self._lock:
             if self._scopes == 0:
                 self._original = original = getattr(owner, self._name)
@@ -237,6 +240,36 @@ def _link_libraries_as_needed() -> typing.ContextManager[None]:
     (https://github.com/pytorch/pytorch/pull/202902).
     """
     return _AS_NEEDED_LINKS.scope()
+
+
+def _float_param_from_signature(original, wrapper, name, arg_type, signature=None):
+    from torch._inductor.codegen.cpp_wrapper_gpu import TRITON_SIGNATURE_TO_CPP
+
+    param = original(wrapper, name, arg_type, signature)
+    # PyTorch 2.14 does not pass the signature on every path.
+    kind = (signature or (wrapper.triton_meta or {}).get("signature", {})).get(name)
+    if param == f"int64_t {name}" and kind in ("fp32", "fp64"):
+        return f"{TRITON_SIGNATURE_TO_CPP[kind]} {name}"
+    return param
+
+
+_FLOAT_KERNEL_ARGS = _ThreadScopedPatch(
+    "torch._inductor.codegen.cpp_wrapper_gpu:DeferredTritonCallWrapper",
+    "_get_cpp_param_type",
+    _float_param_from_signature,
+)
+
+
+def _pass_float_scalars_to_triton_as_floats() -> typing.ContextManager[None]:
+    """Declare a float that a Triton kernel takes, such as a value read with
+    ``.item()``, as a float in the C++ function that launches the kernel.
+    AOTInductor declares every such argument int64_t, so 1.5 reaches the
+    kernel as 1.
+
+    TODO: remove once the pinned PyTorch takes the type from the kernel's
+    signature (https://github.com/pytorch/pytorch/pull/201882).
+    """
+    return _FLOAT_KERNEL_ARGS.scope()
 
 
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
@@ -1380,6 +1413,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # Keep an unused libgomp out of the program, so it loads in a
                 # process without torch. See `_link_libraries_as_needed`.
                 stack.enter_context(_link_libraries_as_needed())
+                stack.enter_context(_pass_float_scalars_to_triton_as_floats())
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
                     stack.enter_context(_allow_triton_templates_on_small_gpus())

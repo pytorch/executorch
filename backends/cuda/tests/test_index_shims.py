@@ -253,8 +253,7 @@ class TestIndexShims(unittest.TestCase):
         for dtype in (torch.float64, torch.float16):
             with self.subTest(dtype=dtype):
                 x = torch.randn(4, 1000, dtype=dtype)
-                # A whole number works around an AOTInductor bug: its Triton
-                # launcher takes a float read with .item() as int64_t, so 1.5
-                # would become 1.
-                scale = torch.tensor(2.0, dtype=dtype)
+                # A fraction, which a float passed to Triton as an integer
+                # loses.
+                scale = torch.tensor(1.5, dtype=dtype)
                 self._run(Values(), [(x, scale)])
