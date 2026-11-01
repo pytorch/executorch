@@ -18,6 +18,10 @@
 
 #include <cpuinfo.h>
 
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <sched.h>
+#endif
+
 // At most one mode should be set.
 #if (                                                       \
     defined(EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES) && \
@@ -122,6 +126,22 @@ void ThreadPool::run(
       0u);
 }
 
+namespace {
+// The CPUs this process may run on, which taskset and cgroup cpusets can make
+// fewer than the online CPUs, or 0 where that is not known. Android is left
+// out: it moves apps between cpusets as they go to the background and back,
+// while the pool is sized only once.
+uint32_t get_num_allowed_cpus() {
+#if defined(__linux__) && !defined(__ANDROID__)
+  cpu_set_t cpus;
+  if (sched_getaffinity(0, sizeof(cpus), &cpus) == 0) {
+    return static_cast<uint32_t>(CPU_COUNT(&cpus));
+  }
+#endif
+  return 0;
+}
+} // namespace
+
 // get_threadpool is not thread safe due to leak_corrupted_threadpool
 // Make this part threadsafe: TODO(kimishpatel)
 ThreadPool* get_threadpool() {
@@ -140,6 +160,11 @@ ThreadPool* get_threadpool() {
     // Set threads equal to the number of performance cores.
     auto result = ::executorch::extension::cpuinfo::get_num_performant_cores();
 #endif
+    // 0 means the count is unknown, which pthreadpool fills in with every
+    // online CPU, past the cap below. Prefer the CPUs this process may use.
+    if (result == 0) {
+      result = get_num_allowed_cpus();
+    }
 
     /*
      * For llvm-tsan, holding limit for the number of locks for a single thread

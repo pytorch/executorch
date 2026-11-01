@@ -17,6 +17,15 @@
 
 #include <gtest/gtest.h>
 
+#if defined(__linux__) && !defined(__ANDROID__) && \
+    defined(EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES)
+#include <sched.h>
+
+#include <cstdlib>
+
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
+#endif
+
 using namespace ::testing;
 
 namespace {
@@ -201,3 +210,32 @@ TEST(TestNoThreadPoolGuard, TestRunWithGuard) {
   }
   ASSERT_EQ(inner, 6);
 }
+
+#if defined(__linux__) && !defined(__ANDROID__) && \
+    defined(EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES)
+// The pool is created once per process, so it is checked in a fresh one whose
+// exit code is the pool's thread count. Failing to limit the CPUs aborts, so
+// it cannot pass for a pool size.
+TEST(ThreadPoolDeathTest, DefaultSizeHonorsCpuAffinity) {
+  executorch::runtime::runtime_init();
+
+  if (::executorch::extension::cpuinfo::get_num_performant_cores() != 0) {
+    GTEST_SKIP() << "The performance core count sizes the pool here.";
+  }
+  ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
+  EXPECT_EXIT(
+      {
+        cpu_set_t cpus;
+        CPU_ZERO(&cpus);
+        CPU_SET(sched_getcpu(), &cpus);
+        if (sched_setaffinity(0, sizeof(cpus), &cpus) != 0) {
+          std::abort();
+        }
+        std::exit(static_cast<int>(
+            ::executorch::extension::threadpool::get_threadpool()
+                ->get_thread_count()));
+      },
+      ExitedWithCode(1),
+      "");
+}
+#endif
