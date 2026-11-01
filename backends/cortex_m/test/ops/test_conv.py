@@ -222,13 +222,12 @@ test_cases = {
         model=CortexMConv1D(1, 1, 1),
         example_inputs=(ramp_tensor(0, 10, (1, 3, 2)),),
     ),
+    # Contiguous on purpose: the Arm test runner only reorders NHWC inputs and its
+    # own 5-D order, so a channels_last_3d input would reach the simulator in the
+    # wrong byte order.
     "conv3d": McuTestCase(
         model=CortexMConv3D(2, 4, (2, 3, 3), stride=(1, 2, 2), padding=1),
-        example_inputs=(
-            ramp_tensor(-10, 10, (2, 2, 4, 6, 6)).to(
-                memory_format=torch.channels_last_3d
-            ),
-        ),
+        example_inputs=(ramp_tensor(-10, 10, (2, 2, 4, 6, 6)),),
     ),
     "conv2d_x3": McuTestCase(
         model=CortexMConv2Dx3(),
