@@ -494,8 +494,8 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
             with _RuntimeLog() as log:
                 outputs = self._run_with_cuda_graph(module, inputs[0], inputs)
             # Eager calls give the same values, so only the log shows the
-            # capture was tried.
-            self.assertIn("capture failed for 'forward'", log.text)
+            # capture was tried, and only once.
+            self.assertEqual(log.text.count("capture failed for 'forward'"), 1)
             for i, (args, out) in enumerate(zip(inputs, outputs)):
                 with self.subTest(module=type(module).__name__, call=i):
                     self.assertIsInstance(out, torch.Tensor)
@@ -525,7 +525,7 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
             outputs = self._run_with_cuda_graph(
                 _MaskedCounter().eval(), inputs[0], inputs
             )
-        self.assertIn("capture failed for 'forward'", log.text)
+        self.assertEqual(log.text.count("capture failed for 'forward'"), 1)
         for i, out in enumerate(outputs):
             with self.subTest(call=i):
                 self.assertIsInstance(out, torch.Tensor)
