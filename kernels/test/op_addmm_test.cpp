@@ -102,6 +102,23 @@ TEST_F(OpAddmmOutTest, AllDtypesSupported) {
   // for those types.
 }
 
+TEST_F(OpAddmmOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // Each output sums 512 products of 1. A BFloat16 running sum stops growing
+  // at 256, so without float accumulation the result is 256 instead of 512.
+  constexpr int K = 512;
+  Tensor x = tf.ones({2, K});
+  Tensor y = tf.ones({K, 3});
+  Tensor out = tf.zeros({2, 3});
+  Tensor expected = tf.full({2, 3}, K);
+
+  // A self with the output's shape and a broadcast self take different paths.
+  op_addmm_out(tf.zeros({2, 3}), x, y, Scalar(1), Scalar(1), out);
+  EXPECT_TENSOR_EQ(out, expected);
+  op_addmm_out(tf.zeros({3}), x, y, Scalar(1), Scalar(1), out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
 TEST_F(OpAddmmOutTest, EmptyInputWithEmptyOutTensorPasses) {
   TensorFactory<ScalarType::Float> tf;
 

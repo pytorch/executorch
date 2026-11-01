@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <c10/util/BFloat16-math.h>
 #include <c10/util/irange.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <algorithm>
@@ -30,6 +31,13 @@ namespace torch {
 namespace executor {
 
 namespace internal {
+
+/// The type that products and sums of `T` values are computed in, like ATen's
+/// opmath_type: float for Half and BFloat16, because a 16-bit running sum
+/// stops growing once it is large next to each term, and `T` otherwise.
+template <typename T>
+using opmath_t =
+    std::conditional_t<c10::is_reduced_floating_point_v<T>, float, T>;
 
 template <bool ComputeMin, bool ComputeMax>
 inline void
@@ -171,13 +179,16 @@ inline void vec_matmul(
     int64_t m,
     int64_t n,
     int64_t p) {
+  using AccT = internal::opmath_t<T>;
+  using AccU = internal::opmath_t<U>;
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
-      T sum = 0;
+      AccT sum = 0;
       for (const auto k : c10::irange(n)) {
-        sum += x[i * n + k] * y[k * p + j];
+        sum +=
+            static_cast<AccU>(x[i * n + k]) * static_cast<AccU>(y[k * p + j]);
       }
-      z[i * p + j] = sum;
+      z[i * p + j] = static_cast<T>(sum);
     }
   }
 }
@@ -191,13 +202,16 @@ inline void vec_quantized_matmul_int8(
     int64_t m,
     int64_t n,
     int64_t p) {
+  using AccT = internal::opmath_t<T>;
+  using AccU = internal::opmath_t<U>;
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
-      T sum = 0;
+      AccT sum = 0;
       for (const auto k : c10::irange(n)) {
-        sum += x[i * n + k] * static_cast<U>(y[k * p + j]) * s[k];
+        sum += static_cast<AccU>(x[i * n + k]) *
+            static_cast<AccU>(y[k * p + j]) * static_cast<AccU>(s[k]);
       }
-      z[i * p + j] = sum;
+      z[i * p + j] = static_cast<T>(sum);
     }
   }
 }
@@ -218,20 +232,23 @@ inline void vec_quantized_matmul_transb_int8(
     int64_t n,
     int64_t p,
     int64_t g) {
+  using AccT = internal::opmath_t<T>;
+  using AccU = internal::opmath_t<U>;
   int64_t n_over_g = (n + g - 1) / g;
 
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
-      T sum = 0;
+      AccT sum = 0;
       for (int64_t k = 0; k < n; k += g) {
-        T psum = 0;
+        AccT psum = 0;
         // the last group may have fewer than g elements
         for (const auto k2 : c10::irange(k, bounds_min(k + g, n))) {
-          psum += x[i * n + k2] * static_cast<U>(y[j * n + k2]);
+          psum += static_cast<AccU>(x[i * n + k2]) *
+              static_cast<AccU>(y[j * n + k2]);
         }
         sum += psum * s[j * n_over_g + k / g];
       }
-      z[i * p + j] = sum;
+      z[i * p + j] = static_cast<T>(sum);
     }
   }
 }
@@ -250,13 +267,16 @@ inline void vec_addmm(
     int64_t p,
     U beta,
     U alpha) {
+  using Acc = internal::opmath_t<T>;
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
-      T sum = 0;
+      Acc sum = 0;
       for (const auto k : c10::irange(n)) {
-        sum += mat1_data[i * n + k] * mat2_data[k * p + j];
+        sum += static_cast<Acc>(mat1_data[i * n + k]) *
+            static_cast<Acc>(mat2_data[k * p + j]);
       }
-      out_data[i * p + j] = sum * alpha + self_data[i * p + j] * beta;
+      out_data[i * p + j] = static_cast<T>(
+          sum * alpha + static_cast<Acc>(self_data[i * p + j]) * beta);
     }
   }
 }

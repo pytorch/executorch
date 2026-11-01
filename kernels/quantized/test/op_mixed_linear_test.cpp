@@ -69,6 +69,39 @@ TEST_F(OpQuantizedMixedDtypeLinearTest, FloatInputFloatOutput) {
   test_dtype<ScalarType::Float, ScalarType::Float>();
 }
 
+TEST_F(OpQuantizedMixedDtypeLinearTest, HalfComputesInFloat) {
+  TensorFactory<ScalarType::Half> tf;
+  TensorFactory<ScalarType::Char> tf_char;
+  KernelRuntimeContext ctx{};
+
+  // Each output sums 4096 products of 1. A Half running sum stops growing at
+  // 2048, so without float accumulation the result is 2048 instead of 4096.
+  // One scale per row makes one group of 4096 products, and one scale per
+  // element makes 4096 groups of one product.
+  constexpr int K = 4096;
+  Tensor in = tf.ones({1, K});
+  Tensor weight = tf_char.ones({2, K});
+  Tensor out = tf.zeros({1, 2});
+  quantized_mixed_linear_out(ctx, in, weight, tf.ones({2}), {}, {}, out);
+  EXPECT_TENSOR_EQ(out, tf.full({1, 2}, K));
+  Tensor grouped_out = tf.zeros({1, 2});
+  quantized_mixed_linear_out(
+      ctx, in, weight, tf.ones({2, K}), {}, {}, grouped_out);
+  EXPECT_TENSOR_EQ(grouped_out, tf.full({1, 2}, K));
+
+  // 600 * 127 overflows Half, while the scaled product, about 762, fits.
+  Tensor small_out = tf.zeros({1, 1});
+  quantized_mixed_linear_out(
+      ctx,
+      tf.full({1, 1}, 600),
+      tf_char.full({1, 1}, 127),
+      tf.full({1}, 0.01),
+      {},
+      {},
+      small_out);
+  EXPECT_TENSOR_CLOSE(small_out, tf.full({1, 1}, 762));
+}
+
 #if 0
 // need <<
 TEST_F(OpQuantizedMixedDtypeLinearTest, FloatInputHalfOutput) {
