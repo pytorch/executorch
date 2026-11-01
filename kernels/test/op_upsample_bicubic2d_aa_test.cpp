@@ -230,8 +230,8 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, GrowMatchesATen) {
 
 TEST_F(OpUpsampleBicubic2dAAOutTest, ShrinksToWidthOne) {
   // For a contiguous input, ATen's CPU kernel copies the first row to every row
-  // here. These values are its result on the transposed input, which is what
-  // the math gives.
+  // here (https://github.com/pytorch/pytorch/issues/200568). These values are
+  // its result on the transposed input, which is what the math gives.
   expect_resize<ScalarType::Float>(
       {1, 2, 6, 8},
       kInput,

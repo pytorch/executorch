@@ -145,9 +145,12 @@ T weighted_sum(
 
 // Like ATen, resizes the width first and then the height, and copies a dim
 // whose size does not change. Half precision is computed in float and the
-// result is rounded once. Unlike ATen's CPU kernel, which gives every row the
-// first row's values when the input is contiguous, the output width is 1 and
-// the height changes, it resizes the height there too.
+// result is rounded once. ATen's CPU kernel gives every row the first row's
+// values when the input is contiguous, the output width is 1 and the height
+// changes, because basic_loop_separable_1d_vertical in
+// aten/src/ATen/native/cpu/UpSampleKernel.cpp reuses the first row's weights
+// (https://github.com/pytorch/pytorch/issues/200568). This kernel resizes the
+// height there too.
 template <typename CTYPE>
 void upsample_bicubic2d_aa_kernel_impl(
     KernelRuntimeContext& ctx,
