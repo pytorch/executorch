@@ -31,7 +31,6 @@ import torch.fx as fx
 
 import torch.fx._pytree as fx_pytree
 import torch.utils._pytree as pytree
-from executorch.exir._decompositions import upsample_bicubic2d_aa
 
 from executorch.exir.common import (
     extract_out_arguments,
@@ -667,9 +666,6 @@ def _default_decomposition_table(
     decomps[torch.ops.aten.empty_permuted.default] = _empty_permuted
     # torch._check_tensor_all exports to this op, which has no decomposition in core.
     decomps[torch.ops.aten._is_all_true.default] = torch.ops.aten.all.default
-    # F.interpolate(mode="bicubic", antialias=True) exports to this op, which has
-    # no decomposition in core and no portable kernel.
-    decomps[torch.ops.aten._upsample_bicubic2d_aa.default] = upsample_bicubic2d_aa
     # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
 
     never_decompose = []

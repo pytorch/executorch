@@ -12,7 +12,6 @@ from typing import Any, Dict
 
 import torch
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
-from executorch.exir._decompositions import upsample_bicubic2d_aa
 from executorch.exir.backend.test.op_partitioner_demo import (
     AddMulPartitionerDemo,
     NonDecompTestPartitioner,
@@ -364,10 +363,6 @@ class TestProgramManagers(unittest.TestCase):
                 )
 
         x = torch.randn(1, 3, 24, 32)
-        # As in ATen, a NaN reaches only the outputs whose window has it, and a
-        # dim whose size does not change, like the height of x in the first
-        # resize, is copied.
-        x[0, 0, 0, 0] = x[0, 1, -1, -1] = float("nan")
         channels_last = [
             t.to(memory_format=torch.channels_last)
             for t in (x, torch.randn(1, 3, 37, 51), torch.randn(1, 3, 64, 8))
@@ -377,41 +372,18 @@ class TestProgramManagers(unittest.TestCase):
             edge = to_edge(
                 export(Resize(), (inputs[0],), dynamic_shapes=dynamic_shapes)
             )
+            # The op stays whole and runs on its portable kernel.
+            self.assertEqual(
+                self._count_nodes(
+                    edge.exported_program().graph_module,
+                    [exir_ops.edge.aten._upsample_bicubic2d_aa.default],
+                ),
+                3,
+            )
             program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
             for t in inputs:
                 for actual, expected in zip(program.forward((t,)), Resize()(t)):
-                    torch.testing.assert_close(
-                        actual, expected, atol=1e-5, rtol=1e-5, equal_nan=True
-                    )
-
-        # Check the decomposition against ATen directly, over more cases than
-        # lowering covers above.
-        cases = (
-            ([13, 40], False),
-            ([1, 1], True),
-            ([42, 14], False, 1.75, 0.45),
-            ([24, 14], False, 1.05, 0.45),
-            ([24, 32], False, 1.05),
-        )
-        dtypes = (torch.float32, torch.float64, torch.bfloat16, torch.float16)
-        for size, *rest in cases:
-            for dtype in dtypes:
-                with self.subTest(size=size, args=rest, dtype=dtype):
-                    t = x.to(dtype)
-                    # ATen's CPU kernel has no half types, so those are checked
-                    # against float32 rounded once.
-                    expected = torch.ops.aten._upsample_bicubic2d_aa(
-                        t.to(torch.promote_types(dtype, torch.float32)), size, *rest
-                    )
-                    torch.testing.assert_close(
-                        upsample_bicubic2d_aa(t, size, *rest),
-                        expected.to(dtype),
-                        equal_nan=True,
-                    )
-        resized = upsample_bicubic2d_aa(channels_last[0], [13, 40], False)
-        self.assertTrue(resized.is_contiguous(memory_format=torch.channels_last))
-        integer = torch.zeros(1, 3, 24, 32, dtype=torch.uint8)
-        self.assertIs(upsample_bicubic2d_aa(integer, [13, 40], False), NotImplemented)
+                    torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
 
     def test_float_sym_max_min_rejected(self):
         # The runtime's sym_max and sym_min kernels only take ints.

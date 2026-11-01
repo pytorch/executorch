@@ -14,7 +14,6 @@ fbcode_target(_kind = runtime.python_test,
     deps = [
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
-        "//executorch/exir:_decompositions",
         "//executorch/exir:error",
         "//executorch/exir:lib",
         "//executorch/exir:print_program",

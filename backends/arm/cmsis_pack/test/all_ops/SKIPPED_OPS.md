@@ -107,7 +107,7 @@ APIs to force the conversion into the graph.
 
 ---
 
-## 7. Just needs a bespoke recipe — `grid_sampler_2d`, `cdist_forward`, `pdist_forward`, `upsample_bilinear2d_aa`
+## 7. Just needs a bespoke recipe — `grid_sampler_2d`, `cdist_forward`, `pdist_forward`, `upsample_bicubic2d_aa`, `upsample_bilinear2d_aa`
 
 **Why:** no fundamental blocker — they only need specific inputs the bulk recipes don't
 provide (a sampling grid in `[-1, 1]`; two point sets for the distance ops; the
@@ -117,6 +117,7 @@ provide (a sampling grid in `[-1, 1]`; two point sets for the distance ops; the
 - `grid_sampler_2d`: `F.grid_sample(input, grid)` with `grid` in `[-1, 1]`.
 - `cdist_forward`: `torch.cdist(a, b)` with `a:(B,N,D)`, `b:(B,M,D)`.
 - `pdist_forward`: `torch.pdist(x)` with `x:(N,D)`.
+- `upsample_bicubic2d_aa`: `F.interpolate(x, scale_factor=2, mode="bicubic", antialias=True)`.
 - `upsample_bilinear2d_aa`: `F.interpolate(x, scale_factor=2, mode="bilinear", antialias=True)`.
 
 **Effort:** small — a few lines each in `op_recipes.py`.
