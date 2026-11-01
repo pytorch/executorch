@@ -45,8 +45,11 @@ _VARIANTS = [
             # Buck does not put the CUDA driver stub's library on the loader path.
             # @oss-disable[end= ]: "LD_PRELOAD": "$(location //tools/lazify:lazy_stub_binder[shared])",
         },
-        # ggml-CUDA computes f16 BLAS GEMMs in f16 by default.
-        "sample_env": {"GGML_CUDA_CUBLAS_COMPUTE_TYPE": "f32"},
+        # ggml-CUDA computes f16 BLAS GEMMs in f16 and f32 ones in TF32 by default.
+        "sample_env": {
+            "GGML_CUDA_CUBLAS_COMPUTE_TYPE": "f32",
+            "NVIDIA_TF32_OVERRIDE": "0",
+        },
     },
     {
         "suffix": "_hip",
