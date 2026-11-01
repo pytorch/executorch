@@ -20,6 +20,8 @@
 
 #if defined(__linux__) && !defined(__ANDROID__)
 #include <sched.h>
+
+#include <cerrno>
 #endif
 
 // At most one mode should be set.
@@ -133,9 +135,21 @@ namespace {
 // while the pool is sized only once.
 uint32_t get_num_allowed_cpus() {
 #if defined(__linux__) && !defined(__ANDROID__)
-  cpu_set_t cpus;
-  if (sched_getaffinity(0, sizeof(cpus), &cpus) == 0) {
-    return static_cast<uint32_t>(CPU_COUNT(&cpus));
+  // The kernel rejects a mask smaller than its possible CPU count, which can
+  // exceed the CPU_SETSIZE CPUs a cpu_set_t holds, so grow it until it fits.
+  for (int num_cpus = CPU_SETSIZE; num_cpus <= (1 << 20); num_cpus *= 2) {
+    std::unique_ptr<cpu_set_t, void (*)(cpu_set_t*)> cpus(
+        CPU_ALLOC(num_cpus), [](cpu_set_t* set) { CPU_FREE(set); });
+    if (!cpus) {
+      break;
+    }
+    const size_t size = CPU_ALLOC_SIZE(num_cpus);
+    if (sched_getaffinity(0, size, cpus.get()) == 0) {
+      return static_cast<uint32_t>(CPU_COUNT_S(size, cpus.get()));
+    }
+    if (errno != EINVAL) {
+      break;
+    }
   }
 #endif
   return 0;
