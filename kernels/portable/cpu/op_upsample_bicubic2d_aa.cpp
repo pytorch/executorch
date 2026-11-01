@@ -129,9 +129,9 @@ Error compute_weights(
 
 // The value of output `o`, from the inputs it reads. They start at `in` and
 // are `step` elements apart.
-template <typename T, typename IN>
+template <typename T, typename CTYPE_IN>
 T weighted_sum(
-    const IN* in,
+    const CTYPE_IN* in,
     int64_t step,
     const Weights<T>& weights,
     int64_t o) {
