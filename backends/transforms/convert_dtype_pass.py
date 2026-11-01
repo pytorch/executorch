@@ -11,8 +11,9 @@ from typing import Any, Dict
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import ExportPass, map_args, PassResult
 from torch._subclasses.fake_tensor import FakeTensor
+from torch.utils._pytree import PyTree
 
 
 class ConvertDtypePass(ExportPass):
@@ -53,15 +54,10 @@ class ConvertDtypePass(ExportPass):
         # A tensor list, like the inputs of cat, must have the dtype of the output.
         # Multi-output ops are not rewritten, so a value read from one with getitem,
         # like topk indices, can still have src dtype here.
-        args = list(node.args)
-        for i, schema_arg in enumerate(node.target._schema.arguments[: len(args)]):
-            if schema_arg.type != torch.ListType.ofTensors():
-                continue
-            for value in args[i]:
-                if value in casts or not self._is_tensor_of_dtype(
-                    value.meta["val"], self.src_dtype
-                ):
-                    continue
+        def cast(value: torch.fx.Node) -> torch.fx.Node:
+            if value not in casts and self._is_tensor_of_dtype(
+                value.meta["val"], self.src_dtype
+            ):
                 with graph.inserting_before(node):
                     casts[value] = graph.create_node(
                         "call_function",
@@ -70,8 +66,16 @@ class ConvertDtypePass(ExportPass):
                         {"dtype": self.dst_dtype},
                     )
                 casts[value].meta["val"] = value.meta["val"].to(self.dst_dtype)
-            args[i] = [casts.get(value, value) for value in args[i]]
-        node.args = tuple(args)
+            return casts.get(value, value)
+
+        def cast_tensor_list(value: PyTree, arg: torch.Argument) -> PyTree:
+            if arg.type == torch.ListType.ofTensors():
+                return [cast(v) for v in value]
+            return value
+
+        node.args, node.kwargs = map_args(
+            node.target, cast_tensor_list, node.args, node.kwargs
+        )
 
     def _convert_dtype(self, graph: torch.fx.Graph) -> None:
         # Shared by all rewritten ops, so a value in several tensor lists gets one cast.

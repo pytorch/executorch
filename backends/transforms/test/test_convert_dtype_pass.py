@@ -26,16 +26,24 @@ class TestConvertDtypePass(unittest.TestCase):
 
         module = TopKIndices()
         inputs = (torch.randn(2, 3), torch.randint(0, 8, (2, 3)))
-        edge = to_edge(export(module, inputs, strict=True)).transform([I64toI32()])
+        edge = to_edge(export(module, inputs, strict=True))
+        second_cat = [
+            n
+            for n in edge.exported_program().graph.nodes
+            if n.target == exir_ops.edge.aten.cat.default
+        ][1]
+        # A node made by a pass can take its tensor list as a keyword argument.
+        second_cat.kwargs = {"tensors": second_cat.args[0], "dim": second_cat.args[1]}
+        second_cat.args = ()
+        edge = edge.transform([I64toI32()])
 
         nodes = edge.exported_program().graph.nodes
         cats = [n for n in nodes if n.target == exir_ops.edge.aten.cat.default]
         gather = next(n for n in nodes if n.target == exir_ops.edge.aten.gather.default)
-        for cat in cats:
-            self.assertEqual(
-                [t.meta["val"].dtype for t in cat.args[0]], [torch.int32] * 2
-            )
-        self.assertIs(cats[0].args[0][1], cats[1].args[0][0])
+        tensor_lists = [cats[0].args[0], cats[1].kwargs["tensors"]]
+        for tensors in tensor_lists:
+            self.assertEqual([t.meta["val"].dtype for t in tensors], [torch.int32] * 2)
+        self.assertIs(tensor_lists[0][1], tensor_lists[1][0])
         # The pass rewrites gather to int32 too, but only casts tensor lists, so
         # gather keeps the int64 index it needs.
         self.assertEqual(gather.args[2].meta["val"].dtype, torch.int64)
