@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdlib>
 #include <memory>
 #endif
 
@@ -112,7 +113,14 @@ bool populate_available_cpu_mids() {
     if (midr_file.is_open()) {
       std::string x;
       std::getline(midr_file, x);
-      tmp = static_cast<uint32_t>(std::stoul(x, nullptr, 16));
+      char* end = nullptr;
+      const unsigned long midr = std::strtoul(x.c_str(), &end, 16);
+      if (end == x.c_str()) {
+        ET_LOG(Info, "Failed to parse midr file %s", midr_file_path.c_str());
+        cpu_midrs->clear();
+        return false;
+      }
+      tmp = static_cast<uint32_t>(midr);
       (*cpu_midrs)[i] = tmp;
     } else {
       ET_LOG(Info, "Failed to open midr file %s", midr_file_path.c_str());
