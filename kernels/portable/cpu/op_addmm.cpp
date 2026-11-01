@@ -65,7 +65,7 @@ Tensor& addmm_out(
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&]() {
     using ACC = typename executorch::runtime::
         promote_types<CTYPE, CTYPE, /*half_to_float=*/true>::type;
-    vec_addmm<CTYPE, ACC>(
+    vec_addmm<CTYPE>(
         out.mutable_data_ptr<CTYPE>(),
         in.const_data_ptr<CTYPE>(),
         mat1.const_data_ptr<CTYPE>(),

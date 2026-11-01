@@ -135,17 +135,25 @@ TEST_F(OpAddmmOutTest, BFloat16BiasIsRoundedOnce) {
     EXPECT_TENSOR_EQ(out, tf.full({2, 3}, 258));
   }
 
-  // alpha is not rounded to BFloat16 first: 0.3 would become 0.30078125, and
-  // 50 * 0.30078125 rounds to 15.0625 instead of 15.
-  Tensor out_alpha = tf.zeros({1, 1});
+  // alpha and beta are not rounded to BFloat16 first: 0.3 would become
+  // 0.30078125, and 50 * 0.30078125 rounds to 15.0625 instead of 15.
+  Tensor out_scalar = tf.zeros({1, 1});
   op_addmm_out(
       tf.zeros({1}),
       tf.ones({1, 50}),
       tf.ones({50, 1}),
       Scalar(1),
       Scalar(0.3),
-      out_alpha);
-  EXPECT_TENSOR_EQ(out_alpha, tf.full({1, 1}, 15));
+      out_scalar);
+  EXPECT_TENSOR_EQ(out_scalar, tf.full({1, 1}, 15));
+  op_addmm_out(
+      tf.full({1}, 50),
+      tf.zeros({1, 1}),
+      tf.zeros({1, 1}),
+      Scalar(0.3),
+      Scalar(1),
+      out_scalar);
+  EXPECT_TENSOR_EQ(out_scalar, tf.full({1, 1}, 15));
 }
 
 TEST_F(OpAddmmOutTest, EmptyInputWithEmptyOutTensorPasses) {

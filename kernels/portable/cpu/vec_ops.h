@@ -252,9 +252,9 @@ inline void vec_quantized_matmul_transb_int8(
 // out[i][j] = alpha * sum(mat1[i][k] * mat2[k][j]) + beta * self[i][j]
 // self[i][j] is self_data[i * self_row_stride + j * self_col_stride], so a
 // stride of 0 broadcasts self along that dim.
-// T for tensor dtype, U for scalar type. Sums and alpha and beta use the
-// accumulator type of T.
-template <typename T, typename U = T>
+// alpha, beta and the sums use internal::acc_t<T>, so Half and BFloat16 are
+// summed in float.
+template <typename T>
 inline void vec_addmm(
     T* ET_RESTRICT out_data,
     const T* ET_RESTRICT self_data,
@@ -263,8 +263,8 @@ inline void vec_addmm(
     int64_t m,
     int64_t n,
     int64_t p,
-    U beta,
-    U alpha,
+    internal::acc_t<T> beta,
+    internal::acc_t<T> alpha,
     int64_t self_row_stride,
     int64_t self_col_stride) {
   using ACC = internal::acc_t<T>;
@@ -276,10 +276,10 @@ inline void vec_addmm(
             static_cast<ACC>(mat2_data[k * p + j]);
       }
       out_data[i * p + j] = static_cast<T>(
-          sum * static_cast<ACC>(alpha) +
+          sum * alpha +
           static_cast<ACC>(
               self_data[i * self_row_stride + j * self_col_stride]) *
-              static_cast<ACC>(beta));
+              beta);
     }
   }
 }
