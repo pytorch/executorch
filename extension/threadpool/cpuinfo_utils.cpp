@@ -60,7 +60,7 @@ bool is_non_performant_core(const struct cpuinfo_uarch_info* uarch_info) {
   return false;
 }
 
-#if CPUINFO_ARCH_ARM || CPUINFO_ARCH_ARM64
+#if defined(__linux__) && (CPUINFO_ARCH_ARM || CPUINFO_ARCH_ARM64)
 std::vector<uint32_t>* get_static_cpu_midr_vector() {
   static std::vector<uint32_t> cpu_midrs;
   return &cpu_midrs;
@@ -147,7 +147,7 @@ uint32_t _get_num_performant_cores() {
 
 uint32_t get_num_performant_cores() {
   ET_CHECK_MSG(cpuinfo_initialize(), "cpuinfo cannot be initialized.");
-#if CPUINFO_ARCH_ARM || CPUINFO_ARCH_ARM64
+#if defined(__linux__) && (CPUINFO_ARCH_ARM || CPUINFO_ARCH_ARM64)
   // First try and see if we have number of cores profiled for this specific
   // device
   uint32_t model_specific_num_cores = _get_model_specific_num_cores();
@@ -197,10 +197,10 @@ uint32_t get_num_performant_cores() {
       }
     }
 #endif
-#if CPUINFO_ARCH_ARM || CPUINFO_ARCH_ARM64
+#if defined(__linux__) && (CPUINFO_ARCH_ARM || CPUINFO_ARCH_ARM64)
     return _get_num_performant_cores();
 #else
-    // MIDR registers exist only on ARM. Elsewhere the count is unknown.
+    // The MIDR files exist only on ARM Linux. Elsewhere the count is unknown.
     return 0;
 #endif
   }
