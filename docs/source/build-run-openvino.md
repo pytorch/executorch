@@ -146,18 +146,18 @@ earlier release keeps computing in float16 until it is exported again.
 OpenVINO's CPU plugin computes 64-bit integers in 32 bits. An integer result
 outside the int32 range wraps around without an error. This applies to every
 int64 tensor, including the int64 result of `cumsum` and `prod` over smaller
-integer types. The CPU plugin also computes some int32 and int64 ops in float32.
-On x86 CPUs these are `sum`, `amax`, `amin`, `max` and `min`. On ARM CPUs they
-are element-wise ops such as `add`, `maximum` and `clamp`, and the same
-reductions along any dimension but the last. Once a value or a running total is
-above 16,777,216 (2^24) or below -16,777,216, such a result can be off, even
-inside the int32 range. For example, on x86 `sum` over a tensor that holds
-16,777,216 and 1 gives 16,777,216, and so does `amax` over one that holds
-16,777,217.
+integer types. In OpenVINO 2026.4.1, the CPU plugin also computes some int32 and
+int64 ops in float32. On x86 CPUs these are `sum`, `amax`, `amin`, `max` and
+`min`. On ARM CPUs they are element-wise ops such as `add`, `maximum` and
+`clamp`, and the same reductions along any dimension but the last. Once a value
+or a running total is above 16,777,216 (2^24) or below -16,777,216, such a
+result can be off, even inside the int32 range. For example, on x86 `sum` over a
+tensor that holds 16,777,216 and 1 gives 16,777,216, and so does `amax` over one
+that holds 16,777,217.
 
-On ties, the CPU plugin's `min(dim)` and `max(dim)` can return a later index
-than PyTorch, which returns the first one. This happens with uint8 and other
-dtypes.
+In OpenVINO 2026.4.1, the CPU plugin's `min(dim)` and `max(dim)` can return a
+later index on ties than PyTorch, which returns the first one. This happens with
+float32 as well as integer dtypes such as int32 and uint8.
 
 ## Build Instructions for Examples
 
