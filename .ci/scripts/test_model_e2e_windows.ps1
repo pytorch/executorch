@@ -89,12 +89,12 @@ switch ($HfModel) {
         $runnerTarget = "voxtral_realtime_runner"
         $runnerPath = "voxtral_realtime"
         $runnerPreset = "voxtral-realtime-cuda"
-        $expectedOutput = "Quilter"
+        $expectedOutput = "Phoebe"
         $preprocessor = "preprocessor.pte"
         $tokenizerUrl = ""
         $tokenizerFile = "tekken.json"
-        $audioUrl = "https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
-        $audioFile = "poem.wav"
+        $audioUrl = "https://dldata-public.s3.us-east-2.amazonaws.com/2086-149220-0033.wav"
+        $audioFile = "test_audio.wav"
     }
     "facebook/dinov2-small-imagenet1k-1-layer" {
         $runnerTarget = "dinov2_runner"

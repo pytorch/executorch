@@ -446,11 +446,14 @@ TEST_F(TextGenerationTest, DeferredCapturesAreReleasedBeforeExecution) {
   auto capture = std::make_shared<Token>(10);
   std::weak_ptr<Token> owner = capture;
   auto event = output();
+  // Only the first forward is relevant; avoid racing the bounded output queue.
+  GenerationOptions options;
+  options.max_new_tokens = 1;
   auto result = runtime->generate(
       "s",
       [capture = std::move(capture)](const PromptPreparationContext&)
           -> PromptPreparationResult { return ids({*capture, 11}); },
-      {},
+      options,
       [event](GenerationEvent update) { event->accept(std::move(update)); });
   ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
   const auto handle = std::get<RequestHandle>(result);
@@ -1344,6 +1347,43 @@ TEST_F(TextGenerationTest, ReplayOpenFailureLeavesReservedUnavailableSession) {
   auto fresh = output();
   submit(fresh, ids({20, 21})).wait();
   EXPECT_EQ(fresh->terminal->stats.session_reset_reason, "new");
+}
+
+TEST_F(TextGenerationTest, IgnoreEosIsRequestScopedAndPreservesExplicitStops) {
+  config.default_stop_tokens = {9};
+  tokenizer.pieces[9] = "<eos>";
+  tokenizer.pieces[8] = "<stop>";
+  executor.script = {100, 9, 8, 101};
+  executor.burst = 4;
+  start();
+  GenerationOptions options;
+  options.max_new_tokens = 4;
+  options.ignore_eos = true;
+  auto ignored = output();
+  submit(ignored, ids({10, 11}), options).wait();
+  ASSERT_TRUE(ignored->terminal);
+  EXPECT_EQ(ignored->terminal->finish_reason, FinishReason::Length);
+  EXPECT_EQ(ignored->terminal->stats.completion_tokens, 4u);
+  EXPECT_EQ(
+      ignored->terminal->stats.generated_token_ids,
+      (std::vector<Token>{100, 9, 8, 101}));
+
+  options.stop_tokens = {8};
+  auto explicit_stop = output();
+  submit(explicit_stop, ids({20, 21}), options).wait();
+  ASSERT_TRUE(explicit_stop->terminal);
+  EXPECT_EQ(explicit_stop->terminal->finish_reason, FinishReason::Stop);
+  EXPECT_EQ(
+      explicit_stop->terminal->stats.generated_token_ids,
+      (std::vector<Token>{100, 9}));
+
+  options.ignore_eos = false;
+  auto normal = output();
+  submit(normal, ids({30, 31}), options).wait();
+  ASSERT_TRUE(normal->terminal);
+  EXPECT_EQ(normal->terminal->finish_reason, FinishReason::Stop);
+  EXPECT_EQ(
+      normal->terminal->stats.generated_token_ids, (std::vector<Token>{100}));
 }
 
 TEST_F(TextGenerationTest, EosIsLogicalHistoryButNotVisibleTextOrReplayIds) {

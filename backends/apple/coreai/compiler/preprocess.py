@@ -157,10 +157,9 @@ def _get_compile_spec(
     return None
 
 
-def _nds_key(model_hash: str, relative_path: str) -> str:
-    # Namespaced by content hash so identical assets dedup to one entry and the
-    # hash doubles as an on-device cache key.
-    return f"coreai/{model_hash}/{relative_path}"
+def _nds_key(export_hash: str, relative_path: str) -> str:
+    # Identical exports share embedded assets under their export hash.
+    return f"coreai/{export_hash}/{relative_path}"
 
 
 def _asset_metadata(staging: Path) -> Dict[str, Any]:
@@ -194,23 +193,23 @@ def _asset_metadata(staging: Path) -> Dict[str, Any]:
 
 def _deliver(
     staging: Path,
-    model_hash: str,
+    export_hash: str,
     packaging: AssetPackaging,
     manifest_extra: Dict[str, Any],
 ) -> PreprocessResult:
     """Embed a staging directory of bundles in the .pte with its manifest.
 
     ``staging`` holds the ``.aimodel`` / ``.aimodelc`` bundles, never their
-    contents, so assets land under ``coreai/<hash>/<bundle>/`` in the
+    contents, so assets land under ``coreai/<export_hash>/<bundle>/`` in the
     NamedDataStore.
     """
     manifest = {
         "packaging": packaging.value,
-        "hash": model_hash,
+        "export_hash": export_hash,
         **manifest_extra,
         **_asset_metadata(staging),
     }
-    return _embed_dir_inline(staging, model_hash, manifest)
+    return _embed_dir_inline(staging, export_hash, manifest)
 
 
 def _prepare_program_for_conversion(edge_program: ExportedProgram) -> ExportedProgram:
@@ -255,21 +254,21 @@ def _convert_to_aiprogram(
 
 # Asset embedding helpers.
 def _embed_dir_inline(
-    root_dir: Path, model_hash: str, manifest_extra: Dict[str, Any]
+    root_dir: Path, export_hash: str, manifest_extra: Dict[str, Any]
 ) -> PreprocessResult:
     """Flatten every file under ``root_dir`` into the NamedDataStore.
 
     ``root_dir`` is the directory *containing* the ``.aimodel`` / ``.aimodelc``
     bundles, never a bundle itself, so the bundle name survives into the keys.
 
-    Keys are ``coreai/{hash}/{relpath}``; ``manifest_extra`` becomes the
+    Keys are ``coreai/{export_hash}/{relpath}``; ``manifest_extra`` becomes the
     manifest (packaging, files, archs, ...).
     """
     store = NamedDataStore()
     for path in sorted(root_dir.rglob("*")):
         if path.is_file():
             store.add_named_data(
-                _nds_key(model_hash, path.relative_to(root_dir).as_posix()),
+                _nds_key(export_hash, path.relative_to(root_dir).as_posix()),
                 path.read_bytes(),
                 alignment=_ASSET_ALIGNMENT,
             )
@@ -426,15 +425,15 @@ def _compiled_arch_bundles(out_dir: Path) -> List[Tuple[str, Path]]:
 def _compile_aot(program, opts: Dict[str, Any], tmp_dir: Path) -> Tuple[str, Path]:
     """Save the intermediate ``.aimodel`` and AOT-compile it to ``.aimodelc``.
 
-    Returns ``(model_hash, compiled_out_dir)``. The intermediate ``.aimodel``
+    Returns ``(export_hash, compiled_out_dir)``. The intermediate ``.aimodel``
     keeps the default OS floor; ``min_deployment_version`` targets the compiled
     ``.aimodelc`` via ``coreai-build``, so it is not double-specified.
     """
-    model_hash = _save_and_hash(program, tmp_dir / "model.aimodel")
+    export_hash = _save_and_hash(program, tmp_dir / "model.aimodel")
     out = tmp_dir / "compiled"
     out.mkdir()
     _run_coreai_build(tmp_dir / "model.aimodel", out, opts)
-    return model_hash, out
+    return export_hash, out
 
 
 @final
@@ -446,8 +445,7 @@ class CoreAIBackend(BackendDetails):
     ``xcrun coreai-build``; architecture selection is one / a list / all). The
     bundles are embedded in the ``.pte`` via NamedDataStore.
 
-    ``processed_bytes`` is always a small JSON manifest naming what/where.
-    Runtime execution is not wired up yet.
+    ``processed_bytes`` contains the manifest used by the runtime delegate.
     """
 
     @staticmethod
@@ -514,15 +512,15 @@ class CoreAIBackend(BackendDetails):
         program, min_os, bindings: Dict[str, Any]
     ) -> PreprocessResult:
         with TemporaryDirectory() as tmp:
-            model_hash = _save_and_hash(program, Path(tmp) / "model.aimodel", min_os)
+            export_hash = _save_and_hash(program, Path(tmp) / "model.aimodel", min_os)
             return _deliver(
                 Path(tmp),
-                model_hash,
+                export_hash,
                 AssetPackaging.INLINE,
                 {
                     **bindings,
                     # relative path the runtime resolves against its base
-                    "path": f"{model_hash}/model.aimodel",
+                    "path": f"{export_hash}/model.aimodel",
                     "min_deployment_version": _os_version_text(min_os),
                 },
             )
@@ -533,17 +531,17 @@ class CoreAIBackend(BackendDetails):
         program, opts: Dict[str, Any], bindings: Dict[str, Any]
     ) -> PreprocessResult:
         with TemporaryDirectory() as tmp:
-            model_hash, out = _compile_aot(program, opts, Path(tmp))
+            export_hash, out = _compile_aot(program, opts, Path(tmp))
             return _deliver(
                 out,
-                model_hash,
+                export_hash,
                 AssetPackaging.AOT_COMPILED_INLINE,
                 {
                     **bindings,
                     "platform": opts["platform"],
                     "min_deployment_version": opts["min_deployment_version"],
                     "archs": {
-                        arch: f"{model_hash}/{bundle.name}"
+                        arch: f"{export_hash}/{bundle.name}"
                         for arch, bundle in _compiled_arch_bundles(out)
                     },
                 },

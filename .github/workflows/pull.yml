@@ -1365,9 +1365,9 @@ jobs:
         export QNN_DELEGATE_TEST=1
         export LD_LIBRARY_PATH="$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$(realpath build-x86/lib/):${LD_LIBRARY_PATH:-}"
 
-        # Run operator test classes only.
+        # Run operator and FCB test classes only.
         pytest -vs backends/qualcomm/tests/test_qnn_delegate.py \
-            -k "TestQNNFloatingPointOperator or TestQNNQuantizedOperator"
+            -k "TestQNNFloatingPointOperator or TestQNNQuantizedOperator or TestQNNFcb"
 
   test-phi-3-mini-runner-linux:
     needs: docker-image

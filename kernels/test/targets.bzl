@@ -248,6 +248,7 @@ def define_common_targets():
     _common_op_test("op_copy_test", ["aten", "portable"])
     _common_op_test("op_cos_test", ["aten", "portable"])
     _common_op_test("op_cosh_test", ["aten", "portable"])
+    _common_op_test("op_cummin_test", ["aten", "portable"])
     _common_op_test("op_cumsum_test", ["aten", "portable"])
     _common_op_test("op_detach_copy_test", ["aten", "portable"])
     _common_op_test("op_diagonal_copy_test", ["aten", "portable"])

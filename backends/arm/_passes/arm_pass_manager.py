@@ -87,6 +87,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeMaxPool1dPass,
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
+    DecomposeMvDotPass,
     DecomposeNotEqualPass,
     DecomposePermuteForU55Pass,
     DecomposePowTensorTensorPass,
@@ -882,6 +883,7 @@ class ArmPassManager(ExportedProgramPassManager):
                     ConvertMinMaxPass(tfa_pass=True),
                     AccumulateIndexPutPass(tfa_pass=True),
                     DecomposeMatmulPass(tfa_pass=True),
+                    DecomposeMvDotPass(tfa_pass=True),
                 ]
             )
 

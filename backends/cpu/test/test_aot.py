@@ -197,6 +197,23 @@ class CPUAOTTest(unittest.TestCase):
         self.assertEqual(program.executorch_program.execution_plan[0].delegates, [])
         self.assertGreater(len(program.buffer), 0)
 
+    def test_1d_linear_is_preserved_and_delegated(self):
+        class Linear1D(torch.nn.Module):
+            def forward(self, x, w):
+                return torch.ops.aten.linear.default(x, w, None)
+
+        edge = to_edge_transform_and_lower(
+            torch.export.export(Linear1D(), (torch.randn(3), torch.randn(3))),
+            partitioner=[CPUPartitioner()],
+        )
+        program = edge.to_executorch()
+        delegate_targets = [
+            node.target
+            for data in program.executorch_program.backend_delegate_data
+            for node in deserialize_graph(bytes(data.data)).nodes
+        ]
+        self.assertEqual(delegate_targets.count("torch.ops.aten.linear.default"), 1)
+
     def test_constants_have_recorded_readable_tail(self):
         model = torch.nn.Linear(2, 3).eval()
         result = CpuBackend.preprocess(

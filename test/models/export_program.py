@@ -115,6 +115,14 @@ class ModuleAddHalf(nn.Module):
         )
 
 
+class ModuleChannelsLast(nn.Module):
+    def forward(self, x):
+        return x + x
+
+    def get_random_inputs(self):
+        return (torch.randn(1, 3, 4, 5).to(memory_format=torch.channels_last),)
+
+
 class ModuleDynamicCatUnallocatedIO(nn.Module):
     def __init__(self):
         super(ModuleDynamicCatUnallocatedIO, self).__init__()

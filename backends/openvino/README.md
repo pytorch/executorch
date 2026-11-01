@@ -48,6 +48,51 @@ print(_get_registered_backend_names())
 # Should include 'OpenvinoBackend'
 ```
 
+## Precision
+
+When the device is `CPU`, a program computes in float32 by default. Without this default,
+OpenVINO would compute in bfloat16 on x86 CPUs with bfloat16 units, which keeps only two to
+three significant digits, and in float16 on ARM CPUs, which keeps about three.
+Both are faster. To trade accuracy for speed, ask for the faster precision when
+lowering:
+
+```python
+from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+OpenvinoPartitioner(
+    [CompileSpec("device", b"CPU"), CompileSpec("inference_precision", b"bf16")]
+)
+```
+
+On an ARM CPU, ask for `f16` instead: there float32 is about 1.8x slower than
+float16, as measured on an Orin Nano.
+
+The value is OpenVINO's `INFERENCE_PRECISION_HINT`: `f32`, `f16` or `bf16`. An
+empty value means the default, and any other value fails at lowering. A CPU
+without float16 support computes an `f16` program in float32. OpenVINO has no
+bfloat16 on ARM CPUs, so there `bf16` keeps the ARM default, float16 where the
+CPU supports it. Which x86 CPUs compute in bfloat16 is up to OpenVINO; see its
+[Precision Control](https://docs.openvino.ai/2026/openvino-workflow/running-inference/optimize-inference/precision-control.html)
+page. Other devices, such as GPUs, keep OpenVINO's default unless the option is
+set.
+
+The default also applies to a program exported in float16: on a CPU it computes
+in float32 unless you lower it with `inference_precision`.
+
+On x86 CPUs, OpenVINO applies the precision when the runtime loads a program.
+So a program lowered without `inference_precision` computes in float32, even
+one exported with an ExecuTorch release that did not have this default. That
+is slower and can use more memory. Export it again with `inference_precision`
+set to `bf16` to get the earlier speed. On ARM CPUs, OpenVINO applies the
+precision when the program is lowered, so a program exported with such an
+earlier release keeps computing in float16 until it is exported again.
+
+OpenVINO's CPU plugin computes 64-bit integers in 32 bits. An integer result
+outside the int32 range wraps around without an error. This applies to every
+int64 tensor, including the int64 result of `cumsum` and `prod` over smaller
+integer types.
+
 ## Directory Structure
 
 ```

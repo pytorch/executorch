@@ -1,4 +1,4 @@
-import { getDemo } from './config/catalog.js';
+import { enablePreview, getDemo } from './config/catalog.js';
 import { initGPU } from './gpu/context.js';
 import { h, replace } from './lib/dom.js';
 import './lib/theme.js';
@@ -7,17 +7,20 @@ import { mountChat } from './ui/demo-chat.js';
 import { mountEffects } from './ui/demo-effects.js';
 import { mountSegment } from './ui/demo-segment.js';
 import { mountStt } from './ui/demo-stt.js';
+import { mountTts } from './ui/demo-tts.js';
 import { mountVision } from './ui/demo-vision.js';
 import { mountVlm } from './ui/demo-vlm.js';
 import { mountDiagnosticsBanner } from './ui/diagnostics-banner.js';
 import { icon } from './ui/icons.js';
 import { mountModels } from './ui/models-page.js';
 import { createSidebar } from './ui/sidebar.js';
+import { getDevConfig } from './runtime/sources.js';
 
 const DEMO_VIEWS = {
   chat: mountChat,
   vision: mountVision,
   stt: mountStt,
+  tts: mountTts,
   vlm: mountVlm,
   segment: mountSegment,
   effects: mountEffects,
@@ -32,6 +35,9 @@ function parseRoute() {
   if (parts[0] === 'examples' && parts[1]) return { name: 'catalog', category: parts[1], nav: `examples/${parts[1]}` };
   return { name: 'catalog', nav: 'examples' };
 }
+
+// Unpublished models a local dev server provides show up as previews (see catalog.js).
+enablePreview((await getDevConfig())?.models);
 
 const COLLAPSE_KEY = 'etwg-sidebar-collapsed';
 const app = document.getElementById('app');

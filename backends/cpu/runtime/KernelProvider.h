@@ -64,10 +64,14 @@ runtime::Result<Buffer> allocate_buffer(
 /// Threadpool lifetime covers preparation and every invocation of the plan.
 struct ExecutionContext {
   size_t threads = 1;
-  bool avx2_fma = false;
   pthreadpool* threadpool = nullptr;
   runtime::EventTracer* event_tracer = nullptr;
 };
+
+/// Reads the process thread pool. Call it for every execution: the thread
+/// pool can be reset between executions.
+ExecutionContext current_execution_context(
+    runtime::EventTracer* tracer = nullptr);
 
 struct Support {
   bool supported;
@@ -135,7 +139,7 @@ class KernelImplementation {
     return false;
   }
   /// Pure metadata query, before compile can read constants or allocate
-  /// storage. The default declares contiguous tensor storage for every region
+  /// storage. The default declares contiguous storage for every region
   /// boundary.
   virtual runtime::Result<StorageRequirements> requirements(
       const KernelRegion& region,
