@@ -178,6 +178,13 @@ Error compute_weights(
     for (const auto j : c10::irange(exact.size[o])) {
       const int64_t i = o * exact.max_size + j;
       const double value = exact.values[i] * (1 << precision);
+      // The precision only bounds the largest weight, so with such a scale a
+      // negative one can still be out of range.
+      ET_CHECK_OR_RETURN_ERROR(
+          value > -32768.5 && value < 32767.5,
+          InvalidArgument,
+          "_upsample_bicubic2d_aa got a scale whose uint8 weights do not fit "
+          "in fixed point");
       weights.values[i] = static_cast<int16_t>(
           value < 0 ? static_cast<int>(-0.5 + value)
                     : static_cast<int>(0.5 + value));

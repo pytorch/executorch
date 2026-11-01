@@ -595,6 +595,25 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, RejectsUint8WeightsTooLargeForFixedPoint) {
           out));
 }
 
+TEST_F(OpUpsampleBicubic2dAAOutTest, RejectsUint8WeightsOutsideInt16) {
+  // With this scale, the last output's window sums to a negative value, so
+  // its most negative weight is larger than any positive one and does not fit
+  // in 16 bits at the precision the positive ones allow.
+  TensorFactory<ScalarType::Byte> tf;
+  Tensor in = tf.full({1, 1, 1, 19}, 100);
+  Tensor out = tf.zeros({1, 1, 1, 6});
+  const std::vector<int64_t> output_size = {1, 6};
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_upsample_bicubic2d_aa_out(
+          in,
+          ArrayRef<int64_t>(output_size.data(), output_size.size()),
+          false,
+          std::nullopt,
+          0.25,
+          out));
+}
+
 TEST_F(OpUpsampleBicubic2dAAOutTest, ResizesBothDimsLikeTwoOneDimResizes) {
   // Inputs this tall make the kernel keep only a few rows between its passes.
   TensorFactory<ScalarType::Float> tf;
