@@ -139,6 +139,18 @@ class TestBoolMinMax(BaseOpenvinoOpTest):
         x[1] = -x[1].abs() - 0.1
         self.execute_layer_test(BoolMinMax(), (x,), expected_partitions=2)
 
+    def test_bool_min_of_a_buffer(self):
+        class BufferMin(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("w", torch.tensor([1.0, -2.0, 3.0]))
+
+            def forward(self, x):
+                return x + (self.w > 0).min().float()
+
+        # The comparison reads only the buffer, so its partition has no inputs.
+        self.execute_layer_test(BufferMin(), (torch.randn(3),), expected_partitions=2)
+
     def test_maximum_of_bool_and_float_stays_with_openvino(self):
         class Maximum(torch.nn.Module):
             def forward(self, mask, x):
