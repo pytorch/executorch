@@ -264,18 +264,21 @@ T weighted_sum(
 }
 
 // ATen's uint8 sum: starts at one half so that dropping the fraction bits
-// rounds, and clamps the result.
+// rounds, and clamps the result. It adds up in 64 bits, not in int as ATen
+// does, because a scale F.interpolate never gives can make a window wide
+// enough to overflow int.
 uint8_t weighted_sum(
     const uint8_t* in,
     int64_t step,
     const FixedPointWeights& weights,
     int64_t o) {
   const int16_t* values = weights.values + o * weights.max_size;
-  int sum = 1 << (weights.precision - 1);
+  int64_t sum = int64_t{1} << (weights.precision - 1);
   for (const auto j : c10::irange(weights.size[o])) {
     sum += in[j * step] * values[j];
   }
-  return static_cast<uint8_t>(std::clamp(sum >> weights.precision, 0, 255));
+  return static_cast<uint8_t>(
+      std::clamp<int64_t>(sum >> weights.precision, 0, 255));
 }
 
 // Like ATen, resizes the width first and then the height, and copies a dim
