@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import logging
+import operator
 from collections import OrderedDict
 from typing import cast, Mapping, Optional
 
@@ -15,6 +16,9 @@ from executorch.exir import memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
+from executorch.exir.passes.insert_write_back_for_buffers_pass import (
+    _schema_paired_args,
+)
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
 from torch._export.utils import (
     get_buffer,
@@ -26,6 +30,7 @@ from torch._export.utils import (
 from torch._guards import detect_fake_mode
 from torch.export import ExportedProgram
 from torch.export.exported_program import InputKind, InputSpec, TensorArgument
+from torch.multiprocessing.reductions import StorageWeakRef
 from torch.utils import _pytree as pytree
 
 # Avoid propagating constants for `exir.ops.edge.aten.full.default`.
@@ -110,7 +115,12 @@ def get_constant_placeholder_dict(
     Returns a dictionary of placeholder node -> constant tensor.
     """
     const_node_to_tensor: OrderedDict[torch.fx.Node, torch.Tensor] = OrderedDict()
+    # Before run_decompositions, buffers_to_mutate does not list a buffer that
+    # is written in place, so it looks like a constant here.
+    written = _nodes_written_in_place(exported_program.graph_module)
     for node in exported_program.graph.find_nodes(op="placeholder"):
+        if node in written:
+            continue
         if is_param(exported_program, node):
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_param(exported_program, node)
@@ -124,6 +134,106 @@ def get_constant_placeholder_dict(
                 torch.Tensor, get_lifted_tensor_constant(exported_program, node)
             )
     return const_node_to_tensor
+
+
+# Higher order ops whose submodule takes, in order, the operands after it.
+_WRAPPER_HOPS = (
+    torch.ops.higher_order.wrap_with_set_grad_enabled,
+    torch.ops.higher_order.wrap_with_autocast,
+)
+
+
+def _storages(node: torch.fx.Node) -> set[StorageWeakRef]:
+    # Only strided tensors have a storage to share. Sparse ones raise here.
+    return {
+        StorageWeakRef(val.untyped_storage())
+        for val in pytree.tree_leaves(node.meta.get("val"))
+        if isinstance(val, torch.Tensor) and val.layout == torch.strided
+    }
+
+
+def _hop_written_operands(
+    graph_module: torch.fx.GraphModule, node: torch.fx.Node
+) -> list[torch.fx.Node]:
+    """
+    Returns the operands of a higher order op, such as a no_grad or autocast
+    region, that an in-place op inside its submodules writes.
+    """
+    written = []
+    for i, arg in enumerate(node.args):
+        if not isinstance(arg, torch.fx.Node) or arg.op != "get_attr":
+            continue
+        submodule = getattr(graph_module, arg.target)
+        if not isinstance(submodule, torch.fx.GraphModule):
+            continue
+        submodule_written = _nodes_written_in_place(submodule)
+        placeholders = submodule.graph.find_nodes(op="placeholder")
+        if node.target in _WRAPPER_HOPS:
+            written += [
+                operand
+                for placeholder, operand in zip(placeholders, node.args[i + 1 :])
+                if placeholder in submodule_written
+                and isinstance(operand, torch.fx.Node)
+            ]
+        elif any(p in submodule_written for p in placeholders):
+            # The operand layout is op specific, so any operand may be written.
+            written += [
+                leaf
+                for leaf in pytree.tree_leaves(node.args)
+                if isinstance(leaf, torch.fx.Node)
+            ]
+    return written
+
+
+def _nodes_written_in_place(
+    graph_module: torch.fx.GraphModule,
+) -> set[torch.fx.Node]:
+    """
+    Returns the nodes whose value an in-place op writes, directly, through a
+    view or inside a higher order op. Such a value has to stay a runtime
+    tensor, not a constant.
+    """
+    written = set()
+    for node in graph_module.graph.nodes:
+        if node.op != "call_function":
+            continue
+        schema = getattr(node.target, "_schema", None)
+        if schema is None:
+            written.update(_hop_written_operands(graph_module, node))
+            continue
+        for arg, schema_arg in _schema_paired_args(node, schema):
+            alias_info = schema_arg.alias_info
+            if alias_info is not None and alias_info.is_write:
+                written.update(
+                    leaf
+                    for leaf in pytree.tree_leaves(arg)
+                    if isinstance(leaf, torch.fx.Node)
+                )
+    if not written:
+        return written
+    # Every view of a written tensor shares its storage, including views that
+    # composite ops like atleast_2d or meshgrid return before decomposition.
+    written_storages = set().union(*(_storages(node) for node in written))
+    written.update(
+        node
+        for node in graph_module.graph.nodes
+        if not _storages(node).isdisjoint(written_storages)
+    )
+    # A deserialized program does not share storage between a view and its
+    # base, so a write through a view also marks the tensor the view reads.
+    pending = list(written)
+    while pending:
+        node = pending.pop()
+        if node.op != "call_function" or not node.args:
+            continue
+        base = node.args[0]
+        is_view = node.target is operator.getitem or getattr(
+            node.target, "is_view", False
+        )
+        if is_view and isinstance(base, torch.fx.Node) and base not in written:
+            written.add(base)
+            pending.append(base)
+    return written
 
 
 def get_propagated_const_tensor_dict(
@@ -142,9 +252,12 @@ def get_propagated_const_tensor_dict(
         # Default set of targets to skip.
         all_skip_targets = _DEFAULT_SKIP_TARGETS
 
+    written_in_place = _nodes_written_in_place(exported_program.graph_module)
+
     for node in exported_program.graph.nodes:
         if (
             node.op != "call_function"
+            or node in written_in_place
             or node.target is memory.alloc
             or node.target in all_skip_targets
             # Ops with side effects (RNG draws, mutation) have to run at
@@ -182,7 +295,22 @@ def get_propagated_const_tensor_dict(
                 and 0 in prop_constant_tensor.stride()
             ):
                 prop_constant_tensor = prop_constant_tensor.contiguous()
+
+            # A folded constant must be a plain tensor that does not require
+            # grad. no_grad is not enough when the op returns a view of a
+            # parameter or the parameter itself.
+            if isinstance(prop_constant_tensor, torch.Tensor):
+                prop_constant_tensor = prop_constant_tensor.detach()
         const_node_to_tensor[node] = prop_constant_tensor
+
+    # Only tensors can be lifted into placeholders. A non-tensor value read by
+    # a node outside the fold stays a runtime op, together with the non-tensor
+    # values it is computed from.
+    for node in reversed(list(const_node_to_tensor)):
+        if not isinstance(const_node_to_tensor[node], torch.Tensor) and any(
+            user not in const_node_to_tensor for user in node.users
+        ):
+            del const_node_to_tensor[node]
 
     return const_node_to_tensor
 
@@ -411,8 +539,19 @@ def constant_prop_pass(
 
     _update_output_node_and_specs(exported_program, _skip_dim_order=_skip_dim_order)
 
-    # Cleanup the graph.
-    exported_program.graph.eliminate_dead_code()
-    exported_program.graph_module.recompile()
+    # Cleanup the graph. A higher order op that writes its operands has no
+    # users, yet it has to stay. Graph.eliminate_dead_code also cleans
+    # submodules without this rule, which would drop a nested region, so only
+    # the top-level graph is cleaned here.
+    graph_module = exported_program.graph_module
+    for node in reversed(graph_module.graph.nodes):
+        if (
+            node.op not in ("placeholder", "output")
+            and not node.users
+            and not node.is_impure()
+            and not _hop_written_operands(graph_module, node)
+        ):
+            graph_module.graph.erase_node(node)
+    graph_module.recompile()
 
     return exported_program

@@ -532,9 +532,13 @@ class AddmmConfig(GEMMConfig):
         """
 
         def find_partition_args(input_node):
+            # A quantized tensor subclass dequantizes inside the linear call.
+            # Stop at that dequant, or its integer input is taken for a float
+            # weight.
             while (
                 len(input_node.all_input_nodes) != 0
                 and input_node not in src_partition.input_nodes
+                and not is_dequant(input_node)
             ):
                 input_node = input_node.all_input_nodes[0]
             return input_node

@@ -53,6 +53,10 @@ if [[ "$FLOW" == *qnn* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON"
 fi
 
+if [[ "$FLOW" == *cpu* ]]; then
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_CPU=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON"
+fi
+
 if [[ "$FLOW" == *vulkan* ]]; then
     # CPU runners can have Mesa ICDs installed without a usable hardware GPU.
     source .ci/scripts/setup-vulkan-linux-deps.sh "swiftshader"
@@ -119,7 +123,7 @@ fi
 
 if [[ "$FLOW" == *openvino* ]]; then
     # Setup OpenVINO environment
-    source .ci/scripts/setup-openvino.sh --nightly
+    source .ci/scripts/setup-openvino.sh
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_OPENVINO=ON"
 fi
 

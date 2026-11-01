@@ -7,27 +7,9 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmOpTargetedPass
-from executorch.backends.arm._passes.arm_pass_utils import create_node, get_node_arg
+from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-
-DTYPE_RANK = {
-    torch.bool: 0,
-    torch.uint8: 1,
-    torch.int8: 2,
-    torch.int16: 3,
-    torch.int32: 4,
-    torch.int64: 5,
-    torch.float16: 6,
-    torch.bfloat16: 7,
-    torch.float32: 8,
-    torch.float64: 9,
-}
-
-
-def get_largest_dtype(dtype_1, dtype_2):
-    """Find the largest dtype."""
-    return dtype_1 if DTYPE_RANK[dtype_1] > DTYPE_RANK[dtype_2] else dtype_2
 
 
 class MatchArgDtypePass(ArmOpTargetedPass):
@@ -44,26 +26,32 @@ class MatchArgDtypePass(ArmOpTargetedPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    target_ops = {exir_ops.edge.aten.sub.Tensor, exir_ops.edge.aten.where.self}
+    target_ops = {
+        exir_ops.edge.aten.maximum.default,
+        exir_ops.edge.aten.pow.Tensor_Tensor,
+        exir_ops.edge.aten.sub.Tensor,
+        exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.where.self,
+    }
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified_graph = False
         graph = graph_module.graph
 
-        for node in list(graph.nodes):
+        for node in graph.nodes:
             if node.op != "call_function" or node.target not in self.target_ops:
                 continue
+            args_to_cast = (
+                node.args[1:]
+                if node.target == exir_ops.edge.aten.where.self
+                else node.args
+            )
+            input_ = args_to_cast[0]
+            other_ = args_to_cast[1]
+            target_dtype = torch.result_type(input_.meta["val"], other_.meta["val"])
 
-            input_ = get_node_arg(node.args, 0)
-            other_ = get_node_arg(node.args, 1)
-
-            input_dtype = input_.meta["val"].dtype
-            other_dtype = other_.meta["val"].dtype
-            target_dtype = input_dtype
-            if input_dtype != other_dtype:
-                target_dtype = get_largest_dtype(input_dtype, other_dtype)
-
-            for arg in node.args[1:]:
+            for arg in args_to_cast:
                 arg_dtype = arg.meta["val"].dtype
 
                 if arg_dtype != target_dtype:
@@ -79,13 +67,13 @@ class MatchArgDtypePass(ArmOpTargetedPass):
                             replace_node_int8.kwargs = {"dtype": torch.int8}
 
                         with graph.inserting_after(replace_node_int8):
-                            replace_node_fp32 = create_node(
+                            replace_node_target = create_node(
                                 graph,
                                 exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
                             )
-                            replace_node_fp32.args = (replace_node_int8,)
-                            replace_node_fp32.kwargs = {"dtype": target_dtype}
-                            node.replace_input_with(arg, replace_node_fp32)
+                            replace_node_target.args = (replace_node_int8,)
+                            replace_node_target.kwargs = {"dtype": target_dtype}
+                            node.replace_input_with(arg, replace_node_target)
                     else:
                         with graph.inserting_after(arg):
                             replace_node = create_node(
