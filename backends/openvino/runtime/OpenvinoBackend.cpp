@@ -695,7 +695,12 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_owned_output(
   const int64_t rank = compiled.rank.max;
   if (compiled.rank.min != rank) {
     ov_.partial_shape_free(&compiled);
-    ET_LOG(Error, "OpenVINO: output %zu has a dynamic rank", index);
+    ET_LOG(
+        Error,
+        "OpenVINO: output %zu was compiled with a dynamic rank, which "
+        "ExecuTorch does not support. Export the model with static sizes for "
+        "the inputs this output depends on.",
+        index);
     return exr::Error::NotSupported;
   }
   // OpenVINO refuses any other shape for an output it compiled with a fixed
