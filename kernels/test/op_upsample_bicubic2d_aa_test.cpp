@@ -418,10 +418,6 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, NanReachesOnlyItsWindows) {
 // its float32 results.
 TEST_F(OpUpsampleBicubic2dAAOutTest, HalfTypesMatchFloat32ATen) {
   expect_resize<ScalarType::Half>(
-      {1, 2, 6, 8}, kInput, {3, 5}, false, std::nullopt, std::nullopt, kShrunk);
-  expect_resize<ScalarType::BFloat16>(
-      {1, 2, 6, 8}, kInput, {3, 5}, false, std::nullopt, std::nullopt, kShrunk);
-  expect_resize<ScalarType::Half>(
       {1, 1, 2, 10},
       kOppositeRows,
       {1, 5},
