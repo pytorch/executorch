@@ -38,8 +38,8 @@ namespace {
  *
  * Half and BFloat16 cannot keep their running sums in out, because rounding
  * every partial sum to 16 bits makes long sums stop growing. They keep the
- * sums of a block of trailing positions in float instead, and walk the rows in
- * the same order.
+ * sums of a block of up to 1024 trailing positions in float instead, and walk
+ * the rows once per block. A narrower block made wide inputs much slower.
  */
 template <typename CTYPE_OUT, typename LoadFn = CTYPE_OUT (*)(const void*)>
 void cumsum_tensors(
@@ -87,7 +87,7 @@ void cumsum_tensors(
       }
     }
   } else {
-    constexpr size_t kBlock = 64;
+    constexpr size_t kBlock = 1024;
     ACC sums[kBlock];
     for (size_t i = 0; i < leading_dims; i++) {
       const size_t start_loc = i * (trailing_dims * dim_size);

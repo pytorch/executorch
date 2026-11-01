@@ -210,11 +210,11 @@ TEST_F(OpCumSumOutTest, SimpleGeneratedCase) {
 
 TEST_F(OpCumSumOutTest, BFloat16LargeDimAccumulatesInFloat) {
   TensorFactory<ScalarType::BFloat16> tf;
-  // Each of the 65 columns sums 512 ones. A BFloat16 running sum stops growing
-  // at 256, so without float accumulation the later rows would stay at 256.
-  // 65 columns also need more than one block of running sums.
+  // Each of the 1025 columns sums 512 ones. A BFloat16 running sum stops
+  // growing at 256, so without float accumulation the later rows would stay at
+  // 256. 1025 columns also need a second, partial block of running sums.
   constexpr int N = 512;
-  constexpr int C = 65;
+  constexpr int C = 1025;
   std::vector<executorch::aten::BFloat16> expected;
   for (int i = 1; i <= N; ++i) {
     expected.insert(expected.end(), C, static_cast<float>(i));
