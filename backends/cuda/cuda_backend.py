@@ -8,7 +8,6 @@
 import contextlib
 import copy
 import functools
-import importlib
 import logging
 import math
 import os
@@ -134,45 +133,40 @@ def _keep_triton_reduction_loads_loop_scoped():
         IndexingOptions.has_rmask = orig_has_rmask
 
 
-class _ThreadScopedPatch:
-    """Makes ``<owner>.<name>`` call ``replace(original, *args, **kwargs)`` in
-    the threads inside ``scope()``, while every other thread keeps the
-    original. ``owner`` names a module, or a class in it as ``module:Class``.
+class _Depth(threading.local):
+    def __init__(self) -> None:
+        self.value = 0
 
-    Threads can lower at the same time. The first scope to enter installs the
-    swap and the last one to leave restores the original, so a thread that
-    leaves first does not take the swap away from one still inside.
+
+class _CompilePatch:
+    """A patch of Inductor that changes behavior only for the threads inside
+    ``scope()``.
+
+    ``install`` applies the patch and returns the function that removes it.
+    The patched code calls the ``active`` function it is given to decide, on
+    each call, whether the calling thread asked for the change. Threads can
+    lower at the same time, so the first scope to enter installs the patch
+    and the last one to leave removes it: a thread that leaves first does not
+    take the patch away from one still compiling.
     """
 
-    def __init__(
-        self, owner: str, name: str, replace: typing.Callable[..., Any]
-    ) -> None:
-        self._owner = owner
-        self._name = name
-        self._replace = replace
+    def __init__(self, install: typing.Callable[..., typing.Callable[[], None]]):
+        self._install = install
+        self._remove: typing.Callable[[], None] = lambda: None
         self._lock = threading.Lock()
         self._scopes = 0
-        self._original: Any = None
-        self._depth = threading.local()
+        self._depth = _Depth()
+
+    def _active(self) -> bool:
+        return self._depth.value > 0
 
     @contextlib.contextmanager
     def scope(self) -> typing.Iterator[None]:
-        module, _, attribute = self._owner.partition(":")
-        owner = importlib.import_module(module)
-        if attribute:
-            owner = getattr(owner, attribute)
         with self._lock:
             if self._scopes == 0:
-                self._original = original = getattr(owner, self._name)
-
-                def dispatch(*args: Any, **kwargs: Any) -> Any:
-                    if getattr(self._depth, "value", 0):
-                        return self._replace(original, *args, **kwargs)
-                    return original(*args, **kwargs)
-
-                setattr(owner, self._name, dispatch)
+                self._remove = self._install(self._active)
             self._scopes += 1
-        self._depth.value = getattr(self._depth, "value", 0) + 1
+        self._depth.value += 1
         try:
             yield
         finally:
@@ -180,12 +174,26 @@ class _ThreadScopedPatch:
             with self._lock:
                 self._scopes -= 1
                 if self._scopes == 0:
-                    setattr(owner, self._name, self._original)
+                    self._remove()
 
 
-_SMALL_GPU_TEMPLATES = _ThreadScopedPatch(
-    "torch._inductor.utils", "is_big_gpu", lambda original, *args, **kwargs: True
-)
+def _install_small_gpu_override(active):
+    from torch._inductor import utils as inductor_utils
+
+    original = inductor_utils.is_big_gpu
+
+    def is_big_gpu(index_or_device=0) -> bool:
+        return active() or original(index_or_device)
+
+    inductor_utils.is_big_gpu = is_big_gpu
+
+    def remove() -> None:
+        inductor_utils.is_big_gpu = original
+
+    return remove
+
+
+_SMALL_GPU_OVERRIDE = _CompilePatch(_install_small_gpu_override)
 
 
 def _allow_triton_templates_on_small_gpus() -> typing.ContextManager[None]:
@@ -199,26 +207,37 @@ def _allow_triton_templates_on_small_gpus() -> typing.ContextManager[None]:
     TODO: remove once Inductor skips the floor when ATen is not an allowed
     backend (https://github.com/pytorch/pytorch/issues/141690).
     """
-    return _SMALL_GPU_TEMPLATES.scope()
+    return _SMALL_GPU_OVERRIDE.scope()
 
 
-def _with_as_needed(original, device_type, aot_mode=False, *args, **kwargs):
-    definitions, include_dirs, cflags, ldflags, *rest = original(
-        device_type, aot_mode, *args, **kwargs
-    )
-    if (
-        aot_mode
-        and sys.platform.startswith("linux")
-        and not torch._inductor.config.aot_inductor.link_libtorch
-        and torch._inductor.config.aot_inductor.cross_target_platform is None
-    ):
-        ldflags = [*ldflags, "Wl,--as-needed"]
-    return (definitions, include_dirs, cflags, ldflags, *rest)
+def _install_as_needed_links(active):
+    from torch._inductor import cpp_builder
+
+    original = cpp_builder.get_cpp_torch_device_options
+
+    def device_options(device_type, aot_mode=False, *args, **kwargs):
+        definitions, include_dirs, cflags, ldflags, *rest = original(
+            device_type, aot_mode, *args, **kwargs
+        )
+        if (
+            aot_mode
+            and active()
+            and sys.platform.startswith("linux")
+            and not torch._inductor.config.aot_inductor.link_libtorch
+            and torch._inductor.config.aot_inductor.cross_target_platform is None
+        ):
+            ldflags = [*ldflags, "Wl,--as-needed"]
+        return (definitions, include_dirs, cflags, ldflags, *rest)
+
+    cpp_builder.get_cpp_torch_device_options = device_options
+
+    def remove() -> None:
+        cpp_builder.get_cpp_torch_device_options = original
+
+    return remove
 
 
-_AS_NEEDED_LINKS = _ThreadScopedPatch(
-    "torch._inductor.cpp_builder", "get_cpp_torch_device_options", _with_as_needed
-)
+_AS_NEEDED_LINKS = _CompilePatch(_install_as_needed_links)
 
 
 def _link_libraries_as_needed() -> typing.ContextManager[None]:
@@ -242,22 +261,31 @@ def _link_libraries_as_needed() -> typing.ContextManager[None]:
     return _AS_NEEDED_LINKS.scope()
 
 
-def _float_param_from_signature(original, wrapper, name, arg_type, signature=None):
-    from torch._inductor.codegen.cpp_wrapper_gpu import TRITON_SIGNATURE_TO_CPP
+def _install_float_kernel_args(active):
+    from torch._inductor.codegen.cpp_wrapper_gpu import (
+        DeferredTritonCallWrapper,
+        TRITON_SIGNATURE_TO_CPP,
+    )
 
-    param = original(wrapper, name, arg_type, signature)
-    # PyTorch 2.14 does not pass the signature on every path.
-    kind = (signature or (wrapper.triton_meta or {}).get("signature", {})).get(name)
-    if param == f"int64_t {name}" and kind in ("fp32", "fp64"):
-        return f"{TRITON_SIGNATURE_TO_CPP[kind]} {name}"
-    return param
+    original = DeferredTritonCallWrapper._get_cpp_param_type
+
+    def get_cpp_param_type(self, name, arg_type, signature=None):
+        param = original(self, name, arg_type, signature)
+        # PyTorch 2.14 does not pass the signature on every path.
+        kind = (signature or (self.triton_meta or {}).get("signature", {})).get(name)
+        if active() and param == f"int64_t {name}" and kind in ("fp32", "fp64"):
+            return f"{TRITON_SIGNATURE_TO_CPP[kind]} {name}"
+        return param
+
+    DeferredTritonCallWrapper._get_cpp_param_type = get_cpp_param_type
+
+    def remove() -> None:
+        DeferredTritonCallWrapper._get_cpp_param_type = original
+
+    return remove
 
 
-_FLOAT_KERNEL_ARGS = _ThreadScopedPatch(
-    "torch._inductor.codegen.cpp_wrapper_gpu:DeferredTritonCallWrapper",
-    "_get_cpp_param_type",
-    _float_param_from_signature,
-)
+_FLOAT_KERNEL_ARGS = _CompilePatch(_install_float_kernel_args)
 
 
 def _pass_float_scalars_to_triton_as_floats() -> typing.ContextManager[None]:
