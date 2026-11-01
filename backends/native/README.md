@@ -214,7 +214,12 @@ and API. `native_cpu_engine_test` covers the CPU engine when
 `EXECUTORCH_BUILD_NATIVE_CPU` is enabled. `native_vulkan_passes_test` covers the
 Vulkan graph rewrites without requiring a GPU. When either runner below is
 enabled, `native_runner_utils_test` covers their shared runner utilities. Run these
-with `ctest --test-dir cmake-out -R native_`.
+with `ctest --test-dir cmake-out -R native_` after `cmake --build cmake-out`.
+
+The engines' sample tests judge them on the bundled op samples. Building them runs
+the sample generator, which needs `torch` and `torchao`. Those with failing cases
+are disabled in CTest; run their binaries directly with
+`--packages=<build-dir>/backends/native/test/op_samples`.
 
 The `Test Native Engines` CI workflow has separate Linux jobs for the shared
 runtime, CPU, GGML, and Vulkan, with each test suite run once. To reproduce with
