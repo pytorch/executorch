@@ -129,10 +129,10 @@ void ThreadPool::run(
 }
 
 namespace {
-// The CPUs this process may run on, which taskset and cgroup cpusets can make
-// fewer than the online CPUs, or 0 where that is not known. Android is left
-// out: it moves apps between cpusets as they go to the background and back,
-// while the pool is sized only once.
+// The number of CPUs in the calling thread's affinity mask, or 0 where that is
+// not known. taskset and cgroup cpusets shrink the mask, CPU quotas do not.
+// Android is left out: it moves apps between cpusets as they go to the
+// background and back, while the pool is sized only once.
 uint32_t get_num_allowed_cpus() {
 #if defined(__linux__) && !defined(__ANDROID__)
   // The kernel rejects a mask smaller than its possible CPU count, which can
@@ -174,10 +174,12 @@ ThreadPool* get_threadpool() {
     // Set threads equal to the number of performance cores.
     auto result = ::executorch::extension::cpuinfo::get_num_performant_cores();
 #endif
-    // 0 means the count is unknown, which pthreadpool fills in with every
-    // online CPU, past the cap below. Prefer the CPUs this process may use.
-    if (result == 0) {
-      result = get_num_allowed_cpus();
+    // Never start more threads than the CPUs this process may run on, and use
+    // that number when the count is unknown (0), which pthreadpool would fill
+    // in with every online CPU, past the cap below.
+    const auto allowed = get_num_allowed_cpus();
+    if (allowed > 0) {
+      result = result == 0 ? allowed : std::min(result, allowed);
     }
 
     /*

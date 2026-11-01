@@ -17,13 +17,10 @@
 
 #include <gtest/gtest.h>
 
-#if defined(__linux__) && !defined(__ANDROID__) && \
-    defined(EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES)
+#if defined(__linux__) && !defined(__ANDROID__)
 #include <sched.h>
 
 #include <cstdlib>
-
-#include <executorch/extension/threadpool/cpuinfo_utils.h>
 #endif
 
 using namespace ::testing;
@@ -78,6 +75,16 @@ void run_lambda_with_size(
   auto threadpool = ::executorch::extension::threadpool::get_threadpool();
   threadpool->run(f, range);
 }
+
+// The pool has no more threads than the CPUs this process may run on.
+bool may_use_more_than_one_cpu() {
+#if defined(__linux__) && !defined(__ANDROID__)
+  cpu_set_t cpus;
+  return sched_getaffinity(0, sizeof(cpus), &cpus) != 0 || CPU_COUNT(&cpus) > 1;
+#else
+  return true;
+#endif
+}
 } // namespace
 
 TEST(ThreadPoolTest, ParallelAdd) {
@@ -97,7 +104,9 @@ TEST(ThreadPoolTest, ParallelAdd) {
   };
 
   auto threadpool = ::executorch::extension::threadpool::get_threadpool();
-  EXPECT_GT(threadpool->get_thread_count(), 1);
+  if (may_use_more_than_one_cpu()) {
+    EXPECT_GT(threadpool->get_thread_count(), 1);
+  }
 
   generate_add_test_inputs(a, b, c_ref, c, vector_size);
   run_lambda_with_size(add_lambda, vector_size, grain_size);
@@ -142,7 +151,9 @@ TEST(ThreadPoolTest, ParallelReduce) {
   };
 
   auto threadpool = ::executorch::extension::threadpool::get_threadpool();
-  EXPECT_GT(threadpool->get_thread_count(), 1);
+  if (may_use_more_than_one_cpu()) {
+    EXPECT_GT(threadpool->get_thread_count(), 1);
+  }
 
   generate_reduce_test_inputs(a, c_ref, vector_size);
   run_lambda_with_size(reduce_lambda, vector_size, grain_size);
@@ -211,17 +222,13 @@ TEST(TestNoThreadPoolGuard, TestRunWithGuard) {
   ASSERT_EQ(inner, 6);
 }
 
-#if defined(__linux__) && !defined(__ANDROID__) && \
-    defined(EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES)
+#if defined(__linux__) && !defined(__ANDROID__)
 // The pool is created once per process, so it is checked in a fresh one whose
 // exit code is the pool's thread count. Failing to limit the CPUs aborts, so
 // it cannot pass for a pool size.
 TEST(ThreadPoolDeathTest, DefaultSizeHonorsCpuAffinity) {
   executorch::runtime::runtime_init();
 
-  if (::executorch::extension::cpuinfo::get_num_performant_cores() != 0) {
-    GTEST_SKIP() << "The performance core count sizes the pool here.";
-  }
   ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
   EXPECT_EXIT(
       {
