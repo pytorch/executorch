@@ -265,9 +265,10 @@ class TestFoldConstantCumsumPass(unittest.TestCase):
                 part = torch.ones(6, dtype=torch.int64).split(3)[1]
                 return torch.cumsum(part, 0, dtype=self.dtype) + x
 
-        x = torch.zeros(3, dtype=torch.int64)
         for dtype in (torch.int64, torch.int32):
             with self.subTest(dtype=dtype):
+                # Of the same dtype, so the result keeps the folded dtype.
+                x = torch.zeros(3, dtype=dtype)
                 folded = self.fold(Model(dtype), (x,))
                 self.assertNotIn(
                     exir_ops.edge.aten.cumsum.default,
