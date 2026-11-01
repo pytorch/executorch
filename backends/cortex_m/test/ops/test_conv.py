@@ -224,7 +224,11 @@ test_cases = {
     ),
     "conv3d": McuTestCase(
         model=CortexMConv3D(2, 4, (2, 3, 3), stride=(1, 2, 2), padding=1),
-        example_inputs=(ramp_tensor(-10, 10, (2, 2, 4, 6, 6)),),
+        example_inputs=(
+            ramp_tensor(-10, 10, (2, 2, 4, 6, 6)).to(
+                memory_format=torch.channels_last_3d
+            ),
+        ),
     ),
     "conv2d_x3": McuTestCase(
         model=CortexMConv2Dx3(),

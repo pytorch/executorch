@@ -1344,6 +1344,20 @@ TEST_F(OpConvCorrectnessTest, Grouped3DStridePaddingDilation) {
         in, w, bias, stride, padding, dilation, false, {0}, 2, out);
     EXPECT_TENSOR_EQ(out, exp);
   }
+  // Export gives a channels-last 5-D input a contiguous output.
+  auto out = tf.zeros_like(expected);
+  op_convolution_out(
+      tf.channels_last_like(input),
+      tf.channels_last_like(weight),
+      bias,
+      stride,
+      padding,
+      dilation,
+      false,
+      {0},
+      2,
+      out);
+  EXPECT_TENSOR_EQ(out, expected);
 }
 
 TEST_F(OpConvCorrectnessTest, GroupedTransposed3DStridePaddingDilation) {
@@ -1380,4 +1394,18 @@ TEST_F(OpConvCorrectnessTest, GroupedTransposed3DStridePaddingDilation) {
         in, w, bias, stride, padding, dilation, true, output_padding, 2, out);
     EXPECT_TENSOR_EQ(out, exp);
   }
+  // Export gives a channels-last 5-D input a contiguous output.
+  auto out = tf.zeros_like(expected);
+  op_convolution_out(
+      tf.channels_last_like(input),
+      tf.channels_last_like(weight),
+      bias,
+      stride,
+      padding,
+      dilation,
+      true,
+      output_padding,
+      2,
+      out);
+  EXPECT_TENSOR_EQ(out, expected);
 }
