@@ -87,15 +87,20 @@ class ReplaceMaskedCopyWithWherePass(PassBase):
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
-        for node in list(graph_module.graph.nodes):
-            mask = self._mask_of_copy(node)
-            if mask is None:
+        for module in graph_module.modules():
+            if not isinstance(module, GraphModule):
                 continue
-            self._replace(graph_module, node, mask)
-            modified = True
-        if modified:
-            graph_module.graph.lint()
-            graph_module.recompile()
+            replaced = False
+            for node in list(module.graph.nodes):
+                mask = self._mask_of_copy(node)
+                if mask is None:
+                    continue
+                self._replace(module, node, mask)
+                replaced = True
+            if replaced:
+                module.graph.lint()
+                module.recompile()
+                modified = True
         return PassResult(graph_module, modified)
 
     @staticmethod

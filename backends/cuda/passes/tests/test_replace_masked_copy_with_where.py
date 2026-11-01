@@ -83,6 +83,36 @@ class TestReplaceMaskedCopyWithWherePass(unittest.TestCase):
         ReplaceMaskedCopyWithWherePass()(program.graph_module)
         self.assertIn(exir_ops.edge.aten.where.self, _targets(program.graph_module))
 
+    def test_masked_copy_in_a_cond_branch(self):
+        class Copy(torch.nn.Module):
+            def forward(self, x, mask):
+                def copy(x, mask):
+                    out = torch.zeros_like(x)
+                    out[mask] = x[mask]
+                    return out
+
+                return torch.cond(
+                    x.sum() > 0, copy, lambda x, mask: x.clone(), (x, mask)
+                )
+
+        x = torch.randn(4, 3)
+        mask = torch.tensor([True, False, True, False])
+        program = to_edge(export(Copy(), (x, mask))).exported_program()
+        ReplaceMaskedCopyWithWherePass()(program.graph_module)
+
+        cond = next(
+            n
+            for n in program.graph_module.graph.nodes
+            if n.target is torch.ops.higher_order.cond
+        )
+        branch = getattr(program.graph_module, cond.args[1].target)
+        self.assertIn(exir_ops.edge.aten.where.self, _targets(branch))
+        self.assertNotIn(exir_ops.edge.aten.index_put.default, _targets(branch))
+        for picked in (x.abs(), -x.abs()):
+            torch.testing.assert_close(
+                program.module()(picked, mask), Copy()(picked, mask), rtol=0, atol=0
+            )
+
     def test_other_writes_are_kept(self):
         class Kept(torch.nn.Module):
             def forward(self, x, mask, idx):
