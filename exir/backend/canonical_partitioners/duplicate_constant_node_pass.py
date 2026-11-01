@@ -87,9 +87,13 @@ def duplicate_constant_node(
                     "that reads or writes it has the same tag, as "
                     "tag_mutated_buffer does, or leave it untagged."
                 )
-            users = list(node.users.keys())
-            for ith in range(1, len(node.users)):
-                copy_constant_or_attribute_fqn = node.name + f"_copy_{ith - 1}"
+            # The graph output keeps the original, which the output specs
+            # name, so then every other user reads a copy.
+            users = [user for user in node.users if user.op != "output"]
+            if len(users) == len(node.users):
+                users = users[1:]
+            for ith, user in enumerate(users):
+                copy_constant_or_attribute_fqn = node.name + f"_copy_{ith}"
                 with exported_program.graph.inserting_before(
                     constant_or_attribute_node
                 ):
@@ -107,34 +111,12 @@ def duplicate_constant_node(
                     copied_constant_or_attribute_node.meta["val"] = (
                         constant_or_attribute_node.meta["val"]
                     )
-                    new_args = tuple(
-                        [
-                            (
-                                arg
-                                if arg != constant_or_attribute_node
-                                else copied_constant_or_attribute_node
-                            )
-                            for arg in users[ith].args
-                        ]
+                    # This also reaches a constant that an op such as cat or
+                    # index_put reads from a list.
+                    user.replace_input_with(
+                        constant_or_attribute_node,
+                        copied_constant_or_attribute_node,
                     )
-                    new_kwargs = {
-                        key: (
-                            value
-                            if value != constant_or_attribute_node
-                            else copied_constant_or_attribute_node
-                        )
-                        for key, value in users[ith].kwargs.items()
-                    }
-                    users[ith].args = new_args
-                    users[ith].kwargs = new_kwargs
-                    # An op such as cat or index_put reads the constant from a
-                    # list. The graph output keeps the original, which the
-                    # output specs name.
-                    if users[ith].op != "output":
-                        users[ith].replace_input_with(
-                            constant_or_attribute_node,
-                            copied_constant_or_attribute_node,
-                        )
                     # The copy keeps the original target, so it reads the
                     # original tensor and needs no data of its own.
                     new_input_specs.append(

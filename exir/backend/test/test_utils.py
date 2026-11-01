@@ -25,6 +25,7 @@ from executorch.exir.backend.utils import (
     get_delegates,
     get_non_lowered_nodes,
     is_identical_graph,
+    tag_constant_data,
     tag_mutated_buffer,
 )
 
@@ -452,3 +453,55 @@ class TestUtils(unittest.TestCase):
                     ],
                     ["b_state"] if owned_by_program else [],
                 )
+
+    def test_to_backend_copies_a_constant_read_by_ops_in_two_places(self):
+        class CatConst(torch.nn.Module):
+            def __init__(self, returned: bool):
+                super().__init__()
+                self.returned = returned
+                self.register_buffer("const", torch.ones(2))
+
+            def forward(self, x):
+                out = torch.cat([x, self.const]), torch.cat([self.const, x])
+                return (*out, self.const) if self.returned else out
+
+        class TagEachCat(Partitioner):
+            def partition(self, program: ExportedProgram) -> PartitionResult:
+                tags = {}
+                for node in program.graph.nodes:
+                    if node.target == exir_ops.edge.aten.cat.default:
+                        tag = f"tag{len(tags)}"
+                        node.meta["delegation_tag"] = tag
+                        tags[tag] = DelegationSpec(ExecutorBackend.__name__, [])
+                tag_constant_data(program)
+                return PartitionResult(
+                    tagged_exported_program=program, partition_tags=tags
+                )
+
+        # cat reads the constant from a list. Each delegate gets its own copy,
+        # and the graph output keeps the original, which the output specs name.
+        for returned, constants in (
+            (False, [["b_const"], ["b_const_copy_0"]]),
+            (True, [["b_const_copy_0"], ["b_const_copy_1"]]),
+        ):
+            with self.subTest(returned=returned):
+                lowered = to_edge(
+                    export(CatConst(returned), (torch.ones(2),), strict=True)
+                ).to_backend(TagEachCat())
+                program = lowered.exported_program()
+                self.assertEqual(
+                    [
+                        [
+                            spec.arg.name
+                            for spec in module.original_module.graph_signature.input_specs
+                            if spec.target == "const"
+                        ]
+                        for _, module in program.graph_module.named_children()
+                    ],
+                    constants,
+                )
+                if returned:
+                    self.assertEqual(
+                        program.graph.output_node().args[0][-1].name, "b_const"
+                    )
+                lowered.to_executorch()
