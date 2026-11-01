@@ -68,15 +68,19 @@ class XNNPartitionerConfig(PartitionerConfig):
         with the name of the XNNPartitionerConfig class which return this set of nodes.
         This enforces that all partitions returned by XNNPartitioner configs are labeled
         with the partitioner config which returned them
+
+        Returns an empty list if any of the nodes has more dims than XNNPACK supports.
+        Otherwise marks every quantize and dequantize node in the partition, other
+        than the given node, as implicit, so that it is folded into the op it feeds
+        or follows.
         """
         partitioned_nodes = self.get_node_and_deps(node, ep)
         # A partition can take nodes that their own configs reject.
         if not all(self._check_tensor_ranks(n) for n in partitioned_nodes):
             return []
 
-        # Fold the q/dq nodes around the node only once its partition is taken, so
-        # a rejected node keeps them as separate ops. A q/dq node that is itself
-        # the partitioned node stays a separate op too.
+        # Fold only now, so a rejected node keeps its q/dq nodes as separate ops. A
+        # q/dq node partitioned on its own stays a separate op as well.
         for n in partitioned_nodes:
             if n is not node and (is_quant(n) or is_dequant(n)):
                 tag_as_implicit_q_dq(n)
