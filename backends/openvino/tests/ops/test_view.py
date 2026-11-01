@@ -102,24 +102,29 @@ class TestViewOperator(BaseOpenvinoOpTest):
             def forward(self, x, y):
                 return self.lowered(x), self.lowered(y)
 
-        dynamic_shapes = (
-            {0: Dim("rows_x", min=1, max=2)},
-            {0: Dim("rows_y", min=1, max=4)},
-        )
-        program = to_edge(
-            export(TwoCalls(), (x, y), dynamic_shapes=dynamic_shapes)
-        ).to_executorch()
-        self.assertEqual(len(program.executorch_program.execution_plan[0].delegates), 1)
+        rows_y = {0: Dim("rows_y", min=1, max=4)}
+        # In the second program the first call's output is static, so that call
+        # binds its own buffer to the output the dynamic call shares.
+        for rows_x, later in (
+            ({0: Dim("rows_x", min=1, max=2)}, (y[:1], y[:3])),
+            (None, (x + 1, y[:1])),
+        ):
+            with self.subTest(static_first=rows_x is None):
+                program = to_edge(
+                    export(TwoCalls(), (x, y), dynamic_shapes=(rows_x, rows_y))
+                ).to_executorch()
+                plan = program.executorch_program.execution_plan[0]
+                self.assertEqual(len(plan.delegates), 1)
 
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
-            pte_path = os.path.join(tmp_dir, "model.pte")
-            with open(pte_path, "wb") as f:
-                program.write_to_file(f)
-            loaded = Runtime.get().load_program(pte_path)
-            method = loaded.load_method("forward")
-            assert method is not None
-            for inputs in ((x, y), (y[:1], y[:3])):
-                outputs = method.execute(inputs)
-                for output, value in zip(outputs, inputs):
-                    torch.testing.assert_close(output, value * 2)
-            del method, loaded
+                with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+                    pte_path = os.path.join(tmp, "model.pte")
+                    with open(pte_path, "wb") as f:
+                        program.write_to_file(f)
+                    loaded = Runtime.get().load_program(pte_path)
+                    method = loaded.load_method("forward")
+                    assert method is not None
+                    for inputs in ((x, y), later):
+                        outputs = method.execute(inputs)
+                        for output, value in zip(outputs, inputs):
+                            torch.testing.assert_close(output, value * 2)
+                    del method, loaded

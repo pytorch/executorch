@@ -244,6 +244,9 @@ bool OpenvinoBackend::ensure_loaded() const {
         ov_compiled_model_create_infer_request)
     LOAD_SYM(compiled_model_inputs_size, ov_compiled_model_inputs_size)
     LOAD_SYM(compiled_model_outputs_size, ov_compiled_model_outputs_size)
+    LOAD_SYM(compiled_model_output_by_index, ov_compiled_model_output_by_index)
+    LOAD_SYM(port_get_partial_shape, ov_port_get_partial_shape)
+    LOAD_SYM(output_const_port_free, ov_output_const_port_free)
     LOAD_SYM(compiled_model_free, ov_compiled_model_free)
     LOAD_SYM(
         infer_request_set_input_tensor_by_index,
@@ -264,6 +267,7 @@ bool OpenvinoBackend::ensure_loaded() const {
     LOAD_SYM(tensor_data, ov_tensor_data)
     LOAD_SYM(shape_create, ov_shape_create)
     LOAD_SYM(shape_free, ov_shape_free)
+    LOAD_SYM(partial_shape_free, ov_partial_shape_free)
 
 #undef LOAD_SYM
 
@@ -546,7 +550,7 @@ exr::Error OpenvinoBackend::execute(
       // out after inference.
       if (!owned) {
         auto result = create_owned_output(
-            execution_handle->infer_request, i, output_tensor.scalar_type());
+            execution_handle->compiled_model, i, output_tensor.scalar_type());
         if (!result.ok()) {
           return result.error();
         }
@@ -662,29 +666,49 @@ exr::Error OpenvinoBackend::copy_output(
 }
 
 exr::Result<ov_tensor_t*> OpenvinoBackend::create_owned_output(
-    ov_infer_request_t* infer_request,
+    const ov_compiled_model_t* compiled_model,
     size_t index,
     exa::ScalarType scalar_type) const {
   ov_element_type_e ov_type = convert_to_openvino_type(scalar_type);
   if (ov_type == OV_ELEMENT_UNDEFINED) {
     return exr::Error::NotSupported;
   }
-  // The request's own output has the compiled shape, empty along each dynamic
-  // dimension. OpenVINO refuses any other shape for an output it compiled
-  // with a fixed shape, even when ExecuTorch planned it with a dynamic size.
-  ov_tensor_t* current = nullptr;
-  ov_shape_t shape = {};
-  ov_status_e status = ov_.infer_request_get_output_tensor_by_index(
-      infer_request, index, &current);
+  // The shape comes from the compiled model, not the request: on a handle
+  // shared by several calls, the request's output can be an earlier call's
+  // buffer.
+  ov_output_const_port_t* port = nullptr;
+  ov_partial_shape_t compiled = {};
+  ov_status_e status =
+      ov_.compiled_model_output_by_index(compiled_model, index, &port);
   if (status == OV_STATUS_OK) {
-    status = ov_.tensor_get_shape(current, &shape);
-    ov_.tensor_free(current);
+    status = ov_.port_get_partial_shape(port, &compiled);
+    ov_.output_const_port_free(port);
   }
+  if (status != OV_STATUS_OK) {
+    ET_LOG(
+        Error,
+        "OpenVINO: failed to read the shape of output %zu (status=%d)",
+        index,
+        status);
+    return exr::Error::Internal;
+  }
+  const int64_t rank = compiled.rank.max;
+  if (compiled.rank.min != rank) {
+    ov_.partial_shape_free(&compiled);
+    ET_LOG(Error, "OpenVINO: output %zu has a dynamic rank", index);
+    return exr::Error::NotSupported;
+  }
+  // OpenVINO refuses any other shape for an output it compiled with a fixed
+  // shape, even when ExecuTorch planned it with a dynamic size. Along each
+  // dynamic dimension the buffer starts empty.
+  std::unique_ptr<int64_t[]> dims(new int64_t[rank]);
+  for (int64_t d = 0; d < rank; d++) {
+    const ov_dimension_t& dim = compiled.dims[d];
+    dims[d] = dim.min == dim.max ? dim.max : 0;
+  }
+  ov_.partial_shape_free(&compiled);
   ov_tensor_t* owned = nullptr;
-  if (status == OV_STATUS_OK) {
-    status = ov_.tensor_create(ov_type, shape, &owned);
-    ov_.shape_free(&shape);
-  }
+  status = ov_.tensor_create(ov_type, {rank, dims.get()}, &owned);
   if (status != OV_STATUS_OK || !owned) {
     ET_LOG(
         Error,
