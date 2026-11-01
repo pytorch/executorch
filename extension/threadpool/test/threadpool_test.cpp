@@ -82,7 +82,7 @@ void run_lambda_with_size(
 bool may_use_more_than_one_cpu() {
 #if defined(__linux__) && !defined(__ANDROID__)
   cpu_set_t cpus;
-  return sched_getaffinity(0, sizeof(cpus), &cpus) == 0 && CPU_COUNT(&cpus) > 1;
+  return sched_getaffinity(0, sizeof(cpus), &cpus) != 0 || CPU_COUNT(&cpus) > 1;
 #else
   return true;
 #endif
@@ -258,6 +258,12 @@ TEST(TestNoThreadPoolGuard, TestRunWithGuard) {
 // gtest runs death tests before the other tests, so the forked child creates
 // the pool itself, and the CPU limit it sets does not reach the other tests.
 TEST(ThreadPoolDeathTest, DefaultSizeHonorsCpuAffinity) {
+  // A later run, as with --gtest_repeat, forks after the other tests created
+  // the pool, and the child keeps that pool's size.
+  static int runs = 0;
+  if (runs++ > 0) {
+    GTEST_SKIP() << "The pool may already exist in this process";
+  }
   executorch::runtime::runtime_init();
 
   EXPECT_EXIT(
