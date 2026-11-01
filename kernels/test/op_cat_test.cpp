@@ -251,25 +251,31 @@ TEST_F(OpCatOutTest, AllDtypesSupported) {
   // for those types.
 }
 
-TEST_F(OpCatOutTest, EmptyInputTensorShapeIgnored) {
-  ET_SKIP_IF(
-      torch::executor::testing::SupportedFeatures::get()->is_aten,
-      "ATen kernel doesn't ignore empty input tensor shape");
+TEST_F(OpCatOutTest, EmptyInputsAreSkipped) {
   TensorFactory<ScalarType::Int> tf;
-
-  // An empty tensor with a shape totally different from the non-empty inputs.
-  Tensor empty = tf.make({0, 10, 3}, {});
-  EXPECT_EQ(empty.numel(), 0);
-
   Tensor x = tf.ones({2, 2});
 
-  std::vector<Tensor> inputs = {x, empty, x};
-
-  // Output whose shape is appropriate for concatenating along dim[0].
+  // A 1-D empty tensor may have any shape. Other empty inputs match x except
+  // in the cat dim.
+  std::vector<Tensor> inputs = {x, tf.make({0}, {}), tf.make({0, 2}, {}), x};
   Tensor out = tf.zeros({4, 2});
 
   op_cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out);
-  // Success if it doesn't assert on the weird-shaped empty input.
+
+  EXPECT_TENSOR_EQ(out, tf.ones({4, 2}));
+
+  // Every input is empty here. The 1-D one is skipped, and the others still
+  // add up along the cat dim.
+  std::vector<Tensor> empty_inputs = {
+      tf.make({0}, {}), tf.make({2, 0}, {}), tf.make({3, 0}, {})};
+  Tensor empty_out = tf.make({5, 0}, {});
+
+  op_cat_out(
+      ArrayRef<Tensor>(empty_inputs.data(), empty_inputs.size()),
+      /*dim=*/0,
+      empty_out);
+
+  EXPECT_TENSOR_EQ(empty_out, tf.make({5, 0}, {}));
 }
 
 TEST_F(OpCatOutTest, DimBounds) {
@@ -290,6 +296,12 @@ TEST_F(OpCatOutTest, DimBounds) {
     op_cat_out(inputs, dim, out);
     // Success if it doesn't assert.
   }
+
+  // An empty input does not make a dim valid either.
+  Tensor empty = tf.make({0, 2}, {});
+  Tensor empty_out = tf.make({0, 2}, {});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_cat_out(ArrayRef<Tensor>(&empty, 1), /*dim=*/2, empty_out));
 
   // Some invalid dim values.
   const std::vector<int64_t> invalid_dims = {2, -3};
@@ -361,6 +373,33 @@ TEST_F(OpCatOutTest, MismatchedDimensionSizeDies) {
   // Same dtype and number of dimensions as the output, but a different-sized 1
   // dimension.
   std::vector<Tensor> inputs = {tf.ones({2, 3})};
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_cat_out(
+          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+}
+
+TEST_F(OpCatOutTest, EmptyInputWithMismatchedShapeDies) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor out = tf.zeros({2, 7});
+
+  // Taking the output shape from the empty input would make the kernel read 14
+  // values from x, which holds 6.
+  std::vector<Tensor> inputs = {tf.ones({2, 3}), tf.make({0, 7}, {})};
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_cat_out(
+          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+}
+
+TEST_F(OpCatOutTest, EmptyInputWithOtherRankDies) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor x = tf.ones({2, 2});
+  Tensor out = tf.zeros({4, 2});
+
+  std::vector<Tensor> inputs = {x, tf.make({0, 10, 3}, {}), x};
 
   ET_EXPECT_KERNEL_FAILURE(
       context_,
