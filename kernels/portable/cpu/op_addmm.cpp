@@ -75,6 +75,23 @@ Tensor& addmm_out(
           p,
           beta_val,
           alpha_val);
+    } else if (
+        in.dim() > 0 && static_cast<size_t>(in.size(in.dim() - 1)) == p &&
+        static_cast<size_t>(in.numel()) == p) {
+      // A row bias, as in nn.Linear, goes through vec_addmm one output row at
+      // a time, so that each output is rounded once.
+      for (const auto i : c10::irange(m)) {
+        vec_addmm<CTYPE, CTYPE>(
+            out.mutable_data_ptr<CTYPE>() + i * p,
+            in.const_data_ptr<CTYPE>(),
+            mat1.const_data_ptr<CTYPE>() + i * n,
+            mat2.const_data_ptr<CTYPE>(),
+            1,
+            n,
+            p,
+            beta_val,
+            alpha_val);
+      }
     } else {
       // If broadcasting is required, them compute the matmul
       // and addition separately, using

@@ -112,11 +112,29 @@ TEST_F(OpAddmmOutTest, BFloat16LargeDimAccumulatesInFloat) {
   Tensor out = tf.zeros({2, 3});
   Tensor expected = tf.full({2, 3}, K);
 
-  // A self with the output's shape and a broadcast self take different paths.
+  // A self with the output's shape, a row and a column take different paths.
   op_addmm_out(tf.zeros({2, 3}), x, y, Scalar(1), Scalar(1), out);
   EXPECT_TENSOR_EQ(out, expected);
   op_addmm_out(tf.zeros({3}), x, y, Scalar(1), Scalar(1), out);
   EXPECT_TENSOR_EQ(out, expected);
+  op_addmm_out(tf.zeros({2, 1}), x, y, Scalar(1), Scalar(1), out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpAddmmOutTest, BFloat16RowBiasIsRoundedOnce) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // 257 + 1 rounds to 258 in BFloat16. Rounding the product first gives 256,
+  // and 256 + 1 rounds back to 256.
+  constexpr int K = 257;
+  Tensor out = tf.zeros({2, 3});
+  op_addmm_out(
+      tf.ones({3}),
+      tf.ones({2, K}),
+      tf.ones({K, 3}),
+      Scalar(1),
+      Scalar(1),
+      out);
+  EXPECT_TENSOR_EQ(out, tf.full({2, 3}, 258));
 }
 
 TEST_F(OpAddmmOutTest, EmptyInputWithEmptyOutTensorPasses) {
