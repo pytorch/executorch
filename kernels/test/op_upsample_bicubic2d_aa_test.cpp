@@ -521,11 +521,11 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, RejectsIntegerInput) {
 }
 
 TEST_F(OpUpsampleBicubic2dAAOutTest, FailsWithoutTempMemory) {
+  const std::vector<int64_t> output_size = {6, 5};
   context_ = torch::executor::KernelRuntimeContext();
   TensorFactory<ScalarType::Float> tf;
   Tensor in = tf.make({1, 2, 6, 8}, kInput);
   Tensor out = tf.zeros({1, 2, 6, 5});
-  const std::vector<int64_t> output_size = {6, 5};
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_upsample_bicubic2d_aa_out(
@@ -535,6 +535,21 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, FailsWithoutTempMemory) {
           std::nullopt,
           std::nullopt,
           out));
+  // uint8 computes its weights on its own path. A new context clears the
+  // failure, so that this check can fail too.
+  context_ = torch::executor::KernelRuntimeContext();
+  TensorFactory<ScalarType::Byte> tb;
+  Tensor in_u8 = tb.zeros({1, 2, 6, 8});
+  Tensor out_u8 = tb.zeros({1, 2, 6, 5});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_upsample_bicubic2d_aa_out(
+          in_u8,
+          ArrayRef<int64_t>(output_size.data(), output_size.size()),
+          false,
+          std::nullopt,
+          std::nullopt,
+          out_u8));
 }
 
 TEST_F(OpUpsampleBicubic2dAAOutTest, FailsWhenTempMemoryRunsOut) {
