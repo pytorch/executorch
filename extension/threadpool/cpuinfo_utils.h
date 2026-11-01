@@ -15,7 +15,8 @@ namespace executorch::extension::cpuinfo {
 /**
  * Returns the number of performance cores, or 0 if it is unknown, for example
  * on x86 or when every core is an efficiency core. On Linux other than
- * Android, the count is limited to get_num_allowed_cpus().
+ * Android, the count is capped at get_num_allowed_cpus(), without checking
+ * which cores the affinity mask allows.
  */
 uint32_t get_num_performant_cores();
 

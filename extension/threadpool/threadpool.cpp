@@ -140,11 +140,12 @@ ThreadPool* get_threadpool() {
     // Set threads equal to the number of performance cores.
     auto result = ::executorch::extension::cpuinfo::get_num_performant_cores();
 #endif
-    // Never start more threads than the CPUs this process may run on, and use
-    // that number when the count is unknown (0), which pthreadpool would fill
-    // in with every online CPU, past the cap below. Android is left out: it
-    // moves every app between cpusets as it goes to the background and back,
-    // while the pool keeps the size it was created with.
+    // On Linux, never start more threads than the CPUs in this thread's
+    // affinity mask, which the pool's threads inherit, and use that number
+    // when the count is unknown (0), which pthreadpool would fill in with
+    // every online CPU, past the cap below. Android is left out: it moves
+    // every app between cpusets as it goes to the background and back, while
+    // the pool keeps the size it was created with.
 #if !defined(__ANDROID__)
     const auto allowed =
         ::executorch::extension::cpuinfo::get_num_allowed_cpus();
