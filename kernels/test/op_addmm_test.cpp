@@ -112,7 +112,7 @@ TEST_F(OpAddmmOutTest, BFloat16LargeDimAccumulatesInFloat) {
   Tensor out = tf.zeros({2, 3});
   Tensor expected = tf.full({2, 3}, K);
 
-  // A self with the output's shape, a row and a column take different paths.
+  // A bias with the output's shape, a row bias and a column bias.
   op_addmm_out(tf.zeros({2, 3}), x, y, Scalar(1), Scalar(1), out);
   EXPECT_TENSOR_EQ(out, expected);
   op_addmm_out(tf.zeros({3}), x, y, Scalar(1), Scalar(1), out);
@@ -304,6 +304,19 @@ TEST_F(OpAddmmOutTest, BroadcastTest) {
   EXPECT_TENSOR_EQ(
       op_addmm_out(self, x, y, Scalar(1), Scalar(1), out),
       tf.make({2, 2}, {8, 11, 16, 23}));
+
+  // A column bias adds a different value to each row.
+  TensorFactory<ScalarType::Float> tf_float;
+  Tensor x_float = tf_float.make({2, 2}, {1, 2, 3, 4});
+  Tensor out_float = tf_float.zeros({2, 2});
+  op_addmm_out(
+      tf_float.make({2, 1}, {10, 20}),
+      x_float,
+      x_float,
+      Scalar(1),
+      Scalar(1),
+      out_float);
+  EXPECT_TENSOR_EQ(out_float, tf_float.make({2, 2}, {17, 20, 35, 42}));
 }
 TEST_F(OpAddmmOutTest, BroadcastDimSize1) {
   TensorFactory<ScalarType::Float> tf;
