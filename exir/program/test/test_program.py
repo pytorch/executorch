@@ -12,10 +12,7 @@ from typing import Any, Dict
 
 import torch
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
-from executorch.exir._decompositions import (
-    upsample_bicubic2d_aa,
-    upsample_bilinear2d_aa,
-)
+from executorch.exir._decompositions import upsample_bicubic2d_aa
 from executorch.exir.backend.test.op_partitioner_demo import (
     AddMulPartitionerDemo,
     NonDecompTestPartitioner,
@@ -387,12 +384,8 @@ class TestProgramManagers(unittest.TestCase):
                         actual, expected, atol=1e-5, rtol=1e-5, equal_nan=True
                     )
 
-        # to_edge leaves the bilinear op to its portable kernel, so check both
-        # shared functions against ATen directly, over more cases than above.
-        functions = (
-            (upsample_bilinear2d_aa, torch.ops.aten._upsample_bilinear2d_aa),
-            (upsample_bicubic2d_aa, torch.ops.aten._upsample_bicubic2d_aa),
-        )
+        # Check the decomposition against ATen directly, over more cases than
+        # lowering covers above.
         cases = (
             ([13, 40], False),
             ([1, 1], True),
@@ -401,23 +394,20 @@ class TestProgramManagers(unittest.TestCase):
             ([24, 32], False, 1.05),
         )
         dtypes = (torch.float32, torch.float64, torch.bfloat16, torch.float16)
-        for function, op in functions:
-            for size, *rest in cases:
-                for dtype in dtypes:
-                    with self.subTest(op=op, size=size, args=rest, dtype=dtype):
-                        t = x.to(dtype)
-                        # ATen's CPU kernel has no half types, so those are
-                        # checked against float32 rounded once.
-                        expected = op(
-                            t.to(torch.promote_types(dtype, torch.float32)),
-                            size,
-                            *rest,
-                        )
-                        torch.testing.assert_close(
-                            function(t, size, *rest),
-                            expected.to(dtype),
-                            equal_nan=True,
-                        )
+        for size, *rest in cases:
+            for dtype in dtypes:
+                with self.subTest(size=size, args=rest, dtype=dtype):
+                    t = x.to(dtype)
+                    # ATen's CPU kernel has no half types, so those are checked
+                    # against float32 rounded once.
+                    expected = torch.ops.aten._upsample_bicubic2d_aa(
+                        t.to(torch.promote_types(dtype, torch.float32)), size, *rest
+                    )
+                    torch.testing.assert_close(
+                        upsample_bicubic2d_aa(t, size, *rest),
+                        expected.to(dtype),
+                        equal_nan=True,
+                    )
         resized = upsample_bicubic2d_aa(channels_last[0], [13, 40], False)
         self.assertTrue(resized.is_contiguous(memory_format=torch.channels_last))
         integer = torch.zeros(1, 3, 24, 32, dtype=torch.uint8)

@@ -11,17 +11,11 @@ Decompositions into core ATen ops for ops that PyTorch keeps whole.
 """
 
 import math
-from typing import Callable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 from torch._prims_common import suggest_memory_format
 from torch.fx.experimental.symbolic_shapes import statically_known_true
-
-_Filter = Callable[[torch.Tensor], torch.Tensor]
-
-
-def _linear_filter(x: torch.Tensor) -> torch.Tensor:
-    return torch.clamp(1 - x.abs(), min=0)
 
 
 def _cubic_filter(x: torch.Tensor) -> torch.Tensor:
@@ -38,8 +32,6 @@ def _antialias_taps(
     out_size: int,
     align_corners: bool,
     scale: Optional[float],
-    support: int,
-    filter_fn: _Filter,
     dtype: torch.dtype,
     device: torch.device,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -48,6 +40,8 @@ def _antialias_taps(
     o reads input index[o, k] with weight[o, k]. When shrinking, the window
     widens by the shrink factor. Taps outside the window read index in_size.
     """
+    # _cubic_filter is 0 from a distance of 2 on.
+    support = 2
     if align_corners or scale is None or scale <= 0:
         if align_corners:
             # ATen uses a ratio of 0 for an output size of 1. min and max give
@@ -76,7 +70,7 @@ def _antialias_taps(
     end = torch.clamp(torch.floor(center + support * widen + 0.5), max=in_size)
     position = first[:, None] + torch.arange(2 * reach + 1, dtype=dtype, device=device)
     inside = position < end[:, None]
-    weights = filter_fn((position - center[:, None] + 0.5) * (1.0 / widen))
+    weights = _cubic_filter((position - center[:, None] + 0.5) * (1.0 / widen))
     weights = torch.where(inside, weights, 0)
     total = weights.sum(1, keepdim=True)
     weights = torch.where(total != 0, weights / total, weights)
@@ -93,14 +87,19 @@ def _antialias_taps(
     return index, weights
 
 
-def _upsample_aa(
+def upsample_bicubic2d_aa(
     input: torch.Tensor,
     output_size: List[int],
     align_corners: bool,
-    scales: Tuple[Optional[float], Optional[float]],
-    support: int,
-    filter_fn: _Filter,
+    scales_h: Optional[float] = None,
+    scales_w: Optional[float] = None,
 ) -> torch.Tensor:
+    """
+    ``aten._upsample_bicubic2d_aa`` in core ATen ops. It holds every output's
+    window at once, which takes several times the memory of the larger of the
+    input and the output. Returns NotImplemented for integer inputs, which
+    keeps the op.
+    """
     if not input.is_floating_point():
         # ATen rounds integer results in fixed point. Keep the op rather than
         # give different values.
@@ -108,7 +107,7 @@ def _upsample_aa(
     memory_format = suggest_memory_format(input)
     dims = [
         (dim, scale)
-        for dim, scale in ((3, scales[1]), (2, scales[0]))
+        for dim, scale in ((3, scales_w), (2, scales_h))
         # ATen's CPU kernel copies a dim whose size does not change, whatever
         # its scale.
         if not statically_known_true(input.shape[dim] == output_size[dim - 2])
@@ -126,8 +125,6 @@ def _upsample_aa(
             output_size[dim - 2],
             align_corners,
             scale,
-            support,
-            filter_fn,
             dtype,
             input.device,
         )
@@ -138,39 +135,3 @@ def _upsample_aa(
         taps = padded.index_select(dim, index.flatten()).unflatten(dim, index.shape)
         result = (taps * weights.view(index.shape + (1,) * (3 - dim))).sum(dim + 1)
     return result.to(input.dtype).contiguous(memory_format=memory_format)
-
-
-def upsample_bilinear2d_aa(
-    input: torch.Tensor,
-    output_size: List[int],
-    align_corners: bool,
-    scales_h: Optional[float] = None,
-    scales_w: Optional[float] = None,
-) -> torch.Tensor:
-    """
-    ``aten._upsample_bilinear2d_aa`` in core ATen ops. It holds every output's
-    window at once, which takes several times the memory of the larger of the
-    input and the output.
-    Returns NotImplemented for integer inputs, which keeps the op.
-    """
-    return _upsample_aa(
-        input, output_size, align_corners, (scales_h, scales_w), 1, _linear_filter
-    )
-
-
-def upsample_bicubic2d_aa(
-    input: torch.Tensor,
-    output_size: List[int],
-    align_corners: bool,
-    scales_h: Optional[float] = None,
-    scales_w: Optional[float] = None,
-) -> torch.Tensor:
-    """
-    ``aten._upsample_bicubic2d_aa`` in core ATen ops. It holds every output's
-    window at once, which takes several times the memory of the larger of the
-    input and the output.
-    Returns NotImplemented for integer inputs, which keeps the op.
-    """
-    return _upsample_aa(
-        input, output_size, align_corners, (scales_h, scales_w), 2, _cubic_filter
-    )
