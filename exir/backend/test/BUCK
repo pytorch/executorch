@@ -378,6 +378,7 @@ fbcode_target(_kind = runtime.python_test,
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/backend:utils",
+        "//executorch/exir/backend/test/demos/rpc:executor_backend_preprocess",
         "//executorch/exir/dialects:lib",
         "//executorch/extension/pybindings:portable_lib",  # @manual
         "//executorch/runtime/executor/test:test_backend_compiler_lib",

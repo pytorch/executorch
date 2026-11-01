@@ -10,7 +10,14 @@ import torch
 from executorch import exir
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.partitioner import Partitioner, PartitionResult
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
+from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
+    ExecutorBackend,
+)
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.backend.utils import (
     format_delegated_graph,
@@ -18,6 +25,7 @@ from executorch.exir.backend.utils import (
     get_delegates,
     get_non_lowered_nodes,
     is_identical_graph,
+    tag_mutated_buffer,
 )
 
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
@@ -390,3 +398,57 @@ class TestUtils(unittest.TestCase):
             payload_names,
             f"Delegate names mismatch: {delegate_names} vs {payload_names}",
         )
+
+    def test_to_backend_keeps_a_mutated_buffer_out_of_a_partial_delegate(self):
+        class UpdateState(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(2))
+
+            def forward(self, x):
+                y = x * self.state
+                z = x + self.state
+                self.state.copy_(x * 2)
+                return y + z
+
+        class TagNodes(Partitioner):
+            def __init__(self, names):
+                super().__init__()
+                self.names = names
+
+            def partition(self, program: ExportedProgram) -> PartitionResult:
+                for node in program.graph.nodes:
+                    if node.name in self.names:
+                        node.meta["delegation_tag"] = "tag0"
+                tag_mutated_buffer(program)
+                return PartitionResult(
+                    tagged_exported_program=program,
+                    partition_tags={
+                        "tag0": DelegationSpec(ExecutorBackend.__name__, [])
+                    },
+                )
+
+        # The delegate owns the buffer only when it reads and writes all of
+        # it. Otherwise the owning program keeps the one buffer: a copy in the
+        # delegate would never see the updates.
+        readers = ["aten_mul_tensor", "aten_add_tensor"]
+        writer = "aten_mul_tensor_1"
+        for names, owned_by_program in (
+            (readers + [writer], False),
+            (readers, True),
+            (readers[:1], True),
+        ):
+            with self.subTest(names=names):
+                program = (
+                    to_edge(export(UpdateState(), (torch.ones(2),), strict=True))
+                    .to_backend(TagNodes(names))
+                    .exported_program()
+                )
+                self.assertEqual(
+                    [
+                        spec.arg.name
+                        for spec in program.graph_signature.input_specs
+                        if spec.target == "state"
+                    ],
+                    ["b_state"] if owned_by_program else [],
+                )

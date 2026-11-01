@@ -664,7 +664,7 @@ class TestPartitioner(unittest.TestCase):
 
             def forward(self, x):
                 result = x + self.state
-                self.state.copy_(x)
+                self.state.copy_(x + 1)
                 return result
 
         edge = exir.to_edge(
@@ -677,9 +677,14 @@ class TestPartitioner(unittest.TestCase):
             if exported_program.graph_signature.inputs_to_buffers.get(node.name)
             == "state"
         )
+        writer = next(
+            node
+            for node in exported_program.graph.nodes
+            if node.name in exported_program.graph_signature.buffers_to_mutate
+        )
         delegate_tag = "test_partition"
-        for user in state_node.users:
-            user.meta["delegation_tag"] = delegate_tag
+        for node in [*state_node.users, writer]:
+            node.meta["delegation_tag"] = delegate_tag
 
         tag_mutated_buffer(exported_program)
 

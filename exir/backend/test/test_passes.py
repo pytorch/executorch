@@ -90,34 +90,25 @@ class TestPasses(unittest.TestCase):
     def test_duplicate_constant_node_in_a_list_argument(self) -> None:
         """
         An op such as cat or index_put reads its tensors from a list, so the
-        copy has to replace a constant there too. A mutated buffer keeps its
-        list readers, since a copy would not see its updates, and the graph
-        output keeps the original that the output specs name.
+        copy has to replace a constant there too. The graph output keeps the
+        original that the output specs name.
         """
 
         class CatConst(torch.nn.Module):
-            def __init__(self, mutate: bool, returned: bool):
+            def __init__(self, returned: bool):
                 super().__init__()
-                self.mutate = mutate
                 self.returned = returned
                 self.register_buffer("const", torch.ones(2))
 
             def forward(self, x):
                 if self.returned:
                     return torch.cat([x, self.const]), self.const
-                out = torch.cat([x, self.const]), torch.cat([self.const, x])
-                if self.mutate:
-                    self.const.add_(1)
-                return out
+                return torch.cat([x, self.const]), torch.cat([self.const, x])
 
-        for mutate, returned, readers_of_original in (
-            (False, False, 1),
-            (True, False, 2),
-            (False, True, 2),
-        ):
-            with self.subTest(mutate=mutate, returned=returned):
+        for returned, readers_of_original in ((False, 1), (True, 2)):
+            with self.subTest(returned=returned):
                 edge = exir.to_edge(
-                    export(CatConst(mutate, returned), (torch.ones(2),), strict=True)
+                    export(CatConst(returned), (torch.ones(2),), strict=True)
                 )
                 program = edge.exported_program()
                 name = next(
@@ -131,3 +122,26 @@ class TestPasses(unittest.TestCase):
                 users = {node.name: len(node.users) for node in program.graph.nodes}
                 self.assertEqual(users[name], readers_of_original)
                 program._validate()
+
+    def test_duplicate_constant_node_refuses_a_mutated_buffer(self) -> None:
+        class UpdateConst(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("const", torch.zeros(2))
+
+            def forward(self, x):
+                y = x * self.const
+                self.const.add_(1)
+                return y
+
+        program = exir.to_edge(
+            export(UpdateConst(), (torch.ones(2),), strict=True)
+        ).exported_program()
+        name = next(
+            node.name
+            for node in program.graph.nodes
+            if node.op == "placeholder" and is_buffer(program, node)
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "would not see its updates"):
+            duplicate_constant_node(program, name)

@@ -40,6 +40,7 @@ def duplicate_constant_node(
     """
     A pass to duplicate the attributes/constants node (the candidate_node) in the graph. Mostly used for duplicating light-weight data.
     If the data is too large, try tag it with "no_copy" to prevent high memory usage and make it as part of the output.
+    A mutated buffer is never copied, because a copy would not see its updates: this raises instead.
 
     Args:
         exported_program: the exported program to be modified. If constants nodes are copied, they will be added as new
@@ -76,11 +77,17 @@ def duplicate_constant_node(
                 raise RuntimeError(
                     f"placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: {node} "
                 )
+            if (
+                old_signature.inputs_to_buffers.get(node.name)
+                in old_signature.buffers_to_mutate.values()
+            ):
+                raise RuntimeError(
+                    f"mutated buffer ({node}) cannot be copied, because a copy "
+                    "would not see its updates. Tag it only when every node "
+                    "that reads or writes it has the same tag, as "
+                    "tag_mutated_buffer does, or leave it untagged."
+                )
             users = list(node.users.keys())
-            mutated = set(old_signature.buffers_to_mutate.values())
-            is_mutated_buffer = (
-                old_signature.inputs_to_buffers.get(node.name) in mutated
-            )
             for ith in range(1, len(node.users)):
                 copy_constant_or_attribute_fqn = node.name + f"_copy_{ith - 1}"
                 with exported_program.graph.inserting_before(
@@ -121,11 +128,9 @@ def duplicate_constant_node(
                     users[ith].args = new_args
                     users[ith].kwargs = new_kwargs
                     # An op such as cat or index_put reads the constant from a
-                    # list. A mutated buffer keeps such a reader, since a copy
-                    # would not see its updates: lowering then fails instead.
-                    # The graph output keeps the original, which the output
-                    # specs name.
-                    if not is_mutated_buffer and users[ith].op != "output":
+                    # list. The graph output keeps the original, which the
+                    # output specs name.
+                    if users[ith].op != "output":
                         users[ith].replace_input_with(
                             constant_or_attribute_node,
                             copied_constant_or_attribute_node,
