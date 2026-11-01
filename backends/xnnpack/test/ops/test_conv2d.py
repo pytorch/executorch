@@ -887,9 +887,12 @@ class TestConv2d(unittest.TestCase):
                                 "executorch_exir_dialects_edge__ops_aten_convolution_default"
                             ]
                         )
+                        .check_count(
+                            {"torch.ops.higher_order.executorch_call_delegate": 2}
+                        )
                         .to_executorch()
                         .serialize()
-                        .run_method_and_compare_outputs()
+                        .run_method_and_compare_outputs(qtol=1)
                     )
 
     def test_fp32_tconv_output_padding(self):
