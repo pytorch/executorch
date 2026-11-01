@@ -363,12 +363,13 @@ class TestProgramManagers(unittest.TestCase):
                 )
 
         x = torch.randn(1, 3, 24, 32)
-        channels_last = [
-            t.to(memory_format=torch.channels_last)
-            for t in (x, torch.randn(1, 3, 37, 51), torch.randn(1, 3, 64, 8))
-        ]
         dims = {"x": {2: Dim("h", min=8, max=64), 3: Dim("w", min=8, max=64)}}
-        for dynamic_shapes, inputs in ((None, [x]), (dims, channels_last)):
+        sizes = [(24, 32), (8, 8), (13, 64), (37, 51), (64, 8)]
+        cases = [(None, [x])] + [
+            (dims, [torch.randn(1, 3, h, w).to(memory_format=f) for h, w in sizes])
+            for f in (torch.contiguous_format, torch.channels_last)
+        ]
+        for dynamic_shapes, inputs in cases:
             edge = to_edge(
                 export(Resize(), (inputs[0],), dynamic_shapes=dynamic_shapes)
             )
@@ -382,7 +383,11 @@ class TestProgramManagers(unittest.TestCase):
             )
             program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
             for t in inputs:
-                with self.subTest(dynamic=dynamic_shapes is not None, shape=t.shape):
+                with self.subTest(
+                    dynamic=dynamic_shapes is not None,
+                    shape=t.shape,
+                    channels_last=t.is_contiguous(memory_format=torch.channels_last),
+                ):
                     for actual, expected in zip(program.forward((t,)), Resize()(t)):
                         torch.testing.assert_close(
                             actual, expected, atol=1e-5, rtol=1e-5
