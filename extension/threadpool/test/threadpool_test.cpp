@@ -21,6 +21,7 @@
 #if defined(__linux__) && !defined(__ANDROID__)
 #include <sched.h>
 
+#include <cstdio>
 #include <cstdlib>
 #endif
 
@@ -79,14 +80,19 @@ void run_lambda_with_size(
 
 // The pool has no more threads than the CPUs this process may run on.
 bool may_use_more_than_one_cpu() {
-  return ::executorch::extension::cpuinfo::get_num_allowed_cpus() != 1;
+#if defined(__linux__) && !defined(__ANDROID__)
+  cpu_set_t cpus;
+  return sched_getaffinity(0, sizeof(cpus), &cpus) == 0 && CPU_COUNT(&cpus) > 1;
+#else
+  return true;
+#endif
 }
 
 #if defined(__linux__) && !defined(__ANDROID__)
-// Limits this thread to the CPU it runs on, then exits with the larger of the
-// default pool size and the performance core count, at most 255. Exiting with
-// 1 means both follow the limit. Failing to set the limit aborts instead.
-[[noreturn]] void exit_with_counts_on_one_cpu() {
+// Limits this thread to the CPU it runs on, then prints the default pool size
+// and the performance core count for the test to match. Failing to set the
+// limit aborts instead.
+[[noreturn]] void print_counts_on_one_cpu() {
   const int cpu = sched_getcpu();
   if (cpu < 0) {
     std::abort();
@@ -102,10 +108,13 @@ bool may_use_more_than_one_cpu() {
   if (sched_setaffinity(0, size, cpus.get()) != 0) {
     std::abort();
   }
-  const size_t count = std::max<size_t>(
+  std::fprintf(
+      stderr,
+      "pool %zu perf %u end\n",
       ::executorch::extension::threadpool::get_threadpool()->get_thread_count(),
-      ::executorch::extension::cpuinfo::get_num_performant_cores());
-  std::exit(static_cast<int>(std::min<size_t>(count, 255)));
+      static_cast<unsigned>(
+          ::executorch::extension::cpuinfo::get_num_performant_cores()));
+  std::exit(EXIT_SUCCESS);
 }
 #endif
 } // namespace
@@ -246,11 +255,14 @@ TEST(TestNoThreadPoolGuard, TestRunWithGuard) {
 }
 
 #if defined(__linux__) && !defined(__ANDROID__)
-// The pool is created once per process, so it is checked in a fresh one.
+// gtest runs death tests before the other tests, so the forked child creates
+// the pool itself, and the CPU limit it sets does not reach the other tests.
 TEST(ThreadPoolDeathTest, DefaultSizeHonorsCpuAffinity) {
   executorch::runtime::runtime_init();
 
-  ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
-  EXPECT_EXIT(exit_with_counts_on_one_cpu(), ExitedWithCode(1), "");
+  EXPECT_EXIT(
+      print_counts_on_one_cpu(),
+      ExitedWithCode(EXIT_SUCCESS),
+      "pool 1 perf [01] end");
 }
 #endif
