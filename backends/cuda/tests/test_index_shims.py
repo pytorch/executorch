@@ -4,14 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Mask indexing, index_put, scatter and scatter_reduce in the CUDA backend's
-index shims.
+"""Ops that Inductor does not lower by itself in the CUDA backend.
 
 A mask index makes a result size depend on the data, so Inductor leaves it,
 and an index_put with a mask, to the backend's own index shims. Inductor also
 leaves them every scatter and scatter_reduce it cannot write with an atomic
-add. These tests lower real programs, run them through the Python runtime,
-and compare with eager PyTorch on CUDA.
+add. varlen_attn and _reshape_copy have no Inductor lowering, so the backend
+decomposes them. These tests lower real programs, run them through the Python
+runtime, and compare with eager PyTorch on CUDA.
 """
 
 import os
@@ -29,6 +29,7 @@ from executorch.backends.cuda.passes.replace_masked_copy_with_where import (
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
+from torch.nn.attention.varlen import varlen_attn
 from torch.testing._internal.common_utils import DeterministicGuard
 
 
@@ -39,7 +40,10 @@ from torch.testing._internal.common_utils import DeterministicGuard
 )
 class TestIndexShims(unittest.TestCase):
     def _run(
-        self, model: torch.nn.Module, cases: Sequence[Tuple[torch.Tensor, ...]]
+        self,
+        model: torch.nn.Module,
+        cases: Sequence[Tuple[torch.Tensor, ...]],
+        **tolerance: float,
     ) -> None:
         """Lower model for cases[0], then compare every case with eager CUDA."""
         spec = CudaBackend.generate_method_name_compile_spec("forward")
@@ -69,7 +73,7 @@ class TestIndexShims(unittest.TestCase):
                 expected = model(*(t.cuda() for t in inputs))
                 for output, reference in zip(outputs, expected, strict=True):
                     torch.testing.assert_close(
-                        output.cpu(), reference.cpu(), equal_nan=True
+                        output.cpu(), reference.cpu(), equal_nan=True, **tolerance
                     )
 
     def test_mask_index_and_index_put(self):
@@ -310,3 +314,40 @@ class TestIndexShims(unittest.TestCase):
                 # loses.
                 scale = torch.tensor(1.5, dtype=dtype)
                 self._run(Values(), [(x, scale)])
+
+    def test_reshape_copy(self):
+        """Torch-TensorRT hands back the views it leaves to PyTorch as
+        _reshape_copy."""
+
+        class ReshapeCopy(torch.nn.Module):
+            def forward(self, x):
+                reshape = torch.ops.aten._reshape_copy
+                return (
+                    reshape(x.transpose(0, 1), [-1, 4]),
+                    reshape(x[:, 1:3], [8, -1]),
+                    reshape(x, [4, 32]),
+                )
+
+        self._run(ReshapeCopy(), [(torch.randn(8, 4, 4),)])
+
+    def test_varlen_attn(self):
+        """varlen_attn calls Flash attention, which the CUDA shims lack."""
+
+        class Attention(torch.nn.Module):
+            def forward(self, q, k, v, cu_seq):
+                # Flattening views each output, which needs the op's layout.
+                return tuple(
+                    varlen_attn(
+                        q, k, v, cu_seq, cu_seq, 16, 16, window_size=window
+                    ).flatten(1)
+                    for window in ((-1, -1), (-1, 0), (8, 0), (4, 2))
+                )
+
+        torch.manual_seed(0)
+        q, k, v = (torch.randn(28, 4, 64, dtype=torch.bfloat16) for _ in range(3))
+        # The sequence boundaries come only at run time.
+        cases = [
+            (q, k, v, torch.tensor([0, 12, 28], dtype=torch.int32)),
+            (q, k, v, torch.tensor([0, 16, 28], dtype=torch.int32)),
+        ]
+        self._run(Attention(), cases, atol=1e-2, rtol=1e-2)

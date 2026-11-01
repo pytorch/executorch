@@ -22,7 +22,6 @@ from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import export
-from torch.nn.attention.varlen import varlen_attn
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
@@ -506,30 +505,14 @@ class TestCudaExport(unittest.TestCase):
         self.assertNotIn(torch.ops.aten.tril.default, targets)
         self.assertIn(torch.ops.aten.linear.default, targets)
 
-    def test_reshape_copy(self):
-        """Torch-TensorRT hands back the views it leaves to PyTorch as _reshape_copy."""
-
-        class ReshapeCopyModule(torch.nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return torch.ops.aten._reshape_copy(x.transpose(0, 1), [-1, 4]) * 2
-
-        self._export_to_cuda_with_lower(ReshapeCopyModule(), (torch.randn(8, 4, 4),))
-
-    def test_varlen_attn(self):
-        """varlen_attn calls Flash attention, which the CUDA shims lack."""
-
-        class VarlenAttention(torch.nn.Module):
-            def forward(self, q, k, v, cu_seq):
-                # Flattening views the output, which needs the op's layout.
-                return varlen_attn(q, k, v, cu_seq, cu_seq, 16, 16).flatten(1)
+    def test_varlen_attn_decomposition(self):
+        """The CUDA backend decomposes varlen_attn, which calls Flash attention."""
 
         q, k, v = (
             torch.randn(32, 4, 64, dtype=torch.bfloat16, device="cuda")
             for _ in range(3)
         )
         cu_seq = torch.tensor([0, 16, 32], dtype=torch.int32, device="cuda")
-        self._export_to_cuda_with_lower(VarlenAttention(), (q, k, v, cu_seq))
-
         # Causal masks over query sequences shorter and longer than their key
         # sequences (some queries then see no key, and NaN values outside the
         # key sequences must stay out), grouped-query attention with an empty
