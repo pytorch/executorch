@@ -685,6 +685,25 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
       op_convolution_out(
           input_6d, weight_6d, bias, {1}, {0}, {1}, false, {0}, 1, out_6d));
 
+  // Like PyTorch, a kernel dim must not be empty.
+  Tensor narrow_input = tf.ones({1, 1, 3});
+  Tensor empty_weight = tf.ones({1, 1, 0});
+  Tensor wide_out = tf.zeros({1, 1, 4});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          narrow_input,
+          empty_weight,
+          bias,
+          {1},
+          {0},
+          {1},
+          false,
+          {0},
+          1,
+          wide_out));
+
   // Like PyTorch, an empty spatial dim is rejected even when padding would
   // give it an output.
   Tensor empty_input = tf.ones({1, 1, 0});

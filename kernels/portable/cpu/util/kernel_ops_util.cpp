@@ -464,6 +464,8 @@ bool check_convolution_args(
     kernel_size[i] = weight.size(i + 2);
   }
   ET_LOG_AND_RETURN_IF_FALSE(
+      kernel_size_is_valid({kernel_size, kernel_ndim}, kernel_ndim));
+  ET_LOG_AND_RETURN_IF_FALSE(
       stride_is_valid(stride, kernel_ndim, /*allow_empty=*/false));
   ET_LOG_AND_RETURN_IF_FALSE(
       padding_is_valid(padding, {kernel_size, kernel_ndim}, kernel_ndim));
