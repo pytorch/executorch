@@ -1152,6 +1152,29 @@ class TestLinear(unittest.TestCase):
                 },
             )
 
+    def test_qs8_linear_with_force_non_static_weights_for_f32_linear(self):
+        # The flag is for float linears. A quantized linear that is decomposed into
+        # a matmul keeps its quantize and dequantize nodes and is delegated whole.
+        module = BaseLinear(use_bias=True)
+        quant_config = get_symmetric_quantization_config(is_per_channel=True)
+        partitioner = XnnpackPartitioner(force_non_static_weights_for_f32_linear=True)
+        (
+            Tester(module.eval(), module.get_inputs(rank=2))
+            .quantize(Quantize(quantization_config=quant_config))
+            .export()
+            .to_edge()
+            .partition(Partition(partitioner=partitioner))
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_addmm_default",
+                    "quantized_decomposed",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     def test_linear_with_force_non_static_weights_for_f32_linear(self):
         def check_signature(
             signature: ExportGraphSignature,

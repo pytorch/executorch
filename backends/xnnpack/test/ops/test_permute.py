@@ -168,7 +168,13 @@ class TestPermute(unittest.TestCase):
                 )
 
     def test_qs8_permute_above_max_rank(self):
-        self._test_permute_above_max_rank(get_symmetric_quantization_config())
+        for force_non_static_weights in (False, True):
+            self._test_permute_above_max_rank(
+                get_symmetric_quantization_config(),
+                partitioner=XnnpackPartitioner(
+                    force_non_static_weights_for_f32_linear=force_non_static_weights
+                ),
+            )
 
     def test_qd8_permute_above_max_rank(self):
         self._test_permute_above_max_rank(

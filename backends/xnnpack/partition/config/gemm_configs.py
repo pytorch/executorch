@@ -567,16 +567,19 @@ class AddmmConfig(GEMMConfig):
         node.args = tuple(fake_args)
         node.users = src_partition.output_nodes[0].users
         valid_deps, deps = super().get_deps(node, ep)
+        _, precision = self._overwrite_precision(node)
 
         # Reset addmm node back to old args and users
         node.args = old_args
         node.users = old_users
 
-        # When using force_non_static_weights_for_f32_linear, we want to get_deps to overwrite the source partition nodes.
-        # Else we want to be greedy, but leave out views XNNPACK cannot hold.
+        # A float linear with force_non_static_weights_for_f32_linear takes only the
+        # deps inside the source partition. Else we want to be greedy, but leave out
+        # views XNNPACK cannot hold.
         ret_deps = (
             list(set(deps) & set(src_partition.nodes))
             if self.force_non_static_weights_for_f32_linear
+            and precision == ConfigPrecisionType.FP32
             else list(
                 set(deps)
                 | {n for n in src_partition.nodes if self._check_tensor_ranks(n)}
