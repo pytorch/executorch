@@ -197,7 +197,7 @@ class OpUpsampleBicubic2dAAOutTest : public OperatorTest {
   }
 
  private:
-  uint8_t temp_memory_[16 * 1024];
+  uint8_t temp_memory_[16 * 1024] = {};
   executorch::runtime::MemoryAllocator temp_allocator_{
       sizeof(temp_memory_),
       temp_memory_};
