@@ -294,8 +294,8 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, FailsWithoutTempMemory) {
   context_ = torch::executor::KernelRuntimeContext();
   TensorFactory<ScalarType::Float> tf;
   Tensor in = tf.make({1, 2, 6, 8}, kInput);
-  Tensor out = tf.zeros({1, 2, 3, 5});
-  const std::vector<int64_t> output_size = {3, 5};
+  Tensor out = tf.zeros({1, 2, 6, 5});
+  const std::vector<int64_t> output_size = {6, 5};
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_upsample_bicubic2d_aa_out(
@@ -305,4 +305,64 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, FailsWithoutTempMemory) {
           std::nullopt,
           std::nullopt,
           out));
+}
+
+TEST_F(OpUpsampleBicubic2dAAOutTest, RejectsEmptyInput) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor in = tf.zeros({1, 1, 0, 4});
+  Tensor out = tf.zeros({1, 1, 2, 2});
+  const std::vector<int64_t> output_size = {2, 2};
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_upsample_bicubic2d_aa_out(
+          in,
+          ArrayRef<int64_t>(output_size.data(), output_size.size()),
+          false,
+          std::nullopt,
+          std::nullopt,
+          out));
+}
+
+TEST_F(OpUpsampleBicubic2dAAOutTest, RejectsScaleTooSmallForInput) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor in = tf.zeros({1, 1, 64, 8});
+  Tensor out = tf.zeros({1, 1, 2, 8});
+  const std::vector<int64_t> output_size = {2, 8};
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_upsample_bicubic2d_aa_out(
+          in,
+          ArrayRef<int64_t>(output_size.data(), output_size.size()),
+          false,
+          std::ldexp(1.0, -60),
+          std::nullopt,
+          out));
+}
+
+TEST_F(OpUpsampleBicubic2dAAOutTest, ResizesBothDimsLikeTwoOneDimResizes) {
+  // Inputs this tall make the kernel keep only a few rows between its passes.
+  TensorFactory<ScalarType::Float> tf;
+  std::vector<float> data(2 * 24 * 16);
+  for (const auto i : c10::irange(data.size())) {
+    data[i] = std::sin(0.37f * i);
+  }
+  const Tensor in = tf.make({1, 2, 24, 16}, data);
+  const auto resize = [&](const Tensor& from, int64_t h, int64_t w) {
+    Tensor to =
+        tf.zeros({1, 2, static_cast<int32_t>(h), static_cast<int32_t>(w)});
+    const std::vector<int64_t> output_size = {h, w};
+    op_upsample_bicubic2d_aa_out(
+        from,
+        ArrayRef<int64_t>(output_size.data(), output_size.size()),
+        false,
+        std::nullopt,
+        std::nullopt,
+        to);
+    return to;
+  };
+  const Tensor wide = resize(in, 24, 5);
+  for (const int64_t height : {18, 30}) {
+    EXPECT_TENSOR_CLOSE_WITH_TOL(
+        resize(in, height, 5), resize(wide, height, 5), 1e-6, 1e-6);
+  }
 }
