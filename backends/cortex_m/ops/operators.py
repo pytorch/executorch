@@ -621,6 +621,78 @@ impl(lib, "quantized_linear_per_channel", "CompositeExplicitAutograd")(
 )
 
 
+# Same as quantized_linear_per_channel with symmetric int4 weights, packed two
+# per byte over the flattened [out_features, in_features] matrix (see
+# utils.pack_int4). The requantization parameters give out_features.
+_LINEAR_S4_ARGS = (
+    "Tensor input, Tensor weights, Tensor? bias, int input_offset, "
+    "int output_offset, Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_max, int activation_min"
+)
+lib.define(f"quantized_linear_s4({_LINEAR_S4_ARGS}) -> Tensor")
+lib.define(
+    f"quantized_linear_s4.out({_LINEAR_S4_ARGS}, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+def _check_linear_s4_args(
+    input: torch.Tensor, weights: torch.Tensor, requantize_multipliers: torch.Tensor
+) -> tuple[int, int]:
+    # Matches the C++ kernel's packed-weight checks.
+    in_features = input.shape[-1]
+    out_features = requantize_multipliers.shape[0]
+    if weights.dim() != 1 or weights.numel() != (in_features * out_features + 1) // 2:
+        raise ValueError(
+            f"quantized_linear_s4: weights must be 1-D and hold "
+            f"{in_features * out_features} int4 values, two per byte"
+        )
+    return out_features, in_features
+
+
+@register_fake("cortex_m::quantized_linear_s4")  # type: ignore[misc]
+def quantized_linear_s4_meta(
+    input: torch.Tensor,
+    weights: torch.Tensor,
+    bias: torch.Tensor | None,
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_max: int,
+    activation_min: int,
+) -> torch.Tensor:
+    out_features, _ = _check_linear_s4_args(input, weights, requantize_multipliers)
+    return input.new_empty((*input.shape[:-1], out_features))
+
+
+@impl(lib, "quantized_linear_s4", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_linear_s4_impl(
+    input: torch.Tensor,
+    weights: torch.Tensor,
+    bias: torch.Tensor | None,
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_max: int,
+    activation_min: int,
+) -> torch.Tensor:
+    weight_sizes = _check_linear_s4_args(input, weights, requantize_multipliers)
+    return quantized_linear_impl(
+        input,
+        unpack_int4(weights, weight_sizes),
+        bias,
+        None,
+        input_offset,
+        0,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_max,
+        activation_min,
+    )
+
+
 # ===================================================================
 # SOFTMAX OPERATION DEFINITION
 # ===================================================================

@@ -401,12 +401,6 @@ def _get_linear_replacement(
         )
     )
 
-    # CMSIS-NN's MVE `arm_fully_connected_s8` path reads a precomputed
-    # kernel_sum (input_offset×sum(weight) + bias) from ctx.buf and
-    # ignores the bias argument. The DSP and scalar paths do the opposite
-    # — they read the bias argument at runtime and ignore ctx.buf
-    # (see arm_nn_vec_mat_mult_t_s8.c). Pick the right input format here
-    # based on the target ISA so the runtime gets exactly what it expects.
     linear_args = node.args
     weights = cast(Node, linear_args[1])
     weights_tensor = get_param_tensor(exported_program, weights)
@@ -420,6 +414,59 @@ def _get_linear_replacement(
         get_param_tensor(exported_program, bias_node) if bias_node is not None else None
     )
 
+    # int4 weights take the per-channel s4 kernel, which reads the bias itself.
+    # Shapes that are unsafe for it run int4-range weights exactly on the int8
+    # kernels.
+    if (
+        weight_qparams.qmin >= -8
+        and weight_qparams.qmax <= 7
+        and _int4_kernels_safe(dialect_pass, weights_tensor.shape[1])
+    ):
+        # A per-tensor scale repeats over the output features.
+        repeats = weights_tensor.shape[0] // len(quantized_multipliers)
+        constants = (
+            ("_weight_s4", pack_int4(weights_tensor)),
+            (
+                "_quantized_multiplier",
+                torch.tensor(quantized_multipliers * repeats, dtype=torch.int32),
+            ),
+            (
+                "_quantized_shift",
+                torch.tensor(quantized_shifts * repeats, dtype=torch.int32),
+            ),
+        )
+        with node.graph.inserting_after(weights):
+            packed_weights, multipliers_arg, shifts_arg = (
+                create_constant_placeholder(
+                    exported_program,
+                    node.graph,
+                    node.name + suffix,
+                    InputKind.PARAMETER,
+                    tensor,
+                )
+                for suffix, tensor in constants
+            )
+        return DialectNodeSpec(
+            exir_ops.edge.cortex_m.quantized_linear_s4.default,
+            (
+                linear_args[0],
+                packed_weights,
+                bias_node,
+                -input_zp,
+                output_zp,
+                multipliers_arg,
+                shifts_arg,
+                output_max,
+                output_min,
+            ),
+        )
+
+    # CMSIS-NN's MVE `arm_fully_connected_s8` path reads a precomputed
+    # kernel_sum (input_offset×sum(weight) + bias) from ctx.buf and
+    # ignores the bias argument. The DSP and scalar paths do the opposite
+    # — they read the bias argument at runtime and ignore ctx.buf
+    # (see arm_nn_vec_mat_mult_t_s8.c). Pick the right input format here
+    # based on the target ISA so the runtime gets exactly what it expects.
     if target_config.backend == cmsis_nn.Backend.MVE:
         kernel_sum_tensor = _compute_kernel_sum(
             weights_tensor, bias_tensor, -input_zp, 0

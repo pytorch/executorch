@@ -40,7 +40,7 @@ INT8_WEIGHT_PER_CHANNEL_QSPEC = QuantizationSpec(
 )
 
 # int4 weights held in int8, with the symmetric range of the Arm a8w4 config.
-# The lowering packs them two per byte for the CMSIS-NN s4 convolution.
+# The lowering packs them two per byte for the CMSIS-NN s4 kernels.
 INT4_WEIGHT_PER_CHANNEL_QSPEC = QuantizationSpec(
     dtype=torch.int8,
     observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
@@ -103,9 +103,10 @@ CONV_TRANSPOSE_TARGETS = {
     torch.ops.aten.conv_transpose2d.input,
 }
 
-INT4_WEIGHT_CONV_TARGETS = {
+INT4_WEIGHT_TARGETS = {
     torch.ops.aten.conv1d.default,
     torch.ops.aten.conv2d.default,
+    torch.ops.aten.linear.default,
 }
 
 POOL_SHARE_OUTPUT_TARGETS = {
@@ -190,7 +191,7 @@ class CortexMQuantizationConfig(QuantizationConfig):
         """
         Returns the configured weight quantization spec with the following cortex-m specific adjustments:
         - For conv transpose, returns the per-channel quantization spec with ch_axis=1 to match the IOHW weight format used by CMSIS-NN, instead of the default ch_axis=0
-        - For int4 weights, widens the configured spec to the full int8 range unless the node is an ungrouped convolution, the only op with an int4 CMSIS-NN kernel here
+        - For int4 weights, widens the configured spec to the full int8 range unless the node is an ungrouped convolution or a linear layer
         """
         weight_qspec = super().get_weight_qspec()
         if (
@@ -210,7 +211,7 @@ class CortexMQuantizationConfig(QuantizationConfig):
             groups = (
                 node.args[6] if len(node.args) > 6 else node.kwargs.get("groups", 1)
             )
-            if node.target not in INT4_WEIGHT_CONV_TARGETS or groups != 1:
+            if node.target not in INT4_WEIGHT_TARGETS or groups != 1:
                 return replace(weight_qspec, quant_min=None, quant_max=None)
         return weight_qspec
 
@@ -255,8 +256,8 @@ INT8_PER_CHANNEL_CONFIG = CortexMQuantizationConfig(
 )
 
 
-# int8 activations with int4 weights on ungrouped convolutions; every other
-# weighted op keeps int8 weights.
+# int8 activations with int4 weights on ungrouped convolutions and linear
+# layers; every other weighted op keeps int8 weights.
 A8W4_PER_CHANNEL_CONFIG = CortexMQuantizationConfig(
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_ACTIVATION_PER_TENSOR_QSPEC,

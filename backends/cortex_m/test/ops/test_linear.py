@@ -4,27 +4,34 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 
 import pytest
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a8w4_quantization_config,
+)
 from executorch.backends.arm.test.common import parametrize
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    A8W4_PER_CHANNEL_CONFIG,
     CortexMQuantizationConfig,
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_PER_CHANNEL_CONFIG,
     INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC,
 )
-from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
+from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
     ramp_tensor,
 )
+from executorch.backends.cortex_m.utils import pack_int4, unpack_int4
 from executorch.backends.test.harness.stages import Quantize, StageType
 from executorch.backends.transforms.utils import get_param_tensor
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 
 class CortexMLinear(torch.nn.Module):
@@ -422,3 +429,168 @@ def test_dialect_linear_per_channel_keeps_fused_relu(cortex_m_target):
     targets = [str(n.target) for n in program.graph.nodes if n.op == "call_function"]
     assert any("quantized_linear_per_channel" in t for t in targets)
     assert not any("relu" in t for t in targets)
+
+
+a8w4_linear_test_cases = {
+    "linear_bias": per_channel_linear_test_cases["linear_bias"],
+    "linear_no_bias": per_channel_linear_test_cases["linear_no_bias"],
+    # 27 * 13 = 351 weights: odd, so the last high nibble is padding.
+    "linear_odd_weight_count": McuTestCase(
+        model=CortexMLinearPerChannel(27, 13, bias=True),
+        example_inputs=(ramp_tensor(-2, 2, (2, 27)),),
+    ),
+    "linear_3d_input": McuTestCase(
+        model=CortexMLinearPerChannel(24, 10, bias=True),
+        example_inputs=(ramp_tensor(-2, 2, (2, 3, 24)),),
+    ),
+    "linear_relu": McuTestCase(
+        model=torch.nn.Sequential(
+            CortexMLinearPerChannel(24, 12, bias=True), torch.nn.ReLU()
+        ),
+        example_inputs=(ramp_tensor(-2, 2, (2, 24)),),
+    ),
+}
+
+
+def _s4_linear_weights(tester):
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    [linear] = _linear_nodes(tester)
+    assert linear.target == exir_ops.edge.cortex_m.quantized_linear_s4.default
+    multipliers = get_param_tensor(program, linear.args[5])
+    in_features = linear.args[0].meta["val"].shape[-1]
+    weights = get_param_tensor(program, linear.args[1])
+    assert weights.shape == ((multipliers.numel() * in_features + 1) // 2,)
+    return multipliers, unpack_int4(weights, (multipliers.numel(), in_features))
+
+
+@parametrize("test_case", a8w4_linear_test_cases)
+@pytest.mark.parametrize("cpu", [CortexM.M55, CortexM.M4, CortexM.M0PLUS])
+def test_dialect_linear_a8w4(test_case, cpu):
+    tester = _lower_linear_per_channel(
+        test_case, CortexMTargetConfig(cpu=cpu), A8W4_PER_CHANNEL_CONFIG
+    )
+    tester.run_method_and_compare_outputs(inputs=test_case.example_inputs, qtol=1)
+
+    _, weights = _s4_linear_weights(tester)
+    # Per-channel scales make every weight row reach the end of the int4 grid.
+    assert set(weights.to(torch.int32).abs().amax(dim=1).tolist()) == {7}
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    assert not any("relu" in str(n.target) for n in program.graph.nodes)
+
+
+def _per_tensor_a8w4_config():
+    arm_config = get_symmetric_a8w4_quantization_config(
+        is_per_channel=False, is_qat=False
+    )
+    return CortexMQuantizationConfig(
+        arm_config.input_activation,
+        arm_config.output_activation,
+        arm_config.weight,
+        arm_config.bias,
+    )
+
+
+def test_dialect_linear_a8w4_per_tensor(cortex_m_target):
+    case = per_channel_linear_test_cases["linear_bias"]
+    tester = _lower_linear_per_channel(case, cortex_m_target, _per_tensor_a8w4_config())
+    tester.run_method_and_compare_outputs(inputs=case.example_inputs, qtol=1)
+
+    multipliers, weights = _s4_linear_weights(tester)
+    # One weight scale, repeated for the per-channel kernel.
+    assert multipliers.unique().numel() == 1
+    assert weights.abs().max() == 7
+
+
+@pytest.mark.parametrize(
+    "cpu,per_channel,expected",
+    [
+        pytest.param(
+            CortexM.M55,
+            True,
+            exir_ops.edge.cortex_m.quantized_linear_per_channel.default,
+            id="m55",
+        ),
+        pytest.param(
+            CortexM.M55,
+            False,
+            exir_ops.edge.cortex_m.quantized_linear.default,
+            id="m55_per_tensor",
+        ),
+        pytest.param(
+            CortexM.M4,
+            True,
+            exir_ops.edge.cortex_m.quantized_linear_s4.default,
+            id="m4",
+        ),
+    ],
+)
+def test_dialect_linear_a8w4_unaligned_rows_use_int8_kernels_on_mve(
+    cpu, per_channel, expected
+):
+    # Rows of 37 values: unaligned VLD2 on MVE.
+    case = McuTestCase(
+        model=CortexMLinearPerChannel(37, 13, bias=True),
+        example_inputs=(ramp_tensor(-2, 2, (2, 37)),),
+    )
+    config = A8W4_PER_CHANNEL_CONFIG if per_channel else _per_tensor_a8w4_config()
+    tester = _lower_linear_per_channel(case, CortexMTargetConfig(cpu=cpu), config)
+    tester.run_method_and_compare_outputs(inputs=case.example_inputs, qtol=1)
+
+    if expected == exir_ops.edge.cortex_m.quantized_linear_s4.default:
+        _s4_linear_weights(tester)
+        return
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    [linear] = _linear_nodes(tester)
+    assert linear.target == expected
+    assert get_param_tensor(program, linear.args[1]).abs().max() == 7
+
+
+@parametrize("test_case", a8w4_linear_test_cases)
+def test_implementation_linear_a8w4(test_case, cortex_m_target):
+    tester = _lower_linear_per_channel(
+        test_case, cortex_m_target, A8W4_PER_CHANNEL_CONFIG
+    )
+    tester.to_executorch().serialize()
+    tester.run_method_and_compare_outputs(inputs=test_case.example_inputs, qtol=1)
+
+
+@pytest.mark.parametrize("fake", [False, True])
+@pytest.mark.parametrize(
+    "packed_shape",
+    [pytest.param((5,), id="wrong_byte_count"), pytest.param((2, 3), id="not_1d")],
+)
+def test_quantized_linear_s4_rejects_invalid_weights(fake, packed_shape):
+    # 3 output features over 4 input features take 6 bytes.
+    args = (
+        torch.ones((2, 4), dtype=torch.int8),
+        torch.zeros(packed_shape, dtype=torch.int8),
+        None,
+        0,
+        0,
+        torch.full((3,), 1 << 30, dtype=torch.int32),
+        torch.ones(3, dtype=torch.int32),
+        127,
+        -128,
+    )
+    with FakeTensorMode(allow_non_fake_inputs=True) if fake else nullcontext():
+        with pytest.raises(ValueError, match="two per byte"):
+            torch.ops.cortex_m.quantized_linear_s4.default(*args)
+
+
+def test_quantized_linear_s4_matches_unpacked_reference():
+    weights = torch.tensor([[1, -7, 3], [7, -2, 0]], dtype=torch.int8)
+    args = (
+        torch.tensor([[10, -20, 30]], dtype=torch.int8),
+        pack_int4(weights),
+        torch.tensor([5, -5], dtype=torch.int32),
+        3,
+        -1,
+        torch.full((2,), 1 << 30, dtype=torch.int32),
+        torch.zeros(2, dtype=torch.int32),
+        127,
+        -128,
+    )
+    expected = torch.ops.cortex_m.quantized_linear_per_channel.default(
+        args[0], weights, args[2], None, args[3], 0, *args[4:]
+    )
+    assert torch.equal(torch.ops.cortex_m.quantized_linear_s4.default(*args), expected)

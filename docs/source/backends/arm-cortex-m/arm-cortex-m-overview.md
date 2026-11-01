@@ -29,7 +29,7 @@ The backend pass pipeline replaces quantized ATen operators with [CMSIS-NN](http
 | `aten.convolution`             | `arm_convolve`         | ✅   | ⬜    | ✅   |
 | `aten.convolution` (depthwise) | `arm_depthwise_conv`   | ✅   | ⬜    | ⬜   |
 | `aten.convolution` (transposed)| `arm_transpose_conv`   | ✅   | ⬜    | ⬜   |
-| `aten.linear`                  | `arm_fully_connected`  | ✅   | ⬜    | ⬜   |
+| `aten.linear`                  | `arm_fully_connected`  | ✅   | ⬜    | ✅   |
 | `aten.bmm`                     | `arm_batch_matmul`     | ✅   | ⬜    | ⬜   |
 | `aten.add`                     | `arm_elementwise_add`  | ✅   | ⬜    | N/A  |
 | `aten.mul`                     | `arm_elementwise_mul`  | ✅   | ⬜    | N/A  |
@@ -50,7 +50,7 @@ By default, the Cortex-M backend implements **symmetric INT8 (8w8a)** quantizati
 - **Per-tensor** quantization for all other supported operators.
 - **Shared quantization parameters** for data-movement operators (e.g. reshape, permute) to avoid unnecessary requantization.
 
-`A8W4_PER_CHANNEL_CONFIG`, set per operator with `CortexMQuantizer.set_node_target`, quantizes the weights of ungrouped convolutions to per-channel INT4 with INT8 activations (4w8a); other operators keep INT8 weights. On MVE targets, a convolution whose rows (input channels x kernel height x kernel width) have 32 or more values that are not a multiple of 4 runs its INT4-range weights on the INT8 kernels instead, with no flash saving.
+`A8W4_PER_CHANNEL_CONFIG`, set per operator with `CortexMQuantizer.set_node_target`, quantizes the weights of ungrouped convolutions and linear layers to per-channel INT4 with INT8 activations (4w8a); other operators keep INT8 weights. INT4 linear layers run on CMSIS-NN's 1x1 INT4 convolution, `arm_convolve_1x1_s4_fast`, because `arm_fully_connected_s4` is per-tensor only. On MVE targets, a convolution whose rows (input channels x kernel height x kernel width) have 32 or more values that are not a multiple of 4, or a linear layer with 32 or more input features that are not a multiple of 4, runs its INT4-range weights on the INT8 kernels instead, with no flash saving.
 
 CMSIS-NN also supports INT4 weights for other operators and INT8 weights with INT16 activations (8w16a), but the corresponding quantizer configurations and operator implementations are not yet integrated.
 
