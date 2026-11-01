@@ -45,12 +45,14 @@ class ConvertDtypePass(ExportPass):
         return new_kwargs
 
     def _cast_tensor_lists_to_dst(
-        self, graph: torch.fx.Graph, node: torch.fx.Node
+        self,
+        graph: torch.fx.Graph,
+        node: torch.fx.Node,
+        casts: Dict[torch.fx.Node, torch.fx.Node],
     ) -> None:
         # A tensor list, like the inputs of cat, must have the dtype of the output.
         # Multi-output ops are not rewritten, so a value read from one with getitem,
         # like topk indices, can still have src dtype here.
-        casts: Dict[torch.fx.Node, torch.fx.Node] = {}
         args = list(node.args)
         for i, schema_arg in enumerate(node.target._schema.arguments[: len(args)]):
             if schema_arg.type != torch.ListType.ofTensors():
@@ -72,6 +74,8 @@ class ConvertDtypePass(ExportPass):
         node.args = tuple(args)
 
     def _convert_dtype(self, graph: torch.fx.Graph) -> None:
+        # Shared by all rewritten ops, so a value in several tensor lists gets one cast.
+        list_casts: Dict[torch.fx.Node, torch.fx.Node] = {}
         for node in graph.nodes:
             # For each src dtype input, append a _to_dim_order_copy node to convert to dst dtype.
             if node.op == "placeholder":
@@ -100,7 +104,7 @@ class ConvertDtypePass(ExportPass):
                         if schema_arg.name == "dtype":
                             node.kwargs = self._kwargs_to_dst_dtype(node.kwargs)
                             break
-                    self._cast_tensor_lists_to_dst(graph, node)
+                    self._cast_tensor_lists_to_dst(graph, node, list_casts)
 
             # For each src dtype output, prepend a _to_dim_order_copy node to convert from dst dtype.
             if node.op == "output":
