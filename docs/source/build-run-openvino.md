@@ -151,8 +151,9 @@ On x86 CPUs these are `sum`, `amax`, `amin`, `max` and `min`. On ARM CPUs they
 are element-wise ops such as `add`, `maximum` and `clamp`, and the same
 reductions along any dimension but the last. Once a value or a running total is
 above 16,777,216 (2^24) or below -16,777,216, such a result can be off, even
-inside the int32 range. For example, on x86 the sum 16,777,216 + 1 gives
-16,777,216, and so does `amax` over a tensor that holds 16,777,217.
+inside the int32 range. For example, on x86 `sum` over a tensor that holds
+16,777,216 and 1 gives 16,777,216, and so does `amax` over one that holds
+16,777,217.
 
 On ties, the CPU plugin's `min(dim)` and `max(dim)` can return a later index
 than PyTorch, which returns the first one. This happens with uint8 and other
