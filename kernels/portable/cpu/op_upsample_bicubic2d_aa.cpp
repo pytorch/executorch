@@ -179,9 +179,9 @@ Error compute_weights(
 }
 
 // Converts the weights as ATen's uint8 path does, with the most fraction bits,
-// up to 22, that keep twice the largest weight below 2^15. Each window is
-// computed in double twice, to find the largest weight and then to convert
-// it, so that only one window of doubles is kept.
+// up to 22, that keep the largest weight below 2^15. Each window is computed
+// in double twice, to find the largest weight and then to convert it, so that
+// only one window of doubles is kept.
 Error compute_weights(
     KernelRuntimeContext& ctx,
     int64_t in_size,

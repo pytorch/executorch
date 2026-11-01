@@ -153,6 +153,12 @@ const std::vector<float> kUint8Wide = {201, 115, 112, 163, 187, 170, 133,
                                        144, 150, 97,  109, 58,  68,  126,
                                        182, 176, 178, 173, 126, 13};
 
+// kUint8Input resized to (5, 8).
+const std::vector<float> kUint8Shorter = {
+    69,  16,  54,  48,  189, 177, 183, 59,  255, 119, 247, 250, 90, 88,
+    98,  183, 255, 141, 130, 245, 253, 128, 255, 14,  96,  3,   0,  237,
+    250, 153, 76,  23,  0,   9,   210, 36,  35,  255, 203, 9};
+
 } // namespace
 
 class OpUpsampleBicubic2dAAOutTest : public OperatorTest {
@@ -476,6 +482,14 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, Uint8MatchesATenExactly) {
       std::nullopt,
       std::nullopt,
       kUint8Wide);
+  expect_resize<ScalarType::Byte>(
+      {1, 1, 6, 8},
+      kUint8Input,
+      {5, 8},
+      false,
+      std::nullopt,
+      std::nullopt,
+      kUint8Shorter);
 }
 
 TEST_F(OpUpsampleBicubic2dAAOutTest, ResizesDynamicOutput) {
@@ -579,7 +593,8 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, RejectsScaleTooSmallForInput) {
 
 TEST_F(OpUpsampleBicubic2dAAOutTest, RejectsUint8WeightsTooLargeForFixedPoint) {
   // With this scale, the window of the middle output nearly sums to zero, so
-  // its normalized weights are far too large for 16-bit fixed point.
+  // its largest normalized weight leaves no fraction bit in 16-bit fixed
+  // point, although every weight still fits in 16 bits.
   TensorFactory<ScalarType::Byte> tf;
   Tensor in = tf.make({1, 1, 1, 4}, {10, 20, 30, 40});
   Tensor out = tf.zeros({1, 1, 1, 5});
@@ -591,7 +606,7 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, RejectsUint8WeightsTooLargeForFixedPoint) {
           ArrayRef<int64_t>(output_size.data(), output_size.size()),
           false,
           std::nullopt,
-          0.46386847,
+          0.4638698,
           out));
 }
 
