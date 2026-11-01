@@ -42,12 +42,11 @@ namespace {
  * once per block. The block costs 4 KB of stack; a narrower one made wide
  * inputs much slower.
  */
+// Not inlined, because Clang would then reserve the Half and BFloat16 block in
+// cumsum_out's frame for every dtype.
 template <typename CTYPE_OUT, typename LoadFn = CTYPE_OUT (*)(const void*)>
-void cumsum_tensors(
-    const Tensor& self,
-    LoadFn load_self,
-    int64_t dim,
-    Tensor& out) {
+ET_NOINLINE void
+cumsum_tensors(const Tensor& self, LoadFn load_self, int64_t dim, Tensor& out) {
   if (self.numel() == 0) {
     return;
   }
