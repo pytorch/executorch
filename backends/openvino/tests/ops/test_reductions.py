@@ -113,34 +113,6 @@ class TestIntegerReductions(BaseOpenvinoOpTest):
             (input_ids, torch.arange(8)[None], mask),
         )
 
-    def test_only_an_unused_first_input_is_put_back(self):
-        class Add(torch.nn.Module):
-            def forward(self, x, y):
-                return x + y
-
-        class Second(torch.nn.Module):
-            def forward(self, x, y):
-                return y * 2
-
-        def converted_without_the_first_input():
-            y = opset13.parameter([2], Type.f32)
-            return Model([opset13.relu(y)], [y])
-
-        shapes, types = [[2], [2]], [torch.float32, torch.float32]
-        model = converted_without_the_first_input()
-        preprocess._match_partition_inputs(
-            model, torch.fx.symbolic_trace(Second()), shapes, types
-        )
-        self.assertEqual(len(model.get_parameters()), 2)
-        # Add reads its first input, so losing it fails lowering.
-        with self.assertRaisesRegex(RuntimeError, "expected 2 parameters"):
-            preprocess._match_partition_inputs(
-                converted_without_the_first_input(),
-                torch.fx.symbolic_trace(Add()),
-                shapes,
-                types,
-            )
-
 
 class TestBoolMinMax(BaseOpenvinoOpTest):
     """OpenVINO converts min, max, clamp and sign to ops that take no bool tensors."""
@@ -190,6 +162,43 @@ class TestBoolMinMax(BaseOpenvinoOpTest):
         # Computed in float, which OpenVINO converts.
         x = torch.randn(2, 7)
         self.execute_layer_test(Maximum(), (x > 0, x))
+
+
+class TestMatchPartitionInputs(unittest.TestCase):
+    def test_only_an_unused_first_input_is_put_back(self):
+        class Add(torch.nn.Module):
+            def forward(self, x, y):
+                return x + y
+
+        class Second(torch.nn.Module):
+            def forward(self, x, y):
+                return y * 2
+
+        def converted_without_the_first_input():
+            y = opset13.parameter([3], Type.f32)
+            return Model([opset13.relu(y)], [y])
+
+        shapes, types = [[1, 3], [3]], [torch.int64, torch.float32]
+        model = converted_without_the_first_input()
+        preprocess._match_partition_inputs(
+            model, torch.fx.symbolic_trace(Second()), shapes, types
+        )
+        # The runtime binds inputs by position.
+        self.assertEqual(
+            [
+                (list(p.get_partial_shape().to_shape()), p.get_element_type())
+                for p in model.get_parameters()
+            ],
+            [([1, 3], Type.i64), ([3], Type.f32)],
+        )
+        # Add reads its first input, so losing it fails lowering.
+        with self.assertRaisesRegex(RuntimeError, "expected 2 parameters"):
+            preprocess._match_partition_inputs(
+                converted_without_the_first_input(),
+                torch.fx.symbolic_trace(Add()),
+                shapes,
+                types,
+            )
 
 
 class TestFoldConstantCumsumPass(unittest.TestCase):
