@@ -145,7 +145,9 @@ T weighted_sum(
 
 // Like ATen, resizes the width first and then the height, and copies a dim
 // whose size does not change. Half precision is computed in float and the
-// result is rounded once.
+// result is rounded once. Unlike ATen's CPU kernel, which gives every row the
+// first row's values when the input is contiguous, the output width is 1 and
+// the height changes, it resizes the height there too.
 template <typename CTYPE>
 void upsample_bicubic2d_aa_kernel_impl(
     KernelRuntimeContext& ctx,

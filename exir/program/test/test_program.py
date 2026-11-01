@@ -382,8 +382,11 @@ class TestProgramManagers(unittest.TestCase):
             )
             program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
             for t in inputs:
-                for actual, expected in zip(program.forward((t,)), Resize()(t)):
-                    torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
+                with self.subTest(dynamic=dynamic_shapes is not None, shape=t.shape):
+                    for actual, expected in zip(program.forward((t,)), Resize()(t)):
+                        torch.testing.assert_close(
+                            actual, expected, atol=1e-5, rtol=1e-5
+                        )
 
     def test_float_sym_max_min_rejected(self):
         # The runtime's sym_max and sym_min kernels only take ints.
