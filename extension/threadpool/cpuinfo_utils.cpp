@@ -9,7 +9,6 @@
 #include <c10/util/irange.h>
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 
-#include <algorithm>
 #include <fstream>
 #include <mutex>
 #include <string>
@@ -24,6 +23,7 @@
 #if defined(__linux__)
 #include <sched.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <memory>
 #endif
@@ -238,9 +238,7 @@ uint32_t get_num_allowed_cpus() {
 
 uint32_t get_num_performant_cores() {
   const uint32_t count = count_performant_cores();
-#if !defined(__ANDROID__)
-  // Android moves every app between cpusets as it goes to the background and
-  // back, so a count taken in the background would be too small later.
+#if defined(__linux__) && !defined(__ANDROID__)
   const uint32_t allowed = get_num_allowed_cpus();
   if (count > 0 && allowed > 0) {
     return std::min(count, allowed);
