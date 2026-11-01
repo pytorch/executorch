@@ -288,13 +288,16 @@ def get_propagated_const_tensor_dict(
             # Execute the `node.target` and create a new propagated constant tensor.
             prop_constant_tensor = node.target(*args_data, **kwargs_data)
 
-            # ExecuTorch doesn't support zero strides, so we need to ensure the tensor is contiguous
-            # if it has any zero strides from broadcasting/expansion operations
+            # ExecuTorch rejects zero strides. contiguous() keeps a zero stride
+            # that PyTorch ignores, on a size-1 dim or in an empty tensor, so
+            # copy instead.
             if (
                 isinstance(prop_constant_tensor, torch.Tensor)
                 and 0 in prop_constant_tensor.stride()
             ):
-                prop_constant_tensor = prop_constant_tensor.contiguous()
+                prop_constant_tensor = prop_constant_tensor.clone(
+                    memory_format=torch.contiguous_format
+                )
 
             # A folded constant must be a plain tensor that does not require
             # grad. no_grad is not enough when the op returns a view of a

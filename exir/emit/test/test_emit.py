@@ -2665,6 +2665,26 @@ class TestEmit(unittest.TestCase):
                 expected_storage.append(j * 16 + i)
         self.assertEqual([int(v) for v in storage_values], expected_storage)
 
+    def test_emit_folded_constant_with_zero_stride(self) -> None:
+        class ScaleByBuffer(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("scale", torch.tensor(2.0))
+
+            def forward(self, x):
+                # expand(1) of a 0-d tensor has stride (0,), yet PyTorch calls
+                # it contiguous.
+                return x * self.scale.expand(1)
+
+        model = ScaleByBuffer()
+        x = torch.randn(4)
+        exported = constant_prop_pass(export(model, (x,), strict=True))
+        self.assertEqual([t.stride() for t in exported.constants.values()], [(1,)])
+
+        program = to_edge(exported).to_executorch()
+        et_module = _load_for_executorch_from_buffer(program.buffer)
+        self.assertTrue(torch.allclose(model(x), et_module((x,))[0]))
+
     def test_emit_device_info_propagated_to_serialized_tensor(self) -> None:
         """Verify that device info from PropagateDevicePass flows through
         the emitter into ExtraTensorInfo.device_type on serialized tensors."""
