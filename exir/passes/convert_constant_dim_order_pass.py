@@ -6,6 +6,7 @@
 import logging
 
 import torch
+from executorch.exir.tensor import without_zero_strides
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
 
@@ -20,6 +21,19 @@ def _should_transform(tensor: torch.Tensor) -> bool:
     return not tensor.is_contiguous() and not tensor.is_contiguous(
         memory_format=torch.channels_last
     )
+
+
+def _normalize(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Returns the tensor with default or channels-last dim order and no zero
+    strides, copying it only if needed.
+    """
+    if _should_transform(tensor):
+        return tensor.contiguous()
+    if 0 in tensor.stride() and not tensor.is_contiguous():
+        # Only a channels-last tensor gets here. Keep its layout.
+        return tensor.clone(memory_format=torch.channels_last)
+    return without_zero_strides(tensor)
 
 
 def _update_placeholder_meta(
@@ -49,8 +63,11 @@ def _update_placeholder_meta(
     if placeholder_node is None:
         raise RuntimeError(f"Missing placeholder for {input_spec.arg.name}.")
 
-    strides = placeholder_node.meta["val"].stride()
-    placeholder_node.meta["val"] = placeholder_node.meta["val"].contiguous()
+    val = placeholder_node.meta["val"]
+    placeholder_node.meta["val"] = _normalize(val)
+    # Dropping a zero stride that PyTorch ignores does not change the layout.
+    if not _should_transform(val):
+        return
     logger.warning(
         "%s '%s' has strides %s, which are neither contiguous nor channels-last. "
         "to_edge stores it contiguous, so partitioners and delegates see the "
@@ -58,7 +75,7 @@ def _update_placeholder_meta(
         "where it is created to avoid this change.",
         kind.name.replace("_", " ").capitalize(),
         target,
-        tuple(strides),
+        tuple(val.stride()),
     )
 
 
@@ -69,8 +86,8 @@ def convert_constant_dim_order_pass(
     Normalize lifted tensors to default or channels-last dim order.
 
     Tensor constants, buffers and parameters with other dim orders or striding
-    are converted to contiguous tensors. This pass acts in-place on the unlifted
-    exported program.
+    are converted to contiguous tensors, and zero strides are removed. This
+    pass acts in-place on the unlifted exported program.
 
     Args:
         exported_program: The ExportedProgram to transform.
@@ -84,8 +101,11 @@ def convert_constant_dim_order_pass(
     )
 
     for key, const in exported_program.constants.items():
-        if isinstance(const, torch.Tensor) and _should_transform(const):
-            exported_program.constants[key] = const.contiguous()
+        if not isinstance(const, torch.Tensor):
+            continue
+        normalized = _normalize(const)
+        if normalized is not const:
+            exported_program.constants[key] = normalized
 
             # Also update the corresponding placeholder node meta value. This doesn't
             # get automatically updated during retracing as ExportPass uses the placeholder
@@ -99,21 +119,21 @@ def convert_constant_dim_order_pass(
             _update_placeholder_meta(exported_program, key, kind)
 
     for key, param in exported_program.named_parameters():
-        if _should_transform(param):
+        normalized = _normalize(param)
+        if normalized is not param:
             exported_program.state_dict[key] = torch.nn.Parameter(
-                param.contiguous(), requires_grad=param.requires_grad
+                normalized, requires_grad=param.requires_grad
             )
             _update_placeholder_meta(exported_program, key, InputKind.PARAMETER)
 
     # Convert buffers.
     for key, buffer in exported_program.named_buffers():
-        if (
-            key not in non_persistent_buffer_names
-            and isinstance(buffer, torch.Tensor)
-            and _should_transform(buffer)
-        ):
+        if key in non_persistent_buffer_names or not isinstance(buffer, torch.Tensor):
+            continue
+        normalized = _normalize(buffer)
+        if normalized is not buffer:
             # Persistent buffers are stored in the state dict.
-            exported_program.state_dict[key] = buffer.contiguous()
+            exported_program.state_dict[key] = normalized
 
             _update_placeholder_meta(exported_program, key, InputKind.BUFFER)
 

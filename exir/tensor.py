@@ -118,6 +118,20 @@ def dim_order_from_stride(
     return tuple(typing.cast(Tuple[bytes], sorted_dims))
 
 
+def without_zero_strides(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Returns the tensor, or a contiguous copy of it if it has a zero stride,
+    which ExecuTorch cannot store.
+
+    Tensor.contiguous() is not enough: PyTorch ignores the stride of a size-1
+    dim, and every stride of an empty tensor, when it checks contiguity, so it
+    can return a tensor with a zero stride unchanged.
+    """
+    if 0 not in tensor.stride():
+        return tensor
+    return tensor.clone(memory_format=torch.contiguous_format)
+
+
 def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
     """
     Converts dim order to stride using sizes
@@ -210,7 +224,7 @@ class TensorSpec:
     def from_tensor(cls, tensor: torch.Tensor, const: bool = False) -> TensorSpec:
         if const:
             # for non-contigous tensors, convert to a contiguous one
-            tensor = tensor.contiguous()
+            tensor = without_zero_strides(tensor.contiguous())
             # Weights cannot be views during emission or serialization
             if tensor.nbytes != tensor.untyped_storage().nbytes():
                 tensor = tensor.clone()

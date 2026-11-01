@@ -32,7 +32,7 @@ from executorch.exir.backend.test.demos.rpc.executor_backend_partitioner import 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
-from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes import convert_constant_dim_order_pass, MemoryPlanningPass
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
@@ -2684,6 +2684,44 @@ class TestEmit(unittest.TestCase):
         program = to_edge(exported).to_executorch()
         et_module = _load_for_executorch_from_buffer(program.buffer)
         self.assertTrue(torch.allclose(model(x), et_module((x,))[0]))
+
+    def test_emit_user_constants_with_zero_stride(self) -> None:
+        def zero_stride(value):
+            # expand(1) of a 0-d tensor has stride (0,), yet PyTorch calls it
+            # contiguous.
+            return torch.tensor(value).expand(1)
+
+        class AddConstants(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = nn.Parameter(zero_stride(1.0), requires_grad=False)
+                self.register_buffer("bias", zero_stride(2.0))
+                self.register_buffer("offset", zero_stride(3.0), persistent=False)
+                self.shift = zero_stride(4.0)
+                # Channels-last, with a zero stride on the size-1 batch dim.
+                self.register_buffer(
+                    "image",
+                    torch.randn(1, 3, 4, 4).as_strided((1, 3, 4, 4), (0, 1, 12, 3)),
+                )
+
+            def forward(self, x):
+                constants = self.weight + self.bias + self.offset + self.shift
+                return x + constants + self.image.contiguous()
+
+        model = AddConstants()
+        x = torch.randn(4)
+        with self.assertNoLogs(convert_constant_dim_order_pass.logger):
+            edge = to_edge(
+                export(model, (x,), strict=True),
+                constant_methods={"get_scale": zero_stride(5.0)},
+            )
+        stored_image = edge.exported_program().state_dict["image"]
+        self.assertEqual(stored_image.stride(), (48, 1, 12, 3))
+        program = edge.to_executorch()
+
+        et_module = _load_for_executorch_from_buffer(program.buffer)
+        self.assertTrue(torch.allclose(model(x), et_module((x,))[0]))
+        self.assertEqual(et_module.run_method("get_scale", [])[0].tolist(), [5.0])
 
     def test_emit_device_info_propagated_to_serialized_tensor(self) -> None:
         """Verify that device info from PropagateDevicePass flows through
