@@ -21,6 +21,7 @@
 #if defined(__linux__) && !defined(__ANDROID__)
 #include <sched.h>
 
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #endif
@@ -81,11 +82,24 @@ void run_lambda_with_size(
 // The pool has no more threads than the CPUs this process may run on.
 bool may_use_more_than_one_cpu() {
 #if defined(__linux__) && !defined(__ANDROID__)
-  cpu_set_t cpus;
-  return sched_getaffinity(0, sizeof(cpus), &cpus) != 0 || CPU_COUNT(&cpus) > 1;
-#else
-  return true;
+  // Grows the mask as get_num_allowed_cpus() does, for kernels with more
+  // possible CPUs than a cpu_set_t holds.
+  for (int num_cpus = CPU_SETSIZE; num_cpus <= (1 << 20); num_cpus *= 2) {
+    std::unique_ptr<cpu_set_t, void (*)(cpu_set_t*)> cpus(
+        CPU_ALLOC(num_cpus), [](cpu_set_t* set) { CPU_FREE(set); });
+    if (!cpus) {
+      break;
+    }
+    const size_t size = CPU_ALLOC_SIZE(num_cpus);
+    if (sched_getaffinity(0, size, cpus.get()) == 0) {
+      return CPU_COUNT_S(size, cpus.get()) > 1;
+    }
+    if (errno != EINVAL) {
+      break;
+    }
+  }
 #endif
+  return true;
 }
 
 #if defined(__linux__) && !defined(__ANDROID__)
