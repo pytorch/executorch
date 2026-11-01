@@ -86,3 +86,48 @@ class TestPasses(unittest.TestCase):
 
         self.assertEqual(len(copied_nodes), 1)
         self.assertNotEqual(user.kwargs["other"], buffer_node)
+
+    def test_duplicate_constant_node_in_a_list_argument(self) -> None:
+        """
+        An op such as cat or index_put reads its tensors from a list, so the
+        copy has to replace a constant there too. A mutated buffer keeps its
+        list readers, since a copy would not see its updates, and the graph
+        output keeps the original that the output specs name.
+        """
+
+        class CatConst(torch.nn.Module):
+            def __init__(self, mutate: bool, returned: bool):
+                super().__init__()
+                self.mutate = mutate
+                self.returned = returned
+                self.register_buffer("const", torch.ones(2))
+
+            def forward(self, x):
+                if self.returned:
+                    return torch.cat([x, self.const]), self.const
+                out = torch.cat([x, self.const]), torch.cat([self.const, x])
+                if self.mutate:
+                    self.const.add_(1)
+                return out
+
+        for mutate, returned, readers_of_original in (
+            (False, False, 1),
+            (True, False, 2),
+            (False, True, 2),
+        ):
+            with self.subTest(mutate=mutate, returned=returned):
+                edge = exir.to_edge(
+                    export(CatConst(mutate, returned), (torch.ones(2),), strict=True)
+                )
+                program = edge.exported_program()
+                name = next(
+                    node.name
+                    for node in program.graph.nodes
+                    if node.op == "placeholder" and is_buffer(program, node)
+                )
+
+                duplicate_constant_node(program, name)
+
+                users = {node.name: len(node.users) for node in program.graph.nodes}
+                self.assertEqual(users[name], readers_of_original)
+                program._validate()

@@ -77,6 +77,10 @@ def duplicate_constant_node(
                     f"placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: {node} "
                 )
             users = list(node.users.keys())
+            mutated = set(old_signature.buffers_to_mutate.values())
+            is_mutated_buffer = (
+                old_signature.inputs_to_buffers.get(node.name) in mutated
+            )
             for ith in range(1, len(node.users)):
                 copy_constant_or_attribute_fqn = node.name + f"_copy_{ith - 1}"
                 with exported_program.graph.inserting_before(
@@ -116,6 +120,16 @@ def duplicate_constant_node(
                     }
                     users[ith].args = new_args
                     users[ith].kwargs = new_kwargs
+                    # An op such as cat or index_put reads the constant from a
+                    # list. A mutated buffer keeps such a reader, since a copy
+                    # would not see its updates: lowering then fails instead.
+                    # The graph output keeps the original, which the output
+                    # specs name.
+                    if not is_mutated_buffer and users[ith].op != "output":
+                        users[ith].replace_input_with(
+                            constant_or_attribute_node,
+                            copied_constant_or_attribute_node,
+                        )
                     # The copy keeps the original target, so it reads the
                     # original tensor and needs no data of its own.
                     new_input_specs.append(
