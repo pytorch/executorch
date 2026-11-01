@@ -62,12 +62,8 @@ bool compute_weights(
     int64_t in_size,
     int64_t out_size,
     bool align_corners,
-    optional<double> scale,
+    const optional<double> scale,
     Weights<T>& weights) {
-  // ATen ignores a scale that is not positive.
-  if (scale.has_value() && scale.value() <= 0) {
-    scale = std::nullopt;
-  }
   const T ratio =
       area_pixel_compute_scale<T>(in_size, out_size, align_corners, scale);
   // The filter spans 4 inputs, widened by the shrink factor.

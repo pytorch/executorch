@@ -14,6 +14,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 using namespace ::testing;
 using exec_aten::ArrayRef;
 using exec_aten::ScalarType;
@@ -209,6 +211,9 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, AlignCornersMatchesATen) {
 TEST_F(OpUpsampleBicubic2dAAOutTest, ScalesMatchATen) {
   expect_resize<ScalarType::Float>(
       {1, 2, 6, 8}, kInput, {10, 3}, false, 1.75, 0.45, kScaled);
+  // Like ATen, a scale that is not positive is ignored.
+  expect_resize<ScalarType::Float>(
+      {1, 2, 6, 8}, kInput, {3, 5}, false, -1.0, std::nan(""), kShrunk);
 }
 
 TEST_F(OpUpsampleBicubic2dAAOutTest, CopiesDimsThatKeepTheirSize) {
