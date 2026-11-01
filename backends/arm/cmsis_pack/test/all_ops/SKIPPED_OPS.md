@@ -2,7 +2,7 @@
 
 This test gives **every** operator the pack ships two kinds of coverage:
 
-- **Build / link** — `gen_cproject.py` selects all 198 operator components, so the
+- **Build / link** — `gen_cproject.py` selects all 199 operator components, so the
   consumer firmware links every op's generated registration, forward declaration and
   kernel source. *No operator is exempt from this.*
 - **Execution** — `generate_test_models.py` turns each op's recipe in `op_recipes.py`
@@ -11,7 +11,7 @@ This test gives **every** operator the pack ships two kinds of coverage:
 A **skip** only means an op is not *executed*; it is still build/link-covered. Every skip
 carries a reason (enforced by `test_op_recipes.py::test_no_silent_coverage_gaps`), so
 there are no silent gaps. Current status on the CPU target (Corstone-315): **167 executed
-(incl. 2 shape variants), 33 skipped** of 198 operator components, all passing.
+(incl. 2 shape variants), 34 skipped** of 199 operator components, all passing.
 
 The Ethos-U variant has a separate, weaker status — see
 [Ethos-U variant status](#ethos-u-variant-status) before citing its results.
