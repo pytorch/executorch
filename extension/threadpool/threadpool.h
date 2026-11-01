@@ -37,7 +37,8 @@
  * not. The mask also sizes the threadpool when the performance core count is
  * unknown, as on x86. It is read once: the threadpool does not follow later
  * changes to the mask, and a child created by fork() keeps its parent's size.
- * If the mask grows later, call _unsafe_reset_threadpool() to use the new CPUs.
+ * If the mask can grow later, set the thread count you need with
+ * _unsafe_reset_threadpool() before loading any model.
  */
 
 namespace executorch::extension::threadpool {
