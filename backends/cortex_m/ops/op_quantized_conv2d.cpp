@@ -9,6 +9,8 @@
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 
+#include <algorithm>
+
 #include "cortex_m_ops_common.h"
 
 namespace cortex_m {
@@ -31,9 +33,8 @@ bool validate_conv2d_arguments(
     const Tensor& requantize_multipliers,
     const Tensor& requantize_shifts,
     ActivationLayout layout) {
-  if (input.dim() != kConvDim || weight.dim() != kConvDim ||
-      output.dim() != kConvDim) {
-    ET_LOG(Error, "quantized_conv2d_out: tensors must be 4-D");
+  if (input.dim() != kConvDim || output.dim() != kConvDim) {
+    ET_LOG(Error, "quantized_conv2d_out: input and output must be 4-D");
     context.fail(Error::InvalidArgument);
     return false;
   }
@@ -92,21 +93,157 @@ bool validate_conv2d_arguments(
       requantize_shifts.size(0) != out_channels) {
     ET_LOG(
         Error,
-        "quantized_conv2d_out: per-channel params must match output channels (%zd)",
-        out_channels);
+        "quantized_conv2d_out: per-channel params must match output channels (%d)",
+        static_cast<int>(out_channels));
     context.fail(Error::InvalidArgument);
     return false;
   }
 
   return true;
 }
+
+std::optional<cmsis_nn_dims> int8_filter_dims(
+    KernelRuntimeContext& context,
+    const Tensor& weight) {
+  if (weight.dim() != kConvDim) {
+    ET_LOG(Error, "quantized_conv2d_out: weight must be 4-D");
+    context.fail(Error::InvalidArgument);
+    return std::nullopt;
+  }
+  return cmsis_nn_dims{
+      static_cast<int32_t>(weight.size(0)),
+      static_cast<int32_t>(weight.size(1)),
+      static_cast<int32_t>(weight.size(2)),
+      static_cast<int32_t>(weight.size(3))};
+}
+
+std::optional<cmsis_nn_dims> packed_int4_filter_dims(
+    KernelRuntimeContext& context,
+    const Tensor& weight,
+    const Int64ArrayRef weight_sizes) {
+  if (weight.dim() != 1 || weight_sizes.size() != kConvDim) {
+    ET_LOG(
+        Error,
+        "quantized_conv2d_s4_out: weight must be 1-D and weight_sizes must have length 4");
+    context.fail(Error::InvalidArgument);
+    return std::nullopt;
+  }
+  for (const int64_t size : weight_sizes) {
+    if (size <= 0) {
+      ET_LOG(Error, "quantized_conv2d_s4_out: weight_sizes must be positive");
+      context.fail(Error::InvalidArgument);
+      return std::nullopt;
+    }
+  }
+  const int64_t count =
+      weight_sizes[0] * weight_sizes[1] * weight_sizes[2] * weight_sizes[3];
+  if (weight.numel() != (count + 1) / 2) {
+    ET_LOG(
+        Error,
+        "quantized_conv2d_s4_out: weight must hold %d int4 values, two per byte",
+        static_cast<int>(count));
+    context.fail(Error::InvalidArgument);
+    return std::nullopt;
+  }
+  return cmsis_nn_dims{
+      static_cast<int32_t>(weight_sizes[0]),
+      static_cast<int32_t>(weight_sizes[1]),
+      static_cast<int32_t>(weight_sizes[2]),
+      static_cast<int32_t>(weight_sizes[3])};
+}
+
+#ifndef CMSIS_NN_NO_INT4
+// On MVE, arm_convolve_1_x_n_s4 misplaces packed weights when the input channel
+// count is odd, can read unaligned rows when it is not a multiple of 4, and
+// fails when its edge loops cannot split the padding. True for the shapes
+// arm_convolve_wrapper_s4 would send there in those cases, which
+// arm_convolve_s4 handles. Mirrored in passes/scratch_buffer_sizes.py.
+bool use_generic_s4_kernel(
+    const cmsis_nn_conv_params& params,
+    const cmsis_nn_dims& input,
+    const cmsis_nn_dims& filter,
+    const cmsis_nn_dims& output) {
+  const bool is_1x1 = params.padding.w == 0 && params.padding.h == 0 &&
+      filter.w == 1 && filter.h == 1 && params.dilation.w == 1 &&
+      params.dilation.h == 1;
+  const bool is_1_x_n = input.h == 1 && filter.h == 1 &&
+      params.dilation.w == 1 && (params.stride.w * input.c) % 4 == 0;
+  if (is_1x1 || !is_1_x_n) {
+    return false;
+  }
+  if (input.c % 4 != 0) {
+    return true;
+  }
+  const int32_t stride = params.stride.w;
+  const int32_t pad = params.padding.w;
+  const int32_t total_pad = (output.w - 1) * stride + filter.w - input.w;
+  const int32_t asym_pad = total_pad % 2;
+  if (pad * 2 + asym_pad != total_pad) {
+    return true;
+  }
+  const int32_t right_pad_outputs = pad + asym_pad != 0
+      ? std::max<int32_t>(1, (pad + asym_pad + stride - 1) / stride)
+      : 0;
+  const int32_t left_pad_outputs =
+      pad != 0 ? std::max<int32_t>(1, (pad + stride - 1) / stride) : 0;
+  return left_pad_outputs + right_pad_outputs > output.w;
+}
+
+[[maybe_unused]] int32_t convolve_s4_get_buffer_size(
+    const cmsis_nn_conv_params& params,
+    const cmsis_nn_dims& input,
+    const cmsis_nn_dims& filter,
+    const cmsis_nn_dims& output) {
+  if (!use_generic_s4_kernel(params, input, filter, output)) {
+    return arm_convolve_wrapper_s4_get_buffer_size(
+        &params, &input, &filter, &output);
+  }
+  // Dilation keeps the wrapper off its 1x1 and 1xN paths, and the
+  // arm_convolve_s4 buffer size does not depend on it.
+  cmsis_nn_conv_params generic_params = params;
+  generic_params.dilation.w = 2;
+  return arm_convolve_wrapper_s4_get_buffer_size(
+      &generic_params, &input, &filter, &output);
+}
+
+arm_cmsis_nn_status convolve_s4(
+    const cmsis_nn_context* ctx,
+    const cmsis_nn_conv_params* params,
+    const cmsis_nn_per_channel_quant_params* quant_params,
+    const cmsis_nn_dims* input_dims,
+    const int8_t* input_data,
+    const cmsis_nn_dims* filter_dims,
+    const int8_t* filter_data,
+    const cmsis_nn_dims* bias_dims,
+    const int32_t* bias_data,
+    const cmsis_nn_dims* output_dims,
+    int8_t* output_data) {
+  auto* convolve =
+      use_generic_s4_kernel(*params, *input_dims, *filter_dims, *output_dims)
+      ? arm_convolve_s4
+      : arm_convolve_wrapper_s4;
+  return convolve(
+      ctx,
+      params,
+      quant_params,
+      input_dims,
+      input_data,
+      filter_dims,
+      filter_data,
+      bias_dims,
+      bias_data,
+      output_dims,
+      output_data);
+}
+#endif
 } // namespace
 
-// cppcheck-suppress unusedFunction
+template <bool kPackedInt4>
 static Tensor& quantized_conv2d_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& weight,
+    const Int64ArrayRef weight_sizes,
     const std::optional<Tensor>& bias,
     const Int64ArrayRef stride,
     const Int64ArrayRef padding,
@@ -134,6 +271,13 @@ static Tensor& quantized_conv2d_out_impl(
           layout)) {
     return out;
   }
+  const auto maybe_filter_dims = kPackedInt4
+      ? packed_int4_filter_dims(context, weight, weight_sizes)
+      : int8_filter_dims(context, weight);
+  if (!maybe_filter_dims.has_value()) {
+    return out;
+  }
+  const cmsis_nn_dims& filter_dims = maybe_filter_dims.value();
 
   const int32_t batch = static_cast<int32_t>(input.size(0));
   const int32_t input_channels = static_cast<int32_t>(
@@ -142,11 +286,6 @@ static Tensor& quantized_conv2d_out_impl(
       input.size(layout == ActivationLayout::NHWCLogical ? 1 : 2));
   const int32_t input_width = static_cast<int32_t>(
       input.size(layout == ActivationLayout::NHWCLogical ? 2 : 3));
-
-  const int32_t kernel_output_channels = static_cast<int32_t>(weight.size(0));
-  const int32_t kernel_height = static_cast<int32_t>(weight.size(1));
-  const int32_t kernel_width = static_cast<int32_t>(weight.size(2));
-  const int32_t kernel_input_channels = static_cast<int32_t>(weight.size(3));
 
   const int32_t output_channels = static_cast<int32_t>(
       out.size(layout == ActivationLayout::NHWCLogical ? 3 : 1));
@@ -162,11 +301,6 @@ static Tensor& quantized_conv2d_out_impl(
 
   const cmsis_nn_dims input_dims{
       batch, input_height, input_width, input_channels};
-  const cmsis_nn_dims filter_dims{
-      kernel_output_channels,
-      kernel_height,
-      kernel_width,
-      kernel_input_channels};
   const cmsis_nn_dims output_dims{
       batch, output_height, output_width, output_channels};
   const cmsis_nn_dims bias_dims{1, 1, 1, output_channels};
@@ -195,6 +329,45 @@ static Tensor& quantized_conv2d_out_impl(
   const int32_t* bias_data =
       bias.has_value() ? bias.value().const_data_ptr<int32_t>() : nullptr;
 
+  auto* convolve = arm_convolve_wrapper_s8;
+  if constexpr (kPackedInt4) {
+    // The int4 kernels have no grouped path.
+    if (filter_dims.c != input_channels || filter_dims.n != output_channels) {
+      ET_LOG(
+          Error,
+          "quantized_conv2d_s4_out: weight_sizes (%d out, %d in) must match the output and input channels (%d, %d)",
+          static_cast<int>(filter_dims.n),
+          static_cast<int>(filter_dims.c),
+          static_cast<int>(output_channels),
+          static_cast<int>(input_channels));
+      context.fail(Error::InvalidArgument);
+      return out;
+    }
+#if defined(ARM_MATH_MVEI)
+    // The MVE s4 kernels de-interleave rows of 32 or more values with VLD2,
+    // which faults on rows that do not start on a 4-byte boundary.
+    // Mirrors _int4_kernels_safe in passes/aten_to_cortex_m_pass.py.
+    const int32_t row_length = filter_dims.c * filter_dims.h * filter_dims.w;
+    if (row_length >= 32 && row_length % 4 != 0) {
+      ET_LOG(
+          Error,
+          "quantized_conv2d_s4_out: on MVE, rows of 32 or more values need a multiple of 4 values (%d)",
+          static_cast<int>(row_length));
+      context.fail(Error::NotSupported);
+      return out;
+    }
+#endif
+#ifdef CMSIS_NN_NO_INT4
+    ET_LOG(
+        Error,
+        "quantized_conv2d_s4_out: CMSIS-NN was built without its int4 kernels");
+    context.fail(Error::NotSupported);
+    return out;
+#else
+    convolve = convolve_s4;
+#endif
+  }
+
   cmsis_nn_context cmsis_context;
   cmsis_context.buf = nullptr;
   cmsis_context.size = scratch.nbytes();
@@ -203,8 +376,16 @@ static Tensor& quantized_conv2d_out_impl(
   }
 
 #ifdef CORTEX_M_ENABLE_RUNTIME_CHECKS
-  const int32_t runtime_buffer_bytes = arm_convolve_wrapper_s8_get_buffer_size(
-      &conv_params, &input_dims, &filter_dims, &output_dims);
+  int32_t runtime_buffer_bytes = 0;
+  if constexpr (kPackedInt4) {
+#ifndef CMSIS_NN_NO_INT4
+    runtime_buffer_bytes = convolve_s4_get_buffer_size(
+        conv_params, input_dims, filter_dims, output_dims);
+#endif
+  } else {
+    runtime_buffer_bytes = arm_convolve_wrapper_s8_get_buffer_size(
+        &conv_params, &input_dims, &filter_dims, &output_dims);
+  }
   if (runtime_buffer_bytes < 0) {
     ET_LOG(
         Error, "quantized_conv2d_out: CMSIS-NN buffer size calculation failed");
@@ -222,7 +403,7 @@ static Tensor& quantized_conv2d_out_impl(
   }
 #endif
 
-  const arm_cmsis_nn_status status = arm_convolve_wrapper_s8(
+  const arm_cmsis_nn_status status = convolve(
       &cmsis_context,
       &conv_params,
       &quant_params,
@@ -238,7 +419,7 @@ static Tensor& quantized_conv2d_out_impl(
   if (status != ARM_CMSIS_NN_SUCCESS) {
     ET_LOG(
         Error,
-        "quantized_conv2d_out: arm_convolve_wrapper_s8 failed with status %d",
+        "quantized_conv2d_out: CMSIS-NN convolution failed with status %d",
         status);
     context.fail(Error::Internal);
   }
@@ -263,10 +444,11 @@ Tensor& quantized_conv2d_out(
     const int64_t activation_max,
     const Tensor& scratch,
     Tensor& out) {
-  return quantized_conv2d_out_impl(
+  return quantized_conv2d_out_impl<false>(
       context,
       input,
       weight,
+      {},
       bias,
       stride,
       padding,
@@ -299,10 +481,87 @@ Tensor& quantized_conv2d_nhwc_out(
     const int64_t activation_max,
     const Tensor& scratch,
     Tensor& out) {
-  return quantized_conv2d_out_impl(
+  return quantized_conv2d_out_impl<false>(
       context,
       input,
       weight,
+      {},
+      bias,
+      stride,
+      padding,
+      dilation,
+      input_offset,
+      output_offset,
+      requantize_multipliers,
+      requantize_shifts,
+      activation_min,
+      activation_max,
+      scratch,
+      ActivationLayout::NHWCLogical,
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_conv2d_s4_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Tensor& weight,
+    const std::optional<Tensor>& bias,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
+    const int64_t input_offset,
+    const int64_t output_offset,
+    const Tensor& requantize_multipliers,
+    const Tensor& requantize_shifts,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    const Int64ArrayRef weight_sizes,
+    const Tensor& scratch,
+    Tensor& out) {
+  return quantized_conv2d_out_impl<true>(
+      context,
+      input,
+      weight,
+      weight_sizes,
+      bias,
+      stride,
+      padding,
+      dilation,
+      input_offset,
+      output_offset,
+      requantize_multipliers,
+      requantize_shifts,
+      activation_min,
+      activation_max,
+      scratch,
+      ActivationLayout::NCHWLogical,
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_conv2d_s4_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Tensor& weight,
+    const std::optional<Tensor>& bias,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
+    const int64_t input_offset,
+    const int64_t output_offset,
+    const Tensor& requantize_multipliers,
+    const Tensor& requantize_shifts,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    const Int64ArrayRef weight_sizes,
+    const Tensor& scratch,
+    Tensor& out) {
+  return quantized_conv2d_out_impl<true>(
+      context,
+      input,
+      weight,
+      weight_sizes,
       bias,
       stride,
       padding,

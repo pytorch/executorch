@@ -152,6 +152,7 @@ def define_common_targets(is_fbcode = False):
             env = {"PYTEST_ADDOPTS": "-k 'not test_implementation'"},
             deps = [
                 "//caffe2:torch",
+                "//executorch/backends/cortex_m/quantizer:quantizer",
                 "//executorch/backends/test/harness:tester",
                 "//executorch/exir/dialects:lib",
                 ":tester",

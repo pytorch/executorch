@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from typing import Any, Callable, TypeGuard
+from typing import Any, Callable, Sequence, TypeGuard
 
 import torch
 
@@ -341,6 +341,23 @@ def quantize_multiplier_aot(scale: float) -> tuple[int, int]:
         torch.iinfo(torch.int32).min, min(torch.iinfo(torch.int32).max, q_fixed)
     )
     return multiplier, shift
+
+
+def pack_int4(values: torch.Tensor) -> torch.Tensor:
+    """Packs int4 values two per byte in the CMSIS-NN s4 order: element 2i in
+    the low nibble of byte i, element 2i + 1 in the high nibble.
+    """
+    nibbles = values.flatten().to(torch.int32) & 0xF
+    if nibbles.numel() % 2:
+        nibbles = torch.cat((nibbles, nibbles.new_zeros(1)))
+    return (nibbles[0::2] | (nibbles[1::2] << 4)).to(torch.uint8).view(torch.int8)
+
+
+def unpack_int4(packed: torch.Tensor, sizes: Sequence[int]) -> torch.Tensor:
+    data = packed.view(torch.uint8).to(torch.int32)
+    nibbles = torch.stack((data & 0xF, data >> 4), dim=-1).flatten()
+    values = torch.where(nibbles > 7, nibbles - 16, nibbles)
+    return values[: math.prod(sizes)].reshape(sizes).to(torch.int8)
 
 
 def cleanup_erased_nodes(graph_module: torch.fx.GraphModule):

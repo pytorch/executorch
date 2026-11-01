@@ -73,6 +73,8 @@ ops_list=(
     cortex_m::pad.out
     cortex_m::quantized_conv2d.out
     cortex_m::quantized_conv2d_nhwc.out
+    cortex_m::quantized_conv2d_s4.out
+    cortex_m::quantized_conv2d_s4_nhwc.out
     cortex_m::quantized_depthwise_conv2d.out
     cortex_m::quantized_depthwise_conv2d_nhwc.out
     cortex_m::quantized_transpose_conv2d.out
