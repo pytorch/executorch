@@ -9,8 +9,8 @@
 
 #pragma once
 
+#include <c10/util/BFloat16-math.h>
 #include <c10/util/irange.h>
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <algorithm>
 #include <cmath>
@@ -31,6 +31,12 @@ namespace torch {
 namespace executor {
 
 namespace internal {
+
+/// The accumulator type for `T`: float for Half and BFloat16, `T` otherwise,
+/// like promote_types<T, T, /*half_to_float=*/true> in the kernels. It needs
+/// only c10 because ATen-mode kernels include this header.
+template <typename T>
+using acc_t = std::conditional_t<c10::is_reduced_floating_point_v<T>, float, T>;
 
 template <bool ComputeMin, bool ComputeMax>
 inline void
@@ -172,8 +178,7 @@ inline void vec_matmul(
     int64_t m,
     int64_t n,
     int64_t p) {
-  using ACC = typename executorch::runtime::
-      promote_types<T, U, /*half_to_float=*/true>::type;
+  using ACC = internal::acc_t<T>;
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
       ACC sum = 0;
@@ -194,8 +199,7 @@ inline void vec_quantized_matmul_int8(
     int64_t m,
     int64_t n,
     int64_t p) {
-  using ACC = typename executorch::runtime::
-      promote_types<T, U, /*half_to_float=*/true>::type;
+  using ACC = internal::acc_t<T>;
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
       ACC sum = 0;
@@ -224,8 +228,7 @@ inline void vec_quantized_matmul_transb_int8(
     int64_t n,
     int64_t p,
     int64_t g) {
-  using ACC = typename executorch::runtime::
-      promote_types<T, U, /*half_to_float=*/true>::type;
+  using ACC = internal::acc_t<T>;
   int64_t n_over_g = (n + g - 1) / g;
 
   for (const auto i : c10::irange(m)) {
@@ -264,8 +267,7 @@ inline void vec_addmm(
     U alpha,
     int64_t self_row_stride,
     int64_t self_col_stride) {
-  using ACC = typename executorch::runtime::
-      promote_types<T, T, /*half_to_float=*/true>::type;
+  using ACC = internal::acc_t<T>;
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
       ACC sum = 0;
