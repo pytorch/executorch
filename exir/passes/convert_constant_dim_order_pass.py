@@ -30,9 +30,6 @@ def _normalize(tensor: torch.Tensor) -> torch.Tensor:
     """
     if _should_transform(tensor):
         return tensor.contiguous()
-    if 0 in tensor.stride() and not tensor.is_contiguous():
-        # Only a channels-last tensor gets here. Keep its layout.
-        return tensor.clone(memory_format=torch.channels_last)
     return without_zero_strides(tensor)
 
 

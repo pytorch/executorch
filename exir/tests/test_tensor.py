@@ -392,6 +392,10 @@ class TestTensor(unittest.TestCase):
         for tensor, stride in [
             (torch.tensor(2.0).expand(1), (1,)),
             (torch.zeros(3).expand(0, 3), (3, 1)),
+            (
+                torch.randn(1, 3, 4, 4).as_strided((1, 3, 4, 4), (0, 1, 12, 3)),
+                (48, 1, 12, 3),
+            ),
         ]:
             self.assertIn(0, tensor.stride())
             copy = without_zero_strides(tensor)
