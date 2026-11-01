@@ -821,13 +821,13 @@ TEST_F(OpConvCorrectnessTest, HugePaddingAndDilation) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor input = tf.ones({1, 1, 3});
-  Tensor weight = tf.ones({1, 1, 3});
+  Tensor weight = tf.ones({1, 1, 5});
   Tensor point_weight = tf.ones({1, 1, 1});
   optional<Tensor> bias;
   const int64_t int32_max[] = {std::numeric_limits<int32_t>::max()};
   const int64_t huge[] = {std::numeric_limits<int64_t>::max() / 2 + 1};
 
-  // The dilated kernel size would wrap around to a negative number.
+  // The dilated kernel size would wrap around to 1, which fits the input.
   Tensor out = tf.zeros({1, 1, 3});
   ET_EXPECT_KERNEL_FAILURE(
       context_,
