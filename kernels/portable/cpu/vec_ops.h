@@ -275,11 +275,14 @@ inline void vec_addmm(
         sum += static_cast<ACC>(mat1_data[i * n + k]) *
             static_cast<ACC>(mat2_data[k * p + j]);
       }
-      out_data[i * p + j] = static_cast<T>(
-          sum * alpha +
-          static_cast<ACC>(
-              self_data[i * self_row_stride + j * self_col_stride]) *
-              beta);
+      ACC result = sum * alpha;
+      // As in ATen, a zero beta ignores self, so NaN and Inf in it are dropped.
+      if (beta != 0) {
+        result += static_cast<ACC>(
+                      self_data[i * self_row_stride + j * self_col_stride]) *
+            beta;
+      }
+      out_data[i * p + j] = static_cast<T>(result);
     }
   }
 }

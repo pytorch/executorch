@@ -156,6 +156,19 @@ TEST_F(OpAddmmOutTest, BFloat16BiasIsRoundedOnce) {
   EXPECT_TENSOR_EQ(out_scalar, tf.full({1, 1}, 15));
 }
 
+TEST_F(OpAddmmOutTest, ZeroBetaIgnoresNanInSelf) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor out = tf.zeros({1, 1});
+  op_addmm_out(
+      tf.full({1, 1}, std::numeric_limits<float>::quiet_NaN()),
+      tf.ones({1, 1}),
+      tf.full({1, 1}, 2),
+      Scalar(0),
+      Scalar(1),
+      out);
+  EXPECT_TENSOR_EQ(out, tf.full({1, 1}, 2));
+}
+
 TEST_F(OpAddmmOutTest, EmptyInputWithEmptyOutTensorPasses) {
   TensorFactory<ScalarType::Float> tf;
 
