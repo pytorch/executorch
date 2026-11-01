@@ -1132,7 +1132,8 @@ TEST_F(OpAvgPool2DOutTest, BFloat16LargeKernelAccumulatesInFloat) {
   op_avg_pool2d_out(
       in, kernel_size, {}, padding, ceil_mode, count_include_pad, {}, out);
   EXPECT_TENSOR_CLOSE(out, tf.ones({1, 1, 1, 1}));
+  // BFloat16 rounds 257 to 256, so dividing in BFloat16 would give exactly 4.
   op_avg_pool2d_out(
-      in, kernel_size, {}, padding, ceil_mode, count_include_pad, 1024, out);
-  EXPECT_TENSOR_CLOSE(out, tf.ones({1, 1, 1, 1}));
+      in, kernel_size, {}, padding, ceil_mode, count_include_pad, 257, out);
+  EXPECT_TENSOR_EQ(out, tf.full({1, 1, 1, 1}, 1024.0 / 257));
 }
