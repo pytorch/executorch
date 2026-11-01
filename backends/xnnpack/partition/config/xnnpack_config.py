@@ -76,8 +76,10 @@ class XNNPartitionerConfig(PartitionerConfig):
         """
         partitioned_nodes = self.get_node_and_deps(node, ep)
         # A partition can take nodes that their own configs reject.
-        if not all(self._check_tensor_ranks(n) for n in partitioned_nodes):
-            return []
+        for n in partitioned_nodes:
+            if not self._check_tensor_ranks(n):
+                why(node, reason=f"its partition takes {n}, which has too many dims")
+                return []
 
         # Fold only now, so a rejected node keeps its q/dq nodes as separate ops. A
         # q/dq node partitioned on its own stays a separate op as well.
@@ -86,11 +88,11 @@ class XNNPartitionerConfig(PartitionerConfig):
                 tag_as_implicit_q_dq(n)
 
         # label partitioned nodes with the name of the partitioner config
-        for node in partitioned_nodes:
-            if "xnn_partitioner_config" in node.meta:
-                node.meta["xnn_partitioner_config"].append(self.__class__.__name__)
+        for n in partitioned_nodes:
+            if "xnn_partitioner_config" in n.meta:
+                n.meta["xnn_partitioner_config"].append(self.__class__.__name__)
             else:
-                node.meta["xnn_partitioner_config"] = [self.__class__.__name__]
+                n.meta["xnn_partitioner_config"] = [self.__class__.__name__]
 
         return partitioned_nodes
 
@@ -111,7 +113,9 @@ class XNNPartitionerConfig(PartitionerConfig):
     ) -> List[torch.fx.Node]:
         """
         Takes in a node and its exported program and returns a list of nodes
-        and its dependencies that need to be partitioned together
+        and its dependencies that need to be partitioned together. Quantize and
+        dequantize nodes in the list, other than the node itself, are folded into
+        the partition's op once get_partition takes it.
 
         Args:
             node: Node to be partitioned
