@@ -514,8 +514,10 @@ bool check_convolution_args(
         transposed,
         transposed ? val_at(output_padding, i, /*default_value=*/0) : 0);
     ET_CHECK_OR_RETURN_FALSE(
-        output_size <= std::numeric_limits<executorch::aten::SizesType>::max(),
-        "Output size %" PRId64 " in spatial dim %zu is too large",
+        output_size > 0 &&
+            output_size <=
+                std::numeric_limits<executorch::aten::SizesType>::max(),
+        "Output size %" PRId64 " in spatial dim %zu is out of range",
         output_size,
         i);
   }

@@ -814,29 +814,29 @@ TEST_F(OpConvCorrectnessTest, KernelLargerThanPaddedInput) {
           input, weight, bias, stride, {0}, dilation, false, {0}, 1, out));
 }
 
-TEST_F(OpConvCorrectnessTest, HugeStridePaddingDilation) {
+TEST_F(OpConvCorrectnessTest, HugePaddingAndDilation) {
   ET_SKIP_IF(
       torch::executor::testing::SupportedFeatures::get()->is_aten,
-      "ATen does not reject these values");
+      "ATen does not reject all of these values");
   TensorFactory<ScalarType::Float> tf;
 
   Tensor input = tf.ones({1, 1, 3});
   Tensor weight = tf.ones({1, 1, 3});
   Tensor point_weight = tf.ones({1, 1, 1});
   optional<Tensor> bias;
-  Tensor out = tf.zeros({1, 1, 3});
-  Tensor point_out = tf.zeros({1, 1, 1});
   const int64_t int32_max[] = {std::numeric_limits<int32_t>::max()};
-  const int64_t above_int32[] = {int64_t{1} << 31};
   const int64_t huge[] = {std::numeric_limits<int64_t>::max() / 2 + 1};
 
   // The dilated kernel size would wrap around to a negative number.
+  Tensor out = tf.zeros({1, 1, 3});
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_convolution_out(
           input, weight, bias, {1}, {0}, huge, false, {0}, 1, out));
 
-  // These output sizes are 2^32 + 1, which 32-bit sizes would cut to 1.
+  // These output sizes, 2^32 + 1 and 5 - 2^32, would turn into 1 and 5 in
+  // 32-bit sizes.
+  Tensor out_1 = tf.zeros({1, 1, 1});
   context_ = torch::executor::KernelRuntimeContext();
   ET_EXPECT_KERNEL_FAILURE(
       context_,
@@ -850,21 +850,13 @@ TEST_F(OpConvCorrectnessTest, HugeStridePaddingDilation) {
           false,
           {0},
           1,
-          point_out));
+          out_1));
+  Tensor out_5 = tf.zeros({1, 1, 5});
   context_ = torch::executor::KernelRuntimeContext();
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_convolution_out(
-          input,
-          point_weight,
-          bias,
-          above_int32,
-          {0},
-          {1},
-          true,
-          {0},
-          1,
-          point_out));
+          input, point_weight, bias, {1}, int32_max, {1}, true, {0}, 1, out_5));
 }
 
 TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
