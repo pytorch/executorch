@@ -70,16 +70,24 @@ U* allocate_temp(KernelRuntimeContext& ctx, int64_t count) {
   return memory.ok() ? static_cast<U*>(memory.get()) : nullptr;
 }
 
-// Computes the weights as ATen's antialiased CPU kernel does, expression for
-// expression, so that they round the same way.
+// What the windows of one dim share: the shrink ratio, and the filter support
+// widened by it.
 template <typename T>
-Error compute_weights(
-    KernelRuntimeContext& ctx,
+struct Filter {
+  int64_t in_size;
+  int64_t max_size;
+  T ratio;
+  T support;
+  T invscale;
+};
+
+template <typename T>
+Error make_filter(
     int64_t in_size,
     int64_t out_size,
     bool align_corners,
     const optional<double> scale,
-    Weights<T>& weights) {
+    Filter<T>& filter) {
   const T ratio =
       area_pixel_compute_scale<T>(in_size, out_size, align_corners, scale);
   // F.interpolate never makes the ratio larger than the input size, and the
@@ -90,12 +98,63 @@ Error compute_weights(
       InvalidArgument,
       "_upsample_bicubic2d_aa got a scale that is too small for its input "
       "size");
+  filter.in_size = in_size;
+  filter.ratio = ratio;
   // The filter spans 4 inputs, widened by the shrink factor.
-  const T support =
-      static_cast<T>((ratio >= 1.0) ? (4 * 0.5) * ratio : 4 * 0.5);
+  filter.support = static_cast<T>((ratio >= 1.0) ? (4 * 0.5) * ratio : 4 * 0.5);
+  filter.invscale = static_cast<T>((ratio >= 1.0) ? 1.0 / ratio : 1.0);
   // A window never holds more inputs than there are.
-  weights.max_size =
-      std::min(static_cast<int64_t>(std::ceil(support)) * 2 + 1, in_size);
+  filter.max_size = std::min(
+      static_cast<int64_t>(std::ceil(filter.support)) * 2 + 1, in_size);
+  return Error::Ok;
+}
+
+// Computes the window of output `o` and its weights as ATen's antialiased CPU
+// kernel does, expression for expression, so that they round the same way.
+template <typename T>
+void compute_window(
+    const Filter<T>& filter,
+    int64_t o,
+    int64_t& first,
+    int64_t& size,
+    T* values) {
+  const T center = static_cast<T>(filter.ratio * (o + 0.5));
+  const int64_t start =
+      std::max(static_cast<int64_t>(center - filter.support + 0.5), int64_t(0));
+  size = std::clamp(
+      std::min(
+          static_cast<int64_t>(center + filter.support + 0.5), filter.in_size) -
+          start,
+      int64_t(0),
+      filter.max_size);
+  T total = 0;
+  for (const auto j : c10::irange(size)) {
+    values[j] = cubic_aa_filter<T>(
+        static_cast<T>((j + start - center + 0.5) * filter.invscale));
+    total += values[j];
+  }
+  if (total != 0) {
+    for (const auto j : c10::irange(size)) {
+      values[j] /= total;
+    }
+  }
+  // An empty window reads nothing, but its start still has to point into the
+  // input.
+  first = std::min(start, filter.in_size - 1);
+}
+
+template <typename T>
+Error compute_weights(
+    KernelRuntimeContext& ctx,
+    int64_t in_size,
+    int64_t out_size,
+    bool align_corners,
+    const optional<double> scale,
+    Weights<T>& weights) {
+  Filter<T> filter{};
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      make_filter(in_size, out_size, align_corners, scale, filter));
+  weights.max_size = filter.max_size;
   weights.first = allocate_temp<int64_t>(ctx, out_size);
   weights.size = weights.first != nullptr
       ? allocate_temp<int64_t>(ctx, out_size)
@@ -108,38 +167,21 @@ Error compute_weights(
       MemoryAllocationFailed,
       "_upsample_bicubic2d_aa could not get temporary memory for its "
       "weights");
-  const T invscale = static_cast<T>((ratio >= 1.0) ? 1.0 / ratio : 1.0);
   for (const auto o : c10::irange(out_size)) {
-    const T center = static_cast<T>(ratio * (o + 0.5));
-    const int64_t first =
-        std::max(static_cast<int64_t>(center - support + 0.5), int64_t(0));
-    const int64_t size = std::clamp(
-        std::min(static_cast<int64_t>(center + support + 0.5), in_size) - first,
-        int64_t(0),
-        weights.max_size);
-    T* values = weights.values + o * weights.max_size;
-    T total = 0;
-    for (const auto j : c10::irange(size)) {
-      values[j] = cubic_aa_filter<T>(
-          static_cast<T>((j + first - center + 0.5) * invscale));
-      total += values[j];
-    }
-    if (total != 0) {
-      for (const auto j : c10::irange(size)) {
-        values[j] /= total;
-      }
-    }
-    // An empty window reads nothing, but its start still has to point into
-    // the input.
-    weights.first[o] = std::min(first, in_size - 1);
-    weights.size[o] = size;
+    compute_window(
+        filter,
+        o,
+        weights.first[o],
+        weights.size[o],
+        weights.values + o * weights.max_size);
   }
   return Error::Ok;
 }
 
-// Computes the weights in double and converts them as ATen's uint8 path does,
-// with the most fraction bits, up to 22, that keep twice the largest weight
-// below 2^15.
+// Converts the weights as ATen's uint8 path does, with the most fraction bits,
+// up to 22, that keep twice the largest weight below 2^15. Each window is
+// computed in double twice, to find the largest weight and then to convert
+// it, so that only one window of doubles is kept.
 Error compute_weights(
     KernelRuntimeContext& ctx,
     int64_t in_size,
@@ -147,13 +189,29 @@ Error compute_weights(
     bool align_corners,
     const optional<double> scale,
     FixedPointWeights& weights) {
-  Weights<double> exact{};
-  ET_CHECK_OK_OR_RETURN_ERROR(compute_weights<double>(
-      ctx, in_size, out_size, align_corners, scale, exact));
+  Filter<double> filter{};
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      make_filter(in_size, out_size, align_corners, scale, filter));
+  weights.max_size = filter.max_size;
+  double* exact = allocate_temp<double>(ctx, filter.max_size);
+  weights.first =
+      exact != nullptr ? allocate_temp<int64_t>(ctx, out_size) : nullptr;
+  weights.size = weights.first != nullptr
+      ? allocate_temp<int64_t>(ctx, out_size)
+      : nullptr;
+  weights.values = weights.size != nullptr
+      ? allocate_temp<int16_t>(ctx, out_size * weights.max_size)
+      : nullptr;
+  ET_CHECK_OR_RETURN_ERROR(
+      weights.values != nullptr,
+      MemoryAllocationFailed,
+      "_upsample_bicubic2d_aa could not get temporary memory for its "
+      "weights");
   double max_weight = 0;
   for (const auto o : c10::irange(out_size)) {
-    for (const auto j : c10::irange(exact.size[o])) {
-      max_weight = std::max(max_weight, exact.values[o * exact.max_size + j]);
+    compute_window(filter, o, weights.first[o], weights.size[o], exact);
+    for (const auto j : c10::irange(weights.size[o])) {
+      max_weight = std::max(max_weight, exact[j]);
     }
   }
   int precision = 0;
@@ -168,16 +226,11 @@ Error compute_weights(
       InvalidArgument,
       "_upsample_bicubic2d_aa got a scale whose uint8 weights do not fit in "
       "fixed point");
-  weights.values = allocate_temp<int16_t>(ctx, out_size * exact.max_size);
-  ET_CHECK_OR_RETURN_ERROR(
-      weights.values != nullptr,
-      MemoryAllocationFailed,
-      "_upsample_bicubic2d_aa could not get temporary memory for its "
-      "weights");
   for (const auto o : c10::irange(out_size)) {
-    for (const auto j : c10::irange(exact.size[o])) {
-      const int64_t i = o * exact.max_size + j;
-      const double value = exact.values[i] * (1 << precision);
+    compute_window(filter, o, weights.first[o], weights.size[o], exact);
+    int16_t* values = weights.values + o * weights.max_size;
+    for (const auto j : c10::irange(weights.size[o])) {
+      const double value = exact[j] * (1 << precision);
       // The precision only bounds the largest weight, so with such a scale a
       // negative one can still be out of range.
       ET_CHECK_OR_RETURN_ERROR(
@@ -185,14 +238,11 @@ Error compute_weights(
           InvalidArgument,
           "_upsample_bicubic2d_aa got a scale whose uint8 weights do not fit "
           "in fixed point");
-      weights.values[i] = static_cast<int16_t>(
+      values[j] = static_cast<int16_t>(
           value < 0 ? static_cast<int>(-0.5 + value)
                     : static_cast<int>(0.5 + value));
     }
   }
-  weights.max_size = exact.max_size;
-  weights.first = exact.first;
-  weights.size = exact.size;
   weights.precision = precision;
   return Error::Ok;
 }
