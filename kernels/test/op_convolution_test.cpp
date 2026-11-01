@@ -725,15 +725,31 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
           padded_out));
 }
 
-TEST_F(OpConvCorrectnessTest, EmptyBatchWithEmptySpatialDim) {
+TEST_F(OpConvCorrectnessTest, EmptyBatchOrChannelWithEmptySpatialDim) {
   TensorFactory<ScalarType::Float> tf;
   optional<Tensor> bias;
 
-  // Like PyTorch, an empty spatial dim is fine when the batch is empty too.
+  // Like PyTorch, an empty spatial dim is fine when the batch or channel dim is
+  // empty too.
   Tensor input = tf.ones({0, 1, 0});
   Tensor weight = tf.ones({1, 1, 1});
   Tensor out = tf.zeros({0, 1, 2});
   op_convolution_out(input, weight, bias, {1}, {1}, {1}, false, {0}, 1, out);
+
+  Tensor channelless_input = tf.ones({1, 0, 0});
+  Tensor channelless_weight = tf.ones({1, 0, 1});
+  Tensor channelless_out = tf.zeros({1, 0, 2});
+  op_convolution_out(
+      channelless_input,
+      channelless_weight,
+      bias,
+      {1},
+      {1},
+      {1},
+      false,
+      {0},
+      1,
+      channelless_out);
 
   Tensor transposed_input = tf.ones({0, 2, 0});
   Tensor transposed_weight = tf.ones({2, 1, 3});
@@ -912,6 +928,21 @@ TEST_F(OpConvCorrectnessTest, HugePaddingAndDilation) {
       context_,
       op_convolution_out(
           input, point_weight, bias, {1}, int32_max, {1}, true, {0}, 1, out_5));
+
+  // A huge stride or padding would wrap these transposed output sizes around to
+  // 1 and 5 in 64 bits.
+  Tensor input_5 = tf.ones({1, 1, 5});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input_5, point_weight, bias, huge, {0}, {1}, true, {0}, 1, out_1));
+  const int64_t int64_max[] = {std::numeric_limits<int64_t>::max()};
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, point_weight, bias, {1}, int64_max, {1}, true, {0}, 1, out_5));
 }
 
 TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
@@ -1399,20 +1430,23 @@ TEST_F(OpConvCorrectnessTest, Grouped3DStridePaddingDilation) {
         in, w, bias, stride, padding, dilation, false, {0}, 2, out);
     EXPECT_TENSOR_EQ(out, exp);
   }
-  // Export gives a channels-last 5-D input a contiguous output.
-  auto out = tf.zeros_like(expected);
-  op_convolution_out(
-      tf.channels_last_like(input),
-      tf.channels_last_like(weight),
-      bias,
-      stride,
-      padding,
-      dilation,
-      false,
-      {0},
-      2,
-      out);
-  EXPECT_TENSOR_EQ(out, expected);
+  // Export gives a channels-last 5-D input a contiguous output, and the
+  // weight may keep its contiguous layout.
+  for (const Tensor& w : {weight, tf.channels_last_like(weight)}) {
+    auto out = tf.zeros_like(expected);
+    op_convolution_out(
+        tf.channels_last_like(input),
+        w,
+        bias,
+        stride,
+        padding,
+        dilation,
+        false,
+        {0},
+        2,
+        out);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
 }
 
 TEST_F(OpConvCorrectnessTest, GroupedTransposed3DStridePaddingDilation) {
@@ -1449,18 +1483,21 @@ TEST_F(OpConvCorrectnessTest, GroupedTransposed3DStridePaddingDilation) {
         in, w, bias, stride, padding, dilation, true, output_padding, 2, out);
     EXPECT_TENSOR_EQ(out, exp);
   }
-  // Export gives a channels-last 5-D input a contiguous output.
-  auto out = tf.zeros_like(expected);
-  op_convolution_out(
-      tf.channels_last_like(input),
-      tf.channels_last_like(weight),
-      bias,
-      stride,
-      padding,
-      dilation,
-      true,
-      output_padding,
-      2,
-      out);
-  EXPECT_TENSOR_EQ(out, expected);
+  // Export gives a channels-last 5-D input a contiguous output, and the
+  // weight may keep its contiguous layout.
+  for (const Tensor& w : {weight, tf.channels_last_like(weight)}) {
+    auto out = tf.zeros_like(expected);
+    op_convolution_out(
+        tf.channels_last_like(input),
+        w,
+        bias,
+        stride,
+        padding,
+        dilation,
+        true,
+        output_padding,
+        2,
+        out);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
 }
