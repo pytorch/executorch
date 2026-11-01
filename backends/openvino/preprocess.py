@@ -53,8 +53,8 @@ def _match_partition_inputs(
             input_shapes[0], pt_to_ov_type_map[str(input_types[0])]
         )
         model.add_parameters([first, *parameters])
-    # The runtime binds inputs by position, so any other mismatch would make
-    # every call fail, or swap inputs of the same type and shape.
+    # The runtime binds inputs by position and refuses a wrong count, so any
+    # other mismatch fails here instead of on every call.
     if len(model.get_parameters()) != len(input_types):
         raise RuntimeError(
             f"OpenVINO backend: expected {len(input_types)} parameters in the "
