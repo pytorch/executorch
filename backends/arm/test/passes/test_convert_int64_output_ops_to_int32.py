@@ -700,8 +700,8 @@ def test_topk_mixed_dtype_cat_stays_int64(use_edge_ops: bool):
     result = ConvertInt64OutputOpsToInt32Pass().call(exported_program.graph_module)
 
     # to_edge casts y to int64 for the cat, and the pass removes that cast again.
-    # The mixed-dtype cat left behind is not valid edge IR. The Arm pass manager
-    # runs this pass before to_edge, so only edge-graph callers like this test get it.
+    # The mixed-dtype cat left behind is not valid edge IR. Arm flows that run this
+    # pass after to_edge, through transform_passes, lower with _check_ir_validity=False.
     assert result.modified == use_edge_ops
     assert not _cast_nodes(result.graph_module)
     actual = exported_program.module()(x, y)
