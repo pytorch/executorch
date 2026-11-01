@@ -35,7 +35,8 @@
  * the CPUs in the affinity mask of the thread that first calls
  * get_threadpool(). taskset and cgroup cpusets shrink that mask, CPU quotas do
  * not. The mask also sizes the threadpool when the performance core count is
- * unknown, as on x86.
+ * unknown, as on x86. It is read once: the threadpool does not follow later
+ * changes to the mask, and a child created by fork() keeps its parent's size.
  */
 
 namespace executorch::extension::threadpool {
