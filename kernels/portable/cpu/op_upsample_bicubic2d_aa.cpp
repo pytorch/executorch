@@ -298,6 +298,8 @@ Tensor& _upsample_bicubic2d_aa_out(
       out,
       "Failed to resize output tensor");
 
+  // Keep in sync with _check_bicubic_aa_inputs_are_float in
+  // exir/verification/verifier.py, which rejects other dtypes at to_edge.
   ET_SWITCH_FLOATHBF16_TYPES(
       in.scalar_type(), ctx, "_upsample_bicubic2d_aa.out", CTYPE, [&]() {
         upsample_bicubic2d_aa_kernel_impl<CTYPE>(
