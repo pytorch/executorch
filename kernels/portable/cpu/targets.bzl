@@ -42,6 +42,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "vec_ops",
         exported_deps = [
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/portable_type/c10/c10:c10",
             "//executorch/runtime/platform:compiler",
         ],
