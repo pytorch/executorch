@@ -113,7 +113,7 @@ class TestIntegerReductions(BaseOpenvinoOpTest):
 
 
 class TestBoolMinMax(BaseOpenvinoOpTest):
-    """OpenVINO has no bool form of min, max, clamp or sign."""
+    """OpenVINO converts min, max, clamp and sign to ops that take no bool tensors."""
 
     def test_bool_ops_run_on_the_cpu(self):
         class BoolMinMax(torch.nn.Module):
@@ -121,8 +121,8 @@ class TestBoolMinMax(BaseOpenvinoOpTest):
                 m = x > 0
                 n = m.flip(1)
                 return (
-                    m.min(1).values,
-                    m.max(1).values,
+                    *m.min(1),
+                    *m.max(1),
                     m.amin(1),
                     m.amax(1),
                     m.min(),
@@ -133,7 +133,8 @@ class TestBoolMinMax(BaseOpenvinoOpTest):
                     m.clamp(min=0.5),
                 )
 
-        # One row all true and one all false, so min and max differ by row.
+        # One row all true and one all false, so min and max differ by row and
+        # their indices must pick the first of the ties.
         x = torch.randn(3, 7)
         x[0] = x[0].abs() + 0.1
         x[1] = -x[1].abs() - 0.1
