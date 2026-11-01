@@ -857,6 +857,16 @@ TEST_F(OpConvCorrectnessTest, KernelLargerThanPaddedInput) {
       context_,
       op_convolution_out(
           input, weight, bias, stride, {0}, dilation, false, {0}, 1, out));
+
+  // The same holds in 1-D.
+  Tensor input_1d = tf.ones({1, 1, 2});
+  Tensor weight_1d = tf.ones({1, 1, 3});
+  Tensor out_1d = tf.zeros({1, 1, 1});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input_1d, weight_1d, bias, {2}, {0}, {1}, false, {0}, 1, out_1d));
 }
 
 TEST_F(OpConvCorrectnessTest, HugePaddingAndDilation) {
