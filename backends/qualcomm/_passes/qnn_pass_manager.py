@@ -172,6 +172,8 @@ class QnnPassManager(PassManager):
         """Return annotation pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
             RemoveRedundancy,
+            # Retraced autocast regions may emit ops that the passes below decompose.
+            DecomposeWrapWithAutocast,
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
             ReplaceArangeArgs,
@@ -194,7 +196,6 @@ class QnnPassManager(PassManager):
             DecomposeTriu,
             DecomposeTrunc,
             DecomposeVar,
-            DecomposeWrapWithAutocast,
             DecomposeEinsum,
             DecomposeEmpty,
             DecomposeExpM1,
@@ -218,6 +219,7 @@ class QnnPassManager(PassManager):
     def get_export_passes(cls):
         """Return export pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
+            DecomposeWrapWithAutocast,
             ConvertComplexStft,
             DecomposeAsStrided,
             DecomposeBinaryAlpha,
@@ -239,7 +241,6 @@ class QnnPassManager(PassManager):
             # We keep div and floor operations in floating-point to maintain precision.
             # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
             DecomposeFloorDivide,
-            DecomposeWrapWithAutocast,
             ConvertSquareToPow,
             LiftConstantScalarOperands,
             InsertReshapeForReduceOps,

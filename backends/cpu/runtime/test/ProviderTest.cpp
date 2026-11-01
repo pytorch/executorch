@@ -66,7 +66,7 @@ class ProviderTest : public ::testing::Test {
   std::vector<EValue> values;
   std::vector<Buffer> buffers;
   size_t private_bytes = 0;
-  ExecutionContext execution_context{1, true};
+  ExecutionContext execution_context;
 };
 
 // Cppcheck cannot expand GTest fixture macros without build headers.

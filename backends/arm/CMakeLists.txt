@@ -277,6 +277,15 @@ if(EXECUTORCH_BUILD_VGF)
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
   add_library(vgf_backend ${_vgf_backend_sources})
 
+  option(EXECUTORCH_VGF_ZERO_COPY_IO
+         "Enable VGF model-boundary host zero-copy I/O" OFF
+  )
+  if(EXECUTORCH_VGF_ZERO_COPY_IO)
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_ZERO_COPY_IO=1)
+  else()
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_ZERO_COPY_IO=0)
+  endif()
+
   # Should be absent in ordinary production builds.
   option(EXECUTORCH_VGF_IO_STATS "Collect per-execution VGF copy statistics"
          OFF

@@ -145,7 +145,6 @@ Error CPUPlan::execute(const ExecutionContext& context) {
   ET_CHECK_OR_RETURN_ERROR(prepared_, InvalidState, "CPU plan is not prepared");
   ET_CHECK_OR_RETURN_ERROR(
       context.threads == execution_.threads &&
-          context.avx2_fma == execution_.avx2_fma &&
           context.threadpool == execution_.threadpool,
       NotSupported,
       "CPU execution properties changed; reload the static method");
@@ -609,9 +608,8 @@ std::string CPUPlan::describe(double preparation_ms) const {
       "\"xnn_workspace_shared\":true,\"xnn_packed_cache\":\"per_plan\","
       "\"delegate_io\":\"copy_for_unknown_external_tail_capacity\","
       "\"selection_context\":{\"threads\":" +
-      std::to_string(execution_.threads) +
-      ",\"avx2_fma\":" + (execution_.avx2_fma ? "true" : "false") +
-      "},\"candidates\":[" + decisions_ + "]}";
+      std::to_string(execution_.threads) + "},\"candidates\":[" + decisions_ +
+      "]}";
   return report;
 }
 } // namespace executorch::backends::cpu

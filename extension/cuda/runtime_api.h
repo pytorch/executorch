@@ -25,6 +25,7 @@ using cudaStream_t = hipStream_t;
 
 inline constexpr cudaError_t cudaSuccess = hipSuccess;
 inline constexpr unsigned int cudaEventDisableTiming = hipEventDisableTiming;
+inline constexpr unsigned int cudaStreamNonBlocking = hipStreamNonBlocking;
 inline constexpr cudaMemcpyKind cudaMemcpyDeviceToDevice =
     hipMemcpyDeviceToDevice;
 inline constexpr cudaMemcpyKind cudaMemcpyDeviceToHost = hipMemcpyDeviceToHost;
@@ -196,6 +197,12 @@ inline cudaError_t cudaStreamCreate(cudaStream_t* stream) {
 
 inline cudaError_t cudaStreamDestroy(cudaStream_t stream) {
   return hipStreamDestroy(stream);
+}
+
+inline cudaError_t cudaStreamCreateWithFlags(
+    cudaStream_t* stream,
+    unsigned int flags) {
+  return hipStreamCreateWithFlags(stream, flags);
 }
 
 inline cudaError_t cudaStreamEndCapture(

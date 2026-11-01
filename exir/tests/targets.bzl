@@ -307,6 +307,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lowered_backend_module",
             "//executorch/exir:schema",
             "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
         ],
     )
 

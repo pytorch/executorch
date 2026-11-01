@@ -522,6 +522,7 @@ test_runtime_vgf() {
         -DEXECUTORCH_BUILD_TESTS=ON \
         -DEXECUTORCH_BUILD_VGF=ON \
         -DEXECUTORCH_BUILD_VULKAN=OFF \
+        -DEXECUTORCH_VGF_ZERO_COPY_IO=ON \
         -DPYTHON_EXECUTABLE="${python_executable}"         -DPython3_EXECUTABLE="${python_executable}"
 
     # Build the VGF tests explicitly. This makes a missing/renamed target fail

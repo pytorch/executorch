@@ -112,6 +112,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_copy.cpp",
     "kernels/portable/cpu/op_cos.cpp",
     "kernels/portable/cpu/op_cosh.cpp",
+    "kernels/portable/cpu/op_cummin.cpp",
     "kernels/portable/cpu/op_cumsum.cpp",
     "kernels/portable/cpu/op_detach_copy.cpp",
     "kernels/portable/cpu/op_diagonal_copy.cpp",
@@ -430,6 +431,19 @@ XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SR
 XNNPACK_SCHEMA_SRCS = [
     "backends/xnnpack/serialization/runtime_schema.fbs",
 ]
+
+CPU_RUNTIME_BUCK_SRCS = [
+    "runtime/KernelProvider.cpp",
+    "runtime/CPUPlan.cpp",
+    "runtime/op_helpers/Convolution.cpp",
+]
+
+# CpuBackend with the default provider composition: XNNPACK and Reference.
+CPU_BACKEND_SRCS = ["backends/cpu/" + x for x in CPU_RUNTIME_BUCK_SRCS + [
+    "runtime/CPUBackend.cpp",
+    "runtime/providers/reference/ReferenceProvider.cpp",
+    "runtime/providers/xnnpack/XNNPACKProvider.cpp",
+]]
 
 VULKAN_SCHEMA_SRCS = [
     "backends/vulkan/serialization/schema.fbs",
