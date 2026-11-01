@@ -4,7 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Op cases: a model and the inputs of each sample it is recorded with."""
+"""Op cases: a model and the inputs of each sample it is recorded with, or of
+the calls of one sample when its shapes are dynamic."""
 
 import inspect
 from collections.abc import Callable
@@ -15,6 +16,7 @@ import torch
 from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
 from facto.inputgen.specs.model import Spec
 from facto.inputgen.utils.random_manager import seeded_random_manager
+from torch.export import Dim
 
 Inputs = tuple[torch.Tensor, ...]
 
@@ -29,6 +31,9 @@ class Case:
     model: torch.nn.Module
     # Positional float32 inputs of each sample; the count may vary by case.
     inputs: list[Inputs]
+    # `{dim: Dim}` of each positional input. A dynamic case's inputs are the
+    # calls of one sample, which run in order on one executable.
+    dynamic_shapes: tuple[dict[int, Dim], ...] | None = None
 
 
 def outputs(result) -> list[torch.Tensor]:
@@ -43,6 +48,31 @@ def draws(count: int, *shapes: tuple[int, ...]) -> list[Inputs]:
         tuple(torch.randn(shape, generator=generator) for shape in shapes)
         for _ in range(count)
     ]
+
+
+def chain(name: str, model: torch.nn.Module, *shapes: tuple[int | Dim, ...]) -> Case:
+    """A dynamic case with standard-normal inputs of `shapes`, from a fixed seed.
+    Each Dim starts mid-range, which export traces, then visits both bounds and
+    returns, every other Dim in the opposite order."""
+    dims = list(dict.fromkeys(d for s in shapes for d in s if not isinstance(d, int)))
+    walks = {}
+    for k, d in enumerate(dims):
+        mid = (d.min + d.max + 1) // 2
+        walks[d] = (mid, d.min, d.max, mid) if k % 2 == 0 else (mid, d.max, d.min, mid)
+    generator = torch.Generator().manual_seed(0)
+    inputs = [
+        tuple(
+            torch.randn(
+                [walks[d][step] if d in walks else d for d in s], generator=generator
+            )
+            for s in shapes
+        )
+        for step in range(4)
+    ]
+    dynamic_shapes = tuple(
+        {i: d for i, d in enumerate(s) if not isinstance(d, int)} for s in shapes
+    )
+    return Case(name, model, inputs, dynamic_shapes)
 
 
 class _SuiteRunner:

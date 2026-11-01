@@ -11,9 +11,10 @@ and two sample sets over the same inputs: `golden`, the eager outputs, and
 `precise`, the same math in float64 with quantized weights decoded in float32,
 whatever the method's dtype, and activations unquantized, floating outputs
 stored as float32. Weight-only schemes add `golden-int8_act`, the eager outputs
-with the same weights and int8 per-token dynamic activations. Nothing in it
-depends on an engine or a device: consumers judge an engine by its distance
-from `precise` relative to eager's.
+with the same weights and int8 per-token dynamic activations. A dynamic case
+is exported with its dynamic shapes and recorded as one sample whose calls
+change them. Nothing in it depends on an engine or a device: consumers judge an
+engine by its distance from `precise` relative to eager's.
 """
 
 import copy
@@ -45,6 +46,13 @@ def _cast(inputs: Inputs, dtype: torch.dtype) -> Inputs:
     return tuple(t.to(dtype) if t.is_floating_point() else t for t in inputs)
 
 
+def _samples(calls: list[Call], chained: bool) -> list[Sample]:
+    """One sample per call, or one running all the calls when they are chained."""
+    if chained:
+        return [Sample(calls)] if calls else []
+    return [Sample([call]) for call in calls]
+
+
 def record(
     cases: list[Case],
     scheme: Scheme,
@@ -69,20 +77,27 @@ def record(
                 k: scheme.decode(v).double() for k, v in method.state_dict().items()
             }
             inputs = [_cast(x, dtype) for x in case.inputs]
-            programs[name] = torch.export.export(method, inputs[0])
+            chained = case.dynamic_shapes is not None
+            programs[name] = torch.export.export(
+                method,
+                inputs[0],
+                dynamic_shapes=({"args": case.dynamic_shapes} if chained else None),
+            )
+            golden_calls, precise_calls, act_calls = [], [], []
             with torch.no_grad():
                 for x in inputs:
-                    golden.append(Sample([Call(name, list(x), outputs(method(*x)))]))
+                    golden_calls.append(Call(name, list(x), outputs(method(*x))))
                     ref = functional_call(method, state, _cast(x, torch.float64))
                     ref = [
                         t.float() if t.is_floating_point() else t for t in outputs(ref)
                     ]
-                    precise.append(Sample([Call(name, list(x), ref)]))
+                    precise_calls.append(Call(name, list(x), ref))
                     if scheme.weight_only:
                         with int8_activations(method):
-                            golden_act.append(
-                                Sample([Call(name, list(x), outputs(method(*x)))])
-                            )
+                            act_calls.append(Call(name, list(x), outputs(method(*x))))
+            golden += _samples(golden_calls, chained)
+            precise += _samples(precise_calls, chained)
+            golden_act += _samples(act_calls, chained)
     if not programs:
         logger.info(f"{path.name}: no case fits the scheme, not written")
         path.unlink(missing_ok=True)

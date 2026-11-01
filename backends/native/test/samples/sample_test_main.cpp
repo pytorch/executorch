@@ -6,8 +6,9 @@
 
 // A gtest main that runs the bundled samples of .ptn packages on the engine the
 // binary links (see PtnRunner.h): one test per package and method, grouping
-// samples by their first call. Each sample runs from a fresh context, and each
-// method output is judged over all its samples by OutputCheck.
+// samples by their first call. Each sample runs from a fresh context, its calls
+// in order on one executable per method, resizing dynamic inputs between them.
+// Each method output is judged over all its calls by OutputCheck.
 //
 // Usage:
 //   <test> --packages=a.ptn,dir [--rmse_ratio --max_ratio --rtol --sigmas]
