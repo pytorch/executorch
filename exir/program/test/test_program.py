@@ -362,11 +362,15 @@ class TestProgramManagers(unittest.TestCase):
                     ),
                 )
 
+        generator = torch.Generator().manual_seed(0)
+
         def image(h, w, dtype, memory_format=torch.contiguous_format):
             if dtype == torch.uint8:
-                t = torch.randint(0, 256, (1, 3, h, w), dtype=dtype)
+                t = torch.randint(
+                    0, 256, (1, 3, h, w), dtype=dtype, generator=generator
+                )
             else:
-                t = torch.randn(1, 3, h, w)
+                t = torch.randn(1, 3, h, w, generator=generator)
             return t.to(memory_format=memory_format)
 
         dims = {"x": {2: Dim("h", min=8, max=64), 3: Dim("w", min=8, max=64)}}
