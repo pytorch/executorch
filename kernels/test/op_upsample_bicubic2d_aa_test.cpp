@@ -188,12 +188,15 @@ class OpUpsampleBicubic2dAAOutTest : public OperatorTest {
         scales_h,
         scales_w,
         out);
-    // Half types are computed in float and rounded once, so they can be one
-    // unit in the last place away from the rounded float32 result.
-    const double atol = DTYPE == ScalarType::Half ? 2e-3
-        : DTYPE == ScalarType::BFloat16           ? 2e-2
-                                                  : 1e-5;
-    EXPECT_TENSOR_CLOSE_WITH_TOL(out, want, 1e-5, atol);
+    // Half types are computed in float and rounded once, so they are at most
+    // one unit in the last place from the rounded float32 result.
+    if constexpr (DTYPE == ScalarType::Half) {
+      EXPECT_TENSOR_CLOSE_WITH_TOL(out, want, 1.0 / 1024, 1e-6);
+    } else if constexpr (DTYPE == ScalarType::BFloat16) {
+      EXPECT_TENSOR_CLOSE_WITH_TOL(out, want, 1.0 / 128, 1e-6);
+    } else {
+      EXPECT_TENSOR_CLOSE_WITH_TOL(out, want, 1e-5, 1e-5);
+    }
   }
 
  private:
@@ -256,6 +259,20 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, AlignCornersMatchesATen) {
       std::nullopt,
       std::nullopt,
       kAlignCorners);
+  // With one output row, align_corners makes the ratio 0.
+  expect_resize<ScalarType::Float>(
+      {1, 2, 6, 8},
+      kInput,
+      {1, 3},
+      true,
+      std::nullopt,
+      std::nullopt,
+      {-0.540295064,
+       -0.463256866,
+       -0.694539428,
+       -0.254411757,
+       -0.0313641243,
+       0.986554146});
 }
 
 TEST_F(OpUpsampleBicubic2dAAOutTest, ScalesMatchATen) {
@@ -264,6 +281,30 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, ScalesMatchATen) {
   // Like ATen, a scale that is not positive is ignored.
   expect_resize<ScalarType::Float>(
       {1, 2, 6, 8}, kInput, {3, 5}, false, -1.0, std::nan(""), kShrunk);
+  // A scale this small puts the windows of the last two columns past the input,
+  // so they read nothing and give 0.
+  expect_resize<ScalarType::Float>(
+      {1, 1, 3, 4},
+      kSmallInput,
+      {3, 5},
+      false,
+      std::nullopt,
+      0.4,
+      {-0.0650536492,
+       -0.260022759,
+       -0.16743961,
+       0,
+       0,
+       0.273937315,
+       -0.593872368,
+       -0.41743961,
+       0,
+       0,
+       0.0734110475,
+       0.270127088,
+       -0.00814000517,
+       0,
+       0});
 }
 
 TEST_F(OpUpsampleBicubic2dAAOutTest, CopiesDimsThatKeepTheirSize) {
@@ -321,9 +362,7 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, NanReachesOnlyItsWindows) {
 
 // ATen's CPU kernel has no float16 or bfloat16 version, so these compare with
 // its float32 results.
-TEST_F(OpUpsampleBicubic2dAAOutTest, OtherFloatTypesMatchFloat32ATen) {
-  expect_resize<ScalarType::Double>(
-      {1, 2, 6, 8}, kInput, {3, 5}, false, std::nullopt, std::nullopt, kShrunk);
+TEST_F(OpUpsampleBicubic2dAAOutTest, HalfTypesMatchFloat32ATen) {
   expect_resize<ScalarType::Half>(
       {1, 2, 6, 8}, kInput, {3, 5}, false, std::nullopt, std::nullopt, kShrunk);
   expect_resize<ScalarType::BFloat16>(
@@ -344,6 +383,32 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, OtherFloatTypesMatchFloat32ATen) {
       std::nullopt,
       std::nullopt,
       kAveraged);
+}
+
+TEST_F(OpUpsampleBicubic2dAAOutTest, DoubleMatchesFloat64ATen) {
+  TensorFactory<ScalarType::Double> tf;
+  const Tensor in = tf.make(
+      {1, 1, 3, 4},
+      std::vector<double>(kSmallInput.begin(), kSmallInput.end()));
+  Tensor out = tf.zeros({1, 1, 2, 3});
+  const std::vector<int64_t> output_size = {2, 3};
+  op_upsample_bicubic2d_aa_out(
+      in,
+      ArrayRef<int64_t>(output_size.data(), output_size.size()),
+      false,
+      std::nullopt,
+      std::nullopt,
+      out);
+  // ATen's float64 result. A float32 computation is about 1e-7 away.
+  const Tensor want = tf.make(
+      {1, 1, 2, 3},
+      {-0.02889796548038389,
+       0.2150704092175421,
+       -0.5353515689565878,
+       0.5353515689565879,
+       -0.2150704092175421,
+       0.028897965480383748});
+  EXPECT_TENSOR_CLOSE_WITH_TOL(out, want, 1e-12, 1e-12);
 }
 
 TEST_F(OpUpsampleBicubic2dAAOutTest, ResizesDynamicOutput) {
