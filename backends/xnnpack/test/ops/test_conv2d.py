@@ -364,7 +364,7 @@ class TestConv2d(unittest.TestCase):
             (3, torch.nn.Conv3d, torch.nn.ConvTranspose3d),
         ):
             m = torch.nn.Sequential(
-                conv(2, 2, 2), torch.nn.ReLU(), conv_transpose(2, 2, 2)
+                conv(2, 2, 2), torch.nn.ReLU(), conv(2, 2, 2), conv_transpose(2, 2, 2)
             )
             tester = Tester(m.eval(), (torch.randn([1, 2] + [4] * dims),))
             tester.quantize().export()
