@@ -266,9 +266,12 @@ TEST(ThreadPoolDeathTest, DefaultSizeHonorsCpuAffinity) {
   }
   executorch::runtime::runtime_init();
 
+  // A known performance core count drops to 1, and an unknown one stays 0.
+  const char* expected =
+      ::executorch::extension::cpuinfo::get_num_performant_cores() > 0
+      ? "pool 1 perf 1 end"
+      : "pool 1 perf 0 end";
   EXPECT_EXIT(
-      print_counts_on_one_cpu(),
-      ExitedWithCode(EXIT_SUCCESS),
-      "pool 1 perf [01] end");
+      print_counts_on_one_cpu(), ExitedWithCode(EXIT_SUCCESS), expected);
 }
 #endif
