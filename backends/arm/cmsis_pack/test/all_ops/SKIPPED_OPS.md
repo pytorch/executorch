@@ -196,7 +196,7 @@ The Docker image used for the consumer build already provides this, so they expo
 
 ## Priority to raise execution coverage
 
-1. **§7 + §8 bespoke recipes** (5 ops) — trivial, immediate wins.
+1. **§7 + §8 bespoke recipes** (6 ops) — trivial, immediate wins.
 2. **§1 + §2 structural-assertion mode** (5 ops) — one small runner/manifest feature.
 3. **Cortex-M env** — install `cmsis_nn`; unlocks 16 ops with no new code.
 4. **§10 quantized path** (9 ops) — one quantized export path.
