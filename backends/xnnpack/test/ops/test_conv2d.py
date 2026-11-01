@@ -870,14 +870,24 @@ class TestConv2d(unittest.TestCase):
                         conv_count=1,
                     )
                 else:
-                    with self.assertRaises(RuntimeError):
-                        self._test(
-                            PerChannelConvTranspose2d(
-                                3 * groups, 5 * groups, groups, ch_axis
-                            ),  # ch_axis=0
-                            quant_config=None,
-                            conv_count=1,
+                    # XNNPACK leaves this conv out, and the quantize and dequantize
+                    # nodes around it then run in delegates of their own.
+                    m = PerChannelConvTranspose2d(
+                        3 * groups, 5 * groups, groups, ch_axis
+                    )
+                    (
+                        Tester(m.eval(), m.get_inputs())
+                        .export()
+                        .to_edge_transform_and_lower()
+                        .check(
+                            [
+                                "executorch_exir_dialects_edge__ops_aten_convolution_default"
+                            ]
                         )
+                        .to_executorch()
+                        .serialize()
+                        .run_method_and_compare_outputs()
+                    )
 
     def test_fp32_tconv_output_padding(self):
         """Test transposed convolution with non-zero output padding."""
