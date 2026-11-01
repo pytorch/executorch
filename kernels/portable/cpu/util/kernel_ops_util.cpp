@@ -495,7 +495,7 @@ bool check_convolution_args(
         i);
     if (!transposed) {
       // Like PyTorch, reject a dilated kernel larger than the padded input. The
-      // output size math would otherwise round such a size up to 1 for strides
+      // output size math can otherwise round such a size up to 1 for strides
       // above 1.
       const int64_t padded_input_size = input_size + 2 * pad;
       const int64_t dilated_kernel_size = dil * (kernel_size[i] - 1) + 1;
@@ -544,6 +544,7 @@ bool check_convolution_args(
       groups,
       weight.size(0));
 
+  // The groups checks above keep groups * weight.size(1) from overflowing.
   if (bias.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
     ET_LOG_AND_RETURN_IF_FALSE(

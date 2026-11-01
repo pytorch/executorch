@@ -33,8 +33,8 @@ struct IndexRange {
   int64_t end;
 };
 
-// The range helpers do not depend on the dtype, so out of line one copy serves
-// every dtype and spatial dim.
+// The range helpers do not depend on the dtype, so a single out-of-line copy
+// serves every dtype and spatial dim.
 ET_NOINLINE IndexRange transposed_kernel_range(
     int64_t begin,
     int64_t end,
@@ -281,8 +281,8 @@ void conv3d_impl(
     for (const auto out_y : c10::irange(out_H)) {
       for (const auto out_x : c10::irange(out_W)) {
         COMPUTE_T accum = 0;
-        // Depth taps sit outside the channel loop, so lower ranks, whose depth
-        // is 1, add no work per channel.
+        // Depth taps sit outside the channel loop, so for 1-D and 2-D inputs
+        // the depth loop runs once and adds no work per channel.
         for (const auto w_z : c10::irange(w_D)) {
           int64_t in_z = stride_z * out_z + dilation_z * w_z - padding_z;
           if (in_z < 0 || in_z >= in_D) {
