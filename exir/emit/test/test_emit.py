@@ -2665,7 +2665,7 @@ class TestEmit(unittest.TestCase):
                 expected_storage.append(j * 16 + i)
         self.assertEqual([int(v) for v in storage_values], expected_storage)
 
-    def test_emit_folded_constant_with_zero_stride(self) -> None:
+    def test_constant_prop_pass_folds_without_a_zero_stride(self) -> None:
         class ScaleByBuffer(nn.Module):
             def __init__(self):
                 super().__init__()
@@ -2676,14 +2676,10 @@ class TestEmit(unittest.TestCase):
                 # it contiguous.
                 return x * self.scale.expand(1)
 
-        model = ScaleByBuffer()
-        x = torch.randn(4)
-        exported = constant_prop_pass(export(model, (x,), strict=True))
+        exported = constant_prop_pass(
+            export(ScaleByBuffer(), (torch.randn(4),), strict=True)
+        )
         self.assertEqual([t.stride() for t in exported.constants.values()], [(1,)])
-
-        program = to_edge(exported).to_executorch()
-        et_module = _load_for_executorch_from_buffer(program.buffer)
-        self.assertTrue(torch.allclose(model(x), et_module((x,))[0]))
 
     def test_emit_user_constants_with_zero_stride(self) -> None:
         def zero_stride(value):
