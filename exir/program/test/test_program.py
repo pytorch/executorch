@@ -388,6 +388,28 @@ class TestProgramManagers(unittest.TestCase):
                             actual, expected, atol=1e-5, rtol=1e-5
                         )
 
+        # The portable kernel only takes floating-point inputs, unless the
+        # config leaves the op to another kernel.
+        class CondResize(torch.nn.Module):
+            def forward(self, pred, x):
+                return torch.cond(
+                    pred, lambda x: Resize()(x)[0], lambda x: x.clone(), (x,)
+                )
+
+        image = torch.randint(0, 256, (1, 3, 24, 18), dtype=torch.uint8)
+        op = torch.ops.aten._upsample_bicubic2d_aa.default
+        for program in (
+            export(Resize(), (image,)),
+            export(CondResize(), (torch.tensor(True), image)),
+        ):
+            with self.assertRaisesRegex(SpecViolationError, "only takes float32"):
+                to_edge(program)
+            for config in (
+                EdgeCompileConfig(_core_aten_ops_exception_list=[op]),
+                EdgeCompileConfig(preserve_ops=[op]),
+            ):
+                to_edge(program, compile_config=config)
+
     def test_float_sym_max_min_rejected(self):
         # The runtime's sym_max and sym_min kernels only take ints.
         def model(sym_op):
