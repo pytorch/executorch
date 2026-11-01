@@ -358,13 +358,14 @@ class TestConv2d(unittest.TestCase):
 
     def test_qs8_quantizer_skips_conv3d(self) -> None:
         # XNNPACK has no conv3d support, so its quantizer leaves 3d convs in float,
-        # with or without a fused relu. Each conv of the same model in 2d gets its
-        # weight quantized.
+        # with or without a fused relu. The same model in 2d gets its activations
+        # and weights quantized. The weights are quantized ahead of time, so only
+        # their dequantize nodes remain.
         quant_config = get_symmetric_quantization_config(is_per_channel=True)
-        weight_dq = "torch.ops.quantized_decomposed.dequantize_per_channel.default"
-        for dims, conv, conv_transpose, quantized_convs in (
-            (2, torch.nn.Conv2d, torch.nn.ConvTranspose2d, 3),
-            (3, torch.nn.Conv3d, torch.nn.ConvTranspose3d, 0),
+        ops = "torch.ops.quantized_decomposed"
+        for dims, conv, conv_transpose, quantized_activations, quantized_weights in (
+            (2, torch.nn.Conv2d, torch.nn.ConvTranspose2d, 4, 3),
+            (3, torch.nn.Conv3d, torch.nn.ConvTranspose3d, 0, 0),
         ):
             m = torch.nn.Sequential(
                 conv(2, 2, 2), torch.nn.ReLU(), conv(2, 2, 2), conv_transpose(2, 2, 2)
@@ -373,7 +374,14 @@ class TestConv2d(unittest.TestCase):
                 Tester(m.eval(), (torch.randn([1, 2] + [4] * dims),))
                 .quantize(Quantize(quantization_config=quant_config))
                 .export()
-                .check_count({weight_dq: quantized_convs})
+                .check_count(
+                    {
+                        f"{ops}.quantize_per_tensor.default": quantized_activations,
+                        f"{ops}.dequantize_per_tensor.default": quantized_activations,
+                        f"{ops}.quantize_per_channel.default": 0,
+                        f"{ops}.dequantize_per_channel.default": quantized_weights,
+                    }
+                )
             )
 
     def test_fp32_conv2d_permute(self) -> None:
