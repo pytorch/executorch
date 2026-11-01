@@ -17,6 +17,12 @@ class FuseConvPaddingPass(ExportPass):
             exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: (True, 6),
             exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default: (False, 7),
             exir_ops.edge.cortex_m.quantized_depthwise_conv2d_nhwc.default: (True, 7),
+            exir_ops.edge.cortex_m.quantized_conv2d_s4.default: (False, 6),
+            exir_ops.edge.cortex_m.quantized_conv2d_s4_nhwc.default: (True, 6),
+        }
+        packed_int4_ops = {
+            exir_ops.edge.cortex_m.quantized_conv2d_s4.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_s4_nhwc.default,
         }
         modified = False
         for node in graph_module.graph.nodes:
@@ -43,7 +49,11 @@ class FuseConvPaddingPass(ExportPass):
             ):
                 continue
             height, width = tensor.shape[1:3] if explicit_nhwc else tensor.shape[2:4]
-            kernel = get_first_fake_tensor(node.args[1]).shape[1:3]
+            # Packed int4 weights are 1-D; weight_sizes holds their OHWI shape.
+            if node.target in packed_int4_ops:
+                kernel = node.args[12][1:3]
+            else:
+                kernel = get_first_fake_tensor(node.args[1]).shape[1:3]
             # The pinned CMSIS-NN MVE 1xN kernel mishandles asymmetric boundaries.
             if height == 1 and kernel[0] == 1:
                 continue

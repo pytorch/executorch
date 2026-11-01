@@ -24,6 +24,7 @@ from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.backends.cortex_m.utils import (
     build_activation_lut,
     is_foldable_alpha,
+    pack_int4,
     quantize_multiplier_aot,
     quantize_val,
     SHIFT_INT8,
@@ -279,6 +280,22 @@ def _has_qparams(node: Node) -> bool:
     )
 
 
+def _int4_kernels_safe(dialect_pass: AtenToDialectPass, row_length: int) -> bool:
+    """Whether the CMSIS-NN int4 kernels can multiply activation rows of
+    `row_length` values.
+
+    On MVE, the s4 kernels de-interleave rows of 32 or more values with VLD2,
+    which faults unless every row starts on a 4-byte boundary. The C++ ops
+    reject the same shapes.
+    """
+    assert isinstance(dialect_pass, AtenToCortexMPass)
+    return (
+        dialect_pass.target_config.backend != cmsis_nn.Backend.MVE
+        or row_length < 32
+        or row_length % 4 == 0
+    )
+
+
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.sigmoid.default)
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.tanh.default)
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.silu.default)
@@ -360,21 +377,28 @@ def _get_linear_replacement(
 
     input_scale = node.meta["input_qparams"][0].scale
     input_zp = node.meta["input_qparams"][0].zp
-    weight_scale = node.meta["input_qparams"][1].scale
-    weight_zp = node.meta["input_qparams"][1].zp
+    weight_qparams = node.meta["input_qparams"][1]
     output_scale = node.meta["output_qparams"][0].scale
     output_zp = node.meta["output_qparams"][0].zp
     output_min = node.meta["output_qparams"][0].qmin
     output_max = node.meta["output_qparams"][0].qmax
 
-    if weight_zp != 0:
+    # Per-channel weights carry one scale and zero point per output feature.
+    weight_scales = weight_qparams.scale
+    weight_zps = weight_qparams.zp
+    if not isinstance(weight_scales, list):
+        weight_scales, weight_zps = [weight_scales], [weight_zps]
+    if any(zp != 0 for zp in weight_zps):
         raise NotImplementedError(
             f"cortex_m::quantized_linear assumes symmetric weight "
-            f"quantization (weight_zp == 0); got weight_zp={weight_zp}"
+            f"quantization (weight_zp == 0); got weight_zp={weight_qparams.zp}"
         )
 
-    quantized_multiplier, quantized_shift = quantize_multiplier_aot(
-        (input_scale * weight_scale) / output_scale
+    quantized_multipliers, quantized_shifts = zip(
+        *(
+            quantize_multiplier_aot((input_scale * weight_scale) / output_scale)
+            for weight_scale in weight_scales
+        )
     )
 
     # CMSIS-NN's MVE `arm_fully_connected_s8` path reads a precomputed
@@ -386,6 +410,11 @@ def _get_linear_replacement(
     linear_args = node.args
     weights = cast(Node, linear_args[1])
     weights_tensor = get_param_tensor(exported_program, weights)
+    if len(weight_scales) not in (1, weights_tensor.shape[0]):
+        raise ValueError(
+            f"cortex_m::quantized_linear expects one weight scale per output "
+            f"feature ({weights_tensor.shape[0]}); got {len(weight_scales)}"
+        )
     bias_node = cast(Node | None, linear_args[2]) if len(linear_args) > 2 else None
     bias_tensor = (
         get_param_tensor(exported_program, bias_node) if bias_node is not None else None
@@ -393,7 +422,7 @@ def _get_linear_replacement(
 
     if target_config.backend == cmsis_nn.Backend.MVE:
         kernel_sum_tensor = _compute_kernel_sum(
-            weights_tensor, bias_tensor, -input_zp, -weight_zp
+            weights_tensor, bias_tensor, -input_zp, 0
         )
         with node.graph.inserting_after(weights):
             kernel_sum_arg = create_constant_placeholder(
@@ -408,21 +437,41 @@ def _get_linear_replacement(
         kernel_sum_arg = None
         bias_arg = bias_node
 
+    if len(weight_scales) == 1:
+        target = exir_ops.edge.cortex_m.quantized_linear.default
+        multipliers_arg, shifts_arg = list(quantized_multipliers), list(quantized_shifts)
+    else:
+        target = exir_ops.edge.cortex_m.quantized_linear_per_channel.default
+        with node.graph.inserting_after(weights):
+            multipliers_arg, shifts_arg = (
+                create_constant_placeholder(
+                    exported_program,
+                    node.graph,
+                    node.name + suffix,
+                    InputKind.PARAMETER,
+                    torch.tensor(values, dtype=torch.int32),
+                )
+                for suffix, values in (
+                    ("_quantized_multiplier", quantized_multipliers),
+                    ("_quantized_shift", quantized_shifts),
+                )
+            )
+
     args = (
         linear_args[0],
         weights,
         bias_arg,
         kernel_sum_arg,
         -input_zp,
-        -weight_zp,
+        0,
         output_zp,
-        [quantized_multiplier],
-        [quantized_shift],
+        multipliers_arg,
+        shifts_arg,
         output_max,
         output_min,
     )
 
-    return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_linear.default, args)
+    return DialectNodeSpec(target, args)
 
 
 @AtenToCortexMPass.register_dialect_substitution(
@@ -466,10 +515,20 @@ def _get_convolution_replacement(
 
     input_scale = node.meta["input_qparams"][0].scale
     input_zero_point = node.meta["input_qparams"][0].zp
-    weight_scales = node.meta["input_qparams"][1].scale
+    weight_qparams = node.meta["input_qparams"][1]
+    weight_scales = weight_qparams.scale
+    # The CMSIS-NN int4 convolution has no grouped path, and some shapes are
+    # unsafe on MVE. Those convolutions run int4-range weights exactly on the
+    # int8 kernels.
+    weight_shape = get_first_fake_tensor(weight).shape
+    packed_int4 = (
+        groups == 1
+        and weight_qparams.qmin >= -8
+        and weight_qparams.qmax <= 7
+        and _int4_kernels_safe(dialect_pass, math.prod(weight_shape[1:]))
+    )
     if not isinstance(weight_scales, list):
-        fake_weight_tensor = get_first_fake_tensor(weight)
-        weight_scales = [weight_scales] * fake_weight_tensor.shape[0]
+        weight_scales = [weight_scales] * weight_shape[0]
 
     output_qparams = node.meta["output_qparams"][0]
     output_scale = output_qparams.scale
@@ -521,7 +580,7 @@ def _get_convolution_replacement(
     # optimal_dw_conv_constraints = (batch_size == 1) and (
     #    (in_channels == out_channels and dilation == [1, 1]) or (in_channels == 1)
     # )
-    use_depthwise_conv = is_depthwise and (batch_size == 1)
+    use_depthwise_conv = is_depthwise and (batch_size == 1) and not packed_int4
 
     if use_depthwise_conv:
         # For depthwise: OIHW -> IHWO which gives [1, H, W, C_OUT] for CMSIS-NN
@@ -556,7 +615,7 @@ def _get_convolution_replacement(
             node.graph,
             node.name + "_weight_nhwc",
             InputKind.PARAMETER,
-            weight_permuted,
+            pack_int4(weight_permuted) if packed_int4 else weight_permuted,
         )
 
         quantized_multiplier_tensor = create_constant_placeholder(
@@ -629,15 +688,23 @@ def _get_convolution_replacement(
         quantized_shift_tensor,
         output_qmin,
         output_qmax,
-        scratch,
     )
+    if packed_int4:
+        return DialectNodeSpec(
+            (
+                exir_ops.edge.cortex_m.quantized_conv2d_s4_nhwc.default
+                if explicit_nhwc
+                else exir_ops.edge.cortex_m.quantized_conv2d_s4.default
+            ),
+            (*conv2d_args, list(weight_permuted.shape), scratch),
+        )
     return DialectNodeSpec(
         (
             exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default
             if explicit_nhwc
             else exir_ops.edge.cortex_m.quantized_conv2d.default
         ),
-        conv2d_args,
+        (*conv2d_args, scratch),
     )
 
 

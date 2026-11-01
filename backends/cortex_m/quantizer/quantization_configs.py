@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import operator
+from dataclasses import replace
 from typing import Any, Callable
 
 import torch
@@ -36,6 +37,17 @@ INT8_WEIGHT_PER_CHANNEL_QSPEC = QuantizationSpec(
     observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
     qscheme=torch.per_channel_symmetric,
     ch_axis=0,
+)
+
+# int4 weights held in int8, with the symmetric range of the Arm a8w4 config.
+# The lowering packs them two per byte for the CMSIS-NN s4 convolution.
+INT4_WEIGHT_PER_CHANNEL_QSPEC = QuantizationSpec(
+    dtype=torch.int8,
+    observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
+    qscheme=torch.per_channel_symmetric,
+    ch_axis=0,
+    quant_min=-7,
+    quant_max=7,
 )
 
 # For transpose conv, output channels are at axis 1 (IOHW format vs OIHW for regular conv)
@@ -89,6 +101,11 @@ SOFTMAX_TARGETS = {
 
 CONV_TRANSPOSE_TARGETS = {
     torch.ops.aten.conv_transpose2d.input,
+}
+
+INT4_WEIGHT_CONV_TARGETS = {
+    torch.ops.aten.conv1d.default,
+    torch.ops.aten.conv2d.default,
 }
 
 POOL_SHARE_OUTPUT_TARGETS = {
@@ -173,6 +190,7 @@ class CortexMQuantizationConfig(QuantizationConfig):
         """
         Returns the configured weight quantization spec with the following cortex-m specific adjustments:
         - For conv transpose, returns the per-channel quantization spec with ch_axis=1 to match the IOHW weight format used by CMSIS-NN, instead of the default ch_axis=0
+        - For int4 weights, widens the configured spec to the full int8 range unless the node is an ungrouped convolution, the only op with an int4 CMSIS-NN kernel here
         """
         weight_qspec = super().get_weight_qspec()
         if (
@@ -183,6 +201,17 @@ class CortexMQuantizationConfig(QuantizationConfig):
             and weight_qspec.dtype == torch.int8
         ):
             return INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC
+        if (
+            node is not None
+            and isinstance(weight_qspec, QuantizationSpec)
+            and weight_qspec.quant_max is not None
+            and weight_qspec.quant_max <= 7
+        ):
+            groups = (
+                node.args[6] if len(node.args) > 6 else node.kwargs.get("groups", 1)
+            )
+            if node.target not in INT4_WEIGHT_CONV_TARGETS or groups != 1:
+                return replace(weight_qspec, quant_min=None, quant_max=None)
         return weight_qspec
 
     def get_bias_qspec(
@@ -223,4 +252,15 @@ INT8_PER_CHANNEL_CONFIG = CortexMQuantizationConfig(
     INT8_WEIGHT_PER_CHANNEL_QSPEC,
     _get_int32_per_channel_bias_qspec,
     f"{__name__}.INT8_PER_CHANNEL_CONFIG",
+)
+
+
+# int8 activations with int4 weights on ungrouped convolutions; every other
+# weighted op keeps int8 weights.
+A8W4_PER_CHANNEL_CONFIG = CortexMQuantizationConfig(
+    INT8_ACTIVATION_PER_TENSOR_QSPEC,
+    INT8_ACTIVATION_PER_TENSOR_QSPEC,
+    INT4_WEIGHT_PER_CHANNEL_QSPEC,
+    _get_int32_per_channel_bias_qspec,
+    f"{__name__}.A8W4_PER_CHANNEL_CONFIG",
 )

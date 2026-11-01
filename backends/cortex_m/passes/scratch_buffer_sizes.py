@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from collections.abc import Callable
 from functools import partial
 from typing import Any, cast
@@ -81,10 +82,51 @@ def _get_common_conv_buffer_size_inputs(
     )
 
 
+def _use_generic_s4_kernel(
+    input_nhwc: list[int],
+    filter_nhwc: list[int],
+    output_nhwc: list[int],
+    padding_hw: list[int],
+    stride_hw: list[int],
+    dilation_hw: list[int],
+) -> bool:
+    """Mirrors use_generic_s4_kernel in ops/op_quantized_conv2d.cpp: the 1xN
+    shapes that the s4 op runs with arm_convolve_s4."""
+    _, input_h, input_w, c_in = input_nhwc
+    _, kernel_h, kernel_w, _ = filter_nhwc
+    output_w = output_nhwc[2]
+    stride, pad = stride_hw[1], padding_hw[1]
+    is_1x1 = (
+        padding_hw == [0, 0] and kernel_h == kernel_w == 1 and dilation_hw == [1, 1]
+    )
+    is_1_x_n = (
+        input_h == 1
+        and kernel_h == 1
+        and dilation_hw[1] == 1
+        and stride * c_in % 4 == 0
+    )
+    if is_1x1 or not is_1_x_n:
+        return False
+    if c_in % 4:
+        return True
+    total_pad = (output_w - 1) * stride + kernel_w - input_w
+    # C remainder, as in the C++ and CMSIS-NN: a strided convolution without
+    # padding can have total_pad == -1.
+    asym_pad = int(math.fmod(total_pad, 2))
+    if pad * 2 + asym_pad != total_pad:
+        return True
+    right_pad_outputs = (
+        max(1, (pad + asym_pad + stride - 1) // stride) if pad + asym_pad else 0
+    )
+    left_pad_outputs = max(1, (pad + stride - 1) // stride) if pad else 0
+    return left_pad_outputs + right_pad_outputs > output_w
+
+
 def cmsis_nn_conv_buffer_size(
     backend: cmsis_nn.Backend,
     conv_node: torch.fx.Node,
     nhwc_logical: bool = False,
+    packed_int4: bool = False,
 ) -> list[int]:
     (
         input_nhwc,
@@ -101,15 +143,24 @@ def cmsis_nn_conv_buffer_size(
     output_qmin = cast(int, conv_node.args[10])
     output_qmax = cast(int, conv_node.args[11])
 
-    # Weight is in OHWI layout after conversion.
+    # Weight is in OHWI layout after conversion. Packed int4 weights are 1-D,
+    # with the OHWI shape in the weight_sizes arg.
+    if packed_int4:
+        weight_shape = list(cast(list[int], conv_node.args[12]))
     c_out, kernel_h, kernel_w, c_in = weight_shape
     filter_nhwc = [c_out, kernel_h, kernel_w, c_in]
+    if packed_int4 and _use_generic_s4_kernel(
+        input_nhwc, filter_nhwc, output_nhwc, padding_hw, stride_hw, dilation_hw
+    ):
+        # Dilation keeps the wrapper off its 1x1 and 1xN paths, and the
+        # arm_convolve_s4 buffer size does not depend on it.
+        dilation_hw = [dilation_hw[0], 2]
 
     return [
         int(
             cmsis_nn.convolve_wrapper_buffer_size(
                 backend,
-                cmsis_nn.DataType.A8W8,
+                cmsis_nn.DataType.A8W4 if packed_int4 else cmsis_nn.DataType.A8W8,
                 input_nhwc=input_nhwc,
                 filter_nhwc=filter_nhwc,
                 output_nhwc=output_nhwc,
@@ -298,6 +349,12 @@ _target_to_buffer_sizes_registry: dict[Any, BufferSizeFunction] = {
     exir_ops.edge.cortex_m.quantized_conv2d.default: cmsis_nn_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: partial(
         cmsis_nn_conv_buffer_size, nhwc_logical=True
+    ),
+    exir_ops.edge.cortex_m.quantized_conv2d_s4.default: partial(
+        cmsis_nn_conv_buffer_size, packed_int4=True
+    ),
+    exir_ops.edge.cortex_m.quantized_conv2d_s4_nhwc.default: partial(
+        cmsis_nn_conv_buffer_size, nhwc_logical=True, packed_int4=True
     ),
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default: cmsis_nn_depthwise_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d_nhwc.default: partial(

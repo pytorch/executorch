@@ -8,8 +8,12 @@ from contextlib import nullcontext
 
 import pytest
 import torch
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    A8W4_PER_CHANNEL_CONFIG,
+)
+from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.test.tester import CortexMTester
-from executorch.backends.test.harness.stages import StageType
+from executorch.backends.test.harness.stages import Quantize, StageType
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
 
@@ -137,6 +141,30 @@ def test_fuse_conv_padding(
     assert (len(conv.args[4]) == 4) == fused
     pads = [n for n in graph.nodes if n.target == exir_ops.edge.cortex_m.pad.default]
     assert len(pads) == (not fused or shared)
+
+
+@pytest.mark.parametrize(
+    "channels,out_channels,kernel,stride,padding",
+    [
+        pytest.param(4, 8, (3, 3), (2, 2), (0, 1, 0, 1), id="conv"),
+        pytest.param(1, 64, (10, 4), (2, 2), (1, 1, 4, 5), id="ds_cnn_stem"),
+    ],
+)
+def test_fuse_conv_padding_a8w4(channels, out_channels, kernel, stride, padding):
+    model = PaddedConv(channels, out_channels, 1, kernel, stride, padding).eval()
+    size = (49, 10) if channels == 1 else (8, 8)
+    x = (torch.rand(1, channels, *size) * 5 - 1).to(memory_format=torch.channels_last)
+    quantizer = CortexMQuantizer().set_node_target(
+        torch.ops.aten.conv2d.default, A8W4_PER_CHANNEL_CONFIG
+    )
+    tester = CortexMTester(model, (x,))
+    tester.quantize(Quantize(quantizer)).export().to_edge().run_passes()
+    tester.run_method_and_compare_outputs(inputs=(x,), qtol=1)
+    graph = tester.get_artifact(StageType.RUN_PASSES).exported_program().graph
+    [conv] = [n for n in graph.nodes if "conv2d" in str(n.target)]
+    assert conv.target == exir_ops.edge.cortex_m.quantized_conv2d_s4.default
+    assert len(conv.args[4]) == 4
+    assert not any(n.target == exir_ops.edge.cortex_m.pad.default for n in graph.nodes)
 
 
 @pytest.mark.parametrize(

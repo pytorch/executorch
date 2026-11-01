@@ -22,6 +22,7 @@ from executorch.backends.cortex_m.utils import (
     quantize_per_tensor_cmsis,
     requantize_cmsis,
     SHIFT_INT8,
+    unpack_int4,
 )
 from executorch.exir._warnings import experimental
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -580,14 +581,44 @@ def quantized_linear_impl(
         output_shape = (*input.shape[:-1], output.shape[-1])
         output_reshaped = output.reshape(output_shape)
 
-    output = requantize_cmsis(
-        output_reshaped,
-        int(requantize_multipliers[0]),
-        int(requantize_shifts[0]),
-    )
+    if len(requantize_multipliers) == 1:
+        output = requantize_cmsis(
+            output_reshaped,
+            int(requantize_multipliers[0]),
+            int(requantize_shifts[0]),
+        )
+    else:
+        output = torch.stack(
+            [
+                requantize_cmsis(output_reshaped[..., channel], int(mult), int(shift))
+                for channel, (mult, shift) in enumerate(
+                    zip(requantize_multipliers, requantize_shifts)
+                )
+            ],
+            dim=-1,
+        )
     output += output_offset
     output = torch.clamp(output, activation_min, activation_max).to(torch.int8)
     return output
+
+
+# Same as quantized_linear, with one int32 requantization multiplier and shift
+# per output feature.
+_LINEAR_PER_CHANNEL_ARGS = (
+    "Tensor input, Tensor weights, Tensor? bias, Tensor? kernel_sum, "
+    "int input_offset, int filter_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_max, int activation_min"
+)
+lib.define(f"quantized_linear_per_channel({_LINEAR_PER_CHANNEL_ARGS}) -> Tensor")
+lib.define(
+    f"quantized_linear_per_channel.out({_LINEAR_PER_CHANNEL_ARGS}, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+register_fake("cortex_m::quantized_linear_per_channel")(quantized_linear_meta)
+impl(lib, "quantized_linear_per_channel", "CompositeExplicitAutograd")(
+    quantized_linear_impl
+)
 
 
 # ===================================================================
@@ -1046,6 +1077,193 @@ def quantized_conv2d_nhwc_impl(
         scratch,
     )
     return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+# ===================================================================
+# QUANTIZED CONV2D WITH INT4 WEIGHTS
+# ===================================================================
+# Same as quantized_conv2d(_nhwc), but the OHWI weight is int4, packed two per
+# byte into a 1-D tensor (see utils.pack_int4); weight_sizes holds its OHWI
+# shape.
+
+_CONV2D_S4_ARGS = (
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] dilation, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, int[] weight_sizes, Tensor scratch"
+)
+lib.define(f"quantized_conv2d_s4({_CONV2D_S4_ARGS}) -> Tensor")
+lib.define(
+    f"quantized_conv2d_s4.out({_CONV2D_S4_ARGS}, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(f"quantized_conv2d_s4_nhwc({_CONV2D_S4_ARGS}) -> Tensor")
+lib.define(
+    f"quantized_conv2d_s4_nhwc.out({_CONV2D_S4_ARGS}, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+def _check_s4_weight(
+    weight: torch.Tensor, weight_sizes: Sequence[int], input_channels: int
+) -> None:
+    # Matches the checks in the C++ kernel.
+    if weight.dim() != 1 or len(weight_sizes) != 4 or min(weight_sizes) <= 0:
+        raise ValueError(
+            "quantized_conv2d_s4: weight must be 1-D and weight_sizes must hold "
+            "4 positive sizes"
+        )
+    if weight.numel() != (prod(weight_sizes) + 1) // 2:
+        raise ValueError(
+            f"quantized_conv2d_s4: weight must hold {prod(weight_sizes)} int4 "
+            "values, two per byte"
+        )
+    # CMSIS-NN has no grouped int4 convolution.
+    if weight_sizes[3] != input_channels:
+        raise ValueError(
+            f"quantized_conv2d_s4: weight input channels ({weight_sizes[3]}) must "
+            f"match input channels ({input_channels})"
+        )
+
+
+@register_fake("cortex_m::quantized_conv2d_s4")  # type: ignore[misc]
+def quantized_conv2d_s4_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    weight_sizes: Sequence[int],
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    _check_s4_weight(weight, weight_sizes, input.shape[1])
+    return quantized_conv2d_meta(
+        input,
+        weight.new_empty(weight_sizes),
+        bias,
+        stride,
+        padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+    )
+
+
+@impl(lib, "quantized_conv2d_s4", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_conv2d_s4_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    weight_sizes: Sequence[int],
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    _check_s4_weight(weight, weight_sizes, input.shape[1])
+    return quantized_conv2d_impl(
+        input,
+        unpack_int4(weight, weight_sizes),
+        bias,
+        stride,
+        padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+    )
+
+
+@register_fake("cortex_m::quantized_conv2d_s4_nhwc")  # type: ignore[misc]
+@experimental(_EXPLICIT_LAYOUT_EXPERIMENTAL)  # type: ignore[misc]
+def quantized_conv2d_s4_nhwc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    weight_sizes: Sequence[int],
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_conv2d_s4_meta(
+        input.permute(0, 3, 1, 2),
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        weight_sizes,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_conv2d_s4_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_conv2d_s4_nhwc_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    weight_sizes: Sequence[int],
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    _check_s4_weight(weight, weight_sizes, input.shape[3])
+    return quantized_conv2d_nhwc_impl(
+        input,
+        unpack_int4(weight, weight_sizes),
+        bias,
+        stride,
+        padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+    )
 
 
 # ===================================================================

@@ -47,6 +47,11 @@ def mark_node_as_annotated(
 
 
 class CortexMQuantizer(ComposableQuantizer):
+    """Convolutions use ``INT8_PER_CHANNEL_CONFIG`` and every other supported op
+    ``per_tensor_config``. ``set_node_target`` overrides the config of an op,
+    and each call overrides those before it.
+    """
+
     def __init__(
         self,
         per_tensor_config: Optional[QuantizationConfig] = None,
@@ -85,7 +90,8 @@ class CortexMQuantizer(ComposableQuantizer):
         for key in conv_patterns:
             conv_targets.update(key)
 
-        pattern_matcher = PatternMatcher(
+        self.patterns = support_dict.keys()
+        self.pattern_matcher = PatternMatcher(
             cast(
                 dict[tuple[OpOverload, ...], Optional[type[PatternCheck]]],
                 support_dict,
@@ -96,16 +102,37 @@ class CortexMQuantizer(ComposableQuantizer):
             PatternQuantizer(
                 INT8_PER_CHANNEL_CONFIG,
                 node_finder=NodeTargetNodeFinder(list(conv_targets)),
-                pattern_matcher=pattern_matcher,
+                pattern_matcher=self.pattern_matcher,
             ),
             PatternQuantizer(
                 per_tensor_config,
                 node_finder=GlobalNoOutputNodeFinder(),
-                pattern_matcher=pattern_matcher,
+                pattern_matcher=self.pattern_matcher,
             ),
             SharedQspecQuantizer(),
         ]
         super().__init__(quantizers)
+
+    def set_node_target(
+        self, node_target: OpOverload, quantization_config: Optional[QuantizationConfig]
+    ) -> "CortexMQuantizer":
+        """Quantize every node calling `node_target`, and the ops its patterns
+        fuse after it, with `quantization_config`, e.g.
+        ``torch.ops.aten.linear.default`` with ``INT8_PER_CHANNEL_CONFIG`` for
+        per-channel int8 linear weights. ``None`` leaves them unquantized.
+        """
+        # The pattern matcher only matches consecutive found nodes, so the
+        # finder must also find the activations fused after node_target.
+        targets = {op for p in self.patterns if p[0] == node_target for op in p}
+        self.quantizers.insert(
+            0,
+            PatternQuantizer(
+                quantization_config,
+                node_finder=NodeTargetNodeFinder(list(targets)),
+                pattern_matcher=self.pattern_matcher,
+            ),
+        )
+        return self
 
     def annotate(self, model):
         reporter = QuantizerReporter(self.quantizers)

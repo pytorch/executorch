@@ -26,7 +26,7 @@ The backend pass pipeline replaces quantized ATen operators with [CMSIS-NN](http
 
 | ATen Op                        | CMSIS-NN Kernel        | 8w8a | 8w16a | 4w8a |
 |--------------------------------|------------------------|------|-------|------|
-| `aten.convolution`             | `arm_convolve`         | ✅   | ⬜    | ⬜   |
+| `aten.convolution`             | `arm_convolve`         | ✅   | ⬜    | ✅   |
 | `aten.convolution` (depthwise) | `arm_depthwise_conv`   | ✅   | ⬜    | ⬜   |
 | `aten.convolution` (transposed)| `arm_transpose_conv`   | ✅   | ⬜    | ⬜   |
 | `aten.linear`                  | `arm_fully_connected`  | ✅   | ⬜    | ⬜   |
@@ -45,12 +45,14 @@ The backend pass pipeline replaces quantized ATen operators with [CMSIS-NN](http
 
 ## Quantization Support
 
-The Cortex-M backend currently implements **symmetric INT8 (8w8a)** quantization:
+By default, the Cortex-M backend implements **symmetric INT8 (8w8a)** quantization:
 - **Per-channel** quantization for convolution operators.
 - **Per-tensor** quantization for all other supported operators.
 - **Shared quantization parameters** for data-movement operators (e.g. reshape, permute) to avoid unnecessary requantization.
 
-CMSIS-NN also supports INT4 weights with INT8 activations (4w8a), INT8 weights with INT16 activations (8w16a), and per-channel quantization for fully connected layers, but the corresponding quantizer configurations and operator implementations are not yet integrated.
+`A8W4_PER_CHANNEL_CONFIG`, set per operator with `CortexMQuantizer.set_node_target`, quantizes the weights of ungrouped convolutions to per-channel INT4 with INT8 activations (4w8a); other operators keep INT8 weights. On MVE targets, a convolution whose rows (input channels x kernel height x kernel width) have 32 or more values that are not a multiple of 4 runs its INT4-range weights on the INT8 kernels instead, with no flash saving.
+
+CMSIS-NN also supports INT4 weights for other operators and INT8 weights with INT16 activations (8w16a), but the corresponding quantizer configurations and operator implementations are not yet integrated.
 
 ## Tutorial
 
