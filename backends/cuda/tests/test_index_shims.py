@@ -14,10 +14,11 @@ decomposes them. These tests lower real programs, run them through the Python
 runtime, and compare with eager PyTorch on CUDA.
 """
 
+import contextlib
 import os
 import tempfile
 import unittest
-from typing import Sequence, Tuple
+from typing import Iterator, Sequence, Tuple
 from unittest.mock import patch
 
 import torch
@@ -30,7 +31,19 @@ from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
 from torch.nn.attention.varlen import varlen_attn
-from torch.testing._internal.common_utils import DeterministicGuard
+
+
+@contextlib.contextmanager
+def _deterministic() -> Iterator[None]:
+    """Deterministic mode, which also sends every scatter and index_put to the
+    shims."""
+    enabled = torch.are_deterministic_algorithms_enabled()
+    warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+    torch.use_deterministic_algorithms(True)
+    try:
+        yield
+    finally:
+        torch.use_deterministic_algorithms(enabled, warn_only=warn_only)
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "requires CUDA")
@@ -161,7 +174,7 @@ class TestIndexShims(unittest.TestCase):
                 return summed, written
 
         idx = torch.tensor([0, 3, 3, 1, 3])
-        with DeterministicGuard(True):
+        with _deterministic():
             for dtype in (torch.float16, torch.bfloat16):
                 with self.subTest(dtype=dtype):
                     x = torch.arange(8, dtype=dtype)
@@ -210,7 +223,7 @@ class TestIndexShims(unittest.TestCase):
         x = torch.full((5, 6), -1)
         # Repeated writes differ from the write before them, also as bool.
         src = torch.arange(20).reshape(4, 5)
-        with DeterministicGuard(True):
+        with _deterministic():
             for dtype, index_dtype in (
                 (torch.bfloat16, torch.int64),
                 (torch.int64, torch.int32),
@@ -243,7 +256,7 @@ class TestIndexShims(unittest.TestCase):
         x = torch.randn(4, 6, 5)
         index = torch.randint(0, 6, (3, 4, 5))
         src = torch.randn(3, 8, 5)
-        with DeterministicGuard(True):
+        with _deterministic():
             self._run(Strided(), [(x, index, src)])
 
     def test_scatter_mean_counts_in_its_dtype(self):
@@ -296,7 +309,7 @@ class TestIndexShims(unittest.TestCase):
                     for dtype in (torch.float16, torch.bfloat16)
                 )
 
-        with DeterministicGuard(True):
+        with _deterministic():
             self._run(Sum(), [(torch.arange(1000) % 3, torch.full((1000,), 0.1))])
 
     def test_float64_and_float16_values(self):
