@@ -59,6 +59,17 @@ class TestAddMMOperator(BaseOpenvinoOpTest):
             compile_specs=(bf16, CompileSpec("inference_precision", b"")),
         )
 
+    def test_addmm_takes_the_last_inference_precision(self):
+        # Lowering keeps only the last value. The runtime must too, or it fails
+        # to load this invalid first one, on any device.
+        compile_specs = tuple(
+            CompileSpec("inference_precision", value) for value in (b"f7", b"")
+        )
+        sample_input = tuple(torch.randn(4, 4) for _ in range(3))
+        self.execute_layer_test(
+            self.create_model(), sample_input, compile_specs=compile_specs
+        )
+
     def test_addmm_passes_the_precision_to_openvino(self):
         if not self.device.startswith("CPU"):
             self.skipTest("only CPUs compute in float32 by default")
