@@ -56,7 +56,8 @@ int32_t main(int32_t argc, char** argv) {
       ? ::executorch::extension::cpuinfo::get_num_performant_cores()
       : static_cast<uint32_t>(FLAGS_cpu_threads);
   if (num_threads == 0) {
-    // The default pool already follows the CPUs this process may run on.
+    // On Linux other than Android, the default pool size follows the CPUs
+    // this process may run on.
     num_threads = static_cast<uint32_t>(std::min<size_t>(
         ::executorch::extension::threadpool::get_threadpool()
             ->get_thread_count(),

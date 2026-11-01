@@ -21,7 +21,7 @@
 #include <sys/sysctl.h>
 #endif
 
-#if defined(__linux__) && !defined(__ANDROID__)
+#if defined(__linux__)
 #include <sched.h>
 
 #include <cerrno>
@@ -215,7 +215,7 @@ uint32_t count_performant_cores() {
 } // namespace
 
 uint32_t get_num_allowed_cpus() {
-#if defined(__linux__) && !defined(__ANDROID__)
+#if defined(__linux__)
   // The kernel rejects a mask smaller than its possible CPU count, which can
   // exceed the CPU_SETSIZE CPUs a cpu_set_t holds, so grow it until it fits.
   for (int num_cpus = CPU_SETSIZE; num_cpus <= (1 << 20); num_cpus *= 2) {
@@ -238,8 +238,15 @@ uint32_t get_num_allowed_cpus() {
 
 uint32_t get_num_performant_cores() {
   const uint32_t count = count_performant_cores();
+#if !defined(__ANDROID__)
+  // Android moves every app between cpusets as it goes to the background and
+  // back, so a count taken in the background would be too small later.
   const uint32_t allowed = get_num_allowed_cpus();
-  return count > 0 && allowed > 0 ? std::min(count, allowed) : count;
+  if (count > 0 && allowed > 0) {
+    return std::min(count, allowed);
+  }
+#endif
+  return count;
 }
 
 } // namespace executorch::extension::cpuinfo
