@@ -67,6 +67,25 @@ AOTITorchError narrow_to(From value, To* ret_value) {
 
 template <typename T>
 AOTITorchError read_one_element(const SlimTensor* tensor, T* ret_value) {
+#if defined(CUDA_AVAILABLE)
+  // A graph capture cannot record the copy to the host below, and the copy
+  // aborts the process when it fails, so refuse first. Info, not Error: the
+  // backend then retries the call without a graph.
+  if (tensor->is_cuda()) {
+    auto stream = getCurrentCUDAStream(tensor->device_index());
+    ET_CHECK_OK_OR_RETURN_ERROR(stream.error());
+    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+    ET_CUDA_CHECK_OR_RETURN_ERROR(
+        cudaStreamIsCapturing(stream.get(), &capture));
+    if (capture != cudaStreamCaptureStatusNone) {
+      ET_LOG(
+          Info,
+          "reading a single element: a device value cannot be read inside a "
+          "CUDA graph capture");
+      return Error::NotSupported;
+    }
+  }
+#endif
   switch (tensor->dtype()) {
     case ScalarType::Byte:
       return narrow_to(tensor->item<uint8_t>(), ret_value);

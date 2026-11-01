@@ -293,6 +293,11 @@ class _MaskedAdd(nn.Module):
         return x.index_put((mask,), torch.ones(4), accumulate=True)
 
 
+class _ScaledByCount(nn.Module):
+    def forward(self, x, mask):
+        return x * mask.sum().item()
+
+
 class _MaskedCounter(nn.Module):
     """Counts its calls in a device buffer, and reads a mask's count. The
     buffer has one element, the case torch 2.14 can fold into a constant."""
@@ -470,12 +475,17 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                     expected = eager(x.cuda())[0].cpu()
                 torch.testing.assert_close(out, expected)
 
-    def test_mask_runs_without_a_graph(self):
-        # A mask index reads its count back to the host, which a capture
-        # cannot record, so the capture call has to run without a graph.
+    def test_host_read_runs_without_a_graph(self):
+        # A mask index reads its count back to the host, and .item() a value,
+        # which a capture cannot record, so the capture call has to run
+        # without a graph.
         torch.manual_seed(0)
         inputs = [(torch.randn(8, 4), torch.rand(8) > 0.5) for _ in range(6)]
-        for module in (_MaskedRows().eval(), _MaskedAdd().eval()):
+        for module in (
+            _MaskedRows().eval(),
+            _MaskedAdd().eval(),
+            _ScaledByCount().eval(),
+        ):
             with _RuntimeLog() as log:
                 outputs = self._run_with_cuda_graph(module, inputs[0], inputs)
             # Eager calls give the same values, so only the log shows the
