@@ -72,34 +72,6 @@ def _check_sym_max_min_args_are_ints(gm: GraphModule) -> None:
                     )
 
 
-def _check_bicubic_aa_input_dtype(gm: GraphModule) -> None:
-    # The built-in exception for _upsample_bicubic2d_aa only covers the dtypes
-    # its portable kernel takes.
-    dtypes = (torch.float32, torch.float64, torch.float16, torch.bfloat16, torch.uint8)
-    for module in gm.modules():
-        if not isinstance(module, GraphModule):
-            continue
-        for node in module.graph.nodes:
-            if node.op != "call_function":
-                continue
-            target = node.target
-            if isinstance(target, EdgeOpOverload):
-                target = target._op
-            if target != torch.ops.aten._upsample_bicubic2d_aa.default:
-                continue
-            src = node.args[0] if node.args else node.kwargs.get("self")
-            val = src.meta.get("val") if isinstance(src, torch.fx.Node) else None
-            if isinstance(val, torch.Tensor) and val.dtype not in dtypes:
-                raise SpecViolationError(
-                    "The portable _upsample_bicubic2d_aa kernel only takes float32, "
-                    f"float64, float16, bfloat16 and uint8 inputs, but {node.name} has "
-                    f"{val.dtype}. Cast the input to one of them before the resize. "
-                    "If another kernel runs the op, list it in EdgeCompileConfig's "
-                    "_core_aten_ops_exception_list or preserve_ops.\n"
-                    f"stack trace: {node.meta.get('stack_trace')}"
-                )
-
-
 def _check_valid_dim_order_ops(op, use_dim_order) -> None:
     if use_dim_order:
         if op in DimOrderOpsMap:
@@ -369,12 +341,6 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 return
             _check_tensors_are_contiguous(gm)
             _check_sym_max_min_args_are_ints(gm)
-            # An op that the config lists is left to another kernel, in any
-            # dtype, as it was before this op had a portable kernel.
-            if torch.ops.aten._upsample_bicubic2d_aa.default not in (
-                self._core_aten_ops_exception_list + self._preserve_ops
-            ):
-                _check_bicubic_aa_input_dtype(gm)
             _check_tensor_args_matching_op_allowed_dtype(gm)
 
         def is_valid(self, gm: GraphModule) -> bool:
