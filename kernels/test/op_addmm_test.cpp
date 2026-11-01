@@ -121,20 +121,31 @@ TEST_F(OpAddmmOutTest, BFloat16LargeDimAccumulatesInFloat) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpAddmmOutTest, BFloat16RowBiasIsRoundedOnce) {
+TEST_F(OpAddmmOutTest, BFloat16BiasIsRoundedOnce) {
   TensorFactory<ScalarType::BFloat16> tf;
   // 257 + 1 rounds to 258 in BFloat16. Rounding the product first gives 256,
-  // and 256 + 1 rounds back to 256.
+  // and 256 + 1 rounds back to 256. Every bias shape must get 258.
   constexpr int K = 257;
+  Tensor x = tf.ones({2, K});
+  Tensor y = tf.ones({K, 3});
   Tensor out = tf.zeros({2, 3});
+  for (const auto& bias :
+       {tf.ones({3}), tf.ones({2, 1}), tf.ones({1, 1}), tf.ones({})}) {
+    op_addmm_out(bias, x, y, Scalar(1), Scalar(1), out);
+    EXPECT_TENSOR_EQ(out, tf.full({2, 3}, 258));
+  }
+
+  // alpha is not rounded to BFloat16 first: 0.3 would become 0.30078125, and
+  // 50 * 0.30078125 rounds to 15.0625 instead of 15.
+  Tensor out_alpha = tf.zeros({1, 1});
   op_addmm_out(
-      tf.ones({3}),
-      tf.ones({2, K}),
-      tf.ones({K, 3}),
+      tf.zeros({1}),
+      tf.ones({1, 50}),
+      tf.ones({50, 1}),
       Scalar(1),
-      Scalar(1),
-      out);
-  EXPECT_TENSOR_EQ(out, tf.full({2, 3}, 258));
+      Scalar(0.3),
+      out_alpha);
+  EXPECT_TENSOR_EQ(out_alpha, tf.full({1, 1}, 15));
 }
 
 TEST_F(OpAddmmOutTest, EmptyInputWithEmptyOutTensorPasses) {

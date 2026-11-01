@@ -245,9 +245,12 @@ inline void vec_quantized_matmul_transb_int8(
   }
 }
 
-// mat1 (m x n), mat2 (n x p), out (m, p), self (m x p)
-// z[i][j] = sum(x[i][k] * y[k][j]), for k in range(n)
-// T for tensor dtype, U for scalar type
+// mat1 (m x n), mat2 (n x p), out (m, p)
+// out[i][j] = alpha * sum(mat1[i][k] * mat2[k][j]) + beta * self[i][j]
+// self[i][j] is self_data[i * self_row_stride + j * self_col_stride], so a
+// stride of 0 broadcasts self along that dim.
+// T for tensor dtype, U for scalar type. Sums and alpha and beta use the
+// accumulator type of T.
 template <typename T, typename U = T>
 inline void vec_addmm(
     T* ET_RESTRICT out_data,
@@ -258,9 +261,11 @@ inline void vec_addmm(
     int64_t n,
     int64_t p,
     U beta,
-    U alpha) {
+    U alpha,
+    int64_t self_row_stride,
+    int64_t self_col_stride) {
   using ACC = typename executorch::runtime::
-      promote_types<T, U, /*half_to_float=*/true>::type;
+      promote_types<T, T, /*half_to_float=*/true>::type;
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
       ACC sum = 0;
@@ -269,7 +274,10 @@ inline void vec_addmm(
             static_cast<ACC>(mat2_data[k * p + j]);
       }
       out_data[i * p + j] = static_cast<T>(
-          sum * alpha + static_cast<ACC>(self_data[i * p + j]) * beta);
+          sum * static_cast<ACC>(alpha) +
+          static_cast<ACC>(
+              self_data[i * self_row_stride + j * self_col_stride]) *
+              static_cast<ACC>(beta));
     }
   }
 }
