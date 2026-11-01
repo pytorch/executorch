@@ -158,10 +158,16 @@ Error compute_weights(
   }
   int precision = 0;
   while (precision < 22 &&
-         static_cast<int>(0.5 + max_weight * (1 << (precision + 1))) <
-             (1 << 15)) {
+         0.5 + max_weight * (1 << (precision + 1)) < (1 << 15)) {
     ++precision;
   }
+  // Only a scale that F.interpolate never gives, with windows that nearly
+  // cancel out, gets here. ATen's generic CPU path fails on it too.
+  ET_CHECK_OR_RETURN_ERROR(
+      precision > 0,
+      InvalidArgument,
+      "_upsample_bicubic2d_aa got a scale whose uint8 weights do not fit in "
+      "fixed point");
   weights.values = allocate_temp<int16_t>(ctx, out_size * exact.max_size);
   ET_CHECK_OR_RETURN_ERROR(
       weights.values != nullptr,

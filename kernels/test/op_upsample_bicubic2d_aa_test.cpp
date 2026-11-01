@@ -577,6 +577,24 @@ TEST_F(OpUpsampleBicubic2dAAOutTest, RejectsScaleTooSmallForInput) {
           out));
 }
 
+TEST_F(OpUpsampleBicubic2dAAOutTest, RejectsUint8WeightsTooLargeForFixedPoint) {
+  // With this scale, the window of the middle output nearly sums to zero, so
+  // its normalized weights are far too large for 16-bit fixed point.
+  TensorFactory<ScalarType::Byte> tf;
+  Tensor in = tf.make({1, 1, 1, 4}, {10, 20, 30, 40});
+  Tensor out = tf.zeros({1, 1, 1, 5});
+  const std::vector<int64_t> output_size = {1, 5};
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_upsample_bicubic2d_aa_out(
+          in,
+          ArrayRef<int64_t>(output_size.data(), output_size.size()),
+          false,
+          std::nullopt,
+          0.46386847,
+          out));
+}
+
 TEST_F(OpUpsampleBicubic2dAAOutTest, ResizesBothDimsLikeTwoOneDimResizes) {
   // Inputs this tall make the kernel keep only a few rows between its passes.
   TensorFactory<ScalarType::Float> tf;
