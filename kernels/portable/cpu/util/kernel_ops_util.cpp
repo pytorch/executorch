@@ -207,8 +207,8 @@ int64_t _kernel_output_size_helper(
     bool transposed,
     int64_t output_padding) {
   if (transposed) {
-    return (inputSize - 1) * stride - 2 * pad + dilation * (kernelSize - 1) +
-        output_padding + 1;
+    return (static_cast<int64_t>(inputSize) - 1) * stride - 2 * pad +
+        dilation * (kernelSize - 1) + output_padding + 1;
   }
   int64_t numerator = inputSize + 2 * pad - dilation * (kernelSize - 1) - 1 +
       (ceil_mode ? stride - 1 : 0);
@@ -487,9 +487,12 @@ bool check_convolution_args(
     const int64_t input_size = in.size(i + 2);
     const int64_t pad = val_at(padding, i, /*default_value=*/0);
     const int64_t dil = val_at(dilation, i, /*default_value=*/1);
-    // Like PyTorch, only the batch and channel dims may be empty.
+    // Like PyTorch, a spatial dim may only be empty when the batch or channel
+    // dim is empty too.
     ET_CHECK_OR_RETURN_FALSE(
-        input_size > 0, "Expected input spatial dim %zu to be non-empty", i);
+        input_size > 0 || in.size(0) == 0 || in.size(1) == 0,
+        "Input spatial dim %zu is empty, but the batch and channel dims are not",
+        i);
     if (!transposed) {
       // Like PyTorch, reject a dilated kernel larger than the padded input. The
       // output size math would otherwise round such a size up to 1 for strides

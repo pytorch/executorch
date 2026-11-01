@@ -725,6 +725,32 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
           padded_out));
 }
 
+TEST_F(OpConvCorrectnessTest, EmptyBatchWithEmptySpatialDim) {
+  TensorFactory<ScalarType::Float> tf;
+  optional<Tensor> bias;
+
+  // Like PyTorch, an empty spatial dim is fine when the batch is empty too.
+  Tensor input = tf.ones({0, 1, 0});
+  Tensor weight = tf.ones({1, 1, 1});
+  Tensor out = tf.zeros({0, 1, 2});
+  op_convolution_out(input, weight, bias, {1}, {1}, {1}, false, {0}, 1, out);
+
+  Tensor transposed_input = tf.ones({0, 2, 0});
+  Tensor transposed_weight = tf.ones({2, 1, 3});
+  Tensor transposed_out = tf.zeros({0, 1, 2});
+  op_convolution_out(
+      transposed_input,
+      transposed_weight,
+      bias,
+      {1},
+      {0},
+      {1},
+      true,
+      {0},
+      1,
+      transposed_out);
+}
+
 TEST_F(OpConvCorrectnessTest, InvalidBiasLength) {
   TensorFactory<ScalarType::Float> tf;
 
