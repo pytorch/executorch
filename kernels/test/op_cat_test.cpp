@@ -489,6 +489,17 @@ TEST_F(OpCatOutTest, CatDimSizeOverflowDies) {
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
+TEST_F(OpCatOutTest, CatOutTargetSizeRejectsDimPastInputRank) {
+  // Callers such as the Cadence Fusion G3 kernel use this without running
+  // check_cat_args first.
+  TensorFactory<ScalarType::Int> tf;
+  Tensor empty = tf.make({0, 2}, {});
+  Tensor::SizesType out_sizes[executorch::runtime::kTensorDimensionLimit];
+  size_t out_ndim = 0;
+  EXPECT_FALSE(torch::executor::get_cat_out_target_size(
+      ArrayRef<Tensor>(&empty, 1), /*dim=*/2, out_sizes, &out_ndim));
+}
+
 TEST_F(OpCatOutTest, CatDimSizeOverflowBeforeAddition) {
   // On 32-bit targets, adding these sizes before checking wraps the sum to 1.
   Tensor::SizesType sizes_a[1] = {
