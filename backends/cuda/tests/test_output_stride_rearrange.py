@@ -18,6 +18,7 @@ Usage:
     python -m pytest backends/cuda/tests/test_output_stride_rearrange.py -v
 """
 
+import contextlib
 import glob
 import os
 import subprocess
@@ -292,6 +293,29 @@ class _MaskedAdd(nn.Module):
         return x.index_put((mask,), torch.ones(4), accumulate=True)
 
 
+class _ScaledByCount(nn.Module):
+    def forward(self, x, mask):
+        return x * mask.sum().item()
+
+
+class _ScatterMax(nn.Module):
+    def forward(self, x, index, src):
+        return x.scatter_reduce(1, index, src, "amax")
+
+
+class _MaskedCounter(nn.Module):
+    """Counts its calls in a device buffer, and reads a mask's count. The
+    buffer has one element, the case torch 2.14 can fold into a constant."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("calls", torch.zeros(1), persistent=False)
+
+    def forward(self, x, mask):
+        self.calls.add_(1)
+        return self.calls.clone(), x[mask]
+
+
 class _HostFlag(nn.Module):
     """A torch.cond on a flag the program keeps in host memory and updates on
     every call."""
@@ -313,6 +337,29 @@ class _Double(nn.Module):
 
     def forward(self, x):
         return (x * 2).contiguous(memory_format=self.memory_format)
+
+
+class _RuntimeLog:
+    """Collects the runtime's log lines. They go to sys.stderr while the
+    caller holds the GIL, and straight to file descriptor 2 otherwise."""
+
+    def __enter__(self):
+        sys.stderr.flush()
+        self._file = tempfile.TemporaryFile(mode="w+")
+        self._saved = os.dup(2)
+        os.dup2(self._file.fileno(), 2)
+        self._redirect = contextlib.redirect_stderr(self._file)
+        self._redirect.__enter__()
+        return self
+
+    def __exit__(self, *exc):
+        self._redirect.__exit__(*exc)
+        self._file.flush()
+        os.dup2(self._saved, 2)
+        os.close(self._saved)
+        self._file.seek(0)
+        self.text = self._file.read()
+        self._file.close()
 
 
 class TestStridedOutputWithCudaGraph(unittest.TestCase):
@@ -413,7 +460,7 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                         self._assert_matches_eager(module, x, out)
                     else:
                         # InvalidArgument, from the replay's input shape check.
-                        self.assertIn("error 0x12", str(out))
+                        self.assertIn("execute() failed with error 0x12", str(out))
 
     def test_host_state_runs_without_a_graph(self):
         # A graph would keep the branch of the capture call, and a failed
@@ -422,7 +469,6 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
         torch.manual_seed(0)
         module = _HostFlag().cuda().eval()
         eager = _HostFlag().cuda().eval()
-        eager.load_state_dict(module.state_dict())
         inputs = [torch.randn(1, rows, 64) for rows in (1, 1, 1, 50, 50, 50)]
         rows = torch.export.Dim("rows", min=1, max=64)
         outputs = self._run_with_cuda_graph(
@@ -434,22 +480,63 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
                     expected = eager(x.cuda())[0].cpu()
                 torch.testing.assert_close(out, expected)
 
-    def test_mask_runs_without_a_graph(self):
-        # A mask index reads its count back to the host, which a capture
-        # cannot record, so the capture call has to run without a graph.
+    def test_host_read_runs_without_a_graph(self):
+        # A mask index reads its count back to the host, and .item() a value,
+        # which a capture cannot record, so the capture call has to run
+        # without a graph.
         torch.manual_seed(0)
         inputs = [(torch.randn(8, 4), torch.rand(8) > 0.5) for _ in range(6)]
-        for module in (_MaskedRows().eval(), _MaskedAdd().eval()):
-            outputs = self._run_with_cuda_graph(module, inputs[0], inputs)
+        for module in (
+            _MaskedRows().eval(),
+            _MaskedAdd().eval(),
+            _ScaledByCount().eval(),
+        ):
+            with _RuntimeLog() as log:
+                outputs = self._run_with_cuda_graph(module, inputs[0], inputs)
+            # Eager calls give the same values, so only the log shows the
+            # capture was tried, and only once.
+            self.assertEqual(log.text.count("capture failed for 'forward'"), 1)
             for i, (args, out) in enumerate(zip(inputs, outputs)):
                 with self.subTest(module=type(module).__name__, call=i):
                     self.assertIsInstance(out, torch.Tensor)
                     torch.testing.assert_close(out, module(*args))
 
+    def test_scatter_reduce_replays_in_a_graph(self):
+        # The shim sorts its writes in scratch memory, which the capture has to
+        # record as well.
+        torch.manual_seed(0)
+        index = torch.tensor([[0, 2, 2, 5], [1, 1, 1, 0], [5, 3, 0, 5]])
+        inputs = [(torch.randn(5, 6), index, torch.randn(4, 5)) for _ in range(6)]
+        module = _ScatterMax().eval()
+        with _RuntimeLog() as log:
+            outputs = self._run_with_cuda_graph(module, inputs[0], inputs)
+        self.assertIn("captured and instantiated for 'forward'", log.text)
+        for i, (args, out) in enumerate(zip(inputs, outputs)):
+            with self.subTest(call=i):
+                self.assertIsInstance(out, torch.Tensor)
+                torch.testing.assert_close(out, module(*args))
+
+    def test_mask_retry_updates_state_once(self):
+        # The capture call runs again without a graph, so its update to the
+        # count must not land twice.
+        torch.manual_seed(0)
+        inputs = [(torch.randn(8, 4), torch.rand(8) > 0.5) for _ in range(6)]
+        with _RuntimeLog() as log:
+            outputs = self._run_with_cuda_graph(
+                _MaskedCounter().eval(), inputs[0], inputs
+            )
+        self.assertEqual(log.text.count("capture failed for 'forward'"), 1)
+        for i, out in enumerate(outputs):
+            with self.subTest(call=i):
+                self.assertIsInstance(out, torch.Tensor)
+                torch.testing.assert_close(out, torch.tensor([i + 1.0]))
+
     def test_output_shape_changes_at_capture(self):
         torch.manual_seed(0)
         # The capture call has a larger batch than the warmup calls before it.
-        inputs = [torch.randn(batch, 3, 4, 4) for batch in (1, 1, 1, 2, 2, 2)]
+        # The last call goes back to the warmup batch, which only a live graph
+        # rejects, because a replay needs the captured input sizes.
+        inputs = [torch.randn(batch, 3, 4, 4) for batch in (1, 1, 1, 2, 2, 2, 1)]
         batch = torch.export.Dim("batch", min=1, max=8)
         for memory_format in (torch.contiguous_format, torch.channels_last):
             module = _Double(memory_format).eval()
@@ -458,7 +545,11 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
             )
             for i, (x, out) in enumerate(zip(inputs, outputs)):
                 with self.subTest(memory_format=memory_format, call=i):
-                    self._assert_matches_eager(module, x, out)
+                    if i == 6:
+                        # InvalidArgument, from the replay's input size check.
+                        self.assertIn("execute() failed with error 0x12", str(out))
+                    else:
+                        self._assert_matches_eager(module, x, out)
 
 
 if __name__ == "__main__":
