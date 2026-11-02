@@ -498,6 +498,12 @@ class TestCudaExport(unittest.TestCase):
         inputs = (torch.randn(1, 16), torch.randn(1, 14))
         self._export_to_cuda_with_lower(GaussianHead().eval(), inputs)
 
+        # The export above fails without the pass only when autotuning trips
+        # the assert, so check that the backend runs it.
+        self.assertIn(
+            RemoveAssertAsyncPass,
+            {type(p) for p in CudaBackend.get_custom_passes([])},
+        )
         # The pass drops the check and the math that only fed it.
         graph_module = export(GaussianHead().eval(), inputs).graph_module
         RemoveAssertAsyncPass()(graph_module)

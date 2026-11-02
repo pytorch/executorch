@@ -25,7 +25,9 @@ class RemoveAssertAsyncPass(PassBase):
 
     ExecuTorch already removes these checks from the rest of a program before
     it is saved (see ``RemoveGraphAssertsPass``), so the delegate now does the
-    same.
+    same. Unlike that pass, this one keeps the size checks, such as
+    ``aten._assert_scalar``: they run on the host, so they cannot break the
+    CUDA context.
     """
 
     def call(self, graph_module: GraphModule) -> PassResult:
