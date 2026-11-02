@@ -346,6 +346,15 @@ class ET_EXPERIMENTAL PrefixCache {
     return lookup_identity(copy_tokens(request));
   }
 
+  // Token match only: restoration can still fail. Does not clone or touch LRU.
+  std::size_t best_match_length(const PrefixIdentity& request) const {
+    std::size_t best = 0;
+    for (const auto& entry : entries_) {
+      best = std::max(best, match_length(entry.tokens, request));
+    }
+    return best;
+  }
+
   std::optional<PrefixMatch> lookup_identity(const PrefixIdentity& request) {
     if (request.size() < 2 || entries_.empty()) {
       return std::nullopt;
@@ -362,8 +371,7 @@ class ET_EXPERIMENTAL PrefixCache {
       candidates.reserve(entries_.size());
       std::size_t rank = 0;
       for (auto it = entries_.begin(); it != entries_.end(); ++it, ++rank) {
-        const auto matched =
-            std::min(common_prefix(it->tokens, request), request.size() - 1);
+        const auto matched = match_length(it->tokens, request);
         if (matched > 0) {
           candidates.push_back(Candidate{it, matched, rank});
         }
@@ -404,6 +412,14 @@ class ET_EXPERIMENTAL PrefixCache {
   }
 
  private:
+  static std::size_t match_length(
+      const PrefixIdentity& prefix,
+      const PrefixIdentity& request) {
+    return request.size() < 2
+        ? 0
+        : std::min(common_prefix(prefix, request), request.size() - 1);
+  }
+
   PrefixIdentity copy_tokens(const std::vector<Token>& tokens) const {
     if (!max_entries_ || tokens.empty()) {
       return {};

@@ -164,6 +164,7 @@ class Executor : public batching::testing::FakeExecutor {
   Gate cloning;
   Gate decoding;
   std::atomic<bool> refuse_clone{false};
+  std::atomic<SessionId> refused_source{0};
   std::atomic<int> clone_calls{0};
   std::atomic<int> peak_rows{0};
   bool reject_after_decode = false;
@@ -205,7 +206,7 @@ class Executor : public batching::testing::FakeExecutor {
   std::optional<SessionId> clone(SessionId source, Position upto) override {
     ++clone_calls;
     cloning.enter();
-    if (refuse_clone.load()) {
+    if (refuse_clone.load() || source == refused_source.load()) {
       return std::nullopt;
     }
     std::vector<Token> prefix;
@@ -475,6 +476,352 @@ class PrefixReuseTest : public ::testing::Test {
     return std::get<RequestHandle>(std::move(result));
   }
 };
+
+class ActivePrefixTest : public PrefixReuseTest {
+ protected:
+  void SetUp() override {
+    PrefixReuseTest::SetUp();
+    config.prefix_cache_capacity = 0;
+    config.active_prefix_reuse_min_tokens = 2;
+    watch_callbacks();
+  }
+
+  // This request fails in preparation without consulting the engine. Its
+  // completion proves that control got past a preceding clone submission.
+  void control_barrier() {
+    auto event = output();
+    auto request = submit(event, {}, std::nullopt);
+    request.wait();
+    ASSERT_TRUE(event->terminal);
+    EXPECT_EQ(event->terminal->finish_reason, FinishReason::Failed);
+  }
+
+  RequestHandle donor(std::optional<std::string> key = std::nullopt) {
+    executor.decoding.hold();
+    auto request = submit(output(), {1, 2, 3, 4}, key, 4);
+    EXPECT_TRUE(executor.decoding.wait());
+    return request;
+  }
+};
+
+TEST_F(ActivePrefixTest, BranchesHaveOwnSuffixSamplingAndBudgets) {
+  start();
+  auto source = donor();
+  auto left = output();
+  auto right = output();
+  GenerationOptions options;
+  options.max_new_tokens = 2;
+  options.sampling.temperature = 0.8f;
+  options.seed = 99;
+  auto b = submit(left, {1, 2, 3, 9}, std::nullopt, options);
+  options.max_new_tokens = 1;
+  options.sampling.temperature = 0;
+  options.seed = 100;
+  auto c = submit(right, {1, 2, 3, 8}, std::nullopt, options);
+  control_barrier();
+  executor.decoding.release();
+  source.wait();
+  b.wait();
+  c.wait();
+  ASSERT_EQ(executor.clones().size(), 2u);
+  for (const auto& clone : executor.clones()) {
+    EXPECT_EQ(clone.prefix, (std::vector<Token>{1, 2, 3}));
+  }
+  for (const auto& event : {left, right}) {
+    ASSERT_TRUE(event->terminal);
+    const auto& stats = event->terminal->stats;
+    EXPECT_TRUE(stats.active_prefix.reused);
+    EXPECT_EQ(stats.reused_prompt_tokens, 3u);
+    EXPECT_EQ(stats.prefilled_prompt_tokens, 1u);
+    EXPECT_EQ(stats.active_prefix.committed_tokens, 4u);
+    EXPECT_TRUE(stats.first_token_ms);
+    EXPECT_GE(*stats.first_token_ms, stats.active_prefix.clone_ms);
+  }
+  EXPECT_EQ(left->terminal->stats.completion_tokens, 2u);
+  EXPECT_EQ(right->terminal->stats.completion_tokens, 1u);
+  for (const auto& feed : executor.feeds()) {
+    if (feed.position == 3) {
+      EXPECT_TRUE(
+          feed.tokens == std::vector<Token>{9} ||
+          feed.tokens == std::vector<Token>{8});
+      ASSERT_TRUE(feed.sampling);
+      EXPECT_FLOAT_EQ(feed.sampling->temperature, feed.seed == 99 ? 0.8f : 0);
+    }
+  }
+}
+
+TEST_F(ActivePrefixTest, IdenticalPromptLeavesFinalTokenForForward) {
+  start();
+  auto source = donor();
+  auto event = output();
+  auto branch = submit(event, {1, 2, 3, 4}, std::nullopt);
+  control_barrier();
+  executor.decoding.release();
+  branch.wait();
+  source.wait();
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->stats.active_prefix.shared_tokens, 4u);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 1u);
+}
+
+TEST_F(ActivePrefixTest, DoesNotMatchGeneratedOutput) {
+  start();
+  auto source = donor();
+  auto event = output();
+  auto branch = submit(event, {1, 2, 3, 4, 100, 101, 9}, std::nullopt);
+  control_barrier();
+  executor.decoding.release();
+  branch.wait();
+  source.wait();
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->stats.active_prefix.shared_tokens, 4u);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 4u);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 3u);
+}
+
+TEST_F(ActivePrefixTest, RefusedCloneFallsBackOnceWithFullPrompt) {
+  start();
+  executor.refuse_clone = true;
+  auto source = donor();
+  auto event = output();
+  auto branch = submit(event, {1, 2, 3, 9}, std::nullopt, 2);
+  control_barrier();
+  executor.decoding.release();
+  branch.wait();
+  source.wait();
+  EXPECT_EQ(executor.clone_calls.load(), 1);
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->finish_reason, FinishReason::Length);
+  EXPECT_TRUE(event->terminal->stats.active_prefix.attempted);
+  EXPECT_FALSE(event->terminal->stats.active_prefix.reused);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 4u);
+  EXPECT_EQ(event->terminal->stats.completion_tokens, 2u);
+}
+
+TEST_F(ActivePrefixTest, AdvancingBeyondRetainedBoundaryFallsBack) {
+  executor.retained_tail = 1;
+  start();
+  auto source = donor();
+  auto event = output();
+  auto branch = submit(event, {1, 2, 3, 9}, std::nullopt);
+  control_barrier();
+  executor.decoding.release();
+  branch.wait();
+  source.wait();
+  EXPECT_EQ(executor.clone_calls.load(), 1);
+  EXPECT_TRUE(executor.clones().empty());
+  ASSERT_TRUE(event->terminal);
+  EXPECT_FALSE(event->terminal->stats.active_prefix.reused);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 4u);
+}
+
+TEST_F(
+    ActivePrefixTest,
+    CancellationDuringCloneDiscardsResultAndPreservesDonor) {
+  start();
+  auto source = donor();
+  executor.cloning.hold();
+  auto event = output();
+  auto branch = submit(event, {1, 2, 3, 9}, std::nullopt);
+  control_barrier();
+  executor.decoding.release();
+  ASSERT_TRUE(executor.cloning.wait());
+  branch.cancel();
+  control_barrier();
+  executor.cloning.release();
+  branch.wait();
+  source.wait();
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminals, 1);
+  EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 0u);
+  EXPECT_EQ(events.front()->terminal->finish_reason, FinishReason::Length);
+}
+
+TEST_F(ActivePrefixTest, ShutdownDrainsInFlightClone) {
+  start();
+  auto source = donor();
+  executor.cloning.hold();
+  auto event = output();
+  auto branch = submit(event, {1, 2, 3, 9}, std::nullopt);
+  control_barrier();
+  executor.decoding.release();
+  ASSERT_TRUE(executor.cloning.wait());
+  branch.cancel();
+  source.cancel();
+  auto stopped = std::async(std::launch::async, [&] { runtime->shutdown(); });
+  executor.cloning.release();
+  ASSERT_EQ(stopped.wait_for(5s), std::future_status::ready);
+  stopped.get();
+  branch.wait();
+  source.wait();
+  EXPECT_EQ(event->terminals, 1);
+  EXPECT_EQ(executor.open_count(), 0);
+}
+
+class ActivePrefixExclusionTest : public ActivePrefixTest,
+                                  public ::testing::WithParamInterface<int> {};
+TEST_P(
+    ActivePrefixExclusionTest,
+    LeavesUnsupportedOrUnhelpfulRequestsUnchanged) {
+  const auto mode = GetParam();
+  if (mode == 0)
+    config.active_prefix_reuse_min_tokens = 0;
+  start();
+  auto source =
+      donor(mode == 1 ? std::optional<std::string>{"named"} : std::nullopt);
+  auto event = output();
+  auto prompt = mode == 3 ? std::vector<Token>{8, 9}
+      : mode == 4         ? std::vector<Token>{1}
+                          : std::vector<Token>{1, 2, 3, 9};
+  auto branch = submit(
+      event,
+      prompt,
+      mode == 2 ? std::optional<std::string>{"recipient"} : std::nullopt);
+  // The ordinary cold-open path can await the engine, so do not use a control
+  // barrier while holding its decode here.
+  executor.decoding.release();
+  branch.wait();
+  source.wait();
+  EXPECT_EQ(executor.clone_calls.load(), 0);
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, prompt.size());
+}
+INSTANTIATE_TEST_SUITE_P(
+    Scope,
+    ActivePrefixExclusionTest,
+    ::testing::Range(0, 5));
+
+TEST_F(ActivePrefixTest, PartialPrefillUsesCommittedPositionWithoutWaiting) {
+  auto scheduler = std::make_unique<PausableScheduler>();
+  scheduler->inner = batching::DecodeFirstScheduler::create(12, 4, 8);
+  auto* paused = scheduler.get();
+  executor.executing.hold();
+  start(true, std::move(scheduler));
+  std::vector<Token> prompt(20);
+  std::iota(prompt.begin(), prompt.end(), 1);
+  auto source = submit(output(), prompt, std::nullopt, 2);
+  ASSERT_TRUE(executor.executing.wait());
+  paused->paused = true;
+  executor.executing.release();
+  // The engine processes this open after the first eight-token forward.
+  ASSERT_FALSE(runtime->open_session_async("barrier").get());
+  auto event = output();
+  prompt.back() = 99;
+  auto branch = submit(event, prompt, std::nullopt);
+  ASSERT_TRUE(executor.cloning.wait());
+  control_barrier();
+  paused->paused = false;
+  // Wake the engine if it went idle while the scheduler was paused.
+  ASSERT_FALSE(runtime->close_session_async("barrier").get());
+  branch.wait();
+  source.wait();
+  ASSERT_TRUE(event->terminal);
+  const auto& stats = event->terminal->stats;
+  EXPECT_EQ(stats.active_prefix.shared_tokens, 19u);
+  EXPECT_EQ(stats.active_prefix.committed_tokens, 8u);
+  EXPECT_EQ(stats.reused_prompt_tokens, 8u);
+  EXPECT_EQ(stats.prefilled_prompt_tokens, 12u);
+  ASSERT_EQ(executor.clones().size(), 1u);
+  EXPECT_EQ(executor.clones()[0].prefix.size(), 8u);
+}
+
+TEST_F(ActivePrefixTest, NoCommittedPrefixDoesNotWaitForDonor) {
+  auto scheduler = std::make_unique<PausableScheduler>();
+  scheduler->paused = true;
+  auto* paused = scheduler.get();
+  start(true, std::move(scheduler));
+  auto source = submit(output(), {1, 2, 3, 4}, std::nullopt);
+  auto event = output();
+  auto branch = submit(event, {1, 2, 3, 9}, std::nullopt);
+  control_barrier();
+  paused->paused = false;
+  ASSERT_FALSE(runtime->open_session_async("wake").get());
+  branch.wait();
+  source.wait();
+  EXPECT_EQ(executor.clone_calls.load(), 0);
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->stats.active_prefix.insufficient_committed, 1u);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 4u);
+}
+
+class ActivePrefixCacheTest : public ActivePrefixTest,
+                              public ::testing::WithParamInterface<bool> {};
+TEST_P(ActivePrefixCacheTest, ChoosesCacheOrActiveByAdditionalSavings) {
+  config.prefix_cache_capacity = 1;
+  start();
+  const bool tiny = GetParam();
+  submit(
+      output(),
+      tiny ? std::vector<Token>{1} : std::vector<Token>{1, 2, 3},
+      std::nullopt)
+      .wait();
+  // Keep the initial cache entry while the donor starts from cold input.
+  executor.refuse_clone = true;
+  auto source = donor();
+  executor.refuse_clone = false;
+  auto event = output();
+  auto branch = submit(event, {1, 2, 3, 9}, std::nullopt);
+  if (tiny)
+    control_barrier();
+  executor.decoding.release();
+  branch.wait();
+  source.wait();
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->stats.active_prefix.attempted, tiny);
+  EXPECT_EQ(event->terminal->stats.active_prefix.reused, tiny);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 1u);
+}
+INSTANTIATE_TEST_SUITE_P(CacheSizes, ActivePrefixCacheTest, ::testing::Bool());
+
+TEST_F(ActivePrefixTest, FailedCacheLookupStillTriesActiveDonor) {
+  config.prefix_cache_capacity = 1;
+  auto scheduler = std::make_unique<PausableScheduler>();
+  auto* paused = scheduler.get();
+  start(true, std::move(scheduler));
+  submit(output(), {1, 2, 3}, std::nullopt).wait();
+  ASSERT_EQ(executor.clones().size(), 1u);
+  executor.refused_source = executor.clones().back().destination;
+  executor.refuse_clone = true;
+  auto source = donor();
+  paused->paused = true;
+  executor.decoding.release();
+  ASSERT_FALSE(runtime->open_session_async("barrier").get());
+  executor.refuse_clone = false;
+  auto event = output();
+  auto branch = submit(event, {1, 2, 3, 9}, std::nullopt);
+  control_barrier();
+  paused->paused = false;
+  ASSERT_FALSE(runtime->close_session_async("barrier").get());
+  branch.wait();
+  source.wait();
+  ASSERT_TRUE(event->terminal);
+  EXPECT_TRUE(event->terminal->stats.active_prefix.reused);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 3u);
+}
+
+TEST_F(ActivePrefixTest, RefusalDoesNotRepeatPreparation) {
+  std::atomic<int> prepared{0};
+  model_preparer = [&](const auto&,
+                       PromptInput input) -> ModelPreparationResult {
+    ++prepared;
+    return make_token_prepared_input(input.segments[0].get_tokens());
+  };
+  start();
+  executor.refuse_clone = true;
+  auto source = donor();
+  auto event = output();
+  auto branch = submit(event, {1, 2, 3, 9}, std::nullopt);
+  control_barrier();
+  const auto before = prepared.load();
+  executor.decoding.release();
+  branch.wait();
+  source.wait();
+  EXPECT_EQ(prepared.load(), before);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 4u);
+}
 
 class PrefixReuseSamplingTest
     : public PrefixReuseTest,

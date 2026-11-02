@@ -37,6 +37,10 @@ def _validate_limits(parser, args, *, prefix_capture_slots=0) -> int:
         parser.error(f"--prefix-cache-entries must be between 0 and {_MAX_INT32}")
     if not 0 <= args.prefix_checkpoint_interval <= _MAX_INT32:
         parser.error(f"--prefix-checkpoint-interval must be between 0 and {_MAX_INT32}")
+    if not 0 <= args.active_prefix_reuse_min_tokens <= _MAX_INT32:
+        parser.error(
+            f"--active-prefix-reuse-min-tokens must be between 0 and {_MAX_INT32}"
+        )
     if args.prefix_checkpoint_interval and not args.prefix_cache_entries:
         parser.error("--prefix-checkpoint-interval requires --prefix-cache-entries > 0")
     if not 0 <= prefix_capture_slots <= _MAX_INT32:
@@ -100,6 +104,12 @@ def _parse_args(argv=None):
         type=int,
         default=0,
         help="Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.",
+    )
+    parser.add_argument(
+        "--active-prefix-reuse-min-tokens",
+        type=int,
+        default=0,
+        help="Minimum additional tokens saved by active prompt reuse; 0 disables",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
@@ -170,6 +180,14 @@ def main(argv=None) -> None:
             + (
                 ["--prefix_capture_slots", str(args.prefix_capture_slots)]
                 if args.prefix_cache_entries
+                else []
+            )
+            + (
+                [
+                    "--active_prefix_reuse_min_tokens",
+                    str(args.active_prefix_reuse_min_tokens),
+                ]
+                if args.active_prefix_reuse_min_tokens
                 else []
             )
             + (

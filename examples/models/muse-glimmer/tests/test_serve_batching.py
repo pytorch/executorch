@@ -242,3 +242,28 @@ def test_chat_factory_closes_worker(arguments, monkeypatch, constructor_failure)
         asyncio.run(scenario())
     assert worker.closed
     assert captured["command"] == serve_batching._worker_command(args)
+
+
+@pytest.mark.parametrize("backend", ["mlx", "cuda"])
+def test_active_prefix_setting_is_shared(arguments, backend, monkeypatch):
+    monkeypatch.setattr(serve_batching, "_validate_backend", lambda *args: None)
+    args = serve_batching._parse_args(
+        arguments
+        + [
+            "--backend",
+            backend,
+            "--active-prefix-reuse-min-tokens",
+            "1024",
+        ]
+    )
+    assert "--active_prefix_reuse_min_tokens=1024" in serve_batching._worker_command(
+        args
+    )
+
+
+@pytest.mark.parametrize("value", ["-1", str(2**31)])
+def test_invalid_active_prefix_setting(arguments, value):
+    with pytest.raises(SystemExit):
+        serve_batching._parse_args(
+            arguments + ["--active-prefix-reuse-min-tokens", value]
+        )

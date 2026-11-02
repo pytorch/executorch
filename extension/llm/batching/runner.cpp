@@ -31,6 +31,22 @@ namespace batching {
 
 namespace {
 
+void complete_clone(
+    std::function<void(std::optional<Session>)> callback,
+    std::optional<Session> result) noexcept {
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    if (callback) {
+      callback(std::move(result));
+    }
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+    // Delivery is attempted once. Unclaimed sessions close through RAII.
+  }
+#endif
+}
+
 // Everything the runner needs from one answered input, checked together so a
 // broken executor is reported the same way whether or not this step ends the
 // generation. `room` is how far the session can still advance, so a run that
@@ -301,6 +317,10 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::future<std::optional<Session>> clone_async(
       SessionId source,
       Position upto);
+  void clone_async(
+      SessionId source,
+      Position upto,
+      std::function<void(std::optional<Session>)> on_complete);
   void request_close(SessionId session) noexcept;
   GenerationHandle generate_async(
       SessionId session,
@@ -434,7 +454,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   struct CloneCommand {
     SessionId source;
     Position upto;
-    std::shared_ptr<std::promise<std::optional<Session>>> ack;
+    std::function<void(std::optional<Session>)> on_complete;
   };
 
   struct StartCommand {
@@ -613,13 +633,22 @@ Position Session::position() const noexcept {
 }
 
 std::future<std::optional<Session>> Session::clone_async(Position upto) const {
+  auto ack = std::make_shared<std::promise<std::optional<Session>>>();
+  auto future = ack->get_future();
+  clone_async(upto, [ack](std::optional<Session> result) {
+    ack->set_value(std::move(result));
+  });
+  return future;
+}
+
+void Session::clone_async(
+    Position upto,
+    std::function<void(std::optional<Session>)> on_complete) const {
   if (!valid()) {
-    std::promise<std::optional<Session>> ack;
-    auto future = ack.get_future();
-    ack.set_value(std::nullopt);
-    return future;
+    complete_clone(std::move(on_complete), std::nullopt);
+    return;
   }
-  return state_->impl->clone_async(state_->session, upto);
+  state_->impl->clone_async(state_->session, upto, std::move(on_complete));
 }
 
 std::function<std::future<std::optional<Session>>(Position)>
@@ -931,14 +960,14 @@ void RunnerImpl::process_command_(CloneCommand command) {
   // admission still gives this clone access until that command retires source.
   if (!is_running_() || source == sessions_.end() || source->second.poisoned ||
       command.upto < 0 || command.upto > source->second.position()) {
-    command.ack->set_value(std::nullopt);
+    complete_clone(std::move(command.on_complete), std::nullopt);
     return;
   }
 
   std::optional<SessionId> sid;
+  std::optional<Session> result;
   bool owned = false;
   bool registered = false;
-  bool published = false;
 #if ET_HAS_EXCEPTIONS
   try {
 #endif
@@ -956,27 +985,25 @@ void RunnerImpl::process_command_(CloneCommand command) {
           record.status = status;
           sessions_.emplace(*sid, std::move(record));
           registered = true;
-          command.ack->set_value(Session(std::make_unique<SessionState>(
-              shared_from_this(), *sid, std::move(status))));
-          published = true;
+          result = Session(std::make_unique<SessionState>(
+              shared_from_this(), *sid, std::move(status)));
         }
       }
     }
 #if ET_HAS_EXCEPTIONS
   } catch (...) {
-    // Cloning is optional. A failed allocation or backend clone must not stop
-    // the engine or strand the caller's future.
+    // Cloning is optional. Backend or allocation failure must not stop work.
   }
 #endif
-  if (!published) {
+  if (!result) {
     if (registered) {
       sessions_.erase(*sid);
     }
     if (owned) {
       executor_.close_session(*sid);
     }
-    command.ack->set_value(std::nullopt);
   }
+  complete_clone(std::move(command.on_complete), std::move(result));
 }
 
 void RunnerImpl::process_command_(StartCommand command) {
@@ -1371,16 +1398,35 @@ std::future<std::optional<Session>> RunnerImpl::clone_async(
     Position upto) {
   auto ack = std::make_shared<std::promise<std::optional<Session>>>();
   auto future = ack->get_future();
-  {
-    std::lock_guard<std::mutex> lock(control_mutex_);
-    if (lifecycle_.load(std::memory_order_relaxed) != Lifecycle::Running) {
-      ack->set_value(std::nullopt);
-      return future;
-    }
-    inbox_.emplace_back(CloneCommand{source, upto, std::move(ack)});
-  }
-  notify_engine_();
+  clone_async(source, upto, [ack](std::optional<Session> result) {
+    ack->set_value(std::move(result));
+  });
   return future;
+}
+
+void RunnerImpl::clone_async(
+    SessionId source,
+    Position upto,
+    std::function<void(std::optional<Session>)> on_complete) {
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    std::unique_lock<std::mutex> lock(control_mutex_);
+    if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
+      // Allocate the command before moving its completion, so allocation
+      // failure can still settle the caller.
+      inbox_.emplace_back(CloneCommand{source, upto, {}});
+      std::get<CloneCommand>(inbox_.back()).on_complete =
+          std::move(on_complete);
+      lock.unlock();
+      notify_engine_();
+      return;
+    }
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+  }
+#endif
+  complete_clone(std::move(on_complete), std::nullopt);
 }
 
 void RunnerImpl::request_close(SessionId session) noexcept {

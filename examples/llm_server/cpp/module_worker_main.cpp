@@ -39,6 +39,10 @@ DEFINE_int32(
     prefix_capture_slots,
     0,
     "Transient capture rows; 0: size automatically from session/request limits");
+DEFINE_int32(
+    active_prefix_reuse_min_tokens,
+    0,
+    "Minimum extra tokens saved by active prompt reuse; zero disables");
 DEFINE_int32(max_session_tokens, 2048, "Maximum retained tokens per session");
 DEFINE_int32(max_decode_sequences, 2, "Decode slots in one packed forward");
 DEFINE_int32(
@@ -51,6 +55,7 @@ int main(int argc, char** argv) {
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_session_tokens <= 0 || FLAGS_max_decode_sequences <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_prefix_cache_entries < 0 ||
+      FLAGS_active_prefix_reuse_min_tokens < 0 ||
       FLAGS_prefix_capture_slots < 0 || FLAGS_prefix_checkpoint_interval < 0 ||
       (FLAGS_prefix_checkpoint_interval > 0 &&
        FLAGS_prefix_cache_entries == 0)) {
@@ -62,6 +67,7 @@ int main(int argc, char** argv) {
   }
   executorch::extension::llm::serving::ServingRuntimeConfig config;
   config.max_sessions = FLAGS_max_sessions;
+  config.active_prefix_reuse_min_tokens = FLAGS_active_prefix_reuse_min_tokens;
   config.prefix_cache_capacity = FLAGS_prefix_cache_entries;
   config.max_prefix_captures = FLAGS_prefix_capture_slots;
   config.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;

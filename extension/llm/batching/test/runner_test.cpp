@@ -1198,6 +1198,43 @@ TEST(CloneTest, DefaultMovedFromAndClosedSessionsRefuseSynchronously) {
   EXPECT_TRUE(executor.clones().empty());
 }
 
+TEST(CloneTest, CallbackRejectsInlineAndContainsExceptions) {
+  Session empty;
+  int calls = 0;
+  empty.clone_async(0, [&](std::optional<Session> result) {
+    ++calls;
+    EXPECT_FALSE(result);
+#if ET_HAS_EXCEPTIONS
+    throw std::runtime_error("callback failed");
+#endif
+  });
+  EXPECT_EQ(calls, 1);
+}
+
+TEST(CloneTest, CallbackCanReenterRunnerAndDropResult) {
+  CloneExecutor executor;
+  Fixture fixture(executor);
+  auto source = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+  auto generation = generate(source, tokens(3), config(1), updates);
+  generation.wait();
+  std::promise<std::future<std::optional<Session>>> reentered;
+  source.clone_async(2, [&](std::optional<Session> result) {
+    EXPECT_TRUE(result);
+    reentered.set_value(fixture.runner.open_session_async());
+#if ET_HAS_EXCEPTIONS
+    throw std::runtime_error("discard result");
+#endif
+  });
+  auto ready = reentered.get_future();
+  ASSERT_EQ(ready.wait_for(kTimeout), std::future_status::ready);
+  auto opened = ready.get();
+  ASSERT_EQ(opened.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_TRUE(opened.get());
+  fixture.runner.shutdown();
+  EXPECT_EQ(executor.open_count(), 0);
+}
+
 TEST(CloneTest, DefaultExecutorRefusesWithoutPoisoningSource) {
   FakeExecutor executor;
   Fixture fixture(executor);

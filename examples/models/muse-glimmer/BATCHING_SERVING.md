@@ -240,3 +240,17 @@ and `--max-draft-owners`), then add `--dflash` to the serve command above. The
 draft ABI and `--dflash-n-draft` behave as on MLX. Drafts are greedy; the target
 accepts or resamples them on the device under each request's sampling. Decode
 drafts of up to four owners run in CUDA graphs.
+
+### Experimental active prompt reuse
+
+Pass `--active-prefix-reuse-min-tokens 1024` to the batching server launcher to
+reuse an already-computed prompt prefix from another active anonymous text
+request. The value is the minimum additional tokens saved over a cached prefix;
+`0` (the default) disables it. The native worker flag uses underscores:
+`--active_prefix_reuse_min_tokens=1024`.
+
+The recipient clones the committed matching prefix and computes its own suffix.
+It never waits for the donor to reach a future position. If the backend cannot
+restore that prefix, including overwritten sliding-window state, the request
+falls back to cached or full prefill. MLX and CUDA use the same serving policy;
+named sessions and multimodal requests keep their existing behavior.

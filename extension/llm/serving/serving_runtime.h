@@ -78,6 +78,10 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // serialized; one replacement may overlap. Positive values override sizing.
   std::size_t max_prefix_captures = 0;
 
+  // Experimental: minimum additional prompt tokens saved by cloning an active
+  // anonymous text request. Zero disables; never waits for future progress.
+  std::size_t active_prefix_reuse_min_tokens = 0;
+
   std::size_t resolved_prefix_captures() const {
     if (prefix_cache_capacity == 0) {
       return 0;

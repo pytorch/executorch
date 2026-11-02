@@ -307,6 +307,26 @@ class PrefixCacheTest : public ::testing::Test {
   std::unique_ptr<Runner> runner;
 };
 
+TEST_F(PrefixCacheTest, MatchLengthIsMetadataOnlyAndLeavesLastToken) {
+  PrefixCache cache(2);
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  ASSERT_TRUE(cache.insert({1, 2, 3, 4}, snapshot({1, 2, 3, 4})));
+  const auto before = executor.clones().size();
+  auto match_length = [&](Tokens tokens) {
+    return cache.best_match_length(
+        token_identity(std::make_shared<const Tokens>(std::move(tokens))));
+  };
+  EXPECT_EQ(match_length({1, 2, 3, 4}), 3u);
+  EXPECT_EQ(match_length({1, 2, 3, 4, 5}), 4u);
+  EXPECT_EQ(match_length({1, 8}), 1u);
+  EXPECT_EQ(match_length({1}), 0u);
+  EXPECT_EQ(match_length({}), 0u);
+  EXPECT_EQ(executor.clones().size(), before);
+  executor.reject_clones = true;
+  EXPECT_EQ(match_length({1, 2, 3, 4}), 3u);
+  EXPECT_FALSE(cache.lookup({1, 2, 3, 4}));
+}
+
 class PrefillBreakpointTest
     : public PrefixCacheTest,
       public ::testing::WithParamInterface<std::size_t> {};
