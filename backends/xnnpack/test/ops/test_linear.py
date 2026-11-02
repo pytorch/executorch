@@ -6,6 +6,7 @@
 # pyre-unsafe
 
 import unittest
+from dataclasses import replace
 
 from itertools import product
 from typing import Callable, Dict, List, Optional, Tuple
@@ -32,6 +33,13 @@ from executorch.backends.xnnpack.test.tester.tester import (
 )
 
 from torch.export.graph_signature import ExportGraphSignature, InputKind
+
+# Buck preloads the quantized kernels instead of shipping this module.
+try:
+    import executorch.extension.pybindings.portable_lib  # noqa[F401]
+    import executorch.kernels.quantized  # noqa[F401]
+except ImportError:
+    pass
 
 try:
     from torchao.quantization.granularity import PerGroup
@@ -839,6 +847,26 @@ class TestLinear(unittest.TestCase):
                     quant_type="per_tensor",
                 )
 
+    def test_qs8_linear_float_output(self):
+        # XNNPACK leaves out a quantized linear whose output is not quantized. The
+        # quantize and dequantize of its input then run in a delegate of their own.
+        quant_config = replace(
+            get_symmetric_quantization_config(is_per_channel=True),
+            output_activation=None,
+        )
+        module = BaseLinear(use_bias=True)
+        (
+            Tester(module.eval(), module.get_inputs(rank=2))
+            .quantize(Quantize(quantization_config=quant_config))
+            .export()
+            .to_edge_transform_and_lower()
+            .check(["executorch_exir_dialects_edge__ops_aten_addmm_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     # Tests for q[dp]8-f16-qc8w
     def test_qd8_f16_per_channel_linear(self):
         self._test_qd8_per_channel_linear(dtype=torch.half)
@@ -1077,6 +1105,32 @@ class TestLinear(unittest.TestCase):
                     "dequantize_per_tensor.tensor": 1,  #  1: act
                     "dequantize_per_channel.default": 1,  # 1: weight
                 },
+            )
+
+    def test_quantized_linear_with_force_non_static_weights_for_f32_linear(self):
+        # The flag is for float linears. A quantized linear that is decomposed into
+        # a matmul keeps its quantize and dequantize nodes and is delegated whole.
+        partitioner = XnnpackPartitioner(force_non_static_weights_for_f32_linear=True)
+        for is_dynamic in (False, True):
+            module = BaseLinear(use_bias=True)
+            quant_config = get_symmetric_quantization_config(
+                is_per_channel=True, is_dynamic=is_dynamic
+            )
+            (
+                Tester(module.eval(), module.get_inputs(rank=2))
+                .quantize(Quantize(quantization_config=quant_config))
+                .export()
+                .to_edge()
+                .partition(Partition(partitioner=partitioner))
+                .check_not(
+                    [
+                        "executorch_exir_dialects_edge__ops_aten_addmm_default",
+                        "quantized_decomposed",
+                    ]
+                )
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs(atol=5e-2)
             )
 
     def test_linear_with_force_non_static_weights_for_f32_linear(self):

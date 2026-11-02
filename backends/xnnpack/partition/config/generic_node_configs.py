@@ -16,11 +16,7 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
 )
-from executorch.backends.xnnpack.utils.quant_utils import (
-    is_dequant,
-    is_quant,
-    tag_as_implicit_q_dq,
-)
+from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
     get_param_tensor,
@@ -163,15 +159,6 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
             if not is_quant(node_output):
                 # Expected node --> fused_act (optional) --> dequant
                 return deps
-
-            # Tag input nodes (dq nodes) as implicit q/dq nodes
-            for dq_input in node.all_input_nodes:
-                if is_dequant(dq_input):
-                    tag_as_implicit_q_dq(dq_input)
-
-            # Tag node_output (q node) as an implicit q/dq node
-            if is_quant(node_output):
-                tag_as_implicit_q_dq(node_output)
 
             quantized_deps.append(node_output)
 
