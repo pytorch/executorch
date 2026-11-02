@@ -182,6 +182,11 @@ class DecomposeDepthwiseConvTransposePass(XNNPACKPass):
                         name=phase_name,
                         data=phase_weight,
                     )
+                # create_constant_placeholder only sets meta["val"]; keep the
+                # external-constant tag so the phase weights follow the
+                # original weight into its .ptd file.
+                if "custom" in weight_node.meta:
+                    phase_weight_node.meta["custom"] = dict(weight_node.meta["custom"])
                 # (left, right, top, bottom)
                 pad = [tx_max, -tx_min, ty_max, -ty_min]
                 with graph.inserting_before(node):
