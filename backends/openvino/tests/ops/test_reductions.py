@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 import torch
+from executorch.backends.openvino import preprocess
 from executorch.backends.openvino._passes import (
     fold_constant_cumsum_pass,
     FoldConstantCumsumPass,
@@ -14,6 +15,7 @@ from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
 )
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from openvino import Model, opset13, Type  # type: ignore[import-untyped]
 from openvino.frontend.pytorch.torchdynamo.op_support import (  # type: ignore[import-untyped]
     OperatorSupport,
 )
@@ -162,6 +164,43 @@ class TestBoolMinMax(BaseOpenvinoOpTest):
         self.execute_layer_test(Maximum(), (x > 0, x))
 
 
+class TestMatchPartitionInputs(unittest.TestCase):
+    def test_only_an_unused_first_input_is_put_back(self):
+        class Add(torch.nn.Module):
+            def forward(self, x, y):
+                return x + y
+
+        class Second(torch.nn.Module):
+            def forward(self, x, y):
+                return y * 2
+
+        def converted_without_the_first_input():
+            y = opset13.parameter([3], Type.f32)
+            return Model([opset13.relu(y)], [y])
+
+        shapes, types = [[1, 3], [3]], [torch.int64, torch.float32]
+        model = converted_without_the_first_input()
+        preprocess._match_partition_inputs(
+            model, torch.fx.symbolic_trace(Second()), shapes, types
+        )
+        # The runtime binds inputs by position.
+        self.assertEqual(
+            [
+                (list(p.get_partial_shape().to_shape()), p.get_element_type())
+                for p in model.get_parameters()
+            ],
+            [([1, 3], Type.i64), ([3], Type.f32)],
+        )
+        # Add reads its first input, so losing it fails lowering.
+        with self.assertRaisesRegex(RuntimeError, "expected 2 parameters"):
+            preprocess._match_partition_inputs(
+                converted_without_the_first_input(),
+                torch.fx.symbolic_trace(Add()),
+                shapes,
+                types,
+            )
+
+
 class TestFoldConstantCumsumPass(unittest.TestCase):
     def fold(self, module, inputs):
         """Edge program module of module, with constant cumsums folded."""
@@ -298,7 +337,9 @@ class TestFoldConstantCumsumPass(unittest.TestCase):
 
         x = torch.zeros(3, dtype=torch.int64)
         folded = to_edge(torch.export.export(Model(), (x,))).exported_program().module()
-        # Meta, unlike CUDA, fails on every build: it never reaches the CPU.
+        # Without the fix, the meta device keeps the cumsum unfolded on every
+        # build, because a meta tensor has no data to copy to the CPU. CUDA
+        # would only show it on a build without CUDA.
         with torch.device("meta"):
             FoldConstantCumsumPass()(folded)
         self.assertNotIn(

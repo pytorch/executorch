@@ -83,7 +83,7 @@ in float32 unless you lower it with `inference_precision`.
 On x86 CPUs, OpenVINO applies the precision when the runtime loads a program.
 So a program lowered without `inference_precision` computes in float32, even
 one exported with an ExecuTorch release that did not have this default. On an
-x86 CPU with bfloat16 units that is slower and can use more memory; export it
+x86 CPU with bfloat16 units, float32 is slower and can use more memory; export it
 again with `inference_precision` set to `bf16` to get the earlier speed. Other
 x86 CPUs already computed such a program in float32. On ARM CPUs, OpenVINO applies the
 precision when the program is lowered, so a program exported with such an
@@ -92,11 +92,18 @@ earlier release keeps computing in float16 until it is exported again.
 OpenVINO's CPU plugin computes 64-bit integers in 32 bits. An integer result
 outside the int32 range wraps around without an error. This applies to every
 int64 tensor, including the int64 result of `cumsum` and `prod` over smaller
-integer types. `sum`, `amax`, `amin`, `max` and `min` are less exact still:
-they reduce integers in float32, so a result can be off as soon as any value,
-or any running total of a sum, is above 16,777,216 (2^24) or below
--16,777,216, even inside the int32 range. For example, the sum 16,777,216 + 1
-gives 16,777,216, and so does `amax` over a tensor that holds 16,777,217.
+integer types. In OpenVINO 2026.4.1, the CPU plugin also computes some int32 and
+int64 ops in float32. On x86 CPUs these are `sum`, `amax`, `amin`, `max` and
+`min`. On ARM CPUs they are element-wise ops such as `add`, `maximum` and
+`clamp`, and the same reductions along any dimension but the last. Once a value
+or a running total is above 16,777,216 (2^24) or below -16,777,216, such a
+result can be off, even inside the int32 range. For example, on x86 `sum` over a
+tensor that holds 16,777,216 and 1 gives 16,777,216, and so does `amax` over one
+that holds 16,777,217.
+
+In OpenVINO 2026.4.1, the CPU plugin's `min(dim)` and `max(dim)` can return a
+later index on ties than PyTorch, which returns the first one. This happens with
+float32 as well as integer dtypes such as int32 and uint8.
 
 ## Directory Structure
 

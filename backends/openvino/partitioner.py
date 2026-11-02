@@ -34,9 +34,9 @@ class PatternNode:
 
 
 def _reads_only_bool(node: torch.fx.Node) -> bool:
-    """Whether OpenVINO would compute the node in bool. It promotes mixed
+    """Whether OpenVINO would compute the node in bool. It promotes mixed tensor
     inputs, so maximum(bool, float) is computed in float and converts fine."""
-    vals = [arg.meta.get("val") for arg in node.args if isinstance(arg, torch.fx.Node)]
+    vals = [n.meta.get("val") for n in node.all_input_nodes]
     tensors = [val for val in vals if isinstance(val, torch.Tensor)]
     return bool(tensors) and all(t.dtype == torch.bool for t in tensors)
 
