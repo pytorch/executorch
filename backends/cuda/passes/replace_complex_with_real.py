@@ -35,6 +35,7 @@ import operator
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import torch
+import torch.utils._pytree as pytree
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 from torch.fx import Graph, Node
@@ -121,8 +122,9 @@ _PROVENANCE = ("from_node", "nn_module_stack", "source_fn_stack", "stack_trace")
 
 # The fake kernels of some view copies, such as permute_copy, make dynamic
 # sizes static or fail on them, so a new view copy gets its value from its
-# view. view_copy keeps its own kernel, which keeps dynamic sizes, because
-# view fails on some strides that view_copy accepts.
+# view, laid out as the copy's would be. view_copy keeps its own kernel, which
+# keeps dynamic sizes, because view fails on some strides that view_copy
+# accepts.
 _VIEWS: Dict[Any, Any] = {
     _aten.alias_copy.default: torch.ops.aten.alias.default,
     _aten.expand_copy.default: torch.ops.aten.expand.default,
@@ -171,7 +173,14 @@ class _Rewriter:
         fake_args, fake_kwargs = torch.fx.map_arg(
             (args, kwargs), lambda n: n.meta["val"]
         )
-        node.meta["val"] = _VIEWS.get(target, target)(*fake_args, **fake_kwargs)
+        value = _VIEWS.get(target, target)(*fake_args, **fake_kwargs)
+        if target in _VIEWS:
+            value = pytree.tree_map_only(
+                torch.Tensor,
+                lambda t: t.clone(memory_format=torch.contiguous_format),
+                value,
+            )
+        node.meta["val"] = value
         return node
 
     def parts(self, value: Node) -> List[Node]:

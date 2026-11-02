@@ -7,8 +7,10 @@
 import unittest
 
 import torch
+import torch.utils._pytree as pytree
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.passes.replace_complex_with_real import (
+    _VIEWS,
     ReplaceComplexWithRealPass,
 )
 from executorch.backends.cuda.passes.tests.test_replace_fused_sdpa import (
@@ -74,6 +76,9 @@ class TestReplaceComplexWithRealPass(unittest.TestCase):
         for node in program.graph.nodes:
             val = node.meta.get("val")
             self.assertFalse(isinstance(val, torch.Tensor) and val.is_complex())
+            if node.target in _VIEWS:
+                # A view copy returns new tensors laid out in order.
+                self.assertTrue(all(t.is_contiguous() for t in pytree.tree_leaves(val)))
         # The backend retraces the program when its decomposition table applies.
         program = program.run_decompositions({})
         for positions in (torch.tensor([3, 0, 7, 7, 1]), torch.tensor([6, 2, 4])):
