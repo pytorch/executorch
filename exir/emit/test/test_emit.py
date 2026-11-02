@@ -2719,6 +2719,19 @@ class TestEmit(unittest.TestCase):
         self.assertTrue(torch.allclose(model(x), et_module((x,))[0]))
         self.assertEqual(et_module.run_method("get_scale", [])[0].tolist(), [5.0])
 
+    def test_emit_user_input_with_zero_stride(self) -> None:
+        class Double(nn.Module):
+            def forward(self, x):
+                return x * 2
+
+        # A zero stride on a size-1 dim, as in an expanded example input. PyTorch
+        # still calls it contiguous.
+        x = torch.randn(1, 4).as_strided((1, 4), (0, 1))
+        program = to_edge(export(Double(), (x,), strict=True)).to_executorch()
+
+        et_module = _load_for_executorch_from_buffer(program.buffer)
+        self.assertTrue(torch.allclose(x * 2, et_module((x,))[0]))
+
     def test_emit_device_info_propagated_to_serialized_tensor(self) -> None:
         """Verify that device info from PropagateDevicePass flows through
         the emitter into ExtraTensorInfo.device_type on serialized tensors."""

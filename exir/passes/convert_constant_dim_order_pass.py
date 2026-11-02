@@ -83,8 +83,10 @@ def convert_constant_dim_order_pass(
     Normalize lifted tensors to default or channels-last dim order.
 
     Tensor constants, buffers and parameters with other dim orders or striding
-    are converted to contiguous tensors, and zero strides are removed. This
-    pass acts in-place on the unlifted exported program.
+    are converted to contiguous tensors, and zero strides are removed. User
+    inputs with a zero stride become contiguous, or stay channels-last; other
+    inputs are not changed. This pass acts in-place on the unlifted exported
+    program.
 
     Args:
         exported_program: The ExportedProgram to transform.
@@ -133,5 +135,11 @@ def convert_constant_dim_order_pass(
             exported_program.state_dict[key] = normalized
 
             _update_placeholder_meta(exported_program, key, InputKind.BUFFER)
+
+    # An expanded example input has a zero stride, which ExecuTorch cannot
+    # store either. Constants are already normalized, so this only changes inputs.
+    for node in exported_program.graph.nodes:
+        if node.op == "placeholder" and isinstance(node.meta.get("val"), torch.Tensor):
+            node.meta["val"] = without_zero_strides(node.meta["val"])
 
     return exported_program
