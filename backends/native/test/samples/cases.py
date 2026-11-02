@@ -10,11 +10,12 @@ import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 import torch
-from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
-from facto.inputgen.specs.model import Spec
-from facto.inputgen.utils.random_manager import seeded_random_manager
+
+if TYPE_CHECKING:
+    from facto.inputgen.specs.model import Spec
 
 Inputs = tuple[torch.Tensor, ...]
 
@@ -92,10 +93,14 @@ def suite_cases(module: ModuleType, samples: int) -> list[Case]:
 
 
 def facto_cases(
-    spec: Spec, build: Callable[..., Case], keep: Callable[[int, tuple], bool]
+    spec: "Spec", build: Callable[..., Case], keep: Callable[[int, tuple], bool]
 ) -> list[Case]:
     """One-sample cases `build(name, *args)` from FACTO's argument tuples for
     `spec`, named by position, keeping those where `keep(position, args)`."""
+    # FACTO is on the path for the sample generator only, not for pytest.
+    from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
+    from facto.inputgen.utils.random_manager import seeded_random_manager
+
     seeded_random_manager.seed(0)
     return [
         build(f"facto_{i}", *args)
