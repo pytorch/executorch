@@ -41,7 +41,9 @@ class TestTorchOps(unittest.TestCase):
         example_inputs = (torch.LongTensor([0]),)
         return model, example_inputs
 
-    def _compare_outputs(self, executorch_program, eager_program, example_inputs):
+    def _compare_outputs(
+        self, executorch_program, eager_program, example_inputs, atol=1e-2, rtol=1e-2
+    ):
         if not IS_VALID_TEST_RUNTIME:
             return
         runtime = Runtime.get()
@@ -49,9 +51,7 @@ class TestTorchOps(unittest.TestCase):
         method = program.load_method("forward")
         et_outputs = method.execute(example_inputs)[0]
         eager_outputs = eager_program(*example_inputs)
-        self.assertTrue(
-            torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
-        )
+        self.assertTrue(torch.allclose(et_outputs, eager_outputs, atol=atol, rtol=rtol))
 
     def test_dequantize_affine_b4w_embedding(self):
         model, example_inputs = self._get_test_model()
@@ -533,6 +533,34 @@ class TestTorchOps(unittest.TestCase):
                 ], f"Got unexpected node target after delegation: {node.target.__name__}"
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
+
+    def test_gelu_tanh(self):
+        """
+        torch.export passes approximate="tanh" to gelu as a keyword, and
+        coremltools reads it only from the positional inputs.  If the keyword
+        is dropped, the exact gelu runs, which differs by up to 4.7e-4.
+        """
+        model = torch.nn.GELU(approximate="tanh").eval()
+        example_inputs = (torch.linspace(-8, 8, 4096),)
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            compute_precision=ct.precision.FLOAT32
+        )
+        ep = torch.export.export(model, example_inputs)
+        program = ct.convert(ep.run_decompositions({}), convert_to="milinternal")
+        self.assertEqual(
+            [op.mode.val for op in program.find_ops(op_type="gelu")],
+            ["TANH_APPROXIMATION"],
+        )
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner(compile_specs=compile_specs)]
+        )
+        for node in delegated_program.exported_program().graph.nodes:
+            if node.op == "call_function":
+                self.assertIn(
+                    node.target.__name__, ["executorch_call_delegate", "getitem"]
+                )
+        et_prog = delegated_program.to_executorch()
+        self._compare_outputs(et_prog, model, example_inputs, atol=1e-5, rtol=1e-5)
 
     def test_fills_keep_their_dtype(self):
         """

@@ -55,6 +55,21 @@ def split_copy(context, node):
     split(context, node)
 
 
+# https://github.com/apple/coremltools/pull/2863
+# coremltools reads approximate only from the positional inputs, but torch.export
+# passes it as a keyword, so gelu(approximate="tanh") became the exact gelu.
+@register_torch_op(override=True)
+def gelu(context, node):
+    inputs = _get_inputs(context, node, expected=[1, 2])
+    if len(inputs) == 2:
+        approximate = inputs[1].val
+    else:
+        # Read the keyword as is: _get_kwinputs would bind "tanh" to a node named tanh.
+        approximate = (node.kwinputs or {}).get("approximate", ["none"])[0]
+    mode = {"none": "EXACT", "tanh": "TANH_APPROXIMATION"}[approximate]
+    context.add(mb.gelu(x=inputs[0], mode=mode, name=node.name))
+
+
 def _torch_dtype(node):
     """The dtype torch gives the output of node, if node carries it, as a node of
     an ExportedProgram does."""
