@@ -123,6 +123,7 @@ def define_common_targets(is_fbcode = False):
             # intentionally don't work in xplat (since they're host-only tools).
             "ET_MODULE_ADD_HALF_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAddHalf.pte])",
             "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
+            "ET_MODULE_CHANNELS_LAST_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleChannelsLast.pte])",
             "ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleDynamicCatUnallocatedIO.pte])",
             "ET_MODULE_INDEX_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleIndex.pte])",
             "ET_MODULE_ADD_MUL_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAddMul.pte])",

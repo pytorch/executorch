@@ -9,7 +9,11 @@
 from typing import final, List
 
 import torch
-from executorch.backends.openvino._passes import DecomposeFloorDividePass
+from executorch.backends.openvino._passes import (
+    CastReductionInputPass,
+    DecomposeFloorDividePass,
+    FoldConstantCumsumPass,
+)
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -24,6 +28,10 @@ from openvino.frontend.pytorch.fx_decoder import (  # type: ignore[import-untype
     TorchFXPythonDecoder,
 )
 from openvino.preprocess import PrePostProcessor  # type: ignore[import-untyped]
+
+# The values of the inference_precision compile spec. The runtime
+# (OpenvinoBackend.cpp) accepts the same ones.
+_PRECISIONS = ("f32", "f16", "bf16")
 
 
 @final
@@ -43,7 +51,25 @@ class OpenvinoBackend(BackendDetails):
         Returns:
             PreprocessResult: The result of preprocessing, including the compiled model bytes.
         """
-        for pass_cls in [DimOrderOpsRevertPass, DecomposeFloorDividePass]:
+        compile_options = {}
+        for spec in module_compile_spec:
+            compile_options[spec.key] = spec.value.decode()
+        device = compile_options.get("device", "CPU")
+        requested_precision = compile_options.get("inference_precision")
+        # Some OpenVINO releases accept an unknown value. Checking before the
+        # conversion fails fast and keeps it out of the program, where the
+        # runtime would only fail at load.
+        if requested_precision and requested_precision not in _PRECISIONS:
+            raise ValueError(
+                f"OpenVINO backend: unsupported inference_precision "
+                f"'{requested_precision}', expected one of {', '.join(_PRECISIONS)}"
+            )
+
+        for pass_cls in [
+            DimOrderOpsRevertPass,
+            DecomposeFloorDividePass,
+            CastReductionInputPass,
+        ]:
             result = pass_cls()(edge_program.graph_module)
             if result and result.graph_module:
                 edge_program._graph_module = result.graph_module
@@ -70,14 +96,12 @@ class OpenvinoBackend(BackendDetails):
                         f"{type(val).__name__}; only tensors and ints are supported"
                     )
 
-        compile_options = {}
-        for spec in module_compile_spec:
-            compile_options[spec.key] = spec.value.decode()
-
         # The converter chooses some lowerings (e.g. boolean-mask indexing) from
         # the input types, so they must be known before conversion starts.
+        module = edge_program.module()
+        FoldConstantCumsumPass()(module)
         decoder = TorchFXPythonDecoder(
-            edge_program.module(), input_shapes=input_shapes, input_types=input_types
+            module, input_shapes=input_shapes, input_types=input_types
         )
         frontend = FrontEndManager().load_by_framework("pytorch")
         ppp = PrePostProcessor(frontend.convert(frontend.load(decoder)))
@@ -86,7 +110,11 @@ class OpenvinoBackend(BackendDetails):
         for i in int_inputs:
             ppp.input(i).tensor().set_shape([1])
             ppp.input(i).preprocess().custom(lambda x: opset13.squeeze(x, 0).output(0))
-        compiled = compile_model(ppp.build(), compile_options.get("device", "CPU"))
+        # On ARM CPUs OpenVINO fixes the precision here, not when the runtime
+        # imports the model, so this must follow the same rule as the runtime.
+        precision = requested_precision or ("f32" if device.startswith("CPU") else None)
+        config = {"INFERENCE_PRECISION_HINT": precision} if precision else {}
+        compiled = compile_model(ppp.build(), device, config)
         model_bytes = compiled.export_model()
 
         return PreprocessResult(processed_bytes=model_bytes.getvalue())

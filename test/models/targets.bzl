@@ -63,6 +63,7 @@ def define_common_targets():
         "ModuleAddHalf",
         "ModuleAddMul",
         "ModuleBasic",
+        "ModuleChannelsLast",
         "ModuleKVCacheCachePos",
         "ModuleKVCacheInputPos",
         "ModuleMultipleEntry",

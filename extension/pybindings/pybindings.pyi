@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, TypeVar, Union
 
 import torch
 
@@ -497,5 +497,6 @@ class _CallerStreamScope:
     """
 
     def __init__(self, stream: Union[_CudaStream, int]) -> None: ...
+    can_check_device: ClassVar[bool]
     def __enter__(self) -> None: ...
     def __exit__(self, *args: Any) -> None: ...

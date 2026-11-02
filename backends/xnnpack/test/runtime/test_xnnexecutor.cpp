@@ -7,9 +7,17 @@
  */
 
 #include <executorch/backends/xnnpack/runtime/XNNExecutor.h>
+#include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
+#include <executorch/backends/xnnpack/serialization/schema_generated.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/platform/runtime.h>
+#include <flatbuffers/flatbuffers.h>
 #include <gtest/gtest.h>
+#include <src/xnnpack/subgraph.h>
 #include <xnnpack.h>
+
+#include <array>
+#include <optional>
 
 using executorch::aten::Tensor;
 using executorch::backends::xnnpack::delegate::XNNExecutor;
@@ -17,6 +25,137 @@ using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Span;
 using executorch::runtime::testing::TensorFactory;
+
+namespace executorch::backends::xnnpack::delegate {
+
+class XNNPackedLhsTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    runtime::runtime_init();
+    backend_ = runtime::get_backend_class(xnnpack_backend_key);
+    ASSERT_NE(backend_, nullptr);
+    ASSERT_EQ(
+        original_options_.set_option(disable_packed_lhs_option_key, false),
+        Error::Ok);
+    ASSERT_EQ(
+        runtime::get_option(xnnpack_backend_key, original_options_.view()),
+        Error::Ok);
+
+    std::vector<flatbuffers::Offset<fb_xnnpack::XValue>> values;
+    for (uint32_t id = 0; id < 3; ++id) {
+      const auto tensor = fb_xnnpack::CreateXNNTensorValue(
+          builder_,
+          fb_xnnpack::XNNDatatype::xnn_datatype_fp32,
+          1,
+          builder_.CreateVector<uint32_t>({1}),
+          0,
+          id,
+          id == 2 ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT
+                  : XNN_VALUE_FLAG_EXTERNAL_INPUT,
+          id);
+      values.push_back(fb_xnnpack::CreateXValue(
+          builder_, fb_xnnpack::XValueUnion::XNNTensorValue, tensor.Union()));
+    }
+    const auto add = fb_xnnpack::Create_XNNNode2x1(builder_, 0, 1, 2);
+    const auto node = fb_xnnpack::CreateXNode(
+        builder_, fb_xnnpack::XNodeUnion::XNNAdd, add.Union());
+    const auto graph = fb_xnnpack::CreateXNNGraph(
+        builder_,
+        builder_.CreateString("0"),
+        builder_.CreateVector(&node, 1),
+        builder_.CreateVector(values),
+        3,
+        builder_.CreateVector<uint32_t>({0, 1}),
+        builder_.CreateVector<uint32_t>({2}));
+    fb_xnnpack::FinishXNNGraphBuffer(builder_, graph);
+  }
+
+  void TearDown() override {
+    EXPECT_EQ(
+        runtime::set_option(xnnpack_backend_key, original_options_.view()),
+        Error::Ok);
+  }
+
+  runtime::Result<uint32_t> create_runtime_flags(
+      Span<runtime::BackendOption> specs) {
+    std::array<uint8_t, 4096> memory{};
+    runtime::MemoryAllocator allocator(memory.size(), memory.data());
+    runtime::BackendInitContext context(
+        &allocator, nullptr, nullptr, nullptr, {specs.data(), specs.size()});
+    runtime::FreeableBuffer processed(
+        builder_.GetBufferPointer(), builder_.GetSize(), nullptr);
+    auto handle = backend_->init(context, &processed, {});
+    if (!handle.ok()) {
+      return handle.error();
+    }
+    const auto* executor = static_cast<XNNExecutor*>(handle.get());
+    const uint32_t flags = executor->runtime_->flags;
+    backend_->destroy(handle.get());
+    return flags;
+  }
+
+  runtime::BackendInterface* backend_{nullptr};
+  runtime::BackendOptions<1> original_options_;
+  flatbuffers::FlatBufferBuilder builder_;
+};
+
+TEST_F(XNNPackedLhsTest, RuntimeSpecOverridesGlobalDefault) {
+  runtime::BackendOptions<1> global_options;
+  ASSERT_EQ(
+      global_options.set_option(disable_packed_lhs_option_key, false),
+      Error::Ok);
+  ASSERT_EQ(
+      runtime::set_option(xnnpack_backend_key, global_options.view()),
+      Error::Ok);
+  runtime::BackendOptions<2> specs;
+  ASSERT_EQ(specs.set_option(weight_cache_option_key, false), Error::Ok);
+  const auto baseline = create_runtime_flags(specs.view());
+  ASSERT_TRUE(baseline.ok());
+#if defined(XNN_FLAG_NO_PACKED_LHS)
+  ASSERT_EQ(baseline.get() & XNN_FLAG_NO_PACKED_LHS, 0);
+#endif
+
+  for (bool global_default : {false, true}) {
+    SCOPED_TRACE(global_default);
+    ASSERT_EQ(
+        global_options.set_option(
+            disable_packed_lhs_option_key, global_default),
+        Error::Ok);
+    ASSERT_EQ(
+        runtime::set_option(xnnpack_backend_key, global_options.view()),
+        Error::Ok);
+    for (auto override_value :
+         {std::optional<bool>{},
+          std::optional<bool>{false},
+          std::optional<bool>{true}}) {
+      SCOPED_TRACE(::testing::PrintToString(override_value));
+      runtime::BackendOptions<2> model_options;
+      ASSERT_EQ(
+          model_options.set_option(weight_cache_option_key, false), Error::Ok);
+      if (override_value.has_value()) {
+        ASSERT_EQ(
+            model_options.set_option(
+                disable_packed_lhs_option_key, *override_value),
+            Error::Ok);
+      }
+      const auto flags = create_runtime_flags(model_options.view());
+      ASSERT_TRUE(flags.ok());
+      uint32_t expected_flags = baseline.get();
+#if defined(XNN_FLAG_NO_PACKED_LHS)
+      if (override_value.value_or(global_default)) {
+        expected_flags |= XNN_FLAG_NO_PACKED_LHS;
+      }
+#endif
+      EXPECT_EQ(flags.get(), expected_flags);
+      ASSERT_EQ(
+          runtime::get_option(xnnpack_backend_key, global_options.view()),
+          Error::Ok);
+      EXPECT_EQ(std::get<bool>(global_options.view()[0].value), global_default);
+    }
+  }
+}
+
+} // namespace executorch::backends::xnnpack::delegate
 
 TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
   XNNExecutor executor({});

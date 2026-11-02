@@ -1402,6 +1402,12 @@ def _windows_import_libraries() -> List["BuiltFile"]:
             ["EXECUTORCH_BUILD_XNNPACK", "EXECUTORCH_BUILD_NATIVE_CPU"],
         ),
         (
+            "backends/cpu/",
+            "executorch_backend_cpu",
+            None,
+            ["EXECUTORCH_BUILD_CPU"],
+        ),
+        (
             "backends/cuda/",
             "executorch_backend_cuda",
             None,
@@ -2956,6 +2962,8 @@ class CustomBuild(build):
                     cmake_build_args += ["--target", "executorch_kernels_torchao"]
                 if cmake_cache.is_enabled("EXECUTORCH_BUILD_XNNPACK"):
                     cmake_build_args += ["--target", "xnnpack_backend"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_CPU"):
+                    cmake_build_args += ["--target", "cpu_backend"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
                 cmake_build_args += ["--target", "custom_ops_aot_lib"]
@@ -3206,6 +3214,16 @@ setup(
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_XNNPACK",
                         "EXECUTORCH_BUILD_NATIVE_CPU",
+                    ],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/cpu/" + _CFG,
+                    src_name=get_dynamic_lib_name("executorch_backend_cpu"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_cpu"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_CPU",
                     ],
                 ),
                 # Install the MLX delegate beside them, so a C++ consumer can link

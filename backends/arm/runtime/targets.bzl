@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
@@ -52,6 +57,23 @@ def define_common_targets():
             ":vela_bin_stream",
             "//executorch/runtime/core:core",
             "fbsource//third-party/ethos-u-core-driver:core_driver_headers_only",
+        ],
+    )
+    runtime.cxx_test(
+        name = "ethosu_planned_scratch_test",
+        srcs = [
+            "EthosUBackend.cpp",
+            "EthosUBackend_IoMemcpy.cpp",
+            "tests/ethos-u/test_ethosu_planned_scratch.cpp",
+        ],
+        headers = ["EthosUBackend_Internal.h"],
+        compiler_flags = ["-Wno-global-constructors"],
+        preprocessor_flags = _persistent_region_flags(),
+        deps = [
+            ":vela_bin_stream",
+            "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
         ],
     )
     runtime.cxx_library(

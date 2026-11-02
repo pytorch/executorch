@@ -7,6 +7,9 @@
 import unittest
 
 import torch
+from executorch.backends.xnnpack.partition.config.generic_node_configs import (
+    UpsampleNearest2dConfig,
+)
 from executorch.backends.xnnpack.test.tester import Tester
 
 
@@ -56,11 +59,13 @@ class TestUpsampleNearest2d(unittest.TestCase):
         tester = Tester(module, inputs)
         if quant:
             tester.quantize()
-        tester.export().to_edge_transform_and_lower().check_not([self.edge_op])
+        tester.export()
         if quant:
-            tester.check_not(["torch.ops.quantized_decomposed"])
+            tester.check(["torch.ops.quantized_decomposed"])
         (
-            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.to_edge_transform_and_lower()
+            .check_not([self.edge_op])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
             .run_method_and_compare_outputs(qtol=2 if quant else 0)
@@ -85,6 +90,43 @@ class TestUpsampleNearest2d(unittest.TestCase):
             self.ConvNearestConv(), (torch.randn(1, 3, 16, 16),), quant=True
         )
 
+    def test_qs8_upsample_nearest2d_requantized_output(self):
+        """The output is quantized differently from the input, so the
+        delegate requantizes it after depth_to_space."""
+
+        class RequantizedNearest2x(torch.nn.Module):
+            def forward(self, x):
+                quantized = torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                    x, 0.25, 0, -128, 127, torch.int8
+                )
+                dequantized = (
+                    torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                        quantized, 0.25, 0, -128, 127, torch.int8
+                    )
+                )
+                upsampled = torch.nn.functional.interpolate(
+                    dequantized, scale_factor=2.0, mode="nearest"
+                )
+                requantized = (
+                    torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                        upsampled, 0.5, 0, -128, 127, torch.int8
+                    )
+                )
+                return torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                    requantized, 0.5, 0, -128, 127, torch.int8
+                )
+
+        (
+            Tester(RequantizedNearest2x(), (torch.randn(1, 3, 4, 4),))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_not([self.edge_op])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(qtol=1)
+        )
+
     def test_fp32_upsample_nearest2d_x3_not_partitioned(self):
         (
             Tester(self.Nearest3x(), (torch.randn(1, 3, 4, 4),))
@@ -105,3 +147,35 @@ class TestUpsampleNearest2d(unittest.TestCase):
             .serialize()
             .run_method_and_compare_outputs()
         )
+
+    def test_qs8_upsample_nearest2d_unsupported_scale_not_annotated(self):
+        # The quantizer only annotates what the partitioner lowers, so an
+        # upsample that stays outside the delegate is not wrapped in q/dq.
+        for module, inputs in (
+            (self.Nearest3x(), (torch.randn(1, 3, 4, 4),)),
+            (self.NearestInexact2x(), (torch.randn(1, 3, 200, 200),)),
+        ):
+            (
+                Tester(module, inputs)
+                .quantize()
+                .export()
+                .check_not(["torch.ops.quantized_decomposed"])
+                .to_edge_transform_and_lower()
+                .check_count({self.edge_op: 1})
+                .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+            )
+
+    def test_fp32_upsample_nearest2d_inexact_scale_kwarg_rejected(self):
+        # torch.export passes scale_factors positionally; a graph built by
+        # hand or rewritten by a pass can carry it as a kwarg instead.
+        ep = torch.export.export(
+            self.NearestInexact2x(), (torch.randn(1, 3, 200, 200),)
+        )
+        node = next(
+            n
+            for n in ep.graph.nodes
+            if n.target == torch.ops.aten.upsample_nearest2d.vec
+        )
+        node.kwargs = {"scale_factors": node.args[2]}
+        node.args = node.args[:2]
+        self.assertFalse(UpsampleNearest2dConfig().check_constraints(node, ep))

@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict
+from typing import Dict, List, Optional
 
 import torch
 from executorch.backends.transforms import get_shape
@@ -15,6 +15,7 @@ from executorch.backends.xnnpack.operators.node_visitor import (
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNConcatenate4,
+    XNNConvert,
     XNNDepthToSpace2d,
     XNNGraph,
     XNNQuantizedTensorValue,
@@ -32,7 +33,8 @@ class UpsampleNearest2dVisitor(NodeVisitor):
     XNNPACK has no nearest resize, so x2 upsampling is lowered as four copies
     of the input concatenated along channels, [N, H, W, 4C], followed by
     depth_to_space_2d(block_size=2). Neither op changes values, so the
-    intermediate carries the input's quantization parameters.
+    intermediates carry the input's quantization parameters, and an output
+    quantized differently is requantized with a convert.
     """
 
     target = "aten.upsample_nearest2d.vec"
@@ -49,6 +51,7 @@ class UpsampleNearest2dVisitor(NodeVisitor):
     ) -> None:
         input_node = get_input_node(node, 0)
         input_quant_params = QuantParams.from_inputs(input_node, self._exported_program)
+        output_quant_params = QuantParams.from_outputs(node)
         self.define_tensor(
             input_node,
             xnn_graph,
@@ -61,7 +64,7 @@ class UpsampleNearest2dVisitor(NodeVisitor):
             xnn_graph,
             vals_to_ids,
             convert_to_nhwc=True,
-            quant_params=QuantParams.from_outputs(node),
+            quant_params=output_quant_params,
         )
         input_id = vals_to_ids[input_node]
         output_id = vals_to_ids[node]
@@ -75,26 +78,15 @@ class UpsampleNearest2dVisitor(NodeVisitor):
             f"only x2 nearest upsampling is supported, got {in_shape} -> {out_shape}",
         )
 
-        concat_id = len(xnn_graph.xvalues)
-        concat_value = XNNTensorValue(
-            datatype=self.get_serialized_dtype(input_quant_params, node),
-            num_dims=4,
-            dims=[n, h, w, 4 * c],
-            external_id=XNN_INVALID_VALUE_ID,
-            constant_buffer_idx=0,
-            flags=0,
-            id_out=concat_id,
+        concat_id = self.define_intermediate(
+            xnn_graph, node, [n, h, w, 4 * c], input_quant_params
         )
-        xnn_graph.xvalues.append(
-            XValue(xvalue_union=concat_value)
-            if input_quant_params is None
-            else XValue(
-                xvalue_union=XNNQuantizedTensorValue(
-                    tensor_value=concat_value,
-                    quant_params=self.get_quant_params(input_quant_params, xnn_graph),
-                )
+        if self.quant_params_match(input_quant_params, output_quant_params):
+            d2s_output_id = output_id
+        else:
+            d2s_output_id = self.define_intermediate(
+                xnn_graph, node, [n, 2 * h, 2 * w, c], input_quant_params
             )
-        )
 
         xnn_graph.xnodes.append(
             XNode(
@@ -116,9 +108,57 @@ class UpsampleNearest2dVisitor(NodeVisitor):
                 xnode_union=XNNDepthToSpace2d(
                     block_size=2,
                     input_id=concat_id,
-                    output_id=output_id,
+                    output_id=d2s_output_id,
                     flags=0,
                 ),
                 debug_handle=debug_handle,
             )
         )
+        if d2s_output_id != output_id:
+            xnn_graph.xnodes.append(
+                XNode(
+                    xnode_union=XNNConvert(
+                        input_id=d2s_output_id, output_id=output_id, flags=0
+                    ),
+                    debug_handle=debug_handle,
+                )
+            )
+
+    def define_intermediate(
+        self,
+        xnn_graph: XNNGraph,
+        node: torch.fx.Node,
+        dims: List[int],
+        quant_params: Optional[QuantParams],
+    ) -> int:
+        tensor_id = len(xnn_graph.xvalues)
+        tensor_value = XNNTensorValue(
+            datatype=self.get_serialized_dtype(quant_params, node),
+            num_dims=len(dims),
+            dims=dims,
+            external_id=XNN_INVALID_VALUE_ID,
+            constant_buffer_idx=0,
+            flags=0,
+            id_out=tensor_id,
+        )
+        xnn_graph.xvalues.append(
+            XValue(xvalue_union=tensor_value)
+            if quant_params is None
+            else XValue(
+                xvalue_union=XNNQuantizedTensorValue(
+                    tensor_value=tensor_value,
+                    quant_params=self.get_quant_params(quant_params, xnn_graph),
+                )
+            )
+        )
+        return tensor_id
+
+    @staticmethod
+    def quant_params_match(a: Optional[QuantParams], b: Optional[QuantParams]) -> bool:
+        if a is None or b is None:
+            return a is b
+        check_or_raise(
+            not a.per_channel and not b.per_channel,
+            "upsample_nearest2d expects per-tensor quantized activations",
+        )
+        return a.dtype == b.dtype and a.scale == b.scale and a.zp == b.zp
