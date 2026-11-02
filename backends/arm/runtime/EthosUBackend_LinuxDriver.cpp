@@ -51,6 +51,7 @@ struct LinuxDriverOptions {
 
 struct PlatformState {
   LinuxDriverOptions options;
+  bool warned_ignored_planned_scratch = false;
   std::shared_ptr<EthosU::Network> network;
   std::shared_ptr<EthosU::Buffer> constant_buffer;
   std::shared_ptr<EthosU::Buffer> intermediate_buffer;
@@ -428,7 +429,7 @@ bool needs_scratch_allocation() {
 // Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
 // cppcheck-suppress unusedFunction
 Error platform_execute(
-    BackendExecutionContext& /*context*/,
+    BackendExecutionContext& context,
     const ExecutionHandle* execution_handle,
     const VelaHandles& handles,
     int input_count,
@@ -453,10 +454,17 @@ Error platform_execute(
     linux_output_ptrs[i] = tensor_out.mutable_data_ptr<char>();
   }
 
-  const PlatformState* state = execution_handle->platform_state;
+  PlatformState* state = execution_handle->platform_state;
   if (state == nullptr) {
     ET_LOG(Error, "Ethos-U Linux backend missing platform state");
     return Error::InvalidState;
+  }
+  if (!context.scratch_buffers().empty() &&
+      !state->warned_ignored_planned_scratch) {
+    ET_LOG(
+        Info,
+        "WARNING: Planned Ethos-U scratch is unused on Linux Direct Drive; using driver-managed scratch instead");
+    state->warned_ignored_planned_scratch = true;
   }
   return invoke_linux_driver(
       handles,
