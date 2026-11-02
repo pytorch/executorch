@@ -14,6 +14,7 @@ from coremltools.converters.mil.mil import types
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.backends.apple.coreml.test.test_coreml_utils import (
+    is_fbcode,
     IS_VALID_TEST_RUNTIME,
 )
 from executorch.exir.backend.utils import format_delegated_graph
@@ -682,6 +683,41 @@ class TestTorchOps(unittest.TestCase):
             [output.dtype for output in program.functions["main"].outputs],
             [types.int32] * 4,
         )
+
+    @unittest.skipIf(is_fbcode(), "The coremltools in fbcode has no rms_norm.")
+    def test_rms_norm_without_eps(self):
+        """
+        torch.nn.RMSNorm(eps=None) leaves eps out of rms_norm, which
+        coremltools requires, and without elementwise_affine the weight too.
+        Torch then uses the float32 machine epsilon, which the output for a
+        one-hot row of 65536 values depends on.
+        """
+        x = torch.zeros(1, 65536)
+        x[0, 0] = 1
+        model = torch.nn.RMSNorm(65536, elementwise_affine=False).eval()
+        ep = torch.export.export(model, (x,))
+        program = ct.convert(
+            ep.run_decompositions({}),
+            convert_to="milinternal",
+            compute_precision=ct.precision.FLOAT32,
+        )
+        self.assertEqual(
+            [op.y.val for op in program.find_ops(op_type="add")],
+            [torch.finfo(torch.float32).eps],
+        )
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            compute_precision=ct.precision.FLOAT32
+        )
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner(compile_specs=compile_specs)]
+        )
+        for node in delegated_program.exported_program().graph.nodes:
+            if node.op == "call_function":
+                self.assertIn(
+                    node.target.__name__, ["executorch_call_delegate", "getitem"]
+                )
+        et_prog = delegated_program.to_executorch()
+        self._compare_outputs(et_prog, model, (x,), rtol=1e-3)
 
     def test_dequantize_affine_below_ios18_raises_with_hint(self):
         """

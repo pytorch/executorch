@@ -180,6 +180,7 @@ if not is_fbcode():
         _empty_dim_order,
         _to_dim_order_copy,
     )
+    from coremltools.converters.mil.frontend.torch.ops import rms_norm as _rms_norm
 
     # This is a temporary hack to register the alias "dim_order_ops._to_dim_order_copy",
     # which was missed by coremltools
@@ -192,6 +193,19 @@ if not is_fbcode():
     @register_torch_op(torch_alias=["dim_order_ops._empty_dim_order"], override=False)
     def _empty_dim_order_TMP_EXECUTORCH_ALIAS_HACK(context, node):
         _empty_dim_order(context, node)
+
+    # coremltools 9.0 requires the eps that torch.nn.RMSNorm(eps=None) leaves out.
+    # Torch then uses the float32 machine epsilon, also for float16 inputs, while
+    # https://github.com/apple/coremltools/pull/2743 would use 1e-5, so keep this
+    # override after that change lands.
+    @register_torch_op(override=True)
+    def rms_norm(context, node):
+        inputs = list(node.inputs) + [None] * (4 - len(node.inputs))
+        if inputs[3] is None:
+            inputs[3] = float(np.finfo(np.float32).eps)
+        node = copy.copy(node)
+        node.inputs = inputs
+        _rms_norm(context, node)
 
 else:
     # TODO: remove this case when fbcode updates to coremltools 9.0
