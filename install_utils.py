@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import functools
+import importlib.util
 import os
 import platform
 import re
@@ -23,6 +24,33 @@ SUPPORTED_CUDA_VERSIONS = (
     (13, 2),
     (13, 4),
 )
+
+
+@functools.lru_cache(maxsize=1)
+def get_package_install_command() -> Tuple[str, ...]:
+    """Choose an installer once, even if requirements later install pip."""
+    if importlib.util.find_spec("pip") is not None:
+        return (sys.executable, "-m", "pip", "install")
+
+    uv = shutil.which("uv")
+    if uv is not None:
+        return (
+            uv,
+            "pip",
+            "install",
+            "--python",
+            sys.executable,
+            # Match pip's selection across the PyTorch and PyPI indexes.
+            "--index-strategy",
+            "unsafe-best-match",
+        )
+
+    raise RuntimeError(
+        "Neither pip nor uv is available. "
+        f'Install pip with "{sys.executable} -m ensurepip --upgrade", '
+        "or install uv and ensure it is on PATH: "
+        "https://docs.astral.sh/uv/getting-started/installation/"
+    )
 
 
 def is_cmake_option_on(
@@ -397,9 +425,7 @@ def python_is_compatible():
     try:
         import packaging
     except ImportError:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "packaging"], check=True
-        )
+        subprocess.run([*get_package_install_command(), "packaging"], check=True)
     # Compare the current python version to the range in version_specifier. Exits
     # with status 1 if the version is not compatible, or with status 0 if the
     # version is compatible or the logic itself fails.
