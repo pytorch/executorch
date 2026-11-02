@@ -28,9 +28,10 @@ shapes, and the full tile sweep. Just run::
 
 and send back the output. ``--verbose`` prints every tile config.
 
-Timing: each config / shape / M runs ``--iters`` times, built lazily and timed
-as a single ``mx.eval``; the reported time is the average per call. Each kernel
-runs once untimed first (the accuracy check doubles as this warmup).
+Timing: each config / shape / M first runs ``--warmup`` untimed calls (so the
+kernel is compiled), then ``--iters`` calls built lazily and timed as a single
+``mx.eval``; the reported time is the average per call. The run pauses
+``--dtype-pause`` seconds between activation dtypes.
 Calls rotate across enough weight copies to exceed ``--rotate-mb`` so weights
 are not served from cache. int8_int4 times include activation quantization.
 
@@ -147,9 +148,11 @@ def check_int8_int4(
     return err.item()
 
 
-def time_per_call(fn: Callable[[int], mx.array], iters: int) -> float:
-    """Average seconds per call over ``iters`` runs; ``fn(i)`` must build (not
-    evaluate) run ``i``."""
+def time_per_call(fn: Callable[[int], mx.array], warmup: int, iters: int) -> float:
+    """Average seconds per call over ``iters`` timed runs after ``warmup``
+    untimed runs; ``fn(i)`` must build (not evaluate) run ``i``."""
+    for i in range(warmup):
+        mx.eval(fn(i))
     outs = [fn(i) for i in range(iters)]
     start = time.perf_counter()
     mx.eval(outs)
@@ -157,10 +160,10 @@ def time_per_call(fn: Callable[[int], mx.array], iters: int) -> float:
 
 
 def tile_configs(K: int, args: argparse.Namespace) -> List[Tile]:
-    """Valid tiles; BK > 0 needs BK % 32 == 0, K % BK == 0, and tiles that fit
-    in threadgroup memory."""
+    """Valid tiles; MPP needs BM % 8 == 0; BK > 0 needs BK % 32 == 0,
+    K % BK == 0, and tiles that fit in threadgroup memory."""
     tiles: List[Tile] = []
-    for bm in args.bm:
+    for bm in (bm for bm in args.bm if bm % 8 == 0):
         for bn in args.bn:
             for bk in args.bk:
                 if bk == FULL_K:
@@ -203,7 +206,7 @@ def bench_shape(
     mx.eval(w_packed, w_scale, mlx_w, mlx_scales, mlx_biases)
 
     def timed(fn: Callable[[int], mx.array]) -> float:
-        return time_per_call(fn, args.iters)
+        return time_per_call(fn, args.warmup, args.iters)
 
     results: Dict[int, dict] = {}
     for M in ms:
@@ -242,7 +245,6 @@ def bench_shape(
                 mode="affine",
             )
 
-        mx.eval(mlx_call(0))
         t_mlx = timed(mlx_call)
         results[M] = {"mlx": t_mlx, "int8": entries}
 
@@ -330,7 +332,13 @@ def main() -> None:
     parser.add_argument(
         "--dtypes", nargs="+", choices=list(DTYPES), default=list(DTYPES)
     )
-    parser.add_argument("--bm", type=int, nargs="+", default=[32, 64, 128])
+    parser.add_argument(
+        "--bm",
+        type=int,
+        nargs="+",
+        default=[8, 16, 32, 64, 128],
+        help="Output tile rows (MPP requires a multiple of 8).",
+    )
     parser.add_argument("--bn", type=int, nargs="+", default=[32, 64, 128])
     parser.add_argument(
         "--bk",
@@ -343,7 +351,19 @@ def main() -> None:
         "--group-size", type=int, default=32, help="MLX baseline group size."
     )
     parser.add_argument(
+        "--warmup",
+        type=int,
+        default=1,
+        help="Untimed runs per config / shape / M before timing (compiles kernels).",
+    )
+    parser.add_argument(
         "--iters", type=int, default=10, help="Timed runs per config / shape / M."
+    )
+    parser.add_argument(
+        "--dtype-pause",
+        type=float,
+        default=60,
+        help="Seconds to pause between activation dtypes.",
     )
     parser.add_argument(
         "--rotate-mb",
@@ -361,11 +381,14 @@ def main() -> None:
     print(
         f"device: {info.get('device_name', '?')}  mlx: {mx.__version__}  "
         f"M: {ms}  dtypes: {args.dtypes}  mlx group_size: {args.group_size}  "
-        f"iters: {args.iters}",
+        f"warmup: {args.warmup}  iters: {args.iters}",
         flush=True,
     )
 
-    for dtype_name in args.dtypes:
+    for i, dtype_name in enumerate(args.dtypes):
+        if i > 0 and args.dtype_pause > 0:
+            print(f"pausing {args.dtype_pause:g}s before {dtype_name}...", flush=True)
+            time.sleep(args.dtype_pause)
         res = {name: bench_shape(name, dtype_name, ms, args) for name in args.shapes}
         print_dtype_report(dtype_name, ms, res, args.group_size)
         print(flush=True)
