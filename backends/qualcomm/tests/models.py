@@ -2490,6 +2490,17 @@ class RmsNorm(torch.nn.Module):
         return self.rms(x)
 
 
+class UpcastRmsNorm(torch.nn.Module):
+    def __init__(self, dtype):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(32, dtype=dtype))
+
+    def forward(self, x):
+        h = x.float()
+        h = h * torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + 1e-6)
+        return self.weight * h.to(x.dtype)
+
+
 class Roll(torch.nn.Module):
     def __init__(self, shifts, dims=None):
         super().__init__()

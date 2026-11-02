@@ -5,7 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 import torch
 from executorch.backends.qualcomm._passes.utils import find_patterns
-from executorch.backends.qualcomm.builders.node_visitor import dq_ops
+from executorch.backends.qualcomm.builders.node_visitor import (
+    dq_ops,
+    QNN_TENSOR_TYPE_MAP,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
@@ -79,19 +82,91 @@ class RecomposeRmsNorm(ExportPass):
         self.rms_norm_target = exir_ops.edge.aten.rms_norm.default
         self.skip_targets = [
             exir_ops.edge.aten.to.dtype,
+            exir_ops.edge.aten._to_copy.default,
+            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
         ]
         self.quantization_capture = quantization_capture
         if quantization_capture:
             self.rms_norm_target = torch.ops.aten.rms_norm.default
             self.skip_targets = [
                 torch.ops.aten.to.dtype,
+                torch.ops.aten.to.device,
+                torch.ops.aten.type_as.default,
             ]
 
-    def _get_input_node(self, node):
-        input_node = node.args[0]
-        while input_node.target in self.skip_targets:
+    def _is_cast(self, node, dtype):
+        """
+        Whether the node is a cast that changes nothing but the dtype, to a
+        dtype at least as wide as `dtype` and at most float32. A narrower cast
+        rounds the values, which the rebuilt rms_norm in `dtype` would not do,
+        and rms_norm computes in float32 at most.
+        """
+        if not _is_call(node) or node.target not in self.skip_targets:
+            return False
+        source, cast = node.args[0].meta["val"], node.meta["val"]
+        return (
+            torch.promote_types(cast.dtype, dtype) == cast.dtype
+            and torch.promote_types(cast.dtype, torch.float32) == torch.float32
+            and (cast.layout, cast.device, cast.dim_order())
+            == (source.layout, source.device, source.dim_order())
+        )
+
+    def _strip_casts(self, node, dtype):
+        while self._is_cast(node, dtype):
+            node = node.args[0]
+        return node
+
+    def _squares_the_scaled_tensor(self, pattern, dtype):
+        square, scale_mul = pattern[6], pattern[2]
+        base = square.args[0]
+        if _is_pow(square):
+            exponent = square.args[1]
+            if _is_node(exponent):
+                # LiftConstantScalarOperands may have turned it into a constant.
+                constant = exponent.meta["val"].constant
+                exponent = None if constant is None else constant.item()
+            squares = exponent == 2
+        else:
+            squares = self._strip_casts(square.args[1], dtype) is self._strip_casts(
+                base, dtype
+            )
+        scaled = [arg for arg in scale_mul.args if arg is not pattern[3]]
+        # T5's norm squares a float32 copy of the tensor it scales.
+        return (
+            squares
+            and len(scaled) == 1
+            and self._strip_casts(scaled[0], dtype) is self._strip_casts(base, dtype)
+        )
+
+    def _get_norm_input(self, pattern, gamma_node):
+        """
+        The tensor to rebuild the norm on, or None if it has to stay
+        decomposed. rms_norm returns its input's dtype, so the input has to be
+        in the pattern's output dtype. Unless the norm is about to be
+        quantized, QNN also needs a type for that dtype.
+        """
+        last_mul_node = pattern[0]
+        dtype = last_mul_node.meta["val"].dtype
+        if not self._squares_the_scaled_tensor(pattern, dtype):
+            return None
+        input_node = pattern[6].args[0]
+        while self._is_cast(input_node, dtype) and (
+            input_node.meta["val"].dtype != dtype
+            or input_node.args[0].meta["val"].dtype == dtype
+        ):
             input_node = input_node.args[0]
-        return input_node
+        if input_node.meta["val"].dtype != dtype or (
+            not self.quantization_capture and dtype not in QNN_TENSOR_TYPE_MAP
+        ):
+            return None
+        # The "*" in the patterns can match any op, but only casts may sit
+        # between the normalization and the weight.
+        normalized = next(
+            (arg for arg in last_mul_node.args if arg is not gamma_node), None
+        )
+        return (
+            input_node if self._strip_casts(normalized, dtype) is pattern[2] else None
+        )
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
@@ -127,7 +202,9 @@ class RecomposeRmsNorm(ExportPass):
                 if gamma_node is None:
                     continue
 
-                input_node = self._get_input_node(rms_norm_pattern[6])
+                input_node = self._get_norm_input(rms_norm_pattern, gamma_node)
+                if input_node is None:
+                    continue
                 # Only the last-dim form the RmsNorm builder supports is recomposed.
                 # Anything else, e.g. a 0-d scale, is left decomposed.
                 input_shape = list(input_node.meta["val"].shape)
