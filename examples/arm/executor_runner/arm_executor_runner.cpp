@@ -1476,8 +1476,8 @@ int main(int argc, const char* argv[]) {
   }
 #endif
   ET_LOG(Info, "   %s", argv[0]);
-  for (int i = 1; i + 1 < argc; i += 2) {
-    ET_LOG(Info, "   %s %s", argv[i], argv[i + 1]);
+  for (int i = 1; i < argc; i++) {
+    ET_LOG(Info, "   %s", argv[i]);
   }
 #else
   (void)argc;
@@ -1506,10 +1506,14 @@ int main(int argc, const char* argv[]) {
       input_file_allocation_pool_size, input_file_allocation_pool);
 
   /* parse input parameters */
-  for (int i = 0; i < argc; i++) {
+  for (int i = 1; i < argc; i++) {
     if (std::strcmp(argv[i], "-i") == 0) {
+      if (++i >= argc || argv[i] == nullptr) {
+        ET_LOG(Fatal, "Missing value for -i");
+        return 1;
+      }
       // input file, read the data into memory
-      const char* input_tensor_filename = argv[++i];
+      const char* input_tensor_filename = argv[i];
       const printf_size_t nbr_inputs = input_buffers.size() + 1;
       ET_LOG(
           Info,
@@ -1529,7 +1533,11 @@ int main(int argc, const char* argv[]) {
       input_buffers.push_back(std::make_pair(buffer, buffer_size));
       ctx.input_filenames.push_back(input_tensor_filename);
     } else if (std::strcmp(argv[i], "-m") == 0) {
-      const char* pte_filename = argv[++i];
+      if (++i >= argc || argv[i] == nullptr) {
+        ET_LOG(Fatal, "Missing value for -m");
+        return 1;
+      }
+      const char* pte_filename = argv[i];
       ET_LOG(Info, "Reading pte model from file %s", pte_filename);
       auto [buffer, buffer_size] =
           read_binary_file(pte_filename, ctx.input_file_allocator.value());
@@ -1541,8 +1549,12 @@ int main(int argc, const char* argv[]) {
       model_data = reinterpret_cast<const uint8_t*>(buffer);
       model_size = buffer_size;
     } else if (std::strcmp(argv[i], "-o") == 0) {
+      if (++i >= argc || argv[i] == nullptr) {
+        ET_LOG(Fatal, "Missing value for -o");
+        return 1;
+      }
       // store the base filename to write output to.
-      ctx.output_basename = argv[++i];
+      ctx.output_basename = argv[i];
     } else if (std::strcmp(argv[i], "--server_mode") == 0) {
       if (++i >= argc) {
         ET_LOG(Fatal, "--server_mode requires true or false");
