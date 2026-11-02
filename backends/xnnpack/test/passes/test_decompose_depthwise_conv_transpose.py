@@ -4,16 +4,39 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
 import math
+import os
+import tempfile
 import unittest
+from collections import Counter
+from unittest import mock
 
+import executorch.backends.test.harness.stages as BaseStages
 import torch
 from executorch.backends.test.harness.stages import StageType
+from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack._passes.decompose_depthwise_conv_transpose import (
     DecomposeDepthwiseConvTransposePass,
 )
+from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
+from executorch.backends.xnnpack._passes.fuse_pad_into_conv_pass import (
+    FusePadIntoConvPass,
+)
+from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
+    _get_schema_bytes,
+    XNNHeader,
+)
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
+from executorch.exir._serialize import _deserialize_pte_binary
+from executorch.exir._serialize._flatbuffer import _flatc_decompile
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes.external_constants_pass import (
+    delegate_external_constants_pass_unlifted,
+)
+from executorch.extension.flat_tensor.serialize.serialize import (
+    _deserialize_to_flat_tensor,
+)
 
 
 class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
@@ -77,17 +100,68 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
             .run_method_and_compare_outputs(atol=tol, rtol=tol)
         )
 
-    def _check_lowered(self, module, inputs, tol=1e-3, dynamic_shapes=None):
+    @staticmethod
+    def _xnnpack_node_types(tester) -> Counter:
+        """Node types in the serialized XNNPACK graph of the single delegate
+        produced by to_edge_transform_and_lower."""
+        graph_module = (
+            tester.get_artifact(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
+            .exported_program()
+            .graph_module
+        )
+        (delegate,) = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == torch.ops.higher_order.executorch_call_delegate
+        ]
+        payload = getattr(graph_module, delegate.args[0].target).processed_bytes
+        header = XNNHeader.from_bytes(payload[: XNNHeader.EXPECTED_LENGTH])
+        flatbuffer = payload[
+            header.flatbuffer_offset : header.flatbuffer_offset + header.flatbuffer_size
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            schema_path = os.path.join(d, "schema.fbs")
+            with open(schema_path, "wb") as f:
+                f.write(_get_schema_bytes())
+            bin_path = os.path.join(d, "graph.bin")
+            with open(bin_path, "wb") as f:
+                f.write(flatbuffer)
+            _flatc_decompile(d, schema_path, bin_path)
+            with open(os.path.join(d, "graph.json")) as f:
+                # flatc writes unbounded clamp limits as a bare inf
+                text = (
+                    f.read().replace("-inf", "-Infinity").replace(" inf", " Infinity")
+                )
+            graph = json.loads(text)
+        return Counter(node["xnode_union_type"] for node in graph["xnodes"])
+
+    def _check_lowered(
+        self, module, inputs, tol=1e-3, dynamic_shapes=None, num_deconvs=1
+    ):
+        # XNNPACK delegates an fp32 depthwise transposed conv on its own, so
+        # one delegate and matching outputs do not prove the pass ran during
+        # lowering: count its calls and check the serialized graph.
+        tester = Tester(module.eval(), inputs, dynamic_shapes=dynamic_shapes).export()
+        with mock.patch.object(
+            DecomposeDepthwiseConvTransposePass,
+            "_decompose",
+            autospec=True,
+            side_effect=DecomposeDepthwiseConvTransposePass._decompose,
+        ) as decompose:
+            tester.to_edge_transform_and_lower()
+        self.assertEqual(decompose.call_count, num_deconvs)
+        tester.check_count(
+            {"torch.ops.higher_order.executorch_call_delegate": 1}
+        ).check_not([self.conv])
+        node_types = self._xnnpack_node_types(tester)
+        self.assertEqual(node_types["XNNConvTranspose2d"], 0, node_types)
+        self.assertEqual(node_types["XNNDepthToSpace2d"], num_deconvs, node_types)
         (
-            Tester(module.eval(), inputs, dynamic_shapes=dynamic_shapes)
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not([self.conv])
-            .to_executorch()
+            tester.to_executorch()
             .serialize()
             .run_method_and_compare_outputs(num_runs=3, atol=tol, rtol=tol)
         )
+        return tester
 
     def test_upfirdn_4x4_stride2(self):
         # StyleGAN-style x2 upsampling filter: 4 phases of 2x2 taps, each with
@@ -161,7 +235,7 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
         self._check_pass(
             module, inputs, {self.conv: 8, self.pad: 8, self.cat: 2, self.d2s: 2}
         )
-        self._check_lowered(module, inputs)
+        self._check_lowered(module, inputs, num_deconvs=2)
 
     class SharedWeightDeconvs(torch.nn.Module):
         def __init__(self, kernel, stride, paddings, output_paddings):
@@ -206,7 +280,7 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
             module, inputs, {self.conv: 18, self.cat: 2, self.d2s: 2}
         )
         self.assertEqual(self._count_phase_placeholders(tester), 18)
-        self._check_lowered(module, inputs)
+        self._check_lowered(module, inputs, num_deconvs=2)
 
     def test_shared_weight_same_params(self):
         # Identical deconvs on one weight share one set of phase placeholders.
@@ -218,7 +292,7 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
             module, inputs, {self.conv: 18, self.cat: 2, self.d2s: 2}
         )
         self.assertEqual(self._count_phase_placeholders(tester), 9)
-        self._check_lowered(module, inputs)
+        self._check_lowered(module, inputs, num_deconvs=2)
 
     def test_batch_gt_1(self):
         module = self.DwDeconv(kernel=4, stride=2, padding=1)
@@ -245,12 +319,92 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
 
     def test_deconv_relu(self):
         # The activation follows depth_to_space_2d instead of fusing into the
-        # removed transposed conv.
+        # removed transposed conv, which relies on the pass running before
+        # FuseActivationPass in the default pass list. The phase pads read the
+        # NHWC output of the leading conv and fold into the phase convs through
+        # FusePadIntoConvPass at the end of that list.
         module = torch.nn.Sequential(
-            self.DwDeconv(kernel=4, stride=2, padding=1), torch.nn.ReLU()
+            torch.nn.Conv2d(8, 8, 3, padding=1),
+            self.DwDeconv(kernel=4, stride=2, padding=1),
+            torch.nn.ReLU(),
         )
         inputs = (torch.randn(1, 8, 6, 10),)
+        default_passes = XNNPACKPassManager(
+            Tester(module.eval(), inputs).export().get_artifact()
+        ).passes
+        self.assertLess(
+            default_passes.index(DecomposeDepthwiseConvTransposePass),
+            default_passes.index(FuseActivationPass),
+        )
+        tester = (
+            Tester(module.eval(), inputs)
+            .export()
+            .to_edge()
+            .run_passes(RunPasses(default_passes))
+            .check_count({self.conv: 5, self.pad: 4, self.d2s: 1})
+        )
+        graph = (
+            tester.get_artifact(StageType.RUN_PASSES)
+            .exported_program()
+            .graph_module.graph
+        )
+        (relu,) = [
+            n for n in graph.nodes if n.target == exir_ops.edge.aten.relu.default
+        ]
+        self.assertEqual(
+            relu.args[0].target, exir_ops.edge.et_xnnpack.depth_to_space_2d.default
+        )
+        convs = [
+            n for n in graph.nodes if n.target == exir_ops.edge.aten.convolution.default
+        ]
+        self.assertEqual(
+            [FuseActivationPass.get_fused_activation(n) for n in convs], [None] * 5
+        )
+        self.assertEqual(
+            sum(FusePadIntoConvPass.get_fused_padding(n) is not None for n in convs), 4
+        )
+        self.assertEqual(
+            sum(
+                FusePadIntoConvPass.is_folded_pad(n)
+                for n in graph.nodes
+                if n.target == exir_ops.edge.aten.constant_pad_nd.default
+            ),
+            4,
+        )
         self._check_lowered(module, inputs)
+
+    class ExportWithExternalConstants(BaseStages.Export):
+        def run(self, artifact, inputs):
+            tagged = torch.export.export(artifact, inputs, strict=True).module()
+            delegate_external_constants_pass_unlifted(
+                module=tagged, gen_tag_fn=lambda _: "model"
+            )
+            self.exported_program = torch.export.export(tagged, inputs, strict=True)
+
+    def test_external_constants(self):
+        # The phase weights inherit the original weight's external-constant
+        # tag, so every constant ends up in model.ptd and none in the .pte.
+        module = self.DwDeconv(kernel=4, stride=2, padding=1)
+        inputs = (torch.randn(1, 8, 6, 10),)
+        tester = Tester(module.eval(), inputs)
+        tester.export(self.ExportWithExternalConstants())
+        tester.to_edge_transform_and_lower().check_count(
+            {"torch.ops.higher_order.executorch_call_delegate": 1}
+        ).to_executorch()
+        exec = tester.get_artifact()
+        self.assertIsNone(_deserialize_pte_binary(exec.buffer).named_data)
+        self.assertEqual(list(exec._tensor_data), ["model"])
+        ptd = _deserialize_to_flat_tensor(bytes(exec._tensor_data["model"]))
+        self.assertEqual(len(ptd.named_data), 5)  # 4 phase weights + bias
+
+        from executorch.extension.pybindings import portable_lib as runtime
+
+        loaded = runtime._load_for_executorch_from_buffer(
+            exec.buffer, bytes(exec._tensor_data["model"])
+        )
+        self.assertTrue(
+            torch.allclose(loaded.forward(inputs)[0], module(*inputs), atol=1e-3)
+        )
 
     def test_dynamic_shape(self):
         module = self.DwDeconv(kernel=4, stride=2, padding=1)
