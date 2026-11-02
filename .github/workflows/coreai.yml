@@ -114,7 +114,7 @@ jobs:
       needs.run-decision.outputs.is-full-run == 'true'
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 8
       matrix:
         suite: [models, operators]
         flow: [coreai_fp32, coreai_fp16, coreai_w8a8, coreai_w8]
@@ -155,7 +155,12 @@ jobs:
           coreai_fp32/models | coreai_fp16/models | coreai_w8/models) MAX_FAILED=0 ;;
           # Known failures; lower this as they're fixed.
           coreai_w8a8/operators) MAX_FAILED=23 ;;
-          coreai_w8a8/models) MAX_FAILED=7 ;;
+          # 7 fail locally (accuracy). On the xcode-27 runners, 19 w8a8
+          # dynamic_shapes models also fail execution with Core AI
+          # inferenceFailed(-1) (3 overlap the local 7), while their static
+          # variants and fp32 dynamic_shapes pass. TODO: report to Apple and
+          # lower back to 7.
+          coreai_w8a8/models) MAX_FAILED=23 ;;
           *) MAX_FAILED="" ;;
         esac
         FAIL_FAST=""

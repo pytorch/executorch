@@ -6,6 +6,7 @@
 
 import copy
 import tempfile
+from collections import OrderedDict
 
 import pytest
 import torch
@@ -31,6 +32,22 @@ def _fp16_inputs(inputs):
         ),
         inputs,
     )
+
+
+# FP16 rounding error grows with the network's activation scale rather than
+# each element's value, so outputs near zero (e.g. cancelling logits) can carry
+# error far above a per-element rtol. Allow a fraction of each output's largest
+# magnitude instead.
+_FP16_ATOL_FRACTION_OF_MAX = 0.02
+
+
+def _fp16_atol(reference, atol):
+    if not (isinstance(reference, torch.Tensor) and reference.is_floating_point()):
+        return atol
+    finite = reference[torch.isfinite(reference)].float()
+    if finite.numel() == 0:
+        return atol
+    return max(atol, _FP16_ATOL_FRACTION_OF_MAX * finite.abs().max().item())
 
 
 class CoreAIQuantize(Stage):
@@ -149,3 +166,45 @@ class CoreAITester(Tester):
         return super().run_method_and_compare_outputs(
             stage=stage, inputs=inputs, **kwargs
         )
+
+    def _compare_outputs(
+        self,
+        reference_output,
+        stage_output,
+        quantization_scale=None,
+        atol=1e-03,
+        rtol=1e-03,
+        qtol=0,
+        statistics_callback=None,
+    ):
+        if not self.fp16:
+            return Tester._compare_outputs(
+                reference_output,
+                stage_output,
+                quantization_scale,
+                atol,
+                rtol,
+                qtol,
+                statistics_callback,
+            )
+        if isinstance(reference_output, torch.Tensor):
+            reference_output = (reference_output,)
+        elif isinstance(reference_output, OrderedDict):
+            reference_output = tuple(reference_output.values())
+        if isinstance(stage_output, torch.Tensor):
+            stage_output = (stage_output,)
+        assert len(stage_output) == len(reference_output)
+        for i, (actual, reference) in enumerate(zip(stage_output, reference_output)):
+            try:
+                Tester._compare_outputs(
+                    reference,
+                    actual,
+                    quantization_scale,
+                    _fp16_atol(reference, atol),
+                    rtol,
+                    qtol,
+                    statistics_callback,
+                )
+            except AssertionError as error:
+                # Each output is compared alone, so the harness numbers it 0.
+                raise AssertionError(f"FP16 output {i}: {error}") from None
