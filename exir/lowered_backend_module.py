@@ -43,11 +43,11 @@ from torch.export.exported_program import (
     OutputSpec,
     TensorArgument,
 )
+from torch.fx.passes.tools_common import stable_topological_sort
 from torch.fx.passes.utils.fuser_utils import (
     erase_nodes,
     fuse_as_graphmodule,
     insert_subgm,
-    legalize_graph,
     NodeList,
     topo_sort,
 )
@@ -931,10 +931,10 @@ def create_submodule_from_nodes(
     erase_nodes(gm, sorted_nodes)
 
     # Topological sort original gm with newly created sub_gm
-    # TODO : T153794167 Get rid of support for skipping legalize graph in create_submodule_from_nodes
+    # TODO : T153794167 Get rid of support for skipping the sort in create_submodule_from_nodes
     # once we transition to using fuse_by_partitions.
     if not skip_legalize_graph:
-        legalize_graph(gm)
+        stable_topological_sort(gm)
 
     # Get the call_module node
     submodule_node = None

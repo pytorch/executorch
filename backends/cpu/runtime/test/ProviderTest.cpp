@@ -66,7 +66,7 @@ class ProviderTest : public ::testing::Test {
   std::vector<EValue> values;
   std::vector<Buffer> buffers;
   size_t private_bytes = 0;
-  ExecutionContext execution_context{1, true};
+  ExecutionContext execution_context;
 };
 
 // Cppcheck cannot expand GTest fixture macros without build headers.
@@ -1169,6 +1169,291 @@ TEST_F(ProviderTest, ReferenceClonesWithMemoryFormat) {
   node.inputs[1].arg = ptn::StringArg{"torch.channels_last"};
   EXPECT_FALSE(
       implementation->supports(node, graph, execution_context).supported);
+}
+
+namespace maxpool {
+struct Case {
+  int64_t n, c, h, w;
+  std::vector<int64_t> kernel;
+  std::vector<int64_t> stride;
+  std::vector<int64_t> padding;
+  std::vector<int64_t> dilation;
+  bool ceil_mode;
+};
+
+int64_t output_size(
+    int64_t in,
+    int64_t k,
+    int64_t s,
+    int64_t p,
+    int64_t d,
+    bool ceil_mode) {
+  const int64_t numerator = in + 2 * p - d * (k - 1) - 1;
+  int64_t out = ceil_mode ? (numerator + s - 1) / s + 1 : numerator / s + 1;
+  if (ceil_mode && (out - 1) * s >= in + p) {
+    out -= 1;
+  }
+  return out;
+}
+
+void broadcast(
+    const std::vector<int64_t>& list,
+    int64_t fallback,
+    int64_t& first,
+    int64_t& second) {
+  if (list.empty()) {
+    first = fallback;
+    second = fallback;
+  } else if (list.size() == 1) {
+    first = list[0];
+    second = list[0];
+  } else {
+    first = list[0];
+    second = list[1];
+  }
+}
+
+void reference(
+    const float* input,
+    float* output,
+    int64_t n,
+    int64_t c,
+    int64_t h,
+    int64_t w,
+    int64_t kh,
+    int64_t kw,
+    int64_t sh,
+    int64_t sw,
+    int64_t ph,
+    int64_t pw,
+    int64_t dh,
+    int64_t dw,
+    int64_t oh,
+    int64_t ow) {
+  const float kNegInf = -std::numeric_limits<float>::infinity();
+  for (int64_t ni = 0; ni < n; ++ni) {
+    for (int64_t ci = 0; ci < c; ++ci) {
+      for (int64_t ohi = 0; ohi < oh; ++ohi) {
+        for (int64_t owi = 0; owi < ow; ++owi) {
+          float best = kNegInf;
+          for (int64_t khi = 0; khi < kh; ++khi) {
+            const int64_t hi = ohi * sh - ph + khi * dh;
+            if (hi < 0 || hi >= h) {
+              continue;
+            }
+            for (int64_t kwi = 0; kwi < kw; ++kwi) {
+              const int64_t wi = owi * sw - pw + kwi * dw;
+              if (wi < 0 || wi >= w) {
+                continue;
+              }
+              const float value = input[((ni * c + ci) * h + hi) * w + wi];
+              if (value > best) {
+                best = value;
+              }
+            }
+          }
+          output[((ni * c + ci) * oh + ohi) * ow + owi] = best;
+        }
+      }
+    }
+  }
+}
+} // namespace maxpool
+
+TEST_F(ProviderTest, XNNPACKMaxPool2dMatchesNaiveReference) {
+  using maxpool::Case;
+  const Case cases[] = {
+      {1, 1, 1, 1, {2, 2}, {1, 1}, {1, 1}, {2, 2}, false},
+      {2, 3, 1, 4, {2, 2}, {1, 1}, {1, 1}, {2, 2}, false},
+      {2, 3, 4, 1, {2, 2}, {1, 1}, {1, 1}, {2, 2}, false},
+      {1, 2, 1, 1, {2, 2}, {2, 2}, {1, 1}, {3, 3}, true},
+      {1, 2, 1, 1, {2, 2}, {3, 3}, {0, 0}, {2, 2}, true},
+      {1, 2, 7, 7, {3, 3}, {1, 1}, {0, 0}, {1, 1}, false},
+      {1, 2, 8, 8, {3, 3}, {2, 2}, {1, 1}, {1, 1}, false},
+      {2, 3, 9, 7, {3, 2}, {2, 1}, {1, 0}, {1, 1}, false},
+      {2, 3, 9, 8, {3, 4}, {2, 1}, {1, 2}, {1, 1}, false},
+      {1, 1, 10, 10, {3, 3}, {1, 1}, {0, 0}, {2, 2}, false},
+      {1, 4, 12, 11, {2, 3}, {2, 1}, {1, 0}, {2, 1}, false},
+      {1, 2, 20, 20, {3, 3}, {2, 2}, {1, 1}, {1, 1}, true},
+      {1, 2, 21, 17, {3, 2}, {2, 2}, {1, 0}, {1, 1}, true},
+      // Stride wider than the kernel: XNNPACK accepts the sliding window.
+      {1, 1, 8, 8, {2, 2}, {3, 3}, {0, 0}, {1, 1}, false},
+      // One-element lists broadcast; empty stride/padding/dilation default.
+      {1, 2, 6, 6, {3}, {2}, {1}, {1}, false},
+      {1, 2, 6, 6, {2, 2}, {}, {0, 0}, {}, false},
+      {1, 8, 21, 21, {3, 3}, {2, 2}, {1, 1}, {1, 1}, true},
+      {1, 1, 5, 5, {5, 5}, {1, 1}, {0, 0}, {1, 1}, false},
+      {1, 2, 7, 5, {1, 1}, {1, 1}, {0, 0}, {1, 1}, false},
+      // Ceil mode where the adjustment drops the final window.
+      {1, 1, 3, 3, {2, 2}, {2, 2}, {1, 1}, {1, 1}, true},
+  };
+  for (const auto& test_case : cases) {
+    graph = ptn::Graph();
+    values.clear();
+    buffers.clear();
+    const auto& [n, c, h, w, kernel, stride, padding, dilation, ceil_mode] =
+        test_case;
+    int64_t kh, kw, sh, sw, ph, pw, dh, dw;
+    maxpool::broadcast(kernel, 0, kh, kw);
+    if (stride.empty()) {
+      sh = kh;
+      sw = kw;
+    } else {
+      maxpool::broadcast(stride, 0, sh, sw);
+    }
+    maxpool::broadcast(padding, 0, ph, pw);
+    maxpool::broadcast(dilation, 1, dh, dw);
+    const int64_t oh = maxpool::output_size(h, kh, sh, ph, dh, ceil_mode);
+    const int64_t ow = maxpool::output_size(w, kw, sw, pw, dw, ceil_mode);
+    ASSERT_GT(oh, 0);
+    ASSERT_GT(ow, 0);
+    graph.values.emplace_back(
+        "input", ptn::ScalarType::Float, std::vector<int64_t>{n, c, h, w});
+    graph.values.emplace_back(
+        "output", ptn::ScalarType::Float, std::vector<int64_t>{n, c, oh, ow});
+    graph.values.emplace_back(
+        "indices", ptn::ScalarType::Long, std::vector<int64_t>{n, c, oh, ow});
+    graph.values[0].role = ptn::ValueRole::UserInput;
+    ptn::Node node;
+    node.name = "max_pool2d";
+    node.target = "torch.ops.aten.max_pool2d_with_indices.default";
+    node.inputs = {
+        {"self", ptn::TensorArg{0}},
+        {"kernel_size", ptn::IntListArg{kernel, {}}},
+        {"stride", ptn::IntListArg{stride, {}}},
+        {"padding", ptn::IntListArg{padding, {}}},
+        {"dilation", ptn::IntListArg{dilation, {}}},
+        {"ceil_mode", ptn::BoolArg{ceil_mode}}};
+    node.outputs = {
+        {ptn::OutputValueKind::Tensor, 1}, {ptn::OutputValueKind::Tensor, 2}};
+    graph.nodes.push_back(std::move(node));
+    graph.input_ids = {0};
+    graph.output_ids = {1};
+    graph.initialize_schedule();
+    graph.rebuild_def_use();
+    for (const auto id : {0, 1}) {
+      const auto& shape = graph.value(id).tensor_meta().sizes;
+      values.emplace_back(
+          factory.zeros(std::vector<int32_t>(shape.begin(), shape.end())));
+    }
+    buffers.resize(3);
+    GuardedBuffer input(static_cast<size_t>(n * c * h * w) * sizeof(float));
+    GuardedBuffer output(static_cast<size_t>(n * c * oh * ow) * sizeof(float));
+    bind_value(0, input.buffer);
+    bind_value(1, output.buffer);
+    auto* source = static_cast<float*>(input.buffer.data);
+    for (int64_t i = 0; i < n * c * h * w; ++i) {
+      source[i] = static_cast<float>((i * 37 + 11) % 13) - 6.0f;
+    }
+    PreparationContext context{
+        graph, buffers, allocator, private_bytes, execution_context};
+    auto provider = create_xnnpack_provider();
+    auto* implementation = provider->implementations()[0];
+    ASSERT_TRUE(
+        implementation->supports(graph.node(0), graph, execution_context)
+            .supported);
+    auto executable = implementation->compile({{0}, {0}, {1}}, context);
+    ASSERT_TRUE(executable.ok());
+    ASSERT_EQ(provider->finish(), Error::Ok);
+    ASSERT_EQ(executable.get()->reshape(), Error::Ok);
+    ASSERT_EQ(executable.get()->bind(), Error::Ok);
+    ExecutionContext execution = execution_context;
+    ASSERT_EQ(executable.get()->run(execution), Error::Ok);
+    EXPECT_EQ(buffers[2].data, nullptr);
+    std::vector<float> expected(static_cast<size_t>(n * c * oh * ow), 0.0f);
+    maxpool::reference(
+        source,
+        expected.data(),
+        n,
+        c,
+        h,
+        w,
+        kh,
+        kw,
+        sh,
+        sw,
+        ph,
+        pw,
+        dh,
+        dw,
+        oh,
+        ow);
+    auto* result = static_cast<float*>(output.buffer.data);
+    for (int64_t i = 0; i < n * c * oh * ow; ++i) {
+      EXPECT_FLOAT_EQ(result[i], expected[i])
+          << "case index " << (&test_case - cases) << " element " << i;
+    }
+  }
+}
+
+TEST_F(ProviderTest, XNNPACKMaxPool2dRejectsUnsupportedSchemas) {
+  graph.values.emplace_back(
+      "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 2, 8, 8});
+  graph.values.emplace_back(
+      "output", ptn::ScalarType::Float, std::vector<int64_t>{1, 2, 4, 4});
+  graph.values.emplace_back(
+      "indices", ptn::ScalarType::Long, std::vector<int64_t>{1, 2, 4, 4});
+  ptn::Node node;
+  node.name = "max_pool2d";
+  node.target = "torch.ops.aten.max_pool2d_with_indices.default";
+  node.inputs = {
+      {"self", ptn::TensorArg{0}},
+      {"kernel_size", ptn::IntListArg{{3, 3}, {}}},
+      {"stride", ptn::IntListArg{{2, 2}, {}}},
+      {"padding", ptn::IntListArg{{1, 1}, {}}},
+      {"dilation", ptn::IntListArg{{1, 1}, {}}},
+      {"ceil_mode", ptn::BoolArg{false}}};
+  node.outputs = {
+      {ptn::OutputValueKind::Tensor, 1}, {ptn::OutputValueKind::Tensor, 2}};
+  graph.nodes.push_back(node);
+  graph.input_ids = {0};
+  graph.output_ids = {1};
+  auto provider = create_xnnpack_provider();
+  auto* implementation = provider->implementations()[0];
+  auto supported = [&] {
+    return implementation->supports(graph.node(0), graph, execution_context)
+        .supported;
+  };
+  EXPECT_TRUE(supported());
+  graph.output_ids.push_back(2);
+  EXPECT_FALSE(supported());
+  graph.output_ids.pop_back();
+  graph.values[2].consumer_ids.push_back(1);
+  EXPECT_FALSE(supported());
+  graph.values[2].consumer_ids.clear();
+  EXPECT_TRUE(supported());
+  graph.node(0).inputs[1].arg = ptn::IntListArg{{3, 3, 3}, {}};
+  EXPECT_FALSE(supported());
+  graph.node(0).inputs[1].arg = ptn::IntListArg{{3, 3}, {}};
+  graph.node(0).inputs[1].arg = ptn::IntListArg{{0, 3}, {}};
+  EXPECT_FALSE(supported());
+  graph.node(0).inputs[1].arg = ptn::IntListArg{{3, 3}, {}};
+  graph.node(0).inputs[2].arg = ptn::IntListArg{{0, 2}, {}};
+  EXPECT_FALSE(supported());
+  graph.node(0).inputs[2].arg = ptn::IntListArg{{2, 2}, {}};
+  graph.node(0).inputs[3].arg = ptn::IntListArg{{-1, 1}, {}};
+  EXPECT_FALSE(supported());
+  graph.node(0).inputs[3].arg = ptn::IntListArg{{1, 1}, {}};
+  graph.node(0).inputs[3].arg = ptn::IntListArg{{2, 1}, {}};
+  EXPECT_FALSE(supported());
+  graph.node(0).inputs[3].arg = ptn::IntListArg{{1, 1}, {}};
+  graph.node(0).inputs[4].arg = ptn::IntListArg{{0, 1}, {}};
+  EXPECT_FALSE(supported());
+  graph.node(0).inputs[4].arg = ptn::IntListArg{{1, 1}, {}};
+  graph.node(0).inputs[1].arg = ptn::IntListArg{{3, 3}, {0, 1}};
+  EXPECT_FALSE(supported());
+  graph.node(0).inputs[1].arg = ptn::IntListArg{{3, 3}, {}};
+  graph.node(0).inputs[5].arg = ptn::IntArg{0};
+  EXPECT_FALSE(supported());
+  graph.node(0).inputs[5].arg = ptn::BoolArg{false};
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {1, 2, 5, 4});
+  EXPECT_FALSE(supported());
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {1, 2, 4, 4});
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Int, {1, 2, 4, 4});
+  EXPECT_FALSE(supported());
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {1, 2, 4, 4});
+  graph.values[0] = ptn::Value("input", ptn::ScalarType::Float, {1, 2, 8});
+  EXPECT_FALSE(supported());
 }
 // cppcheck-suppress-end syntaxError
 } // namespace

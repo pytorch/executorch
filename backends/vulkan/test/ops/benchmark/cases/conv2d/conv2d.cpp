@@ -6,6 +6,7 @@
 
 #include <executorch/backends/vulkan/test/ops/benchmark/cases/conv2d/conv2d.h>
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 
@@ -56,6 +57,12 @@ TestCase create_conv2d_test_case(
   std::string dtype_str = dtype_short(dtype);
   std::string bias_str = config.has_bias ? "+bias" : "";
 
+  if (config.groups <= 0 || config.dims.C % config.groups != 0 ||
+      config.C_out % config.groups != 0) {
+    throw std::invalid_argument(
+        "Convolution channels must be divisible by groups");
+  }
+
   int64_t H_out = calc_out_size(
       config.dims.H,
       config.kernel.h,
@@ -69,16 +76,28 @@ TestCase create_conv2d_test_case(
       config.padding.w,
       config.dilation.w);
 
+  const auto pair_label = [](int64_t h, int64_t w) {
+    return std::to_string(h) + (h == w ? "" : "x" + std::to_string(w));
+  };
   std::string shape = "[" + std::to_string(config.dims.N) + "," +
       std::to_string(config.dims.C) + "," + std::to_string(config.dims.H) +
       "," + std::to_string(config.dims.W) + "]->[" +
       std::to_string(config.C_out) + "] k" + std::to_string(config.kernel.h) +
       "x" + std::to_string(config.kernel.w) + " s" +
-      std::to_string(config.stride.h) + " p" +
-      std::to_string(config.padding.h) + " d" +
-      std::to_string(config.dilation.h);
+      pair_label(config.stride.h, config.stride.w) + " p" +
+      pair_label(config.padding.h, config.padding.w) + " d" +
+      pair_label(config.dilation.h, config.dilation.w);
 
   std::string suffix = bias_str;
+  if (config.groups != 1) {
+    suffix += (suffix.empty() ? "" : " ") + std::string("g") +
+        std::to_string(config.groups);
+  }
+  if (config.clamp) {
+    suffix += (suffix.empty() ? "" : " ") + std::string("clamp[") +
+        std::to_string(config.clamp->min) + "," +
+        std::to_string(config.clamp->max) + "]";
+  }
   if (!impl_selector.empty()) {
     if (!suffix.empty()) {
       suffix += " ";
@@ -100,9 +119,12 @@ TestCase create_conv2d_test_case(
       memory_layout,
       DataGenType::RANDOM);
 
-  // Weight tensor [C_out, C_in, K_h, K_w] - constant
+  // Weight tensor [C_out, C_in / groups, K_h, K_w] - constant
   ValueSpec weight(
-      {config.C_out, config.dims.C, config.kernel.h, config.kernel.w},
+      {config.C_out,
+       config.dims.C / config.groups,
+       config.kernel.h,
+       config.kernel.w},
       dtype,
       storage_type,
       memory_layout,
@@ -138,6 +160,10 @@ TestCase create_conv2d_test_case(
 
   // impl_selector string
   test_case.add_input_spec(ValueSpec::make_string(impl_selector));
+  test_case.add_input_spec(ValueSpec(static_cast<int32_t>(config.groups)));
+  test_case.add_input_spec(ValueSpec(config.clamp.has_value()));
+  test_case.add_input_spec(ValueSpec(config.clamp ? config.clamp->min : 0.0f));
+  test_case.add_input_spec(ValueSpec(config.clamp ? config.clamp->max : 0.0f));
 
   // Output tensor [N, C_out, H_out, W_out]
   ValueSpec output(
@@ -374,7 +400,6 @@ TestCase create_conv2d_pw_test_case(
 }
 
 int64_t conv2d_flop_calculator(const TestCase& test_case) {
-  auto input_sizes = test_case.inputs()[0].get_tensor_sizes();
   auto weight_sizes = test_case.inputs()[1].get_tensor_sizes();
   auto output_sizes = test_case.outputs()[0].get_tensor_sizes();
 
@@ -382,7 +407,7 @@ int64_t conv2d_flop_calculator(const TestCase& test_case) {
   int64_t C_out = output_sizes[1];
   int64_t H_out = output_sizes[2];
   int64_t W_out = output_sizes[3];
-  int64_t C_in = input_sizes[1];
+  int64_t C_in = weight_sizes[1];
   int64_t K_h = weight_sizes[2];
   int64_t K_w = weight_sizes[3];
 
@@ -418,7 +443,7 @@ int64_t conv2d_pw_flop_calculator(const TestCase& test_case) {
   return 2 * N * C_out * C_in * H * W;
 }
 
-// Reference implementation for general conv2d (groups=1).
+// Reference implementation for general conv2d.
 //
 // Supports both FP32 and (small-shape) FP16 inputs. The math is always done in
 // float; for FP16 the master input/weight/bias values are dequantized from
@@ -473,6 +498,12 @@ void conv2d_reference_impl(TestCase& test_case) {
   int64_t padding_w = test_case.inputs()[6].get_int_value();
   int64_t dilation_h = test_case.inputs()[7].get_int_value();
   int64_t dilation_w = test_case.inputs()[8].get_int_value();
+  const int64_t groups = test_case.inputs()[10].get_int_value();
+  const int64_t in_group_channels = C_in / groups;
+  const int64_t out_group_channels = C_out / groups;
+  const bool clamp_out = test_case.inputs()[11].get_bool_value();
+  const float out_min = test_case.inputs()[12].get_float_value();
+  const float out_max = test_case.inputs()[13].get_float_value();
 
   // get_element() materializes a float regardless of dtype (it dequantizes
   // half master data), so the same loop body serves both FP32 and FP16.
@@ -484,19 +515,21 @@ void conv2d_reference_impl(TestCase& test_case) {
       for (int64_t oh = 0; oh < H_out; ++oh) {
         for (int64_t ow = 0; ow < W_out; ++ow) {
           float sum = 0.0f;
-          for (int64_t ci = 0; ci < C_in; ++ci) {
+          for (int64_t ci = 0; ci < in_group_channels; ++ci) {
             for (int64_t kh = 0; kh < K_h; ++kh) {
               for (int64_t kw = 0; kw < K_w; ++kw) {
                 int64_t ih = oh * stride_h - padding_h + kh * dilation_h;
                 int64_t iw = ow * stride_w - padding_w + kw * dilation_w;
                 if (ih >= 0 && ih < H_in && iw >= 0 && iw < W_in) {
+                  const int64_t input_channel =
+                      co / out_group_channels * in_group_channels + ci;
                   float in_val = input.get_element(
-                      n * (C_in * H_in * W_in) + ci * (H_in * W_in) +
+                      n * (C_in * H_in * W_in) + input_channel * (H_in * W_in) +
                       ih * W_in + iw);
-                  // weight is [C_out, C_in, K_h, K_w]
+                  // weight is [C_out, C_in / groups, K_h, K_w]
                   float w_val = weight.get_element(
-                      co * (C_in * K_h * K_w) + ci * (K_h * K_w) + kh * K_w +
-                      kw);
+                      co * (in_group_channels * K_h * K_w) + ci * (K_h * K_w) +
+                      kh * K_w + kw);
                   sum += in_val * w_val;
                 }
               }
@@ -505,6 +538,9 @@ void conv2d_reference_impl(TestCase& test_case) {
           if (!bias_spec.is_none()) {
             sum += bias_spec.get_element(co);
           }
+          if (clamp_out) {
+            sum = std::clamp(sum, out_min, out_max);
+          }
           ref_data
               [n * (C_out * H_out * W_out) + co * (H_out * W_out) + oh * W_out +
                ow] = sum;
@@ -512,6 +548,23 @@ void conv2d_reference_impl(TestCase& test_case) {
       }
     }
   }
+}
+
+void conv2d_exact_operands_reference(TestCase& test_case) {
+  auto reference = test_case;
+  for (size_t i = 0; i < 3; ++i) {
+    if (test_case.inputs()[i].is_none()) {
+      continue;
+    }
+    reference.inputs()[i].dtype = vkapi::kFloat;
+    auto& values = reference.inputs()[i].get_float_data();
+    values.resize(test_case.inputs()[i].numel());
+    for (size_t j = 0; j < values.size(); ++j) {
+      values[j] = test_case.inputs()[i].get_element(j);
+    }
+  }
+  conv2d_reference_impl(reference);
+  test_case.outputs()[0].share_reference_from(reference.outputs()[0]);
 }
 
 // Reference implementation for depthwise conv2d

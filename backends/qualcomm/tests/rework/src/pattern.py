@@ -5000,7 +5000,7 @@ class Remove0DTensor:
         assertions: Assertions,
         pass_pipeline: PassPipeline,
     ):
-        inputs = (torch.randn(4), torch.randn(3, 4))
+        inputs = (torch.randn(1), torch.randn(3, 4))
         gm = pass_pipeline.lower_edge_ep(
             module=Remove0DTensor._ZeroDim(),
             sample_input=inputs,

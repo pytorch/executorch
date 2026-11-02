@@ -11,6 +11,11 @@ def _persistent_region_flags():
         "fbsource//xplat/executorch/tools/buck/constraints:ethosu-persistent-region-enabled": ["-DETHOSU_PERSISTENT_REGION"],
     })
 
+def _vgf_zero_copy_flags():
+    if native.read_config("executorch", "vgf_zero_copy_io", "false") == "true":
+        return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=1"]
+    return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=0"]
+
 def define_common_targets():
     runtime.cxx_library(
         name = "vela_bin_stream",
@@ -65,6 +70,7 @@ def define_common_targets():
         ],
         exported_headers = [
             "VGFExecutionStats.h",
+            "VGFMutableAlias.h",
             "VGFNeuralStatistics.h",
             "VGFSetup.h",
             "VGFShapeUtils.h",
@@ -83,6 +89,7 @@ def define_common_targets():
             "-DUSE_VULKAN_WRAPPER",
             "-DUSE_VULKAN_VOLK",
         ],
+        preprocessor_flags = _vgf_zero_copy_flags(),
         visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/backend:interface",
