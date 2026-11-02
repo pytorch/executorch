@@ -2457,6 +2457,12 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_rms_norm_upcast(self):
+        # A Qwen-style norm, which normalizes in float32.
+        module = UpcastRmsNorm(torch.float16)  # noqa: F405
+        sample_input = (torch.randn(4, 32, dtype=torch.float16),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_roll(self):
         modules = [
             Roll(shifts=(3, 3), dims=(1, 2)),  # noqa: F405
@@ -6112,6 +6118,15 @@ class TestQNNQuantizedOperator(TestQNN):
                     module, sample_input, quant_dtype=QuantDtype.use_16a4w
                 )
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_rms_norm_upcast(self):
+        # Quantization capture rebuilds a float32 norm with a bfloat16 weight.
+        # The default rtol of 1 would pass a norm output of zeros.
+        self.rtol = 1e-1
+        module = UpcastRmsNorm(torch.bfloat16)  # noqa: F405
+        sample_input = (torch.randn(4, 32),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_roll(self):
         modules = [
