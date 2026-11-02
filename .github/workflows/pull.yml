@@ -213,7 +213,13 @@ jobs:
           EXECUTORCH_PYBIND_TEST_BFLOAT16_CHANNELS_LAST_PTE=cmake-out-no-aten/add_bfloat16_channels_last.pte \
           PYTHONPATH=cmake-out-no-aten:.. \
           python extension/pybindings/test/test_pybindings_no_aten.py
-        if ldd cmake-out-no-aten/_C*.so | grep -Eiq 'torch|aten|c10'; then
+        NO_ATEN_LINKS="$(ldd cmake-out-no-aten/_C*.so)"
+        printf '%s\n' "$NO_ATEN_LINKS"
+        if grep -q 'not found' <<<"$NO_ATEN_LINKS"; then
+          echo "torch-free pybindings have a missing runtime dependency"
+          exit 1
+        fi
+        if grep -Eiq '^[[:space:]]*(lib(torch|aten|c10)[^[:space:]/]*\.so|[^[:space:]]*/lib(torch|aten|c10)[^[:space:]/]*\.so)' <<<"$NO_ATEN_LINKS"; then
           echo "torch-free pybindings unexpectedly link against ATen"
           exit 1
         fi
