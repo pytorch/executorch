@@ -192,6 +192,8 @@ class Adapter final {
 
   // Physical Device Features
 
+  bool supports_spirv_capability(uint32_t capability);
+
   inline bool supports_16bit_storage_buffers() {
 #ifdef ETVK_FORCE_NO_EXTENSIONS
     return false;
