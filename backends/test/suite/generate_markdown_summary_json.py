@@ -55,6 +55,7 @@ class AggregatedSummary:
     counts: ResultCounts
     counts_by_params: dict[str, ResultCounts]
     failed_tests: list[list[str]]
+    expected_failures: list[list[str]]
     unexpected_passes: list[str]
 
 
@@ -76,6 +77,7 @@ def aggregate_results(json_path: str) -> AggregatedSummary:
     counts = ResultCounts()
     failed_tests = []
     counts_by_param = {}
+    expected_failures = []
     unexpected_passes = []
 
     for test_data in data["tests"]:
@@ -106,13 +108,17 @@ def aggregate_results(json_path: str) -> AggregatedSummary:
                     counts_by_param[params] = ResultCounts()
                 counts_by_param[params].add_row(result, result_detail, expected_fail)
 
-            if result.lower() == "fail" and not expected_fail:
-                failed_tests.append(subtest_meta)
+            if result.lower() == "fail":
+                if expected_fail:
+                    expected_failures.append(subtest_meta)
+                else:
+                    failed_tests.append(subtest_meta)
 
     return AggregatedSummary(
         counts=counts,
         failed_tests=failed_tests,
         counts_by_params=counts_by_param,
+        expected_failures=expected_failures,
         unexpected_passes=unexpected_passes,
     )
 
@@ -214,16 +220,26 @@ def generate_markdown(json_path: str, exit_code: int = 0):  # noqa (C901)
     print('pytest -c /dev/nul backends/test/suite/ -k "<test_id>"')
     print("```")
     if results.failed_tests:
-        header = build_header(results.failed_tests)
-
-        escaped_header = [escape_for_markdown(col) for col in header.keys()]
-        print("| " + " | ".join(escaped_header) + " |")
-        print("|" + "|".join(["---"] * len(escaped_header)) + "|")
-        for rec in results.failed_tests:
-            row = build_row(rec, header)
-            print("| " + " | ".join(row) + " |")
+        print_table(results.failed_tests)
     else:
         print("No failed tests.\n")
+
+    if results.expected_failures:
+        # Shown with their details, so an expected failure that starts failing
+        # in a different way is still visible.
+        print("# Expected Failures\n")
+        print_table(results.expected_failures)
+
+
+def print_table(records) -> None:
+    header = build_header(records)
+
+    escaped_header = [escape_for_markdown(col) for col in header.keys()]
+    print("| " + " | ".join(escaped_header) + " |")
+    print("|" + "|".join(["---"] * len(escaped_header)) + "|")
+    for rec in records:
+        row = build_row(rec, header)
+        print("| " + " | ".join(row) + " |")
 
 
 def build_header(data) -> dict[str, int]:
