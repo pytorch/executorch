@@ -37,6 +37,21 @@ if(NOT TARGET GTest::gtest_main)
   )
 endif()
 
+add_executable(
+  ethosu_planned_scratch_test
+  test_ethosu_planned_scratch.cpp
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_IoMemcpy.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/VelaBinStream.cpp"
+)
+target_link_libraries(
+  ethosu_planned_scratch_test PRIVATE executorch_core GTest::gtest_main
+)
+add_test(NAME ethosu_planned_scratch_test COMMAND ethosu_planned_scratch_test)
+set_tests_properties(
+  ethosu_planned_scratch_test PROPERTIES LABELS "arm;ethos-u;runtime"
+)
+
 set(_ethos_u_runtime_tests_dir "${CMAKE_CURRENT_SOURCE_DIR}")
 set(_ethos_u_runtime_test_output_dir "${CMAKE_CURRENT_BINARY_DIR}/test_run")
 
