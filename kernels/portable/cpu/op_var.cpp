@@ -29,6 +29,10 @@ void compute_variance(
     const double denominator) {
   using ACC = typename executorch::runtime::
       promote_types<CTYPE_OUT, CTYPE_OUT, /*half_to_float=*/true>::type;
+  // Inputs are converted to the output dtype first, as in ATen.
+  const auto to_acc = [](CTYPE_IN v) {
+    return static_cast<ACC>(static_cast<CTYPE_OUT>(v));
+  };
   CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
   if (num == 0 || denominator <= 0) {
     for (const auto out_ix : c10::irange(out.numel())) {
@@ -40,15 +44,12 @@ void compute_variance(
         in, dim_list, out, [&](const auto begin, const auto end) {
           for (const auto out_ix : c10::irange(begin, end)) {
             ACC sum = plan.execute<CTYPE_IN, ACC>(
-                [](CTYPE_IN v) { return static_cast<ACC>(v); },
-                [](ACC outv, ACC acc) { return acc + outv; },
-                out_ix);
+                to_acc, [](ACC outv, ACC acc) { return acc + outv; }, out_ix);
             ACC mean = sum / static_cast<ACC>(num);
             ACC sum2 = plan.execute<CTYPE_IN, ACC>(
-                [mean](CTYPE_IN v) {
-                  return (
-                      (static_cast<ACC>(v) - mean) *
-                      (static_cast<ACC>(v) - mean));
+                [mean, to_acc](CTYPE_IN v) {
+                  const ACC diff = to_acc(v) - mean;
+                  return diff * diff;
                 },
                 [](ACC outv, ACC acc) { return acc + outv; },
                 out_ix);

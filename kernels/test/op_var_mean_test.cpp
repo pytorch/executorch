@@ -423,6 +423,27 @@ TEST_F(OpVarMeanCorrectionOutTest, BFloat16LargeDimAccumulatesInFloat) {
   EXPECT_TENSOR_EQ(mean_out, expected_mean);
 }
 
+TEST_F(OpVarMeanCorrectionOutTest, MixedDtypesConvertInputsFirst) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen supports fewer dtypes");
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::BFloat16> tf_out;
+  // BFloat16 holds 1000, 1001, 1002, 1003 as 1000, 1000, 1000, 1004, whose
+  // unbiased variance is 4. The variance of the float values is about 1.67.
+  optional<Scalar> correction(1);
+  Tensor var_out = tf_out.zeros({1});
+  Tensor mean_out = tf_out.zeros({1});
+  op_var_mean_correction_out(
+      tf.make({1, 4}, {1000, 1001, 1002, 1003}),
+      ArrayRef<int64_t>{1},
+      correction,
+      /*keepdim=*/false,
+      var_out,
+      mean_out);
+  EXPECT_TENSOR_EQ(var_out, tf_out.full({1}, 4));
+}
+
 TEST_F(OpVarMeanCorrectionOutTest, KeepDim) {
   ET_SKIP_IF(
       torch::executor::testing::SupportedFeatures::get()->is_aten,
