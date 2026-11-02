@@ -581,6 +581,18 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_convert_dtype_pass",
+        srcs = [
+            "test/test_convert_dtype_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":convert_dtype_pass",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_collapse_view_copy",
         srcs = [
             "test/test_collapse_view_copy.py",
