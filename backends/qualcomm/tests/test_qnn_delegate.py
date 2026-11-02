@@ -2353,6 +2353,15 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_fp32_rms_norm(self):
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kHtpBackend:
+            self.skipTest("validates HTP FP32 RMSNorm accumulation")
+        module = Fp32RmsNorm(16).half()  # noqa: F405
+        sample_input = (
+            torch.linspace(-4096, 4096, 16, dtype=torch.float16).reshape(1, 1, 1, 16),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_roll(self):
         modules = [
             Roll(shifts=(3, 3), dims=(1, 2)),  # noqa: F405

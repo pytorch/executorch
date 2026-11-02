@@ -398,6 +398,12 @@ def test_recompose_rms_norm(request, kwargs):
     RecomposeRmsNorm.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_backends_quantized()
+@repack_pass_fixtures
+def test_recompose_rms_norm_annotation(request, kwargs):
+    RecomposeRmsNorm.test_annotation(request, kwargs)  # noqa: F405
+
+
 @enumerate_backends()
 @repack_pass_fixtures
 def test_remove_0d_tensor(request, kwargs):

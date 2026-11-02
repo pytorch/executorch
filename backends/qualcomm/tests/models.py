@@ -2420,6 +2420,18 @@ class RmsNorm(torch.nn.Module):
         return self.rms(x)
 
 
+class Fp32RmsNorm(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):
+        input_dtype = x.dtype
+        x = x.float()
+        x = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + 1e-6)
+        return x.to(input_dtype) * self.weight.to(input_dtype)
+
+
 class Roll(torch.nn.Module):
     def __init__(self, shifts, dims=None):
         super().__init__()
