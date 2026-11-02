@@ -147,6 +147,12 @@ class FuseBatchNormPass(XNNPACKPass):
                 if why:
                     why("Convolution input must be rank 3 or 4.")
                 return False
+        # BatchNorm normalizes dim 1, which holds the linear's output features only
+        # when the linear output is 2-D.
+        elif "val" not in input_node.meta or len(input_node.meta["val"].shape) != 2:
+            if why:
+                why(bn, "Linear output must be rank 2.")
+            return False
 
         return True
 
