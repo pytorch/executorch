@@ -663,7 +663,10 @@ void update_cache_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   add_sdpa_kv_cache_update_node(graph, input_pos_symint, value, cache);
 }
 
-void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+void sdpa_impl_with_shader_override(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args,
+    const ValueRef shader_override) {
   int arg_idx = 0;
   const ValueRef q_projected = args[arg_idx++];
   const ValueRef k_cache = args[arg_idx++];
@@ -792,7 +795,12 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       /*k=*/kDummyValueRef,
       input_pos_symint,
       out,
-      SDPAMode::LLM);
+      SDPAMode::LLM,
+      shader_override);
+}
+
+void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  sdpa_impl_with_shader_override(graph, args, kDummyValueRef);
 }
 
 void sdpa_with_kv_cache_impl(
