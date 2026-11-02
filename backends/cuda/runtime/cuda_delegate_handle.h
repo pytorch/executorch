@@ -56,6 +56,15 @@ using AOTInductorModelContainerGetConstantDataSizeFunc =
         aoti::AOTInductorModelContainerHandle container_handle,
         size_t idx,
         size_t* data_size);
+using AOTInductorModelContainerGetConstantTypeFunc = aoti::AOTIRuntimeError (*)(
+    aoti::AOTInductorModelContainerHandle container_handle,
+    size_t idx,
+    int32_t* type);
+using AOTInductorModelContainerGetConstantFromFoldedFunc =
+    aoti::AOTIRuntimeError (*)(
+        aoti::AOTInductorModelContainerHandle container_handle,
+        size_t idx,
+        bool* from_folded);
 struct CudaWeightStorage {
   void* data{nullptr};
   size_t nbytes{0};
@@ -285,6 +294,11 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // Bytes a constant's compiled shape spans; the off-graph KV cache checks its
   // storage against it before binding.
   AOTInductorModelContainerGetConstantDataSizeFunc get_constant_data_size{
+      nullptr};
+  // With these, FQN weight binding checks completeness itself instead of
+  // AOTI's full update, which warns once per off-graph KV buffer on every load.
+  AOTInductorModelContainerGetConstantTypeFunc get_constant_type{nullptr};
+  AOTInductorModelContainerGetConstantFromFoldedFunc get_constant_from_folded{
       nullptr};
 
   // The per-thread stream. Nothing owns it: the value is a fixed sentinel the

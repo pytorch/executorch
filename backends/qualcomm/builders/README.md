@@ -483,6 +483,7 @@ Please help update following table if you are contributing new operators:
 | SparseToDense | &cross; |
 | Split | &check; |
 | Squeeze | &check; |
+| Stft | &check; |
 | StridedSlice | &check; |
 | Tanh | &check; |
 | Tile | &check; |

@@ -266,7 +266,32 @@ REGISTER_TEST_CASE_SET("embedding_q4gsw", "correctness") {
        .scales_dtype = vkapi::kFloat,
        .storage_type = utils::kTexture3D},
   };
-  return {generate_test_cases(configs), embedding_4bit_reference};
+  auto test_cases = generate_test_cases(configs);
+  for (const auto storage_type : {utils::kBuffer, utils::kTexture3D}) {
+    test_cases.push_back(create_test_case(
+        {.vocab_size = 16,
+         .embed_dim = 1536,
+         .group_size = 1536,
+         .indices_shape = {1, 4},
+         .test_case_name = "gemma4_token_embedding_per_row",
+         .dtype = vkapi::kFloat,
+         .scales_dtype = vkapi::kFloat,
+         .storage_type = storage_type,
+         .is_linear_weight = true,
+         .per_row_scales_1d = true}));
+    test_cases.push_back(create_test_case(
+        {.vocab_size = 16,
+         .embed_dim = 8960,
+         .group_size = 8960,
+         .indices_shape = {1, 4},
+         .test_case_name = "gemma4_ple_embedding_per_row",
+         .dtype = vkapi::kFloat,
+         .scales_dtype = vkapi::kFloat,
+         .storage_type = storage_type,
+         .is_linear_weight = true,
+         .per_row_scales_1d = true}));
+  }
+  return {test_cases, embedding_4bit_reference};
 }
 
 REGISTER_TEST_CASE_SET("embedding_q4gsw", "performance") {

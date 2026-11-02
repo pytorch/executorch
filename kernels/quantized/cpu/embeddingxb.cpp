@@ -125,9 +125,10 @@ void check_embedding_xbit_args(
         static_cast<int8_t>(weight_scales.dim()));
 
     ET_CHECK_MSG(
-        opt_weight_zero_points.value().scalar_type() == out.scalar_type(),
+        opt_weight_zero_points.value().scalar_type() ==
+            weight_scales.scalar_type(),
         "weight zero points scalar type %" PRId8
-        " does not match out.scalar_type()",
+        " does not match weight_scales.scalar_type()",
         static_cast<int8_t>(opt_weight_zero_points.value().scalar_type()));
 
     for (int32_t i = 0; i < weight_scales.dim(); ++i) {
@@ -193,6 +194,12 @@ void embedding_xbit_per_channel(
 
   for (int i = 0; i < indices.numel(); i++) {
     CTYPE_INDICES index = indices_ptr[i];
+    ET_CHECK_MSG(
+        index >= 0 && index < weight.size(0),
+        "Index out of bounds for weight: index %" PRId64
+        " must be in range [0, %zd)",
+        static_cast<int64_t>(index),
+        weight.size(0));
     // If using groupwise embedding
     int32_t qparams_index = index * num_groups_per_channel;
     CTYPE_PARAMS zp = 0.0;
@@ -283,6 +290,15 @@ Tensor& quantized_embedding_xbit_out(
       out_type,
       out,
       weight_nbit);
+
+  // Without a dtype argument the output takes the scales' dtype, and the
+  // kernel reads the scales as the output type.
+  ET_CHECK_MSG(
+      weight_scales.scalar_type() == out_type,
+      "weight_scales.scalar_type() %" PRId8
+      " does not match out.scalar_type() %" PRId8,
+      static_cast<int8_t>(weight_scales.scalar_type()),
+      static_cast<int8_t>(out_type));
 
   constexpr auto name = "quantized_decomposed::embedding_xbit.out";
   ScalarType indices_type = indices.scalar_type();

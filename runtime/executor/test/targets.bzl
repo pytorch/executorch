@@ -123,6 +123,7 @@ def define_common_targets(is_fbcode = False):
             # intentionally don't work in xplat (since they're host-only tools).
             "ET_MODULE_ADD_HALF_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAddHalf.pte])",
             "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
+            "ET_MODULE_CHANNELS_LAST_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleChannelsLast.pte])",
             "ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleDynamicCatUnallocatedIO.pte])",
             "ET_MODULE_INDEX_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleIndex.pte])",
             "ET_MODULE_ADD_MUL_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAddMul.pte])",
@@ -358,9 +359,13 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/core:device_memory_buffer",
                 "//executorch/runtime/core/test:mock_cuda_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
                 "//executorch/schema:program",
             ],
             env = {
                 "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDevice.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDeviceProgram.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDeviceProgram.ptd])",
             },
         )

@@ -7,13 +7,17 @@
  */
 #include <executorch/examples/models/muse-glimmer/runtime/prompt_preparation.h>
 
-#include <CommonCrypto/CommonDigest.h>
 #include <executorch/extension/llm/serving/detail/prompt_preparer.h>
 #include <nlohmann/json.hpp>
 #include <pytorch/tokenizers/tokenizer.h>
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <utility>
+
+#if defined(EXECUTORCH_BUILD_MLX)
+#include <CommonCrypto/CommonDigest.h>
+#endif
 
 namespace executorch::extension::llm {
 namespace {
@@ -45,15 +49,143 @@ bool valid_image(
       bytes == static_cast<size_t>(pixels) * 3;
 }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#if defined(EXECUTORCH_BUILD_CUDA)
+// FIPS 180-4 SHA-256 for CUDA builds without a platform crypto library.
+class Sha256 {
+ public:
+  void update(const void* data, size_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    length_ += size;
+    while (size > 0) {
+      const size_t take = std::min(size, block_.size() - buffered_);
+      std::copy(bytes, bytes + take, block_.begin() + buffered_);
+      buffered_ += take;
+      bytes += take;
+      size -= take;
+      if (buffered_ == block_.size()) {
+        compress();
+        buffered_ = 0;
+      }
+    }
+  }
+
+  batching::ContentKey finish() {
+    const uint64_t bits = length_ * 8;
+    const uint8_t pad = 0x80;
+    update(&pad, 1);
+    const uint8_t zero = 0;
+    while (buffered_ != 56) {
+      update(&zero, 1);
+    }
+    uint8_t encoded[8];
+    for (size_t i = 0; i < 8; ++i) {
+      encoded[7 - i] = static_cast<uint8_t>(bits >> (i * 8));
+    }
+    update(encoded, sizeof(encoded));
+    batching::ContentKey key;
+    for (size_t i = 0; i < state_.size(); ++i) {
+      for (size_t j = 0; j < 4; ++j) {
+        key[i * 4 + j] = static_cast<uint8_t>(state_[i] >> (24 - 8 * j));
+      }
+    }
+    return key;
+  }
+
+ private:
+  static uint32_t rotr(uint32_t x, int n) {
+    return (x >> n) | (x << (32 - n));
+  }
+
+  void compress() {
+    static constexpr std::array<uint32_t, 64> k = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
+        0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+        0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+        0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+        0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+        0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+        0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+        0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
+    std::array<uint32_t, 64> w;
+    for (size_t i = 0; i < 16; ++i) {
+      w[i] = (uint32_t(block_[4 * i]) << 24) |
+          (uint32_t(block_[4 * i + 1]) << 16) |
+          (uint32_t(block_[4 * i + 2]) << 8) | uint32_t(block_[4 * i + 3]);
+    }
+    for (size_t i = 16; i < 64; ++i) {
+      const uint32_t s0 =
+          rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+      const uint32_t s1 =
+          rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+      w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    }
+    auto v = state_;
+    for (size_t i = 0; i < 64; ++i) {
+      const uint32_t s1 = rotr(v[4], 6) ^ rotr(v[4], 11) ^ rotr(v[4], 25);
+      const uint32_t ch = (v[4] & v[5]) ^ (~v[4] & v[6]);
+      const uint32_t t1 = v[7] + s1 + ch + k[i] + w[i];
+      const uint32_t s0 = rotr(v[0], 2) ^ rotr(v[0], 13) ^ rotr(v[0], 22);
+      const uint32_t maj = (v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]);
+      v = {t1 + s0 + maj, v[0], v[1], v[2], v[3] + t1, v[4], v[5], v[6]};
+    }
+    for (size_t i = 0; i < state_.size(); ++i) {
+      state_[i] += v[i];
+    }
+  }
+
+  std::array<uint32_t, 8> state_ = {
+      0x6a09e667,
+      0xbb67ae85,
+      0x3c6ef372,
+      0xa54ff53a,
+      0x510e527f,
+      0x9b05688c,
+      0x1f83d9ab,
+      0x5be0cd19};
+  std::array<uint8_t, 64> block_{};
+  size_t buffered_ = 0;
+  uint64_t length_ = 0;
+};
+#elif defined(EXECUTORCH_BUILD_MLX)
+class Sha256 {
+ public:
+  Sha256() {
+    CC_SHA256_Init(&context_);
+  }
+
+  void update(const void* data, size_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    while (size > 0) {
+      const auto chunk = static_cast<CC_LONG>(std::min(
+          size, static_cast<size_t>(std::numeric_limits<CC_LONG>::max())));
+      CC_SHA256_Update(&context_, bytes, chunk);
+      bytes += chunk;
+      size -= chunk;
+    }
+  }
+
+  batching::ContentKey finish() {
+    batching::ContentKey key;
+    CC_SHA256_Final(key.data(), &context_);
+    return key;
+  }
+
+ private:
+  CC_SHA256_CTX context_;
+};
+#else
+#error "Muse Glimmer preparation requires a CUDA or MLX build"
+#endif
+
 batching::ContentKey image_key(
     const MuseGlimmerRGBImage& image,
     const MuseGlimmerImageGrid& grid) {
-  CC_SHA256_CTX hash;
-  CC_SHA256_Init(&hash);
+  Sha256 hash;
   constexpr char version[] = "muse-glimmer-image-v1";
-  CC_SHA256_Update(&hash, version, sizeof(version) - 1);
+  hash.update(version, sizeof(version) - 1);
   // Five unsigned 64-bit big-endian fields, followed by canonical HWC bytes.
   for (uint64_t value :
        {uint64_t(image.width),
@@ -64,20 +196,11 @@ batching::ContentKey image_key(
     uint8_t bytes[8];
     for (size_t i = 0; i < 8; ++i)
       bytes[7 - i] = static_cast<uint8_t>(value >> (i * 8));
-    CC_SHA256_Update(&hash, bytes, sizeof(bytes));
+    hash.update(bytes, sizeof(bytes));
   }
-  for (size_t offset = 0; offset < image.rgb.size();) {
-    const auto count = static_cast<CC_LONG>(std::min(
-        image.rgb.size() - offset,
-        static_cast<size_t>(std::numeric_limits<CC_LONG>::max())));
-    CC_SHA256_Update(&hash, image.rgb.data() + offset, count);
-    offset += count;
-  }
-  batching::ContentKey key;
-  CC_SHA256_Final(key.data(), &hash);
-  return key;
+  hash.update(image.rgb.data(), image.rgb.size());
+  return hash.finish();
 }
-#pragma clang diagnostic pop
 } // namespace
 
 MuseGlimmerPreparedInput::MuseGlimmerPreparedInput(

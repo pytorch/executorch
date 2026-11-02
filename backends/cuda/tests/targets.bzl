@@ -27,7 +27,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -64,7 +64,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -86,7 +86,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -110,7 +110,8 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
+            resource_units = 1,
         ),
     )
 
@@ -129,7 +130,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -153,7 +154,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -206,7 +207,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -231,7 +232,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -253,7 +254,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -279,7 +280,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -304,6 +305,45 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/cuda:quantize_op_dispatch",
             "//executorch/backends/cuda:triton_kernels",
         ],
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_triton_mutation_cache",
+        srcs = [
+            "test_triton_mutation_cache.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:triton_kernels",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100-exclusive",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_cuda_weight_reuse",
+        srcs = [
+            "test_cuda_weight_reuse.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/exir:lib",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100-exclusive",
+        ),
     )
 
     python_unittest(

@@ -13,6 +13,8 @@
 #include <executorch/backends/webgpu/runtime/ops/adamw/adamw_step_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/add/binary_add_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/addmm/addmm_tiled_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/arange/arange_int_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/arange/arange_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/avg_pool2d/avg_pool2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/batch_norm/batch_norm_wgsl.h>
@@ -44,8 +46,10 @@
 #include <executorch/backends/webgpu/runtime/ops/embedding/embedding_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/embedding_q4gsw/embedding_q4gsw_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_gemm_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_shmem_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv_transpose2d_gemm_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv_transpose2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_av_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_qk_entry_wgsl.h>
@@ -153,7 +157,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 139> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -195,6 +199,20 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kApplyRotaryEmbInterleavedWorkgroupSizeX,
         kApplyRotaryEmbInterleavedWorkgroupSizeY,
         kApplyRotaryEmbInterleavedWorkgroupSizeZ,
+    },
+    {
+        "arange",
+        kArangeWGSL,
+        kArangeWorkgroupSizeX,
+        kArangeWorkgroupSizeY,
+        kArangeWorkgroupSizeZ,
+    },
+    {
+        "arange_int",
+        kArangeIntWGSL,
+        kArangeIntWorkgroupSizeX,
+        kArangeIntWorkgroupSizeY,
+        kArangeIntWorkgroupSizeZ,
     },
     {
         "arg_reduce",
@@ -400,6 +418,13 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kConv2dGemmWorkgroupSizeZ,
     },
     {
+        "conv2d_shmem",
+        kConv2dShmemWGSL,
+        kConv2dShmemWorkgroupSizeX,
+        kConv2dShmemWorkgroupSizeY,
+        kConv2dShmemWorkgroupSizeZ,
+    },
+    {
         "conv2d_vec4",
         kConv2dVec4WGSL,
         kConv2dVec4WorkgroupSizeX,
@@ -412,6 +437,13 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kConvTranspose2dWorkgroupSizeX,
         kConvTranspose2dWorkgroupSizeY,
         kConvTranspose2dWorkgroupSizeZ,
+    },
+    {
+        "conv_transpose2d_gemm",
+        kConvTranspose2dGemmWGSL,
+        kConvTranspose2dGemmWorkgroupSizeX,
+        kConvTranspose2dGemmWorkgroupSizeY,
+        kConvTranspose2dGemmWorkgroupSizeZ,
     },
     {
         "conv_with_clamp",

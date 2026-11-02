@@ -717,8 +717,14 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     new (compute_graph) ComputeGraph(graph_config);
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
-    Error err = compileModel(
-        processed->data(), processed->size(), compute_graph, named_data_map);
+    Error err = Error::Ok;
+    try {
+      err = compileModel(
+          processed->data(), processed->size(), compute_graph, named_data_map);
+    } catch (const vkapi::ShaderNotSupportedError& error) {
+      ET_LOG(Error, "Unsupported Vulkan shader: %s", error.what());
+      err = Error::NotSupported;
+    }
 
     // This backend does not need its processed data after compiling the
     // model.
@@ -854,7 +860,13 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     for (const auto& r :
          compute_graph->context()->querypool().get_shader_timestamp_data()) {
       std::string event_name = "{" + r.kernel_name +
-          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) + "}";
+          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) +
+          ", \"global_workgroup\": [" + std::to_string(r.metadata.gwg[0]) +
+          ", " + std::to_string(r.metadata.gwg[1]) + ", " +
+          std::to_string(r.metadata.gwg[2]) + "], \"local_workgroup\": [" +
+          std::to_string(r.metadata.lwg[0]) + ", " +
+          std::to_string(r.metadata.lwg[1]) + ", " +
+          std::to_string(r.metadata.lwg[2]) + "]}";
       event_tracer_log_profiling_delegate(
           event_tracer,
           event_name.c_str(),
