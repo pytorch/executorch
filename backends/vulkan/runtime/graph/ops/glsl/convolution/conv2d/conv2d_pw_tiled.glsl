@@ -9,6 +9,7 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
+#define T ${buffer_scalar_type(DTYPE)}
 #define VEC4_T ${buffer_gvec_type(DTYPE, 4)}
 
 #define TILE_M4 ${TILE_M4}
@@ -73,8 +74,9 @@ ${layout_declare_spec_const(C, "int", "activation_type", "0")}
 struct InCoords {
   ivec2 pos[TILE_M];
   ivec2 out_pos[TILE_M];
-  bool valid[TILE_M];
   bool in_bounds[TILE_M];
+  // 1 for pixels inside the input, 0 for padding.
+  T in_scale[TILE_M];
 };
 
 void compute_in_coords(
@@ -83,8 +85,7 @@ void compute_in_coords(
     const int tiles_x,
     const int W_out,
     const int H_out,
-    const int W_in,
-    const int H_in) {
+    const ivec2 in_extents) {
   const int x0 = (tile_idx_m % tiles_x) * TILE_W;
   const int y0 = (tile_idx_m / tiles_x) * TILE_H;
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
@@ -98,12 +99,15 @@ void compute_in_coords(
     coords.out_pos[m] = ivec2(out_x, out_y);
     if (stride_1_padding_0 != 0) {
       coords.pos[m] = ivec2(out_x, out_y);
-      coords.valid[m] = true;
+      coords.in_scale[m] = T(1);
     } else {
-      const int in_x = out_x * stride_w - padding_w;
-      const int in_y = out_y * stride_h - padding_h;
-      coords.pos[m] = ivec2(in_x, in_y);
-      coords.valid[m] = in_x >= 0 && in_x < W_in && in_y >= 0 && in_y < H_in;
+      // Padding pixels read the nearest input pixel and are zeroed by a
+      // multiply. Zeroing them with a branch or select instead dropped valid
+      // pixels on Adreno 830 (Float) and PowerVR DXT (Half).
+      const ivec2 pos =
+          ivec2(out_x * stride_w - padding_w, out_y * stride_h - padding_h);
+      coords.pos[m] = clamp(pos, ivec2(0), in_extents - 1);
+      coords.in_scale[m] = T(all(equal(coords.pos[m], pos)) ? 1.0 : 0.0);
     }
   }
 }
@@ -118,10 +122,12 @@ void load_input_tile_with_checks(
       // The k4 check is redundant when TILE_K4 == 1, but with no branch left in
       // the K loop the Adreno compiler reads the weight buffer through a much
       // slower path.
-      if (k4_start + k4 < K4 &&
-          (stride_1_padding_0 != 0 || coords.valid[m])) {
+      if (k4_start + k4 < K4) {
         tile.data[m][k4] =
             VEC4_T(texelFetch(t_in, ivec3(coords.pos[m], k4_start + k4), 0));
+        if (stride_1_padding_0 == 0) {
+          tile.data[m][k4] *= coords.in_scale[m];
+        }
       } else {
         tile.data[m][k4] = VEC4_T(0.0);
       }
@@ -162,8 +168,6 @@ void main() {
 
   const int n4_start = tile_idx_n * TILE_N4;
 
-  const int W_in = in_sizes.x;
-  const int H_in = in_sizes.y;
   const int K = in_sizes.z;
   const int K4 = div_up_4(K);
 
@@ -185,7 +189,7 @@ void main() {
 
   InCoords in_coords;
   compute_in_coords(
-      in_coords, tile_idx_m, tiles_x, W_out, H_out, W_in, H_in);
+      in_coords, tile_idx_m, tiles_x, W_out, H_out, in_sizes.xy);
 
   for (int k4 = 0; k4 < K4; k4++) {
     load_input_tile_with_checks(in_tile, in_coords, k4, K4);

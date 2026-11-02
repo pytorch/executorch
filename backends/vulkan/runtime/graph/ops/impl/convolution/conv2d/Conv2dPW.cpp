@@ -197,14 +197,11 @@ ValueRef prepack_conv2d_pw_weight(
   const int64_t output_width = N4 * 4 * 4;
 
   // Buffer weights are faster than texture weights on every GPU measured.
-  // Half buffers need 16-bit storage support. Float uses texture weights on
-  // Mali, where Float buffer weights produced wrong results for padded and
-  // strided convolutions on Mali-G715.
+  // Half buffers need 16-bit storage support.
   utils::StorageType weight_storage = utils::kTexture2D;
   uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
-  const bool buffer_weights = graph.dtype_of(weight_data) == vkapi::kHalf
-      ? graph.float16_buffers_enabled()
-      : !graph.device_is_mali();
+  const bool buffer_weights = graph.dtype_of(weight_data) != vkapi::kHalf ||
+      graph.float16_buffers_enabled();
   if (buffer_weights || output_width / 4 > max_extent ||
       static_cast<uint32_t>(output_height) > max_extent) {
     weight_storage = utils::kBuffer;
