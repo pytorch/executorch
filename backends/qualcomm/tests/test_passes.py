@@ -1,4 +1,5 @@
 import contextlib
+import logging
 import operator
 import unittest
 from collections import defaultdict
@@ -523,13 +524,17 @@ class TestPasses(unittest.TestCase):
                     else:
                         no_collision.append(type(model).__name__)
                     reserve.assert_called_once()
-        # A skip, not a failure: a torch update that removes the collision is fine.
+        # A skip, not a failure: a torch update that removes the collision is
+        # fine. While any case still collides, the test still means something.
+        message = (
+            f"{no_collision} no longer collide without reserve_node_names, so "
+            "those cases no longer test it; see "
+            "https://github.com/pytorch/pytorch/issues/202927"
+        )
+        if len(no_collision) == len(cases):
+            self.skipTest(message)
         if no_collision:
-            self.skipTest(
-                f"{no_collision} no longer collide without reserve_node_names, so "
-                "those cases no longer test it; see "
-                "https://github.com/pytorch/pytorch/issues/202927"
-            )
+            logging.warning(message)
 
     def test_build_op_wrappers_returns_context_binary(self):
         op_name = "ctx_loader_build"
