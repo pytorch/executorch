@@ -358,9 +358,12 @@ class TestIndexShims(unittest.TestCase):
 
         torch.manual_seed(0)
         q, k, v = (torch.randn(28, 4, 64, dtype=torch.bfloat16) for _ in range(3))
+        # Equal scores so large that float32 rounds their log-sum-exp.
+        big = torch.full_like(q, 1024)
         # The sequence boundaries come only at run time.
         cases = [
             (q, k, v, torch.tensor([0, 12, 28], dtype=torch.int32)),
             (q, k, v, torch.tensor([0, 16, 28], dtype=torch.int32)),
+            (big, big, v, torch.tensor([0, 12, 28], dtype=torch.int32)),
         ]
         self._run(Attention(), cases, atol=1e-2, rtol=1e-2)

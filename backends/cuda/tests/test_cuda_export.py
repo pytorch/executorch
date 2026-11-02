@@ -540,11 +540,14 @@ class TestCudaExport(unittest.TestCase):
         shifted = torch.tensor([2, 6, 16], dtype=torch.int32, device="cuda")
         nan_outside = v.clone()
         nan_outside[:2] = nan_outside[16:] = float("nan")
+        big = torch.full_like(q, 1024)
         cases = [
             (q[:16], k, v, short, cu_seq, 12, 16, True, None, [3, -1]),
             (q, k, nan_outside, cu_seq, shifted, 16, 12, True, None, [-1, 0]),
             (q, k[:, :2], v[:, :2], empty, empty, 16, 16, False, 0.5, None, True),
             (q, k, v, cu_seq, cu_seq, 16, 16, False, None, [4, 2]),
+            # Equal scores so large that float32 rounds their log-sum-exp.
+            (big, big, v, cu_seq, cu_seq, 16, 16),
         ]
         table = CudaBackend.get_decomposition_table()
         for args in cases:

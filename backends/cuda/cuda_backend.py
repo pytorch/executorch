@@ -786,8 +786,11 @@ def _varlen_attn(
     scores = torch.einsum("qhd,khd->hqk", query.float(), key.float()) * scale
     scores = scores.masked_fill(~allowed, float("-inf"))
     lse = scores.logsumexp(-1)
-    lse = lse.masked_fill(lse == float("-inf"), float("inf"))
-    probs = torch.exp(scores - lse[..., None])
+    empty = lse == float("-inf")
+    # Not exp(scores - lse): at large scores, float32 rounds lse as coarsely
+    # as the scores, and the weights no longer add up to one.
+    probs = scores.softmax(-1).masked_fill(empty[..., None], 0)
+    lse = lse.masked_fill(empty, float("inf"))
     out = torch.einsum("hqk,khd->qhd", probs, value.float()).to(query.dtype)
     rng_state = torch.zeros(2, dtype=torch.uint64, device=query.device)
     # einsum gives a permuted view. The op lays out its output in the
