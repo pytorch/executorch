@@ -150,10 +150,11 @@ class TraceExecutor final : public batching::testing::FakeExecutor {
       }
       auto& tokens = it->second;
       tokens.resize(position);
+      const auto& source = *std::get<batching::TokenInputPtr>(input.payload);
       tokens.insert(
           tokens.end(),
-          input.tokens->begin() + input.offset,
-          input.tokens->begin() + input.offset + input.size);
+          source.begin() + input.offset,
+          source.begin() + input.offset + input.size);
       if (output.outputs[i] && !output.outputs[i]->tokens.empty()) {
         const auto& generated = output.outputs[i]->tokens;
         tokens.insert(tokens.end(), generated.begin(), generated.end() - 1);
@@ -238,7 +239,9 @@ int main(int argc, char** argv) {
   config.prefix_cache_capacity = prefix_cache ? 2 : 0;
   executor.capacity = static_cast<int>(
       config.max_sessions +
-      (prefix_cache ? config.prefix_cache_capacity + 1 : 0));
+      (prefix_cache
+           ? config.prefix_cache_capacity + config.resolved_prefix_captures()
+           : 0));
   if (stop_immediately) {
     config.default_stop_tokens = {9};
   }

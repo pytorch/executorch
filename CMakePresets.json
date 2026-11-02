@@ -168,6 +168,14 @@
       }
     },
     {
+      "name": "llm-release-vulkan",
+      "displayName": "LLM release build with Vulkan",
+      "inherits": ["llm-release"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_VULKAN": "ON"
+      }
+    },
+    {
       "name": "llm-release-cuda",
       "displayName": "LLM release build with CUDA",
       "inherits": [
@@ -359,7 +367,8 @@
       "displayName": "Build ExecuTorch for ESP baremetal",
       "inherits": ["common"],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/esp_baremetal.cmake"
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/esp_baremetal.cmake",
+        "CMAKE_TRY_COMPILE_TARGET_TYPE": "STATIC_LIBRARY"
       }
     },
     {
@@ -426,6 +435,14 @@
       "targets": [
         "install"
       ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-release-vulkan-install",
+      "displayName": "Build and install LLM extension release artifacts (Vulkan)",
+      "configurePreset": "llm-release-vulkan",
+      "configuration": "Release",
+      "targets": ["install"],
       "jobs": 0
     },
     {
@@ -535,6 +552,14 @@
           "type": "build",
           "name": "llm-release-install"
         }
+      ]
+    },
+    {
+      "name": "llm-release-vulkan",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Vulkan enabled",
+      "steps": [
+        {"type": "configure", "name": "llm-release-vulkan"},
+        {"type": "build", "name": "llm-release-vulkan-install"}
       ]
     },
     {

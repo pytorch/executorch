@@ -8,12 +8,15 @@ import copy
 import inspect
 from typing import Any, Optional, Type
 
+import torch
 from executorch.backends.arm._passes import (
     DeduplicateGetAttrPass,
     FoldAndAnnotateQParamsPass,
     ScalarsToAttributePass,
 )
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
+from executorch.backends.cortex_m.utils import _ACTIVATION_FNS
+from executorch.backends.transforms.aten_to_dialect_pass import AtenToDialectPass
 from executorch.backends.transforms.convert_conv1d_to_conv2d_pass import (
     ConvertConv1dToConv2dPass,
 )
@@ -30,10 +33,12 @@ from executorch.backends.transforms.replace_scalar_with_tensor import (
 from executorch.backends.transforms.replace_squeeze_unsqueeze_with_view import (
     ReplaceSqueezeAndUnsqueezeWithViewPass,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import (
     ExportedProgramPassBase,
     ExportedProgramPassResult,
     ExportPass,
+    ProxyValue,
 )
 from executorch.exir.pass_manager import ExportedProgramPassManager, PassType
 from executorch.exir.program._program import _transform, lift_constant_tensor_pass
@@ -82,6 +87,34 @@ class LiftConstantTensorsPass(ExportedProgramPassBase):
         )
 
 
+# Once Q/DQ is folded these ops take int8, but their ATen fake kernels promote
+# it to float, so each retrace would label them and everything behind them float.
+_FLOAT_PROMOTING_OPS = frozenset({*_ACTIVATION_FNS, exir_ops.edge.aten.div.Tensor})
+
+
+class _PreserveQuantizedDtype(ExportPass):
+    def call_operator(self, op, args, kwargs, meta) -> ProxyValue:
+        result = super().call_operator(op, args, kwargs, meta)
+        input_qparams = meta.data.get("input_qparams")
+        output_qparams = meta.data.get("output_qparams")
+        # Match AtenToCortexMPass, which only lowers these ops with both qparams.
+        if op not in _FLOAT_PROMOTING_OPS or not input_qparams or not output_qparams:
+            return result
+        dtype = next(iter(output_qparams.values())).dtype
+        data = torch.empty_like(result.data, dtype=dtype)
+        self.tracer.set_metadata(result.node, data)
+        return ProxyValue(data, result.proxy)
+
+
+def _preserving_quantized_dtype(pass_cls: PassClass) -> PassClass:
+    # Shared passes retrace too, so every pass needs this, except dialect
+    # lowering passes: they lower these ops themselves, and subclassing one
+    # would give it an empty substitution registry.
+    if not issubclass(pass_cls, ExportPass) or issubclass(pass_cls, AtenToDialectPass):
+        return pass_cls
+    return type(pass_cls.__name__, (_PreserveQuantizedDtype, pass_cls), {})
+
+
 class _CortexMLoweringPass(ExportedProgramPassBase):
     def __init__(
         self, pass_classes: list[PassClass], target_config: CortexMTargetConfig
@@ -99,7 +132,7 @@ class _CortexMLoweringPass(ExportedProgramPassBase):
             if "target_config" in signature.parameters:
                 kwargs["target_config"] = self.target_config
 
-            transform_pass = pass_cls(**kwargs)
+            transform_pass = _preserving_quantized_dtype(pass_cls)(**kwargs)
             transformed = _transform(exported_program, transform_pass)
             modified |= transformed is not exported_program
             exported_program = transformed
@@ -111,13 +144,15 @@ class CortexMPassManager(ExportedProgramPassManager):
     legacy_pass_list: list[PassClass] = [
         # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
         RemoveGetItemPass,
-        FoldAndAnnotateQParamsPass,
+        # Retrace scalar ops while the graph still has floating-point Q/DQ inputs.
         ReplaceScalarWithTensorArgPass,
-        ReplaceQuantNodesPass,
+        FoldAndAnnotateQParamsPass,
         ActivationFusionPass,
         QuantizedClampActivationPass,
         DecomposeHardswishPass,
         AtenToCortexMPass,
+        # Retrace only after quantized ATen ops have become Cortex-M kernels.
+        ReplaceQuantNodesPass,
         FuseConvPaddingPass,
         InitializeScratchBuffersPass,
         LiftConstantTensorsPass,

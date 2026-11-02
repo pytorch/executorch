@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 import torch
 from executorch.exir._warnings import deprecated
 from executorch.exir.error import internal_assert
+from executorch.exir.inplace_aliasing import verify_inplace_result_aliases
 from executorch.exir.memory import alloc
 from executorch.exir.memory_planning import (
     _is_out_var_node,
@@ -285,6 +286,7 @@ class MemoryPlanningPass(PassBase):
         A pass for memory planning. The actual algorithm used will be picked by
         memory_planning_algo
         """
+        verify_inplace_result_aliases(graph_module)
         self._set_alloc_node_spec(graph_module)
         # TODO(shunting) if people have concern of adding a field to GraphModule
         # directly, we should define a GraphModule subclass that we can add our

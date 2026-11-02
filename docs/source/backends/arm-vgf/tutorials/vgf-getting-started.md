@@ -60,7 +60,7 @@ The `setup.sh` script has generated a `setup_path.sh` script that you need to so
 
 `source examples/arm/arm-scratch/setup_path.sh`
 
-Python 3.12 is the reference and recommended minimum for the ML SDK 0.10 VGF flow. If you use an older ExecuTorch-supported Python version, the VGF preflight reports a warning so that the environment difference is visible.
+Python 3.12 is the reference and recommended minimum for the VGF flow. If you use an older ExecuTorch-supported Python version, the VGF preflight reports a warning so that the environment difference is visible.
 
 As a check that your environment is set up correctly, run
 

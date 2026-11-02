@@ -134,6 +134,13 @@ serving::PromptInput prompt_input(const Json& request) {
 
 serving::GenerationOptions generation_options(const Json& request) {
   serving::GenerationOptions options;
+  if (request.contains("ignore_eos")) {
+    const auto& value = request.at("ignore_eos");
+    if (!value.is_boolean()) {
+      throw std::invalid_argument("ignore_eos must be a boolean");
+    }
+    options.ignore_eos = value.get<bool>();
+  }
   if (request.contains("max_new_tokens")) {
     const auto& value = request.at("max_new_tokens");
     const bool in_range = value.is_number_unsigned()
@@ -268,9 +275,12 @@ class Worker {
     }
     try {
       const auto info = runtime_.info();
+      const auto stops = runtime_.default_stop_strings();
       queue_.push_back(
           {nullptr,
            Json({{"ready", true},
+                 {"supports_ignore_eos", true},
+                 {"default_stop_strings", stops ? Json(*stops) : Json(nullptr)},
                  {"multiplexed", true},
                  {"max_named_sessions", info.max_sessions},
                  {"max_inflight_requests", config_.max_inflight_requests}})
@@ -413,31 +423,54 @@ class Worker {
              "top_p",
              "top_k",
              "seed",
-             "stop"});
+             "stop",
+             "ignore_eos"});
         std::optional<std::string> key;
         if (message.contains("session_id"))
           key = session_key(message);
-        auto prompt = prompt_input(message);
         auto options = generation_options(message);
         // Register first. This serial reader retains op through handle binding,
         // even if a callback publishes its terminal and the writer retires it.
-        auto result = runtime_.generate(
-            std::move(key),
-            std::move(prompt),
-            std::move(options),
-            [this, weak = std::weak_ptr<Operation>(op)](
-                const serving::GenerationEvent& update) {
-              try {
-                if (auto active = weak.lock()) {
-                  event(active, update);
-                  if (std::holds_alternative<serving::TerminalEvent>(update))
-                    checkpoint(Checkpoint::TerminalEnqueued, active->id);
-                }
-              } catch (...) {
-                failed_ = true;
-                changed_.notify_all();
-              }
-            });
+        auto sink = [this, weak = std::weak_ptr<Operation>(op)](
+                        const serving::GenerationEvent& update) {
+          try {
+            if (auto active = weak.lock()) {
+              event(active, update);
+              if (std::holds_alternative<serving::TerminalEvent>(update))
+                checkpoint(Checkpoint::TerminalEnqueued, active->id);
+            }
+          } catch (...) {
+            failed_ = true;
+            changed_.notify_all();
+          }
+        };
+        serving::GenerateResult result;
+        if (config_.prompt_preparer) {
+          if (message.contains("prompt") ==
+              message.contains("prompt_segments")) {
+            throw std::invalid_argument(
+                "supply exactly one of prompt and prompt_segments");
+          }
+          const char* field =
+              message.contains("prompt") ? "prompt" : "prompt_segments";
+          Json prompt = {{field, std::move(message.at(field))}};
+          result = runtime_.generate(
+              std::move(key),
+              serving::PromptPreparation{
+                  [prompt = std::move(prompt),
+                   adapter = config_.prompt_preparer](
+                      const serving::PromptPreparationContext& context) {
+                    return adapter(prompt, context);
+                  }},
+              std::move(options),
+              std::move(sink));
+        } else {
+          result = runtime_.generate(
+              std::move(key),
+              prompt_input(message),
+              std::move(options),
+              std::move(sink));
+        }
         checkpoint(Checkpoint::BeforeBind, id);
         serving::RequestHandle cancel;
         {
@@ -533,7 +566,7 @@ class Worker {
         return;
       }
       for (ssize_t i = 0; i < count && !failed_; ++i) {
-        if (line.size() + 1 > config_.max_frame_bytes)
+        if (line.size() + 1 > config_.max_input_frame_bytes)
           throw std::runtime_error("input frame exceeds limit");
         if (buffer[i] == '\n') {
           request(line);
@@ -652,6 +685,9 @@ int testing::run_multiplexed_worker(
       config.startup_timeout.count() <= 0) {
     runtime.shutdown();
     return 1;
+  }
+  if (config.max_input_frame_bytes == 0) {
+    config.max_input_frame_bytes = config.max_frame_bytes;
   }
   return Worker(runtime, input_fd, output_fd, config, std::move(hooks)).run();
 }

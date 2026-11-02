@@ -68,7 +68,7 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
         # Canonical portable int4 (what load_checkpoint produces by default).
         # CudaCoalescedInt4Tensor reuses the nibble-packed qdata untouched and
         # re-encodes scale/zero into the coalesced [N, n_groups] layout the CUDA
-        # decode kernel reads (int4_dispatch.py / int4_plain_mm.cuh). The
+        # decode kernels read (int4_dispatch.py / int4_quantized_gemm.py). The
         # transpose is baked into the serialized constant, so the exported decode
         # graph carries no per-step transpose/clone.
         w = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(w)

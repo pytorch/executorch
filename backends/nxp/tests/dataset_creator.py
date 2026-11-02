@@ -247,7 +247,7 @@ class FromCalibrationDataDatasetCreator(DatasetCreator):
         seed(42)
 
     @staticmethod
-    def _get_example_np_data(example):
+    def _get_example_np_data(example, input_spec):
         if isinstance(example, tuple):
             if len(example) == 2:
                 data, _ = example
@@ -259,9 +259,18 @@ class FromCalibrationDataDatasetCreator(DatasetCreator):
             raise NotImplementedError("Examples other than tuple are not supported.")
 
         if isinstance(data, Tensor):
-            return [data.unsqueeze(0).numpy()]
+            return [
+                (
+                    data.numpy()
+                    if data.shape == input_spec[0].shape
+                    else data.unsqueeze(0).numpy()
+                )
+            ]
         elif isinstance(data, list) and all(isinstance(dt, Tensor) for dt in data):
-            return [dt.unsqueeze(0).numpy() for dt in data]
+            return [
+                dt.numpy() if dt.shape == ispec.shape else dt.unsqueeze(0).numpy()
+                for dt, ispec in zip(data, input_spec)
+            ]
         else:
             raise TypeError("Data must be a single Tensor or a list of Tensors.")
 
@@ -273,9 +282,15 @@ class FromCalibrationDataDatasetCreator(DatasetCreator):
 
         # We need to use ordered collection for deterministic selection of samples
         classes = OrderedDict([(cl, None) for _, cl in self._dataset])
-        examples_per_class = self._num_examples // len(classes)
+
+        # If num_examples is less than number of classes, sample only from first num_examples classes
+        examples_per_class = (
+            self._num_examples // len(classes)
+            if self._num_examples >= len(classes)
+            else 1
+        )
         idx_list = []
-        for cl in classes.keys():
+        for cl in list(classes.keys())[: self._num_examples]:
             cl_idx_list = [
                 idx for idx in range(len(self._dataset)) if self._dataset[idx][1] == cl
             ]
@@ -315,7 +330,7 @@ class FromCalibrationDataDatasetCreator(DatasetCreator):
         for i, (idx, cl) in enumerate(idx_list):
             label = self._idx_to_label[cl]
             example = self._dataset[idx]
-            data = self._get_example_np_data(example)
+            data = self._get_example_np_data(example, input_spec)
             for inp_idx, dt in enumerate(data):
                 if input_spec[0].dim_order == torch.channels_last:
                     if (

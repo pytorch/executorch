@@ -6,7 +6,7 @@ This page lists Ethos-U55-supported PyTorch APIs and the dtype and quantization 
 
 `8x8` means 8-bit activations and 8-bit weights. `16x8` means 16-bit activations and 8-bit weights. `8x4` means 8-bit activations and 4-bit weights.
 
-Total supported PyTorch APIs: **105**.
+Total supported PyTorch APIs: **107**.
 
 | PyTorch API | Support profile | DType | Quantization mode |
 | --- | --- | --- | --- |
@@ -51,6 +51,7 @@ Total supported PyTorch APIs: **105**.
 | `torch.full` | INT | `INT8` | 8x8 |
 | `torch.full_like` | INT | `INT8` | 8x8 |
 | `torch.index_select` | INT | `INT8` | 8x8 |
+| `torch.linalg.vector_norm` | INT | `INT8` | 8x8 |
 | `torch.linspace` | INT | `INT8` | 8x8 |
 | `torch.log` | INT | `INT8` | 8x8 |
 | `torch.log10` | INT | `INT8` | 8x8 |
@@ -69,6 +70,7 @@ Total supported PyTorch APIs: **105**.
 | `torch.nn.ELU` / `torch.nn.functional.elu` | INT | `INT8` | 8x8 |
 | `torch.nn.functional.pad` | INT | `INT8` | 8x8 |
 | `torch.nn.functional.scaled_dot_product_attention` | INT | `INT8` | 8x8 |
+| `torch.nn.functional.softplus` | INT | `INT8` | 8x8 |
 | `torch.nn.GELU` / `torch.nn.functional.gelu` | INT | `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.nn.Hardsigmoid` / `torch.nn.functional.hardsigmoid` | INT | `INT8` | 8x8 |
 | `torch.nn.Hardswish` / `torch.nn.functional.hardswish` | INT | `INT8` | 8x8 |

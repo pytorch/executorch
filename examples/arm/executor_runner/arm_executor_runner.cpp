@@ -264,9 +264,10 @@ const float et_rtol = 0.01;
 #endif
 
 #if defined(ET_NUM_INFERENCES)
-const int num_inferences = ET_NUM_INFERENCES;
+static_assert(ET_NUM_INFERENCES > 0, "ET_NUM_INFERENCES must be positive");
+const size_t num_inferences = static_cast<size_t>(ET_NUM_INFERENCES);
 #else
-const int num_inferences = 1;
+const size_t num_inferences = 1;
 #endif
 
 /**
@@ -463,8 +464,16 @@ template <typename ValueType>
 
 Error prepare_input_tensors(
     Method& method,
-    MemoryAllocator& allocator,
-    const std::vector<std::pair<char*, size_t>>& input_buffers) {
+    EValue* input_evalues,
+    const std::vector<std::pair<char*, size_t>>& input_buffers,
+    ET_UNUSED const void* bundled_model_data = nullptr) {
+#if defined(ET_BUNDLE_IO)
+  if (bundled_model_data != nullptr) {
+    return executorch::bundled_program::load_bundled_input(
+        method, bundled_model_data, testset_idx);
+  }
+#endif
+
   MethodMeta method_meta = method.method_meta();
   size_t num_inputs = method_meta.num_inputs();
 
@@ -474,12 +483,6 @@ Error prepare_input_tensors(
       InvalidArgument,
       "Wrong number of inputs allocated compared to method");
 #endif
-
-  EValue* input_evalues = allocator.allocateList<EValue>(num_inputs);
-  ET_CHECK_OR_RETURN_ERROR(
-      input_evalues != nullptr,
-      MemoryAllocationFailed,
-      "Could not allocate memory for input evalues.");
 
   Error err = method.get_inputs(input_evalues, num_inputs);
   ET_CHECK_OK_OR_RETURN_ERROR(err);
@@ -617,6 +620,7 @@ struct RunnerContext {
   Box<HierarchicalAllocator> planned_memory;
   Box<MemoryManager> memory_manager;
   Box<Result<Method>> method;
+  EValue* input_evalues = nullptr;
 #if defined(ET_EVENT_TRACER_ENABLED)
   Box<ETDumpGen> etdump_gen;
 #if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
@@ -889,24 +893,28 @@ void runner_init(
   size_t input_membase = ctx.method_allocator->used_size();
 
 #if defined(ET_BUNDLE_IO)
-  if (ctx.bundle_io) {
-    // Get inputs from bundled IO ".bpte" data
-    // Useful for testing
-    ET_LOG(Info, "Input testset[%d] from bundled bpte", testset_idx);
-    Error status = executorch::bundled_program::load_bundled_input(
-        *ctx.method.value(), model_data, testset_idx);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "load_bundled_input failed with status 0x%" PRIx32,
-        status);
-  } else
+  if (!ctx.bundle_io
+#if defined(SEMIHOSTING)
+      || ctx.server_mode
+#endif
+  )
 #endif
   {
-    Error status = ::prepare_input_tensors(
-        *ctx.method.value(), ctx.method_allocator.value(), input_buffers);
+    const size_t num_inputs = ctx.method.value()->inputs_size();
+    ctx.input_evalues = ctx.method_allocator->allocateList<EValue>(num_inputs);
     ET_CHECK_MSG(
-        status == Error::Ok, "Failed to prepare inputs 0x%" PRIx32, status);
+        ctx.input_evalues != nullptr || num_inputs == 0,
+        "Could not allocate memory for input evalues.");
   }
+  Error input_status = ::prepare_input_tensors(
+      *ctx.method.value(),
+      ctx.input_evalues,
+      input_buffers,
+      ctx.bundle_io ? model_data : nullptr);
+  ET_CHECK_MSG(
+      input_status == Error::Ok,
+      "Failed to prepare inputs 0x%" PRIx32,
+      input_status);
 #if defined(ET_LOG_DUMP_INPUT)
   {
     std::vector<EValue> inputs((*ctx.method.value())->inputs_size());
@@ -1332,14 +1340,30 @@ bool verify_result(RunnerContext& ctx, const void* model_data) {
   return model_ok;
 }
 
-bool run_model(RunnerContext& ctx, const void* model_data) {
+bool run_model(
+    RunnerContext& ctx,
+    const void* model_data,
+    const std::vector<std::pair<char*, size_t>>& input_buffers) {
   Error status;
-  ET_LOG(Info, "Starting running %d inferences...", num_inferences);
-  int n = 0;
+  ET_LOG(
+      Info,
+      "Starting running %lu inferences...",
+      static_cast<printf_size_t>(num_inferences));
+  size_t n = 0;
   StartMeasurements();
   for (n = 0; n < num_inferences; n++) {
-    ET_LOG(Debug, "Running inference number %d", n);
-    // Run the model.
+    ET_LOG(
+        Debug, "Running inference number %lu", static_cast<printf_size_t>(n));
+    if (n > 0) {
+      status = ::prepare_input_tensors(
+          *ctx.method.value(),
+          ctx.input_evalues,
+          input_buffers,
+          ctx.bundle_io ? model_data : nullptr);
+      if (status != Error::Ok) {
+        break;
+      }
+    }
     status = ctx.method.value()->execute();
     if (status != Error::Ok) {
       break;
@@ -1358,7 +1382,10 @@ bool run_model(RunnerContext& ctx, const void* model_data) {
       ctx.method_name,
       status);
 
-  ET_LOG(Info, "%d inferences finished", num_inferences);
+  ET_LOG(
+      Info,
+      "%lu inferences finished",
+      static_cast<printf_size_t>(num_inferences));
   print_outputs(ctx);
   bool model_ok = verify_result(ctx, model_data);
   ET_LOG(Info, "Model run: %d", model_ok);
@@ -1400,7 +1427,7 @@ bool run_model_server(
         status == Error::Ok, "Could not reload inputs: 0x%" PRIx32, status);
 
     status = ::prepare_input_tensors(
-        *ctx.method.value(), ctx.temp_allocator.value(), input_buffers);
+        *ctx.method.value(), ctx.input_evalues, input_buffers);
     ET_CHECK_MSG(
         status == Error::Ok, "Failed to prepare inputs 0x%" PRIx32, status);
 
@@ -1449,8 +1476,8 @@ int main(int argc, const char* argv[]) {
   }
 #endif
   ET_LOG(Info, "   %s", argv[0]);
-  for (int i = 1; i < argc; i++) {
-    ET_LOG(Info, "   %s %s", argv[i], argv[++i]);
+  for (int i = 1; i + 1 < argc; i += 2) {
+    ET_LOG(Info, "   %s %s", argv[i], argv[i + 1]);
   }
 #else
   (void)argc;
@@ -1536,8 +1563,8 @@ int main(int argc, const char* argv[]) {
   // Byte 4-7 is usually a nice magic number that could be good to print to make
   // sure it's OK ETxx for PTE and BPxx for bundled pte where xx is a number.
   // cppcheck-suppress knownConditionTrueFalse
-  if (model_data == nullptr || model_size == 0) {
-    ET_LOG(Fatal, "Model data is not initialized");
+  if (model_data == nullptr || model_size < 8) {
+    ET_LOG(Fatal, "Model data is missing or too short");
     return 1;
   }
 #if defined(SEMIHOSTING)
@@ -1570,7 +1597,7 @@ int main(int argc, const char* argv[]) {
   if (ctx.server_mode) {
     model_ok = run_model_server(ctx, model_data, input_buffers);
   } else {
-    model_ok = run_model(ctx, model_data);
+    model_ok = run_model(ctx, model_data, input_buffers);
   }
 #if defined(ETHOSU55)
   if (keep_powered) {
@@ -1578,7 +1605,7 @@ int main(int argc, const char* argv[]) {
   }
 #endif
 #else
-  model_ok = run_model(ctx, model_data);
+  model_ok = run_model(ctx, model_data, input_buffers);
 #endif
   ET_LOG(Info, "Model run: %d", model_ok);
 

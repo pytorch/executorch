@@ -128,12 +128,19 @@ std::ostream& operator<<(std::ostream& out, const VulkanExtension result) {
 ShaderNotSupportedError::ShaderNotSupportedError(
     std::string shader_name,
     VulkanExtension extension)
-    : shader_name_(std::move(shader_name)), extension_{extension} {
+    : ShaderNotSupportedError(
+          std::move(shader_name),
+          utils::concat_str(extension)) {}
+
+ShaderNotSupportedError::ShaderNotSupportedError(
+    std::string shader_name,
+    std::string requirement)
+    : shader_name_(std::move(shader_name)) {
   std::ostringstream oss;
   oss << "Shader " << shader_name_ << " ";
   oss << "not compatible with device. ";
   oss << "Missing support for extension or physical device feature: ";
-  oss << extension_;
+  oss << requirement;
   what_ = oss.str();
 }
 

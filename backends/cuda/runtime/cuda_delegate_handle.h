@@ -16,6 +16,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace executorch {
@@ -30,6 +33,10 @@ namespace backends {
 namespace cuda {
 
 class CudaKVCache;
+
+// Prefix the lowering pass gives every off-graph KV constant, whose storage
+// the runtime supplies rather than loads.
+inline constexpr std::string_view kOffGraphKVFqnPrefix = "__et_offgraph_kv_";
 
 // Where a method's inputs carry the number of tokens a step writes: an index
 // into execute()'s inputs and a dimension of that tensor. Declared by the
@@ -49,6 +56,15 @@ using AOTInductorModelContainerGetConstantDataSizeFunc =
         aoti::AOTInductorModelContainerHandle container_handle,
         size_t idx,
         size_t* data_size);
+using AOTInductorModelContainerGetConstantTypeFunc = aoti::AOTIRuntimeError (*)(
+    aoti::AOTInductorModelContainerHandle container_handle,
+    size_t idx,
+    int32_t* type);
+using AOTInductorModelContainerGetConstantFromFoldedFunc =
+    aoti::AOTIRuntimeError (*)(
+        aoti::AOTInductorModelContainerHandle container_handle,
+        size_t idx,
+        bool* from_folded);
 struct CudaWeightStorage {
   void* data{nullptr};
   size_t nbytes{0};
@@ -134,6 +150,13 @@ struct CudaGraphState {
   std::vector<void*> graph_allocations;
 
   CudaGraphState() = default;
+
+  // Starts the warmup that leads to capture, when the current device can
+  // capture: without memory pools the allocator falls back to cudaMalloc,
+  // which a captured graph cannot own, so the phase stays Disabled there.
+  // Returns whether it started. Defined with the backend, which owns the
+  // warmup length.
+  bool start_warmup();
 
   ~CudaGraphState() {
     release();
@@ -272,6 +295,11 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // storage against it before binding.
   AOTInductorModelContainerGetConstantDataSizeFunc get_constant_data_size{
       nullptr};
+  // With these, FQN weight binding checks completeness itself instead of
+  // AOTI's full update, which warns once per off-graph KV buffer on every load.
+  AOTInductorModelContainerGetConstantTypeFunc get_constant_type{nullptr};
+  AOTInductorModelContainerGetConstantFromFoldedFunc get_constant_from_folded{
+      nullptr};
 
   // The per-thread stream. Nothing owns it: the value is a fixed sentinel the
   // driver resolves to a different stream on each host thread, so releasing the
@@ -308,6 +336,11 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // cannot report it, because lowering replaced the cache op with kernels over
   // pre-bound memory.
   OffGraphKVStepWidth kv_step_width;
+
+  // Compiled shape of each off-graph KV constant by FQN, from the serialized
+  // FQN-weight metadata. AOTI reports only a constant's bytes, possibly
+  // rounded up to 64, which cannot tell two nearby geometries apart.
+  std::unordered_map<std::string, std::vector<int64_t>> offgraph_kv_sizes;
 };
 
 } // namespace cuda

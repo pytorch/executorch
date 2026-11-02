@@ -1193,6 +1193,38 @@ class TestProgram(unittest.TestCase):
         self.assertEqual(deserialized2.mutable_data, None)
         self._check_named_data_store_output(deserialized2.named_data, named_data)
 
+    def test_named_data_aliases_combine_alignment(self) -> None:
+        named_data = NamedDataStoreOutput(
+            buffers=[b"abcd"],
+            pte_data={
+                "weak": DataEntry(0, 16, None),
+                "strong": DataEntry(0, 256, None),
+            },
+            external_data={},
+        )
+        pte_data = bytes(
+            serialize_pte_binary(
+                PTEFile(
+                    program=get_test_program(),
+                    named_data=named_data,
+                ),
+                segment_alignment=128,
+            )
+        )
+
+        header = self.get_and_validate_extended_header(pte_data)
+        self.assertEqual(header.segment_base_offset % 256, 0)
+
+        program = _flatbuffer_to_program(pte_data)
+        alias_entries = [
+            entry for entry in program.named_data if entry.key in ("weak", "strong")
+        ]
+        self.assertEqual(len(alias_entries), 2)
+        self.assertEqual(alias_entries[0].segment_index, alias_entries[1].segment_index)
+        segment = program.segments[alias_entries[0].segment_index]
+        absolute_offset = header.segment_base_offset + segment.offset
+        self.assertEqual(absolute_offset % 256, 0)
+
 
 # Common data for extended header tests. The two example values should produce
 # the example data.

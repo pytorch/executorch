@@ -27,9 +27,6 @@ from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
 from .convert_int64_const_ops_to_int32 import ConvertInt64ConstOpsToInt32Pass  # noqa
 from .convert_int64_output_ops_to_int32 import ConvertInt64OutputOpsToInt32Pass  # noqa
 from .convert_minmax_pass import ConvertMinMaxPass  # noqa
-from .convert_permute_singleton_to_view_pass import (  # noqa
-    ConvertPermuteSingletonToViewPass,
-)
 from .convert_split_to_slice import ConvertSplitToSlicePass  # noqa
 from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp_pass import ConvertToClampPass  # noqa
@@ -46,6 +43,7 @@ from .decompose_atan_pass import DecomposeAtanPass  # noqa
 from .decompose_atanh_pass import DecomposeAtanhPass  # noqa
 from .decompose_avg_pool2d_pass import DecomposeAvgPool2dPass  # noqa
 from .decompose_batch_norm_no_stats import DecomposeBatchNormNoStatsPass  # noqa
+from .decompose_bool_equality_pass import DecomposeBoolEqualityPass  # noqa
 from .decompose_choose_qparams_symmetric_pass import (  # noqa
     DecomposeChooseQParamsSymmetricPass,
 )
@@ -65,6 +63,7 @@ from .decompose_erfinv_pass import DecomposeErfinvPass  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
 from .decompose_flip_pass import DecomposeFlipPass  # noqa
 from .decompose_floor_divide_pass import DecomposeFloorDividePass  # noqa
+from .decompose_gated_delta_rule_pass import DecomposeGatedDeltaRulePass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa
@@ -94,6 +93,7 @@ from .decompose_matmul import DecomposeMatmulPass  # noqa
 from .decompose_max_pool1d_pass import DecomposeMaxPool1dPass  # noqa
 from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
+from .decompose_mv_dot_pass import DecomposeMvDotPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_permute_for_u55_pass import DecomposePermuteForU55Pass  # noqa
 from .decompose_pow_tensor_tensor_pass import DecomposePowTensorTensorPass  # noqa
@@ -172,6 +172,7 @@ from .insert_rescales_pass import (  # noqa
 )
 from .insert_table_ops import InsertTableOpsPass  # noqa
 from .lower_dynamic_w8a8_linear_pass import LowerDynamicW8A8LinearPass  # noqa
+from .lower_int16_rsqrt_pass import LowerInt16RsqrtPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
@@ -208,6 +209,7 @@ from .replace_scalar_with_tensor_pass import (  # noqa
 )
 from .resolve_view_copy_inferred_dim_pass import ResolveViewCopyInferredDimPass  # noqa
 from .rewrite_adaptive_avg_pool2d import RewriteAdaptiveAvgPool2dPass  # noqa
+from .rewrite_argmax_pass import RewriteArgmaxPass  # noqa
 from .rewrite_avg_pool2d_pass import RewriteAvgPool2dPass  # noqa
 from .rewrite_bool_bitwise_to_logical_pass import (  # noqa
     RewriteBoolBitwiseToLogicalPass,

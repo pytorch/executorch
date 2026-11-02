@@ -86,6 +86,48 @@ def test_canonicalize_direct_permute_chain() -> None:
     _validate_numerics(gm_before, result.graph_module, (x_data,))
 
 
+def test_canonicalize_singleton_permute_to_view() -> None:
+    builder = GraphBuilder()
+    x_data = torch.randn(1, 1, 1, 4)
+    x = builder.placeholder("x", x_data)
+    permute = builder.call_operator(
+        op=exir_ops.edge.aten.permute_copy.default,
+        args=(x, [0, 3, 1, 2]),
+    )
+    builder.output([permute])
+    original = builder.get_graph_module()
+    gm_before = copy.deepcopy(original)
+
+    result = cast(PassResult, CanonicalizeViewCopyPermutePass().call(original))
+
+    assert result.modified
+    assert (
+        _count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default) == 0
+    )
+    assert _count_node(result.graph_module, exir_ops.edge.aten.view_copy.default) == 1
+    _validate_numerics(gm_before, result.graph_module, (x_data,))
+
+
+def test_canonicalize_keeps_equal_sized_non_singleton_permute() -> None:
+    builder = GraphBuilder()
+    x_data = torch.randn(2, 1, 2)
+    x = builder.placeholder("x", x_data)
+    permute = builder.call_operator(
+        op=exir_ops.edge.aten.permute_copy.default,
+        args=(x, [2, 1, 0]),
+    )
+    builder.output([permute])
+    original = builder.get_graph_module()
+
+    result = cast(PassResult, CanonicalizeViewCopyPermutePass().call(original))
+
+    assert not result.modified
+    assert (
+        _count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default) == 1
+    )
+    assert _count_node(result.graph_module, exir_ops.edge.aten.view_copy.default) == 0
+
+
 def test_canonicalize_pixel_shuffle_view_permute_chain() -> None:
     builder = GraphBuilder()
     x_data = torch.randn(1, 2, 2, 8)

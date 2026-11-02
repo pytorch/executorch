@@ -14,6 +14,7 @@ layout(set = 0, binding = 2, rgba8_snorm) uniform writeonly image2D outImage;
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 const float FLOW_SCALE = @FLOW_SCALE@;
+const vec2 FLOW_NORMALIZATION = vec2(@FLOW_NORMALIZATION_X@, @FLOW_NORMALIZATION_Y@);
 const int FLOW_ZERO_POINT = @FLOW_ZERO_POINT@;
 const float INPUT_SCALE = @INPUT_SCALE@;
 const int INPUT_ZERO_POINT = @INPUT_ZERO_POINT@;
@@ -36,7 +37,7 @@ vec2 alignCornersUvFromFlowOffset(ivec2 p) {
   vec2 baseGrid =
       (vec2(p) * vec2(2.0) / (inputSize - vec2(1.0))) - vec2(1.0);
   vec2 texel =
-      (baseGrid + flowOffset + vec2(1.0)) * vec2(0.5) *
+      (baseGrid + flowOffset * FLOW_NORMALIZATION + vec2(1.0)) * vec2(0.5) *
       (inputSize - vec2(1.0));
   return (texel + vec2(0.5)) / inputSize;
 }

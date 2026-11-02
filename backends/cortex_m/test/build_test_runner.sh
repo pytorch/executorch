@@ -51,8 +51,11 @@ ops_list=(
     aten::cat.out
     aten::full.out
     aten::ge.Tensor_out
+    aten::permute_copy.out
+    aten::slice_copy.Tensor_out
     aten::unsqueeze_copy.out
     aten::squeeze_copy.dim_out
+    aten::squeeze_copy.dims_out
     aten::select_copy.int_out
     aten::amax.out
     cortex_m::quantize_per_tensor.out

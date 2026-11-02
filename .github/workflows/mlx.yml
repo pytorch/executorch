@@ -10,11 +10,16 @@ on:
   pull_request:
     paths:
       - .github/workflows/mlx.yml
+      - Makefile
       - backends/mlx/**
       - extension/llm/batching/**
       - extension/llm/cache/**
       - extension/llm/export/**
+      - extension/llm/runner/**
+      - extension/llm/sampler/**
+      - extension/llm/serving/**
       - extension/audio/**
+      - examples/llm_server/cpp/**
       - examples/models/gemma4_31b/**
       - examples/models/muse-glimmer/**
       - examples/models/nemotron3_diarization/**
@@ -128,6 +133,8 @@ jobs:
           backends/mlx/test/test_sample.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           examples/models/muse-glimmer/tests/test_mlx_pipeline.py \
+          examples/models/muse-glimmer/tests/test_mlx_offgraph.py \
+          examples/models/muse-glimmer/tests/test_checkpoint_context.py \
           -v
         echo "::endgroup::"
 
@@ -309,9 +316,8 @@ jobs:
         echo "Success: built $RUNNER"
         echo "::endgroup::"
 
-  # Build-only: the Muse Glimmer GGUF checkpoints are far too large to export in
-  # CI, so this covers the compile / link / metallib wiring of the runners --
-  # which is what MLX backend changes are most likely to break.
+  # No full-model export: Muse Glimmer GGUF checkpoints are too large for CI.
+  # Cover runner compile/link/metallib wiring and asset-independent preparation.
   test-mlx-muse-glimmer-build:
     needs: run-decision
     if: |
@@ -353,6 +359,19 @@ jobs:
           exit 1
         fi
         echo "Success: built solo_runner, dflash_runner and muse_glimmer_worker"
+        echo "::endgroup::"
+
+        echo "::group::Build and test Muse Glimmer batching with MLX"
+        ${CONDA_RUN} make muse-glimmer-batching-mlx
+        BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
+        ${CONDA_RUN} cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
+          -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
+        ${CONDA_RUN} cmake --build "${BATCHING_BIN_DIR}" --target muse_glimmer_batching_test --parallel
+        ${CONDA_RUN} ctest --test-dir "${BATCHING_BIN_DIR}" \
+          -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_worker"
+        test -f "${BATCHING_BIN_DIR}/mlx.metallib"
         echo "::endgroup::"
 
   test-mlx-nemotron3-diarization-build:

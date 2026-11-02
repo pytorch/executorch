@@ -13,16 +13,25 @@ ${define_required_extensions("texture3d", DTYPE)}
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_load_type(DTYPE, "texture3d")}
+$if DTYPE == "half" or DTYPE == "float":
+  #define FILL_DTYPE float
+$elif DTYPE == "int32":
+  #define FILL_DTYPE int
+$elif DTYPE == "uint8":
+  #define FILL_DTYPE uint
+$else:
+  #error Unsupported full dtype
 
 ${define_active_storage_type("texture3d")}
 
 layout(std430) buffer;
 
 #include "indexing.glslh"
+#include "convert.glslh"
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, "texture3d")}
 ${layout_declare_ubo(B, "TextureMetadata", "outp")}
-${layout_declare_ubo(B, "float", "fill_value")}
+${layout_declare_ubo(B, "FILL_DTYPE", "fill_value")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -37,6 +46,8 @@ void main() {
   }
 
   VEC4_T outtex = VEC4_T(fill_value);
+  $if DTYPE == "half":
+    outtex = round_to_half_rte(outtex);
 
   TensorIndex4D tidx =
       texture_pos_to_tensor4d_idx_simple(outp, pos, out_layout);

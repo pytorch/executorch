@@ -93,6 +93,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_atan.cpp",
     "kernels/portable/cpu/op_atan2.cpp",
     "kernels/portable/cpu/op_atanh.cpp",
+    "kernels/portable/cpu/op_avg_pool1d.cpp",
     "kernels/portable/cpu/op_avg_pool2d.cpp",
     "kernels/portable/cpu/op_bitwise_and.cpp",
     "kernels/portable/cpu/op_bitwise_not.cpp",
@@ -111,6 +112,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_copy.cpp",
     "kernels/portable/cpu/op_cos.cpp",
     "kernels/portable/cpu/op_cosh.cpp",
+    "kernels/portable/cpu/op_cummin.cpp",
     "kernels/portable/cpu/op_cumsum.cpp",
     "kernels/portable/cpu/op_detach_copy.cpp",
     "kernels/portable/cpu/op_diagonal_copy.cpp",
@@ -343,6 +345,7 @@ EXTENSION_EVALUE_UTIL_SRCS = [
 EXTENSION_FLAT_TENSOR_SRCS = [
     "extension/flat_tensor/flat_tensor_data_map.cpp",
     "extension/flat_tensor/serialize/flat_tensor_header.cpp",
+    "extension/flat_tensor/serialize/serialize.cpp",
 ]
 
 EXTENSION_MEMORY_ALLOCATOR_SRCS = [
@@ -393,8 +396,6 @@ EXTENSION_TRAINING_SRCS = [
 ]
 
 TRAIN_XOR_SRCS = [
-    # REVIEW: removing this breaks the build; where is it supposed to come from?
-    "extension/flat_tensor/serialize/serialize.cpp",
     "extension/training/examples/XOR/train.cpp",
 ]
 
@@ -430,6 +431,19 @@ XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SR
 XNNPACK_SCHEMA_SRCS = [
     "backends/xnnpack/serialization/runtime_schema.fbs",
 ]
+
+CPU_RUNTIME_BUCK_SRCS = [
+    "runtime/KernelProvider.cpp",
+    "runtime/CPUPlan.cpp",
+    "runtime/op_helpers/Convolution.cpp",
+]
+
+# CpuBackend with the default provider composition: XNNPACK and Reference.
+CPU_BACKEND_SRCS = ["backends/cpu/" + x for x in CPU_RUNTIME_BUCK_SRCS + [
+    "runtime/CPUBackend.cpp",
+    "runtime/providers/reference/ReferenceProvider.cpp",
+    "runtime/providers/xnnpack/XNNPACKProvider.cpp",
+]]
 
 VULKAN_SCHEMA_SRCS = [
     "backends/vulkan/serialization/schema.fbs",

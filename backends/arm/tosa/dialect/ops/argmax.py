@@ -5,7 +5,10 @@
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops._common import validate_nan_mode
+from executorch.backends.arm.tosa.dialect.ops._common import (
+    validate_float_dtype,
+    validate_nan_mode,
+)
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
@@ -32,23 +35,7 @@ def _validate_argmax_dtype(dtype: torch.dtype) -> None:
             )
         return
 
-    if dtype in (torch.float16, torch.float32):
-        if not tosa_spec.support_float():
-            raise TosaValueError(
-                f"TOSA spec {tosa_spec} doesn't support {dtype} for ARGMAX",
-                op="ARGMAX",
-            )
-        return
-
-    if dtype == torch.bfloat16:
-        if not (tosa_spec.support_float() and tosa_spec.support_extension("bf16")):
-            raise TosaValueError(
-                f"TOSA spec {tosa_spec} doesn't support bfloat16 for ARGMAX",
-                op="ARGMAX",
-            )
-        return
-
-    raise TosaValueError(f"Unsupported dtype {dtype} for ARGMAX", op="ARGMAX")
+    validate_float_dtype(dtype, "ARGMAX")
 
 
 @register_fake_tosa_op(

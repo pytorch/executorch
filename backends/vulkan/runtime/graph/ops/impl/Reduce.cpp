@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/View.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
@@ -419,11 +420,50 @@ DEFINE_REDUCE_FN(mean, 4)
 DEFINE_REDUCE_FN(amax, 3)
 DEFINE_REDUCE_FN(amin, 3)
 
+void resize_squeezed_reduce_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+  std::vector<int64_t> sizes = graph->sizes_of(in);
+  const int64_t dim = normalize(
+      graph->extract_scalar<int64_t>(resize_args.at(0)), sizes.size());
+  sizes.erase(sizes.begin() + dim);
+  graph->virtual_resize(out, sizes);
+}
+
+void any_dim(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  if (graph.is_buffer_storage(args[0])) {
+    VK_CHECK_COND(
+        normalize(
+            graph.extract_scalar<int64_t>(args[1]), graph.dim_of(args[0])) ==
+        graph.dim_of(args[0]) - 1);
+    return add_reduce_per_row_node(graph, args[0], args[2], args[3], "any");
+  }
+  if (graph.extract_scalar<bool>(args[2])) {
+    return add_reduce_node(graph, args[0], args[1], args[3], "any");
+  }
+
+  std::vector<int64_t> sizes = graph.sizes_of(args[0]);
+  sizes.at(normalize(graph.extract_scalar<int64_t>(args[1]), sizes.size())) = 1;
+  TmpTensor reduced(
+      &graph,
+      sizes,
+      graph.dtype_of(args[0]),
+      graph.storage_type_of(args[0]),
+      graph.estimate_memory_layout_of(args[0]));
+  add_reduce_node(graph, args[0], args[1], reduced, "any");
+  return add_view_copy_node(
+      graph, reduced, args[3], {args[1]}, resize_squeezed_reduce_node);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sum.dim_IntList, sum);
   VK_REGISTER_OP(aten.mean.dim, mean);
   VK_REGISTER_OP(aten.amax.default, amax);
   VK_REGISTER_OP(aten.amin.default, amin);
+  VK_REGISTER_OP(aten.any.dim, any_dim);
 }
 
 } // namespace vkcompute

@@ -5,6 +5,10 @@
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
+from executorch.backends.arm.tosa.dialect.ops._common import (
+    validate_float_dtype,
+    validate_int64_support,
+)
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
@@ -16,28 +20,6 @@ INT_SPECS = TosaSpecification.all_versions_for_profile("INT")
 DUAL_PROFILE_SPECS = [*INT_SPECS, *FP_SPECS]
 
 
-def _validate_float_dtype(dtype: torch.dtype, op: str) -> None:
-    tosa_spec = get_context_spec()
-
-    if dtype in (torch.float16, torch.float32):
-        if not tosa_spec.support_float():
-            raise TosaValueError(
-                f"TOSA spec {tosa_spec} doesn't support {dtype} for {op}",
-                op=op,
-            )
-        return
-
-    if dtype == torch.bfloat16:
-        if not (tosa_spec.support_float() and tosa_spec.support_extension("bf16")):
-            raise TosaValueError(
-                f"TOSA spec {tosa_spec} doesn't support bfloat16 for {op}",
-                op=op,
-            )
-        return
-
-    raise TosaValueError(f"Unsupported dtype {dtype} for {op}", op=op)
-
-
 def _validate_integer_dtype(dtype: torch.dtype, op: str) -> None:
     tosa_spec = get_context_spec()
 
@@ -47,6 +29,10 @@ def _validate_integer_dtype(dtype: torch.dtype, op: str) -> None:
                 f"TOSA spec {tosa_spec} doesn't support {dtype} for {op}",
                 op=op,
             )
+        return
+
+    if dtype == torch.int64:
+        validate_int64_support(op)
         return
 
     raise TosaValueError(f"Unsupported dtype {dtype} for {op}", op=op)
@@ -63,23 +49,11 @@ def _validate_abs_dtype(dtype: torch.dtype) -> None:
             )
         return
 
-    if dtype in (torch.float16, torch.float32):
-        if not tosa_spec.support_float():
-            raise TosaValueError(
-                f"TOSA spec {tosa_spec} doesn't support {dtype} for ABS",
-                op="ABS",
-            )
+    if dtype == torch.int64:
+        validate_int64_support("ABS")
         return
 
-    if dtype == torch.bfloat16:
-        if not (tosa_spec.support_float() and tosa_spec.support_extension("bf16")):
-            raise TosaValueError(
-                f"TOSA spec {tosa_spec} doesn't support bfloat16 for ABS",
-                op="ABS",
-            )
-        return
-
-    raise TosaValueError(f"Unsupported dtype {dtype} for ABS", op="ABS")
+    validate_float_dtype(dtype, "ABS")
 
 
 def _validate_clz_dtype(dtype: torch.dtype) -> None:
@@ -100,11 +74,11 @@ def _validate_bool_dtype(dtype: torch.dtype, op: str) -> None:
 
 
 def _validate_negate_dtype(dtype: torch.dtype) -> None:
-    if dtype in (torch.int8, torch.int16, torch.int32):
+    if dtype in (torch.int8, torch.int16, torch.int32, torch.int64):
         _validate_integer_dtype(dtype, "NEGATE")
         return
 
-    _validate_float_dtype(dtype, "NEGATE")
+    validate_float_dtype(dtype, "NEGATE")
 
 
 @register_fake_tosa_op(
@@ -130,7 +104,7 @@ def BITWISE_NOT(input1: torch.Tensor) -> torch.Tensor:
     FP_SPECS,
 )
 def CEIL(input1: torch.Tensor) -> torch.Tensor:
-    _validate_float_dtype(input1.dtype, "CEIL")
+    validate_float_dtype(input1.dtype, "CEIL")
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
@@ -148,7 +122,7 @@ def CLZ(input1: torch.Tensor) -> torch.Tensor:
     FP_SPECS,
 )
 def COS(input1: torch.Tensor) -> torch.Tensor:
-    _validate_float_dtype(input1.dtype, "COS")
+    validate_float_dtype(input1.dtype, "COS")
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
@@ -157,7 +131,7 @@ def COS(input1: torch.Tensor) -> torch.Tensor:
     FP_SPECS,
 )
 def EXP(input1: torch.Tensor) -> torch.Tensor:
-    _validate_float_dtype(input1.dtype, "EXP")
+    validate_float_dtype(input1.dtype, "EXP")
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
@@ -166,7 +140,7 @@ def EXP(input1: torch.Tensor) -> torch.Tensor:
     FP_SPECS,
 )
 def FLOOR(input1: torch.Tensor) -> torch.Tensor:
-    _validate_float_dtype(input1.dtype, "FLOOR")
+    validate_float_dtype(input1.dtype, "FLOOR")
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
@@ -175,7 +149,7 @@ def FLOOR(input1: torch.Tensor) -> torch.Tensor:
     FP_SPECS,
 )
 def LOG(input1: torch.Tensor) -> torch.Tensor:
-    _validate_float_dtype(input1.dtype, "LOG")
+    validate_float_dtype(input1.dtype, "LOG")
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
@@ -202,7 +176,7 @@ def NEGATE(input1: torch.Tensor) -> torch.Tensor:
     FP_SPECS,
 )
 def RECIPROCAL(input1: torch.Tensor) -> torch.Tensor:
-    _validate_float_dtype(input1.dtype, "RECIPROCAL")
+    validate_float_dtype(input1.dtype, "RECIPROCAL")
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
@@ -211,7 +185,7 @@ def RECIPROCAL(input1: torch.Tensor) -> torch.Tensor:
     FP_SPECS,
 )
 def RSQRT(input1: torch.Tensor) -> torch.Tensor:
-    _validate_float_dtype(input1.dtype, "RSQRT")
+    validate_float_dtype(input1.dtype, "RSQRT")
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
@@ -220,5 +194,5 @@ def RSQRT(input1: torch.Tensor) -> torch.Tensor:
     FP_SPECS,
 )
 def SIN(input1: torch.Tensor) -> torch.Tensor:
-    _validate_float_dtype(input1.dtype, "SIN")
+    validate_float_dtype(input1.dtype, "SIN")
     return torch.empty_like(input1, dtype=input1.dtype)

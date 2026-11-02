@@ -3,6 +3,11 @@ load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def _vgf_zero_copy_test_flags():
+    if native.read_config("executorch", "vgf_zero_copy_io", "false") == "true":
+        return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=1"]
+    return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=0"]
+
 _ENABLE_VGF = True
 
 def define_arm_tests():
@@ -32,6 +37,7 @@ def define_arm_tests():
         "ops/test_slice.py",
         "ops/test_sigmoid.py",
         "ops/test_softmax.py",
+        "ops/test_softplus.py",
         "ops/test_sub.py",
         "ops/test_sum.py",
         "ops/test_tanh.py",
@@ -51,6 +57,12 @@ def define_arm_tests():
         "ops/test_split.py",
     ]
 
+    # Modules
+    test_files += [
+        "modules/test_moe.py",
+        "modules/test_qwen_delta_gate.py",
+    ]
+
     # Export recipes
     test_files += [
         "recipes/test_arm_recipes.py",
@@ -67,7 +79,10 @@ def define_arm_tests():
     test_files += [
         "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
+        "misc/test_diff_pte.py",
         "misc/test_external_vela_blocks.py",
+        "misc/test_vela_persistent_region.py",
+        "misc/test_delegated_state_partitioning.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
         "misc/test_tosa_constant_pool.py",
@@ -86,6 +101,10 @@ def define_arm_tests():
         "misc/test_vgf_check_env.py",
         "misc/test_vulkan_validation_layer.py",
         "misc/test_vgf_backend.py",
+        "misc/test_vgf_quantization_quality.py",
+        "misc/test_vgf_quantization_assessment.py",
+        "misc/test_vgf_quantization_sensitivity.py",
+        "misc/test_vgf_quantization_visualization.py",
         "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
     ]
@@ -112,13 +131,13 @@ def define_arm_tests():
         }
         if not runtime.is_oss and _ENABLE_VGF:
             test_env.update({
-                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.9.0:model-converter-bin)",
                 "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
                 "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
                 "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",
                 "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
                 "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
+                "EMULATION_LAYER_VERSION": "0.9.0",
             })
 
         python_pytest(
@@ -136,7 +155,9 @@ def define_arm_tests():
                 "fbsource//third-party/khronos:vulkan",
                 "//executorch/backends/arm/runtime:vgf_backend",
             ]),
-            deps = [
+            deps = ([] if runtime.is_oss or not _ENABLE_VGF else [
+                "//executorch/backends/arm/test:model_converter_resource",
+            ]) + [
                 "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
                 "//executorch/backends/arm/test:conftest",
                 "//executorch/backends/arm/test:mxfp_test_common",
@@ -165,9 +186,17 @@ def define_arm_tests():
             ] if runtime.is_oss else []) + ([
                 "//executorch/backends/arm/scripts/docgen:generate_op_support",
             ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
+                "//executorch/examples/models/llama:llama_transformer",
+                "//executorch/examples/models/llama:transformer_modules",
+                "fbsource//third-party/pypi/transformers:transformers",
+                "fbsource//third-party/pypi/typing-extensions:typing-extensions",
+            ] if test_file == "modules/test_moe.py" else []) + ([
                 "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
                 "fbsource//third-party/pypi/packaging:packaging",
-            ] if test_file == "misc/test_version_xfail.py" else []),
+            ] if test_file == "misc/test_version_xfail.py" else []) + ([
+                "//executorch/exir:schema",
+                "//executorch/exir/_serialize:lib",
+            ] if test_file == "misc/test_diff_pte.py" else []),
         )
 
     runtime.cxx_test(
@@ -177,6 +206,7 @@ def define_arm_tests():
             "//executorch/backends/arm/runtime:vela_bin_stream",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:named_data_map",
+            "//executorch/runtime/platform:platform",
         ],
     )
 
@@ -191,9 +221,18 @@ def define_arm_tests():
             deps = [
                 "//executorch/backends/arm/runtime:vgf_backend",
                 "//executorch/runtime/core:core",
-                "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
+                "fbsource//third-party/pypi/ai-ml-sdk-vgf-library/0.11.0:vgf",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            ],
+        )
+
+    if not runtime.is_oss and _ENABLE_VGF:
+        runtime.cxx_test(
+            name = "vgf_shape_utils_test",
+            srcs = ["vgf_shape_utils_test.cpp"],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
             ],
         )
 
@@ -205,6 +244,22 @@ def define_arm_tests():
                 "-DUSE_VULKAN_WRAPPER",
                 "-DUSE_VULKAN_VOLK",
             ],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            ],
+        )
+
+    if not runtime.is_oss and _ENABLE_VGF:
+        runtime.cxx_test(
+            name = "vgf_zero_copy_test",
+            srcs = ["vgf_zero_copy_test.cpp"],
+            compiler_flags = [
+                "-DUSE_VULKAN_WRAPPER",
+                "-DUSE_VULKAN_VOLK",
+            ],
+            preprocessor_flags = _vgf_zero_copy_test_flags(),
             deps = [
                 "//executorch/backends/arm/runtime:vgf_backend",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",

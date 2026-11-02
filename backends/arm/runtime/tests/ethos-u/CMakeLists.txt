@@ -89,6 +89,16 @@ set_tests_properties(
 )
 
 add_test(
+  NAME runner_input_restoration
+  COMMAND "${_ethos_u_runtime_tests_dir}/test_runner_input_restoration.sh"
+          "${EXECUTORCH_ROOT}" "${_ethos_u_runtime_test_output_dir}"
+)
+set_tests_properties(
+  runner_input_restoration PROPERTIES LABELS "arm;ethos-u;runtime;runner;fvp"
+                                      RESOURCE_LOCK arm_ethos_u_runtime
+)
+
+add_test(
   NAME memory_allocation_planned_fast
   COMMAND "${_ethos_u_runtime_tests_dir}/test_memory_allocation_planned_fast.sh"
           "${EXECUTORCH_ROOT}" "${_ethos_u_runtime_test_output_dir}"

@@ -28,7 +28,6 @@ from .worker_client import (
     WorkerStats,
 )
 
-
 logger = logging.getLogger(__name__)
 _MAX_REQUEST_BYTES = 1024 * 1024
 _MAX_MESSAGE_BYTES = 1024 * 1024
@@ -219,6 +218,12 @@ class MultiplexedWorkerClient:
     budget. Cancellation operations have an independent, equally bounded budget.
     A supplied process must have binary pipes and a stdout stream limit at least
     max_message_bytes. The factory configures those pipes before readiness.
+
+    max_request_bytes is a client-side limit, not worker configuration. It must
+    not exceed the worker's max_input_frame_bytes (or max_frame_bytes fallback).
+    The shipped module worker uses a 1 MiB input limit. Raising the client limit
+    requires a separately configured worker: an oversized frame terminates the
+    worker and fails all in-flight requests.
     """
 
     supports_multiplexing = True
@@ -232,6 +237,9 @@ class MultiplexedWorkerClient:
         mailbox_capacity: int = 64,
         max_buffered_chars: int = 1024 * 1024,
         max_message_bytes: int = _MAX_MESSAGE_BYTES,
+        max_request_bytes: int = _MAX_REQUEST_BYTES,
+        supports_ignore_eos: bool = False,
+        default_stop_strings: list[str] | None = None,
     ):
         _validate_limits(
             max_named_sessions=max_named_sessions,
@@ -239,15 +247,26 @@ class MultiplexedWorkerClient:
             mailbox_capacity=mailbox_capacity,
             max_buffered_chars=max_buffered_chars,
             max_message_bytes=max_message_bytes,
+            max_request_bytes=max_request_bytes,
         )
         if proc.stdin is None or proc.stdout is None:
             raise WorkerError("worker requires stdin and stdout pipes")
         self._loop = asyncio.get_running_loop()
+        if default_stop_strings is not None and (
+            not isinstance(default_stop_strings, list)
+            or any(not isinstance(s, str) or not s for s in default_stop_strings)
+        ):
+            raise WorkerError(
+                "default_stop_strings must be null or a list of nonempty strings"
+            )
+        self.default_stop_strings = default_stop_strings
+        self.supports_ignore_eos = supports_ignore_eos
         self.max_named_sessions = max_named_sessions
         self.max_inflight_requests = max_inflight_requests
         self._mailbox_capacity = mailbox_capacity
         self._max_buffered_chars = max_buffered_chars
         self._max_message_bytes = max_message_bytes
+        self._max_request_bytes = max_request_bytes
         self._proc = proc
         self._write_ready = asyncio.Event()
         self._requests: dict[int, _Request] = {}
@@ -403,7 +422,8 @@ class MultiplexedWorkerClient:
                 "op": "cancel",
                 "request_id": cancel_id,
                 "target_request_id": state.request_id,
-            }
+            },
+            self._max_request_bytes,
         )
         state.cancel_pending = False
         self._controls[cancel_id] = _Cancellation(state.request_id)
@@ -445,7 +465,7 @@ class MultiplexedWorkerClient:
         self._ensure_usable()
 
     @staticmethod
-    def _encode_request(request):
+    def _encode_request(request, max_request_bytes=_MAX_REQUEST_BYTES):
         try:
             _validate_wire_values(request)
             for name, low, high in (
@@ -468,9 +488,10 @@ class MultiplexedWorkerClient:
             raise WorkerError(
                 f"invalid worker request: {error}", code="invalid_argument"
             ) from error
-        if len(payload) > _MAX_REQUEST_BYTES:
+        if len(payload) > max_request_bytes:
             raise WorkerError(
-                "worker request exceeds the 1 MiB frame limit", code="invalid_argument"
+                f"worker request exceeds the {max_request_bytes} byte frame limit",
+                code="invalid_argument",
             )
         return payload
 
@@ -485,7 +506,9 @@ class MultiplexedWorkerClient:
                 raise WorkerError(f"request id {request_id} is not reserved")
         state.submitted = True
         try:
-            payload = self._encode_request(dict(request, request_id=state.request_id))
+            payload = self._encode_request(
+                dict(request, request_id=state.request_id), self._max_request_bytes
+            )
             if not state.completion.done():
                 self._writes.append((state.request_id, payload))
                 self._write_ready.set()
@@ -705,6 +728,8 @@ class MultiplexedWorkerClient:
                 "seed": getattr(config, "seed", 0),
                 "stop": list(getattr(config, "stop", []) or []),
             }
+            if getattr(config, "ignore_eos", False):
+                request["ignore_eos"] = config.ignore_eos
             segments = getattr(config, "prompt_segments", None)
             request["prompt_segments" if segments is not None else "prompt"] = (
                 segments if segments is not None else prompt
@@ -774,16 +799,22 @@ async def spawn_multiplexed_worker(
     mailbox_capacity: int = 64,
     max_buffered_chars: int = 1024 * 1024,
     max_message_bytes: int = _MAX_MESSAGE_BYTES,
+    max_request_bytes: int = _MAX_REQUEST_BYTES,
 ) -> MultiplexedWorkerClient:
     """Start a native worker on the caller's loop, requiring explicit multiplexing.
 
     Use from async application startup and await client.close() at shutdown.
     Sequential workers continue to use the synchronous spawn_worker factory.
+
+    max_request_bytes must not exceed the worker's configured input-frame limit
+    (1 MiB for the shipped module worker). This factory does not negotiate or
+    raise that limit; oversized frames terminate the worker and all its requests.
     """
     _validate_limits(
         mailbox_capacity=mailbox_capacity,
         max_buffered_chars=max_buffered_chars,
         max_message_bytes=max_message_bytes,
+        max_request_bytes=max_request_bytes,
     )
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -805,10 +836,13 @@ async def spawn_multiplexed_worker(
         return MultiplexedWorkerClient(
             proc,
             max_named_sessions=msg.get("max_named_sessions", 0),
+            supports_ignore_eos=msg.get("supports_ignore_eos") is True,
+            default_stop_strings=msg.get("default_stop_strings"),
             max_inflight_requests=msg.get("max_inflight_requests", 64),
             mailbox_capacity=mailbox_capacity,
             max_buffered_chars=max_buffered_chars,
             max_message_bytes=max_message_bytes,
+            max_request_bytes=max_request_bytes,
         )
     except BaseException:
         cleanup = asyncio.create_task(_shutdown_async_process(proc))

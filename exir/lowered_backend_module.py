@@ -15,12 +15,14 @@ import torch
 import torch.utils._pytree as pytree
 from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+from executorch.exir.backend.backend_details import DelegateScratchSpec
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 from executorch.exir.emit import emit_program
 
 from executorch.exir.graph_module import _get_submodule
 
+from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.spec_prop_pass import make_spec, SpecPropPass
 from executorch.exir.schema import Program
@@ -41,11 +43,11 @@ from torch.export.exported_program import (
     OutputSpec,
     TensorArgument,
 )
+from torch.fx.passes.tools_common import stable_topological_sort
 from torch.fx.passes.utils.fuser_utils import (
     erase_nodes,
     fuse_as_graphmodule,
     insert_subgm,
-    legalize_graph,
     NodeList,
     topo_sort,
 )
@@ -66,6 +68,10 @@ class LoweredBackendModule(torch.nn.Module):
     _named_data_store_output: Optional[
         NamedDataStoreOutput
     ]  # Named Data serialized by the backend
+    _scratch_specs: List[
+        DelegateScratchSpec
+    ]  # Scratch buffers the backend needs at execute() time
+    _share_handle_across_calls: bool  # Whether all calls may share one handle
     meta: Optional[Dict[str, Any]]  # Metadata for the lowered module
 
     def __init__(
@@ -75,6 +81,8 @@ class LoweredBackendModule(torch.nn.Module):
         processed_bytes: bytes,
         compile_specs: List[CompileSpec],
         named_data_store_output: Optional[NamedDataStoreOutput] = None,
+        scratch_specs: Optional[List[DelegateScratchSpec]] = None,
+        share_handle_across_calls: bool = False,
     ) -> None:
         super().__init__()
         self._original_exported_program = edge_program
@@ -82,6 +90,8 @@ class LoweredBackendModule(torch.nn.Module):
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
         self._named_data_store_output = named_data_store_output
+        self._scratch_specs = scratch_specs or []
+        self._share_handle_across_calls = share_handle_across_calls
         self.meta = None
 
     # pyre-ignore
@@ -110,6 +120,8 @@ class LoweredBackendModule(torch.nn.Module):
             processed_bytes=self._processed_bytes,
             compile_specs=copy.deepcopy(self._compile_specs, memo),
             named_data_store_output=self._named_data_store_output,
+            scratch_specs=copy.deepcopy(self._scratch_specs, memo),
+            share_handle_across_calls=self._share_handle_across_calls,
         )
         res.meta = copy.copy(getattr(self, "meta", {}))
         return res
@@ -148,6 +160,20 @@ class LoweredBackendModule(torch.nn.Module):
         Returns the Named Data Store Output
         """
         return self._named_data_store_output
+
+    @property
+    def scratch_specs(self) -> List[DelegateScratchSpec]:
+        """
+        Returns the scratch buffers the backend asked for in preprocess
+        """
+        return self._scratch_specs
+
+    @property
+    def share_handle_across_calls(self) -> bool:
+        """
+        Returns whether every call of this module in a method may share one delegate handle
+        """
+        return self._share_handle_across_calls
 
     # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
     def buffer(
@@ -342,7 +368,12 @@ class LoweredBackendModule(torch.nn.Module):
         )
         if memory_planning is None:
             memory_planning = MemoryPlanningPass()
-        exported_program = _transform(exported_program, SpecPropPass(), memory_planning)
+        exported_program = _transform(
+            exported_program,
+            SpecPropPass(),
+            DelegateScratchSpecPass(),
+            memory_planning,
+        )
         emitted_program = emit_program(
             exported_program, emit_stacktrace=emit_stacktrace
         ).program
@@ -900,10 +931,10 @@ def create_submodule_from_nodes(
     erase_nodes(gm, sorted_nodes)
 
     # Topological sort original gm with newly created sub_gm
-    # TODO : T153794167 Get rid of support for skipping legalize graph in create_submodule_from_nodes
+    # TODO : T153794167 Get rid of support for skipping the sort in create_submodule_from_nodes
     # once we transition to using fuse_by_partitions.
     if not skip_legalize_graph:
-        legalize_graph(gm)
+        stable_topological_sort(gm)
 
     # Get the call_module node
     submodule_node = None

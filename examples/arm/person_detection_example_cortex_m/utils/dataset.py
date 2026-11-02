@@ -47,7 +47,9 @@ def is_allowed_license(license_url: str) -> bool:
     )
 
 
-def setup_dataset() -> None:
+def setup_dataset(
+    train_samples: int = TRAIN_SAMPLES, validation_samples: int = VALIDATION_SAMPLES
+) -> None:
     """Download and export licence-validated Open Images Person splits."""
     import fiftyone as fo  # type: ignore[import-not-found, import-untyped]
     import fiftyone.zoo as foz  # type: ignore[import-not-found, import-untyped]
@@ -56,8 +58,8 @@ def setup_dataset() -> None:
     )
 
     for split, max_samples in (
-        ("train", TRAIN_SAMPLES),
-        ("validation", VALIDATION_SAMPLES),
+        ("train", train_samples),
+        ("validation", validation_samples),
     ):
         export_dir = DATASET_DIR / split
         labels_path = export_dir / "labels.json"

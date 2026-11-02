@@ -1,0 +1,13 @@
+# Copyright 2026 Mwaniki Njagi.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+description: ExecuTorch ESP-NN backend runtime (XTS3 int8 interpreter and EspNNBackend delegate)
+dependencies:
+  idf:
+    version: ">=5.1"
+  espressif/esp-nn: "^1.4.0"

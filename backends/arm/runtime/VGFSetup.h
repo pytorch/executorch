@@ -23,6 +23,7 @@ using executorch::runtime::CompileSpec;
 
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
 #include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
+#include <executorch/backends/arm/runtime/VGFZeroCopy.h>
 
 namespace executorch {
 namespace backends {
@@ -140,6 +141,15 @@ class VgfRepr {
    */
   void free_vgf();
 
+  // Terminal per-representation state. Some execution/cleanup failures
+  // synchronously free this VgfRepr's Vulkan resources while the runtime
+  // still owns the DelegateHandle. Such a handle remains destructible but
+  // must never be executed again.
+  bool is_execution_valid() const {
+    return execution_valid_;
+  }
+  void invalidate_execution_state();
+
   /*
    * input and outputs from the VGF - these are memory mapped and populated
    * with the EValues coming the backend execute call
@@ -152,6 +162,11 @@ class VgfRepr {
   size_t model_output_count = 0;
   std::vector<SegmentState> segments;
   std::vector<ResourceAlloc> extra_allocs;
+
+  // Metadata for each IO entry. The ExecuTorch argument index is assigned
+  // later from the model boundary mapping and
+  // must not be assumed from the IO index.
+  std::vector<VgfZeroCopyIoMetadata> zero_copy_io_metadata;
 
   // Mapping to persistent IO memory
   static bool map_io(IO* io, void** handle) {
@@ -195,6 +210,40 @@ class VgfRepr {
     return host_memory_import_capabilities_;
   }
 
+  // Resource-management seam for execute().
+  VgfZeroCopyImportResult try_import_zero_copy_candidate(
+      size_t io_index,
+      void* host_pointer,
+      size_t logical_nbytes);
+
+  const VgfZeroCopySlot* zero_copy_import_slot(size_t io_index) const {
+    return zero_copy_import_manager_.slot(io_index);
+  }
+
+  // Select which tensor view is written to all descriptor bindings associated
+  // with this boundary IO. Selection itself is cheap; Vulkan descriptor writes
+  // are deferred until flush_boundary_bindings().
+  bool activate_imported_binding(size_t io_index);
+  bool activate_owned_binding(size_t io_index);
+  bool is_import_active(size_t io_index) const;
+
+  // Host pointers passed through EValue are caller-owned and are guaranteed
+  // only for the duration of execute(). Restore owned descriptor bindings and
+  // release every imported Vulkan object before control returns to the caller.
+  bool flush_boundary_bindings(
+      executorch::runtime::EventTracer* event_tracer = nullptr);
+  // Execution-scoped host-import cleanup. On every normal return,
+  // no caller-owned EValue storage remains imported by Vulkan. false means
+  // this VgfRepr was synchronously torn down, marked invalid, and is no
+  // longer reusable. If
+  // GPU completion cannot be established, cleanup fail-stops instead of
+  // returning while a live import may still reference caller memory.
+  bool release_execution_zero_copy_imports();
+  // End the lifetime of every host allocation imported for the current
+  // execute() call. Any imported descriptor is first restored to the owned
+  // tensor view; imported Vulkan objects are destroyed only after no queued
+  // work can still use them. The next execute_vgf() re-records the command
+  // buffer through the existing dirty-binding path.
   ~VgfRepr() {
     free_vgf();
     if (vk_pipeline_cache != VK_NULL_HANDLE) {
@@ -206,6 +255,9 @@ class VgfRepr {
   }
 
  private:
+  // false after terminal cleanup; the DelegateHandle remains valid only
+  // for destroy().
+  bool execution_valid_ = true;
   // Basic Vulkan objects passed to us and re-used
   VkInstance vk_instance;
   VkPhysicalDevice vk_physical;
@@ -224,6 +276,33 @@ class VgfRepr {
   bool neural_statistics_device_enabled_ = false;
   int neural_statistics_mode_index_ = 1;
   VgfHostMemoryImportCapabilities host_memory_import_capabilities_{};
+  VgfZeroCopyImportManager zero_copy_import_manager_;
+
+  std::vector<VgfBoundaryBindingState> zero_copy_binding_states_;
+
+  struct VgfAliasImageRecordState {
+    bool needs_tensor_aliasing = false;
+    VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageLayout current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    std::vector<VkImage> images;
+  };
+
+  struct VgfAliasLayoutUse {
+    uint32_t alias_group = 0;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  };
+
+  struct VgfSegmentRecordPlan {
+    std::vector<VgfAliasLayoutUse> alias_layouts;
+  };
+
+  // The VGF decoders are temporary. Persist only the small amount of alias
+  // information required to re-record the execute command buffer after a
+  // descriptor update.
+  std::unordered_map<uint32_t, VgfAliasImageRecordState>
+      execute_alias_image_states_;
+  std::vector<uint32_t> execute_output_image_alias_groups_;
+  std::vector<VgfSegmentRecordPlan> execute_segment_record_plans_;
 
   bool timestamp_queries_enabled = false;
   uint32_t timestamp_valid_bits = 0;
@@ -234,7 +313,16 @@ class VgfRepr {
   // than once) in execute_vgf
   VkCommandBuffer vk_execute_cmd = VK_NULL_HANDLE;
   VkFence vk_execute_fence = VK_NULL_HANDLE;
+  // True only while vk_execute_cmd has an outstanding queue submission.
+  // A freshly-created unsignaled fence is not evidence of pending execution.
+  bool execute_submission_pending_ = false;
   // Note: the vector of tensor memory is stored in IOs above
+
+  bool record_execute_command_buffer(VkCommandBuffer command_buffer);
+  bool select_boundary_tensor_view(
+      size_t io_index,
+      VkTensorViewARM tensor_view,
+      bool imported);
 
   bool init_timestamp_queries();
   void read_timestamp_queries(executorch::runtime::EventTracer* event_tracer);

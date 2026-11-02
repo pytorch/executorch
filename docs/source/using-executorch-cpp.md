@@ -197,9 +197,9 @@ These are the components the package provides:
 | `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
 | `kernels_quantized` | The quantized operator kernels | Linux, macOS, Windows |
 | `kernels_torchao` | The TorchAO low-bit quantized kernels | Linux and macOS, aarch64 only |
-| `backend_cuda` | The CUDA delegate | Linux |
-| `extension_cuda` | The CUDA stream extension | Linux |
-| `backend_openvino` | The OpenVINO delegate | Linux |
+| `backend_cuda` | The CUDA delegate | Linux, Windows (runs programs exported on Linux) |
+| `extension_cuda` | Shared CUDA allocator, stream and device helpers. Allocator headers require the CUDA toolkit. A program that calls the CUDA runtime itself links `CUDA::cudart`. | Linux, Windows |
+| `backend_openvino` | The OpenVINO delegate | Linux, Windows |
 | `backend_coreml` | The Core ML delegate, for Apple GPU and Neural Engine execution | macOS |
 | `backend_mlx` | The MLX delegate, for Apple GPU execution | macOS, Apple Silicon |
 
@@ -253,17 +253,28 @@ The quantized kernels are deliberately left out of that variable, because loadin
 stops the runtime.
 
 The OpenVINO delegate needs one more step. The wheel ships the adapter, not the OpenVINO runtime
-itself, and the adapter opens `libopenvino_c.so` by name when the model is loaded. Python callers
-get that path set for them on import; a standalone C++ program does not, so install the runtime and
-point the program at it:
+itself, and the adapter opens `libopenvino_c.so` (`openvino_c.dll` on Windows) by name when the
+model is loaded. Python callers get that path set for them on import; a standalone C++ program does
+not, so install the runtime and point the program at it:
 
 ```bash
 pip install "executorch[openvino]"
 export OPENVINO_LIB_PATH="$(python -c 'import glob, openvino, os; print(sorted(glob.glob(os.path.join(os.path.dirname(openvino.__file__), "libs", "libopenvino_c.so*")))[0])')"
 ```
 
+On Windows, in PowerShell:
+
+```powershell
+pip install "executorch[openvino]"
+$env:OPENVINO_LIB_PATH = python -c "import openvino, os; print(os.path.join(os.path.dirname(openvino.__file__), 'libs', 'openvino_c.dll'))"
+```
+
 Without it the delegate still registers and the program still links, and the failure arrives later,
 when the model is loaded.
+
+For now the openvino extra installs no runtime on Python 3.15, or on Linux aarch64 with
+Python 3.14. OpenVINO publishes no build for Python 3.15, and its aarch64 builds for Python
+3.14 need glibc 2.35 or newer.
 
 The MLX delegate has a similar requirement. Its Metal kernels live in a separate `mlx.metallib`
 file, which MLX looks for next to whichever library holds MLX code. The wheel ships it beside the
@@ -404,15 +415,17 @@ as Ninja, or build with `cmake --build build --config Release` under Visual Stud
 against the release C++ library, and a Debug program uses the debug one, whose types are laid out
 differently, so mixing the two would corrupt memory. The runtime headers therefore refuse a Debug
 build at compile time, with an error asking for Release. On CMake older than 3.28, copy the DLLs from
-`${EXECUTORCH_RUNTIME_LIBRARY_DIR}` instead, and apply `${EXECUTORCH_COMPILE_DEFINITIONS}`, which
-carries that check.
+`${EXECUTORCH_RUNTIME_LIBRARY_DIR}` instead, together with any listed in
+`${EXECUTORCH_RUNTIME_DLLS_EXTRA}`, and apply `${EXECUTORCH_COMPILE_DEFINITIONS}`, which carries
+that check.
 
 The `etdump` component is not offered on Windows, because the Windows wheel is built without the
 event tracer.
 
 ### Running on a GPU with the CUDA package
 
-The CUDA build is a separate package. Releases cover CUDA 13.2 and 13.4, so pick the index
+On Linux, the package on PyPI is the CUDA build, for the same CUDA version as the `torch` package
+there. Releases also cover CUDA 13.2 and 13.4 on their own indexes, so you can pick the one
 matching the CUDA version you have (`cu132` or `cu134`). For CUDA 13.2:
 
 ```
@@ -421,7 +434,7 @@ pip install executorch torch \
   --extra-index-url https://pypi.org/simple
 ```
 
-CUDA wheels are built for Python 3.10 through 3.14, which is every Python this project supports.
+CUDA wheels are built for Python 3.11 through 3.15, which is every Python this project supports.
 
 The second index is required: a bare `--index-url` replaces PyPI rather than adding to it, and some
 dependencies are only on PyPI. The torch you install has to come from the same CUDA index, because
@@ -499,6 +512,43 @@ reach fewer cards in that range than the x86_64 ones, so a card at or above `(8,
 outside an ARM package. Note that `torch.cuda.get_arch_list()` is not the right check either:
 PyTorch builds for a wider set at the bottom than these packages do, so a GPU can appear in that
 list and still not be supported.
+
+#### CUDA on Windows
+
+The Windows CUDA package runs CUDA programs; it cannot lower them. Lowering compiles the model with
+a toolchain only the Linux side has, so export on Linux or in WSL, adding one compile spec that
+names the Windows target, then copy `model.pte` and `aoti_cuda_blob.ptd` to the Windows machine:
+
+```python
+from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+compile_specs = [
+    CudaBackend.generate_method_name_compile_spec("forward"),
+    CompileSpec("platform", b"windows"),
+]
+partitioner = [CudaPartitioner(compile_specs)]
+```
+
+That export also needs the MinGW cross compiler and, from the same CUDA train as the torch that
+exports, the Windows CUDA runtime on the Linux side. Both commands use scripts from the
+repository, so run them from a clone of it:
+
+```bash
+sudo bash .ci/docker/common/install_cuda_windows_cross_compile.sh --mingw
+python .ci/scripts/wheel/install_cuda_redist.py --train 13.2 \
+    --platform windows-x86_64 --dest ~/cuda-windows-13.2 --components cuda_cudart
+export WINDOWS_CUDA_HOME=~/cuda-windows-13.2
+```
+
+On Windows, link the same components as on Linux and copy the DLLs beside your program as described
+in the Windows section above. `$<TARGET_RUNTIME_DLLS>` also brings the delegate's CUDA extension
+(allocator and stream helpers) and its AOTI shim layer. Those need only the NVIDIA driver, but the
+model itself does not: the library
+AOTInductor compiles into `model.pte` imports `cudart64_13.dll` (for the CUDA 13 packages), which
+comes from the CUDA Toolkit, whose installer puts its `bin` directory on `PATH`. The Python module in
+this package carries no CUDA; it is the C++ SDK that runs the program.
 
 ### Building from source
 

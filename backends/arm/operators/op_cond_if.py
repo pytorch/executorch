@@ -38,7 +38,7 @@ class CondVisitor(NodeVisitor):
     ) -> None:
 
         validate_num_inputs(self.target, inputs, 4)
-        validate_valid_dtype(self.target, [inputs[0]], ts.DType.BOOL, self.tosa_spec)
+        validate_valid_dtype(self.target, [inputs[0]], ts.DType.BOOL)
         validate_cf_extension(self.target, self.tosa_spec)
 
         attr = ts.TosaSerializerAttribute()
