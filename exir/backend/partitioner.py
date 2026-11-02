@@ -114,11 +114,7 @@ class Partitioner(ABC):
         * After lowering, on the EDGE program (`ep.dialect == "EDGE"`). A node still in the
           graph whose op is in this list, or in the list of an earlier partitioner for the
           same method, and that the filter accepts was neither decomposed nor delegated,
-          and raises an error. The quantize and dequantize ops in exir's
-          `_QUANT_PRIMITIVES` are exempt.
-
-        When the filter is not None, exir drops mutable ops, ops that alias an output, and a
-        fixed blocklist from the list at both stages, so those entries are never kept whole.
+          and raises an error, except for some quantization ops.
 
         Returns:
             List[torch._ops.OpOverload]: a list of operator names that should not be decomposed.

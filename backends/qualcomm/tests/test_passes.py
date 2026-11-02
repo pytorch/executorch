@@ -1024,21 +1024,52 @@ class TestPasses(unittest.TestCase):
                     raise
 
     def test_partitioner_keeps_constant_only_subgraph_on_cpu(self):
+        class ConstantBranch(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.randn(4, 16))
+
+            def forward(self, x):
+                return x + torch.relu(self.table * 2 - 1)
+
+        sample_input = (torch.randn(4, 16),)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        # With relu on CPU, table * 2 - 1 reads nothing at runtime.
+        try:
+            edge = to_edge_transform_and_lower_to_qnn(
+                ConstantBranch().eval(),
+                sample_input,
+                compiler_specs,
+                skip_node_op_set={"aten.relu.default"},
+            )
+        except RuntimeError as e:
+            if "Failed to initialize QNN backend" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
+        edge.to_executorch()
+
+    def test_htp_decomposes_kept_whole_ops_left_on_cpu(self):
         class ConstantBranches(torch.nn.Module):
             def __init__(self):
                 super().__init__()
                 self.register_buffer("table", torch.randn(4, 16))
                 self.register_buffer("weight", torch.randn(16, 16))
+                self.register_buffer("mask", torch.rand(4, 16) > 0.5)
 
             def forward(self, x):
                 linear = torch.nn.functional.linear
-                # QNN has no bfloat16 type, so this branch reads nothing at
-                # runtime once the casts run on CPU. Its linear is decomposed.
+                # QNN has no bfloat16 type, and a masked select has no static
+                # shape, so these branches read nothing at runtime once those
+                # ops run on CPU. Their linears are decomposed.
                 cast = linear(self.table, self.weight).to(torch.bfloat16).float()
+                masked = linear(self.table, self.weight)[self.mask].sum()
                 # This linear reads only constants too, but it shares a
                 # partition with the add that reads x, so it stays whole.
                 delegated = linear(self.table, self.weight)
-                return x + delegated + cast
+                return x + delegated + cast + masked
 
         class SkippedFeeder(torch.nn.Module):
             def __init__(self):
@@ -1057,7 +1088,9 @@ class TestPasses(unittest.TestCase):
 
         # Runs without the QNN SDK: the backend accepts every op and compiles
         # nothing.
-        with patch.object(
+        with patch(
+            "executorch.backends.qualcomm.utils.utils.setup_qnn_sdk"
+        ), patch.object(
             QnnManagerRegistry, "get_or_create_qnn_manager", return_value=MagicMock()
         ), patch.object(
             QnnBackend,

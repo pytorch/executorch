@@ -399,23 +399,28 @@ class QnnPartitioner(Partitioner):
         Determines which op should not be decomposed during partitioning.
         The list of operators is obtained from `get_skip_decomp_table()`.
         The filter function (`filter_fn`) can be used to further refine which nodes are not decomposed. (advanced use case)
-        On HTP, ops that `_drop_partitions_without_runtime_inputs` would keep on
-        CPU, as far as is known before decomposition, are decomposed too.
+        On HTP, kept-whole ops that `_drop_partitions_without_runtime_inputs`
+        would leave on CPU, as far as can be told before they are decomposed,
+        are decomposed too.
         """
         do_not_decompose = get_skip_decomp_table()
-        # On the lowered program this filter tells exir which kept-whole ops
-        # may stay on CPU, and none may, so it stays plain filter_fn there.
+        # On the lowered program exir reports every kept-whole op left there
+        # that the filter accepts, so it stays plain filter_fn.
         if self.backend != QnnExecuTorchBackendType.kHtpBackend or ep.dialect == "EDGE":
             return (do_not_decompose, filter_fn)
 
         @functools.cache
         def left_on_cpu() -> Set[torch.fx.Node]:
-            # The real partitions are not known before decomposition, so the
-            # drop rule runs on the largest ones possible: only ops whose dtypes
-            # or shapes rule QNN out count as CPU ops. The caller's skips are
-            # left out, since decomposing adds nodes, and a skip must not rename
-            # the nodes that skip_node_id_set names. Ops that QNN rejects while
-            # partitioning are not known yet either.
+            # The real partitions are only known once the kept-whole ops are
+            # decomposed, so the drop rule runs on the largest ones possible:
+            # only ops whose dtypes or shapes rule QNN out count as CPU ops.
+            # The caller's skips are left out, since decomposing adds nodes,
+            # and a skip must not rename the nodes that skip_node_id_set names.
+            # Ops that QNN rejects while partitioning are not known yet either.
+            # So when a skipped or rejected op is all that cuts a kept-whole op
+            # off, the op is not decomposed and still fails as before, and when
+            # such an op reads only constants and feeds a kept-whole op, the
+            # kept-whole op is decomposed although it ends up delegated.
             partitions = generate_partitions_from_list_of_nodes(
                 ep.graph_module,
                 op_support=create_op_support(
@@ -431,7 +436,7 @@ class QnnPartitioner(Partitioner):
                 for node in partition.nodes
             }
 
-        # exir calls this method several times before decomposition but uses
+        # exir calls this method several times on the ATen program but uses
         # only one of the filters, so the partitions are found on first use.
         return (
             do_not_decompose,
