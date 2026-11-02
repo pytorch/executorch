@@ -37,6 +37,21 @@ if(NOT TARGET GTest::gtest_main)
   )
 endif()
 
+add_executable(
+  ethosu_planned_scratch_test
+  test_ethosu_planned_scratch.cpp
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_IoMemcpy.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/VelaBinStream.cpp"
+)
+target_link_libraries(
+  ethosu_planned_scratch_test PRIVATE executorch_core GTest::gtest_main
+)
+add_test(NAME ethosu_planned_scratch_test COMMAND ethosu_planned_scratch_test)
+set_tests_properties(
+  ethosu_planned_scratch_test PROPERTIES LABELS "arm;ethos-u;runtime"
+)
+
 set(_ethos_u_runtime_tests_dir "${CMAKE_CURRENT_SOURCE_DIR}")
 set(_ethos_u_runtime_test_output_dir "${CMAKE_CURRENT_BINARY_DIR}/test_run")
 
@@ -64,6 +79,21 @@ target_link_libraries(
 add_test(NAME vela_external_blocks COMMAND vela_external_blocks_test)
 set_tests_properties(
   vela_external_blocks PROPERTIES LABELS "arm;ethos-u;runtime"
+)
+
+find_package(Threads REQUIRED)
+add_executable(
+  ethosu_execution_stats_test
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_execution_stats_test.cpp"
+)
+target_include_directories(
+  ethosu_execution_stats_test PRIVATE "${EXECUTORCH_ROOT}/.."
+)
+target_link_libraries(ethosu_execution_stats_test PRIVATE Threads::Threads)
+add_test(NAME ethosu_execution_stats COMMAND ethosu_execution_stats_test)
+set_tests_properties(
+  ethosu_execution_stats PROPERTIES LABELS "arm;ethos-u;runtime"
 )
 
 add_test(
