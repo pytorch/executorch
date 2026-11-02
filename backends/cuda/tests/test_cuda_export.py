@@ -708,6 +708,73 @@ class TestCudaExport(unittest.TestCase):
             "SDPA kernel export with triton_kernel_mode=OFF failed",
         )
 
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_fused_sdpa(self):
+        """Decomposing attention on CUDA, as Torch-TensorRT does, gives fused
+        variants that the backend has no kernel for."""
+        from executorch.runtime import Runtime
+
+        class Attention(torch.nn.Module):
+            def forward(self, q, k, v, mask):
+                attention = torch.nn.functional.scaled_dot_product_attention
+                # Flash attention with fewer key heads and a custom scale.
+                grouped = attention(
+                    q,
+                    k[:, :2, :16],
+                    v[:, :2, :16],
+                    is_causal=True,
+                    scale=0.2,
+                    enable_gqa=True,
+                )
+                # Efficient attention, with the mask turned into a bias.
+                masked = attention(q, k[:, :, :16], v[:, :, :16], attn_mask=mask)
+                # Flash attention of one query over many keys, which runs in
+                # the Triton decode kernel.
+                decode = attention(q[:, :, :1], k, v)
+                return grouped, masked, decode
+
+        model = Attention()
+        inputs = (
+            torch.randn(1, 4, 16, 64, dtype=torch.bfloat16, device="cuda"),
+            torch.randn(1, 4, 256, 64, dtype=torch.bfloat16, device="cuda"),
+            torch.randn(1, 4, 256, 64, dtype=torch.bfloat16, device="cuda"),
+            torch.ones(16, 16, dtype=torch.bool, device="cuda").tril(),
+        )
+        program = export(model, inputs, strict=True).run_decompositions()
+        fused = [
+            node
+            for node in program.graph.nodes
+            if "aten._scaled_dot_product_" in str(node.target)
+        ]
+        self.assertEqual(len(fused), 3)
+        with self.assertLogs(
+            "executorch.backends.cuda.triton.replacement_pass", "INFO"
+        ) as logs:
+            edge = to_edge_transform_and_lower(
+                program,
+                partitioner=[
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec("forward")]
+                    )
+                ],
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+        # The masked call keeps a float bias, which the Triton kernels do not take.
+        output = "\n".join(logs.output)
+        self.assertIn("Replaced 2 nodes with Triton kernels", output)
+        self.assertIn("Using split-K decode SDPA", output)
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            method = Runtime.get().load_program(path).load_method("forward")
+            outputs = method.execute([t.cpu() for t in inputs])
+        for output, reference in zip(outputs, model(*inputs), strict=True):
+            torch.testing.assert_close(output, reference.cpu(), atol=2e-2, rtol=2e-2)
+
     def test_missing_scatter_kernel_fails_at_export(self):
         """Inductor leaves int64 scatter_add to an ATen kernel the CUDA shim lacks."""
 
@@ -764,6 +831,41 @@ class TestCudaExport(unittest.TestCase):
                 inputs = (x, mask, column, idx, counts)
                 outputs = method.execute(list(inputs))
                 for output, expected in zip(outputs, model(*inputs), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected)
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_same_tensor_returned_twice(self):
+        """AOTI gives two outputs one handle when they are the same tensor. With
+        CUDA graphs on, three calls run eagerly, the fourth captures a graph and
+        the fifth replays it."""
+        from executorch.runtime import Runtime
+
+        class Twice(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+                y = x * 2
+                return y.detach(), x + 1, y.detach()
+
+        model = Twice()
+        edge = self._export_to_cuda_with_lower(model, (torch.randn(4, 8),))
+        runtime = Runtime.get()
+        option = "enable_cuda_graph_for_method"
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            runtime.backend_registry.set_option("CudaBackend", {option: "forward"})
+            try:
+                method = runtime.load_program(path).load_method("forward")
+            finally:
+                # The option is process wide.
+                runtime.backend_registry.set_option("CudaBackend", {option: ""})
+            for _ in range(5):
+                x = torch.randn(4, 8)
+                outputs = method.execute([x])
+                for output, expected in zip(outputs, model(x), strict=True):
                     torch.testing.assert_close(output.cpu(), expected)
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):

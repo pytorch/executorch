@@ -4,6 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
+from dataclasses import dataclass
+
+import torch
 from executorch.backends.espressif.passes import EspPassManager
 from executorch.backends.espressif.quantizer import EspNNQuantizer
 from executorch.backends.test.harness import Tester
@@ -50,3 +54,34 @@ class EspTester(Tester):
         stages[StageType.RUN_PASSES] = EspRunPasses
         stages[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = EspToEdgeTransformAndLower
         super().__init__(module, example_inputs, stages)
+
+    def test_dialect(
+        self,
+        ops_before_transforms,
+        ops_after_transforms,
+        *,
+        qtol=0,
+        atol=1e-3,
+        rtol=1e-3,
+    ):
+        return (
+            self.quantize()
+            .export()
+            .to_edge()
+            .check_node_count(ops_before_transforms)
+            .run_passes()
+            .check_node_count(ops_after_transforms)
+            .run_method_and_compare_outputs(
+                inputs=self.example_inputs, qtol=qtol, atol=atol, rtol=rtol
+            )
+        )
+
+
+@dataclass
+class EspTestCase:
+    model: torch.nn.Module
+    example_inputs: tuple[torch.Tensor, ...]
+
+
+def ramp_tensor(start: float, end: float, shape: tuple[int, ...]) -> torch.Tensor:
+    return torch.linspace(start, end, math.prod(shape)).reshape(shape)
