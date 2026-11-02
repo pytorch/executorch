@@ -1,7 +1,8 @@
+import contextlib
 import operator
 import unittest
 from collections import defaultdict
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, PropertyMock
 
 import torch
 from executorch.backends.qualcomm._passes import (
@@ -35,8 +36,14 @@ from executorch.backends.qualcomm.builders.op_custom_op import (
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.builders.utils import is_parameter
-from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
-from executorch.backends.qualcomm.partition.utils import get_skip_decomp_table
+from executorch.backends.qualcomm.partition.qnn_partitioner import (
+    QnnOperatorSupport,
+    QnnPartitioner,
+)
+from executorch.backends.qualcomm.partition.utils import (
+    filter_fn,
+    get_skip_decomp_table,
+)
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -58,18 +65,272 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_SCALE,
     QCOM_ZERO_POINTS,
 )
+from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerRegistry
 from executorch.backends.qualcomm.utils.utils import (
+    generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir.backend.backend_details import PreprocessResult
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.lowered_backend_module import get_lowered_backend_modules
+from executorch.exir.program._program import _replace_aten_ops_with_transformed_ops
 from torch.export.exported_program import OutputKind
+from torch.export.graph_signature import ExportGraphSignature
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.library import Library
 from torchao.quantization import IntxWeightOnlyConfig, PerAxis, quantize_
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+
+class ConstantBranches(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("table", torch.randn(4, 16))
+        self.register_buffer("weight", torch.randn(16, 16))
+        self.register_buffer("mask", torch.rand(4, 16) > 0.5)
+
+    def forward(self, x):
+        linear = torch.nn.functional.linear
+        # QNN has no bfloat16 type, and a masked select has no static shape,
+        # so these branches read nothing at runtime once those ops run on
+        # CPU. Their linears are decomposed.
+        cast = linear(self.table, self.weight).to(torch.bfloat16).float()
+        masked = linear(self.table, self.weight)[self.mask].sum()
+        # This linear feeds a delegated add both directly and through CPU
+        # casts, so the partitioner splits it off to avoid a cycle. It is
+        # decomposed.
+        detour = linear(self.table, self.weight)
+        detour = detour + detour.to(torch.bfloat16).float()
+        # This linear reads only constants too, but it shares a partition with
+        # the add that reads x, so it stays whole, even though that add
+        # reaches another QNN op through CPU casts.
+        delegated = linear(self.table, self.weight)
+        y = x + delegated + cast + masked + detour
+        return y.to(torch.bfloat16).float() + 1
+
+
+class MaskedReader(ConstantBranches):
+    def forward(self, x):
+        # Nothing after the masked select reaches QNN: the sum reads a
+        # data-dependent size, and the runtime asserts that export adds for
+        # that size have no tensor output. So the linear shares the add's
+        # partition and stays whole.
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        return x + linear, linear[self.mask].sum()
+
+
+class SkippedRelu(ConstantBranches):
+    def forward(self, x):
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        return x + linear.relu()
+
+
+class QuantizedCast(ConstantBranches):
+    def forward(self, x):
+        # A quantized linear stays whole. Quantized casts get a QNN type, so
+        # here the whole model is delegated.
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        return x + linear.to(torch.bfloat16).float()
+
+
+class NoRuntimeInput(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("table", torch.randn(4, 16))
+        self.register_buffer("weight", torch.randn(16, 16))
+
+    def forward(self, x):
+        # x only reaches a CPU cast, so no partition reads a runtime value, and
+        # the linear is decomposed.
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        return x.to(torch.bfloat16), linear * 2
+
+
+class CastSplit(NoRuntimeInput):
+    def forward(self, x):
+        # QNN takes every getitem, so the getitems of this CPU split can join
+        # the add's partition. The linear would then close a cycle through the
+        # split, so it is left out and decomposed.
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        low, high = linear.to(torch.bfloat16).split(8, dim=-1)
+        return x + linear, low, high
+
+
+class ConstantOutput(NoRuntimeInput):
+    def forward(self, x):
+        # No path links this linear to the ops that read x, but the partitioner
+        # also merges such ops, so the linear stays whole. The getitems of the
+        # split stay with it, since QNN takes it.
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        return x + 1, *x.split(8, dim=-1), linear
+
+
+class CastSplitInput(NoRuntimeInput):
+    def forward(self, x):
+        # Only the getitems of a CPU split read x, and the partitioner moves
+        # them out of the linear's partition, so it reads no runtime value.
+        # The linear is decomposed.
+        low, high = x.to(torch.bfloat16).split(8, dim=-1)
+        return low, high, torch.nn.functional.linear(self.table, self.weight)
+
+
+class SplitAfterAdd(NoRuntimeInput):
+    def forward(self, x):
+        # These getitems come after a QNN op, so their partition cannot merge
+        # with the add's. The linear joins theirs, which reads no runtime value
+        # once they are moved out, so it is decomposed.
+        low, high = (x + 1).to(torch.bfloat16).split(8, dim=-1)
+        return low, high, torch.nn.functional.linear(self.table, self.weight)
+
+
+class CastSplitLinked(NoRuntimeInput):
+    def forward(self, x):
+        # As above, but the linear feeds the add, so it stays whole.
+        low, high = (x + 1).to(torch.bfloat16).split(8, dim=-1)
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        return low, high, x + linear
+
+
+class LinearOfInput(NoRuntimeInput):
+    def forward(self, x):
+        # This linear reads x through the add, so it stays whole even though it
+        # reaches a QNN op through CPU casts.
+        linear = torch.nn.functional.linear(x + 1, self.weight)
+        return linear + linear.to(torch.bfloat16).float()
+
+
+class ReluBeforeCast(NoRuntimeInput):
+    def forward(self, x):
+        # The linear reaches the CPU cast through a relu that reads no runtime
+        # value either, so it is cut off and decomposed.
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        return x + linear.relu().to(torch.bfloat16).float()
+
+
+class CondAfterLinear(NoRuntimeInput):
+    def forward(self, x):
+        # QNN has no node visitor for cond, so it runs on CPU and cuts the
+        # linear off from the add. The linear is decomposed.
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        branch = torch.cond(x.sum() > 0, torch.neg, torch.abs, (linear,))
+        return x + branch
+
+
+class ItemAfterLinear(NoRuntimeInput):
+    def forward(self, x):
+        # item has no tensor output, so it runs on CPU, and the partition of
+        # the linear and the sum reads no runtime value. The linear is
+        # decomposed.
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        return x * linear.sum().item()
+
+
+class IntStackBesideLinear(NoRuntimeInput):
+    def forward(self, x):
+        # Both stay on CPU, but filter_fn already decomposes an int64 stack.
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        indices = torch.stack([self.table.long(), self.table.long()])
+        return x.to(torch.bfloat16), linear * 2, indices
+
+
+class EluBesideLinear(NoRuntimeInput):
+    def forward(self, x):
+        # Both stay on CPU, but exir has no decomposition for elu.
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        elu = torch.nn.functional.elu(self.table)
+        return x.to(torch.bfloat16), linear * 2, elu * 2
+
+
+class SharedConstant(NoRuntimeInput):
+    def forward(self, x):
+        # Like CastSplitLinked, but the linear reads a value that the add
+        # reads.
+        low, high = (x + 1).to(torch.bfloat16).split(8, dim=-1)
+        table = self.table * 2
+        linear = torch.nn.functional.linear(table, self.weight)
+        return low, high, x + table, linear
+
+
+class UnlinkedSplit(NoRuntimeInput):
+    def forward(self, x):
+        # No QNN op comes before this split, so its getitems cannot keep the
+        # linear out of the add's partition. It stays whole.
+        low, high = x.to(torch.bfloat16).split(8, dim=-1)
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        return x + 1, low, high, linear
+
+
+class MutatedTable(NoRuntimeInput):
+    def forward(self, x):
+        # The table changes on every run, so the linear reads a runtime value
+        # and stays whole, although only a CPU cast reads it.
+        self.table.mul_(2)
+        linear = torch.nn.functional.linear(self.table, self.weight)
+        return x + linear.to(torch.bfloat16).float()
+
+
+class QuantizedWeight(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("table", torch.randn(4, 16))
+        self.linear = torch.nn.Linear(16, 16, bias=False)
+
+    def forward(self, x):
+        return x + self.linear(self.table).to(torch.bfloat16).float()
+
+
+class GroupQuantizedWeight(NoRuntimeInput):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("scales", torch.full((16, 2), 0.1))
+        self.register_buffer("zero_points", torch.zeros(16, 2, dtype=torch.int8))
+
+    def forward(self, x):
+        group = (self.scales, self.zero_points, -8, 7, torch.int8, 8)
+        weight = torch.ops.quantized_decomposed.quantize_per_channel_group(
+            self.weight, *group
+        )
+        weight = torch.ops.quantized_decomposed.dequantize_per_channel_group(
+            weight, *group, torch.float32
+        )
+        linear = torch.nn.functional.linear(self.table, weight)
+        return x + linear.to(torch.bfloat16).float()
+
+
+@contextlib.contextmanager
+def stubbed_qnn_backend():
+    # Lowers without the QNN SDK: the backend accepts every op and compiles
+    # nothing.
+    with patch("executorch.backends.qualcomm.utils.utils.setup_qnn_sdk"), patch.object(
+        QnnManagerRegistry, "get_or_create_qnn_manager", return_value=MagicMock()
+    ), patch.object(
+        QnnBackend,
+        "preprocess_multimethod",
+        side_effect=lambda programs, _: {
+            method: [PreprocessResult(processed_bytes=b"qnn")] * len(partitions)
+            for method, partitions in programs.items()
+        },
+    ):
+        yield
+
+
+def stubbed_compiler_specs(backend_options):
+    with patch("executorch.backends.qualcomm.utils.utils.setup_qnn_sdk"):
+        return generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650, backend_options=backend_options
+        )
+
+
+def delegated_ops(edge):
+    return [
+        node.target
+        for lowered in get_lowered_backend_modules(edge.exported_program().graph_module)
+        for node in lowered.original_module.graph.nodes
+    ]
 
 
 class TestPasses(unittest.TestCase):
@@ -1190,28 +1451,280 @@ class TestPasses(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.register_buffer("table", torch.randn(4, 16))
+                self.register_buffer("weight", torch.randn(16, 16))
 
             def forward(self, x):
-                return x + torch.relu(self.table * 2 - 1)
+                # With relu on CPU, table * 2 - 1 reads nothing at runtime, and
+                # with the bfloat16 cast on CPU, neither does the linear. So the
+                # linear must be decomposed for this to lower.
+                linear = torch.nn.functional.linear(self.table, self.weight)
+                cast = linear.to(torch.bfloat16).float()
+                return x + torch.relu(self.table * 2 - 1) + cast
+
+        class DetourBranch(ConstantBranch):
+            def forward(self, x):
+                # The linear reaches the add only through CPU casts, so it is
+                # decomposed, but the partition of x + 1 takes its pieces.
+                linear = torch.nn.functional.linear(self.table, self.weight)
+                cast = (x + 1).to(torch.bfloat16).float()
+                return linear.to(torch.bfloat16).float() + cast
 
         sample_input = (torch.randn(4, 16),)
         compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=QcomChipset.SM8650,
             backend_options=generate_htp_compiler_spec(use_fp16=True),
         )
-        # With relu on CPU, table * 2 - 1 reads nothing at runtime.
-        try:
+        # HTP accepts the pieces of a decomposed linear that a partition takes.
+        for model, takes_pieces in ((ConstantBranch(), False), (DetourBranch(), True)):
+            with self.subTest(model=type(model).__name__):
+                try:
+                    edge = to_edge_transform_and_lower_to_qnn(
+                        model.eval(),
+                        sample_input,
+                        compiler_specs,
+                        skip_node_op_set={"aten.relu.default"},
+                    )
+                except RuntimeError as e:
+                    if "Failed to initialize QNN backend" in str(e):
+                        self.skipTest(f"QNN SDK not available: {e}")
+                    raise
+                edge.to_executorch()
+                self.assertEqual(
+                    takes_pieces, exir_ops.edge.aten.mm.default in delegated_ops(edge)
+                )
+
+    def test_htp_decomposes_kept_whole_ops_left_on_cpu(self):
+        compiler_specs = stubbed_compiler_specs(
+            generate_htp_compiler_spec(use_fp16=True)
+        )
+        sample_input = (torch.randn(4, 16),)
+        with stubbed_qnn_backend():
             edge = to_edge_transform_and_lower_to_qnn(
-                ConstantBranch().eval(),
-                sample_input,
-                compiler_specs,
-                skip_node_op_set={"aten.relu.default"},
+                ConstantBranches().eval(), sample_input, compiler_specs
             )
-        except RuntimeError as e:
-            if "Failed to initialize QNN backend" in str(e):
-                self.skipTest(f"QNN SDK not available: {e}")
-            raise
+            for model in (
+                NoRuntimeInput(),
+                CastSplit(),
+                CastSplitInput(),
+                SplitAfterAdd(),
+                ReluBeforeCast(),
+            ):
+                with self.subTest(model=type(model).__name__):
+                    to_edge_transform_and_lower_to_qnn(
+                        model.eval(), sample_input, compiler_specs
+                    )
+        top_level_ops = [
+            node.target
+            for node in edge.exported_program().graph.nodes
+            if node.op == "call_function"
+        ]
+        self.assertNotIn(exir_ops.edge.aten.linear.default, top_level_ops)
+        self.assertIn(exir_ops.edge.aten.linear.default, delegated_ops(edge))
+        self.assertIn(exir_ops.edge.aten.add.Tensor, delegated_ops(edge))
         edge.to_executorch()
+
+    def test_htp_keeps_linked_kept_whole_ops_whole(self):
+        compiler_specs = stubbed_compiler_specs(
+            generate_htp_compiler_spec(use_fp16=True)
+        )
+        sample_input = (torch.randn(4, 16),)
+        for model in (
+            MaskedReader(),
+            ConstantOutput(),
+            CastSplitLinked(),
+            LinearOfInput(),
+            SharedConstant(),
+            UnlinkedSplit(),
+            MutatedTable(),
+        ):
+            with self.subTest(model=type(model).__name__), stubbed_qnn_backend():
+                edge = to_edge_transform_and_lower_to_qnn(
+                    model.eval(), sample_input, compiler_specs
+                )
+                self.assertIn(exir_ops.edge.aten.linear.default, delegated_ops(edge))
+
+    def test_htp_keeps_quantized_ops_whole(self):
+        compiler_specs = stubbed_compiler_specs(
+            generate_htp_compiler_spec(use_fp16=True)
+        )
+        sample_input = (torch.randn(4, 16),)
+        quantized = prepare_pt2e(
+            torch.export.export(QuantizedCast().eval(), sample_input).module(),
+            QnnQuantizer(),
+        )
+        quantized(*sample_input)
+        with stubbed_qnn_backend():
+            edge = to_edge_transform_and_lower_to_qnn(
+                convert_pt2e(quantized),
+                sample_input,
+                stubbed_compiler_specs(generate_htp_compiler_spec(use_fp16=False)),
+            )
+        self.assertIn(exir_ops.edge.aten.linear.default, delegated_ops(edge))
+
+        # These ops are left on CPU, but stay whole. exir renames each op it
+        # keeps whole while it filters, so the linear must still count as
+        # quantized once the dequantize of its weight is renamed.
+        weight_only = QuantizedWeight().eval()
+        quantize_(
+            weight_only,
+            IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerAxis(0)),
+        )
+        for model, quantized_ops in (
+            (weight_only, {torch.ops.torchao.dequantize_affine.default}),
+            (
+                GroupQuantizedWeight().eval(),
+                {
+                    torch.ops.quantized_decomposed.quantize_per_channel_group.default,
+                    torch.ops.quantized_decomposed.dequantize_per_channel_group.default,
+                },
+            ),
+        ):
+            with self.subTest(model=type(model).__name__):
+                kept_whole_ops = _replace_aten_ops_with_transformed_ops(
+                    "forward",
+                    torch.export.export(model, sample_input),
+                    {"forward": [QnnPartitioner(compiler_specs)]},
+                )
+                self.assertLessEqual(
+                    {torch.ops.aten.linear.default, *quantized_ops}, kept_whole_ops
+                )
+
+    def test_kept_whole_filter_is_filter_fn_on_edge_and_gpu(self):
+        sample_input = (torch.randn(4, 16),)
+        compiler_specs = stubbed_compiler_specs(
+            generate_htp_compiler_spec(use_fp16=True)
+        )
+        with stubbed_qnn_backend():
+            edge = to_edge_transform_and_lower_to_qnn(
+                ConstantBranches().eval(), sample_input, compiler_specs
+            )
+        # On the lowered program the filter must not let a kept-whole op left
+        # on CPU through, so exir still reports it.
+        _, keep_whole = QnnPartitioner(compiler_specs).ops_to_not_decompose(
+            edge.exported_program()
+        )
+        self.assertIs(keep_whole, filter_fn)
+        # GPU drops no partitions, so it keeps the same ops whole as before.
+        _, keep_whole = QnnPartitioner(
+            stubbed_compiler_specs(generate_gpu_compiler_spec())
+        ).ops_to_not_decompose(
+            torch.export.export(ConstantBranches().eval(), sample_input)
+        )
+        self.assertIs(keep_whole, filter_fn)
+
+    def test_htp_kept_whole_filter_ignores_skips(self):
+        # A skip of either kind that changed what is decomposed would rename
+        # later nodes, so a skip_node_id_set entry could name a different node.
+        # Skipping the relu cuts the linear off, so the model cannot be lowered.
+        compiler_specs = stubbed_compiler_specs(
+            generate_htp_compiler_spec(use_fp16=True)
+        )
+        ep = torch.export.export(SkippedRelu().eval(), (torch.randn(4, 16),))
+        _, keep_whole = QnnPartitioner(compiler_specs).ops_to_not_decompose(ep)
+        _, keep_whole_skipped = QnnPartitioner(
+            compiler_specs, skip_node_op_set={"aten.relu.default"}
+        ).ops_to_not_decompose(ep)
+        self.assertEqual(
+            [keep_whole(node) for node in ep.graph.nodes],
+            [keep_whole_skipped(node) for node in ep.graph.nodes],
+        )
+
+    def test_htp_kept_whole_filter_counts_cond_and_item_as_cpu(self):
+        # QNN's passes cannot lower either model yet, so the filter is checked
+        # alone.
+        compiler_specs = stubbed_compiler_specs(
+            generate_htp_compiler_spec(use_fp16=True)
+        )
+        # With a skip_node_id_set, the renaming is worth a warning.
+        for model, skip_node_id_set, level in (
+            (CondAfterLinear(), None, "INFO"),
+            (ItemAfterLinear(), {"linear"}, "WARNING"),
+        ):
+            with self.subTest(model=type(model).__name__):
+                ep = torch.export.export(model.eval(), (torch.randn(4, 16),))
+                _, keep_whole = QnnPartitioner(
+                    compiler_specs, skip_node_id_set=skip_node_id_set
+                ).ops_to_not_decompose(ep)
+                linear = next(
+                    node
+                    for node in ep.graph.nodes
+                    if node.target == torch.ops.aten.linear.default
+                )
+                with self.assertLogs(QnnPartitioner.__module__, "INFO") as logs:
+                    self.assertFalse(keep_whole(linear))
+                self.assertEqual(level, logs.records[-1].levelname)
+                self.assertIn(linear.name, logs.output[-1])
+
+    def test_htp_kept_whole_log_names_only_newly_decomposed_ops(self):
+        compiler_specs = stubbed_compiler_specs(
+            generate_htp_compiler_spec(use_fp16=True)
+        )
+        cases = [
+            (IntStackBesideLinear(), torch.ops.aten.stack.default),
+            (EluBesideLinear(), torch.ops.aten.elu.default),
+        ]
+        for model, left_out in cases:
+            with self.subTest(left_out=left_out):
+                ep = torch.export.export(model.eval(), (torch.randn(4, 16),))
+                _, keep_whole = QnnPartitioner(compiler_specs).ops_to_not_decompose(ep)
+                nodes = {node.target: node for node in ep.graph.nodes}
+                linear = nodes[torch.ops.aten.linear.default]
+                with self.assertLogs(QnnPartitioner.__module__, "INFO") as logs:
+                    self.assertFalse(keep_whole(linear))
+                self.assertIn(f"'{linear.name}'", logs.output[-1])
+                self.assertNotIn(f"'{nodes[left_out].name}'", logs.output[-1])
+
+    def test_htp_kept_whole_estimate_avoids_quadratic_steps(self):
+        class Chain(torch.nn.Module):
+            def __init__(self, length):
+                super().__init__()
+                self.scales = torch.nn.ParameterList(
+                    torch.rand(16) for _ in range(length)
+                )
+
+            def forward(self, x):
+                # Each scale * 2 reads only constants, like the dequantize of a
+                # quantized weight.
+                for scale in self.scales:
+                    x = torch.relu(x * (scale * 2) + x)
+                return x
+
+        compiler_specs = stubbed_compiler_specs(
+            generate_htp_compiler_spec(use_fp16=True)
+        )
+
+        # Large models have tens of thousands of nodes and constants. The time
+        # to partition grows with the square of the graph size, and so does
+        # going over the input specs of the graph signature for each input, or
+        # running the estimate for each node exir filters.
+        def input_spec_reads(length):
+            ep = torch.export.export(Chain(length), (torch.randn(4, 16),))
+            input_specs = ep.graph_signature.input_specs
+            nodes = [node for node in ep.graph.nodes if node.op == "call_function"]
+            with patch.object(
+                CapabilityBasedPartitioner,
+                "propose_partitions",
+                autospec=True,
+                side_effect=CapabilityBasedPartitioner.propose_partitions,
+            ) as partition, patch.object(
+                ExportGraphSignature,
+                "input_specs",
+                new_callable=PropertyMock,
+                return_value=input_specs,
+                create=True,
+            ) as read_input_specs:
+                _, keep_whole = QnnPartitioner(compiler_specs).ops_to_not_decompose(ep)
+                for node in nodes:
+                    keep_whole(node)
+                QnnPartitioner._drop_partitions_without_runtime_inputs(
+                    [Partition(nodes=[node]) for node in nodes], ep
+                )
+            partition.assert_not_called()
+            return read_input_specs.call_count
+
+        reads = input_spec_reads(2)
+        self.assertGreater(reads, 0)
+        self.assertEqual(reads, input_spec_reads(4))
 
     def test_partitioner_falls_back_on_bfloat16(self):
         class Bf16Region(torch.nn.Module):
