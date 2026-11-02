@@ -270,6 +270,13 @@ def _validate_qkv_shapes(
         raise RuntimeError(
             f"Head dimension must match across Q, K, V; got D_q={D_q}, D_k={D_k}, D_v={D_v}."
         )
+    # Heads that are not a power of 2 must fit in one tile, and
+    # _next_power_of_2 caps the tile at 256.
+    if not _is_power_of_2(D_q) and _next_power_of_2(D_q) < D_q:
+        raise RuntimeError(
+            "Head dimensions that are not a power of 2 must be at most "
+            f"{_next_power_of_2(D_q)}; got D={D_q}."
+        )
     # Key and Value sequence lengths must match
     if L_kv_k != L_kv_v:
         raise RuntimeError(
@@ -1301,7 +1308,8 @@ def sdpa(
     share K/V loads) based on a tile-utilization heuristic from FlashAttention.
 
     Args:
-        query: Query tensor [B, H_q, L_q, D], dtype torch.bfloat16
+        query: Query tensor [B, H_q, L_q, D], dtype torch.bfloat16. A D that
+            is not a power of 2 must be at most 256.
         key: Key tensor [B, H_kv, L_kv, D], dtype torch.bfloat16
         value: Value tensor [B, H_kv, L_kv, D], dtype torch.bfloat16
         attn_mask: Optional bool mask [B, 1, L_q, L_kv] (broadcast over heads)

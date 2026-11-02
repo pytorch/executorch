@@ -815,6 +815,43 @@ class TestCudaExport(unittest.TestCase):
             "SDPA single kernel operation export failed",
         )
 
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_sdpa_head_sizes(self):
+        from executorch.runtime import Runtime
+
+        class Attention(torch.nn.Module):
+            def forward(self, *qkv):
+                return tuple(
+                    torch.nn.functional.scaled_dot_product_attention(*qkv[i : i + 3])
+                    for i in range(0, len(qkv), 3)
+                )
+
+        # Heads that are not a power of 2 and are above 256 are wider than one
+        # tile of the Triton kernel for such heads.
+        head_sizes = (96, 192, 256, 512, 288, 320, 384, 640, 768)
+        inputs = tuple(
+            torch.randn(1, 2, 64, size, dtype=torch.bfloat16)
+            for size in head_sizes
+            for _ in range(3)
+        )
+        model = Attention()
+        edge = self._export_to_cuda_with_lower(model, inputs)
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            method = Runtime.get().load_program(path).load_method("forward")
+            outputs = method.execute(list(inputs))
+        expected = model(*(x.cuda() for x in inputs))
+        for size, output, reference in zip(head_sizes, outputs, expected, strict=True):
+            with self.subTest(head_size=size):
+                torch.testing.assert_close(
+                    output.cpu(), reference.cpu(), atol=2e-2, rtol=2e-2
+                )
+
     def test_triton_kernel_mode_off(self):
         """
         Test CUDA export with triton_kernel_mode set to OFF for SDPA kernel.
