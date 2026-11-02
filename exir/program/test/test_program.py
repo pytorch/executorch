@@ -345,6 +345,66 @@ class TestProgramManagers(unittest.TestCase):
 
         to_edge(export(M(), (torch.randn(4),))).to_executorch()
 
+    def test_antialiased_resize(self):
+        class Resize(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    F.interpolate(x, size=(24, 18), mode="bicubic", antialias=True),
+                    F.interpolate(
+                        x, scale_factor=(1.75, 0.45), mode="bicubic", antialias=True
+                    ),
+                    F.interpolate(
+                        x,
+                        scale_factor=(0.4, 1.3),
+                        mode="bicubic",
+                        align_corners=True,
+                        antialias=True,
+                    ),
+                )
+
+        generator = torch.Generator().manual_seed(0)
+
+        def image(h, w, dtype, memory_format=torch.contiguous_format):
+            if dtype == torch.uint8:
+                t = torch.randint(
+                    0, 256, (1, 3, h, w), dtype=dtype, generator=generator
+                )
+            else:
+                t = torch.randn(1, 3, h, w, generator=generator)
+            return t.to(memory_format=memory_format)
+
+        dims = {"x": {2: Dim("h", min=8, max=64), 3: Dim("w", min=8, max=64)}}
+        sizes = [(24, 32), (64, 64)]
+        cases = []
+        for dtype in (torch.float32, torch.uint8):
+            cases.append((None, [image(24, 32, dtype)]))
+            for f in (torch.contiguous_format, torch.channels_last):
+                cases.append((dims, [image(h, w, dtype, f) for h, w in sizes]))
+        for dynamic_shapes, inputs in cases:
+            edge = to_edge(
+                export(Resize(), (inputs[0],), dynamic_shapes=dynamic_shapes)
+            )
+            # The op stays whole and runs on its portable kernel.
+            self.assertEqual(
+                self._count_nodes(
+                    edge.exported_program().graph_module,
+                    [exir_ops.edge.aten._upsample_bicubic2d_aa.default],
+                ),
+                3,
+            )
+            program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+            for t in inputs:
+                with self.subTest(
+                    dtype=t.dtype,
+                    dynamic=dynamic_shapes is not None,
+                    shape=t.shape,
+                    channels_last=t.is_contiguous(memory_format=torch.channels_last),
+                ):
+                    # uint8 follows ATen's fixed-point path exactly.
+                    tol = 0 if t.dtype == torch.uint8 else 1e-5
+                    for actual, expected in zip(program.forward((t,)), Resize()(t)):
+                        torch.testing.assert_close(actual, expected, atol=tol, rtol=tol)
+
     def test_float_sym_max_min_rejected(self):
         # The runtime's sym_max and sym_min kernels only take ints.
         def model(sym_op):
