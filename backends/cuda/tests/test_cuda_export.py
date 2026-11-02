@@ -777,6 +777,41 @@ class TestCudaExport(unittest.TestCase):
                 for output, expected in zip(outputs, model(*inputs), strict=True):
                     torch.testing.assert_close(output.cpu(), expected)
 
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_same_tensor_returned_twice(self):
+        """AOTI gives two outputs one handle when they are the same tensor. With
+        CUDA graphs on, three calls run eagerly, the fourth captures a graph and
+        the fifth replays it."""
+        from executorch.runtime import Runtime
+
+        class Twice(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+                y = x * 2
+                return y.detach(), x + 1, y.detach()
+
+        model = Twice()
+        edge = self._export_to_cuda_with_lower(model, (torch.randn(4, 8),))
+        runtime = Runtime.get()
+        option = "enable_cuda_graph_for_method"
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            runtime.backend_registry.set_option("CudaBackend", {option: "forward"})
+            try:
+                method = runtime.load_program(path).load_method("forward")
+            finally:
+                # The option is process wide.
+                runtime.backend_registry.set_option("CudaBackend", {option: ""})
+            for _ in range(5):
+                x = torch.randn(4, 8)
+                outputs = method.execute([x])
+                for output, expected in zip(outputs, model(x), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected)
+
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """
         Verify that, for a CUDA-delegated graph, every memory-planned tensor's
