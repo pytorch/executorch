@@ -83,10 +83,8 @@ HEAD_DIMS_POW2 = [64, 128, 256]
 HEAD_DIMS_NON_POW2 = [80, 96]
 
 # Sequence length pairs (seqlen_q, seqlen_kv) adapted from FlashAttention
-# Note: Lk must be >= BLOCK_N (32) to avoid unmasked zero-padding in K
-# that dilutes softmax. This is a pre-existing kernel limitation for very
-# short KV sequences.
 SEQLEN_PAIRS_BASIC = [
+    (1, 1),
     (1, 64),
     (1, 128),
     (1, 512),
@@ -356,6 +354,38 @@ class TestTritonSdpa(unittest.TestCase):
             for tile, (unpacked, packed) in outs.items():
                 with self.subTest(Lq=Lq, tile=tile):
                     self.assertTrue(torch.equal(unpacked, packed))
+
+    def test_every_tile_drops_keys_past_the_end(self):
+        """Each standard-kernel tile without a mask: keys at or past the key
+        count, or past kv_len, stay out of the softmax."""
+        import triton
+
+        sdpa_module = importlib.import_module(
+            "executorch.backends.cuda.triton.kernels.sdpa"
+        )
+        kernel = sdpa_module._sdpa_fwd_kernel
+        B, H, Lq, D = 1, 4, 16, 64
+        configs = sdpa_module._sdpa_fwd_prune(
+            kernel.configs, None, HEAD_DIM=D, NUM_GROUPS=1
+        )
+        # No tile size divides 80 keys, only the 32-key tiles divide 96, and
+        # kv_len is only known on the device.
+        for Lk, kv_len in ((80, None), (96, None), (128, 80)):
+            torch.manual_seed(Lk)
+            q = torch.randn(B, H, Lq, D, dtype=torch.bfloat16, device="cuda")
+            k = torch.randn(B, H, Lk, D, dtype=torch.bfloat16, device="cuda")
+            v = torch.randn(B, H, Lk, D, dtype=torch.bfloat16, device="cuda")
+            valid = Lk if kv_len is None else kv_len
+            ref = _reference_sdpa(q, k[:, :, :valid], v[:, :, :valid])
+            kwargs = {}
+            if kv_len is not None:
+                kwargs["kv_len"] = torch.tensor([kv_len], device="cuda")
+            for config in configs:
+                single = triton.autotune(configs=[config], key=kernel.keys)(kernel.fn)
+                with self.subTest(Lk=Lk, kv_len=kv_len, config=str(config)):
+                    with mock.patch.object(sdpa_module, "_sdpa_fwd_kernel", single):
+                        out = self.sdpa(q, k, v, **kwargs)
+                    self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_mha_never_packs(self):
         sdpa_module = importlib.import_module(
