@@ -49,7 +49,7 @@ class RemoveRedundancy(ExportPass):
         return node.args[0].meta["val"].shape == node.meta["val"].shape
 
     def _to_copy_op_condition(self, node):
-        return "memory_format" in node.kwargs
+        return "memory_format" in node.kwargs and self._dim_order_op_condition(node)
 
     def _default_condition(self, ndoe):
         return True
