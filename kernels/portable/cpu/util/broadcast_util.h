@@ -247,6 +247,7 @@ size_t linearize_access_indexes(
  * Useful for binary elementwise operators. For each element of the inputs,
  * perform a computation and write to the corresponding element of the output.
  * Tensor broadcasting is applied wherever it is required.
+ * The tensors must be dense in their respective dimension orders.
  */
 template <typename CTYPE_A, typename CTYPE_B, typename CTYPE_OUT, typename Op>
 inline void apply_binary_elementwise_fn(
@@ -258,8 +259,17 @@ inline void apply_binary_elementwise_fn(
   const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (const auto [out_index, a_index, b_index] :
-       BroadcastIndexesRange<2>(out, a, b)) {
+  if (a.sizes() == out.sizes() && b.sizes() == out.sizes() &&
+      a.strides() == out.strides() && b.strides() == out.strides()) {
+    for (size_t i = 0; i < out.numel(); ++i) {
+      data_out[i] = compute_fun(data_a[i], data_b[i]);
+    }
+    return;
+  }
+
+  // Use an input index to respect output strides.
+  for (const auto [_, a_index, b_index, out_index] :
+       BroadcastIndexesRange<3, true>(out, a, b, out)) {
     data_out[out_index] = compute_fun(data_a[a_index], data_b[b_index]);
   }
 }
