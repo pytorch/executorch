@@ -10,10 +10,14 @@ import torch
 from executorch import exir
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
     PartitionResult,
+)
+from executorch.exir.backend.test.backend_with_compiler_demo import (
+    BackendWithCompilerDemo,
 )
 from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
     ExecutorBackend,
@@ -30,6 +34,9 @@ from executorch.exir.backend.utils import (
 )
 
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
+from executorch.extension.pybindings.portable_lib import (  # @manual
+    _load_for_executorch_from_buffer,
+)
 from torch.export import export, ExportedProgram
 from torch.fx import symbolic_trace
 from torch.fx.passes.utils.matcher_utils import SubgraphMatcher
@@ -402,57 +409,85 @@ class TestUtils(unittest.TestCase):
 
     def test_to_backend_keeps_a_mutated_buffer_out_of_a_partial_delegate(self):
         class UpdateState(torch.nn.Module):
-            def __init__(self):
+            def __init__(self, read: bool, returned: bool):
                 super().__init__()
+                self.read = read
+                self.returned = returned
                 self.register_buffer("state", torch.zeros(2))
 
             def forward(self, x):
-                y = x * self.state
-                z = x + self.state
-                self.state.copy_(x * 2)
-                return y + z
+                if self.read:
+                    out = torch.sin(self.state) + (x + self.state)
+                else:
+                    out = torch.sin(x)
+                self.state.copy_(x + x)
+                if self.returned:
+                    return out, self.state
+                # In read mode, the last add reads the new value.
+                return out + self.state if self.read else out
 
         class TagNodes(Partitioner):
-            def __init__(self, names):
+            def __init__(self, tags):
                 super().__init__()
-                self.names = names
+                self.tags = tags
 
             def partition(self, program: ExportedProgram) -> PartitionResult:
                 for node in program.graph.nodes:
-                    if node.name in self.names:
-                        node.meta["delegation_tag"] = "tag0"
+                    if node.name in self.tags:
+                        node.meta["delegation_tag"] = self.tags[node.name]
                 tag_mutated_buffer(program)
+                spec = DelegationSpec(
+                    BackendWithCompilerDemo.__name__,
+                    [CompileSpec("max_value", bytes([4]))],
+                )
                 return PartitionResult(
                     tagged_exported_program=program,
-                    partition_tags={
-                        "tag0": DelegationSpec(ExecutorBackend.__name__, [])
-                    },
+                    partition_tags={tag: spec for tag in self.tags.values()},
                 )
 
         # The delegate owns the buffer only when it reads and writes all of
         # it. Otherwise the owning program keeps the one buffer: a copy in the
         # delegate would never see the updates.
-        readers = ["aten_mul_tensor", "aten_add_tensor"]
-        writer = "aten_mul_tensor_1"
-        for names, owned_by_program in (
-            (readers + [writer], False),
-            (readers, True),
-            (readers[:1], True),
+        sin, add, writer = "aten_sin_default", "aten_add_tensor", "aten_add_tensor_2"
+        # Also the add that makes "out", and the add that reads the new value.
+        whole = {sin, add, "aten_add_tensor_1", writer, "aten_add_tensor_3"}
+        for read, returned, tags, owned_by_program in (
+            (True, False, dict.fromkeys(whole, "tag0"), False),
+            (True, False, {sin: "tag0", add: "tag0", writer: "tag0"}, True),
+            (True, False, {sin: "tag0", add: "tag0"}, True),
+            (True, False, {sin: "tag0"}, True),
+            (True, False, {sin: "tag0", add: "tag1"}, True),
+            # Lowering cannot give a delegate a buffer whose new value is returned.
+            (True, True, {sin: "tag0", add: "tag0", writer: "tag0"}, True),
+            # Without readers, "add" is the writer. Some partitioners tag such a
+            # buffer themselves.
+            (False, False, {add: "tag0"}, True),
+            (False, False, {add: "tag0", "b_state": "tag0"}, False),
+            (False, True, {add: "tag0", "b_state": "tag0"}, True),
         ):
-            with self.subTest(names=names):
-                program = (
-                    to_edge(export(UpdateState(), (torch.ones(2),), strict=True))
-                    .to_backend(TagNodes(names))
-                    .exported_program()
-                )
+            with self.subTest(read=read, returned=returned, tags=tags):
+                x = torch.full((2,), 0.25)
+                lowered = to_edge(
+                    export(UpdateState(read, returned), (x,), strict=True)
+                ).to_backend(TagNodes(tags))
                 self.assertEqual(
                     [
                         spec.arg.name
-                        for spec in program.graph_signature.input_specs
+                        for spec in lowered.exported_program().graph_signature.input_specs
                         if spec.target == "state"
                     ],
                     ["b_state"] if owned_by_program else [],
                 )
+                if tags == {sin: "tag0"}:
+                    eager = UpdateState(read, returned)
+                    module = _load_for_executorch_from_buffer(
+                        lowered.to_executorch().buffer
+                    )
+                    # The demo backend approximates sin with two Taylor terms.
+                    for _ in range(2):
+                        torch.testing.assert_close(
+                            module.forward((x,))[0], eager(x), atol=1e-3, rtol=0
+                        )
 
     def test_to_backend_copies_a_constant_read_by_ops_in_two_places(self):
         class CatConst(torch.nn.Module):
