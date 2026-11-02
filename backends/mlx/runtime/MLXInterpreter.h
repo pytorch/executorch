@@ -1211,7 +1211,8 @@ inline void exec_slice_update(
   // st.set_tensor does a std::move. Keeping for now, but should investigate and
   // possibly remove in future.
   const bool in_place = (n.out.idx == n.dst.idx);
-  array& dst = st.tensor_ref(n.dst);
+  // Only the in-place form writes dst. Otherwise dst may be a constant.
+  const array& dst = st.const_tensor_ref(n.dst);
   const array& upd = st.const_tensor_ref(n.update);
 
   const int rank = static_cast<int>(dst.ndim());
@@ -1252,9 +1253,10 @@ inline void exec_slice_update(
       return;
     }
     if (n.step == 1) {
-      dst = slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
+      st.tensor_ref(n.dst) =
+          slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
     } else {
-      dst = slice_update(
+      st.tensor_ref(n.dst) = slice_update(
           dst, upd, to_shape(vstart), to_shape(vstop), to_shape(vstrides), s);
     }
 

@@ -286,7 +286,18 @@ def test_to_tosa_FP_bf16_fp8_with_extensions(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", _TO_COPY_TEST_DATA_FP_FP8)
+_xfail_fp8e5m2_cast_rounding = common.xfail_if_emulation_layer_version(
+    "<0.11.0",
+    reason="Emulation layer does not round casts to FP8E5M2 to nearest.",
+    raises=AssertionError,
+)
+
+
+@common.parametrize(
+    "test_data",
+    _TO_COPY_TEST_DATA_FP_FP8,
+    xfails={"fp16_to_fp8e5m2": _xfail_fp8e5m2_cast_rounding},
+)
 @common.SkipIfNoModelConverter
 def test_to_vgf_no_quant_fp8_with_extension(test_data: Tuple):
     test_tensor, new_dtype, _ = test_data()
@@ -303,7 +314,11 @@ def test_to_vgf_no_quant_fp8_with_extension(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", _TO_COPY_TEST_DATA_BF16_FP8)
+@common.parametrize(
+    "test_data",
+    _TO_COPY_TEST_DATA_BF16_FP8,
+    xfails={"bf16_to_fp8e5m2": _xfail_fp8e5m2_cast_rounding},
+)
 @common.SkipIfNoModelConverter
 def test_to_vgf_no_quant_bf16_fp8_with_extensions(test_data: Tuple):
     test_tensor, new_dtype, _ = test_data()

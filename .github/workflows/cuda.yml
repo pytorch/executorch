@@ -43,6 +43,7 @@ on:
       - examples/models/muse-glimmer/**
       - extension/pybindings/**
       - runtime/__init__.py
+      - runtime/cuda.py
       - exir/passes/convert_constant_dim_order_pass.py
       - exir/passes/insert_write_back_for_buffers_pass.py
       - exir/passes/propagate_device_config.py
@@ -131,6 +132,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
+      contains(needs.changed-files.outputs.changed-files, 'runtime/cuda.py') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -176,6 +178,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
+        contains(needs.changed-files.outputs.changed-files, 'runtime/cuda.py') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||

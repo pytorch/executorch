@@ -3,8 +3,8 @@
 The TensorRT backend runs ExecuTorch models on NVIDIA GPUs with
 [TensorRT](https://developer.nvidia.com/tensorrt), NVIDIA's inference library. At export time,
 TensorRT compiles the parts of the model it supports into engines (programs optimized for your
-GPU), and the engines are stored in the `.pte` file. At run time, the TensorRT delegate hands each
-engine back to TensorRT.
+GPU), and by default the engines are stored in the `.pte` file. At run time, the TensorRT delegate
+hands each engine back to TensorRT.
 
 The delegate is built and shipped by the [Torch-TensorRT](https://github.com/pytorch/TensorRT)
 project, not by ExecuTorch. You export with Torch-TensorRT, and you run with the normal ExecuTorch
@@ -12,13 +12,11 @@ runtime and its usual APIs. The
 [Torch-TensorRT ExecuTorch guide](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html)
 covers every option in detail.
 
-This page describes Torch-TensorRT 2.15 and newer. Features marked "newer than 2.15" need a later
-Torch-TensorRT build, such as a
-[nightly build](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#nightly-builds).
+This page describes Torch-TensorRT 2.15 and newer.
 
 ## Features
 
-- **TensorRT engines inside a `.pte`.** One file holds the program and its engines.
+- **TensorRT engines inside a `.pte`.** By default, one file holds the program and its engines.
 - **Works with the CUDA backend in one program.** Operators that TensorRT cannot compile can go to
   the ExecuTorch [CUDA backend](../cuda/cuda-overview.md) instead of the CPU, so the whole model
   stays on the GPU.
@@ -36,8 +34,9 @@ Torch-TensorRT build, such as a
 - **Weight streaming.** An engine can keep part of its weights in CPU memory.
 - **Zero-copy KV cache.** The engine of a large language model (LLM) can update its key-value (KV)
   cache in place.
-- **Newer than 2.15:** engines in a separate data file, and optimization profiles (tunings for
-  different input sizes) chosen per call.
+- **Engines in a separate data file.** The engines can be kept in a `.ptd` file next to the `.pte`.
+- **Optimization profiles.** One engine can carry tunings for different input sizes, and a C++
+  application picks one per call.
 
 ## Target Requirements
 
@@ -171,9 +170,11 @@ The Torch-TensorRT docs call such a program *coalesced*.
 
 The export writes the weights of the CUDA part to a data file, `aoti_cuda_blob.ptd`, next to the
 `.pte`. Pass that file when you load the program: if the CUDA part has weights, loading fails
-without it. The file has the same name for every model, so a second export into the same directory
-overwrites the first one's weights, and the first model can then return wrong answers with no
-error. Save each model into its own directory.
+without it. By default the file has the same name for every model, so a second export into the
+same directory overwrites the first one's weights, and the first model then fails to load. To keep
+several models in one directory, give each its own data file name with
+`CudaBackend.generate_data_name_compile_spec`, as the
+[CUDA backend page](../cuda/cuda-overview.md) shows, or save each model into its own directory.
 
 ### Keeping inputs and outputs on the GPU
 
@@ -429,15 +430,16 @@ shows how to set the options that apply at run time, from C++ or from Python.
   Set how many bytes stay on the GPU with `weight_streaming_budget_per_engine` in
   `torch_tensorrt.save`, or with the `weight_streaming_budget` load option. The load option takes
   the number of bytes as a decimal string, or as an integer below 2 GiB.
-- [**Engines in a separate data file**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#keep-the-engines-in-a-separate-file)
-  (newer than 2.15). Pass `external_engine_data="engines"` to `torch_tensorrt.save` to write the
-  engines to `engines.ptd` instead of the `.pte`, and pass that file when you load the program.
+- [**Engines in a separate data file.**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#keep-the-engines-in-a-separate-file)
+  Pass `external_engine_data="engines"` to `torch_tensorrt.save` to write the engines to
+  `engines.ptd` instead of the `.pte`, and pass that file when you load the program.
   The Python loader takes one data file, so for a program that also uses the CUDA backend, pass
-  `external_engine_data="aoti_cuda_blob"` to share its file.
-- [**Optimization profiles**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#optimization-profiles)
-  (newer than 2.15). One engine can be tuned for several ranges of input shapes, for example one
-  for decoding one token at a time and one for a long prompt. A C++ application picks the profile for
-  each call with `torch_tensorrt::executorch_backend::OptimizationProfileGuard`, from the
+  the name of the CUDA data file to share it: `external_engine_data="aoti_cuda_blob"` by default,
+  or the name given to `CudaBackend.generate_data_name_compile_spec`.
+- [**Optimization profiles.**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#optimization-profiles)
+  One engine can be tuned for several ranges of input shapes, for example one for decoding one
+  token at a time and one for a long prompt. A C++ application picks the profile for each call
+  with `torch_tensorrt::executorch_backend::OptimizationProfileGuard`, from the
   `torch_tensorrt/executorch/TensorRTBackend.h` header. Without the guard, every engine runs
   profile 0, and Python cannot choose a profile. The Python packages do not carry that header, and
   the guide explains where to get it.
@@ -450,6 +452,4 @@ shows how to set the options that apply at run time, from C++ or from Python.
 - [Export a model that keeps its data on the GPU](https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_device_resident.py)
 - [Export a decoder step whose KV cache stays in memory you own](https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_kv_cache_decode.py)
 - [Export one engine with two optimization profiles](https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_multi_profile.py)
-  (newer than 2.15)
 - [C++ and Python reference runners](https://github.com/pytorch/TensorRT/tree/main/examples/executorch_reference_runner)
-  (the two multi-profile programs need a build newer than 2.15)

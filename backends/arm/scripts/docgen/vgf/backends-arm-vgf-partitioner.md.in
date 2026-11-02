@@ -2,4 +2,8 @@
 
 The `VgfPartitioner` controls what parts of a model is delegated to the Arm VGF backend. Below is a reference of the various functions the partitioner provides:
 
+Pass `VgfCompileSpec(alias_buffer_mutations=True)` to delegate mutable KV-cache
+buffers as persistent VGF state. Eligible buffers must be zero-initialized,
+static-shape `int8` tensors whose reads and mutation stay in one partition.
+
 $PARTITIONER

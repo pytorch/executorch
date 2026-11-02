@@ -27,8 +27,16 @@ ValueRef prepack_biases(
   auto sizes = graph.sizes_of(weight);
   const int64_t out_channels = transposed ? sizes.at(1) : sizes.at(0);
 
+  // Texture biases are padded to an even number of texels so shaders that
+  // compute two output texels per invocation can read both without a check.
+  const int64_t packed_out_channels = storage_type == utils::kBuffer
+      ? out_channels
+      : utils::align_up(out_channels, int64_t(8));
   ValueRef v = graph.add_tensor(
-      {out_channels}, graph.dtype_of(weight), storage_type, memory_layout);
+      {packed_out_channels},
+      graph.dtype_of(weight),
+      storage_type,
+      memory_layout);
 
   vkapi::ShaderInfo shader =
       get_nchw_to_tensor_shader(graph, v, graph.get_staging_dtype_for(weight));
@@ -36,6 +44,14 @@ ValueRef prepack_biases(
   vkapi::ParamsBindList param_buffers = {};
   if (graph.is_buffer_storage(v)) {
     param_buffers.append(graph.buffer_meta_ubo(v));
+  } else if (packed_out_channels != out_channels) {
+    vTensorPtr bias(&graph, v);
+    const api::vTensor::TextureMetadata metadata(
+        {out_channels},
+        bias->image_extents(),
+        bias->axis_map(),
+        bias->packed_dim_info());
+    param_buffers.append(graph.create_params_buffer(metadata));
   } else {
     param_buffers.append(graph.texture_meta_ubo(v));
   }
