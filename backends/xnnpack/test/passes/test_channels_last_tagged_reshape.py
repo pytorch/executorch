@@ -520,6 +520,23 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                 graph = json.load(f)
         return Counter(node["xnode_union_type"] for node in graph["xnodes"])
 
+    def _delegate_input_buffers(self, tester) -> set:
+        """Names of the buffers the single delegate takes as inputs."""
+        exported_program = tester.get_artifact(
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER
+        ).exported_program()
+        (delegate,) = [
+            node
+            for node in exported_program.graph_module.graph.nodes
+            if node.target == torch.ops.higher_order.executorch_call_delegate
+        ]
+        inputs_to_buffers = exported_program.graph_signature.inputs_to_buffers
+        return {
+            inputs_to_buffers[arg.name]
+            for arg in delegate.args[1:]
+            if arg.name in inputs_to_buffers
+        }
+
     def _assert_only_io_transposes(self, tester):
         """The delegate transposes the input to NHWC and the output back, and
         nothing else: no reshape or transpose for the operand."""
@@ -612,6 +629,128 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             .serialize()
             .run_method_and_compare_outputs()
         )
+
+    class ConvMutatedStateMulConv(torch.nn.Module):
+        """conv -> x * state[H, W] -> conv, with the state updated after each
+        inference: a mutated buffer is not constant, so it is neither folded
+        nor delegated as constant data."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("state", torch.randn(5, 7))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = x * self.state
+            self.state.add_(1.0)
+            return self.conv2(x)
+
+    def test_fp32_channels_last_tagged_reshape_pass_mutated_buffer_operand(self):
+        inputs = (torch.randn(1, 3, 5, 7),)
+        tester = (
+            Tester(self.ConvMutatedStateMulConv().eval(), inputs)
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # input -> NHWC, the 4D view of the state -> NHWC, output -> NCHW
+            .check_count(
+                {
+                    self.to_copy_name: 3,
+                    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
+                }
+            )
+        )
+        state = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+        self.assertEqual(tuple(state.state_dict["state"].shape), (5, 7))
+        tester = (
+            Tester(self.ConvMutatedStateMulConv().eval(), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        )
+        # Read at every inference, so it stays a delegate input.
+        self.assertIn("state", self._delegate_input_buffers(tester))
+
+    class ConvScale4dMulConv(torch.nn.Module):
+        """conv -> x * scale[1, C, 1, 1] -> conv: a 4D constant is already
+        broadcast-aligned, so it stays a delegate input and is converted to
+        NHWC in the graph, as before."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("scale", torch.randn(1, 8, 1, 1))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = x * self.scale
+            return self.conv2(x)
+
+    def test_fp32_channels_last_tagged_reshape_pass_4d_constant_operand(self):
+        inputs = (torch.randn(1, 3, 5, 7),)
+        (
+            Tester(self.ConvScale4dMulConv().eval(), inputs)
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # On the whole program the constant is tagged NCHW, so the op
+            # takes the NCHW path: input -> NHWC, conv1 output -> NCHW,
+            # op output -> NHWC, output -> NCHW
+            .check_count({self.to_copy_name: 4})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_view_copy_default"])
+            .run_method_and_compare_outputs()
+        )
+        # In the delegate the constant is an input: input -> NHWC,
+        # scale -> NHWC, output -> NCHW
+        tester = (
+            Tester(self.ConvScale4dMulConv().eval(), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        )
+        self.assertIn("scale", self._delegate_input_buffers(tester))
+        node_types = self._xnnpack_node_types(tester)
+        self.assertEqual(node_types["XNNStaticTranspose"], 3, node_types)
+        self.assertEqual(node_types["XNNStaticReshape"], 0, node_types)
+        tester.to_executorch().serialize().run_method_and_compare_outputs()
+
+    class ConvNoiseAddConvCumsum(torch.nn.Module):
+        """conv -> x + noise[H, W] -> conv, and cumsum(noise) outside the
+        delegate: the delegate gets its own folded copy of the constant and
+        the non-delegated consumer keeps the original."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("noise", torch.randn(5, 7))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = x + self.noise
+            return self.conv2(x), torch.cumsum(self.noise, 0)
+
+    def test_fp32_channels_last_tagged_reshape_pass_lower_rank_operand_shared_with_non_delegated_op(
+        self,
+    ):
+        inputs = (torch.randn(1, 3, 5, 7),)
+        tester = (
+            Tester(self.ConvNoiseAddConvCumsum().eval(), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count(
+                {
+                    "torch.ops.higher_order.executorch_call_delegate": 1,
+                    "executorch_exir_dialects_edge__ops_aten_cumsum_default": 1,
+                }
+            )
+        )
+        self.assertEqual(self._delegate_input_buffers(tester), set())
+        self._assert_only_io_transposes(tester)
+        tester.to_executorch().serialize().run_method_and_compare_outputs()
 
     def test_fp32_channels_last_tagged_reshape_pass_input_lower_rank_operand(self):
         # A non-constant [H, W] operand is reshaped and converted in the graph.

@@ -23,6 +23,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
 from executorch.backends.xnnpack.utils.utils import (
     get_param_tensor,
     is_dtype_cast,
+    is_foldable_broadcast_operand,
     is_param_node,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -213,12 +214,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
 
     def is_foldable_constant(self, node: torch.fx.Node) -> bool:
         """
-        A lifted constant with a single user can be reshaped and laid out as
-        NHWC ahead of time instead of at every inference.
+        A constant with a single user can be reshaped and laid out as NHWC
+        ahead of time instead of at every inference.
         """
         return (
-            node.op == "placeholder"
-            and is_param_node(self.exported_program, node)
+            is_foldable_broadcast_operand(self.exported_program, node)
             and len(node.users) == 1
         )
 

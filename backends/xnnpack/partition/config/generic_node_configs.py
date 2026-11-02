@@ -24,6 +24,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
     get_param_tensor,
+    is_foldable_broadcast_operand,
     is_param_node,
     normalize_mean_dims,
     normalize_pool2d_args,
@@ -180,9 +181,10 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
 
 class BroadcastBinaryConfig(GenericNodePartitionerConfig):
     """
-    A binary op whose constant operands are delegated with it, so they are
-    serialized as constant data and a lower-rank one can be laid out as NHWC
-    ahead of time instead of being reshaped and transposed at every inference.
+    A binary op whose rank < 4 constant operands are delegated with it, so
+    they are serialized as constant data and laid out as NHWC ahead of time
+    instead of being reshaped and transposed at every inference. Any other
+    constant operand stays a delegate input, as for every other op.
     """
 
     def get_node_and_deps(
@@ -192,7 +194,7 @@ class BroadcastBinaryConfig(GenericNodePartitionerConfig):
         return deps + [
             input_node
             for input_node in node.all_input_nodes
-            if is_param_node(ep, input_node)
+            if is_foldable_broadcast_operand(ep, input_node)
         ]
 
 
