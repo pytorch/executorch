@@ -11,52 +11,14 @@ option(EVENT_TRACER "Build with event tracing support" ON)
 set(NXP_RUNNER_DEFINES NEUTRON_CMODEL)
 set(NXP_RUNNER_LIBS)
 
-set(EIQ_NEUTRON_TARGET
-    "imxrt700"
-    CACHE STRING "Neutron Target to build the executor_runner"
-)
 set(EXECUTORCH_PATH ${CMAKE_CURRENT_LIST_DIR}/../../../)
 
-find_package(
-  Python
-  COMPONENTS Interpreter
-  REQUIRED
-)
+include(${EXECUTORCH_PATH}/backends/nxp/cmake/neutron_sdk.cmake)
 
 message(STATUS "Looking for Neutron Driver")
 if(NOT TARGET nd)
   message(STATUS "Looking for Neutron Driver -- not found")
 
-  message(STATUS "Looking for eIQ Neutron SDK")
-  execute_process(
-    COMMAND
-      ${Python_EXECUTABLE} -c
-      "import eiq_neutron_sdk, os; print(os.path.dirname(eiq_neutron_sdk.__file__))"
-    OUTPUT_VARIABLE EIQ_NEUTRON_SDK_PATH
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
-  message(
-    STATUS "Looking for eIQ Neutron SDK -- found: ${EIQ_NEUTRON_SDK_PATH}"
-  )
-  message(STATUS "Looking for Neutron target $CACHE{EIQ_NEUTRON_TARGET}")
-  set(EIQ_NEUTRON_TARGET_DIR
-      "${EIQ_NEUTRON_SDK_PATH}/target/$CACHE{EIQ_NEUTRON_TARGET}"
-  )
-  if(NOT EXISTS ${EIQ_NEUTRON_TARGET_DIR})
-    message(
-      FATAL_ERROR
-        "Looking for Neutron target $CACHE{EIQ_NEUTRON_TARGET} -- not found"
-    )
-  else()
-    message(
-      STATUS
-        "Looking for Neutron target $CACHE{EIQ_NEUTRON_TARGET} -- found: ${EIQ_NEUTRON_TARGET_DIR}"
-    )
-  endif()
-
-  set(EIQ_NEUTRON_TARGET_INCLUDE_DIR "${EIQ_NEUTRON_TARGET_DIR}/common/include"
-                                     "${EIQ_NEUTRON_TARGET_DIR}/driver/include"
-  )
   set(EIQ_NEUTRON_TARGET_DRIVER
       "${EIQ_NEUTRON_TARGET_DIR}/cmodel/libNeutronDriver.a"
   )
