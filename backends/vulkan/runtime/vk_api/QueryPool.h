@@ -27,8 +27,8 @@ namespace vkcompute {
 namespace vkapi {
 
 struct ShaderMetadata final {
-  const uint32_t gwg[3];
-  const uint32_t lwg[3];
+  uint32_t gwg[3];
+  uint32_t lwg[3];
 };
 
 struct ShaderResult final {
@@ -37,6 +37,13 @@ struct ShaderResult final {
   const uint64_t start_time_ns;
   const uint64_t end_time_ns;
   const ShaderMetadata metadata;
+};
+
+struct ShaderTimestamp final {
+  std::string kernel_name;
+  uint64_t start_ticks;
+  uint64_t end_ticks;
+  ShaderMetadata metadata;
 };
 
 struct QueryPoolConfig final {
@@ -111,6 +118,9 @@ class QueryPool final {
   void extract_results();
 
   std::vector<ShaderResult> get_shader_timestamp_data();
+  // Read after fence completion; unfinished or unavailable captures return no
+  // samples and never wait for GPU work.
+  std::vector<ShaderTimestamp> get_shader_timestamp_ticks();
   void print_results(const bool tsv_format = false);
   unsigned long get_total_shader_ns(std::string kernel_name);
   unsigned long get_mean_shader_ns(std::string kernel_name);
