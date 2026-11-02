@@ -270,6 +270,12 @@ def _validate_qkv_shapes(
         raise RuntimeError(
             f"Head dimension must match across Q, K, V; got D_q={D_q}, D_k={D_k}, D_v={D_v}."
         )
+    # Heads that are not a power of 2 must fit in one tile, which
+    # _next_power_of_2 caps at 256.
+    if not _is_power_of_2(D_q) and D_q > 256:
+        raise RuntimeError(
+            f"Head dimensions that are not a power of 2 must be at most 256; got D={D_q}."
+        )
     # Key and Value sequence lengths must match
     if L_kv_k != L_kv_v:
         raise RuntimeError(

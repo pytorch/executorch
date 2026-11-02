@@ -364,6 +364,21 @@ class TestSDPAKernelSupportCheck(unittest.TestCase):
         node.kwargs = {"query": query, "key": key, "value": value}
         self.assertFalse(ReplaceEdgeOpWithTritonOpPass._sdpa_kernel_supports(node))
 
+    def test_wide_heads_are_supported_only_as_powers_of_2(self):
+        # A hand-built graph shows which calls the pass gives to the kernel
+        # without compiling the kernel.
+        from executorch.backends.cuda.triton.replacement_pass import (
+            ReplaceEdgeOpWithTritonOpPass,
+        )
+
+        sizes = ((192, True), (264, False), (640, False), (512, True), (1024, True))
+        for size, supported in sizes:
+            with self.subTest(head_size=size):
+                node = self._sdpa_node((1, 2, 64, size))
+                self.assertEqual(
+                    ReplaceEdgeOpWithTritonOpPass._sdpa_kernel_supports(node), supported
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
