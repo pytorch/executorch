@@ -1370,6 +1370,103 @@ std::vector<uint8_t> make_quantized_input_tensors() {
   return tensors;
 }
 
+// result = index(slice_scatter(index(input, batch), index(src, batch), 1, 1, 5,
+// 2), batch) over a [2, 6] input and [2, 2] src. aten.index keeps its operands
+// in buffer storage, so slice_scatter reads and writes buffer-planned tensors.
+std::vector<uint8_t> make_buffered_slice_scatter_program() {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto meta = create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 6});
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", meta),
+      fbs::CreateTensorValueDirect(
+          builder,
+          "src",
+          create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 2})),
+      fbs::CreateTensorValueDirect(
+          builder,
+          "batch",
+          create_tensor_meta(builder, fbs::ScalarType::LONG, {2})),
+      fbs::CreateTensorValueDirect(builder, "gathered", meta),
+      fbs::CreateTensorValueDirect(
+          builder,
+          "gathered_src",
+          create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 2})),
+      fbs::CreateTensorValueDirect(builder, "scattered", meta),
+      fbs::CreateTensorValueDirect(builder, "result", meta),
+  };
+  std::vector<flatbuffers::Offset<fbs::Node>> nodes;
+  for (const char* name : {"input", "src", "batch"}) {
+    const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+        fbs::CreateOutputDirect(builder, name)};
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder, name, fbs::OpKind::PLACEHOLDER, "", nullptr, &outputs));
+  }
+  const auto add_call =
+      [&](const char* name,
+          const char* target,
+          const std::vector<flatbuffers::Offset<fbs::NamedArgument>>& inputs) {
+        const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+            fbs::CreateOutputDirect(builder, name)};
+        nodes.push_back(fbs::CreateNodeDirect(
+            builder,
+            name,
+            fbs::OpKind::CALL_FUNCTION,
+            target,
+            &inputs,
+            &outputs));
+      };
+  const auto gather_inputs = [&](const char* input) {
+    const auto indices = fbs::CreateOptionalTensorListArg(
+        builder,
+        create_strings(builder, {"batch"}),
+        builder.CreateVector(std::vector<uint8_t>{1}));
+    return std::vector<flatbuffers::Offset<fbs::NamedArgument>>{
+        fbs::CreateNamedArgumentDirect(
+            builder, "self", create_tensor_arg(builder, input)),
+        fbs::CreateNamedArgumentDirect(
+            builder,
+            "indices",
+            fbs::CreateArgument(
+                builder,
+                fbs::ArgumentValue::OptionalTensorListArg,
+                indices.Union())),
+    };
+  };
+  add_call("gathered", "torch.ops.aten.index.Tensor", gather_inputs("input"));
+  add_call("gathered_src", "torch.ops.aten.index.Tensor", gather_inputs("src"));
+  add_call(
+      "scattered",
+      "torch.ops.aten.slice_scatter.default",
+      {
+          fbs::CreateNamedArgumentDirect(
+              builder, "self", create_tensor_arg(builder, "gathered")),
+          fbs::CreateNamedArgumentDirect(
+              builder, "src", create_tensor_arg(builder, "gathered_src")),
+          fbs::CreateNamedArgumentDirect(
+              builder, "dim", create_int_arg(builder, 1)),
+          fbs::CreateNamedArgumentDirect(
+              builder, "start", create_int_arg(builder, 1)),
+          fbs::CreateNamedArgumentDirect(
+              builder, "end", create_int_arg(builder, 5)),
+          fbs::CreateNamedArgumentDirect(
+              builder, "step", create_int_arg(builder, 2)),
+      });
+  add_call("result", "torch.ops.aten.index.Tensor", gather_inputs("scattered"));
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "result"))};
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs));
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input", "src", "batch"}),
+      create_strings(builder, {"result"}),
+      builder.CreateVector(tensor_values));
+  return finish_program(
+      builder, graph, {fbs::CreateOutputSpecDirect(builder, "result")});
+}
+
 constexpr int64_t kHfTokens = 4;
 constexpr int64_t kHfHeads = 4;
 constexpr int64_t kHfKvHeads = 2;
@@ -2180,6 +2277,32 @@ TEST(VulkanEngineTest, ResizesBufferViewWithItsSource) {
   compiled.executable->get_output(
       0, output.data(), output.size(), ScalarType::Float);
   EXPECT_EQ(output, (std::vector<float>{4.0f, 1.0f}));
+}
+
+TEST(VulkanEngineTest, ExecutesSliceScatterOnBufferPlannedTensors) {
+  std::vector<float> input(12);
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = static_cast<float>(i + 1);
+  }
+  const std::vector<float> src = {-1.0f, -2.0f, -3.0f, -4.0f};
+  const std::vector<int64_t> batch = {0, 1};
+  CompiledProgram compiled =
+      compile_program(make_buffered_slice_scatter_program());
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->set_input(1, src.data(), src.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      2, batch.data(), batch.size(), ScalarType::Long);
+  compiled.executable->execute();
+  std::vector<float> output(12);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  std::vector<float> expected = input;
+  for (size_t row = 0; row < 2; ++row) {
+    expected[row * 6 + 1] = src[row * 2];
+    expected[row * 6 + 3] = src[row * 2 + 1];
+  }
+  EXPECT_EQ(output, expected);
 }
 
 TEST(VulkanEngineTest, RejectsBufferViewResizeThatDoesNotDivide) {

@@ -1749,6 +1749,24 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
     }
 
+    // ET-VK's slice_scatter indexes self, src and out as standard
+    // channels-packed textures.
+    const bool slice_scatter = key == "aten.slice_scatter.default";
+    if (slice_scatter) {
+      const uint32_t limit =
+          graph_->context()->adapter_ptr()->max_texture3d_dim();
+      std::vector<ValueId> ids = n.input_value_ids();
+      for_each_output_value(n, [&](ValueId id) { ids.push_back(id); });
+      if (std::ranges::any_of(ids, [&](ValueId id) {
+            return g().value(id).is_tensor() &&
+                exceeds_texture_limit(
+                       meta_of(id), utils::kChannelsPacked, limit);
+          })) {
+        throw std::runtime_error(
+            "vulkan: slice_scatter exceeds the texture dimension limit");
+      }
+    }
+
     std::vector<VkRef> args;
     args.reserve(n.inputs.size() + 1);
     for (const NamedArgument& na : n.inputs) {
@@ -1784,6 +1802,16 @@ class VulkanEngineExecutable final : public EngineExecutable {
             a,
             g().value(value_id),
             storage_at(value_id),
+            utils::kChannelsPacked);
+      }
+      if (slice_scatter && (na.name == "self" || na.name == "src") &&
+          na.arg.kind() == ArgKind::Tensor && valid(na.arg.as_tensor().id) &&
+          !graph_->val_is_tref(a) &&
+          !graph_->is_standard_channels_packed_texture_tensor(a)) {
+        a = repack(
+            a,
+            g().value(na.arg.as_tensor().id),
+            utils::kTexture3D,
             utils::kChannelsPacked);
       }
       // ET-VK's pad picks its shader by the output's layout and storage
@@ -1828,6 +1856,18 @@ class VulkanEngineExecutable final : public EngineExecutable {
     std::vector<VkRef> outs;
     for_each_output_value(
         n, [&](ValueId output_id) { outs.push_back(vref_at(output_id)); });
+    if (slice_scatter && outs.size() == 1 &&
+        !graph_->is_standard_channels_packed_texture_tensor(outs[0])) {
+      const VkRef tmp = graph_->add_tensor(
+          graph_->sizes_of(outs[0]),
+          graph_->dtype_of(outs[0]),
+          utils::kTexture3D,
+          utils::kChannelsPacked);
+      args.push_back(tmp);
+      VK_GET_OP_FN(key)(*graph_, args);
+      VK_GET_OP_FN("aten.clone.default")(*graph_, {tmp, none_ref_, outs[0]});
+      return;
+    }
     // ET-VK's embedding and convolution only write channels-packed outputs.
     if ((key == "aten.embedding.default" ||
          key == "aten.convolution.default") &&
