@@ -131,8 +131,8 @@ GlobalWorkGrid pick_conv2d_pw_tiled_gwg(
 /*
  * Wide tile work groups span the channel tiles of a row of pixel tiles, so the
  * input they share is read through one core's cache: y covers the channel tiles
- * (rounded up to a power of two) while x keeps at least min_x pixel tiles, and x
- * takes the remaining threads.
+ * (rounded up to a power of two) while x keeps at least min_x pixel tiles, and
+ * x takes the remaining threads.
  *
  * The thread count and min_x per GPU family come from sweeping 12 local sizes
  * (32 to 512 threads with min_x 4 to 32, and an 8x8 square) over 57 Float and
