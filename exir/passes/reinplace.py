@@ -557,6 +557,31 @@ def _storage_aliases(node: torch.fx.Node) -> Set[torch.fx.Node]:
     return aliases
 
 
+def _replace_spec(graph: torch.fx.Graph, old: Any, new: Any) -> None:
+    """Point every reference to the TensorSpec ``old`` at ``new``: the
+    delegate's own output specs, which the emitter reads, the output node's,
+    and the bases of views, which are rebuilt on ``new`` so they keep reading
+    the storage that is now written."""
+    from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
+
+    replaced = {id(old): new}
+
+    def remap(spec: Any) -> Any:
+        if id(spec) in replaced:
+            return replaced[id(spec)]
+        if isinstance(spec, _ViewSpec) and id(spec._base) in replaced:
+            replaced[id(spec)] = _ViewSpec(replaced[id(spec._base)], list(spec.shape))
+            return replaced[id(spec)]
+        return spec
+
+    for node in graph.nodes:
+        spec = node.meta.get("spec")
+        if isinstance(spec, (list, tuple)):
+            node.meta["spec"] = type(spec)(remap(s) for s in spec)
+        elif spec is not None:
+            node.meta["spec"] = remap(spec)
+
+
 def reinplace_delegate_input_mutations(
     graph_module: torch.fx.GraphModule, graph_signature: ExportGraphSignature
 ) -> None:
@@ -600,11 +625,7 @@ def reinplace_delegate_input_mutations(
             for user in alias.users
         ) or any(alias is not mutated and alias in delegate.args for alias in aliases):
             continue
-        # The emitter takes the delegate's outputs from its own specs.
-        delegate_specs = list(delegate.meta["spec"])
-        delegate_specs[update.args[1]] = mutated.meta["spec"]
-        delegate.meta["spec"] = type(delegate.meta["spec"])(delegate_specs)
-        update.meta["spec"] = mutated.meta["spec"]
+        _replace_spec(graph, update.meta["spec"], mutated.meta["spec"])
         for spec in graph_signature.output_specs:
             if spec.arg.name == node.name:
                 spec.arg.name = update.name

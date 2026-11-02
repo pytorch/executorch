@@ -28,6 +28,7 @@ from executorch.exir.passes.reinplace import (
     reinplace_delegate_input_mutations,
     reinplace_pass,
 )
+from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
 from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
     _load_for_executorch_from_buffer,
 )
@@ -876,6 +877,35 @@ class TestReinplacePass(unittest.TestCase):
                     any(spec is k_cache.meta["spec"] for spec in delegate.meta["spec"]),
                     in_place,
                 )
+
+    def test_delegate_output_spec_replaced_everywhere(self) -> None:
+        """When the delegate output that carries an input mutation is also
+        viewed on the host and returned, the view and the method's output must
+        follow it onto the input's storage, or they would read storage the
+        delegate no longer writes."""
+        inputs = (torch.ones(1, 2, 1, 4), torch.zeros(1, 2, 8, 4), torch.tensor([3]))
+        program = to_edge_transform_and_lower(
+            export(_CacheUpdate(), inputs, strict=True),
+            partitioner=[AllNodePartitioner("_InPlaceDemoBackend", [])],
+        ).to_executorch()
+        ep = program.exported_program()
+        graph = ep.graph
+        k_cache = next(n for n in graph.nodes if n.name == "k_cache")
+        write_back = next(
+            n for n in graph.nodes if n.target == torch.ops.aten.copy_.default
+        )
+        update = write_back.args[1]
+        with graph.inserting_after(write_back):
+            view = graph.call_function(memory.view, (update, [16, 4]))
+            view.meta["spec"] = _ViewSpec(update.meta["spec"], [16, 4])
+            graph.call_function(torch.ops.aten.clone.default, (view,))
+        output = next(n for n in graph.nodes if n.op == "output")
+
+        reinplace_delegate_input_mutations(ep.graph_module, ep.graph_signature)
+
+        self.assertEqual(len(_find_nodes(ep, "copy_")), 0)
+        self.assertIs(view.meta["spec"]._base, k_cache.meta["spec"])
+        self.assertTrue(any(s is k_cache.meta["spec"] for s in output.meta["spec"]))
 
     def test_delegate_input_mutation_kept_when_read_before_write_back(
         self,
