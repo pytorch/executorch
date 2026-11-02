@@ -25,6 +25,43 @@ using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 /**
+ * Writes the cumulative sums of a Half or BFloat16 tensor along a dim that has
+ * more than one trailing position. It keeps the float sums of a block of up to
+ * 1024 trailing positions and walks the rows once per block; a narrower block
+ * made wide inputs much slower. The block costs 4 KB of stack, so this is not
+ * inlined: callers that do not get here do not reserve it.
+ */
+template <typename CTYPE_OUT, typename LoadFn>
+ET_NOINLINE void cumsum_in_float_blocks(
+    const Tensor& self,
+    LoadFn load_self,
+    size_t leading_dims,
+    size_t dim_size,
+    size_t trailing_dims,
+    CTYPE_OUT* output_data_base) {
+  const char* const input_data_base =
+      reinterpret_cast<const char*>(self.const_data_ptr());
+  constexpr size_t kBlock = 1024;
+  float sums[kBlock];
+  for (size_t i = 0; i < leading_dims; i++) {
+    const size_t start_loc = i * (trailing_dims * dim_size);
+    for (size_t first = 0; first < trailing_dims; first += kBlock) {
+      const size_t block = std::min(kBlock, trailing_dims - first);
+      for (size_t j = 0; j < dim_size; j++) {
+        const size_t round_base = start_loc + j * trailing_dims + first;
+        for (size_t idx = 0; idx < block; idx++) {
+          const float value = load_self(
+              &input_data_base[(round_base + idx) * self.element_size()]);
+          sums[idx] = j == 0 ? value : sums[idx] + value;
+          output_data_base[round_base + idx] =
+              static_cast<CTYPE_OUT>(sums[idx]);
+        }
+      }
+    }
+  }
+}
+
+/**
  * Returns the cumulative sum of elements of input in the dimension dim.
  *
  * Given a self tensor whose size is (d1, d2, .., d_dim, ..., dm), and does
@@ -37,16 +74,16 @@ namespace {
  * well as reducing the number of cache misses.
  *
  * Half and BFloat16 cannot keep their running sums in out, because rounding
- * every partial sum to 16 bits makes long sums stop growing. They keep the
- * sums of a block of trailing positions in float instead, and walk the rows
- * once per block. The block costs 4 KB of stack; a narrower one made wide
- * inputs much slower.
+ * every partial sum to 16 bits makes long sums stop growing. They keep them in
+ * float instead: one sum along the last dim, and cumsum_in_float_blocks
+ * otherwise.
  */
-// Not inlined, because Clang would then reserve the Half and BFloat16 block in
-// cumsum_out's frame for every dtype.
 template <typename CTYPE_OUT, typename LoadFn = CTYPE_OUT (*)(const void*)>
-ET_NOINLINE void
-cumsum_tensors(const Tensor& self, LoadFn load_self, int64_t dim, Tensor& out) {
+void cumsum_tensors(
+    const Tensor& self,
+    LoadFn load_self,
+    int64_t dim,
+    Tensor& out) {
   if (self.numel() == 0) {
     return;
   }
@@ -86,25 +123,24 @@ cumsum_tensors(const Tensor& self, LoadFn load_self, int64_t dim, Tensor& out) {
         }
       }
     }
-  } else {
-    constexpr size_t kBlock = 1024;
-    ACC sums[kBlock];
+  } else if (trailing_dims == 1) {
     for (size_t i = 0; i < leading_dims; i++) {
-      const size_t start_loc = i * (trailing_dims * dim_size);
-      for (size_t first = 0; first < trailing_dims; first += kBlock) {
-        const size_t block = std::min(kBlock, trailing_dims - first);
-        for (size_t j = 0; j < dim_size; j++) {
-          const size_t round_base = start_loc + j * trailing_dims + first;
-          for (size_t idx = 0; idx < block; idx++) {
-            const ACC value = load_self(
-                &input_data_base[(round_base + idx) * self.element_size()]);
-            sums[idx] = j == 0 ? value : sums[idx] + value;
-            output_data_base[round_base + idx] =
-                static_cast<CTYPE_OUT>(sums[idx]);
-          }
-        }
+      const size_t start_loc = i * dim_size;
+      ACC sum = 0;
+      for (size_t j = 0; j < dim_size; j++) {
+        sum +=
+            load_self(&input_data_base[(start_loc + j) * self.element_size()]);
+        output_data_base[start_loc + j] = static_cast<CTYPE_OUT>(sum);
       }
     }
+  } else {
+    cumsum_in_float_blocks<CTYPE_OUT>(
+        self,
+        load_self,
+        leading_dims,
+        dim_size,
+        trailing_dims,
+        output_data_base);
   }
 }
 
