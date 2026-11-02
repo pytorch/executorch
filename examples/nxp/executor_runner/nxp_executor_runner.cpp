@@ -28,8 +28,8 @@ static uint8_t __attribute__((
 static uint8_t __attribute__((
     aligned(16))) tmp_allocator_pool[512 * 1024 * 1024U]; // 512 MB
 
-#include <executorch/backends/nxp/runtime/NeutronDriver.h>
-#include <executorch/backends/nxp/runtime/NeutronErrors.h>
+#include <NeutronDriver.h>
+#include <NeutronErrors.h>
 
 #ifdef NEUTRON_CMODEL
 // The following header is needed only for NSYS backend.

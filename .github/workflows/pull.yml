@@ -2176,6 +2176,9 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        # Install the eIQ Neutron SDK (provides the Neutron driver headers)
+        pip install -r backends/nxp/requirements-eiq.txt
+
         # Build
         cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -DEXECUTORCH_BUILD_NXP_NEUTRON_EXTERNAL_MEM=ON -Bcmake-out .
         cmake --build cmake-out --target executorch_delegate_neutron --config Release
