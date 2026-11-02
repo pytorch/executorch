@@ -24,10 +24,10 @@ constexpr int64_t kRefDimSizeLimit = 512;
 //                           upscale_factor, in_layout, out_layout) -> fp_out
 // Implementation: fused fast-path kernel. The in_layout / out_layout strings
 // select the channels-packed int8x4 layout used for the temporary quantized
-// tensors. Supported values: "4W4C", "4C1W".
+// tensors. Supported values: "4W4C", "4C", "4C1W".
 // (PACKED_INT8_CONV2D is a Python/serialization-level alias that the runtime
-// resolves to kPackedInt8_4C1W, so it is not exercised separately here -- it
-// would only re-test the same C++ kernel path as "4C1W".)
+// resolves to kPackedInt8_4C or kPackedInt8_4C1W, so it is not exercised
+// separately here.)
 
 struct PixelShuffleConfig {
   std::vector<int64_t> in_shape; // [N, C*r*r, H, W]
