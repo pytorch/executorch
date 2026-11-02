@@ -19,13 +19,14 @@ namespace {
 // channels-packed int8x4 GPUMemoryLayout enum.
 //
 // Note: PACKED_INT8_CONV2D is a Python/serialization-level alias that the
-// runtime resolves to kPackedInt8_4C1W (see VulkanBackend.cpp). At the C++
-// runtime layer there is no distinct kPackedInt8_CONV2D enum, so testing
-// "CONV2D" here would just be duplicate runtime work over "4C1W". We
-// therefore only expose the two real enum values to the test driver.
+// runtime resolves to kPackedInt8_4C (im2col convolution inputs) or
+// kPackedInt8_4C1W. At the C++ runtime layer there is no distinct
+// kPackedInt8_CONV2D enum, so only the resolved layouts are exposed here.
 utils::GPUMemoryLayout layout_from_string(const std::string& s) {
   if (s == "4W4C") {
     return utils::kPackedInt8_4W4C;
+  } else if (s == "4C") {
+    return utils::kPackedInt8_4C;
   } else if (s == "4C1W") {
     return utils::kPackedInt8_4C1W;
   }
@@ -46,8 +47,8 @@ utils::GPUMemoryLayout layout_from_string(const std::string& s) {
 //       float output_scale,
 //       int   output_zp,
 //       int   upscale_factor,
-//       str   in_layout,    // "4W4C" | "4C1W"
-//       str   out_layout,   // "4W4C" | "4C1W"
+//       str   in_layout,    // "4W4C" | "4C" | "4C1W"
+//       str   out_layout,   // "4W4C" | "4C" | "4C1W"
 //   ) -> Tensor (float, output shape = pixel_shuffle(in, r))
 //
 
