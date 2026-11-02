@@ -28,7 +28,6 @@ from executorch.exir.passes.reinplace import (
     reinplace_delegate_input_mutations,
     reinplace_pass,
 )
-from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
 from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
     _load_for_executorch_from_buffer,
 )
@@ -75,6 +74,29 @@ class _CacheUpdate(torch.nn.Module):
     ) -> torch.Tensor:
         k_cache.index_copy_(2, pos, k)
         return k_cache.sum(-1)
+
+
+class _CacheUpdateViewedOnHost(torch.nn.Module):
+    def forward(
+        self, k: torch.Tensor, k_cache: torch.Tensor, pos: torch.Tensor
+    ) -> torch.Tensor:
+        k_cache.index_copy_(2, pos, k)
+        return k_cache.view(-1) * 2
+
+
+class _HostOpsPartitioner(AllNodePartitioner):
+    """Delegates every node except calls to ``host_ops``."""
+
+    def __init__(self, backend_id: str, host_ops: set) -> None:
+        super().__init__(backend_id, [])
+        self.host_ops = host_ops
+
+    def partition(self, exported_program: ExportedProgram):
+        result = super().partition(exported_program)
+        for node in exported_program.graph_module.graph.nodes:
+            if node.op == "call_function" and node.target in self.host_ops:
+                node.meta.pop("delegation_tag", None)
+        return result
 
 
 class TestReinplacePass(unittest.TestCase):
@@ -882,30 +904,46 @@ class TestReinplacePass(unittest.TestCase):
         """When the delegate output that carries an input mutation is also
         viewed on the host and returned, the view and the method's output must
         follow it onto the input's storage, or they would read storage the
-        delegate no longer writes."""
-        inputs = (torch.ones(1, 2, 1, 4), torch.zeros(1, 2, 8, 4), torch.tensor([3]))
-        program = to_edge_transform_and_lower(
-            export(_CacheUpdate(), inputs, strict=True),
-            partitioner=[AllNodePartitioner("_InPlaceDemoBackend", [])],
-        ).to_executorch()
-        ep = program.exported_program()
-        graph = ep.graph
-        k_cache = next(n for n in graph.nodes if n.name == "k_cache")
-        write_back = next(
-            n for n in graph.nodes if n.target == torch.ops.aten.copy_.default
-        )
-        update = write_back.args[1]
-        with graph.inserting_after(write_back):
-            view = graph.call_function(memory.view, (update, [16, 4]))
-            view.meta["spec"] = _ViewSpec(update.meta["spec"], [16, 4])
-            graph.call_function(torch.ops.aten.clone.default, (view,))
-        output = next(n for n in graph.nodes if n.op == "output")
+        delegate no longer writes. A dynamic view keeps its dynamism."""
+        batch = torch.export.Dim("batch", max=4)
+        inputs = (torch.ones(2, 2, 1, 4), torch.zeros(2, 2, 8, 4), torch.tensor([3]))
+        host_ops = {
+            edge_ops.edge.aten.view_copy.default,
+            edge_ops.edge.aten.mul.Tensor,
+        }
+        for dynamic_shapes in (None, ({0: batch}, {0: batch}, None)):
+            with self.subTest(dynamic=dynamic_shapes is not None):
+                program = to_edge_transform_and_lower(
+                    export(
+                        _CacheUpdateViewedOnHost(),
+                        inputs,
+                        dynamic_shapes=dynamic_shapes,
+                        strict=True,
+                    ),
+                    partitioner=[_HostOpsPartitioner("_InPlaceDemoBackend", host_ops)],
+                ).to_executorch()
+                ep = program.exported_program()
+                graph = ep.graph
+                k_cache = next(n for n in graph.nodes if n.name == "k_cache")
+                view = next(n for n in graph.nodes if n.target == memory.view)
+                view_spec = view.meta["spec"]
+                # Write back the very delegate output the host views.
+                write_back = next(
+                    n for n in graph.nodes if n.target == torch.ops.aten.copy_.default
+                )
+                write_back.args = (k_cache, view.args[0])
+                output = next(n for n in graph.nodes if n.op == "output")
+                dynamism = view_spec.shape_dynamism
 
-        reinplace_delegate_input_mutations(ep.graph_module, ep.graph_signature)
+                reinplace_delegate_input_mutations(ep.graph_module, ep.graph_signature)
 
-        self.assertEqual(len(_find_nodes(ep, "copy_")), 0)
-        self.assertIs(view.meta["spec"]._base, k_cache.meta["spec"])
-        self.assertTrue(any(s is k_cache.meta["spec"] for s in output.meta["spec"]))
+                self.assertEqual(len(_find_nodes(ep, "copy_")), 0)
+                self.assertIs(view.meta["spec"], view_spec)
+                self.assertIs(view_spec._base, k_cache.meta["spec"])
+                self.assertEqual(view_spec.shape_dynamism, dynamism)
+                self.assertTrue(
+                    any(s is k_cache.meta["spec"] for s in output.meta["spec"])
+                )
 
     def test_delegate_input_mutation_kept_when_read_before_write_back(
         self,

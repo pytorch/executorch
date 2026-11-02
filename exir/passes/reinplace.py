@@ -559,27 +559,22 @@ def _storage_aliases(node: torch.fx.Node) -> Set[torch.fx.Node]:
 
 def _replace_spec(graph: torch.fx.Graph, old: Any, new: Any) -> None:
     """Point every reference to the TensorSpec ``old`` at ``new``: the
-    delegate's own output specs, which the emitter reads, the output node's,
-    and the bases of views, which are rebuilt on ``new`` so they keep reading
-    the storage that is now written."""
+    delegate's own output specs, which the emitter reads, and the output
+    node's. Views of ``old`` are rebased onto ``new`` in place, so they keep
+    reading the storage that is now written, with their own sizes, dynamism
+    and guards; ``old`` and ``new`` describe the same tensor."""
     from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
-
-    replaced = {id(old): new}
-
-    def remap(spec: Any) -> Any:
-        if id(spec) in replaced:
-            return replaced[id(spec)]
-        if isinstance(spec, _ViewSpec) and id(spec._base) in replaced:
-            replaced[id(spec)] = _ViewSpec(replaced[id(spec._base)], list(spec.shape))
-            return replaced[id(spec)]
-        return spec
 
     for node in graph.nodes:
         spec = node.meta.get("spec")
+        specs = spec if isinstance(spec, (list, tuple)) else [spec]
+        for s in specs:
+            if isinstance(s, _ViewSpec) and s._base is old:
+                object.__setattr__(s, "_base", new)
         if isinstance(spec, (list, tuple)):
-            node.meta["spec"] = type(spec)(remap(s) for s in spec)
-        elif spec is not None:
-            node.meta["spec"] = remap(spec)
+            node.meta["spec"] = type(spec)(new if s is old else s for s in spec)
+        elif spec is old:
+            node.meta["spec"] = new
 
 
 def reinplace_delegate_input_mutations(
