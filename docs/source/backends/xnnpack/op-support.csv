@@ -14,7 +14,7 @@ conv2d,"fp16, fp32","PT2E: static or dynamic int8 activations
 8-bit weights, symmetric per-tensor or per-channel",constant weights
 dequantize_per_tensor,"fp16, fp32",,
 div,"fp16, fp32",,
-elu,"fp16, fp32",,
+elu,"fp16, fp32",,"alpha positive and normal in the compute dtype, scale = 1, input_scale = 1"
 exp,"fp16, fp32",,
 floor,"fp16, fp32",,
 gelu,"fp16, fp32",,

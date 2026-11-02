@@ -147,6 +147,37 @@ def test_quantizer_conv2d():
     assert nodes[12].args[0].target == torch.ops.aten.conv2d.default
 
 
+def test_quantizer_non_strict_export():
+    class ConvConcatRelu(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(4, 4, 3, padding=1)
+
+        def forward(self, x):
+            return torch.relu(torch.cat((self.conv(x), self.conv(x)), dim=1))
+
+    example_input = (torch.ones(1, 4, 8, 8),)
+    exported_model = torch.export.export(
+        ConvConcatRelu().eval(), example_input, strict=False
+    )
+
+    m = _prepare_for_quantization(exported_model)
+    m(*example_input)
+    m = convert_pt2e(m)
+
+    convs = [n for n in m.graph.nodes if n.target == torch.ops.aten.conv2d.default]
+    assert len(convs) == 2
+    for conv in convs:
+        assert (
+            conv.args[0].target
+            == torch.ops.quantized_decomposed.dequantize_per_tensor.default
+        )
+        assert (
+            conv.args[1].target
+            == torch.ops.quantized_decomposed.dequantize_per_channel.default
+        )
+
+
 def test_quantizer_linear():
     model = models.LinearModule(bias=True)
     model.eval()

@@ -65,8 +65,10 @@ separate borrowed view. In torch output mode such a result is a view of memory
 torch does not own, so it cannot grow with `resize_()` and cannot be shared
 through `torch.multiprocessing`. Call `.clone()` for a normal torch tensor.
 
-`dtype_name` names a result's dtype, including dtypes NumPy lacks, such as
-`"bfloat16"`.
+An `ExecuTorchResult`'s `dtype` is the dtype's name as torch spells it, such as
+`"float32"` or `"bfloat16"`.
+`method_meta().output_tensor_meta(i).dtype_name()` gives the same name before
+the method runs.
 
 `Method.get_attribute()` returns a view of mutable state. A constant can sit
 in read-only memory, so it comes back read-only: NumPy and the buffer protocol
@@ -78,6 +80,16 @@ Calls on a shared method or module are serialized. A sequence of separate
 `set_inputs`, `execute`, and `get_outputs` calls on a shared method needs a lock
 held by the caller around the whole sequence: `set_inputs` hides the outputs
 until the next `execute`, so another thread's call can land in between.
+
+A run may reuse the memory of inputs that export planned, or write an input in
+place. So each `execute` installs such inputs again from what the caller
+passed, or from the copy the bindings made when an input needed converting. A
+module does the same for inputs kept from an earlier call. A change to the
+storage of a torch tensor or buffer input is then refused; a DLPack producer
+must keep its memory in place while the bindings hold it. A result returned
+with `clone_outputs=False` lives in the method's output memory, so passing it
+back in as an input means each run reads what the run before it wrote there;
+pass a copied result instead.
 
 To select `ExecuTorchResult` outputs even when PyTorch is installed, set the
 environment variable before importing the bindings. The setting is fixed when
@@ -128,32 +140,52 @@ so while torch is loaded they still read CUDA inputs, torch tensors or DLPack,
 and return borrowed CUDA results.
 
 Execution is synchronous at the Python boundary: a call returns after its device
-work has finished, so its outputs are ready on any stream. Every wait is for the
-whole device (`cudaDeviceSynchronize`), not for one stream, so it also waits for
-unrelated work queued on that device, for example by torch. Before it runs, a
-call waits once for each device that holds a non-empty CUDA input or output.
-Another library may still be writing such an input: a torch CUDA tensor, a CUDA
-DLPack input, or a result of these bindings passed back in, which can share
-memory a caller handed to that library. It may also still be reading the memory
-of an output from an earlier call, which this call writes again. After it runs,
-a call waits once for each device that holds a CUDA input or output, since the
-method may have updated an input in place. Each cloned CUDA
-output waits once more for its copy. A torch CUDA input in another layout also
-waits before torch copies it into the exported layout. Reading a CUDA result
-through `__dlpack__` or `to_host()` waits once as well. In CUDA-enabled
-bindings a wait holds the GIL, so other Python threads pause until it ends, and
-a queued CUDA host callback that needs the GIL makes the wait hang. Bindings
-built without CUDA wait through `torch.cuda.synchronize`, which releases the
-GIL. On an idle device a wait is short:
-`cudaDeviceSynchronize` took a median of 1.5 microseconds on an A100. The
+work has finished, so its outputs are ready on any stream. How long a call with
+only host inputs and outputs waits depends on where it runs:
+
+- Inside an `executorch.runtime.cuda.stream()` block with a non-blocking stream,
+  such as `executorch.runtime.cuda.Stream()`, it waits for that stream. A
+  blocking stream, such as a `cupy.cuda.Stream()` with default flags, also waits
+  for work on CUDA's legacy default stream, which is also the default stream of
+  torch.
+- Outside a block, a program's copies between host and GPU memory run on the
+  legacy default stream, so the call waits for work on every blocking stream of
+  the device, for example delegates running on another thread.
+
+In both cases, the CUDA delegate copies an output whose memory layout has to
+change through the legacy default stream, and loading a method's CUDA weights,
+which a first call may do, waits for the whole device.
+
+The waits below, for CUDA inputs and outputs, are for the whole device
+(`cudaDeviceSynchronize`), not for one stream, so they also wait for unrelated
+work queued on that device, for example by torch. Before it runs, a call waits
+once for each device that holds a non-empty CUDA input or output. Another
+library may still be writing such an input: a torch CUDA tensor, a CUDA DLPack
+input, or a result of these bindings passed back in, which can share memory a
+caller handed to that library. It may also still be reading the memory of an
+output from an earlier call, which this call writes again. After it runs, a call
+waits once for each device that holds a CUDA input or output, since the method
+may have updated an input in place. Each cloned CUDA output waits once more for
+its copy. A torch CUDA input in another layout also waits before torch copies it
+into the exported layout. Reading a CUDA result through `__dlpack__` or
+`to_host()` waits once as well. In CUDA-enabled bindings a wait holds the GIL,
+so other Python threads pause until it ends, and a queued CUDA host callback
+that needs the GIL makes the wait hang. Bindings built without CUDA wait through
+`torch.cuda.synchronize`, which releases the GIL. On an idle device a wait is
+short: `cudaDeviceSynchronize` took a median of 1.5 microseconds on an A100. The
 synchronization has no C++ ATen dependency.
 
 For bfloat16 inputs, raw byte buffers use the shape declared by the exported
-method. Bfloat16 results expose flat bytes through the buffer protocol because
-NumPy and PEP 3118 do not define that numeric dtype. DLPack consumers receive the
-original bfloat16 dtype and tensor shape. A bfloat16 result passed back in is
-read through DLPack too, so it keeps its own shape and dim order instead of
-taking the method's.
+method. NumPy and PEP 3118 do not define bfloat16, so the buffer protocol shows
+a bfloat16 result as 16-bit unsigned integers in its real shape and layout.
+Other dtypes NumPy lacks, such as float8, are shown the same way, as integers of
+the same width. NumPy converts that view as integers, so
+`np.asarray(out, dtype=np.float32)` gives the bit patterns as numbers, not the
+bfloat16 values. DLPack consumers, such as `torch.from_dlpack(out)`, receive the
+original bfloat16 dtype. A bfloat16 result passed back in is read through DLPack
+too, so it keeps its dtype, shape, and dim order. A bfloat16 input does not
+accept 16-bit integers, so that integer data is never read as bfloat16 by
+mistake; pass the result itself or raw bytes.
 
 ```python
 import cupy as cp

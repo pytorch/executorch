@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from executorch.backends.xnnpack.utils.utils import (
     get_groups_from_conv,
     is_depthwise_conv,
+    why_not_x2_nearest_upsample,
 )
 from torch._subclasses import FakeTensor
 from torch.fx import Node
@@ -223,7 +224,7 @@ def _annotate_linear_relu(
         if _is_annotated(partition):
             continue
 
-        if filter_fn and any(not filter_fn(n) for n in partition):
+        if filter_fn and not filter_fn(linear_node):
             continue
 
         linear_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -310,7 +311,7 @@ def _do_annotate_conv(
         if _is_annotated(partition) or skip:
             continue
 
-        if filter_fn and any(not filter_fn(n) for n in partition):
+        if filter_fn and not filter_fn(conv_node):
             continue
 
         conv_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -373,7 +374,7 @@ def _do_annotate_conv_relu(
         if is_conv_transpose and groups != 1:
             continue
 
-        if filter_fn and any(not filter_fn(n) for n in partition):
+        if filter_fn and not filter_fn(conv_node):
             continue
 
         conv_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -604,7 +605,7 @@ def _do_annotate_conv_bn(  # noqa: C901
             partition.append(bias_node)
         if _is_annotated(partition):
             continue
-        if filter_fn and any(not filter_fn(n) for n in partition):
+        if filter_fn and not filter_fn(conv_node):
             continue
 
         # Annotate conv inputs and pattern output
@@ -727,6 +728,44 @@ def _annotate_adaptive_avg_pool2d(
     return annotated_partitions
 
 
+@register_annotator("upsample_nearest2d")
+def _annotate_upsample_nearest2d(
+    gm: torch.fx.GraphModule,
+    quantization_config: Optional[QuantizationConfig],
+    filter_fn: Optional[Callable[[Node], bool]] = None,
+) -> Optional[list[list[Node]]]:
+    """Nearest upsampling only copies values, so its output shares the
+    input's quantization parameters. Only the x2 case XNNPACK lowers is
+    annotated; any other stays a float op outside the delegate."""
+    annotated_partitions = []
+    for node in gm.graph.nodes:
+        if node.target != torch.ops.aten.upsample_nearest2d.vec:
+            continue
+        if _is_annotated([node]) or (filter_fn and not filter_fn(node)):
+            continue
+        if why_not_x2_nearest_upsample(node) is not None:
+            continue
+
+        input_act = node.args[0]
+        assert isinstance(input_act, Node)
+        if (
+            Q_ANNOTATION_KEY not in input_act.meta
+            or not input_act.meta[Q_ANNOTATION_KEY]._annotated
+            or input_act.meta[Q_ANNOTATION_KEY].output_qspec is None
+        ):
+            input_act_qspec = get_input_act_qspec(quantization_config)
+        else:
+            input_act_qspec = SharedQuantizationSpec(input_act)
+
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map={input_act: input_act_qspec},
+            output_qspec=SharedQuantizationSpec((input_act, node)),
+            _annotated=True,
+        )
+        annotated_partitions.append([node])
+    return annotated_partitions
+
+
 def _is_input_large_scalar(node: Node, gm: torch.fx.GraphModule):
     """Check if input is a large scalar value. So that we can skip quantization for the node
     since histc op (in HistogramObserver) only works for values up to certain upper bound
@@ -786,7 +825,7 @@ def _annotate_add_relu(  # noqa: C901
         if _is_annotated(partition):
             continue
 
-        if filter_fn and any(not filter_fn(n) for n in partition):
+        if filter_fn and not filter_fn(add_node):
             continue
 
         if _is_input_non_float_tensor(add_node):
@@ -845,7 +884,7 @@ def _annotate_add(
         if _is_annotated(partition):
             continue
 
-        if filter_fn and any(not filter_fn(n) for n in partition):
+        if filter_fn and not filter_fn(add_node):
             continue
 
         if _is_input_non_float_tensor(add_node):
@@ -916,7 +955,7 @@ def _annotate_mul_relu(  # noqa: C901
         if _is_annotated(partition):
             continue
 
-        if filter_fn and any(not filter_fn(n) for n in partition):
+        if filter_fn and not filter_fn(mul_node):
             continue
 
         if _is_input_non_float_tensor(mul_node):
@@ -975,7 +1014,7 @@ def _annotate_mul(
         if _is_annotated(partition):
             continue
 
-        if filter_fn and any(not filter_fn(n) for n in partition):
+        if filter_fn and not filter_fn(mul_node):
             continue
 
         if _is_input_non_float_tensor(mul_node):
@@ -1065,6 +1104,8 @@ def _annotate_cat(
     for cat_node in gm.graph.nodes:
         if cat_node.target != torch.ops.aten.cat.default:
             continue
+        if filter_fn and not filter_fn(cat_node):
+            continue
 
         if _is_annotated([cat_node]):
             continue
@@ -1123,9 +1164,22 @@ def _is_share_obs_or_fq_op(op: Callable) -> bool:
     ]
 
 
+def touches_bfloat16(node: Node) -> bool:
+    """Whether a node reads or produces a bfloat16 tensor. The quantized kernels
+    do not take bfloat16 and XNNPACK leaves such patterns to them, where they
+    abort at run time, so these nodes are not quantized."""
+    return any(
+        isinstance(n.meta.get("val"), torch.Tensor)
+        and n.meta["val"].dtype == torch.bfloat16
+        for n in (node, *node.all_input_nodes)
+    )
+
+
 def propagate_annotation(model: torch.fx.GraphModule) -> None:
     for n in model.graph.nodes:
         if n.op != "call_function" or not _is_share_obs_or_fq_op(n.target):
+            continue
+        if touches_bfloat16(n):
             continue
 
         prev_node = n.args[0]

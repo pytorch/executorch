@@ -34,10 +34,15 @@ TestCase create_sdpa_test_case(
       std::to_string(config.n_heads) + " Hkv" +
       std::to_string(config.n_kv_heads) + " S" +
       std::to_string(config.seq_len) + " C" +
-      std::to_string(config.context_len);
+      std::to_string(config.context_len) + " P" +
+      std::to_string(config.input_pos >= 0
+                         ? config.input_pos
+                         : config.context_len - config.seq_len);
 
-  const std::string suffix =
-      "[" + config.model + " " + config.regime + " " + impl + "]";
+  const std::string suffix = "[" + config.model + " " + config.regime + " " +
+      impl + " scale=" +
+      (config.scale.has_value() ? std::to_string(*config.scale) : "default") +
+      "]";
 
   test_case.set_name(make_test_label(
       prefix, dtype_str, dtype_str, shape, storage_str, suffix));
@@ -64,7 +69,29 @@ TestCase create_sdpa_test_case(
       storage_type,
       utils::kWidthPacked,
       DataGenType::RANDOM);
+  ValueSpec k_projected(
+      {1, config.seq_len, config.n_kv_heads, config.head_dim},
+      dtype,
+      storage_type,
+      utils::kWidthPacked,
+      DataGenType::RANDOM);
+  ValueSpec v_projected(
+      {1, config.seq_len, config.n_kv_heads, config.head_dim},
+      dtype,
+      storage_type,
+      utils::kWidthPacked,
+      DataGenType::RANDOM);
+  const int64_t input_pos = config.input_pos >= 0
+      ? config.input_pos
+      : config.context_len - config.seq_len;
+  ValueSpec input_pos_spec(utils::safe_downcast<int32_t>(input_pos));
 
+  ValueSpec scale;
+  if (config.scale.has_value()) {
+    scale = ValueSpec(*config.scale);
+  } else {
+    scale.set_none(true);
+  }
   ValueSpec impl_selector = ValueSpec::make_string(impl);
 
   // out: [1, S, n_heads, head_dim]
@@ -78,6 +105,10 @@ TestCase create_sdpa_test_case(
   test_case.add_input_spec(q);
   test_case.add_input_spec(k_cache);
   test_case.add_input_spec(v_cache);
+  test_case.add_input_spec(k_projected);
+  test_case.add_input_spec(v_projected);
+  test_case.add_input_spec(input_pos_spec);
+  test_case.add_input_spec(scale);
   test_case.add_input_spec(impl_selector);
   test_case.add_output_spec(output);
 
@@ -121,7 +152,7 @@ static std::vector<float> as_float_data(const ValueSpec& spec) {
 }
 
 // Reference: causal SDPA over the KV cache.
-//   q:[1,S,H,D], k/v cache:[1,C,Hkv,D], input_pos = C - S.
+//   q:[1,S,H,D], k/v cache:[1,C,Hkv,D], input_pos + S <= C.
 //   For query row s (absolute position input_pos + s), attends to cache
 //   positions [0, input_pos + s]. GQA: head h maps to kv head h / (H/Hkv).
 void sdpa_reference_impl(TestCase& test_case) {
@@ -138,17 +169,38 @@ void sdpa_reference_impl(TestCase& test_case) {
   const int64_t C = k_sizes[1];
   const int64_t Hkv = k_sizes[2];
 
-  if (C > kRefContextLenLimit) {
+  if (C > 512 || (C > kRefContextLenLimit && S > 18)) {
     throw std::invalid_argument("sdpa reference: perf shape, skipping");
   }
 
-  const int64_t input_pos = C - S;
+  const int64_t input_pos = test_case.inputs()[5].get_int_value();
+  const int64_t context_len = input_pos + S;
+  if (input_pos < 0 || context_len > C) {
+    throw std::invalid_argument("sdpa reference: invalid input_pos");
+  }
   const int64_t heads_per_kv = H / Hkv;
-  const float scale = 1.0f / std::sqrt(static_cast<float>(D));
+  const ValueSpec& scale_spec = test_case.inputs()[6];
+  const float scale = scale_spec.is_none()
+      ? 1.0f / std::sqrt(static_cast<float>(D))
+      : scale_spec.get_float_value();
 
   const auto q_data = as_float_data(q);
-  const auto k_data = as_float_data(k);
-  const auto v_data = as_float_data(v);
+  auto k_data = as_float_data(k);
+  auto v_data = as_float_data(v);
+  if (test_case.inputs()[7].get_string_value() == "fused") {
+    const auto k_projected_data = as_float_data(test_case.inputs()[3]);
+    const auto v_projected_data = as_float_data(test_case.inputs()[4]);
+    for (int64_t s = 0; s < S; ++s) {
+      for (int64_t hk = 0; hk < Hkv; ++hk) {
+        for (int64_t d = 0; d < D; ++d) {
+          const int64_t projected_idx = (s * Hkv + hk) * D + d;
+          const int64_t cache_idx = ((input_pos + s) * Hkv + hk) * D + d;
+          k_data[cache_idx] = k_projected_data[projected_idx];
+          v_data[cache_idx] = v_projected_data[projected_idx];
+        }
+      }
+    }
+  }
 
   ValueSpec& output = test_case.outputs()[0];
   auto& ref = output.get_ref_float_data();
@@ -162,7 +214,7 @@ void sdpa_reference_impl(TestCase& test_case) {
     return (c * Hkv + hk) * D + d;
   };
 
-  std::vector<float> scores(C);
+  std::vector<float> scores(context_len);
   for (int64_t s = 0; s < S; ++s) {
     const int64_t attend_len = input_pos + s + 1; // causal
     for (int64_t h = 0; h < H; ++h) {

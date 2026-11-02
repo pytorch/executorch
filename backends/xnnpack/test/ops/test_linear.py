@@ -37,6 +37,7 @@ try:
     from torchao.quantization.granularity import PerGroup
     from torchao.quantization.quant_api import (
         Int8DynamicActivationIntxWeightConfig,
+        IntxWeightOnlyConfig,
         quantize_,
     )
     from torchao.utils import unwrap_tensor_subclass
@@ -781,6 +782,25 @@ class TestLinear(unittest.TestCase):
             uses_bias=True,
         )
 
+    def test_fp32_linear_view_weight(self):
+        class ViewWeightLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.randn(3, 8, 8)[1])
+
+            def forward(self, x):
+                return torch.nn.functional.linear(x, self.weight)
+
+        (
+            Tester(ViewWeightLinear(), (torch.randn(2, 8),))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     def test_fp32_linear_fused_relu(self):
         for use_bias in (True, False):
             for num_batch_dims in range(1, 3):
@@ -897,6 +917,112 @@ class TestLinear(unittest.TestCase):
                 self._test_groupwise_dq_linear(
                     lin_mod, inputs, group_size=30, use_bias=False, atol=1e-2
                 )
+
+    @unittest.skipIf(not torchao_installed, "Requires TorchAO")
+    def test_qd8_linear_transposed_scale(self):
+        mod = torch.nn.Linear(64, 4, bias=False)
+        with torch.no_grad():
+            # Rows with very different scales make a misordered scale obvious.
+            mod.weight.mul_(torch.arange(1.0, 5.0).unsqueeze(1))
+        quantize_(
+            mod,
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=torch.int4, weight_granularity=PerGroup(32)
+            ),
+        )
+        unwrap_tensor_subclass(mod)
+        # XNNPACK stores groupwise scales as bf16, so round them for an exact comparison.
+        scale = mod.weight.scale.to(torch.bfloat16).float()
+        mod.weight.scale = scale.t().contiguous().t()
+        (
+            Tester(mod, (torch.randn(2, 64),))
+            .export()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    [
+                        XnnpackPartitioner(
+                            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT
+                        )
+                    ]
+                )
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    @unittest.skipIf(not torchao_installed, "Requires TorchAO")
+    def test_linear_int4_weight_only_dequant_in_source_partition(self):
+        # An int4 weight-only tensor subclass dequantizes inside the linear
+        # call, so its dequant is inside the linear's source partition and
+        # must not be skipped when looking for the weight.
+        # Activations are quantized by hand so that their quantize and
+        # dequantize stay outside the linear's source partition.
+        class DynamicActivationLinear(torch.nn.Module):
+            def __init__(self, linear):
+                super().__init__()
+                self.linear = linear
+
+            def forward(self, x):
+                block, qmin, qmax = [1, 64], -128, 127
+                scale, zero_point = torch.ops.torchao.choose_qparams_affine(
+                    x,
+                    "ASYMMETRIC",
+                    block,
+                    torch.int8,
+                    qmin,
+                    qmax,
+                    None,
+                    None,
+                    torch.int8,
+                )
+                q = torch.ops.torchao.quantize_affine(
+                    x, block, scale, zero_point, torch.int8, qmin, qmax
+                )
+                dq = torch.ops.torchao.dequantize_affine(
+                    q, block, scale, zero_point, torch.int8, qmin, qmax
+                )
+                return self.linear(dq)
+
+        for use_bias, gemm in (
+            (False, "executorch_exir_dialects_edge__ops_aten_mm_default"),
+            (True, "executorch_exir_dialects_edge__ops_aten_addmm_default"),
+        ):
+            mod = torch.nn.Linear(64, 32, bias=use_bias)
+            quantize_(
+                mod,
+                IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+            )
+            unwrap_tensor_subclass(mod)
+            inputs = (torch.randn(2, 64),)
+            # The XNNPACK partitioner does not delegate float activations with
+            # quantized weights, so the gemm must stay out of the delegate.
+            (
+                Tester(mod, inputs)
+                .export()
+                .to_edge_transform_and_lower()
+                .check_count({gemm: 1})
+            )
+            # With dynamically quantized activations it is delegated and has
+            # to keep the weight scales.
+            (
+                Tester(DynamicActivationLinear(mod), inputs)
+                .export()
+                .to_edge()
+                .partition(
+                    Partition(
+                        XnnpackPartitioner(
+                            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT
+                        )
+                    )
+                )
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .check_not([gemm])
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs(atol=1e-2, rtol=1e-2)
+            )
 
     def test_qd8_per_channel_linear_parallel(self):
         in_size = 2

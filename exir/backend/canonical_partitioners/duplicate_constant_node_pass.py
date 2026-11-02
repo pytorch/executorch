@@ -13,7 +13,6 @@ from torch._export.utils import get_buffer, get_lifted_tensor_constant, get_para
 
 from torch.export import ExportedProgram
 from torch.export.exported_program import InputSpec, TensorArgument
-from torch.export.graph_signature import InputKind
 
 
 def _get_attribute_or_constants(
@@ -44,7 +43,7 @@ def duplicate_constant_node(
 
     Args:
         exported_program: the exported program to be modified. If constants nodes are copied, they will be added as new
-        placeholder and the state_dict will be updated
+        placeholders that share the original target
         candidate_node: the name of the constant node to be duplicated
 
     Returns:
@@ -117,22 +116,8 @@ def duplicate_constant_node(
                     }
                     users[ith].args = new_args
                     users[ith].kwargs = new_kwargs
-                    if old_input_spec.kind == InputKind.CONSTANT_TENSOR:
-                        exported_program.constants[copy_constant_or_attribute_fqn] = (
-                            copy.deepcopy(constant_or_attribute)
-                        )
-                    elif (
-                        old_input_spec.kind == InputKind.BUFFER
-                        and old_input_spec.persistent is False
-                    ):
-                        # non persistent buffer will be in the .constants
-                        exported_program.constants[copy_constant_or_attribute_fqn] = (
-                            copy.deepcopy(constant_or_attribute)
-                        )
-                    else:
-                        exported_program.state_dict[copy_constant_or_attribute_fqn] = (
-                            copy.deepcopy(constant_or_attribute)
-                        )
+                    # The copy keeps the original target, so it reads the
+                    # original tensor and needs no data of its own.
                     new_input_specs.append(
                         InputSpec(
                             kind=old_input_spec.kind,

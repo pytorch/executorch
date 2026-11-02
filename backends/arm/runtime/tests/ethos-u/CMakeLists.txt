@@ -37,6 +37,21 @@ if(NOT TARGET GTest::gtest_main)
   )
 endif()
 
+add_executable(
+  ethosu_planned_scratch_test
+  test_ethosu_planned_scratch.cpp
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_IoMemcpy.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/VelaBinStream.cpp"
+)
+target_link_libraries(
+  ethosu_planned_scratch_test PRIVATE executorch_core GTest::gtest_main
+)
+add_test(NAME ethosu_planned_scratch_test COMMAND ethosu_planned_scratch_test)
+set_tests_properties(
+  ethosu_planned_scratch_test PROPERTIES LABELS "arm;ethos-u;runtime"
+)
+
 set(_ethos_u_runtime_tests_dir "${CMAKE_CURRENT_SOURCE_DIR}")
 set(_ethos_u_runtime_test_output_dir "${CMAKE_CURRENT_BINARY_DIR}/test_run")
 
@@ -101,6 +116,16 @@ set_tests_properties(
   runner_size_optimization
   PROPERTIES LABELS "arm;ethos-u;runtime;memory_allocation;runner"
              RESOURCE_LOCK arm_ethos_u_runtime
+)
+
+add_test(
+  NAME runner_input_restoration
+  COMMAND "${_ethos_u_runtime_tests_dir}/test_runner_input_restoration.sh"
+          "${EXECUTORCH_ROOT}" "${_ethos_u_runtime_test_output_dir}"
+)
+set_tests_properties(
+  runner_input_restoration PROPERTIES LABELS "arm;ethos-u;runtime;runner;fvp"
+                                      RESOURCE_LOCK arm_ethos_u_runtime
 )
 
 add_test(

@@ -15,6 +15,11 @@
 
 namespace vkcompute {
 
+void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args);
+void sdpa_with_kv_cache_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args);
+
 // Bare-minimum mirror of the LLM decode/prefill path in sdpa_impl() (see
 // SDPA.cpp), stripped of the input-validation VK_CHECK_CONDs. Building the
 // three SDPA nodes directly lets the test forward a shader_override knob to the
@@ -25,6 +30,7 @@ static void test_sdpa_impl(
     const ValueRef k_cache,
     const ValueRef v_cache,
     const ValueRef input_pos_symint,
+    const ValueRef scale,
     const ValueRef out,
     const ValueRef shader_override) {
   const int64_t num_q_heads = graph.size_at<int64_t>(-2, q_projected);
@@ -74,7 +80,9 @@ static void test_sdpa_impl(
       utils::kWidthPacked);
 
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
-  const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
+  const float scale_val = graph.val_is_none(scale)
+      ? 1.0f / std::sqrt(static_cast<float>(head_dim_size))
+      : graph.extract_scalar<float>(scale);
 
   add_sdpa_compute_attn_weights_node(
       graph,
@@ -110,11 +118,8 @@ static void test_sdpa_impl(
 // Test wrapper for the LLM KV-cache SDPA op (llama.custom_sdpa.default).
 //
 // The production op reads the dynamic context length from an `input_pos`
-// symint, but input_pos is not a free parameter: the op enforces
-// context_len = S + input_pos, and context_len is exactly the KV-cache's dim
-// -3. Since q is [B=1, S, H, D] and the caches are [B=1, context_len, H_kv, D],
-// input_pos is fully determined by the tensor shapes. Deriving it here from
-// those shapes keeps the single source of truth (the cache size) authoritative.
+// symint. The KV-cache's dim -3 is its capacity, so input_pos + S must not
+// exceed that dimension.
 //
 // Decode vs prefill is selected automatically inside the nodes via
 // is_single_token() (S == 1 -> coop/GEMV shaders, S > 1 -> tiled shaders). For
@@ -126,12 +131,17 @@ static void test_sdpa_impl(
 //   "non_gqa"   -> force the per-query-head coop shader
 // impl_selector has no effect on prefill (tiled).
 //
-// Args: q, k_cache, v_cache, impl_selector, out
+// Args: q, k_cache, v_cache, k_projected, v_projected, input_pos, scale,
+// impl_selector, out
 void test_sdpa(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   int arg_idx = 0;
   const ValueRef q = args.at(arg_idx++);
   const ValueRef k_cache = args.at(arg_idx++);
   const ValueRef v_cache = args.at(arg_idx++);
+  const ValueRef k_projected = args.at(arg_idx++);
+  const ValueRef v_projected = args.at(arg_idx++);
+  const ValueRef input_pos_ref = args.at(arg_idx++);
+  const ValueRef scale = args.at(arg_idx++);
   const ValueRef impl_selector_str = args.at(arg_idx++);
   const ValueRef out = args.at(arg_idx++);
 
@@ -139,17 +149,51 @@ void test_sdpa(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(
       impl_selector == "default" || impl_selector == "gqa" ||
           impl_selector == "gqa_tile2" || impl_selector == "gqa_base" ||
-          impl_selector == "non_gqa",
+          impl_selector == "non_gqa" || impl_selector == "production" ||
+          impl_selector == "fused",
       "test_sdpa: impl_selector must be one of {default, gqa, gqa_tile2, "
-      "gqa_base, non_gqa}");
+      "gqa_base, non_gqa, production, fused}");
 
   const int64_t seq_len = graph.size_at<int64_t>(-3, q);
-  const int64_t context_len = graph.size_at<int64_t>(-3, k_cache);
-  VK_CHECK_COND(context_len >= seq_len);
-  const int32_t input_pos_val =
-      utils::safe_downcast<int32_t>(context_len - seq_len);
+  const int64_t cache_capacity = graph.size_at<int64_t>(-3, k_cache);
+  const int32_t input_pos_val = graph.extract_scalar<int32_t>(input_pos_ref);
+  VK_CHECK_COND(input_pos_val >= 0);
+  VK_CHECK_COND(input_pos_val + seq_len <= cache_capacity);
 
   const ValueRef input_pos_symint = graph.add_symint(input_pos_val);
+
+  if (impl_selector == "fused") {
+    sdpa_with_kv_cache_impl(
+        graph,
+        {q,
+         k_projected,
+         v_projected,
+         k_cache,
+         v_cache,
+         input_pos_symint,
+         graph.add_scalar<int64_t>(seq_len),
+         graph.add_none(),
+         graph.add_scalar(0.0),
+         graph.add_scalar(true),
+         scale,
+         out});
+    return;
+  }
+
+  if (impl_selector == "production") {
+    sdpa_impl(
+        graph,
+        {q,
+         k_cache,
+         v_cache,
+         input_pos_symint,
+         graph.add_none(),
+         graph.add_scalar(0.0),
+         graph.add_scalar(true),
+         scale,
+         out});
+    return;
+  }
 
   // shader_override (see SDPA.h): kDummyValueRef auto; otherwise a
   // kShaderOverride* scalar forcing the AV shader family / variant.
@@ -165,7 +209,14 @@ void test_sdpa(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   }
 
   test_sdpa_impl(
-      graph, q, k_cache, v_cache, input_pos_symint, out, shader_override);
+      graph,
+      q,
+      k_cache,
+      v_cache,
+      input_pos_symint,
+      scale,
+      out,
+      shader_override);
 }
 
 REGISTER_OPERATORS {
