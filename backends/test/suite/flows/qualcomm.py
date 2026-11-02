@@ -42,13 +42,17 @@ def _create_qnn_flow(
     )
 
 
-# 3-D convolutions that QNN takes and fails. The portable kernel runs none of
-# them: QNN refuses to lower depthwise 3-D convolutions ("DepthWise only
-# supports Conv2d") and the padded input of padding_modes ("'NoneType' object
-# has no attribute 'op'"), and the delegated transposed cases do not match.
-_QNN_QUANTIZED_CONV3D_XFAILS = [
+# QNN partitioning crashes on these 3-D convolutions instead of leaving them to
+# the portable kernel: the depthwise one asserts "DepthWise only supports
+# Conv2d", and the replicate-padded one raises "'NoneType' object has no
+# attribute 'op'".
+_QNN_CONV3D_LOWERING_XFAILS = [
     "test_conv3d_depthwise",
-    "test_conv3d_padding_modes",
+    "test_conv3d_padding_replicate",
+]
+# With 8-bit weights, QNN takes these transposed 3-D convolutions and its output
+# does not match.
+_QNN_8BIT_WEIGHT_CONV3D_XFAILS = [
     "test_convtranspose3d_depthwise",
     "test_convtranspose3d_groups",
     "test_convtranspose3d_padding",
@@ -61,14 +65,14 @@ QNN_16A16W_TEST_FLOW = _create_qnn_flow(
     quantize=True,
     quant_dtype=QuantDtype.use_16a16w,
     use_fp16=False,
-    xfail_patterns=["test_conv3d_depthwise", "test_conv3d_padding_modes"],
+    xfail_patterns=_QNN_CONV3D_LOWERING_XFAILS,
 )
 QNN_16A8W_TEST_FLOW = _create_qnn_flow(
     "qnn_16a8w",
     quantize=True,
     quant_dtype=QuantDtype.use_16a8w,
     use_fp16=False,
-    xfail_patterns=_QNN_QUANTIZED_CONV3D_XFAILS,
+    xfail_patterns=_QNN_CONV3D_LOWERING_XFAILS + _QNN_8BIT_WEIGHT_CONV3D_XFAILS,
 )
 QNN_16A4W_TEST_FLOW = _create_qnn_flow(
     "qnn_16a4w",
@@ -83,12 +87,13 @@ QNN_16A4W_BLOCK_TEST_FLOW = _create_qnn_flow(
     quantize=True,
     quant_dtype=QuantDtype.use_8a8w,
     use_fp16=False,
-    xfail_patterns=_QNN_QUANTIZED_CONV3D_XFAILS,
+    # This flow quantizes as 8a8w, so it fails the same cases as qnn_8a8w.
+    xfail_patterns=_QNN_CONV3D_LOWERING_XFAILS + _QNN_8BIT_WEIGHT_CONV3D_XFAILS,
 )
 QNN_8A8W_TEST_FLOW = _create_qnn_flow(
     "qnn_8a8w",
     quantize=True,
     quant_dtype=QuantDtype.use_8a8w,
     use_fp16=False,
-    xfail_patterns=_QNN_QUANTIZED_CONV3D_XFAILS,
+    xfail_patterns=_QNN_CONV3D_LOWERING_XFAILS + _QNN_8BIT_WEIGHT_CONV3D_XFAILS,
 )

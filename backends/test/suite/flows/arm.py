@@ -80,10 +80,6 @@ ARM_ETHOS_U55_FLOW = _create_arm_flow(
     "arm_ethos_u55",
     lambda: common.get_u55_compile_spec(),
     quantize=True,
-    # The Corstone runner is built without the
-    # quantized_decomposed::dequantize_per_channel.out kernel that this case
-    # leaves outside the delegate.
-    xfail_patterns=["test_conv3d_padding_modes"],
 )
 ARM_ETHOS_U85_FLOW = _create_arm_flow(
     "arm_ethos_u85",

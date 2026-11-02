@@ -31,7 +31,7 @@ COREML_TEST_FLOW = _create_coreml_flow(
     # Core ML lowering of a transposed 3-D convolution with output_padding
     # raises "'NoneType' object is not iterable".
     xfail_patterns=[
-        "test_conv3d_padding_modes",
+        "test_conv3d_padding_reflect",
         "test_convtranspose3d_output_padding",
     ],
 )

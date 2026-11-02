@@ -22,7 +22,7 @@ def _create_webgpu_flow() -> TestFlow:
         ],
         # WebGPU fails to build the graph for replicate padding ("clamp: int
         # dtype unsupported").
-        xfail_patterns=["test_conv3d_padding_modes"],
+        xfail_patterns=["test_conv3d_padding_replicate"],
     )
 
 
