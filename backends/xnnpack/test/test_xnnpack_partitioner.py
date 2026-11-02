@@ -161,3 +161,84 @@ class TestXnnpackPartitioner(unittest.TestCase):
         fwd2_et = executorch_module.run_method("forward_2", example_inputs)
         self.assertTrue(torch.allclose(fwd1_eager, fwd1_et[0], 1e-3))
         self.assertTrue(torch.allclose(fwd2_eager, fwd2_et[0], 1e-3))
+
+    def test_enable_bf16_leaves_ops_xnnpack_cannot_define_in_bf16(self):
+        """
+        XNNPACK refuses these ops on bf16 tensors when the program loads, so even
+        with enable_bf16 their bf16 nodes must run on the portable kernels.
+        """
+
+        class Mean(torch.nn.Module):
+            def forward(self, x):
+                return x.mean((-1, -2), keepdim=True)
+
+        class Softmax(torch.nn.Module):
+            def forward(self, x):
+                return torch.softmax(x, -1)
+
+        modules = {
+            "avg_pool2d": torch.nn.AvgPool2d(2),
+            "batch_norm": torch.nn.BatchNorm2d(4),
+            "max_pool2d": torch.nn.MaxPool2d(2),
+            "mean": Mean(),
+            "softmax": Softmax(),
+            "upsample_bilinear2d": torch.nn.Upsample(scale_factor=2, mode="bilinear"),
+        }
+        x = torch.randn(1, 4, 8, 8, dtype=torch.bfloat16)
+        for name, module in modules.items():
+            with self.subTest(name):
+                module = module.eval().to(torch.bfloat16)
+                program = to_edge_transform_and_lower(
+                    export(module, (x,)),
+                    partitioner=[XnnpackPartitioner(enable_bf16=True)],
+                )
+                self.assertFalse(
+                    any(
+                        "lowered_module" in node.name
+                        for node in program.exported_program().graph.nodes
+                    )
+                )
+                output = _load_for_executorch_from_buffer(
+                    program.to_executorch().buffer
+                ).forward((x,))[0]
+                torch.testing.assert_close(output, module(x))
+
+    def test_enable_bf16_runs_an_attention_block(self):
+        """
+        The linear layers and both batch matrix multiplications of a bf16 attention
+        block run in XNNPACK, and the program loads and matches eager bf16.
+        """
+
+        class Attention(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.q = torch.nn.Linear(16, 16)
+                self.k = torch.nn.Linear(16, 16)
+                self.v = torch.nn.Linear(16, 16)
+                self.o = torch.nn.Linear(16, 16, bias=False)
+
+            def forward(self, x):
+                scores = self.q(x) @ self.k(x).transpose(1, 2) * 0.25
+                return self.o(torch.softmax(scores, dim=-1) @ self.v(x))
+
+        module = Attention().eval().to(torch.bfloat16)
+        x = torch.randn(2, 8, 16, dtype=torch.bfloat16)
+        program = to_edge_transform_and_lower(
+            export(module, (x,)), partitioner=[XnnpackPartitioner(enable_bf16=True)]
+        )
+        left_on_cpu = {
+            node.target.__name__
+            for node in program.exported_program().graph.nodes
+            if node.op == "call_function" and hasattr(node.target, "__name__")
+        }
+        matmuls = {
+            "aten.addmm.default",
+            "aten.bmm.default",
+            "aten.linear.default",
+            "aten.mm.default",
+        }
+        self.assertEqual(left_on_cpu & matmuls, set())
+        output = _load_for_executorch_from_buffer(
+            program.to_executorch().buffer
+        ).forward((x,))[0]
+        torch.testing.assert_close(output, module(x), atol=1e-2, rtol=1e-2)

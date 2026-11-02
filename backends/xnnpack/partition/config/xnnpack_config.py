@@ -45,6 +45,11 @@ class XNNPartitionerConfig(PartitionerConfig):
     types they want to enable
     """
 
+    # XNNPACK defines some ops only for fp32 and fp16 tensors. Their configs set this
+    # to False, so enable_bf16 leaves their bf16 nodes to the portable kernels
+    # instead of handing XNNPACK a node it refuses when the program loads.
+    supports_bf16 = True
+
     def __init__(self, **kwargs):
         super().__init__()
         self.enabled_precision_types = self.supported_precision_types()
@@ -269,7 +274,7 @@ class XNNPartitionerConfig(PartitionerConfig):
             torch.float32,
             torch.float16,
         }
-        if self.enable_bf16:
+        if self.enable_bf16 and self.supports_bf16:
             valid_dtypes.add(torch.bfloat16)
         # Only allow int8 and quant dtypes for quant operations
         if is_quant(node) or is_dequant(node) or is_qparam(node):

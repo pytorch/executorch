@@ -25,6 +25,7 @@ why = WhyNoPartition(logger=logger)
 
 class BatchNormConfig(XNNPartitionerConfig):
     target_name = "_native_batch_norm_legit_no_training.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         if not self.check_common_constraints(node, ep):
