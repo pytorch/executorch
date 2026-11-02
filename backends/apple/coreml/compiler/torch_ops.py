@@ -31,6 +31,7 @@ from coremltools.converters.mil.frontend.torch.torch_op_registry import (
     register_torch_op,
 )
 from coremltools.converters.mil.mil import types
+from coremltools.converters.mil.mil.types.symbolic import is_symbolic
 from executorch.exir.dim_order_utils import get_memory_format
 
 
@@ -169,6 +170,39 @@ def scalar_tensor(context, node):
     if _torch_dtype(node) is None or x.val is None:
         return _ct_ops.scalar_tensor(context, node)
     context.add(mb.const(val=_core_ml_type(node)(x.val), name=node.name))
+
+
+# coremltools writes y[:, i] = v to y[:, i:i + 1] without first wrapping a
+# negative i, so for i = -1 it writes to an empty slice. No upstream issue
+# covers this yet. For example, y[:, torch.tensor([-1])] = v fails to lower
+# with "The update tensor should have shape [3, 0]. Got (3, 1)", and from
+# iOS 18 Core ML skips the write when i is an input. A TorchScript node, which
+# passes its indices as one list, keeps the coremltools converter.
+@register_torch_op(override=True)
+def index_put(context, node):
+    names = node.inputs[1]
+    if not isinstance(names, tuple) or None not in names:
+        return _ct_ops.index_put(context, node)
+    x = context[node.inputs[0]]
+    wrapped = list(names)
+    for dim, name in enumerate(names):
+        if name is None or not types.is_int(context[name].dtype):
+            continue
+        index = context[name]
+        size = x.shape[dim]
+        if is_symbolic(size):
+            size = _utils.pymil_value_at(mb.shape(x=x), dim)
+        index = mb.select(
+            cond=mb.less(x=index, y=0),
+            a=mb.add(x=index, y=size),
+            b=index,
+            name=f"{node.name}_index_{dim}",
+        )
+        context.add(index)
+        wrapped[dim] = index.name
+    node = copy.copy(node)
+    node.inputs = (node.inputs[0], tuple(wrapped), *node.inputs[2:])
+    return _ct_ops.index_put(context, node)
 
 
 def is_fbcode():

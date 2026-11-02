@@ -812,6 +812,83 @@ class TestTorchOps(unittest.TestCase):
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, (x,), rtol=1e-3)
 
+    def test_negative_index_next_to_slice(self):
+        """
+        coremltools writes y[:, i] = v to y[:, i:i + 1] without wrapping a
+        negative i, so for i = -1 the slice is empty: lowering failed for a
+        constant i, and from iOS 18 Core ML skipped the write for an input i.
+        """
+
+        class Write(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("last", torch.tensor([-1]))
+
+            def forward(self, x, v, i, rows, cols):
+                # Two copies, so that a skipped write shows in the output.
+                y = x.clone()
+                y[:, self.last] = v
+                z = x.clone()
+                z[:, i] = v * 2
+                z[rows, cols] = v[0]
+                return y, z
+
+        class Functional(torch.nn.Module):
+            def forward(self, x, v, i):
+                return torch.ops.aten.index_put(x, [None, i], v)
+
+        model = Write()
+        example_inputs = (
+            torch.rand(3, 4),
+            torch.rand(3, 1),
+            torch.tensor([-1]),
+            torch.tensor([0, 1]),
+            torch.tensor([-1, 2]),
+        )
+        program = ct.convert(
+            torch.export.export(model, example_inputs).run_decompositions({}),
+            convert_to="milinternal",
+            minimum_deployment_target=ct.target.iOS16,
+        )
+        # The constant is wrapped while converting, and the write without a
+        # slice is left to coremltools, so only the input next to a slice
+        # needs a select at run time.
+        self.assertEqual(len(program.find_ops(op_type="select")), 1)
+        # TorchScript passes the indices as one list, which keeps the
+        # coremltools converter.
+        ct.convert(
+            torch.jit.trace(Functional(), example_inputs[:3]),
+            inputs=[
+                ct.TensorType(shape=(3, 4)),
+                ct.TensorType(shape=(3, 1)),
+                ct.TensorType(shape=(1,), dtype=types.int32),
+            ],
+            convert_to="milinternal",
+        )
+        width = torch.export.Dim("width", min=2, max=8)
+        for dynamic_shapes in (None, ({1: width}, None, None, None, None)):
+            with self.subTest(dynamic=dynamic_shapes is not None):
+                ep = torch.export.export(
+                    model, example_inputs, dynamic_shapes=dynamic_shapes
+                )
+                delegated_program = executorch.exir.to_edge_transform_and_lower(
+                    ep, partitioner=[self._coreml_partitioner()]
+                )
+                self.assertEqual(
+                    [
+                        node.target.__name__
+                        for node in delegated_program.exported_program().graph.nodes
+                        if node.op == "call_function"
+                    ],
+                    ["executorch_call_delegate", "getitem", "getitem"],
+                )
+                et_program = delegated_program.to_executorch()
+                self._compare_outputs(et_program, model, example_inputs)
+                if dynamic_shapes is not None:
+                    # Another width catches a wrap by the exported width.
+                    wide_inputs = (torch.rand(3, 6), *example_inputs[1:])
+                    self._compare_outputs(et_program, model, wide_inputs)
+
     def test_dequantize_affine_below_ios18_raises_with_hint(self):
         """
         Regression test for https://github.com/pytorch/executorch/issues/13122.
