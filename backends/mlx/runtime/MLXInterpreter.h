@@ -1308,7 +1308,11 @@ inline std::tuple<int, int, int, int> next_contiguous_run(
 // Optimizes into slice_update calls for contiguous runs
 inline void
 exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
-  array& dst = st.tensor_ref(n.dst);
+  // When out == dst, use direct assignment to preserve MLX buffer donation.
+  // Only then is dst written, so a functional update may read a constant.
+  const bool in_place = (n.out.idx == n.dst.idx);
+  const array& dst =
+      in_place ? st.tensor_ref(n.dst) : st.const_tensor_ref(n.dst);
   const array& upd = st.const_tensor_ref(n.update);
   const array& indices = st.const_tensor_ref(n.indices);
   if (indices.ndim() != 1) {
@@ -1321,9 +1325,14 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
 
   // Like ATen, negative indices are rejected rather than wrapped. Export
   // accepts int32 indices too, so they are widened rather than rejected.
-  const array idx_arr = indices.dtype() == ::mlx::core::int32
-      ? astype(indices, ::mlx::core::int64, s)
-      : indices;
+  // Indices computed in the graph can be a strided view, so they are made
+  // contiguous before their data is read.
+  const array idx_arr = contiguous(
+      indices.dtype() == ::mlx::core::int32
+          ? astype(indices, ::mlx::core::int64, s)
+          : indices,
+      false,
+      s);
   eval(idx_arr); // Ensure indices are materialized before accessing data
   if (idx_arr.dtype() != ::mlx::core::int64) {
     throw std::invalid_argument(
@@ -1348,11 +1357,9 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
     idx_vec[i] = static_cast<int>(idx);
   }
 
-  // When out == dst, use direct assignment to preserve MLX buffer donation.
-  // TODO: I'm not sure if this is needed as a special case since the standard
-  // st.set_tensor does a std::move. Keeping for now, but should investigate and
-  // possibly remove in future.
-  const bool in_place = (n.out.idx == n.dst.idx);
+  // TODO: I'm not sure the in-place case is needed as a special case since the
+  // standard st.set_tensor does a std::move. Keeping for now, but should
+  // investigate and possibly remove in future.
 
   if (idx_vec.empty()) {
     if (!in_place) {
@@ -1402,8 +1409,9 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
         : slice(upd, to_shape(upd_vstart), to_shape(upd_vstop), s);
 
     if (in_place) {
-      dst = slice_update(
-          dst, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);
+      array& target = st.tensor_ref(n.dst);
+      target = slice_update(
+          target, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);
     } else {
       result = slice_update(
           result, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);

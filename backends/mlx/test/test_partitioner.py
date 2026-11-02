@@ -480,6 +480,43 @@ class TestMLXPartitionerMixedSupport(unittest.TestCase):
         self.assertLess(err, 1e-4)
 
 
+class TestMLXPartitionerFunctionalIndexCopy(unittest.TestCase):
+    """index_copy that returns a new tensor rather than updating one."""
+
+    class ConstantDestination(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("table", torch.randn(16, 8))
+
+        def forward(self, indices, update):
+            return self.table.index_copy(0, indices, update)
+
+    class StridedIndices(nn.Module):
+        def forward(self, data, indices, update):
+            return data.index_copy(0, indices[::2], update)
+
+    def test_constant_destination(self):
+        # The destination is a constant the delegate must read, not write.
+        counts, delegates, err = _run(
+            self.ConstantDestination().eval(),
+            (torch.tensor([1, 5]), torch.randn(2, 8)),
+        )
+        self.assertEqual(delegates, 1)
+        self.assertEqual(counts.get("IndexCopyNode", 0), 1)
+        self.assertEqual(err, 0)
+
+    def test_strided_indices(self):
+        # Indices sliced in the graph are a strided view the delegate must
+        # read in order.
+        counts, delegates, err = _run(
+            self.StridedIndices().eval(),
+            (torch.randn(16, 8), torch.tensor([1, 4, 9, 7]), torch.randn(2, 8)),
+        )
+        self.assertEqual(delegates, 1)
+        self.assertEqual(counts.get("IndexCopyNode", 0), 1)
+        self.assertEqual(err, 0)
+
+
 class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
     """index_copy_ into a user input lowers functionally and is written back."""
 
