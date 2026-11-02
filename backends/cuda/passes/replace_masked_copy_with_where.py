@@ -77,8 +77,9 @@ class ReplaceMaskedCopyWithWherePass(PassBase):
     """
     Replace ``index_put(out, indices, index(src, indices))`` with
     ``where(mask, src, out)`` when ``indices`` is one boolean mask (after any
-    number of ``None``), ``src`` and ``out`` have the same shape and dtype, and
-    the put does not accumulate.
+    number of ``None``), ``src`` and ``out`` have the same shape and dtype,
+    ``where`` lays out its result like ``out``, and the put does not
+    accumulate.
 
     The two masks may be one node or two equal computations. The ``index`` is
     then removed too if nothing else reads it but the range checks export adds
@@ -131,6 +132,16 @@ class ReplaceMaskedCopyWithWherePass(PassBase):
             return None
         if not all(
             statically_known_true(a == b) for a, b in zip(src_val.shape, out_val.shape)
+        ):
+            return None
+        # index_put keeps out's layout, but where takes its layout from its
+        # inputs, the mask first.
+        condition = mask_val
+        for _ in range(out_val.dim() - indices.index(masks[0]) - mask_val.dim()):
+            condition = condition.unsqueeze(-1)
+        layout = torch.where(condition, src_val, out_val).stride()
+        if not all(
+            statically_known_true(a == b) for a, b in zip(layout, out_val.stride())
         ):
             return None
         return masks[0]

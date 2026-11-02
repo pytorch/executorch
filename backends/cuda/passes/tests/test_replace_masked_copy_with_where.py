@@ -154,6 +154,35 @@ class TestReplaceMaskedCopyWithWherePass(unittest.TestCase):
         ):
             torch.testing.assert_close(got, expected, rtol=0, atol=0)
 
+    def test_different_layouts_are_kept(self):
+        """index_put keeps the destination's layout, but where may take the
+        mask's or the source's, and a later view(-1) then fails."""
+
+        class Source(torch.nn.Module):
+            def forward(self, x, mask):
+                src = x.contiguous(memory_format=torch.channels_last)
+                out = torch.zeros_like(x, memory_format=torch.contiguous_format)
+                out[mask] = src[mask]
+                return out
+
+        class Mask(torch.nn.Module):
+            def forward(self, x, y):
+                mask = y.contiguous(memory_format=torch.channels_last) > 0
+                out = torch.zeros_like(x)
+                out[mask] = x[mask]
+                return out
+
+        x = torch.randn(4, 3, 5, 6)
+        for model, inputs in (
+            (Source(), (x, torch.tensor([True, False, True, True]))),
+            (Mask(), (x, torch.randn(4, 3, 5, 6))),
+        ):
+            program = to_edge(export(model, inputs)).exported_program()
+            ReplaceMaskedCopyWithWherePass()(program.graph_module)
+            targets = _targets(program.graph_module)
+            self.assertIn(exir_ops.edge.aten.index_put.default, targets)
+            self.assertNotIn(exir_ops.edge.aten.where.self, targets)
+
     def test_random_masks_are_kept(self):
         """Two draws of a random mask are different masks."""
 
