@@ -1195,6 +1195,34 @@ class TestPasses(unittest.TestCase):
                     )
                     torch.testing.assert_close(ep.module()(x), model(x))
 
+    def test_remove_redundancy_keeps_a_to_copy_that_changes_the_dtype(self):
+        class Copy(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
+            def forward(self, x):
+                y = x.to(self.dtype, memory_format=torch.contiguous_format)
+                return y + y
+
+        # Without dim order, a layout change is a _to_copy with memory_format,
+        # which QNN drops. A _to_copy that also changes the dtype has to stay.
+        x = torch.randn(2, 4, 8, 8).to(memory_format=torch.channels_last)
+        for dtype, kept in ((torch.float32, False), (torch.float16, True)):
+            with self.subTest(dtype=dtype):
+                config = EdgeCompileConfig(_skip_dim_order=True)
+                ep = to_edge(
+                    torch.export.export(Copy(dtype), (x,), strict=True),
+                    compile_config=config,
+                ).exported_program()
+                RemoveRedundancy(quantization_capture=False)(ep.graph_module)
+                self.assertEqual(
+                    exir_ops.edge.aten._to_copy.default
+                    in [node.target for node in ep.graph.nodes],
+                    kept,
+                )
+                self.assertEqual(ep.module()(x).dtype, dtype)
+
     def test_i64_to_i32_casts_a_top_of_graph_constant_after_placeholders(self):
         # DecomposeRemainder puts the int64 constant 3 at the top of the graph.
         class IntRemainder(torch.nn.Module):
