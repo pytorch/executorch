@@ -934,6 +934,18 @@ class ET_EXPERIMENTAL CudaBackend final
 
     bool run_called = false;
 
+    // AOTI puts the same handle in every slot of an output that it returns
+    // more than once, for example y.detach() returned twice. So only the last
+    // slot that holds a handle deletes it, as PyTorch's AOTI runner does.
+    const auto delete_output = [&](size_t i) noexcept {
+      for (size_t j = i + 1; j < slim_outputs.size(); j++) {
+        if (slim_outputs[j] == slim_outputs[i]) {
+          return;
+        }
+      }
+      delete slim_outputs[i];
+    };
+
     // Scope guard: deletes any non-null slim_outputs on exit. Normal paths
     // null entries as they take ownership, so the guard only fires on
     // early-return error paths. Also cleans up inputs if run() was never
@@ -944,7 +956,7 @@ class ET_EXPERIMENTAL CudaBackend final
       }
       for (size_t i = 0; i < slim_outputs.size(); i++) {
         if (slim_outputs[i]) {
-          delete slim_outputs[i];
+          delete_output(i);
         }
       }
     });
@@ -1136,7 +1148,7 @@ class ET_EXPERIMENTAL CudaBackend final
       if (pre_run_outputs[i] == slim_outputs[i]) {
         // Case (a): AOTI wrote directly into our planned ET buffer. The result
         // is already in place — nothing to copy, just drop the view wrapper.
-        delete slim_outputs[i];
+        delete_output(i);
       } else {
         // Case (b): AOTI returned its own buffer. D2D copy the result into the
         // planned GPU ET buffer, then free AOTI's buffer.
@@ -1145,7 +1157,7 @@ class ET_EXPERIMENTAL CudaBackend final
                 slim_outputs[i], et_output, cuda_stream),
             "Failed to D2D copy GPU output %zu into ETensor",
             i);
-        delete slim_outputs[i];
+        delete_output(i);
       }
       slim_outputs[i] = nullptr;
     }

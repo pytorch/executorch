@@ -562,6 +562,99 @@ class TestCudaExport(unittest.TestCase):
             "SDPA kernel export with triton_kernel_mode=OFF failed",
         )
 
+    def test_missing_scatter_kernel_fails_at_export(self):
+        """Inductor leaves int64 scatter_add to an ATen kernel the CUDA shim lacks."""
+
+        class Int64ScatterAdd(torch.nn.Module):
+            def forward(self, counts: torch.Tensor, idx: torch.Tensor):
+                return counts.scatter_add(0, idx, torch.ones_like(idx))
+
+        inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
+        with self.assertRaises(RuntimeError) as context:
+            self._export_to_cuda_with_lower(Int64ScatterAdd(), inputs)
+        self.assertIn("aoti_torch_cuda_scatter_reduce_two_out", str(context.exception))
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_mask_index_and_index_put(self):
+        """A mask index makes the result size depend on the data, and Inductor
+        has no atomic add for int64, so these run in the index shims."""
+        from executorch.runtime import Runtime
+
+        class MaskIndex(torch.nn.Module):
+            def forward(self, x, mask, column, idx, counts):
+                out = x.clone()
+                out[mask] = x[mask] * 2
+                # The mask and column index dims 0 and 2, which are not adjacent.
+                picked = x[mask, :, column].sum(0)
+                # A transposed input gives a result that is not row-major.
+                rows = x.transpose(1, 2)[mask] * 3
+                ones = torch.ones_like(idx)
+                counts = counts.index_put((idx,), ones, accumulate=True)
+                return out, picked, rows, counts
+
+        model = MaskIndex()
+        x = torch.randn(4, 5, 6)
+        column = torch.tensor([2])
+        idx = torch.tensor([0, 3, 3, 1, 3])
+        # Nonzero counts check that repeated writes add to the old values.
+        counts = torch.arange(8) * 5
+        masks = (
+            torch.tensor([True, False, True, True]),
+            torch.zeros(4, dtype=torch.bool),
+            torch.ones(4, dtype=torch.bool),
+        )
+        edge = self._export_to_cuda_with_lower(
+            model, (x, masks[0], column, idx, counts)
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            method = Runtime.get().load_program(path).load_method("forward")
+            for mask in masks:
+                inputs = (x, mask, column, idx, counts)
+                outputs = method.execute(list(inputs))
+                for output, expected in zip(outputs, model(*inputs), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected)
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_same_tensor_returned_twice(self):
+        """AOTI gives two outputs one handle when they are the same tensor. With
+        CUDA graphs on, three calls run eagerly, the fourth captures a graph and
+        the fifth replays it."""
+        from executorch.runtime import Runtime
+
+        class Twice(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+                y = x * 2
+                return y.detach(), x + 1, y.detach()
+
+        model = Twice()
+        edge = self._export_to_cuda_with_lower(model, (torch.randn(4, 8),))
+        runtime = Runtime.get()
+        option = "enable_cuda_graph_for_method"
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            runtime.backend_registry.set_option("CudaBackend", {option: "forward"})
+            try:
+                method = runtime.load_program(path).load_method("forward")
+            finally:
+                # The option is process wide.
+                runtime.backend_registry.set_option("CudaBackend", {option: ""})
+            for _ in range(5):
+                x = torch.randn(4, 8)
+                outputs = method.execute([x])
+                for output, expected in zip(outputs, model(x), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected)
+
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """
         Verify that, for a CUDA-delegated graph, every memory-planned tensor's
