@@ -54,6 +54,17 @@ class Maximum(torch.nn.Module):
         ),
     }
 
+    test_parameters_mixed = {
+        "int32_float32": lambda: (
+            torch.tensor([1, 2, 3], dtype=torch.int32),
+            torch.tensor([1.5, 1.5, 3.5]),
+        ),
+        "float32_int32": lambda: (
+            torch.tensor([1.5, 1.5, 3.5]),
+            torch.tensor([1, 2, 3], dtype=torch.int32),
+        ),
+    }
+
     def __init__(self):
         super().__init__()
 
@@ -65,7 +76,8 @@ class Maximum(torch.nn.Module):
     "test_data",
     Maximum.test_parameters
     | Maximum.test_parameters_fp16
-    | Maximum.test_parameters_bf16,
+    | Maximum.test_parameters_bf16
+    | Maximum.test_parameters_mixed,
 )
 def test_maximum_tosa_FP(test_data: Tuple):
     TosaPipelineFP[test_t](

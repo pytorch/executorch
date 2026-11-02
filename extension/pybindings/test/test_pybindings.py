@@ -398,6 +398,25 @@ print("all calls finished")
         with self.assertRaisesRegex(ValueError, "dtype Long.*expects Float"):
             executorch_module(np.ones((2, 2), dtype=int))
 
+    def test_refused_input_errors_say_why(self):
+        exported_program, inputs = create_program(ModuleAddScalar())
+        executorch_module = self.load_fn(exported_program.buffer)
+        with self.assertRaises(RuntimeError) as error:
+            executorch_module.forward([None, inputs[1]])
+        self.assertIn("type Tensor but was None", str(error.exception))
+        # Only the reason is reported, not lines about other inputs.
+        self.assertNotIn("is not Tensor", str(error.exception))
+
+        # The portable runtime logs a static shape mismatch over two lines.
+        if self.kernel_mode == "portable":
+            exported_program, inputs = create_program(ModuleAdd())
+            with self.assertRaisesRegex(
+                RuntimeError, r"received \(3, 2\)\.; Error resizing tensor at input 0"
+            ):
+                self.load_fn(exported_program.buffer).forward(
+                    [torch.ones(3, 2), inputs[1]]
+                )
+
     def test_numpy_float_scalar_input(self):
         exported_program, inputs = create_program(ModuleAddScalar())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -1253,7 +1272,7 @@ print("CUDA DLPack roundtrip preserved device storage")
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
 
-        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=float32, is_memory_planned=True, nbytes=16, device=cpu)"
         float_dtype = 6
         self.assertEqual(
             str(meta),
@@ -1271,6 +1290,9 @@ print("CUDA DLPack roundtrip preserved device storage")
         del meta
         self.assertEqual([t.sizes() for t in input_tensors], [(2, 2), (2, 2)])
         self.assertEqual([t.dtype() for t in input_tensors], [float_dtype, float_dtype])
+        self.assertEqual(
+            [t.dtype_name() for t in input_tensors], ["float32", "float32"]
+        )
         self.assertEqual([t.is_memory_planned() for t in input_tensors], [True, True])
         self.assertEqual([t.nbytes() for t in input_tensors], [16, 16])
         self.assertEqual(str(input_tensors), f"[{tensor_info}, {tensor_info}]")
@@ -1883,7 +1905,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(meta.num_outputs(), 1)
         self.assertEqual(meta.num_attributes(), 1)
 
-        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=float32, is_memory_planned=True, nbytes=16, device=cpu)"
 
         float_dtype = 6
         self.assertEqual(
@@ -1935,7 +1957,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
 
-        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=float32, is_memory_planned=True, nbytes=16, device=cpu)"
         float_dtype = 6
         self.assertEqual(
             str(meta),
@@ -2463,6 +2485,35 @@ print("ran after its program was dropped")
             executorch_module.plan_execute("forward")
         output = executorch_module.forward([values, torch.tensor([3])])
         torch.testing.assert_close(torch.as_tensor(np.asarray(output[0])), values[3:4])
+
+    def test_planned_inputs_are_installed_again_at_each_run(self):
+        class Accumulate(torch.nn.Module):
+            def forward(self, x, state):
+                state.add_(x)
+                return state * 1
+
+        x = torch.arange(4, dtype=torch.float32) + 1
+        state = torch.zeros(4)
+        # Each run writes the planned copy of state, so the next run has to
+        # install the caller's tensor again.
+        program = to_edge(export(Accumulate(), (x, state), strict=True)).to_executorch()
+
+        method = self.load_prog_fn(program.buffer).load_method("forward")
+        method.set_inputs([x, state])
+        for _ in range(2):
+            method.execute()
+            torch.testing.assert_close(method.get_outputs()[0], x)
+
+        module = self.load_fn(program.buffer)
+        torch.testing.assert_close(module.forward([x, state])[0], x)
+        torch.testing.assert_close(module.forward([x])[0], x)
+
+        # The inputs are read again, so a change to their storage is refused.
+        state.resize_(64, 64)
+        with self.assertRaisesRegex(ValueError, "storage changed"):
+            method.execute()
+        with self.assertRaisesRegex(ValueError, "storage changed"):
+            module.forward([x])
 
     def test_module_keeps_a_temporary_program_buffer_alive(self):
         exported_program, inputs = create_program(ModuleAdd())

@@ -27,13 +27,17 @@ void test_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // args[7]  = dilation_h  (int)
   // args[8]  = dilation_w  (int)
   // args[9]  = impl_selector (string)
-  // args[10] = output [N, C_out, H_out, W_out]
+  // args[10] = groups (int)
+  // args[11] = clamp_out (bool)
+  // args[12] = out_min (float)
+  // args[13] = out_max (float)
+  // args[14] = output [N, C_out, H_out, W_out]
   //
   // impl_selector grammar:
   //   ""             -> aten.convolution.default (heuristic-routed:
   //                     should_use_conv2d_im2col() picks direct vs im2col)
-  //   "direct"       -> conv2d_direct_impl: forces the direct sliding-window
-  //                     path, bypassing the routing heuristic
+  //   "direct"       -> production direct picker, bypassing im2col routing
+  //   "direct_masked" -> force bounds checking instead of zero-border sampling
   //   "im2col"       -> et_vk.conv2d_gemm.default, auto im2col storage
   //   "im2col_buffer"-> im2col/GEMM, force buffer im2col intermediate
   //   "im2col_tex2d" -> im2col/GEMM, force texture2d im2col intermediate
@@ -48,7 +52,16 @@ void test_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const int64_t dilation_h = graph.extract_scalar<int64_t>(args.at(7));
   const int64_t dilation_w = graph.extract_scalar<int64_t>(args.at(8));
   const std::string impl_selector = graph.extract_string(args.at(9));
-  const ValueRef out = args.at(10);
+  const ValueRef groups = args.at(10);
+  const bool clamp_out = graph.extract_scalar<bool>(args.at(11));
+  const float out_min = graph.extract_scalar<float>(args.at(12));
+  const float out_max = graph.extract_scalar<float>(args.at(13));
+  const ValueRef out = args.at(14);
+  if (impl_selector.find("im2col") == 0) {
+    VK_CHECK_COND(
+        graph.get_int(groups) == 1,
+        "im2col test selectors require groups == 1");
+  }
 
   ValueRef stride =
       graph.add_scalar_list<int64_t>(std::vector<int64_t>{stride_h, stride_w});
@@ -80,9 +93,9 @@ void test_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         padding,
         dilation,
         out,
-        /*clamp_out=*/false,
-        /*out_min_val=*/0.0f,
-        /*out_max_val=*/0.0f,
+        clamp_out,
+        out_min,
+        out_max,
         im2col_storage_override);
     return;
   }
@@ -90,13 +103,8 @@ void test_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef transposed = graph.add_scalar<bool>(false);
   ValueRef output_padding =
       graph.add_scalar_list<int64_t>(std::vector<int64_t>{0, 0});
-  ValueRef groups = graph.add_scalar<int64_t>(1);
 
-  // The "direct" selector must reach the exact direct sliding-window dispatch
-  // the heuristic would otherwise pick. The registered op can only route via
-  // the heuristic, so call conv2d_direct_impl directly to bypass it (mirroring
-  // how the forced-storage variants call conv2d_gemm_impl).
-  if (impl_selector == "direct") {
+  if (impl_selector == "direct" || impl_selector == "direct_masked") {
     conv2d_direct_impl(
         graph,
         input,
@@ -109,28 +117,47 @@ void test_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         output_padding,
         groups,
         out,
-        /*clamp_out=*/false,
-        /*out_min_val=*/0.0f,
-        /*out_max_val=*/0.0f);
+        clamp_out,
+        out_min,
+        out_max,
+        /*force_masked=*/impl_selector == "direct_masked");
     return;
   }
 
-  const std::string target_op = (impl_selector == "im2col")
-      ? "et_vk.conv2d_gemm.default"
-      : "aten.convolution.default";
+  if (impl_selector == "im2col") {
+    conv2d_gemm_impl(
+        graph,
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        out,
+        clamp_out,
+        out_min,
+        out_max);
+    return;
+  }
+  const std::string target_op =
+      clamp_out ? "et_vk.conv_with_clamp.default" : "aten.convolution.default";
 
-  VK_GET_OP_FN(target_op.c_str())
-  (graph,
-   {input,
-    weight,
-    bias,
-    stride,
-    padding,
-    dilation,
-    transposed,
-    output_padding,
-    groups,
-    out});
+  std::vector<ValueRef> op_args = {
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      transposed,
+      output_padding,
+      groups};
+  if (clamp_out) {
+    op_args.push_back(args.at(12));
+    op_args.push_back(args.at(13));
+  }
+  op_args.push_back(out);
+  VK_GET_OP_FN(target_op.c_str())(graph, op_args);
 }
 
 REGISTER_OPERATORS {

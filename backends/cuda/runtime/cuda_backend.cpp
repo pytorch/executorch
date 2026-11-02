@@ -1053,6 +1053,38 @@ class ET_EXPERIMENTAL CudaBackend final
           "cudaStreamEndCapture failed: %s",
           cudaGetErrorString(gerr));
 
+      // Warmup checks this too, but the capture step's inputs can differ.
+      // The outputs belong to the captured graph, so leave them to it.
+      for (size_t i = 0; i < n_outputs; i++) {
+        if (pre_run_outputs[i] != slim_outputs[i] &&
+            !output_is_raw_copyable(
+                slim_outputs[i], &(args[i + n_inputs]->toTensor()))) {
+          std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
+          ET_LOG(
+              Error,
+              "CUDA graph: output %zu of '%s' is not laid out like its "
+              "ETensor; this call fails and later calls run without a graph",
+              i,
+              handle->method_name.c_str());
+          return Error::NotSupported;
+        }
+        // Replay copies raw bytes and never resizes, so the ETensor takes the
+        // captured shape here and keeps it for every replay.
+        const Error resize_err =
+            executorch::ET_RUNTIME_NAMESPACE::resize_tensor(
+                args[i + n_inputs]->toTensor(), slim_outputs[i]->sizes());
+        if (resize_err != Error::Ok) {
+          std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
+          ET_LOG(
+              Error,
+              "CUDA graph: cannot resize output %zu of '%s' to its captured "
+              "shape; this call fails and later calls run without a graph",
+              i,
+              handle->method_name.c_str());
+          return resize_err;
+        }
+      }
+
       gerr = cudaGraphInstantiate(
           &handle->cuda_graph_state.graph_exec,
           handle->cuda_graph_state.graph,
@@ -1140,6 +1172,17 @@ class ET_EXPERIMENTAL CudaBackend final
       } else {
         // Case (b): AOTI returned its own buffer. D2D copy the result into the
         // planned GPU ET buffer, then free AOTI's buffer.
+        //
+        // A graph replay could not land this output, so run the method eagerly.
+        if (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
+            !output_is_raw_copyable(slim_outputs[i], et_output)) {
+          handle->cuda_graph_state.phase = CudaGraphPhase::Disabled;
+          ET_LOG(
+              Info,
+              "CUDA graph: disabled for '%s', output %zu is not laid out like its ETensor",
+              handle->method_name.c_str(),
+              i);
+        }
         ET_CHECK_OK_OR_RETURN_ERROR(
             copy_slimtensor_to_device_etensor_async(
                 slim_outputs[i], et_output, cuda_stream),

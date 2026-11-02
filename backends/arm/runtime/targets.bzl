@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
@@ -10,6 +15,11 @@ def _persistent_region_flags():
         "DEFAULT": [],
         "fbsource//xplat/executorch/tools/buck/constraints:ethosu-persistent-region-enabled": ["-DETHOSU_PERSISTENT_REGION"],
     })
+
+def _vgf_zero_copy_flags():
+    if native.read_config("executorch", "vgf_zero_copy_io", "false") == "true":
+        return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=1"]
+    return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=0"]
 
 def define_common_targets():
     runtime.cxx_library(
@@ -49,6 +59,23 @@ def define_common_targets():
             "fbsource//third-party/ethos-u-core-driver:core_driver_headers_only",
         ],
     )
+    runtime.cxx_test(
+        name = "ethosu_planned_scratch_test",
+        srcs = [
+            "EthosUBackend.cpp",
+            "EthosUBackend_IoMemcpy.cpp",
+            "tests/ethos-u/test_ethosu_planned_scratch.cpp",
+        ],
+        headers = ["EthosUBackend_Internal.h"],
+        compiler_flags = ["-Wno-global-constructors"],
+        preprocessor_flags = _persistent_region_flags(),
+        deps = [
+            ":vela_bin_stream",
+            "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
     runtime.cxx_library(
         name = "vgf_backend",
         srcs = [
@@ -65,6 +92,7 @@ def define_common_targets():
         ],
         exported_headers = [
             "VGFExecutionStats.h",
+            "VGFMutableAlias.h",
             "VGFNeuralStatistics.h",
             "VGFSetup.h",
             "VGFShapeUtils.h",
@@ -83,6 +111,7 @@ def define_common_targets():
             "-DUSE_VULKAN_WRAPPER",
             "-DUSE_VULKAN_VOLK",
         ],
+        preprocessor_flags = _vgf_zero_copy_flags(),
         visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/backend:interface",

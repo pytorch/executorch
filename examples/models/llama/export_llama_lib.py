@@ -124,6 +124,8 @@ EXECUTORCH_DEFINED_MODELS = [
     "lfm2_5_1_2b",  # hybrid
     "spark_x2_5_1_7b",  # hybrid
     "spark_x2_5_4b",  # hybrid
+    "spark_x2_6_1_7b",  # hybrid
+    "spark_x2_6_4b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
@@ -146,6 +148,8 @@ HUGGING_FACE_REPO_IDS = {
     "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
     "spark_x2_5_1_7b": "XHToken/Spark-X2.5-1.7B",
     "spark_x2_5_4b": "XHToken/Spark-X2.5-4B",
+    "spark_x2_6_1_7b": "XHToken/Spark-X2.6-1.7B",
+    "spark_x2_6_4b": "XHToken/Spark-X2.6-4B",
 }
 
 
@@ -739,7 +743,7 @@ def export_llama(  # noqa: C901
             from executorch.examples.models.smollm2 import convert_weights
         elif model_name.startswith("lfm2"):
             from executorch.examples.models.lfm2 import convert_weights
-        elif model_name.startswith("spark_x2_5"):
+        elif model_name.startswith("spark_x2_"):
             from executorch.examples.models.spark_x2_5 import convert_weights
         else:
             raise ValueError(

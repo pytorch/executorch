@@ -59,6 +59,31 @@ TEST_F(HiFiDivTest, DISABLED_Int32FloorDivideTest) {
   EXPECT_TENSOR_EQ(out, tf.full(sizes, kExpectedResult));
 }
 
+TEST_F(HiFiDivTest, FloatNoRoundingModeIsTrueDivision) {
+  TensorFactory<ScalarType::Float> tf;
+  const std::vector<int> sizes{2, 2};
+  Tensor out = tf.zeros(sizes);
+  const Tensor numerator = tf.make(sizes, {7.0, -7.0, 1.0, -1.0});
+  const Tensor denominator = tf.make(sizes, {2.0, 2.0, 4.0, 4.0});
+
+  div_out_mode(numerator, denominator, std::nullopt, out);
+
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, {3.5, -3.5, 0.25, -0.25}));
+}
+
+TEST_F(HiFiDivTest, Int32NoRoundingModeIsTrueDivisionToFloat) {
+  TensorFactory<ScalarType::Int> tf_int;
+  TensorFactory<ScalarType::Float> tf_float;
+  const std::vector<int> sizes{2, 2};
+  Tensor out = tf_float.zeros(sizes);
+  const Tensor numerator = tf_int.make(sizes, {7, -7, 1, -1});
+  const Tensor denominator = tf_int.make(sizes, {2, 2, 4, 4});
+
+  div_out_mode(numerator, denominator, std::nullopt, out);
+
+  EXPECT_TENSOR_EQ(out, tf_float.make(sizes, {3.5, -3.5, 0.25, -0.25}));
+}
+
 } // namespace
 } // namespace native
 } // namespace HiFi

@@ -618,7 +618,9 @@ if [ "$DEVICE" = "cuda" ] && [ "$MODEL_NAME" = "muse_glimmer" ] && [ "$MODE" = "
     --mode requests --requests 5 --prompt_tokens 600 --max_new_tokens 64 --stagger_ms 200
 
   pip install -r examples/llm_server/python/requirements.txt
-  python -c "from huggingface_hub import hf_hub_download; [hf_hub_download('${HF_MODEL}', f, local_dir='${MODEL_DIR}') for f in ('tokenizer_config.json', 'chat_template.jinja')]"
+  for f in tokenizer_config.json chat_template.jinja; do
+    curl -fL --retry 3 --retry-all-errors "$TOKENIZER_URL/$f" -o "$MODEL_DIR/$f"
+  done
   PORT=$(python - <<'PY'
 import socket
 
