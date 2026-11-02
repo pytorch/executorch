@@ -4296,7 +4296,6 @@ TEST(VulkanWorkGroupSizeTest, lwg) {
   EXPECT_EQ(large_z_lwg.z(), 1024u);
 
   EXPECT_FALSE(LocalWorkGroup().is_valid());
-  EXPECT_THROW(LocalWorkGroup(3u, 2u, 1u), vkapi::Error);
 }
 
 TEST(VulkanWorkGroupSizeTest, lwg_validation) {

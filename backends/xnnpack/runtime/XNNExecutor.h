@@ -146,6 +146,7 @@ class XNNExecutor {
       executorch::runtime::Span<executorch::runtime::EValue*> args) const;
 
   friend class XNNCompiler;
+  friend class XNNPackedLhsTest;
 };
 
 } // namespace delegate

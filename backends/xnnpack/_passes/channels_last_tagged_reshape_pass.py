@@ -61,6 +61,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
     memory_sensitive_ops_nhwc = {
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
+        exir_ops.edge.aten.upsample_nearest2d.vec,
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.max_pool2d.default,
         exir_ops.edge.aten.amax.default,

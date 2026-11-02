@@ -13,6 +13,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   set(EXECUTORCH_ROOT "${executorch_native_PREFIX}/include/executorch")
   add_subdirectory(../runner_utils runner_utils)
   set(_native_vision_runtime executorch_native::runtime)
+  set(_native_vision_vulkan_engine executorch_native::runtime)
+  set(EXECUTORCH_BUILD_NATIVE_VULKAN ON)
 
   if(NOT TARGET gflags AND NOT TARGET gflags::gflags)
     find_package(gflags REQUIRED)
@@ -23,19 +25,50 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(_native_runner_gflags gflags)
   endif()
 else()
-  set(_native_vision_runtime native_engine native_package native_runtime
-                             native_vulkan_engine
+  set(_native_vision_runtime native_engine)
+  set(_native_vision_vulkan_engine native_vulkan_engine)
+endif()
+
+add_library(native_classification_runner STATIC ClassificationRunner.cpp)
+target_link_libraries(
+  native_classification_runner
+  PUBLIC ${_native_vision_runtime}
+  PRIVATE ${_native_runner_gflags} native_runner_utils
+)
+target_compile_options(
+  native_classification_runner
+  PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+          $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+)
+
+function(add_native_classification_runner target source engine)
+  add_executable(${target} ${source})
+  target_link_libraries(
+    ${target} PRIVATE native_classification_runner ${_native_runner_gflags}
+                      ${engine}
+  )
+  target_compile_options(
+    ${target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+                      $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  )
+  install(TARGETS ${target} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endfunction()
+
+if(EXECUTORCH_BUILD_NATIVE_VULKAN)
+  add_native_classification_runner(
+    run_classification run_classification.cpp ${_native_vision_vulkan_engine}
   )
 endif()
 
-add_executable(run_classification run_classification.cpp)
-target_link_libraries(
-  run_classification PRIVATE ${_native_runner_gflags} native_runner_utils
-                             ${_native_vision_runtime}
-)
-target_compile_options(
-  run_classification PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
-                             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
-)
+if(EXECUTORCH_BUILD_NATIVE_CPU)
+  add_native_classification_runner(
+    run_classification_cpu run_classification_cpu.cpp native_cpu_engine
+  )
+endif()
 
-install(TARGETS run_classification RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(EXECUTORCH_BUILD_NATIVE_GGML)
+  add_native_classification_runner(
+    run_classification_ggml_cpu run_classification_ggml_cpu.cpp
+    native_ggml_engine
+  )
+endif()

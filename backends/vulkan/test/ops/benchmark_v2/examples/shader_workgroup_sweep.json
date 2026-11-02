@@ -1,0 +1,33 @@
+{
+  "name": "buffer copy shader and workgroup sweep",
+  "shader_sweep": ["buffer_to_buffer_float", "buffer_to_buffer_int32"],
+  "gwg_size": "default_pick_gwg",
+  "lwg_size_sweep": {"x": [32, 128, 32]},
+  "target_ms": 10,
+  "benchmark_runs": 5,
+  "show_memory_throughput": true,
+  "show_compute_throughput": false,
+  "max_dispatches": 512,
+  "reference": "copy",
+  "bindings": [
+    {
+      "buffer": {
+        "name": "output",
+        "sizes": [65536],
+        "dtype": "float32",
+        "access": "write",
+        "data": {"fill": 0}
+      }
+    },
+    {
+      "buffer": {
+        "name": "input",
+        "sizes": [65536],
+        "dtype": "float32",
+        "data": {"rand_uniform_float": [-1, 1]}
+      }
+    },
+    {"meta_ubo": "output", "field": "numel"}
+  ],
+  "outputs": ["output"]
+}
