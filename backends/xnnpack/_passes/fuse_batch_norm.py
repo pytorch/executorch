@@ -102,6 +102,12 @@ class FuseBatchNormPass(XNNPACKPass):
 
         is_conv = input_node.target == exir_ops.edge.aten.convolution.default
 
+        # Fusing changes what the input node computes, so nothing else may use it.
+        if len(input_node.users) != 1:
+            if why:
+                why(bn, "Batch norm must be the only user of the input node.")
+            return False
+
         # All users of the batch_norm node must be getitem ops.
         # batch_norm returns a 3-element tuple.
         # Each user must only access the first element of the tuple.

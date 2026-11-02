@@ -35,6 +35,13 @@ class ConfigPrecisionType(Enum):
     DYNAMIC_QUANT = 3
 
 
+def _input_and_output_values(node: torch.fx.Node) -> List[object]:
+    values = [arg.meta.get("val") for arg in node.all_input_nodes]
+    node_val = node.meta.get("val")
+    values.extend(node_val if isinstance(node_val, (list, tuple)) else [node_val])
+    return values
+
+
 class XNNPartitionerConfig(PartitionerConfig):
     """
     Base partitioner config for XNNPACK Partitioner Configs. Base wrapper class
@@ -45,9 +52,9 @@ class XNNPartitionerConfig(PartitionerConfig):
     types they want to enable
     """
 
-    # XNNPACK defines some ops only for fp32 and fp16 tensors. Their configs set this
-    # to False, so enable_bf16 leaves their bf16 nodes to the portable kernels
-    # instead of handing XNNPACK a node it refuses when the program loads.
+    # At the pinned XNNPACK commit, some ops are defined only for fp32 and fp16
+    # tensors. Their configs set this to False, so their bf16 nodes stay on the
+    # portable kernels instead of failing when the program loads.
     supports_bf16 = True
 
     def __init__(self, **kwargs):
@@ -173,6 +180,13 @@ class XNNPartitionerConfig(PartitionerConfig):
             why(node, reason="not enabled precision types")
             return False
 
+        if not self.supports_bf16 and any(
+            isinstance(val, torch.Tensor) and val.dtype == torch.bfloat16
+            for val in _input_and_output_values(node)
+        ):
+            why(node, reason="XNNPACK does not support bf16 for this op")
+            return False
+
         has_valid_dtypes = self._check_node_has_valid_dtype(node)
         if not has_valid_dtypes:
             why(node, reason="invalid dtype")
@@ -181,10 +195,7 @@ class XNNPartitionerConfig(PartitionerConfig):
         return self._check_tensor_ranks(node)
 
     def _check_tensor_ranks(self, node: torch.fx.Node) -> bool:
-        vals = [arg.meta.get("val") for arg in node.all_input_nodes]
-        node_val = node.meta.get("val")
-        vals.extend(node_val if isinstance(node_val, (list, tuple)) else [node_val])
-        for val in vals:
+        for val in _input_and_output_values(node):
             if isinstance(val, torch.Tensor) and val.dim() > XNN_MAX_TENSOR_DIMS:
                 why(
                     node,
@@ -274,7 +285,7 @@ class XNNPartitionerConfig(PartitionerConfig):
             torch.float32,
             torch.float16,
         }
-        if self.enable_bf16 and self.supports_bf16:
+        if self.enable_bf16:
             valid_dtypes.add(torch.bfloat16)
         # Only allow int8 and quant dtypes for quant operations
         if is_quant(node) or is_dequant(node) or is_qparam(node):

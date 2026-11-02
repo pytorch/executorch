@@ -870,13 +870,13 @@ output. Does nothing when the op wrote the output itself.
 Error convertBf16MatMulResult(
     xnn_subgraph_t subgraph_ptr,
     uint32_t result_id,
-    uint32_t output_id,
+    uint32_t remapped_output_id,
     const NodePtr node) noexcept {
-  if (result_id == output_id) {
+  if (result_id == remapped_output_id) {
     return Error::Ok;
   }
-  xnn_status status =
-      xnn_define_convert(subgraph_ptr, result_id, output_id, /*flags=*/0);
+  xnn_status status = xnn_define_convert(
+      subgraph_ptr, result_id, remapped_output_id, /*flags=*/0);
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
       Internal,
