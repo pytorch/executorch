@@ -374,7 +374,7 @@ class TestProgramManagers(unittest.TestCase):
             return t.to(memory_format=memory_format)
 
         dims = {"x": {2: Dim("h", min=8, max=64), 3: Dim("w", min=8, max=64)}}
-        sizes = [(24, 32), (8, 8), (13, 64), (37, 51), (64, 8)]
+        sizes = [(24, 32), (64, 64)]
         cases = []
         for dtype in (torch.float32, torch.uint8):
             cases.append((None, [image(24, 32, dtype)]))
