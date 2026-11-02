@@ -145,9 +145,7 @@ class RecordTest(unittest.TestCase):
             for call, x in zip(
                 sets["golden"].samples[0].calls, case.inputs, strict=True
             ):
-                torch.testing.assert_close(
-                    call.outputs[0], model(*x), rtol=0, atol=0
-                )
+                torch.testing.assert_close(call.outputs[0], model(*x), rtol=0, atol=0)
 
     def test_record_keeps_integer_outputs_precise(self) -> None:
         class Argmax(torch.nn.Module):
