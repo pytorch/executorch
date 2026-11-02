@@ -229,6 +229,9 @@ inline void vec_quantized_matmul_transb_int8(
     int64_t p,
     int64_t g) {
   using ACC = internal::acc_t<T>;
+  // Products use the input's accumulator type, so a Double output does not
+  // change the products of a Float input.
+  using PRODUCT = internal::acc_t<U>;
   int64_t n_over_g = (n + g - 1) / g;
 
   for (const auto i : c10::irange(m)) {
@@ -238,8 +241,8 @@ inline void vec_quantized_matmul_transb_int8(
         ACC psum = 0;
         // the last group may have fewer than g elements
         for (const auto k2 : c10::irange(k, bounds_min(k + g, n))) {
-          psum +=
-              static_cast<ACC>(x[i * n + k2]) * static_cast<ACC>(y[j * n + k2]);
+          psum += static_cast<PRODUCT>(x[i * n + k2]) *
+              static_cast<PRODUCT>(y[j * n + k2]);
         }
         sum += psum * static_cast<ACC>(s[j * n_over_g + k / g]);
       }

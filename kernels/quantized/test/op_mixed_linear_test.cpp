@@ -103,6 +103,25 @@ TEST_F(OpQuantizedMixedDtypeLinearTest, HalfComputesInFloat) {
   EXPECT_TENSOR_CLOSE(small_out, tf.full({1, 1}, 762));
 }
 
+TEST_F(OpQuantizedMixedDtypeLinearTest, FloatInputDoubleOutput) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Char> tf_char;
+  TensorFactory<ScalarType::Double> tf_double;
+  KernelRuntimeContext ctx{};
+
+  // (1 + 2^-23) * 127 rounds to 127 + 2^-16 in float, but not in double.
+  Tensor out = tf_double.zeros({1, 1});
+  quantized_mixed_linear_out(
+      ctx,
+      tf.full({1, 1}, 1.0f + 0x1p-23f),
+      tf_char.full({1, 1}, 127),
+      tf.ones({1}),
+      {},
+      {},
+      out);
+  EXPECT_TENSOR_EQ(out, tf_double.full({1, 1}, 127.0 + 0x1p-16));
+}
+
 TEST_F(OpQuantizedMixedDtypeLinearTest, FloatInputHalfOutput) {
   test_dtype<ScalarType::Float, ScalarType::Half>();
 }
