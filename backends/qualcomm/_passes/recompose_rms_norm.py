@@ -227,6 +227,10 @@ class RecomposeRmsNorm(ExportPass):
         )
 
     def _is_last_dim_reduction(self, mean, input_node):
+        input_val = input_node.meta.get("val")
+        if input_val is None or input_val.dim() == 0:
+            return False
+
         dim = mean.args[1] if len(mean.args) > 1 else mean.kwargs.get("dim")
         keepdim = (
             mean.args[2] if len(mean.args) > 2 else mean.kwargs.get("keepdim", False)
@@ -241,8 +245,7 @@ class RecomposeRmsNorm(ExportPass):
             return False
         if dims[0] == -1:
             return True
-        input_val = input_node.meta.get("val")
-        return input_val is not None and dims[0] == input_val.dim() - 1
+        return dims[0] == input_val.dim() - 1
 
     def _validate_rms_norm(self, pattern):
         last_mul, _, outer_mul, inverse_sqrt, add, mean, square = pattern

@@ -35,6 +35,11 @@ typedef struct {
   size_t size;
 } ov_available_devices_t;
 
+typedef struct {
+  const char* buildNumber;
+  const char* description;
+} ov_version_t;
+
 // Intentionally partial — only OV_STATUS_OK is needed for success checks.
 // The full enum is defined in openvino/c/ov_common.h.
 typedef enum {
@@ -64,6 +69,8 @@ typedef enum {
 } ov_element_type_e;
 
 // Function pointer types for each OpenVINO C API function we use.
+using ov_get_openvino_version_fn = ov_status_e (*)(ov_version_t*);
+using ov_version_free_fn = void (*)(ov_version_t*);
 using ov_core_create_fn = ov_status_e (*)(ov_core_t**);
 using ov_core_free_fn = void (*)(ov_core_t*);
 using ov_core_get_available_devices_fn =
@@ -102,6 +109,8 @@ struct DlCloser {
 using DlHandle = std::unique_ptr<void, DlCloser>;
 
 struct OpenvinoFunctions {
+  ov_get_openvino_version_fn get_openvino_version = nullptr;
+  ov_version_free_fn version_free = nullptr;
   ov_core_create_fn core_create = nullptr;
   ov_core_free_fn core_free = nullptr;
   ov_core_get_available_devices_fn core_get_available_devices = nullptr;

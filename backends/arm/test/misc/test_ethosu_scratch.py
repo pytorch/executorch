@@ -51,7 +51,8 @@ def compile_scratch(tmp_path):
                 return_value=PreprocessResult(processed_bytes=b"tosa"),
             ),
         ):
-            return EthosUBackend.preprocess(None, compile_spec._to_list())
+            edge_program = torch.export.export(torch.nn.ReLU(), (torch.ones(1),))
+            return EthosUBackend.preprocess(edge_program, compile_spec._to_list())
 
     return compile_with_scratch
 

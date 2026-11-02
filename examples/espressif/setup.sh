@@ -87,8 +87,18 @@ installer = Path(sys.argv[1])
 if hashlib.sha256(installer.read_bytes()).hexdigest() != sys.argv[2]:
     sys.exit(f"Checksum mismatch for {installer}; refusing to execute it.")
 PY
-    sh "${tools_dir}/install-esp-emu.sh" --version "${emulator_version}" \
-        --bin-dir "${tools_dir}/bin" --quiet
+    for attempt in 1 2 3 4 5; do
+        if sh "${tools_dir}/install-esp-emu.sh" --version "${emulator_version}" \
+            --bin-dir "${tools_dir}/bin" --quiet; then
+            break
+        fi
+        if [[ "${attempt}" -eq 5 ]]; then
+            echo "esp-emulator installation failed after ${attempt} attempts." >&2
+            exit 1
+        fi
+        echo "esp-emulator installation attempt ${attempt}/5 failed; retrying in $((attempt * 5)) seconds..." >&2
+        sleep "$((attempt * 5))"
+    done
     "${tools_dir}/bin/esp-emu" --version
 fi
 

@@ -20,7 +20,7 @@ On Linux and Windows, the OpenVINO backend is included in the ExecuTorch pip whe
 pip install executorch[openvino]
 ```
 
-For now the extra installs no runtime on Python 3.15, or on Linux aarch64 with Python 3.14, because the OpenVINO versions it supports publish no build there.
+For now the extra installs no runtime on Python 3.15, or on Linux aarch64 with Python 3.14. OpenVINO publishes no build for Python 3.15, and its aarch64 builds for Python 3.14 need glibc 2.35 or newer.
 
 The backend automatically discovers the OpenVINO C library from the pip-installed package, so no library search path setup is needed.
 

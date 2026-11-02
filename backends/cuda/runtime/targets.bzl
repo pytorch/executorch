@@ -175,6 +175,27 @@ def define_common_targets(is_fbcode = False):
     )
 
     cpp_unittest(
+        name = "test_cuda_output_copy",
+        srcs = [
+            "test/test_cuda_output_copy.cpp",
+        ],
+        deps = [
+            ":cuda_backend",
+            ":runtime_shims",
+            "//executorch/backends/aoti/slim/factory:from_blob",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )
+
+    cpp_unittest(
         name = "test_cuda_kv_cache",
         srcs = [
             "test/test_cuda_kv_cache.cpp",

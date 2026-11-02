@@ -358,9 +358,13 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/core:device_memory_buffer",
                 "//executorch/runtime/core/test:mock_cuda_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
                 "//executorch/schema:program",
             ],
             env = {
                 "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDevice.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDeviceProgram.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDeviceProgram.ptd])",
             },
         )

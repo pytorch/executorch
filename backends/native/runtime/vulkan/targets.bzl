@@ -40,6 +40,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/backends/native/runtime:reference_gguf_kquant",
+            "//executorch/backends/native/runtime/graph:aliases",
             "//executorch/backends/native/runtime/graph:graph_utils",
         ],
         visibility = ["PUBLIC"],

@@ -980,7 +980,10 @@ if(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
-  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+     OR EXECUTORCH_BUILD_NATIVE_LLM_RUNNER
+  )
+    # Both LLM runners need tokenizers with regex lookahead support.
     set(SUPPORT_REGEX_LOOKAHEAD ON)
     # llama/runner/CMakeLists.txt builds a shared library libllama_runner.so
     # that transitively depends on tokenizers. Need to build tokenizers with
@@ -991,7 +994,9 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
-  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+     OR EXECUTORCH_BUILD_NATIVE_LLM_RUNNER
+  )
     set(CMAKE_POSITION_INDEPENDENT_CODE
         ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
     )
@@ -1439,7 +1444,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
     )
     add_library(
-      aten_bridge
+      aten_bridge STATIC
       ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
     )
     set_target_properties(aten_bridge PROPERTIES CXX_STANDARD 20)
@@ -1450,9 +1455,8 @@ if(EXECUTORCH_BUILD_PYBIND)
       aten_bridge PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
     )
     target_compile_options(aten_bridge PUBLIC ${_pybind_compile_options})
-    # torch_cpu_library is the CPU half of torch. Linking torch would also force
-    # libtorch_cuda into DT_NEEDED in a CUDA build, and a CPU-only torch could
-    # then not load this library.
+    # aten_bridge is static, so _training_lib gets this link. torch would record
+    # libtorch_cuda with a CUDA build of PyTorch; torch_cpu_library does not.
     if(EXECUTORCH_BUILD_SHARED)
       target_link_libraries(
         aten_bridge PRIVATE torch_cpu_library c10 executorch_shared

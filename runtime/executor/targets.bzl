@@ -128,6 +128,7 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/schema:program",
+                "//executorch/runtime/core:device_allocator",
                 "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
                 "//executorch/runtime/core/portable_type/c10/c10:c10",
             ],

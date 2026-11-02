@@ -297,6 +297,26 @@ class TestEmit(unittest.TestCase):
             torch.ones(10, dtype=torch.int64),
         )
 
+        # An empty buffer has no initial data, so the program has no mutable
+        # segment, and loading the method must not look for one.
+        class EmptyModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("cache_pos", torch.zeros(0, 2))
+
+            def forward(self, x):
+                self.cache_pos.add_(x)
+                return self.cache_pos + 1
+
+        x = torch.zeros(0, 2)
+        et_program_empty = to_edge(
+            torch.export.export(EmptyModule(), (x,), strict=True)
+        ).to_executorch(config=et_config)
+        method_empty = runtime.load_program(et_program_empty.buffer).load_method(
+            "forward"
+        )
+        self.assertEqual(method_empty.execute((x,))[0].shape, (0, 2))
+
     def test_int_list_input(self):
         class M(torch.nn.Module):
             def forward(self, x, y, z):
@@ -2517,10 +2537,7 @@ class TestEmit(unittest.TestCase):
             model, (test_inputs[0],), dynamic_shapes=dynamic_shapes
         )
 
-        edge_program = to_edge(
-            exported_program,
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
-        )
+        edge_program = to_edge(exported_program)
         et_program = edge_program.to_executorch()
         program_buffer = et_program.buffer
         et_module = _load_for_executorch_from_buffer(program_buffer)
