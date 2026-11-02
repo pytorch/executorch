@@ -1,0 +1,75 @@
+{
+  "name": "texture addition LWG range",
+  "shader": "binary_add_texture3d_float",
+  "gwg_size": "default_pick_gwg",
+  "lwg_size_sweep": {
+    "x": [4, 12, 4],
+    "y": [4, 12, 4],
+    "z": [1, 1, 1]
+  },
+  "target_ms": 10,
+  "benchmark_runs": 5,
+  "max_dispatches": 512,
+  "validation_method": {
+    "function": "is_close",
+    "atol": 0.0001,
+    "rtol": 0.0001
+  },
+  "bindings": [
+    {
+      "texture3d": {
+        "name": "out",
+        "sizes": [1, 16, 64, 64],
+        "access": "write",
+        "data": {
+          "fill": 0
+        }
+      }
+    },
+    {
+      "texture3d": {
+        "name": "a",
+        "sizes": [1, 16, 64, 64],
+        "data": {
+          "rand_uniform_float": [-1, 1]
+        }
+      }
+    },
+    {
+      "texture3d": {
+        "name": "b",
+        "sizes": [1, 16, 64, 64],
+        "data": {
+          "rand_uniform_float": [-1, 1]
+        }
+      }
+    },
+    {
+      "meta_ubo": "out"
+    },
+    {
+      "meta_ubo": "a"
+    },
+    {
+      "meta_ubo": "b"
+    }
+  ],
+  "specialization_constants": [
+    {
+      "layout": "out"
+    },
+    {
+      "layout": "a"
+    },
+    {
+      "layout": "b"
+    }
+  ],
+  "push_constants": [
+    {
+      "dtype": "float32",
+      "data": [2]
+    }
+  ],
+  "outputs": ["out"]
+}
