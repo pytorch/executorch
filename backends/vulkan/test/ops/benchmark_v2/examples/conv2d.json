@@ -1,0 +1,62 @@
+{
+  "name": "conv2d",
+  "operator": "aten.convolution.default",
+  "target_ms": 10,
+  "benchmark_runs": 5,
+  "show_memory_throughput": true,
+  "show_compute_throughput": true,
+  "max_dispatches": 512,
+  "sweep_variables": {
+    "v_DTYPE": ["float32", "float16"]
+  },
+  "args_sweep": [
+    [
+      {
+        "tensor": {
+          "name": "input",
+          "sizes": [1, 4, 4, 4],
+          "dtype": "v_DTYPE",
+          "storage": "texture3d",
+          "layout": "channels",
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "weight",
+          "sizes": [8, 4, 3, 3],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {
+        "tensor": {
+          "name": "bias",
+          "sizes": [8],
+          "dtype": "v_DTYPE",
+          "storage": "constant",
+          "layout": "width",
+          "data": {"rand_uniform_float": [-1, 1]}
+        }
+      },
+      {"int_list": [1, 1]},
+      {"int_list": [1, 1]},
+      {"int_list": [1, 1]},
+      {"bool": false},
+      {"int_list": [0, 0]},
+      {"int": 1},
+      {
+        "tensor": {
+          "name": "output",
+          "sizes": [1, 8, 4, 4],
+          "dtype": "v_DTYPE",
+          "storage": "texture3d",
+          "layout": "channels",
+          "data": {"fill": 0}
+        }
+      }
+    ]
+  ]
+}
