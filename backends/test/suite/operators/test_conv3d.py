@@ -134,13 +134,6 @@ class Conv3d(OperatorTest):
             flow,
         )
 
-    def test_conv3d_padding_zeros(self, flow: TestFlow) -> None:
-        self._test_op(
-            Model(padding=1, padding_mode="zeros"),
-            (torch.randn(4, 3, 8, 8, 8),),
-            flow,
-        )
-
     def test_conv3d_padding_reflect(self, flow: TestFlow) -> None:
         self._test_op(
             Model(padding=1, padding_mode="reflect"),

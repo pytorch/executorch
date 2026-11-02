@@ -87,7 +87,8 @@ QNN_16A4W_BLOCK_TEST_FLOW = _create_qnn_flow(
     quantize=True,
     quant_dtype=QuantDtype.use_8a8w,
     use_fp16=False,
-    # This flow quantizes as 8a8w, so it fails the same cases as qnn_8a8w.
+    # This flow still quantizes as 8a8w, not 16a4w block, so it fails the same
+    # cases as qnn_8a8w. Recheck the list when the dtype is corrected.
     xfail_patterns=_QNN_CONV3D_LOWERING_XFAILS + _QNN_8BIT_WEIGHT_CONV3D_XFAILS,
 )
 QNN_8A8W_TEST_FLOW = _create_qnn_flow(
