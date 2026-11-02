@@ -556,9 +556,13 @@ class TestCudaExport(unittest.TestCase):
             (big, big, v, cu_seq, cu_seq, 16, 16),
         ]
         table = CudaBackend.get_decomposition_table()
-        for args in cases:
-            for actual, expected in zip(table[op](*args)[:2], op(*args)[:2]):
-                torch.testing.assert_close(actual, expected, atol=1e-2, rtol=1e-2)
+        # On ROCm, varlen_attn runs AOTriton, which lines an explicit window up
+        # with the start of each sequence. The decomposition follows Flash
+        # attention on CUDA, which lines it up with the end, so compare on CUDA.
+        if torch.version.hip is None:
+            for args in cases:
+                for actual, expected in zip(table[op](*args)[:2], op(*args)[:2]):
+                    torch.testing.assert_close(actual, expected, atol=1e-2, rtol=1e-2)
         # Flash attention versions differ on this window, since a query sequence
         # can be longer than max_k + 1.
         with self.assertRaisesRegex(NotImplementedError, "window"):
