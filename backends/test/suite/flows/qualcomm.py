@@ -81,7 +81,8 @@ QNN_16A4W_TEST_FLOW = _create_qnn_flow(
     quantize=True,
     quant_dtype=QuantDtype.use_16a4w,
     use_fp16=False,
-    # QNN fails to generate a context binary for every 3-D convolution here.
+    # Every 3-D convolution fails in this flow, most of them when QNN generates
+    # the context binary.
     xfail_patterns=["test_conv3d", "test_convtranspose3d"],
 )
 QNN_16A4W_BLOCK_TEST_FLOW = _create_qnn_flow(
