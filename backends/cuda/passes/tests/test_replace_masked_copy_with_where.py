@@ -33,7 +33,8 @@ class TestReplaceMaskedCopyWithWherePass(unittest.TestCase):
 
         class Copy(torch.nn.Module):
             def forward(self, x, mask):
-                out = torch.zeros_like(x)
+                # Not zeros, so a lost destination value shows.
+                out = torch.full_like(x, 7.0)
                 # A leading None and a trailing dim, and the mask computed twice,
                 # as Transformers' SmolVLM writes its position ids.
                 out[:, mask.view(-1)] = x[:, mask.view(-1)]
@@ -219,7 +220,8 @@ class TestReplaceMaskedCopyWithWherePass(unittest.TestCase):
             n for n in graph.nodes if n.target == exir_ops.edge.aten.index.Tensor
         )
         y_node = next(n for n in graph.nodes if n.name == "y")
-        # count * 0 + y.size(0) <= 4 has the one symbol of y's size.
+        # count * 0 + y.size(0) <= 4 reads the count, but whether it holds
+        # depends only on y's size.
         with graph.inserting_before(index.next):
             count = graph.call_function(torch.ops.aten.sym_size.int, (index, 0))
             size = graph.call_function(torch.ops.aten.sym_size.int, (y_node, 0))

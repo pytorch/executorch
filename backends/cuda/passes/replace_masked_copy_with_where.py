@@ -52,8 +52,10 @@ def _same_value(a: Any, b: Any) -> bool:
                 return False
             pending.extend(zip(a, b))
             continue
-        if not isinstance(a, Node) or not isinstance(b, Node):
-            if isinstance(a, Node) or isinstance(b, Node) or a != b:
+        if isinstance(a, Node) != isinstance(b, Node):
+            return False
+        if not isinstance(a, Node):
+            if a != b:
                 return False
             continue
         if a is b or (a, b) in compared:
@@ -116,9 +118,9 @@ class ReplaceMaskedCopyWithWherePass(PassBase):
         if accumulate or not isinstance(values, Node) or values.target != _INDEX:
             return None
         src, src_indices = values.args
-        if not _same_value(list(src_indices), list(indices)):
+        if not _same_value(src_indices, indices):
             return None
-        masks = [index for index in indices if index is not None]
+        masks = [entry for entry in indices if entry is not None]
         if len(masks) != 1:
             return None
         mask_val = masks[0].meta.get("val")
