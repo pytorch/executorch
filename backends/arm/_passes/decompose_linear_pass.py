@@ -19,14 +19,16 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class DecomposeLinearPass(ArmOpTargetedPass):
-    """This pass decomposes linear into a Conv2D with view operations.
+    """Decompose linear into a 1x1 Conv2D with projection rows in width.
+
+    Symbolic row counts must be nonzero at runtime, as required by TOSA.
 
     Example:
         linear(x, weights, bias) becomes:
-            x_reshaped = view(x)
+            x_reshaped = permute(view(x, [1, 1, rows, Ci]), [0, 3, 1, 2])
             weights_reshaped = view(weights)
             conv2d = conv2d(x_reshaped, weights_reshaped, bias)
-            output = view(conv2d)
+            output = view(permute(conv2d, [0, 2, 3, 1]), output_shape)
 
     """
 
@@ -48,11 +50,11 @@ class DecomposeLinearPass(ArmOpTargetedPass):
             output_shape = get_first_fake_tensor(node).shape
             input_shape = get_first_fake_tensor(input).shape
             weights_shape = get_first_fake_tensor(weights).shape
-            batches = torch.sym_int(1)
+            rows = torch.sym_int(1)
             for dim in input_shape[:-1]:
-                batches *= dim
+                rows *= dim
             # input has shape (..., Ci)
-            input_reshaped_shape = [batches, input_shape[-1], 1, 1]
+            input_reshaped_shape = [1, 1, rows, input_shape[-1]]
             # weights have shape (Co, Ci)
             weights_reshaped_shape = [weights_shape[0], weights_shape[1], 1, 1]
 
@@ -73,12 +75,19 @@ class DecomposeLinearPass(ArmOpTargetedPass):
                 input_reshaped_shape = all_sizes[:n_in]
                 weights_reshaped_shape = all_sizes[n_in : n_in + n_w]
                 output_size = all_sizes[n_in + n_w :]
-                # Reshape input to 4D with shape (N, Ci, 1, 1)
+                # Keep features innermost until the permutation to NCHW.
                 input_reshaped = create_node(
                     graph=graph_module.graph,
                     op_target=exir_ops.edge.aten.view_copy.default,
                     args=(input, input_reshaped_shape),
                     kwargs={},
+                    from_node=node,
+                    inherit_qparams=False,
+                )
+                input_reshaped = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.edge.aten.permute_copy.default,
+                    args=(input_reshaped, [0, 3, 1, 2]),
                     from_node=node,
                     inherit_qparams=False,
                 )
@@ -112,14 +121,19 @@ class DecomposeLinearPass(ArmOpTargetedPass):
                     inherit_qparams=True,
                 )
 
-            with graph_module.graph.inserting_after(conv):
-                # Reshape output to same rank as original input with shape (..., Co)
-                # No need to insert q/dq pair as Conv2D node above has inserted them if
-                # required.
+                # Inserting before linear keeps conv -> permute -> view in order.
+                output = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.edge.aten.permute_copy.default,
+                    args=(conv, [0, 2, 3, 1]),
+                    from_node=node,
+                    inherit_qparams=False,
+                )
+                # Restore (..., Co); only the convolution inherits linear qparams.
                 output = create_node(
                     graph=graph_module.graph,
                     op_target=exir_ops.edge.aten.view_copy.default,
-                    args=(conv, output_size),
+                    args=(output, output_size),
                     kwargs={},
                     from_node=node,
                     inherit_qparams=False,

@@ -8,11 +8,21 @@ import logging
 from typing import List, Optional
 
 import torch
+from executorch.backends.qualcomm.builders.node_visitor import (
+    dq_ops,
+    q_ops,
+    QNN_TENSOR_TYPE_MAP,
+)
 
-from executorch.backends.qualcomm.utils.constants import QCOM_QNN_COMPILE_SPEC
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_BYPASS_NODE,
+    QCOM_QNN_COMPILE_SPEC,
+    QCOM_QUANT_ATTRS,
+)
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.utils import _pytree as pytree
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +146,66 @@ def warn_if_dilated_conv_may_not_fit_vtcm(
     return estimate
 
 
+def has_unsupported_dtype(node: torch.fx.Node) -> bool:
+    """
+    Whether the node reads or writes an unquantized tensor of a data type the
+    backend has no QNN type for (e.g. bfloat16). Such a node has to stay on
+    CPU. A quantized tensor takes its QNN type from its encoding instead.
+    """
+    return any(
+        _produces_unsupported_dtype(n)
+        for n in (node, *node.all_input_nodes)
+        if QCOM_QUANT_ATTRS not in n.meta and not n.meta.get(QCOM_BYPASS_NODE)
+    )
+
+
+def _produces_unsupported_dtype(node: torch.fx.Node) -> bool:
+    return any(
+        isinstance(val, torch.Tensor) and val.dtype not in QNN_TENSOR_TYPE_MAP
+        for val in pytree.tree_leaves(node.meta.get("val"))
+    )
+
+
+def _unsupported_dtypes_are_quantized(node: torch.fx.Node) -> bool:
+    # filter_fn runs before quantization attributes are annotated, so the
+    # surrounding quantize and dequantize ops are the only sign of them.
+    inputs_quantized = all(
+        arg.target in _DQ_OPS
+        for arg in node.all_input_nodes
+        if _produces_unsupported_dtype(arg)
+    )
+    output_quantized = not _produces_unsupported_dtype(node) or any(
+        user.target in _Q_OPS for user in node.users
+    )
+    return inputs_quantized and output_quantized
+
+
+_Q_OPS = {op._op for op in q_ops}
+_DQ_OPS = {op._op for op in dq_ops}
+
+
+def has_data_dependent_shape(node: torch.fx.Node) -> bool:
+    """
+    Whether the node reads or writes a tensor with a data-dependent size (e.g.
+    after boolean mask indexing). QNN needs a size for every dimension, and
+    such a dimension has no hint to give it, so the node has to stay on CPU.
+    """
+    return any(
+        isinstance(dim, torch.SymInt) and dim.node.hint is None
+        for n in (node, *node.all_input_nodes)
+        for val in pytree.tree_leaves(n.meta.get("val"))
+        if isinstance(val, torch.Tensor)
+        for dim in val.shape
+    )
+
+
 # Logic to determine whether to skip decompose and has higher priority than get_skip_decomp_table()
 def filter_fn(node: torch.fx.Node) -> bool:
+    # The node will stay on CPU, so it must not be kept from decomposition.
+    if has_unsupported_dtype(node) and not _unsupported_dtypes_are_quantized(node):
+        return False
+    if has_data_dependent_shape(node):
+        return False
     # QNN does not support int32/int64 IO for the following OPs.
     potential_i32_i64_io_ops = [
         torch.ops.aten.stack.default,
@@ -148,6 +216,24 @@ def filter_fn(node: torch.fx.Node) -> bool:
         torch.int64,
     ]:
         return False
+    # HTP Pack takes inputs of rank 1 to 4, so its output has 2 to 5 dims.
+    if node.target == torch.ops.aten.stack.default and not (
+        2 <= node.meta["val"].dim() <= 5
+    ):
+        return False
+    # QNN Stft only produces the real-valued spectrum and has no normalization.
+    # ConvertComplexStft rewrites the supported complex cases into this form.
+    # Without a window, QNN's rectangular default spans n_fft rather than
+    # win_length.
+    if node.target == torch.ops.aten.stft.default:
+        args = list(node.args) + [None] * (8 - len(node.args))
+        n_fft, win_length, window, normalized = args[1], args[3], args[4], args[5]
+        return (
+            not node.meta["val"].is_complex()
+            and node.args[0].meta["val"].is_floating_point()
+            and not normalized
+            and (window is not None or win_length in (None, n_fft))
+        )
     return True
 
 
@@ -176,6 +262,7 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.scatter_add.default,
         torch.ops.aten.scatter_reduce.two,
         torch.ops.aten.stack.default,
+        torch.ops.aten.stft.default,
         torch.ops.aten.upsample_bicubic2d.vec,
         # This request is ignored because it is in a blocklist. Refer to exir/program/_program.py
         torch.ops.aten.unbind.int,

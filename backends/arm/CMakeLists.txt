@@ -277,6 +277,15 @@ if(EXECUTORCH_BUILD_VGF)
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
   add_library(vgf_backend ${_vgf_backend_sources})
 
+  option(EXECUTORCH_VGF_ZERO_COPY_IO
+         "Enable VGF model-boundary host zero-copy I/O" OFF
+  )
+  if(EXECUTORCH_VGF_ZERO_COPY_IO)
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_ZERO_COPY_IO=1)
+  else()
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_ZERO_COPY_IO=0)
+  endif()
+
   # Should be absent in ordinary production builds.
   option(EXECUTORCH_VGF_IO_STATS "Collect per-execution VGF copy statistics"
          OFF
@@ -360,6 +369,20 @@ if(EXECUTORCH_BUILD_VGF)
       target_link_libraries(vgf_neural_statistics_test PRIVATE gtest gtest_main)
     endif()
     add_test(NAME vgf_neural_statistics_test COMMAND vgf_neural_statistics_test)
+
+    add_executable(
+      vgf_shape_utils_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_shape_utils_test.cpp
+    )
+    target_include_directories(
+      vgf_shape_utils_test PRIVATE ${_common_include_directories}
+    )
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(vgf_shape_utils_test PRIVATE GTest::gtest_main)
+    else()
+      target_link_libraries(vgf_shape_utils_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_shape_utils_test COMMAND vgf_shape_utils_test)
 
     add_executable(
       vgf_vulkan_features_test

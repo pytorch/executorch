@@ -133,6 +133,25 @@ def install_requirements(use_pytorch_nightly):
     if torchao_from_source():
         LOCAL_REQUIREMENTS.append("third-party/ao")
     if sys.platform != "win32":
+        if sys.platform == "darwin" and sys.version_info >= (3, 15):
+            # SentencePiece 0.2.2 hardcodes a 10.9 compile target despite the
+            # wheel's newer deployment target. Scope the libc++ workaround to it.
+            sentencepiece_env = os.environ.copy()
+            sentencepiece_env["CXXFLAGS"] = (
+                f"{sentencepiece_env.get('CXXFLAGS', '')} -D_LIBCPP_DISABLE_AVAILABILITY"
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--no-build-isolation",
+                    "sentencepiece==0.2.2",
+                ],
+                env=sentencepiece_env,
+                check=True,
+            )
         # TODO(larryliu0820): Setup a pypi package for this.
         LOCAL_REQUIREMENTS.append("extension/llm/tokenizers")
     # TODO(gjcomer): Re-enable when buildable on Windows.
@@ -187,9 +206,10 @@ def install_optional_example_requirements(use_pytorch_nightly):
     )
 
     print("Installing torch domain libraries")
+    torchaudio_version = "2.11.1" if sys.version_info >= (3, 15) else "2.11.0"
     DOMAIN_LIBRARIES = cu134_packages or [
         ("torchvision==0.29.0" if use_pytorch_nightly else "torchvision"),
-        ("torchaudio==2.11.0" if use_pytorch_nightly else "torchaudio"),
+        (f"torchaudio=={torchaudio_version}" if use_pytorch_nightly else "torchaudio"),
     ]
     # Then install domain libraries
     subprocess.run(

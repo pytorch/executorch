@@ -10,7 +10,8 @@
 Direct native lowering.
 
 Where the ExecuTorch flow is export -> [quantize] -> to_edge -> to_backend -> to_executorch, this
-is export -> [quantize] -> to_native, and yields a NativeProgramManager to save as a .ptn. See README.md.
+is export -> [quantize] -> to_native, and yields a NativeProgramManager to save as a .ptn.
+See backends/native/README.md.
 
 Lowering runs the same to_edge_transform_and_lower pipeline as the ExecuTorch path
 (the default native passes plus NativePartitioner), but opts the partitioner into
@@ -37,19 +38,23 @@ import torch
 
 from executorch.backends.native.preprocess import NativeDelegateInfo
 from executorch.backends.native.serialization.graph_serialize import (
+    _compile_to_bytes,
     _same_tensor,
     collect_data_keys,
     deserialize_program,
+    map_data_keys,
     merge_programs,
     validate_program,
 )
-from executorch.backends.native.serialization.schema import Program
+from executorch.backends.native.serialization.schema import OutputKind, Program
 from executorch.exir._serialize._ptn import write_ptn
 from torch.utils import _pytree as pytree
 
 if TYPE_CHECKING:
     from torch.export import ExportedProgram
     from torch.fx import GraphModule
+
+_STATE_NAMESPACE = "state"
 
 
 class NativeProgramManager:
@@ -254,13 +259,7 @@ def _delegate_info(lowered: object, method_name: str) -> NativeDelegateInfo:
 def _merge_constants(
     per_method: dict[str, dict[str, torch.Tensor]],
 ) -> dict[str, torch.Tensor]:
-    """Union per-method constants by fqn.
-
-    serialize_program treats an fqn as one buffer across every method, so hold to
-    that here rather than letting a later method silently clobber an earlier one.
-    _same_tensor short-circuits on identity and shared storage, which is the usual
-    case for a weight referenced by several methods.
-    """
+    """Merge constants by their final data keys, rejecting differing values."""
     merged: dict[str, torch.Tensor] = {}
     source: dict[str, str] = {}
     for method_name, constants in per_method.items():
@@ -324,11 +323,11 @@ def _validate_merged_program(
 def _normalize_programs(
     programs: "ExportedProgram | dict[str, ExportedProgram]",
 ) -> dict[str, ExportedProgram]:
-    """Validate and normalize the public input before starting expensive lowering."""
+    """Validate the public input, then functionalize each method for lowering."""
     from torch.export import ExportedProgram as TorchExportedProgram
 
     if isinstance(programs, TorchExportedProgram):
-        return {"forward": programs}
+        programs = {"forward": programs}
     if not isinstance(programs, dict):
         raise TypeError(
             "to_native: programs must be an ExportedProgram or a dict mapping "
@@ -346,12 +345,18 @@ def _normalize_programs(
             )
         if not method_name:
             raise ValueError("to_native: method names must be non-empty strings.")
+        if method_name.split("/")[0] == _STATE_NAMESPACE:
+            raise ValueError(
+                f"to_native: method name {method_name!r} is reserved; "
+                f"{_STATE_NAMESPACE!r} namespaces mutable state keys."
+            )
         if not isinstance(program, TorchExportedProgram):
             raise TypeError(
                 f"to_native: method {method_name!r} must map to an "
                 f"ExportedProgram, got {type(program).__name__}."
             )
-        method_programs[method_name] = program
+        # Functionalize so each method's buffer writes appear in its signature.
+        method_programs[method_name] = program.run_decompositions({})
     return method_programs
 
 
@@ -362,6 +367,11 @@ def to_native(
 
     ``programs`` is a single ``ExportedProgram`` (lowered as the sole ``forward``
     method) or a dict mapping method name to ``ExportedProgram``.
+
+    Immutable constant keys are namespaced as ``<method>/<key>``, including for a
+    single method. Keys mutated by any method become ``state/<key>`` in every
+    method, so state remains shared across methods. Equal immutable tensors
+    deduplicate on save.
 
     Nothing about lowering is configurable yet. The passes, the partitioner, and
     the edge compile config are all owned here, because correctness of the package
@@ -377,9 +387,10 @@ def to_native(
     Raises:
         TypeError: If ``programs`` is not an ``ExportedProgram`` or a method-name
             dictionary containing only ``ExportedProgram`` values.
-        ValueError: If the method dictionary is empty, a method name is empty, a
-            method does not fully delegate to the native backend, a constant
-            differs between methods, or a data key the graph references has no
+        ValueError: If the method dictionary is empty, a method name is empty or
+            in the reserved ``state`` namespace, a method does not fully delegate
+            to the native backend, a mutable constant differs between methods,
+            namespaced keys conflict, or a data key the graph references has no
             backing tensor.
     """
     method_programs = _normalize_programs(programs)
@@ -393,9 +404,18 @@ def to_native(
         get_lowered_submodules,
     )
 
+    # Methods in a package share mutable buffers, so a buffer one method writes
+    # is not constant in the others. Passes that fold buffer values into weights
+    # must skip any buffer written by any method, not just their own.
+    mutable_buffers = {
+        buffer
+        for program in method_programs.values()
+        for buffer in program.graph_signature.buffers_to_mutate.values()
+    }
+
     edge = to_edge_transform_and_lower(
         method_programs,
-        transform_passes=get_default_passes(),
+        transform_passes=get_default_passes(mutable_buffers=mutable_buffers),
         partitioner=[
             NativePartitioner(external_constants_tag=None, _serialize_as_ptn=True)
         ],
@@ -425,8 +445,7 @@ def to_native(
                 f"wholly supported by the native backend: an identity method "
                 f"produces none, and disconnected supported regions produce "
                 "several. Residual operator targets: "
-                f"{residual_targets}. See the README for this limitation of "
-                "the current implementation."
+                f"{residual_targets}."
             )
         module = lowered[0][1]
         _check_delegate_contract(
@@ -437,13 +456,44 @@ def to_native(
         method_blobs[method_name] = module.processed_bytes
         method_constants[method_name] = _delegate_info(module, method_name).constants
 
-    ptg_blob = merge_programs(method_blobs)
-    constants = _merge_constants(method_constants)
+    program = deserialize_program(merge_programs(method_blobs))
+    state_keys = _mutable_data_keys(program) | {
+        buffer.fqn
+        for method in program.methods
+        for buffer in method.mutable_buffers or []
+    }
+    state = {key: f"{_STATE_NAMESPACE}/{key}" for key in state_keys}
+    data_keys = set(state.values())
+    for method in program.methods:
+        constants_for_method = method_constants[method.name]
+        namespaced = {
+            key: f"{method.name}/{key}"
+            for key in constants_for_method
+            if key not in state
+        }
+        conflicts = set(namespaced.values()) & data_keys
+        if conflicts:
+            raise ValueError(
+                "to_native: namespaced constant keys already exist: "
+                f"{sorted(conflicts)}"
+            )
+        data_keys.update(namespaced.values())
+        mapping = state | namespaced
+        map_data_keys(method, lambda key, mapping=mapping: mapping.get(key, key))
+        for buffer in method.mutable_buffers or []:
+            buffer.fqn = state[buffer.fqn]
+        for spec in method.output_specs or []:
+            if spec.kind == OutputKind.BUFFER_MUTATION and spec.target is not None:
+                spec.target = state.get(spec.target, spec.target)
+        method_constants[method.name] = {
+            mapping.get(key, key): tensor
+            for key, tensor in constants_for_method.items()
+        }
 
-    program = deserialize_program(ptg_blob)
+    constants = _merge_constants(method_constants)
     _validate_merged_program(program, constants)
 
-    return NativeProgramManager(ptg=ptg_blob, constants=constants)
+    return NativeProgramManager(ptg=_compile_to_bytes(program), constants=constants)
 
 
 __all__ = ["NativeProgramManager", "to_native"]

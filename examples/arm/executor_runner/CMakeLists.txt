@@ -51,6 +51,9 @@ set(ET_NUM_INFERENCES
     "1"
     CACHE STRING "Number of inferences to run"
 )
+if(NOT ET_NUM_INFERENCES MATCHES "^[1-9][0-9]*$")
+  message(FATAL_ERROR "ET_NUM_INFERENCES must be a positive integer")
+endif()
 
 option(ET_LOG_DUMP_INPUT "Dump input in log" OFF)
 option(ET_LOG_DUMP_OUTPUT "Dump output in log" ON)

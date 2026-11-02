@@ -95,6 +95,8 @@
 
 .PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-rocm voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu supertonic-mlx silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx muse-glimmer-cuda muse-glimmer-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
 
+.PHONY: llama-vulkan
+
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
 	@echo "  voxtral-cuda        - Build Voxtral runner with CUDA backend"
@@ -131,6 +133,7 @@ help:
 	@echo "  llama-cuda          - Build Llama runner with CUDA backend"
 	@echo "  llama-cuda-debug    - Build Llama runner with CUDA backend (debug mode)"
 	@echo "  llama-cpu           - Build Llama runner with CPU backend"
+	@echo "  llama-vulkan        - Build Llama runner with Vulkan backend"
 	@echo "  lfm_2_5-mlx         - Build LFM2.5 runner with MLX backend"
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
@@ -140,6 +143,7 @@ help:
 	@echo "  muse-glimmer-cuda   - Build Muse Glimmer runners and worker with CUDA backend"
 	@echo "  muse-glimmer-mlx    - Build Muse Glimmer runners and worker with MLX backend"
 	@echo "  muse-glimmer-batching-mlx - Build batching Muse Glimmer runner and worker with MLX"
+	@echo "  muse-glimmer-batching-cuda - Build batching Muse Glimmer runner and worker with CUDA"
 	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner with CUDA backend"
 	@echo "  qwen3_5_moe-metal   - Build Qwen3.5 MoE runner with Metal backend"
 	@echo "  qwen3_5_moe-mlx     - Build Qwen3.5 MoE runner with MLX backend"
@@ -410,6 +414,15 @@ llama-cpu:
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
 
+llama-vulkan:
+	@echo "==> Building and installing ExecuTorch with Vulkan..."
+	cmake --workflow --preset llm-release-vulkan
+	@echo "==> Building Llama runner with Vulkan..."
+	cd examples/models/llama && cmake --workflow --preset llama-release
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
+
 llama-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
 	cmake --workflow --preset llm-release-cuda
@@ -527,6 +540,23 @@ muse-glimmer-batching-mlx:
 	cmake --build "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching" \
 		--target muse_glimmer_batching_runner muse_glimmer_batching_worker \
 		--parallel "$$(sysctl -n hw.ncpu)"
+	@echo ""
+	@echo "Build complete!"
+	@echo "  Runner:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_runner"
+	@echo "  Worker:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_worker"
+
+.PHONY: muse-glimmer-batching-cuda
+muse-glimmer-batching-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Configuring batching Muse Glimmer runners with CUDA..."
+	cd examples/models/muse-glimmer && cmake --preset muse-glimmer-cuda \
+		-B "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching" \
+		-DMUSE_GLIMMER_BUILD_BATCHING=ON \
+		-DMUSE_GLIMMER_BUILD_BATCHING_TESTS=OFF
+	cmake --build "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching" \
+		--target muse_glimmer_batching_runner muse_glimmer_batching_worker \
+		--parallel "$(nproc)"
 	@echo ""
 	@echo "Build complete!"
 	@echo "  Runner:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_runner"

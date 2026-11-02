@@ -48,7 +48,8 @@ class TensorInfoTestFriend final {
                Span<const uint8_t>(dim_order.data(), dim_order.size()),
                scalar_type,
                is_memory_planned,
-               name)
+               name,
+               etensor::Device{etensor::DeviceType::CPU, 0})
         .get();
   }
 };

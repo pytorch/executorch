@@ -9,6 +9,9 @@ from executorch.backends.transforms.utils import (
     delete_constant_placeholder,
 )
 from executorch.exir import to_edge
+from executorch.exir.backend.canonical_partitioners.duplicate_constant_node_pass import (
+    duplicate_constant_node,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
 from torch.export.graph_signature import InputKind
@@ -188,6 +191,46 @@ def test_create_same_name_returns_existing_node():
         placeholders = [n for n in graph.nodes if n.op == "placeholder"]
         assert len(placeholders) == 2  # the created node and the user input
         assert len(exported_program.state_dict) == 1
+
+
+def test_delete_placeholders_sharing_target():
+    """
+    duplicate_constant_node gives every copy the target of the original, so the
+    tensor must stay until the last placeholder referring to it is deleted.
+    """
+
+    class SharedWeight(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.ones(1))
+
+        def forward(self, x):
+            return x + self.weight, x - self.weight
+
+    exported_program = to_edge(
+        export(SharedWeight(), (torch.zeros(1),), strict=True)
+    ).exported_program()
+    (weight_name,) = exported_program.graph_signature.inputs_to_parameters
+    duplicate_constant_node(exported_program, weight_name)
+
+    weight_nodes = [
+        node
+        for node in exported_program.graph.nodes
+        if node.name in exported_program.graph_signature.inputs_to_parameters
+    ]
+    assert len(weight_nodes) == 2
+    input_node = next(
+        node
+        for node in exported_program.graph.nodes
+        if node.name in exported_program.graph_signature.user_inputs
+    )
+    for node in weight_nodes:
+        node.replace_all_uses_with(input_node)
+
+    delete_constant_placeholder(exported_program, weight_nodes[0])
+    assert "weight" in exported_program.state_dict
+    delete_constant_placeholder(exported_program, weight_nodes[1])
+    assert len(exported_program.state_dict) == 0
 
 
 def test_create_delete_parameter():

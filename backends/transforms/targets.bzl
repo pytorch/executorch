@@ -129,7 +129,21 @@ def define_common_targets():
             ":utils",
             "//caffe2:torch",
             "//executorch/exir:pass_base",
-            "//executorch/exir:sym_util",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_batch_norm_with_linear",
+        srcs = ["fuse_batch_norm_with_linear.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            ":utils",
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
         ],
     )
@@ -182,10 +196,22 @@ def define_common_targets():
         srcs = ["fuse_view_copy.py"],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             "//caffe2:torch",
             "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_fuse_view_copy",
+        srcs = ["test/test_fuse_view_copy.py"],
+        deps = [
+            ":fuse_view_copy",
+            "//caffe2:torch",
+            "//executorch/exir:lib",
             "//executorch/exir/dialects:lib",
         ],
     )
@@ -500,6 +526,19 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_fuse_batch_norm_with_linear",
+        srcs = [
+            "test/test_fuse_batch_norm_with_linear.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":fuse_batch_norm_with_linear",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_quantize_fused_convbn_bias_pass",
         srcs = [
             "test/test_quantize_fused_convbn_bias_pass.py",
@@ -711,6 +750,7 @@ def define_common_targets():
         ],
         deps = [
             ":channels_last_layout",
+            ":dim_maps",
             "//caffe2:torch",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",

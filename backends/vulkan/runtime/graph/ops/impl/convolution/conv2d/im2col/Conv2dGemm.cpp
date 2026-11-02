@@ -120,7 +120,7 @@ ValueRef prepack_conv2d_gemm_weight(
 
   std::string kernel_name = "pack_conv2d_gemm_weight";
   add_storage_type_suffix(kernel_name, weight_storage);
-  add_dtype_suffix(kernel_name, graph.dtype_of(weight_data));
+  add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight));
   add_dtype_suffix(kernel_name, graph.get_staging_dtype_for(weight_data));
 
   graph.prepack_nodes().emplace_back(new PrepackNode(

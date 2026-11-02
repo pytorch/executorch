@@ -55,7 +55,7 @@ class WorkerStats:
     finish_reason: Optional[str] = None
     # Warm-resume accounting: how many prompt tokens were served from the
     # session's resident KV state vs actually prefilled this request, and why
-    # ("new"|"exact_prefix"|"dirty"|"mismatch"|"equal"). Not exposed as OpenAI
+    # ("new"|"exact_prefix"|"prefix_clone"|"dirty"|"mismatch"|"equal"). Not exposed as OpenAI
     # usage; logged for measuring warm-resume hit rate. None on older workers.
     reused_prompt_tokens: int = 0
     prefilled_prompt_tokens: int = 0
@@ -186,6 +186,7 @@ class WorkerClient:
     """
 
     supports_multiplexing = False
+    supports_ignore_eos = False
 
     def __init__(
         self,
@@ -475,6 +476,11 @@ class WorkerClient:
         stats_callback=None,
         request_id: Optional[int] = None,
     ):
+        if getattr(config, "ignore_eos", False):
+            raise WorkerError(
+                "ignore_eos requires a multiplexed batching worker",
+                code="unsupported_parameter",
+            )
         request = {
             "max_new_tokens": getattr(config, "max_new_tokens", -1),
             "temperature": getattr(config, "temperature", 0.0),

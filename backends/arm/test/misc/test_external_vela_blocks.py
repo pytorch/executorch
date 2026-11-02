@@ -10,6 +10,7 @@ import struct
 from unittest.mock import patch
 
 import numpy as np
+import torch
 from executorch.backends.arm import arm_vela
 from executorch.backends.arm.arm_vela import (
     _BLOCK_ALIGNMENT,
@@ -193,7 +194,8 @@ def test_ethosu_preprocess_outputs_external_blocks_as_named_data(tmp_path):
             side_effect=compile_tosa_flatbuffer,
         ),
     ):
-        result = EthosUBackend.preprocess(None, compile_spec._to_list())
+        edge_program = torch.export.export(torch.nn.ReLU(), (torch.ones(1),))
+        result = EthosUBackend.preprocess(edge_program, compile_spec._to_list())
 
     assert result.data_store_output is not None
     external_data = result.data_store_output.external_data

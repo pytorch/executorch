@@ -63,10 +63,16 @@ fallback is not enabled by this launcher.
 `--max-context` is required and sets both the HTTP limit and native session-token
 limit; choose a value supported by the export. Capacity defaults are
 `--max-sessions 16`, `--max-decode-sequences 8`, `--max-inflight-requests 64`, and
-`--prefix-cache-entries 0`. Logical sessions, packed decode width, and in-flight
-request capacity are independent limits. Python concurrency follows advertised
-request capacity, not the single native delivery thread. Python reads native
-async streams directly through bounded per-request mailboxes, without a thread
+`--prefix-cache-entries 0`. With prefix caching enabled, `--prefix-capture-slots 0`
+(the default) automatically allows one pending prompt capture per admitted request,
+bounded by `min(max_sessions, max_inflight_requests)`. A positive value overrides
+this allowance. With checkpoints enabled, automatic sizing uses at most two rows:
+checkpoint collection is serialized, but one replacement can overlap. Explicit
+values above two add unused row capacity in that mode.
+Logical sessions, packed decode width, and in-flight request capacity are independent
+limits. Python concurrency follows advertised request capacity, not the single
+native delivery thread. Python reads native async streams directly through bounded
+per-request mailboxes, without a thread
 pool or a second token queue. A paused consumer does not stall peers, but consumers
 must not block the event loop; native callbacks must also do short, bounded,
 nonblocking work. Prefix snapshots require extra native capacity, which the worker
@@ -239,9 +245,9 @@ the generic control plane never imports an example. Backend specifics
 
 The dedicated batching launcher supports concurrent text requests on one shared
 runner, ordered persistent-session continuation, targeted in-band cancellation,
-and optional creation-only prefix reuse. It does not yet migrate Muse image or
-DFlash execution. The serialized-worker limitations below describe the legacy
-path, not the new batching worker.
+and optional prefix reuse for new sessions and clean prompt replacements. It
+does not yet migrate Muse image or DFlash execution. The serialized-worker
+limitations below describe the legacy path, not the new batching worker.
 
 Deliberately narrow (reliability-first): Hermes/Qwen tool calling only;
 unsupported sampling params are rejected, not ignored. **One worker process,

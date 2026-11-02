@@ -540,6 +540,13 @@ lib.define(
     "sdpa_bitwise_causal_mask_gen.out(Tensor positions, int key_length, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
+lib.define(
+    "sdpa_bitwise_ring_mask_gen(Tensor positions, int sliding_window, int cache_length) -> Tensor"
+)
+lib.define(
+    "sdpa_bitwise_ring_mask_gen.out(Tensor positions, int sliding_window, int cache_length, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
 # Load/store with iDMA. These only exist before memory planning.
 # Post memory planning, we check that outputs/inputs for the load/store are in
 # DTCM and replace idma_load/idma_store with idma_copy.
@@ -3408,6 +3415,26 @@ def sdpa_bitwise_causal_mask_gen_meta(
     torch._check(key_length > 0, lambda: "key_length must be positive")
     torch._check(key_length % 8 == 0, lambda: "key_length must be a multiple of 8")
     return positions.new_empty((positions.numel(), key_length // 8), dtype=torch.uint8)
+
+
+@register_fake("cadence::sdpa_bitwise_ring_mask_gen")
+def sdpa_bitwise_ring_mask_gen_meta(
+    positions: torch.Tensor, sliding_window: int, cache_length: int
+) -> torch.Tensor:
+    torch._check(
+        positions.dtype in (torch.int32, torch.int64),
+        lambda: "expected int32 or int64 positions",
+    )
+    torch._check(positions.dim() == 1, lambda: "positions must be one-dimensional")
+    torch._check(cache_length > 0, lambda: "cache_length must be positive")
+    torch._check(cache_length % 8 == 0, lambda: "cache_length must be a multiple of 8")
+    torch._check(
+        0 < sliding_window <= cache_length,
+        lambda: "sliding_window must be positive and at most cache_length",
+    )
+    return positions.new_empty(
+        (positions.numel(), cache_length // 8), dtype=torch.uint8
+    )
 
 
 @register_fake("cadence::quantized_w8a32_linear")

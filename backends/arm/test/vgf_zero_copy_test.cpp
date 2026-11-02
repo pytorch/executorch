@@ -291,6 +291,33 @@ void reset_manager(
 // The C++ compiler and test runner validate these tests.
 // cppcheck-suppress-begin syntaxError
 
+TEST(VgfZeroCopyRuntimeGateTest, FeatureOffDisablesImportAttempts) {
+  EXPECT_FALSE(vgf_zero_copy_io_should_attempt(
+      /*build_enabled=*/false, nullptr, /*host_import_enabled=*/true));
+}
+
+TEST(VgfZeroCopyRuntimeGateTest, RuntimeZeroIsAKillSwitch) {
+  EXPECT_FALSE(vgf_zero_copy_io_should_attempt(
+      /*build_enabled=*/true, "0", /*host_import_enabled=*/true));
+  EXPECT_TRUE(vgf_zero_copy_io_should_attempt(
+      /*build_enabled=*/true, nullptr, /*host_import_enabled=*/true));
+  EXPECT_TRUE(vgf_zero_copy_io_should_attempt(
+      /*build_enabled=*/true, "1", /*host_import_enabled=*/true));
+}
+
+TEST(VgfZeroCopyRuntimeGateTest, UnsupportedCapabilityFallsBack) {
+  EXPECT_FALSE(vgf_zero_copy_io_should_attempt(
+      /*build_enabled=*/true, nullptr, /*host_import_enabled=*/false));
+}
+
+TEST(VgfZeroCopyRuntimeGateTest, HeaderReflectsBuildDefinition) {
+#if defined(EXECUTORCH_VGF_ZERO_COPY_IO) && EXECUTORCH_VGF_ZERO_COPY_IO
+  EXPECT_TRUE(vgf_zero_copy_io_build_enabled());
+#else
+  EXPECT_FALSE(vgf_zero_copy_io_build_enabled());
+#endif
+}
+
 TEST(VgfZeroCopyImportTest, SuccessfulCandidateCreation) {
   alignas(64) std::array<std::byte, 128> host{};
   FakeVulkanState state;
@@ -559,7 +586,7 @@ TEST(
   EXPECT_EQ(manager.slot(0)->memory, old_memory);
 }
 
-TEST(VgfZeroCopyImportTest, StableCacheHitDoesNotReimport) {
+TEST(VgfZeroCopyImportTest, SamePointerWithinExecutionUsesCacheHit) {
   alignas(64) std::array<std::byte, 128> host{};
   FakeVulkanState state;
   VgfZeroCopyImportManager manager;
@@ -579,6 +606,337 @@ TEST(VgfZeroCopyImportTest, StableCacheHitDoesNotReimport) {
   EXPECT_TRUE(cached.cache_hit);
   EXPECT_EQ(state.create_tensor_calls, create_calls);
   EXPECT_EQ(state.allocate_memory_calls, allocate_calls);
+}
+
+TEST(VgfZeroCopyImportTest, ReleaseAllEndsExecutionScopedCacheLifetime) {
+  alignas(64) std::array<std::byte, 128> host{};
+  FakeVulkanState state;
+  VgfZeroCopyImportManager manager;
+  reset_manager(&manager, 1, &state);
+
+  const auto first = manager.try_import_candidate(
+      0, host.data(), host.size(), eligible_metadata());
+  ASSERT_TRUE(first.accepted);
+  ASSERT_FALSE(first.cache_hit);
+  ASSERT_NE(manager.slot(0), nullptr);
+  ASSERT_TRUE(manager.slot(0)->valid());
+
+  manager.release_all();
+
+  ASSERT_NE(manager.slot(0), nullptr);
+  EXPECT_FALSE(manager.slot(0)->valid());
+  EXPECT_EQ(state.destroy_tensor_view_calls, 1u);
+  EXPECT_EQ(state.destroy_tensor_calls, 1u);
+  EXPECT_EQ(state.free_memory_calls, 1u);
+
+  // A numerically identical pointer in a later execute() is not proof that the
+  // original EValue allocation is still alive. After execution-scoped release,
+  // the same address must be imported again rather than treated as a cache hit.
+  const auto second = manager.try_import_candidate(
+      0, host.data(), host.size(), eligible_metadata());
+  ASSERT_TRUE(second.accepted);
+  EXPECT_FALSE(second.cache_hit);
+  EXPECT_EQ(state.create_tensor_calls, 2u);
+  EXPECT_EQ(state.allocate_memory_calls, 2u);
+}
+
+TEST(VgfZeroCopyImportTest, FirstAcceptedImportSelectionChoosesImportedView) {
+  const auto owned = fake_handle<VkTensorViewARM>(0x7050);
+  const auto imported = fake_handle<VkTensorViewARM>(0x7060);
+  VgfBoundaryBindingState binding_state;
+  binding_state.initialize(owned);
+
+  ASSERT_TRUE(vgf_apply_import_binding_selection(
+      &binding_state, /*import_accepted=*/true, imported));
+
+  EXPECT_TRUE(binding_state.import_active);
+  EXPECT_TRUE(binding_state.dirty);
+  EXPECT_EQ(binding_state.selected_view, imported);
+  EXPECT_EQ(binding_state.bound_view, owned);
+}
+
+TEST(VgfZeroCopyImportTest, AcceptedCachedImportReselectsAfterOwnedFallback) {
+  const auto owned = fake_handle<VkTensorViewARM>(0x7070);
+  const auto imported = fake_handle<VkTensorViewARM>(0x7080);
+  VgfBoundaryBindingState binding_state;
+  binding_state.initialize(owned);
+
+  ASSERT_TRUE(vgf_apply_import_binding_selection(
+      &binding_state, /*import_accepted=*/true, imported));
+  binding_state.mark_clean();
+  ASSERT_TRUE(vgf_apply_import_binding_selection(
+      &binding_state, /*import_accepted=*/false, VK_NULL_HANDLE));
+  binding_state.mark_clean();
+
+  // Within one execute() scope the import manager may return a cache hit for
+  // the same live host allocation. Accepted still means the cached imported
+  // view must become selected again. VGFBackend releases the cache on return.
+  ASSERT_TRUE(vgf_apply_import_binding_selection(
+      &binding_state, /*import_accepted=*/true, imported));
+  EXPECT_TRUE(binding_state.import_active);
+  EXPECT_TRUE(binding_state.dirty);
+  EXPECT_EQ(binding_state.selected_view, imported);
+}
+
+TEST(VgfZeroCopyImportTest, RejectedImportSelectionRestoresOwnedView) {
+  const auto owned = fake_handle<VkTensorViewARM>(0x7090);
+  const auto imported = fake_handle<VkTensorViewARM>(0x70a0);
+  VgfBoundaryBindingState binding_state;
+  binding_state.initialize(owned);
+  ASSERT_TRUE(vgf_apply_import_binding_selection(
+      &binding_state, /*import_accepted=*/true, imported));
+  binding_state.mark_clean();
+
+  ASSERT_TRUE(vgf_apply_import_binding_selection(
+      &binding_state, /*import_accepted=*/false, VK_NULL_HANDLE));
+
+  EXPECT_FALSE(binding_state.import_active);
+  EXPECT_TRUE(binding_state.dirty);
+  EXPECT_EQ(binding_state.selected_view, owned);
+  EXPECT_EQ(binding_state.bound_view, imported);
+}
+
+TEST(VgfZeroCopyImportTest, BoundaryBindingOwnedToImportedMarksDirty) {
+  auto metadata = eligible_metadata();
+  metadata.bindings = {
+      VgfBoundaryBindingRef{.segment_index = 0, .set_index = 0, .binding = 3}};
+  const auto owned = fake_handle<VkTensorViewARM>(0x7100);
+  const auto imported = fake_handle<VkTensorViewARM>(0x7200);
+
+  VgfBoundaryBindingState binding_state;
+  binding_state.initialize(owned);
+  ASSERT_TRUE(binding_state.select(imported, true));
+
+  EXPECT_TRUE(binding_state.import_active);
+  EXPECT_TRUE(binding_state.dirty);
+  EXPECT_EQ(binding_state.selected_view, imported);
+  const auto updates = vgf_collect_boundary_descriptor_updates(
+      std::vector<VgfZeroCopyIoMetadata>{metadata},
+      std::vector<VgfBoundaryBindingState>{binding_state});
+  ASSERT_EQ(updates.size(), 1u);
+  EXPECT_EQ(updates[0].tensor_view, imported);
+  EXPECT_EQ(updates[0].binding.binding, 3u);
+}
+
+TEST(VgfZeroCopyImportTest, BoundaryBindingImportedToOwnedMarksDirty) {
+  const auto owned = fake_handle<VkTensorViewARM>(0x7300);
+  const auto imported = fake_handle<VkTensorViewARM>(0x7400);
+  VgfBoundaryBindingState binding_state;
+  binding_state.initialize(owned);
+  ASSERT_TRUE(binding_state.select(imported, true));
+  binding_state.mark_clean();
+
+  EXPECT_TRUE(binding_state.select(owned, false));
+  EXPECT_FALSE(binding_state.import_active);
+  EXPECT_TRUE(binding_state.dirty);
+  EXPECT_EQ(binding_state.selected_view, owned);
+}
+
+TEST(VgfZeroCopyImportTest, BoundaryBindingImportedAToImportedBMarksDirty) {
+  const auto owned = fake_handle<VkTensorViewARM>(0x7500);
+  const auto imported_a = fake_handle<VkTensorViewARM>(0x7600);
+  const auto imported_b = fake_handle<VkTensorViewARM>(0x7700);
+  VgfBoundaryBindingState binding_state;
+  binding_state.initialize(owned);
+  ASSERT_TRUE(binding_state.select(imported_a, true));
+  binding_state.mark_clean();
+
+  EXPECT_TRUE(binding_state.select(imported_b, true));
+  EXPECT_TRUE(binding_state.import_active);
+  EXPECT_TRUE(binding_state.dirty);
+  EXPECT_EQ(binding_state.selected_view, imported_b);
+}
+
+TEST(VgfZeroCopyImportTest, BoundaryBindingUnchangedSelectionIsNoOp) {
+  const auto owned = fake_handle<VkTensorViewARM>(0x7800);
+  const auto imported = fake_handle<VkTensorViewARM>(0x7900);
+  VgfBoundaryBindingState binding_state;
+  binding_state.initialize(owned);
+  ASSERT_TRUE(binding_state.select(imported, true));
+  binding_state.mark_clean();
+
+  EXPECT_FALSE(binding_state.select(imported, true));
+  EXPECT_FALSE(binding_state.dirty);
+  EXPECT_TRUE(binding_state.import_active);
+}
+
+TEST(VgfZeroCopyImportTest, BoundaryBindingPendingChangeCanCancelBeforeFlush) {
+  const auto owned = fake_handle<VkTensorViewARM>(0x7950);
+  const auto imported = fake_handle<VkTensorViewARM>(0x7960);
+  VgfBoundaryBindingState binding_state;
+  binding_state.initialize(owned);
+
+  ASSERT_TRUE(binding_state.select(imported, true));
+  ASSERT_TRUE(binding_state.dirty);
+  ASSERT_TRUE(binding_state.select(owned, false));
+  EXPECT_FALSE(binding_state.dirty);
+  EXPECT_EQ(binding_state.selected_view, owned);
+  EXPECT_EQ(binding_state.bound_view, owned);
+}
+
+TEST(VgfZeroCopyImportTest, BoundaryBindingFansOutToEveryRecordedBinding) {
+  auto metadata = eligible_metadata();
+  metadata.bindings = {
+      VgfBoundaryBindingRef{.segment_index = 0, .set_index = 0, .binding = 1},
+      VgfBoundaryBindingRef{.segment_index = 2, .set_index = 0, .binding = 7},
+  };
+  const auto owned = fake_handle<VkTensorViewARM>(0x7a00);
+  const auto imported = fake_handle<VkTensorViewARM>(0x7b00);
+  VgfBoundaryBindingState binding_state;
+  binding_state.initialize(owned);
+  ASSERT_TRUE(binding_state.select(imported, true));
+
+  const auto updates = vgf_collect_boundary_descriptor_updates(
+      std::vector<VgfZeroCopyIoMetadata>{metadata},
+      std::vector<VgfBoundaryBindingState>{binding_state});
+  ASSERT_EQ(updates.size(), 2u);
+  EXPECT_EQ(updates[0].binding.segment_index, 0u);
+  EXPECT_EQ(updates[0].binding.binding, 1u);
+  EXPECT_EQ(updates[1].binding.segment_index, 2u);
+  EXPECT_EQ(updates[1].binding.binding, 7u);
+  EXPECT_EQ(updates[0].tensor_view, imported);
+  EXPECT_EQ(updates[1].tensor_view, imported);
+}
+
+TEST(VgfZeroCopyImportTest, CleanBoundaryBindingNeedsNoRefreshOrRerecord) {
+  auto metadata = eligible_metadata();
+  const auto owned = fake_handle<VkTensorViewARM>(0x7c00);
+  VgfBoundaryBindingState binding_state;
+  binding_state.initialize(owned);
+
+  EXPECT_FALSE(vgf_boundary_bindings_dirty(
+      std::vector<VgfBoundaryBindingState>{binding_state}));
+  EXPECT_TRUE(vgf_collect_boundary_descriptor_updates(
+                  std::vector<VgfZeroCopyIoMetadata>{metadata},
+                  std::vector<VgfBoundaryBindingState>{binding_state})
+                  .empty());
+}
+
+TEST(
+    VgfZeroCopyImportTest,
+    FailedImportedReplacementCanRestoreOwnedBindingBeforeDispatch) {
+  alignas(64) std::array<std::byte, 128> first_host{};
+  alignas(64) std::array<std::byte, 128> replacement_host{};
+  FakeVulkanState state;
+  VgfZeroCopyImportManager manager;
+  reset_manager(&manager, 1, &state);
+
+  ASSERT_TRUE(
+      manager
+          .try_import_candidate(
+              0, first_host.data(), first_host.size(), eligible_metadata())
+          .accepted);
+  ASSERT_NE(manager.slot(0), nullptr);
+  const auto imported_a = manager.slot(0)->tensor_view;
+  const auto owned = fake_handle<VkTensorViewARM>(0x7d00);
+
+  VgfBoundaryBindingState binding_state;
+  binding_state.initialize(owned);
+  ASSERT_TRUE(binding_state.select(imported_a, true));
+  binding_state.mark_clean();
+
+  state.create_tensor_view_result = VK_ERROR_INITIALIZATION_FAILED;
+  const auto replacement = manager.try_import_candidate(
+      0, replacement_host.data(), replacement_host.size(), eligible_metadata());
+  ASSERT_FALSE(replacement.accepted);
+  ASSERT_NE(manager.slot(0), nullptr);
+  EXPECT_EQ(manager.slot(0)->tensor_view, imported_a);
+
+  ASSERT_TRUE(vgf_apply_import_binding_selection(
+      &binding_state, replacement.accepted, VK_NULL_HANDLE));
+  EXPECT_TRUE(binding_state.dirty);
+  EXPECT_FALSE(binding_state.import_active);
+  EXPECT_EQ(binding_state.selected_view, owned);
+}
+
+TEST(
+    VgfZeroCopyImportTest,
+    MixedBoundaryExecutionCanImportOneAndFallbackAnother) {
+  alignas(64) std::array<std::byte, 128> aligned_boundary{};
+  alignas(64) std::array<std::byte, 4000> non_aligned_boundary{};
+  FakeVulkanState state;
+  VgfZeroCopyImportManager manager;
+  reset_manager(&manager, 2, &state);
+
+  auto input_metadata = eligible_metadata();
+  auto output_metadata = eligible_metadata();
+  output_metadata.is_input = false;
+  output_metadata.executorch_argument_index = 1;
+
+  const auto imported = manager.try_import_candidate(
+      0, aligned_boundary.data(), aligned_boundary.size(), input_metadata);
+  const auto copied = manager.try_import_candidate(
+      1,
+      non_aligned_boundary.data(),
+      non_aligned_boundary.size(),
+      output_metadata);
+
+  EXPECT_TRUE(imported.accepted);
+  EXPECT_FALSE(copied.accepted);
+  EXPECT_EQ(
+      copied.reason, VgfZeroCopyImportRejectionReason::kLogicalSizeAlignment);
+}
+
+TEST(
+    VgfZeroCopyImportTest,
+    PointerChangeWithinExecutionCreatesTransactionalReplacement) {
+  alignas(64) std::array<std::byte, 128> first_host{};
+  alignas(64) std::array<std::byte, 128> second_host{};
+  FakeVulkanState state;
+  VgfZeroCopyImportManager manager;
+  reset_manager(&manager, 1, &state);
+
+  ASSERT_TRUE(
+      manager
+          .try_import_candidate(
+              0, first_host.data(), first_host.size(), eligible_metadata())
+          .accepted);
+  const auto first_view = manager.slot(0)->tensor_view;
+
+  const auto replacement = manager.try_import_candidate(
+      0, second_host.data(), second_host.size(), eligible_metadata());
+
+  ASSERT_TRUE(replacement.accepted);
+  EXPECT_FALSE(replacement.cache_hit);
+  ASSERT_NE(manager.slot(0), nullptr);
+  EXPECT_EQ(manager.slot(0)->host_pointer, second_host.data());
+  EXPECT_NE(manager.slot(0)->tensor_view, first_view);
+  EXPECT_EQ(state.create_tensor_calls, 2u);
+  EXPECT_EQ(state.allocate_memory_calls, 2u);
+  EXPECT_EQ(state.destroy_tensor_view_calls, 1u);
+  EXPECT_EQ(state.destroy_tensor_calls, 1u);
+  EXPECT_EQ(state.free_memory_calls, 1u);
+}
+
+TEST(VgfZeroCopyImportTest, ReleaseAllEndsEveryImportedObjectLifetime) {
+  alignas(64) std::array<std::byte, 128> first_host{};
+  alignas(64) std::array<std::byte, 128> second_host{};
+  FakeVulkanState state;
+  VgfZeroCopyImportManager manager;
+  reset_manager(&manager, 2, &state);
+
+  ASSERT_TRUE(
+      manager
+          .try_import_candidate(
+              0, first_host.data(), first_host.size(), eligible_metadata())
+          .accepted);
+  ASSERT_TRUE(
+      manager
+          .try_import_candidate(
+              1, second_host.data(), second_host.size(), eligible_metadata())
+          .accepted);
+
+  manager.release_all();
+
+  ASSERT_NE(manager.slot(0), nullptr);
+  ASSERT_NE(manager.slot(1), nullptr);
+  EXPECT_FALSE(manager.slot(0)->valid());
+  EXPECT_FALSE(manager.slot(1)->valid());
+  EXPECT_EQ(manager.slot(0)->host_pointer, nullptr);
+  EXPECT_EQ(manager.slot(1)->host_pointer, nullptr);
+  EXPECT_EQ(state.destroy_tensor_view_calls, 2u);
+  EXPECT_EQ(state.destroy_tensor_calls, 2u);
+  EXPECT_EQ(state.free_memory_calls, 2u);
 }
 
 TEST(VgfZeroCopyImportTest, ReleaseUsesSafeDestructionOrderAndDoesNotOwnHost) {

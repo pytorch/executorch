@@ -16,7 +16,7 @@ lib.define(
 )
 
 lib.define(
-    "_empty_dim_order(int[] size, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None, int[]? dim_order=None) -> Tensor"
+    "_empty_dim_order(SymInt[] size, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None, int[]? dim_order=None) -> Tensor"
 )
 
 # Out variant of aten::_to_copy and aten::empty drops TensorOptions, so do their dim order variants
@@ -25,7 +25,7 @@ lib.define(
 )
 
 lib.define(
-    "_empty_dim_order.out(int[] size, *, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)"
+    "_empty_dim_order.out(SymInt[] size, *, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(

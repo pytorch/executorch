@@ -81,7 +81,9 @@ ValueRef prepack_fp_linear_weight(
 
   std::string kernel_name = "pack_fp_linear_weight";
   add_storage_type_suffix(kernel_name, weight_storage);
-  add_dtype_suffix(kernel_name, graph.dtype_of(weight_data));
+  // The packed tensor's dtype, not the TensorRef's: half is aliased to float on
+  // devices without fp16 buffer support, and the shader must match the texture.
+  add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight));
   add_dtype_suffix(kernel_name, graph.get_staging_dtype_for(weight_data));
 
   graph.prepack_nodes().emplace_back(new PrepackNode(

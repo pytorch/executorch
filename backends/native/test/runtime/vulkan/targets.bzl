@@ -15,7 +15,19 @@ def define_common_targets():
     runtime.genrule(
         name = "vulkan_test_driver",
         out = "vulkan_test_driver",
+        visibility = ["//executorch/backends/native/test/..."],
         cmd = "mkdir -p $OUT && cp $(location fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_so)/libvulkan.so.1 $OUT/libvk_swiftshader.so",
+    )
+
+    runtime.cxx_binary(
+        name = "vulkan_ptn_runner",
+        srcs = ["vulkan_ptn_runner.cpp"],
+        visibility = ["//executorch/backends/native/test/..."],
+        deps = [
+            "//executorch/backends/native/runtime/vulkan:vulkan_engine",
+            "//executorch/backends/native/test/runtime:ptn_runner_main",
+            "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
+        ],
     )
 
     runtime.cxx_test(

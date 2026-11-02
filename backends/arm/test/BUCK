@@ -104,3 +104,12 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = define_arm_tests,)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "model_converter_resource",
+    base_module = "executorch.backends.arm.vgf",
+    resources = {
+        "fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.11.0:model-converter-bin": "_model_converter_binary",
+    },
+)

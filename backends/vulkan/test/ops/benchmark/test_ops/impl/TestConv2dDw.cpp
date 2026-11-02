@@ -47,7 +47,11 @@ static std::string pick_conv2d_dw_shader_with_selector(
   const bool is_3x3 = weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3;
   const bool is_5x5 = weight_sizes.at(2) == 5 && weight_sizes.at(3) == 5;
 
-  if (!stride_equals_dilation) {
+  // Only the tiled 3x3 / 5x5 shaders have a stride != dilation (_sned)
+  // variant. The generic conv2d_dw shader reads stride and dilation from its
+  // params and handles any combination, so it must not take the infix:
+  // conv2d_dw_sned_<dtype> does not exist and the lookup throws at load.
+  if (!stride_equals_dilation && (is_3x3 || is_5x5)) {
     kernel_name += "_sned";
   }
 

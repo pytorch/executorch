@@ -1,11 +1,27 @@
 load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def _persistent_region_flags():
+    if native.read_config("executorch", "ethosu_persistent_region", "false") == "true":
+        return ["-DETHOSU_PERSISTENT_REGION"]
+    if runtime.is_oss:
+        return []
+    return select({
+        "DEFAULT": [],
+        "fbsource//xplat/executorch/tools/buck/constraints:ethosu-persistent-region-enabled": ["-DETHOSU_PERSISTENT_REGION"],
+    })
+
+def _vgf_zero_copy_flags():
+    if native.read_config("executorch", "vgf_zero_copy_io", "false") == "true":
+        return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=1"]
+    return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=0"]
+
 def define_common_targets():
     runtime.cxx_library(
         name = "vela_bin_stream",
         srcs = ["VelaBinStream.cpp"],
         exported_headers = ["VelaBinStream.h"],
+        preprocessor_flags = _persistent_region_flags(),
         visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:core",
@@ -29,6 +45,7 @@ def define_common_targets():
         supports_python_dlopen = True,
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors"],
+        preprocessor_flags = _persistent_region_flags(),
         visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/backend:interface",
@@ -53,8 +70,10 @@ def define_common_targets():
         ],
         exported_headers = [
             "VGFExecutionStats.h",
+            "VGFMutableAlias.h",
             "VGFNeuralStatistics.h",
             "VGFSetup.h",
+            "VGFShapeUtils.h",
             "VGFVulkanFeatures.h",
             "VGFZeroCopy.h",
         ],
@@ -70,6 +89,7 @@ def define_common_targets():
             "-DUSE_VULKAN_WRAPPER",
             "-DUSE_VULKAN_VOLK",
         ],
+        preprocessor_flags = _vgf_zero_copy_flags(),
         visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/backend:interface",

@@ -111,12 +111,26 @@ Example output:
 import functools
 from pathlib import Path
 from types import ModuleType
-from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Set, Union
+from typing import (
+    Any,
+    BinaryIO,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    TYPE_CHECKING,
+    Union,
+)
+
+if TYPE_CHECKING:
+    import torch
 
 try:
-    from executorch.extension.pybindings.portable_lib import (  # type: ignore[import-not-found]
+    from executorch.extension.pybindings.portable_lib import (  # type: ignore[import-not-found]  # noqa: F401
         ExecuTorchMethod,
         ExecuTorchProgram,
+        ExecuTorchResult,
         MethodMeta,
         Verification,
     )
@@ -135,16 +149,58 @@ class Method:
     def __init__(self, method: ExecuTorchMethod) -> None:
         self._method = method
 
-    def execute(self, inputs: Sequence[Any]) -> Sequence[Any]:
+    def execute(
+        self, inputs: Sequence[Any], clone_outputs: bool = True
+    ) -> Sequence[Any]:
         """Executes the method with the given inputs.
+
+        Outputs are copies, except for an output bound with
+        :meth:`set_output`, which is returned as the bound tensor and
+        overwritten by later calls. An input that is not memory planned (e.g.
+        exported with ``alloc_graph_input=False``) is used in place, so a
+        mutation of it is written into the tensor passed in for it, while an
+        output that is that input is still returned as a copy. A memory planned
+        input is copied into the method, so the tensor passed in for it is not
+        updated.
 
         Args:
             inputs: A sequence of input values, typically torch.Tensor objects.
+                Without PyTorch, pass NumPy arrays, other buffers such as
+                memoryview, DLPack objects such as CuPy arrays, or
+                ExecuTorchResult values. Scalar inputs take Python numbers.
+            clone_outputs: If False, the outputs share the method's memory and
+                a later execution may overwrite them, which avoids a copy.
 
         Returns:
-            A list of output values, typically torch.Tensor objects.
+            A list of output values, typically torch.Tensor objects. Without
+            PyTorch, tensor outputs are ExecuTorchResult objects.
         """
-        return self._method(inputs)
+        return self._method(inputs, clone_outputs=clone_outputs)
+
+    def set_output(self, tensor: "torch.Tensor", index: int) -> None:
+        """Binds output ``index`` to ``tensor``'s storage for every later call.
+
+        The method then writes that output straight into ``tensor`` and returns
+        it uncloned (viewed at the written shape when that differs) instead of
+        a copy of its own storage. Every later call overwrites ``tensor``, so
+        clone a returned output to keep it.
+
+        The output must not be memory planned (export with
+        ``alloc_graph_output=False``), must not be returned at another output
+        index too, and must not be an input, which already lives in the tensor
+        passed in for it. That last case is only known once inputs have been
+        set: a binding made before the first call is removed by that call,
+        which raises. ``tensor`` must have the output's dtype and device, be
+        contiguous, hold at least as many bytes as the output's largest shape,
+        and not share memory with another bound output or with an input. The
+        output itself must be contiguous, not e.g. channels-last. A rejected
+        binding raises ``ValueError``. The ATen bindings don't support it.
+
+        Args:
+            tensor: The tensor that stores the output from now on.
+            index: The index of the output to bind.
+        """
+        self._method.set_output(tensor, index)
 
     @property
     def metadata(self) -> MethodMeta:
@@ -187,9 +243,11 @@ class Program:
         program placed them. A method whose buffers are all on the host shares
         one set of arenas with every other host-only method of this program,
         sized to the largest of them, so two such methods overwrite each
-        other's intermediate values. Outputs are copied out on every call, so
-        that sharing does not change what execute returns. A method with any
-        buffer placed on an accelerator gets its own arenas instead, claimed
+        other's intermediate values. By default execute copies its outputs out,
+        so that sharing does not change what it returns. With
+        ``clone_outputs=False`` the outputs share that memory, so the next
+        execution of any method of this program may overwrite them. A method
+        with any buffer placed on an accelerator gets its own arenas instead, claimed
         when that method is first loaded and owned by that method until the
         method itself is released. This program caches every method it loads,
         so in normal use those arenas live as long as the program does. A

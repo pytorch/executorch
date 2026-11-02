@@ -2864,6 +2864,42 @@ class Stack(torch.nn.Module):
         return torch.stack((x, y, z))
 
 
+class Stft(torch.nn.Module):
+    def __init__(
+        self,
+        n_fft,
+        hop_length=None,
+        win_length=None,
+        use_window=True,
+        onesided=True,
+        output="power",
+    ):
+        super().__init__()
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.win_length = win_length
+        self.onesided = onesided
+        self.output = output
+        self.window = torch.hann_window(win_length or n_fft) if use_window else None
+
+    def forward(self, x):
+        spectrum = torch.stft(
+            x,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            win_length=self.win_length,
+            window=self.window,
+            center=False,
+            onesided=self.onesided,
+            return_complex=True,
+        )
+        if self.output == "power":
+            return spectrum.abs().pow(2)
+        if self.output == "magnitude":
+            return spectrum.abs()
+        return torch.view_as_real(spectrum)
+
+
 class Sub(torch.nn.Module):
     def __init__(self):
         super().__init__()
