@@ -1156,7 +1156,7 @@ print("lines through Python:", stream.text().count(expected))
                         pass
                 try:
                     runtime._load_program_from_buffer(b"\xff" * 128)
-                except Exception:  # Its error message is not valid UTF-8 either.
+                except RuntimeError:
                     pass
                 return values.__dlpack__(stream=stream)
 
@@ -1181,6 +1181,13 @@ print("lines through Python:", stream.text().count(expected))
         self.assertGreater(kept, 512 * 1024 - 1024)
         self.assertLessEqual(kept, 1024 * 1024)
         self.assertIn("Program identifier '\\xff\\xff\\xff\\xff'", lines[-1])
+
+    def test_error_message_cut_in_a_character_raises_runtime_error(self):
+        # An error message is cut at a fixed length. With these paths, the cut
+        # falls inside a character for at least one of them.
+        for prefix in ("", "a", "ab"):
+            with self.assertRaises(RuntimeError):
+                self.runtime._load_for_executorch(prefix + "\u4e2d" * 60 + ".pte")
 
     def test_bfloat16_output_preserves_dtype(self):
         class ModuleAddBFloat16(ModuleAdd):

@@ -80,7 +80,7 @@
 #endif
 
 /// Throws a runtime_error with the provided message if `error` is not `Ok`,
-/// followed by the errors the runtime logged during this call.
+/// followed by the errors the runtime logged during this call. Needs the GIL.
 #define THROW_IF_ERROR(error, message, ...)                       \
   ({                                                              \
     if ((error) != Error::Ok) {                                   \
@@ -588,7 +588,15 @@ std::string with_runtime_errors(const char* message) {
     result.append(": ").append(runtime_errors, runtime_errors_size);
     runtime_errors_size = 0;
   }
-  return result;
+  // Python rejects an exception message that is not valid UTF-8. The message is
+  // cut at a fixed length, which can split a character of a path, and the
+  // runtime can log raw bytes, such as a file's identifier.
+  const auto text = py::reinterpret_steal<py::str>(
+      PyUnicode_DecodeUTF8(result.data(), result.size(), "backslashreplace"));
+  if (!text) {
+    throw py::error_already_set();
+  }
+  return text.cast<std::string>();
 }
 
 // Starts every binding call with no runtime errors recorded, and gives an
