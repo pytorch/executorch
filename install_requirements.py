@@ -41,19 +41,18 @@ def torchao_from_source():
 
 
 def get_torchao_version(torch_url):
-    if torch_url.endswith("/cpu") and not torchao_from_source():
+    if (
+        os.environ.get("EXECUTORCH_USE_RELEASE_CPU_DEPS") == "1"
+        and torch_url.endswith("/cpu")
+        and not torchao_from_source()
+    ):
         return TORCHAO_STABLE_VERSION
     return TORCHAO_NIGHTLY_VERSION
 
 
 def get_torch_url():
     torch_url = determine_torch_url(TORCH_URL_BASE)
-    # Python 3.15 still needs torchaudio 2.11.1 from the test index.
-    if (
-        torch_url.endswith("/cpu")
-        and not torchao_from_source()
-        and sys.version_info < (3, 15)
-    ):
+    if get_torchao_version(torch_url) == TORCHAO_STABLE_VERSION:
         return "https://download.pytorch.org/whl/cpu"
     return torch_url
 

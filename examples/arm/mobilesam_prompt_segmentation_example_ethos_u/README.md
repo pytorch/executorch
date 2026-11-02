@@ -17,7 +17,7 @@ From the ExecuTorch repository root:
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-CMAKE_GENERATOR=Ninja ./install_executorch.sh --optional-dependency ethos_u
+EXECUTORCH_USE_RELEASE_CPU_DEPS=1 CMAKE_GENERATOR=Ninja ./install_executorch.sh --optional-dependency ethos_u
 ./examples/arm/setup.sh --i-agree-to-the-contained-eula
 ./examples/arm/mobilesam_prompt_segmentation_example_ethos_u/run.sh
 ```
