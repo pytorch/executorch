@@ -103,9 +103,7 @@ Error make_filter(
   // The filter spans 4 inputs, widened by the shrink factor.
   filter.support = static_cast<T>((ratio >= 1.0) ? (4 * 0.5) * ratio : 4 * 0.5);
   filter.invscale = static_cast<T>((ratio >= 1.0) ? 1.0 / ratio : 1.0);
-  // A window never holds more inputs than there are.
-  filter.max_size = std::min(
-      static_cast<int64_t>(std::ceil(filter.support)) * 2 + 1, in_size);
+  filter.max_size = static_cast<int64_t>(std::ceil(filter.support)) * 2 + 1;
   return Error::Ok;
 }
 
