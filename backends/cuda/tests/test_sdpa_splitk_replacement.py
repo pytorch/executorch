@@ -275,6 +275,10 @@ class TestUnsupportedSDPAStaysWithRegularLowering(unittest.TestCase):
         q, v = _bf16(1, 2, 1, 16), _bf16(1, 2, 256, 32)
         self.assertStays(self._logs(q, _bf16(1, 2, 256, 16), v), "Head dimension")
 
+    def test_wide_head_that_is_not_a_power_of_2_is_not_replaced(self):
+        q = _bf16(1, 2, 64, 640)
+        self.assertStays(self._logs(q, q, q), "not a power of 2")
+
     def test_key_value_batch_1_under_batch_2_is_not_replaced(self):
         q, kv = _bf16(2, 2, 1, 16), _bf16(1, 2, 256, 16)
         self.assertStays(self._logs(q, kv, kv), "Batch dimension must match")
@@ -320,7 +324,7 @@ class TestUnsupportedSDPAStaysWithRegularLowering(unittest.TestCase):
 
 
 class TestSDPAKernelSupportCheck(unittest.TestCase):
-    """Calls that cannot be exported end to end, on hand-built graphs."""
+    """Support checks on hand-built graphs, which compile nothing."""
 
     def setUp(self):
         if importlib.util.find_spec("triton") is None:
@@ -364,19 +368,17 @@ class TestSDPAKernelSupportCheck(unittest.TestCase):
         node.kwargs = {"query": query, "key": key, "value": value}
         self.assertFalse(ReplaceEdgeOpWithTritonOpPass._sdpa_kernel_supports(node))
 
-    def test_wide_heads_are_supported_only_as_powers_of_2(self):
-        # A hand-built graph shows which calls the pass gives to the kernel
-        # without compiling the kernel.
+    def test_heads_that_fit_the_kernel_are_supported(self):
+        # Some CI GPUs lack the shared memory to compile heads of 1024.
         from executorch.backends.cuda.triton.replacement_pass import (
             ReplaceEdgeOpWithTritonOpPass,
         )
 
-        sizes = ((192, True), (264, False), (640, False), (512, True), (1024, True))
-        for size, supported in sizes:
+        for size in (192, 256, 512, 1024):
             with self.subTest(head_size=size):
                 node = self._sdpa_node((1, 2, 64, size))
-                self.assertEqual(
-                    ReplaceEdgeOpWithTritonOpPass._sdpa_kernel_supports(node), supported
+                self.assertTrue(
+                    ReplaceEdgeOpWithTritonOpPass._sdpa_kernel_supports(node)
                 )
 
 
