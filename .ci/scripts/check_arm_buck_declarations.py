@@ -154,6 +154,7 @@ class Declarations:
         self.snapshot = snapshot
         self.rules: dict[str, Rule] = {}
         self.loaded: set[str] = set()
+        self.called_helpers: set[tuple[str, str, str]] = set()
         self.package_errors: dict[str, list[tuple[str, str]]] = {}
 
     def package_error(self, package: str, filename: str, error: str) -> None:
@@ -386,6 +387,7 @@ class Declarations:
                     package, filename, "recursive declaration helper: " + name
                 )
             else:
+                self.called_helpers.add((package, filename, name))
                 visiting.add(name)
                 visit(function.body, dict(env))
                 visiting.remove(name)
@@ -403,6 +405,26 @@ class Declarations:
                         )
                     except Unsupported:
                         local_env.pop(node.targets[0].id, None)
+                elif isinstance(node, ast.AugAssign):
+                    target = node.target
+                    try:
+                        if not isinstance(target, ast.Name):
+                            raise Unsupported("non-name assignment target")
+                        local_env[target.id] = self.value(
+                            ast.BinOp(left=target, op=node.op, right=node.value),
+                            local_env,
+                            package,
+                        )
+                    except (Unsupported, TypeError) as error:
+                        while isinstance(target, (ast.Attribute, ast.Subscript)):
+                            target = target.value
+                        if isinstance(target, ast.Name):
+                            local_env.pop(target.id, None)
+                        self.package_error(
+                            package,
+                            filename,
+                            f"unsupported augmented assignment: {ast.unparse(node)} ({error})",
+                        )
                 elif isinstance(node, ast.If):
                     try:
                         branch = (
@@ -588,7 +610,7 @@ def python_imports(  # noqa: C901
                     package[: len(package) - node.level + 1]
                     + ([module] if module else [])
                 )
-            if not module.startswith("executorch."):
+            if module != "executorch" and not module.startswith("executorch."):
                 return
             for alias in node.names:
                 child = module + "." + alias.name
@@ -626,6 +648,8 @@ def is_test_file(source: str, filename: str) -> bool:
 def registered_tests(  # noqa: C901
     declarations: Declarations,
 ) -> tuple[set[str], list[str]]:
+    if (SCOPE, TEST_MACRO, "define_arm_tests") not in declarations.called_helpers:
+        return set(), []
     try:
         tree = ast.parse(declarations.snapshot.read(TEST_MACRO), filename=TEST_MACRO)
     except (KeyError, SyntaxError) as error:

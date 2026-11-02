@@ -33,6 +33,10 @@ SCOPE = "backends/arm/test"
 TESTER = SCOPE + "/tester/runner.py"
 BUCK = SCOPE + "/BUCK"
 TARGETS = SCOPE + "/targets.bzl"
+ARM_TEST_REGISTRATION = (
+    'load(":targets.bzl", "define_arm_tests")\n'
+    "fbcode_target(_kind=define_arm_tests)\n"
+)
 
 
 def library(name, sources, deps="[]"):
@@ -45,7 +49,8 @@ def fixture():
             "arm_tester_lib",
             'glob(["tester/*.py"], exclude=["tester/excluded.py"])',
             '["//executorch/exir:umbrella"]',
-        ),
+        )
+        + ARM_TEST_REGISTRATION,
         TESTER: "from executorch.exir.schema import Tensor\n",
         TARGETS: 'def define_arm_tests():\n    test_files = []\n    test_files += native.glob(["passes/test_*.py"])\n',
         "exir/BUCK": library("umbrella", "[]", '[":schema"]')
@@ -91,10 +96,13 @@ class DeclarationTests(unittest.TestCase):
                 if i.kind == "missing dependency"
             )
         )
-        after[BUCK] = library(
-            "arm_tester_lib",
-            'glob(["tester/*.py"], exclude=["tester/excluded.py"])',
-            '["//executorch/exir:umbrella", "//executorch/devtools/pte_tool:diff_pte_lib"]',
+        after[BUCK] = (
+            library(
+                "arm_tester_lib",
+                'glob(["tester/*.py"], exclude=["tester/excluded.py"])',
+                '["//executorch/exir:umbrella", "//executorch/devtools/pte_tool:diff_pte_lib"]',
+            )
+            + ARM_TEST_REGISTRATION
         )
         after[TARGETS] += '    test_files += ["misc/test_diff_pte.py"]\n'
         self.assertEqual(set(), regressions(before, after))
@@ -633,9 +641,6 @@ class DeclarationTests(unittest.TestCase):
     def test_known_pytest_generation_loop_is_handled_by_registration(self):
         files = fixture()
         files[
-            BUCK
-        ] += 'load(":targets.bzl", "define_arm_tests")\nfbcode_target(_kind=define_arm_tests)\n'
-        files[
             TARGETS
         ] += "    for test_file in test_files:\n        python_pytest(name=test_file, srcs=[test_file])\n"
         self.assertEqual(set(), analyze(Snapshot(files)))
@@ -865,6 +870,222 @@ class DeclarationTests(unittest.TestCase):
                 self.assertIn("choose_deps()", report)
                 if add_arm_error:
                     self.assertIn("ERROR: Unregistered test", report)
+
+    def test_removing_macro_invocation_unregisters_existing_suite(self):
+        before = fixture()
+        test = SCOPE + "/passes/test_registered.py"
+        before[test] = "def test_registered(): pass\n"
+        self.assertEqual(set(), analyze(Snapshot(before)))
+        after = dict(before)
+        after[BUCK] = after[BUCK].replace("fbcode_target(_kind=define_arm_tests)\n", "")
+        issues = regressions(before, after)
+        self.assertEqual(1, len(issues))
+        issue = next(iter(issues))
+        self.assertEqual("unregistered test", issue.kind)
+        self.assertEqual(test, issue.source)
+        self.assertEqual("error", issue.severity)
+
+    def test_inactive_registration_calls_do_not_register_tests(self):
+        for invocation in (
+            "",
+            "if False:\n    define_arm_tests()\n",
+            "def unused():\n    define_arm_tests()\n",
+            "non_fbcode_target(_kind=define_arm_tests)\n",
+        ):
+            with self.subTest(invocation=invocation):
+                files = fixture()
+                files[SCOPE + "/passes/test_registered.py"] = (
+                    "def test_registered(): pass\n"
+                )
+                files[BUCK] = files[BUCK].replace(
+                    "fbcode_target(_kind=define_arm_tests)\n", invocation
+                )
+                self.assertTrue(
+                    any(i.kind == "unregistered test" for i in analyze(Snapshot(files)))
+                )
+
+    def test_alias_and_called_wrappers_register_tests(self):
+        for registration in (
+            'load(":targets.bzl", register="define_arm_tests")\nregister()\n',
+            'load(":targets.bzl", register="define_arm_tests")\nfbcode_target(_kind=register)\n',
+            'load(":targets.bzl", "define_arm_tests")\n'
+            "def wrapper():\n    define_arm_tests()\nwrapper()\n",
+        ):
+            with self.subTest(registration=registration):
+                files = fixture()
+                files[SCOPE + "/passes/test_registered.py"] = (
+                    "def test_registered(): pass\n"
+                )
+                files[BUCK] = files[BUCK].replace(ARM_TEST_REGISTRATION, registration)
+                self.assertEqual(set(), analyze(Snapshot(files)))
+
+    def test_parameterized_registration_is_not_counted(self):
+        for change_signature in (False, True):
+            with self.subTest(change_signature=change_signature):
+                files = fixture()
+                files[SCOPE + "/passes/test_registered.py"] = (
+                    "def test_registered(): pass\n"
+                )
+                if change_signature:
+                    files[TARGETS] = files[TARGETS].replace(
+                        "define_arm_tests()", "define_arm_tests(config)"
+                    )
+                else:
+                    files[BUCK] = files[BUCK].replace(
+                        "_kind=define_arm_tests)",
+                        "_kind=define_arm_tests, config=True)",
+                    )
+                issues = analyze(Snapshot(files))
+                self.assertTrue(any(i.kind == "unregistered test" for i in issues))
+                self.assertTrue(
+                    any(
+                        i.kind == "cannot validate"
+                        and "parameterized declaration helper" in i.detail
+                        for i in issues
+                    )
+                )
+
+    def test_dormant_registration_macro_is_not_evaluated(self):
+        files = fixture()
+        files[BUCK] = files[BUCK].replace("fbcode_target(_kind=define_arm_tests)\n", "")
+        files[TARGETS] = "def define_arm_tests():\n    test_files = choose_tests()\n"
+        self.assertEqual(set(), analyze(Snapshot(files)))
+
+    def test_root_package_import_matches_dotted_import_dependencies(self):
+        for source in (
+            "import executorch.exir\n",
+            "from executorch import exir\n",
+            "from executorch import exir as export_ir\n",
+        ):
+            with self.subTest(source=source):
+                files = fixture()
+                files["exir/__init__.py"] = ""
+                files["exir/BUCK"] += library("lib", '["__init__.py"]')
+                files[TESTER] = source
+                issues = analyze(Snapshot(files))
+                self.assertEqual(1, len(issues))
+                issue = next(iter(issues))
+                self.assertEqual("missing dependency", issue.kind)
+                self.assertEqual("executorch.exir", issue.subject)
+                self.assertEqual("error", issue.severity)
+                files[BUCK] = files[BUCK].replace(
+                    '["//executorch/exir:umbrella"]',
+                    '["//executorch/exir:umbrella", "//executorch/exir:lib"]',
+                )
+                self.assertEqual(set(), analyze(Snapshot(files)))
+
+    def test_root_package_import_checks_each_alias_and_skips_type_only(self):
+        files = fixture()
+        files["exir/__init__.py"] = ""
+        files["exir/BUCK"] += library("lib", '["__init__.py"]')
+        files["devtools/__init__.py"] = ""
+        files["devtools/BUCK"] = library("lib", '["__init__.py"]')
+        files[TESTER] = "from executorch import exir, devtools as tools\n"
+        issues = analyze(Snapshot(files))
+        self.assertEqual(
+            {"executorch.exir", "executorch.devtools"}, {i.subject for i in issues}
+        )
+        self.assertTrue(all(i.kind == "missing dependency" for i in issues))
+        files[TESTER] = "if TYPE_CHECKING:\n    from executorch import exir, devtools\n"
+        self.assertEqual(set(), analyze(Snapshot(files)))
+
+    def test_augmented_sources_and_dependencies_are_evaluated(self):
+        files = fixture()
+        helper = SCOPE + "/tester/helper.py"
+        files[helper] = (
+            "from executorch.devtools.pte_tool.diff_pte import PTEDiffResult\n"
+        )
+        declarations = (
+            'sources = ["tester/runner.py"]\n'
+            'sources += ["tester/helper.py"]\n'
+            'deps = ["//executorch/exir:umbrella"]\n'
+        )
+        files[BUCK] = declarations + library("arm_tester_lib", "sources", "deps")
+        issues = analyze(Snapshot(files))
+        self.assertTrue(
+            any(i.kind == "missing dependency" and i.source == helper for i in issues)
+        )
+        files[BUCK] = (
+            declarations
+            + 'deps += ["//executorch/devtools/pte_tool:diff_pte_lib"]\n'
+            + library("arm_tester_lib", "sources", "deps")
+        )
+        self.assertEqual(set(), analyze(Snapshot(files)))
+
+    def test_unknown_augmented_values_invalidate_previous_declarations(self):
+        for attribute, initial in (
+            ("srcs", '["tester/runner.py"]'),
+            ("deps", '["//executorch/exir:umbrella"]'),
+        ):
+            with self.subTest(attribute=attribute):
+                files = fixture()
+                values = {
+                    "srcs": '["tester/runner.py"]',
+                    "deps": '["//executorch/exir:umbrella"]',
+                }
+                values[attribute] = "values"
+                files[BUCK] = (
+                    f"values = {initial}\n"
+                    "values += choose_values()\n"
+                    + library("arm_tester_lib", values["srcs"], values["deps"])
+                )
+                declarations = Declarations(Snapshot(files))
+                declarations.load_scope()
+                rule = declarations.rules["//executorch/" + SCOPE + ":arm_tester_lib"]
+                self.assertTrue(any(e.startswith(attribute + ":") for e in rule.errors))
+                self.assertEqual(
+                    set(), rule.sources if attribute == "srcs" else rule.deps
+                )
+                self.assertTrue(
+                    any(
+                        i.kind == "cannot validate"
+                        and i.severity == "error"
+                        and i.source == BUCK
+                        and "values += choose_values()" in i.detail
+                        for i in analyze(Snapshot(files))
+                    )
+                )
+
+    def test_unsupported_augmented_operator_invalidates_previous_dependencies(self):
+        files = fixture()
+        files[BUCK] = 'deps = ["//executorch/exir:umbrella"]\n' "deps *= 0\n" + library(
+            "arm_tester_lib", '["tester/runner.py"]', "deps"
+        )
+        declarations = Declarations(Snapshot(files))
+        declarations.load_scope()
+        rule = declarations.rules["//executorch/" + SCOPE + ":arm_tester_lib"]
+        self.assertEqual(set(), rule.deps)
+        self.assertTrue(
+            any(
+                i.kind == "cannot validate"
+                and i.source == BUCK
+                and "deps *= 0" in i.detail
+                for i in analyze(Snapshot(files))
+            )
+        )
+
+    def test_augmented_subscript_and_incompatible_types_are_not_ignored(self):
+        for mutation in ('deps[0] += ":other"', "deps += 1"):
+            with self.subTest(mutation=mutation):
+                files = fixture()
+                files[BUCK] = (
+                    'deps = ["//executorch/exir:umbrella"]\n'
+                    + mutation
+                    + "\n"
+                    + library("arm_tester_lib", '["tester/runner.py"]', "deps")
+                )
+                declarations = Declarations(Snapshot(files))
+                declarations.load_scope()
+                rule = declarations.rules["//executorch/" + SCOPE + ":arm_tester_lib"]
+                self.assertEqual(set(), rule.deps)
+                self.assertTrue(
+                    any(
+                        i.kind == "cannot validate"
+                        and i.source == BUCK
+                        and "unsupported augmented assignment" in i.detail
+                        for i in analyze(Snapshot(files))
+                    )
+                )
 
     def test_nested_explicit_python_test_registration_is_valid(self):
         for kind in ("python_test", "python_pytest", "python_unittest"):
