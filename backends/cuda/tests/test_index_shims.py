@@ -35,7 +35,7 @@ from torch.nn.attention.varlen import varlen_attn
 
 @contextlib.contextmanager
 def _deterministic() -> Iterator[None]:
-    """Deterministic mode, which also sends every scatter and index_put to the
+    """Deterministic mode, which sends more scatters and index_puts to the
     shims."""
     enabled = torch.are_deterministic_algorithms_enabled()
     warn_only = torch.is_deterministic_algorithms_warn_only_enabled()

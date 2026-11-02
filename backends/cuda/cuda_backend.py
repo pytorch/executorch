@@ -426,8 +426,6 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         # `triton_heuristics.py` (clones for benchmark — must stay on GPU for
         # Triton). Discriminate by caller frame so we only force CPU clones for
         # the buffer-lifting path.
-        import sys
-
         caller = sys._getframe(1).f_code.co_name
         if caller == "_unlift_graph":
             # KV-cache buffers are emptied (storage resize_(0)) by the low-memory

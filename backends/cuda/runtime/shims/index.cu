@@ -1205,7 +1205,6 @@ Error scatter(
         scratch,
         stream);
   };
-  // Half and bfloat16 compute in float, and integers in int64.
   switch (out->dtype()) {
     case ScalarType::Float:
       return run(float{}, float{});

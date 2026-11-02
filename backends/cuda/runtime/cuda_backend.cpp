@@ -851,10 +851,10 @@ class ET_EXPERIMENTAL CudaBackend final
     const bool is_capture_step =
         (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
          handle->cuda_graph_state.warmup_remaining == 0);
-    bool graph_ran = false;
-    Error error =
-        run_once(handle, args, n_inputs, n_outputs, is_capture_step, graph_ran);
-    if (error != Error::Ok && is_capture_step && !graph_ran) {
+    bool graph_launched = false;
+    Error error = run_once(
+        handle, args, n_inputs, n_outputs, is_capture_step, graph_launched);
+    if (error != Error::Ok && is_capture_step && !graph_launched) {
       // A capture records kernels without running them, so until the new graph
       // runs, the inputs and any state the program updates are untouched. A
       // program that keeps state in host memory, where host code does run
@@ -872,7 +872,7 @@ class ET_EXPERIMENTAL CudaBackend final
           n_inputs,
           n_outputs,
           /*is_capture_step=*/false,
-          graph_ran);
+          graph_launched);
     }
     ET_CHECK_OK_OR_RETURN_ERROR(error);
     return commit_offgraph_kv_step(handle, kv_step_width);
@@ -962,15 +962,15 @@ class ET_EXPERIMENTAL CudaBackend final
   }
 
   // Runs the program once. On the capture step it captures the CUDA graph
-  // instead, then launches it once, and sets graph_ran once that launch is
-  // queued.
+  // instead, then launches it once, and sets graph_launched once that launch
+  // is queued.
   Error run_once(
       cuda::CudaDelegateHandle* handle,
       Span<EValue*> args,
       size_t n_inputs,
       size_t n_outputs,
       bool is_capture_step,
-      bool& graph_ran) const {
+      bool& graph_launched) const {
     // Wrrap them as SlimTensors for AOTI execution without any host<->device
     // copies.
     std::vector<SlimTensor*> slim_inputs(n_inputs);
@@ -1286,7 +1286,7 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphLaunch (first replay) failed: %s",
           cudaGetErrorString(gerr));
-      graph_ran = true;
+      graph_launched = true;
       handle->cuda_graph_state.note_graph_allocations();
 
       // Copy capture-step outputs into the planned GPU ET buffers (D2D).
