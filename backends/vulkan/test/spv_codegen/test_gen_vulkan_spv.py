@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import stat
+import struct
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,7 +29,7 @@ class TestNestedShaderSources(unittest.TestCase):
             "source = pathlib.Path(sys.argv[2])\n"
             + assertions
             + "output = pathlib.Path(sys.argv[sys.argv.index('-o') + 1])\n"
-            "output.write_bytes(b'\\x03\\x02\\x23\\x07')\n"
+            "output.write_bytes(bytes.fromhex('0302230700000100000000000100000000000000'))\n"
         )
         compiler.chmod(compiler.stat().st_mode | stat.S_IXUSR)
         return compiler, compiler_log
@@ -260,3 +261,171 @@ class TestNestedShaderSources(unittest.TestCase):
             generator.generateSPV(output_dir, cache_dir, nthreads=1)
 
             self.assertEqual(compiler_log.read_text().splitlines(), ["compile"])
+
+
+class TestShaderCapabilities(unittest.TestCase):
+    def _write_spv(self, root: Path, instructions: list[int]) -> Path:
+        path = root / "kernel.spv"
+        words = [0x07230203, 0x00010000, 0, 1, 0, *instructions]
+        path.write_bytes(struct.pack(f"<{len(words)}I", *words))
+        return path
+
+    def test_integer_dot_capabilities(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "kernel.glsl"
+            source.write_text('#version 450\n#include "dot.glslh"\n')
+            for capability in (6016, 6017, 6018, 6019):
+                with self.subTest(capability=capability):
+                    spv = self._write_spv(root, [(2 << 16) | 17, capability])
+                    info = gen_vulkan_spv.getShaderInfo(str(source), str(spv))
+                    self.assertTrue(info.requires_integer_dot_product_ext)
+                    self.assertFalse(info.requires_shader_int16_ext)
+                    self.assertFalse(info.requires_8bit_storage_ext)
+
+    def test_shader_without_integer_dot_capability(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "kernel.glsl"
+            source.write_text("#version 450\nvoid main() {}\n")
+            spv = self._write_spv(root, [(2 << 16) | 17, 1, (1 << 16) | 0])
+            info = gen_vulkan_spv.getShaderInfo(str(source), str(spv))
+            self.assertFalse(info.requires_integer_dot_product_ext)
+
+    def test_glsl_extensions_do_not_add_requirements(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "kernel.glsl"
+            source.write_text(
+                "#extension GL_EXT_integer_dot_product : require\n"
+                "#extension GL_EXT_shader_16bit_storage : require\n"
+                "#extension GL_EXT_shader_8bit_storage : require\n"
+                "#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require\n"
+                "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require\n"
+                "#extension GL_EXT_shader_explicit_arithmetic_types_float64 : require\n"
+            )
+            spv = self._write_spv(root, [(2 << 16) | 17, 1])
+            info = gen_vulkan_spv.getShaderInfo(str(source), str(spv))
+            self.assertEqual([1], info.required_capabilities)
+            self.assertFalse(info.requires_integer_dot_product_ext)
+            self.assertFalse(info.requires_16bit_storage_ext)
+            self.assertFalse(info.requires_8bit_storage_ext)
+            self.assertFalse(info.requires_shader_int16_ext)
+            self.assertFalse(info.requires_shader_int64_ext)
+            self.assertFalse(info.requires_shader_float64_ext)
+
+    def test_all_existing_feature_flags_come_from_spirv(self) -> None:
+        cases = {
+            22: "requires_shader_int16_ext",
+            11: "requires_shader_int64_ext",
+            10: "requires_shader_float64_ext",
+            4433: "requires_16bit_storage_ext",
+            4434: "requires_16bit_storage_ext",
+            4435: "requires_16bit_storage_ext",
+            4436: "requires_16bit_storage_ext",
+            4448: "requires_8bit_storage_ext",
+            4449: "requires_8bit_storage_ext",
+            4450: "requires_8bit_storage_ext",
+            6016: "requires_integer_dot_product_ext",
+            6017: "requires_integer_dot_product_ext",
+            6018: "requires_integer_dot_product_ext",
+            6019: "requires_integer_dot_product_ext",
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "kernel.glsl"
+            source.write_text("#version 450\n")
+            for capability, flag in cases.items():
+                with self.subTest(capability=capability):
+                    spv = self._write_spv(root, [(2 << 16) | 17, capability])
+                    info = gen_vulkan_spv.getShaderInfo(str(source), str(spv))
+                    self.assertEqual([capability], info.required_capabilities)
+                    requirements = {
+                        "requires_shader_int16_ext": info.requires_shader_int16_ext,
+                        "requires_shader_int64_ext": info.requires_shader_int64_ext,
+                        "requires_shader_float64_ext": info.requires_shader_float64_ext,
+                        "requires_16bit_storage_ext": info.requires_16bit_storage_ext,
+                        "requires_8bit_storage_ext": info.requires_8bit_storage_ext,
+                        "requires_integer_dot_product_ext": info.requires_integer_dot_product_ext,
+                    }
+                    self.assertEqual(
+                        {flag}, {key for key, value in requirements.items() if value}
+                    )
+
+    def test_all_capabilities_are_preserved_in_generated_registration(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "kernel.glsl"
+            source.write_text("#version 450\n")
+            capabilities = [6022, 9, 39, 61, 63, 5430, 65535, 9]
+            instructions = [
+                word
+                for capability in capabilities
+                for word in ((2 << 16) | 17, capability)
+            ]
+            spv = self._write_spv(root, instructions)
+            info = gen_vulkan_spv.getShaderInfo(str(source), str(spv))
+            expected = [9, 39, 61, 63, 5430, 6022, 65535]
+            self.assertEqual(expected, info.required_capabilities)
+            cpp = root / "spv.cpp"
+            gen_vulkan_spv.genCppFiles(
+                {str(spv): str(source)}, str(root / "spv.h"), str(cpp)
+            )
+            self.assertIn("{9, 39, 61, 63, 5430, 6022, 65535}", cpp.read_text())
+
+    def test_shader_info_requires_compiled_spirv(self) -> None:
+        with self.assertRaises(TypeError):
+            gen_vulkan_spv.getShaderInfo("unused.glsl")
+
+    def test_generated_registration_requires_header_integer_dot(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "kernel.glsl"
+            source.write_text('#version 450\n#include "dot.glslh"\n')
+            (root / "dot.glslh").write_text(
+                "#extension GL_EXT_integer_dot_product : require\n"
+            )
+            spv = self._write_spv(root, [(2 << 16) | 17, 6018, (2 << 16) | 17, 6019])
+            cpp = root / "spv.cpp"
+            gen_vulkan_spv.genCppFiles(
+                {str(spv): str(source)}, str(root / "spv.h"), str(cpp)
+            )
+            self.assertRegex(
+                cpp.read_text(),
+                r'"kernel",\s*kernel_bin,\s*36,\s*\{\},\s*\{1, 1, 1\},'
+                r"\s*false,\s*false,\s*false,\s*true,",
+            )
+
+    def test_capability_operands_are_not_instructions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "kernel.glsl"
+            source.write_text("#version 450\n")
+            spv = self._write_spv(root, [(3 << 16) | 330, (2 << 16) | 17, 6018])
+            self.assertFalse(
+                gen_vulkan_spv.getShaderInfo(
+                    str(source), str(spv)
+                ).requires_integer_dot_product_ext
+            )
+
+    def test_rejects_malformed_spirv(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "kernel.glsl"
+            source.write_text("#version 450\n")
+            for instructions in (
+                [17],
+                [(2 << 16) | 17],
+                [(1 << 16) | 17],
+                [(3 << 16) | 17, 6018, 6019],
+                [(2 << 16) | 17, 6018, 0],
+            ):
+                with self.subTest(instructions=instructions):
+                    spv = self._write_spv(root, instructions)
+                    with self.assertRaisesRegex(ValueError, "SPIR-V"):
+                        gen_vulkan_spv.getShaderInfo(str(source), str(spv))
+            for data in (b"", b"\x03\x02\x23\x07", b"\x00" * 20, b"\x00" * 21):
+                with self.subTest(data=data):
+                    spv.write_bytes(data)
+                    with self.assertRaisesRegex(ValueError, "SPIR-V"):
+                        gen_vulkan_spv.getShaderInfo(str(source), str(spv))
