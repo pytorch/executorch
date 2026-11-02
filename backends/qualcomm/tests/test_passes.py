@@ -518,7 +518,8 @@ class TestPasses(unittest.TestCase):
                         ).graph.lint()
                     except Exception as e:
                         # The pass manager wraps the lint error in its own.
-                        self.assertIn("Node redefined name", str(e.__cause__ or e))
+                        if "Node redefined name" not in str(e.__cause__ or e):
+                            raise
                     else:
                         no_collision.append(type(model).__name__)
                     reserve.assert_called_once()
