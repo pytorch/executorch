@@ -362,11 +362,9 @@ TOSA_EXT_SHAPE_SupportList: Final[Set] = {
     operator.floordiv,
 }
 
-# Operators that carry an int64 operand when the int64 extension is enabled.
-# EXT-INT64 leaves out CLAMP (clamp, relu, hardtanh), MATMUL (mm, bmm), POW,
-# CEIL, FLOOR, LOGICAL_* and ARGMAX, so operators lowering to one of those are
-# absent, as are operators reaching one through a decomposition like cumsum.
-# An absent operator narrows to int32 the way it does without the extension.
+# Operators that delegate with an int64 operand when the int64 extension is
+# enabled. Each lowers to TOSA operators that EXT-INT64 defines for i64. An
+# absent operator narrows to int32 the way it does without the extension.
 TOSA_EXT_INT64_SupportList: Final[Set] = {
     exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     exir_ops.edge.aten.abs.default,
@@ -377,19 +375,8 @@ TOSA_EXT_INT64_SupportList: Final[Set] = {
     exir_ops.edge.aten.bitwise_xor.Tensor,
     exir_ops.edge.aten.cat.default,
     exir_ops.edge.aten.constant_pad_nd.default,
-    exir_ops.edge.aten.eq.Scalar,
-    exir_ops.edge.aten.eq.Tensor,
     exir_ops.edge.aten.expand_copy.default,
     exir_ops.edge.aten.flip.default,
-    exir_ops.edge.aten.full_like.default,
-    exir_ops.edge.aten.ge.Scalar,
-    exir_ops.edge.aten.ge.Tensor,
-    exir_ops.edge.aten.gt.Scalar,
-    exir_ops.edge.aten.gt.Tensor,
-    exir_ops.edge.aten.le.Scalar,
-    exir_ops.edge.aten.le.Tensor,
-    exir_ops.edge.aten.lt.Scalar,
-    exir_ops.edge.aten.lt.Tensor,
     exir_ops.edge.aten.maximum.default,
     exir_ops.edge.aten.minimum.default,
     exir_ops.edge.aten.mul.Tensor,
@@ -398,13 +385,10 @@ TOSA_EXT_INT64_SupportList: Final[Set] = {
     exir_ops.edge.aten.permute_copy.default,
     exir_ops.edge.aten.repeat.default,
     exir_ops.edge.aten.select_copy.int,
-    exir_ops.edge.aten.slice_copy.Tensor,
     exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.sub.Tensor,
     exir_ops.edge.aten.unsqueeze_copy.default,
     exir_ops.edge.aten.view_copy.default,
-    exir_ops.edge.aten.where.self,
-    exir_ops.edge.aten.zeros_like.default,
 }
 
 

@@ -1208,12 +1208,9 @@ class CheckProperQuantization(OperatorSupportBase):
 
 def _int64_operands_agree(node: fx.Node) -> bool:
     """Whether int64 operands appear only beside other int64 operands."""
-    operands = node.all_input_nodes
-    if node.target == exir_ops.edge.aten.where.self:
-        operands = [arg for arg in node.args[1:] if isinstance(arg, fx.Node)]
     dtypes = {
         arg.meta["val"].dtype
-        for arg in operands
+        for arg in node.all_input_nodes
         if isinstance(arg.meta.get("val"), torch.Tensor)
     }
     return torch.int64 not in dtypes or dtypes == {torch.int64}

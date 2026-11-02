@@ -127,20 +127,32 @@ _NARROW = torch.tensor([1, 2, 3, 4], dtype=torch.int32)
 _COND = torch.tensor([True, False, True, False])
 _FLAGS = torch.tensor([False, True, True, False])
 
+
+class Int64BufferWhere(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("wide", _WIDE)
+
+    def forward(self, cond, x):
+        return torch.where(cond, x, self.wide)
+
+
 # A listed operator on matched int64 operands delegates; an unlisted operator or
 # a pair mixing widths falls back instead.
 int64_extension_partition_suite = {
     "add": (lambda x, y: x + y, (_WIDE, _WIDE_2), 1),
-    "where_int64": (torch.where, (_COND, _WIDE, _WIDE_2), 1),
-    "where_x_narrow": (torch.where, (_COND, _NARROW, _WIDE), 0),
-    "where_y_narrow": (torch.where, (_COND, _WIDE, _NARROW), 0),
     "pad": (lambda x: torch.nn.functional.pad(x, (1, 1)), (_WIDE,), 1),
     "cumsum": (lambda x: torch.cumsum(x, 0), (_WIDE,), 0),
     "cat_narrow": (lambda x, y: torch.cat([x, y]), (_WIDE, _NARROW), 0),
-    "where_x_bool": (torch.where, (_COND, _FLAGS, _WIDE), 0),
-    "where_y_bool": (torch.where, (_COND, _WIDE, _FLAGS), 0),
     "eq_bool": (lambda x, y: x == y, (_WIDE, _FLAGS), 0),
     "cat_bool": (lambda x, y: torch.cat([x, y]), (_FLAGS, _WIDE), 0),
+    "where": (torch.where, (_COND, _WIDE, _WIDE_2), 0),
+    "where_buffer": (Int64BufferWhere(), (_COND, _WIDE_2), 0),
+    "strided_slice": (lambda x: x[::2], (torch.arange(5, dtype=torch.int64),), 0),
+    "gt": (lambda x, y: x > y, (_WIDE, _WIDE_2), 0),
+    "gt_scalar": (lambda x: x > 7, (_WIDE,), 0),
+    "full_like": (lambda x: torch.full_like(x, 5) + x, (_WIDE,), 1),
+    "zeros_like": (lambda x: torch.zeros_like(x) + x, (_WIDE,), 1),
 }
 
 
@@ -149,7 +161,7 @@ def test_int64_extension_partition_tosa_INT(test_data: Tuple):
     op, inputs, delegates = test_data
     (
         ArmTester(
-            Int64Op(op),
+            op if isinstance(op, torch.nn.Module) else Int64Op(op),
             inputs,
             common.get_tosa_compile_spec("TOSA-1.1+INT+int64"),
         )
