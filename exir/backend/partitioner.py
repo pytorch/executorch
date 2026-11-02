@@ -105,6 +105,21 @@ class Partitioner(ABC):
         guaranteed that the program that the backend receives will not have any of these ops
         decomposed.
 
+        to_edge_transform_and_lower calls this method at two stages, possibly more than once
+        in each, and `ep.dialect` tells them apart. Each returned filter is only applied to
+        the nodes of the `ep` passed to that same call.
+
+        * During decomposition, on the ATen program (`ep.dialect == "ATEN"`). The list and
+          the filter decide which nodes are kept whole.
+        * After lowering, on the EDGE program (`ep.dialect == "EDGE"`). A node still in the
+          graph whose op is in this list, or in the list of an earlier partitioner for the
+          same method, and that the filter accepts was neither decomposed nor delegated,
+          and raises an error. The quantize and dequantize ops in exir's
+          `_QUANT_PRIMITIVES` are exempt.
+
+        When the filter is not None, exir drops mutable ops, ops that alias an output, and a
+        fixed blocklist from the list at both stages, so those entries are never kept whole.
+
         Returns:
             List[torch._ops.OpOverload]: a list of operator names that should not be decomposed.
             Optional[Callable[[torch.fx.Node], bool]]]: an optional callable, acting as a filter, that users can provide

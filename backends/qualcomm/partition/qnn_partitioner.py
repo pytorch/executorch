@@ -4,9 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import copy
+import functools
 import logging
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import torch
 from executorch.backends.qualcomm.builders import node_visitor_manager
@@ -48,7 +49,7 @@ from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
-from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.fx.passes.operator_support import create_op_support, OperatorSupportBase
 
 from .common_defs import (
     allow_list_operator,
@@ -62,20 +63,12 @@ from .utils import (
     get_skip_decomp_table,
     has_data_dependent_shape,
     has_unsupported_dtype,
+    must_stay_on_cpu,
     warn_if_dilated_conv_may_not_fit_vtcm,
 )
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
-
-def _is_runtime_input(
-    node: torch.fx.Node, edge_program: torch.export.ExportedProgram
-) -> bool:
-    return not is_parameter(node, edge_program) or is_mutable_buffer_input(
-        node, edge_program
-    )
-
 
 # dequantize ops with a CPU out variant; others cannot fall back
 CPU_DQ_OPS = {
@@ -328,11 +321,17 @@ class QnnPartitioner(Partitioner):
         only by constants once a CPU op splits it from the rest. Such a
         partition stays on CPU.
         """
+
+        def is_runtime_input(node: torch.fx.Node) -> bool:
+            return not is_parameter(node, edge_program) or is_mutable_buffer_input(
+                node, edge_program
+            )
+
         return [
             partition
             for partition in partitions
             if any(
-                _is_runtime_input(arg, edge_program)
+                is_runtime_input(arg)
                 for node in partition.nodes
                 for arg in node.all_input_nodes
                 if arg not in partition.nodes
@@ -399,38 +398,42 @@ class QnnPartitioner(Partitioner):
         """
         Determines which op should not be decomposed during partitioning.
         The list of operators is obtained from `get_skip_decomp_table()`.
-        The filter refines which nodes are not decomposed: `filter_fn`, and on
-        HTP it also leaves out ops that read only constants, except quantize
-        and dequantize ops.
+        The filter function (`filter_fn`) can be used to further refine which nodes are not decomposed. (advanced use case)
+        On HTP, ops that `_drop_partitions_without_runtime_inputs` would keep on
+        CPU, as far as is known before decomposition, are decomposed too.
         """
         do_not_decompose = get_skip_decomp_table()
         # On the lowered program this filter tells exir which kept-whole ops
         # may stay on CPU, and none may, so it stays plain filter_fn there.
         if self.backend != QnnExecuTorchBackendType.kHtpBackend or ep.dialect == "EDGE":
             return (do_not_decompose, filter_fn)
-        # An op that reads only constants can end up in a partition that
-        # _drop_partitions_without_runtime_inputs keeps on CPU after
-        # decomposition, so every such op is decomposed. Partitions are not
-        # known yet, so this also decomposes ones whose partition stays
-        # delegated; folding constant-only subgraphs first would avoid that.
-        constant_only = set()
-        for node in ep.graph.nodes:
-            if node.op == "placeholder":
-                if not _is_runtime_input(node, ep):
-                    constant_only.add(node)
-            elif node.op == "call_function" and all(
-                arg in constant_only for arg in node.all_input_nodes
-            ):
-                constant_only.add(node)
-        # Quantize and dequantize ops stay whole: QNN builds weight encodings
-        # from them.
-        quant_ops = {
-            op
-            for op in do_not_decompose
-            if op.namespace in ("quantized_decomposed", "torchao")
-        }
+
+        @functools.cache
+        def left_on_cpu() -> Set[torch.fx.Node]:
+            # The real partitions are not known before decomposition, so the
+            # drop rule runs on the largest ones possible: only ops whose dtypes
+            # or shapes rule QNN out count as CPU ops. The caller's skips are
+            # left out, since decomposing adds nodes, and a skip must not rename
+            # the nodes that skip_node_id_set names. Ops that QNN rejects while
+            # partitioning are not known yet either.
+            partitions = generate_partitions_from_list_of_nodes(
+                ep.graph_module,
+                op_support=create_op_support(
+                    lambda _, node: node.op == "call_function"
+                    and not must_stay_on_cpu(node)
+                ),
+            )
+            delegated = self._drop_partitions_without_runtime_inputs(partitions, ep)
+            return {
+                node
+                for partition in partitions
+                if partition not in delegated
+                for node in partition.nodes
+            }
+
+        # exir calls this method several times before decomposition but uses
+        # only one of the filters, so the partitions are found on first use.
         return (
             do_not_decompose,
-            lambda node: (node not in constant_only or node.target in quant_ops)
-            and filter_fn(node),
+            lambda node: node not in left_on_cpu() and filter_fn(node),
         )
