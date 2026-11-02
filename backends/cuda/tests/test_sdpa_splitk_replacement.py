@@ -368,7 +368,7 @@ class TestSDPAKernelSupportCheck(unittest.TestCase):
         node.kwargs = {"query": query, "key": key, "value": value}
         self.assertFalse(ReplaceEdgeOpWithTritonOpPass._sdpa_kernel_supports(node))
 
-    def test_heads_that_fit_the_kernel_are_supported(self):
+    def test_heads_the_kernel_takes_are_supported(self):
         # Some CI GPUs lack the shared memory to compile heads of 1024.
         from executorch.backends.cuda.triton.replacement_pass import (
             ReplaceEdgeOpWithTritonOpPass,

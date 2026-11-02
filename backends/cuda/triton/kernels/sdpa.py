@@ -1280,8 +1280,8 @@ def sdpa(
     share K/V loads) based on a tile-utilization heuristic from FlashAttention.
 
     Args:
-        query: Query tensor [B, H_q, L_q, D], dtype torch.bfloat16. D must be
-            a power of 2 or at most 256.
+        query: Query tensor [B, H_q, L_q, D], dtype torch.bfloat16. A D that
+            is not a power of 2 must be at most 256.
         key: Key tensor [B, H_kv, L_kv, D], dtype torch.bfloat16
         value: Value tensor [B, H_kv, L_kv, D], dtype torch.bfloat16
         attn_mask: Optional bool mask [B, 1, L_q, L_kv] (broadcast over heads)
