@@ -22,8 +22,15 @@ from openvino.frontend.pytorch.torchdynamo.op_support import (  # type: ignore[i
 )
 
 from torch.export.exported_program import ExportedProgram
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
+
+# OpenVINO converts these to nothing, so their output is their input.
+_COPY_OPS = {
+    "aten.alias_copy.default",
+    "aten.clone.default",
+    "dim_order_ops._clone_dim_order.default",
+}
 
 
 class PatternNode:
@@ -39,6 +46,42 @@ def _reads_only_bool(node: torch.fx.Node) -> bool:
     vals = [n.meta.get("val") for n in node.all_input_nodes]
     tensors = [val for val in vals if isinstance(val, torch.Tensor)]
     return bool(tensors) and all(t.dtype == torch.bool for t in tensors)
+
+
+def _copy_source(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+    """The node's input, if OpenVINO returns that input as the node's output."""
+    if isinstance(node.target, str) or node.target.__name__ not in _COPY_OPS:
+        return None
+    source = node.args[0]
+    return source if isinstance(source, torch.fx.Node) else None
+
+
+def _remove_copies_of_inputs(partition: Partition) -> None:
+    """Leave out of the partition each copy that would return one of the
+    partition's inputs, unchanged, as one of its outputs.
+
+    OpenVINO would return the input itself, and when the runtime binds the
+    output buffers after the inputs, its CPU plugin does not write such an
+    output and can overwrite the input with the output buffer's old contents.
+    Copies used only inside the partition stay, because OpenVINO reads every
+    input in the default dim order, which a copy left out could have changed.
+    """
+
+    def copies_input(node: torch.fx.Node) -> bool:
+        while (source := _copy_source(node)) is not None:
+            if source not in partition.nodes:
+                return True
+            node = source
+        return False
+
+    # Taking out a copy can make the copy it reads an output.
+    while leaving := [
+        node
+        for node in partition.nodes
+        if copies_input(node) and any(u not in partition.nodes for u in node.users)
+    ]:
+        for node in leaving:
+            partition.remove_node(node)
 
 
 class OpenvinoOperatorsSupport(OperatorSupportBase):
@@ -252,6 +295,7 @@ class OpenvinoPartitioner(Partitioner):
 
         partition_tags = {}
         for partition in partition_list:
+            _remove_copies_of_inputs(partition)
             for node in partition.nodes:
                 tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = tag
