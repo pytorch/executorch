@@ -42,12 +42,14 @@ def _create_qnn_flow(
     )
 
 
-# QNN partitioning crashes on these 3-D convolutions instead of leaving them to
-# the portable kernel: the depthwise one asserts "DepthWise only supports
-# Conv2d", and the replicate-padded one raises "'NoneType' object has no
-# attribute 'op'".
+# QNN fails to lower these 3-D convolutions instead of leaving them to the
+# portable kernel. Partitioning asserts "DepthWise only supports Conv2d" on the
+# depthwise one and raises "'NoneType' object has no attribute 'op'" on the
+# replicate-padded one. For the circular-padded one, the QNN graph's inputs and
+# outputs do not match the delegated program.
 _QNN_CONV3D_LOWERING_XFAILS = [
     "test_conv3d_depthwise",
+    "test_conv3d_padding_circular",
     "test_conv3d_padding_replicate",
 ]
 # With 8-bit weights, QNN takes these transposed 3-D convolutions and its output
