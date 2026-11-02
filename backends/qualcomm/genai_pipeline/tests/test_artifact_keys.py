@@ -15,6 +15,7 @@ from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
     ARTIFACT_TOK_EMBEDDING,
     ARTIFACT_VISION_ENCODER,
     DECODE_QDQ_FILENAME,
+    pte_file_name,
 )
 
 
@@ -49,6 +50,20 @@ class TestArtifactKeys(unittest.TestCase):
         }
 
         self.assertEqual(ALL_ARTIFACT_KEYS, individual)
+
+
+class TestPteFileName(unittest.TestCase):
+    """Compilation writes and inference locates each PTE by this one rule."""
+
+    def test_single_graph_model_is_named_after_the_model(self):
+        """A single-graph model's one artifact carries no artifact-key suffix."""
+        self.assertEqual(pte_file_name("stories260k"), "stories260k")
+
+    def test_component_is_suffixed_with_its_artifact_key(self):
+        """Each component of a multi-graph model is ``{model}_{artifact_key}``."""
+        for key in sorted(ALL_ARTIFACT_KEYS):
+            with self.subTest(key=key):
+                self.assertEqual(pte_file_name("smolvlm", key), f"smolvlm_{key}")
 
 
 class TestDecodeQdqFilename(unittest.TestCase):

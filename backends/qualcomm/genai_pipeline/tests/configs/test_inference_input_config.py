@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config import (
@@ -15,8 +16,8 @@ from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config 
 class TestInferenceInputConfig(unittest.TestCase):
 
     def test_inference_options_default_factory(self):
-        c1 = InferenceInputConfig(soc_model=MagicMock())
-        c2 = InferenceInputConfig(soc_model=MagicMock())
+        c1 = InferenceInputConfig(soc_model=MagicMock(), artifact_dir=Path("/tmp"))
+        c2 = InferenceInputConfig(soc_model=MagicMock(), artifact_dir=Path("/tmp"))
         c1.inference_options["key"] = "val"
         self.assertEqual(c2.inference_options, {})
 

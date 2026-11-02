@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from executorch.backends.qualcomm.genai_pipeline.configs.compilation_output_config import (
@@ -12,6 +13,7 @@ from executorch.backends.qualcomm.genai_pipeline.configs.compilation_output_conf
 )
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_output_config import (
     InferenceOutputConfig,
+    InferenceResult,
 )
 from executorch.backends.qualcomm.genai_pipeline.configs.model_preparation_output_config import (
     ModelPreparationOutputConfig,
@@ -60,6 +62,7 @@ from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
 
 TEST_MOCK_GENERATED_TEXT = "Mock generated text"
 TEST_MOCK_TOKENS_PER_SEC = 42.0
+TEST_EVAL_METHOD = "prompt_eval"
 
 
 class _MockQuantizationStrategy(QuantizationStrategy):
@@ -75,8 +78,12 @@ class _MockCompilationStrategy(CompilationStrategy):
 class _MockInferenceStrategy(InferenceStrategy):
     def invoke(self, context, input_config):
         return InferenceOutputConfig(
-            inference_results=[TEST_MOCK_GENERATED_TEXT],
-            performance_metrics={"tokens_per_sec": TEST_MOCK_TOKENS_PER_SEC},
+            results={
+                TEST_EVAL_METHOD: InferenceResult(
+                    generations=[TEST_MOCK_GENERATED_TEXT],
+                    performance_metrics={"tokens_per_sec": TEST_MOCK_TOKENS_PER_SEC},
+                )
+            }
         )
 
 
@@ -185,9 +192,11 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
         result = pipeline.invoke(make_test_context())
 
         self.assertIsInstance(result, InferenceOutputConfig)
-        self.assertEqual(result.inference_results, [TEST_MOCK_GENERATED_TEXT])
+        method_result = result.results[TEST_EVAL_METHOD]
+        self.assertEqual(method_result.generations, [TEST_MOCK_GENERATED_TEXT])
         self.assertEqual(
-            result.performance_metrics["tokens_per_sec"], TEST_MOCK_TOKENS_PER_SEC
+            method_result.performance_metrics["tokens_per_sec"],
+            TEST_MOCK_TOKENS_PER_SEC,
         )
 
     def test_invoke_compile_only(self):
@@ -367,9 +376,7 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
 
     def test_inference_receives_prompt(self):
         mock_infer = MagicMock(spec=InferenceStrategy)
-        mock_infer.invoke.return_value = InferenceOutputConfig(
-            inference_results=["output"]
-        )
+        mock_infer.invoke.return_value = InferenceOutputConfig()
 
         test_prompt = ["What is AI?"]
         proxy = EngineProxy(
@@ -388,6 +395,63 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
         call_args = mock_infer.invoke.call_args
         input_config = call_args[0][1]
         self.assertEqual(input_config.prompt, test_prompt)
+
+    def _invoke_inference(self, extra_options, model_prep_output):
+        """Run a pipeline of model preparation and inference, returning the inference input."""
+        mock_model_prep = MagicMock(spec=ModelPreparationStrategy)
+        mock_model_prep.invoke.return_value = model_prep_output
+        mock_infer = MagicMock(spec=InferenceStrategy)
+        mock_infer.invoke.return_value = InferenceOutputConfig()
+        proxy = EngineProxy(
+            {
+                STAGE_MODEL_PREPARATION: EngineType.EXECUTORCH,
+                STAGE_INFERENCE: EngineType.EXECUTORCH,
+            },
+            backend_type=TEST_BACKEND_TYPE,
+        )
+        pipeline = GenAIPipeline(
+            model_preparation_stage=ModelPreparationStage(mock_model_prep),
+            quantization_stage=None,
+            compilation_stage=None,
+            inference_stage=InferenceStage(mock_infer),
+            engine_proxy=proxy,
+        )
+        pipeline.invoke(make_test_context(extra_options=extra_options))
+        return mock_infer.invoke.call_args[0][1]
+
+    def test_inference_receives_model_preparation_runtime_tokenizer(self):
+        """The runtime tokenizer passes through as model preparation reported it."""
+        prep_tokenizer = Path("/tmp/prep/tokenizer.json")
+        input_config = self._invoke_inference(
+            extra_options={
+                "runtime_tokenizer_path": "/tmp/override.bin",
+                "inference_options": {"runtime_tokenizer_path": "/tmp/nested.bin"},
+            },
+            model_prep_output=ModelPreparationOutputConfig(
+                runtime_tokenizer_path=prep_tokenizer
+            ),
+        )
+
+        self.assertEqual(input_config.runtime_tokenizer_path, prep_tokenizer)
+
+    def test_inference_receives_inference_options(self):
+        """extra_options['inference_options'] is forwarded to the inference input."""
+        inference_options = {"temperature": 0.5, "system_prompt": "be brief"}
+        input_config = self._invoke_inference(
+            extra_options={"inference_options": inference_options},
+            model_prep_output=ModelPreparationOutputConfig(),
+        )
+
+        self.assertEqual(input_config.inference_options, inference_options)
+
+    def test_inference_options_default_to_empty(self):
+        """Without inference_options the inference input carries an empty dict."""
+        input_config = self._invoke_inference(
+            extra_options={},
+            model_prep_output=ModelPreparationOutputConfig(),
+        )
+
+        self.assertEqual(input_config.inference_options, {})
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
     ARTIFACT_TEXT_DECODER,
+    pte_file_name,
 )
 from executorch.backends.qualcomm.genai_pipeline.compilation.component_spec_policy import (
     build_component_compile_specs,
@@ -184,7 +185,7 @@ class ExecuTorchCompilationStrategy(CompilationStrategy):
             example_inputs=input_config.example_inputs,
             compile_specs=input_config.compile_specs,
             artifact_dir=Path(input_config.artifact_dir),
-            file_name=context.model_name,
+            file_name=pte_file_name(context.model_name),
             soc_model=input_config.soc_model,
             backend_type=input_config.backend_type,
             executorch_config=build_executorch_config(ARTIFACT_TEXT_DECODER),
@@ -363,7 +364,7 @@ class ExecuTorchCompilationStrategy(CompilationStrategy):
             "graphs": graphs,
             "compile_specs": compile_specs,
             "artifact_dir": Path(input_config.artifact_dir),
-            "file_name": f"{context.model_name}_{artifact_key}",
+            "file_name": pte_file_name(context.model_name, artifact_key),
             "soc_model": input_config.soc_model,
             "backend_type": input_config.backend_type,
             "executorch_config": build_executorch_config(artifact_key),
