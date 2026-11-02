@@ -645,8 +645,8 @@ void conv2d_pw_reference_impl(TestCase& test_case) {
   const ValueSpec& bias_spec = test_case.inputs()[2];
   ValueSpec& output = test_case.outputs()[0];
 
-  if (input.dtype != vkapi::kFloat) {
-    throw std::invalid_argument("Reference only supports float");
+  if (input.dtype != vkapi::kFloat && input.dtype != vkapi::kHalf) {
+    throw std::invalid_argument("Reference only supports float and half");
   }
 
   auto input_sizes = input.get_tensor_sizes();
@@ -658,8 +658,18 @@ void conv2d_pw_reference_impl(TestCase& test_case) {
   int64_t W = input_sizes[3];
   int64_t C_out = weight_sizes[0];
 
-  auto& input_data = input.get_float_data();
-  auto& weight_data = weight.get_float_data();
+  // Mirrors create_conv2d_pw_test_case's PERF classification: large-K half
+  // shapes stay timing-only, since FP16 accumulation error would exceed the
+  // half tolerance.
+  if (input.dtype == vkapi::kHalf &&
+      (C_in > kRefDimSizeLimit || C_out > kRefDimSizeLimit ||
+       H > kRefDimSizeLimit || W > kRefDimSizeLimit)) {
+    throw std::invalid_argument(
+        "Half reference skipped for PERF shape (timing-only)");
+  }
+
+  // get_element() materializes a float regardless of dtype, so the same loop
+  // body serves both FP32 and FP16.
   auto& ref_data = output.get_ref_float_data();
   ref_data.resize(N * C_out * H * W, 0.0f);
 
@@ -669,15 +679,14 @@ void conv2d_pw_reference_impl(TestCase& test_case) {
         for (int64_t w = 0; w < W; ++w) {
           float sum = 0.0f;
           for (int64_t ci = 0; ci < C_in; ++ci) {
-            float in_val =
-                input_data[n * (C_in * H * W) + ci * (H * W) + h * W + w];
+            float in_val = input.get_element(
+                n * (C_in * H * W) + ci * (H * W) + h * W + w);
             // weight is [C_out, C_in, 1, 1]
-            float w_val = weight_data[co * C_in + ci];
+            float w_val = weight.get_element(co * C_in + ci);
             sum += in_val * w_val;
           }
           if (!bias_spec.is_none()) {
-            auto& bias_data = bias_spec.get_float_data();
-            sum += bias_data[co];
+            sum += bias_spec.get_element(co);
           }
           ref_data[n * (C_out * H * W) + co * (H * W) + h * W + w] = sum;
         }
