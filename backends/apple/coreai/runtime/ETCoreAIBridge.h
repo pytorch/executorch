@@ -17,6 +17,8 @@ NS_ASSUME_NONNULL_BEGIN
 typedef NS_ENUM(NSInteger, ETCoreAIScalarType) {
   ETCoreAIScalarTypeFloat16 = 0,
   ETCoreAIScalarTypeFloat32 = 1,
+  ETCoreAIScalarTypeInt32 = 2,
+  ETCoreAIScalarTypeBool = 3,
 };
 
 typedef NS_ENUM(NSInteger, ETCoreAIErrorCode) {
