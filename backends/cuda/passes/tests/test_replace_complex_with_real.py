@@ -107,7 +107,9 @@ class TestReplaceComplexWithRealPass(unittest.TestCase):
         model = Rotate()
         inputs = (torch.randn(3, 2), torch.randn(3, 2))
         program = _program_for_cuda_passes(model, inputs)
-        duplicate_constant_node(program, "b_freqs")
+        self.assertEqual(
+            duplicate_constant_node(program, "b_freqs"), {"b_freqs_copy_0"}
+        )
         ReplaceComplexWithRealPass()(program)
         for node in program.graph.nodes:
             val = node.meta.get("val")
