@@ -573,6 +573,12 @@ class TestTritonSdpa(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.sdpa(q, k, v, is_causal=True)
 
+    def test_wide_non_pow2_head_rejected(self):
+        """A non-pow2 head wider than one tile should raise, not be cut short."""
+        q = torch.randn(1, 2, 64, 640, dtype=torch.bfloat16, device="cuda")
+        with self.assertRaises(RuntimeError):
+            self.sdpa(q, q, q)
+
     def test_non_pow2_no_mask(self):
         """Non-pow2 head dim without mask should work (mask_ptr=0 path)."""
         B, H, Lq, Lk, D = 1, 4, 4, 64, 40  # D=40 is not pow2

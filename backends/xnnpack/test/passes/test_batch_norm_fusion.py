@@ -135,6 +135,24 @@ class TestBatchNormFusion(unittest.TestCase):
                 .run_method_and_compare_outputs()
             )
 
+    def test_fp32_linear_batch_norm_on_3d_output(self):
+        """
+        BatchNorm1d normalizes dim 1. When the linear output is 3-D, dim 1 is not the
+        linear's output features, so the batch norm must not fold into the linear.
+        """
+        model = torch.nn.Sequential(torch.nn.Linear(8, 4), torch.nn.BatchNorm1d(4))
+        model[1].running_mean.uniform_(-1, 1)
+        model[1].running_var.uniform_(0.5, 2)
+        (
+            Tester(model.eval(), (torch.randn(2, 4, 8),))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({self.bn_name: 0})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     def test_fp32_conv3d_batch_norm_doesnt_partition(self):
         """
         Conv3d is not currently supported by XNNPACK. We also don't support standalone
