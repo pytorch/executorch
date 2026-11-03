@@ -368,6 +368,34 @@ def hardtanh(context, node):
         )
 
 
+# Torch computes clamp_min and clamp_max in the dtype it promotes the tensor and
+# the bound to, while coremltools requires the two to share a dtype. So
+# x.clamp_min(0) of a float x, and a float bound on an int tensor, fail to lower
+# with an AssertionError. No upstream issue covers this yet. A TorchScript node,
+# which carries no dtype, keeps the coremltools converter.
+def _with_inputs_in_torch_dtype(op, convert):
+    @functools.wraps(convert)
+    def converter(context, node):
+        if _torch_dtype(node) is None:
+            return convert(context, node)
+        dtype = types.numpy_type_to_builtin_type(_core_ml_type(node))
+        x, bound = _get_inputs(context, node, expected=2)
+        if x.dtype != dtype:
+            x = mb.cast(x=x, dtype=types.builtin_to_string(dtype))
+        if bound.dtype != dtype:
+            bound = mb.cast(x=bound, dtype=types.builtin_to_string(dtype))
+        context.add(op(x=x, y=bound, name=node.name))
+
+    return converter
+
+
+for _op, _convert in (
+    (mb.maximum, _ct_ops.clamp_min),
+    (mb.minimum, _ct_ops.clamp_max),
+):
+    register_torch_op(_with_inputs_in_torch_dtype(_op, _convert), override=True)
+
+
 # Torch copies src into the dtype of self, while coremltools' copy keeps the
 # dtype of src. Lowering turns y[:, i] = v into a copy too, so v kept its dtype
 # in y. No upstream issue covers this yet. For example, lowering

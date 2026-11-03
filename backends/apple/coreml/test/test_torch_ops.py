@@ -189,6 +189,39 @@ class TestTorchOps(unittest.TestCase):
         )
         self._compare_outputs(delegated_program.to_executorch(), model, example_inputs)
 
+    def test_clamp_min_max_with_bound_of_other_dtype(self):
+        """
+        Torch computes clamp_min and clamp_max in the dtype it promotes the
+        tensor and the bound to, while coremltools required the two to share a
+        dtype. So lowering an int bound on a float tensor failed, and so did a
+        float bound on an int tensor.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                i = (x * 2).to(torch.int64)
+                ops = [x.clamp_min(1), x.clamp_max(1)]
+                ops += [i.clamp_min(0.5), i.clamp_max(2.5)]
+                ops += [x.clamp_min(i[:1]), i.clamp_max(x[:1] * 2)]
+                return torch.stack(ops)
+
+        # Values that float16 holds exactly, so that Core ML drops the same
+        # fractions as eager.
+        model, example_inputs = Model(), ((torch.rand(2, 3) * 2).half().float(),)
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            torch.export.export(model, example_inputs),
+            partitioner=[self._coreml_partitioner()],
+        )
+        self.assertEqual(
+            [
+                node.target.__name__
+                for node in delegated_program.exported_program().graph.nodes
+                if node.op == "call_function"
+            ],
+            ["executorch_call_delegate", "getitem"],
+        )
+        self._compare_outputs(delegated_program.to_executorch(), model, example_inputs)
+
     def test_hardtanh_of_float_arange(self):
         """
         coremltools gives torch.arange(6, dtype=torch.float32) the dtype int32, so
