@@ -16,6 +16,7 @@ from executorch.backends.native.test.samples.cases import Case, draws, suite_cas
 from executorch.backends.native.test.samples.record import record
 from executorch.backends.native.test.samples.schemes import (
     Gguf,
+    GGUF_SUPER_SCALES,
     Scheme,
     schemes,
     Torchao,
@@ -130,6 +131,16 @@ class RecordTest(unittest.TestCase):
             torch.testing.assert_close(
                 outputs[f"linear_{dtype}"], outputs["linear_f32"], rtol=0, atol=0
             )
+
+    def test_gguf_fits_no_more_linears_than_scale_families(self) -> None:
+        def linears(count: int) -> torch.nn.Module:
+            return torch.nn.Sequential(
+                *(torch.nn.Linear(256, 256) for _ in range(count))
+            )
+
+        families = len(GGUF_SUPER_SCALES["q4_k"])
+        self.assertTrue(Gguf("q4_k").fits(linears(families)))
+        self.assertFalse(Gguf("q4_k").fits(linears(families + 1)))
 
     def test_precise_decodes_intx_weights_in_float32(self) -> None:
         # A code times its scale can need more bits than bf16 holds, so decoding
