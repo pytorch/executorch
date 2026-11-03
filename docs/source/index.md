@@ -179,5 +179,6 @@ llm/working-with-llms
 advanced-topics-section
 tools-section
 api-section
+llm-hf-static-io-contract
 support-section
 ```
