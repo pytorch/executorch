@@ -18,6 +18,17 @@ def define_common_targets():
             visibility = ["PUBLIC"],
         )
 
+        runtime.cxx_library(
+            name = "hf_static_io_manager" + aten_suffix,
+            exported_headers = ["hf_static_io_manager.h"],
+            srcs = ["hf_static_io_manager.cpp"],
+            exported_deps = [
+                ":io_manager" + aten_suffix,
+                "//executorch/extension/llm/runner:constants",
+            ],
+            visibility = ["PUBLIC"],
+        )
+
         # IOManager for the "kvcache_io" contract: KV cache as method I/O.
         runtime.cxx_library(
             name = "kv_cache_io_manager" + aten_suffix,

@@ -19,6 +19,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_test_srcs
     test_generation_config.cpp
+    test_hf_static_io_manager.cpp
     test_io_manager.cpp
     test_model_metadata.cpp
     test_text_llm_runner.cpp
@@ -59,30 +60,45 @@ endif()
 
 add_custom_command(
   OUTPUT ${_metadata_pte_files}
-  # Run against the installed executorch (which stages exir/_serialize/*.fbs at
-  # install time). Do NOT prepend the source tree to PYTHONPATH: it shadows the
-  # installed package with a source copy that lacks the staged .fbs, breaking
-  # to_executorch() under a non-editable install.
   COMMAND
-    ${_export_prefix} ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/export_model_metadata.py
+    ${_export_prefix} ${PYTHON_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/export_model_metadata.py
     --outdir ${CMAKE_CURRENT_BINARY_DIR}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/export_model_metadata.py
           ${EXECUTORCH_ROOT}/extension/llm/export/model_metadata.py
 )
+add_custom_command(
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/hf_static_fixtures.stamp"
+  COMMAND
+    ${_export_prefix} ${PYTHON_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/export_hf_static_program.py --outdir
+    ${CMAKE_CURRENT_BINARY_DIR}
+  WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/export_hf_static_program.py
+)
 add_custom_target(
-  generated_model_metadata_test_files DEPENDS ${_metadata_pte_files}
+  generated_model_metadata_test_files
+  DEPENDS ${_metadata_pte_files}
+          "${CMAKE_CURRENT_BINARY_DIR}/hf_static_fixtures.stamp"
 )
 
 et_cxx_test(
-  test_runner SOURCES ${_test_srcs} EXTRA_LIBS executorch extension_llm_runner
+  test_runner
+  SOURCES
+  ${_test_srcs}
+  EXTRA_LIBS
+  executorch
+  extension_llm_runner
+  portable_kernels
+  portable_ops_lib
 )
 add_dependencies(test_runner generated_model_metadata_test_files)
 set_property(
   TEST test_runner
   PROPERTY
     ENVIRONMENT
-    "ET_MODEL_METADATA_FULL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_full.pte;ET_MODEL_METADATA_LAST_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_last.pte;ET_MODEL_METADATA_SELECTED_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_selected.pte;ET_MODEL_METADATA_INVALID_CONTEXT_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_context.pte;ET_MODEL_METADATA_INVALID_PREFILL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_prefill.pte;ET_MODEL_METADATA_INVALID_VOCAB_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_vocab.pte;ET_MODEL_METADATA_MISSING_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_missing.pte;ET_MODEL_METADATA_GEOMETRY_WRONG_TYPE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_wrong_type.pte;ET_MODEL_METADATA_GEOMETRY_MISMATCHED_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_mismatched.pte;ET_MODEL_METADATA_GEOMETRY_INVALID_HEADS_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_heads.pte;ET_MODEL_METADATA_GEOMETRY_INVALID_DIMS_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_dims.pte;ET_MODEL_METADATA_GEOMETRY_INVALID_WINDOWS_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_windows.pte;ET_MODEL_METADATA_GEOMETRY_EMPTY_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_empty.pte"
+    "ET_MODEL_METADATA_FULL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_full.pte;ET_MODEL_METADATA_LAST_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_last.pte;ET_MODEL_METADATA_SELECTED_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_selected.pte;ET_MODEL_METADATA_INVALID_CONTEXT_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_context.pte;ET_MODEL_METADATA_INVALID_PREFILL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_prefill.pte;ET_MODEL_METADATA_INVALID_VOCAB_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_vocab.pte;ET_MODEL_METADATA_MISSING_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_missing.pte;ET_MODEL_METADATA_GEOMETRY_WRONG_TYPE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_wrong_type.pte;ET_MODEL_METADATA_GEOMETRY_MISMATCHED_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_mismatched.pte;ET_MODEL_METADATA_GEOMETRY_INVALID_HEADS_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_heads.pte;ET_MODEL_METADATA_GEOMETRY_INVALID_DIMS_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_dims.pte;ET_MODEL_METADATA_GEOMETRY_INVALID_WINDOWS_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_windows.pte;ET_MODEL_METADATA_GEOMETRY_EMPTY_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_empty.pte;ET_HF_STATIC_TINY_PATH=${CMAKE_CURRENT_BINARY_DIR}/HfStaticTiny.pte;ET_HF_STATIC_TINY_HALF_PATH=${CMAKE_CURRENT_BINARY_DIR}/HfStaticTinyHalf.pte;ET_HF_STATIC_TINY_STATE_PATH=${CMAKE_CURRENT_BINARY_DIR}/HfStaticTinyWithState.pte;ET_HF_STATIC_FIXTURES_DIR=${CMAKE_CURRENT_BINARY_DIR}"
 )
 
 # Override sanitizer to this issue:

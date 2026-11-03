@@ -542,7 +542,7 @@ Result<executorch::aten::Tensor> KvCacheIOManager::logits(
   return *logits_f_tensor_;
 }
 
-void register_builtin_io_managers() {
+void register_kv_cache_io_manager() {
   static const bool registered = register_io_manager(
       KvCacheIOManager::kContract, [](ET_MODULE_NAMESPACE::Module& module) {
         return std::make_unique<KvCacheIOManager>(module);

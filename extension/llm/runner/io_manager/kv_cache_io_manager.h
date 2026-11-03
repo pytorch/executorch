@@ -147,9 +147,7 @@ class ET_EXPERIMENTAL KvCacheIOManager : public IOManager {
   int64_t logits_zero_point_ = 0;
 };
 
-/// Registers the IOManagers this library implements (e.g. "kvcache_io") with
-/// `io_manager_registry()`. Idempotent.
-void register_builtin_io_managers();
+void register_kv_cache_io_manager();
 
 } // namespace llm
 } // namespace extension
