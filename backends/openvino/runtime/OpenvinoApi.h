@@ -22,6 +22,7 @@ typedef struct ov_core ov_core_t;
 typedef struct ov_compiled_model ov_compiled_model_t;
 typedef struct ov_infer_request ov_infer_request_t;
 typedef struct ov_tensor ov_tensor_t;
+typedef struct ov_output_const_port ov_output_const_port_t;
 
 // Value types reproduced from openvino/c/ov_shape.h and ov_common.h.
 // These are stable C ABI — pinned via version constraint in pyproject.toml.
@@ -29,6 +30,17 @@ typedef struct {
   int64_t rank;
   int64_t* dims;
 } ov_shape_t;
+
+// Reproduced from openvino/c/ov_dimension.h and ov_partial_shape.h.
+typedef struct {
+  int64_t min;
+  int64_t max;
+} ov_dimension_t;
+
+typedef struct {
+  ov_dimension_t rank;
+  ov_dimension_t* dims;
+} ov_partial_shape_t;
 
 typedef struct {
   char** devices;
@@ -92,6 +104,13 @@ using ov_compiled_model_inputs_size_fn =
 using ov_compiled_model_outputs_size_fn =
     ov_status_e (*)(const ov_compiled_model_t*, size_t*);
 using ov_compiled_model_free_fn = void (*)(ov_compiled_model_t*);
+using ov_compiled_model_output_by_index_fn = ov_status_e (*)(
+    const ov_compiled_model_t*,
+    size_t,
+    ov_output_const_port_t**);
+using ov_port_get_partial_shape_fn =
+    ov_status_e (*)(const ov_output_const_port_t*, ov_partial_shape_t*);
+using ov_output_const_port_free_fn = void (*)(ov_output_const_port_t*);
 using ov_infer_request_set_input_tensor_by_index_fn =
     ov_status_e (*)(ov_infer_request_t*, size_t, const ov_tensor_t*);
 using ov_infer_request_set_output_tensor_by_index_fn =
@@ -111,6 +130,7 @@ using ov_tensor_data_fn = ov_status_e (*)(const ov_tensor_t*, void**);
 using ov_shape_create_fn =
     ov_status_e (*)(int64_t, const int64_t*, ov_shape_t*);
 using ov_shape_free_fn = ov_status_e (*)(ov_shape_t*);
+using ov_partial_shape_free_fn = void (*)(ov_partial_shape_t*);
 
 // Defined in OpenvinoBackend.cpp, where the platform's loader API is included.
 struct DlCloser {
@@ -132,6 +152,9 @@ struct OpenvinoFunctions {
   ov_compiled_model_inputs_size_fn compiled_model_inputs_size = nullptr;
   ov_compiled_model_outputs_size_fn compiled_model_outputs_size = nullptr;
   ov_compiled_model_free_fn compiled_model_free = nullptr;
+  ov_compiled_model_output_by_index_fn compiled_model_output_by_index = nullptr;
+  ov_port_get_partial_shape_fn port_get_partial_shape = nullptr;
+  ov_output_const_port_free_fn output_const_port_free = nullptr;
   ov_infer_request_set_input_tensor_by_index_fn
       infer_request_set_input_tensor_by_index = nullptr;
   ov_infer_request_set_output_tensor_by_index_fn
@@ -148,6 +171,7 @@ struct OpenvinoFunctions {
   ov_tensor_data_fn tensor_data = nullptr;
   ov_shape_create_fn shape_create = nullptr;
   ov_shape_free_fn shape_free = nullptr;
+  ov_partial_shape_free_fn partial_shape_free = nullptr;
 };
 
 } // namespace openvino
