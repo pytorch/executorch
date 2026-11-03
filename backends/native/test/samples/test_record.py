@@ -77,6 +77,25 @@ class RecordTest(unittest.TestCase):
             atol=0,
         )
 
+    def test_record_adds_the_8da4w_golden_to_weight_only_packages(self) -> None:
+        case = Case("linear", torch.nn.Linear(64, 8), draws(2, (3, 64)))
+        sets = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("float", "int4wo_g32", "8da4w_g32"):
+                path = Path(tmp) / f"{name}.ptn"
+                record([case], schemes()[name], path, dtypes=["f32"])
+                sets[name] = read_samples(str(path))
+        self.assertNotIn("golden-int8_act", sets["float"])
+        self.assertNotIn("golden-int8_act", sets["8da4w_g32"])
+        for got, want in zip(
+            sets["int4wo_g32"]["golden-int8_act"].samples,
+            sets["8da4w_g32"]["golden"].samples,
+            strict=True,
+        ):
+            torch.testing.assert_close(
+                got.calls[0].outputs, want.calls[0].outputs, rtol=0, atol=0
+            )
+
     def test_record_keeps_integer_outputs_precise(self) -> None:
         class Argmax(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
