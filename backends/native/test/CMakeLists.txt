@@ -29,6 +29,21 @@ target_compile_options(
                               $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
 )
 
+# Judges an engine's outputs against a package's golden and precise samples.
+add_library(native_output_check STATIC samples/OutputCheck.cpp)
+target_link_libraries(native_output_check PUBLIC native_package)
+add_executable(native_output_check_test samples/test_output_check.cpp)
+target_link_libraries(
+  native_output_check_test PRIVATE native_output_check GTest::gtest_main
+)
+add_test(NAME native_output_check_test COMMAND native_output_check_test)
+foreach(target native_output_check native_output_check_test)
+  target_compile_options(
+    ${target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+                      $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  )
+endforeach()
+
 # Op packages with bundled samples, one per op and quantization scheme. The
 # environment pins the eager kernels' ISA and threads, so the golden is the same
 # on any x86 host with AVX2. Other hosts can differ.
