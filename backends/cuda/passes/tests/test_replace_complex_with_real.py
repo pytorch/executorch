@@ -89,9 +89,8 @@ class TestReplaceComplexWithRealPass(unittest.TestCase):
             torch.testing.assert_close(program.module()(*inputs), model(*inputs))
 
     def test_tensor_with_two_placeholders(self):
-        """Partitioning gives a tensor a placeholder per op that reads it when
-        another backend takes ops between those, and the pass stores the
-        tensor once."""
+        """Partitioning gives a tensor a placeholder per delegate that reads it,
+        and the pass stores the tensor once."""
 
         class Rotate(torch.nn.Module):
             def __init__(self):
@@ -107,6 +106,9 @@ class TestReplaceComplexWithRealPass(unittest.TestCase):
         model = Rotate()
         inputs = (torch.randn(3, 2), torch.randn(3, 2))
         program = _program_for_cuda_passes(model, inputs)
+        freqs = next(n for n in program.graph.nodes if n.name == "b_freqs")
+        for i, user in enumerate(freqs.users):
+            user.meta["delegation_tag"] = f"tag{i}"
         self.assertEqual(
             duplicate_constant_node(program, "b_freqs"), {"b_freqs_copy_0"}
         )
