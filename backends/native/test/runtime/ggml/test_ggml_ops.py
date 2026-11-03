@@ -334,18 +334,12 @@ def _run_ggml(
         command.append(f"--input_sizes={';'.join(map(_shape_text, steps))}")
     if graph_ops is not None:
         command.append("--print_graph_ops")
-    env = dict(os.environ)
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
-        # Shared libraries the runner needs may ship beside it.
-        env["LD_LIBRARY_PATH"] = (
-            f"{Path(runner).parent}:{env.get('LD_LIBRARY_PATH', '')}"
-        )
         result = subprocess.run(
             [str(runner), *command],
             capture_output=True,
             text=True,
             timeout=300,
-            env=env,
         )
     if result.returncode != 0:
         raise AssertionError(f"ggml_ptn_runner failed:\n{result.stderr}")
