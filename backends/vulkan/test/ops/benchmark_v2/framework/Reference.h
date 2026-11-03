@@ -33,6 +33,10 @@ void parallel_for(
 const Tensor&
 tensor_arg(const Json& spec, size_t index, const TensorMap& tensors);
 void require(bool condition, const std::string& message);
+// Whether the validated device supports packed int8 dot products. Operators
+// with quantized activations fall back to weight-only quantization without
+// them. Defaults to true when the spec has no reference context.
+bool int8_dot_product(const Json& spec);
 
 } // namespace reference
 
