@@ -172,6 +172,11 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         mutable_buffer_map_vec = self._build_slot_variant_vector(
             builder, self.graph.mutable_buffer_map
         )
+        mutated_inputs = self.graph.mutated_inputs or []
+        builder.StartVector(4, len(mutated_inputs), 4)
+        for position in reversed(mutated_inputs):
+            builder.PrependUint32(position)
+        mutated_inputs_vec = builder.EndVector()
 
         # 3. Build named slots
         named_slots_offsets = []
@@ -214,6 +219,7 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         FBMLXGraphModule.AddMutableBufferMap(builder, mutable_buffer_map_vec)
         FBMLXGraphModule.AddNamedSlots(builder, named_slots_vec)
         FBMLXGraphModule.AddTensorMeta(builder, tensor_meta_vec)
+        FBMLXGraphModule.AddMutatedInputs(builder, mutated_inputs_vec)
         root = FBMLXGraphModule.End(builder)
 
         builder.Finish(root)

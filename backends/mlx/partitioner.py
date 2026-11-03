@@ -383,9 +383,8 @@ class MLXPartitioner(Partitioner):
             # Tag mutated buffers so they are included in the partition
             # This ensures the partitioned subgraph has proper mutation tracking
             tag_mutated_buffer(edge_program)
-            # MLXBackend::execute releases an input that is also an output
-            # before evaluating, so MLX can update it in its own memory, and
-            # only writes outputs once everything reading inputs is done.
+            # MLXBackend::execute writes an input the program updates back into
+            # the caller's tensor, so the method needs no write-back copy_.
             tag_in_place_input_mutations(edge_program)
 
         return PartitionResult(

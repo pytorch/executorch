@@ -1328,6 +1328,10 @@ table MLXGraph {
     // Tensor metadata (for non-temp tensors), indexed by Tid
     tensor_meta: [TensorMeta];
 
+    // Positions in input_map of tensor inputs the program updates. After a run,
+    // the runtime writes each one's slot back into the caller's input tensor.
+    mutated_inputs: [uint32];
+
     // BC: New fields must be appended here with a default value
 }
 

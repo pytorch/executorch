@@ -125,8 +125,8 @@ class IndexCopyHandler(PatternHandler):
     Pattern for index-based updates on mutable buffers.
 
     Only a buffer the method mutates is written in place: the delegate owns it
-    across calls. A mutated user input is not the delegate's to keep, so its
-    index_copy is left to the functional handler and written back by the caller.
+    across calls. A mutated user input's index_copy is left to the functional
+    handler, and its result is written back to the input afterwards.
     """
 
     def __init__(

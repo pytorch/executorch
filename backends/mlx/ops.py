@@ -2413,8 +2413,8 @@ def _index_copy_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """index_copy into a new tensor, leaving `dst` as it was.
 
     The INDEX_COPY pattern writes in place when `dst` is a buffer the method
-    mutates; anything else, a mutated user input included, lands here and the
-    caller writes the result back.
+    mutates; anything else lands here. For a mutated user input, the result is
+    then written back to the input by the delegate or by the method.
     """
     args = P.args(n)
     require_args(args, 4, 4, "aten.index_copy.default")

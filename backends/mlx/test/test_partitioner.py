@@ -950,7 +950,7 @@ class TestMLXPartitionerFunctionalIndexCopy(unittest.TestCase):
 
 
 class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
-    """index_copy_ into a user input lowers functionally and is written back."""
+    """index_copy_ into a user input: the delegate writes the input itself."""
 
     class IndexCopyInput(nn.Module):
         def __init__(self, axis):
@@ -961,10 +961,17 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             data.index_copy_(self.axis, indices, update)
             return data.sum(self.axis)
 
+    def _assert_written_by_delegate(self, program, n_inputs=1):
+        # No write-back copy_, and the method returns each mutated input as
+        # its own value.
+        graph = program.exported_program().graph
+        self.assertFalse(
+            any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
+        )
+        plan = program.executorch_program.execution_plan[0]
+        self.assertEqual(plan.outputs[:n_inputs], plan.inputs[:n_inputs])
+
     def test_index_copy_into_input_lowers_and_executes(self):
-        # The write-back of the mutated input runs outside the delegate, as a
-        # portable copy_, so this goes through the Python runtime rather than
-        # op_test_runner, which links no portable kernels.
         for axis, shape, update_shape in (
             (0, (16, 8), (4, 8)),
             (1, (8, 16), (8, 4)),
@@ -980,6 +987,7 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
                 with torch.no_grad():
                     expected_sum = model(expected, *inputs[1:])
                 program = _lower(model, inputs)
+                self._assert_written_by_delegate(program)
                 with tempfile.TemporaryDirectory() as tmp:
                     path = Path(tmp) / "model.pte"
                     path.write_bytes(program.buffer)
@@ -991,21 +999,11 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
                 self.assertTrue(torch.allclose(data, expected))
                 self.assertTrue(torch.allclose(summed, expected_sum, atol=1e-5))
 
-    def test_index_copy_into_input_written_in_place_with_reinplace(self):
-        # With run_reinplace_pass the delegate writes the mutated input itself:
-        # the method has no write-back copy_, and returns the input value.
+    def test_index_copy_into_input_across_calls(self):
         model = self.IndexCopyInput(0).eval()
         cache = torch.zeros(16, 8)
-        program = to_edge_transform_and_lower(
-            export(model, (cache, torch.tensor([1]), torch.randn(1, 8)), strict=False),
-            partitioner=[MLXPartitioner()],
-        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
-        graph = program.exported_program().graph
-        self.assertFalse(
-            any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
-        )
-        plan = program.executorch_program.execution_plan[0]
-        self.assertEqual(plan.outputs[0], plan.inputs[0])
+        program = _lower(model, (cache, torch.tensor([1]), torch.randn(1, 8)))
+        self._assert_written_by_delegate(program)
 
         method = Runtime.get().load_program(program.buffer).load_method("forward")
         expected = cache.clone()
@@ -1022,21 +1020,13 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             data.index_copy_(0, indices, update)
             return before, data.sum(0)
 
-    def test_read_before_index_copy_with_reinplace(self):
-        # A value read from the input before it is updated in place must be
-        # computed from the old contents, not race the write into the input.
+    def test_read_before_index_copy(self):
+        # A value read from the input before it is updated must be computed
+        # from the old contents, not race the write into the input.
         model = self.ReadThenIndexCopy().eval()
         cache = torch.randn(16, 8)
-        program = to_edge_transform_and_lower(
-            export(model, (cache, torch.tensor([1]), torch.randn(1, 8)), strict=False),
-            partitioner=[MLXPartitioner()],
-        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
-        graph = program.exported_program().graph
-        self.assertFalse(
-            any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
-        )
-        plan = program.executorch_program.execution_plan[0]
-        self.assertEqual(plan.outputs[0], plan.inputs[0])
+        program = _lower(model, (cache, torch.tensor([1]), torch.randn(1, 8)))
+        self._assert_written_by_delegate(program)
 
         method = Runtime.get().load_program(program.buffer).load_method("forward")
         expected = cache.clone()
@@ -1049,10 +1039,9 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             self.assertTrue(torch.equal(cache, expected))
             self.assertTrue(torch.allclose(after, expected.sum(0), atol=1e-5))
 
-    def test_unplanned_input_written_in_place_with_reinplace(self):
-        # An unplanned input is passed to MLX without a copy when its memory can
-        # be wrapped, so the update lands in the caller's own tensor. A large
-        # cache is page-aligned, which wrapping without a copy may require.
+    def test_unplanned_input_updated_in_callers_tensor(self):
+        # An unplanned input is the caller's own tensor, so the update lands
+        # there. A large cache is page-aligned, so MLX wraps it without a copy.
         model = self.IndexCopyInput(0).eval()
         cache = torch.zeros(1024, 1024)
         program = to_edge_transform_and_lower(
@@ -1064,10 +1053,10 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             partitioner=[MLXPartitioner()],
         ).to_executorch(
             ExecutorchBackendConfig(
-                run_reinplace_pass=True,
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             )
         )
+        self._assert_written_by_delegate(program)
         method = Runtime.get().load_program(program.buffer).load_method("forward")
         expected = cache.clone()
         for row in (3, 700):
@@ -1083,8 +1072,7 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             v_cache.index_copy_(0, indices, v)
             return k_cache.sum(0) + v_cache.sum(0)
 
-    def test_two_inputs_written_in_place_with_reinplace(self):
-        # Two caches mutated by one delegate are both written in place.
+    def test_two_inputs_written_by_delegate(self):
         model = self.TwoCaches().eval()
         k_cache, v_cache = torch.zeros(16, 8), torch.zeros(16, 8)
         example = (
@@ -1094,16 +1082,8 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             torch.randn(1, 8),
             torch.randn(1, 8),
         )
-        program = to_edge_transform_and_lower(
-            export(model, tuple(t.clone() for t in example), strict=False),
-            partitioner=[MLXPartitioner()],
-        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
-        graph = program.exported_program().graph
-        self.assertFalse(
-            any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
-        )
-        plan = program.executorch_program.execution_plan[0]
-        self.assertEqual(plan.outputs[:2], plan.inputs[:2])
+        program = _lower(model, tuple(t.clone() for t in example))
+        self._assert_written_by_delegate(program, n_inputs=2)
 
         method = Runtime.get().load_program(program.buffer).load_method("forward")
         expected_k, expected_v = k_cache.clone(), v_cache.clone()
@@ -1129,11 +1109,9 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             cache.index_copy_(0, indices, update)
             return before.view(2, 2), cache
 
-    def test_snapshot_before_index_copy_with_reinplace(self):
+    def test_snapshot_before_index_copy(self):
         # MLX can return the clone as the input's own memory, so it must be
-        # read before the update is written into that memory. The view puts
-        # the snapshot after the update in the delegate's outputs, so the
-        # update is written first.
+        # read out before the update is written into that memory.
         for model in (
             self.SnapshotBeforeMutation().eval(),
             self.ViewOfSnapshotBeforeMutation().eval(),
@@ -1142,16 +1120,8 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
                 cache = torch.tensor([1.0, 2.0, 3.0, 4.0])
                 indices = torch.tensor([1, 3], dtype=torch.int64)
                 update = torch.tensor([20.0, 40.0])
-                program = to_edge_transform_and_lower(
-                    export(model, (cache.clone(), indices, update), strict=False),
-                    partitioner=[MLXPartitioner()],
-                ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
-                graph = program.exported_program().graph
-                self.assertFalse(
-                    any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
-                )
-                plan = program.executorch_program.execution_plan[0]
-                self.assertEqual(plan.outputs[0], plan.inputs[0])
+                program = _lower(model, (cache.clone(), indices, update))
+                self._assert_written_by_delegate(program)
 
                 method = (
                     Runtime.get().load_program(program.buffer).load_method("forward")
@@ -1165,6 +1135,25 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
                     self.assertTrue(torch.equal(before.flatten(), expected_before))
                     self.assertTrue(torch.equal(cache, expected))
                     self.assertTrue(torch.equal(after, expected))
+
+    def test_scalar_source_into_input(self):
+        # The delegate's IndexCopyNode rejects a 0-d source; the update must
+        # still reach the input, whichever path then lowers it.
+        model = self.IndexCopyInput(0).eval()
+        data = torch.zeros(4)
+        program = _lower(model, (data.clone(), torch.tensor([2]), torch.tensor(5.0)))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model.pte"
+            path.write_bytes(program.buffer)
+            self.assertEqual(get_mlx_node_counts(path).get("IndexCopyNode", 0), 0)
+            method = Runtime.get().load_program(path).load_method("forward")
+            expected = data.clone()
+            for row, value in ((2, 5.0), (0, 7.0)):
+                indices, update = torch.tensor([row]), torch.tensor(value)
+                expected.index_copy_(0, indices, update)
+                data, summed = method.execute([data, indices, update])
+                self.assertTrue(torch.equal(data, expected))
+                self.assertTrue(torch.equal(summed, expected.sum(0)))
 
     def test_index_copy_accepts_int32_indices(self):
         # Export accepts int32 indices for index_copy, so the delegate must too.

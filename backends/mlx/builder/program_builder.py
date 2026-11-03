@@ -144,6 +144,7 @@ class MLXProgramBuilder:
         self.slot_manager = SlotManager()
         self.node_info: DefaultDict[Node, NodeInfo] = defaultdict(NodeInfo)
         self._mlx_graph: Optional[MLXGraph] = None
+        self._mutated_input_slots: Set[Slot] = set()
         # Map from SymInt symbol names (e.g., "s77") to the FX Node that produces them.
         # This is used to resolve symbolic tensor dimensions to Vid references.
         self._symint_to_node: Dict[str, Node] = {}
@@ -485,7 +486,7 @@ class MLXProgramBuilder:
             target = ospec.target
             if target is not None:
                 output_kind_targets[kind].add(target)
-            if kind in (OutputKind.USER_OUTPUT, OutputKind.USER_INPUT_MUTATION):
+            if kind == OutputKind.USER_OUTPUT:
                 user_outputs.append(name)
 
         for ispec in self.ep.graph_signature.input_specs:
@@ -765,12 +766,37 @@ class MLXProgramBuilder:
                 )
             )
 
+    def _emit_user_input_mutation_writebacks(self):
+        """Copy each USER_INPUT_MUTATION result into its input's slot.
+
+        The delegate returns no output for such a mutation; after a run the
+        runtime writes the input slot back into the caller's input tensor.
+        """
+        from torch.export.graph_signature import OutputKind
+
+        for ospec in self.ep.graph_signature.output_specs:
+            if ospec.kind != OutputKind.USER_INPUT_MUTATION:
+                continue
+            result_slot = self.slot_manager.get_slot(ospec.arg.name)
+            input_slot = self.slot_manager.get_slot(ospec.target)
+            assert result_slot is not None
+            assert input_slot is not None and input_slot.id_space == IdSpace.Input
+            if result_slot != input_slot:
+                self.emit(
+                    IdCopyNode(
+                        x=self.slot_to_tid(result_slot),
+                        out=self.slot_to_tid(input_slot),
+                    )
+                )
+            self._mutated_input_slots.add(input_slot)
+
     def build(self) -> MLXGraph:
         if self._mlx_graph is not None:
             return self._mlx_graph
 
         self._process_nodes()
         self._emit_buffer_mutation_writebacks()
+        self._emit_user_input_mutation_writebacks()
         self._verify_build()
         self._mlx_graph = self._build_mlx_graph()
         return self._mlx_graph
@@ -939,15 +965,20 @@ class MLXProgramBuilder:
         slot_to_tid: Dict[Slot, int],
         slot_to_vid: Dict[Slot, int],
     ) -> Tuple[
-        List[SlotVariant], List[SlotVariant], List[SlotVariant], List[NamedSlot]
+        List[SlotVariant],
+        List[SlotVariant],
+        List[SlotVariant],
+        List[NamedSlot],
+        List[int],
     ]:
         """
         Build input/output/mutable_buffer maps and named slots.
 
         Returns:
-            (input_map, output_map, mutable_buffer_map, named_slots)
+            (input_map, output_map, mutable_buffer_map, named_slots,
+            mutated_inputs)
         """
-        input_map: List[SlotVariant] = []
+        input_slots: List[Slot] = []
         output_map: List[SlotVariant] = []
         mutable_buffer_map: List[SlotVariant] = []
         # Canonical (unprefixed) name → Slot.  The prefix is applied only at
@@ -961,7 +992,7 @@ class MLXProgramBuilder:
             assert isinstance(slot, Slot)
             name = ispec.target if ispec.target is not None else ispec.arg.name
             if slot.id_space == IdSpace.Input:
-                input_map.append(self._to_slot_variant(slot, slot_to_tid, slot_to_vid))
+                input_slots.append(slot)
                 name_to_slot[name] = slot
             elif slot.id_space == IdSpace.MutableBuffer:
                 mutable_buffer_map.append(
@@ -1006,7 +1037,13 @@ class MLXProgramBuilder:
             for n, s in name_to_slot.items()
         ]
 
-        return input_map, output_map, mutable_buffer_map, named_slots
+        input_map = [
+            self._to_slot_variant(s, slot_to_tid, slot_to_vid) for s in input_slots
+        ]
+        mutated_inputs = [
+            i for i, s in enumerate(input_slots) if s in self._mutated_input_slots
+        ]
+        return input_map, output_map, mutable_buffer_map, named_slots, mutated_inputs
 
     def _build_tensor_meta(  # noqa: C901
         self,
@@ -1106,9 +1143,13 @@ class MLXProgramBuilder:
         self._slot_to_final_tid = slot_to_tid
 
         # Build I/O maps and metadata
-        input_map, output_map, mutable_buffer_map, named_slots = self._build_io_maps(
-            used_slots, slot_to_tid, slot_to_vid
-        )
+        (
+            input_map,
+            output_map,
+            mutable_buffer_map,
+            named_slots,
+            mutated_inputs,
+        ) = self._build_io_maps(used_slots, slot_to_tid, slot_to_vid)
         tensor_meta_list = self._build_tensor_meta(
             used_slots, slot_to_tid, slot_to_vid, num_tensors
         )
@@ -1136,6 +1177,7 @@ class MLXProgramBuilder:
             mutable_buffer_map=mutable_buffer_map,
             named_slots=named_slots,
             tensor_meta=tensor_meta_list,
+            mutated_inputs=mutated_inputs,
         )
 
     def get_named_data_store(
