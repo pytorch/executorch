@@ -2740,16 +2740,22 @@ class TestEmit(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 # PyTorch ignores the stride of a size-1 dim, so it calls
-                # queries contiguous and frame channels-last, but their strides
-                # give other dim orders. image already has a supported one.
-                self.register_buffer("queries", torch.randn(1, 8, 4).transpose(0, 1))
+                # queries and offset contiguous and frame channels-last, but
+                # their strides give other dim orders. image already has a
+                # supported one.
+                self.queries = nn.Parameter(torch.randn(1, 8, 4).transpose(0, 1))
+                self.offset = torch.randn(1, 8, 8).transpose(0, 1)
                 self.register_buffer("image", channels_last(2, 1, 4, 4))
                 self.register_buffer(
                     "frame", torch.randn(48).as_strided((1, 3, 4, 4), (5, 1, 12, 3))
                 )
 
             def forward(self, keys, x, y):
-                return torch.bmm(self.queries, keys), x + self.image, y + self.frame
+                return (
+                    torch.bmm(self.queries, keys) + self.offset,
+                    x + self.image,
+                    y + self.frame,
+                )
 
         model = Model()
         inputs = (
