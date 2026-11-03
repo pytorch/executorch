@@ -45,8 +45,9 @@ inline std::shared_ptr<void> allocate_cuda_result(size_t nbytes, int index) {
 #endif
 }
 
-// The Python API has no way to pass a stream or a readiness event, so the
-// Python boundary is synchronous and waits for the whole device.
+// A tensor handed across the Python boundary carries no readiness event, and
+// another library may write it on any stream, so the boundary waits for the
+// whole device, even inside an executorch.runtime.cuda stream block.
 inline void synchronize_cuda_device(int index) {
 #ifdef EXECUTORCH_PYBINDINGS_CUDA
   auto guard = executorch::extension::cuda::CUDAGuard::create(index);

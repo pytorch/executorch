@@ -166,6 +166,9 @@ Error platform_execute(
       return Error::InvalidProgram;
     }
     const char* output_addr = ethosu_scratch + out_offset;
+    if (output_addr == tensor_out.mutable_data_ptr<char>()) {
+      continue;
+    }
 
     // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)

@@ -1,15 +1,12 @@
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "CPU_RUNTIME_BUCK_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":cpu_backend.bzl", "cpu_backend", "cpu_provider")
 
 def define_common_targets():
     runtime.cxx_library(
         name = "cpu_runtime",
-        srcs = [
-            "runtime/KernelProvider.cpp",
-            "runtime/CPUPlan.cpp",
-            "runtime/op_helpers/Convolution.cpp",
-        ],
+        srcs = CPU_RUNTIME_BUCK_SRCS,
         exported_headers = [
             "runtime/KernelProvider.h",
             "runtime/CPUPlan.h",
@@ -19,6 +16,7 @@ def define_common_targets():
             "//executorch/backends/native/runtime:runtime",
             "//executorch/runtime/backend:interface",
         ],
+        deps = ["//executorch/extension/threadpool:threadpool"],
         visibility = ["PUBLIC"],
     )
 
@@ -26,7 +24,6 @@ def define_common_targets():
         name = "cpu_engine",
         srcs = ["runtime/CPUBackend.cpp"],
         exported_deps = [":cpu_runtime"],
-        deps = ["//executorch/extension/threadpool:threadpool"],
         visibility = ["PUBLIC"],
         # @lint-ignore BUCKLINT: Backend registration runs at static initialization.
         link_whole = True,

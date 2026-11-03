@@ -173,10 +173,9 @@ class ConvBN(torch.nn.Module):
         return self.relu6(self.bn(self.conv(x)))
 
 
-class UnfoldableBN(torch.nn.Module):
-    """Batch norms no convolution can absorb: one reads a convolution output
-    that is also read elsewhere, one the sole reader of a convolution whose
-    weight is shared, one a ReLU."""
+class SharedConvBN(torch.nn.Module):
+    """Batch norms reading a shared convolution output, a convolution with
+    shared weights, and a ReLU."""
 
     def __init__(self):
         super().__init__()
@@ -305,6 +304,7 @@ def _run_ggml(
     resize: bool = False,
     max_cached_graphs: int = 1,
     graph_ops: collections.Counter | None = None,
+    method: str = "forward",
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
@@ -325,6 +325,7 @@ def _run_ggml(
     command = [
         f"--device={os.environ.get('GGML_PTN_DEVICE', 'cpu')}",
         f"--package={package}",
+        f"--method={method}",
         f"--inputs={';'.join(input_steps)}",
         f"--outputs={';'.join(output_steps)}",
         f"--max_cached_graphs={max_cached_graphs}",
@@ -732,15 +733,16 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self.assertEqual(ops["SQRT"] + ops["MUL"], 0)
 
-    def test_unfoldable_batch_norms(self):
+    def test_batch_norms_with_shared_convolution(self):
         ops = collections.Counter()
         self._check(
-            UnfoldableBN(), (torch.randn(1, 4, 5, 6),), graph_ops=ops, **_MATMUL_TOL
+            SharedConvBN(), (torch.randn(1, 4, 5, 6),), graph_ops=ops, **_MATMUL_TOL
         )
-        # Scale and shift come from load; each graph has three batch norms
-        # (one scale multiply each) and two convolutions.
+        # AOT folds the shared-weight branch; two batch norm scales and two
+        # convolutions remain in each graph.
         self.assertEqual(ops["SQRT"], 0)
-        self.assertEqual(2 * ops["MUL"], 3 * ops["MUL_MAT"])
+        self.assertGreater(ops["MUL_MAT"], 0)
+        self.assertEqual(ops["MUL"], ops["MUL_MAT"])
 
     def test_batch_norm_of_computed_statistics(self):
         # Statistics computed in the graph cannot fold at load.
@@ -766,6 +768,41 @@ class GgmlOpsTest(unittest.TestCase):
         norm.running_mean.uniform_(-1.0, 1.0)
         norm.running_var.uniform_(0.5, 2.0)
         self._check(norm, (torch.randn(1, 4, 5, 6),), atol=1e-5)
+
+    def test_batch_norm_statistics_written_by_another_method(self):
+        class Update(torch.nn.Module):
+            def __init__(self, bn):
+                super().__init__()
+                self.bn = bn
+
+            def forward(self, delta):
+                self.bn.running_mean.add_(delta)
+                return self.bn.running_mean + 1
+
+        model = ConvBN(groups=1, bias=True).eval()
+        methods = {
+            "predict": (model, (torch.randn(1, 8, 9, 9),)),
+            "update": (Update(model.bn), (torch.randn(8),)),
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(
+                {
+                    name: torch.export.export(module, inputs)
+                    for name, (module, inputs) in methods.items()
+                }
+            ).save(str(package))
+            for name, (module, inputs) in methods.items():
+                with self.subTest(method=name), torch.no_grad():
+                    expected = copy.deepcopy(module)(*inputs)
+                    ((raw, shape),) = _run_ggml(
+                        package, [inputs], outdir, 1, method=name
+                    )[0]
+                    actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                    torch.testing.assert_close(
+                        actual.reshape(shape), expected, atol=1e-4, rtol=1e-5
+                    )
 
     def test_max_pool2d(self):
         self._check(

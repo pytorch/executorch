@@ -90,6 +90,13 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
       executorch_delegate_ethos_u PRIVATE ${DRIVER_ETHOSU_INCLUDE_DIR}
     )
     target_link_libraries(executorch_delegate_ethos_u PUBLIC ethosu_core_driver)
+    add_library(
+      ethosu_execution_stats STATIC
+      ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp
+    )
+    target_include_directories(
+      ethosu_execution_stats PRIVATE ${_common_include_directories}
+    )
   elseif(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     target_sources(
       executorch_delegate_ethos_u
@@ -276,6 +283,15 @@ if(EXECUTORCH_BUILD_VGF)
   # vgf backend
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
   add_library(vgf_backend ${_vgf_backend_sources})
+
+  option(EXECUTORCH_VGF_ZERO_COPY_IO
+         "Enable VGF model-boundary host zero-copy I/O" OFF
+  )
+  if(EXECUTORCH_VGF_ZERO_COPY_IO)
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_ZERO_COPY_IO=1)
+  else()
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_ZERO_COPY_IO=0)
+  endif()
 
   # Should be absent in ordinary production builds.
   option(EXECUTORCH_VGF_IO_STATS "Collect per-execution VGF copy statistics"

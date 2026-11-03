@@ -47,11 +47,14 @@ REGISTER_TEST_CASE_SET("conv2d", "pw_correctness") {
       // Non-multiple-of-4 channels
       {1, 13, 27, 8, 8, false},
       {1, 33, 17, 8, 8, false},
+      // Partial pixel and channel tiles, below and above the invocation count
+      // where Half switches to the wide tile
+      {1, 33, 52, 41, 47, true},
+      {1, 33, 58, 63, 61, true},
   };
 
   const std::vector<Conv2dPwCaseGroup> groups = {
-      // Accuracy test cases (float only)
-      {accuracy_configs, {vkapi::kFloat}},
+      {accuracy_configs, {vkapi::kFloat, vkapi::kHalf}},
   };
   return {
       generate_pw_test_cases(groups),
@@ -96,6 +99,28 @@ REGISTER_TEST_CASE_SET("conv2d", "pw_performance") {
       generate_pw_test_cases(groups),
       conv2d_pw_reference_impl,
       conv2d_pw_flop_calculator};
+}
+
+REGISTER_TEST_CASE_SET("conv2d", "dsr_pw_set") {
+  // DSR dim=64 1x1 convs at the 1512x2016 input resolution.
+  const std::vector<Conv2dPwConfig> configs = {
+      {1, 64, 64, 756, 1008, true},
+      {1, 32, 128, 756, 1008, true},
+      {1, 128, 32, 756, 1008, true},
+      {1, 128, 128, 378, 504, true},
+      {1, 64, 256, 378, 504, true},
+      {1, 256, 64, 378, 504, true},
+      {1, 256, 256, 189, 252, true},
+      {1, 128, 512, 189, 252, true},
+      {1, 512, 128, 189, 252, true},
+  };
+  // Full-resolution FP16 configurations are timing-only.
+  return {
+      generate_pw_test_cases({{configs, {vkapi::kHalf}}}),
+      nullptr,
+      conv2d_pw_flop_calculator,
+      5,
+      20};
 }
 
 } // namespace conv2d
