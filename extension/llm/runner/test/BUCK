@@ -2,6 +2,7 @@ load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "no
 oncall("executorch")
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -43,5 +44,6 @@ fbcode_target(_kind = runtime.cxx_test,
         "KVCACHE_CACHE_POS": "$(location fbcode//executorch/test/models:exported_programs[ModuleKVCacheCachePos.pte])",
         "KVCACHE_INPUT_POS": "$(location fbcode//executorch/test/models:exported_programs[ModuleKVCacheInputPos.pte])",
         "NO_KVCACHE": "$(location fbcode//executorch/test/models:exported_programs[ModuleNoKVCache.pte])",
+        "STATIC_NO_KVCACHE": "$(location fbcode//executorch/test/models:exported_programs[ModuleStaticNoKVCache.pte])",
     }
 )

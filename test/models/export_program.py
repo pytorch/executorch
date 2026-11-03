@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -279,6 +280,19 @@ class ModuleNoKVCache(torch.nn.Module):
 
     def get_random_inputs(self):
         return (torch.randint(100, [1, 3], dtype=torch.long),)
+
+
+class ModuleStaticNoKVCache(torch.nn.Module):
+    def forward(self, tokens):
+        values = tokens.to(torch.float)
+        positions = torch.arange(4, dtype=torch.float, device=tokens.device).unsqueeze(
+            0
+        )
+        padding_sum = values[:, 2:].sum()
+        return torch.stack((values, positions + padding_sum), dim=-1)
+
+    def get_random_inputs(self):
+        return (torch.zeros(1, 4, dtype=torch.int32),)
 
 
 class ModuleSharedState(torch.nn.Module):

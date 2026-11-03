@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -313,6 +314,42 @@ TEST_F(TextDecoderRunnerTest, StepWithAllModels) {
   // This should not happen since we checked environment variables up front
   ASSERT_TRUE(any_model_tested)
       << "No models were tested despite environment variables being set";
+}
+
+TEST_F(TextDecoderRunnerTest, StaticNonKVShortPrompt) {
+  const char* model_path = std::getenv("STATIC_NO_KVCACHE");
+  if (!model_path) {
+    GTEST_SKIP() << "No static non-KV PTE model environment variable set";
+  }
+
+  Module module(model_path);
+  IOManager io_manager(module);
+  TextDecoderRunner runner(
+      &module, &io_manager, "forward", nullptr, nullptr, false);
+  ASSERT_EQ(runner.load(), Error::Ok);
+
+  auto tokens = executorch::extension::make_tensor_ptr(
+      {1, 2}, std::vector<int64_t>{7, 8});
+  auto result = runner.step(tokens, 0);
+  ASSERT_TRUE(result.ok()) << static_cast<int>(result.error());
+  ASSERT_EQ(result->dim(), 2);
+  ASSERT_EQ(result->size(0), 1);
+  ASSERT_EQ(result->size(1), 2);
+  EXPECT_FLOAT_EQ(result->const_data_ptr<float>()[0], 8.0f);
+  EXPECT_FLOAT_EQ(result->const_data_ptr<float>()[1], 1.0f);
+}
+
+TEST_F(TextDecoderRunnerTest, StaticNonKVRequiresFullLogits) {
+  const char* model_path = std::getenv("NO_KVCACHE");
+  if (!model_path) {
+    GTEST_SKIP() << "No non-KV PTE model environment variable set";
+  }
+
+  Module module(model_path);
+  IOManager io_manager(module);
+  TextDecoderRunner runner(
+      &module, &io_manager, "forward", nullptr, nullptr, false);
+  EXPECT_EQ(runner.load(), Error::InvalidProgram);
 }
 
 } // namespace

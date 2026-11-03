@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -11,7 +12,9 @@
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/kernels/portable/cpu/util/arange_util.h>
 
+#include <algorithm>
 #include <ctime>
+#include <limits>
 
 #include <executorch/extension/llm/runner/stats.h>
 
@@ -27,12 +30,14 @@ TextDecoderRunner::TextDecoderRunner(
     IOManager* io_manager,
     std::string method_name,
     std::unique_ptr<Sampler> sampler,
-    Stats* stats)
+    Stats* stats,
+    bool enable_dynamic_shape)
     : module_(module),
       io_manager_(io_manager),
       method_name_(std::move(method_name)),
       sampler_(std::move(sampler)),
-      stats_(stats) {}
+      stats_(stats),
+      enable_dynamic_shape_(enable_dynamic_shape) {}
 
 // This function is functional, meaning it shouldn't modify any state of the
 // input. It should be safe to call multiple times with the same inputs. The
@@ -93,7 +98,46 @@ TextDecoderRunner::TextDecoderRunner(
   } else { // no kv cache
     (void)start_pos; // unused
 
-    std::vector<runtime::EValue> inputs{tokens};
+    auto input_meta = method_meta.input_tensor_meta(0);
+    ET_CHECK_OK_OR_RETURN_ERROR(input_meta.error());
+    const auto sizes = input_meta->sizes();
+    ET_CHECK_OR_RETURN_ERROR(
+        sizes.size() == 2 && sizes[0] == 1 && tokens->dim() == 2 &&
+            tokens->size(0) == 1,
+        InvalidArgument,
+        "Non-KV text input must have shape [1, sequence_length]");
+    const auto valid_length = tokens->size(1);
+    const auto input_length = static_cast<aten::SizesType>(
+        enable_dynamic_shape_ ? valid_length : sizes[1]);
+    ET_CHECK_OR_RETURN_ERROR(
+        valid_length > 0 && valid_length <= input_length,
+        InvalidArgument,
+        "Token count exceeds the static non-KV input window");
+    ET_CHECK_OR_RETURN_ERROR(
+        tokens->scalar_type() == aten::ScalarType::Long &&
+            (input_meta->scalar_type() == aten::ScalarType::Int ||
+             input_meta->scalar_type() == aten::ScalarType::Long),
+        InvalidArgument,
+        "Non-KV text input must use int32 or int64 tokens");
+    TensorPtr model_tokens;
+    if (input_meta->scalar_type() == aten::ScalarType::Int) {
+      std::vector<int32_t> padded(input_length, 0);
+      const auto* data = tokens->const_data_ptr<int64_t>();
+      for (int64_t i = 0; i < valid_length; ++i) {
+        ET_CHECK_OR_RETURN_ERROR(
+            data[i] >= 0 && data[i] <= std::numeric_limits<int32_t>::max(),
+            InvalidArgument,
+            "Token ID cannot be represented as int32");
+        padded[i] = static_cast<int32_t>(data[i]);
+      }
+      model_tokens = make_tensor_ptr({1, input_length}, std::move(padded));
+    } else {
+      std::vector<int64_t> padded(input_length, 0);
+      const auto* data = tokens->const_data_ptr<int64_t>();
+      std::copy(data, data + valid_length, padded.begin());
+      model_tokens = make_tensor_ptr({1, input_length}, std::move(padded));
+    }
+    std::vector<runtime::EValue> inputs{model_tokens};
     if (stats_ != nullptr) {
       stats_->on_model_execution_begin();
     }
@@ -109,8 +153,21 @@ TextDecoderRunner::TextDecoderRunner(
         outputs_res.get()[0].isTensor(),
         "Non Tensor Output returned from executing LLM");
 
-    // Return the logits tensor
-    return outputs_res.get()[0].toTensor();
+    auto logits = outputs_res.get()[0].toTensor();
+    if (!enable_dynamic_shape_) {
+      ET_CHECK_OR_RETURN_ERROR(
+          logits.dim() == 3 && logits.size(0) == 1 &&
+              logits.size(1) == input_length,
+          InvalidProgram,
+          "Static non-KV models need full logits; export with "
+          "--generate_full_logits");
+      const auto vocab_size = static_cast<aten::SizesType>(logits.size(2));
+      auto* last_row = static_cast<char*>(logits.mutable_data_ptr()) +
+          (valid_length - 1) * vocab_size * logits.element_size();
+      last_logits_ = from_blob(last_row, {1, vocab_size}, logits.scalar_type());
+      return *last_logits_;
+    }
+    return logits;
   }
 }
 
