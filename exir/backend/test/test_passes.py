@@ -86,3 +86,26 @@ class TestPasses(unittest.TestCase):
 
         self.assertEqual(len(copied_nodes), 1)
         self.assertNotEqual(user.kwargs["other"], buffer_node)
+
+    def test_duplicate_constant_node_refuses_a_mutated_buffer(self) -> None:
+        class UpdateConst(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("const", torch.zeros(2))
+
+            def forward(self, x):
+                y = x * self.const
+                self.const.add_(1)
+                return y
+
+        program = exir.to_edge(
+            export(UpdateConst(), (torch.ones(2),), strict=True)
+        ).exported_program()
+        name = next(
+            node.name
+            for node in program.graph.nodes
+            if node.op == "placeholder" and is_buffer(program, node)
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "would not see its updates"):
+            duplicate_constant_node(program, name)

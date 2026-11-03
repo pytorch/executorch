@@ -256,11 +256,14 @@ the delegate, so that the delegate reads the constant itself. `share_mutable_buf
 planned tensor in host memory, so it does not work with this flag. This flag works on its own: it
 needs neither `skip_h2d_for_method_inputs` nor unplanned inputs.
 
-**`skip_h2d_for_method_inputs` refuses inputs that the method changes.** `to_executorch` fails if
-the method changes an input, even when the delegate makes the change. This includes a mutable
-buffer, such as a KV cache, even though the caller does not pass it. For a buffer, put it and every
-operator that uses it in the delegate. The CUDA partitioner already moves the buffer in, with
-`tag_mutated_buffer`, once those operators are there.
+**`skip_h2d_for_method_inputs` refuses changed inputs that a delegate reads.** `to_executorch` fails
+if the method changes an input that a delegate reads, even when the delegate makes the change. This
+includes a mutable buffer, such as a KV cache, even though the caller does not pass it. For a
+buffer, put it and every operator that uses it in the delegate. The CUDA partitioner already moves
+the buffer in, with `tag_mutated_buffer`, once those operators are there. When the method reads the
+buffer, it keeps the buffer out if the method also returns the buffer's new value, or sets the
+buffer to a method input, as in `self.state.copy_(x)`. Because the CUDA partitioner puts the ops
+that read such a buffer in a delegate, this flag then refuses the method.
 
 **The choice is baked into the `.pte`.** A program exported with copies expects host tensors; one
 exported without them expects device tensors. Passing the wrong kind is a caller error, not
