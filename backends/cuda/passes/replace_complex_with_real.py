@@ -309,10 +309,13 @@ def _store_as_real(exported_program: ExportedProgram, node: Node) -> None:
         else exported_program._state_dict
     )
     tensor = tensors[name]
-    pair = torch.view_as_real(tensor.detach().resolve_conj()).clone()
-    if isinstance(tensor, torch.nn.Parameter):
-        pair = torch.nn.Parameter(pair, requires_grad=False)
-    tensors[name] = pair
+    # Partitioning can give one tensor several placeholders, and the first of
+    # them stores it.
+    if tensor.is_complex():
+        pair = torch.view_as_real(tensor.detach().resolve_conj()).clone()
+        if isinstance(tensor, torch.nn.Parameter):
+            pair = torch.nn.Parameter(pair, requires_grad=False)
+        tensors[name] = pair
     node.meta["val"] = torch.view_as_real(node.meta["val"].resolve_conj())
 
 

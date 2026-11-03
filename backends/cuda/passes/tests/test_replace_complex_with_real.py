@@ -17,6 +17,9 @@ from executorch.backends.cuda.passes.tests.test_replace_fused_sdpa import (
     _Fn,
     _program_for_cuda_passes,
 )
+from executorch.exir.backend.canonical_partitioners.duplicate_constant_node_pass import (
+    duplicate_constant_node,
+)
 
 
 class TestReplaceComplexWithRealPass(unittest.TestCase):
@@ -84,6 +87,32 @@ class TestReplaceComplexWithRealPass(unittest.TestCase):
         for positions in (torch.tensor([3, 0, 7, 7, 1]), torch.tensor([6, 2, 4])):
             inputs = (x[: len(positions)], positions, scale)
             torch.testing.assert_close(program.module()(*inputs), model(*inputs))
+
+    def test_tensor_with_two_placeholders(self):
+        """Partitioning gives a tensor a placeholder per op that reads it when
+        another backend takes ops between those, and the pass stores the
+        tensor once."""
+
+        class Rotate(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("freqs", torch.polar(torch.ones(3), torch.rand(3)))
+
+            def forward(self, x, y):
+                return tuple(
+                    torch.view_as_real(torch.view_as_complex(t) * self.freqs)
+                    for t in (x, y)
+                )
+
+        model = Rotate()
+        inputs = (torch.randn(3, 2), torch.randn(3, 2))
+        program = _program_for_cuda_passes(model, inputs)
+        duplicate_constant_node(program, "b_freqs")
+        ReplaceComplexWithRealPass()(program)
+        for node in program.graph.nodes:
+            val = node.meta.get("val")
+            self.assertFalse(isinstance(val, torch.Tensor) and val.is_complex())
+        torch.testing.assert_close(program.module()(*inputs), model(*inputs))
 
     def test_leaves_unsupported_programs(self):
         """A program with a complex op that the rewrite does not handle keeps
