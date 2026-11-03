@@ -392,6 +392,14 @@ class Cast(torch.nn.Module):
         return x.type(torch.IntTensor)
 
 
+class CastToLong(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.to(torch.long)
+
+
 class CastMultiUsers(torch.nn.Module):
     def __init__(self):
         super().__init__()
