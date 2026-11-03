@@ -430,6 +430,32 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
                 node.meta["delegation_tag"] = min(user_tags)
 
 
+# Set by tag_in_place_input_mutations on a mutated user input's placeholder.
+DELEGATE_WRITES_IN_PLACE = "delegate_writes_in_place"
+
+
+def tag_in_place_input_mutations(edge_program: ExportedProgram) -> None:
+    """
+    Util function for partitioners whose delegate writes a mutated user input
+    in place. Marks each user input the program mutates whose readers and
+    update are all tagged with one partition, so to_executorch's
+    run_reinplace_pass can give that update the input's storage and drop the
+    write-back. Unlike tag_mutated_buffer, the input stays an argument of the
+    method. The delegate must then handle an output that is the same tensor as
+    one of its inputs. Call after tagging all other nodes.
+    """
+    sig = edge_program.graph_signature
+    update_of = {name: out for out, name in sig.user_inputs_to_mutate.items()}
+    nodes = {node.name: node for node in edge_program.graph.nodes}
+    for node in edge_program.graph.nodes:
+        if node.op != "placeholder" or node.name not in update_of:
+            continue
+        tags = {user.meta.get("delegation_tag") for user in node.users}
+        tags.add(nodes[update_of[node.name]].meta.get("delegation_tag"))
+        if len(tags) == 1 and None not in tags:
+            node.meta[DELEGATE_WRITES_IN_PLACE] = tags.pop()
+
+
 def is_shape_dynamic(node: torch.fx.Node) -> bool:
     """
     Check if the node shape is dynamic.

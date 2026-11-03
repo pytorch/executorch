@@ -20,6 +20,10 @@ from executorch.exir.backend.backend_details import BackendDetails, PreprocessRe
 from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
     AllNodePartitioner,
 )
+from executorch.exir.backend.utils import (
+    DELEGATE_WRITES_IN_PLACE,
+    tag_in_place_input_mutations,
+)
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as edge_ops
@@ -54,18 +58,27 @@ def _find_nodes(
     ]
 
 
-class _InPlaceDemoBackend(BackendDetails):
-    writes_mutated_inputs_in_place = True
-
+class _DemoBackend(BackendDetails):
     @staticmethod
     def preprocess(edge_program, compile_specs) -> PreprocessResult:
         return PreprocessResult(processed_bytes=b"")
 
 
-class _CopyingDemoBackend(BackendDetails):
-    @staticmethod
-    def preprocess(edge_program, compile_specs) -> PreprocessResult:
-        return PreprocessResult(processed_bytes=b"")
+class _InPlacePartitioner(AllNodePartitioner):
+    """Delegates every node except calls to ``host_ops``, marking the mutated
+    inputs it can write in place."""
+
+    def __init__(self, backend_id: str, host_ops: frozenset = frozenset()) -> None:
+        super().__init__(backend_id, [])
+        self.host_ops = host_ops
+
+    def partition(self, exported_program: ExportedProgram):
+        result = super().partition(exported_program)
+        for node in exported_program.graph_module.graph.nodes:
+            if node.op == "call_function" and node.target in self.host_ops:
+                node.meta.pop("delegation_tag", None)
+        tag_in_place_input_mutations(exported_program)
+        return result
 
 
 class _CacheUpdate(torch.nn.Module):
@@ -82,21 +95,6 @@ class _CacheUpdateViewedOnHost(torch.nn.Module):
     ) -> torch.Tensor:
         k_cache.index_copy_(2, pos, k)
         return k_cache.view(-1) * 2
-
-
-class _HostOpsPartitioner(AllNodePartitioner):
-    """Delegates every node except calls to ``host_ops``."""
-
-    def __init__(self, backend_id: str, host_ops: set) -> None:
-        super().__init__(backend_id, [])
-        self.host_ops = host_ops
-
-    def partition(self, exported_program: ExportedProgram):
-        result = super().partition(exported_program)
-        for node in exported_program.graph_module.graph.nodes:
-            if node.op == "call_function" and node.target in self.host_ops:
-                node.meta.pop("delegation_tag", None)
-        return result
 
 
 class TestReinplacePass(unittest.TestCase):
@@ -874,17 +872,17 @@ class TestReinplacePass(unittest.TestCase):
 
     def test_delegate_writes_mutated_input_in_place(self) -> None:
         """A delegate that mutates one of its inputs writes it in place when
-        its backend opts in: its output shares the input's spec and the
-        write-back copy_ is gone. Other backends keep the copy_."""
+        its partitioner marks that input: its output shares the input's spec
+        and the write-back copy_ is gone. Unmarked inputs keep the copy_."""
         inputs = (torch.ones(1, 2, 1, 4), torch.zeros(1, 2, 8, 4), torch.tensor([3]))
-        for backend, in_place in (
-            ("_InPlaceDemoBackend", True),
-            ("_CopyingDemoBackend", False),
+        for partitioner, in_place in (
+            (_InPlacePartitioner("_DemoBackend"), True),
+            (AllNodePartitioner("_DemoBackend", []), False),
         ):
-            with self.subTest(backend=backend):
+            with self.subTest(in_place=in_place):
                 program = to_edge_transform_and_lower(
                     export(_CacheUpdate(), inputs, strict=True),
-                    partitioner=[AllNodePartitioner(backend, [])],
+                    partitioner=[partitioner],
                 ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
                 graph = program.exported_program().graph
                 k_cache = next(n for n in graph.nodes if n.name == "k_cache")
@@ -907,10 +905,9 @@ class TestReinplacePass(unittest.TestCase):
         delegate no longer writes. A dynamic view keeps its dynamism."""
         batch = torch.export.Dim("batch", max=4)
         inputs = (torch.ones(2, 2, 1, 4), torch.zeros(2, 2, 8, 4), torch.tensor([3]))
-        host_ops = {
-            edge_ops.edge.aten.view_copy.default,
-            edge_ops.edge.aten.mul.Tensor,
-        }
+        host_ops = frozenset(
+            {edge_ops.edge.aten.view_copy.default, edge_ops.edge.aten.mul.Tensor}
+        )
         for dynamic_shapes in (None, ({0: batch}, {0: batch}, None)):
             with self.subTest(dynamic=dynamic_shapes is not None):
                 program = to_edge_transform_and_lower(
@@ -920,7 +917,7 @@ class TestReinplacePass(unittest.TestCase):
                         dynamic_shapes=dynamic_shapes,
                         strict=True,
                     ),
-                    partitioner=[_HostOpsPartitioner("_InPlaceDemoBackend", host_ops)],
+                    partitioner=[_InPlacePartitioner("_DemoBackend", host_ops)],
                 ).to_executorch()
                 ep = program.exported_program()
                 graph = ep.graph
@@ -945,6 +942,33 @@ class TestReinplacePass(unittest.TestCase):
                     any(s is k_cache.meta["spec"] for s in output.meta["spec"])
                 )
 
+    def test_input_read_outside_the_partition_is_not_marked(self) -> None:
+        """An input also read on the host is not the delegate's alone, so it is
+        not marked and keeps its write-back."""
+
+        class ReadOnHostThenUpdate(torch.nn.Module):
+            def forward(
+                self, k: torch.Tensor, k_cache: torch.Tensor, pos: torch.Tensor
+            ) -> torch.Tensor:
+                doubled = k_cache * 2
+                k_cache.index_copy_(2, pos, k)
+                return doubled
+
+        inputs = (torch.ones(1, 2, 1, 4), torch.zeros(1, 2, 8, 4), torch.tensor([3]))
+        program = to_edge_transform_and_lower(
+            export(ReadOnHostThenUpdate(), inputs, strict=True),
+            partitioner=[
+                _InPlacePartitioner(
+                    "_DemoBackend", frozenset({edge_ops.edge.aten.mul.Tensor})
+                )
+            ],
+        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        ep = program.exported_program()
+        k_cache = next(n for n in ep.graph.nodes if n.name == "k_cache")
+
+        self.assertNotIn(DELEGATE_WRITES_IN_PLACE, k_cache.meta)
+        self.assertEqual(len(_find_nodes(ep, "copy_")), 1)
+
     def test_delegate_input_mutation_kept_when_read_before_write_back(
         self,
     ) -> None:
@@ -957,7 +981,7 @@ class TestReinplacePass(unittest.TestCase):
             with self.subTest(read_through=read_through):
                 program = to_edge_transform_and_lower(
                     export(_CacheUpdate(), inputs, strict=True),
-                    partitioner=[AllNodePartitioner("_InPlaceDemoBackend", [])],
+                    partitioner=[_InPlacePartitioner("_DemoBackend")],
                 ).to_executorch()
                 ep = program.exported_program()
                 graph = ep.graph

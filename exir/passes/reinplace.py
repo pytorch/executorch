@@ -584,16 +584,17 @@ def reinplace_delegate_input_mutations(
 
     The method writes a mutated input back with ``copy_(input, output)`` once
     the delegate that computed ``output`` returns. When that delegate also
-    reads ``input`` and its backend sets ``writes_mutated_inputs_in_place``,
-    give ``output`` the input's TensorSpec, so the two are one value the
-    delegate writes directly, and drop the copy.
+    reads ``input`` and the partitioner marked ``input`` with
+    ``tag_in_place_input_mutations``, give ``output`` the input's TensorSpec,
+    so the two are one value the delegate writes directly, and drop the copy.
+    The mark says the delegate handles the aliasing; the checks here make sure
+    nothing else in the method can tell.
 
     Runs on a graph with tensor specs, before memory planning.
     """
-    from executorch.exir.backend.backend_details import BackendDetails
+    from executorch.exir.backend.utils import DELEGATE_WRITES_IN_PLACE
     from executorch.exir.delegate import executorch_call_delegate
 
-    backends = {cls.__name__: cls for cls in BackendDetails.__subclasses__()}
     graph = graph_module.graph
     position = {node: i for i, node in enumerate(graph.nodes)}
     for node in list(graph.nodes):
@@ -603,12 +604,11 @@ def reinplace_delegate_input_mutations(
         if mutated.op != "placeholder" or update.target != operator.getitem:
             continue
         delegate = update.args[0]
-        if delegate.target != executorch_call_delegate or mutated not in delegate.args:
-            continue
-        backend = backends.get(
-            getattr(graph_module, delegate.args[0].target).backend_id
-        )
-        if backend is None or not backend.writes_mutated_inputs_in_place:
+        if (
+            delegate.target != executorch_call_delegate
+            or mutated not in delegate.args
+            or DELEGATE_WRITES_IN_PLACE not in mutated.meta
+        ):
             continue
         # The input now changes while the delegate runs, not at the copy, so
         # nothing in between may read it, directly or through an alias, and the
