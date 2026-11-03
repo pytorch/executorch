@@ -81,6 +81,8 @@ def _size(size: List[Any], ndim: int) -> List[Any]:
 # position, and how to name the same dims of the pair. These arguments'
 # default values never need changing.
 _SAME_ON_BOTH_PARTS: Dict[Any, Tuple[Tuple[int, Callable[..., Any]], ...]] = {
+    # Torch-TensorRT turns every view into _reshape_copy.
+    _aten._reshape_copy.default: ((1, _size),),
     _aten.alias_copy.default: (),
     _aten.cat.default: ((1, _dim),),
     _aten.clone.default: (),

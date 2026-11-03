@@ -42,7 +42,9 @@ class TestReplaceComplexWithRealPass(unittest.TestCase):
 
             def forward(self, x, positions, scale):
                 f = torch.stack(self.freqs[positions].unbind(-1), -1)
-                f = f.unsqueeze(-2).expand(-1, 2, -1).flatten(-2).unsqueeze(-2)
+                f = f.unsqueeze(-2).expand(-1, 2, -1).flatten(-2)
+                # Torch-TensorRT turns views into _reshape_copy.
+                f = torch.ops.aten._reshape_copy(f, [-1, 1, 6])
                 pairs = torch.view_as_complex(x.unflatten(-1, (-1, 2)))
                 # The product keeps the permuted layout, so export flattens
                 # the transpose back with a view.
