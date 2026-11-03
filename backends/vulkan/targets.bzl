@@ -342,12 +342,12 @@ def define_common_targets(is_fbcode = False):
             continue
         suffix = "_no_volk" if no_volk else ""
         runtime.cxx_test(
-            name = "vulkan_shared_context_test{}".format(suffix),
+            name = "vulkan_shared_device_test{}".format(suffix),
             srcs = [
-                "test/shared_context/SharedContextPolicyTest.cpp",
-                "test/shared_context/SharedContextAdapterTest.cpp",
+                "test/shared_device/SharedDevicePolicyTest.cpp",
+                "test/shared_device/SharedDeviceAdapterTest.cpp",
             ],
-            headers = ["runtime/SharedContext.h"],
+            headers = ["runtime/SharedDevice.h"],
             compiler_flags = get_vulkan_compiler_flags(),
             labels = get_labels(no_volk),
             platforms = get_platforms(),

@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/SharedContext.h>
+#include <executorch/backends/vulkan/runtime/ResolveSharedDevice.h>
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
 #include <executorch/runtime/backend/interface.h>
@@ -27,7 +27,7 @@
 
 namespace {
 using namespace executorch::backends::vulkan_shared;
-using executorch::backends::vulkan::create_vulkan_shared_context;
+using executorch::backends::vulkan::create_vulkan_shared_device;
 using executorch::backends::vulkan::resolve_vulkan_shared_adapter;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendOption;
@@ -46,14 +46,14 @@ BackendInitContext context_for(BackendOptions<3>& options) {
       Span<const BackendOption>(view.data(), view.size()));
 }
 
-TEST(SharedContextAdapterBuildTest, DisabledDoesNotInitializeVulkan) {
+TEST(SharedDeviceAdapterBuildTest, DisabledDoesNotInitializeVulkan) {
   BackendInitContext init(nullptr);
   auto result = resolve_vulkan_shared_adapter(init);
   ASSERT_TRUE(result.ok());
   EXPECT_EQ(result.get(), nullptr);
 }
 
-TEST(SharedContextAdapterBuildTest, InvalidArgumentsDoNotEnterInitialization) {
+TEST(SharedDeviceAdapterBuildTest, InvalidArgumentsDoNotEnterInitialization) {
   executorch::runtime::runtime_init();
   std::array<uint8_t, 16> bytes{};
   int releases = 0;
@@ -74,10 +74,10 @@ TEST(SharedContextAdapterBuildTest, InvalidArgumentsDoNotEnterInitialization) {
   EXPECT_EQ(backend->init(init, nullptr, {}).error(), Error::InvalidArgument);
 }
 
-class SharedContextAdapterTest : public ::testing::Test {
+class SharedDeviceAdapterTest : public ::testing::Test {
  protected:
-  SharedVulkanContextPtr shared;
-  SharedVulkanContextKey key{"phase3-gpu-test", 7};
+  SharedVulkanDevicePtr shared;
+  SharedVulkanDeviceKey key{"phase3-gpu-test", 7};
 
   void SetUp() override {
     const char* enabled = std::getenv("ETVK_RUN_GPU_TESTS");
@@ -86,25 +86,25 @@ class SharedContextAdapterTest : public ::testing::Test {
           << "Set ETVK_RUN_GPU_TESTS=1 to require real Vulkan execution";
     }
     executorch::runtime::runtime_init();
-    SharedVulkanContextRegistry::Get().clear_for_testing();
-    auto created = create_vulkan_shared_context(key);
+    SharedVulkanDeviceRegistry::Get().clear_for_testing();
+    auto created = create_vulkan_shared_device(key);
     ASSERT_TRUE(created.ok())
         << "Requested GPU tests require a working Vulkan ICD";
     shared = created.get();
     ASSERT_EQ(
-        SharedVulkanContextRegistry::Get().register_context(shared), Error::Ok);
+        SharedVulkanDeviceRegistry::Get().register_device(shared), Error::Ok);
   }
 
   void TearDown() override {
-    SharedVulkanContextRegistry::Get().clear_for_testing();
+    SharedVulkanDeviceRegistry::Get().clear_for_testing();
     shared.reset();
   }
 
   // Test-only copy used to mutate context metadata. The copied context shares
   // the same VkQueue as the original but owns a different queue mutex, so the
   // two contexts must not perform queue operations concurrently.
-  SharedVulkanContextCreateInfo copy_info() {
-    SharedVulkanContextCreateInfo info;
+  SharedVulkanDeviceCreateInfo copy_info() {
+    SharedVulkanDeviceCreateInfo info;
     info.key = key;
     info.instance = shared->instance();
     info.physical_device = shared->physical_device();
@@ -166,7 +166,7 @@ void submit_empty(vkapi::Adapter& adapter) {
   adapter.wait_idle(queue);
 }
 
-TEST_F(SharedContextAdapterTest, ReusesHandlesAndOnlyRegisteredQueueMetadata) {
+TEST_F(SharedDeviceAdapterTest, ReusesHandlesAndOnlyRegisteredQueueMetadata) {
   vkapi::Adapter first(shared, ""), second(shared, "");
   EXPECT_EQ(first.instance_handle(), shared->instance());
   EXPECT_EQ(first.device_handle(), second.device_handle());
@@ -180,7 +180,7 @@ TEST_F(SharedContextAdapterTest, ReusesHandlesAndOnlyRegisteredQueueMetadata) {
   EXPECT_NO_THROW(submit_empty(second));
 }
 
-TEST_F(SharedContextAdapterTest, RejectsForeignQueueMetadataBeforeSubmission) {
+TEST_F(SharedDeviceAdapterTest, RejectsForeignQueueMetadataBeforeSubmission) {
   vkapi::Adapter adapter(shared, "");
   auto queue = adapter.request_queue();
   auto wrong = queue;
@@ -191,9 +191,9 @@ TEST_F(SharedContextAdapterTest, RejectsForeignQueueMetadataBeforeSubmission) {
   EXPECT_NO_THROW(submit_empty(adapter));
 }
 
-TEST_F(SharedContextAdapterTest, ImportedFeaturesAreConservativelyDisabled) {
+TEST_F(SharedDeviceAdapterTest, ImportedFeaturesAreConservativelyDisabled) {
   auto info = copy_info();
-  auto conservative = std::make_shared<SharedVulkanContext>(std::move(info));
+  auto conservative = std::make_shared<SharedVulkanDevice>(std::move(info));
   vkapi::Adapter adapter(conservative, "");
   EXPECT_FALSE(adapter.supports_int16_shader_types());
   EXPECT_FALSE(adapter.supports_int64_shader_types());
@@ -212,25 +212,25 @@ TEST_F(SharedContextAdapterTest, ImportedFeaturesAreConservativelyDisabled) {
 }
 
 TEST_F(
-    SharedContextAdapterTest,
+    SharedDeviceAdapterTest,
     RejectsInvalidQueueFamilyWithoutDestroyingDevice) {
   auto info = copy_info();
   info.queue_family_index = std::numeric_limits<uint32_t>::max() - 1;
-  auto incompatible = std::make_shared<SharedVulkanContext>(std::move(info));
+  auto incompatible = std::make_shared<SharedVulkanDevice>(std::move(info));
   EXPECT_ANY_THROW(vkapi::Adapter adapter(incompatible, ""));
   vkapi::Adapter valid(shared, "");
   EXPECT_NO_THROW(submit_empty(valid));
 }
 
-TEST_F(SharedContextAdapterTest, RejectsInvalidContextBeforeVulkanCalls) {
-  EXPECT_ANY_THROW(vkapi::Adapter adapter(SharedVulkanContextPtr{}, ""));
+TEST_F(SharedDeviceAdapterTest, RejectsInvalidContextBeforeVulkanCalls) {
+  EXPECT_ANY_THROW(vkapi::Adapter adapter(SharedVulkanDevicePtr{}, ""));
   auto invalid =
-      std::make_shared<SharedVulkanContext>(SharedVulkanContextCreateInfo{});
+      std::make_shared<SharedVulkanDevice>(SharedVulkanDeviceCreateInfo{});
   EXPECT_ANY_THROW(vkapi::Adapter adapter(invalid, ""));
 }
 
 TEST_F(
-    SharedContextAdapterTest,
+    SharedDeviceAdapterTest,
     BorrowedDeviceHandleSurvivesExceptionUnwinding) {
   EXPECT_THROW(
       ([&] {
@@ -242,17 +242,15 @@ TEST_F(
   EXPECT_NO_THROW(submit_empty(still_valid));
 }
 
-TEST_F(
-    SharedContextAdapterTest,
-    CreatedContextRetainsRuntimeUntilLastBorrower) {
+TEST_F(SharedDeviceAdapterTest, CreatedContextRetainsRuntimeUntilLastBorrower) {
   auto runtime = vkapi::runtime_owner();
   const auto owners_before = runtime.use_count();
-  auto created = create_vulkan_shared_context({"phase3-runtime-owner", 91});
+  auto created = create_vulkan_shared_device({"phase3-runtime-owner", 91});
   ASSERT_TRUE(created.ok());
-  SharedVulkanContextPtr retained = std::move(created.get());
+  SharedVulkanDevicePtr retained = std::move(created.get());
   EXPECT_EQ(runtime.use_count(), owners_before + 1);
 
-  std::weak_ptr<SharedVulkanContext> weak = retained;
+  std::weak_ptr<SharedVulkanDevice> weak = retained;
   auto borrower = std::make_unique<vkapi::Adapter>(retained, "");
   retained.reset();
   EXPECT_FALSE(weak.expired());
@@ -264,12 +262,12 @@ TEST_F(
   EXPECT_EQ(runtime.use_count(), owners_before);
 }
 
-TEST_F(SharedContextAdapterTest, UnregisterKeepsDeviceAliveUntilLastBorrower) {
-  std::weak_ptr<SharedVulkanContext> weak = shared;
+TEST_F(SharedDeviceAdapterTest, UnregisterKeepsDeviceAliveUntilLastBorrower) {
+  std::weak_ptr<SharedVulkanDevice> weak = shared;
   auto first = std::make_unique<vkapi::Adapter>(shared, "");
   auto second = std::make_unique<vkapi::Adapter>(shared, "");
   ASSERT_EQ(
-      SharedVulkanContextRegistry::Get().unregister_context(key), Error::Ok);
+      SharedVulkanDeviceRegistry::Get().unregister_device(key), Error::Ok);
   shared.reset();
   first.reset();
   EXPECT_FALSE(weak.expired());
@@ -278,7 +276,7 @@ TEST_F(SharedContextAdapterTest, UnregisterKeepsDeviceAliveUntilLastBorrower) {
   EXPECT_TRUE(weak.expired());
 }
 
-TEST_F(SharedContextAdapterTest, IndependentAdaptersSubmitAndWaitConcurrently) {
+TEST_F(SharedDeviceAdapterTest, IndependentAdaptersSubmitAndWaitConcurrently) {
   constexpr size_t count = 4;
   std::array<std::exception_ptr, count> errors{};
   std::vector<std::thread> threads;
@@ -303,9 +301,9 @@ TEST_F(SharedContextAdapterTest, IndependentAdaptersSubmitAndWaitConcurrently) {
 }
 
 TEST_F(
-    SharedContextAdapterTest,
+    SharedDeviceAdapterTest,
     DifferentKeysShareInstanceAndHaveIndependentDevices) {
-  auto other = create_vulkan_shared_context({"phase3-other-device", 99});
+  auto other = create_vulkan_shared_device({"phase3-other-device", 99});
   ASSERT_TRUE(other.ok());
   // We keep one Volk-loaded VkInstance but allow independent
   // logical devices beneath it.
@@ -319,77 +317,149 @@ TEST_F(
 }
 
 TEST_F(
-    SharedContextAdapterTest,
+    SharedDeviceAdapterTest,
     RejectsContextFromDifferentInstanceBeforeVulkanCalls) {
   auto info = copy_info();
-  const SharedVulkanContextKey foreign_key{"foreign-instance", 3};
+  const SharedVulkanDeviceKey foreign_key{"foreign-instance", 3};
   info.key = foreign_key;
   info.instance =
       reinterpret_cast<VkInstance>(static_cast<std::uintptr_t>(0x1234));
-  auto foreign = std::make_shared<SharedVulkanContext>(std::move(info));
+  auto foreign = std::make_shared<SharedVulkanDevice>(std::move(info));
   ASSERT_TRUE(foreign->is_valid());
   ASSERT_EQ(
-      SharedVulkanContextRegistry::Get().register_context(foreign), Error::Ok);
+      SharedVulkanDeviceRegistry::Get().register_device(foreign), Error::Ok);
 
   BackendOptions<3> options;
   ASSERT_EQ(
       options.set_option(
-          kSharedContextNameOption, foreign_key.context_name.c_str()),
+          kSharedDeviceNameOption, foreign_key.device_name.c_str()),
       Error::Ok);
   ASSERT_EQ(
       options.set_option(kSharedGroupIdOption, foreign_key.group_id),
       Error::Ok);
   ASSERT_EQ(
-      options.set_option(kSharedContextModeOption, "lookup_only"), Error::Ok);
+      options.set_option(kSharedDeviceModeOption, "lookup_only"), Error::Ok);
 
   auto result = resolve_vulkan_shared_adapter(context_for(options));
   ASSERT_FALSE(result.ok());
   EXPECT_EQ(result.error(), Error::DelegateInvalidCompatibility);
-  EXPECT_EQ(SharedVulkanContextRegistry::Get().lookup(foreign_key), foreign);
+  EXPECT_EQ(SharedVulkanDeviceRegistry::Get().lookup(foreign_key), foreign);
   EXPECT_EQ(
-      SharedVulkanContextRegistry::Get().unregister_context(foreign_key),
+      SharedVulkanDeviceRegistry::Get().unregister_device(foreign_key),
       Error::Ok);
 }
 
-TEST_F(SharedContextAdapterTest, RuntimeOptionsReachTheRealAdapter) {
+TEST_F(SharedDeviceAdapterTest, CreatedDeviceRetainsEnabledFeatures) {
+  vkapi::Adapter borrower(shared, "");
+  const auto& features = shared->enabled_device_features();
+#ifndef ETVK_FORCE_NO_EXTENSIONS
+  EXPECT_EQ(borrower.supports_int16_shader_types(), features.shader_int16);
+  EXPECT_EQ(borrower.supports_int64_shader_types(), features.shader_int64);
+  EXPECT_EQ(borrower.supports_float64_shader_types(), features.shader_float64);
+  EXPECT_EQ(
+      borrower.supports_16bit_storage_buffers(),
+      features.storage_buffer_16bit_access);
+  EXPECT_EQ(
+      borrower.supports_8bit_storage_buffers(),
+      features.storage_buffer_8bit_access);
+  EXPECT_EQ(borrower.supports_float16_shader_types(), features.shader_float16);
+  EXPECT_EQ(borrower.supports_int8_shader_types(), features.shader_int8);
+  EXPECT_EQ(
+      borrower.supports_int8_dot_product(),
+      features.shader_integer_dot_product);
+  EXPECT_EQ(
+      borrower.supports_cooperative_matrix(), features.cooperative_matrix);
+#endif
+  EXPECT_NO_THROW(submit_empty(borrower));
+}
+
+TEST_F(SharedDeviceAdapterTest, ResolverReusesAdapterForSameRegisteredDevice) {
   BackendOptions<3> options;
   ASSERT_EQ(
-      options.set_option(kSharedContextNameOption, "phase3-gpu-test"),
+      options.set_option(kSharedDeviceNameOption, key.device_name.c_str()),
+      Error::Ok);
+  ASSERT_EQ(options.set_option(kSharedGroupIdOption, key.group_id), Error::Ok);
+  ASSERT_EQ(
+      options.set_option(kSharedDeviceModeOption, "lookup_only"), Error::Ok);
+  auto first = resolve_vulkan_shared_adapter(context_for(options));
+  auto second = resolve_vulkan_shared_adapter(context_for(options));
+  ASSERT_TRUE(first.ok());
+  ASSERT_TRUE(second.ok());
+  ASSERT_NE(first.get(), nullptr);
+  EXPECT_EQ(first.get(), second.get());
+  EXPECT_EQ(first.get()->shared_device(), shared);
+  EXPECT_EQ(&first.get()->vma(), &second.get()->vma());
+  EXPECT_EQ(
+      &first.get()->compute_pipeline_cache(),
+      &second.get()->compute_pipeline_cache());
+}
+
+TEST_F(SharedDeviceAdapterTest, ResolverDoesNotReuseAdapterForReplacedDevice) {
+  BackendOptions<3> options;
+  ASSERT_EQ(
+      options.set_option(kSharedDeviceNameOption, key.device_name.c_str()),
+      Error::Ok);
+  ASSERT_EQ(options.set_option(kSharedGroupIdOption, key.group_id), Error::Ok);
+  ASSERT_EQ(
+      options.set_option(kSharedDeviceModeOption, "lookup_only"), Error::Ok);
+  auto first = resolve_vulkan_shared_adapter(context_for(options));
+  ASSERT_TRUE(first.ok());
+  ASSERT_NE(first.get(), nullptr);
+  ASSERT_EQ(
+      SharedVulkanDeviceRegistry::Get().unregister_device(key), Error::Ok);
+  auto second_device_result = create_vulkan_shared_device(key);
+  ASSERT_TRUE(second_device_result.ok());
+  auto second_device = second_device_result.get();
+  ASSERT_EQ(
+      SharedVulkanDeviceRegistry::Get().register_device(second_device),
+      Error::Ok);
+  auto second = resolve_vulkan_shared_adapter(context_for(options));
+  ASSERT_TRUE(second.ok());
+  ASSERT_NE(second.get(), nullptr);
+  EXPECT_NE(first.get(), second.get());
+  EXPECT_EQ(second.get()->shared_device(), second_device);
+  EXPECT_NO_THROW(submit_empty(*first.get()));
+  EXPECT_NO_THROW(submit_empty(*second.get()));
+}
+
+TEST_F(SharedDeviceAdapterTest, RuntimeOptionsReachTheRealAdapter) {
+  BackendOptions<3> options;
+  ASSERT_EQ(
+      options.set_option(kSharedDeviceNameOption, "phase3-gpu-test"),
       Error::Ok);
   ASSERT_EQ(options.set_option(kSharedGroupIdOption, 7), Error::Ok);
   ASSERT_EQ(
-      options.set_option(kSharedContextModeOption, "lookup_only"), Error::Ok);
+      options.set_option(kSharedDeviceModeOption, "lookup_only"), Error::Ok);
   auto result = resolve_vulkan_shared_adapter(context_for(options));
   ASSERT_TRUE(result.ok());
   ASSERT_NE(result.get(), nullptr);
   EXPECT_EQ(result.get()->device_handle(), shared->device());
   ASSERT_EQ(
-      options.set_option(kSharedContextModeOption, "create_only"), Error::Ok);
+      options.set_option(kSharedDeviceModeOption, "create_only"), Error::Ok);
   auto duplicate = resolve_vulkan_shared_adapter(context_for(options));
   ASSERT_FALSE(duplicate.ok());
   EXPECT_EQ(duplicate.error(), Error::AlreadyLoaded);
   ASSERT_EQ(
-      options.set_option(kSharedContextNameOption, "missing-phase3"),
-      Error::Ok);
+      options.set_option(kSharedDeviceNameOption, "missing-phase3"), Error::Ok);
   ASSERT_EQ(
-      options.set_option(kSharedContextModeOption, "lookup_only"), Error::Ok);
+      options.set_option(kSharedDeviceModeOption, "lookup_only"), Error::Ok);
   EXPECT_EQ(
       resolve_vulkan_shared_adapter(context_for(options)).error(),
       Error::NotFound);
 }
 
 TEST_F(
-    SharedContextAdapterTest,
+    SharedDeviceAdapterTest,
     FailedBackendCompilationReleasesBufferAndBorrower) {
   std::array<uint8_t, 65536> arena{};
   executorch::runtime::MemoryAllocator allocator(arena.size(), arena.data());
   BackendOptions<3> options;
   ASSERT_EQ(
-      options.set_option(kSharedContextNameOption, "phase3-gpu-test"),
+      options.set_option(kSharedDeviceNameOption, "phase3-gpu-test"),
       Error::Ok);
   ASSERT_EQ(options.set_option(kSharedGroupIdOption, 7), Error::Ok);
   ASSERT_EQ(
-      options.set_option(kSharedContextModeOption, "lookup_only"), Error::Ok);
+      options.set_option(kSharedDeviceModeOption, "lookup_only"), Error::Ok);
   auto view = options.view();
   BackendInitContext context(
       &allocator,
@@ -412,12 +482,12 @@ TEST_F(
   EXPECT_EQ(result.error(), Error::NotFound);
   EXPECT_EQ(releases, 1);
   EXPECT_EQ(shared.use_count(), before);
-  EXPECT_EQ(SharedVulkanContextRegistry::Get().lookup(key), shared);
+  EXPECT_EQ(SharedVulkanDeviceRegistry::Get().lookup(key), shared);
   vkapi::Adapter valid(shared, "");
   EXPECT_NO_THROW(submit_empty(valid));
 }
 
-TEST_F(SharedContextAdapterTest, BorrowsApplicationDeviceWithNonDefaultQueue) {
+TEST_F(SharedDeviceAdapterTest, BorrowsApplicationDeviceWithNonDefaultQueue) {
   vkapi::PhysicalDevice physical(shared->instance(), shared->physical_device());
   uint32_t family = std::numeric_limits<uint32_t>::max();
   uint32_t index = 0;
@@ -456,9 +526,9 @@ TEST_F(SharedContextAdapterTest, BorrowsApplicationDeviceWithNonDefaultQueue) {
       shared->physical_device(), &device_info, nullptr, &device));
   vkapi::DeviceHandle device_guard(device);
   struct Owner final {
-    SharedVulkanContextPtr instance_owner;
+    SharedVulkanDevicePtr instance_owner;
     vkapi::DeviceHandle device;
-    Owner(SharedVulkanContextPtr owner, VkDevice handle)
+    Owner(SharedVulkanDevicePtr owner, VkDevice handle)
         : instance_owner(std::move(owner)), device(handle) {}
   };
   auto owner = std::make_shared<Owner>(shared, device);
@@ -466,7 +536,7 @@ TEST_F(SharedContextAdapterTest, BorrowsApplicationDeviceWithNonDefaultQueue) {
   VkQueue supplied = VK_NULL_HANDLE;
   vkGetDeviceQueue(device, family, index, &supplied);
   ASSERT_NE(supplied, VK_NULL_HANDLE);
-  SharedVulkanContextCreateInfo info;
+  SharedVulkanDeviceCreateInfo info;
   info.key = {"application-nondefault", 1};
   info.instance = shared->instance();
   info.physical_device = shared->physical_device();
@@ -475,7 +545,7 @@ TEST_F(SharedContextAdapterTest, BorrowsApplicationDeviceWithNonDefaultQueue) {
   info.queue_family_index = family;
   info.enabled_device_extensions.assign(extensions.begin(), extensions.end());
   info.lifetime_anchor = owner;
-  auto external = std::make_shared<SharedVulkanContext>(std::move(info));
+  auto external = std::make_shared<SharedVulkanDevice>(std::move(info));
   vkapi::Adapter adapter(external, "");
   auto metadata = adapter.request_queue();
   EXPECT_EQ(metadata.family_index, family);

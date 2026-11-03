@@ -14,9 +14,9 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
-// vk_api.h must precede SharedVulkanContext.h: Volk requires VK_NO_PROTOTYPES
+// vk_api.h must precede SharedVulkanDevice.h: Volk requires VK_NO_PROTOTYPES
 // before the first inclusion of Vulkan headers.
-#include <executorch/backends/vulkan_shared/runtime/SharedVulkanContext.h>
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanDevice.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/Device.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
@@ -71,10 +71,9 @@ class Adapter final {
       const uint32_t num_queues,
       const std::string& cache_data_path);
 
-  // Borrow only the queue registered in shared_context.
+  // Borrow only the queue registered in shared_device.
   explicit Adapter(
-      executorch::backends::vulkan_shared::SharedVulkanContextPtr
-          shared_context,
+      executorch::backends::vulkan_shared::SharedVulkanDevicePtr shared_device,
       const std::string& cache_data_path);
 
   Adapter(const Adapter&) = delete;
@@ -97,10 +96,12 @@ class Adapter final {
  private:
   // First member => released last, after caches, VMA, and borrowed
   // DeviceHandle.
-  executorch::backends::vulkan_shared::SharedVulkanContextPtr shared_context_;
+  executorch::backends::vulkan_shared::SharedVulkanDevicePtr shared_device_;
   // Filled before device creation; these are enabled, not available,
   // extensions.
   std::vector<std::string> enabled_device_extensions_;
+  executorch::backends::vulkan_shared::SharedVulkanDeviceFeatures
+      enabled_device_features_;
   // Use a mutex to manage queue usage info since
   // it can be accessed from multiple threads
   std::mutex queue_usage_mutex_;
@@ -137,6 +138,16 @@ class Adapter final {
 
   inline const std::vector<std::string>& enabled_device_extensions() const {
     return enabled_device_extensions_;
+  }
+
+  inline const executorch::backends::vulkan_shared::SharedVulkanDeviceFeatures&
+  enabled_device_features() const {
+    return enabled_device_features_;
+  }
+
+  inline const executorch::backends::vulkan_shared::SharedVulkanDevicePtr&
+  shared_device() const {
+    return shared_device_;
   }
 
   inline VkPhysicalDevice physical_handle() const {

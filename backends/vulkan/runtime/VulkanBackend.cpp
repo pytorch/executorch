@@ -9,7 +9,7 @@
  */
 
 #include <executorch/backends/vulkan/runtime/ResolveLayouts.h>
-#include <executorch/backends/vulkan/runtime/SharedContext.h>
+#include <executorch/backends/vulkan/runtime/ResolveSharedDevice.h>
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 
@@ -617,7 +617,7 @@ void maybe_resize_output(
 //
 
 struct VulkanDelegateHandle final {
-  std::unique_ptr<vkapi::Adapter> shared_adapter;
+  std::shared_ptr<vkapi::Adapter> shared_adapter;
   // Storage belongs to the runtime arena.
   ComputeGraph* compute_graph = nullptr;
 
@@ -1017,10 +1017,12 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     }
     auto* resources = static_cast<VulkanDelegateHandle*>(handle);
     try {
-      resources->compute_graph->context()
-          ->adapter_ptr()
-          ->compute_pipeline_cache()
-          .save_cache();
+      if (!resources->shared_adapter) {
+        resources->compute_graph->context()
+            ->adapter_ptr()
+            ->compute_pipeline_cache()
+            .save_cache();
+      }
     } catch (const std::exception& error) {
       ET_LOG(Error, "Unable to save Vulkan pipeline cache: %s", error.what());
     } catch (...) {

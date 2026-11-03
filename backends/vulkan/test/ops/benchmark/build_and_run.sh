@@ -97,8 +97,14 @@ execute_binary() {
             if [[ -f "$binary_path" ]]; then
                 echo "Pushing binary to Android device..."
                 adb push "$binary_path" /data/local/tmp/
+                local shared_lib="$CMAKE_OUT_DIR/lib/libexecutorch_vulkan_shared_runtime.so"
+                if [[ ! -f "$shared_lib" ]]; then
+                    echo "Error: Vulkan shared runtime library not found: $shared_lib"
+                    exit 1
+                fi
+                adb push "$shared_lib" /data/local/tmp/
                 echo "Executing binary on Android device..."
-                adb shell "cd /data/local/tmp && ./$binary_name"
+                adb shell "cd /data/local/tmp && LD_LIBRARY_PATH=/data/local/tmp ./$binary_name"
             else
                 echo "Error: Binary '$binary_path' not found"
                 exit 1

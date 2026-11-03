@@ -229,7 +229,7 @@ set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
 
 # Test targets
 if(EXECUTORCH_BUILD_TESTS)
-  add_subdirectory(test/shared_context)
+  add_subdirectory(test/shared_device)
 endif()
 
 install(

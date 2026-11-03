@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan_shared/runtime/SharedVulkanContext.h>
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanDevice.h>
 
 #include <algorithm>
 #include <utility>
@@ -14,33 +14,32 @@ namespace executorch {
 namespace backends {
 namespace vulkan_shared {
 
-SharedVulkanContext::SharedVulkanContext(
-    SharedVulkanContextCreateInfo create_info)
+SharedVulkanDevice::SharedVulkanDevice(SharedVulkanDeviceCreateInfo create_info)
     : create_info_(std::move(create_info)) {}
 
-SharedVulkanContext::~SharedVulkanContext() = default;
+SharedVulkanDevice::~SharedVulkanDevice() = default;
 
-const SharedVulkanContextKey& SharedVulkanContext::key() const {
+const SharedVulkanDeviceKey& SharedVulkanDevice::key() const {
   return create_info_.key;
 }
 
-VkInstance SharedVulkanContext::instance() const {
+VkInstance SharedVulkanDevice::instance() const {
   return create_info_.instance;
 }
 
-VkPhysicalDevice SharedVulkanContext::physical_device() const {
+VkPhysicalDevice SharedVulkanDevice::physical_device() const {
   return create_info_.physical_device;
 }
 
-VkDevice SharedVulkanContext::device() const {
+VkDevice SharedVulkanDevice::device() const {
   return create_info_.device;
 }
 
-uint32_t SharedVulkanContext::queue_family_index() const {
+uint32_t SharedVulkanDevice::queue_family_index() const {
   return create_info_.queue_family_index;
 }
 
-bool SharedVulkanContext::has_device_extension(
+bool SharedVulkanDevice::has_device_extension(
     std::string_view extension_name) const {
   return std::any_of(
       create_info_.enabled_device_extensions.begin(),
@@ -50,7 +49,17 @@ bool SharedVulkanContext::has_device_extension(
       });
 }
 
-bool SharedVulkanContext::is_valid() const {
+const std::vector<std::string>& SharedVulkanDevice::enabled_device_extensions()
+    const {
+  return create_info_.enabled_device_extensions;
+}
+
+const SharedVulkanDeviceFeatures& SharedVulkanDevice::enabled_device_features()
+    const {
+  return create_info_.enabled_device_features;
+}
+
+bool SharedVulkanDevice::is_valid() const {
   return create_info_.key.valid() && create_info_.instance != VK_NULL_HANDLE &&
       create_info_.physical_device != VK_NULL_HANDLE &&
       create_info_.device != VK_NULL_HANDLE &&
