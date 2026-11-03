@@ -96,6 +96,7 @@ class QnnOperatorSupport(OperatorSupportBase):
             edge_program,
             op_package_infos=python_options.op_package_options.op_package_infos,
             is_qnn_partitioner=is_qnn_partitioner,
+            backend_type=python_options.backend_options.backend_type,
         )
 
         self.skip_node_op_set = skip_node_op_set

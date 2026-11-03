@@ -36,6 +36,9 @@ from executorch.backends.qualcomm.export_utils import (
 from executorch.backends.qualcomm.partition.utils import (
     warn_if_dilated_conv_may_not_fit_vtcm,
 )
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.tests.rework.conftest import (
     calibrate,
     check_exception,
@@ -333,7 +336,9 @@ class DrawGraph:
         )
         nodes_to_wrappers = defaultdict(dict)
         node_visitors = get_node_visitors(
-            delegated_program.exported_program, enable_tensor_dump=False
+            delegated_program.exported_program,
+            enable_tensor_dump=False,
+            backend_type=QnnExecuTorchBackendType.kHtpBackend,
         )
         py_op_wrapper_list = []
         for node in graph_module.graph.nodes:

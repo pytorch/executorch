@@ -54,6 +54,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 )
 from executorch.backends.qualcomm.tests.models import (
     BroadcastAndMutate,
+    CastToFloat,
     ConvBackward,
     HardSigmoid,
     Reciprocal,
@@ -61,9 +62,13 @@ from executorch.backends.qualcomm.tests.models import (
     Unfold,
 )
 from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DTYPE,
     QCOM_ENCODING,
     QCOM_QUANT_ATTRS,
+    QCOM_QUANT_MAX,
+    QCOM_QUANT_MIN,
     QCOM_SCALE,
+    QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerRegistry
@@ -1033,6 +1038,46 @@ class TestPasses(unittest.TestCase):
             if "Failed to initialize QNN backend" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
             raise
+
+    def test_uint8_to_float32_cast_goes_through_int32_only_on_htp(self):
+        quant_attrs = {
+            QCOM_ENCODING: exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            QCOM_SCALE: 1 / 255,
+            QCOM_ZERO_POINT: 0,
+            QCOM_QUANT_MIN: 0,
+            QCOM_QUANT_MAX: 255,
+            QCOM_DTYPE: torch.uint8,
+        }
+        cases = [
+            (torch.float32, QnnExecuTorchBackendType.kHtpBackend, None, 2),
+            (torch.float64, QnnExecuTorchBackendType.kHtpBackend, None, 2),
+            (torch.float32, QnnExecuTorchBackendType.kGpuBackend, None, 1),
+            (torch.float16, QnnExecuTorchBackendType.kHtpBackend, None, 1),
+            (torch.float32, QnnExecuTorchBackendType.kHtpBackend, quant_attrs, 1),
+        ]
+        for dtype, backend_type, cast_quant_attrs, expected in cases:
+            with self.subTest(
+                dtype=dtype, backend_type=backend_type, quantized=bool(cast_quant_attrs)
+            ):
+                edge_program = to_edge(
+                    torch.export.export(
+                        CastToFloat(dtype),
+                        (torch.arange(4, dtype=torch.uint8),),
+                        strict=True,
+                    )
+                ).exported_program()
+                visitors = get_node_visitors(edge_program, backend_type=backend_type)
+                cast = next(
+                    node
+                    for node in edge_program.graph.nodes
+                    if node.op == "call_function" and node.args[0].op == "placeholder"
+                )
+                if cast_quant_attrs:
+                    cast.meta[QCOM_QUANT_ATTRS] = cast_quant_attrs
+                ops = visitors[cast.target.__name__].define_node(
+                    cast, defaultdict(dict)
+                )
+                self.assertEqual(expected, len(ops))
 
     def test_mha_to_sha(self):
         from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
