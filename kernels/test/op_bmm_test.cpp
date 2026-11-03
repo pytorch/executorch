@@ -196,6 +196,16 @@ TEST_F(OpBmmOutTest, AllRealDtypesSupported) {
   // for those types.
 }
 
+TEST_F(OpBmmOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // Each output sums 512 products of 1. A BFloat16 running sum stops growing
+  // at 256, so without float accumulation the result is 256 instead of 512.
+  constexpr int K = 512;
+  Tensor out = tf.zeros({2, 2, 3});
+  op_bmm_out(tf.ones({2, 2, K}), tf.ones({2, K, 3}), out);
+  EXPECT_TENSOR_EQ(out, tf.full({2, 2, 3}, K));
+}
+
 TEST_F(OpBmmOutTest, AllComplexDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_complex_dtype<ctype, ScalarType::dtype>();
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
