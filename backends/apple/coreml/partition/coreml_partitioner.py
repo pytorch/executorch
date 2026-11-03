@@ -154,6 +154,56 @@ def _reads_or_produces_bfloat16(node: torch.fx.Node) -> bool:
     return any(isinstance(v, torch.Tensor) and v.dtype == torch.bfloat16 for v in vals)
 
 
+# No upstream issue yet. For example, Core ML fails to load x.sum().sum(): it gets
+# the second sum as a reduce_sum of a 0-d tensor, "Param 'x' has incorrect type
+# for operator 'reduce_sum'". A std or vector norm of a 0-d tensor fails too, but
+# stays: it has no CPU kernel, and a refused call can decompose into an op that
+# another call keeps whole.
+_REDUCTION_TARGETS = frozenset(
+    target
+    for aten in (torch.ops.aten, exir_ops.edge.aten)
+    for target in (
+        aten.sum.default,
+        aten.sum.dim_IntList,
+        aten.mean.default,
+        aten.mean.dim,
+        aten.amax.default,
+        aten.amin.default,
+        aten.max.default,
+        aten.max.dim,
+        aten.min.default,
+        aten.min.dim,
+        aten.argmax.default,
+        aten.argmin.default,
+        aten.any.default,
+        aten.any.dim,
+        aten.any.dims,
+        aten.all.default,
+        aten.all.dim,
+        aten.all.dims,
+        aten.var.default,
+        aten.var.dim,
+        aten.var.correction,
+    )
+)
+_SUM_OVER_DIMS = (torch.ops.aten.sum.dim_IntList, exir_ops.edge.aten.sum.dim_IntList)
+
+
+def _reduces_0d_tensor(node: torch.fx.Node) -> bool:
+    """Core ML cannot run the reductions above on a 0-d tensor: its reduce ops
+    need rank 1 or more.
+
+    A sum over a given dim, such as x.sum().sum(0), stays and still fails to
+    lower, since ExecuTorch's optimized sum kernel aborts on it at run time.
+    """
+    if node.target not in _REDUCTION_TARGETS or (
+        node.target in _SUM_OVER_DIMS and len(node.args) > 1 and node.args[1]
+    ):
+        return False
+    val = node.args[0].meta.get("val")
+    return isinstance(val, torch.Tensor) and val.dim() == 0
+
+
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
     if len(schema.arguments) == 0:
@@ -239,6 +289,13 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             self.log_once(
                 "torch.ops.aten.{argmax, argmin}.default with dim=None is "
                 "not supported by CoreML.  Overriding op support."
+            )
+            return True
+
+        if _reduces_0d_tensor(node):
+            self.log_once(
+                f"{node.target} of a 0-d tensor is not supported by CoreML.  "
+                "Overriding op support."
             )
             return True
 

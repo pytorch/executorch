@@ -521,6 +521,93 @@ class TestCoreMLPartitioner(unittest.TestCase):
             out = program.load_method("forward").execute((x,))[0]
             self.assertTrue(torch.allclose(out, model(x), atol=5e-2, rtol=5e-2))
 
+    def test_reduction_of_0d_tensor_is_skipped(self):
+        """
+        Core ML cannot reduce a 0-d tensor.  The partitioner must leave such
+        reductions to the CPU and still delegate the rest.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                total = x.sum()
+                flag = x[0, 0] > 0.5
+                zero_d = [total.sum(), total.mean(), total.mean(0), total.amax()]
+                zero_d += [total.amin(), total.max(), total.max(0)[0], total.min()]
+                zero_d += [total.min(0)[0], total.argmax(0), total.argmin(0)]
+                zero_d += [x[0, 0].sum(), flag.any(), flag.any(0), flag.any((0,))]
+                zero_d += [flag.all(), flag.all(0), flag.all((0,))]
+                zero_d += [total.var(correction=0), total.var(unbiased=False)]
+                zero_d += [total.var(0, False)]
+                return x * 2 + sum(r.to(x.dtype) for r in zero_d)
+
+        model = Model().eval()
+        # Core ML computes in float16, so use values it holds exactly, or
+        # x[0, 0] > 0.5 can differ from eager for x just above 0.5.
+        x = torch.rand(2, 3).half().float()
+        ep = torch.export.export(model, (x,), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("executorch_call_delegate", op_names)
+        # One per reduction, in the order of the model. torch makes all() a
+        # logical_not of any() of a logical_not, which Core ML takes, and every
+        # var a var.correction.
+        reductions = [
+            "sum.dim_IntList",
+            "mean.default",
+            "mean.dim",
+            "amax.default",
+            "amin.default",
+            "max.default",
+            "max.dim",
+            "min.default",
+            "min.dim",
+            "argmax.default",
+            "argmin.default",
+            "sum.dim_IntList",
+            "any.default",
+            "any.dim",
+            "any.dims",
+            "any.dims",
+            "any.dim",
+            "any.dims",
+        ] + ["var.correction"] * 3
+        self.assertEqual(
+            sorted(
+                name
+                for name in op_names
+                if name not in ("executorch_call_delegate", "getitem")
+            ),
+            sorted(f"aten.{name}" for name in reductions),
+        )
+        if _TEST_RUNTIME:
+            program = Runtime.get().load_program(edge.to_executorch().buffer)
+            out = program.load_method("forward").execute((x,))[0]
+            self.assertTrue(torch.allclose(out, model(x), atol=1e-2, rtol=1e-2))
+
+        # A sum of a 0-d tensor over a dim stays in Core ML, where lowering
+        # fails as before, since ExecuTorch's optimized sum kernel aborts on it.
+        class SumOverDim(torch.nn.Module):
+            def forward(self, x):
+                return x * x.sum().sum(0)
+
+        ep = torch.export.export(SumOverDim(), (x,), strict=True)
+        result = CoreMLPartitioner().partition(
+            executorch.exir.to_edge(ep).exported_program()
+        )
+        sums = [
+            n
+            for n in result.tagged_exported_program.graph.nodes
+            if getattr(n.target, "__name__", "") == "aten.sum.dim_IntList"
+        ]
+        self.assertEqual(len(sums), 2)
+        self.assertTrue(all("delegation_tag" in n.meta for n in sums))
+
     def test_tied_embedding_is_quantized_with_its_linear(self):
         """A weight that is both an embedding table and an output projection lowers.
 
