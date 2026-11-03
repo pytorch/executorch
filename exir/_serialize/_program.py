@@ -416,10 +416,17 @@ def serialize_pte_binary(
     if constant_tensor_alignment is None:
         constant_tensor_alignment = ALIGNMENT
 
-    # Don't modify the original program.
-    # TODO(T144120904): Could avoid yet more huge copies with a more shallow
-    # copy, reusing the actual data blobs.
-    program = copy.deepcopy(pte_file.program)
+    # Don't modify the original program, but share its delegate blobs rather
+    # than copy them: deepcopy shares only exact bytes, and Core ML returns
+    # another bytes type for models over 1 GiB. The memo lives only for this
+    # call, because deepcopy fills it with every object it copies.
+    program = copy.deepcopy(
+        pte_file.program,
+        memo={
+            id(entry.data): entry.data
+            for entry in pte_file.program.backend_delegate_data
+        },
+    )
 
     # Store extracted segment data, with any buffer-specific alignment.
     # This may be constant data, delegate data or named data.

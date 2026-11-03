@@ -38,6 +38,8 @@
 
 - op: _unique2.out
 
+- op: _upsample_bicubic2d_aa.out
+
 - op: _upsample_bilinear2d_aa.out
 
 - op: abs.out
@@ -83,6 +85,8 @@
 - op: atan2.out
 
 - op: atanh.out
+
+- op: avg_pool1d.out
 
 - op: avg_pool2d.out
 
@@ -130,6 +134,8 @@
 - op: cos.out
 
 - op: cosh.out
+
+- op: cummin.out
 
 - op: cumsum.out
 

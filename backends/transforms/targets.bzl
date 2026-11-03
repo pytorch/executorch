@@ -129,7 +129,21 @@ def define_common_targets():
             ":utils",
             "//caffe2:torch",
             "//executorch/exir:pass_base",
-            "//executorch/exir:sym_util",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_batch_norm_with_linear",
+        srcs = ["fuse_batch_norm_with_linear.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            ":utils",
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
         ],
     )
@@ -512,6 +526,19 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_fuse_batch_norm_with_linear",
+        srcs = [
+            "test/test_fuse_batch_norm_with_linear.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":fuse_batch_norm_with_linear",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_quantize_fused_convbn_bias_pass",
         srcs = [
             "test/test_quantize_fused_convbn_bias_pass.py",
@@ -577,6 +604,18 @@ def define_common_targets():
             "//executorch/exir:lib",
             "//executorch/extension/pybindings:portable_lib",
             "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_convert_dtype_pass",
+        srcs = [
+            "test/test_convert_dtype_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":convert_dtype_pass",
         ],
     )
 
@@ -723,6 +762,7 @@ def define_common_targets():
         ],
         deps = [
             ":channels_last_layout",
+            ":dim_maps",
             "//caffe2:torch",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",

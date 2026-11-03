@@ -18,7 +18,7 @@
 namespace vkcompute {
 
 // Resize output [M, N] based on current fp_input M and packed_weight shape.
-// extra_args = { weight_data_tref, fp_input }. Mirrors the style of
+// extra_args begins with { weight_data_tref, fp_input }. Mirrors the style of
 // resize_linear_qw_node in QuantizedLinear.cpp.
 void resize_q4gsw_linear_node(
     ComputeGraph* graph,
@@ -153,7 +153,6 @@ vkapi::ShaderInfo pick_q4gsw_nc_coop_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
   const uint32_t N =
       utils::safe_downcast<uint32_t>(utils::val_at(-1, graph->sizes_of(out)));
@@ -161,6 +160,14 @@ vkapi::ShaderInfo pick_q4gsw_nc_coop_shader(
   const CoopVariant v = pick_coop_variant_for_N(N);
   std::string kernel_name = "q4gsw_linear_gemv_coop__w_4x8_nc_buffer";
   kernel_name += v.suffix;
+  const int64_t K = graph->size_at<int64_t>(-1, resize_args.at(1));
+  const int64_t group_size = graph->extract_scalar<int64_t>(resize_args.at(2));
+  // Keep the 64-lane variant strided; grouping its large-K case regresses
+  // on MoltenVK.
+  if (v.num_groups > 1 && group_size / 4 > v.workers_per_group &&
+      K / group_size >= v.workers_per_group) {
+    kernel_name += "_grouped";
+  }
   add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
   add_dtype_suffix(kernel_name, graph->dtype_of(out));
   return VK_KERNEL_FROM_STR(kernel_name);
@@ -454,7 +461,7 @@ void add_q4gsw_linear_nc_coop_gemv_node(
       {graph.sizes_ubo(output), graph.sizes_ubo(fp_input)},
       {},
       {apply_bias, K_val, group_size_val},
-      {weight_data, fp_input},
+      {weight_data, fp_input, graph.add_scalar<int64_t>(group_size_val)},
       resize_q4gsw_linear_node));
 }
 
