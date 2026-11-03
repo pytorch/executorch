@@ -101,6 +101,7 @@ set(optional_lib_list
     metal_backend
     neuron_backend
     qnn_executorch_backend
+    qnn_llm_io_buffer_allocator
     portable_ops_lib
     custom_ops
     extension_asr_runner

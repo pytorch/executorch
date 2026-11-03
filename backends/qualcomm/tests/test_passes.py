@@ -917,6 +917,29 @@ class TestPasses(unittest.TestCase):
         )
         self.assertFalse(has_sdpa(transformed))
 
+    def test_partitioner_from_options_matches_explicit_compiler_specs(self):
+        """from_options must build the same compiler specs a caller would
+        assemble by hand, and route partitioner-level options to __init__."""
+        explicit = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8750,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+            use_mha2sha=True,
+        )
+        partitioner = QnnPartitioner.from_options(
+            soc_model="SM8750",
+            use_fp16=True,
+            use_mha2sha=True,
+            convert_linear_to_conv2d=True,
+        )
+        self.assertEqual(
+            [(s.key, s.value) for s in partitioner.compiler_specs],
+            [(s.key, s.value) for s in explicit],
+        )
+        self.assertTrue(partitioner.convert_linear_to_conv2d)
+
+        with self.assertRaises(TypeError):
+            QnnPartitioner.from_options(soc_model="SM8750", not_an_option=1)
+
     def test_index_put_int64_value_not_quantized(self):
         """QNN's IndexPut annotator must skip a non-float (int64) value arg.
 

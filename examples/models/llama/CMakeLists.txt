@@ -175,6 +175,10 @@ if(TARGET qnn_executorch_backend)
   if(NOT MSVC)
     executorch_target_link_options_shared_lib(qnn_executorch_backend)
   endif()
+  if(TARGET qnn_llm_io_buffer_allocator)
+    list(APPEND link_libraries qnn_llm_io_buffer_allocator)
+    executorch_target_link_options_shared_lib(qnn_llm_io_buffer_allocator)
+  endif()
 endif()
 
 # MLX backend

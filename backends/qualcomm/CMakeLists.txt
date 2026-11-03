@@ -369,6 +369,24 @@ install(
   RUNTIME DESTINATION ${_qnn_install_dir}
 )
 
+# rpcmem I/O buffers for the LLM runner's IOManagers. It registers itself, so
+# runners link it whole-archive.
+if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  add_library(
+    qnn_llm_io_buffer_allocator STATIC
+    ${QNN_EXECUTORCH_ROOT_DIR}/llm/io_buffer_allocator.cpp
+  )
+  target_link_libraries(
+    qnn_llm_io_buffer_allocator PUBLIC qnn_executorch_backend executorch_core
+                                       extension_module_static extension_tensor
+  )
+  install(
+    TARGETS qnn_llm_io_buffer_allocator
+    EXPORT ExecuTorchTargets
+    ARCHIVE DESTINATION ${_qnn_install_dir}
+  )
+endif()
+
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
   add_subdirectory(
     ${QNN_EXECUTORCH_ROOT_DIR}/runtime/backends/direct_mode
