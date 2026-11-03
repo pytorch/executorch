@@ -570,6 +570,7 @@ class CudaWeightCollector:
         device_name: str,
         target_sm: Optional[int] = None,
         ptx_compute: int = 0,
+        external_tag: Optional[str] = None,
     ) -> None:
         if result.data_store_output is None:
             raise RuntimeError("CUDA AOTI preprocess returned no named data")
@@ -589,7 +590,7 @@ class CudaWeightCollector:
             keep_compatibility_blob=not artifact.entries,
         )
 
-        external_tag = f"aoti_{device_name}_blob"
+        external_tag = external_tag or f"aoti_{device_name}_blob"
         serialized_entries = []
         for entry in artifact.entries:
             data = artifact.storages.get(entry.storage_key)
@@ -601,7 +602,7 @@ class CudaWeightCollector:
                     ),
                 )
             if data is not None:
-                # Every program writes its weights to the same file name, so the
+                # Programs can write their weights to the same file name, so the
                 # key carries the content: another program's file then fails to
                 # load instead of running this program with its weights.
                 content_key = f"{entry.storage_key}:{data.sha256().hex()}"
