@@ -10,7 +10,18 @@ import torch
 from executorch import exir
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.partitioner import Partitioner, PartitionResult
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
+from executorch.exir.backend.test.backend_with_compiler_demo import (
+    BackendWithCompilerDemo,
+)
+from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
+    ExecutorBackend,
+)
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.backend.utils import (
     format_delegated_graph,
@@ -18,9 +29,15 @@ from executorch.exir.backend.utils import (
     get_delegates,
     get_non_lowered_nodes,
     is_identical_graph,
+    tag_constant_data,
+    tag_mutated_buffer,
 )
 
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
+from executorch.extension.pybindings.portable_lib import (  # @manual
+    _get_registered_backend_names,
+    _load_for_executorch_from_buffer,
+)
 from torch.export import export, ExportedProgram
 from torch.fx import symbolic_trace
 from torch.fx.passes.utils.matcher_utils import SubgraphMatcher
@@ -390,3 +407,155 @@ class TestUtils(unittest.TestCase):
             payload_names,
             f"Delegate names mismatch: {delegate_names} vs {payload_names}",
         )
+
+    def test_to_backend_keeps_a_mutated_buffer_out_of_a_partial_delegate(  # noqa: C901
+        self,
+    ):
+        class UpdateState(torch.nn.Module):
+            def __init__(self, read: bool, returned: bool, copy_input: bool):
+                super().__init__()
+                self.read = read
+                self.returned = returned
+                self.copy_input = copy_input
+                self.register_buffer("state", torch.zeros(2))
+
+            def forward(self, x):
+                if self.read:
+                    out = torch.sin(self.state) + (x + self.state)
+                else:
+                    out = torch.sin(x)
+                self.state.copy_(x if self.copy_input else x + x)
+                if self.returned:
+                    return out, self.state
+                # In read mode, the last add reads the new value.
+                return out + self.state if self.read else out
+
+        class TagNodes(Partitioner):
+            def __init__(self, tags):
+                super().__init__()
+                self.tags = tags
+
+            def partition(self, program: ExportedProgram) -> PartitionResult:
+                for node in program.graph.nodes:
+                    if node.name in self.tags:
+                        node.meta["delegation_tag"] = self.tags[node.name]
+                tag_mutated_buffer(program)
+                spec = DelegationSpec(
+                    BackendWithCompilerDemo.__name__,
+                    [CompileSpec("max_value", bytes([4]))],
+                )
+                return PartitionResult(
+                    tagged_exported_program=program,
+                    partition_tags={tag: spec for tag in self.tags.values()},
+                )
+
+        # The delegate owns the buffer only when it reads and writes all of
+        # it. Otherwise the owning program keeps the one buffer: a copy in the
+        # delegate would never see the updates.
+        sin, add, writer = "aten_sin_default", "aten_add_tensor", "aten_add_tensor_2"
+        # Also the add that makes "out", and the add that reads the new value.
+        whole = {sin, add, "aten_add_tensor_1", writer, "aten_add_tensor_3"}
+        has_demo_backend = (
+            BackendWithCompilerDemo.__name__ in _get_registered_backend_names()
+        )
+        for read, returned, copy_input, tags, owned_by_program in (
+            (True, False, False, dict.fromkeys(whole, "tag0"), False),
+            (True, False, False, {sin: "tag0", add: "tag0", writer: "tag0"}, True),
+            (True, False, False, {sin: "tag0", add: "tag0"}, True),
+            (True, False, False, {sin: "tag0"}, True),
+            (True, False, False, {sin: "tag0", add: "tag1"}, True),
+            # Lowering cannot give a delegate a buffer whose new value is returned.
+            (True, True, False, {sin: "tag0", add: "tag0", writer: "tag0"}, True),
+            # Without readers, "add" is the writer. Some partitioners tag such a
+            # buffer themselves.
+            (False, False, False, {add: "tag0"}, True),
+            (False, False, False, {add: "tag0", "b_state": "tag0"}, False),
+            (False, True, False, {add: "tag0", "b_state": "tag0"}, True),
+            # The new value is the graph input, which no partition holds.
+            (True, False, True, dict.fromkeys(whole, "tag0"), True),
+        ):
+            with self.subTest(
+                read=read, returned=returned, copy_input=copy_input, tags=tags
+            ):
+                x = torch.full((2,), 0.25)
+                lowered = to_edge(
+                    export(UpdateState(read, returned, copy_input), (x,), strict=True)
+                ).to_backend(TagNodes(tags))
+                self.assertEqual(
+                    [
+                        spec.arg.name
+                        for spec in lowered.exported_program().graph_signature.input_specs
+                        if spec.target == "state"
+                    ],
+                    ["b_state"] if owned_by_program else [],
+                )
+                if copy_input:
+                    # Every op is delegated, so only the new value keeps the
+                    # buffer out.
+                    self.assertEqual(
+                        get_non_lowered_nodes(lowered.exported_program().graph), []
+                    )
+                if tags == {sin: "tag0"} and has_demo_backend:
+                    eager = UpdateState(read, returned, copy_input)
+                    module = _load_for_executorch_from_buffer(
+                        lowered.to_executorch().buffer
+                    )
+                    # The demo backend approximates sin with two Taylor terms.
+                    for _ in range(2):
+                        torch.testing.assert_close(
+                            module.forward((x,))[0], eager(x), atol=1e-3, rtol=0
+                        )
+        if not has_demo_backend:
+            self.skipTest("the runtime has no demo backend to run the lowered program")
+
+    def test_to_backend_copies_a_constant_read_by_ops_in_two_places(self):
+        class CatConst(torch.nn.Module):
+            def __init__(self, returned: bool):
+                super().__init__()
+                self.returned = returned
+                self.register_buffer("const", torch.ones(2))
+
+            def forward(self, x):
+                out = torch.cat([x, self.const]), torch.cat([self.const, x])
+                return (*out, self.const) if self.returned else out
+
+        class TagEachCat(Partitioner):
+            def partition(self, program: ExportedProgram) -> PartitionResult:
+                tags = {}
+                for node in program.graph.nodes:
+                    if node.target == exir_ops.edge.aten.cat.default:
+                        tag = f"tag{len(tags)}"
+                        node.meta["delegation_tag"] = tag
+                        tags[tag] = DelegationSpec(ExecutorBackend.__name__, [])
+                tag_constant_data(program)
+                return PartitionResult(
+                    tagged_exported_program=program, partition_tags=tags
+                )
+
+        # cat reads the constant from a list. Each delegate gets its own copy,
+        # and the graph output keeps the original, which the output specs name.
+        for returned, constants in (
+            (False, [["b_const"], ["b_const_copy_0"]]),
+            (True, [["b_const_copy_0"], ["b_const_copy_1"]]),
+        ):
+            with self.subTest(returned=returned):
+                lowered = to_edge(
+                    export(CatConst(returned), (torch.ones(2),), strict=True)
+                ).to_backend(TagEachCat())
+                program = lowered.exported_program()
+                self.assertEqual(
+                    [
+                        [
+                            spec.arg.name
+                            for spec in module.original_module.graph_signature.input_specs
+                            if spec.target == "const"
+                        ]
+                        for _, module in program.graph_module.named_children()
+                    ],
+                    constants,
+                )
+                if returned:
+                    self.assertEqual(
+                        program.graph.output_node().args[0][-1].name, "b_const"
+                    )
+                lowered.to_executorch()
