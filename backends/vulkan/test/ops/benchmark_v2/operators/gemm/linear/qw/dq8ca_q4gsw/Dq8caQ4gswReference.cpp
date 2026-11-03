@@ -23,11 +23,7 @@ Tensor dq8ca_q4gsw_reference(
       spec.at("args").at(6),
       spec.at("args").at(7),
       spec.at("args").at(8)};
-  const Json context = spec.value("reference_context", Json::object());
-  require(context.is_object(), "Reference context must be an object");
-  const Json dot = context.value("int8_dot_product", Json(true));
-  require(dot.is_boolean(), "DQ8CA reference capability must be boolean");
-  if (!dot.get<bool>()) {
+  if (!int8_dot_product(spec)) {
     return q4gsw_linear_reference(canonical, tensors, threads);
   }
   TensorMap converted = tensors;
