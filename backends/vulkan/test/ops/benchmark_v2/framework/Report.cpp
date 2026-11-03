@@ -355,6 +355,8 @@ std::string format_condensed_report(const Report& report) {
           key == "wall_time_batch_us" || key == "wall_time_shader_us";
       if (key == "args") {
         condensed["args_str"] = table_text(table_inputs(original, true));
+      } else if (key == "bindings") {
+        condensed["bindings_str"] = table_text(table_inputs(original, false));
       } else if (batch_timing && value.is_array()) {
         const Report stats =
             latency_statistics(value.get<std::vector<double>>());
