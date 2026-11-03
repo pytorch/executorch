@@ -407,6 +407,13 @@ void validate_config(const Json& spec) {
             spec.at("target_ms").get<double>() <= 10000,
         "target_ms must be in (0, 10000]");
   }
+  if (spec.contains("sustain_s")) {
+    require(
+        spec.at("sustain_s").is_number() &&
+            spec.at("sustain_s").get<double>() > 0 &&
+            spec.at("sustain_s").get<double>() <= 3600,
+        "sustain_s must be in (0, 3600]");
+  }
 }
 
 } // namespace
