@@ -124,6 +124,7 @@ bool is_supported_dtype(int32_t dtype) {
     case 4: // Long
     case 5: // Half
     case 6: // Float
+    case 7: // Double
     case 11: // Bool
     case 15: // BFloat16
       return true;
@@ -358,6 +359,7 @@ Error CudaWeightCache::validate_view(const Entry& entry) {
       item_size = 4;
       break;
     case aoti::slim::c10::ScalarType::Long:
+    case aoti::slim::c10::ScalarType::Double:
       item_size = 8;
       break;
     default:

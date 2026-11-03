@@ -67,6 +67,25 @@ AOTITorchError narrow_to(From value, To* ret_value) {
 
 template <typename T>
 AOTITorchError read_one_element(const SlimTensor* tensor, T* ret_value) {
+#if defined(CUDA_AVAILABLE)
+  // A graph capture cannot record the copy to the host below, and the copy
+  // aborts the process when it fails, so refuse first. Info, not Error: the
+  // backend then retries the call without a graph.
+  if (tensor->is_cuda()) {
+    auto stream = getCurrentCUDAStream(tensor->device_index());
+    ET_CHECK_OK_OR_RETURN_ERROR(stream.error());
+    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+    ET_CUDA_CHECK_OR_RETURN_ERROR(
+        cudaStreamIsCapturing(stream.get(), &capture));
+    if (capture != cudaStreamCaptureStatusNone) {
+      ET_LOG(
+          Info,
+          "reading a single element: a device value cannot be read inside a "
+          "CUDA graph capture");
+      return Error::NotSupported;
+    }
+  }
+#endif
   switch (tensor->dtype()) {
     case ScalarType::Byte:
       return narrow_to(tensor->item<uint8_t>(), ret_value);
@@ -80,6 +99,11 @@ AOTITorchError read_one_element(const SlimTensor* tensor, T* ret_value) {
       return narrow_to(tensor->item<int64_t>(), ret_value);
     case ScalarType::Float:
       return narrow_to(tensor->item<float>(), ret_value);
+    case ScalarType::Double:
+      return narrow_to(tensor->item<double>(), ret_value);
+    case ScalarType::Half:
+      return narrow_to(
+          static_cast<float>(tensor->item<c10::Half>()), ret_value);
     case ScalarType::BFloat16:
       return narrow_to(
           static_cast<float>(tensor->item<c10::BFloat16>()), ret_value);
@@ -470,6 +494,8 @@ ET_CUDA_DEFINE_ITEM_SHIM(int16, int16_t)
 ET_CUDA_DEFINE_ITEM_SHIM(int32, int32_t)
 ET_CUDA_DEFINE_ITEM_SHIM(int64, int64_t)
 ET_CUDA_DEFINE_ITEM_SHIM(float32, float)
+ET_CUDA_DEFINE_ITEM_SHIM(float64, double)
+ET_CUDA_DEFINE_ITEM_SHIM(float16, c10::Half)
 ET_CUDA_DEFINE_ITEM_SHIM(bfloat16, c10::BFloat16)
 ET_CUDA_DEFINE_ITEM_SHIM(bool, bool)
 
