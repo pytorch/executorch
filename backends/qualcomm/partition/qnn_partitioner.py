@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 import copy
 import functools
+import inspect
 import logging
 import operator
 from collections import defaultdict, OrderedDict
@@ -293,6 +294,62 @@ class QnnPartitioner(Partitioner):
         self.skip_node_id_set = set() if skip_node_id_set is None else skip_node_id_set
         self.skip_node_op_set = set() if skip_node_op_set is None else skip_node_op_set
         self.skip_mutable_buffer = skip_mutable_buffer
+
+    @classmethod
+    def from_options(
+        cls,
+        soc_model: str,
+        backend: str = "htp",
+        **options: Any,
+    ) -> "QnnPartitioner":
+        """Build a QnnPartitioner from plain options, generating its compiler specs.
+
+        Lets a caller that only knows option names and values (for example an
+        exporter forwarding a ``dict`` of vendor settings) get a working
+        partitioner without importing the QNN compiler-spec builders.
+
+        Args:
+            soc_model (str): Target SoC name, e.g. ``"SM8750"``.
+            backend (str): QNN backend, one of ``"htp"``, ``"gpu"`` or ``"lpai"``.
+            **options: Each option is routed by name to the first of these that
+                accepts it: ``QnnPartitioner.__init__`` (``skip_node_id_set``,
+                ``passes_job``, ``convert_linear_to_conv2d``, ...),
+                ``generate_qnn_executorch_compiler_spec`` (``use_mha2sha``,
+                ``shared_buffer``, ...), then ``generate_<backend>_compiler_spec``
+                (``use_fp16``, ``htp_performance_mode``, ...). An option none of
+                them accepts raises ``TypeError``.
+        """
+        from executorch.backends.qualcomm.utils import utils as qnn_utils
+
+        backend_spec_fn = getattr(qnn_utils, f"generate_{backend}_compiler_spec", None)
+        if backend_spec_fn is None:
+            raise ValueError(f"Unsupported QNN backend {backend!r}.")
+
+        def accepted(fn):
+            return set(inspect.signature(fn).parameters) - {"self"}
+
+        partitioner_kwargs, compiler_spec_kwargs, backend_kwargs = {}, {}, {}
+        for name, value in options.items():
+            if name in accepted(cls.__init__) - {"compiler_specs"}:
+                partitioner_kwargs[name] = value
+            elif name in accepted(qnn_utils.generate_qnn_executorch_compiler_spec) - {
+                "soc_model",
+                "backend_options",
+            }:
+                compiler_spec_kwargs[name] = value
+            elif name in accepted(backend_spec_fn):
+                backend_kwargs[name] = value
+            else:
+                raise TypeError(
+                    f"Unknown QnnPartitioner option {name!r} for backend {backend!r}."
+                )
+
+        compiler_specs = qnn_utils.generate_qnn_executorch_compiler_spec(
+            soc_model=qnn_utils.get_soc_to_chipset_map()[soc_model],
+            backend_options=backend_spec_fn(**backend_kwargs),
+            **compiler_spec_kwargs,
+        )
+        return cls(compiler_specs, **partitioner_kwargs)
 
     def transform_for_pre_decomposition(
         self, exported_program: ExportedProgram
