@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
@@ -82,6 +83,18 @@ class To(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
+        # HTP fails to compile an int64 cast above rank 4, so it stays on CPU.
+        if node.meta["val"].dim() > 4 and torch.int64 in (
+            input_node.meta["val"].dtype,
+            node.meta["val"].dtype,
+        ):
+            warnings.warn(
+                f"[QNN Delegate Op Builder]: {node.name} casts a rank "
+                f"{node.meta['val'].dim()} int64 tensor, fallback op",
+                stacklevel=1,
+            )
+            return None
+
         input_tensor = self.get_tensor(input_node, node)
 
         input_tensor_wrapper = self.define_tensor(

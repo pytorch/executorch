@@ -1297,15 +1297,14 @@ class TestQNNFloatingPointOperator(TestQNN):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
 
-        # HTP's Mod stops at rank 4, so rank-5 integer division stays on CPU.
-        # int32, since rank-5 int64 inputs fail on their own I64toI32 casts.
+        # HTP's Mod and int64 Cast stop at rank 4, so all of it stays on CPU.
         rank5 = (2, 2, 3, 4, 5)
-        with self.subTest(i=index):
+        with self.subTest(msg="rank5"):
             self.lower_module_and_test_output(
                 FloorDiv(),  # noqa: F405
                 (
-                    torch.randint(-30000, 30000, rank5, dtype=torch.int32),
-                    torch.full(rank5, -7, dtype=torch.int32),
+                    torch.randint(-30000, 30000, rank5),
+                    torch.full(rank5, -7),
                 ),
                 expected_partitions=0,
             )
@@ -2390,15 +2389,14 @@ class TestQNNFloatingPointOperator(TestQNN):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
 
-        # HTP's Mod stops at rank 4, so rank-5 integer division stays on CPU.
-        # int32, since rank-5 int64 inputs fail on their own I64toI32 casts.
+        # HTP's Mod and int64 Cast stop at rank 4, so all of it stays on CPU.
         rank5 = (2, 2, 3, 4, 5)
-        with self.subTest(i=index):
+        with self.subTest(msg="rank5"):
             self.lower_module_and_test_output(
                 RemainderTensor(),  # noqa: F405
                 (
-                    torch.randint(-30000, 30000, rank5, dtype=torch.int32),
-                    torch.full(rank5, -7, dtype=torch.int32),
+                    torch.randint(-30000, 30000, rank5),
+                    torch.full(rank5, -7),
                 ),
                 expected_partitions=0,
             )
