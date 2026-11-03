@@ -20,7 +20,6 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     _schema_paired_args,
 )
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
-from executorch.exir.tensor import without_zero_strides
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -289,13 +288,22 @@ def get_propagated_const_tensor_dict(
             # Execute the `node.target` and create a new propagated constant tensor.
             prop_constant_tensor = node.target(*args_data, **kwargs_data)
 
+            # ExecuTorch doesn't support zero strides, so we need to ensure the tensor is contiguous
+            # if it has any zero strides from broadcasting/expansion operations.
+            # contiguous() is not enough: it keeps a zero stride on a size-1 dim.
+            if (
+                isinstance(prop_constant_tensor, torch.Tensor)
+                and 0 in prop_constant_tensor.stride()
+            ):
+                prop_constant_tensor = prop_constant_tensor.clone(
+                    memory_format=torch.contiguous_format
+                )
+
             # A folded constant must be a plain tensor that does not require
             # grad. no_grad is not enough when the op returns a view of a
             # parameter or the parameter itself.
             if isinstance(prop_constant_tensor, torch.Tensor):
-                prop_constant_tensor = without_zero_strides(
-                    prop_constant_tensor
-                ).detach()
+                prop_constant_tensor = prop_constant_tensor.detach()
         const_node_to_tensor[node] = prop_constant_tensor
 
     # Only tensors can be lifted into placeholders. A non-tensor value read by
