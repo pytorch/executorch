@@ -245,6 +245,12 @@ def _create_empty_etrecord():
     return ETRecord()
 
 
+def _unused_name(prefix: str, index: int, taken: Set[str]) -> str:
+    while f"{prefix}{index}" in taken:
+        index += 1
+    return f"{prefix}{index}"
+
+
 def lift_constant_tensor_pass(ep):
     """
     Takes an ExportedProgram and returns the ExportedProgram modified in-place,
@@ -255,6 +261,7 @@ def lift_constant_tensor_pass(ep):
 
     graph_signature = ep.graph_signature
     buffers = list(graph_signature.buffers)
+    taken = set(buffers) | set(ep.state_dict) | set(ep.constants)
 
     fake_mode = _detect_fake_mode_from_gm(ep.graph_module)
 
@@ -271,7 +278,10 @@ def lift_constant_tensor_pass(ep):
             if not isinstance(constant_tensor, torch.Tensor):
                 continue
 
-            constant_tensor_fqn = f"_lifted_tensor_constant{len(buffers)}"
+            constant_tensor_fqn = _unused_name(
+                "_lifted_tensor_constant", len(buffers), taken
+            )
+            taken.add(constant_tensor_fqn)
 
             with ep.graph.inserting_before(first_user_input):
                 # Insert the constant node before the first user input

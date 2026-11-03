@@ -1716,6 +1716,31 @@ class TestPasses(unittest.TestCase):
             self.assertNotIn(name, new_ep.state_dict)
         self.assertIs(new_ep.state_dict["_prop_tensor_constant0"], stale)
 
+    def test_lift_constant_tensor_pass_avoids_buffer_name_collision(self) -> None:
+        class AddBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # A buffer named like a lifted constant, as re-exporting an
+                # unlifted program gives.
+                self.register_buffer("_lifted_tensor_constant1", torch.full((4,), 2.0))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self._lifted_tensor_constant1 + 3
+
+        edge = to_edge(
+            export(AddBuffer(), (torch.ones(4),), strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=False),
+        )
+        edge = edge.transform([ScalarToTensorPass(), RemoveMixedTypeOperators()])
+        exported_program = lift_constant_tensor_pass(edge.exported_program())
+
+        buffers = exported_program.graph_signature.buffers
+        self.assertEqual(len(buffers), len(set(buffers)))
+        torch.testing.assert_close(
+            exported_program.state_dict["_lifted_tensor_constant1"],
+            torch.full((4,), 2.0),
+        )
+
     def test_pass_no_user_inputs(self) -> None:
         class NoUserInputs(torch.nn.Module):
             def __init__(self):
