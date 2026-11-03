@@ -17,6 +17,19 @@ class AmdPointwiseModule(torch.nn.Module):
         return torch.sin(x) * torch.sigmoid(x + 0.5)
 
 
+def _find_triton_sources(cache_dir: pathlib.Path) -> list[pathlib.Path]:
+    triton_sources = []
+    for source_path in cache_dir.rglob("*.py"):
+        source = source_path.read_text(errors="ignore")
+        if "async_compile.triton(" in source or "@triton_heuristics." in source:
+            triton_sources.append(source_path)
+    if not triton_sources:
+        raise RuntimeError(
+            f"Inductor did not generate a Triton kernel under {cache_dir}"
+        )
+    return triton_sources
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Export a small Triton-backed AOTI delegate for an AMD GPU."
@@ -90,15 +103,7 @@ def main() -> None:
             "the exported program does not contain an AOTI delegate call"
         )
 
-    triton_sources = []
-    for source_path in cache_dir.rglob("*.py"):
-        source = source_path.read_text(errors="ignore")
-        if "async_compile.triton(" in source or "@triton_heuristics." in source:
-            triton_sources.append(source_path)
-    if not triton_sources:
-        raise RuntimeError(
-            f"Inductor did not generate a Triton kernel under {cache_dir}"
-        )
+    triton_sources = _find_triton_sources(cache_dir)
 
     executorch_program = edge_program.to_executorch()
     pte_path = args.output_dir / "amd_triton.pte"
