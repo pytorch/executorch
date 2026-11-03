@@ -150,6 +150,10 @@ aoti_torch_new_tensor_handle(SlimTensor* orig_handle, SlimTensor** new_handle);
 
 /**
  * Clone APIs.
+ *
+ * A clone of a CUDA tensor is a synchronous copy, which a CUDA graph capture
+ * cannot record, so both return Error::NotSupported while the current stream
+ * is capturing.
  */
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_clone_preserve_strides(
     SlimTensor* self,
@@ -207,7 +211,9 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_as_strided(
  * @param self Destination tensor (must not be null)
  * @param src Source tensor to copy from (must not be null)
  * @param non_blocking If true, the copy may be asynchronous (currently ignored)
- * @return AOTITorchError error code (Error::Ok on success)
+ * @return Error::Ok on success, Error::NotSupported if either tensor is a CUDA
+ * tensor and the current stream is capturing a CUDA graph, which cannot record
+ * the synchronous copy
  */
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(SlimTensor* self, SlimTensor* src, int32_t non_blocking);
@@ -231,7 +237,8 @@ aoti_torch_item_bool(SlimTensor* tensor, bool* ret_value);
  *
  * @param tensor Single-element tensor (must not be null)
  * @param ret_value Output parameter for the extracted value
- * @return AOTITorchError error code (Error::Ok on success)
+ * @return Error::Ok on success, Error::NotSupported for a CUDA tensor while the
+ * current stream is capturing a CUDA graph, which cannot record the copy
  */
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_item_uint8(SlimTensor* tensor, uint8_t* ret_value);

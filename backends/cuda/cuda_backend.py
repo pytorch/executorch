@@ -44,6 +44,9 @@ from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
     MoveCondPredicateToCpuPass,
 )
 from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyncPass
+from executorch.backends.cuda.passes.replace_complex_with_real import (
+    ReplaceComplexWithRealPass,
+)
 from executorch.backends.cuda.passes.replace_fused_sdpa import (
     ReplaceFusedSdpaWithSdpaPass,
 )
@@ -1266,6 +1269,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 triton_kernel_mode = mode
         passes = [
             RemoveAssertAsyncPass(),
+            ReplaceComplexWithRealPass(),
             MoveCondPredicateToCpuPass(),
             ReplaceInt64FloorDivWithFloatPass(),
             ReplaceFusedSdpaWithSdpaPass(),
