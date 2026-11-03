@@ -45,6 +45,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANT_ANNOTATION_KEY,
 )
 from executorch.backends.qualcomm.utils.qnn_sdk_setup import disable_mkldnn_on_amd
+from executorch.backends.transforms.replace_in_place_ops import replace_in_place_ops
 from torch._ops import OpOverload
 
 from torch.fx import GraphModule
@@ -572,6 +573,7 @@ class QnnQuantizer(Quantizer):
         Returns:
             GraphModule: The transformed model.
         """
+        model = replace_in_place_ops(model)
         per_block_linears = self._get_per_block_linears(model)
         # HTP FullyConnected reads BLOCKWISE_EXPANSION block scales past their
         # documented size, which can corrupt the output (pytorch/executorch#23746),

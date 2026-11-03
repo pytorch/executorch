@@ -15,5 +15,6 @@ def define_common_targets():
         visibility = ["PUBLIC"],
         deps = [
             "//executorch/backends/transforms:decompose_sdpa",
+            "//executorch/backends/transforms:replace_in_place_ops",
         ],
     )

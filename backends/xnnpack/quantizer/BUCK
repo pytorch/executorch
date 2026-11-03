@@ -9,6 +9,7 @@ fbcode_target(
     srcs = ["xnnpack_quantizer.py"],
     deps = [
         ":xnnpack_quantizer_utils",
+        "//executorch/backends/transforms:replace_in_place_ops",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//caffe2:torch",
         "//executorch/exir:lib",
