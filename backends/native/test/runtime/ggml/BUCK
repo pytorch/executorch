@@ -61,15 +61,30 @@ _VARIANTS = [
 
 [
     fbcode_target(
+        _kind = runtime.cxx_library,
+        name = "ggml_engine_host" + v["suffix"],
+        srcs = ["ggml_ptn_runner.cpp"],
+        link_whole = True,
+        visibility = ["//executorch/backends/native/test/..."],
+        exported_deps = ["//executorch/backends/native/test/runtime:engine_host"],
+        deps = ["//executorch/backends/native/runtime/engine:" + v["engine"]] +
+               v.get("deps", []),
+        external_deps = ["gflags"] + v.get("external_deps", []),
+        labels = v.get("labels", []),
+        **v.get("compat", {})
+    )
+    for v in _VARIANTS
+]
+
+[
+    fbcode_target(
         _kind = runtime.cxx_binary,
         name = "ggml_ptn_runner" + v["suffix"],
-        srcs = ["ggml_ptn_runner.cpp"],
         visibility = ["//executorch/backends/native/test/..."],
         deps = [
-            "//executorch/backends/native/runtime/engine:" + v["engine"],
+            ":ggml_engine_host" + v["suffix"],
             "//executorch/backends/native/test/runtime:ptn_runner_main",
-        ] + v.get("deps", []),
-        external_deps = ["gflags"] + v.get("external_deps", []),
+        ],
         labels = v.get("labels", []),
         **v.get("compat", {})
     )
