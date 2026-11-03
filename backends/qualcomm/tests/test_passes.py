@@ -1,4 +1,6 @@
+import operator
 import unittest
+from collections import defaultdict
 from unittest.mock import MagicMock, patch
 
 import torch
@@ -12,6 +14,7 @@ from executorch.backends.qualcomm._passes import (
     FoldQDQ,
     InsertIOQDQ,
     InsertReshapeForReduceOps,
+    LayoutTransform,
     LiftConstantScalarOperands,
     RecomposeRmsNorm,
     Remove0DTensor,
@@ -25,6 +28,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     to_dq_op,
     to_q_op,
 )
+from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.builders.op_custom_op import (
     _resolve_qnn_data_type,
     CustomOp,
@@ -32,6 +36,7 @@ from executorch.backends.qualcomm.builders.op_custom_op import (
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
+from executorch.backends.qualcomm.partition.utils import get_skip_decomp_table
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -41,6 +46,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 )
 from executorch.backends.qualcomm.tests.models import (
     BroadcastAndMutate,
+    ConvBackward,
     HardSigmoid,
     Reciprocal,
     TopKandIndex,
@@ -294,6 +300,169 @@ class TestPasses(unittest.TestCase):
             op_name, check_ir_validity=True
         )
         self.assertEqual(1, len(context_loader_nodes))
+
+    def test_skip_decomp_table_preserves_conv_backward(self):
+        self.assertIn(
+            torch.ops.aten.convolution_backward.default,
+            get_skip_decomp_table(),
+        )
+
+    def test_conv_backward_composite_lowering(self):
+        x = torch.randn(1, 3, 8, 8)
+        grad_output = torch.randn(1, 4, 4, 4)
+        edge_program = to_edge(
+            torch.export.export(
+                ConvBackward(flatten_grad_input=True, duplicate_backward=True),
+                (grad_output, x),
+                strict=True,
+            )
+        ).exported_program()
+        graph_module = LayoutTransform(edge_program, insert_permute=True)(
+            edge_program.graph_module
+        ).graph_module
+
+        conv_backwards = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.convolution_backward.default
+        ]
+        self.assertEqual(2, len(conv_backwards))
+        conv_backward = conv_backwards[0]
+        getitem = next(node for node in conv_backward.users if node.args[1] == 0)
+        permutes = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.permute_copy.default
+        ]
+        self.assertTrue(any(node.args[0] is getitem for node in permutes))
+        self.assertFalse(any(node.args[0] is conv_backward for node in permutes))
+
+        forward_conv = next(
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.convolution.default
+        )
+        weight_node = forward_conv.args[1]
+        nodes_to_wrappers = defaultdict(dict)
+        visitors = get_node_visitors(edge_program)
+        visitors["aten.convolution.default"].define_node(
+            forward_conv, nodes_to_wrappers
+        )
+        forward_weight_wrapper = nodes_to_wrappers[weight_node.name][0]
+        first_ops = visitors["aten.convolution_backward.default"].define_node(
+            conv_backwards[0], nodes_to_wrappers
+        )
+        first_hwoi_wrapper = nodes_to_wrappers[f"{weight_node.name}_hwoi"][0]
+        second_ops = visitors["aten.convolution_backward.default"].define_node(
+            conv_backwards[1], nodes_to_wrappers
+        )
+        second_hwoi_wrapper = nodes_to_wrappers[f"{weight_node.name}_hwoi"][0]
+
+        self.assertEqual(2, len(first_ops))
+        self.assertEqual(1, len(second_ops))
+        self.assertIs(forward_weight_wrapper, nodes_to_wrappers[weight_node.name][0])
+        self.assertIn(f"{weight_node.name}_hwoi", nodes_to_wrappers)
+        self.assertIs(first_hwoi_wrapper, second_hwoi_wrapper)
+
+    def test_conv_backward_quantized_inputs_fallback(self):
+        x = torch.randn(1, 3, 8, 8)
+        grad_output = torch.randn(1, 4, 4, 4)
+        edge_program = to_edge(
+            torch.export.export(ConvBackward(), (grad_output, x), strict=True)
+        ).exported_program()
+        conv_backward = next(
+            node
+            for node in edge_program.graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.convolution_backward.default
+        )
+        visitor = get_node_visitors(edge_program)["aten.convolution_backward.default"]
+
+        for input_index in (0, 2):
+            with self.subTest(input_index=input_index):
+                conv_backward.args[input_index].meta[QCOM_QUANT_ATTRS] = {}
+                self.assertIsNone(visitor.define_node(conv_backward, defaultdict(dict)))
+                conv_backward.args[input_index].meta.pop(QCOM_QUANT_ATTRS)
+
+    def test_layout_transform_tuple_outputs(self):
+        with self.subTest("multiple_getitems"):
+            x = torch.randn(1, 3, 8, 8)
+            grad_output = torch.randn(1, 4, 4, 4)
+            edge_program = to_edge(
+                torch.export.export(
+                    ConvBackward(flatten_grad_input=True, return_grad_weight=True),
+                    (grad_output, x),
+                    strict=True,
+                )
+            ).exported_program()
+            conv_backward = next(
+                node
+                for node in edge_program.graph_module.graph.nodes
+                if node.target == exir_ops.edge.aten.convolution_backward.default
+            )
+            getitems = [
+                node
+                for node in conv_backward.users
+                if node.target.__name__ == "getitem" and node.args[1] in (0, 1)
+            ]
+            # Synthetic metadata exercises LayoutTransform only; quantized
+            # ConvBackward lowering remains unsupported.
+            for index, getitem in enumerate(getitems):
+                getitem.meta[QCOM_QUANT_ATTRS] = {"index": index}
+
+            graph_module = LayoutTransform(edge_program, insert_permute=True)(
+                edge_program.graph_module
+            ).graph_module
+            self.assertEqual(2, len(getitems))
+            permutes_by_input = {
+                node.args[0]: node
+                for node in graph_module.graph.nodes
+                if node.target == exir_ops.edge.aten.permute_copy.default
+            }
+            self.assertTrue(all(getitem in permutes_by_input for getitem in getitems))
+            for getitem in getitems:
+                self.assertEqual(
+                    getitem.meta[QCOM_QUANT_ATTRS],
+                    permutes_by_input[getitem].meta[QCOM_QUANT_ATTRS],
+                )
+
+        with self.subTest("none_output"):
+            graph = torch.fx.Graph()
+            conv_backward = graph.call_function(
+                torch.ops.aten.convolution_backward.default,
+                (),
+            )
+            conv_backward.meta["val"] = (torch.empty(1, 3, 4, 4), None, None)
+            graph.call_function(operator.getitem, (conv_backward, 2))
+            graph.call_function(operator.getitem, (conv_backward, 0))
+
+            layout_transform = LayoutTransform(MagicMock())
+            layout_transform.mark_as_transformed(conv_backward)
+
+            self.assertEqual(
+                (0, 2, 3, 1),
+                conv_backward.meta[layout_transform.transformed_tag],
+            )
+
+        with self.subTest("invalid_tuple_user"):
+            graph = torch.fx.Graph()
+            tuple_node = graph.call_function(
+                torch.ops.aten.convolution_backward.default,
+                (),
+            )
+            tuple_node.meta["val"] = (torch.empty(1, 3, 4, 4),)
+            getitem_node = graph.call_function(operator.getitem, (tuple_node, 0))
+            graph.call_function(torch.ops.aten.alias.default, (tuple_node,))
+            graph.output(getitem_node)
+            graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+            layout_transform = LayoutTransform(MagicMock(), insert_permute=True)
+            original_nodes = list(graph_module.graph.nodes)
+
+            with self.assertRaisesRegex(AssertionError, "Expected tuple-output node"):
+                layout_transform.insert_node(
+                    graph_module, tuple_node, revert_layout=False
+                )
+
+            self.assertEqual(original_nodes, list(graph_module.graph.nodes))
 
     def _build_quantized_graph(self):
         """Build a quantized graph through AnnotateQuantAttrs + FoldQDQ."""
