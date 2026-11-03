@@ -2676,10 +2676,25 @@ class TestEmit(unittest.TestCase):
                 # it contiguous.
                 return x * self.scale.expand(1)
 
-        exported = constant_prop_pass(
-            export(ScaleByBuffer(), (torch.randn(4),), strict=True)
-        )
-        self.assertEqual([t.stride() for t in exported.constants.values()], [(1,)])
+        class AddStridedWeight(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.randn(48))
+
+            def forward(self, x):
+                # Channels-last but for a zero stride on the size-1 batch dim.
+                # The folded constant is contiguous, like the input it is added
+                # to, so portable add sees one dim order.
+                return x + self.weight.as_strided((1, 3, 4, 4), (0, 1, 12, 3))
+
+        for model, x, stride in (
+            (ScaleByBuffer(), torch.randn(4), (1,)),
+            (AddStridedWeight(), torch.randn(1, 3, 4, 4), (48, 16, 4, 1)),
+        ):
+            exported = constant_prop_pass(export(model, (x,), strict=True))
+            self.assertEqual(
+                [t.stride() for t in exported.constants.values()], [stride]
+            )
 
     def test_emit_user_constants_with_zero_stride(self) -> None:
         def zero_stride(value):
