@@ -649,19 +649,6 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
-    name = "test_idma_ops",
-    srcs = [
-        "tests/test_idma_ops.py",
-    ],
-    deps = [
-        "//executorch/backends/test:graph_builder",
-        "//executorch/backends/cadence/aot:ops_registrations",
-        "//executorch/runtime:runtime",
-        "//later:lib",
-    ],
-)
-
 fbcode_target(_kind = runtime.python_library,
     name = "weight_packing",
     srcs = [

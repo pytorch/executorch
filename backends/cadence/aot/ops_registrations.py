@@ -547,27 +547,6 @@ lib.define(
     "sdpa_bitwise_ring_mask_gen.out(Tensor positions, int sliding_window, int cache_length, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
-# Load/store with iDMA. These only exist before memory planning.
-# Post memory planning, we check that outputs/inputs for the load/store are in
-# DTCM and replace idma_load/idma_store with idma_copy.
-lib.define("idma_load(Tensor src, int task_num=0, int channel=0) -> Tensor")
-lib.define(
-    "idma_load.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
-)
-lib.define("idma_store(Tensor src, int task_num=0, int channel=0) -> Tensor")
-lib.define(
-    "idma_store.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
-)
-
-# Non-blocking iDMA copy.
-lib.define("idma_copy(Tensor src, int task_num=0, int channel=0) -> Tensor")
-lib.define(
-    "idma_copy.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
-)
-# iDMA wait.
-lib.define("idma_wait(Tensor src, int task_num=0) -> Tensor")
-lib.define("idma_wait.out(Tensor src, int task_num=0, *, Tensor(a!) out) -> Tensor(a!)")
-
 # ------------------------------------ #
 #   Migrated from custom_ops.yaml      #
 # ------------------------------------ #
@@ -3289,45 +3268,6 @@ def quantized_rope_rotate_stacked_halves_meta(
     out_zero_point: int,
 ) -> torch.Tensor:
     return rope_rotate_stacked_halves_meta(input, sin_tensor, cos_tensor, pos)
-
-
-@register_fake("cadence::idma_copy")
-def copy_idma_copy_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-    channel: int = 0,
-) -> torch.Tensor:
-    return src.new_empty(*src.shape, dtype=src.dtype)
-
-
-@register_fake("cadence::idma_wait")
-def copy_idma_wait_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-) -> torch.Tensor:
-    return src.new_empty(*src.shape, dtype=src.dtype)
-
-
-@register_fake("cadence::idma_load")
-def idma_load_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-    channel: int = 0,
-) -> torch.Tensor:
-    res = copy_idma_copy_impl(src, task_num, channel)
-    assert isinstance(res, torch.Tensor)
-    return res
-
-
-@register_fake("cadence::idma_store")
-def idma_store_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-    channel: int = 0,
-) -> torch.Tensor:
-    res = copy_idma_copy_impl(src, task_num, channel)
-    assert isinstance(res, torch.Tensor)
-    return res
 
 
 @register_fake("cadence::roi_align_box_processor")
