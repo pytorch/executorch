@@ -345,6 +345,7 @@ class LinearConfig(GEMMConfig):
 
 class ConvolutionConfig(GEMMConfig):
     target_name = "convolution.default"
+    supports_bf16 = False
 
     def __init__(self, **kwargs):
         super().__init__(
@@ -364,12 +365,6 @@ class ConvolutionConfig(GEMMConfig):
 
         kernel_node = get_input_node(node, 1)
         kernel_shape = get_shape(kernel_node)
-        if any(
-            value.meta["val"].dtype == torch.bfloat16
-            for value in (node, kernel_node, get_input_node(node, 0))
-        ):
-            why(node, "XNNPACK does not support BF16 convolution")
-            return False
         # The weight rank is the only reliable indicator of the conv dimensionality.
         # stride, padding and dilation may each be a single value that ATen
         # broadcasts over every spatial dim.
