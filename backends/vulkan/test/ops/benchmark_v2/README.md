@@ -31,6 +31,19 @@ Each expanded case runs separately. Shader variants can share one binding
 interface through `shader_sweep`; operators can sweep argument sets, dtype and
 storage variables, and execution routes.
 
+## Building with CMake
+
+From the ExecuTorch root, `build.sh` builds ExecuTorch with the Vulkan backend
+into `cmake-out/`, then `etvk_ops_bench`. It requires `glslc` on `PATH`. Pass
+`--android` to cross-compile for arm64 Android into `cmake-android-out/` with
+the NDK at `ANDROID_NDK`.
+
+```sh
+backends/vulkan/test/ops/benchmark_v2/build.sh
+cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench \
+  --config=backends/vulkan/test/ops/benchmark_v2/examples/shaders.json
+```
+
 ## Running the binary
 
 The commands below assume `etvk_ops_bench` is on `PATH` and the current directory
@@ -92,6 +105,7 @@ Benchmark conditions such as `target_ms` and `benchmark_runs` belong in the JSON
 | `examples/q8ta_conv2d.json` | Quantized int8 activations, per-channel int8 weights, and int8 output. |
 | `examples/linear.json` | FP32/FP16 linear projections and feed-forward expansion, with decode and batched/prefill shapes. |
 | `examples/q4gsw_linear.json` | Weight-only Q4GSW linear with FP32 and FP16 activations. |
+| `examples/conv2d_gemm_sustained.json` | 12-second sustained replay of the FP16 im2col convolution GEMM shader, for hardware counter sampling. Run with `--validation_mode=none`. |
 
 | Field | Meaning |
 | --- | --- |
@@ -114,6 +128,7 @@ Benchmark conditions such as `target_ms` and `benchmark_runs` belong in the JSON
 | `max_dispatches` | Invocation count cap, default 200 for operators and 65536 for shaders. |
 | `warmup_runs` | Unmeasured batches per timing mode, default 3. |
 | `benchmark_runs` | Measured batches per timing mode, default 10. |
+| `sustain_s` | Replace the measurement passes with back-to-back query-free replay for this many seconds. See [sustained replay](#sustained-replay-for-hardware-counters). |
 | `check` | Registered validation-only check, e.g. capability or dynamic-resize checks. |
 | `reference` | Optional registered CPU reference name; inferred for supported operators/shaders. |
 | `validation_method` | Comparison function and tolerances, e.g. `{"function":"is_close","atol":0.01,"rtol":0.01}`. Optional `outputs` selects named tensors to check. |
@@ -504,6 +519,9 @@ full JSON, with these substitutions:
 - Operator `args` becomes `args_str`, using the full `Inputs` notation, including
   non-tensor arguments, storage, dtype, and non-constant layouts. Output-only
   tensors are excluded. Table width limits do not truncate this string.
+- Shader `bindings` becomes `bindings_str`, using the same `Inputs` notation:
+  read and read-write tensor bindings in binding order, followed by uniform and
+  push constant values. Table width limits do not truncate this string.
 - `gpu_timestamp_operator_us`, `gpu_timestamp_batch_us`, and wall timing arrays
   become objects with `min`, `median`, and `max`. Median is the middle sorted
   sample, averaging the two middle samples for even counts. Empty timing arrays
@@ -512,8 +530,8 @@ full JSON, with these substitutions:
   pass's start/end readings. Unavailable readings are ignored; a pass without
   usable readings becomes `null`. Zero remains a valid observation.
 
-Shader timestamp statistics, shader breakdowns, raw shader bindings, validation,
-and other metadata retain their full JSON representation.
+Shader timestamp statistics, shader breakdowns, validation, and other metadata
+retain their full JSON representation.
 
 ```json
 {
@@ -560,6 +578,7 @@ Pass selection depends on case type and timestamp support:
 | Raw shader | Yes | Wall time, whole-batch GPU timestamps. |
 | Operator | Yes | Wall time, whole-batch GPU timestamps, per-dispatch GPU timestamps. |
 | Raw shader or operator | No | Wall time only. GPU batch/operator timings are `null` in `json` and empty arrays in `json_full`; raw shader statistics are `null`, and shader breakdowns are omitted. |
+| Raw shader or operator with `sustain_s` | Either | [Sustained replay](#sustained-replay-for-hardware-counters) window only. GPU timestamp fields are `null` or empty as above, and shader breakdowns are omitted. |
 
 Each enabled pass performs `warmup_runs` unmeasured replays (default 3), followed
 by `benchmark_runs` measured replays (default 10; many examples specify 5).
@@ -711,6 +730,43 @@ when evaluating that overhead.
 Prepacking remains outside timing.
 Breakdowns are omitted when timestamps are unavailable, including on this
 repository's SwiftShader build.
+
+### Sustained replay for hardware counters
+
+GPU hardware counters are sampled system-wide, so attributing them to one shader
+requires a workload that runs only that shader across several sample periods.
+With `sustain_s`, the benchmark calibrates and warms up as usual, then resubmits
+the query-free batch back-to-back until `sustain_s` seconds elapse. This window
+replaces the wall time, GPU timestamp, and shader profiling passes. Operator
+cases replay their full dispatch chain, so profile one shader with a raw shader
+case that reproduces its dispatch.
+
+`examples/conv2d_gemm_sustained.json` reproduces one dispatch of
+`conv2d_gemm_texture2d_half`, the GEMM step of an FP16 im2col convolution with
+input `[1, 64, 128, 128]` and weight `[128, 64, 3, 3]`. Each dispatch covers a
+113-row output tile, so K = 3 x 3 x 64 = 576, M = 113 x 128 = 14464, and
+N = 128. The bindings follow the shader interface: the output, the `[M, K]`
+im2col tile, the `[K/4, N/4 x 16]` packed weight, the bias, and the output sizes
+UBO. The push constants are `(K/4, row offset, rows per tile, 0)` followed by
+unused clamp bounds. This shader has no registered CPU reference, so run the
+example with `--validation_mode=none`.
+
+The window boundaries are printed to stderr as they occur:
+
+```text
+sustain_begin monotonic_ns=156312739333286 case=conv2d_gemm tile0 fp16 M14464 K576 N128
+sustain_end monotonic_ns=156324742238646 case=conv2d_gemm tile0 fp16 M14464 K576 N128
+```
+
+`monotonic_ns` is `CLOCK_MONOTONIC` on Linux and Android. Start a sampler when
+`sustain_begin` appears and stop it before `sustain_s` elapses, or keep only
+samples timestamped between the two markers. Reports add `sustain_s` and
+`sustain_monotonic_ns` with `begin` and `end`. `benchmark_runs` counts the
+batches replayed in the window, so the window contains `benchmark_runs` times
+the repetition count dispatches. `wall_time_batch_us` and the Android wall-time
+clock samples cover those batches; GPU timestamp fields are empty and shader
+breakdowns are omitted. Validation, prepacking, and calibration finish before
+the window begins.
 
 ## Throughput
 
@@ -951,6 +1007,16 @@ packed `int8x4` activations and outputs; weight-only quantized operators use the
 native weight, scale, and activation arguments. Quantize and dequantize are
 separate operator cases. Quantized comparisons use quantized units with zero
 relative tolerance. Use `route` or `route_sweep` to select execution routes.
+
+`correctness.json` is an operator directory's correctness collection, which
+continuous integration validates with `--validation_only`. Besides correctness
+shapes, it includes the smallest performance-collection cases that dispatch a
+shader no correctness shape reaches. Performance collections exist to measure
+latency and are not run in CI. Correctness cases that fail because of known
+operator bugs live in separate collections named after the bug, such as
+`convolution/q8ta/cases/legacy_4w4c_padding.json` and
+`embedding/qw/q4gsw/cases/texture3d_multirow_indices.json`, so CI stays green
+while the cases remain available for a fix.
 
 ## Schema audits and validation-only runs
 
