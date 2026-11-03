@@ -493,6 +493,22 @@ class ET_EXPERIMENTAL CudaBackend final
          to_string(so_file_counter.fetch_add(1, std::memory_order_relaxed)) +
          ".so");
 
+    // A failed init returns no handle, so destroy() never runs for it. Remove
+    // the file here unless init succeeds.
+    bool keep_so_file = false;
+    executorch::backends::aoti::ScopeGuard remove_so_file([&]() noexcept {
+      if (keep_so_file) {
+        return;
+      }
+      std::error_code remove_error;
+      filesystem::remove(so_path, remove_error);
+      ET_CHECK_OR_LOG_ERROR(
+          !remove_error,
+          "Failed to remove temporary shared library %s: %s",
+          so_path.c_str(),
+          remove_error.message().c_str());
+    });
+
     // Create a temporary file
     ofstream outfile(so_path, ios::binary);
 
@@ -644,6 +660,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
     live_handles_.fetch_add(1, std::memory_order_acq_rel);
 
+    keep_so_file = true;
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -834,10 +851,10 @@ class ET_EXPERIMENTAL CudaBackend final
     const bool is_capture_step =
         (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
          handle->cuda_graph_state.warmup_remaining == 0);
-    bool graph_ran = false;
-    Error error =
-        run_once(handle, args, n_inputs, n_outputs, is_capture_step, graph_ran);
-    if (error != Error::Ok && is_capture_step && !graph_ran) {
+    bool graph_launched = false;
+    Error error = run_once(
+        handle, args, n_inputs, n_outputs, is_capture_step, graph_launched);
+    if (error != Error::Ok && is_capture_step && !graph_launched) {
       // A capture records kernels without running them, so until the new graph
       // runs, the inputs and any state the program updates are untouched. A
       // program that keeps state in host memory, where host code does run
@@ -855,10 +872,69 @@ class ET_EXPERIMENTAL CudaBackend final
           n_inputs,
           n_outputs,
           /*is_capture_step=*/false,
-          graph_ran);
+          graph_launched);
     }
     ET_CHECK_OK_OR_RETURN_ERROR(error);
     return commit_offgraph_kv_step(handle, kv_step_width);
+  }
+
+  void destroy(DelegateHandle* handle_) const override {
+    if (handle_ == nullptr) {
+      return;
+    }
+    cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
+
+    mutable_state_forget_handle(handle);
+    if (handle->kv_cache != nullptr) {
+      handle->kv_cache->forget_handle(handle);
+    }
+
+    // NOTE: AOTInductorModelContainerDelete does not work correctly with
+    // multiple .so files. Deleting one container frees shared resources,
+    // which causes segmentation faults when attempting to delete other
+    // containers. As a workaround, we skip explicit container deletion and
+    // defer cleanup to the OS. The corresponding shared library must remain
+    // loaded as well: the leaked container still owns objects whose code and
+    // process-wide state live in that library, so dlclose/FreeLibrary can
+    // invalidate them and crash during multi-method teardown.
+    // TODO(gasoonjia): Find a proper solution for safe container deletion.
+    // AOTInductorModelContainerDelete(handle->container_handle);
+
+    // Remove the temporary shared library file
+    if (!handle->so_path.empty()) {
+      std::error_code remove_error;
+      std::filesystem::remove(handle->so_path, remove_error);
+      ET_CHECK_OR_LOG_ERROR(
+          !remove_error,
+          "Failed to remove temporary shared library %s: %s",
+          handle->so_path.c_str(),
+          remove_error.message().c_str());
+    }
+
+    delete handle;
+
+    // The allocator lets the device pool keep freed memory so that repeated
+    // delegate execution does not pay to map it again. Nothing is running on
+    // this backend once the last handle is gone, so hand that memory back
+    // rather than hold it for the life of the process.
+    if (live_handles_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      // Only frees the driver has already observed can be released, so without
+      // this the trim gives back nothing rather than less. A device wait rather
+      // than a stream wait because the frees went to whichever stream was
+      // current when the storage was released, which is not necessarily one
+      // this handle recorded, and teardown is not bound to the thread that ran
+      // the method either.
+      const cudaError_t sync_err = cudaDeviceSynchronize();
+      if (sync_err != cudaSuccess) {
+        ET_LOG(
+            Error,
+            "cudaDeviceSynchronize before releasing the pool failed: %s.",
+            cudaGetErrorString(sync_err));
+        (void)cudaGetLastError();
+      }
+      // This also releases unused blocks cached by other allocator users.
+      CudaAllocator::release_cached_memory(-1);
+    }
   }
 
  private:
@@ -886,15 +962,15 @@ class ET_EXPERIMENTAL CudaBackend final
   }
 
   // Runs the program once. On the capture step it captures the CUDA graph
-  // instead, then launches it once, and sets graph_ran once that launch is
-  // queued.
+  // instead, then launches it once, and sets graph_launched once that launch
+  // is queued.
   Error run_once(
       cuda::CudaDelegateHandle* handle,
       Span<EValue*> args,
       size_t n_inputs,
       size_t n_outputs,
       bool is_capture_step,
-      bool& graph_ran) const {
+      bool& graph_launched) const {
     // Wrrap them as SlimTensors for AOTI execution without any host<->device
     // copies.
     std::vector<SlimTensor*> slim_inputs(n_inputs);
@@ -1210,7 +1286,7 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphLaunch (first replay) failed: %s",
           cudaGetErrorString(gerr));
-      graph_ran = true;
+      graph_launched = true;
       handle->cuda_graph_state.note_graph_allocations();
 
       // Copy capture-step outputs into the planned GPU ET buffers (D2D).
@@ -1288,67 +1364,6 @@ class ET_EXPERIMENTAL CudaBackend final
     return Error::Ok;
   }
 
- public:
-  void destroy(DelegateHandle* handle_) const override {
-    if (handle_ == nullptr) {
-      return;
-    }
-    cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
-
-    mutable_state_forget_handle(handle);
-    if (handle->kv_cache != nullptr) {
-      handle->kv_cache->forget_handle(handle);
-    }
-
-    // NOTE: AOTInductorModelContainerDelete does not work correctly with
-    // multiple .so files. Deleting one container frees shared resources,
-    // which causes segmentation faults when attempting to delete other
-    // containers. As a workaround, we skip explicit container deletion and
-    // defer cleanup to the OS. The corresponding shared library must remain
-    // loaded as well: the leaked container still owns objects whose code and
-    // process-wide state live in that library, so dlclose/FreeLibrary can
-    // invalidate them and crash during multi-method teardown.
-    // TODO(gasoonjia): Find a proper solution for safe container deletion.
-    // AOTInductorModelContainerDelete(handle->container_handle);
-
-    // Remove the temporary shared library file
-    if (!handle->so_path.empty()) {
-      std::error_code remove_error;
-      std::filesystem::remove(handle->so_path, remove_error);
-      ET_CHECK_OR_LOG_ERROR(
-          !remove_error,
-          "Failed to remove temporary shared library %s: %s",
-          handle->so_path.c_str(),
-          remove_error.message().c_str());
-    }
-
-    delete handle;
-
-    // The allocator lets the device pool keep freed memory so that repeated
-    // delegate execution does not pay to map it again. Nothing is running on
-    // this backend once the last handle is gone, so hand that memory back
-    // rather than hold it for the life of the process.
-    if (live_handles_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-      // Only frees the driver has already observed can be released, so without
-      // this the trim gives back nothing rather than less. A device wait rather
-      // than a stream wait because the frees went to whichever stream was
-      // current when the storage was released, which is not necessarily one
-      // this handle recorded, and teardown is not bound to the thread that ran
-      // the method either.
-      const cudaError_t sync_err = cudaDeviceSynchronize();
-      if (sync_err != cudaSuccess) {
-        ET_LOG(
-            Error,
-            "cudaDeviceSynchronize before releasing the pool failed: %s.",
-            cudaGetErrorString(sync_err));
-        (void)cudaGetLastError();
-      }
-      // This also releases unused blocks cached by other allocator users.
-      CudaAllocator::release_cached_memory(-1);
-    }
-  }
-
- private:
   mutable std::mutex cuda_graph_method_mutex_;
   std::string cuda_graph_method_;
 

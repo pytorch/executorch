@@ -104,8 +104,8 @@ struct CudaWeightStorage {
 //
 // The transition flow is:
 //   Disabled  ──(if CUDA graph is enabled for this method, the device
-//                has memory pools, and every constant is in device
-//                memory)──▶  Warmup
+//                has memory pools, and every constant is known to be in
+//                device memory)──▶  Warmup
 //   Warmup    ──(after `warmup_remaining` execute() calls)──▶  Replay
 //   Warmup    ──(if the capture fails, or an output is not laid out
 //                like its ETensor)──▶  Disabled

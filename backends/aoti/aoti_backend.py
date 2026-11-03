@@ -53,6 +53,22 @@ def _checked_data_name(data_name: str) -> str:
     return data_name
 
 
+def _written_buffer_options(program: ExportedProgram) -> Dict[str, Any]:
+    """Inductor options for a program that writes a buffer.
+
+    They turn off Inductor's joint-graph constant folding for the whole
+    program, not only for the buffers it writes. Before torch 2.15, that
+    folding can turn the update of a one-element buffer, such as a counter,
+    into its value at export, so every call writes that same value
+    (https://github.com/pytorch/pytorch/pull/185077).
+
+    TODO: remove once the pinned torch is 2.15 or newer.
+    """
+    if program.graph_signature.buffers_to_mutate:
+        return {"joint_graph_constant_folding": False}
+    return {}
+
+
 @experimental(
     "This API and all of aoti-driven backend related functionality are experimental."
 )
@@ -292,6 +308,7 @@ class AotiBackend(ABC):
         device_name = cls.get_device_name()
         decomposition_table = cls.get_decomposition_table()
         options = cls.get_aoti_compile_options(compile_specs)
+        options.update(_written_buffer_options(edge_program))
 
         # Move the edge_program to the target device. Routed through a hook so
         # backends can keep large non-parameter tensors (e.g. KV-cache buffers)

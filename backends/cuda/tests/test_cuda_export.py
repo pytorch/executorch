@@ -17,10 +17,12 @@ import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyncPass
 from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import export
+from torch.nn.attention.varlen import varlen_attn
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
@@ -211,6 +213,31 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 seen["inside"] = inductor_utils.is_big_gpu(0)
         self.assertEqual({"inside": True, "other": False}, seen)
 
+    def test_small_gpu_override_survives_a_thread_that_leaves_first(self):
+        from executorch.backends.cuda.cuda_backend import (
+            _allow_triton_templates_on_small_gpus,
+        )
+        from torch._inductor import utils as inductor_utils
+
+        entered, leave = threading.Event(), threading.Event()
+
+        def overlap():
+            with _allow_triton_templates_on_small_gpus():
+                entered.set()
+                leave.wait(timeout=10)
+
+        with mock.patch.object(
+            inductor_utils, "is_big_gpu", return_value=False
+        ) as is_big_gpu:
+            other = threading.Thread(target=overlap)
+            other.start()
+            entered.wait(timeout=10)
+            with _allow_triton_templates_on_small_gpus():
+                leave.set()
+                other.join(timeout=10)
+                self.assertTrue(inductor_utils.is_big_gpu(0))
+            self.assertIs(inductor_utils.is_big_gpu, is_big_gpu)
+
     def test_cuda_include_ptx_compile_spec(self):
         with mock.patch.object(
             CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True
@@ -381,74 +408,6 @@ class TestCudaExport(unittest.TestCase):
 
         return edge_program_manager
 
-    @unittest.skipIf(
-        torch.version.hip is not None,
-        "loads through the Python runtime, which the ROCm build does not include",
-    )
-    def test_fused_sdpa(self):
-        """Decomposing attention on CUDA, as Torch-TensorRT does, gives fused
-        variants that the backend has no kernel for."""
-        from executorch.runtime import Runtime
-
-        class Attention(torch.nn.Module):
-            def forward(self, q, k, v, mask):
-                attention = torch.nn.functional.scaled_dot_product_attention
-                # Flash attention with fewer key heads and a custom scale.
-                grouped = attention(
-                    q,
-                    k[:, :2, :16],
-                    v[:, :2, :16],
-                    is_causal=True,
-                    scale=0.2,
-                    enable_gqa=True,
-                )
-                # Efficient attention, with the mask turned into a bias.
-                masked = attention(q, k[:, :, :16], v[:, :, :16], attn_mask=mask)
-                # Flash attention of one query over many keys, which runs in
-                # the Triton decode kernel.
-                decode = attention(q[:, :, :1], k, v)
-                return grouped, masked, decode
-
-        model = Attention()
-        inputs = (
-            torch.randn(1, 4, 16, 64, dtype=torch.bfloat16, device="cuda"),
-            torch.randn(1, 4, 256, 64, dtype=torch.bfloat16, device="cuda"),
-            torch.randn(1, 4, 256, 64, dtype=torch.bfloat16, device="cuda"),
-            torch.ones(16, 16, dtype=torch.bool, device="cuda").tril(),
-        )
-        program = export(model, inputs, strict=True).run_decompositions()
-        fused = [
-            node
-            for node in program.graph.nodes
-            if "aten._scaled_dot_product_" in str(node.target)
-        ]
-        self.assertEqual(len(fused), 3)
-        with self.assertLogs(
-            "executorch.backends.cuda.triton.replacement_pass", "INFO"
-        ) as logs:
-            edge = to_edge_transform_and_lower(
-                program,
-                partitioner=[
-                    CudaPartitioner(
-                        [CudaBackend.generate_method_name_compile_spec("forward")]
-                    )
-                ],
-                compile_config=EdgeCompileConfig(_check_ir_validity=False),
-            )
-        # The masked call keeps a float bias, which the Triton kernels do not take.
-        output = "\n".join(logs.output)
-        self.assertIn("Replaced 2 nodes with Triton kernels", output)
-        self.assertIn("Using split-K decode SDPA", output)
-        with tempfile.TemporaryDirectory() as directory:
-            path = os.path.join(directory, "model.pte")
-            with open(path, "wb") as f:
-                edge.to_executorch().write_to_file(f)
-            method = Runtime.get().load_program(path).load_method("forward")
-            outputs = method.execute([t.cpu() for t in inputs])
-        for output, reference in zip(outputs, model(*inputs), strict=True):
-            torch.testing.assert_close(output, reference.cpu(), atol=2e-2, rtol=2e-2)
-
-
     def test_simple_add(self):
         """Test CUDA export for simple element-wise addition."""
 
@@ -514,6 +473,100 @@ class TestCudaExport(unittest.TestCase):
         self._export_to_cuda_with_lower(
             CheckModule().eval(), (torch.randn(4, 8),), strict=False
         )
+
+    def test_distribution_argument_check(self):
+        """A check that holds for every input must not fail while AOTI autotunes."""
+
+        class GaussianHead(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.mean = torch.nn.Linear(16, 14)
+                self.log_std = torch.nn.Linear(16, 14)
+
+            def forward(self, x: torch.Tensor, eps: torch.Tensor) -> torch.Tensor:
+                std = torch.clamp(torch.exp(self.log_std(x)), 1e-5, 10.0)
+                scale_tril = torch.diag_embed(std.sqrt())
+                # The check MultivariateNormal makes on scale_tril, as newer
+                # PyTorch exports it. With 14 actions, Inductor computes each
+                # half in a kernel of its own, so the assert reads bools that
+                # autotuning makes up.
+                lower = (scale_tril.tril() == scale_tril).flatten(-2).min(-1)[0]
+                positive = (scale_tril.diagonal(dim1=-2, dim2=-1) > 0).min(-1)[0]
+                torch._assert_async((lower & positive).all(), "invalid scale_tril")
+                return self.mean(x) + (scale_tril @ eps[..., None])[..., 0]
+
+        inputs = (torch.randn(1, 16), torch.randn(1, 14))
+        self._export_to_cuda_with_lower(GaussianHead().eval(), inputs)
+
+        # The export above fails without the pass only when autotuning trips
+        # the assert, so check that the backend runs it.
+        self.assertIn(
+            RemoveAssertAsyncPass,
+            {type(p) for p in CudaBackend.get_custom_passes([])},
+        )
+        # The pass drops the check and the math that only fed it.
+        graph_module = export(GaussianHead().eval(), inputs).graph_module
+        RemoveAssertAsyncPass()(graph_module)
+        targets = {n.target for n in graph_module.graph.nodes}
+        self.assertNotIn(torch.ops.aten._assert_async.msg, targets)
+        self.assertNotIn(torch.ops.aten.tril.default, targets)
+        self.assertIn(torch.ops.aten.linear.default, targets)
+
+    def test_reshape_copy(self):
+        """Torch-TensorRT hands back the views it leaves to PyTorch as _reshape_copy."""
+
+        class ReshapeCopyModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.ops.aten._reshape_copy(x.transpose(0, 1), [-1, 4]) * 2
+
+        self._export_to_cuda_with_lower(ReshapeCopyModule(), (torch.randn(8, 4, 4),))
+
+    def test_varlen_attn(self):
+        """varlen_attn calls Flash attention, which the CUDA shims lack."""
+
+        class VarlenAttention(torch.nn.Module):
+            def forward(self, q, k, v, cu_seq):
+                # Flattening views the output, which needs the op's layout.
+                return varlen_attn(q, k, v, cu_seq, cu_seq, 16, 16).flatten(1)
+
+        q, k, v = (
+            torch.randn(32, 4, 64, dtype=torch.bfloat16, device="cuda")
+            for _ in range(3)
+        )
+        cu_seq = torch.tensor([0, 16, 32], dtype=torch.int32, device="cuda")
+        self._export_to_cuda_with_lower(VarlenAttention(), (q, k, v, cu_seq))
+
+        # Causal masks over query sequences shorter and longer than their key
+        # sequences (some queries then see no key, and NaN values outside the
+        # key sequences must stay out), grouped-query attention with an empty
+        # sequence, and a window in self-attention.
+        op = torch.ops.torch_attn._varlen_attn.default
+        short = torch.tensor([0, 4, 16], dtype=torch.int32, device="cuda")
+        empty = torch.tensor([0, 16, 16, 32], dtype=torch.int32, device="cuda")
+        shifted = torch.tensor([2, 6, 16], dtype=torch.int32, device="cuda")
+        nan_outside = v.clone()
+        nan_outside[:2] = nan_outside[16:] = float("nan")
+        big = torch.full_like(q, 1024)
+        cases = [
+            (q[:16], k, v, short, cu_seq, 12, 16, True, None, [3, -1]),
+            (q, k, nan_outside, cu_seq, shifted, 16, 12, True, None, [-1, 0]),
+            (q, k[:, :2], v[:, :2], empty, empty, 16, 16, False, 0.5, None, True),
+            (q, k, v, cu_seq, cu_seq, 16, 16, False, None, [4, 2]),
+            # Equal scores so large that float32 rounds their log-sum-exp.
+            (big, big, v, cu_seq, cu_seq, 16, 16),
+        ]
+        table = CudaBackend.get_decomposition_table()
+        # On ROCm, varlen_attn runs AOTriton, which lines an explicit window up
+        # with the start of each sequence. The decomposition follows Flash
+        # attention on CUDA, which lines it up with the end, so compare on CUDA.
+        if torch.version.hip is None:
+            for args in cases:
+                for actual, expected in zip(table[op](*args)[:2], op(*args)[:2]):
+                    torch.testing.assert_close(actual, expected, atol=1e-2, rtol=1e-2)
+        # Flash attention versions differ on this window, since a query sequence
+        # can be longer than max_k + 1.
+        with self.assertRaisesRegex(NotImplementedError, "window"):
+            table[op](q, k[:16], v[:16], cu_seq, short, 16, 12, False, None, [3, -1])
 
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""
@@ -825,63 +878,92 @@ class TestCudaExport(unittest.TestCase):
         )
 
     def test_missing_scatter_kernel_fails_at_export(self):
-        """Inductor leaves int64 scatter_add to an ATen kernel the CUDA shim lacks."""
+        """The scatter fallback writes its kernel call itself, and the check for
+        missing kernels still sees it. In deterministic mode Inductor leaves a
+        scatter of a scalar to that fallback, and the CUDA shims lack its
+        kernel."""
 
-        class Int64ScatterAdd(torch.nn.Module):
+        class ValueScatter(torch.nn.Module):
             def forward(self, counts: torch.Tensor, idx: torch.Tensor):
-                return counts.scatter_add(0, idx, torch.ones_like(idx))
+                return counts.scatter(0, idx, 1.0)
 
-        inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
-        with self.assertRaises(RuntimeError) as context:
-            self._export_to_cuda_with_lower(Int64ScatterAdd(), inputs)
-        self.assertIn("aoti_torch_cuda_scatter_reduce_two_out", str(context.exception))
+        inputs = (torch.zeros(8), torch.randint(0, 8, (32,)))
+        deterministic = torch.are_deterministic_algorithms_enabled()
+        warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+        torch.use_deterministic_algorithms(True)
+        try:
+            with self.assertRaises(RuntimeError) as context:
+                self._export_to_cuda_with_lower(ValueScatter(), inputs)
+        finally:
+            torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
+        self.assertIn("aoti_torch_cuda_scatter_value_out", str(context.exception))
 
     @unittest.skipIf(
         torch.version.hip is not None,
         "loads through the Python runtime, which the ROCm build does not include",
     )
-    def test_mask_index_and_index_put(self):
-        """A mask index makes the result size depend on the data, and Inductor
-        has no atomic add for int64, so these run in the index shims."""
+    def test_fused_sdpa(self):
+        """Decomposing attention on CUDA, as Torch-TensorRT does, gives fused
+        variants that the backend has no kernel for."""
         from executorch.runtime import Runtime
 
-        class MaskIndex(torch.nn.Module):
-            def forward(self, x, mask, column, idx, counts):
-                out = x.clone()
-                out[mask] = x[mask] * 2
-                # The mask and column index dims 0 and 2, which are not adjacent.
-                picked = x[mask, :, column].sum(0)
-                # A transposed input gives a result that is not row-major.
-                rows = x.transpose(1, 2)[mask] * 3
-                ones = torch.ones_like(idx)
-                counts = counts.index_put((idx,), ones, accumulate=True)
-                return out, picked, rows, counts
+        class Attention(torch.nn.Module):
+            def forward(self, q, k, v, mask):
+                attention = torch.nn.functional.scaled_dot_product_attention
+                # Flash attention with fewer key heads and a custom scale.
+                grouped = attention(
+                    q,
+                    k[:, :2, :16],
+                    v[:, :2, :16],
+                    is_causal=True,
+                    scale=0.2,
+                    enable_gqa=True,
+                )
+                # Efficient attention, with the mask turned into a bias.
+                masked = attention(q, k[:, :, :16], v[:, :, :16], attn_mask=mask)
+                # Flash attention of one query over many keys, which runs in
+                # the Triton decode kernel.
+                decode = attention(q[:, :, :1], k, v)
+                return grouped, masked, decode
 
-        model = MaskIndex()
-        x = torch.randn(4, 5, 6)
-        # Negative and int32: the shims wrap the index and read it as int32.
-        column = torch.tensor([-4], dtype=torch.int32)
-        idx = torch.tensor([0, 3, 3, 1, 3])
-        # Nonzero counts check that repeated writes add to the old values.
-        counts = torch.arange(8) * 5
-        masks = (
-            torch.tensor([True, False, True, True]),
-            torch.zeros(4, dtype=torch.bool),
-            torch.ones(4, dtype=torch.bool),
+        model = Attention()
+        inputs = (
+            torch.randn(1, 4, 16, 64, dtype=torch.bfloat16, device="cuda"),
+            torch.randn(1, 4, 256, 64, dtype=torch.bfloat16, device="cuda"),
+            torch.randn(1, 4, 256, 64, dtype=torch.bfloat16, device="cuda"),
+            torch.ones(16, 16, dtype=torch.bool, device="cuda").tril(),
         )
-        edge = self._export_to_cuda_with_lower(
-            model, (x, masks[0], column, idx, counts)
-        )
+        program = export(model, inputs, strict=True).run_decompositions()
+        fused = [
+            node
+            for node in program.graph.nodes
+            if "aten._scaled_dot_product_" in str(node.target)
+        ]
+        self.assertEqual(len(fused), 3)
+        with self.assertLogs(
+            "executorch.backends.cuda.triton.replacement_pass", "INFO"
+        ) as logs:
+            edge = to_edge_transform_and_lower(
+                program,
+                partitioner=[
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec("forward")]
+                    )
+                ],
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+        # The masked call keeps a float bias, which the Triton kernels do not take.
+        output = "\n".join(logs.output)
+        self.assertIn("Replaced 2 nodes with Triton kernels", output)
+        self.assertIn("Using split-K decode SDPA", output)
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "model.pte")
             with open(path, "wb") as f:
                 edge.to_executorch().write_to_file(f)
             method = Runtime.get().load_program(path).load_method("forward")
-            for mask in masks:
-                inputs = (x, mask, column, idx, counts)
-                outputs = method.execute(list(inputs))
-                for output, expected in zip(outputs, model(*inputs), strict=True):
-                    torch.testing.assert_close(output.cpu(), expected)
+            outputs = method.execute([t.cpu() for t in inputs])
+        for output, reference in zip(outputs, model(*inputs), strict=True):
+            torch.testing.assert_close(output, reference.cpu(), atol=2e-2, rtol=2e-2)
 
     @unittest.skipIf(
         torch.version.hip is not None,

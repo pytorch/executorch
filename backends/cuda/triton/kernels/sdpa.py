@@ -514,6 +514,7 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
     NUM_GROUPS: tl.constexpr,
     PACK_GQA: tl.constexpr,
     MASK_IS_CAUSAL: tl.constexpr = False,
+    KV_LEN_MULTIPLE: tl.constexpr = 1,
 ):
     """
     Shared kernel body for SDPA forward pass.
@@ -526,6 +527,9 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
 
     When False, the grid iterates over H_q heads and each program handles
     one Q head with simple h_kv = h_q // NUM_GROUPS remapping.
+
+    KV_LEN_MULTIPLE: kv_len is a multiple of this. When BLOCK_N divides it,
+    no tile reaches past kv_len, so the kernel skips the key bound check.
     """
     pid_m = tl.program_id(axis=0)
     pid_bh = tl.program_id(axis=1)
@@ -632,6 +636,17 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
             k = tl.load(k_ptrs, mask=k_mask, other=0.0).to(tl.bfloat16)
 
             qk = (tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale).to(tl.float32)
+            # Keys past kv_len load as zeros, which would score 0 rather than -inf.
+            # A mask or a causal bound already drops them.
+            if (
+                not (HAS_MASK or IS_CAUSAL or MASK_IS_CAUSAL)
+                and KV_LEN_MULTIPLE % BLOCK_N != 0
+            ):
+                qk = tl.where(
+                    offs_n[None, :] < kv_len,
+                    qk,
+                    tl.full(qk.shape, -float("inf"), dtype=tl.float32),
+                )
 
             if HAS_MASK:
                 qk = tl.where(
@@ -753,6 +768,7 @@ _SDPA_FWD_CONFIGS = [
     for config in _SDPA_PREFILL_CONFIGS
     for pack in (False, True)
 ]
+_SDPA_BLOCK_N_SIZES = {config.kwargs["BLOCK_N"] for config in _SDPA_FWD_CONFIGS}
 
 
 def _sdpa_fwd_prune(configs, nargs, **kwargs):
@@ -820,6 +836,7 @@ def _sdpa_fwd_kernel(
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     MASK_IS_CAUSAL: tl.constexpr = False,
+    KV_LEN_MULTIPLE: tl.constexpr = 1,
 ):
     # Packed, the grid walks the KV heads; unpacked, the query heads.
     if PACK_GQA:
@@ -866,6 +883,7 @@ def _sdpa_fwd_kernel(
         NUM_GROUPS=NUM_GROUPS,
         PACK_GQA=PACK_GQA,
         MASK_IS_CAUSAL=MASK_IS_CAUSAL,
+        KV_LEN_MULTIPLE=KV_LEN_MULTIPLE,
     )
 
 
@@ -1115,6 +1133,15 @@ def _launch_pow2_kernel(
             return (triton.cdiv(L_q * num_groups, meta["BLOCK_M"]), B * H_kv)
         return (triton.cdiv(L_q, meta["BLOCK_M"]), B * H_q)
 
+    # The largest tile size that divides L_kv. A kv_len or a symbolic length is
+    # only known at run time, so those always check bounds. A mask or a causal
+    # bound makes the check unneeded, so those calls keep 1 and share kernels.
+    kv_len_multiple = 1
+    if isinstance(L_kv, int) and not (HAS_KV_LEN or HAS_MASK or is_causal):
+        kv_len_multiple = max(
+            (n for n in _SDPA_BLOCK_N_SIZES if L_kv % n == 0), default=1
+        )
+
     # Single autotuned kernel: the config set spans BLOCK_M in {16..128}, each
     # with and without pack GQA, and `_sdpa_prefill_prune` keeps only
     # non-spilling tiles for this HEAD_DIM, so the autotuner picks a
@@ -1157,6 +1184,7 @@ def _launch_pow2_kernel(
         HEAD_DIM=D,
         NUM_GROUPS=num_groups,
         MASK_IS_CAUSAL=mask_is_causal,
+        KV_LEN_MULTIPLE=kv_len_multiple,
     )
 
 
