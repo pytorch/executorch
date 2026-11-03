@@ -24,6 +24,7 @@
 #include "coreai_cache.h"
 #include "coreai_cache_entry_fixture.h"
 #import "coreai_delegate_fixture.h"
+#include "coreai_fault_scope.h"
 #include "coreai_test_utils.h"
 
 namespace executorch::backends::coreai::testing {
@@ -1283,12 +1284,15 @@ TEST_F(CoreAIDelegateTest, WaiterAcquiresAfterConcurrentSharedLoadFails) {
     BookmarkLoaderScope fake;
     auto calls = std::make_shared<std::atomic<int>>(0);
     auto first_in_flight = std::make_shared<std::atomic<bool>>(false);
+    auto second_waiting = std::make_shared<std::atomic<bool>>(false);
     __weak BookmarkFakeLoader* loader = fake.loader;
-    // The first acquisition fails after the second load has queued behind it.
+    // The first acquisition fails only once the second load waits on it.
     fake.loader.onSpecialize = ^(NSURL*) {
       if (++*calls == 1) {
         *first_in_flight = true;
-        usleep(100000);
+        for (int i = 0; i < 1000 && !*second_waiting; ++i) {
+          usleep(5000);
+        }
         loader.specializeError = [NSError errorWithDomain:NSPOSIXErrorDomain
                                                      code:EIO
                                                  userInfo:nil];
@@ -1304,8 +1308,19 @@ TEST_F(CoreAIDelegateTest, WaiterAcquiresAfterConcurrentSharedLoadFails) {
     while (!*first_in_flight) {
       std::this_thread::yield();
     }
-    const Error second_result = init_sharing(second, true, root);
+    Error second_result = Error::Internal;
+    {
+      StorageFaultScope observe_wait(FaultPoint::BeforeSharedLoadWait);
+      observe_wait.armed = false;
+      observe_wait.observe = ^(FaultPoint point) {
+        if (point == FaultPoint::BeforeSharedLoadWait) {
+          *second_waiting = true;
+        }
+      };
+      second_result = init_sharing(second, true, root);
+    }
     worker.join();
+    EXPECT_TRUE(second_waiting->load());
     EXPECT_NE(first_result, Error::Ok);
     EXPECT_EQ(second_result, Error::Ok);
     EXPECT_EQ(calls->load(), 2);

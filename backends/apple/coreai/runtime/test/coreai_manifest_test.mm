@@ -47,6 +47,7 @@ NSMutableDictionary* enumerated_manifest() {
 TEST(CoreAIManifestTest, ParsesEnumeratedFunctions) {
   auto parsed = parse_manifest(encode(enumerated_manifest()));
   ASSERT_TRUE(parsed.ok());
+  EXPECT_TRUE(parsed->enumerated);
   ASSERT_EQ(parsed->functions.size(), 2u);
   EXPECT_TRUE([parsed->functions[0].name isEqual:@"main_s0_4"]);
   EXPECT_EQ(
@@ -299,6 +300,7 @@ TEST_P(CoreAIManifestMetadataTest, ReturnsManifestFieldsAndNameOrder) {
   ASSERT_EQ(parsed->functions.size(), 1u);
   EXPECT_TRUE([parsed->functions[0].name isEqual:dict[@"function"]]);
   EXPECT_TRUE(parsed->functions[0].input_shapes.empty());
+  EXPECT_FALSE(parsed->enumerated);
   EXPECT_TRUE([parsed->inputs isEqual:dict[@"input_names"]]);
   EXPECT_TRUE([parsed->outputs isEqual:dict[@"output_names"]]);
   EXPECT_TRUE([parsed->files isEqual:dict[@"files"]]);

@@ -18,6 +18,7 @@ namespace executorch::backends::coreai {
 Manifest::Manifest(
     NSString* export_hash,
     std::vector<ManifestFunction> functions,
+    bool enumerated,
     NSArray<NSString*>* inputs,
     NSArray<NSString*>* outputs,
     NSDictionary<NSString*, NSNumber*>* files,
@@ -29,6 +30,7 @@ Manifest::Manifest(
     bool multifunction)
     : export_hash(export_hash),
       functions(std::move(functions)),
+      enumerated(enumerated),
       inputs(inputs),
       outputs(outputs),
       files(files),
@@ -48,6 +50,7 @@ SelectedBundle::SelectedBundle(
       bundle_name(path.lastPathComponent),
       digest(manifest.bundle_digests[path.lastPathComponent]),
       functions(manifest.functions),
+      enumerated(manifest.enumerated),
       inputs(manifest.inputs),
       outputs(manifest.outputs),
       files([files copy]),
@@ -349,6 +352,7 @@ Result<Manifest> parse_manifest(NSData* data) {
   return Manifest(
       export_hash,
       std::move(functions),
+      enumerated_functions != nil,
       inputs,
       outputs,
       files,

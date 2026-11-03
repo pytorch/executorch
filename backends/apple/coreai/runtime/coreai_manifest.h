@@ -28,6 +28,8 @@ class Manifest final {
  public:
   NSString* const export_hash;
   const std::vector<ManifestFunction> functions;
+  // Listed under enumerated_functions; each function has static input shapes.
+  const bool enumerated;
   NSArray<NSString*>* const inputs;
   NSArray<NSString*>* const outputs;
   NSDictionary<NSString*, NSNumber*>* const files;
@@ -49,6 +51,7 @@ class Manifest final {
   Manifest(
       NSString* export_hash,
       std::vector<ManifestFunction> functions,
+      bool enumerated,
       NSArray<NSString*>* inputs,
       NSArray<NSString*>* outputs,
       NSDictionary<NSString*, NSNumber*>* files,
@@ -69,6 +72,7 @@ class SelectedBundle final {
   NSString* const bundle_name;
   NSString* const digest;
   const std::vector<ManifestFunction> functions;
+  const bool enumerated;
   NSArray<NSString*>* const inputs;
   NSArray<NSString*>* const outputs;
   NSDictionary<NSString*, NSNumber*>* const files;

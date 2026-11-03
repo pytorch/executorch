@@ -176,7 +176,7 @@ inputs; inputs matching none of them fail with `InvalidArgument` without running
 All functions come from one model, so they share weights, one specialization and
 one cache entry. The function count is the product of the enumerated value counts
 across dims, and specialization and load time grow with it: on an M4 Max, a warm
-load of a 256→1024→256 MLP took 7 ms with 1 function, 41 ms with 16 and 248 ms
+load of a two-layer MLP (256 to 1024 to 256 features) took 7 ms with 1 function, 41 ms with 16 and 248 ms
 with 64.
 
 With `multifunction=True`, give each method its own partitioner to enumerate only

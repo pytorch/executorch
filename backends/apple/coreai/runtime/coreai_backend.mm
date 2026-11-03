@@ -34,6 +34,9 @@ struct Handle final {
   size_t input_count = 0;
   size_t output_count = 0;
   ETCoreAILoadedModel* model = nil;
+  // Enumerated delegates pick a function per call by input shape; otherwise
+  // the single function accepts any shapes.
+  bool enumerated = false;
   std::vector<BoundFunction> functions;
 };
 
@@ -136,26 +139,13 @@ std::string describe_shape(
   return text + "]";
 }
 
-// Enumerated-shape delegates bind one function per shape, and each accepts
-// only its own static shapes, so pick the one these inputs match.
+// Each enumerated function accepts only its own static shapes. Called after
+// argument validation, so every input is a tensor.
 Result<id<ETCoreAISession>> select_session(
     const Handle& handle,
     Span<EValue*> args) {
-  if (handle.functions.size() == 1 &&
-      handle.functions.front().input_shapes.empty()) {
+  if (!handle.enumerated) {
     return handle.functions.front().session;
-  }
-  ET_CHECK_OR_RETURN_ERROR(
-      args.size() >= handle.input_count,
-      InvalidArgument,
-      "Core AI delegate expected %zu inputs",
-      handle.input_count);
-  for (size_t index = 0; index < handle.input_count; ++index) {
-    ET_CHECK_OR_RETURN_ERROR(
-        args[index] != nullptr && args[index]->isTensor(),
-        InvalidArgument,
-        "Core AI input %zu must be a tensor",
-        index);
   }
   for (const auto& function : handle.functions) {
     if (inputs_match(function.input_shapes, args)) {
@@ -255,6 +245,7 @@ class CoreAIBackend final : public BackendInterface {
       handle->input_count = host_bundle->bundle.inputs.count;
       handle->output_count = host_bundle->bundle.outputs.count;
       handle->model = loaded.get();
+      handle->enumerated = host_bundle->bundle.enumerated;
       processed->Free();
       return static_cast<DelegateHandle*>(handle.release());
     }
@@ -268,13 +259,11 @@ class CoreAIBackend final : public BackendInterface {
       ET_CHECK_OR_RETURN_ERROR(
           opaque != nullptr, DelegateInvalidHandle, "Null Core AI handle");
       auto& handle = *static_cast<Handle*>(opaque);
-      auto session = select_session(handle, args);
-      if (!session.ok()) {
-        return session.error();
-      }
       std::lock_guard<std::mutex> guard([handle.model executionMutex]);
       return execute_session(
-          session.get(), args, handle.input_count, handle.output_count);
+          args, handle.input_count, handle.output_count, [&] {
+            return select_session(handle, args);
+          });
     }
   }
 
