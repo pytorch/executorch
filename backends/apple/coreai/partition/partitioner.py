@@ -317,6 +317,7 @@ class CoreAIPartitioner(Partitioner):
         ] = None,
         take_over_constant_data: bool = True,
         take_over_mutable_buffer: bool = True,
+        multifunction: bool = False,
     ) -> None:
         # aot_compile_config requests ahead-of-time ``xcrun coreai-build
         # compile`` in preprocess, emitting per-architecture ``.aimodelc``
@@ -329,6 +330,11 @@ class CoreAIPartitioner(Partitioner):
         # ({dim_index: [values]}, aligned to inputs); it is resolved to export
         # symbols in :meth:`partition` and propagated to each subgraph boundary
         # in preprocess, so it is not built into a compile spec here.
+        #
+        # multifunction lowers every Core AI partition of every method into one
+        # Core AI model, one function per partition named <method>_<index>.
+        if multifunction and input_enumerations is not None:
+            raise ValueError("multifunction does not support input_enumerations yet")
         specs = []
         if min_deployment_version is not None:
             specs.append(
@@ -344,6 +350,8 @@ class CoreAIPartitioner(Partitioner):
                     aot_compile_config.to_json().encode(),
                 )
             )
+        if multifunction:
+            specs.append(CompileSpec(COMPILE_SPEC_KEYS.MULTIFUNCTION.value, b"1"))
 
         self.delegation_spec = DelegationSpec(
             backend_id=CoreAIBackend.__name__,

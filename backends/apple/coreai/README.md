@@ -108,6 +108,33 @@ bookmark restoration. A missing bookmark or SDK-confirmed cache miss falls back
 to source materialization and persistent specialization, then binds the requested
 function and ordered I/O on that same acquired model.
 
+### Multi-function export
+
+By default each Core AI delegate is its own model with a single `main` function.
+`CoreAIPartitioner(multifunction=True)` instead lowers every Core AI partition of
+every method into one model, with one function per partition named
+`<method>_<partition index>`:
+
+```python
+lowered = to_edge_transform_and_lower(
+    {"forward": forward_ep, "prefill": prefill_ep},
+    transform_passes=get_default_passes(),
+    partitioner=[CoreAIPartitioner(multifunction=True)],
+    compile_config=get_default_compile_config(),
+)
+```
+
+Here the delegates bind `forward_0` and `prefill_0`; a graph break adds
+`forward_1`, `prefill_1` and so on. Weights shared between methods are stored
+once. Every partition must carry identical compile specs (AOT config, deployment
+floor), and `input_enumerations` is not supported with this option yet.
+
+Each delegate keeps its own manifest naming its function and ordered I/O; all of
+them reference the same embedded bundle. Function bindings are not part of the
+cache key, so the first load specializes the model and the other delegates
+restore it from the same bookmark. Each delegate still loads its own model
+instance.
+
 ### Cache directory
 
 Backend initialization reads the string runtime spec `coreai_cache_dir`. If
