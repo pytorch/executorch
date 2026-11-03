@@ -24,6 +24,7 @@ from openvino.frontend.pytorch.fx_decoder import (  # type: ignore[import-untype
     TorchFXPythonDecoder,
 )
 from openvino.preprocess import PrePostProcessor  # type: ignore[import-untyped]
+from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
 
 @final
@@ -76,6 +77,13 @@ class OpenvinoBackend(BackendDetails):
 
         # The converter chooses some lowerings (e.g. boolean-mask indexing) from
         # the input types, so they must be known before conversion starts.
+        # The converter reads ranks only from tensor_meta, which edge graphs
+        # leave empty, and some ops need one, like aten.index after
+        # aten.index_put.
+        for node in module.graph.nodes:
+            val = node.meta.get("val")
+            if isinstance(val, torch.Tensor) and not node.meta.get("tensor_meta"):
+                node.meta["tensor_meta"] = _extract_tensor_metadata(val)
         decoder = TorchFXPythonDecoder(
             edge_program.module(), input_shapes=input_shapes, input_types=input_types
         )
