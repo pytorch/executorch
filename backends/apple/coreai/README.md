@@ -445,9 +445,28 @@ the repository root:
 cmake -S . -B <build-dir> -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=27.0 \
   -DEXECUTORCH_BUILD_COREAI=ON -DEXECUTORCH_BUILD_TESTS=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON -DEXECUTORCH_BUILD_PORTABLE_OPS=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON
 cmake --build <build-dir> --target backends/apple/coreai/all
 ctest --test-dir <build-dir>/backends/apple/coreai --output-on-failure --no-tests=error
+```
+
+With the module extension and portable operators enabled, `coreai_multithread_test`
+runs a real multi-delegate FP16 model through independently owned Modules. Workers
+start loading together and immediately execute after their own load, allowing
+loading, inference, and teardown to overlap. Every inference checks output shape,
+dtype, finite values, and numerical agreement. Cold and warm rounds share one
+isolated test cache; cleanup happens only after all workers have joined. CTest
+bounds the whole process with a timeout.
+
+The default is a small smoke run. CI uses the following stress size:
+
+```bash
+COREAI_STRESS_THREADS=50 COREAI_STRESS_ITERATIONS=100 \
+  ctest --test-dir <build-dir>/backends/apple/coreai \
+  -R '^coreai_multithread_test$' --output-on-failure --no-tests=error
 ```
 
 For a compile-only production smoke build, use a fresh build directory without
@@ -455,3 +474,32 @@ For a compile-only production smoke build, use a fresh build directory without
 `coreai_runtime_smoke`. For iOS also set `CMAKE_SYSTEM_NAME=iOS` and
 `CMAKE_OSX_SYSROOT=iphoneos`. Do not run the iOS binary on the host or install
 a simulator as part of this build.
+
+## Shared Backend Suite
+
+The shared model/operator suite has five CoreAI flows: `coreai_fp32`,
+`coreai_fp16`, `coreai_w8a8`, `coreai_w8`, and `coreai_w4`. The last two use
+weight-only quantization. Weightless operator cases still exercise delegation
+but do not demonstrate weight quantization. Reports distinguish delegated and
+undelegated cases; a portable fallback is not evidence of CoreAI execution.
+
+Build the Python runtime with CoreAI enabled before running these flows on macOS
+27. A normal Python installation without the delegate cannot execute their PTEs:
+
+```bash
+CMAKE_GENERATOR=Ninja \
+  CMAKE_ARGS="-DEXECUTORCH_BUILD_COREAI=ON -DEXECUTORCH_BUILD_COREML=OFF -DEXECUTORCH_BUILD_MLX=OFF -DCMAKE_OSX_DEPLOYMENT_TARGET=27.0" \
+  python install_executorch.py --editable
+python -m pip install -r backends/apple/coreai/requirements.txt \
+  pytest-xdist pytest-json-report pytest-timeout
+COREAI_TEST_RUNTIME=1 python -m pytest backends/apple/coreai/test/test_tester.py -x
+python -m pytest -c /dev/null backends/test/suite/operators/ \
+  -m flow_coreai_fp32 -x --json-report --json-report-file=coreai-results.json
+```
+
+Use `models` in place of `operators` for the model suite, and select another flow
+with its `flow_` marker. The CoreAI serialized stage passes an isolated cache root
+through per-program backend options, not global options. Set
+`GOLDEN_ARTIFACTS_DIR` to preserve the shared suite's PTE and reference artifacts.
+CI runs each suite/flow pair with bounded parallelism and propagates test failures
+without a failure allowance.
