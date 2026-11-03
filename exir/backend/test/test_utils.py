@@ -407,12 +407,15 @@ class TestUtils(unittest.TestCase):
             f"Delegate names mismatch: {delegate_names} vs {payload_names}",
         )
 
-    def test_to_backend_keeps_a_mutated_buffer_out_of_a_partial_delegate(self):
+    def test_to_backend_keeps_a_mutated_buffer_out_of_a_partial_delegate(  # noqa: C901
+        self,
+    ):
         class UpdateState(torch.nn.Module):
-            def __init__(self, read: bool, returned: bool):
+            def __init__(self, read: bool, returned: bool, copy_input: bool):
                 super().__init__()
                 self.read = read
                 self.returned = returned
+                self.copy_input = copy_input
                 self.register_buffer("state", torch.zeros(2))
 
             def forward(self, x):
@@ -420,7 +423,7 @@ class TestUtils(unittest.TestCase):
                     out = torch.sin(self.state) + (x + self.state)
                 else:
                     out = torch.sin(x)
-                self.state.copy_(x + x)
+                self.state.copy_(x if self.copy_input else x + x)
                 if self.returned:
                     return out, self.state
                 # In read mode, the last add reads the new value.
@@ -451,24 +454,28 @@ class TestUtils(unittest.TestCase):
         sin, add, writer = "aten_sin_default", "aten_add_tensor", "aten_add_tensor_2"
         # Also the add that makes "out", and the add that reads the new value.
         whole = {sin, add, "aten_add_tensor_1", writer, "aten_add_tensor_3"}
-        for read, returned, tags, owned_by_program in (
-            (True, False, dict.fromkeys(whole, "tag0"), False),
-            (True, False, {sin: "tag0", add: "tag0", writer: "tag0"}, True),
-            (True, False, {sin: "tag0", add: "tag0"}, True),
-            (True, False, {sin: "tag0"}, True),
-            (True, False, {sin: "tag0", add: "tag1"}, True),
+        for read, returned, copy_input, tags, owned_by_program in (
+            (True, False, False, dict.fromkeys(whole, "tag0"), False),
+            (True, False, False, {sin: "tag0", add: "tag0", writer: "tag0"}, True),
+            (True, False, False, {sin: "tag0", add: "tag0"}, True),
+            (True, False, False, {sin: "tag0"}, True),
+            (True, False, False, {sin: "tag0", add: "tag1"}, True),
             # Lowering cannot give a delegate a buffer whose new value is returned.
-            (True, True, {sin: "tag0", add: "tag0", writer: "tag0"}, True),
+            (True, True, False, {sin: "tag0", add: "tag0", writer: "tag0"}, True),
             # Without readers, "add" is the writer. Some partitioners tag such a
             # buffer themselves.
-            (False, False, {add: "tag0"}, True),
-            (False, False, {add: "tag0", "b_state": "tag0"}, False),
-            (False, True, {add: "tag0", "b_state": "tag0"}, True),
+            (False, False, False, {add: "tag0"}, True),
+            (False, False, False, {add: "tag0", "b_state": "tag0"}, False),
+            (False, True, False, {add: "tag0", "b_state": "tag0"}, True),
+            # The new value is the graph input, which no partition holds.
+            (True, False, True, dict.fromkeys(whole, "tag0"), True),
         ):
-            with self.subTest(read=read, returned=returned, tags=tags):
+            with self.subTest(
+                read=read, returned=returned, copy_input=copy_input, tags=tags
+            ):
                 x = torch.full((2,), 0.25)
                 lowered = to_edge(
-                    export(UpdateState(read, returned), (x,), strict=True)
+                    export(UpdateState(read, returned, copy_input), (x,), strict=True)
                 ).to_backend(TagNodes(tags))
                 self.assertEqual(
                     [
@@ -478,8 +485,14 @@ class TestUtils(unittest.TestCase):
                     ],
                     ["b_state"] if owned_by_program else [],
                 )
+                if copy_input:
+                    # Every op is delegated, so only the new value keeps the
+                    # buffer out.
+                    self.assertEqual(
+                        get_non_lowered_nodes(lowered.exported_program().graph), []
+                    )
                 if tags == {sin: "tag0"}:
-                    eager = UpdateState(read, returned)
+                    eager = UpdateState(read, returned, copy_input)
                     module = _load_for_executorch_from_buffer(
                         lowered.to_executorch().buffer
                     )
