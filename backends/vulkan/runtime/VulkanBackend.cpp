@@ -789,8 +789,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     } catch (const std::bad_alloc&) {
       return Error::MemoryAllocationFailed;
     } catch (const vkapi::ShaderNotSupportedError& error) {
-      ET_LOG(Error, "Vulkan shader compatibility error: %s", error.what());
-      return Error::DelegateInvalidCompatibility;
+      ET_LOG(Error, "Unsupported Vulkan shader: %s", error.what());
+      return Error::NotSupported;
     } catch (const std::exception& error) {
       ET_LOG(Error, "Vulkan initialization failed: %s", error.what());
       return Error::Internal;
