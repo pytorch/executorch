@@ -4,10 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import copy
-import functools
 import logging
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 from executorch.backends.qualcomm.builders import node_visitor_manager
@@ -49,7 +48,7 @@ from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
-from torch.fx.passes.operator_support import create_op_support, OperatorSupportBase
+from torch.fx.passes.operator_support import OperatorSupportBase
 
 from .common_defs import (
     allow_list_operator,
@@ -63,7 +62,6 @@ from .utils import (
     get_skip_decomp_table,
     has_data_dependent_shape,
     has_unsupported_dtype,
-    must_stay_on_cpu,
     warn_if_dilated_conv_may_not_fit_vtcm,
 )
 
@@ -399,46 +397,6 @@ class QnnPartitioner(Partitioner):
         Determines which op should not be decomposed during partitioning.
         The list of operators is obtained from `get_skip_decomp_table()`.
         The filter function (`filter_fn`) can be used to further refine which nodes are not decomposed. (advanced use case)
-        On HTP, kept-whole ops that `_drop_partitions_without_runtime_inputs`
-        would leave on CPU, as far as can be told before they are decomposed,
-        are decomposed too.
         """
         do_not_decompose = get_skip_decomp_table()
-        # On the lowered program exir reports every kept-whole op left there
-        # that the filter accepts, so it stays plain filter_fn.
-        if self.backend != QnnExecuTorchBackendType.kHtpBackend or ep.dialect == "EDGE":
-            return (do_not_decompose, filter_fn)
-
-        @functools.cache
-        def left_on_cpu() -> Set[torch.fx.Node]:
-            # The real partitions are only known once the kept-whole ops are
-            # decomposed, so the drop rule runs on the largest ones possible:
-            # only ops whose dtypes or shapes rule QNN out count as CPU ops.
-            # The caller's skips are left out, since decomposing adds nodes,
-            # and a skip must not rename the nodes that skip_node_id_set names.
-            # Ops that QNN rejects while partitioning are not known yet either.
-            # So when a skipped or rejected op is all that cuts a kept-whole op
-            # off, the op is not decomposed and still fails as before, and when
-            # such an op reads only constants and feeds a kept-whole op, the
-            # kept-whole op is decomposed although it ends up delegated.
-            partitions = generate_partitions_from_list_of_nodes(
-                ep.graph_module,
-                op_support=create_op_support(
-                    lambda _, node: node.op == "call_function"
-                    and not must_stay_on_cpu(node)
-                ),
-            )
-            delegated = self._drop_partitions_without_runtime_inputs(partitions, ep)
-            return {
-                node
-                for partition in partitions
-                if partition not in delegated
-                for node in partition.nodes
-            }
-
-        # exir calls this method several times on the ATen program but uses
-        # only one of the filters, so the partitions are found on first use.
-        return (
-            do_not_decompose,
-            lambda node: node not in left_on_cpu() and filter_fn(node),
-        )
+        return (do_not_decompose, filter_fn)

@@ -31,11 +31,7 @@ from executorch.backends.qualcomm.builders.op_custom_op import (
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.builders.utils import is_parameter
-from executorch.backends.qualcomm.partition.qnn_partitioner import (
-    QnnOperatorSupport,
-    QnnPartitioner,
-)
-from executorch.backends.qualcomm.partition.utils import filter_fn
+from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -56,17 +52,14 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_SCALE,
     QCOM_ZERO_POINTS,
 )
-from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerRegistry
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.exir import EdgeCompileConfig, to_edge
-from executorch.exir.backend.backend_details import PreprocessResult
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.lowered_backend_module import get_lowered_backend_modules
 from torch.export.exported_program import OutputKind
 from torch.library import Library
 from torchao.quantization import IntxWeightOnlyConfig, PerAxis, quantize_
@@ -1050,101 +1043,6 @@ class TestPasses(unittest.TestCase):
                 self.skipTest(f"QNN SDK not available: {e}")
             raise
         edge.to_executorch()
-
-    def test_htp_decomposes_kept_whole_ops_left_on_cpu(self):
-        class ConstantBranches(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.register_buffer("table", torch.randn(4, 16))
-                self.register_buffer("weight", torch.randn(16, 16))
-                self.register_buffer("mask", torch.rand(4, 16) > 0.5)
-
-            def forward(self, x):
-                linear = torch.nn.functional.linear
-                # QNN has no bfloat16 type, and a masked select has no static
-                # shape, so these branches read nothing at runtime once those
-                # ops run on CPU. Their linears are decomposed.
-                cast = linear(self.table, self.weight).to(torch.bfloat16).float()
-                masked = linear(self.table, self.weight)[self.mask].sum()
-                # This linear reads only constants too, but it shares a
-                # partition with the add that reads x, so it stays whole.
-                delegated = linear(self.table, self.weight)
-                return x + delegated + cast + masked
-
-        class SkippedFeeder(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.register_buffer("table", torch.randn(2, 4, 16))
-                self.linear = torch.nn.Linear(16, 16)
-
-            def forward(self, x):
-                return x + self.linear(self.table.abs()).unsqueeze(0)
-
-        sample_input = (torch.randn(4, 16),)
-        compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=QcomChipset.SM8650,
-            backend_options=generate_htp_compiler_spec(use_fp16=True),
-        )
-
-        # Runs without the QNN SDK: the backend accepts every op and compiles
-        # nothing.
-        with patch(
-            "executorch.backends.qualcomm.utils.utils.setup_qnn_sdk"
-        ), patch.object(
-            QnnManagerRegistry, "get_or_create_qnn_manager", return_value=MagicMock()
-        ), patch.object(
-            QnnBackend,
-            "preprocess_multimethod",
-            side_effect=lambda programs, _: {
-                method: [PreprocessResult(processed_bytes=b"qnn")] * len(partitions)
-                for method, partitions in programs.items()
-            },
-        ):
-            edge = to_edge_transform_and_lower_to_qnn(
-                ConstantBranches().eval(), sample_input, compiler_specs
-            )
-            # Skips must not change what is decomposed. A decomposed linear
-            # would add a bias add that takes the name of the add skipped here.
-            skipped = to_edge_transform_and_lower_to_qnn(
-                SkippedFeeder().eval(),
-                sample_input,
-                compiler_specs,
-                skip_node_id_set={"aten_abs_default", "aten_add_tensor"},
-                skip_node_op_set={"aten.unsqueeze_copy.default"},
-            )
-        program = edge.exported_program()
-        top_level_ops = {
-            node.target for node in program.graph.nodes if node.op == "call_function"
-        }
-        self.assertNotIn(exir_ops.edge.aten.linear.default, top_level_ops)
-        (lowered,) = get_lowered_backend_modules(program.graph_module)
-        delegated_ops = {
-            node.target
-            for node in lowered.original_module.graph.nodes
-            if node.op == "call_function"
-        }
-        self.assertIn(exir_ops.edge.aten.linear.default, delegated_ops)
-        self.assertIn(exir_ops.edge.aten.add.Tensor, delegated_ops)
-        # On the lowered program the filter must not let a kept-whole op left
-        # on CPU through, so exir still reports it.
-        _, keep_whole = QnnPartitioner(compiler_specs).ops_to_not_decompose(program)
-        self.assertIs(keep_whole, filter_fn)
-        edge.to_executorch()
-
-        program = skipped.exported_program()
-        (unsqueeze,) = (
-            node
-            for node in program.graph.nodes
-            if node.target == exir_ops.edge.aten.unsqueeze_copy.default
-        )
-        # The skipped add is the one that reads the unsqueeze, so it ran on CPU.
-        (add,) = unsqueeze.users
-        self.assertEqual(add.target, exir_ops.edge.aten.add.Tensor)
-        (lowered,) = get_lowered_backend_modules(program.graph_module)
-        self.assertIn(
-            exir_ops.edge.aten.linear.default,
-            [node.target for node in lowered.original_module.graph.nodes],
-        )
 
     def test_partitioner_falls_back_on_bfloat16(self):
         class Bf16Region(torch.nn.Module):
