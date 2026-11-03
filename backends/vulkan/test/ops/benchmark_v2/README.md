@@ -504,6 +504,9 @@ full JSON, with these substitutions:
 - Operator `args` becomes `args_str`, using the full `Inputs` notation, including
   non-tensor arguments, storage, dtype, and non-constant layouts. Output-only
   tensors are excluded. Table width limits do not truncate this string.
+- Shader `bindings` becomes `bindings_str`, using the same `Inputs` notation:
+  read and read-write tensor bindings in binding order, followed by uniform and
+  push constant values. Table width limits do not truncate this string.
 - `gpu_timestamp_operator_us`, `gpu_timestamp_batch_us`, and wall timing arrays
   become objects with `min`, `median`, and `max`. Median is the middle sorted
   sample, averaging the two middle samples for even counts. Empty timing arrays
@@ -512,8 +515,8 @@ full JSON, with these substitutions:
   pass's start/end readings. Unavailable readings are ignored; a pass without
   usable readings becomes `null`. Zero remains a valid observation.
 
-Shader timestamp statistics, shader breakdowns, raw shader bindings, validation,
-and other metadata retain their full JSON representation.
+Shader timestamp statistics, shader breakdowns, validation, and other metadata
+retain their full JSON representation.
 
 ```json
 {
