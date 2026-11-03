@@ -39,6 +39,9 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
 from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
     MoveCondPredicateToCpuPass,
 )
+from executorch.backends.cuda.passes.replace_fused_sdpa import (
+    ReplaceFusedSdpaWithSdpaPass,
+)
 from executorch.backends.cuda.passes.replace_int64_floordiv import (
     ReplaceInt64FloorDivWithFloatPass,
 )
@@ -1013,7 +1016,11 @@ class CudaBackend(AotiBackend, BackendDetails):
                         f"Invalid triton_kernel_mode: {mode}. Expected 'ON' or 'OFF'."
                     )
                 triton_kernel_mode = mode
-        passes = [MoveCondPredicateToCpuPass(), ReplaceInt64FloorDivWithFloatPass()]
+        passes = [
+            MoveCondPredicateToCpuPass(),
+            ReplaceInt64FloorDivWithFloatPass(),
+            ReplaceFusedSdpaWithSdpaPass(),
+        ]
         cell_layout = any(
             spec.key == OFFGRAPH_KV_COMPILE_SPEC
             and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"
