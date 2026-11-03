@@ -34,5 +34,21 @@ target_include_directories(
 target_link_libraries(
   qnn_io_buffer_allocator_test PRIVATE executorch_core GTest::gtest_main
 )
+add_executable(qnn_output_order_test test_output_order.cpp)
+target_include_directories(
+  qnn_output_order_test PRIVATE
+  "${EXECUTORCH_ROOT}/.."
+  "${EXECUTORCH_ROOT}/runtime/core/portable_type/c10"
+  "${EXECUTORCH_ROOT}/backends/qualcomm/runtime/pal/include"
+  "${EXECUTORCH_ROOT}/third-party/flatbuffers/include"
+  "${CMAKE_BINARY_DIR}/schema/include"
+  "$ENV{QNN_SDK_ROOT}/include/QNN"
+)
+target_link_libraries(
+  qnn_output_order_test PRIVATE qnn_manager qnn_backend_options
+  "$<LINK_GROUP:RESCAN,qnn_context,qnn_custom_protocol>"
+  executorch_core GTest::gtest_main
+)
 include(GoogleTest)
 gtest_discover_tests(qnn_io_buffer_allocator_test)
+gtest_discover_tests(qnn_output_order_test)
