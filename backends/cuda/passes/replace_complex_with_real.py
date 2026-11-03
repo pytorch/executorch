@@ -20,14 +20,16 @@ last dim of size 2 that holds the real and imaginary parts, the layout of
 
 Views, copies, indexing, repeats, splits, concatenation and stacking act on
 both parts alike, so they keep their op, with the dims they name counted in
-the complex tensor. A complex constant is stored as its real view. A
-decomposition table cannot do this, since a decomposition returns the dtype of
-the op it replaces.
+the complex tensor. A cast of a real tensor to complex gets zero imaginary
+parts. A complex constant, parameter or buffer is stored in the real layout
+too. A decomposition table cannot do this, since a decomposition returns the
+dtype of the op it replaces.
 
 The pass rewrites a program only when it can rewrite every op that reads or
-writes a complex tensor in it. It does not rewrite control flow branches, such
-as those of torch.cond, or complex32 values. Otherwise it leaves the program as
-it is and logs why, and the backend reports the ops it has no kernels for.
+writes a complex tensor in it. Otherwise it leaves the program as it is and
+logs why, and the backend reports the ops it has no kernels for. It never
+rewrites control flow branches, such as those of torch.cond, or complex32
+values.
 """
 
 import logging
@@ -286,8 +288,8 @@ def _can_rewrite(node: Node, complex_nodes: Set[Node]) -> bool:
 
 
 def _constant_name(exported_program: ExportedProgram, node: Node) -> Optional[str]:
-    """The name of the constant, parameter or buffer that ``node`` reads, if
-    the graph never writes it."""
+    """The name of the constant, parameter or buffer that ``node`` reads,
+    unless it is a buffer that the graph writes."""
     signature = exported_program.graph_signature
     for inputs in (
         signature.inputs_to_lifted_tensor_constants,
