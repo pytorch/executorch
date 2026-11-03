@@ -20,6 +20,7 @@ from executorch.backends.mlx.partitioner import MLXPartitioner
 from executorch.backends.mlx.passes import get_default_passes
 from executorch.backends.mlx.test.test_utils import get_mlx_node_counts
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.program import get_fake_program
 from executorch.runtime import Runtime
 from torch.export import export
@@ -385,6 +386,37 @@ class TestMLXPartitionerSharedConstants(unittest.TestCase):
                         builder.check_support_only()
                     else:
                         builder.build()
+
+    def test_delegates_share_the_bytes_of_a_shared_weight(self):
+        class SharedLinear(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(4, 4)
+
+            def forward(self, x):
+                # elu is not lowered, so the second use lands in another delegate.
+                return self.linear(torch.nn.functional.elu(self.linear(x)))
+
+        model = SharedLinear().eval()
+        weight = model.linear.weight.detach().clone()
+        program = to_edge_transform_and_lower(
+            export(model, (torch.randn(2, 4),), strict=False),
+            partitioner=[MLXPartitioner()],
+        ).exported_program()
+        delegates = [
+            module
+            for module in program.graph_module.children()
+            if isinstance(module, LoweredBackendModule)
+        ]
+
+        self.assertEqual(len(delegates), 2)
+        first, second = (
+            {id(buffer) for buffer in delegate.named_data_store_output.buffers}
+            for delegate in delegates
+        )
+        self.assertEqual(len(first), 2)
+        self.assertEqual(first, second)
+        self.assertTrue(torch.equal(model.linear.weight, weight))
 
 
 class TestMLXPartitionerGroupedKeys(unittest.TestCase):
