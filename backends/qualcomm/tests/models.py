@@ -2501,6 +2501,15 @@ class UpcastRmsNorm(torch.nn.Module):
         return self.weight * h.to(x.dtype)
 
 
+class ScaledRmsNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("scale", torch.tensor(2.0))
+
+    def forward(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + 1e-6) * self.scale
+
+
 class Roll(torch.nn.Module):
     def __init__(self, shifts, dims=None):
         super().__init__()

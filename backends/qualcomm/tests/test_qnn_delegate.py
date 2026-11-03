@@ -2372,9 +2372,21 @@ class TestQNNFloatingPointOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rms_norm_upcast(self):
-        # A Qwen-style norm, which normalizes in float32.
-        module = UpcastRmsNorm(torch.float16)  # noqa: F405
-        sample_input = (torch.randn(4, 32, dtype=torch.float16),)
+        # Qwen-style norms, which normalize in float32: a float16 one, and a
+        # float32 one with a bfloat16 weight and values whose squares pass the
+        # largest float16 value.
+        for dtype, x in (
+            (torch.float16, torch.randn(4, 32, dtype=torch.float16)),
+            (torch.bfloat16, torch.linspace(-1000, 1000, 128).reshape(4, 32)),
+        ):
+            with self.subTest(dtype=dtype):
+                module = UpcastRmsNorm(dtype)  # noqa: F405
+                self.lower_module_and_test_output(module, (x,))
+
+    def test_qnn_backend_rms_norm_large_values(self):
+        # A norm whose squares pass the largest float16 value.
+        module = ScaledRmsNorm()  # noqa: F405
+        sample_input = (torch.linspace(-1000, 1000, 128).reshape(4, 32),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_roll(self):
