@@ -39,15 +39,17 @@ TestCase create_test_case_from_config(const PixelShuffleConfig& config) {
   std::string operator_name = "test_etvk." + config.op_name + ".default";
   test_case.set_operator_name(operator_name);
 
-  // FP input: shape [N, C_in, H, W]
+  // FP input: shape [N, C_in, H, W]. With matching qparams, integer inputs and
+  // a unit scale make quantization exact, so the output must match the
+  // reference bit for bit.
   ValueSpec input_tensor(
       config.in_shape,
       vkapi::kFloat,
       utils::kBuffer,
       utils::kWidthPacked,
-      DataGenType::RANDOM);
+      config.same_qparams ? DataGenType::RANDINT8 : DataGenType::RANDOM);
 
-  float input_scale_val = 0.007112f;
+  float input_scale_val = config.same_qparams ? 1.0f : 0.007112f;
   ValueSpec input_scale(input_scale_val);
   int32_t input_zp_val = 0;
   ValueSpec input_zp(input_zp_val);
@@ -85,9 +87,15 @@ TestCase create_test_case_from_config(const PixelShuffleConfig& config) {
   test_case.add_input_spec(out_layout_spec);
   test_case.add_output_spec(output_tensor);
 
-  // Tolerance: ~1 quant step in the bigger of the two scales.
-  float tol = std::max(input_scale_val, output_scale_val) + 1e-4f;
-  test_case.set_abs_tolerance(tol);
+  if (config.same_qparams) {
+    test_case.set_abs_tolerance(0.0f);
+    test_case.set_rel_tolerance(0.0f);
+  } else {
+    // Requantization rounding may differ by ~1 quant step in the bigger of the
+    // two scales.
+    float tol = std::max(input_scale_val, output_scale_val) + 1e-4f;
+    test_case.set_abs_tolerance(tol);
+  }
 
   // Filter shaders that are just measurement overhead (staging copies and the
   // surrounding quantize/dequantize that wrap the operation under test).
