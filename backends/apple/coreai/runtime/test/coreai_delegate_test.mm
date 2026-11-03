@@ -916,6 +916,7 @@ TEST_F(CoreAIDelegateTest, OptionsRejectWrongTypes) {
         {"coreai_cache_dir", 1},
         {"coreai_compute_unit", 1},
         {"coreai_share_multifunction_model", 1},
+        {"coreai_expect_frequent_reshapes", 1},
     };
     for (const auto& option : wrong_types) {
       SCOPED_TRACE(option.key);
@@ -975,6 +976,35 @@ TEST_F(CoreAIDelegateTest, ComputeUnitOptionSelectsSpecialization) {
       SCOPED_TRACE(name);
       EXPECT_EQ(init_with_compute_unit(name), Error::InvalidArgument);
       EXPECT_EQ(bridge.state().last_compute_unit.load(), -1);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ExpectFrequentReshapesOptionReachesLoader) {
+  @autoreleasepool {
+    auto init_with_reshapes = [&](std::optional<bool> reshapes) {
+      bridge.state().last_expect_frequent_reshapes = -1;
+      DelegateFixture fixture(backend, bridge);
+      BackendOptions<3> options;
+      EXPECT_EQ(
+          options.set_option("coreai_compute_unit", "cpu_only"), Error::Ok);
+      if (reshapes.has_value()) {
+        EXPECT_EQ(
+            options.set_option("coreai_expect_frequent_reshapes", *reshapes),
+            Error::Ok);
+      }
+      return fixture.init_with_storage(options);
+    };
+    for (const auto& [reshapes, expected] :
+         {std::pair<std::optional<bool>, int>{std::nullopt, 0},
+          std::pair<std::optional<bool>, int>{false, 0},
+          std::pair<std::optional<bool>, int>{true, 1}}) {
+      SCOPED_TRACE(
+          reshapes.has_value() ? (*reshapes ? "true" : "false") : "absent");
+      ASSERT_EQ(init_with_reshapes(reshapes), Error::Ok);
+      EXPECT_EQ(bridge.state().last_expect_frequent_reshapes.load(), expected);
+      EXPECT_EQ(
+          bridge.state().last_compute_unit.load(), ETCoreAIComputeUnitCPUOnly);
     }
   }
 }

@@ -238,8 +238,12 @@ public final class ETCoreAISwiftModelLoader: NSObject, ETCoreAIModelLoading {
     super.init()
   }
 
-  @objc public convenience init?(computeUnit: ETCoreAIComputeUnit) {
-    guard let options = Self.specializationOptions(for: computeUnit),
+  @objc public convenience init?(
+    computeUnit: ETCoreAIComputeUnit, expectFrequentReshapes: Bool
+  ) {
+    guard
+      let options = Self.specializationOptions(
+        for: computeUnit, expectFrequentReshapes: expectFrequentReshapes),
       let specialization = try? CoreAISpecialization(options: options)
     else {
       return nil
@@ -247,17 +251,21 @@ public final class ETCoreAISwiftModelLoader: NSObject, ETCoreAIModelLoading {
     self.init(specialization: specialization)
   }
 
-  static func specializationOptions(for computeUnit: ETCoreAIComputeUnit)
-    -> SpecializationOptions?
-  {
+  static func specializationOptions(
+    for computeUnit: ETCoreAIComputeUnit, expectFrequentReshapes: Bool = false
+  ) -> SpecializationOptions? {
+    var options: SpecializationOptions
     switch computeUnit {
-    case .default: return .default
-    case .cpuOnly: return .cpuOnly
-    case .preferCPU: return SpecializationOptions(preferredComputeUnitKind: .cpu)
-    case .preferGPU: return SpecializationOptions(preferredComputeUnitKind: .gpu)
-    case .preferNeuralEngine: return SpecializationOptions(preferredComputeUnitKind: .neuralEngine)
+    case .default: options = .default
+    case .cpuOnly: options = .cpuOnly
+    case .preferCPU: options = SpecializationOptions(preferredComputeUnitKind: .cpu)
+    case .preferGPU: options = SpecializationOptions(preferredComputeUnitKind: .gpu)
+    case .preferNeuralEngine:
+      options = SpecializationOptions(preferredComputeUnitKind: .neuralEngine)
     @unknown default: return nil
     }
+    options.expectFrequentReshapes = expectFrequentReshapes
+    return options
   }
 
   public var specializationIdentifier: String { specialization.identifier }

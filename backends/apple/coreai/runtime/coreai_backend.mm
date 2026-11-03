@@ -146,8 +146,13 @@ class CoreAIBackend final : public BackendInterface {
           InvalidArgument,
           "coreai_share_multifunction_model requires a multi-function export "
           "(CoreAIPartitioner(multifunction=True))");
+      auto reshapes = runtime_option<bool>(
+          context, "coreai_expect_frequent_reshapes", false);
+      if (!reshapes.ok()) {
+        return reshapes.error();
+      }
       id<ETCoreAIModelLoading> loader =
-          ETCoreAICreateModelLoader(compute_unit.get());
+          ETCoreAICreateModelLoader(compute_unit.get(), reshapes.get());
       ET_CHECK_OR_RETURN_ERROR(
           loader != nil, Internal, "Cannot create Core AI loader");
       auto cache_directory = create_cache_directory(configured.get());

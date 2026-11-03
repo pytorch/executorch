@@ -165,17 +165,32 @@ final class SwiftSpecializationTests: XCTestCase {
     var report: [String] = []
     for (unit, options) in expected {
       XCTAssertEqual(ETCoreAISwiftModelLoader.specializationOptions(for: unit), options)
-      let loader = try XCTUnwrap(ETCoreAISwiftModelLoader(computeUnit: unit))
-      XCTAssertEqual(
-        loader.specializationIdentifier, try CoreAISpecialization(options: options).identifier)
-      variants.append((options, loader.specializationIdentifier))
-      report.append(
-        "\(unit.rawValue): \(options) -> \(loader.specializationIdentifier)")
+      for reshapes in [false, true] {
+        var expectedOptions = options
+        expectedOptions.expectFrequentReshapes = reshapes
+        XCTAssertEqual(
+          ETCoreAISwiftModelLoader.specializationOptions(
+            for: unit, expectFrequentReshapes: reshapes),
+          expectedOptions)
+        let loader = try XCTUnwrap(
+          ETCoreAISwiftModelLoader(computeUnit: unit, expectFrequentReshapes: reshapes))
+        XCTAssertEqual(
+          loader.specializationIdentifier,
+          try CoreAISpecialization(options: expectedOptions).identifier)
+        variants.append((expectedOptions, loader.specializationIdentifier))
+        report.append(
+          "\(unit.rawValue) reshapes=\(reshapes): \(expectedOptions) -> "
+            + loader.specializationIdentifier)
+      }
     }
     assertIdentifiersMatchExactlyWhenOptionsMatch(variants, report: report)
     XCTAssertEqual(
-      ETCoreAISwiftModelLoader(computeUnit: .default)?.specializationIdentifier, "default")
-    XCTAssertNil(ETCoreAISwiftModelLoader(computeUnit: ETCoreAIComputeUnit(rawValue: 99)!))
+      ETCoreAISwiftModelLoader(computeUnit: .default, expectFrequentReshapes: false)?
+        .specializationIdentifier,
+      "default")
+    XCTAssertNil(
+      ETCoreAISwiftModelLoader(
+        computeUnit: ETCoreAIComputeUnit(rawValue: 99)!, expectFrequentReshapes: false))
   }
 
   // The SDK limits allowed units to the hardware (a CPU-only machine makes

@@ -554,10 +554,13 @@ NSString* ETCoreAIDeviceArchitectureName(void) {
 }
 
 id<ETCoreAIModelLoading> ETCoreAICreateModelLoader(
-    ETCoreAIComputeUnit computeUnit) {
+    ETCoreAIComputeUnit computeUnit,
+    BOOL expectFrequentReshapes) {
   if (current_context == nil || current_context->state.fail_loader_factory) {
     return nil;
   }
   current_context->state.last_compute_unit = static_cast<int>(computeUnit);
+  current_context->state.last_expect_frequent_reshapes =
+      expectFrequentReshapes ? 1 : 0;
   return current_context->state.bookmark_loader ?: [[FakeLoader alloc] init];
 }

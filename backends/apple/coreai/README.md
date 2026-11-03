@@ -393,6 +393,20 @@ BackendOptions<2> options;
 ET_CHECK_OK_OR_RETURN_ERROR(options.set_option("coreai_compute_unit", "cpu_only"));
 ```
 
+`coreai_expect_frequent_reshapes` (bool, default `false`) sets the SDK's
+`SpecializationOptions.expectFrequentReshapes` on top of the selected compute
+unit. Set it for models whose input shapes change between calls. It is part of
+the cache key, so each value is specialized and cached separately, and delegates
+only share a model (`coreai_share_multifunction_model`) when they agree on it.
+For AOT exports, the matching export-time setting is
+`AOTCompileConfig(expect_frequent_reshapes=True)`.
+
+```cpp
+BackendOptions<2> options;
+ET_CHECK_OK_OR_RETURN_ERROR(
+    options.set_option("coreai_expect_frequent_reshapes", true));
+```
+
 `coreai_share_multifunction_model` (bool, default `false`) makes the delegates of
 a multi-function export (`CoreAIPartitioner(multifunction=True)`) share one
 loaded Core AI model per process instead of each loading its own. Without it,
