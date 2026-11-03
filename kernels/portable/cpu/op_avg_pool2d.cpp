@@ -72,21 +72,21 @@ Tensor& avg_pool2d_out(
   static constexpr const char op_name[] = "avg_pool2d.out";
 
   ET_SWITCH_FLOATHBF16_TYPES_AND(Long, in_type, ctx, op_name, CTYPE, [&]() {
+    using ACC = typename executorch::runtime::
+        promote_types<CTYPE, CTYPE, /*half_to_float=*/true>::type;
     if (divisor_override.has_value()) {
       int64_t divisor = divisor_override.value();
       // If divisor_override is specified, then we don't need to use `count`
       // in the calculation. Simply sum x / divisor to get the output.
-      apply_kernel_2d_reduce_then_map_fn<CTYPE>(
-          [](const CTYPE in_val,
-             int64_t in_idx,
-             CTYPE accum,
-             int64_t accum_idx) {
+      apply_kernel_2d_reduce_then_map_fn<CTYPE, ACC>(
+          [](const CTYPE in_val, int64_t in_idx, ACC accum, int64_t accum_idx) {
             // Average pooling does not track indexes, so return 0 for
             // accum_idx
-            return std::tuple<CTYPE, int64_t>(in_val + accum, 0);
+            return std::tuple<ACC, int64_t>(
+                static_cast<ACC>(in_val) + accum, 0);
           },
-          [divisor](const int64_t count, const CTYPE accum) {
-            return accum / static_cast<CTYPE>(divisor);
+          [divisor](const int64_t count, const ACC accum) {
+            return static_cast<CTYPE>(accum / static_cast<ACC>(divisor));
           },
           count_include_pad,
           in,
@@ -96,17 +96,15 @@ Tensor& avg_pool2d_out(
           {},
           out);
     } else {
-      apply_kernel_2d_reduce_then_map_fn<CTYPE>(
-          [](const CTYPE in_val,
-             int64_t in_idx,
-             CTYPE accum,
-             int64_t accum_idx) {
+      apply_kernel_2d_reduce_then_map_fn<CTYPE, ACC>(
+          [](const CTYPE in_val, int64_t in_idx, ACC accum, int64_t accum_idx) {
             // Average pooling does not track indexes, so return 0 for
             // accum_idx
-            return std::tuple<CTYPE, int64_t>(in_val + accum, 0);
+            return std::tuple<ACC, int64_t>(
+                static_cast<ACC>(in_val) + accum, 0);
           },
-          [](const int64_t count, const CTYPE accum) {
-            return accum / static_cast<CTYPE>(count);
+          [](const int64_t count, const ACC accum) {
+            return static_cast<CTYPE>(accum / static_cast<ACC>(count));
           },
           count_include_pad,
           in,

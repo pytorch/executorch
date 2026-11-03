@@ -92,7 +92,9 @@ partitioner = CudaPartitioner([
 ```
 
 The name can have up to 200 ASCII letters, digits, `_`, `-` and `.`. It cannot start with `.` or `-`, cannot end with `.ptd`
-(the export adds it), and cannot be a Windows device name such as `NUL`. Load each program with its own data file:
+(the export adds it), and cannot be a Windows device name such as `NUL`. Windows and macOS usually treat names that differ
+only in case, such as `Encoder` and `encoder`, as the same file, so give programs that share a folder names that differ in
+more than case. Load each program with its own data file:
 
 ```python
 from executorch.runtime import Runtime
