@@ -45,6 +45,15 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
   PYTHON_EXECUTABLE=python3
 fi
 
+# OSDC runners may expose a read-only shared HF cache at /mnt/hf_cache.
+# Redirect hf downloads to a writable per-job cache before the first download.
+HF_CACHE_ROOT="${RUNNER_TEMP:-/tmp}/hf_cache"
+if [[ -z "${HF_HOME:-}" || "${HF_HOME}" == /mnt/hf_cache* ]]; then
+  export HF_HOME="${HF_CACHE_ROOT}"
+fi
+mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
+mkdir -p "${HF_HOME}"
+
 MODEL_OUT=model.pte
 
 
