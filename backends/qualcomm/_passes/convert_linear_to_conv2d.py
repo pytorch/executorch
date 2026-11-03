@@ -145,6 +145,7 @@ class ConvertLinearToConv2d(ExportPass):
         # The set tracks whether the weights associated with a linear node have been preprocessed,
         # and is used in cases where multiple linear nodes share the same weights.
         preprocessed_linear_weights_set = set()
+        calibrated_inputs = {}
 
         for node in graph.nodes:
             if node.target in {self.aten_linear_target, self.edge_linear_target}:
@@ -170,28 +171,34 @@ class ConvertLinearToConv2d(ExportPass):
                 # rank = 2: Reshape (dim, C) to (1, dim, C, 1), and permute to (1, C, 1, dim)
                 # rank = 3: Reshape (N, dim, C) to (N, dim, C, 1), and permute to (N, C, 1, dim)
                 # rank = 4: Permute (N, H, W, C) to (N, C, H, W)
-                if rank <= 3:
-                    shape = (
-                        (1, *input_meta_val.shape, 1)
-                        if rank == 2
-                        else (*input_meta_val.shape, 1)
-                    )
-                    cur_meta_val = cur_meta_val.reshape(shape)
-                    reshape_node = self._create_node(
+                # Linears reading the same input (q/k/v, gate/up) share one layout
+                # change: each extra copy is an op HTP runs.
+                if input_node in calibrated_inputs:
+                    permute_node, cur_meta_val = calibrated_inputs[input_node]
+                else:
+                    if rank <= 3:
+                        shape = (
+                            (1, *input_meta_val.shape, 1)
+                            if rank == 2
+                            else (*input_meta_val.shape, 1)
+                        )
+                        cur_meta_val = cur_meta_val.reshape(shape)
+                        reshape_node = self._create_node(
+                            graph_module,
+                            ops["view"],
+                            (input_node, shape),
+                            cur_meta_val,
+                        )
+
+                    order = (0, 3, 1, 2) if rank == 4 else (0, 2, 3, 1)
+                    cur_meta_val = cur_meta_val.permute(order)
+                    permute_node = self._create_node(
                         graph_module,
-                        ops["view"],
-                        (input_node, shape),
+                        ops["permute"],
+                        (reshape_node, order) if rank <= 3 else (input_node, order),
                         cur_meta_val,
                     )
-
-                order = (0, 3, 1, 2) if rank == 4 else (0, 2, 3, 1)
-                cur_meta_val = cur_meta_val.permute(order)
-                permute_node = self._create_node(
-                    graph_module,
-                    ops["permute"],
-                    (reshape_node, order) if rank <= 3 else (input_node, order),
-                    cur_meta_val,
-                )
+                    calibrated_inputs[input_node] = (permute_node, cur_meta_val)
 
                 # Step 2: reshape weight
                 if weight_placeholder_node.name not in preprocessed_linear_weights_set:

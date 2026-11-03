@@ -10,6 +10,17 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 oncall("executorch")
 
 fbcode_target(_kind = runtime.python_test,
+    name = "test_hf_static",
+    srcs = ["test_hf_static.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:hf_static",
+        "//executorch/exir:lib",
+        "//executorch/runtime:runtime",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
     name = "test_builder",
     srcs = ["test_builder.py"],
     deps = [
