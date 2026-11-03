@@ -139,9 +139,10 @@ def io_mismatches(
     """Return human-readable mismatch messages between coreai and edge I/O.
 
     Compares count, per-tensor dtype (all mapped types: floats and ints), rank,
-    and static (concrete) dims. Symbolic (dynamic) dims are skipped: coreai is
-    specialized to a concrete size while the edge dim stays symbolic.
+    and dimensions that are static (concrete) on both sides.
     """
+    from coreai._compiler.ir import ShapedType
+
     if len(coreai_io) != len(edge_io):
         return [
             f"{kind} count mismatch: .aimodel has {len(coreai_io)}, "
@@ -172,7 +173,11 @@ def io_mismatches(
             )
             continue
         for d, (cdim, edim) in enumerate(zip(cshape, eshape)):
-            if isinstance(edim, int) and cdim != edim:
+            if (
+                isinstance(edim, int)
+                and not ShapedType.is_dynamic_size(cdim)
+                and cdim != edim
+            ):
                 errors.append(
                     f"{kind} {i} dim {d}: static shape mismatch "
                     f"(.aimodel={cdim}, ExecuTorch={edim})"
