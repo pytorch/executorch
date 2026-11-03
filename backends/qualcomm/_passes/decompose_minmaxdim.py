@@ -6,13 +6,11 @@
 
 
 import operator
-from collections import Counter
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class DecomposeMinMaxDim(ExportPass):
@@ -54,56 +52,32 @@ class DecomposeMinMaxDim(ExportPass):
             self.max_dim: self.argmax,
         }
 
-        self.patterns = [
-            # Only index is used (e.g., _, idx = torch.min(x, dim=1))
-            {self.min_dim: 1, self.getitem: 1},
-            {self.max_dim: 1, self.getitem: 1},
-            # Both value and index are used (e.g., val, idx = torch.max(x, dim=1))
-            {self.min_dim: 1, self.getitem: 2},
-            {self.max_dim: 1, self.getitem: 2},
-        ]
-
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
-        partitions = get_source_partitions(graph, [torch.min, torch.max])
-        for _, src_partitions in partitions.items():
-            for partition in src_partitions:
-                if Counter([n.target for n in partition.nodes]) not in self.patterns:
-                    continue
-                binary_output_node = partition.nodes[0]
-
-                # Ensure the binary-output node has exactly 2 outputs
-                if len(binary_output_node.meta["val"]) != 2:
-                    continue
-
-                input_tensor = binary_output_node.args[0]
-                dim = binary_output_node.args[1]
-                keepdim = (
-                    binary_output_node.args[2]
-                    if len(binary_output_node.args) > 2
-                    else False
-                )
-
-                idx_node = next(
-                    (
-                        output_node
-                        for output_node in partition.output_nodes
-                        if output_node.meta["val"].dtype == torch.int64
-                    ),
-                    None,
-                )
-
-                if idx_node:
-                    with graph.inserting_before(idx_node):
-                        argmin_node = graph.create_node(
-                            "call_function",
-                            self.replace_table[binary_output_node.target],
-                            (input_tensor, dim, keepdim),
-                        )
-                        argmin_node.meta = idx_node.meta
-
-                    for user in list(idx_node.users):
-                        user.replace_input_with(idx_node, argmin_node)
+        # Match on the op rather than on source partitions: those need the
+        # `torch.min` / `torch.max` source_fn, which `Tensor.max` and graphs
+        # re-traced from a non-strict export do not carry.
+        for node in list(graph.nodes):
+            if node.target not in self.replace_table:
+                continue
+            idx_nodes = [
+                user
+                for user in node.users
+                if user.target == self.getitem and user.args[1] == 1
+            ]
+            if not idx_nodes:
+                continue
+            input_tensor, dim = node.args[0], node.args[1]
+            keepdim = node.args[2] if len(node.args) > 2 else False
+            for idx_node in idx_nodes:
+                with graph.inserting_before(idx_node):
+                    arg_node = graph.create_node(
+                        "call_function",
+                        self.replace_table[node.target],
+                        (input_tensor, dim, keepdim),
+                    )
+                    arg_node.meta = idx_node.meta
+                idx_node.replace_all_uses_with(arg_node)
 
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
