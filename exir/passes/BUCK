@@ -180,6 +180,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/operator:util",
         "//executorch/exir/passes:replace_aten_with_edge_pass",
+        ":insert_write_back_for_buffers_pass",
     ],
 )
 

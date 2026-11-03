@@ -34,7 +34,7 @@ from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
-from torch._export.verifier import Verifier
+from torch._export.verifier import SpecViolationError, Verifier
 from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
 from torch.fx.passes.infra.pass_manager import PassManager
@@ -336,6 +336,42 @@ class TestProgramManagers(unittest.TestCase):
             ep, compile_config=exir.EdgeCompileConfig(_check_ir_validity=False)
         )
         edge_manager.to_executorch()
+
+    def test_check_tensor_all(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                torch._check_tensor_all(x.abs() < 1e9)
+                return x * 2
+
+        to_edge(export(M(), (torch.randn(4),))).to_executorch()
+
+    def test_float_sym_max_min_rejected(self):
+        # The runtime's sym_max and sym_min kernels only take ints.
+        def model(sym_op):
+            class M(torch.nn.Module):
+                def forward(self, x, y):
+                    return x + sym_op(y.item(), 2)
+
+            return M()
+
+        for sym_op in (torch.sym_max, torch.sym_min):
+            to_edge(export(model(sym_op), (torch.ones(1), torch.tensor(3))))
+            with self.assertRaisesRegex(SpecViolationError, "only supports int"):
+                to_edge(export(model(sym_op), (torch.ones(1), torch.tensor(1.25))))
+
+        class Cond(torch.nn.Module):
+            def forward(self, pred, x, y):
+                return torch.cond(
+                    pred,
+                    lambda x, y: x + torch.sym_max(y.item(), 2),
+                    lambda x, y: x - y,
+                    (x, y),
+                )
+
+        with self.assertRaisesRegex(SpecViolationError, "only supports int"):
+            to_edge(
+                export(Cond(), (torch.tensor(True), torch.ones(1), torch.tensor(1.25)))
+            )
 
     def test_data_dependent(self):
         with torch.library._scoped_library("mylib", "FRAGMENT") as lib:

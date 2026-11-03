@@ -7,6 +7,7 @@
 import contextlib
 import hashlib
 import os
+import re
 import typing
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -168,7 +169,8 @@ class AotiBackend(ABC):
     def collect_unsupported_fallback_kernels(cls, missing_fallback_kernels: Set[str]):
         """
         Context manager to collect unsupported fallback kernels during compilation.
-        Monitors both extern kernel calls and runtime lookup.
+        Monitors extern kernel calls, runtime lookup, and the scatter and
+        index_put fallbacks, which call their kernels directly.
         """
         supported_kernels = cls.get_supported_fallback_kernels()
 
@@ -177,6 +179,10 @@ class AotiBackend(ABC):
         )
         original_generate_fallback_kernel_with_runtime_lookup_aot = (
             CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot
+        )
+        original_generate_scatter_fallback = CppWrapperCpu._generate_scatter_fallback
+        original_generate_index_put_fallback = (
+            CppWrapperCpu._generate_index_put_fallback
         )
 
         def generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels(
@@ -200,10 +206,36 @@ class AotiBackend(ABC):
                 self, op_overload, *args, **kwargs
             )
 
+        def collect_kernels_it_writes(original: Any) -> Any:
+            # These fallbacks write their shim call directly, so read the
+            # kernel names from the lines they write.
+            def generate_and_collect_unsupported_kernels(
+                self, *args: Any, **kwargs: Any
+            ) -> None:
+                lines: List[str] = []
+                writeline = self.writeline
+                self.writeline = lambda line: (lines.append(str(line)), writeline(line))
+                try:
+                    return original(self, *args, **kwargs)
+                finally:
+                    self.writeline = writeline
+                    for line in lines:
+                        for kernel in re.findall(r"\b(aoti_torch_\w+)\(", line):
+                            if kernel not in supported_kernels:
+                                missing_fallback_kernels.add(kernel)
+
+            return generate_and_collect_unsupported_kernels
+
         CppWrapperCpu.generate_c_shim_extern_kernel_call = (
             generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels
         )
         CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot = generate_fallback_kernel_with_runtime_lookup_aot_and_collect_unsupported_kernels
+        CppWrapperCpu._generate_scatter_fallback = collect_kernels_it_writes(
+            original_generate_scatter_fallback
+        )
+        CppWrapperCpu._generate_index_put_fallback = collect_kernels_it_writes(
+            original_generate_index_put_fallback
+        )
 
         try:
             yield
@@ -213,6 +245,12 @@ class AotiBackend(ABC):
             )
             CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot = (
                 original_generate_fallback_kernel_with_runtime_lookup_aot
+            )
+            CppWrapperCpu._generate_scatter_fallback = (
+                original_generate_scatter_fallback
+            )
+            CppWrapperCpu._generate_index_put_fallback = (
+                original_generate_index_put_fallback
             )
 
     @classmethod

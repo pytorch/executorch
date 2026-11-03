@@ -87,6 +87,7 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
+from executorch.backends.transforms.utils import reserve_node_names
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.program._program import (
@@ -100,6 +101,7 @@ from torch.fx.passes.infra.pass_manager import this_before_that_pass_constraint
 class QnnPassManager(PassManager):
 
     def _transform(self, graph_module: GraphModule):
+        reserve_node_names(graph_module)
         return self(graph_module).graph_module
 
     def _reset(self):
@@ -172,6 +174,8 @@ class QnnPassManager(PassManager):
         """Return annotation pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
             RemoveRedundancy,
+            # Retraced autocast regions may emit ops that the passes below decompose.
+            DecomposeWrapWithAutocast,
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
             ReplaceArangeArgs,
@@ -194,7 +198,6 @@ class QnnPassManager(PassManager):
             DecomposeTriu,
             DecomposeTrunc,
             DecomposeVar,
-            DecomposeWrapWithAutocast,
             DecomposeEinsum,
             DecomposeEmpty,
             DecomposeExpM1,
@@ -218,6 +221,7 @@ class QnnPassManager(PassManager):
     def get_export_passes(cls):
         """Return export pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
+            DecomposeWrapWithAutocast,
             ConvertComplexStft,
             DecomposeAsStrided,
             DecomposeBinaryAlpha,
@@ -239,7 +243,6 @@ class QnnPassManager(PassManager):
             # We keep div and floor operations in floating-point to maintain precision.
             # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
             DecomposeFloorDivide,
-            DecomposeWrapWithAutocast,
             ConvertSquareToPow,
             LiftConstantScalarOperands,
             InsertReshapeForReduceOps,

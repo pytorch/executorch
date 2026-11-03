@@ -6,6 +6,7 @@
  */
 
 #include <cinttypes>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -229,6 +230,8 @@ bool OpenvinoBackend::ensure_loaded() const {
     return;                                                           \
   }
 
+    LOAD_SYM(get_openvino_version, ov_get_openvino_version)
+    LOAD_SYM(version_free, ov_version_free)
     LOAD_SYM(core_create, ov_core_create)
     LOAD_SYM(core_free, ov_core_free)
     LOAD_SYM(core_get_available_devices, ov_core_get_available_devices)
@@ -254,6 +257,19 @@ bool OpenvinoBackend::ensure_loaded() const {
     LOAD_SYM(shape_free, ov_shape_free)
 
 #undef LOAD_SYM
+
+    // Before 2026.4, ov_core_import_model reads the blob through a stream, so
+    // the compiled model holds its own copy.
+    ov_version_t version = {};
+    int major = 0;
+    int minor = 0;
+    if (ov_.get_openvino_version(&version) == OV_STATUS_OK) {
+      if (version.buildNumber &&
+          std::sscanf(version.buildNumber, "%d.%d", &major, &minor) == 2) {
+        import_copies_blob_ = major < 2026 || (major == 2026 && minor < 4);
+      }
+      ov_.version_free(&version);
+    }
 
     loaded_ = true;
     ET_LOG(
@@ -333,7 +349,11 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
     return exr::Error::Internal;
   }
 
-  processed->Free();
+  // Since OpenVINO 2026.4 the compiled model can keep reading the blob, so it
+  // is then kept until ExecuTorch frees it after destroy().
+  if (import_copies_blob_) {
+    processed->Free();
+  }
 
   ov_infer_request_t* infer_request = nullptr;
   status =
