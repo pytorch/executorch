@@ -1,3 +1,4 @@
+import itertools
 import os
 import tempfile
 
@@ -25,22 +26,28 @@ class TestCopyOperator(BaseOpenvinoOpTest):
                 copy = self.copy(x)
                 return copy, torch.sin(copy)
 
+        clone = "dim_order_ops::_clone_dim_order"
         copies = {
-            "clone": lambda x: x.clone(),
-            "full slice": lambda x: x[:, :],
-            "clone of a clone": lambda x: x.clone().clone(),
+            "clone": (lambda x: x.clone(), clone, None),
+            "full slice": (lambda x: x[:, :], "aten::alias_copy", None),
+            "clone of a clone": (lambda x: x.clone().clone(), clone, None),
+            # LLM exports turn dim order off, which makes a clone aten.clone.
+            "clone, dim order off": (
+                lambda x: x.clone(),
+                "aten::clone",
+                EdgeCompileConfig(_skip_dim_order=True),
+            ),
         }
         inputs = (torch.randn(2, 3, 4, 5),)
-        for name, copy in copies.items():
+        for name, (copy, operator, config) in copies.items():
             with self.subTest(copy=name):
-                self.execute_layer_test(CopyAndSin(copy), inputs)
-
-        # LLM exports turn dim order off, which makes a clone aten.clone.
-        self.execute_layer_test(
-            CopyAndSin(lambda x: x.clone()),
-            inputs,
-            compile_config=EdgeCompileConfig(_skip_dim_order=True),
-        )
+                program = self.execute_layer_test(
+                    CopyAndSin(copy), inputs, compile_config=config
+                )
+                # On the CPU, preprocess would also give right values, so check
+                # where the copy runs.
+                operators = program.executorch_program.execution_plan[0].operators
+                self.assertIn(operator, [op.name for op in operators])
 
     def test_copy_of_input_used_inside(self):
         class ChannelsLastMean(torch.nn.Module):
@@ -178,9 +185,9 @@ class TestCopyOperator(BaseOpenvinoOpTest):
             "int64": lambda n: torch.randint(-100, 100, (n, 3)),
             "bool": lambda n: torch.randn(n, 3) > 0,
         }
-        dynamic_shapes = ({0: Dim("rows", min=1, max=4)},)
-        for name, make in inputs.items():
-            with self.subTest(dtype=name):
+        for (name, make), dynamic in itertools.product(inputs.items(), (False, True)):
+            dynamic_shapes = ({0: Dim("rows", min=1, max=4)},) if dynamic else None
+            with self.subTest(dtype=name, dynamic=dynamic):
                 x = make(4)
                 # Without a partitioner the copy cannot run on the CPU, so
                 # OpenVINO has to make it.
@@ -201,7 +208,7 @@ class TestCopyOperator(BaseOpenvinoOpTest):
                     loaded = Runtime.get().load_program(pte_path)
                     method = loaded.load_method("forward")
                     assert method is not None
-                    for value in (x, make(2)):
+                    for value in (x, make(2 if dynamic else 4)):
                         copy, flat = method.execute((value,))
                         torch.testing.assert_close(copy, value)
                         torch.testing.assert_close(flat, value.reshape(-1))
