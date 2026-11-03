@@ -35,6 +35,7 @@ from executorch.exir.backend.utils import (
 
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
 from executorch.extension.pybindings.portable_lib import (  # @manual
+    _get_registered_backend_names,
     _load_for_executorch_from_buffer,
 )
 from torch.export import export, ExportedProgram
@@ -454,6 +455,9 @@ class TestUtils(unittest.TestCase):
         sin, add, writer = "aten_sin_default", "aten_add_tensor", "aten_add_tensor_2"
         # Also the add that makes "out", and the add that reads the new value.
         whole = {sin, add, "aten_add_tensor_1", writer, "aten_add_tensor_3"}
+        has_demo_backend = (
+            BackendWithCompilerDemo.__name__ in _get_registered_backend_names()
+        )
         for read, returned, copy_input, tags, owned_by_program in (
             (True, False, False, dict.fromkeys(whole, "tag0"), False),
             (True, False, False, {sin: "tag0", add: "tag0", writer: "tag0"}, True),
@@ -491,7 +495,7 @@ class TestUtils(unittest.TestCase):
                     self.assertEqual(
                         get_non_lowered_nodes(lowered.exported_program().graph), []
                     )
-                if tags == {sin: "tag0"}:
+                if tags == {sin: "tag0"} and has_demo_backend:
                     eager = UpdateState(read, returned, copy_input)
                     module = _load_for_executorch_from_buffer(
                         lowered.to_executorch().buffer
@@ -501,6 +505,8 @@ class TestUtils(unittest.TestCase):
                         torch.testing.assert_close(
                             module.forward((x,))[0], eager(x), atol=1e-3, rtol=0
                         )
+        if not has_demo_backend:
+            self.skipTest("the runtime has no demo backend to run the lowered program")
 
     def test_to_backend_copies_a_constant_read_by_ops_in_two_places(self):
         class CatConst(torch.nn.Module):
