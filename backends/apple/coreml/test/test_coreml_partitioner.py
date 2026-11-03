@@ -17,6 +17,9 @@ import torchvision
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+from executorch.backends.apple.coreml.test.test_coreml_utils import (
+    IS_VALID_TEST_RUNTIME,
+)
 from executorch.exir.backend.utils import format_delegated_graph
 
 
@@ -568,6 +571,119 @@ class TestCoreMLPartitioner(unittest.TestCase):
             program = Runtime.get().load_program(edge.to_executorch().buffer)
             out = program.load_method("forward").execute((x,))[0]
             self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
+
+    def test_index_put_forms_coremltools_gets_wrong(self):
+        """
+        coremltools fails some forms of ``index_put``, such as
+        ``y[:, idx] = v`` with two entries in ``idx``, or writes them to the
+        wrong place, so the partitioner refuses those, and they run on the
+        portable backend.
+        """
+
+        class Scatter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("cols", torch.tensor([0, 2]))
+                self.register_buffer("col", torch.tensor([1]))
+                self.register_buffer("last", torch.tensor(3))
+                self.register_buffer("rows", torch.tensor([[1], [2]]))
+                self.register_buffer("flag", torch.tensor([2]))
+                self.register_buffer("rows_mask", torch.tensor([True, True, True]))
+                self.register_buffer("trio", torch.tensor([0, 2, 3]))
+                self.register_buffer("grid", torch.tensor([[1]]))
+                self.register_buffer("yes", torch.tensor([True]))
+                self.register_buffer("pair", torch.tensor([0, 1]))
+
+            def forward(self, x, a, b, c):
+                y = x * 2
+                y[:, self.cols] = a
+                y[:, self.grid] = a[:, :, None]
+                y[self.rows, self.cols] = b
+                # Same-shape indices without a slice stay in Core ML, also when
+                # a refused write reads the same index.
+                y[self.cols, self.cols] = a[:2, 0]
+                y[self.rows_mask, self.trio] = c
+                torch.ops.aten.index_put_(y, [None, self.col], a, True)
+                torch.ops.aten.index_put_(y, [None, self.last], c)
+                mask = y > 0.5
+                mask[:, self.flag] = a > 0.5
+                # Core ML would return this bool write as int32, and ~ would
+                # then read it wrong.
+                flags = x > 0.5
+                flags[self.pair, self.pair] = a[:2, 0] > 0.5
+                z = a * 2
+                z[:, self.yes] = c[:, None]
+                return y + mask + z + ~flags
+
+        class Scatter3d(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("last", torch.tensor(2))
+                self.register_buffer("mid", torch.tensor(1))
+                self.register_buffer("row", torch.tensor([1]))
+                self.register_buffer("col", torch.tensor([2]))
+
+            def forward(self, x, v):
+                y = x.clone()
+                torch.ops.aten.index_put_(y, [None, None, self.last], v)
+                # Values that vary only after the index stay in Core ML.
+                torch.ops.aten.index_put_(y, [None, self.mid], v[0] * torch.arange(3.0))
+                torch.ops.aten.index_put_(y, [None, self.row, self.col], v)
+                return y * 2
+
+        ios18 = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18
+        )
+        # Values that float16 holds exactly, so that the comparisons with 0.5
+        # in Core ML agree with eager.
+        scatter_inputs = tuple(
+            torch.rand(shape).half().float() for shape in ((3, 4), (3, 1), (2, 2), (3,))
+        )
+        scatter3d_inputs = (torch.rand(2, 2, 3), torch.rand(2, 1))
+        cases = [
+            (Scatter(), scatter_inputs, 9, None),
+            # From iOS 18 the bool write next to a slice stays in Core ML.
+            (Scatter(), scatter_inputs, 8, ios18),
+            (Scatter3d(), scatter3d_inputs, 2, None),
+        ]
+        for model, inputs, cpu_calls, compile_specs in cases:
+            with self.subTest(
+                model=type(model).__name__, ios18=compile_specs is not None
+            ):
+                ep = torch.export.export(model.eval(), inputs, strict=True)
+                edge = executorch.exir.to_edge_transform_and_lower(
+                    ep, partitioner=[CoreMLPartitioner(compile_specs=compile_specs)]
+                )
+                op_names = [
+                    n.target.__name__
+                    for n in edge.exported_program().graph.nodes
+                    if n.op == "call_function"
+                ]
+                self.assertIn("executorch_call_delegate", op_names)
+                self.assertEqual(op_names.count("aten.index_put.default"), cpu_calls)
+                # An iOS 18 program needs macOS 15 to run.
+                if _TEST_RUNTIME and (compile_specs is None or IS_VALID_TEST_RUNTIME):
+                    program = Runtime.get().load_program(edge.to_executorch().buffer)
+                    out = program.load_method("forward").execute(inputs)[0]
+                    self.assertTrue(torch.allclose(out, model(*inputs), atol=1e-2))
+        # With a batch size known only at run time, the write that stays in
+        # Core ML above goes to the CPU too.
+        batch = torch.export.Dim("batch", min=2, max=8)
+        ep = torch.export.export(
+            Scatter3d(),
+            scatter3d_inputs,
+            dynamic_shapes=({0: batch}, {0: batch}),
+            strict=True,
+        )
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertEqual(op_names.count("aten.index_put.default"), 3)
 
     def test_reduction_of_0d_tensor_is_skipped(self):
         """

@@ -26,6 +26,7 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import statically_known_true, sym_eq
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
@@ -249,18 +250,102 @@ def _is_min_max_of_bool(node: torch.fx.Node) -> bool:
     return isinstance(val, torch.Tensor) and val.dtype == torch.bool
 
 
+_INDEX_PUT_TARGETS = (
+    torch.ops.aten.index_put.default,
+    exir_ops.edge.aten.index_put.default,
+)
+
+
+# https://github.com/apple/coremltools/issues/2141 covers a bool index, which
+# coremltools 9.0 converts only on its own. No upstream issue covers the other
+# forms yet. For example, y[:, idx] = v with idx = torch.tensor([0, 2]) raises
+# "Input squeeze_0 has rank 1 != other inputs rank 0".
+def _index_put_refusal(
+    node: torch.fx.Node, minimum_deployment_target: Optional[ct.target]
+) -> Optional[str]:
+    """The form of an ``index_put`` that coremltools 9.0 cannot convert, such
+    as "with accumulate=True next to a slice", or None for any other node.
+
+    With a whole slice, such as ``y[:, idx] = v``, it writes ``v`` into the
+    part of ``y`` the indices select, keeping each indexed dim as size 1. That
+    needs ``accumulate=False``, int indices of shape ``()`` or ``(1,)``, a
+    static size in every other dim, and a non-bool ``y`` below iOS 18. For a
+    size known only at run time, it raises "Cannot add const". With a 0-d
+    index or several indices, torch lays out that part differently, so ``v``
+    may only vary in the dims after the last index. Without a whole slice,
+    several indices need the same shape and no bool mask, and a bool ``y``
+    comes back as int32. It raises or writes the wrong place for any other
+    form, such as ``idx`` with two entries, instead of reporting the op as
+    unsupported.
+    """
+    if node.target not in _INDEX_PUT_TARGETS:
+        return None
+    y, values = node.args[0].meta.get("val"), node.args[2].meta.get("val")
+    indices = [i if i is None else i.meta.get("val") for i in node.args[1]]
+    given = {dim: indices[dim] for dim, i in enumerate(node.args[1]) if i is not None}
+    # Export always sets val, so an index_put without it is left to coremltools.
+    if not given or not all(
+        isinstance(t, torch.Tensor) for t in (y, values, *given.values())
+    ):
+        return None
+    if len(given) == len(indices):
+        if y.dtype == torch.bool:
+            return "on a bool tensor without a slice"
+        if len(indices) > 1 and any(
+            index.dtype == torch.bool
+            or not statically_known_true(sym_eq(index.shape, indices[0].shape))
+            for index in indices
+        ):
+            return "with indices that differ in shape or include a bool mask"
+        return None
+    accumulate = (
+        node.args[3] if len(node.args) > 3 else node.kwargs.get("accumulate", False)
+    )
+    if accumulate:
+        return "with accumulate=True next to a slice"
+    if any(
+        index.dtype == torch.bool
+        or index.dim() > 1
+        or not statically_known_true(index.numel() == 1)
+        for index in given.values()
+    ):
+        return (
+            "with an index other than an int tensor of shape () or (1,) next to a slice"
+        )
+    selected = [1 if dim in given else size for dim, size in enumerate(y.shape)]
+    if any(isinstance(size, torch.SymInt) for size in selected):
+        return "with a size known only at run time next to a slice"
+    reorders = len(given) > 1 or any(index.dim() == 0 for index in given.values())
+    after = len(selected) - 1 - max(given)
+    if reorders and not all(
+        statically_known_true(v == 1)
+        for v in values.shape[: max(0, values.dim() - after)]
+    ):
+        return (
+            "with a 0-d index or several indices, and values that vary before "
+            "the last index"
+        )
+    if y.dtype == torch.bool and (
+        minimum_deployment_target is None or minimum_deployment_target < ct.target.iOS18
+    ):
+        return "on a bool tensor below minimum_deployment_target=ct.target.iOS18"
+    return None
+
+
 class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
     def __init__(
         self,
         skip_ops_for_coreml_delegation: Optional[List[str]] = None,
         lower_full_graph: bool = False,
         log: bool = False,
+        minimum_deployment_target: Optional[ct.target] = None,
     ) -> None:
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
         super().__init__()
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
         self.lower_full_graph = lower_full_graph
+        self.minimum_deployment_target = minimum_deployment_target
         self._logged_msgs = set()
         self._log = log
 
@@ -346,6 +431,14 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         if _is_min_max_of_bool(node):
             self.log_once(
                 f"{node.target} on bool tensors is not supported by CoreML.  "
+                "Overriding op support."
+            )
+            return True
+
+        refusal = _index_put_refusal(node, self.minimum_deployment_target)
+        if refusal is not None:
+            self.log_once(
+                f"{node.target} {refusal} is not supported by CoreML.  "
                 "Overriding op support."
             )
             return True
@@ -444,6 +537,11 @@ class CoreMLPartitioner(Partitioner):
         self.take_over_mutable_buffer = take_over_mutable_buffer
         self.lower_full_graph = lower_full_graph
         self.take_over_constant_data = take_over_constant_data
+        self._minimum_deployment_target = (
+            CoreMLBackend.min_deployment_target_from_compile_specs(
+                self.delegation_spec.compile_specs
+            )
+        )
         self._logged_msgs = set()
 
         if self.lower_full_graph:
@@ -500,6 +598,7 @@ class CoreMLPartitioner(Partitioner):
                 self.skip_ops_for_coreml_delegation,
                 self.lower_full_graph,
                 log=True,
+                minimum_deployment_target=self._minimum_deployment_target,
             ),
             allows_single_node_partition=True,
         )
@@ -539,6 +638,7 @@ class CoreMLPartitioner(Partitioner):
             self.skip_ops_for_coreml_delegation,
             self.lower_full_graph,
             log=False,
+            minimum_deployment_target=self._minimum_deployment_target,
         )
 
         # CoreML prevents certain ops (like triu) from lowering to CoreML when put in the ExecuTorch op namespace
