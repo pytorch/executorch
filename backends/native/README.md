@@ -145,6 +145,14 @@ an engine through the interfaces in `runtime/engine/Engine.h`:
 
 An engine rejects a method whose semantics it cannot fully honor.
 
+Engines need not match eager bit for bit: accumulation precision and order,
+fused multiply-add, and the accuracy of functions such as `exp` are up to each
+engine. As a guideline, an engine should round to nearest when it narrows a
+value for storage, with ties to even between floating-point types (f32 to f16 or
+bf16), as eager does. Rounding toward zero, which some GPU APIs allow, biases
+every stored value toward zero, and the bias compounds across layers instead of
+averaging out.
+
 | Engine | Source | Notes |
 | --- | --- | --- |
 | Vulkan | `runtime/vulkan/` | Builds on the ET-VK `ComputeGraph` and shaders. |
