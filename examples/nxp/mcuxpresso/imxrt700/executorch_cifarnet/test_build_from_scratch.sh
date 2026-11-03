@@ -6,6 +6,7 @@
 
 set -ue
 ARM_TOOLCHAIN_URL="${ARM_TOOLCHAIN_URL:-https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz}"
+MCUXSDK_MANIFEST_REV="${MCUXSDK_MANIFEST_REV:-v26.09.00}"
 
 # Get arm gcc
 echo Downloading ARM GCC toolchain
@@ -37,7 +38,11 @@ export NEUTRON_LIB_DIR=${NEUTRON_LIB_DIR}/target/imxrt700/rt700/cm33
 echo Downloading MCUXpresso SDK
 if [ ! -d mcuxpresso-sdk ]; then
     pip install west
-    west init -m https://github.com/nxp-mcuxpresso/mcuxsdk-manifests.git mcuxpresso-sdk
+    # Pin the manifest revision: its default branch tracks an unreleased SDK
+    # and has pointed at project revisions the remotes no longer serve, which
+    # makes west update fail for reasons unrelated to this repository.
+    west init -m https://github.com/nxp-mcuxpresso/mcuxsdk-manifests.git \
+        --mr "${MCUXSDK_MANIFEST_REV}" mcuxpresso-sdk
     pushd mcuxpresso-sdk
     west update_board --set board mimxrt700evk
     popd
