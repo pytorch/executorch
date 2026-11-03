@@ -1,8 +1,13 @@
 import torch
+from executorch.backends.openvino.preprocess import OpenvinoBackend
 from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
     BaseOpenvinoOpTest,
 )
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.backend_details import CompileSpec
+from executorch.runtime import Runtime
+from torch.export import export
 
 
 class TestCopyOperator(BaseOpenvinoOpTest):
@@ -90,3 +95,24 @@ class TestCopyOperator(BaseOpenvinoOpTest):
         # must run outside.
         operators = program.executorch_program.execution_plan[0].operators
         self.assertIn("dim_order_ops::_clone_dim_order", [op.name for op in operators])
+
+    def test_whole_program_returning_copy_of_input(self):
+        class CopyAndSin(torch.nn.Module):
+            def forward(self, x):
+                copy = x.clone()
+                return copy, torch.sin(copy)
+
+        x = torch.randn(2, 3, 4, 5)
+        # Without a partitioner the copy cannot run on the CPU, so OpenVINO
+        # has to make it.
+        lowered = to_backend(
+            OpenvinoBackend.__name__,
+            to_edge(export(CopyAndSin(), (x,))).exported_program(),
+            [CompileSpec("device", self.device.encode())],
+        )
+        program = Runtime.get().load_program(lowered.buffer())
+        method = program.load_method("forward")
+        assert method is not None
+        torch.testing.assert_close(
+            method.execute((x,)), [x, torch.sin(x)], atol=self.atol, rtol=self.rtol
+        )
