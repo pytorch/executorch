@@ -362,10 +362,11 @@ TOSA_EXT_SHAPE_SupportList: Final[Set] = {
     operator.floordiv,
 }
 
-# Operators that delegate with an int64 operand when the int64 extension is
-# enabled. Each lowers to TOSA operators that EXT-INT64 defines for i64. An
-# absent operator narrows to int32 the way it does without the extension.
-TOSA_EXT_INT64_SupportList: Final[Set] = {
+# Operators that delegate with an int64 operand under PRO-INT with EXT-INT64.
+# Each lowers to TOSA operators that EXT-INT64 defines for i64 under PRO-INT.
+# The list is not exhaustive. An absent operator narrows to int32 the way it
+# does without the extension.
+TOSA_PRO_INT_EXT_INT64_SupportList: Final[Set] = {
     exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     exir_ops.edge.aten.abs.default,
     exir_ops.edge.aten.add.Tensor,
@@ -394,9 +395,9 @@ TOSA_EXT_INT64_SupportList: Final[Set] = {
 
 __all__ = [
     "TOSA_EXT_CONTROL_FLOW_SupportList",
-    "TOSA_EXT_INT64_SupportList",
     "TOSA_EXT_MXFP_SupportList",
     "TOSA_EXT_SHAPE_SupportList",
+    "TOSA_PRO_INT_EXT_INT64_SupportList",
     "TOSA_PRO_INT_SupportList",
     "TOSA_PRO_MIXED_INT_SupportList",
     "TOSA_PRO_FP_SupportList",

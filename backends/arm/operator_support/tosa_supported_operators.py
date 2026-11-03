@@ -67,10 +67,10 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
 )
 from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
     TOSA_EXT_CONTROL_FLOW_SupportList,
-    TOSA_EXT_INT64_SupportList,
     TOSA_EXT_MXFP_SupportList,
     TOSA_EXT_SHAPE_SupportList,
     TOSA_PRO_FP_SupportList,
+    TOSA_PRO_INT_EXT_INT64_SupportList,
     TOSA_PRO_INT_SupportList,
     TOSA_PRO_MIXED_INT_SupportList,
 )
@@ -1207,13 +1207,13 @@ class CheckProperQuantization(OperatorSupportBase):
 
 
 def _int64_operands_agree(node: fx.Node) -> bool:
-    """Whether int64 operands appear only beside other int64 operands."""
+    """Whether every operand beside an int64 operand casts to int64."""
     dtypes = {
         arg.meta["val"].dtype
         for arg in node.all_input_nodes
         if isinstance(arg.meta.get("val"), torch.Tensor)
     }
-    return torch.int64 not in dtypes or dtypes == {torch.int64}
+    return torch.int64 not in dtypes or dtypes <= {torch.int64, torch.int32, torch.bool}
 
 
 class CheckInt64InputsAndOutputs(OperatorSupportBase):
@@ -1444,7 +1444,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         if (
             self.tosa_spec.support_integer()
             and self.tosa_spec.support_extension("int64")
-            and node.target in TOSA_EXT_INT64_SupportList
+            and node.target in TOSA_PRO_INT_EXT_INT64_SupportList
             and _int64_operands_agree(node)
         ):
             return True

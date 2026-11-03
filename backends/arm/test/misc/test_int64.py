@@ -124,6 +124,7 @@ class Int64Op(torch.nn.Module):
 _WIDE = torch.tensor([2**40, -(2**38), 2**31, -1], dtype=torch.int64)
 _WIDE_2 = torch.tensor([2**39, 2**37, 1, -(2**40)], dtype=torch.int64)
 _NARROW = torch.tensor([1, 2, 3, 4], dtype=torch.int32)
+_BYTES = torch.tensor([1, 2, 3, 4], dtype=torch.int8)
 _COND = torch.tensor([True, False, True, False])
 _FLAGS = torch.tensor([False, True, True, False])
 
@@ -137,15 +138,17 @@ class Int64BufferWhere(torch.nn.Module):
         return torch.where(cond, x, self.wide)
 
 
-# A listed operator on matched int64 operands delegates; an unlisted operator or
-# a pair mixing widths falls back instead.
+# A listed operator delegates when every operand casts to int64; an unlisted
+# operator or an operand narrower than int32 falls back instead.
 int64_extension_partition_suite = {
     "add": (lambda x, y: x + y, (_WIDE, _WIDE_2), 1),
     "pad": (lambda x: torch.nn.functional.pad(x, (1, 1)), (_WIDE,), 1),
     "cumsum": (lambda x: torch.cumsum(x, 0), (_WIDE,), 0),
-    "cat_narrow": (lambda x, y: torch.cat([x, y]), (_WIDE, _NARROW), 0),
+    "cat_narrow": (lambda x, y: torch.cat([x, y]), (_WIDE, _NARROW), 1),
+    "or_narrow": (torch.bitwise_or, (_WIDE, _NARROW), 1),
+    "cat_byte": (lambda x, y: torch.cat([x, y]), (_WIDE, _BYTES), 0),
     "eq_bool": (lambda x, y: x == y, (_WIDE, _FLAGS), 0),
-    "cat_bool": (lambda x, y: torch.cat([x, y]), (_FLAGS, _WIDE), 0),
+    "cat_bool": (lambda x, y: torch.cat([x, y]), (_FLAGS, _WIDE), 1),
     "where": (torch.where, (_COND, _WIDE, _WIDE_2), 0),
     "where_buffer": (Int64BufferWhere(), (_COND, _WIDE_2), 0),
     "strided_slice": (lambda x: x[::2], (torch.arange(5, dtype=torch.int64),), 0),
