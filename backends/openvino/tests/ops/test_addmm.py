@@ -45,14 +45,30 @@ class TestAddMMOperator(BaseOpenvinoOpTest):
         self.atol = self.rtol = 1e-4
         sample_input = tuple(torch.randn(256, 256) for _ in range(3))
         self.execute_layer_test(self.create_model(), sample_input)
-        # On x86 only the runtime passes the precision on, so this fails if it
-        # drops an explicit one.
+        # On x86 OpenVINO applies only the precision it gets at load, so this
+        # fails if the runtime drops an explicit one.
+        bf16 = CompileSpec("inference_precision", b"bf16")
         with self.assertRaisesRegex(AssertionError, "ref_output"):
             self.execute_layer_test(
-                self.create_model(),
-                sample_input,
-                compile_specs=(CompileSpec("inference_precision", b"bf16"),),
+                self.create_model(), sample_input, compile_specs=(bf16,)
             )
+        # The last value wins, as in lowering, and an empty one is the default.
+        self.execute_layer_test(
+            self.create_model(),
+            sample_input,
+            compile_specs=(bf16, CompileSpec("inference_precision", b"")),
+        )
+
+    def test_addmm_takes_the_last_inference_precision(self):
+        # Lowering keeps only the last value. The runtime must too, or it fails
+        # to load this invalid first one, on any device.
+        compile_specs = tuple(
+            CompileSpec("inference_precision", value) for value in (b"f7", b"")
+        )
+        sample_input = tuple(torch.randn(4, 4) for _ in range(3))
+        self.execute_layer_test(
+            self.create_model(), sample_input, compile_specs=compile_specs
+        )
 
     def test_addmm_passes_the_precision_to_openvino(self):
         if not self.device.startswith("CPU"):
