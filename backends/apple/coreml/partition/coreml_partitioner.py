@@ -367,7 +367,9 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             return True
         return False
 
-    def should_override_support(self, node) -> bool:
+    def override_reason(self, node) -> Optional[str]:
+        """Why CoreML cannot take node, even when coremltools converts its op."""
+        name = getattr(node.target, "__name__", node.target)
         # https://github.com/apple/coremltools/issues/2573
         if (
             node.target
@@ -380,20 +382,14 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             and "alpha" in node.kwargs
             and node.kwargs["alpha"] != 1
         ):
-            self.log_once(
-                "torch.ops.aten.{sub, add}.Tensor with alpha != 1 is not supported by CoreML.  Overriding support."
-            )
-            return True
+            return "torch.ops.aten.{sub, add}.Tensor with alpha != 1 is not supported by CoreML."
 
         # Ops that are unsupported by CoreML purely on the basis of their
         # target — no per-arg conditions to check.  Grouped by upstream issue
         # so the comment trail still points at the underlying coremltools /
         # executorch bug for each entry.
         if node.target in _UNSUPPORTED_OP_TARGETS:
-            self.log_once(
-                f"{node.target} is not supported by CoreML.  Overriding op support."
-            )
-            return True
+            return f"{name} is not supported by CoreML."
 
         if _touches_unsupported_high_rank_tensor(
             node,
@@ -401,47 +397,26 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
                 getattr(n.target, "__name__", "").lower()
             ),
         ):
-            self.log_once(
-                f"{node.target} on a tensor above rank 5 is not supported by "
-                "CoreML.  Overriding op support."
-            )
-            return True
+            return f"{name} on a tensor above rank 5 is not supported by CoreML."
 
         if _is_arg_min_max_over_flattened_input(node):
-            self.log_once(
+            return (
                 "torch.ops.aten.{argmax, argmin}.default with dim=None is "
-                "not supported by CoreML.  Overriding op support."
+                "not supported by CoreML."
             )
-            return True
 
         if _reduces_0d_tensor(node):
-            self.log_once(
-                f"{node.target} of a 0-d tensor is not supported by CoreML.  "
-                "Overriding op support."
-            )
-            return True
+            return f"{name} of a 0-d tensor is not supported by CoreML."
 
         if _reads_or_produces_bfloat16(node):
-            self.log_once(
-                f"{node.target} on a bfloat16 tensor is not supported by CoreML.  "
-                "Overriding op support."
-            )
-            return True
+            return f"{name} on a bfloat16 tensor is not supported by CoreML."
 
         if _is_min_max_of_bool(node):
-            self.log_once(
-                f"{node.target} on bool tensors is not supported by CoreML.  "
-                "Overriding op support."
-            )
-            return True
+            return f"{name} on bool tensors is not supported by CoreML."
 
         refusal = _index_put_refusal(node, self.minimum_deployment_target)
         if refusal is not None:
-            self.log_once(
-                f"{node.target} {refusal} is not supported by CoreML.  "
-                "Overriding op support."
-            )
-            return True
+            return f"{name} {refusal} is not supported by CoreML."
 
         # TODO: enable this after bugs in ExecuTorch's partitioner are fixed
         # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
@@ -460,7 +435,7 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         #     )
         #     return True
 
-        return False
+        return None
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         # get_attr node can always be supported on any backend
@@ -478,13 +453,20 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             is_supported = ct.converters.mil.frontend.torch.is_torch_fx_node_supported(
                 node
             )
-            if self.should_override_support(node):
+            reason = self.override_reason(node) if is_supported else None
+            if reason is not None:
+                self.log_once(f"{reason}  Overriding op support.")
                 is_supported = False
 
             if not is_supported:
                 if self.lower_full_graph:
+                    unsupported = (
+                        f"CoreML does not support the op {node_target_name}"
+                        if reason is None
+                        else reason.rstrip(".")
+                    )
                     raise NotImplementedError(
-                        f"""CoreML does not support the op {node_target_name}, but you have set lower_full_graph=True in the CoreMLPartitioner.
+                        f"""{unsupported}, but you have set lower_full_graph=True in the CoreMLPartitioner.
 
 Please set lower_full_graph=False in the CoreMLPartitioner to allow running unsupported ops outside of CoreML.  Note that setting lower_full_graph=False may affect performance of CoreML and the available features.
 As an alternative to setting lower_full_graph=False, you can try rewriting your model to avoid using this op.
