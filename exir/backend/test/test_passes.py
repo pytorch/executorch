@@ -34,12 +34,22 @@ class TestPasses(unittest.TestCase):
         )
 
         const_nodes = [
-            node.name
+            node
             for node in edge.exported_program().graph.nodes
             if node.op == "placeholder" and is_buffer(edge.exported_program(), node)
         ]
+        # Users in one program share the original.
+        self.assertEqual(
+            duplicate_constant_node(edge.exported_program(), const_nodes[0].name),
+            set(),
+        )
+        # A copy is made for a user in another delegate.
+        for i, user in enumerate(const_nodes[0].users):
+            user.meta["delegation_tag"] = f"tag{i}"
 
-        copied_nodes = duplicate_constant_node(edge.exported_program(), const_nodes[0])
+        copied_nodes = duplicate_constant_node(
+            edge.exported_program(), const_nodes[0].name
+        )
         self.assertEqual(len(copied_nodes), 1)
 
         # Check that the new constant node is in the graph
@@ -76,6 +86,9 @@ class TestPasses(unittest.TestCase):
         user = users[1]
         user.args = tuple(a for a in user.args if a is not buffer_node)
         user.kwargs = {"other": buffer_node}
+        # A copy is made for a user in another delegate.
+        for i, u in enumerate(users):
+            u.meta["delegation_tag"] = f"tag{i}"
 
         # Patch validation since we modified the graph
         edge.exported_program()._validate = lambda: None

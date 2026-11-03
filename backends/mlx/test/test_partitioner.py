@@ -22,6 +22,7 @@ from executorch.backends.mlx.test.test_utils import get_mlx_node_counts
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.runtime import Runtime
 from torch.export import export
+from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 
 
 class TestMLXPartitionerRejectsToEdge(unittest.TestCase):
@@ -352,6 +353,35 @@ class TestMLXPartitionerSharedConstants(unittest.TestCase):
         _, delegates, err = _run(SharedLinear().eval(), (torch.randn(2, 4),))
         self.assertGreater(delegates, 1)
         self.assertLess(err, 1e-5)
+
+    def test_second_placeholder_for_one_constant_raises(self):
+        class TwoReads(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("c", torch.randn(4))
+
+            def forward(self, x):
+                return x + self.c, x * self.c
+
+        ep = export(TwoReads(), (torch.randn(4),), strict=False)
+        original = next(n for n in ep.graph.nodes if n.name == "b_c")
+        with ep.graph.inserting_after(original):
+            second = ep.graph.placeholder("b_c_second")
+        second.meta = dict(original.meta)
+        mul = next(n for n in ep.graph.nodes if n.target == torch.ops.aten.mul.Tensor)
+        mul.replace_input_with(original, second)
+        ep.graph_signature.input_specs.insert(
+            1, InputSpec(InputKind.BUFFER, TensorArgument("b_c_second"), "c", True)
+        )
+
+        for check_only in (True, False):
+            with self.subTest(check_only=check_only):
+                builder = MLXProgramBuilder(ep)
+                with self.assertRaisesRegex(ValueError, "more than one placeholder"):
+                    if check_only:
+                        builder.check_support_only()
+                    else:
+                        builder.build()
 
 
 class TestMLXPartitionerGroupedKeys(unittest.TestCase):

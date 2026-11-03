@@ -520,21 +520,21 @@ class MLXProgramBuilder:
             else:
                 raise NotImplementedError(f"Support for input {arg} is not implemented")
 
-        target_to_constant_slot = {}
+        constant_targets = set()
         for node in self.ep.graph.nodes:
             if node.op == "placeholder":
                 if node.users == {}:
                     continue
                 if node.name in constant_tensors:
-                    # A constant shared with other partitions is duplicated once per
-                    # user, so several placeholders here can name the same target.
+                    # Constant data is named by target, so a second slot would get none.
                     target = constant_tensors[node.name]
-                    if target in target_to_constant_slot:
-                        self.set_slot(node, target_to_constant_slot[target])
-                    else:
-                        target_to_constant_slot[target] = self.make_or_get_slot(
-                            node, id_space=IdSpace.Constant
+                    if target in constant_targets:
+                        raise ValueError(
+                            f"constant '{target}' has more than one placeholder, "
+                            f"'{node.name}' is a second one"
                         )
+                    constant_targets.add(target)
+                    self.make_or_get_slot(node, id_space=IdSpace.Constant)
                 elif node.name in user_inputs:
                     val = node.meta.get("val", None)
                     if isinstance(val, torch.Tensor) and not val.is_contiguous():

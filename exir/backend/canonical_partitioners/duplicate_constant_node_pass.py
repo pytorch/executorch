@@ -6,7 +6,7 @@
 
 import copy
 import logging
-from typing import Optional, Set
+from typing import Dict, List, Optional, Set
 
 import torch
 from torch._export.utils import get_buffer, get_lifted_tensor_constant, get_param
@@ -33,6 +33,23 @@ def _get_attribute_or_constants(
     return constant_or_attribute
 
 
+def _users_reading_a_copy(node: torch.fx.Node) -> List[List[torch.fx.Node]]:
+    """
+    The users of node that read a copy of it, in groups that share one. The
+    users with the same delegation tag, or with none, form a group, so each
+    program takes a constant once: for example, a program that lists the
+    same lifted constant twice fails to unlift. The group with the graph
+    output keeps the original, which the output specs name, and otherwise
+    the first group does.
+    """
+    groups: Dict[Optional[str], List[torch.fx.Node]] = {}
+    for user in node.users:
+        groups.setdefault(user.meta.get("delegation_tag"), []).append(user)
+    output = any(user.op == "output" for user in node.users)
+    keeper = None if output else next(iter(groups), None)
+    return [users for tag, users in groups.items() if tag != keeper]
+
+
 # TODO: add other passes to duplicate call_function nodes
 def duplicate_constant_node(
     exported_program: ExportedProgram, candidate_node: str
@@ -41,6 +58,8 @@ def duplicate_constant_node(
     A pass to duplicate the attributes/constants node (the candidate_node) in the graph. Mostly used for duplicating light-weight data.
     If the data is too large, try tag it with "no_copy" to prevent high memory usage and make it as part of the output.
     A mutated buffer is never copied, because a copy would not see its updates: this raises instead.
+    Users with the same delegation tag, or with none, share one placeholder, so tag the
+    users before calling it: on a graph without tags it makes no copies.
 
     Args:
         exported_program: the exported program to be modified. If constants nodes are copied, they will be added as new
@@ -87,12 +106,7 @@ def duplicate_constant_node(
                     "that reads or writes it has the same tag, as "
                     "tag_mutated_buffer does, or leave it untagged."
                 )
-            # The graph output keeps the original, which the output specs
-            # name, so then every other user reads a copy.
-            users = [user for user in node.users if user.op != "output"]
-            if len(users) == len(node.users):
-                users = users[1:]
-            for ith, user in enumerate(users):
+            for ith, group in enumerate(_users_reading_a_copy(node)):
                 copy_constant_or_attribute_fqn = node.name + f"_copy_{ith}"
                 with exported_program.graph.inserting_before(
                     constant_or_attribute_node
@@ -113,10 +127,11 @@ def duplicate_constant_node(
                     )
                     # This also reaches a constant that an op such as cat or
                     # index_put reads from a list.
-                    user.replace_input_with(
-                        constant_or_attribute_node,
-                        copied_constant_or_attribute_node,
-                    )
+                    for user in group:
+                        user.replace_input_with(
+                            constant_or_attribute_node,
+                            copied_constant_or_attribute_node,
+                        )
                     # The copy keeps the original target, so it reads the
                     # original tensor and needs no data of its own.
                     new_input_specs.append(

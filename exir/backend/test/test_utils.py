@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import itertools
 import unittest
 
 import torch
@@ -34,6 +35,7 @@ from executorch.exir.backend.utils import (
 )
 
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
+from executorch.exir.lowered_backend_module import get_lowered_backend_modules
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _get_registered_backend_names,
     _load_for_executorch_from_buffer,
@@ -559,3 +561,90 @@ class TestUtils(unittest.TestCase):
                         program.graph.output_node().args[0][-1].name, "b_const"
                     )
                 lowered.to_executorch()
+
+    def test_to_backend_gives_each_program_one_copy_of_a_shared_constant(self):
+        class UseConst(torch.nn.Module):
+            def __init__(self, cpu_first, kind="constant"):
+                super().__init__()
+                const = torch.ones(2)
+                if kind == "buffer":
+                    self.register_buffer("const", const)
+                else:
+                    # A plain tensor attribute is lifted as a constant tensor.
+                    self.const = (
+                        torch.nn.Parameter(const) if kind == "parameter" else const
+                    )
+                self.cpu_first = cpu_first
+
+            def forward(self, x):
+                if self.cpu_first:
+                    s, c = torch.sin(self.const), torch.cos(self.const)
+                y = (x + self.const) * self.const
+                z = (x - self.const) / self.const
+                if not self.cpu_first:
+                    s, c = torch.sin(self.const), torch.cos(self.const)
+                return y, z, s, c
+
+        class TagNodes(Partitioner):
+            def __init__(self, tags):
+                super().__init__()
+                self.tags = tags
+
+            def partition(self, program: ExportedProgram) -> PartitionResult:
+                for node in program.graph.nodes:
+                    if node.name in self.tags:
+                        node.meta["delegation_tag"] = self.tags[node.name]
+                tag_constant_data(program)
+                return PartitionResult(
+                    tagged_exported_program=program,
+                    partition_tags=dict.fromkeys(
+                        self.tags.values(),
+                        DelegationSpec(ExecutorBackend.__name__, []),
+                    ),
+                )
+
+        def counts(program):
+            programs = [program] + [
+                module.original_module
+                for module in get_lowered_backend_modules(program.graph_module)
+            ]
+            return [
+                [spec.target for spec in p.graph_signature.input_specs].count("const")
+                for p in programs
+            ]
+
+        # Each delegate reads the constant twice, and sin and cos read it
+        # outside of them. Each program takes it once, whichever reads first.
+        for kind, cpu_first in itertools.product(
+            ("constant", "buffer", "parameter"), (False, True)
+        ):
+            with self.subTest(kind=kind, cpu_first=cpu_first):
+                lowered = to_edge(
+                    export(UseConst(cpu_first, kind), (torch.ones(2),), strict=True)
+                )
+                lowered = lowered.to_backend(
+                    TagNodes({"aten_add_tensor": "tag0", "aten_mul_tensor": "tag0"})
+                )
+                self.assertEqual(counts(lowered.exported_program()), [1, 1])
+                lowered.exported_program().module()
+                lowered = lowered.to_backend(
+                    TagNodes({"aten_sub_tensor": "tag1", "aten_div_tensor": "tag1"})
+                )
+                self.assertEqual(counts(lowered.exported_program()), [1, 1, 1])
+                lowered.to_executorch()
+
+        # One partitioner takes both delegates, so one call copies it twice.
+        with self.subTest(one_partitioner=True):
+            lowered = to_edge(export(UseConst(False), (torch.ones(2),), strict=True))
+            lowered = lowered.to_backend(
+                TagNodes(
+                    {
+                        "aten_add_tensor": "tag0",
+                        "aten_mul_tensor": "tag0",
+                        "aten_sub_tensor": "tag1",
+                        "aten_div_tensor": "tag1",
+                    }
+                )
+            )
+            self.assertEqual(counts(lowered.exported_program()), [1, 1, 1])
+            lowered.to_executorch()
