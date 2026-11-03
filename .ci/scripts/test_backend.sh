@@ -157,7 +157,15 @@ EXIT_CODE=0
 # a step that size, taking the whole job down before pytest can report. The
 # reason for each failure is in its exception message and traceback, which are
 # unaffected.
-PYTEST_ARGS=(-c /dev/null -n auto --show-capture=no)
+# faulthandler_timeout is pytest's built-in stack dumper, so this adds no
+# dependency and fails nothing: after 15 minutes in one test case it prints
+# every thread's traceback and the case keeps running. A case that wedges
+# otherwise leaves no trace at all - the job is cancelled at the job cap, the
+# JSON report below is never written, and the artifact upload fails - which is
+# how (coreml, models) spent a month at the 180 minute cap with no one able to
+# say which model was stuck or where. Raise the value if a legitimate case ever
+# runs this long.
+PYTEST_ARGS=(-c /dev/null -o faulthandler_timeout=900 -n auto --show-capture=no)
 if [[ ${#PYTEST_RETRY_ARGS[@]} -gt 0 ]]; then
     PYTEST_ARGS+=("${PYTEST_RETRY_ARGS[@]}")
 fi
