@@ -7,7 +7,6 @@
 #include <executorch/backends/vulkan/test/ops/benchmark/cases/q8ta/pixel_shuffle/pixel_shuffle.h>
 
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace executorch {
@@ -17,15 +16,9 @@ namespace q8ta_pixel_shuffle {
 
 namespace {
 
-// All (in_layout, out_layout) pairs across the channels-packed int8 family.
-// CONV2D is a Python-level alias that resolves to 4C1W at the C++ runtime, so
-// it is not listed separately -- it would just re-run the 4C1W kernel path.
-const std::vector<std::pair<std::string, std::string>> kLayoutPairs = {
-    {"4W4C", "4W4C"},
-    {"4W4C", "4C1W"},
-    {"4C1W", "4W4C"},
-    {"4C1W", "4C1W"},
-};
+// Channels-packed int8 layouts. CONV2D is a Python-level alias that resolves to
+// 4C or 4C1W at the C++ runtime, so it is not listed separately.
+const std::vector<std::string> kLayouts = {"4W4C", "4C", "4C1W"};
 
 std::vector<TestCase> generate_test_cases(
     const std::vector<std::vector<int64_t>>& in_shapes,
@@ -36,16 +29,18 @@ std::vector<TestCase> generate_test_cases(
 
   for (const auto& shape : in_shapes) {
     for (bool same_qp : same_qparams) {
-      for (const auto& layouts : kLayoutPairs) {
-        PixelShuffleConfig cfg;
-        cfg.in_shape = shape;
-        cfg.upscale_factor = upscale_factor;
-        cfg.same_qparams = same_qp;
-        cfg.in_layout = layouts.first;
-        cfg.out_layout = layouts.second;
-        cfg.test_case_name = test_case_name;
+      for (const std::string& in_layout : kLayouts) {
+        for (const std::string& out_layout : kLayouts) {
+          PixelShuffleConfig cfg;
+          cfg.in_shape = shape;
+          cfg.upscale_factor = upscale_factor;
+          cfg.same_qparams = same_qp;
+          cfg.in_layout = in_layout;
+          cfg.out_layout = out_layout;
+          cfg.test_case_name = test_case_name;
 
-        test_cases.push_back(create_test_case_from_config(cfg));
+          test_cases.push_back(create_test_case_from_config(cfg));
+        }
       }
     }
   }
@@ -64,6 +59,8 @@ REGISTER_TEST_CASE_SET("q8ta/pixel_shuffle", "correctness") {
       {1, 24, 8, 4}, // out: [1, 6, 16, 8]
       {1, 32, 12, 8}, // out: [1, 8, 24, 16]
       {1, 96, 16, 9}, // out: [1, 24, 32, 18] - first model shape
+      {1, 4, 5, 7}, // out: [1, 1, 10, 14] - 3 padding channel lanes
+      {2, 32, 6, 5}, // out: [2, 8, 12, 10] - batch > 1
   };
   const std::vector<bool> same_qparams = {true, false};
   return {
@@ -82,6 +79,12 @@ REGISTER_TEST_CASE_SET("q8ta/pixel_shuffle", "performance") {
       {1, 96, 32, 18},
       {1, 96, 64, 36},
       {1, 96, 128, 72},
+      // Upsampling decoder with 64 output channels.
+      {1, 256, 16, 16},
+      {1, 256, 32, 32},
+      {1, 256, 64, 64},
+      {1, 256, 128, 128},
+      {1, 256, 256, 256},
   };
   const std::vector<bool> same_qparams = {true}; // residual-style: scales match
   return {
