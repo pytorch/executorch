@@ -89,13 +89,22 @@ def _remove_copies_of_inputs(
     output and can overwrite the input with the output buffer's old contents.
     Copies used only inside the partition stay, because OpenVINO reads every
     input in the default dim order, which a copy left out could have changed.
-    Copies of constants stay too, since constants are not partition inputs.
+    A copy of a constant only this partition reads stays too, since such a
+    constant is not a partition input, unless OpenVINO would write the copy in
+    the wrong dim order: it writes every output in the default one. Like any
+    input, a copy left out that is not in the default dim order is still read
+    wrong by the ops that use it inside.
     """
 
     def copies_input(node: torch.fx.Node) -> bool:
+        copy = node
         while (source := _copy_source(node)) is not None:
             if source not in partition.nodes:
-                return source not in constants
+                return not (
+                    source in constants
+                    and all(user in partition.nodes for user in source.users)
+                    and copy.meta["val"].is_contiguous()
+                )
             node = source
         return False
 
