@@ -6,6 +6,7 @@
 
 import contextlib
 import os
+import tempfile
 import threading
 import unittest
 from typing import Tuple
