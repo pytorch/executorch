@@ -67,6 +67,7 @@ def main() -> None:
         prompt = "abc"
         unreachable_eos_id = config.vocab_size
         tokens = [config.bos_token_id, *prompt.encode()]
+        expected_logits = model(torch.tensor([tokens]), use_cache=False).logits[0, -1]
         expected = []
         # Recompute the full prefix without a cache for an independent reference.
         for _ in range(max_new_tokens):
@@ -75,6 +76,7 @@ def main() -> None:
             expected.append(token)
             tokens.append(token)
 
+        logits_dump = root / "first_logits.bin"
         result = subprocess.run(
             [
                 str(args.runner.resolve()),
@@ -87,6 +89,7 @@ def main() -> None:
                 f"--max_new_tokens={max_new_tokens}",
                 f"--max_seq_length={max_seq_length}",
                 "--print_token_ids",
+                f"--dump_first_logits={logits_dump}",
             ],
             capture_output=True,
             text=True,
@@ -102,7 +105,14 @@ def main() -> None:
         actual = [int(token) for token in match[1].split(",")]
         if actual != expected:
             raise AssertionError(f"Generated tokens {actual} != eager {expected}")
-        print(f"GGML HF LLM runner matched all {max_new_tokens} eager token IDs")
+        actual_logits = torch.frombuffer(
+            bytearray(logits_dump.read_bytes()), dtype=torch.float32
+        )
+        torch.testing.assert_close(actual_logits, expected_logits, atol=1e-3, rtol=1e-3)
+        print(
+            f"GGML HF LLM runner matched all {max_new_tokens} eager token IDs "
+            f"and {config.vocab_size} initial logits"
+        )
 
 
 if __name__ == "__main__":

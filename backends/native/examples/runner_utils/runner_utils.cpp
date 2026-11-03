@@ -35,6 +35,20 @@ std::vector<float> read_floats(const std::string& path) {
   return out;
 }
 
+void write_floats(const std::string& path, std::span<const float> values) {
+  FILE* file = std::fopen(path.c_str(), "wbx");
+  if (!file) {
+    throw std::runtime_error("cannot create " + path);
+  }
+  const size_t written =
+      std::fwrite(values.data(), sizeof(float), values.size(), file);
+  const int closed = std::fclose(file);
+  if (written != values.size() || closed != 0) {
+    std::remove(path.c_str());
+    throw std::runtime_error("cannot write " + path);
+  }
+}
+
 std::vector<std::string> read_lines(const std::string& path) {
   std::vector<std::string> lines;
   std::ifstream file(path);
@@ -73,9 +87,9 @@ std::vector<int> top_k(const std::vector<float>& values, int k) {
   return order;
 }
 
-bool compare_floats(
-    const std::vector<float>& actual,
-    const std::vector<float>& expected,
+bool can_compare_floats(
+    size_t actual_size,
+    size_t expected_size,
     double rtol,
     double atol) {
   if (!std::isfinite(rtol) || !std::isfinite(atol) || rtol < 0 || atol < 0) {
@@ -87,12 +101,23 @@ bool compare_floats(
         atol);
     return false;
   }
-  if (actual.size() != expected.size()) {
+  if (actual_size != expected_size) {
     std::fprintf(
         stderr,
         "error: reference has %zu values, model produced %zu\n",
-        expected.size(),
-        actual.size());
+        expected_size,
+        actual_size);
+    return false;
+  }
+  return true;
+}
+
+bool compare_floats(
+    const std::vector<float>& actual,
+    const std::vector<float>& expected,
+    double rtol,
+    double atol) {
+  if (!can_compare_floats(actual.size(), expected.size(), rtol, atol)) {
     return false;
   }
   size_t failures = 0;

@@ -202,20 +202,9 @@ Generation generate(
     executable.get_output(
         logits_output, logits.data(), logits.size(), ptn::kFloat);
     if (position == 0 && !FLAGS_dump_first_logits.empty()) {
-      FILE* output = std::fopen(FLAGS_dump_first_logits.c_str(), "wbx");
-      if (output == nullptr) {
-        throw std::runtime_error(
-            "cannot create new logits dump: " + FLAGS_dump_first_logits);
-      }
-      const float* row = logits.data() + logits_numel - vocabulary_size;
-      const size_t written =
-          std::fwrite(row, sizeof(float), vocabulary_size, output);
-      const int close_status = std::fclose(output);
-      if (written != vocabulary_size || close_status != 0) {
-        std::remove(FLAGS_dump_first_logits.c_str());
-        throw std::runtime_error(
-            "failed to write complete initial logits dump");
-      }
+      ptn::runner_utils::write_floats(
+          FLAGS_dump_first_logits,
+          {logits.data() + logits_numel - vocabulary_size, vocabulary_size});
     }
     if (FLAGS_print_top_logits) {
       const float* row = logits.data() + logits_numel - vocabulary_size;
