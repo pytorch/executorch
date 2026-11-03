@@ -31,6 +31,7 @@ from openvino.frontend.pytorch.utils import (  # type: ignore[import-untyped]
     pt_to_ov_type_map,
 )
 from openvino.preprocess import PrePostProcessor  # type: ignore[import-untyped]
+from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
 # The values of the inference_precision compile spec. The runtime
 # (OpenvinoBackend.cpp) accepts the same ones.
@@ -128,6 +129,13 @@ class OpenvinoBackend(BackendDetails):
         FoldConstantCumsumPass()(module)
         # The converter chooses some lowerings (e.g. boolean-mask indexing) from
         # the input types, so they must be known before conversion starts.
+        # The converter reads ranks only from tensor_meta, which edge graphs
+        # leave empty, and some ops need one, like aten.index after
+        # aten.index_put.
+        for node in module.graph.nodes:
+            val = node.meta.get("val")
+            if isinstance(val, torch.Tensor) and not node.meta.get("tensor_meta"):
+                node.meta["tensor_meta"] = _extract_tensor_metadata(val)
         decoder = TorchFXPythonDecoder(
             module, input_shapes=input_shapes, input_types=input_types
         )
