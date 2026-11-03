@@ -232,6 +232,44 @@ class TestTorchOps(unittest.TestCase):
         )
         self._compare_outputs(delegated_program.to_executorch(), model, example_inputs)
 
+    def test_copy_into_other_dtype(self):
+        """
+        Torch copies a value into a tensor of another dtype in the dtype of
+        the tensor, also for y[:, i] = v, and coremltools kept the dtype of the
+        value, so lowering failed.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                y = x * 2
+                y[:, 0] = (x[:, 1] * 4).to(torch.int64)
+                y[:, 2] = x[:, 1] > 0.5
+                z = x.clone().copy_((x * 4).to(torch.int64))
+                # Torch drops the fraction of a float written into an int.
+                i = (x * 4).to(torch.int64)
+                i[:, 0] = x[:, 1] * 4
+                # coremltools makes this arange int32, so the copy has to take
+                # the dtype from torch.
+                a = torch.arange(6, dtype=torch.float32).reshape(2, 3).copy_(x)
+                return y + torch.nn.functional.gelu(z) + i + a.softmax(-1)
+
+        # Values that float16 holds exactly, so that the comparison with 0.5 in
+        # Core ML agrees with eager.
+        model, example_inputs = Model(), (torch.rand(2, 3).half().float(),)
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            torch.export.export(model, example_inputs),
+            partitioner=[self._coreml_partitioner()],
+        )
+        self.assertEqual(
+            [
+                node.target.__name__
+                for node in delegated_program.exported_program().graph.nodes
+                if node.op == "call_function"
+            ],
+            ["executorch_call_delegate", "getitem"],
+        )
+        self._compare_outputs(delegated_program.to_executorch(), model, example_inputs)
+
     def test_dequantize_affine_c4w_embedding(self):
         model, example_inputs = self._get_test_model()
         quantize_(

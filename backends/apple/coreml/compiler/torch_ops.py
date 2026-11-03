@@ -366,3 +366,28 @@ def hardtanh(context, node):
         context.add(
             mb.clip(x=x, alpha=dtype(low.val), beta=dtype(high.val), name=node.name)
         )
+
+
+# Torch copies src into the dtype of self, while coremltools' copy keeps the
+# dtype of src. Lowering turns y[:, i] = v into a copy too, so v kept its dtype
+# in y. No upstream issue covers this yet. For example, lowering
+# F.gelu(x.clone().copy_(x.long())) fails with "expects tensor or scalar of
+# dtype from type domain ['fp16', 'fp32'] but got tensor[2,3,int32]". The dtype
+# comes from torch where the node carries it, since coremltools gives some
+# tensors another one, such as int32 to torch.arange(4, dtype=torch.float32).
+def _copy_into_dtype_of_self(context, node):
+    x, src = context[node.inputs[0]], context[node.inputs[1]]
+    dtype = x.dtype
+    if _torch_dtype(node) is not None:
+        dtype = types.numpy_type_to_builtin_type(_core_ml_type(node))
+    if src.dtype != dtype:
+        name = f"{node.name}_src"
+        context.add(mb.cast(x=src, dtype=types.builtin_to_string(dtype), name=name))
+        node = copy.copy(node)
+        node.inputs = [node.inputs[0], name, *node.inputs[2:]]
+    _ct_ops.copy(context, node)
+
+
+register_torch_op(
+    functools.wraps(_ct_ops.copy)(_copy_into_dtype_of_self), override=True
+)
