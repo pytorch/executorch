@@ -406,6 +406,7 @@ Please help update following table if you are contributing new operators:
 | ElementWiseLog | &check; |
 | ElementWiseMaximum | &check; |
 | ElementWiseMinimum | &check; |
+| ElementWiseMod | &check; |
 | ElementWiseMultiply | &check; |
 | ElementWiseNeg | &check; |
 | ElementWiseNeuron | &check; |
@@ -528,7 +529,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.reciprocal` | `DecomposeReciprocal` |
 | `aten.reflection_pad1d` | PyTorch built-in decomposition |
 | `aten.reflection_pad2d`, `aten.reflection_pad3d` | `DecomposePad` |
-| `aten.remainder.Scalar`, `aten.remainder.Tensor` | `DecomposeRemainder` |
+| `aten.remainder` (floating point) | `DecomposeRemainder` |
 | `aten.roll` | `DecomposeRoll` |
 | `aten.select_scatter` | `DecomposeSelectScatter` |
 | `aten.silu` | `DecomposeSilu` |

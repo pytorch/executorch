@@ -2366,6 +2366,12 @@ class TestQNNFloatingPointOperator(TestQNN):
                 ],
             },
             {
+                QCOM_MODULE: [RemainderScalarTensor()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.tensor([80, -7, 3, 100, 9, -80]).reshape(2, 3),)
+                ],
+            },
+            {
                 QCOM_MODULE: [RemainderMultiNode()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [
                     (

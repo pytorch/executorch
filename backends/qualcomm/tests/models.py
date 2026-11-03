@@ -2297,6 +2297,14 @@ class RemainderScalar(torch.nn.Module):
         return torch.remainder(x, 3.0)
 
 
+class RemainderScalarTensor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.remainder(1000, x)
+
+
 class RemainderTensor(torch.nn.Module):
     def __init__(self):
         super().__init__()

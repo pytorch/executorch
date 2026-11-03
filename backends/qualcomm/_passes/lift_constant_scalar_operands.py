@@ -58,6 +58,7 @@ SCALAR_OPS = {
     aten.pow.Tensor_Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False, False),
     aten.pow.Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False, False),
     aten.remainder.Scalar: TensorOpInfo(aten.remainder.Tensor, False, False),
+    aten.remainder.Scalar_Tensor: TensorOpInfo(aten.remainder.Tensor, False, False),
     aten.remainder.Tensor: TensorOpInfo(aten.remainder.Tensor, False, False),
     # The scalar number arg[1] is missing when using default. Result in a corner case to deal
     aten.leaky_relu.default: TensorOpInfo(aten.prelu.default, True, False),
