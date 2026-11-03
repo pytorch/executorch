@@ -93,6 +93,61 @@ class TestTorchOps(unittest.TestCase):
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
 
+    def test_int_input_of_float_ops(self):
+        """
+        Torch computes these ops in float for an int or bool input, and
+        coremltools passed the input on, so lowering failed.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                i = x.to(torch.int64)
+                j = i + 1
+                k = (i > 1).to(torch.int64)
+                return torch.stack(
+                    [
+                        i.sqrt(),
+                        i.exp(),
+                        i.expm1(),
+                        i.sigmoid(),
+                        i.sin(),
+                        i.cos(),
+                        i.tan(),
+                        i.sinh(),
+                        i.cosh(),
+                        i.tanh(),
+                        i.atan(),
+                        i.erf(),
+                        j.rsqrt(),
+                        j.reciprocal(),
+                        j.log2(),
+                        j.log10(),
+                        k.asin(),
+                        k.acos(),
+                        (i - i).atanh(),
+                        (i > 1).sqrt(),
+                        (i >= 0).log(),
+                        (i > 1).log1p(),
+                    ]
+                )
+
+        # Small integers, so that each op reads the same ints in Core ML.
+        model, example_inputs = Model(), (torch.randint(0, 4, (2, 3)).float(),)
+        ep = torch.export.export(model, example_inputs)
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            ep,
+            partitioner=[self._coreml_partitioner()],
+        )
+        self.assertEqual(
+            [
+                node.target.__name__
+                for node in delegated_program.exported_program().graph.nodes
+                if node.op == "call_function"
+            ],
+            ["executorch_call_delegate", "getitem"],
+        )
+        self._compare_outputs(delegated_program.to_executorch(), model, example_inputs)
+
     def test_dequantize_affine_c4w_embedding(self):
         model, example_inputs = self._get_test_model()
         quantize_(

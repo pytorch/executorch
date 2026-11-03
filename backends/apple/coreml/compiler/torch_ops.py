@@ -8,10 +8,15 @@
 # coremltools than is used by ExecuTorch.  Each op registered here should have a link to a PR in coremltools that adds
 # the op to the coremltools library.
 
+import copy
+import functools
+
 import numpy as np
 import torch as _torch
 from coremltools import _logger
+from coremltools.converters.mil import Builder as mb
 from coremltools.converters.mil.frontend import _utils
+from coremltools.converters.mil.frontend.torch import ops as _ct_ops
 from coremltools.converters.mil.frontend.torch.ops import (
     _get_inputs,
     _get_kwinputs,
@@ -238,3 +243,50 @@ def dequantize_codebook(context, node):
     except ValueError as e:
         _raise_with_executorch_hint(e)
     context.add(output, node.name)
+
+
+# Torch computes these ops in float for an int or bool input, while coremltools
+# passes such an input on to Core ML ops that take only float, except for an int
+# input of log and log1p. https://github.com/apple/coremltools/pull/2683 and
+# https://github.com/apple/coremltools/pull/2735 cast an int input of
+# reciprocal, log2 and log10 after coremltools 9.0; no upstream change covers
+# the other ops or a bool input yet. For example, lowering x.long().sqrt() fails
+# with "expects tensor or scalar of dtype from type domain ['fp16', 'fp32'] but
+# got tensor[2,3,int32]".
+def _with_float_input(convert):
+    @functools.wraps(convert)
+    def converter(context, node):
+        x = context[node.inputs[0]]
+        if types.is_int(x.dtype) or types.is_bool(x.dtype):
+            context.add(mb.cast(x=x, dtype="fp32", name=f"{node.name}_input_fp32"))
+            node = copy.copy(node)
+            node.inputs = [f"{node.name}_input_fp32", *node.inputs[1:]]
+        convert(context, node)
+
+    return converter
+
+
+for _convert in (
+    _ct_ops.acos,
+    _ct_ops.asin,
+    _ct_ops.atan,
+    _ct_ops.atanh,
+    _ct_ops.cos,
+    _ct_ops.cosh,
+    _ct_ops.erf,
+    _ct_ops.exp,
+    _ct_ops.expm1,
+    _ct_ops.log,
+    _ct_ops.log1p,
+    _ct_ops.log10,
+    _ct_ops.log2,
+    _ct_ops.reciprocal,
+    _ct_ops.rsqrt,
+    _ct_ops.sigmoid,
+    _ct_ops.sin,
+    _ct_ops.sinh,
+    _ct_ops.sqrt,
+    _ct_ops.tan,
+    _ct_ops.tanh,
+):
+    register_torch_op(_with_float_input(_convert), override=True)
