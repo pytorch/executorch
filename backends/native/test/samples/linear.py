@@ -4,12 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Linear cases: the backend test suite's, FACTO's, and shapes and inputs that
-stress accumulation and quantization."""
+"""Linear cases: the backend test suite's, FACTO's, shapes and inputs that
+stress accumulation and quantization, and dynamic shapes."""
 
 import torch
 from executorch.backends.native.test.samples.cases import (
     Case,
+    chain,
     draws,
     facto_cases,
     suite_cases,
@@ -19,6 +20,7 @@ from executorch.backends.test.suite.operators import test_linear
 from executorch.extension.llm.export.gguf import QK_K
 from facto.inputgen.argument.type import ArgType
 from facto.inputgen.specs.model import ConstraintProducer as cp, InPosArg, OutArg, Spec
+from torch.export import Dim
 
 
 def _unit(*constraints) -> list:
@@ -90,6 +92,91 @@ class _Parallel(torch.nn.Module):
         return tuple(m(x) for m in self.linears)
 
 
+class _Pair(torch.nn.Module):
+    """Two modules, each on its own input."""
+
+    def __init__(self, first: torch.nn.Module, second: torch.nn.Module) -> None:
+        super().__init__()
+        self.first, self.second = first, second
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        return self.first(x), self.second(y)
+
+
+_XNNPACK_SHAPES = ((3, 4, 4), (4, 37, 17), (4, 17, 37))
+
+
+def _batch_dims(count: int, batch: int) -> tuple[Dim, ...]:
+    return tuple(Dim(f"batch{i}", min=1, max=batch) for i in range(count))
+
+
+def _structural(
+    suffix: str, k: int, hidden: int, n: int, batch: Dim, batch2: Dim
+) -> list[Case]:
+    """Parallel, sequential and both, each linear `k` to `hidden` but the last of
+    a sequence, `hidden` to `n`."""
+
+    def sequential() -> torch.nn.Module:
+        return torch.nn.Sequential(
+            torch.nn.Linear(k, hidden), torch.nn.Linear(hidden, n)
+        )
+
+    return [
+        chain(
+            f"dynamic_parallel{suffix}",
+            _Pair(torch.nn.Linear(k, hidden), torch.nn.Linear(k, hidden)),
+            (batch, k),
+            (batch, k),
+        ),
+        chain(f"dynamic_sequential{suffix}", sequential(), (batch, k)),
+        chain(
+            f"dynamic_parallel_and_sequential{suffix}",
+            _Pair(torch.nn.Linear(k, hidden), sequential()),
+            (batch, k),
+            (batch2, k),
+        ),
+    ]
+
+
+def _dynamic_cases() -> list[Case]:
+    """The XNNPACK delegate's dynamic linear tests, with batch dims down to 1,
+    and LLM token shapes every quantization scheme fits."""
+    cases = []
+    for batch, k, n in _XNNPACK_SHAPES:
+        for batch_dims in (1, 2):
+            for bias in (True, False):
+                name = f"dynamic_{batch_dims}batch_{k}_{n}" + (
+                    "" if bias else "_no_bias"
+                )
+                shape = (*_batch_dims(batch_dims, batch), k)
+                cases.append(chain(name, torch.nn.Linear(k, n, bias=bias), shape))
+    batch, batch2 = Dim("batch", min=1, max=100), Dim("batch2", min=1, max=100)
+    cases += [
+        chain("dynamic_two_batch", torch.nn.Linear(14, 15), (batch, batch, 14)),
+        *_structural("", 4, 5, 3, batch, batch2),
+    ]
+    tokens = Dim("tokens", min=1, max=64)
+    cases.append(chain("dynamic_tokens", torch.nn.Linear(256, 64), (tokens, 256)))
+    for batch, k, n in _XNNPACK_SHAPES:
+        for batch_dims in (1, 2):
+            for bias in (True, False):
+                name = f"dynamic_{batch_dims}batch_{k}_{n}_relu" + (
+                    "" if bias else "_no_bias"
+                )
+                relu = torch.nn.Sequential(
+                    torch.nn.Linear(k, n, bias=bias), torch.nn.ReLU()
+                )
+                cases.append(chain(name, relu, (*_batch_dims(batch_dims, batch), k)))
+    rows = Dim("rows", min=1, max=16)
+    return [
+        *cases,
+        # A static batch of one, as an LLM's prefill and decode.
+        chain("dynamic_tokens_3d", torch.nn.Linear(256, 64), (1, tokens, 256)),
+        chain("dynamic_two_batch_256", torch.nn.Linear(256, 64), (rows, rows, 256)),
+        *_structural("_256", 256, 256, 64, tokens, Dim("tokens2", min=1, max=64)),
+    ]
+
+
 def cases() -> list[Case]:
     suite = suite_cases(test_linear, samples=4)
     torch.manual_seed(0)
@@ -127,4 +214,5 @@ def cases() -> list[Case]:
             _facto_case,
             lambda i, args: i % 5 == 0 or args[1].size(1) % QK_K == 0,
         ),
+        *_dynamic_cases(),
     ]

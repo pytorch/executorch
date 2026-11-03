@@ -12,7 +12,12 @@ from types import ModuleType
 
 import torch
 import torch.nn.functional as F
-from executorch.backends.native.test.samples.cases import Case, draws, suite_cases
+from executorch.backends.native.test.samples.cases import (
+    Case,
+    chain,
+    draws,
+    suite_cases,
+)
 from executorch.backends.native.test.samples.record import record
 from executorch.backends.native.test.samples.schemes import (
     Gguf,
@@ -22,6 +27,7 @@ from executorch.backends.native.test.samples.schemes import (
     Torchao,
 )
 from executorch.exir.native import read_samples
+from torch.export import Dim
 from torchao.quantization import IntxWeightOnlyConfig, quantize_
 from torchao.quantization.granularity import PerGroup
 
@@ -104,6 +110,42 @@ class RecordTest(unittest.TestCase):
             torch.testing.assert_close(
                 got.calls[0].outputs, want.calls[0].outputs, rtol=0, atol=0
             )
+
+    def test_chain_visits_each_dims_bounds_starting_mid_range(self) -> None:
+        a, b = Dim("a", min=1, max=8), Dim("b", min=2, max=4)
+        case = chain("pair", torch.nn.Identity(), (a, 3), (b, a))
+        self.assertEqual(
+            [[x.shape for x in xs] for xs in case.inputs],
+            [
+                [(5, 3), (3, 5)],
+                [(1, 3), (4, 1)],
+                [(8, 3), (2, 8)],
+                [(5, 3), (3, 5)],
+            ],
+        )
+        self.assertEqual(case.dynamic_shapes, ({0: a}, {0: b, 1: a}))
+
+    def test_record_chains_a_dynamic_case_into_one_sample(self) -> None:
+        case = chain("linear", torch.nn.Linear(32, 4), (Dim("batch", min=1, max=6), 32))
+        scheme = schemes()["int4wo_g32"]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "linear.ptn"
+            record([case], scheme, path, dtypes=["f32"])
+            sets = read_samples(str(path))
+        self.assertEqual(set(sets), {"golden", "precise", "golden-int8_act"})
+        for samples in sets.values():
+            (sample,) = samples.samples
+            self.assertEqual(
+                [call.inputs[0].shape for call in sample.calls],
+                [(4, 32), (1, 32), (6, 32), (4, 32)],
+            )
+        model = copy.deepcopy(case.model).eval()
+        scheme.quantize(model)
+        with torch.no_grad():
+            for call, x in zip(
+                sets["golden"].samples[0].calls, case.inputs, strict=True
+            ):
+                torch.testing.assert_close(call.outputs[0], model(*x), rtol=0, atol=0)
 
     def test_record_keeps_integer_outputs_precise(self) -> None:
         class Argmax(torch.nn.Module):
