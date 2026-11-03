@@ -12,6 +12,7 @@
 #include <pthread.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 
@@ -724,6 +725,84 @@ TEST_F(CoreAIDelegateTest, HalfDtypePreservesBitsAndRejectsMixedOutputDtype) {
     EXPECT_EQ(bridge.state().last_input_bytes.load(), input);
     EValue* mixed[] = {&in, &tensors.out};
     EXPECT_EQ(fixture.execute({mixed, 2}), Error::InvalidArgument);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, Int32DtypePreservesValuesAndRejectsFloatOutput) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    for (const auto& values :
+         {std::array<int32_t, 2>{INT32_MIN, INT32_MAX},
+          std::array<int32_t, 2>{-16777217, 16777217}}) {
+      int32_t input[] = {values[0], values[1]}, output[] = {0, 0};
+      TensorImpl input_impl(
+          ScalarType::Int,
+          1,
+          tensors.input_size,
+          input,
+          tensors.order,
+          tensors.input_stride);
+      TensorImpl output_impl(
+          ScalarType::Int,
+          1,
+          tensors.output_size,
+          output,
+          tensors.order,
+          tensors.output_stride);
+      EValue in{Tensor(&input_impl)}, out{Tensor(&output_impl)};
+      EValue* args[] = {&in, &out};
+      ASSERT_EQ(fixture.execute({args, 2}), Error::Ok);
+      EXPECT_EQ(output[0], input[0]);
+      EXPECT_EQ(output[1], input[1]);
+      EXPECT_EQ(bridge.state().last_input_bytes.load(), input);
+      EXPECT_EQ(bridge.state().last_input_byte_count.load(), sizeof(input));
+      EValue* mixed[] = {&in, &tensors.out};
+      EXPECT_EQ(fixture.execute({mixed, 2}), Error::InvalidArgument);
+      EXPECT_EQ(tensors.output[0], -1);
+      EXPECT_EQ(tensors.output[1], -1);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, BoolDtypePreservesValuesAndRejectsFloatOutput) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    for (const auto& values :
+         {std::array<bool, 2>{false, true}, std::array<bool, 2>{true, false}}) {
+      bool input[] = {values[0], values[1]};
+      bool output[] = {true, !values[0], !values[1], false};
+      TensorImpl input_impl(
+          ScalarType::Bool,
+          1,
+          tensors.input_size,
+          input,
+          tensors.order,
+          tensors.input_stride);
+      TensorImpl output_impl(
+          ScalarType::Bool,
+          1,
+          tensors.output_size,
+          output + 1,
+          tensors.order,
+          tensors.output_stride);
+      EValue in{Tensor(&input_impl)}, out{Tensor(&output_impl)};
+      EValue* args[] = {&in, &out};
+      ASSERT_EQ(fixture.execute({args, 2}), Error::Ok);
+      EXPECT_EQ(output[1], input[0]);
+      EXPECT_EQ(output[2], input[1]);
+      EXPECT_TRUE(output[0]);
+      EXPECT_FALSE(output[3]);
+      EXPECT_EQ(bridge.state().last_input_bytes.load(), input);
+      EXPECT_EQ(bridge.state().last_input_byte_count.load(), 2);
+      EValue* mixed[] = {&in, &tensors.out};
+      EXPECT_EQ(fixture.execute({mixed, 2}), Error::InvalidArgument);
+      EXPECT_EQ(tensors.output[0], -1);
+      EXPECT_EQ(tensors.output[1], -1);
+    }
   }
 }
 
