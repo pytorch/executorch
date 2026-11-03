@@ -6,7 +6,7 @@
 import logging
 
 import torch
-from executorch.exir.tensor import without_zero_strides
+from executorch.exir.tensor import dim_order_from_stride, without_zero_strides
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
 
@@ -30,7 +30,20 @@ def _normalize(tensor: torch.Tensor) -> torch.Tensor:
     """
     if _should_transform(tensor):
         return tensor.contiguous()
-    return without_zero_strides(tensor)
+    tensor = without_zero_strides(tensor)
+    ndim = tensor.dim()
+    dim_order = dim_order_from_stride(tensor.stride(), tuple(tensor.shape))
+    if dim_order == tuple(range(ndim)) or (
+        ndim in (4, 5) and dim_order == (0, *range(2, ndim), 1)
+    ):
+        return tensor
+    # PyTorch ignores the stride of a size-1 dim when it checks contiguity, so
+    # sizes (8, 1, 4) with strides (4, 32, 1) are contiguous, yet give dim
+    # order (1, 0, 2).
+    memory_format = (
+        torch.contiguous_format if tensor.is_contiguous() else torch.channels_last
+    )
+    return tensor.clone(memory_format=memory_format)
 
 
 def _update_placeholder_meta(
@@ -62,7 +75,7 @@ def _update_placeholder_meta(
 
     val = placeholder_node.meta["val"]
     placeholder_node.meta["val"] = _normalize(val)
-    # Dropping a zero stride that PyTorch ignores does not change the layout.
+    # Fixing a stride that PyTorch ignores does not change the layout.
     if not _should_transform(val):
         return
     logger.warning(
@@ -83,10 +96,11 @@ def convert_constant_dim_order_pass(
     Normalize lifted tensors to default or channels-last dim order.
 
     Tensor constants, buffers and parameters with other dim orders or striding
-    are converted to contiguous tensors, and zero strides are removed. User
-    inputs with a zero stride become contiguous, or stay channels-last; other
-    inputs are not changed. This pass acts in-place on the unlifted exported
-    program.
+    are converted to contiguous tensors. Those that PyTorch calls contiguous or
+    channels-last, but whose strides on size-1 dims give another dim order, are
+    copied into that layout, and zero strides are removed. User inputs with a
+    zero stride become contiguous, or stay channels-last; other inputs are not
+    changed. This pass acts in-place on the unlifted exported program.
 
     Args:
         exported_program: The ExportedProgram to transform.

@@ -2732,6 +2732,37 @@ class TestEmit(unittest.TestCase):
         et_module = _load_for_executorch_from_buffer(program.buffer)
         self.assertTrue(torch.allclose(x * 2, et_module((x,))[0]))
 
+    def test_emit_constants_with_size_one_dims(self) -> None:
+        def channels_last(*sizes):
+            return torch.randn(*sizes).to(memory_format=torch.channels_last)
+
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                # PyTorch ignores the stride of a size-1 dim, so it calls
+                # queries contiguous and frame channels-last, but their strides
+                # give other dim orders. image already has a supported one.
+                self.register_buffer("queries", torch.randn(1, 8, 4).transpose(0, 1))
+                self.register_buffer("image", channels_last(2, 1, 4, 4))
+                self.register_buffer(
+                    "frame", torch.randn(48).as_strided((1, 3, 4, 4), (5, 1, 12, 3))
+                )
+
+            def forward(self, keys, x, y):
+                return torch.bmm(self.queries, keys), x + self.image, y + self.frame
+
+        model = Model()
+        inputs = (
+            torch.randn(8, 4, 8),
+            channels_last(2, 1, 4, 4),
+            channels_last(1, 3, 4, 4),
+        )
+        program = to_edge(export(model, inputs, strict=True)).to_executorch()
+
+        et_module = _load_for_executorch_from_buffer(program.buffer)
+        for expected, actual in zip(model(*inputs), et_module(inputs)):
+            self.assertTrue(torch.allclose(expected, actual))
+
     def test_emit_device_info_propagated_to_serialized_tensor(self) -> None:
         """Verify that device info from PropagateDevicePass flows through
         the emitter into ExtraTensorInfo.device_type on serialized tensors."""
