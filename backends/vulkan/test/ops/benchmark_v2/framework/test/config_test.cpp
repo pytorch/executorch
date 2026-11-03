@@ -177,6 +177,17 @@ TEST(ShaderProfilingConfig, RejectsUnknownTensorAndInvalidOptions) {
   EXPECT_THROW(parse_configs(spec), std::invalid_argument);
 }
 
+TEST(ShaderProfilingConfig, ValidatesSustainDuration) {
+  for (Json spec : {config(), operator_config()}) {
+    spec["sustain_s"] = 2.5;
+    EXPECT_EQ(parse_configs(spec)[0].at("sustain_s"), 2.5);
+    for (const Json& invalid : {Json(0), Json(-1), Json(3601), Json("1")}) {
+      spec["sustain_s"] = invalid;
+      EXPECT_THROW(parse_configs(spec), std::invalid_argument);
+    }
+  }
+}
+
 TEST(ShaderProfilingConfig, PacksTypedInputsAndRejectsTruncation) {
   auto bytes = make_data({{"dtype", "int32"}, {"data", {-7, 42}}}, 2);
   int32_t values[2];
