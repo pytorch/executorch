@@ -11,7 +11,8 @@
 //
 // Usage:
 //   <test> --packages=a.ptn,dir [--rmse_ratio --max_ratio --rtol --sigmas]
-//          [engine host flags] [gtest flags]
+//          [--allow_activation_quant_for_weight_only] [engine host flags]
+//          [gtest flags]
 
 #include <algorithm>
 #include <cstdio>
@@ -56,6 +57,11 @@ DEFINE_double(
     sigmas,
     ptn::testing::Policy{}.sigmas,
     "Standard errors the fitted biases may deviate by.");
+DEFINE_bool(
+    allow_activation_quant_for_weight_only,
+    false,
+    "Let the engine quantize the activations of weight-only quantized linears, "
+    "judging it against golden-int8_act samples where a package has them.");
 
 namespace ptn::testing {
 namespace {
@@ -63,6 +69,7 @@ namespace {
 struct Bundle {
   std::shared_ptr<const Package> package;
   std::shared_ptr<const Program> program;
+  std::string golden_set;
   SampleSet golden;
   SampleSet precise;
 };
@@ -70,7 +77,9 @@ struct Bundle {
 // Created on first use, so listing tests touches no device.
 EngineHost& host() {
   static const std::unique_ptr<EngineHost> instance = [] {
-    std::unique_ptr<EngineHost> made = make_engine_host();
+    std::unique_ptr<EngineHost> made = make_engine_host(
+        {.allow_activation_quant_for_weight_only =
+             FLAGS_allow_activation_quant_for_weight_only});
     std::printf(
         "engine %s on %s\n", made->name().c_str(), made->device_name().c_str());
     return made;
@@ -111,7 +120,8 @@ class SampleTest : public ::testing::Test {
         .rtol = FLAGS_rtol,
         .sigmas = FLAGS_sigmas};
     for (const auto& [key, check] : checks) {
-      const std::string name = key.first + " out " + std::to_string(key.second);
+      const std::string name = key.first + " out " +
+          std::to_string(key.second) + " vs " + bundle_->golden_set;
       std::printf("%s: %s\n", name.c_str(), check.summary().c_str());
       for (const std::string& failure : check.failures(policy)) {
         ADD_FAILURE() << name << ": " << failure;
@@ -129,7 +139,8 @@ class SampleTest : public ::testing::Test {
       const SampleCall& call = golden.calls[c];
       ASSERT_EQ(call.method, precise.calls[c].method);
       ASSERT_TRUE(call.inputs == precise.calls[c].inputs)
-          << call.method << " has golden and precise inputs that differ";
+          << call.method << " has " << bundle_->golden_set
+          << " and precise inputs that differ";
       ASSERT_TRUE(call.outputs && precise.calls[c].outputs)
           << call.method << " has no recorded outputs";
       const std::vector<SampleTensor>& want = *call.outputs;
@@ -208,7 +219,12 @@ void register_package(const std::filesystem::path& path) {
   bundle->program = std::make_shared<const Program>(
       Program::load(program.data(), program.size()));
   const ZipReader zip = ZipReader::open(path.string());
-  bundle->golden = read_sample_set(zip, "golden");
+  // Eager outputs with int8 per-token dynamic activations, which packages with
+  // weight-only quantized linears also carry.
+  const bool act_quant_golden = FLAGS_allow_activation_quant_for_weight_only &&
+      zip.member_size("samples/golden-int8_act/index.json").has_value();
+  bundle->golden_set = act_quant_golden ? "golden-int8_act" : "golden";
+  bundle->golden = read_sample_set(zip, bundle->golden_set);
   bundle->precise = read_sample_set(zip, "precise");
 
   std::set<std::string> methods;
