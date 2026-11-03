@@ -383,6 +383,37 @@ class TestPasses(unittest.TestCase):
                 self.assertIsNone(visitor.define_node(conv_backward, defaultdict(dict)))
                 conv_backward.args[input_index].meta.pop(QCOM_QUANT_ATTRS)
 
+    def test_batch_norm_uses_its_eps(self):
+        # A channel with ~0 running variance is bounded only by eps; a fixed
+        # 1e-9 inflated its scale by ~100x.
+        bn = torch.nn.BatchNorm2d(2, eps=1e-5).eval()
+        with torch.no_grad():
+            bn.running_var.copy_(torch.tensor([1e-8, 1.0]))
+            bn.weight.copy_(torch.tensor([2.0, 3.0]))
+        edge_program = to_edge(
+            torch.export.export(bn, (torch.randn(1, 2, 4, 4),), strict=True)
+        ).exported_program()
+        node = next(
+            n
+            for n in edge_program.graph_module.graph.nodes
+            if n.op == "call_function" and "batch_norm" in str(n.target)
+        )
+        visitor = get_node_visitors(edge_program)[node.target.__name__]
+        tensors = {}
+
+        def define_tensor(source, target, tensor, *args, **kwargs):
+            tensors[source.name] = tensor
+            return MagicMock()
+
+        with patch.object(visitor, "define_tensor", side_effect=define_tensor), patch(
+            "executorch.backends.qualcomm.builders.op_batch_norm.PyQnnManager"
+        ):
+            visitor.define_node(node, {})
+        torch.testing.assert_close(
+            tensors[node.args[1].name],
+            bn.weight.detach() / torch.sqrt(bn.running_var + bn.eps),
+        )
+
     def test_layout_transform_tuple_outputs(self):
         with self.subTest("multiple_getitems"):
             x = torch.randn(1, 3, 8, 8)

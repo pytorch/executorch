@@ -44,6 +44,16 @@ class BatchNorm(NodeVisitor):
             diff = max(abs(tensor.max()), abs(tensor.min())) + eps
             quant_attrs[QCOM_SCALE] = (diff / quant_attrs[QCOM_QUANT_MAX]).item()
 
+    @staticmethod
+    def get_bn_eps(node: torch.fx.Node) -> float:
+        """The op's own eps; channels with near-zero variance depend on it."""
+        for i, arg in enumerate(node.target._schema.arguments):
+            if arg.name == "eps":
+                if i < len(node.args):
+                    return node.args[i]
+                return node.kwargs.get("eps", arg.default_value)
+        raise RuntimeError(f"{node.target} has no eps argument")
+
     def try_dequantize(self, node: torch.fx.Node, tensor: torch.Tensor):
         if tensor.dtype == torch.float:
             return tensor
@@ -64,7 +74,9 @@ class BatchNorm(NodeVisitor):
         if "no_stats" in str(node.target):
             mean_tensor = torch.Tensor([node.args[4]])
             var_tensor = torch.Tensor([node.args[5]])
+            bn_eps = eps
         else:
+            bn_eps = self.get_bn_eps(node)
             mean_tensor = get_parameter(node.args[3], self.edge_program)
             var_tensor = get_parameter(node.args[4], self.edge_program)
 
@@ -116,7 +128,7 @@ class BatchNorm(NodeVisitor):
                 quant_attrs[QCOM_SCALE] = 1.0 / quant_range
                 filter_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
 
-        filter_tensor = filter_tensor / torch.sqrt(var_tensor + eps)
+        filter_tensor = filter_tensor / torch.sqrt(var_tensor + bn_eps)
         self.update_encoding(filter_node, filter_tensor, eps)
         filter_tensor_wrapper = self.define_tensor(
             filter_node,
