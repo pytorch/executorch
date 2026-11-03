@@ -108,8 +108,8 @@ _VARIANTS = [
         ] + flags,
         env = v.get("env", {}) | v.get("sample_env", {}),
         remote_execution = v.get("remote_execution"),
-        # TODO: run in CI once they pass.
-        labels = ci.labels(ci.map(ci.skip_test())),
+        # TODO: run the others in CI once they pass.
+        labels = [] if v["suffix"] + name == "_act_quant" else ci.labels(ci.map(ci.skip_test())),
         test_main = "//executorch/backends/native/test/samples:sample_test_main",
         deps = [":ggml_engine_host" + v["suffix"]],
         **v.get("compat", {})
