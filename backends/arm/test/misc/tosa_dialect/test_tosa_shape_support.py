@@ -50,6 +50,15 @@ class Conv2d(torch.nn.Module):
         return self.conv(x)
 
 
+class TransposeConv2d(torch.nn.Module):
+    def __init__(self, groups: int = 1) -> None:
+        super().__init__()
+        self.conv = torch.nn.ConvTranspose2d(4, 4, 2, stride=2, groups=groups)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
+
+
 class AvgPool2d(torch.nn.Module):
     def __init__(
         self, kernel_size: int = 2, stride: int | None = None, padding: int = 0
@@ -260,6 +269,29 @@ def test_without_shape_extension_accepts_symbolic_spatial_conv2d_without_input_a
     node = _find_node(exported_program, exir_ops.edge.aten.convolution.default)
 
     assert node.meta.get("delegation_tag") in partition_result.partition_tags
+
+
+@pytest.mark.parametrize("groups,expected", [(1, True), (2, False)])
+def test_without_shape_extension_symbolic_spatial_transpose_conv2d(groups, expected):
+    exported_program = _exported_program(
+        TransposeConv2d(groups),
+        (torch.randn(2, 4, 8, 10),),
+        dynamic_shapes=(
+            {
+                0: Dim("batch", min=1, max=4),
+                2: Dim("height", min=2, max=16),
+                3: Dim("width", min=2, max=16),
+            },
+        ),
+    )
+    partition_result = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP")).partition(
+        exported_program
+    )
+    node = _find_node(exported_program, exir_ops.edge.aten.convolution.default)
+
+    assert (
+        node.meta.get("delegation_tag") in partition_result.partition_tags
+    ) is expected
 
 
 def test_without_shape_extension_rejects_symbolic_spatial_conv2d_needing_input_adjustment():
