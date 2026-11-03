@@ -7,11 +7,15 @@
 import json
 import tempfile
 import unittest
+from types import SimpleNamespace
+
+import sympy
 
 import torch
 import torch.nn as nn
 
 from executorch.backends.apple.coreai.compiler.enumerated_shapes import (
+    _eval_dim,
     resolve_input_enumerations,
 )
 from executorch.backends.apple.coreai.partition.partitioner import (
@@ -340,6 +344,14 @@ class InputEnumerationsRuntimeTest(unittest.TestCase):
 
 class InputEnumerationsValidationTest(unittest.TestCase):
     """User-supplied enumerations that cannot be honoured must say so."""
+
+    def test_derived_dim_that_reaches_zero_is_rejected(self):
+        dim = SimpleNamespace(node=SimpleNamespace(expr=sympy.Symbol("s0") - 1))
+        self.assertEqual(_eval_dim(dim, {"s0": 4}, "input_0", 0), 3)
+        with self.assertRaisesRegex(
+            ValueError, r"input 'input_0' dim 0 is s0 - 1, which is 0 when s0=1"
+        ):
+            _eval_dim(dim, {"s0": 1}, "input_0", 0)
 
     def test_conflicting_values_for_one_symbol_are_rejected(self):
         """Two inputs tied to the same Dim cannot enumerate differently.

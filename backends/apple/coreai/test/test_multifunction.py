@@ -17,7 +17,10 @@ from executorch.backends.apple.coreai import (
     get_default_compile_config,
     get_default_passes,
 )
-from executorch.backends.apple.coreai.compiler.preprocess import COMPILE_SPEC_KEYS
+from executorch.backends.apple.coreai.compiler.preprocess import (
+    _check_unique_functions,
+    COMPILE_SPEC_KEYS,
+)
 from executorch.backends.apple.coreai.partition.partitioner import (
     CoreAIPartitioner,
     do_not_delegate,
@@ -264,6 +267,32 @@ class MultifunctionEnumeratedShapesTest(unittest.TestCase):
             )
         forward = [m["function"] for m, _ in _manifests(lowered, "forward")]
         self.assertEqual(forward, ["forward_0", "forward_1"])
+
+    def test_mixed_partitioners_name_the_missing_flag(self):
+        with self.assertRaisesRegex(
+            ValueError, r"multifunction=True must be set.*\['prefill'\]"
+        ):
+            _lower(
+                {
+                    "forward": [CoreAIPartitioner(multifunction=True)],
+                    "prefill": [CoreAIPartitioner()],
+                }
+            )
+
+    def test_duplicate_function_names_are_rejected(self):
+        _check_unique_functions(
+            [
+                {"function": "forward_0"},
+                {"enumerated_functions": [{"function": "forward_0_s0_4"}]},
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "'forward_0_s0_4' twice"):
+            _check_unique_functions(
+                [
+                    {"enumerated_functions": [{"function": "forward_0_s0_4"}]},
+                    {"function": "forward_0_s0_4"},
+                ]
+            )
 
     def test_other_compile_specs_must_still_match(self):
         dim = torch.export.Dim("rows", min=1, max=64)

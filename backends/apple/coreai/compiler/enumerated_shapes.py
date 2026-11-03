@@ -166,7 +166,15 @@ def _eval_dim(dim, subs: Dict[str, int], uname: str, axis: int) -> int:
             f"substitution; enumerate those dims too, or leave this input "
             f"fully dynamic"
         )
-    return int(resolved)
+    value = int(resolved)
+    if value <= 0:
+        values = ", ".join(sorted(f"{s}={v}" for s, v in mapping.items()))
+        raise ValueError(
+            f"input '{uname}' dim {axis} is {expr}, which is {value} when "
+            f"{values}; Core AI needs every dim to be positive, so drop that "
+            "enumerated value"
+        )
+    return value
 
 
 def apply_enumerated_shapes(

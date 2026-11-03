@@ -361,6 +361,28 @@ def _enumerate_binding(
     return enumerated
 
 
+def _check_unique_functions(bindings: List[Dict[str, Any]]) -> None:
+    """Reject two delegates binding the same function name.
+
+    Enumerated functions are named ``<method>_<index>_<key>``, which a method
+    whose name looks like another method's index and key could reproduce.
+    """
+    seen = set()
+    for binding in bindings:
+        names = (
+            [binding["function"]]
+            if "function" in binding
+            else [f["function"] for f in binding["enumerated_functions"]]
+        )
+        for name in names:
+            if name in seen:
+                raise ValueError(
+                    f"multifunction export generates the function name {name!r} "
+                    "twice; rename the method whose name collides with it"
+                )
+            seen.add(name)
+
+
 def _spec_items(
     compile_specs: List[CompileSpec], ignore: Tuple[str, ...] = ()
 ) -> List[Tuple[str, bytes]]:
@@ -590,6 +612,19 @@ class CoreAIBackend(BackendDetails):
         ):
             return super().preprocess_multimethod(edge_programs, compile_specs)
 
+        missing = sorted(
+            {
+                method
+                for method, _, _, specs in partitions
+                if _get_compile_spec(specs, COMPILE_SPEC_KEYS.MULTIFUNCTION) is None
+            }
+        )
+        if missing:
+            raise ValueError(
+                "multifunction=True must be set on the CoreAIPartitioner of every "
+                f"method lowered to Core AI; methods {missing} were lowered "
+                "without it"
+            )
         # Each partition applies its own enumerations, so methods may enumerate
         # different values; every other spec shapes the shared model.
         ignore = (COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS.value,)
@@ -630,6 +665,7 @@ class CoreAIBackend(BackendDetails):
                 bindings, entries, partitions
             )
         ]
+        _check_unique_functions(bindings)
         results = CoreAIBackend._package(program, partitions[0][3], bindings)
 
         by_method: Dict[str, List[PreprocessResult]] = {
