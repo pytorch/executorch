@@ -625,25 +625,26 @@ def _decomposing_may_leave_out(
     kept: Collection[torch._ops.OpOverload],
     from_kept_inside: Collection[torch.fx.Node],
     sizes: Collection[str],
+    is_supported: Callable[[torch.fx.Node], bool],
     may_leave_out: bool,
     log: Callable[[str], None],
 ) -> bool:
-    """Whether decomposing the calls of the ops lowering decomposes may make
-    partition() leave out a call of a kept op it does not leave out in
-    graph_module. may_leave_out says whether partition() may leave out some op
-    there.
+    """Whether decomposing the calls of the ops lowering decomposes may make a
+    call of a kept op that Core ML rejects, or make partition() leave out a
+    call of a kept op it does not leave out in graph_module. may_leave_out
+    says whether partition() may leave out some op there.
 
     That needs a decomposition of a not_kept op that makes a call of a kept op
-    that reads or makes a value Core ML cannot take or return. A decomposed
-    call of any op that reads or makes such a value may also be the first op
-    partition() moves out, after which a partition left without tensor inputs
-    moves out too. So it matters once a kept call can end up in such a
-    partition: a kept call that reads only the weights, constants and state the
-    partitioner moves into Core ML, or a call of a not_kept op that reads only
-    those and makes a tensor or a call of a kept op. If may_leave_out, such a
-    call of a not_kept op matters by itself. Each call is traced by itself, in
-    milliseconds, while decomposing a large program takes minutes. A call that
-    cannot be traced by itself may matter.
+    that Core ML rejects, or that reads or makes a value Core ML cannot take or
+    return. A decomposed call of any op that reads or makes such a value may
+    also be the first op partition() moves out, after which a partition left
+    without tensor inputs moves out too. So it matters once a kept call can end
+    up in such a partition: a kept call that reads only the weights, constants
+    and state the partitioner moves into Core ML, or a call of a not_kept op
+    that reads only those and makes a tensor or a call of a kept op. If
+    may_leave_out, such a call of a not_kept op matters by itself. Each call is
+    traced by itself, in milliseconds, while decomposing a large program takes
+    minutes. A call that cannot be traced by itself may matter.
     """
 
     def crosses(call: torch.fx.Node) -> bool:
@@ -675,7 +676,9 @@ def _decomposing_may_leave_out(
             )
             return True
         if not_kept_call and any(
-            call.target in kept and (from_inside or crosses(call)) for call in calls
+            call.target in kept
+            and (from_inside or not is_supported(call) or crosses(call))
+            for call in calls
         ):
             return True
         crossing = crossing or any(crosses(call) for call in calls)
@@ -1287,15 +1290,17 @@ class CoreMLPartitioner(Partitioner):
         is_supported: Callable[[Any, torch.fx.Node], bool],
     ) -> List[torch._ops.OpOverload]:
         """Drops every kept op that partition() moves out of CoreML at some
-        call, for a value CoreML cannot take or return, since the portable
-        kernels may have no kernel for it. An op skipped by name stays kept.
+        call, for a value CoreML cannot take or return, or that CoreML rejects
+        once the program is decomposed, since the portable kernels may have no
+        kernel for it. An op skipped by name stays kept.
 
         partition() sees the program once lowering decomposes the ops that are
-        not kept, which can change the calls it moves out. So when that may
-        matter, this decomposes the program the same way and finds the calls
-        partition() leaves out, again after each drop that changes the
-        decomposition. It does not see transform passes, or the ops an earlier
-        partitioner takes.
+        not kept, which can make new calls of a kept op that CoreML rejects,
+        such as the matmul of a bfloat16 linear, or change the calls it moves
+        out. So when that may matter, this decomposes the program the same way
+        and finds the calls partition() leaves out, again after each drop that
+        changes the decomposition. It does not see transform passes, or the
+        ops an earlier partitioner takes.
         """
         states = self._state_writers(ep)
         kept_inside = self._placeholders_kept_inside(ep, states)
@@ -1328,6 +1333,7 @@ class CoreMLPartitioner(Partitioner):
                 kept,
                 from_kept_inside,
                 _dynamic_size_names(ep),
+                lambda node: is_supported(None, node),
                 may_leave_out,
                 self.log_once,
             )
@@ -1367,7 +1373,11 @@ class CoreMLPartitioner(Partitioner):
                 )
             else:
                 left_out |= uncertain
-            late = {node.target for node in calls if node in left_out}
+            late = {
+                node.target
+                for node in calls
+                if node in left_out or (decomposed and not is_supported(None, node))
+            }
             if not late:
                 break
             for op in late & decompositions.keys():
