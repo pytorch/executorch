@@ -39,6 +39,11 @@ aoti_torch_get_data_ptr(Tensor* tensor, void** ret_data_ptr);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_sizes(Tensor* tensor, int64_t** ret_sizes);
 
+// Generated code reads the size of a result whose shape depends on the data
+// through this, one dim at a time.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_size(Tensor* tensor, int64_t d, int64_t* ret_size);
+
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_strides(Tensor* tensor, int64_t** ret_strides);
 
