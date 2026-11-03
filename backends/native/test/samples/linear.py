@@ -15,6 +15,7 @@ from executorch.backends.native.test.samples.cases import (
     suite_cases,
 )
 from executorch.backends.test.suite.operators import test_linear
+from executorch.extension.llm.export.gguf import QK_K
 from facto.inputgen.argument.type import ArgType
 from facto.inputgen.specs.model import ConstraintProducer as cp, InPosArg, OutArg, Spec
 
@@ -29,8 +30,9 @@ def _unit(*constraints) -> list:
     ]
 
 
-# in_features is a multiple of every scheme's group size, and out_features is
-# large enough to fit an error's abs_bias and rel_bias from one sample.
+# in_features is a multiple of every torchao scheme's group size and, in some
+# tuples, of GGUF's block; out_features is large enough to fit an error's
+# abs_bias and rel_bias from one sample.
 _FACTO_SPEC = Spec(
     op="linear.default",
     inspec=[
@@ -98,8 +100,13 @@ def cases() -> list[Case]:
         ),
         Case("outlier_channel", torch.nn.Linear(256, 128), outlier),
         Case("zero_row", torch.nn.Linear(256, 64), zero_row),
-        # FACTO varies one argument at a time, so only every fifth tuple is kept.
-        # Its values lie on a 1/8 grid, which makes float32 math exact: these
-        # cases cover shapes more than rounding.
-        *facto_cases(_FACTO_SPEC, _facto_case, lambda i, _: i % 5 == 0),
+        # FACTO varies one argument at a time, so only every fifth tuple is kept,
+        # plus those whose in_features fit GGUF blocks. Its values lie on a 1/8
+        # grid, which makes float32 math exact: these cases cover shapes more
+        # than rounding.
+        *facto_cases(
+            _FACTO_SPEC,
+            _facto_case,
+            lambda i, args: i % 5 == 0 or args[1].size(1) % QK_K == 0,
+        ),
     ]
