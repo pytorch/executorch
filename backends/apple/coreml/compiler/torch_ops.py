@@ -54,6 +54,23 @@ def split_copy(context, node):
     split(context, node)
 
 
+def _torch_dtype(node):
+    """The dtype torch gives the output of node, if node carries it, as a node of
+    an ExportedProgram does."""
+    val = (node.meta or {}).get("val")
+    return val.dtype if isinstance(val, _torch.Tensor) else None
+
+
+def _core_ml_type(node):
+    """The numpy type Core ML uses for the dtype torch gives the output of node."""
+    dtype = _torch_dtype(node)
+    if dtype == _torch.bool:
+        return np.bool_
+    if dtype == _torch.float16:
+        return np.float16
+    return np.float32 if dtype.is_floating_point else np.int32
+
+
 def is_fbcode():
     return not hasattr(_torch.version, "git_version")
 
@@ -290,3 +307,62 @@ for _convert in (
     _ct_ops.tanh,
 ):
     register_torch_op(_with_float_input(_convert), override=True)
+
+
+# For an int input, torch returns floor, ceil and round of it unchanged, and
+# computes relu and relu6 in int, while coremltools passes the input on to Core
+# ML ops that take only float. No upstream issue covers this yet. For example,
+# lowering x.long().floor() fails with "expects tensor or scalar of dtype from
+# type domain ['fp16', 'fp32'] but got tensor[2,3,int32]".
+def _with_int_input(convert, convert_int):
+    @functools.wraps(convert)
+    def converter(context, node):
+        x = context[node.inputs[0]]
+        if types.is_int(x.dtype):
+            context.add(convert_int(x=x, name=node.name))
+        else:
+            convert(context, node)
+
+    return converter
+
+
+for _convert, _convert_int in (
+    (_ct_ops.ceil, mb.identity),
+    (_ct_ops.floor, mb.identity),
+    (_ct_ops.relu, lambda x, name: mb.maximum(x=x, y=0, name=name)),
+    (_ct_ops.relu6, lambda x, name: mb.minimum(x=mb.maximum(x=x, y=0), y=6, name=name)),
+):
+    register_torch_op(_with_int_input(_convert, _convert_int), override=True)
+# coremltools registers round as _round with the alias round.
+register_torch_op(
+    _with_int_input(_ct_ops._round, mb.identity), torch_alias=["round"], override=True
+)
+
+
+# Torch clips the input of hardtanh at its bounds in the dtype of the input,
+# while coremltools passes the bounds as they are to clip, which takes only
+# float and bounds of the dtype of the input. So nn.ReLU6 on an int tensor, and
+# F.relu6(x, inplace=True), which passes int bounds, fail to lower with "the
+# named input `alpha` must have the same data type as the named input `x`".
+# https://github.com/apple/coremltools/pull/2894 casts the bounds to the dtype of
+# a float input; no upstream change covers an int input yet. The dtype comes from
+# torch, since coremltools gives some tensors another one, such as int32 to
+# torch.arange(4, dtype=torch.float32). A TorchScript node, which carries no
+# dtype, keeps the coremltools converter.
+@register_torch_op(override=True)
+def hardtanh(context, node):
+    if _torch_dtype(node) is None:
+        return _ct_ops.hardtanh(context, node)
+    x, low, high = _get_inputs(context, node, expected=3)
+    dtype = types.numpy_type_to_builtin_type(_core_ml_type(node))
+    if x.dtype != dtype:
+        x = mb.cast(x=x, dtype=types.builtin_to_string(dtype))
+    if types.is_int(x.dtype):
+        # Torch drops the fraction of each bound for an int input, as int() does.
+        clipped = mb.maximum(x=x, y=int(low.val))
+        context.add(mb.minimum(x=clipped, y=int(high.val), name=node.name))
+    else:
+        dtype = types.nptype_from_builtin(x.dtype)
+        context.add(
+            mb.clip(x=x, alpha=dtype(low.val), beta=dtype(high.val), name=node.name)
+        )

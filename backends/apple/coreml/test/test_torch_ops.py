@@ -148,6 +148,90 @@ class TestTorchOps(unittest.TestCase):
         )
         self._compare_outputs(delegated_program.to_executorch(), model, example_inputs)
 
+    def test_int_input_of_ops_that_keep_it_int(self):
+        """
+        Torch keeps an int input of floor, ceil, round, relu, relu6 and
+        hardtanh int, and coremltools passed it on to Core ML ops that take only
+        float, so lowering failed. Int bounds of hardtanh failed on a float16
+        input too.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                # -4, 0, 4 and 8, so that relu, relu6 and hardtanh clip on both
+                # sides.
+                i = x.to(torch.int64) * 4 - 4
+                ops = [i.floor(), i.ceil(), i.round(), i.relu()]
+                ops += [
+                    torch.nn.functional.relu6(i),
+                    # Torch drops the fraction of each bound, so this clips at
+                    # -1 and 2.
+                    torch.nn.functional.hardtanh(i, -1.5, 2.7),
+                    # Int bounds on a float16 input.
+                    torch.nn.functional.hardtanh(x.half() * 4 - 4, 0, 6).long(),
+                ]
+                return torch.stack(ops).float()
+
+        model, example_inputs = Model(), (
+            torch.tensor([[0.0, 1.0, 2.0], [3.0, 2.0, 1.0]]),
+        )
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            torch.export.export(model, example_inputs),
+            partitioner=[self._coreml_partitioner()],
+        )
+        self.assertEqual(
+            [
+                node.target.__name__
+                for node in delegated_program.exported_program().graph.nodes
+                if node.op == "call_function"
+            ],
+            ["executorch_call_delegate", "getitem"],
+        )
+        self._compare_outputs(delegated_program.to_executorch(), model, example_inputs)
+
+    def test_hardtanh_of_float_arange(self):
+        """
+        coremltools gives torch.arange(6, dtype=torch.float32) the dtype int32, so
+        its hardtanh failed to lower. Torch clips it in float, at bounds with a
+        fraction. A TorchScript node carries no dtype and keeps the coremltools
+        converter.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                a = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+                return torch.nn.functional.hardtanh(a, 0.5, 2.5) + x
+
+        model, example_inputs = Model(), (torch.zeros(2, 3),)
+        ep = torch.export.export(model, example_inputs)
+        # With no passes, Core ML keeps the clip instead of folding it.
+        program = ct.convert(
+            ep.run_decompositions({}),
+            convert_to="milinternal",
+            pass_pipeline=ct.PassPipeline.EMPTY,
+        )
+        self.assertEqual(
+            [(op.alpha.val, op.beta.val) for op in program.find_ops(op_type="clip")],
+            [(0.5, 2.5)],
+        )
+        ct.convert(
+            torch.jit.trace(torch.nn.Hardtanh(0.5, 2.5), example_inputs),
+            inputs=[ct.TensorType(shape=(2, 3))],
+            convert_to="milinternal",
+        )
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[self._coreml_partitioner()]
+        )
+        self.assertEqual(
+            [
+                node.target.__name__
+                for node in delegated_program.exported_program().graph.nodes
+                if node.op == "call_function"
+            ],
+            ["executorch_call_delegate", "getitem"],
+        )
+        self._compare_outputs(delegated_program.to_executorch(), model, example_inputs)
+
     def test_dequantize_affine_c4w_embedding(self):
         model, example_inputs = self._get_test_model()
         quantize_(
