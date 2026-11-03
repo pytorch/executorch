@@ -47,17 +47,26 @@ Result<ETCoreAIScalarType> scalar_type(ScalarType type) {
       return ETCoreAIScalarTypeFloat16;
     case ScalarType::Float:
       return ETCoreAIScalarTypeFloat32;
+    case ScalarType::Int:
+      return ETCoreAIScalarTypeInt32;
+    case ScalarType::Bool:
+      return ETCoreAIScalarTypeBool;
     default:
-      ET_LOG(Error, "Core AI runtime supports FP16 and FP32 tensors only");
+      ET_LOG(
+          Error,
+          "Core AI runtime supports FP16, FP32, INT32 and BOOL tensors only");
       return Error::NotSupported;
   }
 }
 
 Result<size_t> bridge_scalar_width(ETCoreAIScalarType type) {
   switch (type) {
+    case ETCoreAIScalarTypeBool:
+      return size_t(1);
     case ETCoreAIScalarTypeFloat16:
       return size_t(2);
     case ETCoreAIScalarTypeFloat32:
+    case ETCoreAIScalarTypeInt32:
       return size_t(4);
     default:
       return Error::Internal;
