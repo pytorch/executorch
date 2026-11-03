@@ -75,7 +75,15 @@ std::vector<float> to_float(const SampleTensor& t) {
         out[i] = std::bit_cast<float>(load_u16(bytes + 2 * i) << 16);
       }
       break;
-    default:
+    case kByte:
+    case kChar:
+    case kShort:
+    case kInt:
+    case kLong:
+    case kBool:
+    case kUInt16:
+    case kUInt32:
+    case kUInt64:
       throw std::invalid_argument(
           std::string("to_float: unsupported dtype ") +
           scalar_type_name(t.dtype));
