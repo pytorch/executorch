@@ -1624,6 +1624,35 @@ class TestPasses(unittest.TestCase):
         edge.exported_program()._validate()
         edge.to_executorch()
 
+    def test_constant_prop_for_output_clones_in_program_dialect(self) -> None:
+        class M(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                return x * 2, torch.arange(4, dtype=torch.float32) + 1
+
+        exported = export(M(), (torch.ones(4),), strict=True)
+        for ep in (exported.run_decompositions({}), exported):
+            with self.subTest(dialect=ep.dialect):
+                ep = constant_prop_pass(ep)
+                [_, folded] = ep.graph.output_node().args[0]
+                self.assertEqual(folded.target, torch.ops.aten.clone.default)
+                ep._validate()
+                edge = to_edge(
+                    ep, compile_config=EdgeCompileConfig(_skip_dim_order=False)
+                )
+                [_, folded] = edge.exported_program().graph.output_node().args[0]
+                self.assertEqual(
+                    folded.target, exir_ops.edge.dim_order_ops._clone_dim_order.default
+                )
+
+        with self.subTest(dialect="EDGE"):
+            edge = to_edge(
+                export(M(), (torch.ones(4),), strict=True),
+                compile_config=EdgeCompileConfig(_skip_dim_order=True),
+            )
+            ep = constant_prop_pass(edge.exported_program())
+            [_, folded] = ep.graph.output_node().args[0]
+            self.assertEqual(folded.target, exir_ops.edge.aten.clone.default)
+
     def test_constant_prop_preserves_memory_alloc(self) -> None:
         class Add(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:

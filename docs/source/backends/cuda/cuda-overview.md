@@ -260,10 +260,10 @@ needs neither `skip_h2d_for_method_inputs` nor unplanned inputs.
 if the method changes an input that a delegate reads, even when the delegate makes the change. This
 includes a mutable buffer, such as a KV cache, even though the caller does not pass it. For a
 buffer, put it and every operator that uses it in the delegate. The CUDA partitioner already moves
-the buffer in, with `tag_mutated_buffer`, once those operators are there. When the method reads the
-buffer, it keeps the buffer out if the method also returns the buffer's new value, or sets the
-buffer to a method input, as in `self.state.copy_(x)`. Because the CUDA partitioner puts the ops
-that read such a buffer in a delegate, this flag then refuses the method.
+the buffer in, with `tag_mutated_buffer`, once those operators are there. It keeps the buffer out
+when the method also returns the buffer's new value, or when the new value is a method input, as in
+`self.state.copy_(x)`. For a buffer that stays out, this flag refuses the method only if a delegate
+reads it.
 
 **The choice is baked into the `.pte`.** A program exported with copies expects host tensors; one
 exported without them expects device tensors. Passing the wrong kind is a caller error, not

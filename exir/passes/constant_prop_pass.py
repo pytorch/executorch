@@ -466,11 +466,12 @@ def _update_output_node_and_specs(
     output_specs = exported_program.graph_signature.output_specs
     assert len(output_nodes) == len(output_specs)
 
-    clone_op = (
-        exir_ops.edge.aten.clone.default
-        if _skip_dim_order
-        else exir_ops.edge.dim_order_ops._clone_dim_order.default
-    )
+    if exported_program.dialect != "EDGE":
+        clone_op = torch.ops.aten.clone.default
+    elif _skip_dim_order:
+        clone_op = exir_ops.edge.aten.clone.default
+    else:
+        clone_op = exir_ops.edge.dim_order_ops._clone_dim_order.default
 
     for i in range(len(output_specs)):
         out_node = output_nodes[i]
@@ -497,6 +498,8 @@ def constant_prop_pass(
     """
     This pass is for constant propagation for Exported Program with lifted parameters,
     as the parameters will not be shown up as `get_attr` but as `placeholder` to the graph.
+    A graph output that is a constant gets a clone in front of it: an Edge clone when
+    exported_program.dialect is "EDGE", and torch.ops.aten.clone.default otherwise.
 
     Args:
         exported_program: The ExportedProgram to perform constant propagation on.
