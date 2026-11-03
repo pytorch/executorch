@@ -1,4 +1,5 @@
 import argparse
+import sys
 import unittest
 
 
@@ -71,3 +72,4 @@ if __name__ == "__main__":
         print("OpenVINO backend tests completed successfully")
     else:
         print("OpenVINO backend tests completed with failures")
+        sys.exit(1)
