@@ -289,12 +289,11 @@ Registered convolution routes:
 
 | Operator | Routes and options |
 | --- | --- |
-| `aten.convolution.default` | `auto`, `direct`, `im2col`. Only `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. |
+| `aten.convolution.default`, `et_vk.conv_with_clamp.default` | `auto`, `direct`, `im2col`. `direct` accepts `masked: true`, which disables the border-specialized shader variants. `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. |
 | `et_vk.q8ta_conv2d.default` | `auto`, `direct` (general convolution), `im2col`. No route options. |
 
 The floating-point forced routes currently support forward 2D convolution with
-batch 1 and channels-packed texture3d input/output. Direct grouped convolution
-requires group channel boundaries aligned to four; im2col requires groups 1.
+batch 1 and channels-packed texture3d input/output. im2col requires groups 1.
 The Q8TA routes use packed int8 buffers and the production streaming feasibility
 checks. Route eligibility is separate from automatic performance heuristics:
 for example, forcing floating-point im2col can test dilated convolutions even
