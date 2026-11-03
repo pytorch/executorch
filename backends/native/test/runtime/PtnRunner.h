@@ -12,8 +12,8 @@
 
 namespace ptn::testing {
 
-// Defined once per runner binary; ptn_runner_main.cpp drives the host it
-// returns, so every engine runs a PTN through the same harness.
+// Defined once per binary by an engine's host library; drivers such as
+// ptn_runner_main.cpp run every engine through the host it returns.
 std::unique_ptr<EngineHost> make_engine_host();
 
 } // namespace ptn::testing
