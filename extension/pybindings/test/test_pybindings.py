@@ -673,6 +673,28 @@ if sys.argv[1] == "replaced, another thread":
     print("in order:", 0 <= first < text.find("Program identifier"))
     sys.exit()
 
+if sys.argv[1] == "replaced, a call after a failed load":
+    in_order = True
+    # The first round comes out in order even without the wait, so it repeats.
+    for _ in range(5):
+        captured = io.StringIO()
+        sys.stderr = captured
+        try:
+            TextLLMRunner(missing_program, sys.argv[2])
+        except RuntimeError:
+            # A call that raised runs no pending call before the next call, yet
+            # this call's line must come after the runner's lines.
+            try:
+                portable_lib._load_program_from_buffer(b"x" * 128)
+            except RuntimeError:
+                pass
+        sys.stderr = sys.__stderr__
+        text = captured.getvalue()
+        first = text.find("[llm_runner_helper.cpp:")
+        in_order = in_order and 0 <= first < text.find("Program identifier")
+    print("in order:", in_order)
+    sys.exit()
+
 with (
     contextlib.redirect_stderr(captured)
     if sys.argv[1] == "replaced after import"
@@ -695,6 +717,7 @@ print("lines through Python:", captured.getvalue().count("[llm_runner_helper.cpp
                 "replaced before import",
                 "replaced after import",
                 "replaced, another thread",
+                "replaced, a call after a failed load",
                 "process stderr",
             ):
                 completed = subprocess.run(
@@ -710,8 +733,8 @@ print("lines through Python:", captured.getvalue().count("[llm_runner_helper.cpp
                     self.skipTest("the LLM runner bindings are not built")
                 if mode == "process stderr":
                     self.assertIn("[llm_runner_helper.cpp:", completed.stderr)
-                elif mode == "replaced, another thread":
-                    self.assertIn("in order: True", completed.stdout)
+                elif mode.startswith("replaced, a"):
+                    self.assertIn("in order: True", completed.stdout, mode)
                 else:
                     self.assertIn("lines through Python:", completed.stdout, mode)
                     self.assertNotIn("lines through Python: 0", completed.stdout, mode)
@@ -1041,6 +1064,111 @@ print("done")
                     )
                     if "no LLM runner" not in completed.stdout:
                         self.assertIn("done", completed.stdout, f"{mode}, {kind}")
+
+    def test_lines_waiting_for_a_full_stderr(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("the script below uses the portable bindings")
+        if sys.platform == "win32":
+            self.skipTest("uses a POSIX pipe as fd 2")
+
+        script = """
+import io
+import os
+import sys
+import threading
+import time
+
+from executorch.extension.pybindings import portable_lib
+
+try:
+    from executorch.extension.llm.runner import TextLLMRunner
+except (ImportError, RuntimeError):
+    # The package raises RuntimeError when its extension is not built.
+    print("no LLM runner")
+    sys.exit()
+missing_program = os.path.join(os.path.dirname(sys.argv[2]), "missing.pte")
+
+
+def spin(seconds):
+    rounds = 0
+    end = time.perf_counter() + seconds
+    while time.perf_counter() < end:
+        for _ in range(100):
+            rounds += 1
+    return rounds
+
+
+normal_speed = spin(0.5)
+read_end, write_end = os.pipe()
+os.set_blocking(write_end, False)
+for size in (4096, 512, 64, 1):
+    try:
+        while True:
+            os.write(write_end, b"x" * size)
+    except BlockingIOError:
+        pass
+saved_stderr = os.dup(2)
+os.dup2(write_end, 2)
+if sys.argv[1] == "blocking":
+    os.set_blocking(2, True)
+drained = bytearray()
+
+
+def drain():
+    # Starts once the lines below wait, and needs the GIL after every read.
+    time.sleep(2)
+    os.set_blocking(read_end, False)
+    end = time.monotonic() + 3
+    while time.monotonic() < end:
+        try:
+            drained.extend(os.read(read_end, 65536))
+        except BlockingIOError:
+            time.sleep(0.01)
+
+
+drainer = threading.Thread(target=drain)
+drainer.start()
+try:
+    # fd 2 is full, so these lines go to a thread of the bindings, which waits
+    # to write them.
+    try:
+        TextLLMRunner(missing_program, sys.argv[2])
+    except RuntimeError:
+        pass
+    if sys.argv[1] == "blocking":
+        # The main thread's later lines must wait behind those without making
+        # it spin.
+        time.sleep(0.3)
+        sys.stderr = io.StringIO()
+        try:
+            portable_lib._load_program_from_buffer(b"x" * 128)
+        except RuntimeError:
+            pass
+        print("speed:", round(spin(0.5) / normal_speed, 3))
+        sys.stderr = sys.__stderr__
+    drainer.join()
+finally:
+    os.dup2(saved_stderr, 2)
+print("runner lines:", drained.count(b"[llm_runner_helper.cpp:"))
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            tokenizer = write_llm_tokenizer(directory)
+            for mode in ("blocking", "non-blocking"):
+                completed = subprocess.run(
+                    [sys.executable, "-c", script, mode, tokenizer],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                self.assertEqual(
+                    completed.returncode, 0, f"{mode}: {completed.stderr[-2000:]}"
+                )
+                if "no LLM runner" in completed.stdout:
+                    self.skipTest("the LLM runner bindings are not built")
+                self.assertNotIn("runner lines: 0", completed.stdout, mode)
+                if mode == "blocking":
+                    speed = float(completed.stdout.split("speed:")[1].split()[0])
+                    self.assertGreater(speed, 0.05, completed.stdout)
 
     def test_deferred_runtime_logs_do_not_nest_in_a_stderr_write(self):
         if self.kernel_mode != "portable":
