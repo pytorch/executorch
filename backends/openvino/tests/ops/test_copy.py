@@ -57,8 +57,9 @@ class TestCopyOperator(BaseOpenvinoOpTest):
 
     def test_copy_of_constant_as_output(self):
         class CopyOfConstant(torch.nn.Module):
-            def __init__(self, kind):
+            def __init__(self, kind, memory_format=None):
                 super().__init__()
+                self.memory_format = memory_format
                 value = torch.randn(2, 3, 4, 5)
                 if kind == "parameter":
                     self.constant = torch.nn.Parameter(value)
@@ -68,14 +69,27 @@ class TestCopyOperator(BaseOpenvinoOpTest):
                     self.constant = value
 
             def forward(self, x):
-                return self.constant.clone(), x + self.constant
+                copy = self.constant.clone(memory_format=self.memory_format)
+                return copy, x + self.constant
 
-        for kind in ("parameter", "buffer", "lifted tensor"):
-            with self.subTest(kind=kind):
+        cases = {
+            "parameter": (CopyOfConstant("parameter"), None),
+            "buffer": (CopyOfConstant("buffer"), None),
+            "lifted tensor": (CopyOfConstant("lifted tensor"), None),
+            # With dim order off this stays aten.clone, and the portable clone
+            # kernel rejects preserve_format.
+            "buffer, dim order off": (
+                CopyOfConstant("buffer", torch.preserve_format),
+                EdgeCompileConfig(_skip_dim_order=True),
+            ),
+        }
+        for name, (module, config) in cases.items():
+            with self.subTest(case=name):
                 program = self.execute_layer_test(
-                    CopyOfConstant(kind),
+                    module,
                     (torch.randn(2, 3, 4, 5),),
                     more_inputs=((torch.randn(2, 3, 4, 5),),),
+                    compile_config=config,
                 )
                 # OpenVINO gets a constant as its own data, not as an input, so
                 # the copy stays. Run outside, it would store the constant twice.
@@ -121,9 +135,9 @@ class TestCopyOperator(BaseOpenvinoOpTest):
                 )
                 operators = program.executorch_program.execution_plan[0].operators
                 names = [op.name for op in operators]
-                self.assertIn("dim_order_ops::_clone_dim_order", names)
                 if name == "also read outside":
                     self.assertIn("aten::atan", names)
+                self.assertIn("dim_order_ops::_clone_dim_order", names)
 
     def test_copy_of_mutated_buffer_as_output(self):
         class CopyOfMutatedBuffer(torch.nn.Module):
@@ -156,6 +170,9 @@ class TestCopyOperator(BaseOpenvinoOpTest):
             torch.testing.assert_close(sine, torch.sin(copy), **tolerance)
 
     def test_whole_program_returning_copy_of_input(self):
+        if not self.device.startswith("CPU"):
+            self.skipTest("preprocess adds the copy only for the CPU")
+
         class CopyAndReshape(torch.nn.Module):
             def forward(self, x):
                 return x.clone(), x.reshape(-1)
