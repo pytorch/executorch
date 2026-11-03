@@ -83,3 +83,69 @@ def test_match_arg_ranks_preserves_mul_shift(share_shift_with_data):
     assert shift.target == exir_ops.backend.tosa.CONST.default
     assert shift.args == ([0], [1], torch.int8)
     assert shift.meta["val"].shape == (1,)
+
+
+@pytest.mark.parametrize("use_tosa", [False, True])
+def test_match_arg_ranks_preserves_consumer_provenance(use_tosa: bool) -> None:
+    """Broadcast views retain their consumer's provenance, not their input's."""
+    fake_mode = FakeTensorMode()
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = fake_mode.from_tensor(torch.empty((2, 3)))
+    y = graph.placeholder("y")
+    y.meta["val"] = fake_mode.from_tensor(torch.empty((3,)))
+    y.meta["nn_module_stack"] = {"producer": ("producer", torch.nn.Identity)}
+
+    target = (
+        exir_ops.backend.tosa.ADD.default if use_tosa else exir_ops.edge.aten.add.Tensor
+    )
+    binary = graph.call_function(target, args=(x, y))
+    expected_module_stack = {"consumer": ("consumer", torch.nn.ReLU)}
+    expected_source_stack = [("consumer", torch.nn.ReLU)]
+    binary.meta.update(
+        {
+            "val": fake_mode.from_tensor(torch.empty((2, 3))),
+            "nn_module_stack": expected_module_stack,
+            "source_fn_stack": expected_source_stack,
+            "stack_trace": "original consumer traceback",
+            "debug_handle": 123,
+            # The generated view must not inherit these operator qparams.
+            "input_qparams": {0: "consumer input qparams"},
+            "output_qparams": {0: "consumer output qparams"},
+        }
+    )
+    graph.output(binary)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP")):
+        rank_pass = MatchArgRanksPass(cast(ExportedProgram, None))
+        result = rank_pass.call(graph_module)
+        second_result = rank_pass.call(result.graph_module)
+
+    assert result.modified
+    assert not second_result.modified, "The pass must be idempotent."
+    call_nodes = [
+        node for node in result.graph_module.graph.nodes if node.op == "call_function"
+    ]
+    views = [
+        node
+        for node in call_nodes
+        if node.target == exir_ops.edge.aten.view_copy.default
+    ]
+    assert len(views) == 1
+    view = views[0]
+    consumer = next(node for node in call_nodes if node.target == target)
+
+    assert view.args[0].target == "y"
+    assert view.args[1] == [1, 3]
+    assert consumer.args[1] is view
+    assert view.meta.get("nn_module_stack") == expected_module_stack
+    assert view.meta["nn_module_stack"] != y.meta["nn_module_stack"]
+    assert view.meta.get("source_fn_stack") == expected_source_stack
+    assert "original consumer traceback" in view.meta.get("stack_trace", "")
+    assert view.meta.get("debug_handle") == 123
+    assert view.meta.get("input_qparams") == {}
+    assert view.meta.get("output_qparams") == {}
+    # Retracing must recalculate the view's shape, not retain ADD's shape.
+    assert tuple(view.meta["val"].shape) == (1, 3)
+    assert tuple(consumer.meta["val"].shape) == (2, 3)

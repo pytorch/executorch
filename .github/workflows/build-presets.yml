@@ -27,7 +27,7 @@ jobs:
       default-packages: ""
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: 3.12
       submodules: recursive
       timeout: 90

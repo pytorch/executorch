@@ -94,11 +94,13 @@ class MatchArgRanksPass(ArmOpTargetedPass):
         rank = len(shape)
         new_shape = list([1] * (max_rank - rank) + list(shape))
         with graph_module.graph.inserting_before(node):
+            # The broadcast view belongs to the consuming operator, not its input.
             view = create_node(
                 graph_module.graph,
                 exir_ops.edge.aten.view_copy.default,
                 args=(arg, new_shape),
                 kwargs={},
+                from_node=node,
             )
             node.update_arg(arg_index, view)
 
