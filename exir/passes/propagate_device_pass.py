@@ -560,7 +560,8 @@ class PropagateDevicePass(PassBase):
                     f"disable skip_h2d_for_method_inputs, or, for a mutable buffer, "
                     f"have the partitioner put the buffer and every op that reads "
                     f"or writes it in the delegate; tag_mutated_buffer tags the "
-                    f"buffer once those ops are there."
+                    f"buffer once those ops are there, unless the method also "
+                    f"returns its new value or the new value is a method input."
                 )
             raise RuntimeError(
                 f"{refusal} in place on the host. Either disable "
