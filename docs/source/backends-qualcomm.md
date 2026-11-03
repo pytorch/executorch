@@ -423,6 +423,36 @@ cd $env:EXECUTORCH_ROOT
 .\qnn_executor_runner.exe --model_path .\deeplab_v3\dlv3_qnn.pte
 ```
 
+### Export a Hugging Face LLM
+
+`executorch.backends.qualcomm.utils.hf_export` traces a Hugging Face decoder with HF's static-cache exporter and lowers it to QNN. The model can use a tuned quantization recipe while its cache I/O stays floating-point:
+
+```bash
+python -m executorch.backends.qualcomm.utils.hf_export \
+    --model Qwen/Qwen3-0.6B --soc_model SM8750 --max_seq_len 1024 \
+    --quantize --hybrid --io_contract hf_static --output qwen3.pte
+```
+
+`--io_contract hf_static` produces `decode` (one token) and, with `--hybrid`, `prefill` (`--prefill_len` tokens), sharing weights and cache buffers. The program preserves HF's per-step tensor semantics and writes new cache rows on CPU; it does not preserve HF's single dynamic `forward` program interface.
+
+ExecuTorch's LLM runner uses `HfStaticIOManager`. The Python `hf_static` runner is registered by importing `executorch.extension.llm.io_contracts`; HF's `ExportedGenerator` can select it when transformers provides the I/O-contract hook. A runner must follow the [version-1 contract](llm-hf-static-io-contract.md), including fixed query lengths, padding rows in sliding masks, absolute counters and reset. This is not a claim that any stock HF-ABI runner can load the program. Python native bindings may clone returned outputs; a zero-copy Python host API is not claimed.
+
+#### `hf_static` and `kvcache_io`
+
+| | `hf_static` | `kvcache_io` |
+|---|---|---|
+| Step signature | HF static-cache tensor order; full K/V and counters are inputs and mutated outputs | Past K/V inputs; new K/V rows returned |
+| Cache writes | Program CPU kernels into runner-owned buffers | Runner pastes returned rows |
+| Methods | `prefill` / `decode` | `prefill_forward` / `kv_forward` |
+| Runners | `HfStaticIOManager`; registered Python `hf_static` runner | `KvCacheIOManager`; `qnn_llama_runner`; registered Python adapter |
+| Cache dtype | Float32 / float16 only, even with quantized model computation | Defined by the exported `kvcache_io` program |
+| Auto attention | Decode uses split; prefill uses concat for floating-point model computation and split when quantized | QNN-specific cache layout and attention |
+| Sliding layers | Window-sized caches with CPU shift / write; CPU correctness checked | Distinct cache-as-I/O contract; no equivalent sliding behavior is claimed |
+
+For the transformers export used here, the Python branch that shifts HF's sliding cache once full is traced away. `hf_static` replaces those writes and determines sliding layers from model configuration. A prompt method must not exceed the smallest sliding cache length. Padding rows in a window mask are all-false, so the shift counts real tokens only. See the [counter and padding protocol](llm-hf-static-io-contract.md#positions-counters-and-padding), including the counter difference from HF eager state.
+
+**Device boundary:** sliding-window shifting past context 512 has not been measured on device. CPU tests establish token correctness, not device support / latency. Quantized caches, `sha` prefill and full-length sliding-cache mode are held back from this series.
+
 ### Run [Android LlamaDemo](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo) with QNN backend
 
 `$DEMO_APP` refers to the root of the executorch android demo, i.e., the directory containing `build.gradle.kts`.
