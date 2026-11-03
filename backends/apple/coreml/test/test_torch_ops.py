@@ -9,6 +9,7 @@ import coremltools as ct
 import executorch.exir
 
 import torch
+from coremltools.converters.mil.mil import types
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
@@ -128,6 +129,7 @@ class TestTorchOps(unittest.TestCase):
                         (i > 1).sqrt(),
                         (i >= 0).log(),
                         (i > 1).log1p(),
+                        torch.full((2, 3), 4).sqrt(),
                     ]
                 )
 
@@ -169,6 +171,7 @@ class TestTorchOps(unittest.TestCase):
                     torch.nn.functional.hardtanh(i, -1.5, 2.7),
                     # Int bounds on a float16 input.
                     torch.nn.functional.hardtanh(x.half() * 4 - 4, 0, 6).long(),
+                    torch.full((2, 3), 4).floor(),
                 ]
                 return torch.stack(ops).float()
 
@@ -203,6 +206,7 @@ class TestTorchOps(unittest.TestCase):
                 ops = [x.clamp_min(1), x.clamp_max(1)]
                 ops += [i.clamp_min(0.5), i.clamp_max(2.5)]
                 ops += [x.clamp_min(i[:1]), i.clamp_max(x[:1] * 2)]
+                ops.append(torch.full((2, 3), 0).clamp_min(0.5))
                 return torch.stack(ops)
 
         # Values that float16 holds exactly, so that Core ML drops the same
@@ -276,6 +280,7 @@ class TestTorchOps(unittest.TestCase):
             def forward(self, x):
                 y = x * 2
                 y[:, 0] = (x[:, 1] * 4).to(torch.int64)
+                y[:, 1] = torch.full((2,), 7)
                 y[:, 2] = x[:, 1] > 0.5
                 z = x.clone().copy_((x * 4).to(torch.int64))
                 # Torch drops the fraction of a float written into an int.
@@ -284,7 +289,9 @@ class TestTorchOps(unittest.TestCase):
                 # coremltools makes this arange int32, so the copy has to take
                 # the dtype from torch.
                 a = torch.arange(6, dtype=torch.float32).reshape(2, 3).copy_(x)
-                return y + torch.nn.functional.gelu(z) + i + a.softmax(-1)
+                w = torch.full((2, 3), 4)
+                w[:, 0] = x[:, 0] * 4
+                return y + torch.nn.functional.gelu(z) + i + w + a.softmax(-1)
 
         # Values that float16 holds exactly, so that the comparison with 0.5 in
         # Core ML agrees with eager.
@@ -526,6 +533,127 @@ class TestTorchOps(unittest.TestCase):
                 ], f"Got unexpected node target after delegation: {node.target.__name__}"
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
+
+    def test_fills_keep_their_dtype(self):
+        """
+        coremltools makes full without a dtype, zeros and new_zeros as float,
+        ones_like as float from iOS 16, zeros_like with the dtype of its input,
+        and full_like, new_full, fill and scalar_tensor with the type of their
+        fill value, instead of the dtype torch gives them. nn.MultiheadAttention
+        turns a bool mask into a float one with zeros_like(mask, dtype=...).
+        """
+
+        class Fills(torch.nn.Module):
+            def forward(self, ids, half):
+                ones = torch.ones_like(ids) + ids.new_zeros((2, 3))
+                twos = ids.new_full((2, 3), 2.0) + torch.empty_like(ids).fill_(0.0)
+                zeros = torch.zeros(2, 3, dtype=torch.long) + torch.full_like(ids, 0.0)
+                count = torch.scalar_tensor(1001.0, dtype=torch.long)
+                ints = (ids + ones + twos + zeros + torch.full((2, 3), 1)) * count
+                flags = torch.where(ids > 0, torch.full((2, 3), True), ids > 1)
+                return (
+                    ints,
+                    flags,
+                    half * torch.ones_like(half) + torch.zeros_like(half),
+                )
+
+        class Attention(torch.nn.MultiheadAttention):
+            def forward(self, x, mask):
+                return super().forward(x, x, x, attn_mask=mask, need_weights=False)[0]
+
+        fills_inputs = (torch.arange(6).reshape(2, 3), torch.rand(2, 3).half())
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            compute_precision=ct.precision.FLOAT32,
+            minimum_deployment_target=ct.target.iOS16,
+        )
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            torch.export.export(Fills(), fills_inputs),
+            partitioner=[CoreMLPartitioner(compile_specs=compile_specs)],
+        )
+        self.assertEqual(
+            {
+                node.target.__name__
+                for node in delegated_program.exported_program().graph.nodes
+                if node.op == "call_function"
+            },
+            {"executorch_call_delegate", "getitem"},
+        )
+        # The runtime casts each Core ML output to the dtype ExecuTorch expects,
+        # so the dtypes are read from the program the delegate converts.
+        lowered = delegated_program.exported_program().graph_module.lowered_module_0
+        program = ct.convert(
+            lowered.original_module,
+            convert_to="milinternal",
+            compute_precision=ct.precision.FLOAT32,
+            minimum_deployment_target=ct.target.iOS16,
+        )
+        self.assertEqual(
+            [output.dtype for output in program.functions["main"].outputs],
+            [types.int32, types.bool, types.fp16],
+        )
+        self._compare_outputs(delegated_program.to_executorch(), Fills(), fills_inputs)
+        model = Attention(16, 2, batch_first=True).eval()
+        example_inputs = (
+            torch.randn(1, 6, 16),
+            torch.ones(6, 6, dtype=torch.bool).triu(1),
+        )
+        attention = torch.export.export(model, example_inputs)
+        program = ct.convert(attention.run_decompositions({}), convert_to="milinternal")
+        masks = [
+            op.outputs[0].dtype
+            for op in program.functions["main"].operations
+            if op.name.startswith("zeros_like")
+        ]
+        self.assertTrue(masks and all(types.is_float(dtype) for dtype in masks))
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            attention, partitioner=[CoreMLPartitioner()]
+        )
+        self.assertEqual(
+            [
+                node.target.__name__
+                for node in delegated_program.exported_program().graph.nodes
+                if node.op == "call_function"
+            ],
+            ["executorch_call_delegate", "getitem"],
+        )
+        self._compare_outputs(delegated_program.to_executorch(), model, example_inputs)
+
+    def test_empty_keeps_its_dtype(self):
+        """
+        coremltools converts empty, new_empty and empty_like as zeros, new_zeros
+        and zeros_like, so they need the dtype torch gives them too. With dim
+        order ops skipped, as the Core ML export example does, empty reaches
+        Core ML as well.
+        """
+
+        class Empties(torch.nn.Module):
+            def forward(self, ids, x):
+                return (
+                    torch.empty(2, 3, dtype=torch.long),
+                    ids.new_empty((2, 3)),
+                    torch.empty_like(x, dtype=torch.long),
+                    ids + 1,
+                )
+
+        inputs = (torch.arange(6).reshape(2, 3), torch.rand(2, 3))
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            compute_precision=ct.precision.FLOAT32
+        )
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            torch.export.export(Empties(), inputs),
+            partitioner=[CoreMLPartitioner(compile_specs=compile_specs)],
+            compile_config=executorch.exir.EdgeCompileConfig(_skip_dim_order=True),
+        )
+        lowered = delegated_program.exported_program().graph_module.lowered_module_0
+        program = ct.convert(
+            lowered.original_module,
+            convert_to="milinternal",
+            compute_precision=ct.precision.FLOAT32,
+        )
+        self.assertEqual(
+            [output.dtype for output in program.functions["main"].outputs],
+            [types.int32] * 4,
+        )
 
     def test_dequantize_affine_below_ios18_raises_with_hint(self):
         """

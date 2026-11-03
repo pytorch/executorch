@@ -20,6 +20,7 @@ from coremltools.converters.mil.frontend.torch import ops as _ct_ops
 from coremltools.converters.mil.frontend.torch.ops import (
     _get_inputs,
     _get_kwinputs,
+    _make_fill_op,
     noop,
     NUM_TO_NUMPY_DTYPE,
     NUM_TO_TORCH_DTYPE,
@@ -69,6 +70,90 @@ def _core_ml_type(node):
     if dtype == _torch.float16:
         return np.float16
     return np.float32 if dtype.is_floating_point else np.int32
+
+
+def _add_fill(context, node, shape, value):
+    context.add(_make_fill_op(shape, _core_ml_type(node)(value), node.name))
+
+
+# coremltools gives these fills the type of their fill value or of their input,
+# or makes them float, instead of the dtype torch gives them, so an int or bool
+# fill could come out as float. https://github.com/apple/coremltools/pull/2865
+# fixes zeros_like; no upstream issue covers the others yet. For example,
+# torch.full((1, 16), 0) is int64 in torch, and coremltools makes it fp32. A
+# TorchScript node, which carries no dtype, and a fill value known only at run
+# time keep the coremltools converter.
+@register_torch_op(override=True)
+def full(context, node):
+    inputs = _get_inputs(context, node, min_expected=2)
+    if _torch_dtype(node) is None or inputs[1].val is None:
+        return _ct_ops.full(context, node)
+    _add_fill(context, node, inputs[0], inputs[1].val)
+
+
+@register_torch_op(override=True)
+def new_full(context, node):
+    inputs = _get_inputs(context, node, min_expected=3)
+    if _torch_dtype(node) is None or inputs[2].val is None:
+        return _ct_ops.new_full(context, node)
+    _add_fill(context, node, inputs[1], inputs[2].val)
+
+
+def _fill_like(context, node, convert):
+    inputs = _get_inputs(context, node, min_expected=2)
+    if _torch_dtype(node) is None or inputs[1].val is None:
+        return convert(context, node)
+    _add_fill(context, node, mb.shape(x=inputs[0]), inputs[1].val)
+
+
+@register_torch_op(override=True)
+def full_like(context, node):
+    _fill_like(context, node, _ct_ops.full_like)
+
+
+@register_torch_op(override=True)
+def fill(context, node):
+    _fill_like(context, node, _ct_ops.fill)
+
+
+# coremltools converts empty, new_empty and empty_like as zeros, new_zeros and
+# zeros_like, so these overrides take their names too.
+@register_torch_op(torch_alias=["empty.memory_format"], override=True)
+def zeros(context, node):
+    if _torch_dtype(node) is None:
+        return _ct_ops.zeros(context, node)
+    _add_fill(context, node, _get_inputs(context, node, min_expected=1)[0], 0)
+
+
+@register_torch_op(torch_alias=["new_empty"], override=True)
+def new_zeros(context, node):
+    if _torch_dtype(node) is None:
+        return _ct_ops.new_zeros(context, node)
+    _add_fill(context, node, _get_inputs(context, node, min_expected=2)[1], 0)
+
+
+@register_torch_op(torch_alias=["empty_like"], override=True)
+def zeros_like(context, node):
+    if _torch_dtype(node) is None:
+        return _ct_ops.zeros_like(context, node)
+    x = _get_inputs(context, node, min_expected=1)[0]
+    _add_fill(context, node, mb.shape(x=x), 0)
+
+
+@register_torch_op(override=True)
+def ones_like(context, node):
+    if _torch_dtype(node) is None:
+        return _ct_ops.ones_like(context, node)
+    x = _get_inputs(context, node, min_expected=1)[0]
+    _add_fill(context, node, mb.shape(x=x), 1)
+
+
+@register_torch_op(override=True)
+def scalar_tensor(context, node):
+    x = _get_inputs(context, node, expected=[1, 5])[0]
+    if _torch_dtype(node) is None or x.val is None:
+        return _ct_ops.scalar_tensor(context, node)
+    context.add(mb.const(val=_core_ml_type(node)(x.val), name=node.name))
 
 
 def is_fbcode():
