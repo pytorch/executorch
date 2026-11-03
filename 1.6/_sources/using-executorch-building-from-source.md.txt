@@ -1,6 +1,6 @@
 # Building from Source
 
-On Linux and macOS you may not need to build at all. Current main/nightly wheels
+On Linux and macOS you may not need to build at all. ExecuTorch 1.6 wheels
 ship the runtime as prebuilt libraries with headers and a CMake package, so a
 C++ program can link it directly. See
 [Using the prebuilt libraries from the pip package](using-executorch-cpp.md#using-the-prebuilt-libraries-from-the-pip-package),
@@ -55,7 +55,7 @@ portability details.
 ## Environment Setup
  Clone the ExecuTorch repository from GitHub and create a conda environment. Venv can be used in place of conda.
    ```bash
-   git clone -b viable/strict --recurse-submodules https://github.com/pytorch/executorch.git
+   git clone -b release/1.6 --recurse-submodules https://github.com/pytorch/executorch.git
    cd executorch
    conda create -yn executorch python=3.11
    conda activate executorch
@@ -87,7 +87,7 @@ portability details.
   * `--optional-dependency <name>`: Install an optional Python dependency set.
     Repeat the flag to select more than one. Supported names are `ethos_u`,
     `vgf`, and `openvino`.
-  * `--use-pt-pinned-commit`: Install the pinned PyTorch commit or release version. When not specified, the latest PyTorch nightly build is installed.
+  * `--use-pt-pinned-commit`: Use the PyTorch version already installed for the pinned source commit. When not specified, PyTorch 2.15.0 is installed.
 
   For example, install the current checkout with the dependencies needed for
   Ethos-U ahead-of-time (AOT) export:

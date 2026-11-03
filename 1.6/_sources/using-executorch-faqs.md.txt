@@ -41,7 +41,7 @@ If building the runtime from source, ensure that the build is done in release mo
 
 Ensure the model is delegated. If not targeting a specific accelerator, use the XNNPACK delegate for CPU performance. Undelegated operators will typically fall back to the ExecuTorch portable library, which is designed as a fallback, and is not intended for performance sensitive operators. To target XNNPACK, pass an `XnnpackPartitioner` to `to_edge_transform_and_lower`. See [Building and Running ExecuTorch with XNNPACK Backend](tutorial-xnnpack-delegate-lowering.md) for more information.
 
-Thread count can have a significant impact on CPU performance. The optimal thread count may depend on the model and application. By default, ExecuTorch will currently use as many threads as there are cores. Consider setting the thread count to cores / 2, or just set to 4 on mobile CPUs.
+Thread count can have a significant impact on CPU performance. The optimal thread count may depend on the model and application. By default, ExecuTorch uses one thread per performance core where it can tell core types apart, and one per logical core otherwise. On Linux other than Android, it also uses no more threads than the CPUs the process may run on, for example under `taskset` or in a container with a CPU set, and currently at most 63. It reads that limit once, from the thread that first uses the thread pool. CPU quotas, such as `docker --cpus`, are not detected. Consider setting the thread count to cores / 2, or just set to 4 on mobile CPUs.
 
 Thread count can be set with the following function. Ensure this is done prior to loading or running a model.
 ```
