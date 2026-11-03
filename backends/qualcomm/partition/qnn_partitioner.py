@@ -5,10 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 import copy
 import logging
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 from executorch.backends.qualcomm.builders import node_visitor_manager
 from executorch.backends.qualcomm.builders.node_visitor import (
     PER_CHANNEL_GROUP_ENCODING,
@@ -46,6 +49,7 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_manager import PassType
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -253,6 +257,9 @@ class QnnPartitioner(Partitioner):
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
         skip_mutable_buffer: bool = False,
+        dep_table: Optional[Dict] = None,
+        passes_job: Optional[OrderedDict] = None,
+        convert_linear_to_conv2d: bool = False,
     ):
         """
         Args:
@@ -260,7 +267,15 @@ class QnnPartitioner(Partitioner):
             skip_node_id_set (set, optional): Set of node IDs to exclude from partitioning.
             skip_node_op_set (set, optional): Set of OpOverload to exclude from partitioning.
             skip_mutable_buffer (bool, optional): If True, mutable buffers are not delegated to QNN.
+            dep_table (Dict, optional): Dependency table for the transformation passes.
+            passes_job (OrderedDict, optional): Ordered dictionary of transformation passes.
+            convert_linear_to_conv2d (bool, optional): Convert linear to conv2d where that
+                improves HTP performance.
         """
+        self.compiler_specs = compiler_specs
+        self.dep_table = dep_table
+        self.passes_job = passes_job
+        self.convert_linear_to_conv2d = convert_linear_to_conv2d
         self.compiler_specs_snapshot = copy.deepcopy(compiler_specs)
         self.backend = flatbuffer_to_option(
             generate_qnn_executorch_option(self.compiler_specs_snapshot)
@@ -273,6 +288,26 @@ class QnnPartitioner(Partitioner):
         self.skip_node_id_set = set() if skip_node_id_set is None else skip_node_id_set
         self.skip_node_op_set = set() if skip_node_op_set is None else skip_node_op_set
         self.skip_mutable_buffer = skip_mutable_buffer
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Run the QNN ATen-level passes before default decompositions."""
+        return get_qnn_pass_manager_cls(self.backend)().transform_for_export_pipeline(
+            exported_program
+        )
+
+    def transform_passes(self, exported_program: ExportedProgram) -> List[PassType]:
+        """Run the QNN edge-level passes before partitioning."""
+        return get_qnn_pass_manager_cls(self.backend)().get_to_edge_transform_passes(
+            exported_program,
+            passes_job=self.passes_job,
+            dep_table=self.dep_table,
+            compiler_specs=self.compiler_specs,
+            skip_node_id_set=self.skip_node_id_set,
+            skip_node_op_set=self.skip_node_op_set,
+            convert_linear_to_conv2d=self.convert_linear_to_conv2d,
+        )
 
     def generate_partitions(
         self, edge_program: torch.export.ExportedProgram
