@@ -29,7 +29,8 @@ python -m pytest backends/apple/coreai
 The delegate manifest's `packaging` field names the embedded format: `aimodel`
 for a portable `.aimodel` bundle, located by `path`, or `aimodelc` for
 AOT-compiled per-architecture `.aimodelc` bundles, located by `archs`. Both
-formats require a `function` name, and ordered
+formats require exactly one of a `function` name or `enumerated_functions` (see
+[Enumerated input shapes](#enumerated-input-shapes)), and ordered
 `input_names` and `output_names` matching the converter's bindings. Dictionary
 iteration order is not a binding contract. `export_hash` identifies the exported
 program used to namespace embedded assets. The `files` object maps relative
@@ -129,7 +130,8 @@ lowered = to_edge_transform_and_lower(
 Here the delegates bind `forward_0` and `prefill_0`; a graph break adds
 `forward_1`, `prefill_1` and so on. Weights shared between methods are stored
 once. Every partition must carry identical compile specs (AOT config, deployment
-floor), and `input_enumerations` is not supported with this option yet.
+floor), except `input_enumerations`, which each method may set on its own (see
+below).
 
 Each delegate keeps its own manifest naming its function and ordered I/O; all of
 them reference the same embedded bundle. Function bindings are not part of the
@@ -138,6 +140,55 @@ restore it from the same bookmark. Each delegate still loads its own model
 instance unless the `coreai_share_multifunction_model` runtime option is set
 (see [Runtime options](#runtime-options)). Multi-function manifests carry
 `"multifunction": true`.
+
+### Enumerated input shapes
+
+`CoreAIPartitioner(input_enumerations=...)` compiles a dynamic dim to a fixed set
+of sizes instead of leaving it dynamic. Entries align with the ET model inputs and
+map a dim index to its allowed values; the dim must be exported dynamic:
+
+```python
+batch = torch.export.Dim("batch", min=1, max=64)
+ep = torch.export.export(model, (x,), dynamic_shapes={"x": {0: batch}})
+lowered = to_edge_transform_and_lower(
+    ep,
+    transform_passes=get_default_passes(),
+    partitioner=[CoreAIPartitioner(input_enumerations=[{0: [4, 16, 32]}])],
+    compile_config=get_default_compile_config(),
+)
+```
+
+Core AI replaces the delegate's dynamic function with one static function per
+combination of enumerated values, so the manifest lists them under
+`enumerated_functions` instead of naming one `function`:
+
+```json
+"enumerated_functions": [
+  {"function": "main_s31_4", "input_shapes": [[4, 8]]},
+  {"function": "main_s31_16", "input_shapes": [[16, 8]]},
+  {"function": "main_s31_32", "input_shapes": [[32, 8]]}
+]
+```
+
+`input_shapes` gives every input's shape in `input_names` order. The delegate
+binds every listed function at load and runs the one whose shapes equal the call's
+inputs; inputs matching none of them fail with `InvalidArgument` without running.
+All functions come from one model, so they share weights, one specialization and
+one cache entry.
+
+With `multifunction=True`, give each method its own partitioner to enumerate only
+some methods, or different values per method:
+
+```python
+partitioner={
+    "decode": [CoreAIPartitioner(multifunction=True)],
+    "prefill": [CoreAIPartitioner(multifunction=True, input_enumerations=[{0: [64, 128]}])],
+}
+```
+
+Every enumerated partition expands into its own functions (`prefill_0_<key>`, and
+`prefill_1_<key>` past a graph break) inside the one shared model, while `decode_0`
+stays a single function. The other compile specs must still match across methods.
 
 ### Cache directory
 

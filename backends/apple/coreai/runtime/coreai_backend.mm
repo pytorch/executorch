@@ -14,19 +14,27 @@
 #import "coreai_tensor_io.h"
 
 #include <executorch/runtime/backend/interface.h>
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <new>
+#include <string>
+#include <vector>
 
 namespace executorch::backends::coreai {
 namespace {
 using namespace executorch::runtime;
 
+struct BoundFunction final {
+  std::vector<std::vector<int64_t>> input_shapes;
+  id<ETCoreAISession> session = nil;
+};
+
 struct Handle final {
   size_t input_count = 0;
   size_t output_count = 0;
   ETCoreAILoadedModel* model = nil;
-  id<ETCoreAISession> session = nil;
+  std::vector<BoundFunction> functions;
 };
 
 template <typename T>
@@ -79,11 +87,12 @@ Result<ETCoreAIComputeUnit> compute_unit_option(BackendInitContext& context) {
 
 Result<id<ETCoreAISession>> bind_session(
     id<ETCoreAIPreparedModel> model,
-    const SelectedBundle& bundle) {
+    const SelectedBundle& bundle,
+    NSString* function) {
   dispatch_semaphore_t ready = dispatch_semaphore_create(0);
   __block id<ETCoreAISession> session = nil;
   __block NSError* error = nil;
-  [model loadFunctionNamed:bundle.function
+  [model loadFunctionNamed:function
                 inputNames:bundle.inputs
                outputNames:bundle.outputs
                 completion:^(id<ETCoreAISession> result, NSError* failure) {
@@ -103,6 +112,68 @@ Result<id<ETCoreAISession>> bind_session(
   ET_CHECK_OR_RETURN_ERROR(
       bound != nil, Internal, "Core AI returned no session");
   return bound;
+}
+
+bool inputs_match(
+    const std::vector<std::vector<int64_t>>& shapes,
+    Span<EValue*> args) {
+  for (size_t index = 0; index < shapes.size(); ++index) {
+    const auto sizes = args[index]->toTensor().sizes();
+    if (sizes.size() != shapes[index].size() ||
+        !std::equal(sizes.begin(), sizes.end(), shapes[index].begin())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::string describe_shape(
+    executorch::aten::ArrayRef<executorch::aten::SizesType> sizes) {
+  std::string text = "[";
+  for (size_t dim = 0; dim < sizes.size(); ++dim) {
+    text += (dim == 0 ? "" : ", ") + std::to_string(sizes[dim]);
+  }
+  return text + "]";
+}
+
+// Enumerated-shape delegates bind one function per shape, and each accepts
+// only its own static shapes, so pick the one these inputs match.
+Result<id<ETCoreAISession>> select_session(
+    const Handle& handle,
+    Span<EValue*> args) {
+  if (handle.functions.size() == 1 &&
+      handle.functions.front().input_shapes.empty()) {
+    return handle.functions.front().session;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      args.size() >= handle.input_count,
+      InvalidArgument,
+      "Core AI delegate expected %zu inputs",
+      handle.input_count);
+  for (size_t index = 0; index < handle.input_count; ++index) {
+    ET_CHECK_OR_RETURN_ERROR(
+        args[index] != nullptr && args[index]->isTensor(),
+        InvalidArgument,
+        "Core AI input %zu must be a tensor",
+        index);
+  }
+  for (const auto& function : handle.functions) {
+    if (inputs_match(function.input_shapes, args)) {
+      return function.session;
+    }
+  }
+  std::string shapes;
+  for (size_t index = 0; index < handle.input_count; ++index) {
+    shapes += (index == 0 ? "" : ", ") +
+        describe_shape(args[index]->toTensor().sizes());
+  }
+  ET_LOG(
+      Error,
+      "Core AI inputs with shapes %s match none of the %zu enumerated shapes "
+      "this delegate was exported with",
+      shapes.c_str(),
+      handle.functions.size());
+  return Error::InvalidArgument;
 }
 
 class CoreAIBackend final : public BackendInterface {
@@ -168,19 +239,22 @@ class CoreAIBackend final : public BackendInterface {
       if (!loaded.ok()) {
         return loaded.error();
       }
-      auto session = bind_session(loaded.get().model, host_bundle->bundle);
-      if (!session.ok()) {
-        return session.error();
-      }
       auto handle = std::unique_ptr<Handle>(new (std::nothrow) Handle());
       ET_CHECK_OR_RETURN_ERROR(
           handle != nullptr,
           MemoryAllocationFailed,
           "Cannot allocate Core AI handle");
+      for (const auto& function : host_bundle->bundle.functions) {
+        auto session = bind_session(
+            loaded.get().model, host_bundle->bundle, function.name);
+        if (!session.ok()) {
+          return session.error();
+        }
+        handle->functions.push_back({function.input_shapes, session.get()});
+      }
       handle->input_count = host_bundle->bundle.inputs.count;
       handle->output_count = host_bundle->bundle.outputs.count;
       handle->model = loaded.get();
-      handle->session = session.get();
       processed->Free();
       return static_cast<DelegateHandle*>(handle.release());
     }
@@ -194,9 +268,13 @@ class CoreAIBackend final : public BackendInterface {
       ET_CHECK_OR_RETURN_ERROR(
           opaque != nullptr, DelegateInvalidHandle, "Null Core AI handle");
       auto& handle = *static_cast<Handle*>(opaque);
+      auto session = select_session(handle, args);
+      if (!session.ok()) {
+        return session.error();
+      }
       std::lock_guard<std::mutex> guard([handle.model executionMutex]);
       return execute_session(
-          handle.session, args, handle.input_count, handle.output_count);
+          session.get(), args, handle.input_count, handle.output_count);
     }
   }
 

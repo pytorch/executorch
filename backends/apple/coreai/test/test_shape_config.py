@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
+import tempfile
 import unittest
 
 import torch
@@ -18,7 +20,10 @@ from executorch.backends.apple.coreai.partition.partitioner import (
 )
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
-from executorch.exir.lowered_backend_module import executorch_call_delegate
+from executorch.exir.lowered_backend_module import (
+    executorch_call_delegate,
+    get_lowered_backend_modules,
+)
 from executorch.exir.pass_base import PassResult
 
 
@@ -249,6 +254,88 @@ class InputEnumerationsLoweringTest(unittest.TestCase):
                 _static_ep(),
                 partitioner=[CoreAIPartitioner(input_enumerations=[{0: [4, 16]}])],
             )
+
+    def test_manifest_lists_one_function_per_shape(self):
+        # The dynamic ``main`` is erased by the specialization, so the manifest
+        # must name the per-shape functions the runtime can actually bind.
+        graph = self._lower([{0: [4, 16, 32]}]).exported_program().graph_module
+        [lbm] = get_lowered_backend_modules(graph)
+        manifest = json.loads(bytes(lbm.processed_bytes))
+        self.assertNotIn("function", manifest)
+        functions = manifest["enumerated_functions"]
+        self.assertEqual(len({f["function"] for f in functions}), 3)
+        for entry in functions:
+            self.assertTrue(entry["function"].startswith("main_"), entry["function"])
+        self.assertEqual(
+            sorted(tuple(map(tuple, f["input_shapes"])) for f in functions),
+            [((4, 8),), ((16, 8),), ((32, 8),)],
+        )
+        self.assertEqual(manifest["input_names"], ["input_0"])
+
+    def test_unenumerated_lowering_keeps_main(self):
+        graph = (
+            to_edge_transform_and_lower(
+                _dynamic_ep(), partitioner=[CoreAIPartitioner()]
+            )
+            .exported_program()
+            .graph_module
+        )
+        [lbm] = get_lowered_backend_modules(graph)
+        manifest = json.loads(bytes(lbm.processed_bytes))
+        self.assertEqual(manifest["function"], "main")
+        self.assertNotIn("enumerated_functions", manifest)
+
+
+def _runtime_available():
+    try:
+        from executorch.extension.pybindings.portable_lib import _is_available
+    except ImportError:
+        return False
+    return _is_available("CoreAIBackend")
+
+
+@unittest.skipUnless(_runtime_available(), "requires the Core AI Python runtime")
+class InputEnumerationsRuntimeTest(unittest.TestCase):
+    def test_runs_each_enumerated_shape_and_rejects_others(self):
+        from executorch.extension.pybindings.portable_lib import (
+            _load_program_from_buffer,
+            Verification,
+        )
+
+        torch.manual_seed(0)
+        model = _model()
+        batch = torch.export.Dim("batch", min=1, max=64)
+        ep = torch.export.export(
+            model, (torch.randn(2, 8),), dynamic_shapes={"input": {0: batch}}
+        )
+        buffer = (
+            to_edge_transform_and_lower(
+                ep,
+                partitioner=[CoreAIPartitioner(input_enumerations=[{0: [4, 16, 32]}])],
+            )
+            .to_executorch()
+            .buffer
+        )
+        with tempfile.TemporaryDirectory(prefix="coreai-enumerated-") as cache:
+            program = _load_program_from_buffer(
+                buffer,
+                program_verification=Verification.Minimal,
+                backend_options={"CoreAIBackend": {"coreai_cache_dir": cache}},
+            )
+            method = program.load_method("forward")
+            with torch.no_grad():
+                for rows in (4, 16, 32, 4):
+                    x = torch.randn(rows, 8)
+                    torch.testing.assert_close(
+                        method.call((x,), clone_outputs=True)[0],
+                        model(x),
+                        atol=1e-3,
+                        rtol=1e-3,
+                        msg=f"{rows} rows",
+                    )
+            with self.assertRaises(RuntimeError):
+                method.call((torch.randn(8, 8),), clone_outputs=True)
+            del method, program
 
 
 class InputEnumerationsValidationTest(unittest.TestCase):

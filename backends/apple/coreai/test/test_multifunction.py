@@ -77,6 +77,32 @@ def _lower(partitioner, *, graph_break=False, model=None, inputs=None):
     )
 
 
+def _lower_enumerated(*, graph_break=False, model=None, rows=(4, 8, 16)):
+    """``forward`` is static; ``prefill`` has a dynamic row count it enumerates."""
+    torch.manual_seed(0)
+    model = model or _Stack().eval()
+    dim = torch.export.Dim("rows", min=1, max=64)
+    passes = list(get_default_passes()) + ([_BreakAtMul()] if graph_break else [])
+    return to_edge_transform_and_lower(
+        {
+            "forward": torch.export.export(model, (torch.randn(1, _WIDTH),)),
+            "prefill": torch.export.export(
+                model, (torch.randn(8, _WIDTH),), dynamic_shapes=({0: dim},)
+            ),
+        },
+        transform_passes=passes,
+        partitioner={
+            "forward": [CoreAIPartitioner(multifunction=True)],
+            "prefill": [
+                CoreAIPartitioner(
+                    multifunction=True, input_enumerations=[{0: list(rows)}]
+                )
+            ],
+        },
+        compile_config=get_default_compile_config(),
+    )
+
+
 def _manifests(lowered, method):
     graph = lowered.exported_program(method).graph_module
     return [
@@ -102,10 +128,6 @@ class MultifunctionPartitionerTest(unittest.TestCase):
             spec.key for spec in CoreAIPartitioner().delegation_spec.compile_specs
         ]
         self.assertNotIn(COMPILE_SPEC_KEYS.MULTIFUNCTION.value, default_keys)
-
-    def test_rejects_input_enumerations(self):
-        with self.assertRaisesRegex(ValueError, "input_enumerations"):
-            CoreAIPartitioner(multifunction=True, input_enumerations=[{0: [1, 8]}])
 
 
 class MultifunctionPreprocessTest(unittest.TestCase):
@@ -210,6 +232,65 @@ class MultifunctionPreprocessTest(unittest.TestCase):
         )
 
 
+class MultifunctionEnumeratedShapesTest(unittest.TestCase):
+    def _shapes_by_function(self, manifest, prefix):
+        functions = manifest["enumerated_functions"]
+        for entry in functions:
+            self.assertTrue(entry["function"].startswith(prefix), entry["function"])
+        return sorted(tuple(map(tuple, f["input_shapes"])) for f in functions)
+
+    def test_enumerated_method_lists_per_shape_functions(self):
+        lowered = _lower_enumerated()
+        [(forward, _)] = _manifests(lowered, "forward")
+        [(prefill, _)] = _manifests(lowered, "prefill")
+        self.assertEqual(forward["function"], "forward_0")
+        self.assertNotIn("enumerated_functions", forward)
+        self.assertNotIn("function", prefill)
+        self.assertEqual(
+            self._shapes_by_function(prefill, "prefill_0_"),
+            [((4, _WIDTH),), ((8, _WIDTH),), ((16, _WIDTH),)],
+        )
+        self.assertEqual(forward["export_hash"], prefill["export_hash"])
+        self.assertTrue(forward["multifunction"] and prefill["multifunction"])
+
+    def test_graph_break_enumerates_every_partition(self):
+        lowered = _lower_enumerated(graph_break=True, rows=(4, 16))
+        prefill = [m for m, _ in _manifests(lowered, "prefill")]
+        self.assertEqual(len(prefill), 2)
+        for index, manifest in enumerate(prefill):
+            self.assertEqual(
+                self._shapes_by_function(manifest, f"prefill_{index}_"),
+                [((4, _WIDTH),), ((16, _WIDTH),)],
+            )
+        forward = [m["function"] for m, _ in _manifests(lowered, "forward")]
+        self.assertEqual(forward, ["forward_0", "forward_1"])
+
+    def test_other_compile_specs_must_still_match(self):
+        dim = torch.export.Dim("rows", min=1, max=64)
+        model = _Stack().eval()
+        with self.assertRaisesRegex(ValueError, "identical Core AI compile specs"):
+            to_edge_transform_and_lower(
+                {
+                    "forward": torch.export.export(model, (torch.randn(1, _WIDTH),)),
+                    "prefill": torch.export.export(
+                        model, (torch.randn(8, _WIDTH),), dynamic_shapes=({0: dim},)
+                    ),
+                },
+                transform_passes=get_default_passes(),
+                partitioner={
+                    "forward": [CoreAIPartitioner(multifunction=True)],
+                    "prefill": [
+                        CoreAIPartitioner(
+                            multifunction=True,
+                            input_enumerations=[{0: [4, 8]}],
+                            min_deployment_version="27.1",
+                        )
+                    ],
+                },
+                compile_config=get_default_compile_config(),
+            )
+
+
 def _runtime_available():
     try:
         from executorch.extension.pybindings.portable_lib import _is_available
@@ -286,6 +367,39 @@ class MultifunctionRuntimeTest(unittest.TestCase):
 
     def test_graph_break_methods_run(self):
         self._check(graph_break=True)
+
+    def test_enumerated_shapes_dispatch_by_input_shape(self):
+        torch.manual_seed(0)
+        model = _Stack().eval()
+        lowered = _lower_enumerated(graph_break=True, model=model)
+        from executorch.extension.pybindings.portable_lib import (
+            _load_program_from_buffer,
+            Verification,
+        )
+
+        buffer = lowered.to_executorch().buffer
+        with tempfile.TemporaryDirectory(prefix="coreai-enumerated-") as cache:
+            program = _load_program_from_buffer(
+                buffer,
+                program_verification=Verification.Minimal,
+                backend_options={"CoreAIBackend": {"coreai_cache_dir": cache}},
+            )
+            forward = program.load_method("forward")
+            prefill = program.load_method("prefill")
+            cases = [(forward, 1)] + [(prefill, rows) for rows in (4, 8, 16)]
+            with torch.no_grad():
+                for method, rows in cases:
+                    x = torch.randn(rows, _WIDTH)
+                    torch.testing.assert_close(
+                        method.call((x,), clone_outputs=True)[0],
+                        model(x),
+                        atol=1e-2,
+                        rtol=1e-2,
+                        msg=f"{rows} rows",
+                    )
+                with self.assertRaises(RuntimeError):
+                    prefill.call((torch.randn(5, _WIDTH),), clone_outputs=True)
+            del forward, prefill, program
 
 
 if __name__ == "__main__":

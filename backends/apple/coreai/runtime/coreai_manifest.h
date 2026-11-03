@@ -11,12 +11,23 @@
 #import <Foundation/Foundation.h>
 #include <executorch/runtime/core/result.h>
 
+#include <cstdint>
+#include <vector>
+
 namespace executorch::backends::coreai {
+
+// A function the delegate can bind. One without input shapes accepts any input
+// shapes; enumerated-shape exports list one per shape, and each accepts exactly
+// its input_shapes, in input-name order.
+struct ManifestFunction {
+  NSString* name;
+  std::vector<std::vector<int64_t>> input_shapes;
+};
 
 class Manifest final {
  public:
   NSString* const export_hash;
-  NSString* const function;
+  const std::vector<ManifestFunction> functions;
   NSArray<NSString*>* const inputs;
   NSArray<NSString*>* const outputs;
   NSDictionary<NSString*, NSNumber*>* const files;
@@ -37,7 +48,7 @@ class Manifest final {
  private:
   Manifest(
       NSString* export_hash,
-      NSString* function,
+      std::vector<ManifestFunction> functions,
       NSArray<NSString*>* inputs,
       NSArray<NSString*>* outputs,
       NSDictionary<NSString*, NSNumber*>* files,
@@ -57,7 +68,7 @@ class SelectedBundle final {
   NSString* const path;
   NSString* const bundle_name;
   NSString* const digest;
-  NSString* const function;
+  const std::vector<ManifestFunction> functions;
   NSArray<NSString*>* const inputs;
   NSArray<NSString*>* const outputs;
   NSDictionary<NSString*, NSNumber*>* const files;

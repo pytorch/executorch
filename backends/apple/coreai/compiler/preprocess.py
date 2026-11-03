@@ -316,8 +316,59 @@ def _binding(
     }
 
 
-def _spec_items(compile_specs: List[CompileSpec]) -> List[Tuple[str, bytes]]:
-    return sorted((spec.key, bytes(spec.value)) for spec in compile_specs)
+def _enumerate_binding(
+    program,
+    edge_program: ExportedProgram,
+    binding: Dict[str, Any],
+    input_names: List[str],
+    compile_specs: List[CompileSpec],
+) -> Dict[str, Any]:
+    """Apply this partition's enumerated shapes and rewrite its binding.
+
+    ``set_static_shape_config`` erases the bound function, so a specialized
+    delegate lists every per-shape function with its input shapes, in
+    ``input_names`` order, and the runtime picks one by the inputs it gets.
+    """
+    raw = _get_compile_spec(compile_specs, COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS)
+    if not raw:
+        return binding
+    entrypoint = binding["function"]
+    shapes_config = apply_enumerated_shapes(
+        program,
+        edge_program,
+        json.loads(raw.decode()),
+        input_names=input_names,
+        entrypoint=entrypoint,
+    )
+    if not shapes_config:
+        return binding
+    bound_inputs = binding["input_names"]
+    functions = []
+    for key, shapes in shapes_config.items():
+        if set(shapes) != set(bound_inputs):
+            raise ValueError(
+                f"enumerated shapes for {entrypoint!r} cover inputs "
+                f"{sorted(shapes)} but the delegate binds {bound_inputs}"
+            )
+        functions.append(
+            {
+                "function": f"{entrypoint}_{key}",
+                "input_shapes": [list(shapes[name]) for name in bound_inputs],
+            }
+        )
+    enumerated = {k: v for k, v in binding.items() if k != "function"}
+    enumerated["enumerated_functions"] = functions
+    return enumerated
+
+
+def _spec_items(
+    compile_specs: List[CompileSpec], ignore: Tuple[str, ...] = ()
+) -> List[Tuple[str, bytes]]:
+    return sorted(
+        (spec.key, bytes(spec.value))
+        for spec in compile_specs
+        if spec.key not in ignore
+    )
 
 
 # Asset embedding helpers.
@@ -517,16 +568,9 @@ class CoreAIBackend(BackendDetails):
         binding = _binding(
             program, edge_program, MAIN_ENTRYPOINT, input_names, output_names
         )
-        raw_enum = _get_compile_spec(
-            compile_specs, COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS
+        binding = _enumerate_binding(
+            program, edge_program, binding, input_names, compile_specs
         )
-        if raw_enum:
-            apply_enumerated_shapes(
-                program,
-                edge_program,
-                json.loads(raw_enum.decode()),
-                input_names=input_names,
-            )
         return CoreAIBackend._package(program, compile_specs, [binding])[0]
 
     @classmethod
@@ -546,12 +590,15 @@ class CoreAIBackend(BackendDetails):
         ):
             return super().preprocess_multimethod(edge_programs, compile_specs)
 
-        reference = _spec_items(partitions[0][3])
+        # Each partition applies its own enumerations, so methods may enumerate
+        # different values; every other spec shapes the shared model.
+        ignore = (COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS.value,)
+        reference = _spec_items(partitions[0][3], ignore)
         differing = sorted(
             {
                 method
                 for method, _, _, specs in partitions
-                if _spec_items(specs) != reference
+                if _spec_items(specs, ignore) != reference
             }
         )
         if differing:
@@ -559,9 +606,6 @@ class CoreAIBackend(BackendDetails):
                 "multifunction requires identical Core AI compile specs in every "
                 f"partition; methods {differing} differ from {partitions[0][0]!r}"
             )
-        if _get_compile_spec(partitions[0][3], COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS):
-            raise ValueError("multifunction does not support input_enumerations yet")
-
         entries = [
             (program, f"{method}_{index}", *_boundary_names(program))
             for method, index, program, _ in partitions
@@ -572,8 +616,19 @@ class CoreAIBackend(BackendDetails):
             [entrypoint for _, entrypoint, _, _ in entries],
         )
         program = _convert_to_aiprogram(entries)
+        # Bind every partition before specializing any, since specializing a
+        # partition erases its function.
+        bindings = [_binding(program, *entry) for entry in entries]
         bindings = [
-            {**_binding(program, *entry), "multifunction": True} for entry in entries
+            {
+                **_enumerate_binding(
+                    program, edge_program, binding, input_names, specs
+                ),
+                "multifunction": True,
+            }
+            for binding, (edge_program, _, input_names, _), (_, _, _, specs) in zip(
+                bindings, entries, partitions
+            )
         ]
         results = CoreAIBackend._package(program, partitions[0][3], bindings)
 

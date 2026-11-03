@@ -6,8 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <cstdint>
 #include <limits>
 #include <type_traits>
+#include <vector>
 #include "coreai_manifest_fixture.h"
 #include "coreai_validation.h"
 
@@ -28,6 +30,110 @@ TEST(CoreAIManifestTest, RejectsUnknownPackaging) {
   auto dict = manifest_dict();
   dict[@"packaging"] = @"unknown";
   EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::NotSupported);
+}
+
+NSMutableDictionary* enumerated_manifest() {
+  NSMutableDictionary* dict = manifest_dict();
+  [dict removeObjectForKey:@"function"];
+  dict[@"enumerated_functions"] = @[
+    @{@"function" : @"main_s0_4",
+      @"input_shapes" : @[ @[ @4, @8 ] ]},
+    @{@"function" : @"main_s0_16",
+      @"input_shapes" : @[ @[ @16, @8 ] ]},
+  ];
+  return dict;
+}
+
+TEST(CoreAIManifestTest, ParsesEnumeratedFunctions) {
+  auto parsed = parse_manifest(encode(enumerated_manifest()));
+  ASSERT_TRUE(parsed.ok());
+  ASSERT_EQ(parsed->functions.size(), 2u);
+  EXPECT_TRUE([parsed->functions[0].name isEqual:@"main_s0_4"]);
+  EXPECT_EQ(
+      parsed->functions[0].input_shapes,
+      (std::vector<std::vector<int64_t>>{{4, 8}}));
+  EXPECT_TRUE([parsed->functions[1].name isEqual:@"main_s0_16"]);
+  EXPECT_EQ(
+      parsed->functions[1].input_shapes,
+      (std::vector<std::vector<int64_t>>{{16, 8}}));
+}
+
+TEST(CoreAIManifestTest, RejectsInvalidEnumeratedFunctions) {
+  {
+    SCOPED_TRACE("both function and enumerated_functions");
+    auto dict = enumerated_manifest();
+    dict[@"function"] = @"main";
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
+  {
+    SCOPED_TRACE("neither");
+    auto dict = enumerated_manifest();
+    [dict removeObjectForKey:@"enumerated_functions"];
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
+  NSArray* invalid = @[
+    @[],
+    @{},
+    @[ @"main_s0_4" ],
+    @[
+      @{@"input_shapes" : @[ @[ @4, @8 ] ]}
+    ],
+    @[
+      @{@"function" : @"",
+        @"input_shapes" : @[ @[ @4, @8 ] ]}
+    ],
+    @[ @{@"function" : @"f"} ],
+    @[
+      @{@"function" : @"f",
+        @"input_shapes" : @[]}
+    ],
+    @[
+      @{@"function" : @"f",
+        @"input_shapes" : @[ @[ @4 ], @[ @8 ] ]}
+    ],
+    @[
+      @{@"function" : @"f",
+        @"input_shapes" : @[ @"4x8" ]}
+    ],
+    @[
+      @{@"function" : @"f",
+        @"input_shapes" : @[ @[ @0, @8 ] ]}
+    ],
+    @[
+      @{@"function" : @"f",
+        @"input_shapes" : @[ @[ @-4, @8 ] ]}
+    ],
+    @[
+      @{@"function" : @"f",
+        @"input_shapes" : @[ @[ @4.5, @8 ] ]}
+    ],
+    @[
+      @{@"function" : @"f",
+        @"input_shapes" : @[ @[ @YES, @8 ] ]}
+    ],
+    @[
+      @{@"function" : @"f",
+        @"input_shapes" : @[ @[ @(1LL << 40), @8 ] ]}
+    ],
+    @[
+      @{@"function" : @"f",
+        @"input_shapes" : @[ @[ @4, @8 ] ]},
+      @{@"function" : @"f",
+        @"input_shapes" : @[ @[ @16, @8 ] ]}
+    ],
+    @[
+      @{@"function" : @"f",
+        @"input_shapes" : @[ @[ @4, @8 ] ]},
+      @{@"function" : @"g",
+        @"input_shapes" : @[ @[ @4, @8 ] ]}
+    ],
+  ];
+  for (id functions in invalid) {
+    SCOPED_TRACE([functions description].UTF8String);
+    auto dict = enumerated_manifest();
+    dict[@"enumerated_functions"] = functions;
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
 }
 
 TEST(CoreAIManifestTest, ParsesOptionalMultifunctionFlag) {
@@ -190,7 +296,9 @@ TEST_P(CoreAIManifestMetadataTest, ReturnsManifestFieldsAndNameOrder) {
   ASSERT_TRUE(parsed.ok());
   EXPECT_EQ(parsed->aot_compiled, GetParam());
   EXPECT_TRUE([parsed->export_hash isEqual:dict[@"export_hash"]]);
-  EXPECT_TRUE([parsed->function isEqual:dict[@"function"]]);
+  ASSERT_EQ(parsed->functions.size(), 1u);
+  EXPECT_TRUE([parsed->functions[0].name isEqual:dict[@"function"]]);
+  EXPECT_TRUE(parsed->functions[0].input_shapes.empty());
   EXPECT_TRUE([parsed->inputs isEqual:dict[@"input_names"]]);
   EXPECT_TRUE([parsed->outputs isEqual:dict[@"output_names"]]);
   EXPECT_TRUE([parsed->files isEqual:dict[@"files"]]);
@@ -416,7 +524,8 @@ TEST(CoreAIManifestTest, SelectsAotArchitectureWithoutMutatingManifest) {
     EXPECT_EQ(selected->files.count, 2);
     NSString* bundle = selected->path.lastPathComponent;
     EXPECT_TRUE([selected->export_hash isEqual:parsed->export_hash]);
-    EXPECT_TRUE([selected->function isEqual:parsed->function]);
+    EXPECT_TRUE(
+        [selected->functions[0].name isEqual:parsed->functions[0].name]);
     EXPECT_TRUE([selected->inputs isEqual:parsed->inputs]);
     EXPECT_TRUE([selected->outputs isEqual:parsed->outputs]);
     EXPECT_EQ(selected->aot_compiled, parsed->aot_compiled);
@@ -443,7 +552,7 @@ TEST(CoreAIManifestTest, SelectsSourceBundleUnchanged) {
   ASSERT_TRUE(selected.ok());
   EXPECT_TRUE([selected->path isEqualToString:dict[@"path"]]);
   EXPECT_TRUE([selected->export_hash isEqual:parsed->export_hash]);
-  EXPECT_TRUE([selected->function isEqual:parsed->function]);
+  EXPECT_TRUE([selected->functions[0].name isEqual:parsed->functions[0].name]);
   EXPECT_TRUE([selected->inputs isEqual:parsed->inputs]);
   EXPECT_TRUE([selected->outputs isEqual:parsed->outputs]);
   EXPECT_TRUE([selected->files isEqual:parsed->files]);

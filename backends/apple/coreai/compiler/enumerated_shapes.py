@@ -175,7 +175,8 @@ def apply_enumerated_shapes(
     enumerations: Dict[str, Sequence[int]],
     *,
     input_names: Sequence[str],
-) -> None:
+    entrypoint: str = MAIN_ENTRYPOINT,
+) -> Dict[str, Dict[str, tuple]]:
     """Attach enumerated shapes to the coreai program (all delivery modes).
 
     ``enumerations`` is ``{symbol_name: [value, ...]}`` (from
@@ -184,15 +185,19 @@ def apply_enumerated_shapes(
     combination of the enumerated symbol values, then attach the resulting shapes
     via ``set_static_shape_config``. ``input_names`` are the names the converter
     was given for the user inputs, in boundary order.
+
+    Returns ``{key: {input_name: shape}}`` for the attached specializations, or
+    an empty dict when this subgraph has nothing enumerated. ``entrypoint`` is
+    erased and replaced by one function named ``f"{entrypoint}_{key}"`` per key.
     """
     if not enumerations:
-        return
+        return {}
 
     placeholders = {
         n.name: n for n in edge_program.graph.nodes if n.op == "placeholder"
     }
     user_inputs = list(edge_program.graph_signature.user_inputs)
-    coreai_names = set(graph_input_names(program))
+    coreai_names = set(graph_input_names(program, entrypoint))
 
     # Every entry has to name every boundary input, since
     # set_static_shape_config treats a key as a whole-graph shape: an input left
@@ -217,7 +222,7 @@ def apply_enumerated_shapes(
         # Nothing here is enumerated, so there is nothing to specialize. Routine
         # under multi-partition lowering, and legitimate when the enumerated
         # input is not delegated at all.
-        return
+        return {}
 
     # One axis per enumerated symbol, shared across every input that uses it.
     # _eval_dim rejects any boundary dim left symbolic, so a specialization
@@ -243,4 +248,5 @@ def apply_enumerated_shapes(
             len(shapes_config),
             active,
         )
-        program.set_static_shape_config(MAIN_ENTRYPOINT, shapes_config)
+        program.set_static_shape_config(entrypoint, shapes_config)
+    return shapes_config

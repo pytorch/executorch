@@ -333,8 +333,6 @@ class CoreAIPartitioner(Partitioner):
         #
         # multifunction lowers every Core AI partition of every method into one
         # Core AI model, one function per partition named <method>_<index>.
-        if multifunction and input_enumerations is not None:
-            raise ValueError("multifunction does not support input_enumerations yet")
         specs = []
         if min_deployment_version is not None:
             specs.append(
