@@ -121,8 +121,8 @@ def dim_order_from_stride(
 def without_zero_strides(tensor: torch.Tensor) -> torch.Tensor:
     """
     Returns the tensor, or a copy of it if it has a zero stride, which
-    ExecuTorch cannot store. The copy is channels-last if the tensor is, and
-    contiguous otherwise.
+    ExecuTorch cannot store. The copy is channels-last only if PyTorch calls
+    the tensor channels-last but not contiguous, and contiguous otherwise.
 
     Tensor.contiguous() is not enough: PyTorch ignores the stride of a size-1
     dim, and every stride of an empty tensor, when it checks contiguity, so it
