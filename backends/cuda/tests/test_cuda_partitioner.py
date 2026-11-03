@@ -25,6 +25,7 @@ from executorch.backends.cuda.cuda_weight_collector import (
     CUDA_AOTI_METADATA_MAGIC,
     CudaAotiVariant,
     CudaWeightCollector,
+    decode_cuda_aoti_metadata,
     encode_cuda_aoti_metadata,
 )
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
@@ -431,7 +432,11 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertNotEqual(
                 first_result.processed_bytes, second_result.processed_bytes
             )
-            weight_key = first_artifact.entries[0].storage_key
+            weight_key = (
+                decode_cuda_aoti_metadata(first_result.processed_bytes)
+                .entries[0]
+                .storage_key
+            )
             self.assertIn(
                 weight_key,
                 first_result.data_store_output.external_data["aoti_cuda_blob"],
@@ -481,12 +486,14 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             external_data = first_result.data_store_output.external_data[
                 "aoti_cuda_blob"
             ]
-            first_key = "cuda_fqn_weight:cpu:first_so:_tensor_constant0"
-            second_key = "cuda_fqn_weight:cpu:second_so:_tensor_constant0"
-            self.assertIn(first_key, external_data)
-            self.assertIn(second_key, external_data)
-            self.assertIn(first_key.encode(), first_result.processed_bytes)
-            self.assertIn(second_key.encode(), second_result.processed_bytes)
+            for result, library in ((first_result, "first"), (second_result, "second")):
+                (entry,) = decode_cuda_aoti_metadata(result.processed_bytes).entries
+                self.assertTrue(
+                    entry.storage_key.startswith(
+                        f"cuda_fqn_weight:cpu:{library}_so:_tensor_constant0:"
+                    )
+                )
+                self.assertIn(entry.storage_key, external_data)
 
             for artifact in (first_artifact, second_artifact):
                 for storage in artifact.storages.values():
@@ -511,7 +518,11 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertIs(
                 first_result.data_store_output, second_result.data_store_output
             )
-            weight_key = first_artifact.entries[0].storage_key
+            weight_key = (
+                decode_cuda_aoti_metadata(first_result.processed_bytes)
+                .entries[0]
+                .storage_key
+            )
             self.assertIn(
                 weight_key,
                 first_result.data_store_output.external_data["aoti_cuda_blob"],

@@ -47,6 +47,7 @@ Every tile's badge comes from the `compute` field in `src/config/catalog.js`.
 | Depth, Object Detection | ExecuTorch | Depth Anything V2 Small, YOLO26s, on photos or the live camera. |
 | Background Removal, Super-Resolution | ExecuTorch | MODNet (photo or live camera), Real-ESRGAN ×4. |
 | Speech to Text | ExecuTorch | Whisper base on the microphone or an audio file. |
+| Text to Speech | ExecuTorch | Phonon 31M (English): a flow-LM program with an in-graph KV cache plus a streaming Mimi decoder program, played back as frames decode. |
 
 ## Model licensing gate
 
@@ -67,7 +68,7 @@ with byte progress and caches in Cache Storage.
 - `src/runtime/sources.js`: where a model's files come from (cleared remote URL,
   or the loopback dev config).
 - `src/runtime/llm.js`: ExecuTorch LLM driver (batched prefill, decode, sampling).
-- `src/runtime/forward.js`, `whisper.js`, `sam.js`: the other model drivers.
+- `src/runtime/forward.js`, `whisper.js`, `sam.js`, `phonon.js`: the other model drivers.
 - `src/runtime/emscripten.js`: loads an Emscripten runtime script and its `.wasm`.
 - `src/runtime/vlm.js`: the unlisted VLM demo, which still targets its own
   runtime build.

@@ -11,6 +11,7 @@
 #include <executorch/extension/llm/custom_ops/op_moe.h>
 
 #include <torch/library.h>
+#include <string_view>
 
 namespace torch {
 namespace executor {
@@ -62,7 +63,7 @@ at::Tensor quantized_moe_ffn_aten(
     const int64_t dim,
     const int64_t group_size,
     const int64_t weight_nbit,
-    c10::string_view score_func,
+    std::string_view score_func,
     const double route_scale) {
   auto output = at::empty({x.size(0), dim}, x.options().dtype(at::kFloat));
   WRAP_TO_ATEN(quantized_moe_ffn_out_no_context, 13)

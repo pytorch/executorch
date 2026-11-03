@@ -121,9 +121,8 @@ class ComputeGraphGen:
             ctype = cpp.argumenttype_type(
                 arg.type, mutable=arg.is_write, binds=arg.name
             )
-            cpp_type = ctype.cpp_type(strip_ref=True).replace(
-                "c10::string_view", STRING
-            )
+            cpp_type = ctype.cpp_type(strip_ref=True)
+            cpp_type = cpp_type.replace("c10::string_view", STRING)
 
             self.args.append(
                 ATenArg(name=arg.name, cpp_type=cpp_type, default=arg.default)

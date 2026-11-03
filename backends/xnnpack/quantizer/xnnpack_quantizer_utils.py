@@ -1065,6 +1065,8 @@ def _annotate_cat(
     for cat_node in gm.graph.nodes:
         if cat_node.target != torch.ops.aten.cat.default:
             continue
+        if filter_fn and not filter_fn(cat_node):
+            continue
 
         if _is_annotated([cat_node]):
             continue
@@ -1123,9 +1125,22 @@ def _is_share_obs_or_fq_op(op: Callable) -> bool:
     ]
 
 
+def touches_bfloat16(node: Node) -> bool:
+    """Whether a node reads or produces a bfloat16 tensor. The quantized kernels
+    do not take bfloat16 and XNNPACK leaves such patterns to them, where they
+    abort at run time, so these nodes are not quantized."""
+    return any(
+        isinstance(n.meta.get("val"), torch.Tensor)
+        and n.meta["val"].dtype == torch.bfloat16
+        for n in (node, *node.all_input_nodes)
+    )
+
+
 def propagate_annotation(model: torch.fx.GraphModule) -> None:
     for n in model.graph.nodes:
         if n.op != "call_function" or not _is_share_obs_or_fq_op(n.target):
+            continue
+        if touches_bfloat16(n):
             continue
 
         prev_node = n.args[0]

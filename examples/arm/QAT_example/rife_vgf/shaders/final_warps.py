@@ -47,6 +47,9 @@ def build_final_warps_payload(payloads, rescales, sigmoid_table, *, blend=None):
 
     """
     source = Path(__file__).with_name("final_warps.glsl").read_text()
+    normalization = payloads[0].get("flow_normalization", [1.0, 1.0])
+    for axis, value in zip(("X", "Y"), normalization):
+        source = source.replace(f"@FLOW_NORMALIZATION_{axis}@", format(value, ".9g"))
     functions = [
         _rescale_source(name, node)
         for name, node in zip(

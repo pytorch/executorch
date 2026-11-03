@@ -27,6 +27,7 @@ struct EmbeddingConfig {
   vkapi::ScalarType scales_dtype = vkapi::kHalf;
   utils::StorageType storage_type = utils::kBuffer;
   bool is_linear_weight = false;
+  bool per_row_scales_1d = false;
 };
 
 TestCase create_test_case(const EmbeddingConfig& config);

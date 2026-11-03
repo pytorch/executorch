@@ -87,6 +87,28 @@ constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
 constexpr char kEnableCudaGraphForMethod[] = "enable_cuda_graph_for_method";
 constexpr int kCudaGraphWarmupSteps = 3;
 constexpr char kWeightSharingAcrossMethods[] = "weight_sharing_across_methods";
+
+// A CUDA graph replay copies an output's raw bytes into its ETensor, which is
+// right only when every element sits at the same offset in both. Size-1 dims
+// never move an element, so their strides may differ.
+bool output_is_raw_copyable(const SlimTensor* output, const Tensor* et_output) {
+  if (!output->is_contiguous() ||
+      output->dim() != static_cast<size_t>(et_output->dim())) {
+    return false;
+  }
+  // The ETensor still has its previous shape here, so its strides can be stale
+  // for dynamic shapes; the default dim order is enough on its own.
+  if (executorch::runtime::is_contiguous_dim_order(
+          et_output->dim_order().data(), et_output->dim())) {
+    return true;
+  }
+  for (size_t d = 0; d < output->dim(); d++) {
+    if (output->size(d) != 1 && output->stride(d) != et_output->strides()[d]) {
+      return false;
+    }
+  }
+  return true;
+}
 } // anonymous namespace
 
 bool CudaGraphState::start_warmup() {
@@ -1053,6 +1075,23 @@ class ET_EXPERIMENTAL CudaBackend final
           "cudaStreamEndCapture failed: %s",
           cudaGetErrorString(gerr));
 
+      // Warmup checks this too, but the capture step's inputs can differ.
+      // The outputs belong to the captured graph, so leave them to it.
+      for (size_t i = 0; i < n_outputs; i++) {
+        if (pre_run_outputs[i] != slim_outputs[i] &&
+            !output_is_raw_copyable(
+                slim_outputs[i], &(args[i + n_inputs]->toTensor()))) {
+          std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
+          ET_LOG(
+              Error,
+              "CUDA graph: output %zu of '%s' is not laid out like its "
+              "ETensor; this call fails and later calls run without a graph",
+              i,
+              handle->method_name.c_str());
+          return Error::NotSupported;
+        }
+      }
+
       gerr = cudaGraphInstantiate(
           &handle->cuda_graph_state.graph_exec,
           handle->cuda_graph_state.graph,
@@ -1140,6 +1179,17 @@ class ET_EXPERIMENTAL CudaBackend final
       } else {
         // Case (b): AOTI returned its own buffer. D2D copy the result into the
         // planned GPU ET buffer, then free AOTI's buffer.
+        //
+        // A graph replay could not land this output, so run the method eagerly.
+        if (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
+            !output_is_raw_copyable(slim_outputs[i], et_output)) {
+          handle->cuda_graph_state.phase = CudaGraphPhase::Disabled;
+          ET_LOG(
+              Info,
+              "CUDA graph: disabled for '%s', output %zu is not laid out like its ETensor",
+              handle->method_name.c_str(),
+              i);
+        }
         ET_CHECK_OK_OR_RETURN_ERROR(
             copy_slimtensor_to_device_etensor_async(
                 slim_outputs[i], et_output, cuda_stream),

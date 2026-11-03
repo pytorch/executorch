@@ -291,6 +291,33 @@ void reset_manager(
 // The C++ compiler and test runner validate these tests.
 // cppcheck-suppress-begin syntaxError
 
+TEST(VgfZeroCopyRuntimeGateTest, FeatureOffDisablesImportAttempts) {
+  EXPECT_FALSE(vgf_zero_copy_io_should_attempt(
+      /*build_enabled=*/false, nullptr, /*host_import_enabled=*/true));
+}
+
+TEST(VgfZeroCopyRuntimeGateTest, RuntimeZeroIsAKillSwitch) {
+  EXPECT_FALSE(vgf_zero_copy_io_should_attempt(
+      /*build_enabled=*/true, "0", /*host_import_enabled=*/true));
+  EXPECT_TRUE(vgf_zero_copy_io_should_attempt(
+      /*build_enabled=*/true, nullptr, /*host_import_enabled=*/true));
+  EXPECT_TRUE(vgf_zero_copy_io_should_attempt(
+      /*build_enabled=*/true, "1", /*host_import_enabled=*/true));
+}
+
+TEST(VgfZeroCopyRuntimeGateTest, UnsupportedCapabilityFallsBack) {
+  EXPECT_FALSE(vgf_zero_copy_io_should_attempt(
+      /*build_enabled=*/true, nullptr, /*host_import_enabled=*/false));
+}
+
+TEST(VgfZeroCopyRuntimeGateTest, HeaderReflectsBuildDefinition) {
+#if defined(EXECUTORCH_VGF_ZERO_COPY_IO) && EXECUTORCH_VGF_ZERO_COPY_IO
+  EXPECT_TRUE(vgf_zero_copy_io_build_enabled());
+#else
+  EXPECT_FALSE(vgf_zero_copy_io_build_enabled());
+#endif
+}
+
 TEST(VgfZeroCopyImportTest, SuccessfulCandidateCreation) {
   alignas(64) std::array<std::byte, 128> host{};
   FakeVulkanState state;
@@ -559,7 +586,7 @@ TEST(
   EXPECT_EQ(manager.slot(0)->memory, old_memory);
 }
 
-TEST(VgfZeroCopyImportTest, StableCacheHitDoesNotReimport) {
+TEST(VgfZeroCopyImportTest, SamePointerWithinExecutionUsesCacheHit) {
   alignas(64) std::array<std::byte, 128> host{};
   FakeVulkanState state;
   VgfZeroCopyImportManager manager;
@@ -579,6 +606,38 @@ TEST(VgfZeroCopyImportTest, StableCacheHitDoesNotReimport) {
   EXPECT_TRUE(cached.cache_hit);
   EXPECT_EQ(state.create_tensor_calls, create_calls);
   EXPECT_EQ(state.allocate_memory_calls, allocate_calls);
+}
+
+TEST(VgfZeroCopyImportTest, ReleaseAllEndsExecutionScopedCacheLifetime) {
+  alignas(64) std::array<std::byte, 128> host{};
+  FakeVulkanState state;
+  VgfZeroCopyImportManager manager;
+  reset_manager(&manager, 1, &state);
+
+  const auto first = manager.try_import_candidate(
+      0, host.data(), host.size(), eligible_metadata());
+  ASSERT_TRUE(first.accepted);
+  ASSERT_FALSE(first.cache_hit);
+  ASSERT_NE(manager.slot(0), nullptr);
+  ASSERT_TRUE(manager.slot(0)->valid());
+
+  manager.release_all();
+
+  ASSERT_NE(manager.slot(0), nullptr);
+  EXPECT_FALSE(manager.slot(0)->valid());
+  EXPECT_EQ(state.destroy_tensor_view_calls, 1u);
+  EXPECT_EQ(state.destroy_tensor_calls, 1u);
+  EXPECT_EQ(state.free_memory_calls, 1u);
+
+  // A numerically identical pointer in a later execute() is not proof that the
+  // original EValue allocation is still alive. After execution-scoped release,
+  // the same address must be imported again rather than treated as a cache hit.
+  const auto second = manager.try_import_candidate(
+      0, host.data(), host.size(), eligible_metadata());
+  ASSERT_TRUE(second.accepted);
+  EXPECT_FALSE(second.cache_hit);
+  EXPECT_EQ(state.create_tensor_calls, 2u);
+  EXPECT_EQ(state.allocate_memory_calls, 2u);
 }
 
 TEST(VgfZeroCopyImportTest, FirstAcceptedImportSelectionChoosesImportedView) {
@@ -609,8 +668,9 @@ TEST(VgfZeroCopyImportTest, AcceptedCachedImportReselectsAfterOwnedFallback) {
       &binding_state, /*import_accepted=*/false, VK_NULL_HANDLE));
   binding_state.mark_clean();
 
-  // The import manager may return a cache hit for the same host allocation.
-  // Accepted still means the cached imported view must become selected again.
+  // Within one execute() scope the import manager may return a cache hit for
+  // the same live host allocation. Accepted still means the cached imported
+  // view must become selected again. VGFBackend releases the cache on return.
   ASSERT_TRUE(vgf_apply_import_binding_selection(
       &binding_state, /*import_accepted=*/true, imported));
   EXPECT_TRUE(binding_state.import_active);
@@ -787,6 +847,96 @@ TEST(
   EXPECT_TRUE(binding_state.dirty);
   EXPECT_FALSE(binding_state.import_active);
   EXPECT_EQ(binding_state.selected_view, owned);
+}
+
+TEST(
+    VgfZeroCopyImportTest,
+    MixedBoundaryExecutionCanImportOneAndFallbackAnother) {
+  alignas(64) std::array<std::byte, 128> aligned_boundary{};
+  alignas(64) std::array<std::byte, 4000> non_aligned_boundary{};
+  FakeVulkanState state;
+  VgfZeroCopyImportManager manager;
+  reset_manager(&manager, 2, &state);
+
+  auto input_metadata = eligible_metadata();
+  auto output_metadata = eligible_metadata();
+  output_metadata.is_input = false;
+  output_metadata.executorch_argument_index = 1;
+
+  const auto imported = manager.try_import_candidate(
+      0, aligned_boundary.data(), aligned_boundary.size(), input_metadata);
+  const auto copied = manager.try_import_candidate(
+      1,
+      non_aligned_boundary.data(),
+      non_aligned_boundary.size(),
+      output_metadata);
+
+  EXPECT_TRUE(imported.accepted);
+  EXPECT_FALSE(copied.accepted);
+  EXPECT_EQ(
+      copied.reason, VgfZeroCopyImportRejectionReason::kLogicalSizeAlignment);
+}
+
+TEST(
+    VgfZeroCopyImportTest,
+    PointerChangeWithinExecutionCreatesTransactionalReplacement) {
+  alignas(64) std::array<std::byte, 128> first_host{};
+  alignas(64) std::array<std::byte, 128> second_host{};
+  FakeVulkanState state;
+  VgfZeroCopyImportManager manager;
+  reset_manager(&manager, 1, &state);
+
+  ASSERT_TRUE(
+      manager
+          .try_import_candidate(
+              0, first_host.data(), first_host.size(), eligible_metadata())
+          .accepted);
+  const auto first_view = manager.slot(0)->tensor_view;
+
+  const auto replacement = manager.try_import_candidate(
+      0, second_host.data(), second_host.size(), eligible_metadata());
+
+  ASSERT_TRUE(replacement.accepted);
+  EXPECT_FALSE(replacement.cache_hit);
+  ASSERT_NE(manager.slot(0), nullptr);
+  EXPECT_EQ(manager.slot(0)->host_pointer, second_host.data());
+  EXPECT_NE(manager.slot(0)->tensor_view, first_view);
+  EXPECT_EQ(state.create_tensor_calls, 2u);
+  EXPECT_EQ(state.allocate_memory_calls, 2u);
+  EXPECT_EQ(state.destroy_tensor_view_calls, 1u);
+  EXPECT_EQ(state.destroy_tensor_calls, 1u);
+  EXPECT_EQ(state.free_memory_calls, 1u);
+}
+
+TEST(VgfZeroCopyImportTest, ReleaseAllEndsEveryImportedObjectLifetime) {
+  alignas(64) std::array<std::byte, 128> first_host{};
+  alignas(64) std::array<std::byte, 128> second_host{};
+  FakeVulkanState state;
+  VgfZeroCopyImportManager manager;
+  reset_manager(&manager, 2, &state);
+
+  ASSERT_TRUE(
+      manager
+          .try_import_candidate(
+              0, first_host.data(), first_host.size(), eligible_metadata())
+          .accepted);
+  ASSERT_TRUE(
+      manager
+          .try_import_candidate(
+              1, second_host.data(), second_host.size(), eligible_metadata())
+          .accepted);
+
+  manager.release_all();
+
+  ASSERT_NE(manager.slot(0), nullptr);
+  ASSERT_NE(manager.slot(1), nullptr);
+  EXPECT_FALSE(manager.slot(0)->valid());
+  EXPECT_FALSE(manager.slot(1)->valid());
+  EXPECT_EQ(manager.slot(0)->host_pointer, nullptr);
+  EXPECT_EQ(manager.slot(1)->host_pointer, nullptr);
+  EXPECT_EQ(state.destroy_tensor_view_calls, 2u);
+  EXPECT_EQ(state.destroy_tensor_calls, 2u);
+  EXPECT_EQ(state.free_memory_calls, 2u);
 }
 
 TEST(VgfZeroCopyImportTest, ReleaseUsesSafeDestructionOrderAndDoesNotOwnHost) {

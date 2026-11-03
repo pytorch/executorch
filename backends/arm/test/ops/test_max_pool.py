@@ -22,7 +22,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
-    VgfPipelineFP8,
 )
 
 test_data_suite = {
@@ -89,7 +88,7 @@ test_data_suite_rank3 = {
     "spatial_pool": lambda: (torch.rand(3, 9, 11), [3, 2, 1]),
 }
 
-test_data_suite_fp8_no_comparing = {
+test_data_suite_fp8 = {
     "rand_fp8e4m3": lambda: (
         torch.rand(1, 8, 20, 20).to(torch.float8_e4m3fn),
         [3, 2, 1],
@@ -102,7 +101,7 @@ test_data_suite_fp8_no_comparing = {
     ),
 }
 
-test_data_suite_fp8_dilation_no_comparing = {
+test_data_suite_fp8_dilation = {
     "dilation_fp8e4m3": lambda: (
         torch.rand(1, 1, 8, 8).to(torch.float8_e4m3fn),
         [3, 1, 0, 2],
@@ -193,7 +192,7 @@ def test_max_pool2d_tosa_FP(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_fp8_no_comparing)
+@common.parametrize("test_data", test_data_suite_fp8)
 def test_max_pool2d_tosa_FP_fp8(test_data: torch.Tensor):
     input_tensor, model_params, tosa_extension = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -354,7 +353,7 @@ def test_max_pool2d_tosa_FP_dilation(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_fp8_dilation_no_comparing)
+@common.parametrize("test_data", test_data_suite_fp8_dilation)
 def test_max_pool2d_tosa_FP_fp8_dilation(test_data):
     data, model_params, tosa_extension = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -384,38 +383,6 @@ def test_max_pool2d_tosa_INT_dilation(test_data):
 
 
 # VGF tests
-@common.parametrize("test_data", test_data_suite_fp8_no_comparing)
-@common.SkipIfNoModelConverter
-def test_max_pool2d_vgf_no_quant_fp8(test_data: torch.Tensor):
-    input_tensor, model_params, _ = test_data()
-    pipeline = VgfPipelineFP8[input_t1](
-        MaxPool2d(*model_params),
-        (input_tensor,),
-        aten_op,
-        exir_op,
-        expect_missing_reference=True,
-        atol=0,
-        rtol=0,
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite_fp8_dilation_no_comparing)
-@common.SkipIfNoModelConverter
-def test_max_pool2d_vgf_no_quant_fp8_dilation(test_data):
-    data, model_params, _ = test_data()
-    pipeline = VgfPipelineFP8[input_t1](
-        MaxPool2d(*model_params),
-        (data,),
-        aten_op,
-        exir_op,
-        expect_missing_reference=True,
-        atol=0,
-        rtol=0,
-    )
-    pipeline.run()
-
-
 @common.parametrize(
     "test_data",
     test_data_suite

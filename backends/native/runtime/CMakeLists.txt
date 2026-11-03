@@ -38,6 +38,7 @@ add_library(
   graph/Scalar.cpp
   graph/TensorMeta.cpp
   graph/Value.cpp
+  graph/utils/Aliases.cpp
   graph/utils/GraphUtils.cpp
 )
 
@@ -45,8 +46,10 @@ add_library(native_reference_gguf_kquant utils/ReferenceGgufKQuant.cpp)
 target_link_libraries(native_reference_gguf_kquant PRIVATE Threads::Threads)
 
 add_library(
-  native_package deserialize/OwnedBytes.cpp deserialize/Package.cpp
-                 deserialize/SafeTensorsReader.cpp deserialize/ZipReader.cpp
+  native_package
+  deserialize/OwnedBytes.cpp deserialize/Package.cpp
+  deserialize/SafeTensorsReader.cpp deserialize/Samples.cpp
+  deserialize/ZipReader.cpp
 )
 target_link_libraries(
   native_package

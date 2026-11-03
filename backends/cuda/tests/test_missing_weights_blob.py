@@ -51,8 +51,8 @@ class ModuleWithConstants(torch.nn.Module):
     "loads through the Python runtime, which the ROCm build does not include",
 )
 class TestMissingWeightsBlob(unittest.TestCase):
-    def _lower(self, outdir: str) -> str:
-        torch.manual_seed(0)
+    def _lower(self, outdir: str, seed: int = 0, name: str = "model.pte") -> str:
+        torch.manual_seed(seed)
         module = ModuleWithConstants().eval().cuda()
         inputs = (torch.randn(4, 64, device="cuda"),)
         exported = export(module, inputs)
@@ -61,7 +61,7 @@ class TestMissingWeightsBlob(unittest.TestCase):
             exported, partitioner=[CudaPartitioner([spec])]
         )
         program = lowered.to_executorch()
-        path = os.path.join(outdir, "model.pte")
+        path = os.path.join(outdir, name)
         with open(path, "wb") as f:
             program.write_to_file(f)
         program.write_tensor_data_to_file(outdir)
@@ -155,6 +155,23 @@ class TestMissingWeightsBlob(unittest.TestCase):
             # exception carries only the method name and the error number, so the
             # cause is asserted through the rewrite check above rather than here.
             program = Runtime.get().load_program(path)
+            with self.assertRaisesRegex(
+                RuntimeError, r"Failed to load method forward, error: 0x:?20"
+            ):
+                program.load_method("forward")
+
+    def test_load_fails_with_another_programs_blob(self) -> None:
+        from executorch.runtime import Runtime
+
+        with tempfile.TemporaryDirectory() as outdir:
+            first = self._lower(outdir, seed=0, name="first.pte")
+            # Same module with other weights, written to the same blob file name.
+            second = self._lower(outdir, seed=1, name="second.pte")
+            (blob,) = [f for f in os.listdir(outdir) if f.endswith(".ptd")]
+            blob = os.path.join(outdir, blob)
+            # The blob belongs to the second program, which loads with it.
+            Runtime.get().load_program(second, data_path=blob).load_method("forward")
+            program = Runtime.get().load_program(first, data_path=blob)
             with self.assertRaisesRegex(
                 RuntimeError, r"Failed to load method forward, error: 0x:?20"
             ):

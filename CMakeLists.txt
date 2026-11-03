@@ -980,7 +980,10 @@ if(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
-  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+     OR EXECUTORCH_BUILD_NATIVE_LLM_RUNNER
+  )
+    # Both LLM runners need tokenizers with regex lookahead support.
     set(SUPPORT_REGEX_LOOKAHEAD ON)
     # llama/runner/CMakeLists.txt builds a shared library libllama_runner.so
     # that transitively depends on tokenizers. Need to build tokenizers with
@@ -991,7 +994,9 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
-  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+     OR EXECUTORCH_BUILD_NATIVE_LLM_RUNNER
+  )
     set(CMAKE_POSITION_INDEPENDENT_CODE
         ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
     )

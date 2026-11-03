@@ -108,6 +108,27 @@ class TestVkGraphBuilderInputIds(unittest.TestCase):
         self.assertEqual(len(builder.input_ids), 2)
 
 
+class TestVkGraphBuilderConstants(unittest.TestCase):
+    def test_view_constant_serializes_only_its_own_bytes(self) -> None:
+        class AddViewBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("b", torch.randn(3, 4)[1])
+
+            def forward(self, x):
+                return x + self.b
+
+        module = AddViewBuffer()
+        edge = to_edge(torch.export.export(module, (torch.randn(4),), strict=True))
+        program = apply_passes(edge.exported_program(), [SpecPropPass()])
+        builder = VkGraphBuilder(
+            program, DelegateMappingBuilder(generated_identifiers=True)
+        )
+        builder.build_graph()
+        (data,) = builder.named_data_store.get_named_data_store_output().buffers
+        self.assertEqual(bytes(data), module.b.numpy().tobytes())
+
+
 class TestVkGraphBuilderScalarLists(unittest.TestCase):
     """A scalar list serializes to exactly one Value. bool is a subclass of int,
     so a bool list also satisfies the all-int check, and an empty list

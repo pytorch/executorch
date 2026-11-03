@@ -50,6 +50,7 @@ from torchao.quantization.pt2e.quantize_pt2e import (
 EXECUTORCH_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(EXECUTORCH_ROOT))
 
+from examples.arm.QAT_example.pruning import TwoOfFourPruner  # noqa: E402
 from examples.arm.QAT_example.rife_vgf import (  # noqa: E402
     configure_rife_vgf,
     configure_rife_vgf_quantizer,
@@ -718,8 +719,10 @@ def build_ptq_model(
     calibration_inputs: list[tuple[torch.Tensor, torch.Tensor]],
     *,
     io_quantization: str,
+    prune_layers: Sequence[str] = (),
 ) -> QuantizedModel:
     model = clone_model(model, channels_last=True)
+    pruner = TwoOfFourPruner(model, prune_layers)
     calibration_inputs = [
         (
             inputs[0].contiguous(memory_format=torch.channels_last),
@@ -735,6 +738,7 @@ def build_ptq_model(
     prepared_model = prepare_pt2e(exported_model, quantizer)
     cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_eval(prepared_model)
+    pruner.apply_(prepared_model)
 
     with torch.no_grad():
         for inputs in calibration_inputs:
@@ -755,8 +759,10 @@ def build_qat_model(
     steps: int,
     lr: float,
     io_quantization: str,
+    prune_layers: Sequence[str] = (),
 ) -> QuantizedModel:
     model = clone_model(model, channels_last=True)
+    pruner = TwoOfFourPruner(model, prune_layers)
     training_samples = [
         (
             (
@@ -775,6 +781,7 @@ def build_qat_model(
     prepared_model = prepare_qat_pt2e(exported_model, quantizer)
     cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_train(prepared_model)
+    pruner.apply_(prepared_model)
     optimizer = torch.optim.SGD(prepared_model.parameters(), lr=lr, momentum=0.9)
 
     for step in range(steps):
@@ -790,6 +797,7 @@ def build_qat_model(
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            pruner.apply_(prepared_model)
             total_loss += float(loss.detach().item())
         print(
             f"qat_step={step + 1}/{steps} "
@@ -905,6 +913,7 @@ def write_markdown_report(
         f"- Triples: {aggregate['triple_count']}",
         f"- Input shape: `1x3x{aggregate['height']}x{aggregate['width']}`",
         f"- Mode: `{aggregate['mode']}`",
+        f"- 2:4 pruning patterns: `{aggregate['prune_2_4']}`",
         f"- IO quantization: `{aggregate['io_quantization']}`",
         f"- Data source: `{aggregate['data_source']}`",
         f"- Random seed: `{aggregate['random_seed']}`",
@@ -921,14 +930,22 @@ def write_markdown_report(
         ("eager_channels_last_ssim", "Eager Channels-Last SSIM"),
         ("eager_channels_last_vs_eager_mae", "Eager Channels-Last vs eager MAE"),
         ("eager_channels_last_vs_eager_sqnr", "Eager Channels-Last vs eager SQNR"),
+        ("eager_pruned_psnr", "Pruned eager FP32 PSNR"),
+        ("eager_pruned_ssim", "Pruned eager FP32 SSIM"),
+        ("eager_pruned_vs_eager_mae", "Pruned eager vs dense eager MAE"),
+        ("eager_pruned_vs_eager_sqnr", "Pruned eager vs dense eager SQNR"),
         ("ptq_psnr", "PTQ PSNR"),
         ("ptq_ssim", "PTQ SSIM"),
         ("ptq_vs_eager_mae", "PTQ vs eager MAE"),
         ("ptq_vs_eager_sqnr", "PTQ vs eager SQNR"),
+        ("ptq_vs_eager_pruned_mae", "PTQ vs pruned eager MAE"),
+        ("ptq_vs_eager_pruned_sqnr", "PTQ vs pruned eager SQNR"),
         ("qat_psnr", "QAT PSNR"),
         ("qat_ssim", "QAT SSIM"),
         ("qat_vs_eager_mae", "QAT vs eager MAE"),
         ("qat_vs_eager_sqnr", "QAT vs eager SQNR"),
+        ("qat_vs_eager_pruned_mae", "QAT vs pruned eager MAE"),
+        ("qat_vs_eager_pruned_sqnr", "QAT vs pruned eager SQNR"),
     ):
         if f"{key}_mean" not in aggregate:
             continue
@@ -1090,6 +1107,16 @@ def parse_args() -> argparse.Namespace:
         help="Class in practical-rife train_log.IFNet_HDv3 (for example IFNetTwoBlock).",
     )
     parser.add_argument(
+        "--prune-2-4",
+        action="append",
+        default=[],
+        metavar="LAYER_PATTERN",
+        help=(
+            "Prune matching Conv2d layers for eager evaluation, PTQ or QAT "
+            "with fixed 2:4 input-channel masks. Repeat for multiple patterns."
+        ),
+    )
+    parser.add_argument(
         "--io-quantization",
         choices=("uint8", "int8", "none"),
         default="uint8",
@@ -1220,6 +1247,7 @@ def build_requested_quantized_models(
             model,
             calibration_inputs,
             io_quantization=args.io_quantization,
+            prune_layers=args.prune_2_4,
         )
         ptq_model = ptq.model
         quantization_reports["ptq"] = ptq.coverage
@@ -1246,6 +1274,7 @@ def build_requested_quantized_models(
             steps=args.qat_steps,
             lr=args.qat_lr,
             io_quantization=args.io_quantization,
+            prune_layers=args.prune_2_4,
         )
         qat_model = qat.model
         quantization_reports["qat"] = qat.coverage
@@ -1574,6 +1603,8 @@ def print_progress(index: int, total: int, row: dict[str, Any]) -> None:
         progress += f" eager_psnr={row['eager_psnr']:.3f}"
     if "eager_channels_last_psnr" in row:
         progress += f" eager_cl_psnr={row['eager_channels_last_psnr']:.3f}"
+    if "eager_pruned_psnr" in row:
+        progress += f" eager_pruned_psnr={row['eager_pruned_psnr']:.3f}"
     if "ptq_psnr" in row:
         progress += f" ptq_psnr={row['ptq_psnr']:.3f}"
     if "qat_psnr" in row:
@@ -1592,8 +1623,12 @@ def evaluate_triples(
     eager_channels_last_model: torch.nn.Module | None,
     ptq_model: torch.nn.Module | None,
     qat_model: torch.nn.Module | None,
+    *,
+    eager_pruned_model: torch.nn.Module | None = None,
 ) -> list[dict[str, Any]]:
-    run_eager = args.mode in ("eager", "both", "qat", "all")
+    run_eager = (
+        args.mode in ("eager", "both", "qat", "all") or eager_pruned_model is not None
+    )
     rows: list[dict[str, Any]] = []
     for index, triple in enumerate(triples):
         inputs, target = load_triple_tensors(
@@ -1637,6 +1672,23 @@ def evaluate_triples(
                     reference=eager_output,
                 )
 
+        eager_pruned_output = None
+        if eager_pruned_model is not None:
+            assert eager_output is not None
+            eager_pruned_output = run_model(eager_pruned_model, inputs)
+            update_row_with_prediction_metrics(
+                row,
+                prefix="eager_pruned",
+                prediction=eager_pruned_output,
+                target=target,
+            )
+            update_row_with_delta_metrics(
+                row,
+                prefix="eager_pruned_vs_eager",
+                prediction=eager_pruned_output,
+                reference=eager_output,
+            )
+
         if ptq_model is not None:
             ptq_output = run_model(ptq_model, inputs)
             update_row_with_prediction_metrics(
@@ -1653,6 +1705,13 @@ def evaluate_triples(
                 prediction=ptq_output,
                 reference=eager_output,
             )
+            if eager_pruned_output is not None:
+                update_row_with_delta_metrics(
+                    row,
+                    prefix="ptq_vs_eager_pruned",
+                    prediction=ptq_output,
+                    reference=eager_pruned_output,
+                )
 
         if qat_model is not None:
             qat_output = run_model(qat_model, inputs)
@@ -1670,6 +1729,13 @@ def evaluate_triples(
                 prediction=qat_output,
                 reference=eager_output,
             )
+            if eager_pruned_output is not None:
+                update_row_with_delta_metrics(
+                    row,
+                    prefix="qat_vs_eager_pruned",
+                    prediction=qat_output,
+                    reference=eager_pruned_output,
+                )
 
         rows.append(row)
         print_progress(index, len(triples), row)
@@ -1688,6 +1754,7 @@ def build_aggregate(
         "width": args.width,
         "preprocess": args.preprocess,
         "mode": args.mode,
+        "prune_2_4": args.prune_2_4,
         "io_quantization": args.io_quantization,
         "data_source": "random" if rows and rows[0].get("synthetic") else "frames",
         "random_seed": args.random_seed,
@@ -1697,10 +1764,14 @@ def build_aggregate(
         "eager",
         "eager_channels_last",
         "eager_channels_last_vs_eager",
+        "eager_pruned",
+        "eager_pruned_vs_eager",
         "ptq",
         "ptq_vs_eager",
+        "ptq_vs_eager_pruned",
         "qat",
         "qat_vs_eager",
+        "qat_vs_eager_pruned",
         "ptq_runtime",
         "ptq_runtime_vs_ptq",
         "qat_runtime",
@@ -1748,6 +1819,7 @@ def print_summary(aggregate: dict[str, Any]) -> None:
     for prefix, label in (
         ("eager", "eager"),
         ("eager_channels_last", "eager_channels_last"),
+        ("eager_pruned", "eager_pruned"),
         ("ptq", "ptq"),
         ("ptq_runtime", "ptq_runtime"),
         ("qat", "qat"),
@@ -1813,6 +1885,10 @@ def main() -> int:
     model = load_rife_model(args.model_root, args.checkpoint, args.model_class)
     configure_rife_vgf()
     eager_channels_last_model = clone_model(model, channels_last=True)
+    eager_pruned_model = None
+    if args.prune_2_4:
+        eager_pruned_model = clone_model(model)
+        TwoOfFourPruner(eager_pruned_model, args.prune_2_4)
     ptq_model, qat_model, quantization_reports = build_requested_quantized_models(
         args,
         model,
@@ -1825,6 +1901,7 @@ def main() -> int:
         eager_channels_last_model,
         ptq_model,
         qat_model,
+        eager_pruned_model=eager_pruned_model,
     )
     artifacts = export_requested_vgf_artifacts(args, triples, ptq_model, qat_model)
     reference_models = {

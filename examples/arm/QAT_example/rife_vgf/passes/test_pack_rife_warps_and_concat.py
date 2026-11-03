@@ -37,7 +37,7 @@ class _Inputs(torch.nn.Module):
         return inputs[0]
 
 
-def _program(code=45, width=6):
+def _program(code=45, width=6, normalization=(1.0, 1.0)):
     tensors = [
         torch.zeros(1, 4, width, c, dtype=torch.int8) for c in (4, 4, 4, 4, 1, 8, 4)
     ]
@@ -76,6 +76,7 @@ def _program(code=45, width=6):
                 output_scale=0.01,
                 output_zero_point=-14,
                 flow_channel_offset=offset,
+                flow_normalization=normalization,
             )
         custom = graph.call_function(
             TOSA.CUSTOM.default,
@@ -167,6 +168,7 @@ def test_packs_private_warps_and_preserves_convolution(code):
         "domain",
         "operator",
         "qparams",
+        "normalization",
         "sampler",
         "offset",
         "shared",
@@ -180,12 +182,14 @@ def test_unsupported_pattern_is_unchanged(unsupported):
     if unsupported in ("domain", "operator"):
         key = "domain_name" if unsupported == "domain" else "operator_name"
         custom.kwargs = {**custom.kwargs, key: "unknown"}
-    elif unsupported in ("qparams", "sampler", "offset"):
+    elif unsupported in ("qparams", "sampler", "offset", "normalization"):
         payload = json.loads(bytes(custom.kwargs["implementation_attrs"]))
         if unsupported == "qparams":
             payload["output_scale"] *= 2
         elif unsupported == "sampler":
             payload["input_0_sampler"] = {}
+        elif unsupported == "normalization":
+            payload["flow_normalization"] = [0.25, 0.125]
         else:
             payload["flow_channel_offset"] = 2
         custom.kwargs = {
@@ -209,8 +213,9 @@ def test_unsupported_pattern_is_unchanged(unsupported):
     assert set(program.constants) == constants
 
 
-def test_payload_binding_contract_and_source_specialization():
-    program, _, _, _, _ = _program()
+@pytest.mark.parametrize("normalization", [(1.0, 1.0), (0.25, 0.125)])
+def test_payload_binding_contract_and_source_specialization(normalization):
+    program, _, _, _, _ = _program(normalization=normalization)
     payloads = [
         pack._payload(n) for n in program.graph.nodes if n.target == TOSA.CUSTOM.default
     ]
@@ -221,6 +226,8 @@ def test_payload_binding_contract_and_source_specialization():
     source = compile_shader.call_args.args[0]
     assert "@" not in source
     assert "values[14] = int8_t(-128);" in source
+    factors = ", ".join(format(value, ".9g") for value in normalization)
+    assert f"const vec2 FLOW_NORMALIZATION = vec2({factors});" in source
     for i in range(7):
         assert payload[f"input_{i}_binding"] == i
         assert payload[f"input_{i}_type"] == ("Image" if i < 4 else "Tensor")

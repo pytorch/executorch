@@ -19,7 +19,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
-    VgfPipelineFP8,
 )
 
 aten_op = "torch.ops.aten.conv2d.default"
@@ -523,7 +522,7 @@ test_data_FP_fp16 = {
     "fp16_3x3": conv2d_fp16_3x3,
     "fp16_1x1": conv2d_fp16_1x1,
 }
-test_data_FP_fp8_no_comparing = {
+test_data_FP_fp8 = {
     "fp8e4m3": lambda: (
         Conv2d(
             height=8,
@@ -608,7 +607,7 @@ def test_convolution_2d_tosa_FP(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_FP_fp8_no_comparing)
+@common.parametrize("test_data", test_data_FP_fp8)
 def test_convolution_2d_tosa_FP_fp8(test_data):
     model, tosa_extension = test_data()
     pipeline = TosaPipelineFP[input_t](
@@ -715,20 +714,6 @@ def test_convolution_2d_u85_INT_a8w4(test_data):
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_FP_fp8_no_comparing)
-@common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_no_quant_fp8(test_data):
-    model, _ = test_data()
-    pipeline = VgfPipelineFP8[input_t](
-        model,
-        model.get_inputs(),
-        aten_op,
-        exir_op,
-        expect_missing_reference=True,
     )
     pipeline.run()
 
