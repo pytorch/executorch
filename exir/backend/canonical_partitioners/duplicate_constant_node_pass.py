@@ -40,6 +40,7 @@ def duplicate_constant_node(
     """
     A pass to duplicate the attributes/constants node (the candidate_node) in the graph. Mostly used for duplicating light-weight data.
     If the data is too large, try tag it with "no_copy" to prevent high memory usage and make it as part of the output.
+    A mutated buffer is never copied, because a copy would not see its updates: this raises instead.
 
     Args:
         exported_program: the exported program to be modified. If constants nodes are copied, they will be added as new
@@ -76,9 +77,23 @@ def duplicate_constant_node(
                 raise RuntimeError(
                     f"placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: {node} "
                 )
-            users = list(node.users.keys())
-            for ith in range(1, len(node.users)):
-                copy_constant_or_attribute_fqn = node.name + f"_copy_{ith - 1}"
+            if (
+                old_signature.inputs_to_buffers.get(node.name)
+                in old_signature.buffers_to_mutate.values()
+            ):
+                raise RuntimeError(
+                    f"mutated buffer ({node}) cannot be copied, because a copy "
+                    "would not see its updates. Tag it only when every node "
+                    "that reads or writes it has the same tag, as "
+                    "tag_mutated_buffer does, or leave it untagged."
+                )
+            # The graph output keeps the original, which the output specs
+            # name, so then every other user reads a copy.
+            users = [user for user in node.users if user.op != "output"]
+            if len(users) == len(node.users):
+                users = users[1:]
+            for ith, user in enumerate(users):
+                copy_constant_or_attribute_fqn = node.name + f"_copy_{ith}"
                 with exported_program.graph.inserting_before(
                     constant_or_attribute_node
                 ):
@@ -96,26 +111,12 @@ def duplicate_constant_node(
                     copied_constant_or_attribute_node.meta["val"] = (
                         constant_or_attribute_node.meta["val"]
                     )
-                    new_args = tuple(
-                        [
-                            (
-                                arg
-                                if arg != constant_or_attribute_node
-                                else copied_constant_or_attribute_node
-                            )
-                            for arg in users[ith].args
-                        ]
+                    # This also reaches a constant that an op such as cat or
+                    # index_put reads from a list.
+                    user.replace_input_with(
+                        constant_or_attribute_node,
+                        copied_constant_or_attribute_node,
                     )
-                    new_kwargs = {
-                        key: (
-                            value
-                            if value != constant_or_attribute_node
-                            else copied_constant_or_attribute_node
-                        )
-                        for key, value in users[ith].kwargs.items()
-                    }
-                    users[ith].args = new_args
-                    users[ith].kwargs = new_kwargs
                     # The copy keeps the original target, so it reads the
                     # original tensor and needs no data of its own.
                     new_input_specs.append(

@@ -1365,6 +1365,7 @@ bool run_model(
       }
     }
     status = ctx.method.value()->execute();
+    ConsumeMeasurements();
     if (status != Error::Ok) {
       break;
     }
@@ -1433,6 +1434,7 @@ bool run_model_server(
 
     StartMeasurements();
     status = ctx.method.value()->execute();
+    ConsumeMeasurements();
     StopMeasurements(1);
     ET_CHECK_MSG(
         status == Error::Ok,

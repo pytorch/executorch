@@ -23,6 +23,7 @@ from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.lowered_backend_module import create_submodule_from_nodes
 from tabulate import tabulate
+from torch.export.graph_signature import OutputKind
 from torch.fx.experimental.symbolic_shapes import has_free_symbols
 from torch.fx.node import Node
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -397,37 +398,66 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
 
 def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
     """
-    Util function for partitioners. This function tags the mutated buffer nodes
-    whose users all belong within the same partition. This should be called after tagging all other nodes.
-    Any buffer which is used as input to a subgraph, will be tagged with the same tag as that
-    subgraph. Throw error when buffers is used across different partitions. That is the
-    underlying data will be owned by multiple delegates.
+    Util function for partitioners. This function tags each mutated buffer
+    node whose readers (of the old or the new value) and writers all belong
+    within the same partition with the tag of that partition. This should be
+    called after tagging all other nodes. A buffer that is also read or
+    written outside that partition stays in the owning program and is passed
+    to the delegates as an input, because a delegate that owned it would
+    update its own copy, and the other users would not see the updates. A
+    buffer whose new value is also a user output stays in the owning program
+    too, and so does a buffer whose old value no node reads, unless the
+    partitioner already tagged it with its writers' tag. Any tag already on a
+    buffer that stays is removed, with a warning.
     """
     # Cache signature lookups to avoid rebuilding dicts on every access.
     sig = edge_program.graph_signature
     buffers_map = sig.inputs_to_buffers
-    mutated_buffer_targets = set(sig.buffers_to_mutate.values())
+    nodes = {node.name: node for node in edge_program.graph.nodes}
+    writers = {}
+    for output_name, buffer_name in sig.buffers_to_mutate.items():
+        writers.setdefault(buffer_name, []).append(nodes[output_name])
+    user_outputs = {
+        spec.arg.name
+        for spec in sig.output_specs
+        if spec.kind == OutputKind.USER_OUTPUT
+    }
 
     for node in edge_program.graph.nodes:
+        buffer_name = buffers_map.get(node.name)
+        if node.op != "placeholder" or buffer_name not in writers:
+            continue
+        # An op that reads the new value reads the buffer too.
+        new_value_readers = [
+            user
+            for writer in writers[buffer_name]
+            for user in writer.users
+            if user.op != "output"
+        ]
+        user_tags = {
+            user.meta.get("delegation_tag", None)
+            for user in [*node.users, *writers[buffer_name], *new_value_readers]
+        }
+        # Lowering does not support a delegate that owns a buffer whose new
+        # value is also a user output.
+        returned = any(writer.name in user_outputs for writer in writers[buffer_name])
+        # A buffer whose old value no node reads goes to a delegate only when
+        # the partitioner already gave it to the delegate that writes it.
         if (
-            node.op == "placeholder"
-            and buffers_map.get(node.name) in mutated_buffer_targets
+            (node.users or node.meta.get("delegation_tag", None) in user_tags)
+            and len(user_tags) == 1
+            and None not in user_tags
+            and not returned
         ):
-            user_tags = set()
-            for user in node.users:
-                user_tag = user.meta.get("delegation_tag", None)
-                if user_tag is not None:
-                    user_tags.add(user_tag)
-            if len(user_tags) > 1:
-                logging.info(
-                    f"The data node is used across multiple partitions, including {user_tags}. "
-                    "If the data is too large and it's not preferred to copy, please tag the "
-                    "constant node like node.['no_copy'] = True and they won't be copied."
-                )
-            # Pick a deterministic consumer tag so a buffer shared across
-            # partitions is assigned reproducibly across runs.
-            if len(user_tags) > 0:
-                node.meta["delegation_tag"] = min(user_tags)
+            node.meta["delegation_tag"] = user_tags.pop()
+            continue
+        had_tag = node.meta.pop("delegation_tag", None) is not None
+        if had_tag or (node.users and user_tags != {None}):
+            logging.warning(
+                f"The mutated buffer {node.name} stays in the owning program: "
+                "it is read or written outside one partition, no node reads it, "
+                "or its new value is also returned."
+            )
 
 
 def is_shape_dynamic(node: torch.fx.Node) -> bool:
