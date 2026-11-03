@@ -89,9 +89,10 @@ def _remove_copies_of_inputs(
     output and can overwrite the input with the output buffer's old contents.
     Copies used only inside the partition stay, because OpenVINO reads every
     input in the default dim order, which a copy left out could have changed.
-    A copy of a constant only this partition reads stays too, since such a
-    constant is not a partition input, unless OpenVINO would write the copy in
-    the wrong dim order: it writes every output in the default one. Like any
+    A copy of a constant that only this partition reads stays too, since the
+    constant is not a partition input. Such a copy still leaves when it changes
+    the dim order, since OpenVINO writes every output in the default one, or
+    has a 64-bit type, since the CPU plugin computes those in 32 bits. Like any
     input, a copy left out that is not in the default dim order is still read
     wrong by the ops that use it inside.
     """
@@ -104,18 +105,23 @@ def _remove_copies_of_inputs(
                     source in constants
                     and all(user in partition.nodes for user in source.users)
                     and copy.meta["val"].is_contiguous()
+                    and copy.meta["val"].dtype.itemsize < 8
                 )
             node = source
         return False
 
-    # Taking out a copy can make the copy it reads an output.
+    # Taking out a copy can make another copy leave.
     while leaving := [
         node
         for node in partition.nodes
         if copies_input(node) and any(u not in partition.nodes for u in node.users)
     ]:
         for node in leaving:
-            partition.remove_node(node)
+            # The copies it reads leave with it. A copy of a constant left inside
+            # could feed it while the partition also reads it, a cycle.
+            while (inner := _copy_source(node)) is not None and node in partition.nodes:
+                partition.remove_node(node)
+                node = inner
 
 
 class OpenvinoOperatorsSupport(OperatorSupportBase):

@@ -79,35 +79,47 @@ class TestCopyOperator(BaseOpenvinoOpTest):
                 self.assertEqual(plan.operators, [])
 
     def test_copy_of_constant_that_runs_outside(self):
-        class CopyOfBuffer(torch.nn.Module):
-            def __init__(self, copy, read):
+        class Buffered(torch.nn.Module):
+            def __init__(self, body, buffer):
                 super().__init__()
-                self.copy = copy
-                self.read = read
-                self.register_buffer("buffer", torch.randn(2, 3, 4, 5))
+                self.body = body
+                self.register_buffer("buffer", buffer)
 
             def forward(self, x):
-                return self.copy(self.buffer), self.read(self.buffer) + x
+                return self.body(self.buffer, x)
 
+        def copy_of_copy_and_sin(buffer, x):
+            copy = buffer.clone().clone(memory_format=torch.channels_last)
+            return copy, torch.sin(copy)
+
+        floats = torch.randn(2, 3, 4, 5)
         cases = {
             # OpenVINO writes every output in the default dim order.
             "channels last": (
-                lambda b: b.clone(memory_format=torch.channels_last),
-                lambda b: b,
+                lambda b, x: (b.clone(memory_format=torch.channels_last), b + x),
+                floats,
+            ),
+            # The inner copy must leave too, or export finds a cycle.
+            "copy of a copy, channels last": (copy_of_copy_and_sin, floats),
+            # The CPU plugin computes 64-bit types in 32 bits.
+            "int64": (
+                lambda b, x: (b.clone(), x + 1),
+                torch.tensor([2**40, -(2**40)]),
             ),
             # The partitioner does not take atan, so the CPU stores the buffer
             # anyway, and a copy made there keeps it stored once.
-            "also read outside": (lambda b: b.clone(), torch.atan),
+            "also read outside": (lambda b, x: (b.clone(), torch.atan(b) + x), floats),
         }
-        for name, (copy, read) in cases.items():
+        for name, (body, buffer) in cases.items():
             with self.subTest(case=name):
                 program = self.execute_layer_test(
-                    CopyOfBuffer(copy, read), (torch.randn(2, 3, 4, 5),)
+                    Buffered(body, buffer), (torch.randn(2, 3, 4, 5),)
                 )
                 operators = program.executorch_program.execution_plan[0].operators
-                self.assertIn(
-                    "dim_order_ops::_clone_dim_order", [op.name for op in operators]
-                )
+                names = [op.name for op in operators]
+                self.assertIn("dim_order_ops::_clone_dim_order", names)
+                if name == "also read outside":
+                    self.assertIn("aten::atan", names)
 
     def test_copy_of_mutated_buffer_as_output(self):
         class CopyOfMutatedBuffer(torch.nn.Module):
