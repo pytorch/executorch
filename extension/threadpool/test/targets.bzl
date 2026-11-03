@@ -15,6 +15,7 @@ def define_common_targets():
         name = "threadpool_test",
         srcs = _THREADPOOL_TESTS,
         deps = [
+            "//executorch/extension/threadpool:cpuinfo_utils",
             "//executorch/extension/threadpool:threadpool",
         ],
     )
