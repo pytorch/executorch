@@ -22,7 +22,7 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
-from openvino import compile_model, opset13  # type: ignore[import-untyped]
+from openvino import compile_model, opset13, opset16  # type: ignore[import-untyped]
 from openvino.frontend import FrontEndManager  # type: ignore[import-untyped]
 from openvino.frontend.pytorch.fx_decoder import (  # type: ignore[import-untyped]
     TorchFXPythonDecoder,
@@ -61,6 +61,21 @@ def _match_partition_inputs(
             f"OpenVINO backend: expected {len(input_types)} parameters in the "
             f"converted model, got {len(model.get_parameters())}"
         )
+
+
+def _copy_returned_inputs(model) -> None:
+    """Make the converted model compute each output that is one of its inputs.
+
+    The converter turns copies like aten.clone into nothing, so such an output
+    is the input itself. The CPU plugin does not write it, and can overwrite
+    the input with the output buffer's old contents. OpenVINO keeps an
+    Identity between an input and an output, and the CPU plugin runs it as a
+    copy, while it can remove a Convert to the same type.
+    """
+    for result in model.get_results():
+        source = result.input_value(0)
+        if source.get_node().get_type_name() == "Parameter":
+            result.input(0).replace_source_output(opset16.identity(source).output(0))
 
 
 @final
@@ -142,6 +157,7 @@ class OpenvinoBackend(BackendDetails):
         frontend = FrontEndManager().load_by_framework("pytorch")
         model = frontend.convert(frontend.load(decoder))
         _match_partition_inputs(model, module, input_shapes, input_types)
+        _copy_returned_inputs(model)
         ppp = PrePostProcessor(model)
         # The converter takes an int input, like a SymInt size, as a scalar, but
         # the runtime passes it as an int64 tensor of shape [1].
