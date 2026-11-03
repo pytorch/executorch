@@ -212,6 +212,43 @@ def _is_view_op(op: torch._ops.OpOverload) -> bool:
     return (alias_info is not None) and (not alias_info.is_write)
 
 
+# The partitioner picks the ops to keep whole from torch ops. Refusing min.other
+# and max.other there lets lowering turn them into minimum and maximum. The
+# others stay whole, as core ATen ops or ops the partitioner keeps, so only their
+# edge ops reach it.
+_MIN_MAX_TARGETS = (
+    torch.ops.aten.min.other,
+    torch.ops.aten.max.other,
+    exir_ops.edge.aten.min.default,
+    exir_ops.edge.aten.min.dim,
+    exir_ops.edge.aten.max.default,
+    exir_ops.edge.aten.max.dim,
+    exir_ops.edge.aten.amin.default,
+    exir_ops.edge.aten.amax.default,
+    exir_ops.edge.aten.minimum.default,
+    exir_ops.edge.aten.maximum.default,
+)
+
+
+# No upstream issue yet. For example, converting x.amax() of a bool x raises
+# 'Op "amax" (op_type: reduce_max) Input x="x" expects tensor or scalar of
+# dtype from type domain ['fp16', 'fp32', 'int32'] but got tensor[3,2,bool]'.
+def _is_min_max_of_bool(node: torch.fx.Node) -> bool:
+    """coremltools 9.0 cannot compute a min or max of bool tensors.
+
+    It raises ``ValueError`` when every input is bool, so that the result is
+    bool, such as for the all-true check that torch.distributions exports,
+    instead of reporting the op as unsupported. A bool next to a float or int
+    tensor works, and so do int tensors.
+    """
+    if node.target not in _MIN_MAX_TARGETS:
+        return False
+    val = node.meta.get("val")
+    if isinstance(val, (list, tuple)):
+        val = val[0]
+    return isinstance(val, torch.Tensor) and val.dtype == torch.bool
+
+
 class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
     def __init__(
         self,
@@ -302,6 +339,13 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         if _reads_or_produces_bfloat16(node):
             self.log_once(
                 f"{node.target} on a bfloat16 tensor is not supported by CoreML.  "
+                "Overriding op support."
+            )
+            return True
+
+        if _is_min_max_of_bool(node):
+            self.log_once(
+                f"{node.target} on bool tensors is not supported by CoreML.  "
                 "Overriding op support."
             )
             return True

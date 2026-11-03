@@ -521,6 +521,54 @@ class TestCoreMLPartitioner(unittest.TestCase):
             out = program.load_method("forward").execute((x,))[0]
             self.assertTrue(torch.allclose(out, model(x), atol=5e-2, rtol=5e-2))
 
+    def test_min_max_of_bool_is_skipped(self):
+        """
+        coremltools raises on every form of a min or max of bool tensors, such
+        as the all-true check torch.distributions exports.  The partitioner
+        must leave those ops to the portable backend and still delegate the
+        rest, including a min or max with a float input.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                ok = (x.tril() == x).view(1, -1)
+                no = ok.flip(-1)
+                reduced = [ok.min(), ok.max(), ok.min(-1)[0], ok.max(-1)[0]]
+                reduced += [ok.amin(-1), ok.amax(-1)]
+                paired = [torch.min(ok, no), torch.max(ok, no)]
+                paired += [torch.minimum(ok, no), torch.maximum(ok, no)]
+                flags = sum(r.to(x.dtype).sum() for r in reduced)
+                both = sum(p.to(x.dtype) for p in paired).view(x.shape)
+                floats = x.amax(-1, keepdim=True) + torch.maximum(x > 0.5, x)
+                return x * 2 + flags + both + floats
+
+        model = Model().eval()
+        # Core ML computes in float16, so use values it holds exactly, or
+        # x > 0.5 can differ from eager for x just above 0.5.
+        x = torch.rand(14, 14).half().float()
+        ep = torch.export.export(model, (x,), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("executorch_call_delegate", op_names)
+        for name in ("min.default", "max.default", "min.dim", "max.dim"):
+            self.assertIn(f"aten.{name}", op_names)
+        self.assertIn("aten.amin.default", op_names)
+        # The float amax and maximum stay in Core ML, and lowering turns the
+        # min and max of two tensors into minimum and maximum.
+        self.assertEqual(op_names.count("aten.amax.default"), 1)
+        self.assertEqual(op_names.count("aten.minimum.default"), 2)
+        self.assertEqual(op_names.count("aten.maximum.default"), 2)
+        if _TEST_RUNTIME:
+            program = Runtime.get().load_program(edge.to_executorch().buffer)
+            out = program.load_method("forward").execute((x,))[0]
+            self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
+
     def test_reduction_of_0d_tensor_is_skipped(self):
         """
         Core ML cannot reduce a 0-d tensor.  The partitioner must leave such
