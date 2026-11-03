@@ -168,6 +168,22 @@ class TestMLXPartitionerUnsupportedDtypes(unittest.TestCase):
         self.assertGreater(delegates, 0)
         self.assertLess(err, 1e-6)
 
+    def test_int64_scatter_add_stays_off_the_delegate(self):
+        class ScatterAdd(nn.Module):
+            def forward(self, base, index, src):
+                return base.scatter_add(0, index, src) + 1
+
+        index = torch.tensor([0, 2, 2, 7])
+        for dtype, scatters in ((torch.float32, 1), (torch.int64, 0)):
+            with self.subTest(dtype=dtype):
+                counts, delegates, err = _run(
+                    ScatterAdd(),
+                    (torch.zeros(8, dtype=dtype), index, torch.ones(4, dtype=dtype)),
+                )
+                self.assertEqual(counts.get("ScatterAddNode", 0), scatters)
+                self.assertGreater(delegates, 0)
+                self.assertEqual(err, 0)
+
 
 class Sdpa(nn.Module):
     def __init__(self, is_causal: bool = False):

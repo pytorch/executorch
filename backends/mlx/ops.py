@@ -2671,6 +2671,10 @@ def _scatter_add_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     args = P.args(n)
     require_args(args, 4, 4, "aten.scatter_add")
     require_kwargs(P.kwargs(n), set(), "aten.scatter_add")
+    dtype = n.meta["val"].dtype
+    # MLX's Metal scatter kernels reject 8-byte element types at run time.
+    if dtype.itemsize == 8:
+        raise NotImplementedError(f"aten.scatter_add on {dtype} is not supported")
     x, dim, indices, src = args
     out = P.make_or_get_slot(n)
     P.emit(
