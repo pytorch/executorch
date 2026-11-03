@@ -30,6 +30,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "ethosu_execution_stats",
         srcs = ["EthosUExecutionStats.cpp"],
+        compatible_with = ["ovr_config//cpu:arm32-embedded", "ovr_config//cpu:arm32-embedded-fpu"],
         exported_headers = ["EthosUExecutionStats.h"],
         exported_deps = [":ethosu_invocation_context"],
         visibility = ["PUBLIC"],
@@ -84,6 +85,7 @@ def define_common_targets():
         compiler_flags = ["-Wno-global-constructors"],
         preprocessor_flags = _persistent_region_flags(),
         deps = [
+            ":ethosu_invocation_context",
             ":vela_bin_stream",
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
