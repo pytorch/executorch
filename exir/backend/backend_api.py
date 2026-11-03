@@ -304,7 +304,7 @@ def _partition_and_lower_one_graph_module(
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
         submodule_output_node.meta = tagged_graph_module_output_node.meta
-        logging.debug(f"Partitioned graph module: {tagged_graph_module}")
+        logging.debug("Partitioned graph module: %s", tagged_graph_module.graph)
 
         (
             submodule_program,
@@ -487,7 +487,7 @@ def _create_partitions_in_graph_module(
         submodule_output_node = submodule.graph.output_node()
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
-        logging.debug(f"Partitioned graph module: {tagged_graph_module}")
+        logging.debug("Partitioned graph module: %s", tagged_graph_module.graph)
         (
             submodule_program,
             toplevel_input_specs_to_delete,
