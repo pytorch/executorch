@@ -545,6 +545,30 @@ cd $env:EXECUTORCH_ROOT
 .\qnn_executor_runner.exe --model_path .\deeplab_v3\dlv3_qnn.pte
 ```
 
+### Export a Hugging Face LLM
+
+`executorch.backends.qualcomm.utils.hf_static` traces a Hugging Face decoder with HF's static-cache exporter and lowers it to QNN. The model can use a tuned quantization recipe while its cache I/O stays floating-point. The following is an export configuration example, not a device-validation or performance result:
+
+```bash
+python -m executorch.backends.qualcomm.utils.hf_static \
+    --model Qwen/Qwen3-0.6B --soc_model SM8750 --max_seq_len 1024 \
+    --quantize --hybrid --output qwen3.pte
+```
+
+Each step keeps HF's static-cache interface: token IDs, attention masks, position IDs and full K/V caches in; logits and the same caches updated in place out. The one adaptation is fixed shapes: fixed-length methods and a padding / counter protocol replace HF's single variable-length `forward`, because Hexagon Tensor Processor (HTP) execution needs static shapes. This adaptation is labeled `hf_static` v1.
+
+`export_hf_static()` produces `decode` (one token) and optionally `prefill` (`prefill_len` tokens), sharing weights and cache buffers. The command above adds `prefill` with `--hybrid`. Cache rows are written by CPU kernels into runner-owned buffers. A runner must follow the [version-1 contract](llm-hf-static-io-contract.md), including fixed query lengths, padding rows in sliding masks, absolute counters and reset; matching HF's tensor order alone is not sufficient.
+
+ExecuTorch's LLM runner uses `HfStaticIOManager` without a transformers dependency. HF's own Python runner can load these programs only with `transformers.exporters.register_io_contract`, which exists only in a local transformers branch for this work, not stock transformers. ExecuTorch guards that hook import with `try` / `except ImportError`: importing `executorch.extension.llm.io_contracts` registers the Python adapters only when the hook is available. Without it, registration is skipped and stock HF loading is not enabled. Python native bindings may clone returned outputs; a zero-copy Python host API is not claimed.
+
+KV-cache policies, including eviction, long-context handling, reset and fork, belong in the runner's IOManager, not the QNN backend or exporter. This series implements fixed-shape execution and reset. Cache inspection and adopt / fork / evict hooks are follow-up work, not APIs provided by the current IOManager.
+
+`hf_static` v1 uses float32 / float16 caches, even with quantized model computation. Auto attention uses split for decode and quantized computation, and concat for floating-point prefill.
+
+For the transformers export used here, the Python branch that shifts HF's sliding cache once full is traced away. `hf_static` replaces those writes and determines sliding layers from model configuration. A prompt method must not exceed the smallest sliding cache length. Padding rows in a window mask are all-false, so the shift counts real tokens only. See the [counter and padding protocol](llm-hf-static-io-contract.md#positions-counters-and-padding), including the counter difference from HF eager state. These model window writes do not supply a general runner eviction policy.
+
+**Validation boundary:** CPU tests provide sliding-window correctness evidence only. They do not establish sliding-window device support, longer-context device support or device latency. Device behavior requires separate validation. Quantized caches, `sha` prefill and full-length sliding-cache mode are held back from this series.
+
 ### Run [Android LlamaDemo](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo) with QNN backend
 
 `$DEMO_APP` refers to the root of the executorch android demo, i.e., the directory containing `build.gradle.kts`.
