@@ -12,7 +12,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.test.tester import Quantize, Tester
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.passes.quantize_io_pass import (
     get_config_method_name,
@@ -38,6 +38,14 @@ class TestIODimOrder(unittest.TestCase):
     class Add(torch.nn.Module):
         def forward(self, x, y):
             return x + y
+
+    class Linear(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(16, 8)
+
+        def forward(self, x):
+            return self.linear(x)
 
     class AddConv(torch.nn.Module):
         def __init__(self):
@@ -104,6 +112,25 @@ class TestIODimOrder(unittest.TestCase):
     def test_fp32_add_channels_last_3d(self):
         x = torch.randn(1, 3, 4, 5, 6).to(memory_format=torch.channels_last_3d)
         self._test(self.Add(), [(x, torch.randn(1, 3, 4, 5, 6))])
+
+    def test_qd8_linear_permuted_input(self):
+        # The external stays fp32 and is quantized after the transpose.
+        torch.manual_seed(0)
+        module, x = self.Linear().eval(), self._permuted()
+        config = get_symmetric_quantization_config(is_per_channel=True, is_dynamic=True)
+
+        def run(example):
+            tester = Tester(module, (example,))
+            tester.quantize(Quantize(quantization_config=config)).export()
+            tester.to_edge_transform_and_lower().check_count(
+                {"torch.ops.higher_order.executorch_call_delegate": 1}
+            ).to_executorch().serialize()
+            method = _load_for_executorch_from_buffer(tester.get_artifact())
+            return method.run_method("forward", (x,))[0]
+
+        # The q/dq reference quantizes per tensor and XNNPACK per token, so
+        # compare with the program exported from a contiguous input.
+        torch.testing.assert_close(run(x), run(x.contiguous()), atol=0, rtol=0)
 
     def test_qs8_add_quantized_permuted_input(self):
         torch.manual_seed(0)

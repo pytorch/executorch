@@ -112,9 +112,12 @@ def get_external_dim_orders(
     dim_orders = []
     for node in nodes:
         val = node.meta.get("val", None)
+        if val is None:
+            raise RuntimeError(f"XNNPACK external {node} has no value")
         if not isinstance(val, torch.Tensor):
-            raise RuntimeError(f"XNNPACK external {node} has no tensor value")
-        if ChannelsLastTaggedReshapePass.is_nhwc_tensor(val):
+            # Symbolic sizes have no layout.
+            dim_orders.append(())
+        elif ChannelsLastTaggedReshapePass.is_nhwc_tensor(val):
             dim_orders.append(tuple(range(val.dim())))
         else:
             dim_orders.append(
