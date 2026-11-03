@@ -844,7 +844,11 @@ Error defineBf16MatMulResult(
       output->datatype() != DataType::xnn_datatype_bf16) {
     return Error::Ok;
   }
-  std::vector<size_t> dims = flatbufferDimsToVector<size_t>(output->dims());
+  // Like defineTensor(), treat a null dims vector as rank 0.
+  std::vector<size_t> dims;
+  if (output->dims() != nullptr) {
+    dims = flatbufferDimsToVector<size_t>(output->dims());
+  }
   xnn_status status = xnn_define_tensor_value(
       subgraph_ptr,
       xnn_datatype_fp32,
