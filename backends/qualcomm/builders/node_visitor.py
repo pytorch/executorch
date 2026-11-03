@@ -37,6 +37,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from .utils import (
     deduce_dtype,
     get_parameter,
+    graph_output_position,
     is_graph_input,
     is_graph_output,
     is_mutable_buffer_input,
@@ -465,6 +466,8 @@ class NodeVisitor:
         # the input order between QNN and the original graph’s forward function may differ.
         # The `mutbuf_{id}` is utilized for mapping I/O of mutable buffer at runtime.
         # The `output_` is identified as the graph’s output at runtime to prevent confusion with per_tensor_dump.
+        # The `output_{id}` is the position among the graph's outputs, sorted on at runtime like `input_{id}`:
+        # the same passes can also reorder the ops that produce the outputs.
 
         # For more info about self.is_qnn_partitioner, check constructor for explanation.
         if self.is_qnn_partitioner:
@@ -482,7 +485,9 @@ class NodeVisitor:
                 ).index(node.name)
                 tensor_name = f"output_mutbuf_{position_index}_{tensor_name}"
             elif is_graph_output(node, wrapper_idx):
-                tensor_name = f"output_{tensor_name}"
+                position = graph_output_position(node, wrapper_idx)
+                prefix = "output_" if position is None else f"output_{position}_"
+                tensor_name = f"{prefix}{tensor_name}"
 
         # Only add qcom_tensor_name when enable tensor dump.
         # Only runs in qnn_preprocess (not op validation) since that's when

@@ -141,6 +141,27 @@ def is_graph_output(node: torch.fx.Node, output_index: Optional[int] = None) -> 
     return False
 
 
+def graph_output_position(
+    node: torch.fx.Node, output_index: Optional[int] = None
+) -> Optional[int]:
+    """The position of ``node`` (its ``output_index``-th output, for a
+    multi-output node) among the graph's outputs, or None."""
+    output = next(n for n in node.graph.nodes if n.op == "output")
+    outputs = output.args[0]
+    outputs = outputs if isinstance(outputs, (list, tuple)) else [outputs]
+    for position, value in enumerate(outputs):
+        if value is node:
+            return position
+        if (
+            isinstance(value, torch.fx.Node)
+            and getattr(value.target, "__name__", "") == "getitem"
+            and value.args[0] is node
+            and (output_index is None or value.args[1] == output_index)
+        ):
+            return position
+    return None
+
+
 def is_mutable_buffer_output(
     tensor: torch.fx.Node, edge_program: torch.export.ExportedProgram
 ) -> bool:

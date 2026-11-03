@@ -14,6 +14,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <algorithm>
+#include <charconv>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -34,6 +35,35 @@ bool CompareExportedInput(
   int numA = std::stoi(a->GetName().substr(a->GetName().find('_') + 1));
   int numB = std::stoi(b->GetName().substr(b->GetName().find('_') + 1));
   return numA < numB;
+}
+
+// The graph output position AOT encodes as `output_{id}_...`, or -1 for an
+// output named without one (mutable buffers, older programs).
+int ExportedOutputPosition(const std::string& name) {
+  const std::string prefix = "output_";
+  if (name.rfind(prefix, 0) != 0) {
+    return -1;
+  }
+  const size_t end = name.find('_', prefix.size());
+  if (end == std::string::npos || end == prefix.size() ||
+      end + 1 == name.size()) {
+    return -1;
+  }
+  int position = -1;
+  const auto result =
+      std::from_chars(name.data() + prefix.size(), name.data() + end, position);
+  return result.ec == std::errc{} && result.ptr == name.data() + end &&
+          position >= 0
+      ? position
+      : -1;
+}
+
+bool CompareExportedOutput(
+    const std::shared_ptr<TensorWrapper>& a,
+    const std::shared_ptr<TensorWrapper>& b) {
+  const int pa = ExportedOutputPosition(a->GetName());
+  const int pb = ExportedOutputPosition(b->GetName());
+  return pa >= 0 && (pb < 0 || pa < pb);
 }
 
 int ExtractMutableBufferNumber(const std::string& name) {
@@ -389,6 +419,14 @@ Error QnnManager::AllocateTensor(const std::string& graph_name) {
     }
     output_tensors_[graph_name].emplace_back(std::move(tensor_wrapper));
   }
+  if (!options_->is_from_context_binary()) {
+    // Outputs with a position go in the order the program's outputs bind;
+    // the rest keep their place after them.
+    std::stable_sort(
+        output_tensors_[graph_name].begin(),
+        output_tensors_[graph_name].end(),
+        CompareExportedOutput);
+  }
   return Error::Ok;
 }
 
@@ -406,6 +444,12 @@ Error QnnManager::AllocateTensor(
         CompareExportedInput);
   }
   output_tensors_[graph_name] = std::move(outputs);
+  if (!options_->is_from_context_binary()) {
+    std::stable_sort(
+        output_tensors_[graph_name].begin(),
+        output_tensors_[graph_name].end(),
+        CompareExportedOutput);
+  }
   return Error::Ok;
 }
 
