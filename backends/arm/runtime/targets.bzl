@@ -23,6 +23,19 @@ def _vgf_zero_copy_flags():
 
 def define_common_targets():
     runtime.cxx_library(
+        name = "ethosu_invocation_context",
+        exported_headers = ["EthosUBackend_Pmu.h"],
+        visibility = ["PUBLIC"],
+    )
+    runtime.cxx_library(
+        name = "ethosu_execution_stats",
+        srcs = ["EthosUExecutionStats.cpp"],
+        exported_headers = ["EthosUExecutionStats.h"],
+        exported_deps = [":ethosu_invocation_context"],
+        visibility = ["PUBLIC"],
+        deps = ["fbsource//third-party/ethos-u-core-driver:core_driver_headers_only"],
+    )
+    runtime.cxx_library(
         name = "vela_bin_stream",
         srcs = ["VelaBinStream.cpp"],
         exported_headers = ["VelaBinStream.h"],
@@ -54,6 +67,7 @@ def define_common_targets():
         visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/backend:interface",
+            ":ethosu_invocation_context",
             ":vela_bin_stream",
             "//executorch/runtime/core:core",
             "fbsource//third-party/ethos-u-core-driver:core_driver_headers_only",
