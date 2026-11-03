@@ -80,11 +80,12 @@ class MoveActivationBeforeConcat(PassBase):
                         kwargs=activation.kwargs,
                     )
 
-                    # A non-strict torch.export does not record source_fn_stack.
-                    if source_fn_stack := activation.meta.get("source_fn_stack"):
-                        new_activation.meta["source_fn_stack"] = [
-                            (new_activation.name, source_fn_stack[-1][-1])
-                        ]
+                    new_activation.meta["source_fn_stack"] = [
+                        (
+                            new_activation.name,
+                            activation.meta["source_fn_stack"][-1][-1],
+                        )
+                    ]
                     new_activation.meta["val"] = input_node.meta["val"]
 
                     # Replace the uses of the input node with the new activation node.

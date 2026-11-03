@@ -190,7 +190,12 @@ void add_prepack_standard_node(
   }
 
   std::vector<PushConstantDataInfo> pcs;
-  if (is_nchw_to_bitw8_shader(shader)) {
+  if (graph.is_buffer_storage(tensor)) {
+    pcs = {
+        graph.sizes_pc_of(tensor),
+        graph.strides_pc_of(tensor),
+        graph.numel_pc_of(tensor)};
+  } else if (is_nchw_to_bitw8_shader(shader)) {
     pcs = {graph.sizes_pc_of(tensor)};
   }
 

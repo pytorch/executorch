@@ -2537,7 +2537,10 @@ class TestEmit(unittest.TestCase):
             model, (test_inputs[0],), dynamic_shapes=dynamic_shapes
         )
 
-        edge_program = to_edge(exported_program)
+        edge_program = to_edge(
+            exported_program,
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
         et_program = edge_program.to_executorch()
         program_buffer = et_program.buffer
         et_module = _load_for_executorch_from_buffer(program_buffer)

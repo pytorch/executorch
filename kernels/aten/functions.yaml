@@ -131,8 +131,6 @@
 
 - op: cosh.out
 
-- op: cummin.out
-
 - op: cumsum.out
 
 - op: dequantize.self_out
