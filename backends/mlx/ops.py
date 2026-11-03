@@ -2406,6 +2406,53 @@ def _roll_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+def _constant_mask_as_positions(
+    P: MLXProgramBuilder, n: Node, non_none: List[Tuple[int, Slot, Any]]
+) -> List[Tuple[int, Slot, Any]]:
+    """Replace a constant boolean index of aten.index.Tensor with its positions.
+
+    The MLX runtime gathers only with integer indices. A boolean mask that is
+    a constant of the program, used as the only index, becomes one integer
+    index per mask dimension. Any other boolean index is refused, so the CPU
+    runs it.
+    """
+    masks = [
+        (axis, idx)
+        for axis, idx, val in non_none
+        if isinstance(val, torch.Tensor) and val.dtype == torch.bool
+    ]
+    if not masks:
+        return non_none
+    axis, mask = masks[0]
+    mask_node = n.args[1][axis]
+    # The partitioner sees parameters and persistent buffers as fake tensors,
+    # so only a mask in ep.constants has values it can read.
+    if (
+        len(non_none) > 1
+        or mask.id_space != IdSpace.Constant
+        or (target := P.get_placeholder_target(mask_node)) not in P.ep.constants
+    ):
+        raise NotImplementedError(
+            "aten.index.Tensor: the MLX runtime gathers only with integer "
+            "indices, so only a constant boolean mask used as the only index "
+            "is lowered"
+        )
+    value = P.ep.constants[target]
+    if not value.any():
+        raise NotImplementedError(
+            "aten.index.Tensor: an all-false mask selects nothing, and the MLX "
+            "runtime cannot write an empty output"
+        )
+    return [
+        (
+            axis + i,
+            P.make_or_get_constant(f"{target}_positions_{i}", positions),
+            positions,
+        )
+        for i, positions in enumerate(value.nonzero(as_tuple=True))
+    ]
+
+
 @REGISTRY.register(target=[torch.ops.aten.index.Tensor])
 def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     args = P.args(n)
@@ -2422,14 +2469,19 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     x_ndim = len(x_meta.shape) if x_meta is not None else None
 
     # Filter out None indices and track which axes they correspond to
-    non_none = [(i, idx) for i, idx in enumerate(idx_list) if idx is not None]
+    non_none = [
+        (i, idx, n.args[1][i].meta.get("val"))
+        for i, idx in enumerate(idx_list)
+        if idx is not None
+    ]
 
     if len(non_none) == 0:
         raise ValueError("aten.index.Tensor: all indices are None")
 
+    non_none = _constant_mask_as_positions(P, n, non_none)
+
     if len(non_none) == 1:
-        axis, idx = non_none[0]
-        idx_meta = n.args[1][axis].meta.get("val")
+        axis, idx, idx_meta = non_none[0]
         ndim_match = (
             x_meta is not None
             and idx_meta is not None
@@ -2464,8 +2516,8 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             "aten.index.Tensor with multiple indices requires input shape metadata"
         )
 
-    indices = [P.slot_to_tid(idx) for _, idx in non_none]
-    axes = [i for i, _ in non_none]
+    indices = [P.slot_to_tid(idx) for _, idx, _ in non_none]
+    axes = [i for i, _, _ in non_none]
 
     # slice_sizes: 1 for indexed axes, full static size for non-indexed axes.
     indexed_axes = set(axes)
