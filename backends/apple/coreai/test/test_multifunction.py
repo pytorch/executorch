@@ -117,6 +117,8 @@ class MultifunctionPreprocessTest(unittest.TestCase):
         self.assertEqual(forward["function"], "forward_0")
         self.assertEqual(prefill["function"], "prefill_0")
         self.assertEqual(forward["packaging"], "aimodel")
+        self.assertIs(forward["multifunction"], True)
+        self.assertIs(prefill["multifunction"], True)
         for key in ("export_hash", "path", "files", "bundle_digests"):
             self.assertEqual(forward[key], prefill[key], key)
         self.assertEqual(forward["input_names"], ["input_0"])
@@ -163,6 +165,7 @@ class MultifunctionPreprocessTest(unittest.TestCase):
         ((forward, _),) = _manifests(lowered, "forward")
         ((prefill, _),) = _manifests(lowered, "prefill")
         self.assertEqual((forward["function"], prefill["function"]), ("main", "main"))
+        self.assertNotIn("multifunction", forward)
         self.assertNotEqual(forward["export_hash"], prefill["export_hash"])
 
     def test_mismatched_compile_specs_raise(self):

@@ -25,36 +25,35 @@ using namespace executorch::runtime;
 struct Handle final {
   size_t input_count = 0;
   size_t output_count = 0;
+  ETCoreAILoadedModel* model = nil;
   id<ETCoreAISession> session = nil;
 };
 
+template <typename T>
+Result<T>
+runtime_option(BackendInitContext& context, const char* key, T fallback) {
+  auto option = context.get_runtime_spec<T>(key);
+  if (!option.ok() && option.error() == Error::NotFound) {
+    return fallback;
+  }
+  return option;
+}
+
 Result<NSString*> cache_directory_option(BackendInitContext& context) {
-  auto option = context.get_runtime_spec<const char*>("coreai_cache_dir");
+  auto option =
+      runtime_option<const char*>(context, "coreai_cache_dir", nullptr);
   if (!option.ok()) {
-    if (option.error() == Error::NotFound) {
-      return cache_directory_path(nullptr);
-    }
     return option.error();
   }
-  ET_CHECK_OR_RETURN_ERROR(
-      option.get() != nullptr,
-      InvalidArgument,
-      "Core AI cache directory option must not be null");
   return cache_directory_path(option.get());
 }
 
 Result<ETCoreAIComputeUnit> compute_unit_option(BackendInitContext& context) {
-  auto option = context.get_runtime_spec<const char*>("coreai_compute_unit");
+  auto option =
+      runtime_option<const char*>(context, "coreai_compute_unit", "default");
   if (!option.ok()) {
-    if (option.error() == Error::NotFound) {
-      return ETCoreAIComputeUnitDefault;
-    }
     return option.error();
   }
-  ET_CHECK_OR_RETURN_ERROR(
-      option.get() != nullptr,
-      InvalidArgument,
-      "Core AI compute unit option must not be null");
   static constexpr struct {
     const char* name;
     ETCoreAIComputeUnit value;
@@ -137,6 +136,16 @@ class CoreAIBackend final : public BackendInterface {
       if (!compute_unit.ok()) {
         return compute_unit.error();
       }
+      auto share = runtime_option<bool>(
+          context, "coreai_share_multifunction_model", false);
+      if (!share.ok()) {
+        return share.error();
+      }
+      ET_CHECK_OR_RETURN_ERROR(
+          !share.get() || manifest->multifunction,
+          InvalidArgument,
+          "coreai_share_multifunction_model requires a multi-function export "
+          "(CoreAIPartitioner(multifunction=True))");
       id<ETCoreAIModelLoading> loader =
           ETCoreAICreateModelLoader(compute_unit.get());
       ET_CHECK_OR_RETURN_ERROR(
@@ -145,15 +154,16 @@ class CoreAIBackend final : public BackendInterface {
       if (!cache_directory.ok()) {
         return cache_directory.error();
       }
-      auto prepared = acquire_model(
+      auto loaded = acquire_loaded_model(
           host_bundle.get(),
           context.get_named_data_map(),
           cache_directory.get(),
-          loader);
-      if (!prepared.ok()) {
-        return prepared.error();
+          loader,
+          share.get());
+      if (!loaded.ok()) {
+        return loaded.error();
       }
-      auto session = bind_session(prepared.get(), host_bundle->bundle);
+      auto session = bind_session(loaded.get().model, host_bundle->bundle);
       if (!session.ok()) {
         return session.error();
       }
@@ -164,6 +174,7 @@ class CoreAIBackend final : public BackendInterface {
           "Cannot allocate Core AI handle");
       handle->input_count = host_bundle->bundle.inputs.count;
       handle->output_count = host_bundle->bundle.outputs.count;
+      handle->model = loaded.get();
       handle->session = session.get();
       processed->Free();
       return static_cast<DelegateHandle*>(handle.release());
@@ -178,6 +189,7 @@ class CoreAIBackend final : public BackendInterface {
       ET_CHECK_OR_RETURN_ERROR(
           opaque != nullptr, DelegateInvalidHandle, "Null Core AI handle");
       auto& handle = *static_cast<Handle*>(opaque);
+      std::lock_guard<std::mutex> guard([handle.model executionMutex]);
       return execute_session(
           handle.session, args, handle.input_count, handle.output_count);
     }

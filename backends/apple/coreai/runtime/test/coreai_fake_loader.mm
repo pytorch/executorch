@@ -133,6 +133,19 @@ void run_async(CoreAIFakeBridgeContext* context, void (^work)()) {
                (void (^)(NSArray<ETCoreAITensor*>*, NSError*))completion {
   CoreAIFakeBridgeContext* context = self.context;
   ++context->state.executions;
+  const int active = ++context->state.active_executions;
+  int peak = context->state.max_active_executions.load();
+  while (active > peak &&
+         !context->state.max_active_executions.compare_exchange_weak(
+             peak, active)) {
+  }
+  // Ends the overlap window before the caller can observe completion.
+  void (^reply)(NSArray<ETCoreAITensor*>*, NSError*) = completion;
+  completion = ^(NSArray<ETCoreAITensor*>* outputs, NSError* error) {
+    --context->state.active_executions;
+    reply(outputs, error);
+  };
+  const useconds_t delay = context->state.execute_delay_us;
   const bool should_fail = context->state.fail_execute;
   const bool malformed = context->state.bad_output;
   dispatch_semaphore_t ready = context->state.input_ready;
@@ -141,6 +154,9 @@ void run_async(CoreAIFakeBridgeContext* context, void (^work)()) {
     context.retainedExecutionCompletion = completion;
   }
   run_async(context, ^{
+    if (delay > 0) {
+      usleep(delay);
+    }
     ETCoreAIInputTensor* input = inputs[0];
     context->state.last_input_bytes = input.bytes;
     context->state.last_input_byte_count = input.byteCount;

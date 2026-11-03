@@ -30,6 +30,25 @@ TEST(CoreAIManifestTest, RejectsUnknownPackaging) {
   EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::NotSupported);
 }
 
+TEST(CoreAIManifestTest, ParsesOptionalMultifunctionFlag) {
+  auto absent = parse_manifest(encode(manifest_dict()));
+  ASSERT_TRUE(absent.ok());
+  EXPECT_FALSE(absent->multifunction);
+  for (NSNumber* value in @[ @YES, @NO ]) {
+    auto dict = manifest_dict();
+    dict[@"multifunction"] = value;
+    auto parsed = parse_manifest(encode(dict));
+    ASSERT_TRUE(parsed.ok());
+    EXPECT_EQ(parsed->multifunction, value.boolValue);
+  }
+  for (id value in @[ @1, @"true", NSNull.null ]) {
+    SCOPED_TRACE([value description].UTF8String);
+    auto dict = manifest_dict();
+    dict[@"multifunction"] = value;
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
+}
+
 TEST(CoreAIManifestTest, RejectsUnsafeSourcePaths) {
   for (NSString* path in @[
          @"../model.aimodel",

@@ -572,7 +572,9 @@ class CoreAIBackend(BackendDetails):
             [entrypoint for _, entrypoint, _, _ in entries],
         )
         program = _convert_to_aiprogram(entries)
-        bindings = [_binding(program, *entry) for entry in entries]
+        bindings = [
+            {**_binding(program, *entry), "multifunction": True} for entry in entries
+        ]
         results = CoreAIBackend._package(program, partitions[0][3], bindings)
 
         by_method: Dict[str, List[PreprocessResult]] = {

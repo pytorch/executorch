@@ -26,6 +26,8 @@ class Manifest final {
   NSString* const platform;
   NSDictionary<NSString*, NSString*>* const architectures;
   const NSOperatingSystemVersion minimum_version;
+  // Exported with other delegates as functions of one Core AI model.
+  const bool multifunction;
 
   Manifest(const Manifest&) = default;
   Manifest(Manifest&&) = default;
@@ -43,7 +45,8 @@ class Manifest final {
       bool aot_compiled,
       NSString* platform,
       NSDictionary<NSString*, NSString*>* architectures,
-      NSOperatingSystemVersion minimum_version);
+      NSOperatingSystemVersion minimum_version,
+      bool multifunction);
 
   friend runtime::Result<Manifest> parse_manifest(NSData* data);
 };

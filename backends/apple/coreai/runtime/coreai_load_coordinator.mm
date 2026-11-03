@@ -14,7 +14,28 @@
 #import "coreai_source_bundle.h"
 
 #include <TargetConditionals.h>
+#include <sys/stat.h>
 #include <utility>
+
+@interface ETCoreAILoadedModel ()
+- (instancetype)initWithModel:(id<ETCoreAIPreparedModel>)model;
+@end
+
+@implementation ETCoreAILoadedModel {
+  std::mutex _executionMutex;
+}
+
+- (instancetype)initWithModel:(id<ETCoreAIPreparedModel>)model {
+  if ((self = [super init])) {
+    _model = model;
+  }
+  return self;
+}
+
+- (std::mutex&)executionMutex {
+  return _executionMutex;
+}
+@end
 
 namespace executorch::backends::coreai {
 namespace {
@@ -145,23 +166,26 @@ Result<SelectedHostBundle> select_host_bundle(const Manifest& manifest) {
       std::move(selected.get()), [platform copy], [architecture copy]};
 }
 
-Result<id<ETCoreAIPreparedModel>> acquire_model(
+namespace {
+Result<NSString*> model_cache_key(
     const SelectedHostBundle& host_bundle,
-    const runtime::NamedDataMap* named_data,
-    const CacheDirectory& cache_directory,
     id<ETCoreAIModelLoading> loader) {
   ET_CHECK_OR_RETURN_ERROR(
       loader != nil, InvalidArgument, "Missing Core AI model loader");
   NSString* specialization = [loader.specializationIdentifier copy];
-  auto key = cache_variant_key(
+  return cache_variant_key(
       host_bundle.bundle,
       host_bundle.platform,
       host_bundle.architecture,
       specialization);
-  if (!key.ok()) {
-    return key.error();
-  }
-  NSString* cache_key = key.get();
+}
+
+Result<id<ETCoreAIPreparedModel>> acquire_cached_model(
+    const SelectedHostBundle& host_bundle,
+    const runtime::NamedDataMap* named_data,
+    const CacheDirectory& cache_directory,
+    id<ETCoreAIModelLoading> loader,
+    NSString* cache_key) {
   ET_LOG(Info, "Core AI cache lookup: key=%s", cache_key.UTF8String);
   auto locked = LockedCacheEntry::acquire(cache_directory, cache_key);
   if (!locked.ok()) {
@@ -225,6 +249,69 @@ Result<id<ETCoreAIPreparedModel>> acquire_model(
       cache_key.UTF8String);
   cleanup_source(*locked.get());
   return model;
+}
+} // namespace
+
+Result<id<ETCoreAIPreparedModel>> acquire_model(
+    const SelectedHostBundle& host_bundle,
+    const runtime::NamedDataMap* named_data,
+    const CacheDirectory& cache_directory,
+    id<ETCoreAIModelLoading> loader) {
+  auto key = model_cache_key(host_bundle, loader);
+  if (!key.ok()) {
+    return key.error();
+  }
+  return acquire_cached_model(
+      host_bundle, named_data, cache_directory, loader, key.get());
+}
+
+Result<ETCoreAILoadedModel*> acquire_loaded_model(
+    const SelectedHostBundle& host_bundle,
+    const runtime::NamedDataMap* named_data,
+    const CacheDirectory& cache_directory,
+    id<ETCoreAIModelLoading> loader,
+    bool share) {
+  auto key = model_cache_key(host_bundle, loader);
+  if (!key.ok()) {
+    return key.error();
+  }
+  static std::mutex mutex;
+  static NSMapTable<NSString*, ETCoreAILoadedModel*>* shared_models =
+      [NSMapTable strongToWeakObjectsMapTable];
+  std::unique_lock<std::mutex> guard(mutex, std::defer_lock);
+  NSString* shared_key = nil;
+  if (share) {
+    // The open directory's identity, not its path, so aliases of one
+    // directory share while distinct directories stay isolated.
+    struct stat directory;
+    ET_CHECK_OR_RETURN_ERROR(
+        fstat(cache_directory.descriptor.get(), &directory) == 0,
+        AccessFailed,
+        "Cannot identify Core AI cache directory");
+    shared_key = [NSString
+        stringWithFormat:@"%llu:%llu/%@",
+                         static_cast<unsigned long long>(directory.st_dev),
+                         static_cast<unsigned long long>(directory.st_ino),
+                         key.get()];
+    // Held across acquisition so concurrent first loads acquire only once.
+    guard.lock();
+    ETCoreAILoadedModel* existing = [shared_models objectForKey:shared_key];
+    if (existing != nil) {
+      ET_LOG(Info, "Core AI shared model reused: key=%s", key.get().UTF8String);
+      return existing;
+    }
+  }
+  auto model = acquire_cached_model(
+      host_bundle, named_data, cache_directory, loader, key.get());
+  if (!model.ok()) {
+    return model.error();
+  }
+  ETCoreAILoadedModel* loaded =
+      [[ETCoreAILoadedModel alloc] initWithModel:model.get()];
+  if (share) {
+    [shared_models setObject:loaded forKey:shared_key];
+  }
+  return loaded;
 }
 
 Error clear_cache_entry(

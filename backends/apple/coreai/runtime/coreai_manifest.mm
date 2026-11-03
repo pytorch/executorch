@@ -23,7 +23,8 @@ Manifest::Manifest(
     bool aot_compiled,
     NSString* platform,
     NSDictionary<NSString*, NSString*>* architectures,
-    NSOperatingSystemVersion minimum_version)
+    NSOperatingSystemVersion minimum_version,
+    bool multifunction)
     : export_hash(export_hash),
       function(function),
       inputs(inputs),
@@ -33,7 +34,8 @@ Manifest::Manifest(
       aot_compiled(aot_compiled),
       platform(platform),
       architectures(architectures),
-      minimum_version(minimum_version) {}
+      minimum_version(minimum_version),
+      multifunction(multifunction) {}
 
 SelectedBundle::SelectedBundle(
     const Manifest& manifest,
@@ -67,9 +69,13 @@ bool names_array(id value) {
   return true;
 }
 
+bool is_boolean(id value) {
+  return value != nil &&
+      CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID();
+}
+
 bool file_size(id value) {
-  return [value isKindOfClass:NSNumber.class] &&
-      CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID() &&
+  return [value isKindOfClass:NSNumber.class] && !is_boolean(value) &&
       !CFNumberIsFloatType((__bridge CFNumberRef)value) &&
       [value compare:@0] != NSOrderedAscending &&
       [value compare:@(std::numeric_limits<int64_t>::max())] !=
@@ -183,6 +189,11 @@ Result<Manifest> parse_manifest(NSData* data) {
   NSString* function = dict[@"function"];
   NSArray<NSString*>* inputs = dict[@"input_names"];
   NSArray<NSString*>* outputs = dict[@"output_names"];
+  id multifunction = dict[@"multifunction"];
+  ET_CHECK_OR_RETURN_ERROR(
+      multifunction == nil || is_boolean(multifunction),
+      InvalidProgram,
+      "Core AI multifunction flag must be a boolean");
   NSString* platform = nil;
   NSDictionary<NSString*, NSString*>* architectures = nil;
   ET_CHECK_OR_RETURN_ERROR(
@@ -266,7 +277,8 @@ Result<Manifest> parse_manifest(NSData* data) {
       aot_compiled,
       platform,
       architectures,
-      minimum_version);
+      minimum_version,
+      [multifunction boolValue]);
 }
 
 Result<Manifest> parse_manifest(const void* data, size_t size) {

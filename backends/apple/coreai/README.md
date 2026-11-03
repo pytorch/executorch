@@ -34,7 +34,9 @@ formats require a `function` name, and ordered
 iteration order is not a binding contract. `export_hash` identifies the exported
 program used to namespace embedded assets. The `files` object maps relative
 filenames to byte sizes; `bundle_digests` maps each bundle basename to its
-export-time SHA-256 digest. Asset paths, including bundle and directory names,
+export-time SHA-256 digest. The optional boolean `multifunction` marks a delegate
+exported as one function of a model shared with other delegates. Asset paths,
+including bundle and directory names,
 must remain distinct under case-insensitive, canonically normalized Unicode
 comparison. Accepted names are preserved, not rewritten.
 
@@ -133,7 +135,9 @@ Each delegate keeps its own manifest naming its function and ordered I/O; all of
 them reference the same embedded bundle. Function bindings are not part of the
 cache key, so the first load specializes the model and the other delegates
 restore it from the same bookmark. Each delegate still loads its own model
-instance.
+instance unless the `coreai_share_multifunction_model` runtime option is set
+(see [Runtime options](#runtime-options)). Multi-function manifests carry
+`"multifunction": true`.
 
 ### Cache directory
 
@@ -387,6 +391,31 @@ variant.
 ```cpp
 BackendOptions<2> options;
 ET_CHECK_OK_OR_RETURN_ERROR(options.set_option("coreai_compute_unit", "cpu_only"));
+```
+
+`coreai_share_multifunction_model` (bool, default `false`) makes the delegates of
+a multi-function export (`CoreAIPartitioner(multifunction=True)`) share one
+loaded Core AI model per process instead of each loading its own. Without it,
+every delegate restores a separate model with its own copy of the weights. With
+it, the first delegate loads the model and the others reuse it until the last
+one is destroyed. Delegates sharing a model run one at a time: concurrent
+execution on one model is serialized by a per-model lock, because the SDK does
+not document it as safe and it produced wrong outputs in testing. Setting the
+option on a delegate that isn't from a multi-function export fails
+initialization with `InvalidArgument`.
+
+Sharing is process-wide, not per program, but scoped to the cache directory.
+Separate `Module`s that load the same PTE with the option set and the same
+`coreai_cache_dir` share one model, so their `execute` calls block each other.
+`Module`s with different cache directories never share: each loads its own model
+and keeps its own bookmark. A symlink to a cache directory counts as that
+directory. Different `coreai_compute_unit` values also load separate models,
+since each is a separate specialization.
+
+```cpp
+BackendOptions<2> options;
+ET_CHECK_OK_OR_RETURN_ERROR(
+    options.set_option("coreai_share_multifunction_model", true));
 ```
 
 ## SDK Bridge
