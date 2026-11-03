@@ -181,8 +181,9 @@ struct DeferredLogs final {
   uint64_t batch = 1;
   uint64_t batches_written = 0;
   bool writer_running = false;
-  // A new thread state crashes a Python that has finished exiting, so exit
-  // waits while the writer takes the GIL with one.
+  // Exit waits while the writer takes the GIL, since a Python that has
+  // finished exiting crashes on a new thread state and may have freed the
+  // writer's saved one.
   bool writer_entering = false;
   bool exiting = false;
 };
@@ -220,6 +221,12 @@ void write_to_fd_2(const char* data, size_t size) {
   while (size > 0) {
     const ssize_t written = ::write(2, data, size);
     if (written < 0 && errno == EINTR) {
+      continue;
+    }
+    if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+      // fd 2 is non-blocking and full.
+      pollfd stderr_fd{2, POLLOUT, 0};
+      poll(&stderr_fd, 1, -1);
       continue;
     }
     if (written <= 0) {
@@ -389,7 +396,20 @@ void write_logs_to_python(PendingLogs& logs) noexcept {
   if (logs.lines.empty()) {
     return;
   }
-  // A call's lines go after the lines this thread handed to the writer thread.
+  if (PyThread_get_thread_ident() == main_thread_id) {
+    // The lines that the main thread's pending call has yet to write come
+    // first, since a call that raised runs no pending call before the next.
+    DeferredLogs& deferred = deferred_logs();
+    std::lock_guard<std::mutex> lock(deferred.mutex);
+    note_left_out_bytes(deferred.main_thread_logs);
+    try {
+      logs.lines.insert(0, deferred.main_thread_logs.lines);
+      deferred.main_thread_logs = PendingLogs();
+      deferred.main_thread_write_scheduled = false;
+    } catch (const std::bad_alloc&) {
+    }
+  }
+  // A call's lines go after the lines this thread handed over.
   if (logs.daemon || own_deferred_lines_wait()) {
     defer_lines(logs.lines);
     return;
@@ -431,10 +451,38 @@ int write_main_thread_logs(void*) noexcept {
   return 0;
 }
 
+// Writes the lines to fd 2 one at a time with the GIL released, so that a line
+// no longer than PIPE_BUF stays whole beside other threads' lines. Returns
+// false, without the GIL, if Python began to exit meanwhile: Python may then
+// free this thread's state, so the thread must not touch Python again.
+bool write_lines_to_fd_2_without_gil(const std::string& lines) {
+  PyThreadState* const state = PyEval_SaveThread();
+  size_t begin = 0;
+  while (begin < lines.size()) {
+    const size_t end = lines.find('\n', begin) + 1;
+    write_to_fd_2(lines.data() + begin, end - begin);
+    begin = end;
+  }
+  DeferredLogs& deferred = deferred_logs();
+  {
+    std::lock_guard<std::mutex> lock(deferred.mutex);
+    if (deferred.exiting) {
+      return false;
+    }
+    deferred.writer_entering = true;
+  }
+  PyEval_RestoreThread(state);
+  std::lock_guard<std::mutex> lock(deferred.mutex);
+  deferred.writer_entering = false;
+  deferred.writer_changed.notify_all();
+  return true;
+}
+
 // Writes through Python's C API only, and is not noexcept, since Python may end
 // this thread while it waits for the GIL during exit, and the unwinding must
-// neither touch a Python object nor stop at a noexcept frame.
-void write_lines_through_python(const PendingLogs& logs) {
+// neither touch a Python object nor stop at a noexcept frame. Returns false as
+// write_lines_to_fd_2_without_gil does.
+bool write_lines_through_python(const PendingLogs& logs) {
   PyObject* const text = PyUnicode_DecodeUTF8(
       logs.lines.data(), logs.lines.size(), "backslashreplace");
   PyObject* const stream = PySys_GetObject("stderr");
@@ -444,12 +492,11 @@ void write_lines_through_python(const PendingLogs& logs) {
   const bool written = result != nullptr;
   Py_XDECREF(result);
   Py_XDECREF(text);
-  if (!written) {
-    PyErr_Clear();
-    PyThreadState* const state = PyEval_SaveThread();
-    write_to_fd_2(logs.lines.data(), logs.lines.size());
-    PyEval_RestoreThread(state);
+  if (written) {
+    return true;
   }
+  PyErr_Clear();
+  return write_lines_to_fd_2_without_gil(logs.lines);
 }
 
 // Runs on a thread of its own until no line waits.
@@ -476,14 +523,16 @@ void write_deferred_logs() {
       deferred.writer_changed.notify_all();
     }
     note_left_out_bytes(logs);
-    if (stderr_is_process_stderr()) {
-      // Waits for room without the GIL or any lock of Python's, so that a full
-      // fd 2 never holds up Python's exit.
-      PyThreadState* const state = PyEval_SaveThread();
-      write_to_fd_2(logs.lines.data(), logs.lines.size());
-      PyEval_RestoreThread(state);
-    } else {
-      write_lines_through_python(logs);
+    // Lines for the process's stderr wait for room in fd 2 without the GIL or
+    // any lock of Python's, so that a full fd 2 never holds up Python's exit.
+    const bool python_still_running = stderr_is_process_stderr()
+        ? write_lines_to_fd_2_without_gil(logs.lines)
+        : write_lines_through_python(logs);
+    if (!python_still_running) {
+      std::lock_guard<std::mutex> lock(deferred.mutex);
+      deferred.writer_running = false;
+      deferred.writer_changed.notify_all();
+      return;
     }
     PyGILState_Release(gil);
     std::lock_guard<std::mutex> lock(deferred.mutex);
@@ -508,8 +557,10 @@ void defer_lines(const std::string& lines) noexcept {
     // The main thread logged these lines from native code, which is inside a
     // sys.stderr.write only if that write runs such code. So it can write them
     // before its next bytecode, while a short redirect of sys.stderr still
-    // lasts. Its earlier lines stay ahead.
+    // lasts. While the writer thread holds earlier lines of it, these follow
+    // them there instead, since keeping a thread's order beats the redirect.
     if (PyThread_get_thread_ident() == main_thread_id &&
+        last_deferred_batch <= deferred.batches_written &&
         (deferred.main_thread_write_scheduled ||
          !sys_stderr_is_checked_fd_2())) {
       keep_line(deferred.main_thread_logs, lines);
@@ -539,6 +590,8 @@ bool deferred_lines_wait() {
       !deferred.exiting;
 }
 
+// Whether lines this thread handed over still wait, which its later lines must
+// not pass.
 bool own_deferred_lines_wait() {
   DeferredLogs& deferred = deferred_logs();
   std::lock_guard<std::mutex> lock(deferred.mutex);
