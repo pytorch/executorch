@@ -1,6 +1,4 @@
 import itertools
-import os
-import tempfile
 
 import torch
 from executorch.backends.openvino.preprocess import OpenvinoBackend
@@ -10,7 +8,6 @@ from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
-from executorch.runtime import Runtime
 from torch.export import Dim, export
 
 
@@ -152,16 +149,7 @@ class TestCopyOperator(BaseOpenvinoOpTest):
         # The program does not keep the starting value of a mutated buffer, so
         # check each call against the one before it.
         x1, x2 = torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
-            pte_path = os.path.join(tmp_dir, "model.pte")
-            with open(pte_path, "wb") as f:
-                program.write_to_file(f)
-            loaded = Runtime.get().load_program(pte_path)
-            method = loaded.load_method("forward")
-            assert method is not None
-            first = method.execute((x1,))
-            second = method.execute((x2,))
-            del method, loaded
+        first, second = self.execute_program(program, ((x1,), (x2,)))
         tolerance = {"atol": self.atol, "rtol": self.rtol}
         torch.testing.assert_close(second[0], first[0] + x1, **tolerance)
         for copy, sine in (first, second):
@@ -201,15 +189,8 @@ class TestCopyOperator(BaseOpenvinoOpTest):
                 program = to_edge(
                     export(Lowered(lowered), (x,), dynamic_shapes=dynamic_shapes)
                 ).to_executorch()
-                with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-                    pte_path = os.path.join(tmp, "model.pte")
-                    with open(pte_path, "wb") as f:
-                        program.write_to_file(f)
-                    loaded = Runtime.get().load_program(pte_path)
-                    method = loaded.load_method("forward")
-                    assert method is not None
-                    for value in (x, make(2 if dynamic else 4)):
-                        copy, flat = method.execute((value,))
-                        torch.testing.assert_close(copy, value)
-                        torch.testing.assert_close(flat, value.reshape(-1))
-                    del method, loaded
+                values = (x, make(2 if dynamic else 4))
+                outputs = self.execute_program(program, [(v,) for v in values])
+                for value, (copy, flat) in zip(values, outputs):
+                    torch.testing.assert_close(copy, value)
+                    torch.testing.assert_close(flat, value.reshape(-1))
