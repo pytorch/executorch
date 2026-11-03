@@ -13,7 +13,7 @@
 #include <executorch/backends/aoti/common_shims_slim.h>
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
-#include <executorch/backends/aoti/slim/cuda/guard.h>
+#include <executorch/backends/cuda/runtime/shims/cuda_guard.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/platform.h>
@@ -490,7 +490,9 @@ TEST_F(AOTITorchCopySlimTest, RefusedInsideGraphCapture) {
 
   cudaStream_t stream = nullptr;
   ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
-  ASSERT_EQ(setCurrentCUDAStream(stream, 0), Error::Ok);
+  CUDAStreamGuardHandle stream_guard = nullptr;
+  ASSERT_EQ(
+      aoti_torch_create_cuda_stream_guard(stream, 0, &stream_guard), Error::Ok);
   ASSERT_EQ(
       cudaStreamBeginCapture(stream, cudaStreamCaptureModeRelaxed),
       cudaSuccess);
@@ -518,7 +520,7 @@ TEST_F(AOTITorchCopySlimTest, RefusedInsideGraphCapture) {
   }
   EXPECT_EQ(aoti_torch_copy_(host, device, 0), Error::Ok);
 
-  clearCurrentCUDAStream(0);
+  EXPECT_EQ(aoti_torch_delete_cuda_stream_guard(stream_guard), Error::Ok);
   EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
   EXPECT_EQ(aoti_torch_delete_tensor_object(device), Error::Ok);
   EXPECT_EQ(aoti_torch_delete_tensor_object(other_device), Error::Ok);
