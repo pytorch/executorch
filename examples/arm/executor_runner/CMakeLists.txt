@@ -114,6 +114,16 @@ set(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE
 
 include(${EXECUTORCH_ROOT}/backends/arm/cmake/ArmRunnerUtils.cmake)
 
+if(EXECUTORCH_ARM_ETHOSU_PMU_STATS)
+  arm_runner_check_lock_free_atomics(_ethosu_pmu_stats_atomics)
+  if(NOT _ethosu_pmu_stats_atomics)
+    message(
+      FATAL_ERROR
+        "Ethos-U PMU stats require lock-free byte and pointer atomics, which this target/toolchain does not provide. Disable them with -DEXECUTORCH_ARM_ETHOSU_PMU_STATS=OFF."
+    )
+  endif()
+endif()
+
 arm_runner_define_cache_options()
 arm_runner_validate_model_source(ALLOW_SEMIHOSTING)
 arm_runner_require_python()

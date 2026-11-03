@@ -91,7 +91,7 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     )
     target_link_libraries(executorch_delegate_ethos_u PUBLIC ethosu_core_driver)
     add_library(
-      ethosu_execution_stats STATIC
+      ethosu_execution_stats STATIC EXCLUDE_FROM_ALL
       ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp
     )
     target_include_directories(
