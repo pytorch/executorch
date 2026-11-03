@@ -10,7 +10,7 @@ from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.runtime import Runtime
-from torch.export import export
+from torch.export import Dim, export
 
 
 class TestCopyOperator(BaseOpenvinoOpTest):
@@ -149,22 +149,48 @@ class TestCopyOperator(BaseOpenvinoOpTest):
             torch.testing.assert_close(sine, torch.sin(copy), **tolerance)
 
     def test_whole_program_returning_copy_of_input(self):
-        class CopyAndSin(torch.nn.Module):
+        class CopyAndReshape(torch.nn.Module):
             def forward(self, x):
-                copy = x.clone()
-                return copy, torch.sin(copy)
+                return x.clone(), x.reshape(-1)
 
-        x = torch.randn(2, 3, 4, 5)
-        # Without a partitioner the copy cannot run on the CPU, so OpenVINO
-        # has to make it.
-        lowered = to_backend(
-            OpenvinoBackend.__name__,
-            to_edge(export(CopyAndSin(), (x,))).exported_program(),
-            [CompileSpec("device", self.device.encode())],
-        )
-        program = Runtime.get().load_program(lowered.buffer())
-        method = program.load_method("forward")
-        assert method is not None
-        torch.testing.assert_close(
-            method.execute((x,)), [x, torch.sin(x)], atol=self.atol, rtol=self.rtol
-        )
+        class Lowered(torch.nn.Module):
+            def __init__(self, lowered):
+                super().__init__()
+                self.lowered = lowered
+
+            def forward(self, x):
+                return self.lowered(x)
+
+        inputs = {
+            "float": lambda n: torch.randn(n, 3),
+            "int64": lambda n: torch.randint(-100, 100, (n, 3)),
+            "bool": lambda n: torch.randn(n, 3) > 0,
+        }
+        dynamic_shapes = ({0: Dim("rows", min=1, max=4)},)
+        for name, make in inputs.items():
+            with self.subTest(dtype=name):
+                x = make(4)
+                # Without a partitioner the copy cannot run on the CPU, so
+                # OpenVINO has to make it.
+                lowered = to_backend(
+                    OpenvinoBackend.__name__,
+                    to_edge(
+                        export(CopyAndReshape(), (x,), dynamic_shapes=dynamic_shapes)
+                    ).exported_program(),
+                    [CompileSpec("device", self.device.encode())],
+                )
+                program = to_edge(
+                    export(Lowered(lowered), (x,), dynamic_shapes=dynamic_shapes)
+                ).to_executorch()
+                with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+                    pte_path = os.path.join(tmp, "model.pte")
+                    with open(pte_path, "wb") as f:
+                        program.write_to_file(f)
+                    loaded = Runtime.get().load_program(pte_path)
+                    method = loaded.load_method("forward")
+                    assert method is not None
+                    for value in (x, make(2)):
+                        copy, flat = method.execute((value,))
+                        torch.testing.assert_close(copy, value)
+                        torch.testing.assert_close(flat, value.reshape(-1))
+                    del method, loaded

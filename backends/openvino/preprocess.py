@@ -63,15 +63,18 @@ def _match_partition_inputs(
         )
 
 
-def _copy_returned_inputs(model) -> None:
+def _copy_returned_inputs(model, device: str) -> None:
     """Make the converted model compute each output that is one of its inputs.
 
     The converter turns copies like aten.clone into nothing, so such an output
     is the input itself. The CPU plugin does not write it, and can overwrite
     the input with the output buffer's old contents. OpenVINO keeps an
     Identity between an input and an output, and the CPU plugin runs it as a
-    copy, while it can remove a Convert to the same type.
+    copy, while it can remove a Convert to the same type. Other devices are
+    left as they are, since neither the problem nor Identity was checked there.
     """
+    if not device.startswith("CPU"):
+        return
     for result in model.get_results():
         source = result.input_value(0)
         if source.get_node().get_type_name() == "Parameter":
@@ -157,7 +160,7 @@ class OpenvinoBackend(BackendDetails):
         frontend = FrontEndManager().load_by_framework("pytorch")
         model = frontend.convert(frontend.load(decoder))
         _match_partition_inputs(model, module, input_shapes, input_types)
-        _copy_returned_inputs(model)
+        _copy_returned_inputs(model, device)
         ppp = PrePostProcessor(model)
         # The converter takes an int input, like a SymInt size, as a scalar, but
         # the runtime passes it as an int64 tensor of shape [1].
