@@ -18,6 +18,7 @@ fbcode_target(
         "//executorch/backends/test/suite/operators:test_operators",
         "//executorch/exir/native:native",
         "//pytorch/ao:torchao",
+        "//pytorch/facto:facto",
     ],
 )
 
