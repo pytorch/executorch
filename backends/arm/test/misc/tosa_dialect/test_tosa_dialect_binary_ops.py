@@ -438,15 +438,14 @@ def test_binary_ops_take_int64_only_with_the_extension(
     with TosaLoweringContext(
         TosaSpecification.create_from_string(spec)
     ), FakeTensorMode() as mode:
+        args = _to_fake(mode, input1, input2)
+        if op_name == "MUL":
+            args.append(torch.zeros(1, dtype=torch.int8))
         if not accepted:
             with pytest.raises(TosaValueError):
-                getattr(exir_ops.backend.tosa, op_name).default(
-                    *_to_fake(mode, input1, input2)
-                )
+                getattr(exir_ops.backend.tosa, op_name).default(*args)
             return
-        output = getattr(exir_ops.backend.tosa, op_name).default(
-            *_to_fake(mode, input1, input2)
-        )
+        output = getattr(exir_ops.backend.tosa, op_name).default(*args)
 
     assert output.dtype == torch.int64
     assert tuple(output.shape) == (2, 4, 3)

@@ -5,8 +5,10 @@
 
 from typing import cast
 
+import pytest
 import torch
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
+from executorch.backends.arm._passes.tosa_lowering_utils import create_const
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -47,3 +49,37 @@ def test_match_arg_ranks_handles_tosa_binary_ops() -> None:
     assert view.args[1] == [1, 1, 1, 1, 1, 1]
     assert add.all_input_nodes[0].target == "x"
     assert add.all_input_nodes[1] is view
+
+
+@pytest.mark.parametrize("share_shift_with_data", (False, True))
+def test_match_arg_ranks_preserves_mul_shift(share_shift_with_data):
+    graph = torch.fx.Graph()
+    source = graph.placeholder("source")
+    with FakeTensorMode():
+        source.meta["val"] = torch.empty(2, 3, dtype=torch.int8)
+    shift = create_const(graph, 0, torch.int8, source)
+    scalar = (
+        shift if share_shift_with_data else create_const(graph, 1, torch.int8, source)
+    )
+    mul = graph.call_function(
+        exir_ops.backend.tosa.MUL.default, (scalar, source, shift)
+    )
+    mul.meta["val"] = source.meta["val"]
+    graph.output(mul)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        result = MatchArgRanksPass(cast(ExportedProgram, None))(
+            torch.fx.GraphModule({}, graph)
+        )
+
+    assert result is not None
+    result.graph_module.graph.lint()
+    mul = result.graph_module.graph.find_nodes(
+        op="call_function", target=exir_ops.backend.tosa.MUL.default
+    )[0]
+    assert mul.args[0].meta["val"].shape == (1, 1)
+    assert mul.args[1].meta["val"].shape == (2, 3)
+    shift = mul.args[2]
+    assert shift.target == exir_ops.backend.tosa.CONST.default
+    assert shift.args == ([0], [1], torch.int8)
+    assert shift.meta["val"].shape == (1,)

@@ -413,15 +413,15 @@ def test_unary_ops_take_int64_only_with_the_extension(
     with TosaLoweringContext(
         TosaSpecification.create_from_string(spec)
     ), FakeTensorMode() as mode:
+        args: list[torch.Tensor] = [mode.from_tensor(input_tensor)]
+        if op_name == "NEGATE":
+            zero_point = torch.zeros(1, dtype=torch.int64)
+            args.extend([zero_point, zero_point])
         if not accepted:
             with pytest.raises(TosaValueError):
-                getattr(exir_ops.backend.tosa, op_name).default(
-                    mode.from_tensor(input_tensor)
-                )
+                getattr(exir_ops.backend.tosa, op_name).default(*args)
             return
-        output = getattr(exir_ops.backend.tosa, op_name).default(
-            mode.from_tensor(input_tensor)
-        )
+        output = getattr(exir_ops.backend.tosa, op_name).default(*args)
 
     assert output.dtype == torch.int64
     assert tuple(output.shape) == (2, 3)
