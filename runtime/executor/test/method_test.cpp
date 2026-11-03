@@ -317,6 +317,33 @@ TEST_F(MethodTest, AliasedIOTest) {
   }
 }
 
+TEST_F(MethodTest, SetOutputDataPtrChecksUpperBound) {
+  // The "cat" model's output is at most (4, 4) and is not memory planned.
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float input[4] = {};
+  int32_t sizes[2] = {1, 4};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {4, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float, 2, sizes, input, dim_order, strides);
+  ASSERT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0), Error::Ok);
+  float output[16];
+  ASSERT_EQ(method->set_output_data_ptr(output, sizeof(output), 0), Error::Ok);
+  ASSERT_EQ(method->execute(), Error::Ok);
+  ASSERT_EQ(method->get_output(0).toTensor().nbytes(), 8 * sizeof(float));
+
+  // A later call can grow the output back to (4, 4), so a buffer that only
+  // fits the current (2, 4) output must be refused.
+  float small_output[8];
+  EXPECT_EQ(
+      method->set_output_data_ptr(small_output, sizeof(small_output), 0),
+      Error::InvalidArgument);
+}
+
 TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
   // The "cat" model (ModuleDynamicCatUnallocatedIO) has a 2D input.
   // set_input validates numel/nbytes overflow before resize_tensor.
