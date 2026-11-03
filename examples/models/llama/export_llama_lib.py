@@ -1584,9 +1584,10 @@ def _to_edge_and_lower_llama(  # noqa: C901
         )
         from executorch.extension.llm.custom_ops import model_sharding
 
-        partitioners.append(
-            get_qnn_partitioner(use_kv_cache, pt2e_quantize, num_sharding, soc_model)
+        qnn_partitioner = get_qnn_partitioner(
+            use_kv_cache, pt2e_quantize, num_sharding, soc_model
         )
+        partitioners.append(qnn_partitioner)
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm._passes`
         from executorch.backends.qualcomm._passes import (
             AnnotateStack,
@@ -1648,6 +1649,9 @@ def _to_edge_and_lower_llama(  # noqa: C901
             builder_exported_to_edge.edge_manager.exported_program(),
             dep_table=dep_table,
             passes_job=passes_job,
+            compiler_specs=qnn_partitioner.compiler_specs_snapshot,
+            skip_node_id_set=qnn_partitioner.skip_node_id_set,
+            skip_node_op_set=qnn_partitioner.skip_node_op_set,
         )
 
     logging.info("Lowering model using following partitioner(s): ")

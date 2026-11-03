@@ -80,7 +80,9 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
     ) -> None:
         pass_manager = get_qnn_pass_manager_cls(self.backend_type)()
         ep = pass_manager.transform_for_export_pipeline(artifact)
-        transform_passes = pass_manager.get_to_edge_transform_passes(ep)
+        transform_passes = pass_manager.get_to_edge_transform_passes(
+            ep, compiler_specs=self.compiler_specs
+        )
 
         self.edge_dialect_program = to_edge_transform_and_lower(
             ep,
