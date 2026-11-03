@@ -12,7 +12,21 @@
 
 namespace executorch::extension::cpuinfo {
 
+/**
+ * Returns the number of performance cores, or 0 if it is unknown, for example
+ * on x86 or when every core is an efficiency core. On Linux other than
+ * Android, the count is capped at get_num_allowed_cpus(), without checking
+ * which cores the affinity mask allows.
+ */
 uint32_t get_num_performant_cores();
+
+/**
+ * Returns the number of CPUs in the calling thread's affinity mask on Linux,
+ * or 0 if it is not available. taskset and cgroup cpusets shrink the mask,
+ * CPU quotas do not. On Android the mask changes as an app moves between the
+ * foreground and the background, so it is a poor size for a long-lived pool.
+ */
+uint32_t get_num_allowed_cpus();
 
 } // namespace executorch::extension::cpuinfo
 
