@@ -38,6 +38,7 @@ const std::vector<ScalarTypeTestData> kAllScalarTypes = {
     {ScalarType::Long, 4, 8, "Long", false, true, true, false},
     {ScalarType::Half, 5, 2, "Half", true, false, false, false},
     {ScalarType::Float, 6, 4, "Float", true, false, false, false},
+    {ScalarType::Double, 7, 8, "Double", true, false, false, false},
     {ScalarType::Bool, 11, 1, "Bool", false, false, true, true},
     {ScalarType::BFloat16, 15, 2, "BFloat16", true, false, false, false},
 };
@@ -224,6 +225,7 @@ TEST_F(IsValidScalarTypeTest, AllSupportedTypesAreValid) {
   EXPECT_TRUE(isValidScalarType(ScalarType::Long));
   EXPECT_TRUE(isValidScalarType(ScalarType::Half));
   EXPECT_TRUE(isValidScalarType(ScalarType::Float));
+  EXPECT_TRUE(isValidScalarType(ScalarType::Double));
   EXPECT_TRUE(isValidScalarType(ScalarType::Bool));
   EXPECT_TRUE(isValidScalarType(ScalarType::BFloat16));
 }
