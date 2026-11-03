@@ -162,14 +162,18 @@ final class SwiftSpecializationTests: XCTestCase {
       (.preferNeuralEngine, SpecializationOptions(preferredComputeUnitKind: .neuralEngine)),
     ]
     var identifiers = Set<String>()
+    var report: [String] = []
     for (unit, options) in expected {
       XCTAssertEqual(ETCoreAISwiftModelLoader.specializationOptions(for: unit), options)
       let loader = try XCTUnwrap(ETCoreAISwiftModelLoader(computeUnit: unit))
       XCTAssertEqual(
         loader.specializationIdentifier, try CoreAISpecialization(options: options).identifier)
       identifiers.insert(loader.specializationIdentifier)
+      report.append(
+        "\(unit.rawValue): \(options) -> \(loader.specializationIdentifier)")
     }
-    XCTAssertEqual(identifiers.count, expected.count)
+    XCTAssertEqual(
+      identifiers.count, expected.count, "\n" + report.joined(separator: "\n"))
     XCTAssertEqual(
       ETCoreAISwiftModelLoader(computeUnit: .default)?.specializationIdentifier, "default")
     XCTAssertNil(ETCoreAISwiftModelLoader(computeUnit: ETCoreAIComputeUnit(rawValue: 99)!))
