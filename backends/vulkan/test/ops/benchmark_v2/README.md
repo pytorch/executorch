@@ -31,6 +31,19 @@ Each expanded case runs separately. Shader variants can share one binding
 interface through `shader_sweep`; operators can sweep argument sets, dtype and
 storage variables, and execution routes.
 
+## Building with CMake
+
+From the ExecuTorch root, `build.sh` builds ExecuTorch with the Vulkan backend
+into `cmake-out/`, then `etvk_ops_bench`. It requires `glslc` on `PATH`. Pass
+`--android` to cross-compile for arm64 Android into `cmake-android-out/` with
+the NDK at `ANDROID_NDK`.
+
+```sh
+backends/vulkan/test/ops/benchmark_v2/build.sh
+cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench \
+  --config=backends/vulkan/test/ops/benchmark_v2/examples/shaders.json
+```
+
 ## Running the binary
 
 The commands below assume `etvk_ops_bench` is on `PATH` and the current directory
