@@ -153,7 +153,7 @@ TEST_F(
 TEST_F(CoreAIDelegateTest, PreflightRejectsFutureDeploymentForSourceAndAot) {
   @autoreleasepool {
     for (bool aot : {false, true}) {
-      SCOPED_TRACE(aot ? "AOT" : "source");
+      SCOPED_TRACE(aot ? "aimodelc" : "aimodel");
       auto dict = aot ? aot_manifest_dict() : manifest_dict();
       dict[@"min_deployment_version"] = @"999999.0";
       expect_preflight_rejection(

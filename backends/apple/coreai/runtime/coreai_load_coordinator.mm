@@ -206,7 +206,7 @@ Result<id<ETCoreAIPreparedModel>> acquire_model(
         ET_LOG(
             Info,
             "Core AI specialization started: kind=%s, key=%s",
-            host_bundle.bundle.aot_compiled ? "aot" : "source",
+            host_bundle.bundle.aot_compiled ? "aimodelc" : "aimodel",
             cache_key.UTF8String);
         [loader specializeModelAtURL:url completion:completion];
       });

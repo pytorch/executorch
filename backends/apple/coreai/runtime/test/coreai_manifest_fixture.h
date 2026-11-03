@@ -22,7 +22,7 @@ inline NSString* fixture_identity(char digit) {
 
 inline NSMutableDictionary* manifest_dict() {
   return [@{
-    @"packaging" : @"inline",
+    @"packaging" : @"aimodel",
     @"export_hash" : @"ab",
     @"path" : @"ab/model.aimodel",
     @"function" : @"main",
@@ -37,7 +37,7 @@ inline NSMutableDictionary* manifest_dict() {
 inline NSMutableDictionary* aot_manifest_dict() {
   auto dict = manifest_dict();
   [dict removeObjectForKey:@"path"];
-  dict[@"packaging"] = @"aot_compiled_inline";
+  dict[@"packaging"] = @"aimodelc";
   dict[@"platform"] = @"macOS";
   dict[@"archs"] = @{
     @"arch_b" : @"ab/model.arch_b.aimodelc",

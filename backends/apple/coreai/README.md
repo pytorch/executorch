@@ -26,9 +26,10 @@ python -m pytest backends/apple/coreai
 
 ## Runtime
 
-The delegate manifest describes `.aimodel` source bundles, which require
-`inline` packaging, and AOT-compiled `.aimodelc` bundles, which require
-`aot_compiled_inline`. Both formats require a `function` name, and ordered
+The delegate manifest's `packaging` field names the embedded format: `aimodel`
+for a portable `.aimodel` bundle, located by `path`, or `aimodelc` for
+AOT-compiled per-architecture `.aimodelc` bundles, located by `archs`. Both
+formats require a `function` name, and ordered
 `input_names` and `output_names` matching the converter's bindings. Dictionary
 iteration order is not a binding contract. `export_hash` identifies the exported
 program used to namespace embedded assets. The `files` object maps relative
@@ -128,9 +129,9 @@ even though the new complete contents are already visible. Use a local APFS
 volume; unsupported full-device flushes are reported as errors, not downgraded
 to `fsync`.
 
-Inline bundles are read through `NamedDataMap` and materialized as unchanged
-files under the cache directory. Named data can be supplied externally; inline
-packaging does not require all bytes to reside in one physical PTE. The exporter
+Embedded bundles are read through `NamedDataMap` and materialized as unchanged
+files under the cache directory. Named data can be supplied externally; embedded
+bundles do not require all bytes to reside in one physical PTE.
 computes each bundle digest from all delivered relative filenames and file bytes,
 not just the SDK's bytecode-only `main.hash`. Each AOT architecture has an
 independent digest; only the selected architecture is materialized. NDS key names
@@ -191,7 +192,7 @@ choose the SDK artifact directory. The backend does not inspect SDK-private
 files, alter their backup flags, or use an App Group cache.
 
 Each selected bundle has a `bundle_identity` derived from its bundle digest,
-name, and source/AOT mode. This identifies the delivered bundle independently of
+name, and packaging (`aimodel` or `aimodelc`). This identifies the delivered bundle independently of
 `export_hash`, which namespaces embedded assets. A readable cache key combines
 that bundle identity with
 the platform and Core AI device architecture, plus a hash of a versioned

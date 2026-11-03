@@ -174,11 +174,11 @@ Result<Manifest> parse_manifest(NSData* data) {
       InvalidProgram,
       "Missing Core AI packaging");
   ET_CHECK_OR_RETURN_ERROR(
-      [packaging isEqualToString:@"inline"] ||
-          [packaging isEqualToString:@"aot_compiled_inline"],
+      [packaging isEqualToString:@"aimodel"] ||
+          [packaging isEqualToString:@"aimodelc"],
       NotSupported,
-      "Unsupported Core AI packaging; expected .aimodel or AOT .aimodelc");
-  const bool aot_compiled = [packaging hasPrefix:@"aot_compiled_"];
+      "Unsupported Core AI packaging; expected aimodel or aimodelc");
+  const bool aot_compiled = [packaging isEqualToString:@"aimodelc"];
   NSString* export_hash = dict[@"export_hash"];
   NSString* function = dict[@"function"];
   NSArray<NSString*>* inputs = dict[@"input_names"];

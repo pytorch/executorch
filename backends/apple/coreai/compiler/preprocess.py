@@ -78,9 +78,9 @@ class COMPILE_SPEC_KEYS(Enum):
 
 class AssetPackaging(str, Enum):
     # Portable .aimodel embedded in the .pte via NamedDataStore.
-    INLINE = "inline"
+    AIMODEL = "aimodel"
     # AOT-compiled per-arch .aimodelc bundles embedded in the .pte.
-    AOT_COMPILED_INLINE = "aot_compiled_inline"
+    AIMODELC = "aimodelc"
 
 
 @dataclass(frozen=True)
@@ -213,7 +213,7 @@ def _deliver(
         **manifest_extra,
         **metadata,
     }
-    if packaging == AssetPackaging.INLINE:
+    if packaging == AssetPackaging.AIMODEL:
         manifest["path"] = f"{export_hash}/{manifest['path']}"
     else:
         manifest["archs"] = {
@@ -520,7 +520,7 @@ class CoreAIBackend(BackendDetails):
             _save_asset(program, Path(tmp) / "model.aimodel", min_os)
             return _deliver(
                 Path(tmp),
-                AssetPackaging.INLINE,
+                AssetPackaging.AIMODEL,
                 {
                     **bindings,
                     # relative path the runtime resolves against its base
@@ -538,7 +538,7 @@ class CoreAIBackend(BackendDetails):
             out = _compile_aot(program, opts, Path(tmp))
             return _deliver(
                 out,
-                AssetPackaging.AOT_COMPILED_INLINE,
+                AssetPackaging.AIMODELC,
                 {
                     **bindings,
                     "platform": opts["platform"],
