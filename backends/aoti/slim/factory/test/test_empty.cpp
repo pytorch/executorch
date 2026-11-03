@@ -249,7 +249,7 @@ TEST(EmptyStridedTest, InvalidDtypeUndefined) {
       "");
 }
 
-TEST(EmptyStridedTest, InvalidDtypeDouble) {
+TEST(EmptyStridedTest, InvalidDtypeComplexFloat) {
   std::vector<int64_t> sizes = {2, 3};
   std::vector<int64_t> strides = {3, 1};
 
@@ -257,7 +257,7 @@ TEST(EmptyStridedTest, InvalidDtypeDouble) {
       empty_strided(
           makeArrayRef(sizes),
           makeArrayRef(strides),
-          static_cast<c10::ScalarType>(7)), // Double = 7
+          static_cast<c10::ScalarType>(9)), // ComplexFloat = 9
       "");
 }
 
@@ -280,9 +280,9 @@ TEST(EmptyTest, InvalidDtypeUndefined) {
   EXPECT_DEATH(empty({2, 3}, c10::ScalarType::Undefined), "");
 }
 
-TEST(EmptyTest, InvalidDtypeDouble) {
+TEST(EmptyTest, InvalidDtypeComplexFloat) {
   EXPECT_DEATH(
-      empty({2, 3}, static_cast<c10::ScalarType>(7)), // Double = 7
+      empty({2, 3}, static_cast<c10::ScalarType>(9)), // ComplexFloat = 9
       "");
 }
 
