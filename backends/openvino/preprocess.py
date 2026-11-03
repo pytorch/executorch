@@ -142,6 +142,8 @@ class OpenvinoBackend(BackendDetails):
 
         module = edge_program.module()
         FoldConstantCumsumPass()(module)
+        # The converter chooses some lowerings (e.g. boolean-mask indexing) from
+        # the input types, so they must be known before conversion starts.
         # The converter reads ranks only from tensor_meta, which edge graphs
         # leave empty, and some ops need one, like aten.index after
         # aten.index_put.
@@ -149,8 +151,6 @@ class OpenvinoBackend(BackendDetails):
             val = node.meta.get("val")
             if isinstance(val, torch.Tensor) and not node.meta.get("tensor_meta"):
                 node.meta["tensor_meta"] = _extract_tensor_metadata(val)
-        # The converter chooses some lowerings (e.g. boolean-mask indexing) from
-        # the input types, so they must be known before conversion starts.
         decoder = TorchFXPythonDecoder(
             module, input_shapes=input_shapes, input_types=input_types
         )

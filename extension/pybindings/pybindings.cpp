@@ -1818,19 +1818,47 @@ class PyCallerStreamScope final {
   explicit PyCallerStreamScope(std::shared_ptr<PyCudaStream> owner)
       : owner_(std::move(owner)) {}
   explicit PyCallerStreamScope(uintptr_t stream)
-      : stream_(reinterpret_cast<cudaStream_t>(stream)) {}
+      : stream_(reinterpret_cast<cudaStream_t>(stream)) {
+    // 0 and cudaStreamLegacy (1) both name the legacy default stream, which
+    // waits for every blocking stream, so selecting it would defeat the point
+    // of choosing a stream. The CUDA delegate also refuses a null stream.
+    if (stream == 0 || stream == 1) {
+      throw std::invalid_argument(
+          "The legacy default CUDA stream (handle 0 or 1) cannot be selected; "
+          "select a stream created for this, such as cuda.Stream()");
+    }
+  }
 
-  // Losing the scope without an exit ends it at once, or, if blocks started
-  // after it are still active, when they end. Compared, never dereferenced:
-  // the starting thread may have ended.
+  // Losing the scope on the thread that entered it ends it at once, or when
+  // the blocks started after it end. Another thread cannot change the
+  // entering thread's selection, which then lasts until that thread ends.
+  // home_ is compared, never dereferenced: the entering thread may have ended.
   ~PyCallerStreamScope() {
     if (id_ != 0 && home_ == &caller_stream_scopes) {
       end(/*refuse_out_of_order=*/false);
     }
   }
 
+  // Whether enter() can check the device of a stream it did not create. Fixed
+  // when the bindings are built; see stream_device().
+  static constexpr bool kCanCheckDevice =
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 13000
+      true;
+#else
+      false;
+#endif
+
   void enter() {
     static std::atomic<uint64_t> next_id{1};
+    if (id_ != 0) {
+      throw std::runtime_error(
+          "This CUDA stream scope was entered and has not exited");
+    }
+    int device = 0;
+    if (!owner_ && stream_device(stream_, &device) && device != 0) {
+      throw std::runtime_error(
+          "Only a stream on CUDA device 0 can be selected for now");
+    }
     const cudaStream_t stream = owner_ ? owner_->select() : stream_;
     try {
       auto guard =
@@ -1848,15 +1876,52 @@ class PyCallerStreamScope final {
     }
   }
 
-  // executorch.runtime.cuda enters each scope once, and exits it only on the
-  // thread that entered it.
   void exit() {
-    if (id_ != 0) {
-      end(/*refuse_out_of_order=*/true);
+    if (id_ == 0) {
+      return;
     }
+    if (home_ != &caller_stream_scopes) {
+      throw std::runtime_error(
+          "This CUDA stream scope was entered on another thread");
+    }
+    end(/*refuse_out_of_order=*/true);
   }
 
  private:
+  // Asks CUDA for the device of a stream rather than trusting the device a
+  // wrapper reports. Returns false when it cannot ask: in a CUDA 12 build, or
+  // while the stream captures a CUDA graph.
+  static bool stream_device(cudaStream_t stream, int* device) {
+    // cudaStreamGetDevice came in CUDA 12.8, but a CUDA 12 build may load any
+    // CUDA 12 runtime, where a missing symbol would fail the import. Every
+    // CUDA 13 runtime has it, and runs only on a driver that supports it.
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 13000
+    // CUDA refuses cudaStreamGetDevice on a capturing stream, and the refusal
+    // also ends the caller's capture.
+    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+    auto status = cudaStreamIsCapturing(stream, &capture);
+    if (status == cudaSuccess && capture != cudaStreamCaptureStatusNone) {
+      return false;
+    }
+    if (status == cudaSuccess) {
+      status = cudaStreamGetDevice(stream, device);
+    }
+    if (status != cudaSuccess) {
+      // A failed call leaves an error pending that the next CUDA call, even
+      // in another library, would report.
+      (void)cudaGetLastError();
+      throw std::runtime_error(
+          std::string("Failed to find the device of a CUDA stream: ") +
+          cudaGetErrorString(status));
+    }
+    return true;
+#else
+    (void)stream;
+    (void)device;
+    return false;
+#endif
+  }
+
   void end(bool refuse_out_of_order) {
     auto& scopes = caller_stream_scopes;
     const auto it = std::find_if(
@@ -1864,17 +1929,18 @@ class PyCallerStreamScope final {
           return e.id == id_;
         });
     if (it == scopes.active.end()) {
-      id_ = 0; // Already ended after an earlier refused exit.
+      id_ = 0; // Ended with the thread that entered it.
       return;
     }
     if (it + 1 != scopes.active.end()) {
+      // Ends with the scopes above it, so this object can be entered again.
       it->retired = true;
+      id_ = 0;
       if (refuse_out_of_order) {
         throw std::runtime_error(
             "CUDA stream scopes must end innermost first; this one ends "
             "when the scopes started after it end");
       }
-      id_ = 0;
       return;
     }
     scopes.pop_finished();
@@ -4621,8 +4687,15 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def_property_readonly("device", &PyCudaStream::device)
       .def("close", &PyCudaStream::close);
   py::class_<PyCallerStreamScope>(m, "_CallerStreamScope", py::module_local())
-      .def(py::init<std::shared_ptr<PyCudaStream>>(), py::arg("stream"))
+      .def(
+          py::init<std::shared_ptr<PyCudaStream>>(),
+          py::arg("stream").none(false))
       .def(py::init<uintptr_t>(), py::arg("stream"))
+      .def_property_readonly_static(
+          "can_check_device",
+          [](const py::object&) {
+            return PyCallerStreamScope::kCanCheckDevice;
+          })
       .def("__enter__", &PyCallerStreamScope::enter)
       .def(
           "__exit__",

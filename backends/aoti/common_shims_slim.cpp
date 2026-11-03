@@ -36,6 +36,19 @@ AOTITorchError aoti_torch_get_sizes(Tensor* tensor, int64_t** ret_sizes) {
   return Error::Ok;
 }
 
+AOTITorchError
+aoti_torch_get_size(Tensor* tensor, int64_t d, int64_t* ret_size) {
+  if (tensor == nullptr || ret_size == nullptr) {
+    return Error::InvalidArgument;
+  }
+  const auto ndim = static_cast<int64_t>(tensor->dim());
+  if (d < -ndim || d >= ndim) {
+    return Error::InvalidArgument;
+  }
+  *ret_size = tensor->size(d);
+  return Error::Ok;
+}
+
 AOTITorchError aoti_torch_get_strides(Tensor* tensor, int64_t** ret_strides) {
   if (tensor == nullptr || ret_strides == nullptr) {
     return Error::InvalidArgument;

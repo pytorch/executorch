@@ -41,6 +41,8 @@ _CUDA_FALLBACK_KERNELS = frozenset(
         "at::_ops::sort_stable::call",
         "aoti_torch_cuda_sort_stable",
         "aoti_torch_cuda_randint_low_out",
+        "aoti_torch_cuda_index_Tensor",
+        "aoti_torch_index_put_out",
     }
 )
 

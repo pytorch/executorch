@@ -6,6 +6,7 @@
 
 import contextlib
 import os
+import tempfile
 import threading
 import unittest
 from typing import Tuple
@@ -13,6 +14,7 @@ from unittest import mock
 from unittest.mock import patch
 
 import torch
+from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.examples.models.toy_model import SdpaModule
@@ -236,6 +238,70 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 [CompileSpec(key="cuda_include_ptx", value=b"MAYBE")]
             )
 
+    def test_invalid_data_name_compile_spec(self):
+        for name in (
+            "",
+            "..",
+            ".hidden",
+            "../outside",
+            "a/b",
+            "a\\b",
+            "a/../../outside",
+            "C:model",
+            "model?",
+            "nul",
+            "COM1.txt",
+            "a" * 201,
+            # Non-ASCII letters that IGNORECASE alone would let through.
+            "\u212a" * 200,
+            "\u017fizes",
+            "\u0130d",
+            "\u0131d",
+            "-enc",
+            # One writer turns "encoder.ptd" into the same file as "encoder".
+            # The check ignores case, like the rest of the pattern.
+            "encoder.ptd",
+            "encoder.PTD",
+        ):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "Invalid data name"):
+                    CudaBackend.generate_data_name_compile_spec(name)
+                with self.assertRaisesRegex(ValueError, "Invalid data name"):
+                    CudaBackend.data_name_from_compile_specs(
+                        [CompileSpec(key="data_name", value=name.encode())]
+                    )
+        # A backend that keeps its data in the .pte refuses a name, also one
+        # built by hand.
+        with patch.object(CudaBackend, "save_data_externally", return_value=False):
+            with self.assertRaisesRegex(ValueError, "takes no data name"):
+                CudaBackend.generate_data_name_compile_spec("encoder")
+            with self.assertRaisesRegex(ValueError, "takes no data name"):
+                CudaBackend.data_name_from_compile_specs(
+                    [CompileSpec(key="data_name", value=b"encoder")]
+                )
+        # The shared preprocess, which Metal uses, refuses it before compiling.
+        with self.assertRaisesRegex(ValueError, "takes no data name"):
+            AotiBackend.preprocess(
+                None, [CompileSpec(key="data_name", value=b"encoder")]
+            )
+
+    def test_valid_data_name_compile_spec(self):
+        self.assertEqual(CudaBackend.data_name_from_compile_specs([]), "aoti_cuda_blob")
+        for name in ("encoder", "model_sm80", "v1.2-final", "a" * 200, "x.ptd.bak"):
+            with self.subTest(name=name):
+                spec = CudaBackend.generate_data_name_compile_spec(name)
+                self.assertEqual(CudaBackend.data_name_from_compile_specs([spec]), name)
+
+    def test_methods_of_one_program_must_share_a_data_name(self):
+        def specs(name):
+            return [[CudaBackend.generate_data_name_compile_spec(name)]]
+
+        with self.assertRaisesRegex(ValueError, "same data name"):
+            CudaBackend.preprocess_multimethod(
+                {"forward": [None], "second": [None]},
+                {"forward": specs("first"), "second": specs("second")},
+            )
+
 
 class TestCudaExport(unittest.TestCase):
     """Test CUDA export functionality for various operations using to_edge_transform_and_lower."""
@@ -314,6 +380,74 @@ class TestCudaExport(unittest.TestCase):
         )
 
         return edge_program_manager
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_fused_sdpa(self):
+        """Decomposing attention on CUDA, as Torch-TensorRT does, gives fused
+        variants that the backend has no kernel for."""
+        from executorch.runtime import Runtime
+
+        class Attention(torch.nn.Module):
+            def forward(self, q, k, v, mask):
+                attention = torch.nn.functional.scaled_dot_product_attention
+                # Flash attention with fewer key heads and a custom scale.
+                grouped = attention(
+                    q,
+                    k[:, :2, :16],
+                    v[:, :2, :16],
+                    is_causal=True,
+                    scale=0.2,
+                    enable_gqa=True,
+                )
+                # Efficient attention, with the mask turned into a bias.
+                masked = attention(q, k[:, :, :16], v[:, :, :16], attn_mask=mask)
+                # Flash attention of one query over many keys, which runs in
+                # the Triton decode kernel.
+                decode = attention(q[:, :, :1], k, v)
+                return grouped, masked, decode
+
+        model = Attention()
+        inputs = (
+            torch.randn(1, 4, 16, 64, dtype=torch.bfloat16, device="cuda"),
+            torch.randn(1, 4, 256, 64, dtype=torch.bfloat16, device="cuda"),
+            torch.randn(1, 4, 256, 64, dtype=torch.bfloat16, device="cuda"),
+            torch.ones(16, 16, dtype=torch.bool, device="cuda").tril(),
+        )
+        program = export(model, inputs, strict=True).run_decompositions()
+        fused = [
+            node
+            for node in program.graph.nodes
+            if "aten._scaled_dot_product_" in str(node.target)
+        ]
+        self.assertEqual(len(fused), 3)
+        with self.assertLogs(
+            "executorch.backends.cuda.triton.replacement_pass", "INFO"
+        ) as logs:
+            edge = to_edge_transform_and_lower(
+                program,
+                partitioner=[
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec("forward")]
+                    )
+                ],
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+        # The masked call keeps a float bias, which the Triton kernels do not take.
+        output = "\n".join(logs.output)
+        self.assertIn("Replaced 2 nodes with Triton kernels", output)
+        self.assertIn("Using split-K decode SDPA", output)
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            method = Runtime.get().load_program(path).load_method("forward")
+            outputs = method.execute([t.cpu() for t in inputs])
+        for output, reference in zip(outputs, model(*inputs), strict=True):
+            torch.testing.assert_close(output, reference.cpu(), atol=2e-2, rtol=2e-2)
+
 
     def test_simple_add(self):
         """Test CUDA export for simple element-wise addition."""
@@ -628,6 +762,43 @@ class TestCudaExport(unittest.TestCase):
             "SDPA single kernel operation export failed",
         )
 
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_sdpa_head_sizes(self):
+        from executorch.runtime import Runtime
+
+        class Attention(torch.nn.Module):
+            def forward(self, *qkv):
+                return tuple(
+                    torch.nn.functional.scaled_dot_product_attention(*qkv[i : i + 3])
+                    for i in range(0, len(qkv), 3)
+                )
+
+        # Heads that are not a power of 2 and are above 256 are wider than one
+        # tile of the Triton kernel for such heads.
+        head_sizes = (96, 192, 256, 512, 288, 320, 384, 640, 768)
+        inputs = tuple(
+            torch.randn(1, 2, 64, size, dtype=torch.bfloat16)
+            for size in head_sizes
+            for _ in range(3)
+        )
+        model = Attention()
+        edge = self._export_to_cuda_with_lower(model, inputs)
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            method = Runtime.get().load_program(path).load_method("forward")
+            outputs = method.execute(list(inputs))
+        expected = model(*(x.cuda() for x in inputs))
+        for size, output, reference in zip(head_sizes, outputs, expected, strict=True):
+            with self.subTest(head_size=size):
+                torch.testing.assert_close(
+                    output.cpu(), reference.cpu(), atol=2e-2, rtol=2e-2
+                )
+
     def test_triton_kernel_mode_off(self):
         """
         Test CUDA export with triton_kernel_mode set to OFF for SDPA kernel.
@@ -653,23 +824,99 @@ class TestCudaExport(unittest.TestCase):
             "SDPA kernel export with triton_kernel_mode=OFF failed",
         )
 
-    def test_missing_scatter_and_index_put_kernels_fail_at_export(self):
-        """Inductor leaves these int64 ops to ATen kernels the CUDA shim lacks."""
+    def test_missing_scatter_kernel_fails_at_export(self):
+        """Inductor leaves int64 scatter_add to an ATen kernel the CUDA shim lacks."""
 
-        class Int64Accumulate(torch.nn.Module):
+        class Int64ScatterAdd(torch.nn.Module):
             def forward(self, counts: torch.Tensor, idx: torch.Tensor):
-                ones = torch.ones_like(idx)
-                return (
-                    counts.scatter_add(0, idx, ones),
-                    counts.index_put((idx,), ones, accumulate=True),
-                )
+                return counts.scatter_add(0, idx, torch.ones_like(idx))
 
         inputs = (torch.zeros(8, dtype=torch.long), torch.randint(0, 8, (32,)))
         with self.assertRaises(RuntimeError) as context:
-            self._export_to_cuda_with_lower(Int64Accumulate(), inputs)
-        message = str(context.exception)
-        self.assertIn("aoti_torch_cuda_scatter_reduce_two_out", message)
-        self.assertIn("aoti_torch_index_put_out", message)
+            self._export_to_cuda_with_lower(Int64ScatterAdd(), inputs)
+        self.assertIn("aoti_torch_cuda_scatter_reduce_two_out", str(context.exception))
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_mask_index_and_index_put(self):
+        """A mask index makes the result size depend on the data, and Inductor
+        has no atomic add for int64, so these run in the index shims."""
+        from executorch.runtime import Runtime
+
+        class MaskIndex(torch.nn.Module):
+            def forward(self, x, mask, column, idx, counts):
+                out = x.clone()
+                out[mask] = x[mask] * 2
+                # The mask and column index dims 0 and 2, which are not adjacent.
+                picked = x[mask, :, column].sum(0)
+                # A transposed input gives a result that is not row-major.
+                rows = x.transpose(1, 2)[mask] * 3
+                ones = torch.ones_like(idx)
+                counts = counts.index_put((idx,), ones, accumulate=True)
+                return out, picked, rows, counts
+
+        model = MaskIndex()
+        x = torch.randn(4, 5, 6)
+        # Negative and int32: the shims wrap the index and read it as int32.
+        column = torch.tensor([-4], dtype=torch.int32)
+        idx = torch.tensor([0, 3, 3, 1, 3])
+        # Nonzero counts check that repeated writes add to the old values.
+        counts = torch.arange(8) * 5
+        masks = (
+            torch.tensor([True, False, True, True]),
+            torch.zeros(4, dtype=torch.bool),
+            torch.ones(4, dtype=torch.bool),
+        )
+        edge = self._export_to_cuda_with_lower(
+            model, (x, masks[0], column, idx, counts)
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            method = Runtime.get().load_program(path).load_method("forward")
+            for mask in masks:
+                inputs = (x, mask, column, idx, counts)
+                outputs = method.execute(list(inputs))
+                for output, expected in zip(outputs, model(*inputs), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected)
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_same_tensor_returned_twice(self):
+        """AOTI gives two outputs one handle when they are the same tensor. With
+        CUDA graphs on, three calls run eagerly, the fourth captures a graph and
+        the fifth replays it."""
+        from executorch.runtime import Runtime
+
+        class Twice(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+                y = x * 2
+                return y.detach(), x + 1, y.detach()
+
+        model = Twice()
+        edge = self._export_to_cuda_with_lower(model, (torch.randn(4, 8),))
+        runtime = Runtime.get()
+        option = "enable_cuda_graph_for_method"
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            runtime.backend_registry.set_option("CudaBackend", {option: "forward"})
+            try:
+                method = runtime.load_program(path).load_method("forward")
+            finally:
+                # The option is process wide.
+                runtime.backend_registry.set_option("CudaBackend", {option: ""})
+            for _ in range(5):
+                x = torch.randn(4, 8)
+                outputs = method.execute([x])
+                for output, expected in zip(outputs, model(x), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected)
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """

@@ -87,28 +87,6 @@ constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
 constexpr char kEnableCudaGraphForMethod[] = "enable_cuda_graph_for_method";
 constexpr int kCudaGraphWarmupSteps = 3;
 constexpr char kWeightSharingAcrossMethods[] = "weight_sharing_across_methods";
-
-// A CUDA graph replay copies an output's raw bytes into its ETensor, which is
-// right only when every element sits at the same offset in both. Size-1 dims
-// never move an element, so their strides may differ.
-bool output_is_raw_copyable(const SlimTensor* output, const Tensor* et_output) {
-  if (!output->is_contiguous() ||
-      output->dim() != static_cast<size_t>(et_output->dim())) {
-    return false;
-  }
-  // The ETensor still has its previous shape here, so its strides can be stale
-  // for dynamic shapes; the default dim order is enough on its own.
-  if (executorch::runtime::is_contiguous_dim_order(
-          et_output->dim_order().data(), et_output->dim())) {
-    return true;
-  }
-  for (size_t d = 0; d < output->dim(); d++) {
-    if (output->size(d) != 1 && output->stride(d) != et_output->strides()[d]) {
-      return false;
-    }
-  }
-  return true;
-}
 } // anonymous namespace
 
 bool CudaGraphState::start_warmup() {
@@ -636,7 +614,18 @@ class ET_EXPERIMENTAL CudaBackend final
     // Initialize CUDA graph state if enabled for this method. Not on a device
     // without memory pools, where the method runs without a graph.
     if (should_use_cuda_graph_for_method(method_name)) {
-      if (handle->cuda_graph_state.start_warmup()) {
+      const std::string host_constants = describe_host_constants(handle);
+      if (!host_constants.empty()) {
+        // A graph records only the device work of the capture call. Host code,
+        // such as the choice of a torch.cond branch on a flag in host memory,
+        // would be fixed at its value from that call.
+        ET_LOG(
+            Info,
+            "CUDA graph requested for method '%s', but %s; running without a "
+            "CUDA graph",
+            method_name.c_str(),
+            host_constants.c_str());
+      } else if (handle->cuda_graph_state.start_warmup()) {
         ET_LOG(
             Info,
             "CUDA graph enabled for method '%s' (warmup=%d)",
@@ -790,14 +779,26 @@ class ET_EXPERIMENTAL CudaBackend final
       // Copy new input data (GPU-resident) into static input buffers (D2D)
       for (size_t i = 0; i < n_inputs; i++) {
         auto* et_input = &(args[i]->toTensor());
+        const auto sizes = et_input->sizes();
+        const auto& captured = handle->cuda_graph_state.static_input_sizes[i];
         ET_CHECK_OR_RETURN_ERROR(
-            et_input->nbytes() ==
-                handle->cuda_graph_state.static_input_nbytes[i],
+            sizes.size() == captured.size(),
             InvalidArgument,
-            "CUDA graph replay: input %zu size mismatch (expected %zu, got %zu)",
+            "CUDA graph replay: input %zu has %zu dims, captured with %zu",
             i,
-            handle->cuda_graph_state.static_input_nbytes[i],
-            et_input->nbytes());
+            sizes.size(),
+            captured.size());
+        for (size_t d = 0; d < sizes.size(); d++) {
+          ET_CHECK_OR_RETURN_ERROR(
+              sizes[d] == captured[d],
+              InvalidArgument,
+              "CUDA graph replay: input %zu has size %lld in dim %zu, "
+              "captured with %lld",
+              i,
+              static_cast<long long>(sizes[d]),
+              d,
+              static_cast<long long>(captured[d]));
+        }
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
             handle->cuda_graph_state.static_input_ptrs[i],
             et_input->const_data_ptr(),
@@ -830,13 +831,70 @@ class ET_EXPERIMENTAL CudaBackend final
       return commit_offgraph_kv_step(handle, kv_step_width);
     }
 
-    // ---------------------------------------------------------------
-    // Normal path (also used for WARMUP and CAPTURE phases)
-    // ---------------------------------------------------------------
-    bool is_capture_step =
+    const bool is_capture_step =
         (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
          handle->cuda_graph_state.warmup_remaining == 0);
+    bool graph_ran = false;
+    Error error =
+        run_once(handle, args, n_inputs, n_outputs, is_capture_step, graph_ran);
+    if (error != Error::Ok && is_capture_step && !graph_ran) {
+      // A capture records kernels without running them, so until the new graph
+      // runs, the inputs and any state the program updates are untouched. A
+      // program that keeps state in host memory, where host code does run
+      // during a capture, never gets here: init leaves its graph off.
+      ET_LOG(
+          Info,
+          "CUDA graph: capture failed for '%s'; running this call and later "
+          "ones without a graph",
+          handle->method_name.c_str());
+      // The capture guard turned graphs off, so later calls run eagerly too.
+      ET_DCHECK(handle->cuda_graph_state.phase == CudaGraphPhase::Disabled);
+      error = run_once(
+          handle,
+          args,
+          n_inputs,
+          n_outputs,
+          /*is_capture_step=*/false,
+          graph_ran);
+    }
+    ET_CHECK_OK_OR_RETURN_ERROR(error);
+    return commit_offgraph_kv_step(handle, kv_step_width);
+  }
 
+ private:
+  // Names a constant of the program in host memory, or says that the
+  // constants could not be listed, since unknown counts as host memory.
+  // Empty when every constant is on the device.
+  static std::string describe_host_constants(cuda::CudaDelegateHandle* handle) {
+    const char* unlisted = "its constants could not be listed";
+    if (handle->extract_constants_map == nullptr) {
+      return unlisted;
+    }
+    std::unordered_map<std::string, AtenTensorHandle> constants;
+    if (handle->extract_constants_map(
+            handle->container_handle,
+            reinterpret_cast<AOTInductorConstantMapHandle>(&constants),
+            /*use_inactive=*/false) != Error::Ok) {
+      return unlisted;
+    }
+    for (const auto& [fqn, tensor] : constants) {
+      if (reinterpret_cast<SlimTensor*>(tensor)->is_cpu()) {
+        return "constant '" + fqn + "' is in host memory";
+      }
+    }
+    return "";
+  }
+
+  // Runs the program once. On the capture step it captures the CUDA graph
+  // instead, then launches it once, and sets graph_ran once that launch is
+  // queued.
+  Error run_once(
+      cuda::CudaDelegateHandle* handle,
+      Span<EValue*> args,
+      size_t n_inputs,
+      size_t n_outputs,
+      bool is_capture_step,
+      bool& graph_ran) const {
     // Wrrap them as SlimTensors for AOTI execution without any host<->device
     // copies.
     std::vector<SlimTensor*> slim_inputs(n_inputs);
@@ -863,25 +921,10 @@ class ET_EXPERIMENTAL CudaBackend final
           return;
         }
         // Free what this attempt pinned and disable graphs for this method, so
-        // a capture that cannot succeed costs one error rather than one on
-        // every fourth call for the life of the process. Eager execution is
-        // correct, just slower.
-        for (void* ptr : state_->static_input_ptrs) {
-          (void)cudaFree(ptr);
-        }
-        state_->static_input_ptrs.clear();
-        state_->static_output_ptrs.clear();
-        state_->static_input_nbytes.clear();
-        state_->static_output_nbytes.clear();
-        // Same order as ~CudaGraphState: the exec depends on the graph.
-        if (state_->graph_exec != nullptr) {
-          (void)cudaGraphExecDestroy(state_->graph_exec);
-          state_->graph_exec = nullptr;
-        }
-        if (state_->graph != nullptr) {
-          (void)cudaGraphDestroy(state_->graph);
-          state_->graph = nullptr;
-        }
+        // a capture that cannot succeed is tried once rather than on every
+        // later call for the life of the process. Eager execution is correct,
+        // just slower.
+        state_->release();
         state_->phase = CudaGraphPhase::Disabled;
         state_->warmup_remaining = 0;
         (void)cudaGetLastError();
@@ -925,6 +968,8 @@ class ET_EXPERIMENTAL CudaBackend final
         // through the guard instead of leaking this allocation.
         handle->cuda_graph_state.static_input_ptrs.push_back(static_ptr);
         handle->cuda_graph_state.static_input_nbytes.push_back(nbytes);
+        handle->cuda_graph_state.static_input_sizes.emplace_back(
+            et_input->sizes().begin(), et_input->sizes().end());
 
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
             static_ptr,
@@ -956,6 +1001,18 @@ class ET_EXPERIMENTAL CudaBackend final
 
     bool run_called = false;
 
+    // AOTI puts the same handle in every slot of an output that it returns
+    // more than once, for example y.detach() returned twice. So only the last
+    // slot that holds a handle deletes it, as PyTorch's AOTI runner does.
+    const auto delete_output = [&](size_t i) noexcept {
+      for (size_t j = i + 1; j < slim_outputs.size(); j++) {
+        if (slim_outputs[j] == slim_outputs[i]) {
+          return;
+        }
+      }
+      delete slim_outputs[i];
+    };
+
     // Scope guard: deletes any non-null slim_outputs on exit. Normal paths
     // null entries as they take ownership, so the guard only fires on
     // early-return error paths. Also cleans up inputs if run() was never
@@ -966,7 +1023,7 @@ class ET_EXPERIMENTAL CudaBackend final
       }
       for (size_t i = 0; i < slim_outputs.size(); i++) {
         if (slim_outputs[i]) {
-          delete slim_outputs[i];
+          delete_output(i);
         }
       }
     });
@@ -1056,11 +1113,23 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
-    ET_CHECK_OR_RETURN_ERROR(
-        error == Error::Ok,
-        Internal,
-        "AOTInductorModelContainerRun failed with error code %d",
-        error);
+    if (error != Error::Ok) {
+      // A failed capture is retried without a graph, which reports a real
+      // failure at Error.
+      if (is_capture_step) {
+        ET_LOG(
+            Info,
+            "AOTInductorModelContainerRun failed during CUDA graph capture "
+            "with error code %d",
+            error);
+      } else {
+        ET_LOG(
+            Error,
+            "AOTInductorModelContainerRun failed with error code %d",
+            error);
+      }
+      return Error::Internal;
+    }
 
     if (is_capture_step) {
       // End capture → instantiate graph
@@ -1083,12 +1152,27 @@ class ET_EXPERIMENTAL CudaBackend final
                 slim_outputs[i], &(args[i + n_inputs]->toTensor()))) {
           std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
           ET_LOG(
-              Error,
+              Info,
               "CUDA graph: output %zu of '%s' is not laid out like its "
-              "ETensor; this call fails and later calls run without a graph",
+              "ETensor",
               i,
               handle->method_name.c_str());
           return Error::NotSupported;
+        }
+        // Replay copies raw bytes and never resizes, so the ETensor takes the
+        // captured shape here and keeps it for every replay.
+        const Error resize_err =
+            executorch::ET_RUNTIME_NAMESPACE::resize_tensor(
+                args[i + n_inputs]->toTensor(), slim_outputs[i]->sizes());
+        if (resize_err != Error::Ok) {
+          std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
+          ET_LOG(
+              Info,
+              "CUDA graph: cannot resize output %zu of '%s' to its captured "
+              "shape",
+              i,
+              handle->method_name.c_str());
+          return resize_err;
         }
       }
 
@@ -1101,7 +1185,6 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphInstantiate failed: %s",
           cudaGetErrorString(gerr));
-      handle->cuda_graph_state.note_graph_allocations();
 
       // Record static output pointers (stable under graph replay). Releasing
       // them from slim_outputs here, before the copies below, keeps the cleanup
@@ -1127,6 +1210,8 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphLaunch (first replay) failed: %s",
           cudaGetErrorString(gerr));
+      graph_ran = true;
+      handle->cuda_graph_state.note_graph_allocations();
 
       // Copy capture-step outputs into the planned GPU ET buffers (D2D).
       for (size_t i = 0; i < n_outputs; i++) {
@@ -1143,7 +1228,7 @@ class ET_EXPERIMENTAL CudaBackend final
       // Last failure point is behind us, so the captured state is now the state
       // the next call should replay from.
       capture_guard.disarm();
-      return commit_offgraph_kv_step(handle, kv_step_width);
+      return Error::Ok;
     }
 
     // ----- Normal / WARMUP execution continues here -----
@@ -1175,7 +1260,7 @@ class ET_EXPERIMENTAL CudaBackend final
       if (pre_run_outputs[i] == slim_outputs[i]) {
         // Case (a): AOTI wrote directly into our planned ET buffer. The result
         // is already in place — nothing to copy, just drop the view wrapper.
-        delete slim_outputs[i];
+        delete_output(i);
       } else {
         // Case (b): AOTI returned its own buffer. D2D copy the result into the
         // planned GPU ET buffer, then free AOTI's buffer.
@@ -1195,14 +1280,15 @@ class ET_EXPERIMENTAL CudaBackend final
                 slim_outputs[i], et_output, cuda_stream),
             "Failed to D2D copy GPU output %zu into ETensor",
             i);
-        delete slim_outputs[i];
+        delete_output(i);
       }
       slim_outputs[i] = nullptr;
     }
 
-    return commit_offgraph_kv_step(handle, kv_step_width);
+    return Error::Ok;
   }
 
+ public:
   void destroy(DelegateHandle* handle_) const override {
     if (handle_ == nullptr) {
       return;
