@@ -118,7 +118,7 @@ gpt_oss_test_data = {
 class TensorizedGptOssExperts(GptOssExperts):
     """Provide tensorized experts for the native GPT-OSS MLP.
 
-    Used with GptOssMLP from Transformers 5.0.0rc1 and 5.3.0::
+    Used with GptOssMLP from Transformers 4.57.1, 5.0.0rc1 and 5.3.0::
 
         GptOssMLP
         |-- router: GptOssTopKRouter
@@ -127,6 +127,8 @@ class TensorizedGptOssExperts(GptOssExperts):
     Inherits expert parameters from GptOssExperts and reproduces its clipped
     activation. Only forward() is rewritten as gather/BMM/reduction.
     Accepts either 2D or 3D expert inputs and returns outputs with the same shape.
+    Accepts routing weights for the selected experts or, as passed by
+    Transformers 4.x, dense routing weights for all experts.
 
     """
 
@@ -135,6 +137,8 @@ class TensorizedGptOssExperts(GptOssExperts):
         self, hidden_states: torch.Tensor, router_indices=None, routing_weights=None
     ) -> torch.Tensor:
         tokens, k = router_indices.shape
+        if routing_weights.shape[-1] != k:
+            routing_weights = routing_weights.gather(1, router_indices)
         dim = self.hidden_size
         intermediate = self.intermediate_size
         input_shape = hidden_states.shape
@@ -195,6 +199,16 @@ def test_tensorized_gpt_oss_moe_matches_reference(test_data: input_t) -> None:
 
 
 @common.parametrize("test_data", gpt_oss_test_data)
+@common.xfail_if_dependency_version(
+    "transformers",
+    "<5",
+    module="transformers",
+    reason=(
+        "Transformers 4.x GptOssTopKRouter scatters dense router scores, and "
+        "aten.scatter.src is not delegated."
+    ),
+    raises=RuntimeError,
+)
 @torch.no_grad()
 def test_tensorized_gpt_oss_moe_tosa_FP(test_data: input_t) -> None:
     (x,) = test_data

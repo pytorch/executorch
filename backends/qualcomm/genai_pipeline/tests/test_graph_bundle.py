@@ -48,11 +48,19 @@ class TestGraphBundleFields(unittest.TestCase):
 
 
 class TestQuantIoDtypes(unittest.TestCase):
-    """The tagger indexes both keys per node, so a partial mapping is invalid."""
+    """A graph records ``io_type`` and, when applicable, ``kv_type``."""
 
     def test_both_dtypes_are_accepted(self):
-        """The mapping quantization publishes carries both boundary dtypes."""
+        """A KV-cache graph carries both boundary dtypes."""
         quant_io_dtypes = {"kv_type": torch.uint8, "io_type": torch.uint16}
+
+        bundle = _make_bundle(quant_io_dtypes=quant_io_dtypes)
+
+        self.assertIs(bundle.quant_io_dtypes, quant_io_dtypes)
+
+    def test_io_dtype_without_kv_dtype_is_accepted(self):
+        """A graph without a KV cache carries only its IO dtype."""
+        quant_io_dtypes = {"io_type": torch.uint16}
 
         bundle = _make_bundle(quant_io_dtypes=quant_io_dtypes)
 
@@ -64,9 +72,9 @@ class TestQuantIoDtypes(unittest.TestCase):
 
         self.assertIsNone(bundle.quant_io_dtypes)
 
-    def test_partial_mapping_is_rejected(self):
-        """One key alone would be a KeyError at lowering, so reject it here."""
-        for partial in ({"kv_type": torch.uint8}, {"io_type": torch.uint16}, {}):
+    def test_mapping_without_io_dtype_is_rejected(self):
+        """Every quantized graph needs an IO-boundary dtype."""
+        for partial in ({"kv_type": torch.uint8}, {}):
             with self.subTest(quant_io_dtypes=partial):
                 with self.assertRaises(ValueError):
                     _make_bundle(quant_io_dtypes=partial)
