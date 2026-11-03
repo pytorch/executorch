@@ -44,7 +44,6 @@ from transformers import (
     PreTrainedModel,
 )
 from transformers.cache_utils import StaticLayer
-from transformers.integrations.accelerate import init_empty_weights
 from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
 from transformers.integrations.sdpa_attention import sdpa_attention_forward
 from transformers.masking_utils import (
@@ -64,6 +63,9 @@ def _load(
             text_config.layer_types = text_config.layer_types[:layers]
     kwargs = {"torch_dtype": torch.float32, "attn_implementation": "sdpa"}
     if empty_weights:
+        # transformers 5.11 no longer ships init_empty_weights; only --gguf needs it.
+        from accelerate import init_empty_weights
+
         with init_empty_weights():
             model = AutoModelForCausalLM.from_config(config, **kwargs)
     elif random_weights:
@@ -161,7 +163,9 @@ class LastTokenLM(nn.Module):
             if type(old) is not StaticLayer:
                 raise ValueError(f"cannot change the KV dtype of {type(old).__name__}")
             layer = _CastingStaticLayer(old.max_cache_len)
-            layer.lazy_initialization(old.keys[:, :, :1].to(dtype))
+            layer.lazy_initialization(
+                old.keys[:, :, :1].to(dtype), old.values[:, :, :1].to(dtype)
+            )
             self.cache.layers[i] = layer
             self.cached.register_buffer(f"key_cache_{i}", layer.keys, persistent=False)
             self.cached.register_buffer(
@@ -176,6 +180,9 @@ class LastTokenLM(nn.Module):
     def forward(
         self, input_ids: torch.Tensor, cache_position: torch.Tensor
     ) -> torch.Tensor:
+        # StaticLayer writes at cumulative_length and ignores cache_position.
+        for layer in self.cache.layers:
+            layer.cumulative_length = cache_position[:1].clone()
         return self.cached.model(
             input_ids=input_ids,
             cache_position=cache_position,

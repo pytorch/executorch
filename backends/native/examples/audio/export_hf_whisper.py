@@ -195,6 +195,8 @@ class WhisperDecoder(nn.Module):
         cache_position: torch.Tensor,
         *cross_kv: torch.Tensor,
     ) -> torch.Tensor:
+        for layer in self.self_cache.layers:
+            layer.cumulative_length = cache_position[:1].clone()
         num_layers = len(self.cross_cache.layers)
         for layer_idx, layer in enumerate(self.cross_cache.layers):
             layer.keys = cross_kv[layer_idx]
