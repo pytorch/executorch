@@ -56,7 +56,31 @@ def _copy_source(node: torch.fx.Node) -> Optional[torch.fx.Node]:
     return source if isinstance(source, torch.fx.Node) else None
 
 
-def _remove_copies_of_inputs(partition: Partition) -> None:
+def _constants(program: ExportedProgram) -> set[torch.fx.Node]:
+    """The placeholders that each partition reading them stores as its own
+    data (see tag_constant_data), so OpenVINO gets them as constants, not as
+    inputs."""
+    signature = program.graph_signature
+    mutated = set(signature.buffers_to_mutate.values())
+    names = {
+        *signature.inputs_to_parameters,
+        *signature.inputs_to_lifted_tensor_constants,
+        *(
+            name
+            for name, buffer in signature.inputs_to_buffers.items()
+            if buffer not in mutated
+        ),
+    }
+    return {
+        node
+        for node in program.graph.nodes
+        if node.op == "placeholder" and node.name in names
+    }
+
+
+def _remove_copies_of_inputs(
+    partition: Partition, constants: set[torch.fx.Node]
+) -> None:
     """Leave out of the partition each copy that would return one of the
     partition's inputs, unchanged, as one of its outputs.
 
@@ -65,12 +89,13 @@ def _remove_copies_of_inputs(partition: Partition) -> None:
     output and can overwrite the input with the output buffer's old contents.
     Copies used only inside the partition stay, because OpenVINO reads every
     input in the default dim order, which a copy left out could have changed.
+    Copies of constants stay too, since constants are not partition inputs.
     """
 
     def copies_input(node: torch.fx.Node) -> bool:
         while (source := _copy_source(node)) is not None:
             if source not in partition.nodes:
-                return True
+                return source not in constants
             node = source
         return False
 
@@ -294,8 +319,9 @@ class OpenvinoPartitioner(Partitioner):
         partition_list = partitioner.propose_partitions()
 
         partition_tags = {}
+        constants = _constants(exported_program)
         for partition in partition_list:
-            _remove_copies_of_inputs(partition)
+            _remove_copies_of_inputs(partition, constants)
             for node in partition.nodes:
                 tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = tag

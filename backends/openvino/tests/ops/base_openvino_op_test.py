@@ -105,3 +105,5 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                         ),
                         msg=f"ref_output:\n{ref_output[i]}\n\ntest_output:\n{outputs[i]}",
                     )
+
+        return exec_prog
