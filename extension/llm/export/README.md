@@ -21,6 +21,17 @@ The LLM export process transforms a model from its original format to an optimiz
 - **Stories**: Stories110M (educational model)
 - **SmolLM**: SmolLM2
 
+## Adding Model Support
+
+- Add model IDs to `MODEL_SPECS` in [model_identity.py](config/model_identity.py).
+  Add `ModelFamily` only for a new architecture; `ModelType` is for legacy
+  `model_class` compatibility.
+- Update model loading/family routing and `_get_hf_weight_converter` in
+  [export_llama_lib.py](../../../examples/models/llama/export_llama_lib.py) as needed.
+- Cover identity resolution, routing, and download/local-checkpoint behavior in
+  [config tests](../../../examples/models/llama/config/test_llm_config.py) and
+  [export tests](../../../examples/models/llama/tests/test_export_llama_lib.py).
+
 ## Usage
 
 The export API supports a Hydra-style CLI where you can you configure using yaml and also CLI args.
