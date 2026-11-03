@@ -733,3 +733,24 @@ TEST_F(OpUpsampleBilinear2dAAOutTest, TestSpecificInputCase) {
     EXPECT_FALSE(std::isinf(out_data[i]));
   }
 }
+
+TEST_F(OpUpsampleBilinear2dAAOutTest, IgnoresNonPositiveScales) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor input = tf.make({1, 1, 2, 4}, {1, 2, 3, 4, 5, 6, 7, 8});
+  int64_t output_size_data[2] = {3, 3};
+  ArrayRef<int64_t> output_size(output_size_data, 2);
+  Tensor expected = tf.zeros({1, 1, 3, 3});
+  op_upsample_bilinear2d_aa_out(
+      input,
+      output_size,
+      /*align_corners=*/false,
+      std::nullopt,
+      std::nullopt,
+      expected);
+
+  // Like ATen, a scale that is not positive is ignored.
+  Tensor out = tf.zeros({1, 1, 3, 3});
+  op_upsample_bilinear2d_aa_out(
+      input, output_size, /*align_corners=*/false, 0.0, -1.0, out);
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
