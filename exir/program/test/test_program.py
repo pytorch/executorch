@@ -959,6 +959,52 @@ class TestProgramManagers(unittest.TestCase):
         )
         self.assertEqual(addmm_count, 0)
 
+    def test_to_edge_promotes_mixed_dtype_tensor_lists(self):
+        class Cat(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                return torch.cat([x, y, x])
+
+        class Stack(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                return torch.stack([x, y, x])
+
+        class CatWithEmpty(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                empty = torch.empty(0, 3, dtype=torch.float64)
+                return torch.cat([empty, x])
+
+        bf16 = torch.randn(2, 3, dtype=torch.bfloat16)
+        f32 = torch.randn(2, 3)
+        i32 = torch.randint(-9, 9, (2, 3), dtype=torch.int32)
+        cat = exir_ops.edge.aten.cat.default
+        stack = exir_ops.edge.aten.stack.default
+        cast = exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+        # Without preserving it, stack would decompose into cat.
+        config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.stack.default])
+        for module, op, inputs, dtype in (
+            # The repeated bfloat16 input is cast once.
+            (Cat(), cat, (bf16, f32), torch.float32),
+            (Stack(), stack, (bf16, f32), torch.float32),
+            # Only an input after the first one has another dtype.
+            (Cat(), cat, (f32, i32), torch.float32),
+            # An earlier pass drops the empty float64 input, which still decides
+            # the output dtype.
+            (CatWithEmpty(), cat, (bf16,), torch.float64),
+        ):
+            with self.subTest(
+                module=type(module).__name__, dtypes=[t.dtype for t in inputs]
+            ):
+                edge = to_edge(
+                    export(module, inputs, strict=True), compile_config=config
+                )
+                graph_module = edge.exported_program().graph_module
+                node = next(n for n in graph_module.graph.nodes if n.target == op)
+                self.assertEqual({t.meta["val"].dtype for t in node.args[0]}, {dtype})
+                self.assertEqual(self._count_nodes(graph_module, [cast]), 1)
+                torch.testing.assert_close(
+                    edge.exported_program().module()(*inputs), module(*inputs)
+                )
+
     def test_save_fails(self):
         model = TestLinear()
         program = torch.export.export(model, model._get_random_inputs(), strict=True)

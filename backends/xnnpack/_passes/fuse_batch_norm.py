@@ -102,6 +102,12 @@ class FuseBatchNormPass(XNNPACKPass):
 
         is_conv = input_node.target == exir_ops.edge.aten.convolution.default
 
+        # Fusing changes what the input node computes, so nothing else may use it.
+        if len(input_node.users) != 1:
+            if why:
+                why(bn, "Batch norm must be the only user of the input node.")
+            return False
+
         # All users of the batch_norm node must be getitem ops.
         # batch_norm returns a 3-element tuple.
         # Each user must only access the first element of the tuple.
@@ -141,6 +147,12 @@ class FuseBatchNormPass(XNNPACKPass):
                 if why:
                     why("Convolution input must be rank 3 or 4.")
                 return False
+        # BatchNorm normalizes dim 1, which holds the linear's output features only
+        # when the linear output is 2-D.
+        elif "val" not in input_node.meta or len(input_node.meta["val"].shape) != 2:
+            if why:
+                why(bn, "Linear output must be rank 2.")
+            return False
 
         return True
 
