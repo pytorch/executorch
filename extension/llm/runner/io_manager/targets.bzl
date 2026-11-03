@@ -17,3 +17,18 @@ def define_common_targets():
             ],
             visibility = ["PUBLIC"],
         )
+
+        # IOManager for the "kvcache_io" contract: KV cache as method I/O.
+        runtime.cxx_library(
+            name = "kv_cache_io_manager" + aten_suffix,
+            exported_headers = [
+                "kv_cache_io_manager.h",
+            ],
+            srcs = [
+                "kv_cache_io_manager.cpp",
+            ],
+            exported_deps = [
+                ":io_manager" + aten_suffix,
+            ],
+            visibility = ["PUBLIC"],
+        )

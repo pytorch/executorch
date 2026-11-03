@@ -19,6 +19,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_test_srcs
     test_generation_config.cpp
+    test_io_manager.cpp
     test_model_metadata.cpp
     test_text_llm_runner.cpp
     test_text_prefiller.cpp
@@ -49,6 +50,13 @@ set(_metadata_pte_files
     "${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_windows.pte"
     "${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_empty.pte"
 )
+# Local builds may share a host with other model exports.
+set(_export_prefix)
+if(EXECUTORCH_TEST_EXPORT_LOCK)
+  find_program(_flock flock REQUIRED)
+  set(_export_prefix ${_flock} ${EXECUTORCH_TEST_EXPORT_LOCK})
+endif()
+
 add_custom_command(
   OUTPUT ${_metadata_pte_files}
   # Run against the installed executorch (which stages exir/_serialize/*.fbs at
@@ -56,7 +64,7 @@ add_custom_command(
   # installed package with a source copy that lacks the staged .fbs, breaking
   # to_executorch() under a non-editable install.
   COMMAND
-    ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/export_model_metadata.py
+    ${_export_prefix} ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/export_model_metadata.py
     --outdir ${CMAKE_CURRENT_BINARY_DIR}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/export_model_metadata.py
