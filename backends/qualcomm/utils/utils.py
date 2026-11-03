@@ -462,9 +462,11 @@ def to_edge_transform_and_lower_to_qnn(
     dep_table = ensure_graph_specific_dict(dep_table, graph_names)
     passes_job = ensure_graph_specific_dict(passes_job, graph_names)
 
-    # Prepare programs and partitioners
+    # Prepare programs and partitioners. The partitioner carries the QNN pass
+    # pipeline (transform_for_pre_decomposition / transform_passes), so lowering
+    # runs the same passes whether it is driven from here or from a plain
+    # to_edge_transform_and_lower call.
     aten_programs = {}
-    transform_passes = {}
     qnn_partitioners = {
         graph_name: [
             QnnPartitioner(
@@ -472,6 +474,9 @@ def to_edge_transform_and_lower_to_qnn(
                 skip_node_id_set=skip_node_id_set,
                 skip_node_op_set=skip_node_op_set,
                 skip_mutable_buffer=skip_mutable_buffer,
+                dep_table=dep_table[graph_name],
+                passes_job=passes_job[graph_name],
+                convert_linear_to_conv2d=convert_linear_to_conv2d,
             )
         ]
         for graph_name in graph_names
@@ -503,31 +508,10 @@ def to_edge_transform_and_lower_to_qnn(
                 dynamic_shapes=dynamic_shapes[graph_name],
                 strict=True,
             )
-        option = generate_qnn_executorch_option(compiler_specs[graph_name])
-        python_options = flatbuffer_to_option(option)
-        backend_type = python_options.backend_options.backend_type
-        pass_manager = get_qnn_pass_manager_cls(backend_type)()
-        # This transformation is primarily intended for the LiftConstantScalarOperands pass
-        # to avoid creating temporary tensors in the operation builder.
-        # However, this pass will create a get_attr node, which should be converted
-        # into a lifted tensor constant by the lift_constant_tensor_pass.
-        # If placed in the to_edge_transform_passes, it will be executed
-        # after the lift_constant_tensor_pass, causing the operation builder
-        # to fail to correctly retrieve the parameter by the get_parameter.
-        aten_programs[graph_name] = pass_manager.transform_for_export_pipeline(ep)
-        transform_passes[graph_name] = pass_manager.get_to_edge_transform_passes(
-            ep,
-            passes_job=passes_job[graph_name],
-            dep_table=dep_table[graph_name],
-            compiler_specs=compiler_specs[graph_name],
-            skip_node_id_set=skip_node_id_set,
-            skip_node_op_set=skip_node_op_set,
-            convert_linear_to_conv2d=convert_linear_to_conv2d,
-        )
+        aten_programs[graph_name] = ep
     with QnnManagerContext(compiler_specs):
         return to_edge_transform_and_lower(
             aten_programs,
-            transform_passes=transform_passes,
             partitioner=qnn_partitioners,
             constant_methods=constant_methods,
             compile_config=qnn_edge_config(),

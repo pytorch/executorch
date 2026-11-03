@@ -1131,12 +1131,13 @@ def _apply_pre_decomposition_transforms(
     return program
 
 
-def _gen_edge_manager_for_partitioners(
+def _gen_edge_manager_for_partitioners(  # noqa: C901
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
     config: EdgeCompileConfig,
     constant_methods: Optional[Dict[str, Any]],
     generate_etrecord: Optional[bool] = False,
+    collected_transform_passes: Optional[Dict[str, List[PassType]]] = None,
 ) -> "EdgeProgramManager":
     """
     Generates EdgeProgramManager for subsequent lowering to the
@@ -1156,6 +1157,16 @@ def _gen_edge_manager_for_partitioners(
     for name, program in aten_programs.items():
         partitioners_for_program = partitioner.get(name, [])
         program = _apply_pre_decomposition_transforms(program, partitioners_for_program)
+
+        # Ask partitioners for edge passes here, while the program still matches
+        # what they saw in transform_for_pre_decomposition: pass construction can
+        # depend on the graph.
+        if collected_transform_passes is not None:
+            passes_for_program = []
+            for curr_partitioner in partitioners_for_program:
+                passes_for_program.extend(curr_partitioner.transform_passes(program))
+            if passes_for_program:
+                collected_transform_passes[name] = passes_for_program
 
         # Functionalize program before asking partitioners to preserve ops
         program = program.run_decompositions({})
@@ -1285,6 +1296,46 @@ def collect_named_data_store_from_exported_program(
     collect_named_data_store_outputs(exported_program.graph_module)
 
 
+def _merge_partitioner_transform_passes(
+    transform_passes: Optional[
+        Union[
+            Sequence[PassType],
+            Dict[str, Sequence[PassType]],
+            GraphModulePassManager,
+            ExportedProgramPassManager,
+        ]
+    ],
+    partitioner_passes: Dict[str, List[PassType]],
+    method_names: Sequence[str],
+) -> Dict[str, Sequence[PassType]]:
+    """Fold passes contributed by partitioners into ``transform_passes``.
+
+    Caller-supplied passes run first, so an explicit argument is never
+    reordered behind a backend's own passes.
+    """
+    if isinstance(
+        transform_passes, (GraphModulePassManager, ExportedProgramPassManager)
+    ):
+        raise ValueError(
+            "transform_passes was given as a PassManager, which cannot be "
+            "combined with passes contributed by a partitioner's "
+            "transform_passes(). Pass a list, or a dict of lists, instead."
+        )
+
+    merged: Dict[str, Sequence[PassType]] = {}
+    for name in method_names:
+        if isinstance(transform_passes, dict):
+            caller_passes = transform_passes.get(name, [])
+        elif transform_passes is not None:
+            caller_passes = transform_passes
+        else:
+            caller_passes = []
+        combined = [*caller_passes, *partitioner_passes.get(name, [])]
+        if combined:
+            merged[name] = combined
+    return merged
+
+
 @et_logger("to_edge_transform_and_lower")
 def to_edge_transform_and_lower(  # noqa: C901
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
@@ -1363,9 +1414,20 @@ def to_edge_transform_and_lower(  # noqa: C901
     elif partitioner is None:
         partitioner = {name: [] for name in aten_programs.keys()}
 
+    partitioner_transform_passes: Dict[str, List[PassType]] = {}
     edge_manager = _gen_edge_manager_for_partitioners(
-        partitioner, aten_programs, config, constant_methods, generate_etrecord
+        partitioner,
+        aten_programs,
+        config,
+        constant_methods,
+        generate_etrecord,
+        collected_transform_passes=partitioner_transform_passes,
     )
+
+    if partitioner_transform_passes:
+        transform_passes = _merge_partitioner_transform_passes(
+            transform_passes, partitioner_transform_passes, tuple(aten_programs)
+        )
 
     if transform_passes is not None:
         edge_manager = edge_manager.transform(transform_passes)
