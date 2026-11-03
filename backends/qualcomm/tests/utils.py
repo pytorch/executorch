@@ -285,6 +285,15 @@ class TestQNN(unittest.TestCase):
                     msg=f"ref_output:\n{ref_output[i]}\n\nmodel_output:\n{model_output[i]}",
                 )
 
+    def _assert_outputs_finite(self, model_output, ref_output):
+        self.assertEqual(len(model_output), len(ref_output))
+        for i, (output, reference) in enumerate(zip(model_output, ref_output)):
+            self.assertEqual(output.shape, reference.shape)
+            self.assertTrue(
+                torch.isfinite(output).all().item(),
+                f"Output {i} contains non-finite values",
+            )
+
     def _save_model_and_expected_output(
         self,
         module: torch.nn.Module,
@@ -348,7 +357,7 @@ class TestQNN(unittest.TestCase):
             cmds.extend(["--enable_x86_64"])
 
         if self.online_prepare:
-            cmds.extend(["--online_prepare"])
+            cmds.extend(["--allow_ontarget_compilation"])
 
         if self.shared_buffer:
             cmds.extend(["--shared_buffer"])
@@ -374,6 +383,7 @@ class TestQNN(unittest.TestCase):
         expected_compared_events: int = -1,
         qnn_intermediate_debugger: QNNIntermediateDebugger = None,
         save_heap_result: bool = False,
+        assert_output_equal: bool = True,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (
@@ -585,7 +595,10 @@ class TestQNN(unittest.TestCase):
 
                 # Verify the outputs
                 post_process()
-                self._assert_outputs_equal(outputs, ref_outputs)
+                if assert_output_equal:
+                    self._assert_outputs_equal(outputs, ref_outputs)
+                else:
+                    self._assert_outputs_finite(outputs, ref_outputs)
 
                 # Verify the etdump
                 if expected_profile_events != -1:
@@ -649,7 +662,10 @@ class TestQNN(unittest.TestCase):
                     method_index=method_index, output_callback=output_callback
                 )
                 device.pull(host_output_path=tmp_dir, callback=post_process)
-                self._assert_outputs_equal(outputs, ref_outputs)
+                if assert_output_equal:
+                    self._assert_outputs_equal(outputs, ref_outputs)
+                else:
+                    self._assert_outputs_finite(outputs, ref_outputs)
 
                 if expected_profile_events != -1:
                     device.pull_etdump(etdump_path, callback=validate_profile)
@@ -808,6 +824,7 @@ class TestQNN(unittest.TestCase):
         block_size_map: Dict[str, Tuple] = None,
         submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
         convert_linear_to_conv2d: bool = False,
+        soc_model: Optional[str] = None,
     ) -> torch.fx.GraphModule:
         m = torch.export.export(
             module, inputs, dynamic_shapes=dynamic_shapes, strict=True
@@ -821,7 +838,7 @@ class TestQNN(unittest.TestCase):
             per_channel_embedding=is_embedding_per_channel,
             submodule_qconfig_list=submodule_qconfig_list,
             backend=get_backend_type(self.backend),
-            soc_model=self.soc_model,
+            soc_model=self.soc_model if soc_model is None else soc_model,
         )
         quantizer.set_convert_linear_to_conv2d(convert_linear_to_conv2d)
         if block_size_map is not None:

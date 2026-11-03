@@ -86,6 +86,8 @@ This section outlines the essential APIs and utilities provided to streamline th
 
    This function returns a `QnnConfig`, which serves as an input to some of the key APIs that will be covered below: `build_executorch_binary()`, `Device`.
 
+   In JSON configs, set `"allow_ontarget_compilation": true` to allow compilation on the target device, or `false` to prepare offline. The previous `online_prepare` key remains supported for backward compatibility. Specify only one of these keys.
+
 3. `build_executorch_binary()`:
 
    `build_executorch_binary` is a high-level API used to convert a PyTorch model into a Qualcomm-compatible .pte binary format. This function streamlines the process of quantization, transformation, optimization, and export, enabling users to efficiently deploy models on Qualcomm hardware.

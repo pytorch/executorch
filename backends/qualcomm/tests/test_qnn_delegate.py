@@ -80,6 +80,8 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    get_qnn_context_binary_alignment,
+    get_soc_to_htp_arch_map,
     PyQnnManagerAdaptor,
     rewrite_prepared_observer,
     skip_annotation,
@@ -114,7 +116,7 @@ from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 
 from executorch.examples.models.wav2letter import Wav2LetterModel
-from executorch.exir import to_edge
+from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.backend.backend_api import disable_validation, to_backend
 from executorch.exir.backend.backend_details import PreprocessResult
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
@@ -7153,6 +7155,96 @@ class TestQNNQuantizedModel(TestQNN):
                     sample_input,
                     expected_partitions=expected_partitions[i],
                     assert_output_equal=False,
+                )
+
+    def test_qnn_backend_ontarget_compilation_models(self):
+        self._test_ontarget_compilation_models(self.soc_model)
+
+    def test_qnn_backend_ontarget_compilation_older_soc(self):
+        runtime_soc_models = ("SM8550", "SM8650", "SM8750", "SM8845", "SM8850")
+        if self.soc_model not in runtime_soc_models:
+            self.skipTest(
+                "SM8450 preparation to newer SoC runtime requires one of "
+                f"{runtime_soc_models}"
+            )
+        self._test_ontarget_compilation_models("SM8450")
+
+    def _test_ontarget_compilation_models(self, prepare_soc_model):
+        if self.enable_x86_64 or self.compile_only:
+            self.skipTest("On-target compilation model tests require device execution")
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kHtpBackend:
+            self.skipTest("On-target compilation model tests require the HTP backend")
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[prepare_soc_model],
+            backend_options=generate_htp_compiler_spec(use_fp16=False),
+            online_prepare=True,
+        )
+        for name, model_class in (
+            ("mobilenet_v2", MV2Model),
+            ("edsr", EdsrModel),
+            ("wav2letter", Wav2LetterModel),
+        ):
+            with self.subTest(
+                model=name,
+                prepare_soc_model=prepare_soc_model,
+                runtime_soc_model=self.soc_model,
+            ):
+                instance = model_class()
+                sample_inputs = instance.get_example_inputs()
+                module = self.get_qdq_module(
+                    instance.get_eager_model().eval(),
+                    sample_inputs,
+                    soc_model=prepare_soc_model,
+                )
+                delegated_program = to_edge_transform_and_lower_to_qnn(
+                    module, sample_inputs, compiler_specs
+                )
+                graph_module = delegated_program.exported_program().graph_module
+                delegates = [
+                    node
+                    for node in graph_module.graph.nodes
+                    if node.op == "call_function"
+                    and node.target == torch.ops.higher_order.executorch_call_delegate
+                ]
+                self.assertEqual(len(delegates), 1)
+                host_compute = [
+                    node
+                    for node in graph_module.graph.nodes
+                    if node.op in ("call_function", "call_method", "call_module")
+                    and node not in delegates
+                    and not (
+                        node.op == "call_function" and node.target == operator.getitem
+                    )
+                ]
+                self.assertEqual(host_compute, [])
+                lowered_module = graph_module.get_submodule(delegates[0].args[0].target)
+                self.assertEqual(lowered_module.backend_id, QnnBackend.__name__)
+                options = flatbuffer_to_option(lowered_module.compile_specs[0].value)
+                self.assertTrue(options.online_prepare)
+                self.assertEqual(
+                    options.soc_info.soc_model, self.chipset_table[prepare_soc_model]
+                )
+                self.assertEqual(
+                    options.soc_info.htp_info.htp_arch,
+                    get_soc_to_htp_arch_map()[prepare_soc_model],
+                )
+                executorch_program = delegated_program.to_executorch(
+                    ExecutorchBackendConfig(
+                        segment_alignment=get_qnn_context_binary_alignment()
+                    )
+                )
+                self.verify_output(
+                    module,
+                    sample_inputs,
+                    executorch_program,
+                    assert_output_equal=False,
+                )
+                self.assertEqual(
+                    flatbuffer_to_option(
+                        lowered_module.compile_specs[0].value
+                    ).soc_info.soc_model,
+                    self.chipset_table[prepare_soc_model],
                 )
 
 

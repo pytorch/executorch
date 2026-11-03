@@ -38,8 +38,9 @@ from executorch.backends.qualcomm.utils.utils import get_soc_to_chipset_map
 def main(args) -> None:
     qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
     assert qnn_config.online_prepare, (
-        "This demo uses on-device OpTrace with online_prepare; pass "
-        "--online_prepare (or set online_prepare=True in your config file). "
+        "This demo uses on-device OpTrace with on-target compilation; pass "
+        "--allow_ontarget_compilation "
+        '(or set "allow_ontarget_compilation": true in your config file). '
         "For offline prepare, use htp_profiling_on_device_op_trace_offline.py."
     )
 

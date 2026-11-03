@@ -202,7 +202,17 @@ class QnnConfig:
             logging.info(f"Using {config}'s config.")
 
             with open(config) as f:
-                qnn_config = cls(**json.load(f))
+                config = json.load(f)
+            # JSON files use allow_ontarget_compilation for on-target compilation.
+            # online_prepare is accepted for backward compatibility.
+            if "allow_ontarget_compilation" in config:
+                if "online_prepare" in config:
+                    raise ValueError(
+                        "Cannot specify both allow_ontarget_compilation and "
+                        "online_prepare in a config file."
+                    )
+                config["online_prepare"] = config.pop("allow_ontarget_compilation")
+            qnn_config = cls(**config)
         else:
             raise TypeError(
                 f"Invalid config type {type(config).__name__}. Expected argparse.Namespace or str."
@@ -963,7 +973,8 @@ def build_executorch_binary(
         and not qnn_config.online_prepare
     ):
         raise RuntimeError(
-            "Currently GPU backend only supports online_prepare. Please add --online_prepare flag."
+            "GPU backend requires on-target compilation. "
+            "Please add --allow_ontarget_compilation."
         )
     if (
         qnn_config.backend == QnnExecuTorchBackendType.kLpaiBackend
@@ -1172,11 +1183,14 @@ def setup_common_args_and_variables(parser=None):
     )
 
     parser.add_argument(
-        "--online_prepare",
-        help="If specified, compose QNN graph on device.",
+        "--allow_ontarget_compilation",
+        dest="online_prepare",
+        help="Allow QNN graph compilation on the target device.",
         action="store_true",
         default=False,
     )
+
+    parser.add_argument("--online_prepare", help=argparse.SUPPRESS, action="store_true")
 
     parser.add_argument(
         "--ip",

@@ -802,7 +802,7 @@ def export_llama(args) -> None:
 
     if args.model_mode == "hybrid" and args.online_prepare:
         raise RuntimeError(
-            "Currently hybrid mode is not compatible with online_prepare."
+            "Hybrid mode is not compatible with --allow_ontarget_compilation."
         )
 
     if args.decoder_model == "stories260k":
