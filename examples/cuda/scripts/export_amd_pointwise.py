@@ -17,7 +17,7 @@ class AmdPointwiseModule(torch.nn.Module):
         return torch.sin(x) * torch.sigmoid(x + 0.5)
 
 
-def main() -> None:
+def main() -> None:  # noqa: C901
     parser = argparse.ArgumentParser(
         description="Export a small Triton-backed AOTI delegate for an AMD GPU."
     )
