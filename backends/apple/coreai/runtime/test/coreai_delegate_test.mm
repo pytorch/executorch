@@ -17,6 +17,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <optional>
 #include <thread>
 
@@ -1125,6 +1126,70 @@ TEST_F(CoreAIDelegateTest, ConcurrentFirstSharedLoadsAcquireOnce) {
     EXPECT_EQ(second_result, Error::Ok);
     EXPECT_EQ(
         fake.loader->specializations.load() + fake.loader->restores.load(), 1);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, SharedLoadsOfDifferentModelsRunConcurrently) {
+  @autoreleasepool {
+    BookmarkLoaderScope fake;
+    // Each specialization waits until both are in flight; if one shared load
+    // blocked the other, neither would ever see two in flight.
+    auto in_flight = std::make_shared<std::atomic<int>>(0);
+    auto max_in_flight = std::make_shared<std::atomic<int>>(0);
+    fake.loader.onSpecialize = ^(NSURL*) {
+      const int now = ++*in_flight;
+      int seen = max_in_flight->load();
+      while (now > seen && !max_in_flight->compare_exchange_weak(seen, now)) {
+      }
+      for (int i = 0; i < 400 && max_in_flight->load() < 2; ++i) {
+        usleep(5000);
+      }
+      --*in_flight;
+    };
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture second(backend, bridge, multifunction_manifest());
+    Error second_result = Error::Internal;
+    std::thread worker([&] { second_result = init_sharing(second, true); });
+    const Error first_result = init_sharing(first, true);
+    worker.join();
+    EXPECT_EQ(first_result, Error::Ok);
+    EXPECT_EQ(second_result, Error::Ok);
+    EXPECT_EQ(fake.loader->specializations.load(), 2);
+    EXPECT_EQ(max_in_flight->load(), 2);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, WaiterAcquiresAfterConcurrentSharedLoadFails) {
+  @autoreleasepool {
+    BookmarkLoaderScope fake;
+    auto calls = std::make_shared<std::atomic<int>>(0);
+    auto first_in_flight = std::make_shared<std::atomic<bool>>(false);
+    __weak BookmarkFakeLoader* loader = fake.loader;
+    // The first acquisition fails after the second load has queued behind it.
+    fake.loader.onSpecialize = ^(NSURL*) {
+      if (++*calls == 1) {
+        *first_in_flight = true;
+        usleep(100000);
+        loader.specializeError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                                     code:EIO
+                                                 userInfo:nil];
+      } else {
+        loader.specializeError = nil;
+      }
+    };
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture second(backend, bridge, multifunction_manifest());
+    NSString* root = first.storage.url.path;
+    Error first_result = Error::Ok;
+    std::thread worker([&] { first_result = init_sharing(first, true); });
+    while (!*first_in_flight) {
+      std::this_thread::yield();
+    }
+    const Error second_result = init_sharing(second, true, root);
+    worker.join();
+    EXPECT_NE(first_result, Error::Ok);
+    EXPECT_EQ(second_result, Error::Ok);
+    EXPECT_EQ(calls->load(), 2);
   }
 }
 

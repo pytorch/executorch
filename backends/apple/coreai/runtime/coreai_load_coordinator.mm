@@ -15,6 +15,8 @@
 
 #include <TargetConditionals.h>
 #include <sys/stat.h>
+#include <condition_variable>
+#include <mutex>
 #include <utility>
 
 @interface ETCoreAILoadedModel ()
@@ -276,9 +278,10 @@ Result<ETCoreAILoadedModel*> acquire_loaded_model(
     return key.error();
   }
   static std::mutex mutex;
+  static std::condition_variable load_finished;
   static NSMapTable<NSString*, ETCoreAILoadedModel*>* shared_models =
       [NSMapTable strongToWeakObjectsMapTable];
-  std::unique_lock<std::mutex> guard(mutex, std::defer_lock);
+  static NSMutableSet<NSString*>* loading = [NSMutableSet set];
   NSString* shared_key = nil;
   if (share) {
     // The open directory's identity, not its path, so aliases of one
@@ -293,23 +296,41 @@ Result<ETCoreAILoadedModel*> acquire_loaded_model(
                          static_cast<unsigned long long>(directory.st_dev),
                          static_cast<unsigned long long>(directory.st_ino),
                          key.get()];
-    // Held across acquisition so concurrent first loads acquire only once.
-    guard.lock();
-    ETCoreAILoadedModel* existing = [shared_models objectForKey:shared_key];
-    if (existing != nil) {
-      ET_LOG(Info, "Core AI shared model reused: key=%s", key.get().UTF8String);
-      return existing;
+    // Concurrent first loads of one key wait for a single acquisition, which
+    // may specialize for a long time, while other keys load in parallel. A
+    // failed acquisition leaves no entry, so a waiter then acquires itself.
+    std::unique_lock<std::mutex> guard(mutex);
+    while (true) {
+      ETCoreAILoadedModel* existing = [shared_models objectForKey:shared_key];
+      if (existing != nil) {
+        ET_LOG(
+            Info, "Core AI shared model reused: key=%s", key.get().UTF8String);
+        return existing;
+      }
+      if (![loading containsObject:shared_key]) {
+        break;
+      }
+      load_finished.wait(guard);
     }
+    [loading addObject:shared_key];
   }
   auto model = acquire_cached_model(
       host_bundle, named_data, cache_directory, loader, key.get());
+  ETCoreAILoadedModel* loaded = model.ok()
+      ? [[ETCoreAILoadedModel alloc] initWithModel:model.get()]
+      : nil;
+  if (share) {
+    {
+      std::lock_guard<std::mutex> guard(mutex);
+      [loading removeObject:shared_key];
+      if (loaded != nil) {
+        [shared_models setObject:loaded forKey:shared_key];
+      }
+    }
+    load_finished.notify_all();
+  }
   if (!model.ok()) {
     return model.error();
-  }
-  ETCoreAILoadedModel* loaded =
-      [[ETCoreAILoadedModel alloc] initWithModel:model.get()];
-  if (share) {
-    [shared_models setObject:loaded forKey:shared_key];
   }
   return loaded;
 }

@@ -398,7 +398,8 @@ a multi-function export (`CoreAIPartitioner(multifunction=True)`) share one
 loaded Core AI model per process instead of each loading its own. Without it,
 every delegate restores a separate model with its own copy of the weights. With
 it, the first delegate loads the model and the others reuse it until the last
-one is destroyed. Delegates sharing a model run one at a time: concurrent
+one is destroyed. Delegates that start loading the same model concurrently wait
+for that single load; loads of other models proceed in parallel. Delegates sharing a model run one at a time: concurrent
 execution on one model is serialized by a per-model lock, because the SDK does
 not document it as safe and it produced wrong outputs in testing. Setting the
 option on a delegate that isn't from a multi-function export fails
