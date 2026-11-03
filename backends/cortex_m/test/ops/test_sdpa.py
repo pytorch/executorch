@@ -7,7 +7,7 @@ import math
 from collections import Counter
 
 import torch
-from executorch.backends.arm.test.common import parametrize, xfail_type
+from executorch.backends.arm.test.common import parametrize
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.test.tester import CortexMTester, McuTestCase
 
@@ -113,23 +113,6 @@ not_decomposed_test_cases = {
     "rank2": McuTestCase(CortexMSDPA(), _qkv((8, 16), (8, 16), (8, 16))),
 }
 
-_SCALE_NOT_FOLDED = (
-    "The attention scale mul is left as an fp32 aten.mul between dequantize "
-    "and quantize, no pass folds it into the quantize yet"
-)
-_LINEAR_RETRACED_AS_INT32 = (
-    "Retracing a folded quantized linear gives an int32 output, which fails "
-    "the dtype check of the bmm consuming it"
-)
-
-xfail_cases_dialect: dict[str, xfail_type] = {
-    "self_attention": (_SCALE_NOT_FOLDED, RuntimeError),
-    "cross_attention": (_SCALE_NOT_FOLDED, RuntimeError),
-    "rank3": (_SCALE_NOT_FOLDED, RuntimeError),
-    "explicit_scale": (_SCALE_NOT_FOLDED, RuntimeError),
-    "multihead_attention": (_LINEAR_RETRACED_AS_INT32, Exception),
-}
-
 
 def _transform_for_annotation(model, example_inputs, dynamic_shapes=None):
     # Without check_guards=False, whether export adds a _guards_fn call_module,
@@ -146,7 +129,7 @@ def _op_counts(graph_module) -> Counter:
     )
 
 
-@parametrize("test_case", test_cases, xfails=xfail_cases_dialect)
+@parametrize("test_case", test_cases)
 def test_dialect_sdpa(test_case, cortex_m_target):
     tester = CortexMTester(
         test_case.model, test_case.example_inputs, target_config=cortex_m_target

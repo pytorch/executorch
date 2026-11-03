@@ -279,28 +279,35 @@ def build_activation_lut(
     input_zp: int,
     output_scale: float,
     output_zp: int,
+    *,
+    activation_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ) -> torch.Tensor:
     """AoT-compute a 256-entry int8 lookup table for a quantized activation.
 
     `target` is the edge-dialect op being lowered (e.g.
-    `exir_ops.edge.aten.sigmoid.default`).
+    `exir_ops.edge.aten.sigmoid.default`). When `activation_fn` is supplied,
+    `target` can be None: the callback replaces it and evaluates the complete
+    region on a dequantized floating-point tensor before final quantization.
 
     The LUT is indexed by the input byte value biased by 128: for any int8
     input `q_in`, the kernel reads `lut[q_in + 128]` to get the int8 output.
     Because the LUT is computed in float and quantized once per entry, the
     runtime kernel is a single memory-lookup with no requantization math.
     """
-    if target not in _ACTIVATION_FNS:
+    if activation_fn is None and target not in _ACTIVATION_FNS:
         raise ValueError(
             f"build_activation_lut: unsupported activation target {target!r} "
             f"(supported: {sorted(t.__name__ for t in _ACTIVATION_FNS)})"
         )
-    f = _ACTIVATION_FNS[target]
+    values = None
+    if activation_fn is not None:
+        domain = (torch.arange(-128, 128, dtype=torch.float64) - input_zp) * input_scale
+        values = activation_fn(domain)
     defined: dict[int, int] = {}
     undefined: list[int] = []
     for q in range(-128, 128):
         x = (q - input_zp) * input_scale
-        y = f(x)
+        y = values[q + 128].item() if values is not None else _ACTIVATION_FNS[target](x)
         scaled = y / output_scale + output_zp if math.isfinite(y) else y
         if math.isnan(scaled):
             # log of a negative, rsqrt of a negative. Filled in below.

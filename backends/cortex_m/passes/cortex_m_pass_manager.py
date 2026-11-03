@@ -15,6 +15,9 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     ScalarsToAttributePass,
 )
+from executorch.backends.arm._passes.arm_pass_manager import (
+    _ExportedProgramGraphPassAdapter,
+)
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 from executorch.backends.cortex_m.utils import _ACTIVATION_FNS
 from executorch.backends.transforms.aten_to_dialect_pass import AtenToDialectPass
@@ -59,6 +62,7 @@ from .explicit_layout_pass import (
     ValidateCortexMExplicitLayoutPass,
 )
 from .fuse_conv_padding_pass import FuseConvPaddingPass
+from .fuse_elementwise_to_lut_pass import FuseQuantizedElementwiseToLUTPass
 from .initialize_scratch_buffers_pass import InitializeScratchBuffersPass
 from .matmul_to_bmm_pass import MatmulToBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
@@ -135,6 +139,9 @@ class _CortexMLoweringPass(ExportedProgramPassBase):
                 kwargs["target_config"] = self.target_config
 
             transform_pass = _preserving_quantized_dtype(pass_cls)(**kwargs)
+            if isinstance(transform_pass, FuseQuantizedElementwiseToLUTPass):
+                # Constant creation must update the pass manager's shallow copy.
+                transform_pass = _ExportedProgramGraphPassAdapter(transform_pass)
             transformed = _transform(exported_program, transform_pass)
             modified |= transformed is not exported_program
             exported_program = transformed
@@ -154,6 +161,7 @@ class CortexMPassManager(ExportedProgramPassManager):
         ConvertFullLikeToFullPass,
         ComputeQuantizedConstantOpsPass,
         DecomposeHardswishPass,
+        FuseQuantizedElementwiseToLUTPass,
         AtenToCortexMPass,
         # Retrace only after quantized ATen ops have become Cortex-M kernels.
         ReplaceQuantNodesPass,
@@ -179,6 +187,7 @@ class CortexMPassManager(ExportedProgramPassManager):
         RemovePermutesAroundElementwiseOps,
         CortexMCanonicalizeViewCopyPermutePass,
         ValidateCortexMExplicitLayoutPass,
+        FuseQuantizedElementwiseToLUTPass,
         ReplaceQuantNodesPass,
         AtenToCortexMPass,
         FuseConvPaddingPass,

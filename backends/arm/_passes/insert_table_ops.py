@@ -14,17 +14,18 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     POW_LOG_POSITIVE_LOWER_BOUND_META,
 )
 from executorch.backends.arm._passes.quant_args import QuantArgs
-from executorch.backends.transforms.utils import create_constant_placeholder
+from executorch.backends.transforms.fuse_elementwise_to_lut import (
+    FuseElementwiseToLUTPass,
+    FusionRegion,
+)
 
 from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
-from executorch.exir.pass_base import ExportPass, PassResult
-from torch.export.graph_signature import InputKind
-from torch.fx import GraphModule
-from torch.fx.node import Node
+from executorch.exir.pass_base import ExportPass
+from torch.fx.node import map_arg, Node
 
 
 class TableOps:
@@ -158,26 +159,205 @@ class TableOps:
         return chain(TableOps.unary_table_ops, TableOps.special_table_ops)
 
 
-class InsertTableOpsPass(ArmPass):
-    """For ops in self.table_ops they need to be serialized as a TOSA TABLE.
-
-    This pass replaces these edge ops with a tosa._table(input: Tensor,
-    target_str: str) where target_str == str(node.target). When lowering the
-    _table node target_str will be used to find the corresponding torch operator
-    which will be used to produce the table values in operators/op_table.py.
-
+class InsertTableOpsPass(FuseElementwiseToLUTPass, ArmPass):
+    """Lower quantized pointwise regions directly to INT8 or INT16 TOSA
+    TABLE.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    quantize_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+    dequantize_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+
+    arithmetic_ops = {
+        exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.sub.Tensor,
+        exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.div.Tensor,
+        exir_ops.edge.aten.clamp.default,
+        exir_ops.edge.aten.minimum.default,
+        exir_ops.edge.aten.maximum.default,
+    }
 
     def __init__(self, exported_program: ExportedProgram) -> None:
-        super().__init__()
-        self.exported_program = exported_program
+        super().__init__(
+            exported_program,
+            exir_ops.backend.tosa.TABLE.default,
+            {
+                *TableOps.included_ops(),
+                *self.arithmetic_ops,
+                self.quantize_op,
+                self.dequantize_op,
+            },
+            supported_dtypes=(
+                torch.int8,
+                torch.int16,
+                torch.int32,
+                torch.float32,
+                torch.float64,
+            ),
+            min_region_size=1,
+        )
         self.table_ops = TableOps(exported_program)
+        self.table_targets = set(TableOps.included_ops())
 
-    def register_buffer(self, buffer_name: str, buffer: torch.Tensor) -> None:
-        """Add buffer to self.exported_program.state_dict."""
-        self.exported_program.state_dict[buffer_name] = buffer
+    def _is_supported_node(self, node: Node) -> bool:
+        if node.target == self.table_op or not super()._is_supported_node(node):
+            return False
+        if node.target in (self.quantize_op, self.dequantize_op):
+            if node.target == self.quantize_op:
+                source = node.args[0]
+                if (
+                    source.target == self.dequantize_op
+                    and source.args[5] != node.args[5]
+                ):
+                    # Keep dtype-changing requantization outside the LUT domain.
+                    return False
+            return not any(isinstance(arg, Node) for arg in node.args[1:]) and (
+                node.target != self.quantize_op or self._is_supported_node(node.args[0])
+            )
+        inputs = node.meta.get("input_qparams", {})
+        outputs = node.meta.get("output_qparams", {})
+        if not inputs and not outputs:
+            return node.meta["val"].is_floating_point()
+        return (
+            bool(inputs)
+            and set(outputs) == {0}
+            and all(
+                not qparams.per_channel
+                for qparams in (*inputs.values(), *outputs.values())
+            )
+            and all(
+                index in inputs or self._constant(arg) is not None
+                for index, arg in enumerate(node.args)
+                if isinstance(arg, Node)
+            )
+        )
+
+    def _region_input_qparams(self, region: FusionRegion) -> list[QuantArgs]:
+        qparams = []
+        for node in region.nodes:
+            for index, arg in enumerate(node.args):
+                if arg is not region.input_node:
+                    continue
+                if node.target == self.dequantize_op:
+                    qparams.append(QuantArgs.from_operator(node.target, node.args))
+                elif index in node.meta.get("input_qparams", {}):
+                    qparams.append(node.meta["input_qparams"][index])
+                else:
+                    return []
+        return qparams
+
+    def _region_output_qparams(self, region: FusionRegion) -> dict[int, QuantArgs]:
+        sink = region.nodes[-1]
+        if sink.target == self.quantize_op:
+            return {0: QuantArgs.from_operator(sink.target, sink.args)}
+        return sink.meta.get("output_qparams", {})
+
+    def _find_fusion_region(self, sink: Node) -> FusionRegion | None:
+        region = super()._find_fusion_region(sink)
+        if region is None or (
+            len(region.nodes) == 1 and sink.target not in self.table_targets
+        ):
+            return None
+        pointwise_ops = sum(
+            node.target not in (self.quantize_op, self.dequantize_op)
+            for node in region.nodes
+        )
+        if pointwise_ops == 0:
+            return None
+        if pointwise_ops == 1:
+            table_index = next(
+                (
+                    index
+                    for index, node in enumerate(region.nodes)
+                    if node.target in self.table_targets
+                ),
+                None,
+            )
+            if table_index is not None:
+                for index in range(table_index - 1, -1, -1):
+                    if region.nodes[index].target == self.quantize_op:
+                        # A lone TABLE already lowers the operator; keep its
+                        # input requantization visible near singularities.
+                        region = FusionRegion(
+                            region.nodes[index + 1 :], region.nodes[index]
+                        )
+                        break
+        qparams = self._region_input_qparams(region)
+        if (
+            not qparams
+            or region.input_node.meta["val"].dtype != qparams[0].dtype
+            or any(value != qparams[0] for value in qparams)
+        ):
+            return None
+        outputs = self._region_output_qparams(region)
+        if not outputs or (qparams[0].dtype, outputs[0].dtype) not in (
+            (torch.int8, torch.int8),
+            (torch.int16, torch.int16),
+            (torch.int16, torch.int32),
+        ):
+            return None
+        return region
+
+    def _evaluate_region(
+        self, region: FusionRegion, value: torch.Tensor
+    ) -> torch.Tensor:
+        values = {region.input_node: value.to(torch.float32)}
+        for node in region.nodes:
+            args = []
+            for index, arg in enumerate(node.args):
+                if not isinstance(arg, Node):
+                    args.append(arg)
+                    continue
+                constant = self._constant(arg)
+                if constant is None:
+                    args.append(values[arg])
+                    continue
+                tensor = constant.reshape(()).to(torch.float32)
+                qparams = node.meta.get("input_qparams", {}).get(index)
+                if node.target == self.dequantize_op:
+                    qparams = QuantArgs.from_operator(node.target, node.args)
+                args.append(
+                    (tensor - qparams.get_zp_per_tensor())
+                    * qparams.get_scale_per_tensor()
+                    if qparams
+                    else tensor
+                )
+            # Region inputs are already dequantized by the table generator.
+            # Keep internal edges in float until it quantizes the final result.
+            values[node] = (
+                args[0]
+                if node.target in (self.quantize_op, self.dequantize_op)
+                else self._evaluate_node(
+                    node, args, map_arg(node.kwargs, values.__getitem__)
+                )
+            )
+        return values[region.nodes[-1]]
+
+    def _evaluate_node(self, node: Node, args: list, kwargs: dict) -> torch.Tensor:
+        if node in self.table_ops:
+            if node.meta.get("input_qparams"):
+                self._validate_pow_log_positive_lower_bound(
+                    node, node.meta["input_qparams"][0]
+                )
+            return self.table_ops[node](args[0])
+        if node.target == exir_ops.edge.aten.clamp.default and node.meta.get(
+            "output_qparams"
+        ):
+            # QuantizeClampArgumentsPass has already encoded the bounds.
+            qparams = node.meta["output_qparams"][0]
+            for index in range(1, len(args)):
+                if args[index] is not None:
+                    args[index] = (
+                        args[index] - qparams.get_zp_per_tensor()
+                    ) * qparams.get_scale_per_tensor()
+            kwargs = dict(kwargs)
+            for key in ("min", "max"):
+                if kwargs.get(key) is not None:
+                    kwargs[key] = (
+                        kwargs[key] - qparams.get_zp_per_tensor()
+                    ) * qparams.get_scale_per_tensor()
+        return node.target(*args, **kwargs)
 
     @staticmethod
     def _validate_pow_log_positive_lower_bound(
@@ -354,77 +534,33 @@ class InsertTableOpsPass(ArmPass):
                     f"Unsupported output dtype for table: {out_quantargs.dtype}"
                 )
 
-    def call(self, graph_module: GraphModule) -> PassResult:
-        modified = False
-        for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node not in self.table_ops:
-                continue
-            input_qparams = node.meta.get("input_qparams", {})
-            output_qparams = node.meta.get("output_qparams", {})
-            if len(input_qparams) == 0 or len(output_qparams) == 0:
-                # We only want to replace the node if it's quantized
-                continue
-            # Create table node
-            insert_pos = list(node.graph.nodes)[0]
-            with graph_module.graph.inserting_before(insert_pos):
-                # Expect exactly one quantization parameter for input and output
-                if len(input_qparams) != 1:
-                    raise ValueError(
-                        f"InsertTableOpsPass expected exactly one input quantization parameter, "
-                        f"got {len(input_qparams)} for node {node.name}"
-                    )
-                if len(output_qparams) != 1:
-                    raise ValueError(
-                        f"InsertTableOpsPass expected exactly one output quantization parameter, "
-                        f"got {len(output_qparams)} for node {node.name}"
-                    )
-
-                # Generate table buffer and how much to lshift the table output.
-                input_qargs = input_qparams[0]
-                self._validate_pow_log_positive_lower_bound(node, input_qargs)
-                buffer, lshift = self.generate_table_values(
-                    torch_op=self.table_ops[node],
-                    in_quantargs=input_qargs,
-                    out_quantargs=output_qparams[0],
-                )
-                # Register buffer in self.exported_program.state_dict
-                # b_ prefix is important to be recognized as a constant in RemovePermutesAroundElementwiseOps
-                const_table_node = create_constant_placeholder(
-                    exp_program=self.exported_program,
-                    graph=node.graph,
-                    kind=InputKind.BUFFER,
-                    name="b_" + node.name + "_table_constant",
-                    data=buffer,
-                    persistent_buffer=True,
-                )
-
-            # Create table node
-            with graph_module.graph.inserting_before(node):
-                table_op_node = create_node(
-                    graph=graph_module.graph,
-                    op_target=exir_ops.backend.tosa.TABLE.default,
-                    args=(node.args[0], const_table_node),
-                )
-                output_node = table_op_node
-
-                if lshift != 0:
-                    scale = 2.0**lshift
-                    rescale_node = create_node(
-                        graph=graph_module.graph,
-                        op_target=exir_ops.backend.tosa.RESCALE.default,
-                        args=(table_op_node, output_qparams[0].dtype, [scale], 0, 0),
-                    )
-                    output_node = rescale_node
-
-                node.replace_all_uses_with(output_node)
-            graph_module.graph.erase_node(node)
-            table_op_node.meta["input_qparams"] = input_qparams
-            table_op_node.meta["output_qparams"] = output_qparams
-            modified = True
-
-        if modified:
-            # retrace the graph to update the fake tensor types
-            graph_module = super().call(graph_module).graph_module
-
-            graph_module.recompile()
-        return PassResult(graph_module, modified)
+    def _fuse_region(self, region: FusionRegion) -> None:
+        sink = region.nodes[-1]
+        input_qparams = {0: self._region_input_qparams(region)[0]}
+        output_qparams = self._region_output_qparams(region)
+        table, lshift = self.generate_table_values(
+            lambda value: self._evaluate_region(region, value),
+            input_qparams[0],
+            output_qparams[0],
+        )
+        table_node = self._insert_table_constant(region, table)
+        sink.target = self.table_op
+        sink.args = (region.input_node, table_node)
+        sink.kwargs = {}
+        sink.meta["input_qparams"] = input_qparams
+        sink.meta["output_qparams"] = output_qparams
+        sink.meta["val"] = torch.empty_like(
+            sink.meta["val"], dtype=output_qparams[0].dtype
+        )
+        if lshift != 0:
+            with sink.graph.inserting_before(sink):
+                table_op = create_node(sink.graph, self.table_op, args=sink.args)
+            table_op.meta["input_qparams"] = input_qparams
+            table_op.meta["output_qparams"] = output_qparams
+            table_op.meta["val"] = torch.empty_like(
+                region.input_node.meta["val"], dtype=torch.int32
+            )
+            sink.target = exir_ops.backend.tosa.RESCALE.default
+            sink.args = (table_op, output_qparams[0].dtype, [2.0**lshift], 0, 0)
+            sink.meta.pop("input_qparams")
+            sink.meta.pop("output_qparams")
