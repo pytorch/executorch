@@ -233,6 +233,7 @@ class AbsConfig(GenericNodePartitionerConfig):
 
 class AvgPoolingConfig(GenericNodePartitionerConfig):
     target_name = "avg_pool2d.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -359,6 +360,7 @@ class EluConfig(GenericNodePartitionerConfig):
 
 class SoftmaxConfig(GenericNodePartitionerConfig):
     target_name = "_softmax.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -436,6 +438,7 @@ class MaximumConfig(GenericNodePartitionerConfig):
 
 class MaxPool2dConfig(GenericNodePartitionerConfig):
     target_name = "max_pool2d.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -470,6 +473,7 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
 
 class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
     target_name = "upsample_bilinear2d.vec"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -623,6 +627,7 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
