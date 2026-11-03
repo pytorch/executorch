@@ -6,6 +6,7 @@
 
 import itertools
 import unittest
+from unittest.mock import patch
 
 import torch
 from executorch import exir
@@ -25,6 +26,7 @@ from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
 )
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.backend.utils import (
+    _maybe_duplicate_constant_nodes,
     format_delegated_graph,
     get_delegated_payload,
     get_delegates,
@@ -648,3 +650,83 @@ class TestUtils(unittest.TestCase):
             )
             self.assertEqual(counts(lowered.exported_program()), [1, 1, 1])
             lowered.to_executorch()
+
+    def test_maybe_duplicate_constant_nodes_refuses_one_tag_string(self):
+        program = to_edge(
+            export(torch.nn.Linear(2, 2), (torch.ones(2),), strict=True)
+        ).exported_program()
+        # A str is an iterable of tags too, one per character.
+        with self.assertRaises(TypeError):
+            _maybe_duplicate_constant_nodes(program, "tag0")
+
+    def test_constants_shared_by_many_delegates_are_copied_in_one_pass(self):
+        class ShareConsts(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("a", torch.ones(2))
+                self.register_buffer("b", torch.ones(2))
+
+            def forward(self, x):
+                return x + self.a, x * self.a, self.a - self.b, x / self.b
+
+        program = to_edge(
+            export(ShareConsts(), (torch.ones(2),), strict=True)
+        ).exported_program()
+        ops = [node for node in program.graph.nodes if node.op == "call_function"]
+        for i, node in enumerate(ops):
+            node.meta["delegation_tag"] = f"tag{i}"
+        tag_constant_data(program)
+
+        # Recompiling and validating once per shared constant is quadratic in
+        # the graph size, which a large model with many delegates cannot afford.
+        with patch.object(
+            ExportedProgram,
+            "_validate",
+            autospec=True,
+            side_effect=ExportedProgram._validate,
+        ) as validate, patch.object(
+            torch.fx.GraphModule,
+            "recompile",
+            autospec=True,
+            side_effect=torch.fx.GraphModule.recompile,
+        ) as recompile:
+            _maybe_duplicate_constant_nodes(
+                program, [node.meta["delegation_tag"] for node in ops]
+            )
+        self.assertEqual(validate.call_count, 1)
+        self.assertEqual(recompile.call_count, 1)
+
+        # Copying b_a rewires sub, which must not change who keeps b_b: the
+        # first reader in graph order does.
+        self.assertEqual(
+            {
+                node.meta["delegation_tag"]: [arg.name for arg in node.args]
+                for node in ops
+            },
+            {
+                "tag0": ["x", "b_a"],
+                "tag1": ["x", "b_a_copy_0"],
+                "tag2": ["b_a_copy_1", "b_b"],
+                "tag3": ["x", "b_b_copy_0"],
+            },
+        )
+        for node in program.graph.nodes:
+            if node.op == "placeholder" and node.name != "x":
+                self.assertEqual(
+                    {user.meta["delegation_tag"] for user in node.users},
+                    {node.meta["delegation_tag"]},
+                )
+        self.assertEqual(
+            {
+                spec.arg.name: spec.target
+                for spec in program.graph_signature.input_specs
+            },
+            {
+                "b_a_copy_0": "a",
+                "b_a_copy_1": "a",
+                "b_a": "a",
+                "b_b_copy_0": "b",
+                "b_b": "b",
+                "x": None,
+            },
+        )
