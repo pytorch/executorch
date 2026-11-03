@@ -54,7 +54,7 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -159,13 +159,15 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx-supertonic
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch and Supertonic requirements"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -246,13 +248,15 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx-qwen35-moe
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -327,13 +331,15 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx-muse-glimmer-build
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -366,7 +372,7 @@ jobs:
         BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
         ${CONDA_RUN} cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
           -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
-        ${CONDA_RUN} cmake --build "${BATCHING_BIN_DIR}" --target muse_glimmer_batching_test --parallel
+        ${CONDA_RUN} cmake --build "${BATCHING_BIN_DIR}" --target muse_glimmer_batching_test
         ${CONDA_RUN} ctest --test-dir "${BATCHING_BIN_DIR}" \
           -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
@@ -383,13 +389,15 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx-nemotron3-diarization-build
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
         ${CONDA_RUN} python install_executorch.py > /dev/null
         ${CONDA_RUN} make nemotron3-diarization-mlx
         BIN_DIR=cmake-out/examples/models/nemotron3_diarization
@@ -412,7 +420,7 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx-backend-${{ matrix.suite }}
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -458,13 +466,15 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx-parakeet
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -520,7 +530,7 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx-voxtral
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -528,6 +538,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -584,7 +596,7 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx-voxtral-realtime
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -592,6 +604,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
         # Disable HF Xet storage to avoid stalled downloads on CI runners
         export HF_HUB_DISABLE_XET=1
 
@@ -665,7 +679,7 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx-whisper
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -719,13 +733,15 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx-stories110m
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
         set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -797,26 +813,23 @@ jobs:
             name: "gemma3-1b"
         use-custom: [false, true]
         qconfig: ["4w", "nvfp4"]
-        runner: ["macos-14-xlarge"]
         include:
           - model:
               id: "google/gemma-4-E2B-it"
               name: "gemma4-e2b"
             use-custom: true
             qconfig: "4w"
-            runner: "macos-15-xlarge"
           - model:
               id: "google/gemma-4-E2B-it"
               name: "gemma4-e2b"
             use-custom: false
             qconfig: "4w"
-            runner: "macos-15-xlarge"
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
       default-packages: ""
       job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}-${{ matrix.qconfig }}
-      runner: ${{ matrix.runner }}
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -900,7 +913,7 @@ jobs:
     with:
       default-packages: ""
       job-name: test-mlx-dflash
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -1027,23 +1040,20 @@ jobs:
           - id: "unsloth/Llama-3.2-1B-Instruct"
             name: "llama-1b"
             chat: "llama3"
-            runner: "macos-14-xlarge"
           - id: "unsloth/gemma-3-1b-it"
             name: "gemma3-1b"
             chat: "gemma"
-            runner: "macos-14-xlarge"
           # Only model with KV sharing: 15 caches for 35 layers, and sliding and
           # full-attention caches with different head shapes.
           - id: "google/gemma-4-E2B-it"
             name: "gemma4-e2b"
             chat: "gemma4"
-            runner: "macos-15-xlarge"
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
       default-packages: ""
       job-name: test-mlx-llm-offgraph-${{ matrix.model.name }}
-      runner: ${{ matrix.model.runner }}
+      runner: macos-15-xlarge
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

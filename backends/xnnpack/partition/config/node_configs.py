@@ -17,6 +17,7 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
 )
 from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.backend.utils import WhyNoPartition
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,17 @@ class BatchNormConfig(XNNPartitionerConfig):
 
         if not can_fuse and not can_decompose:
             why(node, f"BatchNorm cannot be decomposed or fused with {input_node}")
+            return False
+
+        # Unless it fuses into a linear, a BatchNorm becomes a depthwise convolution
+        # or folds into a convolution, and the pinned XNNPACK defines neither in bf16.
+        if input_node.meta["val"].dtype == torch.bfloat16 and not (
+            can_fuse and input_node.target == exir_ops.edge.aten.linear.default
+        ):
+            why(
+                node,
+                "XNNPACK supports a bf16 BatchNorm only when it fuses into a linear",
+            )
             return False
 
         return True

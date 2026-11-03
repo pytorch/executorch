@@ -455,6 +455,46 @@ target_link_libraries(
   coreai_runtime_smoke PRIVATE coreaidelegate ${_coreai_runtime}
 )
 
+if(_coreai_run_sdk_tests
+   AND EXECUTORCH_BUILD_EXTENSION_MODULE
+   AND EXECUTORCH_BUILD_PORTABLE_OPS
+)
+  find_package(Threads REQUIRED)
+  set(_coreai_stress_fixture "${CMAKE_CURRENT_BINARY_DIR}/stress_fixture")
+  add_custom_command(
+    OUTPUT "${_coreai_stress_fixture}/model.pte"
+           "${_coreai_stress_fixture}/fixture.json"
+    COMMAND
+      "${PYTHON_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/runtime/test/export_stress_fixture.py"
+      "${_coreai_stress_fixture}"
+    DEPENDS ${_coreai_fixture_sources}
+            "${CMAKE_CURRENT_SOURCE_DIR}/runtime/test/export_stress_fixture.py"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    VERBATIM
+  )
+  add_custom_target(
+    coreai_stress_fixture DEPENDS "${_coreai_stress_fixture}/model.pte"
+                                  "${_coreai_stress_fixture}/fixture.json"
+  )
+  add_executable(
+    coreai_multithread_test runtime/test/coreai_multithread_test.cpp
+  )
+  target_compile_features(coreai_multithread_test PRIVATE cxx_std_17)
+  coreai_require_os27(coreai_multithread_test)
+  set_target_properties(coreai_multithread_test PROPERTIES LINKER_LANGUAGE CXX)
+  target_link_libraries(
+    coreai_multithread_test
+    PRIVATE coreaidelegate ${_coreai_runtime} extension_module portable_ops_lib
+            Threads::Threads nlohmann_json::nlohmann_json
+  )
+  add_dependencies(coreai_multithread_test coreai_stress_fixture)
+  add_test(NAME coreai_multithread_test COMMAND coreai_multithread_test
+                                                "${_coreai_stress_fixture}"
+  )
+  set_tests_properties(coreai_multithread_test PROPERTIES TIMEOUT 240)
+endif()
+
 install(
   FILES runtime/coreai_cache.h
   DESTINATION
