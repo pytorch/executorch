@@ -44,9 +44,13 @@ class GetItemConverter(NodeConverter):
         consumes_model_input = (
             node.args[0].name in self.context.edge_program_signature.user_inputs
         )
-        if consumes_model_input:
-            # Convert as identity op (Transpose that will be removed) because the input tensor is also an input of the
-            #  model. If we did redirection here, we would change the name of a model input, which is prohibited.
+        produces_model_output = any(
+            u.name in self.context.edge_program_signature.user_outputs
+            for u in node.users
+        )
+        if consumes_model_input or produces_model_output:
+            # Convert as identity op (Transpose that will be removed). If we did redirection here, we would change the
+            #  name of a model input or output, which is prohibited.
             self.builder.turn_operator_to_identity(t_op)
             self.builder.append_operators([t_op])
         else:
