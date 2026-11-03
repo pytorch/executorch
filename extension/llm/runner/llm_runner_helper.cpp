@@ -11,6 +11,7 @@
 #include <executorch/extension/llm/runner/image_prefiller.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 
+#include <executorch/extension/llm/runner/io_manager/hf_static_io_manager.h>
 #include <executorch/extension/llm/runner/multimodal_decoder_runner.h>
 #include <executorch/extension/llm/runner/multimodal_prefiller.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
@@ -34,7 +35,9 @@ namespace executorch::extension::llm {
 using ::executorch::extension::Module;
 using ::executorch::runtime::Error;
 
-void register_builtin_io_managers() {}
+void register_builtin_io_managers() {
+  register_hf_static_io_manager();
+}
 
 std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
     const std::string& tokenizer_path,
