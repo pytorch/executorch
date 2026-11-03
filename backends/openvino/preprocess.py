@@ -27,11 +27,40 @@ from openvino.frontend import FrontEndManager  # type: ignore[import-untyped]
 from openvino.frontend.pytorch.fx_decoder import (  # type: ignore[import-untyped]
     TorchFXPythonDecoder,
 )
+from openvino.frontend.pytorch.utils import (  # type: ignore[import-untyped]
+    pt_to_ov_type_map,
+)
 from openvino.preprocess import PrePostProcessor  # type: ignore[import-untyped]
+from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
 # The values of the inference_precision compile spec. The runtime
 # (OpenvinoBackend.cpp) accepts the same ones.
 _PRECISIONS = ("f32", "f16", "bf16")
+
+
+def _match_partition_inputs(
+    model, module: torch.fx.GraphModule, input_shapes: list, input_types: list
+) -> None:
+    """Make the converted model take the inputs the runtime passes."""
+    # The converter takes an unused first input for forward's self and removes
+    # it, but the runtime passes every partition input. The cumsum fold can
+    # leave the first input unused.
+    parameters = list(model.get_parameters())
+    placeholders = [n for n in module.graph.nodes if n.op == "placeholder"]
+    if len(parameters) == len(input_types) - 1 and not placeholders[0].users:
+        for parameter in parameters:
+            model.remove_parameter(parameter)
+        first = opset13.parameter(
+            input_shapes[0], pt_to_ov_type_map[str(input_types[0])]
+        )
+        model.add_parameters([first, *parameters])
+    # The runtime binds inputs by position and refuses a wrong count, so any
+    # other mismatch fails here instead of on every call.
+    if len(model.get_parameters()) != len(input_types):
+        raise RuntimeError(
+            f"OpenVINO backend: expected {len(input_types)} parameters in the "
+            f"converted model, got {len(model.get_parameters())}"
+        )
 
 
 @final
@@ -96,15 +125,24 @@ class OpenvinoBackend(BackendDetails):
                         f"{type(val).__name__}; only tensors and ints are supported"
                     )
 
-        # The converter chooses some lowerings (e.g. boolean-mask indexing) from
-        # the input types, so they must be known before conversion starts.
         module = edge_program.module()
         FoldConstantCumsumPass()(module)
+        # The converter reads ranks only from tensor_meta, which edge graphs
+        # leave empty, and some ops need one, like aten.index after
+        # aten.index_put.
+        for node in module.graph.nodes:
+            val = node.meta.get("val")
+            if isinstance(val, torch.Tensor) and not node.meta.get("tensor_meta"):
+                node.meta["tensor_meta"] = _extract_tensor_metadata(val)
+        # The converter chooses some lowerings (e.g. boolean-mask indexing) from
+        # the input types, so they must be known before conversion starts.
         decoder = TorchFXPythonDecoder(
             module, input_shapes=input_shapes, input_types=input_types
         )
         frontend = FrontEndManager().load_by_framework("pytorch")
-        ppp = PrePostProcessor(frontend.convert(frontend.load(decoder)))
+        model = frontend.convert(frontend.load(decoder))
+        _match_partition_inputs(model, module, input_shapes, input_types)
+        ppp = PrePostProcessor(model)
         # The converter takes an int input, like a SymInt size, as a scalar, but
         # the runtime passes it as an int64 tensor of shape [1].
         for i in int_inputs:
