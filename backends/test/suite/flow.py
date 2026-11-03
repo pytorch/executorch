@@ -226,6 +226,13 @@ def all_flows() -> dict[str, TestFlow]:
     )
 
     try:
+        from executorch.backends.test.suite.flows.coreai import COREAI_TEST_FLOWS
+
+        flows += COREAI_TEST_FLOWS
+    except ImportError as e:
+        logger.info(f"Skipping CoreAI flow registration: {e}")
+
+    try:
         from executorch.backends.test.suite.flows.mlx import MLX_TEST_FLOW
 
         flows += [

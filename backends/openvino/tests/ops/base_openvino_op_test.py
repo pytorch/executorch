@@ -1,12 +1,17 @@
 import os
 import tempfile
 import unittest
+from typing import Optional
 
 import executorch
 import torch
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.backends.openvino.preprocess import OpenvinoBackend
-from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.runtime import Runtime
 
@@ -27,6 +32,7 @@ class BaseOpenvinoOpTest(unittest.TestCase):
         assert_output_equal: bool = True,
         compile_specs: tuple[CompileSpec, ...] = (),
         more_inputs: tuple[tuple[torch.Tensor, ...], ...] = (),
+        compile_config: Optional[EdgeCompileConfig] = None,
     ):
 
         module = module.eval()
@@ -40,6 +46,7 @@ class BaseOpenvinoOpTest(unittest.TestCase):
             partitioner=[
                 OpenvinoPartitioner(compile_spec),
             ],
+            compile_config=compile_config,
         )
 
         # Apply backend-specific passes
