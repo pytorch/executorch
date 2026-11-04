@@ -76,6 +76,8 @@ class CastIntComparisonInputsPass(ArmOpTargetedPass):
         comparison_dtypes = set()
         if tosa_spec.support_integer():
             comparison_dtypes.add(torch.int32)
+            if tosa_spec.support_extension("int64"):
+                comparison_dtypes.add(torch.int64)
         if tosa_spec.support_float():
             comparison_dtypes.update({torch.float16, torch.float32})
             if tosa_spec.support_extension("bf16"):
@@ -113,10 +115,11 @@ class CastIntComparisonInputsPass(ArmOpTargetedPass):
             }:
                 return super().call_operator(op, args, kwargs, meta)
 
+            int_dtypes = {torch.int8, torch.int16, torch.int32, torch.bool, torch.uint8}
+            if tosa_spec.support_extension("int64"):
+                int_dtypes.add(torch.int64)
             if not tosa_spec.support_integer() or any(
-                dtype
-                not in {torch.int8, torch.int16, torch.int32, torch.bool, torch.uint8}
-                for dtype in arg_dtypes
+                dtype not in int_dtypes for dtype in arg_dtypes
             ):
                 raise ValueError(
                     f"{op} cannot cast {arg_dtypes} to a {tosa_spec} comparison dtype."
