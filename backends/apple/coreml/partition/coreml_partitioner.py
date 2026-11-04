@@ -26,6 +26,7 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import statically_known_true, sym_eq
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
@@ -154,6 +155,56 @@ def _reads_or_produces_bfloat16(node: torch.fx.Node) -> bool:
     return any(isinstance(v, torch.Tensor) and v.dtype == torch.bfloat16 for v in vals)
 
 
+# No upstream issue yet. For example, Core ML fails to load x.sum().sum(): it gets
+# the second sum as a reduce_sum of a 0-d tensor, "Param 'x' has incorrect type
+# for operator 'reduce_sum'". A std or vector norm of a 0-d tensor fails too, but
+# stays: it has no CPU kernel, and a refused call can decompose into an op that
+# another call keeps whole.
+_REDUCTION_TARGETS = frozenset(
+    target
+    for aten in (torch.ops.aten, exir_ops.edge.aten)
+    for target in (
+        aten.sum.default,
+        aten.sum.dim_IntList,
+        aten.mean.default,
+        aten.mean.dim,
+        aten.amax.default,
+        aten.amin.default,
+        aten.max.default,
+        aten.max.dim,
+        aten.min.default,
+        aten.min.dim,
+        aten.argmax.default,
+        aten.argmin.default,
+        aten.any.default,
+        aten.any.dim,
+        aten.any.dims,
+        aten.all.default,
+        aten.all.dim,
+        aten.all.dims,
+        aten.var.default,
+        aten.var.dim,
+        aten.var.correction,
+    )
+)
+_SUM_OVER_DIMS = (torch.ops.aten.sum.dim_IntList, exir_ops.edge.aten.sum.dim_IntList)
+
+
+def _reduces_0d_tensor(node: torch.fx.Node) -> bool:
+    """Core ML cannot run the reductions above on a 0-d tensor: its reduce ops
+    need rank 1 or more.
+
+    A sum over a given dim, such as x.sum().sum(0), stays and still fails to
+    lower, since ExecuTorch's optimized sum kernel aborts on it at run time.
+    """
+    if node.target not in _REDUCTION_TARGETS or (
+        node.target in _SUM_OVER_DIMS and len(node.args) > 1 and node.args[1]
+    ):
+        return False
+    val = node.args[0].meta.get("val")
+    return isinstance(val, torch.Tensor) and val.dim() == 0
+
+
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
     if len(schema.arguments) == 0:
@@ -162,18 +213,139 @@ def _is_view_op(op: torch._ops.OpOverload) -> bool:
     return (alias_info is not None) and (not alias_info.is_write)
 
 
+# The partitioner picks the ops to keep whole from torch ops. Refusing min.other
+# and max.other there lets lowering turn them into minimum and maximum. The
+# others stay whole, as core ATen ops or ops the partitioner keeps, so only their
+# edge ops reach it.
+_MIN_MAX_TARGETS = (
+    torch.ops.aten.min.other,
+    torch.ops.aten.max.other,
+    exir_ops.edge.aten.min.default,
+    exir_ops.edge.aten.min.dim,
+    exir_ops.edge.aten.max.default,
+    exir_ops.edge.aten.max.dim,
+    exir_ops.edge.aten.amin.default,
+    exir_ops.edge.aten.amax.default,
+    exir_ops.edge.aten.minimum.default,
+    exir_ops.edge.aten.maximum.default,
+)
+
+
+# No upstream issue yet. For example, converting x.amax() of a bool x raises
+# 'Op "amax" (op_type: reduce_max) Input x="x" expects tensor or scalar of
+# dtype from type domain ['fp16', 'fp32', 'int32'] but got tensor[3,2,bool]'.
+def _is_min_max_of_bool(node: torch.fx.Node) -> bool:
+    """coremltools 9.0 cannot compute a min or max of bool tensors.
+
+    It raises ``ValueError`` when every input is bool, so that the result is
+    bool, such as for the all-true check that torch.distributions exports,
+    instead of reporting the op as unsupported. A bool next to a float or int
+    tensor works, and so do int tensors.
+    """
+    if node.target not in _MIN_MAX_TARGETS:
+        return False
+    val = node.meta.get("val")
+    if isinstance(val, (list, tuple)):
+        val = val[0]
+    return isinstance(val, torch.Tensor) and val.dtype == torch.bool
+
+
+_INDEX_PUT_TARGETS = (
+    torch.ops.aten.index_put.default,
+    exir_ops.edge.aten.index_put.default,
+)
+
+
+# https://github.com/apple/coremltools/issues/2141 covers a bool index, which
+# coremltools 9.0 converts only on its own. No upstream issue covers the other
+# forms yet. For example, y[:, idx] = v with idx = torch.tensor([0, 2]) raises
+# "Input squeeze_0 has rank 1 != other inputs rank 0".
+def _index_put_refusal(
+    node: torch.fx.Node, minimum_deployment_target: Optional[ct.target]
+) -> Optional[str]:
+    """The form of an ``index_put`` that coremltools 9.0 cannot convert, such
+    as "with accumulate=True next to a slice", or None for any other node.
+
+    With a whole slice, such as ``y[:, idx] = v``, it writes ``v`` into the
+    part of ``y`` the indices select, keeping each indexed dim as size 1. That
+    needs ``accumulate=False``, int indices of shape ``()`` or ``(1,)``, a
+    static size in every other dim, and a non-bool ``y`` below iOS 18. For a
+    size known only at run time, it raises "Cannot add const". With a 0-d
+    index or several indices, torch lays out that part differently, so ``v``
+    may only vary in the dims after the last index. Without a whole slice,
+    several indices need the same shape and no bool mask, and a bool ``y``
+    comes back as int32. It raises or writes the wrong place for any other
+    form, such as ``idx`` with two entries, instead of reporting the op as
+    unsupported.
+    """
+    if node.target not in _INDEX_PUT_TARGETS:
+        return None
+    y, values = node.args[0].meta.get("val"), node.args[2].meta.get("val")
+    indices = [i if i is None else i.meta.get("val") for i in node.args[1]]
+    given = {dim: indices[dim] for dim, i in enumerate(node.args[1]) if i is not None}
+    # Export always sets val, so an index_put without it is left to coremltools.
+    if not given or not all(
+        isinstance(t, torch.Tensor) for t in (y, values, *given.values())
+    ):
+        return None
+    if len(given) == len(indices):
+        if y.dtype == torch.bool:
+            return "on a bool tensor without a slice"
+        if len(indices) > 1 and any(
+            index.dtype == torch.bool
+            or not statically_known_true(sym_eq(index.shape, indices[0].shape))
+            for index in indices
+        ):
+            return "with indices that differ in shape or include a bool mask"
+        return None
+    accumulate = (
+        node.args[3] if len(node.args) > 3 else node.kwargs.get("accumulate", False)
+    )
+    if accumulate:
+        return "with accumulate=True next to a slice"
+    if any(
+        index.dtype == torch.bool
+        or index.dim() > 1
+        or not statically_known_true(index.numel() == 1)
+        for index in given.values()
+    ):
+        return (
+            "with an index other than an int tensor of shape () or (1,) next to a slice"
+        )
+    selected = [1 if dim in given else size for dim, size in enumerate(y.shape)]
+    if any(isinstance(size, torch.SymInt) for size in selected):
+        return "with a size known only at run time next to a slice"
+    reorders = len(given) > 1 or any(index.dim() == 0 for index in given.values())
+    after = len(selected) - 1 - max(given)
+    if reorders and not all(
+        statically_known_true(v == 1)
+        for v in values.shape[: max(0, values.dim() - after)]
+    ):
+        return (
+            "with a 0-d index or several indices, and values that vary before "
+            "the last index"
+        )
+    if y.dtype == torch.bool and (
+        minimum_deployment_target is None or minimum_deployment_target < ct.target.iOS18
+    ):
+        return "on a bool tensor below minimum_deployment_target=ct.target.iOS18"
+    return None
+
+
 class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
     def __init__(
         self,
         skip_ops_for_coreml_delegation: Optional[List[str]] = None,
         lower_full_graph: bool = False,
         log: bool = False,
+        minimum_deployment_target: Optional[ct.target] = None,
     ) -> None:
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
         super().__init__()
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
         self.lower_full_graph = lower_full_graph
+        self.minimum_deployment_target = minimum_deployment_target
         self._logged_msgs = set()
         self._log = log
 
@@ -195,7 +367,9 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             return True
         return False
 
-    def should_override_support(self, node) -> bool:
+    def override_reason(self, node) -> Optional[str]:
+        """Why CoreML cannot take node, even when coremltools converts its op."""
+        name = getattr(node.target, "__name__", node.target)
         # https://github.com/apple/coremltools/issues/2573
         if (
             node.target
@@ -208,20 +382,14 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             and "alpha" in node.kwargs
             and node.kwargs["alpha"] != 1
         ):
-            self.log_once(
-                "torch.ops.aten.{sub, add}.Tensor with alpha != 1 is not supported by CoreML.  Overriding support."
-            )
-            return True
+            return "torch.ops.aten.{sub, add}.Tensor with alpha != 1 is not supported by CoreML."
 
         # Ops that are unsupported by CoreML purely on the basis of their
         # target — no per-arg conditions to check.  Grouped by upstream issue
         # so the comment trail still points at the underlying coremltools /
         # executorch bug for each entry.
         if node.target in _UNSUPPORTED_OP_TARGETS:
-            self.log_once(
-                f"{node.target} is not supported by CoreML.  Overriding op support."
-            )
-            return True
+            return f"{name} is not supported by CoreML."
 
         if _touches_unsupported_high_rank_tensor(
             node,
@@ -229,25 +397,26 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
                 getattr(n.target, "__name__", "").lower()
             ),
         ):
-            self.log_once(
-                f"{node.target} on a tensor above rank 5 is not supported by "
-                "CoreML.  Overriding op support."
-            )
-            return True
+            return f"{name} on a tensor above rank 5 is not supported by CoreML."
 
         if _is_arg_min_max_over_flattened_input(node):
-            self.log_once(
+            return (
                 "torch.ops.aten.{argmax, argmin}.default with dim=None is "
-                "not supported by CoreML.  Overriding op support."
+                "not supported by CoreML."
             )
-            return True
+
+        if _reduces_0d_tensor(node):
+            return f"{name} of a 0-d tensor is not supported by CoreML."
 
         if _reads_or_produces_bfloat16(node):
-            self.log_once(
-                f"{node.target} on a bfloat16 tensor is not supported by CoreML.  "
-                "Overriding op support."
-            )
-            return True
+            return f"{name} on a bfloat16 tensor is not supported by CoreML."
+
+        if _is_min_max_of_bool(node):
+            return f"{name} on bool tensors is not supported by CoreML."
+
+        refusal = _index_put_refusal(node, self.minimum_deployment_target)
+        if refusal is not None:
+            return f"{name} {refusal} is not supported by CoreML."
 
         # TODO: enable this after bugs in ExecuTorch's partitioner are fixed
         # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
@@ -266,7 +435,7 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         #     )
         #     return True
 
-        return False
+        return None
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         # get_attr node can always be supported on any backend
@@ -284,13 +453,20 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             is_supported = ct.converters.mil.frontend.torch.is_torch_fx_node_supported(
                 node
             )
-            if self.should_override_support(node):
+            reason = self.override_reason(node) if is_supported else None
+            if reason is not None:
+                self.log_once(f"{reason}  Overriding op support.")
                 is_supported = False
 
             if not is_supported:
                 if self.lower_full_graph:
+                    unsupported = (
+                        f"CoreML does not support the op {node_target_name}"
+                        if reason is None
+                        else reason.rstrip(".")
+                    )
                     raise NotImplementedError(
-                        f"""CoreML does not support the op {node_target_name}, but you have set lower_full_graph=True in the CoreMLPartitioner.
+                        f"""{unsupported}, but you have set lower_full_graph=True in the CoreMLPartitioner.
 
 Please set lower_full_graph=False in the CoreMLPartitioner to allow running unsupported ops outside of CoreML.  Note that setting lower_full_graph=False may affect performance of CoreML and the available features.
 As an alternative to setting lower_full_graph=False, you can try rewriting your model to avoid using this op.
@@ -343,6 +519,11 @@ class CoreMLPartitioner(Partitioner):
         self.take_over_mutable_buffer = take_over_mutable_buffer
         self.lower_full_graph = lower_full_graph
         self.take_over_constant_data = take_over_constant_data
+        self._minimum_deployment_target = (
+            CoreMLBackend.min_deployment_target_from_compile_specs(
+                self.delegation_spec.compile_specs
+            )
+        )
         self._logged_msgs = set()
 
         if self.lower_full_graph:
@@ -399,6 +580,7 @@ class CoreMLPartitioner(Partitioner):
                 self.skip_ops_for_coreml_delegation,
                 self.lower_full_graph,
                 log=True,
+                minimum_deployment_target=self._minimum_deployment_target,
             ),
             allows_single_node_partition=True,
         )
@@ -438,6 +620,7 @@ class CoreMLPartitioner(Partitioner):
             self.skip_ops_for_coreml_delegation,
             self.lower_full_graph,
             log=False,
+            minimum_deployment_target=self._minimum_deployment_target,
         )
 
         # CoreML prevents certain ops (like triu) from lowering to CoreML when put in the ExecuTorch op namespace
