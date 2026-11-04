@@ -13,7 +13,7 @@ During lowering, the MLX partitioner prints a summary of supported and unsupport
 
 Eager PyTorch raises an error when `gather` or `index_put` gets an index outside the tensor. The MLX backend does not, because a check would have to wait for the GPU in the middle of the graph. Instead, it clamps each index to `[-size, size - 1]` on the GPU, where `size` is the length of the indexed axis:
 
-- A negative index counts from the end, so `-1` is the last position. Eager `index_put` does the same, but eager `gather` and `index_add_` reject negative indices.
+- A negative index counts from the end, so `-1` is the last position. Eager `index_put` does the same, but many other eager index ops, such as `gather`, `index_add_`, `index_copy_` and `embedding`, reject negative indices. On MLX, the other index ops below also count from the end.
 - An index past either end reads or writes the first or last position.
 
 For example:
@@ -29,7 +29,7 @@ So a bad index never reads or writes memory outside the tensor, but it is still 
 
 - `gather` returns values from the wrong place.
 - `index_put` overwrites real data at the first or last position, or adds to it with `accumulate=True`. For example, if an 8-slot cache is written as `cache[:, pos] = v` with `pos = torch.tensor([8])`, the write goes to slot 7.
-- `index_add_` lowers to `index_put` with `accumulate=True`, so it adds to the first or last position.
+- `index_add_` lowers to `index_put` with `accumulate=True`, so it treats a bad index the same way, but adds instead of overwriting.
 
 Other ops that take indices behave differently, for example:
 
