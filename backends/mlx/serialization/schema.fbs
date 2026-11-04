@@ -472,6 +472,16 @@ table ScatterAddNode {
     axis: int32;                // Dimension to scatter along
 }
 
+// Scatter (overwrite): write values into input at index positions along an axis
+// Maps to mlx::put_along_axis(a, indices, values, axis)
+table PutAlongAxisNode {
+    x: Tid (required);          // Input tensor to scatter into
+    indices: Tid (required);    // Index tensor (same ndim as x)
+    values: Tid (required);     // Values to write (broadcast to indices)
+    out: Tid (required);
+    axis: int32;                // Dimension to scatter along
+}
+
 table ConcatenateNode {
     tensors: [Tid] (required);  // List of tensors to concatenate
     out: Tid (required);
@@ -1211,7 +1221,8 @@ union OpNode {
     UpdateAndAttendNode,
     TruncNode,
     FlipNode,
-    CummaxNode
+    CummaxNode,
+    PutAlongAxisNode
     // BC: Add new op nodes here (append only)
 }
 
