@@ -33,6 +33,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncContextManager, Awaitable, Callable, Optional
 
 from fastapi import FastAPI, Header, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.requests import ClientDisconnect
 
@@ -126,9 +127,9 @@ async def _create_with_disconnect(
 
 
 class _ClosingStreamingResponse(StreamingResponse):
-    def __init__(self, content, **kwargs):
+    def __init__(self, content, *, heartbeat_interval=15.0, **kwargs):
         self._source = content
-        super().__init__(_with_heartbeats(content), **kwargs)
+        super().__init__(_with_heartbeats(content, heartbeat_interval), **kwargs)
 
     async def __call__(self, scope, receive, send):
         try:
@@ -218,6 +219,17 @@ def build_app(
     """
     app = _create_serving_app(serving, serving_factory)
 
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request, error):
+        first = error.errors()[0]
+        location = ".".join(str(part) for part in first["loc"])
+        api_error = APIError(
+            422, f"{location}: {first['msg']}", "invalid_request_error", "invalid_value"
+        )
+        return JSONResponse(
+            _current_serving(app).error_body(api_error), status_code=422
+        )
+
     @app.get("/health")
     async def health():
         if not _current_serving(app).healthy:
@@ -228,7 +240,11 @@ def build_app(
     async def list_models() -> ModelList:
         return ModelList(
             data=[
-                ModelCard(id=model_id, context_length=_current_serving(app).max_context)
+                ModelCard(
+                    id=model_id,
+                    context_length=_current_serving(app).max_context,
+                    api_dialect=_current_serving(app).api_dialect,
+                )
             ]
         )
 
@@ -265,21 +281,23 @@ def build_app(
     @app.delete("/v1/sessions/{session_id}")
     async def close_session(session_id: str):
         # Free a named session's state + capacity slot (vendor extension).
+        serving = _current_serving(app)
         return await _session_op(
-            _current_serving(app).close_session,
+            serving.close_session,
             session_id,
             {"closed": True, "session_id": session_id},
-            _current_serving(app),
+            serving,
         )
 
     @app.post("/v1/sessions/{session_id}/reset")
     async def reset_session(session_id: str):
         # Replace a named session's context under its public ID (vendor extension).
+        serving = _current_serving(app)
         return await _session_op(
-            _current_serving(app).reset_session,
+            serving.reset_session,
             session_id,
             {"reset": True, "session_id": session_id},
-            _current_serving(app),
+            serving,
         )
 
     return app

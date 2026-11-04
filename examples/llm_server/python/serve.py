@@ -9,6 +9,7 @@
 import argparse
 import asyncio
 import logging
+import math
 import os
 import shutil
 from contextlib import asynccontextmanager
@@ -22,6 +23,20 @@ from .session_runtime import SessionRuntime
 from .tool_parsers import HermesDetector
 
 _MAX_INT32 = (1 << 31) - 1
+
+
+def _parse_preflight_timeout(value):
+    if value == "none":
+        return None
+    try:
+        timeout = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "expected a nonnegative number or none"
+        ) from error
+    if not math.isfinite(timeout) or timeout < 0:
+        raise argparse.ArgumentTypeError("expected a finite nonnegative number or none")
+    return timeout
 
 
 def _validate_limits(parser, args, *, prefix_capture_slots=0) -> int:
@@ -100,6 +115,15 @@ def _parse_args(argv=None):
         type=int,
         default=0,
         help="Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.",
+    )
+    parser.add_argument(
+        "--api-dialect", choices=("openai", "openrouter"), default="openai"
+    )
+    parser.add_argument(
+        "--streaming-preflight-timeout",
+        type=_parse_preflight_timeout,
+        default=1.0,
+        help="Seconds to wait for first output (including prefill) before SSE headers; none waits indefinitely.",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
@@ -187,6 +211,8 @@ def main(argv=None) -> None:
                 args.model_id,
                 max_context=args.max_context,
                 tool_detector_cls=HermesDetector,
+                api_dialect=args.api_dialect,
+                streaming_preflight_timeout=args.streaming_preflight_timeout,
             )
         finally:
             if runtime is None:

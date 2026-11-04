@@ -148,8 +148,7 @@ class ServingChat:
             Callable[[], StreamingResponseParser]
         ] = None,
         streaming_preflight_timeout: Optional[float] = None,
-        stream_usage_in_finish_chunk: bool = False,
-        openrouter_errors: bool = False,
+        api_dialect: str = "openai",
     ):
         self._runtime = runtime
         self._template = template
@@ -160,8 +159,9 @@ class ServingChat:
         self._reasoning_extractor = reasoning_extractor
         self._streaming_parser_factory = streaming_parser_factory
         self._streaming_preflight_timeout = streaming_preflight_timeout
-        self._stream_usage_in_finish_chunk = stream_usage_in_finish_chunk
-        self._openrouter_errors = openrouter_errors
+        if api_dialect not in ("openai", "openrouter"):
+            raise ValueError("api_dialect must be openai or openrouter")
+        self.api_dialect = api_dialect
         # Detector CLASS; a fresh instance is created per request so streaming
         # state is never shared across concurrent requests.
         self._tool_detector_cls = tool_detector_cls
@@ -200,7 +200,7 @@ class ServingChat:
         return self._runtime.healthy
 
     def error_body(self, error: APIError) -> dict:
-        return error.body(openrouter=self._openrouter_errors)
+        return error.body(openrouter=self.api_dialect == "openrouter")
 
     @staticmethod
     def _tool_schemas(req: ChatCompletionRequest) -> dict[str, dict]:
@@ -620,7 +620,7 @@ class ServingChat:
             ),
             (req.n != 1, "n>1"),
             (req.reasoning_effort is not None, "reasoning_effort"),
-            (req.reasoning is not None, "reasoning"),
+            (req.reasoning not in (None, {}, {"exclude": False}), "reasoning"),
             (bool(req.frequency_penalty), "frequency_penalty"),
             (bool(req.presence_penalty), "presence_penalty"),
             (bool(req.logit_bias), "logit_bias"),
@@ -974,7 +974,7 @@ class ServingChat:
                 usage=(
                     self._usage(stats)
                     if finish is not None
-                    and self._stream_usage_in_finish_chunk
+                    and self.api_dialect == "openrouter"
                     and req.stream_options
                     and req.stream_options.include_usage
                     else None
@@ -1073,7 +1073,7 @@ class ServingChat:
         if (
             req.stream_options
             and req.stream_options.include_usage
-            and not self._stream_usage_in_finish_chunk
+            and self.api_dialect != "openrouter"
         ):
             usage_chunk = ChatCompletionChunk(
                 id=cid,

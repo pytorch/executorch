@@ -102,7 +102,9 @@ class ChatCompletionRequest(BaseModel):
             if not isinstance(name, str) or not name.strip() or name in names:
                 raise ValueError("tool names must be unique nonempty strings")
             names.add(name)
-            if not isinstance(fn.get("parameters", {}), dict):
+            if fn.get("parameters") is not None and not isinstance(
+                fn["parameters"], dict
+            ):
                 raise ValueError("tool parameters must be a JSON schema object")
         return tools
 
@@ -120,8 +122,8 @@ class ChatCompletionRequest(BaseModel):
                     raise ValueError("duplicate historical tool call id")
                 calls.add(call.id)
                 try:
-                    arguments = json.loads(call.function.arguments or "")
-                except ValueError as error:
+                    arguments = json.loads(call.function.arguments or "{}")
+                except (ValueError, RecursionError) as error:
                     raise ValueError(
                         "historical tool arguments must be valid JSON"
                     ) from error
@@ -206,6 +208,7 @@ class ModelCard(BaseModel):
     created: int = Field(default_factory=lambda: int(time.time()))
     owned_by: str = "executorch"
     context_length: Optional[int] = None
+    api_dialect: Optional[Literal["openai", "openrouter"]] = None
 
 
 class ModelList(BaseModel):

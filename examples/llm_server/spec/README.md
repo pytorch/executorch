@@ -32,10 +32,11 @@ uses the worker's unset/random value.
 
 `messages` must be nonempty and roles must be `system`, `developer`, `user`,
 `assistant`, or `tool`. Tool declarations require unique nonempty function names
-and object parameter schemas. Historical tool calls require an ID, name, and JSON
-argument object; each tool result must reference a preceding unresolved call.
-Malformed structures and boolean/string values for numeric generation controls
-fail schema validation with HTTP 422 before inference.
+and object parameter schemas (omitted/null means an empty schema). Historical tool calls require an ID, name, and JSON
+argument object (omitted/null/empty arguments mean `{}`); each tool result must reference a preceding unresolved call.
+Malformed structures and boolean/string values for supported numeric generation controls
+fail schema validation with HTTP 422 and an `error` object before inference. Unsupported
+penalty/logprob controls retain their existing Pydantic coercion before capability checks.
 
 `ignore_eos` is an optional JSON boolean (default `false`) supported by the
 multiplexed batching worker. It disables model EOS and automatic chat-template
@@ -323,3 +324,11 @@ deferred: no compatible local PTE/tokenizer has been confirmed, and this stack
 must not download/export weights or claim that a real combined forward was
 verified. A Glimmer `embed_text`/`forward_from_embeddings` last-logits artifact is
 not assumed compatible with this packed construction path.
+
+
+The generic and Muse batching launchers accept `--api-dialect openai|openrouter`.
+This single setting controls both usage placement and overflow metadata, and is
+advertised as `api_dialect` on `/v1/models`. The Muse launcher requires `openrouter`.
+`--streaming-preflight-timeout` waits for first output, including prefill; `none`
+restores an indefinite wait, while finite nonnegative values allow SSE headers
+before first output. Once headers are sent, later failures are SSE error events.

@@ -32,7 +32,7 @@ def test_openrouter_http_overflow_supplies_actionable_prompt_counts(
     make_client, stream, prompt, completion, budget
 ):
     client, worker = make_client(
-        max_context=100, prompt_tokens=prompt, openrouter_errors=True
+        max_context=100, prompt_tokens=prompt, api_dialect="openrouter"
     )
     response = client.post(
         "/v1/chat/completions",
@@ -53,7 +53,7 @@ def test_impossible_output_reservation_does_not_invent_recoverable_counts(
     make_client, prompt
 ):
     client, _ = make_client(
-        max_context=100, prompt_tokens=prompt, openrouter_errors=True
+        max_context=100, prompt_tokens=prompt, api_dialect="openrouter"
     )
     response = client.post(
         "/v1/chat/completions",
@@ -73,7 +73,7 @@ def test_default_openai_error_contract_is_unchanged(make_client):
 
 
 def test_late_context_error_has_same_openrouter_contract(make_client):
-    client, worker = make_client(openrouter_errors=True)
+    client, worker = make_client(api_dialect="openrouter")
 
     def fail(*args, **kwargs):
         raise ContextLengthExceeded(110, 100)

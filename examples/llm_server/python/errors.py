@@ -33,7 +33,7 @@ class ContextLengthExceeded(APIError):
     def __init__(self, num_tokens: int, max_context: int, completion_tokens: int = 0):
         self.num_tokens = num_tokens
         self.max_context = max_context
-        self.completion_tokens = completion_tokens
+        self.completion_tokens = max(0, completion_tokens)
         # completion_tokens > 0: prompt + requested max_tokens would run
         # past the window — reject up front rather than
         # fail (or truncate) mid-generation.

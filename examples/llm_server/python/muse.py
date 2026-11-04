@@ -5,7 +5,7 @@
 
 """Launch the installed Muse CLI with the serving model's actual context limit.
 
-python -m executorch.examples.llm_server.python.muse --base-url http://127.0.0.1:8088/v1
+python -m executorch.examples.llm_server.python.muse --base-url http://127.0.0.1:8000/v1
 Append ``exec --json ...`` for a noninteractive run. No request proxy is used.
 """
 
@@ -17,6 +17,8 @@ import urllib.request
 
 
 def command(muse_bin, base_url, model, extra):
+    if model.get("api_dialect") != "openrouter":
+        raise ValueError("Start the serving endpoint with --api-dialect openrouter")
     context = model.get("context_length")
     if type(context) is not int or context <= 1:
         raise ValueError(
@@ -54,15 +56,24 @@ def main():
     if not args.muse_bin:
         parser.error("Install Muse or supply --muse-bin")
     base_url = args.base_url.rstrip("/")
-    with urllib.request.urlopen(base_url + "/models", timeout=10) as response:
-        models = json.load(response)["data"]
-    models = [m for m in models if args.model is None or m["id"] == args.model]
-    if len(models) != 1:
-        parser.error("Select a served model with --model")
     try:
+        with urllib.request.urlopen(base_url + "/models", timeout=10) as response:
+            models = json.load(response)["data"]
+        if not isinstance(models, list) or any(
+            not isinstance(model, dict) or not isinstance(model.get("id"), str)
+            for model in models
+        ):
+            raise ValueError("invalid model list")
+        models = [m for m in models if args.model is None or m["id"] == args.model]
+        if len(models) != 1:
+            raise ValueError(
+                f"Model {args.model!r} is not served"
+                if args.model and not models
+                else "Select a served model with --model"
+            )
         argv = command(args.muse_bin, base_url, models[0], extra)
-    except ValueError as error:
-        parser.error(str(error))
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        parser.error(f"Cannot configure Muse from {base_url}: {error}")
     os.environ["OPENROUTER_API_KEY"] = "local"
     os.execvp(argv[0], argv)
 
