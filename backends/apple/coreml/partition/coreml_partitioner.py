@@ -4,7 +4,9 @@
 
 import inspect
 import logging
-from typing import Callable, List, Optional, Tuple
+import operator
+import weakref
+from typing import Any, Callable, Collection, Dict, List, Optional, Set, Tuple
 
 import coremltools as ct
 
@@ -25,10 +27,26 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export.exported_program import ExportedProgram
-from torch.fx.experimental.symbolic_shapes import statically_known_true, sym_eq
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
-from torch.fx.passes.operator_support import OperatorSupportBase
+from executorch.exir.passes.dim_order_ops_registry import DimOrderOpsMap
+from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
+from executorch.exir.tracer import _default_decomposition_table
+from torch._export.error import InternalError
+from torch._export.passes.replace_view_ops_with_view_copy_ops_pass import (
+    get_view_copy_of_view_op,
+)
+from torch.export.exported_program import ExportedProgram, OutputKind
+from torch.fx.experimental.proxy_tensor import make_fx
+from torch.fx.experimental.symbolic_shapes import (
+    is_concrete_int,
+    statically_known_true,
+    sym_eq,
+)
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
+from torch.fx.passes.operator_support import (
+    chain,
+    create_op_support,
+    OperatorSupportBase,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
@@ -203,6 +221,486 @@ def _reduces_0d_tensor(node: torch.fx.Node) -> bool:
         return False
     val = node.args[0].meta.get("val")
     return isinstance(val, torch.Tensor) and val.dim() == 0
+
+
+def _makes_tensor(
+    node: torch.fx.Node, dtypes: Optional[Collection[torch.dtype]] = None
+) -> bool:
+    """Whether node makes a tensor, of one of dtypes if given."""
+    val = node.meta.get("val")
+    vals = val if isinstance(val, (list, tuple)) else [val]
+    return any(
+        isinstance(v, torch.Tensor) and (dtypes is None or v.dtype in dtypes)
+        for v in vals
+    )
+
+
+def _makes_symbolic_value(node: torch.fx.Node) -> bool:
+    """Whether node makes a symbolic value, such as a size known only at run
+    time."""
+    return isinstance(
+        node.meta.get("val"), (torch.SymInt, torch.SymFloat, torch.SymBool)
+    )
+
+
+def _dynamic_size_names(ep: ExportedProgram) -> Set[str]:
+    """The names of the dynamic sizes ep has range constraints for, which are
+    the sizes coremltools can give a Core ML input besides numbers."""
+    return {str(symbol) for symbol in ep.range_constraints}
+
+
+# https://github.com/pytorch/executorch/issues/11686
+def _cannot_be_coreml_input(node: torch.fx.Node, sizes: Collection[str]) -> bool:
+    """Whether node makes a tensor Core ML cannot take as a program input: a
+    uint8 or int8 tensor, or one with a size that is neither a number nor in
+    sizes, such as s0 + 1.
+
+    coremltools types each program input through ``TORCH_DTYPE_TO_MIL_DTYPE``
+    and raises ``KeyError`` for a dtype missing from it instead of reporting the
+    op as unsupported. Only uint8 and int8 move to the CPU: the portable kernels
+    handle them, while other missing dtypes, such as uint16, would only fail
+    later, at run time. It looks each dynamic size up by name in the range
+    constraints of the program, and raises ``ValueError`` for one it cannot
+    find.
+    """
+    val = node.meta.get("val")
+    vals = val if isinstance(val, (list, tuple)) else [val]
+    return any(
+        isinstance(v, torch.Tensor)
+        and (
+            v.dtype in (torch.uint8, torch.int8)
+            or any(
+                not is_concrete_int(size) and str(size) not in sizes for size in v.shape
+            )
+        )
+        for v in vals
+    )
+
+
+def _cannot_be_read_from_outside(
+    arg: torch.fx.Node,
+    kept_inside: Collection[str],
+    sizes: Collection[str],
+    outside_coreml: Callable[[torch.fx.Node], bool],
+) -> bool:
+    """Whether a Core ML op cannot read arg from outside its partition: a
+    tensor Core ML cannot take as an input, or a symbolic value computed
+    outside of Core ML, which it cannot take either. A weight, constant or
+    state the partitioner moves into Core ML is not an input.
+    """
+    return arg.name not in kept_inside and (
+        _cannot_be_coreml_input(arg, sizes)
+        or (_makes_symbolic_value(arg) and outside_coreml(arg))
+    )
+
+
+def _find_readers_of_unsupported_inputs(
+    partitions: List[Partition], kept_inside: Collection[str], sizes: Collection[str]
+) -> Set[torch.fx.Node]:
+    """The nodes that read a tensor Core ML cannot take as an input from outside
+    their partition, or a symbolic value computed outside of Core ML.
+    """
+    inside = {node for partition in partitions for node in partition.nodes}
+    return {
+        node
+        for partition in partitions
+        for node in partition.nodes
+        if any(
+            arg not in partition.nodes
+            and _cannot_be_read_from_outside(
+                arg, kept_inside, sizes, lambda arg: arg not in inside
+            )
+            for arg in node.all_input_nodes
+        )
+    }
+
+
+def _cannot_be_coreml_output(node: torch.fx.Node) -> bool:
+    """Whether node makes a value the Core ML delegate cannot return.
+
+    The delegate has no int8 data type to hand an int8 tensor back to
+    ExecuTorch, and it returns only tensors, so a symbolic value cannot be an
+    output either.
+    """
+    return _makes_tensor(node, (torch.int8,)) or _makes_symbolic_value(node)
+
+
+def _find_makers_of_unsupported_outputs(
+    partitions: List[Partition], state_writes: Collection[torch.fx.Node]
+) -> Set[torch.fx.Node]:
+    """The nodes that make a value the Core ML delegate cannot return, for use
+    outside their partition. A write of state that Core ML keeps is no output.
+
+    An op with several outputs hands each one out through a getitem, which
+    always stays with the op, so the op itself is returned.
+    """
+    return {
+        node.args[0] if node.target is operator.getitem else node
+        for partition in partitions
+        for node in partition.nodes
+        if _cannot_be_coreml_output(node)
+        and any(
+            user not in partition.nodes
+            and not (user.op == "output" and node in state_writes)
+            for user in node.users
+        )
+    }
+
+
+def _find_unsupported_inputs_of_left_out_ops(
+    left_out: Set[torch.fx.Node],
+    inside: Set[torch.fx.Node],
+    kept_inside: Collection[str],
+    sizes: Collection[str],
+) -> Set[torch.fx.Node]:
+    """The tensors Core ML cannot take as an input that explain why the ops in
+    left_out run outside of Core ML."""
+    read: Set[torch.fx.Node] = set()
+    for node in left_out:
+        args = [
+            arg
+            for arg in node.all_input_nodes
+            if arg.name not in kept_inside
+            and isinstance(arg.meta.get("val"), torch.Tensor)
+            and _cannot_be_coreml_input(arg, sizes)
+        ]
+        # A value the delegate cannot return, made by an op left out of Core
+        # ML, is no reason for its readers: that op may be out only for them.
+        outside = [
+            arg
+            for arg in args
+            if arg not in inside
+            and not (arg in left_out and _cannot_be_coreml_output(arg))
+        ]
+        if outside:
+            read.update(arg for arg in outside if arg not in left_out)
+        # A tensor that a Core ML partition makes explains the op only when no
+        # tensor from outside does, and the op is not left out for making a
+        # value the delegate cannot return.
+        elif not (
+            _cannot_be_coreml_output(node)
+            and any(user not in left_out for user in node.users)
+        ):
+            read.update(arg for arg in args if arg in inside)
+    return read
+
+
+def _find_nodes_of_partitions_without_tensor_inputs(
+    partitions: List[Partition],
+    kept_inside: Collection[str],
+    allow_partitions_without_inputs: bool,
+) -> Set[torch.fx.Node]:
+    """The nodes of the partitions that read no tensor from outside, except the
+    weights, constants and state the partitioner moves into Core ML.
+
+    Core ML cannot take a symbolic size as an input, and below iOS 18 it
+    rejects a model with no inputs, so such a partition cannot be delegated.
+    """
+    nodes = set()
+    for partition in partitions:
+        inputs = [
+            arg
+            for node in partition.nodes
+            for arg in node.all_input_nodes
+            if arg not in partition.nodes and arg.name not in kept_inside
+        ]
+        reads_tensor = any(_makes_tensor(arg) for arg in inputs)
+        if not reads_tensor and (inputs or not allow_partitions_without_inputs):
+            nodes.update(partition.nodes)
+    return nodes
+
+
+def _find_ops_left_out_of_any_partition(
+    graph_module: torch.fx.GraphModule,
+    op_support: OperatorSupportBase,
+    kept_inside: Collection[str],
+    sizes: Collection[str],
+    state_writes: Collection[torch.fx.Node],
+) -> Set[torch.fx.Node]:
+    """The ops _propose_partitions leaves out however it partitions the rest:
+    each op that reads a tensor Core ML cannot take as an input, or a symbolic
+    value, from an op outside of Core ML, and each op that makes an int8 tensor
+    or a symbolic value an op outside of Core ML uses, other than to write
+    state Core ML may keep.
+    """
+    left_out: Set[torch.fx.Node] = set()
+    supported = {
+        node
+        for node in graph_module.graph.nodes
+        if op_support.is_node_supported(None, node)
+    }
+
+    def outside(node: torch.fx.Node) -> bool:
+        return node in left_out or node not in supported
+
+    # Leaving an op out can make an op before or after it read or make such a
+    # tensor across the edge of Core ML, so repeat until nothing changes.
+    changed = True
+    while changed:
+        changed = False
+        for node in graph_module.graph.nodes:
+            if outside(node):
+                continue
+            if any(
+                outside(arg)
+                and _cannot_be_read_from_outside(arg, kept_inside, sizes, outside)
+                for arg in node.all_input_nodes
+            ):
+                left_out.add(node)
+                changed = True
+            elif _cannot_be_coreml_output(node) and any(
+                outside(user) and not (user.op == "output" and node in state_writes)
+                for user in node.users
+            ):
+                maker = node.args[0] if node.target is operator.getitem else node
+                changed |= maker not in left_out
+                left_out.add(maker)
+    return left_out
+
+
+def _computed_from_kept_inside(
+    graph_module: torch.fx.GraphModule, kept_inside: Collection[str]
+) -> Set[torch.fx.Node]:
+    """The nodes that read no tensor but the weights, constants and state the
+    partitioner moves into Core ML, or nodes computed from them."""
+    nodes: Set[torch.fx.Node] = set()
+    for node in graph_module.graph.nodes:
+        if node.op == "placeholder":
+            if node.name in kept_inside:
+                nodes.add(node)
+        elif all(arg in nodes for arg in node.all_input_nodes if _makes_tensor(arg)):
+            nodes.add(node)
+    return nodes
+
+
+def _find_ops_partitioning_may_leave_out(
+    graph_module: torch.fx.GraphModule,
+    kept_inside: Collection[str],
+    sizes: Collection[str],
+    is_supported: Callable[[torch.fx.Node], bool],
+    states: Collection[str],
+) -> Set[torch.fx.Node]:
+    """The ops _propose_partitions may leave out of Core ML.
+
+    Those that read a tensor Core ML cannot take as an input, make a value the
+    delegate cannot return, or read a symbolic value from an op that may be
+    outside of Core ML set it off. State can stay in the program, so reading it
+    can be reading an input. Once it leaves out one, a partition left without
+    tensor inputs moves out too, and such a partition holds only ops that
+    compute from the weights, constants and state the partitioner moves into
+    Core ML.
+    """
+    weights_and_constants = set(kept_inside).difference(states)
+    set_off: Set[torch.fx.Node] = set()
+    for node in graph_module.graph.nodes:
+        if node.op == "placeholder":
+            continue
+        if _cannot_be_coreml_output(node) or any(
+            _cannot_be_read_from_outside(
+                arg,
+                weights_and_constants,
+                sizes,
+                lambda arg: arg in set_off or not is_supported(arg),
+            )
+            for arg in node.all_input_nodes
+        ):
+            set_off.add(node)
+    if not set_off:
+        return set()
+    return set_off | _computed_from_kept_inside(graph_module, kept_inside)
+
+
+def _states_left_in_program(
+    partitions: List[Partition],
+    state_writers: Dict[torch.fx.Node, List[torch.fx.Node]],
+) -> Set[str]:
+    """The state tag_mutated_buffer leaves in the program for these partitions:
+    state that an op outside one partition reads or writes, also through its
+    new value.
+    """
+    partition_of = {
+        node: partition.id for partition in partitions for node in partition.nodes
+    }
+    left = set()
+    for state, writers in state_writers.items():
+        users = [*state.users, *writers]
+        users += [
+            user for writer in writers for user in writer.users if user.op != "output"
+        ]
+        ids = {partition_of.get(user) for user in users}
+        if None in ids or len(ids) > 1:
+            left.add(state.name)
+    return left
+
+
+def _propose_partitions(
+    graph_module: torch.fx.GraphModule,
+    op_support: OperatorSupportBase,
+    kept_inside: Collection[str],
+    sizes: Collection[str],
+    allow_partitions_without_inputs: bool,
+    state_writers: Dict[torch.fx.Node, List[torch.fx.Node]],
+) -> Tuple[List[Partition], Set[torch.fx.Node]]:
+    """Propose Core ML partitions, leaving out every op that reads a value
+    Core ML cannot take as an input from outside its partition or makes one
+    the delegate cannot return for use outside, and then every partition this
+    leaves without a tensor input. State the partitions leave in the program
+    is an input.
+
+    Returns the partitions and the ops left out.
+    """
+    # Searching for partitions is slow on a large graph, so first leave out
+    # the ops that do not depend on how the search goes. Most graphs then need
+    # a single search.
+    left_out = _find_ops_left_out_of_any_partition(
+        graph_module,
+        op_support,
+        kept_inside,
+        sizes,
+        {writer for writers in state_writers.values() for writer in writers},
+    )
+    support = chain(create_op_support(lambda _, node: node not in left_out), op_support)
+    # Each op moved out of Core ML can hand such a tensor to the next op, so
+    # repeat until no partition reads one.
+    while True:
+        partitions = CapabilityBasedPartitioner(
+            graph_module, support, allows_single_node_partition=True
+        ).propose_partitions()
+        left_in_program = _states_left_in_program(partitions, state_writers)
+        kept = set(kept_inside).difference(left_in_program)
+        state_writes = {
+            writer
+            for state, writers in state_writers.items()
+            if state.name not in left_in_program
+            for writer in writers
+        }
+        new = _find_readers_of_unsupported_inputs(
+            partitions, kept, sizes
+        ) | _find_makers_of_unsupported_outputs(partitions, state_writes)
+        if new or left_out:
+            # Moving those ops out can leave a partition that reads no tensor,
+            # such as the index math of a gather. So once any op moves out,
+            # every such partition that Core ML cannot take moves out too. If
+            # none does, they stay: below iOS 18, lowering then fails on a
+            # partition with no inputs and asks for iOS 18.
+            # _find_ops_partitioning_may_leave_out relies on this.
+            new |= _find_nodes_of_partitions_without_tensor_inputs(
+                partitions, kept, allow_partitions_without_inputs
+            )
+        # Stop once a round leaves out nothing new, so the loop always ends.
+        new -= left_out
+        if not new:
+            return partitions, left_out
+        left_out |= new
+
+
+def _decompose_alone(
+    node: torch.fx.Node, decompositions: Dict[torch._ops.OperatorBase, Callable]
+) -> torch.fx.GraphModule:
+    """Traces the decomposition of node by itself, from the values of its
+    inputs."""
+    inputs = node.all_input_nodes
+
+    def call(*args):
+        env = dict(zip(inputs, args))
+        return node.target(
+            *torch.fx.node.map_arg(node.args, env.__getitem__),
+            **torch.fx.node.map_arg(node.kwargs, env.__getitem__),
+        )
+
+    # pre_dispatch keeps whole a composite op the table leaves out, such as
+    # matmul, as lowering does.
+    return make_fx(
+        call,
+        decomposition_table=decompositions,
+        tracing_mode="fake",
+        pre_dispatch=True,
+    )(*(arg.meta["val"] for arg in inputs))
+
+
+def _decomposing_may_leave_out(
+    graph_module: torch.fx.GraphModule,
+    decompositions: Dict[torch._ops.OperatorBase, Callable],
+    not_kept: Collection[torch._ops.OpOverload],
+    kept: Collection[torch._ops.OpOverload],
+    from_kept_inside: Collection[torch.fx.Node],
+    sizes: Collection[str],
+    may_leave_out: bool,
+    log: Callable[[str], None],
+) -> bool:
+    """Whether decomposing the calls of the ops lowering decomposes may make
+    partition() leave out a call of a kept op it does not leave out in
+    graph_module. may_leave_out says whether partition() may leave out some op
+    there.
+
+    That needs a decomposition of a not_kept op that makes a call of a kept op
+    that reads or makes a value Core ML cannot take or return. A decomposed
+    call of any op that reads or makes such a value may also be the first op
+    partition() moves out, after which a partition left without tensor inputs
+    moves out too. So it matters once a kept call can end up in such a
+    partition: a kept call that reads only the weights, constants and state the
+    partitioner moves into Core ML, or a call of a not_kept op that reads only
+    those and makes a tensor or a call of a kept op. If may_leave_out, such a
+    call of a not_kept op matters by itself. Each call is traced by itself, in
+    milliseconds, while decomposing a large program takes minutes. A call that
+    cannot be traced by itself may matter.
+    """
+
+    def crosses(call: torch.fx.Node) -> bool:
+        return _cannot_be_coreml_output(call) or any(
+            _cannot_be_coreml_input(arg, sizes) or _makes_symbolic_value(arg)
+            for arg in call.all_input_nodes
+        )
+
+    crossing = False
+    without_inputs = any(node.target in kept for node in from_kept_inside)
+    for node in graph_module.graph.nodes:
+        if node.target not in decompositions:
+            continue
+        not_kept_call = node.target in not_kept
+        reads_kept_inside = not_kept_call and all(
+            arg in from_kept_inside
+            for arg in node.all_input_nodes
+            if _makes_tensor(arg)
+        )
+        from_inside = may_leave_out and reads_kept_inside
+        if from_inside and _makes_tensor(node):
+            return True
+        try:
+            calls = list(_decompose_alone(node, decompositions).graph.nodes)
+        except Exception as e:
+            log(
+                f"Decomposing the program to find the ops that run outside of "
+                f"CoreML, because {node.target} cannot be decomposed by itself: {e}"
+            )
+            return True
+        if not_kept_call and any(
+            call.target in kept and (from_inside or crosses(call)) for call in calls
+        ):
+            return True
+        crossing = crossing or any(crosses(call) for call in calls)
+        without_inputs = without_inputs or (
+            reads_kept_inside
+            and (_makes_tensor(node) or any(call.target in kept for call in calls))
+        )
+    return crossing and without_inputs
+
+
+def _edge_op_names(target: Any) -> Set[str]:
+    """The lowercase names target can have once lowered to the edge dialect,
+    which partition() matches skip names against: an ATen op gains its
+    namespace, a view op becomes its copy, and some ops become dim order ops.
+    """
+    if not isinstance(target, torch._ops.OpOverload):
+        return {getattr(target, "__name__", "").lower()}
+    try:
+        view_copy = get_view_copy_of_view_op(target._schema)
+    except InternalError:
+        # A view op without a copy, such as reshape in a program as exported,
+        # is turned into views by lowering before partition() sees it.
+        view_copy = None
+    edge = aten_to_edge(view_copy or target)
+    return {edge.__name__.lower(), DimOrderOpsMap.get(edge, edge).__name__.lower()}
 
 
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
@@ -418,23 +916,6 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         if refusal is not None:
             return f"{name} {refusal} is not supported by CoreML."
 
-        # TODO: enable this after bugs in ExecuTorch's partitioner are fixed
-        # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
-        # # in the placeholders due to partitioning, which CoreML does not support
-        # if not self.lower_full_graph and any(
-        #     isinstance(arg, torch.fx.Node)
-        #     and isinstance(
-        #         arg.meta.get("val", None),
-        #         (torch.SymInt, torch.SymBool, torch.SymFloat),
-        #     )
-        #     for arg in node.args
-        # ):
-        #     self.log_once(
-        #         "Skipping op for CoreML delegation because it contains symbolic args: "
-        #         + node_target_name
-        #     )
-        #     return True
-
         return None
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
@@ -525,6 +1006,7 @@ class CoreMLPartitioner(Partitioner):
             )
         )
         self._logged_msgs = set()
+        self._ops_to_not_decompose_cache = None
 
         if self.lower_full_graph:
             assert (
@@ -574,7 +1056,10 @@ class CoreMLPartitioner(Partitioner):
         logger.info("CoreMLPartitioner::partition")
         partition_tags = {}
 
-        capability_partitioner = CapabilityBasedPartitioner(
+        state_writers = self._state_writers(exported_program)
+        kept_inside = self._placeholders_kept_inside(exported_program, state_writers)
+        sizes = _dynamic_size_names(exported_program)
+        partition_list, left_out = _propose_partitions(
             exported_program.graph_module,
             _OperatorsSupportedForCoreMLBackend(
                 self.skip_ops_for_coreml_delegation,
@@ -582,9 +1067,79 @@ class CoreMLPartitioner(Partitioner):
                 log=True,
                 minimum_deployment_target=self._minimum_deployment_target,
             ),
-            allows_single_node_partition=True,
+            kept_inside,
+            sizes,
+            self._targets_ios18(),
+            state_writers,
         )
-        partition_list = capability_partitioner.propose_partitions()
+        if left_out:
+            kept = set(kept_inside).difference(
+                _states_left_in_program(partition_list, state_writers)
+            )
+            inside = {node for partition in partition_list for node in partition.nodes}
+            inputs = sorted(
+                f"{arg.name} ({arg.meta['val'].dtype}, {tuple(arg.meta['val'].shape)})"
+                for arg in _find_unsupported_inputs_of_left_out_ops(
+                    left_out, inside, kept, sizes
+                )
+            )
+            outputs = sorted(
+                node.name
+                for node in left_out
+                if _makes_tensor(node, (torch.int8,))
+                and any(user not in left_out for user in node.users)
+            )
+            symbols = sorted(
+                node.name
+                for node in left_out
+                if (
+                    _makes_symbolic_value(node)
+                    and any(user not in left_out for user in node.users)
+                )
+                or any(
+                    _makes_symbolic_value(arg) and arg not in inside
+                    for arg in node.all_input_nodes
+                )
+            )
+            reasons = []
+            if inputs:
+                reasons.append(
+                    "reads a tensor CoreML cannot take as an input, of uint8 or "
+                    "int8 or with a size computed from a dynamic size, from "
+                    "outside a CoreML partition: " + ", ".join(inputs)
+                )
+            if outputs:
+                reasons.append(
+                    "makes an int8 tensor, which the CoreML delegate cannot "
+                    "return, for use outside of CoreML: " + ", ".join(outputs)
+                )
+            if symbols:
+                reasons.append(
+                    "makes or reads a symbolic value, which CoreML can neither "
+                    "take as an input nor return, outside of CoreML: "
+                    + ", ".join(symbols)
+                )
+            msg = (
+                f"The model {', and '.join(reasons)}."
+                if reasons
+                else "The model uses a tensor or a symbolic value CoreML cannot handle."
+            )
+            if self.lower_full_graph:
+                raise NotImplementedError(
+                    f"{msg}  Set lower_full_graph=False in the CoreMLPartitioner "
+                    "to run these ops outside of CoreML."
+                )
+            self.log_once(
+                f"{msg}  Running these ops outside of CoreML: "
+                + ", ".join(
+                    sorted(
+                        {
+                            getattr(node.target, "__name__", str(node.target))
+                            for node in left_out
+                        }
+                    )
+                )
+            )
         for partition in partition_list:
             for node in partition.nodes:
                 tag = f"tag{partition.id}"
@@ -609,12 +1164,70 @@ class CoreMLPartitioner(Partitioner):
 
     def log_once(self, msg: str) -> None:
         if msg not in self._logged_msgs:
-            logging.info(msg)
+            logger.info(msg)
             self._logged_msgs.add(msg)
+
+    def _targets_ios18(self) -> bool:
+        """Whether the deployment target is iOS 18 or later."""
+        target = CoreMLBackend.min_deployment_target_from_compile_specs(
+            self.delegation_spec.compile_specs
+        )
+        return target is not None and target >= ct.target.iOS18
+
+    def _placeholders_kept_inside(
+        self,
+        ep: ExportedProgram,
+        state_writers: Dict[torch.fx.Node, List[torch.fx.Node]],
+    ) -> Set[str]:
+        """The weights, constants and state this partitioner moves into Core ML."""
+        signature = ep.graph_signature
+        mutated = set(signature.buffers_to_mutate.values())
+        kept = {state.name for state in state_writers}
+        if self.take_over_constant_data:
+            kept |= set(signature.inputs_to_parameters)
+            kept |= set(signature.inputs_to_lifted_tensor_constants)
+            kept |= {
+                name
+                for name, buffer in signature.inputs_to_buffers.items()
+                if buffer not in mutated
+            }
+        return kept
+
+    def _state_writers(
+        self, ep: ExportedProgram
+    ) -> Dict[torch.fx.Node, List[torch.fx.Node]]:
+        """The nodes that write each mutable buffer this partitioner may move
+        into Core ML as state, by the placeholder that reads it. A buffer that
+        no op reads, or whose new value is also returned, stays in the program.
+        """
+        if not self.take_over_mutable_buffer:
+            return {}
+        signature = ep.graph_signature
+        nodes = {node.name: node for node in ep.graph.nodes}
+        returned = {
+            spec.arg.name
+            for spec in signature.output_specs
+            if spec.kind == OutputKind.USER_OUTPUT
+        }
+        writers: Dict[str, List[torch.fx.Node]] = {}
+        for name, buffer in signature.buffers_to_mutate.items():
+            writers.setdefault(buffer, []).append(nodes[name])
+        return {
+            nodes[name]: writers[buffer]
+            for name, buffer in signature.inputs_to_buffers.items()
+            if buffer in writers
+            and nodes[name].users
+            and not any(writer.name in returned for writer in writers[buffer])
+        }
 
     def ops_to_not_decompose(
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        # to_edge_transform_and_lower asks twice in a row for the same program,
+        # and the dry run in _drop_ops_left_outside can decompose all of it.
+        cached = self._ops_to_not_decompose_cache
+        if cached is not None and cached[0]() is ep:
+            return list(cached[1]), None
         do_not_decompose = []
         op_support = _OperatorsSupportedForCoreMLBackend(
             self.skip_ops_for_coreml_delegation,
@@ -635,21 +1248,24 @@ class CoreMLPartitioner(Partitioner):
             torch.ops.aten.repeat_interleave.self_int,
             torch.ops.aten.repeat_interleave.self_Tensor,
         ]
+
+        def is_supported(submodules, node: torch.fx.Node) -> bool:
+            try:
+                return op_support.is_node_supported(submodules, node)
+            except Exception as e:
+                # CoreML's op_support.is_node_supported will sometimes throw
+                # for unsupported ops, rather than returning False
+                self.log_once(
+                    f"Encountered exception when checking node support, treating node as unsupported: {e}"
+                )
+                return False
+
         rejected = set()
         for node in ep.graph.nodes:
             if node.op == "call_function" and isinstance(
                 node.target, torch._ops.OpOverload
             ):
-                try:
-                    supported = op_support.is_node_supported(None, node)
-                except Exception as e:
-                    # CoreML's op_support.is_node_supported will sometimes throw
-                    # for unsupported ops, rather than returning False
-                    self.log_once(
-                        f"Encountered exception when checking node support, treating node as unsupported: {e}"
-                    )
-                    supported = False
-                if not supported:
+                if not is_supported(None, node):
                     rejected.add(node.target)
                 elif node.target not in do_not_decompose_blocklist and not _is_view_op(
                     node.target
@@ -657,4 +1273,110 @@ class CoreMLPartitioner(Partitioner):
                     do_not_decompose.append(node.target)
         # Without a per-node filter, a preserved op stays whole at every call, so
         # one rejected call would be left with no kernel.
-        return [op for op in do_not_decompose if op not in rejected], None
+        keep = [op for op in do_not_decompose if op not in rejected]
+        keep = self._drop_ops_left_outside(ep, keep, rejected, is_supported)
+        # A weak reference, so the partitioner does not keep the program alive.
+        self._ops_to_not_decompose_cache = (weakref.ref(ep), keep)
+        return list(keep), None
+
+    def _drop_ops_left_outside(
+        self,
+        ep: ExportedProgram,
+        keep: List[torch._ops.OpOverload],
+        rejected: Set[torch._ops.OpOverload],
+        is_supported: Callable[[Any, torch.fx.Node], bool],
+    ) -> List[torch._ops.OpOverload]:
+        """Drops every kept op that partition() moves out of CoreML at some
+        call, for a value CoreML cannot take or return, since the portable
+        kernels may have no kernel for it. An op skipped by name stays kept.
+
+        partition() sees the program once lowering decomposes the ops that are
+        not kept, which can change the calls it moves out. So when that may
+        matter, this decomposes the program the same way and finds the calls
+        partition() leaves out, again after each drop that changes the
+        decomposition. It does not see transform passes, or the ops an earlier
+        partitioner takes.
+        """
+        states = self._state_writers(ep)
+        kept_inside = self._placeholders_kept_inside(ep, states)
+        skip = set(self.skip_ops_for_coreml_delegation)
+        support = create_op_support(
+            lambda submodules, node: is_supported(submodules, node)
+            and not (skip and _edge_op_names(node.target) & skip)
+        )
+        from_kept_inside = _computed_from_kept_inside(ep.graph_module, kept_inside)
+        may_leave_out = bool(
+            _find_ops_partitioning_may_leave_out(
+                ep.graph_module,
+                kept_inside,
+                _dynamic_size_names(ep),
+                lambda node: support.is_node_supported(None, node),
+                {state.name for state in states},
+            )
+        )
+        not_kept = set(rejected)
+        decompositions = _default_decomposition_table()
+        while keep:
+            table = dict(decompositions)
+            for op in keep:
+                table.pop(op, None)
+            kept = set(keep)
+            decomposed = _decomposing_may_leave_out(
+                ep.graph_module,
+                table,
+                not_kept,
+                kept,
+                from_kept_inside,
+                _dynamic_size_names(ep),
+                may_leave_out,
+                self.log_once,
+            )
+            program = ep.run_decompositions(table) if decomposed else ep
+            graph_module = program.graph_module
+            sizes = _dynamic_size_names(program)
+            state_writers = self._state_writers(program)
+            calls = [node for node in graph_module.graph.nodes if node.target in kept]
+            left_out = _find_ops_left_out_of_any_partition(
+                graph_module,
+                support,
+                kept_inside,
+                sizes,
+                {writer for writers in state_writers.values() for writer in writers},
+            )
+            # The search is slow on a large graph, so run it only when it may
+            # leave out a call of an op lowering would otherwise decompose.
+            # Lowering keeps any other op whole either way, so whether such an
+            # op is kept changes nothing.
+            uncertain = _find_ops_partitioning_may_leave_out(
+                graph_module,
+                kept_inside,
+                sizes,
+                lambda node: support.is_node_supported(None, node),
+                {state.name for state in state_writers},
+            ).difference(left_out)
+            if any(
+                node.target in decompositions and node in uncertain for node in calls
+            ):
+                _, left_out = _propose_partitions(
+                    graph_module,
+                    support,
+                    kept_inside,
+                    sizes,
+                    self._targets_ios18(),
+                    state_writers,
+                )
+            else:
+                left_out |= uncertain
+            late = {node.target for node in calls if node in left_out}
+            if not late:
+                break
+            for op in late & decompositions.keys():
+                self.log_once(
+                    f"Not keeping {op} whole, because some call of it runs outside "
+                    "of CoreML."
+                )
+            not_kept |= late
+            keep = [op for op in keep if op not in late]
+            if not any(op in decompositions for op in late):
+                break
+        return keep
