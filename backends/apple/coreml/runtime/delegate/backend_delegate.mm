@@ -250,6 +250,24 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
                            cachePath:(nullable NSString*)cachePath
                          useNewCache:(BOOL)useNewCache
                                error:(NSError* __autoreleasing*)error {
+    return [self loadModelFromAOTData:data
+                        configuration:configuration
+                           methodName:methodName
+                         functionName:functionName
+                            cachePath:cachePath
+                          useNewCache:useNewCache
+                              prewarm:nil
+                                error:error];
+}
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
+                           cachePath:(nullable NSString*)cachePath
+                         useNewCache:(BOOL)useNewCache
+                             prewarm:(nullable NSNumber*)prewarm
+                               error:(NSError* __autoreleasing*)error {
     if (![self loadAndReturnError:error]) {
         return nil;
     }
@@ -291,7 +309,9 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
                                      functionName:functionName
                                             cache:cache
                                             error:error];
-    if ((handle != NULL) && self.config.should_prewarm_model) {
+    // A per-load `prewarm_model` option takes precedence over the config.
+    BOOL shouldPrewarm = prewarm != nil ? prewarm.boolValue : self.config.should_prewarm_model;
+    if ((handle != NULL) && shouldPrewarm) {
         [self.impl prewarmModelWithHandle:handle error:nil];
     }
 
@@ -388,9 +408,10 @@ Handle *init(Buffer processed,
         NSString *methodNameStr = method_name ? @(method_name) : nil;
         NSString *functionNameStr = function_name ? @(function_name) : nil;
 
-        // Parse cache_dir and _use_new_cache from runtime_specs
+        // Parse cache_dir, _use_new_cache and prewarm_model from runtime_specs
         NSString *cachePath = nil;
         BOOL useNewCache = NO; // Default to using the old cache (asset manager)
+        NSNumber *prewarm = nil; // Default to the config's should_prewarm_model
         for (size_t i = 0; i < runtime_specs.size(); ++i) {
             const auto& opt = runtime_specs[i];
             if (std::strcmp(opt.key, "cache_dir") == 0) {
@@ -400,6 +421,10 @@ Handle *init(Buffer processed,
             } else if (std::strcmp(opt.key, "_use_new_cache") == 0) {
                 if (auto* val = std::get_if<bool>(&opt.value)) {
                     useNewCache = *val ? YES : NO;
+                }
+            } else if (std::strcmp(opt.key, "prewarm_model") == 0) {
+                if (auto* val = std::get_if<bool>(&opt.value)) {
+                    prewarm = @(*val);
                 }
             }
         }
@@ -413,6 +438,7 @@ Handle *init(Buffer processed,
                                                            functionName:functionNameStr
                                                               cachePath:cachePath
                                                             useNewCache:useNewCache
+                                                                prewarm:prewarm
                                                                   error:&localError];
         if (localError != nil) {
             ETCoreMLLogError(localError, "Model init failed");
