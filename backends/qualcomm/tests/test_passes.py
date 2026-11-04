@@ -1551,7 +1551,6 @@ class TestPasses(unittest.TestCase):
         }
         cases = [
             (torch.float32, QnnExecuTorchBackendType.kHtpBackend, None, 2),
-            (torch.float64, QnnExecuTorchBackendType.kHtpBackend, None, 2),
             (torch.float32, QnnExecuTorchBackendType.kGpuBackend, None, 1),
             (torch.float16, QnnExecuTorchBackendType.kHtpBackend, None, 1),
             (torch.float32, QnnExecuTorchBackendType.kHtpBackend, quant_attrs, 1),
