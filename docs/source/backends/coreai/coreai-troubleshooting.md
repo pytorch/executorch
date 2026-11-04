@@ -64,7 +64,7 @@ Check the runtime options:
 
 The first load of a model is slow because Core AI specializes it for the device. Later loads restore it from the [cache](coreai-overview.md#cache) and are much faster. If every load is slow:
 
-- **Check the cache directory.** Loads only find each other's cache entries if they use the same `coreai_cache_dir`. A temporary or per-launch directory means every load specializes again.
+- **Check the bookmark directory.** Loads only find each other's bookmarks if they use the same `coreai_cache_dir`. A temporary or per-launch directory means no load finds a bookmark to restore from.
 - **Check the options.** Each `coreai_compute_unit` and `coreai_expect_frequent_reshapes` value is cached separately.
 - **Look for cache misses in the [runtime logs](#at-runtime).** The system may have purged Core AI's cache under storage pressure, which forces the next load to specialize again.
 
@@ -100,8 +100,8 @@ Core AI loading, inference and cache operations are synchronous, and can hang yo
 
 When Core AI fails to restore or remove a cached model, the backend keeps that model's bookmark so a later attempt can retry; it can't tell whether the error is temporary. If loading or [clearing](coreai-overview.md#clearing-the-cache) one model keeps failing:
 
-1. Stop every process that uses the cache directory.
-2. Find the model's cache key in the [runtime logs](#at-runtime). Move `bookmarks/<key>.bookmark` and the `sources/<key>` directory, if present, out of the cache directory, and keep them as a backup. Don't touch the `locks` directory.
+1. Stop every process that uses the bookmark directory.
+2. Find the model's cache key in the [runtime logs](#at-runtime). Move `bookmarks/<key>.bookmark` and the `sources/<key>` directory, if present, out of the bookmark directory, and keep them as a backup. Don't touch the `locks` directory.
 3. Load the model again. The backend specializes it from scratch and saves a new bookmark.
 
 This doesn't remove the old entry from Core AI's cache or free its disk space. Keep the backup: its bookmark may be the only remaining handle to that entry. Only do this while no model is loading, running or being cleared.

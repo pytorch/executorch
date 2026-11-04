@@ -169,7 +169,7 @@ The Core AI backend accepts these options when a model is loaded. All are option
 
 | Option | Type | Default | Effect |
 |---|---|---|---|
-| `coreai_cache_dir` | string | `executorch_coreai` in the app's Caches directory | Where the backend keeps its cache. See [Cache](#cache). |
+| `coreai_cache_dir` | string | `executorch_coreai` in the app's Caches directory | Where the backend keeps its bookmarks to Core AI's cached models. See [Cache](#cache). |
 | `coreai_compute_unit` | string | `default` | Which compute units Core AI may use. See [Compute units](#compute-units). |
 | `coreai_expect_frequent_reshapes` | bool | `false` | Optimize for input shapes that change between calls. See [Frequent reshapes](#frequent-reshapes). |
 | `coreai_share_multifunction_model` | bool | `false` | Load a multi-method model once and share it across its methods. See [Sharing a multi-method model](#sharing-a-multi-method-model). |
@@ -249,20 +249,31 @@ Before turning it on, note:
 
 - **Calls run one at a time.** Delegates that share a model don't execute concurrently, because the Core AI SDK doesn't document concurrent execution of one model as safe.
 - **Sharing is process-wide.** Separate `Module`s that load the same `.pte` with the option set share one model, so their `execute` calls wait for each other.
-- **Only identical specializations share.** Loads share a model only if they use the same cache directory (or a symlink to it), the same `coreai_compute_unit` and the same `coreai_expect_frequent_reshapes`. Otherwise each loads its own.
+- **Only identical specializations share.** Loads share a model only if they use the same bookmark directory (or a symlink to it), the same `coreai_compute_unit` and the same `coreai_expect_frequent_reshapes`. Otherwise each loads its own.
 - **It requires a multi-method export.** For a model not exported with `CoreAIPartitioner(multifunction=True)`, the option fails the load with `InvalidArgument`.
 
 ### Cache
 
-Specialization can take much longer than the rest of a load, so the backend caches its result. On a model's first load, Core AI specializes it and stores the result in the SDK's model cache, and the backend saves a *bookmark*, a handle to that cache entry, in its cache directory. Later loads, including from new processes, restore the specialized model from the bookmark. For example, a small model that took 118 ms to load the first time took 7 ms afterwards.
+Specialization can take much longer than the rest of a load, so its result is cached. For example, a small model that took 118 ms to load the first time took 7 ms afterwards. Two directories are involved:
 
-Each combination of model, platform, device architecture, `coreai_compute_unit` and `coreai_expect_frequent_reshapes` has its own cache entry. The methods of a multi-method export share one entry.
+| | Core AI's model cache | The backend's bookmark directory |
+|---|---|---|
+| Holds | The specialized models | One *bookmark* per specialized model, plus lock files |
+| Managed by | Core AI | The ExecuTorch backend |
+| Location | `coreai-cache` in the app's Caches directory, such as `~/Library/Caches/coreai-cache` for a command-line tool on macOS | `executorch_coreai` in the app's Caches directory, or `coreai_cache_dir` |
+| Configurable | No | Yes, with `coreai_cache_dir` |
 
-The system may purge the SDK's model cache under storage pressure. The next load then specializes the model again, which needs the model data from the `.pte`, so keep the `.pte` (and any external data files) available.
+On a model's first load, Core AI specializes it and stores the result in its own model cache. Core AI then returns a bookmark, a small handle that identifies the model in its cache, and the backend saves it in the bookmark directory. Later loads, including from new processes, pass the bookmark back to Core AI to restore the specialized model without specializing it again.
 
-#### Cache directory
+`coreai_cache_dir` only moves the bookmarks: Core AI always stores specialized models in its own cache, and ExecuTorch can't change where. Don't modify Core AI's cache directly; use [`clear_cache`](#clearing-the-cache) to remove models from it.
 
-The cache directory defaults to `executorch_coreai` in the app's Caches directory. It holds bookmarks, lock files and, while a model is being specialized, a temporary copy of its Core AI model extracted from the `.pte`. To use another directory, set `coreai_cache_dir`:
+Each combination of model, platform, device architecture, `coreai_compute_unit` and `coreai_expect_frequent_reshapes` is specialized and cached separately. The methods of a multi-method export share one entry.
+
+The backend lets the system purge Core AI's model cache under storage pressure. The next load of a purged model specializes it again, which needs the model data from the `.pte`, so keep the `.pte` (and any external data files) available.
+
+#### Bookmark directory
+
+The bookmark directory defaults to `executorch_coreai` in the app's Caches directory. Besides bookmarks and lock files, it briefly holds a copy of a model's Core AI bundle, extracted from the `.pte`, while that model is being specialized. To use another directory, set `coreai_cache_dir`:
 
 - Use an absolute path, on a local APFS volume, that only this backend uses.
 - Don't rename, replace or delete the directory while models are loading, running or being cleared.
@@ -284,10 +295,10 @@ runtime::Error clear_cache_for_pte(
 }
 ```
 
-- `clear_cache` removes every cached model in the cache directory.
-- `clear_cache_for_pte` removes the cached models for one `.pte`, for every device, architecture and option combination they were loaded with.
+- `clear_cache` removes every model that has a bookmark in the bookmark directory.
+- `clear_cache_for_pte` removes the models for one `.pte`, for every device, architecture and option combination they were loaded with.
 
-Both remove the specialized model from the SDK's cache and then delete the backend's files for it. Without a directory argument, they use the default cache directory. They run synchronously, and require that nothing else is using the affected models: unload them first, and make sure no process loads, runs or clears Core AI models in that cache directory at the same time. The next load of a cleared model specializes it again.
+Both use each bookmark to remove the specialized model from Core AI's model cache, then delete the bookmark. They only reach models with a bookmark in the given directory. Without a directory argument, they use the default bookmark directory. They run synchronously, and require that nothing else is using the affected models: unload them first, and make sure no process loads, runs or clears Core AI models in that cache directory at the same time. The next load of a cleared model specializes it again.
 
 ## Reference
 
