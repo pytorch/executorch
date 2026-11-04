@@ -1685,6 +1685,11 @@ class Int64Counter(torch.nn.Module):
         return x * 2, self.count + 0
 
 
+class Int64Results(torch.nn.Module):
+    def forward(self, x, k, mask):
+        return (x > 0.5).sum(-1).masked_scatter(mask, k), x.topk(2).indices
+
+
 class IsInf(torch.nn.Module):
     def __init__(self):
         super().__init__()
