@@ -157,9 +157,10 @@ Tensor& opt_sum_dim_out(
     return out;
   }
 
-  // Fast path: single reduction dim, matching dtype, non-complex, contiguous.
-  // Anything else falls through to the portable kernel.
-  const bool fast_eligible = dim_list.has_value() &&
+  // Fast path: non-0-d input, single reduction dim, matching dtype,
+  // non-complex, contiguous. Anything else falls through to the portable
+  // kernel.
+  const bool fast_eligible = in.dim() > 0 && dim_list.has_value() &&
       dim_list.value().size() == 1 && in.scalar_type() == out.scalar_type() &&
       !executorch::runtime::isComplexType(in.scalar_type()) &&
       tensor_is_contiguous(in);

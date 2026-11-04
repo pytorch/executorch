@@ -336,6 +336,19 @@ TEST_F(OpSumOutTest, BFloat16LargeDimAccumulatesInFloat) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
+TEST_F(OpSumOutTest, ZeroDimInputWithDim) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor self = tf.make({}, {5});
+  for (int64_t dim : {0, -1}) {
+    for (bool keepdim : {false, true}) {
+      Tensor out = tf.zeros({});
+      op_sum_intlist_out(
+          self, ArrayRef<int64_t>{&dim, 1}, keepdim, /*dtype=*/{}, out);
+      EXPECT_TENSOR_EQ(out, tf.make({}, {5}));
+    }
+  }
+}
+
 TEST_F(OpSumOutTest, InvalidDimensionListDies) {
   ET_SKIP_IF(
       torch::executor::testing::SupportedFeatures::get()->is_aten,
