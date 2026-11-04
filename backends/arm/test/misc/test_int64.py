@@ -160,6 +160,11 @@ int64_extension_partition_suite = {
         1,
     ),
     "gt_buffer_narrow": (Int64Buffer(lambda wide, x: x > wide), (_NARROW,), 1),
+    "where_buffer_gt_scalar": (
+        Int64Buffer(lambda wide, x, y: torch.where(wide > 7, x, y)),
+        (_WIDE, _WIDE_2),
+        1,
+    ),
     "strided_slice": (lambda x: x[::2], (torch.arange(5) * 2**33,), 1),
     "gt": (lambda x, y: x > y, (_WIDE, _WIDE_2), 1),
     "gt_scalar": (lambda x: x > 7, (_WIDE,), 1),

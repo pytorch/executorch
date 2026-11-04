@@ -31,6 +31,15 @@ class CastInt64BuffersToInt32Pass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    _comparison_ops = CastIntComparisonInputsPass.target_ops | {
+        exir_ops.edge.aten.eq.Scalar,
+        exir_ops.edge.aten.ne.Scalar,
+        exir_ops.edge.aten.ge.Scalar,
+        exir_ops.edge.aten.gt.Scalar,
+        exir_ops.edge.aten.le.Scalar,
+        exir_ops.edge.aten.lt.Scalar,
+    }
+
     def __init__(self, exported_program: ExportedProgram, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
@@ -146,14 +155,14 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         node.meta["val"] = node.meta["val"].to(torch.int32)
         return True
 
-    @staticmethod
-    def _users_compute_in_int64(node: torch.fx.Node) -> bool:
+    @classmethod
+    def _users_compute_in_int64(cls, node: torch.fx.Node) -> bool:
         def is_int64(value) -> bool:
             return isinstance(value, torch.Tensor) and value.dtype == torch.int64
 
         return all(
             user.op == "output"
-            or user.target in CastIntComparisonInputsPass.target_ops
+            or user.target in cls._comparison_ops
             or is_int64(user.meta.get("val"))
             or any(
                 is_int64(arg.meta.get("val"))
