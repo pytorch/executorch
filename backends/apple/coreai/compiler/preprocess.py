@@ -75,6 +75,11 @@ class COMPILE_SPEC_KEYS(Enum):
     # the portable .aimodel, so it is not part of this AOT-only blob.)
     AOT_COMPILE_CONFIG = "coreai_aot_compile_config"
 
+    # Lower every Core AI partition of every method into one Core AI model, one
+    # function per partition named <method>_<partition index>. Value: b"1".
+    # Every partition must carry identical compile specs.
+    MULTIFUNCTION = "coreai_multifunction"
+
 
 class AssetPackaging(str, Enum):
     # Portable .aimodel embedded in the .pte via NamedDataStore.
@@ -195,24 +200,22 @@ def _deliver(
     staging: Path,
     packaging: AssetPackaging,
     manifest_extra: Dict[str, Any],
-) -> PreprocessResult:
-    """Embed a staging directory of bundles in the .pte with its manifest.
+    bindings: List[Dict[str, Any]],
+) -> List[PreprocessResult]:
+    """Embed a staging directory of bundles in the .pte, one manifest per binding.
 
     ``staging`` holds the ``.aimodel`` / ``.aimodelc`` bundles, never their
     contents, so assets land under ``coreai/<export_hash>/<bundle>/`` in the
     NamedDataStore. ``manifest_extra`` paths are staging-relative bundle names.
+    Each binding (``function``, ``input_names``, ``output_names``) gets its own
+    manifest; all of them reference the same embedded bundles.
     """
     metadata = _asset_metadata(staging)
     # The SDK program hash excludes metadata such as creation timestamps.
     export_hash = hashlib.sha256(
         json.dumps(metadata["bundle_digests"], sort_keys=True).encode("utf-8")
     ).hexdigest()
-    manifest = {
-        "packaging": packaging.value,
-        "export_hash": export_hash,
-        **manifest_extra,
-        **metadata,
-    }
+    manifest = {**manifest_extra, **metadata}
     if packaging == AssetPackaging.AIMODEL:
         manifest["path"] = f"{export_hash}/{manifest['path']}"
     else:
@@ -220,7 +223,21 @@ def _deliver(
             arch: f"{export_hash}/{bundle}"
             for arch, bundle in manifest["archs"].items()
         }
-    return _embed_dir_inline(staging, export_hash, manifest)
+    store_output = _embed_dir(staging, export_hash)
+    return [
+        PreprocessResult(
+            processed_bytes=json.dumps(
+                {
+                    "packaging": packaging.value,
+                    "export_hash": export_hash,
+                    **binding,
+                    **manifest,
+                }
+            ).encode("utf-8"),
+            data_store_output=store_output,
+        )
+        for binding in bindings
+    ]
 
 
 def _prepare_program_for_conversion(edge_program: ExportedProgram) -> ExportedProgram:
@@ -245,35 +262,145 @@ def _prepare_program_for_conversion(edge_program: ExportedProgram) -> ExportedPr
 
 
 def _convert_to_aiprogram(
-    edge_program: ExportedProgram,
-    *,
-    input_names: Optional[List[str]] = None,
-    output_names: Optional[List[str]] = None,
+    entries: List[Tuple[ExportedProgram, str, List[str], List[str]]],
 ):
+    """Convert ``(edge_program, entrypoint, input_names, output_names)`` entries
+    into one Core AI program with one function per entry."""
     from coreai_torch import TorchConverter
 
-    aten_program = _prepare_program_for_conversion(edge_program)
     converter = TorchConverter()
-    converter.add_exported_program(
-        aten_program,
-        input_names=input_names,
-        output_names=output_names,
-        entrypoint_name=MAIN_ENTRYPOINT,
-    )
+    for edge_program, entrypoint, input_names, output_names in entries:
+        converter.add_exported_program(
+            _prepare_program_for_conversion(edge_program),
+            input_names=input_names,
+            output_names=output_names,
+            entrypoint_name=entrypoint,
+        )
     return converter.to_coreai()
 
 
+def _boundary_names(edge_program: ExportedProgram) -> Tuple[List[str], List[str]]:
+    mutated_inputs = edge_program.graph_signature.user_inputs_to_mutate
+    if mutated_inputs:
+        raise ValueError(
+            "Core AI delegates cannot mutate ExecuTorch-owned user inputs: "
+            f"{sorted(mutated_inputs.values())}"
+        )
+    edge_inputs, edge_outputs = _edge_io(edge_program)
+    return (
+        [f"input_{i}" for i in range(len(edge_inputs))],
+        [f"output_{i}" for i in range(len(edge_outputs))],
+    )
+
+
+def _binding(
+    program,
+    edge_program: ExportedProgram,
+    entrypoint: str,
+    input_names: List[str],
+    output_names: List[str],
+) -> Dict[str, Any]:
+    # Fail fast if the .aimodel boundary I/O won't match what ET feeds/reads.
+    assert_io_compatible(
+        program,
+        edge_program,
+        input_names=input_names,
+        output_names=output_names,
+        entrypoint=entrypoint,
+    )
+    bound_inputs, bound_outputs = coreai_io_names(program, entrypoint)
+    return {
+        "function": entrypoint,
+        "input_names": bound_inputs,
+        "output_names": bound_outputs,
+    }
+
+
+def _enumerate_binding(
+    program,
+    edge_program: ExportedProgram,
+    binding: Dict[str, Any],
+    input_names: List[str],
+    compile_specs: List[CompileSpec],
+) -> Dict[str, Any]:
+    """Apply this partition's enumerated shapes and rewrite its binding.
+
+    ``set_static_shape_config`` erases the bound function, so a specialized
+    delegate lists every per-shape function with its input shapes, in
+    ``input_names`` order, and the runtime picks one by the inputs it gets.
+    """
+    raw = _get_compile_spec(compile_specs, COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS)
+    if not raw:
+        return binding
+    entrypoint = binding["function"]
+    shapes_config = apply_enumerated_shapes(
+        program,
+        edge_program,
+        json.loads(raw.decode()),
+        input_names=input_names,
+        entrypoint=entrypoint,
+    )
+    if not shapes_config:
+        return binding
+    bound_inputs = binding["input_names"]
+    functions = []
+    for key, shapes in shapes_config.items():
+        if set(shapes) != set(bound_inputs):
+            raise ValueError(
+                f"enumerated shapes for {entrypoint!r} cover inputs "
+                f"{sorted(shapes)} but the delegate binds {bound_inputs}"
+            )
+        functions.append(
+            {
+                "function": f"{entrypoint}_{key}",
+                "input_shapes": [list(shapes[name]) for name in bound_inputs],
+            }
+        )
+    enumerated = {k: v for k, v in binding.items() if k != "function"}
+    enumerated["enumerated_functions"] = functions
+    return enumerated
+
+
+def _check_unique_functions(bindings: List[Dict[str, Any]]) -> None:
+    """Reject two delegates binding the same function name.
+
+    Enumerated functions are named ``<method>_<index>_<key>``, which a method
+    whose name looks like another method's index and key could reproduce.
+    """
+    seen = set()
+    for binding in bindings:
+        names = (
+            [binding["function"]]
+            if "function" in binding
+            else [f["function"] for f in binding["enumerated_functions"]]
+        )
+        for name in names:
+            if name in seen:
+                raise ValueError(
+                    f"multifunction export generates the function name {name!r} "
+                    "twice; rename the method whose name collides with it"
+                )
+            seen.add(name)
+
+
+def _spec_items(
+    compile_specs: List[CompileSpec], ignore: Tuple[str, ...] = ()
+) -> List[Tuple[str, bytes]]:
+    return sorted(
+        (spec.key, bytes(spec.value))
+        for spec in compile_specs
+        if spec.key not in ignore
+    )
+
+
 # Asset embedding helpers.
-def _embed_dir_inline(
-    root_dir: Path, export_hash: str, manifest_extra: Dict[str, Any]
-) -> PreprocessResult:
-    """Flatten every file under ``root_dir`` into the NamedDataStore.
+def _embed_dir(root_dir: Path, export_hash: str):
+    """Flatten every file under ``root_dir`` into a NamedDataStore output.
 
     ``root_dir`` is the directory *containing* the ``.aimodel`` / ``.aimodelc``
     bundles, never a bundle itself, so the bundle name survives into the keys.
 
-    Keys are ``coreai/{export_hash}/{relpath}``; ``manifest_extra`` becomes the
-    manifest (packaging, files, archs, ...).
+    Keys are ``coreai/{export_hash}/{relpath}``.
     """
     store = NamedDataStore()
     for path in sorted(root_dir.rglob("*")):
@@ -283,10 +410,7 @@ def _embed_dir_inline(
                 path.read_bytes(),
                 alignment=_ASSET_ALIGNMENT,
             )
-    return PreprocessResult(
-        processed_bytes=json.dumps(manifest_extra).encode("utf-8"),
-        data_store_output=store.get_named_data_store_output(),
-    )
+    return store.get_named_data_store_output()
 
 
 def _os_version_text(min_os) -> Optional[str]:
@@ -458,52 +582,110 @@ class CoreAIBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
-        aot_compiled = (
-            _get_compile_spec(compile_specs, COMPILE_SPEC_KEYS.AOT_COMPILE_CONFIG)
-            is not None
-        )
-
-        mutated_inputs = edge_program.graph_signature.user_inputs_to_mutate
-        if mutated_inputs:
-            raise ValueError(
-                "Core AI delegates cannot mutate ExecuTorch-owned user inputs: "
-                f"{sorted(mutated_inputs.values())}"
-            )
-        edge_inputs, edge_outputs = _edge_io(edge_program)
-        input_names = [f"input_{i}" for i in range(len(edge_inputs))]
-        output_names = [f"output_{i}" for i in range(len(edge_outputs))]
+        input_names, output_names = _boundary_names(edge_program)
         program = _convert_to_aiprogram(
-            edge_program, input_names=input_names, output_names=output_names
+            [(edge_program, MAIN_ENTRYPOINT, input_names, output_names)]
         )
-        # Fail fast if the .aimodel boundary I/O won't match what ET feeds/reads.
-        assert_io_compatible(
-            program, edge_program, input_names=input_names, output_names=output_names
+        # Enumerated shapes replace ``main`` with renamed clones, so bind first.
+        binding = _binding(
+            program, edge_program, MAIN_ENTRYPOINT, input_names, output_names
         )
-        # Enumerated shapes replace ``main`` with renamed clones, so read first.
-        bound_inputs, bound_outputs = coreai_io_names(program)
-        raw_enum = _get_compile_spec(
-            compile_specs, COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS
+        binding = _enumerate_binding(
+            program, edge_program, binding, input_names, compile_specs
         )
-        if raw_enum:
-            apply_enumerated_shapes(
-                program,
-                edge_program,
-                json.loads(raw_enum.decode()),
-                input_names=input_names,
-            )
-        bindings = {
-            "function": MAIN_ENTRYPOINT,
-            "input_names": bound_inputs,
-            "output_names": bound_outputs,
-        }
+        return CoreAIBackend._package(program, compile_specs, [binding])[0]
 
+    @classmethod
+    def preprocess_multimethod(
+        cls,
+        edge_programs: Dict[str, List[ExportedProgram]],
+        compile_specs: Dict[str, List[List[CompileSpec]]],
+    ) -> Dict[str, List[PreprocessResult]]:
+        partitions = [
+            (method, index, program, compile_specs[method][index])
+            for method, programs in edge_programs.items()
+            for index, program in enumerate(programs)
+        ]
+        if not any(
+            _get_compile_spec(specs, COMPILE_SPEC_KEYS.MULTIFUNCTION) is not None
+            for _, _, _, specs in partitions
+        ):
+            return super().preprocess_multimethod(edge_programs, compile_specs)
+
+        missing = sorted(
+            {
+                method
+                for method, _, _, specs in partitions
+                if _get_compile_spec(specs, COMPILE_SPEC_KEYS.MULTIFUNCTION) is None
+            }
+        )
+        if missing:
+            raise ValueError(
+                "multifunction=True must be set on the CoreAIPartitioner of every "
+                f"method lowered to Core AI; methods {missing} were lowered "
+                "without it"
+            )
+        # Each partition applies its own enumerations, so methods may enumerate
+        # different values; every other spec shapes the shared model.
+        ignore = (COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS.value,)
+        reference = _spec_items(partitions[0][3], ignore)
+        differing = sorted(
+            {
+                method
+                for method, _, _, specs in partitions
+                if _spec_items(specs, ignore) != reference
+            }
+        )
+        if differing:
+            raise ValueError(
+                "multifunction requires identical Core AI compile specs in every "
+                f"partition; methods {differing} differ from {partitions[0][0]!r}"
+            )
+        entries = [
+            (program, f"{method}_{index}", *_boundary_names(program))
+            for method, index, program, _ in partitions
+        ]
+        logger.info(
+            "Lowering %d Core AI partitions into one model: %s",
+            len(entries),
+            [entrypoint for _, entrypoint, _, _ in entries],
+        )
+        program = _convert_to_aiprogram(entries)
+        # Bind every partition before specializing any, since specializing a
+        # partition erases its function.
+        bindings = [_binding(program, *entry) for entry in entries]
+        bindings = [
+            {
+                **_enumerate_binding(
+                    program, edge_program, binding, input_names, specs
+                ),
+                "multifunction": True,
+            }
+            for binding, (edge_program, _, input_names, _), (_, _, _, specs) in zip(
+                bindings, entries, partitions
+            )
+        ]
+        _check_unique_functions(bindings)
+        results = CoreAIBackend._package(program, partitions[0][3], bindings)
+
+        by_method: Dict[str, List[PreprocessResult]] = {
+            method: [] for method in edge_programs
+        }
+        for (method, _, _, _), result in zip(partitions, results):
+            by_method[method].append(result)
+        return by_method
+
+    @staticmethod
+    def _package(
+        program, compile_specs: List[CompileSpec], bindings: List[Dict[str, Any]]
+    ) -> List[PreprocessResult]:
         # min-deployment-version is a single knob applied to whichever artifact
         # ships: for aot-compiled delivery the .aimodelc (via coreai-build
         # --min-deployment-version), for portable delivery the .aimodel's floor
         # (via save_asset(minimum_os=...)). In the aot-compiled path the temp
         # .aimodel is discarded, so it keeps the default floor (no
         # double-specification).
-        if aot_compiled:
+        if _get_compile_spec(compile_specs, COMPILE_SPEC_KEYS.AOT_COMPILE_CONFIG):
             return CoreAIBackend._preprocess_aot_compiled(
                 program, _aot_compile_options(compile_specs), bindings
             )
@@ -514,33 +696,32 @@ class CoreAIBackend(BackendDetails):
     # Portable .aimodel delivery.
     @staticmethod
     def _preprocess_portable(
-        program, min_os, bindings: Dict[str, Any]
-    ) -> PreprocessResult:
+        program, min_os, bindings: List[Dict[str, Any]]
+    ) -> List[PreprocessResult]:
         with TemporaryDirectory() as tmp:
             _save_asset(program, Path(tmp) / "model.aimodel", min_os)
             return _deliver(
                 Path(tmp),
                 AssetPackaging.AIMODEL,
                 {
-                    **bindings,
                     # relative path the runtime resolves against its base
                     "path": "model.aimodel",
                     "min_deployment_version": _os_version_text(min_os),
                 },
+                bindings,
             )
 
     # AOT-compiled .aimodelc delivery (per architecture).
     @staticmethod
     def _preprocess_aot_compiled(
-        program, opts: Dict[str, Any], bindings: Dict[str, Any]
-    ) -> PreprocessResult:
+        program, opts: Dict[str, Any], bindings: List[Dict[str, Any]]
+    ) -> List[PreprocessResult]:
         with TemporaryDirectory() as tmp:
             out = _compile_aot(program, opts, Path(tmp))
             return _deliver(
                 out,
                 AssetPackaging.AIMODELC,
                 {
-                    **bindings,
                     "platform": opts["platform"],
                     "min_deployment_version": opts["min_deployment_version"],
                     "archs": {
@@ -548,4 +729,5 @@ class CoreAIBackend(BackendDetails):
                         for arch, bundle in _compiled_arch_bundles(out)
                     },
                 },
+                bindings,
             )

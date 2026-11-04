@@ -13,12 +13,18 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <array>
+#include <atomic>
+#include <cerrno>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
+#include <optional>
+#include <thread>
 
 #include "coreai_cache.h"
 #include "coreai_cache_entry_fixture.h"
 #import "coreai_delegate_fixture.h"
+#include "coreai_fault_scope.h"
 #include "coreai_test_utils.h"
 
 namespace executorch::backends::coreai::testing {
@@ -240,6 +246,95 @@ TEST_F(CoreAIDelegateTest, OrderedIoBindingUsesManifestFunctionAndNames) {
     EXPECT_EQ(bridge.state().executions.load(), 1);
     EXPECT_EQ(bridge.state().output_copies.load(), 1);
     EXPECT_EQ(bridge.state().last_output_destination.load(), tensors.output);
+  }
+}
+
+NSMutableDictionary* enumerated_manifest(NSArray* functions) {
+  NSMutableDictionary* manifest = manifest_dict();
+  [manifest removeObjectForKey:@"function"];
+  manifest[@"enumerated_functions"] = functions;
+  return manifest;
+}
+
+// A 1-D float tensor of `size` elements over `data`, shaped once at
+// construction because TensorImpl caches its element count.
+struct VectorTensor final {
+  executorch::aten::TensorImpl::SizesType size[1];
+  executorch::aten::TensorImpl::DimOrderType order[1] = {0};
+  executorch::aten::TensorImpl::StridesType stride[1] = {1};
+  executorch::aten::TensorImpl impl;
+  EValue value;
+  VectorTensor(float* data, int size_value, bool dynamic = false)
+      : size{size_value},
+        impl(
+            executorch::aten::ScalarType::Float,
+            1,
+            size,
+            data,
+            order,
+            stride,
+            dynamic ? runtime::TensorShapeDynamism::DYNAMIC_BOUND
+                    : runtime::TensorShapeDynamism::STATIC),
+        value(executorch::aten::Tensor(&impl)) {}
+};
+
+TEST_F(CoreAIDelegateTest, EnumeratedFunctionsDispatchByInputShape) {
+  @autoreleasepool {
+    bridge.state().functions =
+        [NSSet setWithArray:@[ @"main_two", @"main_one" ]];
+    DelegateFixture fixture(
+        backend, bridge, enumerated_manifest(@[
+          @{@"function" : @"main_two",
+            @"input_shapes" : @[ @[ @2 ] ]},
+          @{@"function" : @"main_one",
+            @"input_shapes" : @[ @[ @1 ] ]},
+        ]));
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    EXPECT_EQ(bridge.state().binding_mismatches.load(), 0);
+
+    FloatTensors two;
+    ASSERT_EQ(fixture.execute({two.args, 2}), Error::Ok);
+    EXPECT_TRUE([bridge.state().last_function isEqual:@"main_two"]);
+    EXPECT_EQ(two.output[0], 3);
+    EXPECT_EQ(two.output[1], 7);
+
+    float one_input[1] = {5};
+    float one_output[2] = {-1, -1};
+    VectorTensor one_in(one_input, 1);
+    VectorTensor one_out(one_output, 2, /*dynamic=*/true);
+    EValue* one_args[] = {&one_in.value, &one_out.value};
+    ASSERT_EQ(fixture.execute({one_args, 2}), Error::Ok);
+    EXPECT_TRUE([bridge.state().last_function isEqual:@"main_one"]);
+    EXPECT_EQ(one_out.impl.size(0), 1);
+    EXPECT_EQ(one_output[0], 5);
+
+    float three_input[3] = {1, 2, 3};
+    float three_output[3] = {-1, -1, -1};
+    VectorTensor three_in(three_input, 3);
+    VectorTensor three_out(three_output, 3, /*dynamic=*/true);
+    EValue* three_args[] = {&three_in.value, &three_out.value};
+    const int executions = bridge.state().executions.load();
+    EXPECT_EQ(fixture.execute({three_args, 2}), Error::InvalidArgument);
+    EXPECT_EQ(bridge.state().executions.load(), executions);
+    EXPECT_EQ(three_output[0], -1);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, EnumeratedFunctionBindFailureFailsInit) {
+  @autoreleasepool {
+    bridge.state().functions =
+        [NSSet setWithArray:@[ @"main_two", @"main_one" ]];
+    bridge.state().fail_function = @"main_one";
+    DelegateFixture fixture(
+        backend, bridge, enumerated_manifest(@[
+          @{@"function" : @"main_two",
+            @"input_shapes" : @[ @[ @2 ] ]},
+          @{@"function" : @"main_one",
+            @"input_shapes" : @[ @[ @1 ] ]},
+        ]));
+    EXPECT_EQ(fixture.init(), Error::InvalidProgram);
+    EXPECT_EQ(bridge.state().function_bindings.load(), 2);
+    EXPECT_EQ(fixture.freed, 0);
   }
 }
 
@@ -905,24 +1000,33 @@ TEST_F(CoreAIDelegateTest, DynamicShapesBorrowCurrentSubrange) {
   }
 }
 
-TEST_F(CoreAIDelegateTest, StorageOptionsRejectWrongTypeAndRelativePaths) {
+TEST_F(CoreAIDelegateTest, OptionsRejectWrongTypes) {
+  @autoreleasepool {
+    const BackendOption wrong_types[] = {
+        {"coreai_cache_dir", 1},
+        {"coreai_compute_unit", 1},
+        {"coreai_share_multifunction_model", 1},
+        {"coreai_expect_frequent_reshapes", 1},
+    };
+    for (const auto& option : wrong_types) {
+      SCOPED_TRACE(option.key);
+      DelegateFixture fixture(backend, bridge);
+      EXPECT_EQ(
+          fixture.init_with_options({&option, 1}), Error::InvalidArgument);
+      EXPECT_EQ(fixture.freed, 0);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, StorageOptionsRejectRelativePaths) {
   @autoreleasepool {
     DelegateFixture fixture(backend, bridge);
-    {
-      SCOPED_TRACE("integer cache directory");
-      BackendOption wrong_type{"coreai_cache_dir", 1};
-      EXPECT_EQ(
-          fixture.init_with_options({&wrong_type, 1}), Error::InvalidArgument);
-    }
-    {
-      SCOPED_TRACE("relative cache directory");
-      BackendOptions<1> relative;
-      ASSERT_EQ(relative.set_option("coreai_cache_dir", "relative"), Error::Ok);
-      EXPECT_EQ(
-          fixture.init_with_options(
-              {relative.view().data(), relative.view().size()}),
-          Error::InvalidArgument);
-    }
+    BackendOptions<1> relative;
+    ASSERT_EQ(relative.set_option("coreai_cache_dir", "relative"), Error::Ok);
+    EXPECT_EQ(
+        fixture.init_with_options(
+            {relative.view().data(), relative.view().size()}),
+        Error::InvalidArgument);
     EXPECT_EQ(fixture.freed, 0);
   }
 }
@@ -935,15 +1039,10 @@ TEST_F(CoreAIDelegateTest, ComputeUnitOptionSelectsSpecialization) {
       bridge.state().last_compute_unit = -1;
       DelegateFixture fixture(backend, bridge);
       BackendOptions<2> options;
-      EXPECT_EQ(
-          options.set_option(
-              "coreai_cache_dir", fixture.storage.url.path.UTF8String),
-          Error::Ok);
       if (name != nullptr) {
         EXPECT_EQ(options.set_option("coreai_compute_unit", name), Error::Ok);
       }
-      return fixture.init_with_options(
-          {options.view().data(), options.view().size()});
+      return fixture.init_with_storage(options);
     };
     {
       SCOPED_TRACE("absent");
@@ -968,14 +1067,282 @@ TEST_F(CoreAIDelegateTest, ComputeUnitOptionSelectsSpecialization) {
       EXPECT_EQ(init_with_compute_unit(name), Error::InvalidArgument);
       EXPECT_EQ(bridge.state().last_compute_unit.load(), -1);
     }
-    {
-      SCOPED_TRACE("integer compute unit");
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ExpectFrequentReshapesOptionReachesLoader) {
+  @autoreleasepool {
+    auto init_with_reshapes = [&](std::optional<bool> reshapes) {
+      bridge.state().last_expect_frequent_reshapes = -1;
       DelegateFixture fixture(backend, bridge);
-      BackendOption wrong_type{"coreai_compute_unit", 1};
+      BackendOptions<3> options;
       EXPECT_EQ(
-          fixture.init_with_options({&wrong_type, 1}), Error::InvalidArgument);
-      EXPECT_EQ(fixture.freed, 0);
+          options.set_option("coreai_compute_unit", "cpu_only"), Error::Ok);
+      if (reshapes.has_value()) {
+        EXPECT_EQ(
+            options.set_option("coreai_expect_frequent_reshapes", *reshapes),
+            Error::Ok);
+      }
+      return fixture.init_with_storage(options);
+    };
+    for (const auto& [reshapes, expected] :
+         {std::pair<std::optional<bool>, int>{std::nullopt, 0},
+          std::pair<std::optional<bool>, int>{false, 0},
+          std::pair<std::optional<bool>, int>{true, 1}}) {
+      SCOPED_TRACE(
+          reshapes.has_value() ? (*reshapes ? "true" : "false") : "absent");
+      ASSERT_EQ(init_with_reshapes(reshapes), Error::Ok);
+      EXPECT_EQ(bridge.state().last_expect_frequent_reshapes.load(), expected);
+      EXPECT_EQ(
+          bridge.state().last_compute_unit.load(), ETCoreAIComputeUnitCPUOnly);
     }
+  }
+}
+
+NSMutableDictionary* multifunction_manifest() {
+  NSMutableDictionary* manifest = manifest_dict();
+  manifest[@"multifunction"] = @YES;
+  return manifest;
+}
+
+// Uses the fixture's own cache directory unless root names another; sharing is
+// scoped to the cache directory.
+Error init_sharing(
+    DelegateFixture& fixture,
+    std::optional<bool> share,
+    NSString* root = nil) {
+  BackendOptions<2> options;
+  if (share.has_value()) {
+    const Error error =
+        options.set_option("coreai_share_multifunction_model", *share);
+    if (error != Error::Ok) {
+      return error;
+    }
+  }
+  if (root == nil) {
+    return fixture.init_with_storage(options);
+  }
+  const Error error = options.set_option("coreai_cache_dir", root.UTF8String);
+  if (error != Error::Ok) {
+    return error;
+  }
+  return fixture.init_with_options(
+      {options.view().data(), options.view().size()});
+}
+
+TEST_F(CoreAIDelegateTest, ShareOptionRequiresMultifunctionExport) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    EXPECT_EQ(init_sharing(fixture, true), Error::InvalidArgument);
+    EXPECT_EQ(bridge.state().prepared_models.load(), 0);
+    EXPECT_EQ(fixture.freed, 0);
+    DelegateFixture allowed(backend, bridge);
+    EXPECT_EQ(init_sharing(allowed, false), Error::Ok);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ShareOptionSharesOneModelUntilLastDelegate) {
+  @autoreleasepool {
+    {
+      SCOPED_TRACE("off loads one model per delegate");
+      DelegateFixture first(backend, bridge, multifunction_manifest());
+      DelegateFixture second(backend, bridge, multifunction_manifest());
+      ASSERT_EQ(init_sharing(first, std::nullopt), Error::Ok);
+      ASSERT_EQ(init_sharing(second, false, first.storage.url.path), Error::Ok);
+      EXPECT_EQ(bridge.state().prepared_models.load(), 2);
+    }
+    EXPECT_EQ(bridge.state().prepared_models.load(), 0);
+    {
+      SCOPED_TRACE("on shares one model");
+      DelegateFixture first(backend, bridge, multifunction_manifest());
+      DelegateFixture second(backend, bridge, multifunction_manifest());
+      ASSERT_EQ(init_sharing(first, true), Error::Ok);
+      ASSERT_EQ(init_sharing(second, true, first.storage.url.path), Error::Ok);
+      EXPECT_EQ(bridge.state().prepared_models.load(), 1);
+      EXPECT_EQ(bridge.state().sessions.load(), 2);
+      for (auto* fixture : {&first, &second}) {
+        FloatTensors tensors;
+        ASSERT_EQ(fixture->execute({tensors.args, 2}), Error::Ok);
+        EXPECT_EQ(tensors.output[0], 3);
+        EXPECT_EQ(tensors.output[1], 7);
+      }
+      first.reset();
+      EXPECT_EQ(bridge.state().prepared_models.load(), 1);
+      second.reset();
+      EXPECT_EQ(bridge.state().prepared_models.load(), 0);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, SharedModelsAreScopedToCacheDirectory) {
+  @autoreleasepool {
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture other_directory(backend, bridge, multifunction_manifest());
+    DelegateFixture alias(backend, bridge, multifunction_manifest());
+    ASSERT_EQ(init_sharing(first, true), Error::Ok);
+    ASSERT_EQ(init_sharing(other_directory, true), Error::Ok);
+    EXPECT_EQ(bridge.state().prepared_models.load(), 2);
+    NSURL* link = [alias.storage.url URLByAppendingPathComponent:@"alias"];
+    ASSERT_TRUE([NSFileManager.defaultManager
+        createSymbolicLinkAtURL:link
+             withDestinationURL:first.storage.url
+                          error:nil]);
+    ASSERT_EQ(init_sharing(alias, true, link.path), Error::Ok);
+    EXPECT_EQ(bridge.state().prepared_models.load(), 2);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, SharedModelSerializesConcurrentExecution) {
+  @autoreleasepool {
+    bridge.state().execute_delay_us = 1000;
+    // The unshared run shows the workload does overlap when nothing serializes
+    // it, so the shared assertion can fail.
+    for (const bool share : {false, true}) {
+      SCOPED_TRACE(share ? "shared" : "unshared");
+      bridge.state().max_active_executions = 0;
+      DelegateFixture first(backend, bridge, multifunction_manifest());
+      DelegateFixture second(backend, bridge, multifunction_manifest());
+      ASSERT_EQ(init_sharing(first, share), Error::Ok);
+      ASSERT_EQ(init_sharing(second, share, first.storage.url.path), Error::Ok);
+      std::atomic<int> failures{0};
+      auto run = [&](DelegateFixture* fixture) {
+        for (int iteration = 0; iteration < 20; ++iteration) {
+          FloatTensors tensors;
+          if (fixture->execute({tensors.args, 2}) != Error::Ok ||
+              tensors.output[0] != 3 || tensors.output[1] != 7) {
+            ++failures;
+          }
+        }
+      };
+      std::thread worker(run, &first);
+      run(&second);
+      worker.join();
+      EXPECT_EQ(failures.load(), 0);
+      if (share) {
+        EXPECT_EQ(bridge.state().max_active_executions.load(), 1);
+      } else {
+        EXPECT_GT(bridge.state().max_active_executions.load(), 1);
+      }
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ConcurrentFirstSharedLoadsAcquireOnce) {
+  @autoreleasepool {
+    BookmarkLoaderScope fake;
+    // Widens the window in which a second load could miss the registry.
+    fake.loader.onSpecialize = ^(NSURL*) {
+      usleep(50000);
+    };
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture second(backend, bridge, multifunction_manifest());
+    Error second_result = Error::Internal;
+    NSString* root = first.storage.url.path;
+    std::thread worker(
+        [&] { second_result = init_sharing(second, true, root); });
+    const Error first_result = init_sharing(first, true);
+    worker.join();
+    EXPECT_EQ(first_result, Error::Ok);
+    EXPECT_EQ(second_result, Error::Ok);
+    EXPECT_EQ(
+        fake.loader->specializations.load() + fake.loader->restores.load(), 1);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, SharedLoadsOfDifferentModelsRunConcurrently) {
+  @autoreleasepool {
+    BookmarkLoaderScope fake;
+    // Each specialization waits until both are in flight; if one shared load
+    // blocked the other, neither would ever see two in flight.
+    auto in_flight = std::make_shared<std::atomic<int>>(0);
+    auto max_in_flight = std::make_shared<std::atomic<int>>(0);
+    fake.loader.onSpecialize = ^(NSURL*) {
+      const int now = ++*in_flight;
+      int seen = max_in_flight->load();
+      while (now > seen && !max_in_flight->compare_exchange_weak(seen, now)) {
+      }
+      for (int i = 0; i < 400 && max_in_flight->load() < 2; ++i) {
+        usleep(5000);
+      }
+      --*in_flight;
+    };
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture second(backend, bridge, multifunction_manifest());
+    Error second_result = Error::Internal;
+    std::thread worker([&] { second_result = init_sharing(second, true); });
+    const Error first_result = init_sharing(first, true);
+    worker.join();
+    EXPECT_EQ(first_result, Error::Ok);
+    EXPECT_EQ(second_result, Error::Ok);
+    EXPECT_EQ(fake.loader->specializations.load(), 2);
+    EXPECT_EQ(max_in_flight->load(), 2);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, WaiterAcquiresAfterConcurrentSharedLoadFails) {
+  @autoreleasepool {
+    BookmarkLoaderScope fake;
+    auto calls = std::make_shared<std::atomic<int>>(0);
+    auto first_in_flight = std::make_shared<std::atomic<bool>>(false);
+    auto second_waiting = std::make_shared<std::atomic<bool>>(false);
+    __weak BookmarkFakeLoader* loader = fake.loader;
+    // The first acquisition fails only once the second load waits on it.
+    fake.loader.onSpecialize = ^(NSURL*) {
+      if (++*calls == 1) {
+        *first_in_flight = true;
+        for (int i = 0; i < 1000 && !*second_waiting; ++i) {
+          usleep(5000);
+        }
+        loader.specializeError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                                     code:EIO
+                                                 userInfo:nil];
+      } else {
+        loader.specializeError = nil;
+      }
+    };
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture second(backend, bridge, multifunction_manifest());
+    NSString* root = first.storage.url.path;
+    Error first_result = Error::Ok;
+    std::thread worker([&] { first_result = init_sharing(first, true); });
+    while (!*first_in_flight) {
+      std::this_thread::yield();
+    }
+    Error second_result = Error::Internal;
+    {
+      StorageFaultScope observe_wait(FaultPoint::BeforeSharedLoadWait);
+      observe_wait.armed = false;
+      observe_wait.observe = ^(FaultPoint point) {
+        if (point == FaultPoint::BeforeSharedLoadWait) {
+          *second_waiting = true;
+        }
+      };
+      second_result = init_sharing(second, true, root);
+    }
+    worker.join();
+    EXPECT_TRUE(second_waiting->load());
+    EXPECT_NE(first_result, Error::Ok);
+    EXPECT_EQ(second_result, Error::Ok);
+    EXPECT_EQ(calls->load(), 2);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, FailedSharedAcquisitionLeavesNoEntry) {
+  @autoreleasepool {
+    BookmarkLoaderScope fake;
+    fake.loader.specializeError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                                      code:EIO
+                                                  userInfo:nil];
+    DelegateFixture failed(backend, bridge, multifunction_manifest());
+    EXPECT_NE(init_sharing(failed, true), Error::Ok);
+    fake.loader.specializeError = nil;
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture second(backend, bridge, multifunction_manifest());
+    NSString* root = failed.storage.url.path;
+    ASSERT_EQ(init_sharing(first, true, root), Error::Ok);
+    ASSERT_EQ(init_sharing(second, true, root), Error::Ok);
+    EXPECT_EQ(fake.loader->specializations.load(), 2);
+    EXPECT_EQ(fake.loader->restores.load(), 0);
   }
 }
 

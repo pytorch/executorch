@@ -53,7 +53,9 @@ bool valid_binding(
   NSArray<NSString*>* expected_outputs = context->state.multiple_io
       ? @[ @"output_1", @"output_0" ]
       : @[ @"output_0" ];
-  const bool valid = [function isEqualToString:@"main"] &&
+  NSSet<NSString*>* functions =
+      context->state.functions ?: [NSSet setWithObject:@"main"];
+  const bool valid = [functions containsObject:function] &&
       [inputs isEqualToArray:expected_inputs] &&
       [outputs isEqualToArray:expected_outputs];
   if (!valid) {
@@ -133,6 +135,20 @@ void run_async(CoreAIFakeBridgeContext* context, void (^work)()) {
                (void (^)(NSArray<ETCoreAITensor*>*, NSError*))completion {
   CoreAIFakeBridgeContext* context = self.context;
   ++context->state.executions;
+  const int active = ++context->state.active_executions;
+  int peak = context->state.max_active_executions.load();
+  while (active > peak &&
+         !context->state.max_active_executions.compare_exchange_weak(
+             peak, active)) {
+  }
+  // Ends the overlap window before the caller can observe completion.
+  void (^reply)(NSArray<ETCoreAITensor*>*, NSError*) = completion;
+  completion = ^(NSArray<ETCoreAITensor*>* outputs, NSError* error) {
+    --context->state.active_executions;
+    reply(outputs, error);
+  };
+  const useconds_t delay = context->state.execute_delay_us;
+  NSString* function = self.function;
   const bool should_fail = context->state.fail_execute;
   const bool malformed = context->state.bad_output;
   dispatch_semaphore_t ready = context->state.input_ready;
@@ -141,7 +157,11 @@ void run_async(CoreAIFakeBridgeContext* context, void (^work)()) {
     context.retainedExecutionCompletion = completion;
   }
   run_async(context, ^{
+    if (delay > 0) {
+      usleep(delay);
+    }
     ETCoreAIInputTensor* input = inputs[0];
+    context->state.last_function = function;
     context->state.last_input_bytes = input.bytes;
     context->state.last_input_byte_count = input.byteCount;
     if (ready != nil) {
@@ -228,7 +248,9 @@ void run_async(CoreAIFakeBridgeContext* context, void (^work)()) {
   CoreAIFakeBridgeContext* context = self.context;
   const bool valid =
       valid_binding(context, functionName, inputNames, outputNames);
-  const bool should_fail = context->state.fail_load;
+  const bool should_fail = context->state.fail_load ||
+      [context->state.fail_function isEqualToString:functionName];
+  ++context->state.function_bindings;
   if (context->state.retain_binding_completion) {
     context.retainedBindingCompletion = completion;
   }
@@ -239,6 +261,7 @@ void run_async(CoreAIFakeBridgeContext* context, void (^work)()) {
     }
     FakeSession* session = [[FakeSession alloc] initWithContext:context];
     session.preparedPin = self;
+    session.function = functionName;
     completion(session, nil);
   });
 }
@@ -349,6 +372,7 @@ void run_async(CoreAIFakeBridgeContext* context, void (^work)()) {
     }
     FakeSession* session = [[FakeSession alloc] initWithContext:context];
     session.preparedPin = self;
+    session.function = functionName;
     completion(session, nil);
   });
 }
@@ -538,10 +562,13 @@ NSString* ETCoreAIDeviceArchitectureName(void) {
 }
 
 id<ETCoreAIModelLoading> ETCoreAICreateModelLoader(
-    ETCoreAIComputeUnit computeUnit) {
+    ETCoreAIComputeUnit computeUnit,
+    BOOL expectFrequentReshapes) {
   if (current_context == nil || current_context->state.fail_loader_factory) {
     return nil;
   }
   current_context->state.last_compute_unit = static_cast<int>(computeUnit);
+  current_context->state.last_expect_frequent_reshapes =
+      expectFrequentReshapes ? 1 : 0;
   return current_context->state.bookmark_loader ?: [[FakeLoader alloc] init];
 }

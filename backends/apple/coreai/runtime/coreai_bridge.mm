@@ -25,6 +25,9 @@ NSString* ETCoreAIDeviceArchitectureName(void) {
 }
 
 id<ETCoreAIModelLoading> ETCoreAICreateModelLoader(
-    ETCoreAIComputeUnit computeUnit) {
-  return [[ETCoreAISwiftModelLoader alloc] initWithComputeUnit:computeUnit];
+    ETCoreAIComputeUnit computeUnit,
+    BOOL expectFrequentReshapes) {
+  return [[ETCoreAISwiftModelLoader alloc]
+         initWithComputeUnit:computeUnit
+      expectFrequentReshapes:expectFrequentReshapes];
 }

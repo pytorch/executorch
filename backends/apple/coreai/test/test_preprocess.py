@@ -215,7 +215,9 @@ class AssetMetadataTest(unittest.TestCase):
                 (bundle / "metadata.json").write_text(
                     json.dumps({"creationDate": timestamp})
                 )
-                result = _deliver(root, AssetPackaging.AIMODEL, {"path": bundle.name})
+                result = _deliver(
+                    root, AssetPackaging.AIMODEL, {"path": bundle.name}, [{}]
+                )[0]
                 manifest = json.loads(result.processed_bytes)
                 manifests.append(manifest)
                 self.assertEqual(
@@ -240,7 +242,9 @@ class AssetMetadataTest(unittest.TestCase):
                 (bundle / "model.mil").write_bytes(b"original")
             for payload in (b"original", b"modified"):
                 (root / archs["h16"] / "model.mil").write_bytes(payload)
-                result = _deliver(root, AssetPackaging.AIMODELC, {"archs": archs})
+                result = _deliver(
+                    root, AssetPackaging.AIMODELC, {"archs": archs}, [{}]
+                )[0]
                 manifest = json.loads(result.processed_bytes)
                 manifests.append(manifest)
                 for arch, name in archs.items():
