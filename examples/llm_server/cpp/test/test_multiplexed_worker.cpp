@@ -693,6 +693,7 @@ TEST_F(ProtocolTest, MaxUint64IdAndAutoBudgetAreAccepted) {
   send(request);
   auto done = receive();
   EXPECT_EQ(done.at("request_id"), std::numeric_limits<uint64_t>::max());
+  EXPECT_EQ(done.at("matched_stop"), "x");
   EXPECT_TRUE(done.value("done", false));
   EXPECT_EQ(done.at("finish_reason"), "stop");
   EXPECT_EQ(finish(), 0);

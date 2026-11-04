@@ -565,6 +565,7 @@ class _FakeRuntime:
             stats.prompt_tokens = out.get("prompt_tokens", 0)
             stats.completion_tokens = out.get("completion_tokens", 0)
             stats.finish_reason = out.get("finish_reason", "stop")
+            stats.matched_stop = out.get("matched_stop")
             stats.generated_token_ids = (
                 list(out["gen_ids"]) if out.get("gen_ids") is not None else None
             )

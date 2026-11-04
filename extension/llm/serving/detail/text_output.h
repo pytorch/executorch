@@ -92,6 +92,10 @@ class TextOutput {
     return string_stop_;
   }
 
+  const std::optional<std::string>& matched_stop() const {
+    return matched_stop_;
+  }
+
   std::size_t completion_tokens() const {
     return generated_.size();
   }
@@ -117,6 +121,15 @@ class TextOutput {
     }
     pending_.erase(0, safe);
     if (string_stop_) {
+      const auto match = std::find_if(
+          stop_strings_.begin(),
+          stop_strings_.end(),
+          [&](const std::string& stop) {
+            return pending_.compare(0, stop.size(), stop) == 0;
+          });
+      if (match != stop_strings_.end()) {
+        matched_stop_ = *match;
+      }
       pending_.clear();
     }
   }
@@ -126,6 +139,7 @@ class TextOutput {
   TextStream::Sink sink_;
   TextStream stream_;
   std::string pending_;
+  std::optional<std::string> matched_stop_;
   std::vector<batching::Token> generated_;
   runtime::Error error_ = runtime::Error::Ok;
   bool token_stop_ = false;

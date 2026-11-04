@@ -142,10 +142,23 @@
                   | replace('reasoning effort', 'reasoning strength')
                   | replace('REASONING EFFORT', 'REASONING STRENGTH') -%}
         {%- endif -%}
+        {%- set reasoning_meta = namespace(declared=false, removed=false, lines=[]) -%}
+        {%- for line in sys_text.splitlines() -%}
+            {%- if not ns.metadata_rendered and (line | trim | lower).startswith('reasoning strength:') -%}
+                {%- if reasoning_strength is not defined -%}
+                    {%- set reasoning_meta.declared = true -%}
+                    {%- set reasoning_meta.lines = reasoning_meta.lines + [line] -%}
+                {%- else -%}
+                    {%- set reasoning_meta.removed = true -%}
+                {%- endif -%}
+            {%- else -%}
+                {%- set reasoning_meta.lines = reasoning_meta.lines + [line] -%}
+            {%- endif -%}
+        {%- endfor -%}
         {{- '<|start|>system<|message|>' -}}
-        {{- sys_text -}}
+        {{- (reasoning_meta.lines | join('\n')) if reasoning_meta.removed else sys_text -}}
         {%- if not ns.metadata_rendered -%}
-            {%- if 'reasoning strength' not in (sys_text | lower) -%}
+            {%- if not reasoning_meta.declared -%}
                 {{- '\n\n' -}}
                 {{- render_reasoning() -}}
             {%- endif -%}

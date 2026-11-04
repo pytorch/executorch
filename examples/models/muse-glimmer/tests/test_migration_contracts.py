@@ -6,23 +6,31 @@
 import json
 
 import pytest
-from executorch.examples.llm_server.python.server import build_app
-from executorch.examples.models.muse_glimmer.serving.stream_parser import (
+
+pytest.importorskip("pydantic", reason="requires llm_server serving dependencies")
+pytest.importorskip("fastapi", reason="requires llm_server serving dependencies")
+pytest.importorskip("httpx", reason="requires llm_server serving dependencies")
+pytest.importorskip("jsonschema", reason="requires llm_server serving dependencies")
+
+from executorch.examples.llm_server.python.server import build_app  # noqa: E402
+from executorch.examples.models.muse_glimmer.serving.stream_parser import (  # noqa: E402
     MuseGlimmerToolReasoningParser,
 )
-from executorch.examples.models.muse_glimmer.serving.tool_parsers.atem import (
+from executorch.examples.models.muse_glimmer.serving.tool_parsers.atem import (  # noqa: E402
     AtemToolCallDetector,
 )
-from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (
+from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (  # noqa: E402
     ToolOutputError,
     ToolSchema,
 )
-from executorch.examples.models.muse_glimmer.tests.test_atem_tool_parser import _atem
-from executorch.examples.models.muse_glimmer.tests.test_serve import (
+from executorch.examples.models.muse_glimmer.tests.test_atem_tool_parser import (  # noqa: E402
+    _atem,
+)
+from executorch.examples.models.muse_glimmer.tests.test_serve import (  # noqa: E402
     _FakeRuntime,
     _glimmer_serving,
 )
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 def client_for(raw, split=1):
@@ -152,7 +160,7 @@ def test_user_directed_atem_examples_remain_text(stream, text):
 def test_schema_dialects_and_root_identifier_use_local_refs(dialect):
     schema = {
         "$schema": dialect,
-        "$id": "https://example.invalid/tool",
+        "$id": "https://example.invalid/tool",  # @lint-ignore
         "definitions": {"text": {"type": "string"}},
         "properties": {"q": {"$ref": "#/definitions/text"}},
     }
@@ -185,7 +193,11 @@ def test_draft7_tuple_items_are_validated_using_draft7_rules():
 
 def test_unused_schemas_do_not_reject_tool_choice_none():
     client, _ = client_for(" to=user<|message|>Hello")
-    body = request({"$schema": "https://example.invalid/unsupported-dialect"})
+    body = request(
+        {
+            "$schema": "https://example.invalid/unsupported-dialect",  # @lint-ignore
+        }
+    )
     body["tool_choice"] = "none"
     assert client.post("/v1/chat/completions", json=body).status_code == 200
 
@@ -421,8 +433,16 @@ def test_malformed_and_unknown_calls_are_explicit_errors(raw):
 @pytest.mark.parametrize(
     "schema",
     [
-        {"$schema": "https://example.invalid/unsupported-dialect"},
-        {"properties": {"content": {"$ref": "https://example.invalid/schema"}}},
+        {
+            "$schema": "https://example.invalid/unsupported-dialect",  # @lint-ignore
+        },
+        {
+            "properties": {
+                "content": {
+                    "$ref": "https://example.invalid/schema",  # @lint-ignore
+                }
+            }
+        },
         {"properties": {"content": {"$ref": "#/$defs/missing"}}},
         {"properties": {"content": {"type": "not-a-type"}}},
     ],
@@ -629,3 +649,204 @@ def test_invalid_literal_string_is_not_unquoted_to_satisfy_schema(
     else:
         assert response.status_code == 502
         assert response.json()["error"]["code"] == "invalid_tool_output"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("split", [1, 7, 10000])
+@pytest.mark.parametrize("example_first", [False, True])
+@pytest.mark.parametrize("fenced", [False, True])
+def test_mixed_recipient_examples_never_become_calls(
+    stream, split, example_first, fenced
+):
+    example = _atem("edit.edit", [("q", "EXAMPLE")])
+    if fenced:
+        example = "```xml\n" + example + "\n```"
+    user = "<|start|>assistant to=user<|message|>Example:\n" + example + "<|eom|>"
+    real = (
+        "<|start|>assistant to=edit.edit<|message|>"
+        + _atem("edit.edit", [("q", "REAL")])
+        + "<|eom|>"
+    )
+    raw = user + real if example_first else real + user
+    client, _ = client_for(raw, split)
+    response = client.post(
+        "/v1/chat/completions",
+        json=request({"properties": {"q": {"type": "string"}}}, stream),
+    )
+    assert response.status_code == 200
+    message, finish = response_message(response, stream)
+    assert finish == "tool_calls"
+    assert [
+        json.loads(call["function"]["arguments"]) for call in message["tool_calls"]
+    ] == [{"q": "REAL"}]
+    assert "EXAMPLE" in message["content"]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("reasoning", [False, True])
+@pytest.mark.parametrize("split", [1, 7, 10000])
+def test_request_stop_inside_parameter_suppresses_entire_call_set(
+    stream, reasoning, split
+):
+    raw = (
+        _atem("edit.edit", [("q", "complete")])
+        + "\n"
+        + _atem("edit.edit", [("q", "before\n\nafter")])
+    )
+    client, serving = client_for(raw, split)
+    serving._runtime._outputs[0]["gen_ids"] = [1, 2, 3]
+    body = request({"properties": {"q": {"type": "string"}}}, stream)
+    body.update(stop="\n\n", session_id="stopped", reasoning={"exclude": not reasoning})
+    response = client.post("/v1/chat/completions", json=body)
+    assert response.status_code == 200
+    message, finish = response_message(response, stream)
+    assert finish == "stop"
+    assert not message.get("tool_calls")
+    assert "atem:" not in (message.get("content") or "")
+    assert serving._transcript._turns["stopped"][0]["ids"] is None
+
+
+def _reference_dag(depth):
+    definitions = {"n0": {"properties": {"q": {"type": "string"}}}}
+    for index in range(1, depth + 1):
+        definitions[f"n{index}"] = {"allOf": [{"$ref": f"#/$defs/n{index - 1}"}] * 2}
+    return {"$defs": definitions, "$ref": f"#/$defs/n{depth}"}
+
+
+def test_exponential_reference_expansion_rejected_before_coercion_or_generation(
+    monkeypatch,
+):
+    def unexpected(*args):
+        pytest.fail(
+            "reference expansion must be bounded before recursive coercion analysis"
+        )
+
+    monkeypatch.setattr(ToolSchema, "_variant_count", unexpected)
+    client, serving = client_for(_atem("edit.edit", [("q", "hello")]))
+    response = client.post("/v1/chat/completions", json=request(_reference_dag(40)))
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_tool_schema"
+    assert "expanded schema nodes" in response.json()["error"]["message"]
+    assert not serving._runtime.prompts
+
+
+def test_bounded_shared_reference_schema_still_validates():
+    schema = ToolSchema(_reference_dag(4))
+    assert schema.coerce_arguments("edit", {"q": "123"}) == {"q": "123"}
+
+
+def test_coercion_work_is_bounded_across_alternatives():
+    schema = ToolSchema(
+        {
+            "allOf": [
+                {
+                    "anyOf": [
+                        {"properties": {f"q{i}": {"const": value}}}
+                        for value in ("a", "b")
+                    ]
+                }
+                for i in range(9)
+            ]
+        }
+    )
+    with pytest.raises(ToolOutputError, match="traversal budget"):
+        schema.coerce_arguments("edit", {f"q{i}": "x" for i in range(9)})
+
+
+@pytest.mark.parametrize(
+    "kind,raw,expected",
+    [
+        ("integer", "+5", 5),
+        ("integer", "007", 7),
+        ("number", ".5", 0.5),
+        ("number", "5.", 5.0),
+    ],
+)
+@pytest.mark.parametrize("stream", [False, True])
+def test_declared_numeric_spellings_remain_compatible(kind, raw, expected, stream):
+    client, _ = client_for(_atem("edit.edit", [("q", raw)]))
+    response = client.post(
+        "/v1/chat/completions",
+        json=request({"properties": {"q": {"type": kind}}}, stream),
+    )
+    assert response.status_code == 200
+    message, finish = response_message(response, stream)
+    assert finish == "tool_calls"
+    assert json.loads(message["tool_calls"][0]["function"]["arguments"]) == {
+        "q": expected
+    }
+    assert ToolSchema({"properties": {"q": {"type": "string"}}}).coerce_arguments(
+        "edit", {"q": raw}
+    ) == {"q": raw}
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_null_parameters_are_normalized_before_schema_compilation(stream):
+    client, _ = client_for(_atem("edit.edit", []))
+    response = client.post("/v1/chat/completions", json=request(None, stream))
+    assert response.status_code == 200
+    message, _ = response_message(response, stream)
+    assert json.loads(message["tool_calls"][0]["function"]["arguments"]) == {}
+
+
+@pytest.mark.parametrize(
+    "system",
+    ["Explain how reasoning strength changes answers.", "Reasoning strength: high."],
+)
+def test_explicit_reasoning_effort_survives_system_prose(system):
+    from pathlib import Path
+
+    from executorch.examples.models.muse_glimmer.serving import chat_template
+    from jinja2 import Environment
+
+    template = Environment().from_string(
+        Path(chat_template.__file__).with_suffix(".jinja").read_text()
+    )
+    prompt = template.render(
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": "hi"},
+        ],
+        reasoning_strength="low",
+        add_generation_prompt=True,
+        bos_token="<s>",
+    )
+    assert "Reasoning strength: low." in prompt
+    assert "Reasoning strength: high." not in prompt
+    if system.startswith("Explain"):
+        assert system in prompt
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("matched_stop", [None, "<|eot|>", "\n\n"])
+def test_native_stop_metadata_distinguishes_truncation_from_malformed_eos(
+    stream, matched_stop
+):
+    raw = '<atem:function_calls><atem:invoke name="edit.edit"><atem:parameter name="q">unfinished'
+    client, serving = client_for(raw)
+    serving._runtime._outputs[0]["matched_stop"] = matched_stop
+    body = request({"properties": {"q": {"type": "string"}}}, stream)
+    body["stop"] = "\n\n"
+    response = client.post("/v1/chat/completions", json=body)
+    if matched_stop == "\n\n":
+        assert response.status_code == 200
+        message, finish = response_message(response, stream)
+        assert finish == "stop"
+        assert not message.get("tool_calls")
+    elif stream:
+        assert '"invalid_tool_output"' in response.text
+    else:
+        assert response.status_code == 502
+        assert response.json()["error"]["code"] == "invalid_tool_output"
+
+
+def test_compiled_schemas_are_not_copied_with_request_normalization(monkeypatch):
+    def unexpected(*args):
+        pytest.fail("compiled schemas must not be deep-copied with request data")
+
+    monkeypatch.setattr(ToolSchema, "__deepcopy__", unexpected, raising=False)
+    client, _ = client_for(_atem("edit.edit", [("q", "hello")]))
+    response = client.post(
+        "/v1/chat/completions", json=request({"properties": {"q": {"type": "string"}}})
+    )
+    assert response.status_code == 200

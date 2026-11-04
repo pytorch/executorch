@@ -67,13 +67,31 @@ def tool_start(text):
     return None
 
 
+def _tool_blocks(text):
+    offset = 0
+    while offset < len(text):
+        relative = tool_start(text[offset:])
+        if relative is None:
+            return
+        start = offset + relative
+        invokes = list(_INVOKE_RE.finditer(text, start))
+        end = None
+        for close in re.finditer(r"</atem:function_calls>", text[start:]):
+            cut = start + close.start()
+            if not any(invoke.start() <= cut < invoke.end() for invoke in invokes):
+                end = start + close.end()
+                break
+        yield start, end
+        if end is None:
+            return
+        offset = end
+
+
 def parameter_value_spans(text):
-    start = tool_start(text)
-    if start is None:
-        return []
     return [
         (invoke.start(2) + parameter.start(2), invoke.start(2) + parameter.end(2))
-        for invoke in _INVOKE_RE.finditer(text, start)
+        for start, end in _tool_blocks(text)
+        for invoke in _INVOKE_RE.finditer(text, start, end or len(text))
         for parameter in _PARAMETER_RE.finditer(invoke.group(2))
     ]
 
@@ -94,24 +112,36 @@ class AtemToolCallDetector:
         self._next_index = 0
 
     def detect_and_parse(
-        self, text: str, tools: dict, *, finish_reason=None
+        self, text: str, tools: dict, *, finish_reason=None, truncated=False
     ) -> ParseResult:
-        start = tool_start(text)
-        if start is None:
-            return ParseResult(normal_text=text)
-        header = self._preceding_header(text, start)
-        normal = text[: header if header is not None else start].strip()
+        normal, calls = [], []
+        offset = 0
+        incomplete = False
         try:
-            if _INVOKE_RE.search(text, start) is None:
-                raise IncompleteToolOutputError("Incomplete ATEM tool call")
-            calls = self._parse_calls(text[start:], tools)
+            for start, end in _tool_blocks(text):
+                header = self._preceding_header(text, start)
+                normal.append(text[offset : header if header is not None else start])
+                offset = end or len(text)
+                # Consume only framing belonging to this call block.
+                terminator = re.match(r"\s*<\|eo[mt]\|>", text[offset:])
+                if terminator:
+                    offset += terminator.end()
+                if end is None or _INVOKE_RE.search(text, start, end) is None:
+                    raise IncompleteToolOutputError("Incomplete ATEM tool call")
+                calls.extend(self._parse_calls(text[start:end], tools))
         except IncompleteToolOutputError:
-            if finish_reason == "length":
-                return ParseResult(normal_text=normal, incomplete=True)
-            raise
+            if finish_reason != "length" and not truncated:
+                raise
+            calls = []
+            incomplete = True
         except (ValueError, RecursionError) as error:
             raise ToolOutputError("Malformed ATEM tool call") from error
-        return ParseResult(normal_text=normal, calls=calls)
+        normal.append(text[offset:])
+        return ParseResult(
+            normal_text="".join(normal).strip() if calls or incomplete else text,
+            calls=calls,
+            incomplete=incomplete,
+        )
 
     @staticmethod
     def _preceding_header(text: str, cut: int) -> Optional[int]:

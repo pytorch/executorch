@@ -110,11 +110,17 @@ Malformed parameter bodies, duplicate parameters, undefined calls, and arguments
 that violate their JSON Schema produce `invalid_tool_output` errors, with no tool
 calls emitted. Parameters support union schemas and local JSON pointer references;
 string values preserve whitespace and literal Harmony headers. Schema validation
-uses Draft 2020-12; remote references, `$id`, and `$dynamicRef` are rejected before
-generation. Install the serving requirements, including `jsonschema`.
-Coercion preserves correlations between object alternatives and conditional
-schemas, then validates the complete argument object. The search is bounded to
-1024 schema alternatives; exceeding that budget fails with `invalid_tool_output`.
+accepts Draft 7, 2019-09, and 2020-12 (the default), including root `$id` and local
+fragment references. External references, nested schema identifiers/dialect changes,
+dynamic references, more than 1023 coercion alternatives, and more than 4096 expanded
+schema nodes are rejected before generation. Disabled tools are not validated.
+Validators are compiled once per request and never fetch schemas. Install the
+serving requirements, including `jsonschema`.
+Coercion preserves correlations between object alternatives and conditional schemas,
+then validates the complete argument object. Declared numeric parameters also accept
+spellings such as `+5`, `007`, `.5`, and `5.`; declared strings stay literal.
+Coercion has a separate 65,536-visit budget and tries at most 1024 alternatives;
+exceeding either returns `invalid_tool_output`.
 This is validation after generation, not token-level constrained decoding.
 `function.strict=true` is supported: a successful response contains only
 schema-valid calls; invalid generation fails the response. This supports Muse's
@@ -312,19 +318,18 @@ draft ABI and `--dflash-n-draft` behave as on MLX. Drafts are greedy; the target
 accepts or resamples them on the device under each request's sampling. Decode
 drafts of up to four owners run in CUDA graphs.
 
-Tool validation accepts JSON Schema Draft 7, 2019-09, and 2020-12 (the default),
-including root `$id` and local fragment references. External references, nested
-schema identifiers/dialect changes, dynamic references, and more than 1023
-coercion alternatives are rejected before generation. Disabled tools are not
-validated. Validators are compiled once per request and never fetch schemas.
-
 ATEM tool intent must start a line outside Markdown code or immediately follow a
 tool recipient header. User-directed examples and quoted markers remain content.
-A length-truncated invocation suppresses the entire incomplete call set and ends
-with `finish_reason=length`; malformed completed calls still return
+An invocation truncated by length or a request stop suppresses the entire
+incomplete call set and ends with `finish_reason=length` or `stop`, respectively;
+malformed completed calls still return
 `invalid_tool_output`. Streaming may already have delivered reasoning before that
 error. Tool calls are emitted only after the whole call set passes validation.
 
 Empty reasoning options and `enabled=true` are no-ops. `effort` accepts low,
 medium, or high, and `exclude` controls response visibility. Disabling reasoning
 generation or unsupported reasoning keys returns an explicit parameter error.
+
+Native workers report the matched string stop separately from EOS, including when
+the stop was removed from their text stream. Rebuild the worker with this adapter
+to support native-trimmed request stops inside tool arguments.

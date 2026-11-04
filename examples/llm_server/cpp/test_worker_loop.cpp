@@ -500,6 +500,7 @@ void test_stop_string_marks_dirty_and_omits_ids() {
   auto em = run(st, true, req);
   check("stop: text=ab (stop trimmed)", em.text == "ab");
   check("stop: finish=stop", em.done["finish_reason"] == "stop");
+  check("stop: reports removed stop", em.done["matched_stop"] == "X");
   check(
       "stop: no generated_token_ids", !em.done.contains("generated_token_ids"));
   check("stop: session marked dirty", st.dirty);

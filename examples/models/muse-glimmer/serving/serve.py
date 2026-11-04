@@ -23,12 +23,11 @@ from executorch.examples.llm_server.python.errors import (
 )
 from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
 from executorch.examples.llm_server.python.server import build_app
-from executorch.examples.llm_server.python.serving_chat import ServingChat
+from executorch.examples.llm_server.python.serving_chat import ServingChat, ToolContext
 from executorch.examples.llm_server.python.session_runtime import (
     PromptInput,
     SessionRuntime,
 )
-from executorch.examples.llm_server.python.tool_parsers.types import ParseResult
 from executorch.examples.llm_server.python.worker_client import spawn_worker
 from executorch.examples.models.muse_glimmer.serving.chat_template import (
     MuseGlimmerChatTemplate as ChatTemplate,
@@ -39,7 +38,6 @@ from executorch.examples.models.muse_glimmer.serving.tool_parsers import (
 )
 from executorch.examples.models.muse_glimmer.serving.tool_parsers.atem import (
     parameter_value_spans,
-    tool_start,
 )
 from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (
     ToolSchema,
@@ -274,18 +272,21 @@ class MuseGlimmerServingChat(ServingChat):
             return None
         return super()._count_prompt_tokens(prompt)
 
-    def _parse_tools(self, req, text, finish_reason, raw_text):
+    def _parse_tools(
+        self, req, text, finish_reason, raw_text, context, request_stopped
+    ):
         if self._tool_detector_cls is AtemToolCallDetector:
-            if tool_start(raw_text) is None:
-                return ParseResult(normal_text=text)
-            schemas = req._validated_tool_schemas or {
-                name: ToolSchema(schema)
-                for name, schema in self._tool_schemas(req).items()
-            }
-            return AtemToolCallDetector().detect_and_parse(
-                text, schemas, finish_reason=finish_reason
+            parsed = AtemToolCallDetector().detect_and_parse(
+                raw_text,
+                context.schemas,
+                finish_reason=finish_reason,
+                truncated=request_stopped,
             )
-        return super()._parse_tools(req, text, finish_reason, raw_text)
+            parsed.normal_text = self._split_reasoning(parsed.normal_text)[1]
+            return parsed
+        return super()._parse_tools(
+            req, text, finish_reason, raw_text, context, request_stopped
+        )
 
     @staticmethod
     def _validate_reasoning_options(reasoning):
@@ -367,12 +368,11 @@ class MuseGlimmerServingChat(ServingChat):
         req = self._normalize_reasoning(req)
         self._reject_invalid_values(req)
         self._reject_unsupported_params(req)
+        tool_context = ToolContext()
         if self._tools_active(req):
-            req._validated_tool_schemas = {
-                tool["function"]["name"]: ToolSchema(
-                    tool["function"].get("parameters", {})
-                )
-                for tool in req.tools
+            tool_context.schemas = {
+                name: ToolSchema(schema)
+                for name, schema in self._tool_schemas(req).items()
             }
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
@@ -412,7 +412,14 @@ class MuseGlimmerServingChat(ServingChat):
             template_kwargs, tools=template_tools
         )
         return await self._create_response(
-            history_req, prompt_input, options, preamble, gen_stops, lease, admission
+            history_req,
+            prompt_input,
+            options,
+            preamble,
+            gen_stops,
+            lease,
+            admission,
+            tool_context=tool_context,
         )
 
 

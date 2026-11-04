@@ -700,6 +700,7 @@ inline void worker_handle_request(
   int64_t num_generated = 0;
   std::string finish = "length"; // EOS or stop string -> "stop"
   bool stop_string = false; // a request stop string was matched
+  std::optional<std::string> matched_stop;
   bool cancelled = false;
   bool cancellation_sealed = false;
   auto seal_cancellation = [&]() {
@@ -760,6 +761,13 @@ inline void worker_handle_request(
     if (stop_hit) {
       finish = "stop"; // reached a stop string: drop it and everything after
       stop_string = true;
+      const auto match = std::find_if(
+          stops.begin(), stops.end(), [&](const std::string& stop) {
+            return pending.compare(0, stop.size(), stop) == 0;
+          });
+      if (match != stops.end()) {
+        matched_stop = *match;
+      }
       // Trimming at the stop means the next turn's prompt won't be an exact
       // token extension of resident, so force a reset (no false prefix match).
       //
@@ -800,6 +808,9 @@ inline void worker_handle_request(
       {"reused_prompt_tokens", reused},
       {"prefilled_prompt_tokens", prefilled},
       {"session_reset_reason", plan.reason}};
+  if (matched_stop) {
+    done["matched_stop"] = *matched_stop;
+  }
   if (cancelled) {
     done["cancelled"] = true;
   }

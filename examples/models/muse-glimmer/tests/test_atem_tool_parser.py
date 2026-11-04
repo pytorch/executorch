@@ -23,10 +23,14 @@ format, including the exact newline placement used by the reference renderer.
 import json
 
 import pytest
-from executorch.examples.models.muse_glimmer.serving.tool_parsers import (
+
+pytest.importorskip("pydantic", reason="requires llm_server serving dependencies")
+pytest.importorskip("jsonschema", reason="requires llm_server serving dependencies")
+
+from executorch.examples.models.muse_glimmer.serving.tool_parsers import (  # noqa: E402
     AtemToolCallDetector,
 )
-from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (
+from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (  # noqa: E402
     ToolOutputError,
 )
 

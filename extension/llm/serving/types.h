@@ -150,6 +150,8 @@ struct ET_EXPERIMENTAL GenerationStats {
   // suffix. Present only for Stop/Length completion without a matched string
   // stop or rendering error. An empty vector is distinct from absent.
   std::optional<std::vector<batching::Token>> generated_token_ids;
+  // Exact string stop removed from visible output; absent for token EOS.
+  std::optional<std::string> matched_stop;
 };
 
 struct ET_EXPERIMENTAL TextEvent {
