@@ -131,6 +131,7 @@ jobs:
           backends/mlx/test/test_serialization_dedup.py \
           backends/mlx/test/test_slot_recycling.py \
           backends/mlx/test/test_sample.py \
+          backends/mlx/test/test_run_all_tests.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           examples/models/muse-glimmer/tests/test_mlx_pipeline.py \
           examples/models/muse-glimmer/tests/test_mlx_offgraph.py \

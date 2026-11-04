@@ -13,6 +13,7 @@ from executorch.backends.arm.operator_support.index_tensor_support import (
 )
 from executorch.backends.arm.operator_support.topk_support import TopKSupported
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    _int64_operands_agree,
     CheckFPComparisonInputs,
     CheckKnownUnsupportedTOSASemantics,
 )
@@ -323,3 +324,13 @@ def test_topk_keyword_arguments(dim) -> None:
     )
     assert config is not None and config.k == 4
     assert reason is None
+
+
+def test_int64_operand_check_skips_symbolic_inputs() -> None:
+    graph = torch.fx.Graph()
+    x = _placeholder(graph, "x", (8,), torch.int32)
+    size = graph.placeholder("size")
+    size.meta["val"] = ShapeEnv().create_unbacked_symint()
+    node = graph.call_function(exir_ops.edge.aten.view_copy.default, (x, [size, -1]))
+
+    assert _int64_operands_agree(node)

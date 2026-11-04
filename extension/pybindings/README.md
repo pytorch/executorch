@@ -240,28 +240,33 @@ look wrong there. If Python has replaced `sys.stderr`, for example with pytest's
 `capsys`, `contextlib.redirect_stderr` or in a Jupyter notebook, the lines go to
 `sys.stderr` instead, a little later. The lines a binding call logs wait until
 the call returns. A line logged outside any binding call, for example by the LLM
-runner, goes to `sys.stderr` before the next Python code runs if Python's main
-thread logged it. A line from another thread goes there a moment later, from a
-thread that the bindings start for this. Outside a call, only a thread that
-holds the GIL can tell where `sys.stderr` goes, so a line from a thread that
-does not hold it, such as one the LLM runner logs while it generates, goes to
-the process's stderr. The lines wait rather than go to Python at once because a
-backend can log while it holds a lock, and writing to Python at that moment
-could deadlock with another thread.
+runner, goes to `sys.stderr` soon after. If Python's main thread logged it, that
+thread writes it itself, before the lines of its next binding call. But if
+earlier lines of the main thread still wait for the bindings' thread, this line
+follows them there. A line from another thread also goes to the bindings'
+thread, which the bindings start for this. It writes to whatever `sys.stderr` is
+at that moment. Outside a call, only a thread that holds the GIL can tell where
+`sys.stderr` goes, so a line from a thread that does not hold it, such as one
+the LLM runner logs while it generates, goes to the process's stderr. The lines
+wait rather than go to Python at once because a backend can log while it holds a
+lock, and writing to Python at that moment could deadlock with another thread.
 
 On Linux and macOS, a line also waits once the process's stderr is a pipe or
 socket that stays full for 100 ms, so a thread that holds the GIL does not hang
 on it while a Python thread in the same process empties it, as under
 `wurlitzer.pipes()`. The rest of a binding call's lines then wait for the call
-to return. A thread that logs outside a call does not wait for room itself. It
-hands the line to the bindings' thread, which writes it without the GIL. While
-it writes, a binding call's lines wait for the call to return. A terminal is
-written at once, since its reader is normally another process. The process can
-still hang if another writer fills the process's stderr right after the check
-for room, or if a Python thread in the same process reads a terminal that is the
-process's stderr. On macOS, a pipe that has not grown past 16 KiB takes a line
-only once the line fits in 512 bytes beside what the pipe holds, because macOS
-reports room in such a pipe that it may not have.
+to return. A thread that holds the GIL and logs outside a call does not wait for
+room itself. It hands the line to the bindings' thread, which writes it a line
+at a time without the GIL. While it writes, a binding call's lines wait for the
+call to return. A terminal is written at once, since its reader is normally
+another process. The process can still hang if another writer fills the
+process's stderr right after the check for room, if a thread that does not hold
+the GIL logs outside a call while a Python thread in the same process empties a
+full stderr and a binding call holds the GIL waiting for that thread, or if a
+Python thread in the same process reads a terminal that is the process's stderr.
+On macOS, a pipe that has not grown past 16 KiB takes a line only once the line
+fits in 512 bytes beside what the pipe holds, because macOS reports room in such
+a pipe that it may not have.
 
 Up to 1 MiB of lines wait at a time; past that, about the newest 512 KiB to
 1 MiB are kept, with a note of how many earlier bytes were left out. A fatal
