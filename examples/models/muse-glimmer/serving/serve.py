@@ -257,7 +257,7 @@ class MuseGlimmerServingChat(ServingChat):
             return None
         return super()._count_prompt_tokens(prompt)
 
-    async def _create(self, req: ChatCompletionRequest, lease):
+    async def _create(self, req: ChatCompletionRequest, lease, admission):
         # The inherited create() owns the transaction around preparation and
         # response cleanup; only image-aware prompt construction differs here.
         if req.model is not None and req.model != self._model_id:
@@ -299,7 +299,7 @@ class MuseGlimmerServingChat(ServingChat):
             template_kwargs, tools=template_tools
         )
         return await self._create_response(
-            history_req, prompt_input, options, preamble, gen_stops, lease
+            history_req, prompt_input, options, preamble, gen_stops, lease, admission
         )
 
 

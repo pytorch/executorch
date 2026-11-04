@@ -131,6 +131,11 @@ class OpenAITranscriptState:
             else:
                 continue
             norm.append([name, _normalize_tool_args(args)])
+        if isinstance(content, list):
+            content = [
+                {key: value for key, value in part.items() if key != "cache_control"}
+                for part in content
+            ]
         blob = json.dumps([content or "", norm], sort_keys=True, ensure_ascii=False)
         return hashlib.sha1(blob.encode("utf-8")).hexdigest()
 

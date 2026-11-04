@@ -503,6 +503,9 @@ class SessionRuntime:
         self._abort_timeout_seconds = abort_timeout_seconds
         self._failure: Optional[WorkerError] = None
 
+    def session_in_use(self, session_id: str) -> bool:
+        return self._session_locks.in_use(session_id)
+
     @property
     def healthy(self) -> bool:
         if self._failure is not None:

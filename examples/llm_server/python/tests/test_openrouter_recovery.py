@@ -186,7 +186,7 @@ def test_stream_admission_evicts_idle_sessions_before_or_after_preflight(late, l
             assert '"error"' not in output
             assert worker.closed_sessions == ["a"]
             assert worker.sessions == set(serving._idle_sessions) == {"b", "c"}
-            assert not serving._admitted_sessions
+            assert not serving._cleanup_sessions
         finally:
             worker.admission.set()
             await runtime.aclose_worker()

@@ -276,7 +276,7 @@ safely replay exact output IDs. Statistics describe consumed prompt and generate
 tokens, not necessarily visible text. Runtime failures have the terminal shape
 `{"request_id":8,"error":"message","code":"internal"}`. Stable error codes
 include `invalid_argument`, `not_ready`, `session_not_found`, `session_busy`,
-`capacity_exhausted`, `internal`, `slow_consumer`, and `frame_too_large`.
+`capacity_exhausted`, `session_capacity_exhausted`, `internal`, `slow_consumer`, and `frame_too_large`.
 
 Lifecycle commands are `open`, `close`, and `reset`, each with `session_id` and
 its own request ID. Their replies are respectively `opened:true`, `closed:true`,
@@ -383,3 +383,8 @@ Idle-session recovery retries at most once and only for native
 open refusal. Request, control-queue, executor, and output-buffer overload remain
 `capacity_exhausted` and never trigger eviction. Both map to HTTP 429. Failed
 closes retain replay state and rotate the victim for a later request.
+
+Unconfirmed native admissions whose cleanup close fails remain cleanup candidates
+until closure is confirmed. Stale candidates do not consume the admission retry,
+and eviction skips sessions whose runtime lease is still settling. Client-only
+`cache_control` markers do not change the replay history fingerprint.
