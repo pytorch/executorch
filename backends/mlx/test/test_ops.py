@@ -3905,14 +3905,14 @@ class ConvStringPaddingTest(OpTestCase):
     @classmethod
     def get_test_configs(cls) -> List["ConvStringPaddingTest"]:
         # Patch embedding: non-overlapping 16x16 patches.
-        patches = dict(
-            padding="valid",
-            kernel_size=16,
-            stride=16,
-            in_channels=3,
-            out_channels=16,
-            input_size=64,
-        )
+        patches = {
+            "padding": "valid",
+            "kernel_size": 16,
+            "stride": 16,
+            "in_channels": 3,
+            "out_channels": 16,
+            "input_size": 64,
+        }
         return [
             cls(**patches),
             cls(padding="valid", dilation=2, groups=2),
