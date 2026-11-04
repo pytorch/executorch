@@ -25,8 +25,7 @@ typedef struct CUstream_st* cudaStream_t;
 // its shims run on. It lives in this shared library, beside the caller stream,
 // so that a process has one copy of it whichever libraries the delegate and its
 // shims are linked into. It is the CUDA delegate's own selection, so it is
-// internal: another backend should follow getCallerStream instead, also because
-// getCurrentCUDAStream creates a stream on first use and never destroys it.
+// internal: another backend should follow getCallerStream instead.
 namespace executorch::extension::cuda::internal {
 
 /**
@@ -42,7 +41,9 @@ EXECUTORCH_EXTENSION_CUDA_API ::executorch::runtime::Error setCurrentCUDAStream(
 
 /**
  * Get the current CUDA stream for the specified device.
- * If no stream has been set, creates a new stream and sets it as current.
+ * If no stream has been set, returns cudaStreamPerThread, the stream the
+ * delegate runs on when the caller selects none. That handle names a stream of
+ * the device that is current when it is used, not of device_index.
  *
  * @param device_index The device index (-1 to use current device)
  * @return Result containing the current stream on success, or an error code on
@@ -53,10 +54,10 @@ getCurrentCUDAStream(int8_t device_index = -1);
 
 /**
  * The CUDA stream registered for the specified device, or std::nullopt if none
- * is set. Unlike getCurrentCUDAStream, it never creates one, so it can snapshot
- * the current selection without side effects. Also returns std::nullopt if the
- * current device cannot be queried (device_index -1), so nullopt does not
- * distinguish "no stream set" from "device query failed".
+ * is set. Unlike getCurrentCUDAStream, it does not fall back to
+ * cudaStreamPerThread, so it can snapshot the selection exactly. Also returns
+ * std::nullopt if the current device cannot be queried (device_index -1), so
+ * nullopt does not distinguish "no stream set" from "device query failed".
  *
  * @param device_index The device index (-1 to use current device)
  */

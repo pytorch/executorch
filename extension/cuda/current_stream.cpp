@@ -58,16 +58,7 @@ Result<cudaStream_t> getCurrentCUDAStream(int8_t device_index) {
   if (it != current_streams_.end()) {
     return it->second;
   }
-
-  cudaStream_t stream;
-  cudaError_t err = cudaStreamCreate(&stream);
-  ET_CHECK_OR_RETURN_ERROR(
-      err == cudaSuccess,
-      Internal,
-      "getCurrentCUDAStream: cudaStreamCreate failed: %s",
-      cudaGetErrorString(err));
-  setCurrentCUDAStream(stream, device_index);
-  return stream;
+  return cudaStreamPerThread;
 }
 
 std::optional<cudaStream_t> peekCurrentCUDAStream(int8_t device_index) {
