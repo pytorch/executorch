@@ -18,6 +18,7 @@ import json
 import logging
 from typing import Any, Optional
 
+from .errors import APIError
 from .protocol import ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -164,13 +165,23 @@ class ChatTemplate:
         if self._hf is not None:
             dumped = [m.model_dump(exclude_none=True) for m in messages]
             _decode_tool_call_arguments(dumped)
-            rendered = self._hf.apply_chat_template(
-                dumped,
-                tools=tools,
-                add_generation_prompt=True,
-                tokenize=False,
-                **kwargs,
-            )
+            from jinja2 import TemplateError
+
+            try:
+                rendered = self._hf.apply_chat_template(
+                    dumped,
+                    tools=tools,
+                    add_generation_prompt=True,
+                    tokenize=False,
+                    **kwargs,
+                )
+            except (TemplateError, ValueError, TypeError) as error:
+                raise APIError(
+                    400,
+                    f"Invalid chat template input: {error}",
+                    "invalid_request_error",
+                    "invalid_value",
+                ) from error
             if self._strip_rendered_prefix and rendered.startswith(
                 self._strip_rendered_prefix
             ):

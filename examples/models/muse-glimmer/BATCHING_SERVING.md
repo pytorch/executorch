@@ -105,6 +105,41 @@ framing and emits `reasoning_content` and `content` incrementally. Optional ATEM
 tool parsing is enabled with `--tool-parser atem`; tool-enabled responses
 currently remain buffered.
 
+The launcher waits at most one second for initial generation readiness before
+returning streaming headers. Idle streams send SSE keepalive comments every 15
+seconds. Admission errors detected before headers retain their HTTP status; late
+errors are delivered as SSE errors. Keepalives indicate a live connection, not
+measured prefill progress.
+
+### Muse CLI through OpenRouter
+
+Start the server with `--max-sessions 8 --tool-parser atem`
+and `--stream-usage-format openrouter`, adding
+`--dflash --dflash-n-draft 7` for a matching DFlash
+export. Then launch the installed Muse CLI:
+
+```sh
+python -m executorch.examples.llm_server.python.muse \
+  --base-url http://127.0.0.1:8000/v1 --model muse_glimmer
+```
+
+The helper reads `/v1/models` and sets Muse's
+`context_compaction.provider_context_limit_tokens` to the server's actual context
+limit. Append `exec` and its flags for noninteractive use, or use `--muse-bin` to
+select an installed executable. Launching Muse directly without this override
+can retain its unknown-model fallback budget; model metadata alone does not
+configure the installed OpenRouter provider.
+
+The OpenRouter usage format includes usage once on the terminal finish chunk.
+The installed Muse provider stops reading at that chunk, so a later usage-only
+chunk would be lost. The default `openai` format keeps the separate usage-only
+chunk. Both formats honor `stream_options.include_usage`.
+The `openrouter` mode also supplies the error metadata and message counts Muse
+needs for reactive context-overflow recovery. Counts describe the input prompt and
+its available budget after reserving completion space; metadata retains the full
+model window. A completion reservation consuming the entire window cannot be
+fixed by compacting input and does not advertise recoverable counts.
+
 Streaming intentionally differs from the legacy buffered fallback for incomplete
 `<|` headers, which are suppressed at EOF; bare `to=` suffixes remain literal text
 unless a complete addressed header resolves them. Streaming also removes known

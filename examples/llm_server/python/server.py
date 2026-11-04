@@ -30,7 +30,6 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-
 from typing import AsyncContextManager, Awaitable, Callable, Optional
 
 from fastapi import FastAPI, Header, Request
@@ -124,13 +123,45 @@ async def _create_with_disconnect(
 
 
 class _ClosingStreamingResponse(StreamingResponse):
+    def __init__(self, content, **kwargs):
+        self._source = content
+        super().__init__(_with_heartbeats(content), **kwargs)
+
     async def __call__(self, scope, receive, send):
         try:
             await super().__call__(scope, receive, send)
         finally:
-            await SessionRuntime._finish_cleanup(
-                asyncio.create_task(self.body_iterator.aclose())
-            )
+            try:
+                await SessionRuntime._finish_cleanup(
+                    asyncio.create_task(self.body_iterator.aclose())
+                )
+            finally:
+                await SessionRuntime._finish_cleanup(
+                    asyncio.create_task(self._source.aclose())
+                )
+
+
+async def _with_heartbeats(stream, interval=15.0):
+    pending = None
+    try:
+        while True:
+            if pending is None:
+                pending = asyncio.create_task(stream.__anext__())
+            done, _ = await asyncio.wait((pending,), timeout=interval)
+            if not done:
+                yield ": keep-alive\n\n"
+                continue
+            try:
+                value = pending.result()
+            except StopAsyncIteration:
+                return
+            pending = None
+            yield value
+    finally:
+        if pending is not None:
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+        await stream.aclose()
 
 
 def _create_serving_app(serving, serving_factory):
@@ -192,7 +223,13 @@ def build_app(
 
     @app.get("/v1/models")
     async def list_models() -> ModelList:
-        return ModelList(data=[ModelCard(id=model_id)])
+        return ModelList(
+            data=[
+                ModelCard(
+                    id=model_id, context_length=_current_serving(app)._max_context
+                )
+            ]
+        )
 
     @app.post("/v1/chat/completions")
     async def chat_completions(
@@ -217,7 +254,9 @@ def build_app(
         except ClientDisconnect:
             return Response(status_code=499)
         except APIError as e:
-            return JSONResponse(e.body(), status_code=e.status)
+            return JSONResponse(
+                _current_serving(app).error_body(e), status_code=e.status
+            )
         if req.stream:
             return _ClosingStreamingResponse(result, media_type="text/event-stream")
         return JSONResponse(result.model_dump(exclude_none=True))

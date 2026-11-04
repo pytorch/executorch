@@ -287,9 +287,9 @@ class MuseGlimmerServingChat(ServingChat):
         if self._max_context:
             count = self._count_prompt_tokens(prompt_input)
             if count is not None:
-                if count >= self._max_context:
-                    raise ContextLengthExceeded(count, self._max_context)
                 requested = req.resolved_max_tokens()
+                if count >= self._max_context:
+                    raise ContextLengthExceeded(count, self._max_context, requested)
                 if requested > 0 and count + requested > self._max_context:
                     raise ContextLengthExceeded(count, self._max_context, requested)
 

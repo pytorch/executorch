@@ -147,6 +147,9 @@ class ServingChat:
         streaming_parser_factory: Optional[
             Callable[[], StreamingResponseParser]
         ] = None,
+        streaming_preflight_timeout: Optional[float] = None,
+        stream_usage_in_finish_chunk: bool = False,
+        openrouter_errors: bool = False,
     ):
         self._runtime = runtime
         self._template = template
@@ -156,6 +159,9 @@ class ServingChat:
         self._content_filter = content_filter
         self._reasoning_extractor = reasoning_extractor
         self._streaming_parser_factory = streaming_parser_factory
+        self._streaming_preflight_timeout = streaming_preflight_timeout
+        self._stream_usage_in_finish_chunk = stream_usage_in_finish_chunk
+        self._openrouter_errors = openrouter_errors
         # Detector CLASS; a fresh instance is created per request so streaming
         # state is never shared across concurrent requests.
         self._tool_detector_cls = tool_detector_cls
@@ -188,6 +194,9 @@ class ServingChat:
     def healthy(self) -> bool:
         """Whether the underlying model worker can accept new requests."""
         return self._runtime.healthy
+
+    def error_body(self, error: APIError) -> dict:
+        return error.body(openrouter=self._openrouter_errors)
 
     @staticmethod
     def _tool_schemas(req: ChatCompletionRequest) -> dict[str, dict]:
@@ -346,6 +355,17 @@ class ServingChat:
         )
 
     @staticmethod
+    def _usage(stats: GenStats) -> Usage:
+        return Usage(
+            prompt_tokens=stats.prompt_tokens,
+            completion_tokens=stats.completion_tokens,
+            total_tokens=stats.prompt_tokens + stats.completion_tokens,
+            prompt_tokens_details=PromptTokensDetails(
+                cached_tokens=stats.reused_prompt_tokens
+            ),
+        )
+
+    @staticmethod
     def _log_generation_stats(
         session_id: Optional[str], stats: GenStats, finish: str
     ) -> None:
@@ -430,6 +450,8 @@ class ServingChat:
 
     @staticmethod
     def _generation_error(error: Exception) -> APIError:
+        if isinstance(error, APIError):
+            return error
         if isinstance(error, WorkerError):
             if error.code in ("capacity_exhausted", "unsupported_session"):
                 return SessionCapacity(error.code)
@@ -594,6 +616,7 @@ class ServingChat:
             ),
             (req.n != 1, "n>1"),
             (req.reasoning_effort is not None, "reasoning_effort"),
+            (req.reasoning is not None, "reasoning"),
             (bool(req.frequency_penalty), "frequency_penalty"),
             (bool(req.presence_penalty), "presence_penalty"),
             (bool(req.logit_bias), "logit_bias"),
@@ -691,12 +714,12 @@ class ServingChat:
         if self._max_context:
             count = self._count_prompt_tokens(prompt_input)
             if count is not None:
+                requested = req.resolved_max_tokens()
                 if count >= self._max_context:
-                    raise ContextLengthExceeded(count, self._max_context)
+                    raise ContextLengthExceeded(count, self._max_context, requested)
                 # An explicit max_tokens that wouldn't fit alongside the prompt
                 # must be rejected here, not run until the worker hits the context
                 # limit mid-decode (a 500 / streaming error after partial output).
-                requested = req.resolved_max_tokens()
                 if requested > 0 and count + requested > self._max_context:
                     raise ContextLengthExceeded(count, self._max_context, requested)
         # Per-path worker stop set (see __init__ for the two sets and why): tool
@@ -728,7 +751,7 @@ class ServingChat:
                 req.session_id, prompt_input, options, stats
             )
             if self._multiplexed:
-                await generation.wait_ready()
+                await generation.wait_ready(timeout=self._streaming_preflight_timeout)
             return _ChatStream(
                 self._stream(req, preamble, gen_stops, generation, stats),
                 lease,
@@ -790,14 +813,7 @@ class ServingChat:
                     finish_reason=finish,
                 )
             ],
-            usage=Usage(
-                prompt_tokens=stats.prompt_tokens,
-                completion_tokens=stats.completion_tokens,
-                total_tokens=stats.prompt_tokens + stats.completion_tokens,
-                prompt_tokens_details=PromptTokensDetails(
-                    cached_tokens=stats.reused_prompt_tokens
-                ),
-            ),
+            usage=self._usage(stats),
         )
 
     async def _stream_plain_content(
@@ -951,6 +967,14 @@ class ServingChat:
                 id=cid,
                 model=self._model_id,
                 choices=[ChunkChoice(delta=delta, finish_reason=finish)],
+                usage=(
+                    self._usage(stats)
+                    if finish is not None
+                    and self._stream_usage_in_finish_chunk
+                    and req.stream_options
+                    and req.stream_options.include_usage
+                    else None
+                ),
             )
             return f"data: {c.model_dump_json(exclude_none=True)}\n\n"
 
@@ -1016,7 +1040,7 @@ class ServingChat:
             await generation.aclose()
 
         if error is not None:
-            err = self._generation_error(error).body()
+            err = self.error_body(self._generation_error(error))
             yield f"data: {json.dumps(err)}\n\n"
             yield "data: [DONE]\n\n"
             return
@@ -1042,19 +1066,16 @@ class ServingChat:
             chunk,
         ):
             yield final_chunk
-        if req.stream_options and req.stream_options.include_usage:
+        if (
+            req.stream_options
+            and req.stream_options.include_usage
+            and not self._stream_usage_in_finish_chunk
+        ):
             usage_chunk = ChatCompletionChunk(
                 id=cid,
                 model=self._model_id,
                 choices=[],
-                usage=Usage(
-                    prompt_tokens=stats.prompt_tokens,
-                    completion_tokens=stats.completion_tokens,
-                    total_tokens=stats.prompt_tokens + stats.completion_tokens,
-                    prompt_tokens_details=PromptTokensDetails(
-                        cached_tokens=stats.reused_prompt_tokens
-                    ),
-                ),
+                usage=self._usage(stats),
             )
             yield f"data: {usage_chunk.model_dump_json(exclude_none=True)}\n\n"
         yield "data: [DONE]\n\n"

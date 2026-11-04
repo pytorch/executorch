@@ -137,6 +137,8 @@ def make_client():
         streaming_parser_factory=None,
         content_filter=None,
         special_tokens=None,
+        stream_usage_in_finish_chunk=False,
+        openrouter_errors=False,
     ):
         fake = FakeRunner(
             tokens,
@@ -167,6 +169,8 @@ def make_client():
             reasoning_extractor=reasoning_extractor,
             streaming_parser_factory=streaming_parser_factory,
             content_filter=content_filter,
+            stream_usage_in_finish_chunk=stream_usage_in_finish_chunk,
+            openrouter_errors=openrouter_errors,
         )
         return TestClient(build_app(serving, "test-model")), fake
 

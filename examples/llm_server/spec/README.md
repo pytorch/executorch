@@ -14,6 +14,10 @@ of language and engine.
 | `GET /health` | implemented |
 | `POST /v1/completions` | planned |
 
+Each `/v1/models` entry includes `context_length` when the server has a configured
+context limit. Clients must use this value or an explicit override for compaction
+budgeting; advertising it does not make every client consume it automatically.
+
 ## `POST /v1/chat/completions`
 
 OpenAI Chat Completions subset. **Honored** request fields: `model`, `messages`,
@@ -25,6 +29,13 @@ defaults to `0` (disabled), and an explicit `seed` must be positive; omitted see
 uses the worker's unset/random value.
 `model` must match the id returned by `/v1/models`; unknown ids return
 `404 model_not_found`.
+
+`messages` must be nonempty and roles must be `system`, `developer`, `user`,
+`assistant`, or `tool`. Tool declarations require unique nonempty function names
+and object parameter schemas. Historical tool calls require an ID, name, and JSON
+argument object; each tool result must reference a preceding unresolved call.
+Malformed structures and boolean/string values for numeric generation controls
+fail schema validation with HTTP 422 before inference.
 
 `ignore_eos` is an optional JSON boolean (default `false`) supported by the
 multiplexed batching worker. It disables model EOS and automatic chat-template
@@ -65,7 +76,8 @@ earlier behavior, which accepted non-boolean values as an opt-out.
 
 **Rejected** with `400 invalid_request_error` (`code: "unsupported_parameter"`)
 rather than silently ignored — a client relying on them would otherwise get
-wrong behavior: `n` (> 1), `reasoning_effort`,
+wrong behavior: `n` (> 1), `reasoning_effort` and OpenRouter `reasoning`
+(unless supported by the model-specific adapter),
 `frequency_penalty`/`presence_penalty` (nonzero), `logit_bias`, `tool_choice` =
 `"required"` or a specific-function choice
 (forcing/restricting a call needs constrained decoding, not implemented),
@@ -89,8 +101,17 @@ first chunk carries `delta.role = "assistant"`, subsequent chunks carry
 `delta.content` (or buffered `delta.tool_calls`), a final chunk carries
 `finish_reason`, optionally a usage-only chunk (with
 `stream_options.include_usage`), terminated by `data: [DONE]`.
-For models with a reasoning extractor, output is buffered and returned reasoning
-is emitted as `delta.reasoning_content` before visible content or tool calls.
+For models with an incremental parser, reasoning is emitted as
+`delta.reasoning_content` while generation runs. Other reasoning extractors buffer
+their output. Complete tool calls remain buffered. Idle HTTP streams include SSE
+keepalive comments every 15 seconds. Model launchers may bound initial readiness
+waiting to return headers during prefill; errors detected after headers arrive
+as SSE error events.
+
+The Muse batching launcher's `--stream-usage-format openrouter` option instead
+attaches requested usage to the finish chunk, once, for clients that stop
+consuming on `finish_reason`. Its default `openai` format retains the separate
+usage-only chunk described above.
 
 ### Tool calling
 
