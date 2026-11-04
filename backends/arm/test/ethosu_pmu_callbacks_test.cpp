@@ -15,6 +15,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <thread>
 
 #define CHECK(expr)                                                           \
@@ -26,6 +27,96 @@
   } while (false)
 
 using namespace executorch::backends::arm;
+using namespace executorch::runtime;
+
+class CapturingTracer final : public EventTracer {
+ public:
+  uint8_t metadata[kEthosUCycleMetadataMaxSize]{};
+  size_t metadata_size = 0;
+  bool started = false;
+  bool ended = false;
+
+  void create_event_block(const char*) override {}
+  EventTracerEntry start_profiling(const char*, ChainID, DebugHandle) override {
+    return {};
+  }
+  EventTracerEntry start_profiling_delegate(
+      const char* name,
+      DelegateDebugIntId index) override {
+    CHECK(std::strcmp(name, kEthosUCycleEventName) == 0);
+    CHECK(index == kUnsetDelegateDebugIntId);
+    started = true;
+    EventTracerEntry entry{};
+    entry.event_id = 17;
+    return entry;
+  }
+  void end_profiling_delegate(
+      EventTracerEntry entry,
+      const void* data,
+      size_t size) override {
+    CHECK(started);
+    CHECK(entry.event_id == 17);
+    CHECK(size <= sizeof(metadata));
+    std::memcpy(metadata, data, size);
+    metadata_size = size;
+    ended = true;
+  }
+  void log_profiling_delegate(
+      const char*,
+      DelegateDebugIntId,
+      et_timestamp_t,
+      et_timestamp_t,
+      const void*,
+      size_t) override {}
+  void end_profiling(EventTracerEntry) override {}
+  void track_allocation(AllocatorID, size_t) override {}
+  AllocatorID track_allocator(const char*) override {
+    return 0;
+  }
+  Result<bool> log_evalue(const EValue&, LoggedEValueType) override {
+    return true;
+  }
+  Result<bool> log_intermediate_output_delegate(
+      const char*,
+      DelegateDebugIntId,
+      const executorch::aten::Tensor&) override {
+    return true;
+  }
+  Result<bool> log_intermediate_output_delegate(
+      const char*,
+      DelegateDebugIntId,
+      const ArrayRef<executorch::aten::Tensor>) override {
+    return true;
+  }
+  Result<bool> log_intermediate_output_delegate(
+      const char*,
+      DelegateDebugIntId,
+      const int&) override {
+    return true;
+  }
+  Result<bool> log_intermediate_output_delegate(
+      const char*,
+      DelegateDebugIntId,
+      const bool&) override {
+    return true;
+  }
+  Result<bool> log_intermediate_output_delegate(
+      const char*,
+      DelegateDebugIntId,
+      const double&) override {
+    return true;
+  }
+  void set_delegation_intermediate_output_filter(
+      EventTracerFilterBase*) override {}
+};
+
+uint64_t read_le(const uint8_t* bytes, size_t size) {
+  uint64_t value = 0;
+  for (size_t index = 0; index < size; ++index) {
+    value |= static_cast<uint64_t>(bytes[index]) << (8 * index);
+  }
+  return value;
+}
 
 extern "C" {
 void ethosu_inference_begin(ethosu_driver*, void*);
@@ -112,5 +203,69 @@ int main() {
   CHECK(observer_ends == 3);
 
   CHECK(set_ethosu_stats_buffer(nullptr) == &buffer);
+
+  CapturingTracer tracer;
+  EthosUInvocationContext traced_invocation{};
+  traced_invocation.event_tracer = &tracer;
+  ethosu_inference_begin(&u85, &traced_invocation);
+  CHECK(pmu(&u85).enabled);
+  pmu(&u85).cycles = 123456;
+  pmu(&u85).counts[0] = 11;
+  pmu(&u85).counts[5] = 67;
+  pmu(&u85).overflow = ETHOSU_PMU_CCNT_Msk | (1u << 5);
+  ethosu_inference_end(&u85, &traced_invocation);
+  CHECK(!pmu(&u85).enabled);
+  CHECK(tracer.started && tracer.ended);
+  CHECK(
+      tracer.metadata_size ==
+      kEthosUCycleMetadataHeaderSize + 7 * kEthosUCycleCounterMetadataSize);
+  CHECK(std::memcmp(tracer.metadata, "EUC1", 4) == 0);
+  CHECK(read_le(tracer.metadata + 4, 4) == 2);
+  CHECK(read_le(tracer.metadata + 8, 4) == 256);
+  CHECK(
+      read_le(tracer.metadata + 12, 4) ==
+      static_cast<uint32_t>(EthosUPlatform::CoreDriver));
+  CHECK(read_le(tracer.metadata + 16, 4) == 1);
+  CHECK(read_le(tracer.metadata + 20, 8) == 0x50000000);
+  CHECK(read_le(tracer.metadata + 28, 8) == 123456);
+  CHECK(read_le(tracer.metadata + 36, 4) == 7);
+  for (size_t slot = 0; slot < 7; ++slot) {
+    const size_t offset =
+        kEthosUCycleMetadataHeaderSize + slot * kEthosUCycleCounterMetadataSize;
+    CHECK(read_le(tracer.metadata + offset, 4) == pmu(&u85).events[slot]);
+    CHECK(read_le(tracer.metadata + offset + 4, 8) == pmu(&u85).counts[slot]);
+    CHECK(read_le(tracer.metadata + offset + 12, 4) == (slot == 5));
+  }
+
+  CapturingTracer other_tracer;
+  EthosUInvocationContext other_invocation{};
+  other_invocation.event_tracer = &other_tracer;
+  ethosu_inference_begin(&u55, &other_invocation);
+  pmu(&u55).cycles = 45;
+  pmu(&u55).counts[3] = 9;
+  pmu(&u55).overflow = 1u << 3;
+  ethosu_inference_end(&u55, &other_invocation);
+  CHECK(other_tracer.started && other_tracer.ended);
+  CHECK(
+      other_tracer.metadata_size ==
+      kEthosUCycleMetadataHeaderSize + 4 * kEthosUCycleCounterMetadataSize);
+  CHECK(read_le(other_tracer.metadata + 8, 4) == 128);
+  CHECK(
+      read_le(other_tracer.metadata + 12, 4) ==
+      static_cast<uint32_t>(EthosUPlatform::CoreDriver));
+  CHECK(read_le(other_tracer.metadata + 16, 4) == 2);
+  CHECK(read_le(other_tracer.metadata + 20, 8) == 0x40000000);
+  CHECK(read_le(other_tracer.metadata + 28, 8) == 45);
+  CHECK(read_le(other_tracer.metadata + 36, 4) == 4);
+  for (size_t slot = 0; slot < 4; ++slot) {
+    const size_t offset =
+        kEthosUCycleMetadataHeaderSize + slot * kEthosUCycleCounterMetadataSize;
+    CHECK(read_le(other_tracer.metadata + offset, 4) == pmu(&u55).events[slot]);
+    CHECK(
+        read_le(other_tracer.metadata + offset + 4, 8) ==
+        pmu(&u55).counts[slot]);
+    CHECK(read_le(other_tracer.metadata + offset + 12, 4) == (slot == 3));
+  }
+  CHECK(buffer.size == 2);
   std::puts("Ethos-U PMU callbacks: PASS");
 }

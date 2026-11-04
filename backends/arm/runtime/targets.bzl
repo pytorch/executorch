@@ -25,6 +25,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "ethosu_invocation_context",
         exported_headers = ["EthosUBackend_Pmu.h"],
+        exported_deps = ["//executorch/runtime/core:event_tracer"],
         visibility = ["PUBLIC"],
     )
     runtime.cxx_library(
