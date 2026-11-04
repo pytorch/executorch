@@ -6,6 +6,7 @@
 
 
 import copy
+import dataclasses
 import re
 import textwrap
 from abc import ABC, abstractmethod
@@ -135,9 +136,10 @@ class QuantizationStrategy(ABC):
                 ch_axis is not None
                 and len(self.quant_config.per_block_quant_config_list) > ch_axis
             ), f"Unsupported per block quantization axis: {ch_axis}, please increase the range of per_block_quant_config_list"
-            config = self.quant_config.per_block_quant_config_list[ch_axis]
-            config.block_size = self.extra_kwargs["block_size"]
-            return config
+            return dataclasses.replace(
+                self.quant_config.per_block_quant_config_list[ch_axis],
+                block_size=self.extra_kwargs["block_size"],
+            )
         else:
             raise ValueError(
                 f"Unsupported quantization granularity: {self.granularity}. "
