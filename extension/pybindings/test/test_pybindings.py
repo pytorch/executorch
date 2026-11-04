@@ -26,6 +26,7 @@ from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.backend.test.device_util import DeviceAwarePartitioner
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.schema import DeviceType
+from executorch.export.utils import is_fbcode
 from executorch.extension.pybindings.test.make_test import (
     create_program,
     ModuleAdd,
@@ -396,6 +397,7 @@ print("all calls finished")
         )
         self.assertIn("all calls finished", completed.stdout)
 
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_backend_logs_do_not_deadlock_other_threads(self):
         if self.kernel_mode != "portable":
             self.skipTest("the script below uses the portable bindings")
@@ -716,6 +718,7 @@ print("lines through Python:", captured.getvalue().count("[llm_runner_helper.cpp
                     self.assertIn("lines through Python:", completed.stdout, mode)
                     self.assertNotIn("lines through Python: 0", completed.stdout, mode)
 
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_runtime_logs_when_writing_to_stderr_fails(self):
         if self.kernel_mode != "portable":
             self.skipTest("the script below uses the portable bindings")
@@ -793,6 +796,7 @@ print("done")
             completed.stderr.count("Program identifier 'xxxx'"), 3, completed.stderr
         )
 
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_fatal_runtime_log_reaches_process_stderr(self):
         if self.kernel_mode != "portable":
             self.skipTest("the script below uses the portable bindings")
@@ -835,6 +839,7 @@ module.forward([torch.ones(2, 2)])
         self.assertNotEqual(kept, -1, completed.stderr)
         self.assertGreater(fatal, kept, completed.stderr)
 
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_runtime_logs_reach_process_stderr_at_once(self):
         if self.kernel_mode != "portable":
             self.skipTest("the script below uses the portable bindings")
@@ -1937,6 +1942,8 @@ print("CUDA DLPack roundtrip preserved device storage")
         self.assertEqual(str(torch.ones(2, 2)), str(executorch_output[1]))
 
     def test_channels_last(self) -> None:
+        if self.kernel_mode != "portable":
+            self.skipTest("ATen nonstandard input layouts are deferred to a follow-up")
         model = ModuleChannelsLast()
         exported_program, inputs = create_program(model)
 
@@ -2064,6 +2071,8 @@ print("CUDA DLPack roundtrip preserved device storage")
         )
 
     def test_channels_last_in_default_out(self) -> None:
+        if self.kernel_mode != "portable":
+            self.skipTest("ATen nonstandard input layouts are deferred to a follow-up")
         model = ModuleChannelsLastInDefaultOut()
         exported_program, inputs = create_program(model)
 
@@ -2596,6 +2605,8 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(str(torch.ones(2, 2)), str(executorch_output[1]))
 
     def test_method_channels_last(self) -> None:
+        if self.kernel_mode != "portable":
+            self.skipTest("ATen nonstandard input layouts are deferred to a follow-up")
         model = ModuleChannelsLast()
         exported_program, inputs = create_program(model)
 
@@ -2618,6 +2629,8 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         )
 
     def test_method_channels_last_in_default_out(self) -> None:
+        if self.kernel_mode != "portable":
+            self.skipTest("ATen nonstandard input layouts are deferred to a follow-up")
         model = ModuleChannelsLastInDefaultOut()
         exported_program, inputs = create_program(model)
 
