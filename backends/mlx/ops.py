@@ -2825,7 +2825,7 @@ def _index_put_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             updates=P.slot_to_tid(values),
             out=P.slot_to_tid(out),
             axes=axes,
-            accumulate=bool(accumulate),
+            reduce="sum" if accumulate else "none",
         )
     )
     return out

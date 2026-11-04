@@ -66,6 +66,15 @@ def _delegate_count(program) -> int:
     )
 
 
+def _cpu_ops(program) -> set:
+    """The ATen ops left outside every delegate, which run on the CPU."""
+    return {
+        str(node.target)
+        for node in program.exported_program().graph_module.graph.nodes
+        if node.op == "call_function" and str(node.target).startswith("aten.")
+    }
+
+
 def _run(model, inputs, transform_passes=None):
     """Lower, execute, and return the node counts, the delegate count and the error.
 
@@ -223,10 +232,34 @@ class MoeDispatch(nn.Module):
 
 class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
     def test_moe_dispatch_is_lowered(self):
-        _, delegates, err = _run(MoeDispatch().eval(), (torch.randn(6, 8),))
+        model, inputs = MoeDispatch().eval(), (torch.randn(6, 8),)
+        program = _lower(model, inputs)
         # Only the int64 histogram stays on the CPU, between two delegates.
-        self.assertEqual(delegates, 2)
-        self.assertLess(err, 1e-5)
+        self.assertEqual(_cpu_ops(program), {"aten.scatter_add.out"})
+        self.assertEqual(_delegate_count(program), 2)
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        err = (method.execute(list(inputs))[0] - model(*inputs)).abs().max()
+        self.assertLess(err.item(), 1e-5)
+
+    def test_cache_write_into_a_buffer(self):
+        class Cache(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("k", torch.zeros(2, 8, 4))
+
+            def forward(self, pos, v):
+                self.k[:, pos] = v
+                return self.k * 1
+
+        program = _lower(Cache().eval(), (torch.tensor([0]), torch.randn(2, 1, 4)))
+        self.assertEqual(_cpu_ops(program), set())
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        reference = Cache()
+        # Each call must see the writes of the calls before it.
+        for pos in (0, 3, 5):
+            inputs = (torch.tensor([pos]), torch.randn(2, 1, 4))
+            out = method.execute(list(inputs))[0]
+            self.assertTrue(torch.equal(out, reference(*inputs)))
 
     def test_unsupported_forms_run_on_the_cpu(self):
         class IndexPut(nn.Module):
@@ -249,19 +282,17 @@ class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
         cases = {
             "int64": (
                 IndexPut(),
-                (
-                    torch.zeros(6, dtype=torch.long),
-                    index[1:],
-                    torch.ones(2, dtype=torch.long),
-                ),
+                (torch.zeros(6, dtype=torch.long), index[1:], torch.tensor([7, 9])),
+                "on torch.int64 is not supported",
             ),
             "bool_accumulate": (
                 IndexPut(True),
                 (
-                    torch.zeros(6, dtype=torch.bool),
+                    torch.ones(6, dtype=torch.bool),
                     index,
                     torch.ones(3, dtype=torch.bool),
                 ),
+                "accumulate on bool",
             ),
             "bool_mask": (
                 IndexPut(),
@@ -270,24 +301,40 @@ class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
                     torch.tensor([1, 0, 1, 0, 0, 1]) == 1,
                     torch.tensor(2.0),
                 ),
+                "only int32 and int64 index tensors",
             ),
             # PyTorch lets a 0-d index gather from a 1-d input.
-            "gather_0d_index": (Gather(), (torch.arange(5.0), torch.tensor(2))),
+            "gather_0d_index": (
+                Gather(),
+                (torch.arange(5.0), torch.tensor(2)),
+                "index of rank 0",
+            ),
         }
-        for name, (model, inputs) in cases.items():
+        refused_ops = (torch.ops.aten.index_put.default, torch.ops.aten.gather.default)
+        for name, (model, inputs, reason) in cases.items():
             with self.subTest(name):
-                program = _lower(model.eval(), inputs)
+                # Refused on purpose, not by a handler that crashed.
+                builder = MLXProgramBuilder(get_fake_program(export(model, inputs)))
+                builder.check_support_only()
+                [info] = [
+                    info
+                    for node, info in builder.node_info.items()
+                    if node.target in refused_ops
+                ]
+                self.assertFalse(info.supported)
+                self.assertIn(reason, info.unsupported_reason)
+
+                program = _lower(model, inputs)
                 self.assertEqual(_delegate_count(program), 1)
-                with tempfile.TemporaryDirectory() as tmp:
-                    path = Path(tmp) / "model.pte"
-                    path.write_bytes(program.buffer)
-                    counts = get_mlx_node_counts(path)
-                    method = Runtime.get().load_program(path).load_method("forward")
-                    out = method.execute(list(inputs))[0]
-                self.assertEqual(counts.get("ScatterNode", 0), 0)
-                self.assertEqual(counts.get("TakeAlongAxisNode", 0), 0)
+                op = "gather" if isinstance(model, Gather) else "index_put"
+                self.assertEqual(_cpu_ops(program), {f"aten.{op}.out"})
+                method = (
+                    Runtime.get().load_program(program.buffer).load_method("forward")
+                )
                 # Exact, and bool outputs cannot be subtracted.
-                self.assertTrue(torch.equal(out, model(*inputs)))
+                self.assertTrue(
+                    torch.equal(method.execute(list(inputs))[0], model(*inputs))
+                )
 
 
 class Sdpa(nn.Module):

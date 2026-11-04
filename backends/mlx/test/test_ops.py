@@ -4827,7 +4827,13 @@ class IndexPutTest(OpTestCase):
                 dtype=torch.bfloat16,
             ),
             # The MoE combine: out.index_add_(0, token, y), with repeats.
-            cls((6, 8), {0: torch.tensor([1, 4, 1, 0, 4, 1])}, (6, 8), True),
+            cls(
+                (6, 8),
+                {0: torch.tensor([1, 4, 1, 0, 4, 1])},
+                (6, 8),
+                True,
+                torch.float16,
+            ),
             cls((6, 8), {0: torch.tensor([5, 0, 5, 2])}, (4, 8), True, torch.int32),
             # A scalar value and negative indices.
             cls(
@@ -4843,12 +4849,22 @@ class IndexPutTest(OpTestCase):
                 {1: torch.tensor([3, 0, 3])},
                 (2, 3, 8),
                 True,
+                torch.bfloat16,
+                nodes={"TransposeNode": 1},
+            ),
+            cls(
+                (2, 5, 6, 3),
+                {1: torch.tensor([[0, 1], [2, 3]]), 2: torch.tensor([[5, 0], [1, 4]])},
+                (2, 2, 2, 3),
                 nodes={"TransposeNode": 1},
             ),
             # Separated indexed axes put the index dims in front already.
             cls(
                 (2, 4, 3, 5),
-                {1: torch.tensor([1, 3]), 3: torch.tensor([4, 0])},
+                {
+                    1: torch.tensor([1, 3], dtype=torch.int32),
+                    3: torch.tensor([4, 0], dtype=torch.int32),
+                },
                 (2, 2, 3),
                 nodes={"TransposeNode": 0},
             ),
@@ -4875,7 +4891,8 @@ class IndexPutTest(OpTestCase):
     def _random(self, shape):
         if self.dtype == torch.bool:
             return torch.randn(shape) > 0
-        return (torch.randn(shape) * 10).to(self.dtype)
+        # Small integers add up exactly in any order, even in half precision.
+        return torch.randint(-8, 8, shape).to(self.dtype)
 
     def _inputs(self, indices):
         n = next(iter(indices.values())).shape[0]

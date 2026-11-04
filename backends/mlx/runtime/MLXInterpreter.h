@@ -900,16 +900,36 @@ inline void exec_scatter_add(
 inline void
 exec_scatter(const ScatterNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
-  const auto& updates = st.const_tensor_ref(n.updates);
+  const int rank = static_cast<int>(x.ndim());
+
+  if (n.indices.size() != n.axes.size()) {
+    throw std::runtime_error(
+        "ScatterNode: indices count (" + std::to_string(n.indices.size()) +
+        ") must match axes count (" + std::to_string(n.axes.size()) + ")");
+  }
+
+  for (auto axis : n.axes) {
+    if (axis < 0 || axis >= rank) {
+      throw std::runtime_error(
+          "ScatterNode: axis " + std::to_string(axis) +
+          " out of range for input with ndim " + std::to_string(rank));
+    }
+  }
+
   std::vector<array> indices;
   indices.reserve(n.indices.size());
   for (auto tid : n.indices) {
     indices.push_back(st.const_tensor_ref(tid));
   }
-  st.set_tensor(
-      n.out,
-      n.accumulate ? scatter_add(x, indices, updates, n.axes, s)
-                   : scatter(x, indices, updates, n.axes, s));
+
+  const auto& updates = st.const_tensor_ref(n.updates);
+  if (n.reduce == "none") {
+    st.set_tensor(n.out, scatter(x, indices, updates, n.axes, s));
+  } else if (n.reduce == "sum") {
+    st.set_tensor(n.out, scatter_add(x, indices, updates, n.axes, s));
+  } else {
+    throw std::runtime_error("ScatterNode: unsupported reduce: " + n.reduce);
+  }
 }
 
 inline void

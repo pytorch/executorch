@@ -473,15 +473,18 @@ table ScatterAddNode {
 }
 
 // Scatter: write updates into x at the positions given by one index tensor
-// per indexed axis. Maps to mlx::scatter, or mlx::scatter_add when accumulate
-// is set.
+// per indexed axis. Maps to mlx::scatter, or mlx::scatter_add for "sum".
+// Index values are not bounds-checked, like GatherNode: mlx::scatter does not
+// check them, and checking on the host would need a device sync.
 table ScatterNode {
     x: Tid (required);
     indices: [Tid] (required);   // Index tensors (one per indexed axis)
-    updates: Tid (required);     // Shape: broadcast(indices) + one slice of x
+    // Shape: broadcast(indices).shape followed by x.shape, with size 1 on
+    // every indexed axis, so rank(updates) = rank(indices) + rank(x).
+    updates: Tid (required);
     out: Tid (required);
     axes: [int32] (required);    // Which axes the indices address
-    accumulate: bool = false;    // Sum values at repeated positions
+    reduce: string (required);   // "none" overwrites x at the indices, "sum" adds into x
 }
 
 table ConcatenateNode {
