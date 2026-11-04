@@ -7,7 +7,7 @@
 import functools
 import inspect
 from collections import OrderedDict
-from typing import Dict, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from executorch.backends.qualcomm._passes import (
     AnnotateAvgPool1D,
@@ -411,7 +411,8 @@ class QnnPassManager(PassManager):
             if dep_table is not None
             else self.get_passes_dependency_for_capture_program()
         )
-        for that, these in dep_table.items():
+        fixed_dep_table = self._get_fixed_passes_dependency(list(passes_job))
+        for that, these in (*dep_table.items(), *fixed_dep_table.items()):
             for this in these:
                 self.add_constraint(this_before_that_pass_constraint(this, that))
         for p in passes_job:
@@ -439,6 +440,14 @@ class QnnPassManager(PassManager):
             self.add_pass(p(**kwargs))
         self._validate_edge_passes()
         return self.passes
+
+    @classmethod
+    def _get_fixed_passes_dependency(cls, passes: List[type]) -> Dict:
+        """
+        Pass order that a backend needs whatever dep_table the caller gives,
+        in the same form as get_passes_dependency_for_capture_program().
+        """
+        return {}
 
     def _validate_edge_passes(self) -> None:
         assert isinstance(

@@ -4,10 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Dict, List
+
 from executorch.backends.qualcomm._passes import (
     DecomposeReciprocal,
     RecomposeHadamard,
     RemoveRedundancy,
+    TagPositionalSinCos,
 )
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
@@ -25,6 +28,7 @@ class QnnHtpPassManager(QnnPassManager):
         # The current change is intended to proactively prepare for the upcoming deprecation of the export pipeline.
         pass_activations = super().get_default_pass_activations()
         pass_activations.extend([(DecomposeReciprocal, True)])
+        pass_activations.append((TagPositionalSinCos, True))
         return pass_activations
 
     @classmethod
@@ -34,6 +38,15 @@ class QnnHtpPassManager(QnnPassManager):
         deps = super().get_passes_dependency_for_capture_program()
         deps.update({DecomposeReciprocal: [RemoveRedundancy]})
         return deps
+
+    @classmethod
+    def _get_fixed_passes_dependency(cls, passes: List[type]) -> Dict:
+        # After every pass but the terminal ones, so it tags the graph the
+        # partitioner sees, with any dep_table.
+        if TagPositionalSinCos not in passes:
+            return {}
+        last = (TagPositionalSinCos, *cls._get_terminal_passes())
+        return {TagPositionalSinCos: [p for p in passes if p not in last]}
 
     @classmethod
     def get_annotation_passes(cls, convert_linear_to_conv2d: bool = False):

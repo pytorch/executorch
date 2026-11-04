@@ -34,6 +34,7 @@ from executorch.backends.qualcomm.utils.check_qnn_version import (
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
+    QCOM_FALLBACK_NODE,
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
     QCOM_REQUANTIZE,
@@ -5153,6 +5154,44 @@ class SeqMSE:
         )
         # convert_pt2e to ensure it doesn't break the module.
         convert_pt2e(prepared)
+
+
+class TagPositionalSinCos:
+    class _TimestepEmbedding(torch.nn.Module):
+        def forward(self, t):
+            angles = t[:, None] * torch.linspace(1, 1000, 8)
+            return torch.cat([torch.sin(angles), torch.cos(angles)], dim=-1)
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        quantizer,
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        pass_pipeline: PassPipeline,
+    ):
+        gm = pass_pipeline.lower_edge_ep(
+            module=TagPositionalSinCos._TimestepEmbedding(),
+            sample_input=(torch.tensor([1.0, 500.0]),),
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            target_pass=_passes.TagPositionalSinCos,
+            quantizer=quantizer,
+        ).graph_module
+        tagged = {
+            node.target for node in gm.graph.nodes if node.meta.get(QCOM_FALLBACK_NODE)
+        }
+        # Only float16 HTP computes the angle in float16, so only it moves the
+        # sin, the cos and the ops of their angle to CPU.
+        if quantizer is None:
+            assert {
+                exir_ops.edge.aten.sin.default,
+                exir_ops.edge.aten.cos.default,
+                exir_ops.edge.aten.mul.Tensor,
+            } <= tagged, tagged
+            assert exir_ops.edge.aten.cat.default not in tagged
+        else:
+            assert not tagged, tagged
 
 
 class TagQuantIO:

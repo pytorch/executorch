@@ -740,6 +740,49 @@ adb logcat | grep -E "ExecuTorch"
   Quantizing the model also avoids the crash, though on some SDK versions the
   same shape then fails at compile time instead.
 
+##### Issue 6: fp16 model fails to load with a missing CPU operator
+
+- **Symptoms**: a model lowered for HTP in fp16 fails to load on a runtime built
+  from a hand-written operator list, because an operator such as `aten::sin.out`
+  or `aten::mul.out` is missing.
+
+- **Cause**: float16 cannot hold a large positional angle precisely, like the
+  `t * freqs` of a timestep embedding. So in HTP fp16, the `TagPositionalSinCos`
+  pass keeps such float32 sin and cos ops, and the ops that build their angle,
+  on CPU, where each op computes in the dtype the model gives it. This includes
+  Fourier features of a graph input, like `sin(x[..., None] * freqs)`. A sin or
+  cos stays in the delegate when it, or an op that builds its angle, has more
+  than 262144 (1024 times 256) elements. This limit holds for each sin or cos
+  on its own. A dynamic size counts with its largest value, so export it with a
+  max, like `Dim("n", max=1024)`, for the pass to apply. The runtime then needs
+  the CPU kernels of the moved ops. The pass logs a warning when it does this.
+
+- **Solution**: the moved ops can include `cos`, `add`, `exp`, `arange`, casts,
+  and for integer positions `cumsum` and comparisons, not only the 2 above. So
+  build the runtime's operator list from the lowered program, with
+  `EXECUTORCH_SELECT_OPS_MODEL` (see
+  [Kernel Library Selective Build](kernel-library-selective-build.md)). Or keep
+  these ops in the delegate if fp16 is precise enough for the model:
+
+    ```python
+    from executorch.backends.qualcomm._passes import TagPositionalSinCos
+    from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+        get_qnn_pass_manager_cls,
+    )
+    from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
+    from executorch.backends.qualcomm.utils.utils import (
+        to_edge_transform_and_lower_to_qnn,
+    )
+
+    passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
+    passes_job[TagPositionalSinCos][QCOM_PASS_ACTIVATE_KEY] = False
+    edge = to_edge_transform_and_lower_to_qnn(
+        model, example_inputs, compiler_specs, passes_job=passes_job
+    )
+    ```
+
+  The QNN FP16 recipe takes the same `passes_job` argument.
+
 ## Supported model list
 
 Please refer to `$EXECUTORCH_ROOT/examples/qualcomm/scripts/` and `$EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/` to the list of supported models.
