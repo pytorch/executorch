@@ -1350,6 +1350,14 @@ def to_edge_transform_and_lower(  # noqa: C901
 
     This API is the primary recommended way to lower to the CPU based XNNPack backend.
 
+    Unlike to_edge, it replaces complex numbers with real numbers before it builds the
+    Edge programs, since the Edge dialect has no complex dtypes for ops such as mul. A
+    complex tensor becomes a real tensor with a last dim of size 2 that holds its real and
+    imaginary parts, as torch.view_as_real gives. This includes complex constants,
+    parameters and buffers, so the returned programs store them in that layout. A program
+    that the pass cannot rewrite completely keeps all its complex numbers. See
+    ReplaceComplexWithRealPass.
+
     Args:
         programs: Can be a single ExportedProgram or a dictionary mapping function names
             to their corresponding ExportedPrograms. If only a single ExportedProgram is

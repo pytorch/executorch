@@ -30,9 +30,10 @@ decomposition table cannot do this, since a decomposition returns the dtype of
 the op it replaces.
 
 ``to_edge_transform_and_lower`` runs the pass on every ATen program before it
-becomes an Edge program, so every backend gets real numbers. The CUDA backend
-runs it again on the Edge program it lowers, which can still rewrite its part
-when the whole program cannot be rewritten.
+becomes an Edge program, so every backend that lowers through it gets real
+numbers. ``to_edge`` does not run it. The CUDA backend runs it again on the
+Edge program it lowers, which can still rewrite its part when the whole
+program cannot be rewritten.
 
 The pass rewrites a program only when it can rewrite every op that reads or
 writes a complex tensor in it. Otherwise it leaves the program as it is and
