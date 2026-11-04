@@ -1160,6 +1160,51 @@ class TestCudaExport(unittest.TestCase):
                 for output, expected in zip(outputs, model(x, angles), strict=True):
                     torch.testing.assert_close(output.cpu(), expected)
 
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_complex_product_with_cpu_tensor_without_dims(self):
+        """A program on the GPU can keep tensors with no dims on the CPU, and
+        complex products with them still lower."""
+        from executorch.runtime import Runtime
+
+        class Scaled(torch.nn.Module):
+            def __init__(self, factor):
+                super().__init__()
+                # Unlike buffers, plain attributes stay on the CPU in .to().
+                self.factor = factor
+
+            def forward(self, x):
+                pairs = torch.view_as_complex(x.unflatten(-1, (-1, 2)))
+                return torch.view_as_real(pairs * self.factor).flatten(-2)
+
+        x = torch.randn(4, 8, device="cuda")
+        for factor in (
+            torch.tensor(0.5),
+            torch.polar(torch.tensor(1.0), torch.tensor(0.3)),
+        ):
+            with self.subTest(dtype=factor.dtype):
+                model = Scaled(factor).to("cuda")
+                program = self._export_to_cuda_with_lower(model, (x,)).to_executorch()
+                with tempfile.TemporaryDirectory() as directory:
+                    path = os.path.join(directory, "model.pte")
+                    with open(path, "wb") as f:
+                        program.write_to_file(f)
+                    program.write_tensor_data_to_file(directory)
+                    (data,) = [
+                        os.path.join(directory, name)
+                        for name in os.listdir(directory)
+                        if name.endswith(".ptd")
+                    ]
+                    method = (
+                        Runtime.get()
+                        .load_program(path, data_path=data)
+                        .load_method("forward")
+                    )
+                    (output,) = method.execute([x.cpu()])
+                torch.testing.assert_close(output.cpu(), model(x).cpu())
+
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """
         Verify that, for a CUDA-delegated graph, every memory-planned tensor's

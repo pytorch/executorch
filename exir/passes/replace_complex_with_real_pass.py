@@ -343,14 +343,20 @@ def _can_rewrite(node: Node, complex_nodes: Set[Node]) -> bool:
         return _keeps_dims_in_order(node)
     if target is _aten.mul.Tensor:
         # A factor can be a real number, or a real tensor in an ATen program.
-        return all(
+        if not all(
             (
                 isinstance(arg.meta.get("val"), torch.Tensor)
                 if isinstance(arg, Node)
                 else isinstance(arg, (int, float))
             )
             for arg in node.args
-        )
+        ):
+            return False
+        # A tensor with no dims can stay on the CPU next to tensors on another
+        # device, but its pair or unsqueezed factor has dims and cannot. The
+        # CUDA backend rewrites such a product after it moves the program.
+        devices = {arg.meta["val"].device for arg in node.args if isinstance(arg, Node)}
+        return len(devices) == 1
     if target in _LIST_INPUTS:
         return all(tensor in complex_nodes for tensor in node.args[0])
     return True
