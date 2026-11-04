@@ -913,8 +913,6 @@ class TestCudaExport(unittest.TestCase):
     def test_fused_sdpa(self):
         """Decomposing attention on CUDA, as Torch-TensorRT does, gives fused
         variants that the backend has no kernel for."""
-        from executorch.runtime import Runtime
-
         class Attention(torch.nn.Module):
             def forward(self, q, k, v, mask):
                 attention = torch.nn.functional.scaled_dot_product_attention
@@ -964,6 +962,11 @@ class TestCudaExport(unittest.TestCase):
         output = "\n".join(logs.output)
         self.assertIn("Replaced 2 nodes with Triton kernels", output)
         self.assertIn("Using split-K decode SDPA", output)
+        if is_fbcode():
+            # Running the program is skipped in fbcode.
+            return
+        from executorch.runtime import Runtime
+
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "model.pte")
             with open(path, "wb") as f:
