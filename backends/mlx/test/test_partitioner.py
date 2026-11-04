@@ -281,6 +281,32 @@ class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
         clamped = torch.tensor([[3, 0], [0, 1], [3, 2]])
         self.assertTrue(torch.equal(out, torch.gather(x, 1, clamped)))
 
+    def test_empty_axis(self):
+        # The delegate cannot return an empty tensor yet, so both models sum.
+        class IndexPut(nn.Module):
+            def forward(self, x, index, values):
+                return torch.ops.aten.index_put.default(x, [index], values).sum(0)
+
+        class Gather(nn.Module):
+            def forward(self, x, index):
+                return torch.gather(x, 1, index).sum(1)
+
+        def run(model, *inputs):
+            program = _lower(model, inputs)
+            self.assertEqual(_cpu_ops(program), set())
+            method = Runtime.get().load_program(program.buffer).load_method("forward")
+            return method.execute(list(inputs))[0]
+
+        # Writing or reading nothing on an empty axis works, as in eager.
+        empty, no_index = torch.zeros(0, 4), torch.zeros(0, dtype=torch.long)
+        out = run(IndexPut(), empty, no_index, empty)
+        self.assertTrue(torch.equal(out, torch.zeros(4)))
+        out = run(Gather(), torch.zeros(3, 0), torch.zeros(3, 0, dtype=torch.long))
+        self.assertTrue(torch.equal(out, torch.zeros(3)))
+        # Eager raises; with no element to clamp to, the delegate must too.
+        with self.assertRaisesRegex(RuntimeError, "empty axis"):
+            run(Gather(), torch.zeros(3, 0), torch.zeros(3, 2, dtype=torch.long))
+
     def test_unsupported_forms_run_on_the_cpu(self):
         class IndexPut(nn.Module):
             def __init__(self, accumulate=False):

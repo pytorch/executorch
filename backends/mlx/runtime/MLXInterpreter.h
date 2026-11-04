@@ -189,11 +189,15 @@ inline void exec_take_along_axis(
   const auto& x = st.const_tensor_ref(n.x);
   const int axis =
       normalize_axis(n.axis, static_cast<int>(x.ndim()), "TakeAlongAxis");
-  // Clamped like ScatterNode: mlx::take_along_axis would read out of range.
   const int size = x.shape(axis);
-  const auto indices =
-      clip(st.const_tensor_ref(n.indices), array(-size), array(size - 1), s);
-  st.set_tensor(n.out, take_along_axis(x, indices, axis, s));
+  const auto& indices = st.const_tensor_ref(n.indices);
+  // An empty axis has no position to clamp to.
+  if (size == 0 && indices.size() != 0) {
+    throw std::runtime_error("TakeAlongAxis: cannot take from an empty axis");
+  }
+  // Clamped like ScatterNode: mlx::take_along_axis would read out of range.
+  const auto clamped = clip(indices, array(-size), array(size - 1), s);
+  st.set_tensor(n.out, take_along_axis(x, clamped, axis, s));
 }
 
 inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {
@@ -944,6 +948,11 @@ exec_scatter(const ScatterNode& n, ExecutionState& st, StreamOrDevice s) {
   // are computed on the device, which made a MoE block several times slower.
   for (size_t i = 0; i < indices.size(); ++i) {
     const int size = x.shape(n.axes[i]);
+    if (size == 0) {
+      // x is empty, so there is nowhere to write.
+      st.set_tensor(n.out, x);
+      return;
+    }
     indices[i] = clip(indices[i], array(-size), array(size - 1), s);
   }
 
