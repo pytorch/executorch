@@ -37,6 +37,11 @@ Lowering variants (``full_k``):
       scales; then MPP runs ``int8 x int4b_format`` over the full K straight
       from device memory, choosing its own K tiling and buffering.
 
+``_SPLIT_K_SOURCE`` / ``_SPLIT_K_REDUCE_SOURCE`` (split-K full-K GEMM) and
+``_MATVEC_SOURCE`` (small-M matvec) produce bit-identical results to the full-K
+kernel. The handler does not emit them yet; ``test/bench_int8_int4_gemm.py``
+times them.
+
 Constraints for MLX lowering:
     * ``K`` must be statically known and a multiple of 64.
     * ``N`` must be statically known.
@@ -141,6 +146,7 @@ _BM = 32
 _BN = 32
 _BK = 64
 _THREADS = 128
+_QUANT_THREADS = 256
 
 
 _HEADER = f"""
@@ -310,40 +316,67 @@ _SOURCE = """
 """
 
 
-# full_k=True, kernel 1: one SIMD group per token row writes xq and x_scale.
+# full_k=True, kernel 1 (template args K, TPR): one threadgroup of TPR threads
+# per xq row. Rows below M (from x) write xq and x_scale; padding rows past M
+# write zeros to xq so the GEMM sees whole BM tiles.
 _QUANT_SOURCE = """
-    const size_t m = threadgroup_position_in_grid.y;
-    const uint lane = thread_index_in_simdgroup;
-    device const vec<T, 4>* x_row = (device const vec<T, 4>*)(x + m * K);
+    constexpr int SG = TPR / 32;
+    threadgroup float sg_amax[SG];
+
+    int M = 1;
+    for (int d = 0; d < x_ndim - 1; ++d) {
+        M *= x_shape[d];
+    }
+    const int m = int(threadgroup_position_in_grid.y);
+    const int tid = int(thread_index_in_threadgroup);
+    device uint* xq_row = (device uint*)(xq + size_t(m) * K);
+    if (m >= M) {
+        for (int i = tid; i < K / 4; i += TPR) {
+            xq_row[i] = 0;
+        }
+        return;
+    }
+    device const vec<T, 4>* x_row = (device const vec<T, 4>*)(x + size_t(m) * K);
 
     float amax = 0.0f;
-    for (int i = lane; i < K / 4; i += 32) {
+    for (int i = tid; i < K / 4; i += TPR) {
         const float4 v = abs(float4(x_row[i]));
         amax = max(amax, max(max(v.x, v.y), max(v.z, v.w)));
     }
-    const float scale = int8_scale_from_amax(simd_max(amax));
+    amax = simd_max(amax);
+    if (SG > 1) {
+        if (thread_index_in_simdgroup == 0) {
+            sg_amax[simdgroup_index_in_threadgroup] = amax;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        amax = sg_amax[0];
+        for (int s = 1; s < SG; ++s) {
+            amax = max(amax, sg_amax[s]);
+        }
+    }
+    const float scale = int8_scale_from_amax(amax);
     const float inv_scale = precise::divide(1.0f, scale);
 
-    device uint* xq_row = (device uint*)(xq + m * K);
-    for (int i = lane; i < K / 4; i += 32) {
+    for (int i = tid; i < K / 4; i += TPR) {
         xq_row[i] = quantize_int8x4(x_row[i], inv_scale);
     }
-    if (lane == 0) {
+    if (tid == 0) {
         x_scale[m] = scale;
     }
 """
 
 
-# full_k=True, kernel 2 (template args BM, BN): MPP multiplies an int8 [K, M]
+# full_k=True, kernel 2 (template args BM, BN): MPP multiplies an int8 [K, rows]
 # tensor by an int4b [K, N] tensor (W transposed) over the whole K for each
-# BM x BN output tile.
+# BM x BN output tile. xq may have zero padding rows past M = len(x_scale).
 _FULL_K_SOURCE = """
-    const int M = xq_shape[0];
+    const int rows = xq_shape[0];
+    const int M = x_scale_shape[0];
     const int n0 = int(threadgroup_position_in_grid.x) * BN;
     const int m0 = int(threadgroup_position_in_grid.y) * BM;
 
     tensor<device int8_t, dextents<int, 2>, tensor_inline> X(
-        (device int8_t*)xq, dextents<int, 2>(K, M));
+        (device int8_t*)xq, dextents<int, 2>(K, rows));
     tensor<device int4b_format, dextents<int, 2>, tensor_inline> W(
         (device uchar*)w_packed, dextents<int, 2>(K, N), array<int, 2>{1, K});
     constexpr auto desc = matmul2d_descriptor(
@@ -364,6 +397,170 @@ _FULL_K_SOURCE = """
             if (m < M && n < N) {
                 const float s = x_scale[m] * float(w_scale[n]);
                 out[size_t(m) * N + n] = T(s * float(acc[i]));
+            }
+        }
+    }
+"""
+
+
+# Split-K full-K, kernel 2 (template args BM, BN, SPLITS; K % (64 * SPLITS)
+# == 0): grid z picks one of SPLITS contiguous K ranges. Each threadgroup runs
+# MPP over its range and writes exact INT32 partial sums to partial[s, m, n].
+_SPLIT_K_SOURCE = """
+    constexpr int KS = K / SPLITS;
+    const int rows = xq_shape[0];
+    const int M = x_scale_shape[0];
+    const int n0 = int(threadgroup_position_in_grid.x) * BN;
+    const int m0 = int(threadgroup_position_in_grid.y) * BM;
+    const int s = int(threadgroup_position_in_grid.z);
+    const int k0 = s * KS;
+
+    tensor<device int8_t, dextents<int, 2>, tensor_inline> X(
+        (device int8_t*)xq + k0, dextents<int, 2>(KS, rows), array<int, 2>{1, K});
+    tensor<device int4b_format, dextents<int, 2>, tensor_inline> W(
+        (device uchar*)w_packed + k0 / 2, dextents<int, 2>(KS, N),
+        array<int, 2>{1, K});
+    constexpr auto desc = matmul2d_descriptor(
+        BM, BN, static_cast<int>(dynamic_extent), false, true, false,
+        matmul2d_descriptor::mode::multiply);
+    matmul2d<desc, execution_simdgroups<4>> mm;
+    auto mA = X.slice(0, m0);
+    auto mB = W.slice(0, n0);
+    auto acc = mm.template get_destination_cooperative_tensor<decltype(mA), decltype(mB), int>();
+    mm.run(mA, mB, acc);
+
+    #pragma clang loop unroll(full)
+    for (ushort i = 0; i < acc.get_capacity(); ++i) {
+        if (acc.is_valid_element(i)) {
+            const auto coord = acc.get_multidimensional_index(i);
+            const int n = n0 + int(coord[0]);
+            const int m = m0 + int(coord[1]);
+            if (m < M && n < N) {
+                partial[(size_t(s) * M + m) * N + n] = acc[i];
+            }
+        }
+    }
+"""
+
+
+# Split-K, kernel 3 (template args T, N, SPLITS): one thread per output sums
+# the INT32 partials and applies the scales in the same order as the full-K
+# epilogue, so results match the unsplit kernel exactly.
+_SPLIT_K_REDUCE_SOURCE = """
+    const int M = x_scale_shape[0];
+    const size_t idx = thread_position_in_grid.x;
+    if (idx >= size_t(M) * N) {
+        return;
+    }
+    const int m = int(idx / N);
+    const int n = int(idx % N);
+    int sum = 0;
+    for (int s = 0; s < SPLITS; ++s) {
+        sum += partial[size_t(s) * M * N + idx];
+    }
+    const float scale = x_scale[m] * float(w_scale[n]);
+    out[idx] = T(scale * float(sum));
+"""
+
+
+_MATVEC_SIMDGROUPS = 2
+_MATVEC_ROWS_PER_SIMDGROUP = 4
+_MATVEC_BLOCK = 512
+
+# Matvec (template args T, N, K, MR; K % 512 == 0) for small M: reads int8
+# activations from the quantize kernel (unpadded) and streams packed weights
+# like MLX's qmv. Each SIMD group computes 4 output channels for up to MR
+# activation rows; each lane covers 16 K values per 512-wide step. XOR 0x88
+# makes nibbles unsigned (q = w + 8) so masked ushort words convert directly to
+# float against activations pre-scaled by 1, 1/16, 1/256, 1/4096 (exact in
+# fp32); subtracting 8 * sum(x) restores the signed dot product. Per-lane sums
+# stay below 2^24, so they are exact integers and the INT32 simd_sum matches the
+# MPP kernels bit for bit.
+_MATVEC_SOURCE = """
+    constexpr int SG = 2;
+    constexpr int RPS = 4;
+    constexpr int VPT = 16;
+    constexpr int BLOCK = 32 * VPT;
+    constexpr int KP = K / 2;
+
+    const int M = x_scale_shape[0];
+    const int lane = int(thread_index_in_simdgroup);
+    const int sg = int(simdgroup_index_in_threadgroup);
+    const int n0 = (int(threadgroup_position_in_grid.x) * SG + sg) * RPS;
+    const int m0 = int(threadgroup_position_in_grid.y) * MR;
+    if (n0 >= N) {
+        return;
+    }
+    const int mrows = min(MR, M - m0);
+
+    device const uchar* w_rows[RPS];
+    #pragma clang loop unroll(full)
+    for (int r = 0; r < RPS; ++r) {
+        w_rows[r] = w_packed + size_t(min(n0 + r, N - 1)) * KP + lane * (VPT / 2);
+    }
+    device const char* x_base = (device const char*)xq + size_t(m0) * K + lane * VPT;
+    const float4 prescale =
+        float4(1.0f, 1.0f / 16.0f, 1.0f / 256.0f, 1.0f / 4096.0f);
+
+    float acc[MR][RPS];
+    float xsum[MR];
+    #pragma clang loop unroll(full)
+    for (int m = 0; m < MR; ++m) {
+        xsum[m] = 0.0f;
+        #pragma clang loop unroll(full)
+        for (int r = 0; r < RPS; ++r) {
+            acc[m][r] = 0.0f;
+        }
+    }
+
+    for (int k = 0; k < K; k += BLOCK) {
+        // Converted once per block and reused for every activation row.
+        float4 wf[RPS][4];
+        #pragma clang loop unroll(full)
+        for (int r = 0; r < RPS; ++r) {
+            const ushort4 q = as_type<ushort4>(
+                *(device const uint2*)(w_rows[r] + k / 2) ^ uint2(0x88888888u));
+            #pragma clang loop unroll(full)
+            for (int i = 0; i < 4; ++i) {
+                wf[r][i] = float4(
+                    q[i] & 0x000f, q[i] & 0x00f0, q[i] & 0x0f00, q[i] & 0xf000);
+            }
+        }
+        #pragma clang loop unroll(full)
+        for (int m = 0; m < MR; ++m) {
+            if (m < mrows) {
+                const uint4 xb = *(device const uint4*)(x_base + size_t(m) * K + k);
+                float4 xs[4];
+                #pragma clang loop unroll(full)
+                for (int i = 0; i < 4; ++i) {
+                    const float4 v = float4(as_type<char4>(xb[i]));
+                    xsum[m] += (v.x + v.y) + (v.z + v.w);
+                    xs[i] = v * prescale;
+                }
+                #pragma clang loop unroll(full)
+                for (int r = 0; r < RPS; ++r) {
+                    float a = 0.0f;
+                    #pragma clang loop unroll(full)
+                    for (int i = 0; i < 4; ++i) {
+                        a += dot(xs[i], wf[r][i]);
+                    }
+                    acc[m][r] += a;
+                }
+            }
+        }
+    }
+
+    #pragma clang loop unroll(full)
+    for (int m = 0; m < MR; ++m) {
+        if (m < mrows) {
+            #pragma clang loop unroll(full)
+            for (int r = 0; r < RPS; ++r) {
+                const int total = simd_sum(int(acc[m][r] - 8.0f * xsum[m]));
+                const int n = n0 + r;
+                if (lane == 0 && n < N) {
+                    const float s = x_scale[m0 + m] * float(w_scale[n]);
+                    out[size_t(m0 + m) * N + n] = T(s * float(total));
+                }
             }
         }
     }
@@ -445,8 +642,12 @@ def _int8_int4_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             header=_HEADER,
             inputs=[P.slot_to_tid(x_slot)],
             outputs=[P.slot_to_tid(xq_slot), P.slot_to_tid(x_scale_slot)],
-            grid=[IntOrVid.from_literal(32), m_iov, IntOrVid.from_literal(1)],
-            threadgroup=_lit(32, 1, 1),
+            grid=[
+                IntOrVid.from_literal(_QUANT_THREADS),
+                m_iov,
+                IntOrVid.from_literal(1),
+            ],
+            threadgroup=_lit(_QUANT_THREADS, 1, 1),
             input_names=["x"],
             output_names=["xq", "x_scale"],
             output_shapes_flat=[m_iov, IntOrVid.from_literal(K), m_iov],
@@ -455,9 +656,9 @@ def _int8_int4_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 torch_dtype_to_scalar_type(torch.int8),
                 torch_dtype_to_scalar_type(torch.float32),
             ],
-            template_arg_names=["T", "K"],
-            template_arg_kinds=[2, 0],
-            template_arg_values=[dtype_int, K],
+            template_arg_names=["T", "K", "TPR"],
+            template_arg_kinds=[2, 0, 0],
+            template_arg_values=[dtype_int, K, _QUANT_THREADS],
         )
     )
     P.emit(
