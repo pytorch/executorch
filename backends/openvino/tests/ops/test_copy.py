@@ -110,6 +110,10 @@ class TestCopyOperator(BaseOpenvinoOpTest):
             copy = buffer.clone().clone(memory_format=torch.channels_last)
             return copy, torch.sin(copy)
 
+        def copy_and_copy_of_it(buffer, x):
+            copy = buffer.clone()
+            return copy, copy.clone(), buffer + x
+
         floats = torch.randn(2, 3, 4, 5)
         cases = {
             # OpenVINO writes every output in the default dim order.
@@ -124,6 +128,8 @@ class TestCopyOperator(BaseOpenvinoOpTest):
                 lambda b, x: (b.clone(), x + 1),
                 torch.tensor([2**40, -(2**40)]),
             ),
+            # OpenVINO's PyTorch frontend cannot return one constant twice.
+            "two copies": (copy_and_copy_of_it, floats),
             # The partitioner does not take atan, so the CPU stores the buffer
             # anyway, and a copy made there keeps it stored once.
             "also read outside": (lambda b, x: (b.clone(), torch.atan(b) + x), floats),

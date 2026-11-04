@@ -6,6 +6,7 @@
 
 # mypy: disable-error-code=import-not-found
 
+from collections import Counter
 from typing import Callable, final, List, Optional, Tuple
 
 import torch
@@ -81,8 +82,8 @@ def _constants(program: ExportedProgram) -> set[torch.fx.Node]:
 def _remove_copies_of_inputs(
     partition: Partition, constants: set[torch.fx.Node]
 ) -> None:
-    """Leave out of the partition each copy that would return one of the
-    partition's inputs, unchanged, as one of its outputs.
+    """Leave out of the partition each copy that would return, unchanged, one
+    of the partition's inputs or a constant OpenVINO cannot return.
 
     OpenVINO would return the input itself, and when the runtime binds the
     output buffers after the inputs, its CPU plugin does not write such an
@@ -90,32 +91,44 @@ def _remove_copies_of_inputs(
     Copies used only inside the partition stay, because OpenVINO reads every
     input in the default dim order, which a copy left out could have changed.
     A copy of a constant that only this partition reads stays too, since the
-    constant is not a partition input. Such a copy still leaves when it changes
-    the dim order, since OpenVINO writes every output in the default one, or
-    has a 64-bit type, since the CPU plugin computes those in 32 bits. Like any
+    constant is not a partition input. Such a copy still leaves when it is not
+    in the default dim order, since OpenVINO writes every output in the default
+    one, when it has a 64-bit type, since the CPU plugin computes those in 32
+    bits, or when another output also returns that constant, since OpenVINO's
+    PyTorch frontend cannot convert two outputs of one constant. Like any
     input, a copy left out that is not in the default dim order is still read
     wrong by the ops that use it inside.
     """
 
-    def copies_input(node: torch.fx.Node) -> bool:
-        copy = node
+    def copied(node: torch.fx.Node) -> Optional[torch.fx.Node]:
         while (source := _copy_source(node)) is not None:
             if source not in partition.nodes:
-                return not (
-                    source in constants
-                    and all(user in partition.nodes for user in source.users)
-                    and copy.meta["val"].is_contiguous()
-                    and copy.meta["val"].dtype.itemsize < 8
-                )
+                return source
             node = source
-        return False
+        return None
 
     # Taking out a copy can make another copy leave.
-    while leaving := [
-        node
-        for node in partition.nodes
-        if copies_input(node) and any(u not in partition.nodes for u in node.users)
-    ]:
+    while True:
+        outputs = {
+            node: copied(node)
+            for node in partition.nodes
+            if any(user not in partition.nodes for user in node.users)
+        }
+        returns = Counter(outputs.values())
+        leaving = [
+            node
+            for node, source in outputs.items()
+            if source is not None
+            and not (
+                source in constants
+                and returns[source] == 1
+                and all(user in partition.nodes for user in source.users)
+                and node.meta["val"].is_contiguous()
+                and node.meta["val"].dtype.itemsize < 8
+            )
+        ]
+        if not leaving:
+            return
         for node in leaving:
             # The copies it reads leave with it. A copy of a constant left inside
             # could feed it while the partition also reads it, a cycle.
