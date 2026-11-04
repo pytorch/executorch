@@ -2648,6 +2648,27 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_sin_cos_large_angle(self):
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kHtpBackend:
+            self.skipTest("Only HTP keeps sin and cos in float32")
+        module = SinusoidalEmbedding()  # noqa: F405
+        # A batch of timesteps, and a single one as at inference.
+        for t in (torch.tensor([[1.0], [0.9], [0.5], [0.1]]), torch.tensor([[1.0]])):
+            with self.subTest(batch=t.shape[0]):
+                self.lower_module_and_test_output(module, (t,))
+
+    def test_qnn_backend_sin_cos_integer_positions(self):
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kHtpBackend:
+            self.skipTest("Only HTP keeps sin and cos in float32")
+        modules = [
+            RotaryPositions(),  # noqa: F405
+            RotaryPositions(return_positions=True),  # noqa: F405
+        ]
+        sample_input = (torch.ones(1, 300, dtype=torch.int64),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_sinh(self):
         module = Sinh()  # noqa: F405
         sample_input = (torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]).reshape(2, 3),)
