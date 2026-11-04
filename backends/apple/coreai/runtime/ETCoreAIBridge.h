@@ -148,7 +148,8 @@ extern "C" {
 BOOL ETCoreAIIsAvailable(void);
 NSString* _Nullable ETCoreAIDeviceArchitectureName(void);
 id<ETCoreAIModelLoading> ETCoreAICreateModelLoader(
-    ETCoreAIComputeUnit computeUnit);
+    ETCoreAIComputeUnit computeUnit,
+    BOOL expectFrequentReshapes);
 #ifdef __cplusplus
 }
 #endif

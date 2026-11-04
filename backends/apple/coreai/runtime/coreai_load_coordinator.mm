@@ -310,29 +310,37 @@ Result<ETCoreAILoadedModel*> acquire_loaded_model(
       if (![loading containsObject:shared_key]) {
         break;
       }
+      static_cast<void>(fault_point(FaultPoint::BeforeSharedLoadWait));
       load_finished.wait(guard);
     }
     [loading addObject:shared_key];
   }
+  // Runs on every exit, so a key cannot stay marked as loading and hang later
+  // loads of the same model.
+  struct FinishSharedLoad final {
+    NSString* key;
+    ETCoreAILoadedModel* loaded = nil;
+    ~FinishSharedLoad() {
+      if (key == nil) {
+        return;
+      }
+      {
+        std::lock_guard<std::mutex> guard(mutex);
+        [loading removeObject:key];
+        if (loaded != nil) {
+          [shared_models setObject:loaded forKey:key];
+        }
+      }
+      load_finished.notify_all();
+    }
+  } finish{shared_key};
   auto model = acquire_cached_model(
       host_bundle, named_data, cache_directory, loader, key.get());
-  ETCoreAILoadedModel* loaded = model.ok()
-      ? [[ETCoreAILoadedModel alloc] initWithModel:model.get()]
-      : nil;
-  if (share) {
-    {
-      std::lock_guard<std::mutex> guard(mutex);
-      [loading removeObject:shared_key];
-      if (loaded != nil) {
-        [shared_models setObject:loaded forKey:shared_key];
-      }
-    }
-    load_finished.notify_all();
-  }
   if (!model.ok()) {
     return model.error();
   }
-  return loaded;
+  finish.loaded = [[ETCoreAILoadedModel alloc] initWithModel:model.get()];
+  return finish.loaded;
 }
 
 Error clear_cache_entry(
@@ -365,7 +373,7 @@ Error clear_cache_entry(
       ET_CHECK_OK_OR_RETURN_ERROR(require_coreai_available());
       // Eviction targets the bookmark, so the loader's specialization is
       // irrelevant.
-      loader = ETCoreAICreateModelLoader(ETCoreAIComputeUnitDefault);
+      loader = ETCoreAICreateModelLoader(ETCoreAIComputeUnitDefault, NO);
       ET_CHECK_OR_RETURN_ERROR(
           loader != nil, Internal, "Cannot create Core AI model loader");
     }

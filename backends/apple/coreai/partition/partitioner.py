@@ -333,8 +333,6 @@ class CoreAIPartitioner(Partitioner):
         #
         # multifunction lowers every Core AI partition of every method into one
         # Core AI model, one function per partition named <method>_<index>.
-        if multifunction and input_enumerations is not None:
-            raise ValueError("multifunction does not support input_enumerations yet")
         specs = []
         if min_deployment_version is not None:
             specs.append(
@@ -373,6 +371,8 @@ class CoreAIPartitioner(Partitioner):
         # Core AI derives op support and ops_to_not_decompose from coreai-torch's
         # tables; the deprecated to_edge() + to_backend() flow decomposes ops
         # (e.g. fused SDPA) before the partitioner runs, breaking that contract.
+        # It also lowers each partition on its own, so multifunction exports
+        # would silently become separate models without shared weights.
         if not self._is_to_edge_transform_and_lower():
             raise RuntimeError(
                 "CoreAIPartitioner must be used with to_edge_transform_and_lower(). "
