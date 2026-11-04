@@ -60,9 +60,12 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Capture at absolute interval multiples and the initial prompt end.
   // Requires cache capacity; zero captures only the initial prompt.
   std::size_t prefix_checkpoint_interval = 0;
-  // Override the interval with increasing checkpoints in (start,
-  // prompt.size()]. Invalid or throwing policies skip capture. Requires cache
-  // capacity. Runs on control; must not block or reenter the runtime.
+  // Best-effort capture at each request's prompt end, including continuations
+  // and replacements. Shares checkpoint admission; requires cache capacity.
+  bool prefix_capture_prompt_end = false;
+  // Override the interval and prompt-end flag with increasing checkpoints in
+  // (start, prompt.size()]. Invalid or throwing policies skip capture. Requires
+  // cache capacity. Runs on control; must not block or reenter the runtime.
   std::function<std::vector<batching::PrefixCheckpoint>(
       const batching::PrefixIdentity& prompt,
       batching::Position start,
@@ -86,7 +89,8 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
       return max_prefix_captures;
     }
     const auto concurrency = std::min(max_sessions, max_requests);
-    return prefix_checkpoint_interval || prefix_checkpoint_policy
+    return prefix_checkpoint_interval || prefix_capture_prompt_end ||
+            prefix_checkpoint_policy
         ? std::min(concurrency, std::size_t{2})
         : concurrency;
   }

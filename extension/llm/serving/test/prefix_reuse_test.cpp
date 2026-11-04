@@ -1023,6 +1023,105 @@ TEST_F(PrefixReuseTest, ContinuationAndExplicitLifecycleBypassCloning) {
   EXPECT_EQ(executor.clone_calls.load(), 2);
 }
 
+class PromptEndCaptureTest : public PrefixReuseTest,
+                             public ::testing::WithParamInterface<std::size_t> {
+};
+
+TEST_P(PromptEndCaptureTest, ContinuationPromptCanBeReusedByAnotherSession) {
+  config.prefix_capture_prompt_end = true;
+  config.prefix_checkpoint_interval = GetParam();
+  config.prefix_cache_capacity = 4;
+  start();
+  submit(output(), {1, 2, 3}).wait();
+  const std::vector<Token> prompt{1, 2, 3, 100, 4, 5};
+  auto continuation = output();
+  submit(continuation, prompt).wait();
+  ASSERT_TRUE(continuation->terminal);
+  ASSERT_FALSE(continuation->terminal->error);
+  EXPECT_EQ(continuation->terminal->stats.session_reset_reason, "exact_prefix");
+  auto replay = output();
+  submit(replay, prompt, "other").wait();
+  ASSERT_TRUE(replay->terminal);
+  ASSERT_FALSE(replay->terminal->error);
+  // A pending periodic capture may occupy the lane at the prompt end.
+  const auto minimum_reuse = GetParam() == 4 ? 4u : prompt.size() - 1;
+  EXPECT_GE(replay->terminal->stats.reused_prompt_tokens, minimum_reuse);
+  EXPECT_LE(
+      replay->terminal->stats.prefilled_prompt_tokens,
+      prompt.size() - minimum_reuse);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    WithoutIntervalAndBetweenBoundariesAndAfterBoundary,
+    PromptEndCaptureTest,
+    ::testing::Values(0u, 4u, 64u));
+
+TEST_F(PrefixReuseTest, PromptEndCaptureIncludesReplacementsAndHonorsCapacity) {
+  config.prefix_capture_prompt_end = true;
+  config.prefix_cache_capacity = 1;
+  start();
+  submit(output(), {1, 2, 3}).wait();
+  submit(output(), {8, 9, 10}).wait();
+  auto warm = output();
+  submit(warm, {8, 9, 10}, std::nullopt).wait();
+  ASSERT_TRUE(warm->terminal);
+  EXPECT_EQ(warm->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(warm->terminal->stats.prefilled_prompt_tokens, 1u);
+  auto evicted = output();
+  submit(evicted, {1, 2, 3}, std::nullopt).wait();
+  ASSERT_TRUE(evicted->terminal);
+  EXPECT_EQ(evicted->terminal->stats.reused_prompt_tokens, 0u);
+}
+
+TEST_F(
+    PrefixReuseTest,
+    PromptEndCaptureRequiresCapacityAndBoundsTransientRows) {
+  EXPECT_FALSE(ServingRuntimeConfig{}.prefix_capture_prompt_end);
+  config.prefix_capture_prompt_end = true;
+  config.max_prefix_captures = 0;
+  EXPECT_EQ(config.resolved_prefix_captures(), 2u);
+  config.max_prefix_captures = 3;
+  EXPECT_EQ(config.resolved_prefix_captures(), 3u);
+  config.prefix_cache_capacity = 0;
+  EXPECT_EQ(config.resolved_prefix_captures(), 0u);
+  start();
+  EXPECT_FALSE(runtime->info().ready);
+  EXPECT_TRUE(executor.opened().empty());
+}
+
+TEST_F(PrefixReuseTest, ExplicitCheckpointPolicyOverridesPromptEndCapture) {
+  config.prefix_capture_prompt_end = true;
+  config.prefix_checkpoint_policy = [](const auto&, auto, bool) {
+    return std::vector<PrefixCheckpoint>{};
+  };
+  start();
+  submit(output(), {1, 2, 3}).wait();
+  submit(output(), {1, 2, 3, 100, 4}).wait();
+  EXPECT_EQ(executor.clone_calls.load(), 0);
+}
+
+TEST_F(PrefixReuseTest, CancelledContinuationSkipsPromptEndCapture) {
+  config.prefix_capture_prompt_end = true;
+  start();
+  submit(output(), {1, 2, 3}).wait();
+  const auto before = executor.clone_calls.load();
+  executor.executing.hold();
+  auto cancelled = output();
+  auto handle = submit(cancelled, {1, 2, 3, 100, 4, 5});
+  ASSERT_TRUE(executor.executing.wait());
+  handle.cancel();
+  executor.executing.release();
+  handle.wait();
+  ASSERT_TRUE(cancelled->terminal);
+  EXPECT_EQ(cancelled->terminal->finish_reason, FinishReason::Cancelled);
+  EXPECT_EQ(executor.clone_calls.load(), before);
+  auto next = output();
+  submit(next, {8, 9, 10}, "other").wait();
+  ASSERT_TRUE(next->terminal);
+  ASSERT_FALSE(next->terminal->error);
+  EXPECT_EQ(executor.clones().back().prefix, (std::vector<Token>{8, 9, 10}));
+}
+
 class ReplacementPrefixTest : public PrefixReuseTest,
                               public ::testing::WithParamInterface<
                                   std::pair<std::vector<Token>, std::size_t>> {

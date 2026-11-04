@@ -262,6 +262,7 @@ struct ServingRuntime::Impl {
                 static_cast<std::size_t>(
                     std::numeric_limits<batching::Position>::max()) &&
             ((!config.prefix_checkpoint_interval &&
+              !config.prefix_capture_prompt_end &&
               !config.prefix_checkpoint_policy) ||
              config.prefix_cache_capacity)),
         tokenizer_(tokenizer),
@@ -1195,6 +1196,7 @@ struct ServingRuntime::Impl {
       std::function<void(batching::Position)> on_prefill;
       if (request->text && request->text->prompt &&
           (config_.prefix_checkpoint_interval != 0 ||
+           config_.prefix_capture_prompt_end ||
            config_.prefix_checkpoint_policy)) {
 #if ET_HAS_EXCEPTIONS
         try {
@@ -1228,6 +1230,10 @@ struct ServingRuntime::Impl {
                 static_cast<batching::Position>(
                     config_.prefix_checkpoint_interval),
                 opening);
+            if (config_.prefix_capture_prompt_end && end > start &&
+                (breakpoints.empty() || breakpoints.back() != end)) {
+              breakpoints.push_back(end);
+            }
           }
           on_prefill = request->text->prefix_capture->observer(
               [this, request] {

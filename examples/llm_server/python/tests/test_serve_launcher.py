@@ -157,6 +157,40 @@ def test_checkpoint_options_reach_worker(argv, launch):
     assert command[command.index("--prefix_checkpoint_interval") + 1] == "512"
 
 
+def test_prompt_end_capture_reaches_worker_and_requires_cache(argv, launch):
+    assert not serve._parse_args(argv).prefix_capture_prompt_end
+    with pytest.raises(SystemExit):
+        serve._parse_args(argv + ["--prefix-capture-prompt-end"])
+    serve.main(argv + ["--prefix-cache-entries", "3", "--prefix-capture-prompt-end"])
+    assert (
+        "--prefix_capture_prompt_end=true" in launch.stages["spawn"].call_args.args[0]
+    )
+
+
+@pytest.mark.parametrize(
+    "sessions,override,expected", [(8, 0, 2), (1, 0, 1), (8, 3, 3)]
+)
+def test_prompt_end_capture_bounds_automatic_rows(argv, sessions, override, expected):
+    args = serve._parse_args(
+        argv
+        + [
+            "--prefix-cache-entries",
+            "3",
+            "--prefix-capture-prompt-end",
+            "--max-sessions",
+            str(sessions),
+            "--prefix-capture-slots",
+            str(override),
+        ]
+    )
+    assert (
+        serve._validate_limits(
+            Mock(), args, prefix_capture_slots=override, prefix_capture_prompt_end=True
+        )
+        == expected
+    )
+
+
 @pytest.mark.parametrize(
     "sessions,requests,interval,override,expected",
     [
