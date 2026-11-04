@@ -429,6 +429,67 @@ class TestInspector(unittest.TestCase):
         self.assertEqual(event_from_object.debug_handles, event_from_file.debug_handles)
         self.assertEqual(event_from_object.op_types, event_from_file.op_types)
 
+    def test_inspector_with_delegated_etrecord_object_matches_saved_file(self):
+        _, _, et_output = TestETRecord().get_test_model(generate_etrecord=True)
+        etrecord = et_output.get_etrecord()
+        instruction_id = next(iter(etrecord._debug_handle_map["forward"]))
+        # Shape produced by DelegateMappingBuilder: int keys, tuple values
+        etrecord._delegate_map = {
+            "forward": {
+                instruction_id: {
+                    "name": "TestBackend",
+                    "delegate_map": {0: (1, 2), 5: (3,)},
+                }
+            }
+        }
+
+        def gen_event_blocks(*args, **kwargs):
+            return [
+                EventBlock(
+                    name=EVENT_BLOCK_NAME,
+                    events=[
+                        Event(name="op", _instruction_id=instruction_id),
+                        Event(
+                            name="delegated",
+                            _instruction_id=instruction_id,
+                            delegate_debug_identifier=0,
+                        ),
+                        # not in the delegate map
+                        Event(
+                            name="unmapped",
+                            _instruction_id=instruction_id,
+                            delegate_debug_identifier=7,
+                        ),
+                    ],
+                )
+            ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            etrecord_path = os.path.join(tmp_dir, "etrecord.bin")
+            etrecord.save(etrecord_path)
+
+            with patch.object(
+                _inspector, "gen_etdump_object", return_value=None
+            ), patch.object(
+                EventBlock, "_gen_from_etdump", side_effect=gen_event_blocks
+            ):
+                inspector_from_object = Inspector(
+                    etdump_path=ETDUMP_PATH, etrecord=etrecord
+                )
+                inspector_from_file = Inspector(
+                    etdump_path=ETDUMP_PATH, etrecord=etrecord_path
+                )
+
+        events_from_object = inspector_from_object.event_blocks[0].events
+        events_from_file = inspector_from_file.event_blocks[0].events
+        self.assertEqual(events_from_file[1].debug_handles, [1, 2])
+        for from_object, from_file in zip(events_from_object, events_from_file):
+            self.assertEqual(from_object.debug_handles, from_file.debug_handles)
+            self.assertEqual(from_object.num_outputs, from_file.num_outputs)
+            self.assertEqual(
+                from_object.delegate_backend_name, from_file.delegate_backend_name
+            )
+
     def test_populate_debugging_related_fields_raises_for_inconsistent_events(self):
         ret_event: Event = Event(
             name="event",
