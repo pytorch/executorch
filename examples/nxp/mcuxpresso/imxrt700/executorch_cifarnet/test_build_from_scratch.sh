@@ -12,7 +12,13 @@ echo Downloading ARM GCC toolchain
 if [ ! -d arm-toolchain ]; then
     mkdir -p arm-toolchain
     pushd arm-toolchain
-    wget $ARM_TOOLCHAIN_URL
+    # The Arm CI images cache this archive (see backends/arm/scripts/utils.sh)
+    cached_toolchain="${ARM_SETUP_DOWNLOAD_CACHE:-}/$(basename $ARM_TOOLCHAIN_URL)"
+    if [ -n "${ARM_SETUP_DOWNLOAD_CACHE:-}" ] && [ -f "$cached_toolchain" ]; then
+        cp "$cached_toolchain" .
+    else
+        wget $ARM_TOOLCHAIN_URL
+    fi
     tar -xvf *.tar.xz
     rm *.tar.xz
     popd
