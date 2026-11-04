@@ -311,3 +311,20 @@ and `--max-draft-owners`), then add `--dflash` to the serve command above. The
 draft ABI and `--dflash-n-draft` behave as on MLX. Drafts are greedy; the target
 accepts or resamples them on the device under each request's sampling. Decode
 drafts of up to four owners run in CUDA graphs.
+
+Tool validation accepts JSON Schema Draft 7, 2019-09, and 2020-12 (the default),
+including root `$id` and local fragment references. External references, nested
+schema identifiers/dialect changes, dynamic references, and more than 1023
+coercion alternatives are rejected before generation. Disabled tools are not
+validated. Validators are compiled once per request and never fetch schemas.
+
+ATEM tool intent must start a line outside Markdown code or immediately follow a
+tool recipient header. User-directed examples and quoted markers remain content.
+A length-truncated invocation suppresses the entire incomplete call set and ends
+with `finish_reason=length`; malformed completed calls still return
+`invalid_tool_output`. Streaming may already have delivered reasoning before that
+error. Tool calls are emitted only after the whole call set passes validation.
+
+Empty reasoning options and `enabled=true` are no-ops. `effort` accepts low,
+medium, or high, and `exclude` controls response visibility. Disabling reasoning
+generation or unsupported reasoning keys returns an explicit parameter error.

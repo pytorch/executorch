@@ -45,14 +45,41 @@ _IDENT = r"[a-zA-Z_][a-zA-Z0-9_-]*"
 _RECIPIENT = rf"{_IDENT}(?:\.{_IDENT})*"
 _HEADER_RE = re.compile(
     rf"(?:{re.escape(_START)}assistant)?"
-    rf" to={_RECIPIENT}"
+    rf" to=({_RECIPIENT})"
     rf"(?: constrain={_IDENT})?"
     rf"{re.escape(_MESSAGE)}"
 )
 
 
+def tool_start(text):
+    headers = list(_HEADER_RE.finditer(text))
+    for marker in re.finditer(r"<atem:function_calls>|<atem:invoke\b", text):
+        prefix = text[: marker.start()]
+        header = next((h for h in reversed(headers) if h.end() <= marker.start()), None)
+        if header is not None:
+            if header.group(1) in ("self", "user"):
+                continue
+            if not text[header.end() : marker.start()].strip():
+                return marker.start()
+        # Standalone blocks must begin a line outside quoted Markdown code.
+        if not prefix.rsplit("\n", 1)[-1].strip() and prefix.count("```") % 2 == 0:
+            return marker.start()
+    return None
+
+
 def parameter_value_spans(text):
-    return [match.span(2) for match in _PARAMETER_RE.finditer(text)]
+    start = tool_start(text)
+    if start is None:
+        return []
+    return [
+        (invoke.start(2) + parameter.start(2), invoke.start(2) + parameter.end(2))
+        for invoke in _INVOKE_RE.finditer(text, start)
+        for parameter in _PARAMETER_RE.finditer(invoke.group(2))
+    ]
+
+
+class IncompleteToolOutputError(ToolOutputError):
+    pass
 
 
 class AtemToolCallDetector:
@@ -66,41 +93,24 @@ class AtemToolCallDetector:
     def __init__(self):
         self._next_index = 0
 
-    def detect_and_parse(self, text: str, tools: dict[str, dict]) -> ParseResult:
-        """Return leading text + any complete tool calls.
-
-        Missing markers preserve the text. Invalid tool intent raises an error.
-        ``tools`` maps tool names to their parameter schemas.
-        """
-        first = _INVOKE_RE.search(text)
-        if first is None:
-            # No complete call. If a tool marker is present the call was
-            # truncated/partial -> strip it; otherwise there is no tool intent.
-            markers = [
-                i
-                for i in (text.find(self.bot_token), text.find(_INVOKE_OPEN))
-                if i != -1
-            ]
-            if markers:
-                raise ToolOutputError("Incomplete ATEM tool call")
+    def detect_and_parse(
+        self, text: str, tools: dict, *, finish_reason=None
+    ) -> ParseResult:
+        start = tool_start(text)
+        if start is None:
             return ParseResult(normal_text=text)
-        # Leading text ends at the block open if present, else at the first
-        # <atem:invoke>; a harmony "to=NAME<|message|>" header that immediately
-        # precedes it is excluded so the header does not leak into content.
-        block = text.find(self.bot_token)
-        cut = block if (block != -1 and block <= first.start()) else first.start()
-        header = self._preceding_header(text, cut)
-        if header is not None:
-            cut = header
-        normal = text[:cut].strip()
+        header = self._preceding_header(text, start)
+        normal = text[: header if header is not None else start].strip()
         try:
-            calls = self._parse_calls(text, tools)
-        except ToolOutputError:
+            if _INVOKE_RE.search(text, start) is None:
+                raise IncompleteToolOutputError("Incomplete ATEM tool call")
+            calls = self._parse_calls(text[start:], tools)
+        except IncompleteToolOutputError:
+            if finish_reason == "length":
+                return ParseResult(normal_text=normal, incomplete=True)
             raise
-        except ValueError as error:
+        except (ValueError, RecursionError) as error:
             raise ToolOutputError("Malformed ATEM tool call") from error
-        if not calls:
-            return ParseResult(normal_text=text)
         return ParseResult(normal_text=normal, calls=calls)
 
     @staticmethod
@@ -116,7 +126,7 @@ class AtemToolCallDetector:
         """Parse every invocation and coerce its parameters."""
         remainder = _INVOKE_RE.sub("", text)
         if re.search(r"</?atem:(?:invoke|parameter)\b", remainder):
-            raise ValueError("Incomplete invocation")
+            raise IncompleteToolOutputError("Incomplete invocation")
         calls = []
         for im in _INVOKE_RE.finditer(text):
             name, body = im.group(1), im.group(2)
@@ -126,7 +136,9 @@ class AtemToolCallDetector:
                     name = matches[0]
             if name not in tools:
                 raise ToolOutputError(f"Model called undefined tool {name!r}")
-            schema = ToolSchema(tools[name])
+            schema = tools[name]
+            if not isinstance(schema, ToolSchema):
+                schema = ToolSchema(schema)
             args = {}
             end = 0
             for pm in _PARAMETER_RE.finditer(body):

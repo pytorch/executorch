@@ -28,6 +28,7 @@ from executorch.examples.llm_server.python.session_runtime import (
     PromptInput,
     SessionRuntime,
 )
+from executorch.examples.llm_server.python.tool_parsers.types import ParseResult
 from executorch.examples.llm_server.python.worker_client import spawn_worker
 from executorch.examples.models.muse_glimmer.serving.chat_template import (
     MuseGlimmerChatTemplate as ChatTemplate,
@@ -38,6 +39,7 @@ from executorch.examples.models.muse_glimmer.serving.tool_parsers import (
 )
 from executorch.examples.models.muse_glimmer.serving.tool_parsers.atem import (
     parameter_value_spans,
+    tool_start,
 )
 from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (
     ToolSchema,
@@ -272,22 +274,62 @@ class MuseGlimmerServingChat(ServingChat):
             return None
         return super()._count_prompt_tokens(prompt)
 
-    async def _create(self, req: ChatCompletionRequest, lease, admission):
-        # The inherited create() owns the transaction around preparation and
-        # response cleanup; only image-aware prompt construction differs here.
-        if req.model is not None and req.model != self._model_id:
-            raise ModelNotFound(req.model, self._model_id)
-        if req.reasoning is not None or req.reasoning_effort is not None:
-            reasoning = req.reasoning or {}
-            effort = reasoning.get("effort", req.reasoning_effort)
-            if set(reasoning) - {"effort"} or effort not in ("low", "medium", "high"):
+    def _parse_tools(self, req, text, finish_reason, raw_text):
+        if self._tool_detector_cls is AtemToolCallDetector:
+            if tool_start(raw_text) is None:
+                return ParseResult(normal_text=text)
+            schemas = req._validated_tool_schemas or {
+                name: ToolSchema(schema)
+                for name, schema in self._tool_schemas(req).items()
+            }
+            return AtemToolCallDetector().detect_and_parse(
+                text, schemas, finish_reason=finish_reason
+            )
+        return super()._parse_tools(req, text, finish_reason, raw_text)
+
+    @staticmethod
+    def _validate_reasoning_options(reasoning):
+        unsupported = set(reasoning) - {"effort", "enabled", "exclude"}
+        if unsupported:
+            raise APIError(
+                400,
+                "Unsupported reasoning keys: " + ", ".join(sorted(unsupported)),
+                "invalid_request_error",
+                "unsupported_parameter",
+            )
+        for key in ("enabled", "exclude"):
+            if key in reasoning and not isinstance(reasoning[key], bool):
                 raise APIError(
                     400,
-                    "Muse reasoning effort must be low, medium or high",
+                    f"reasoning.{key} must be a boolean",
                     "invalid_request_error",
                     "invalid_value",
                 )
-            kwargs = dict(req.chat_template_kwargs or {})
+        if reasoning.get("enabled") is False:
+            raise APIError(
+                400,
+                "Muse does not support disabling reasoning generation",
+                "invalid_request_error",
+                "unsupported_parameter",
+            )
+
+    def _normalize_reasoning(self, req):
+        if req.reasoning is None and req.reasoning_effort is None:
+            return req
+        reasoning = req.reasoning or {}
+        self._validate_reasoning_options(reasoning)
+        effort = reasoning.get("effort")
+        if effort is None:
+            effort = req.reasoning_effort
+        if effort is not None and effort not in ("low", "medium", "high"):
+            raise APIError(
+                400,
+                "Muse reasoning effort must be low, medium or high",
+                "invalid_request_error",
+                "invalid_value",
+            )
+        kwargs = dict(req.chat_template_kwargs or {})
+        if effort is not None:
             if (
                 req.reasoning_effort not in (None, effort)
                 or kwargs.get("reasoning_strength", effort) != effort
@@ -299,18 +341,39 @@ class MuseGlimmerServingChat(ServingChat):
                     "invalid_value",
                 )
             kwargs["reasoning_strength"] = effort
-            req = req.model_copy(
-                update={
-                    "reasoning": None,
-                    "reasoning_effort": None,
-                    "chat_template_kwargs": kwargs,
-                }
-            )
+        if "exclude" in reasoning:
+            visible = not reasoning["exclude"]
+            if kwargs.get("return_reasoning", visible) != visible:
+                raise APIError(
+                    400,
+                    "Conflicting reasoning visibility controls",
+                    "invalid_request_error",
+                    "invalid_value",
+                )
+            kwargs["return_reasoning"] = visible
+        return req.model_copy(
+            update={
+                "reasoning": None,
+                "reasoning_effort": None,
+                "chat_template_kwargs": kwargs,
+            }
+        )
+
+    async def _create(self, req: ChatCompletionRequest, lease, admission):
+        # The inherited create() owns the transaction around preparation and
+        # response cleanup; only image-aware prompt construction differs here.
+        if req.model is not None and req.model != self._model_id:
+            raise ModelNotFound(req.model, self._model_id)
+        req = self._normalize_reasoning(req)
         self._reject_invalid_values(req)
         self._reject_unsupported_params(req)
-        for tool in req.tools or []:
-            function = tool["function"]
-            ToolSchema(function.get("parameters", {}))
+        if self._tools_active(req):
+            req._validated_tool_schemas = {
+                tool["function"]["name"]: ToolSchema(
+                    tool["function"].get("parameters", {})
+                )
+                for tool in req.tools
+            }
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
 
@@ -411,6 +474,8 @@ def build_app_from_args(args):
     )
     worker = _spawn(args)
     runtime = SessionRuntime(worker)
+    from .stream_parser import MuseGlimmerToolReasoningParser
+
     serving = MuseGlimmerServingChat(
         runtime,
         template,
@@ -418,6 +483,7 @@ def build_app_from_args(args):
         max_context=args.max_context,
         max_image_bytes=args.max_image_bytes,
         tool_detector_cls=_tool_detector(args.tool_parser),
+        tool_reasoning_parser_factory=MuseGlimmerToolReasoningParser,
         # The worker prepends the numeric BOS the HF template renders as text and
         # serve.py strips (strip_rendered_bos), so token counts include it.
         prompt_token_offset=1,

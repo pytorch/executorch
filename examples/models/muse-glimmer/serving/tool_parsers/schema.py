@@ -9,13 +9,14 @@ import json
 import math
 import re
 from itertools import chain
-from urllib.parse import unquote
 
 from executorch.examples.llm_server.python.errors import APIError
-from jsonschema import Draft202012Validator
+from jsonschema import Draft201909Validator, Draft202012Validator, Draft7Validator
 from jsonschema.exceptions import SchemaError
-from referencing import Registry
-from referencing.jsonschema import DRAFT202012
+from jsonschema.validators import validator_for
+from referencing import Registry, Resource
+from referencing.exceptions import Unresolvable
+from referencing.jsonschema import DRAFT201909, DRAFT202012, DRAFT7
 
 
 class ToolOutputError(APIError):
@@ -27,52 +28,104 @@ class ToolSchema:
     def __init__(self, schema):
         self.schema = schema
         try:
-            Draft202012Validator.check_schema(schema)
-            resources = [DRAFT202012.create_resource(schema)]
+            cls = validator_for(
+                schema,
+                default=Draft202012Validator if "$schema" not in schema else None,
+            )
+            specs = {
+                Draft7Validator: DRAFT7,
+                Draft201909Validator: DRAFT201909,
+                Draft202012Validator: DRAFT202012,
+            }
+            if cls not in specs:
+                raise ValueError(
+                    "supported JSON Schema drafts are 7, 2019-09 and 2020-12"
+                )
+            self._legacy_ref = cls is Draft7Validator
+            cls.check_schema(schema)
+            root = Resource.from_contents(schema, default_specification=specs[cls])
+            base = root.id() or ""
+            registry = Registry().with_resource(base, root).crawl()
+            self._resolver = registry.resolver(base)
+            resources = [root]
             while resources:
                 resource = resources.pop()
                 node = resource.contents
                 if isinstance(node, dict):
-                    if (
-                        node.get(
-                            "$schema", "https://json-schema.org/draft/2020-12/schema"
-                        ).rstrip("#")
-                        != "https://json-schema.org/draft/2020-12/schema"
-                    ):
-                        raise ValueError("only JSON Schema Draft 2020-12 is supported")
-                    if "$dynamicRef" in node or "$id" in node:
-                        raise ValueError("$dynamicRef and $id are unsupported")
+                    if node is not schema and ("$id" in node or "$schema" in node):
+                        raise ValueError(
+                            "nested schema identifiers and dialect changes are unsupported"
+                        )
+                    if "$dynamicRef" in node or "$recursiveRef" in node:
+                        raise ValueError(
+                            "dynamic and recursive references are unsupported"
+                        )
                     if "$ref" in node:
                         self._resolve(node["$ref"])
                 resources.extend(resource.subresources())
-        except (SchemaError, ValueError, KeyError, IndexError, TypeError) as error:
+            if self._variant_count(schema) > 1023:
+                raise ValueError("tool schema exceeds 1023 coercion alternatives")
+        except (
+            SchemaError,
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+            RecursionError,
+            Unresolvable,
+        ) as error:
             raise APIError(
                 400,
                 "Invalid or unsupported tool schema: " + str(error).splitlines()[0],
                 "invalid_request_error",
                 "invalid_tool_schema",
             ) from error
-        # Registry has no retrieval hook: validation never fetches remote schemas.
-        self.validator = Draft202012Validator(schema, registry=Registry())
+        self.validator = cls(schema, registry=registry)
 
     def _resolve(self, ref):
-        if ref == "#":
-            return self.schema
-        if not ref.startswith("#/"):
-            raise ValueError("tool schema references must be local JSON pointers")
-        node = self.schema
-        for part in unquote(ref[2:]).split("/"):
-            part = part.replace("~1", "/").replace("~0", "~")
-            node = node[int(part)] if isinstance(node, list) else node[part]
+        if not ref.startswith("#"):
+            raise ValueError("tool schema references must be local fragments")
+        node = self._resolver.lookup(ref).contents
         if not isinstance(node, (dict, bool)):
             raise ValueError("tool schema reference must point to a schema")
         return node
+
+    def _variant_count(self, schema, seen=()):
+        if not isinstance(schema, dict) or id(schema) in seen:
+            return 1
+        seen = (*seen, id(schema))
+        count = 1
+        if "$ref" in schema:
+            count = self._variant_count(self._resolve(schema["$ref"]), seen)
+            if self._legacy_ref:
+                return count
+        children = list(schema.get("allOf", []))
+        children.extend(schema.get("dependentSchemas", {}).values())
+        children.extend(
+            v for v in schema.get("dependencies", {}).values() if isinstance(v, dict)
+        )
+        for child in children:
+            count *= self._variant_count(child, seen)
+            if count > 1023:
+                return count
+        for keyword in ("anyOf", "oneOf"):
+            if keyword in schema:
+                count *= sum(
+                    self._variant_count(child, seen) for child in schema[keyword]
+                )
+        if "if" in schema:
+            count *= self._variant_count(schema["if"], seen) * self._variant_count(
+                schema.get("then", {}), seen
+            ) + self._variant_count(schema.get("else", {}), seen)
+        return count
 
     def _property(self, schema, key, seen=()):
         if not isinstance(schema, dict) or id(schema) in seen:
             return {}
         seen = (*seen, id(schema))
         pieces = []
+        if "$ref" in schema and self._legacy_ref:
+            return self._property(self._resolve(schema["$ref"]), key, seen)
         if "$ref" in schema:
             pieces.append(self._property(self._resolve(schema["$ref"]), key, seen))
         if key in schema.get("properties", {}):
@@ -102,6 +155,8 @@ class ToolSchema:
         if not isinstance(schema, dict) or id(schema) in seen:
             return False
         seen = (*seen, id(schema))
+        if "$ref" in schema and self._legacy_ref:
+            return self._declares(self._resolve(schema["$ref"]), kind, seen)
         declared = schema.get("type", [])
         if kind == declared or isinstance(declared, list) and kind in declared:
             return True
@@ -136,6 +191,8 @@ class ToolSchema:
             return stripped.lower() == "true"
         try:
             parsed = json.loads(stripped)
+        except RecursionError as error:
+            raise ToolOutputError("Tool parameter JSON is nested too deeply") from error
         except ValueError:
             return value
         if isinstance(parsed, str):
@@ -150,6 +207,9 @@ class ToolSchema:
             return
         seen = (*seen, id(schema))
         groups = []
+        if "$ref" in schema and self._legacy_ref:
+            yield from self._object_variants(self._resolve(schema["$ref"]), keys, seen)
+            return
         if "$ref" in schema:
             groups.append([self._resolve(schema["$ref"])])
         groups.extend([child] for child in schema.get("allOf", []))
@@ -168,6 +228,11 @@ class ToolSchema:
             for key, child in schema.get("dependentSchemas", {}).items()
             if key in keys
         )
+        groups.extend(
+            [child]
+            for key, child in schema.get("dependencies", {}).items()
+            if key in keys and isinstance(child, dict)
+        )
         base = {
             key: value
             for key, value in schema.items()
@@ -181,6 +246,7 @@ class ToolSchema:
                 "then",
                 "else",
                 "dependentSchemas",
+                "dependencies",
             )
         }
         yield from self._combine_variants([base], groups, keys, seen)

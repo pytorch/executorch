@@ -421,18 +421,23 @@ class ServingChat:
                 break
         return text, stopped
 
-    def _extract_response(self, req: ChatCompletionRequest, text: str):
+    def _parse_tools(self, req, text, finish_reason, raw_text):
+        return self._tool_detector_cls().detect_and_parse(text, self._tool_schemas(req))
+
+    def _extract_response(
+        self, req: ChatCompletionRequest, text: str, *, finish_reason=None
+    ):
         """Return tool calls, optional reasoning, and user-visible content."""
         # Split the reasoning channel out BEFORE tool parsing so the detector only
         # sees the visible (non-reasoning) text. Parsing the full raw output would let
         # a tool-call marker the model emitted inside its private reasoning become a
         # phantom tool call (and drop the real answer).
+        raw_text = text
         reasoning, text = self._split_reasoning(text)
         tool_calls = None
         if self._tools_active(req):
-            parsed = self._tool_detector_cls().detect_and_parse(
-                text, self._tool_schemas(req)
-            )
+            parsed = self._parse_tools(req, text, finish_reason, raw_text)
+            req._tool_output_truncated = parsed.incomplete
             if parsed.calls:
                 tool_calls = [self._to_openai_tool_call(c) for c in parsed.calls]
             text = parsed.normal_text
@@ -1016,7 +1021,14 @@ class ServingChat:
         # Bound the raw output at the first stop/special token BEFORE tool
         # parsing, so a call after the stop boundary is not parsed/emitted.
         tool_calls, reasoning, content = self._extract_response(
-            req, self._truncate_raw(text, req, stopped or stats.finish_reason == "stop")
+            req,
+            self._truncate_raw(text, req, stopped or stats.finish_reason == "stop"),
+            finish_reason=self._finish_reason(
+                req,
+                stats.completion_tokens,
+                stopped=stopped,
+                worker_finish=stats.finish_reason,
+            ),
         )
         # Compare future echoes against the finalized client-visible response.
         self._transcript.record_assistant_turn(
@@ -1026,7 +1038,11 @@ class ServingChat:
             tool_calls=tool_calls,
             reasoning_content=reasoning,
             # Hidden post-EOS tokens must not be spliced into a later echo.
-            generated_token_ids=None if req.ignore_eos else stats.generated_token_ids,
+            generated_token_ids=(
+                None
+                if req.ignore_eos or req._tool_output_truncated
+                else stats.generated_token_ids
+            ),
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
         )
@@ -1186,6 +1202,12 @@ class ServingChat:
         yield chunk(DeltaMessage(), finish=finish)
 
     async def _stream_tool_output(self, generation, stops, stop, parts, parser):
+        if parser is None:
+            text, stopped = await self._collect_until_stop(generation, stops)
+            parts.append(text)
+            if stopped:
+                stop()
+            return
         async for part in self._clean(generation, stops, stop):
             parts.append(part)
             if parser is not None:
@@ -1219,7 +1241,15 @@ class ServingChat:
             self._extract_response(
                 req,
                 self._truncate_raw(
-                    "".join(parts), req, stop_hit[0] or stats.finish_reason == "stop"
+                    "".join(parts),
+                    req,
+                    stop_hit[0] or stats.finish_reason == "stop",
+                ),
+                finish_reason=self._finish_reason(
+                    req,
+                    stats.completion_tokens,
+                    stopped=stop_hit[0],
+                    worker_finish=stats.finish_reason,
                 ),
             )
         )
@@ -1332,7 +1362,11 @@ class ServingChat:
             tool_calls=tool_calls,
             reasoning_content=reasoning or None,
             # Hidden post-EOS tokens must not be spliced into a later echo.
-            generated_token_ids=None if req.ignore_eos else stats.generated_token_ids,
+            generated_token_ids=(
+                None
+                if req.ignore_eos or req._tool_output_truncated
+                else stats.generated_token_ids
+            ),
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
         )

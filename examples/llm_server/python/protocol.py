@@ -16,7 +16,7 @@ import time
 import uuid
 from typing import Any, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, PrivateAttr
 
 
 def _new_id(prefix: str) -> str:
@@ -54,6 +54,9 @@ class StreamOptions(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
+    _validated_tool_schemas: dict = PrivateAttr(default_factory=dict)
+    _tool_output_truncated: bool = PrivateAttr(default=False)
+
     model: Optional[str] = None
     messages: list[ChatMessage] = Field(min_length=1)
     stream: bool = False

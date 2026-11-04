@@ -264,7 +264,7 @@ def test_undefined_tool_is_an_explicit_error():
 def test_truncated_call_is_an_explicit_error():
     with pytest.raises(ToolOutputError, match="Incomplete"):
         _parse(
-            'Sure! <atem:function_calls><atem:invoke name="get_weather">'
+            'Sure!\n<atem:function_calls><atem:invoke name="get_weather">'
             '<atem:parameter name="city">Paris'
         )
 

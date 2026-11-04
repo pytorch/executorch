@@ -34,9 +34,8 @@ def resolve_tool_result_names(messages):
 
 class MuseGlimmerChatTemplate(ChatTemplate):
     def __init__(self, *args, **kwargs):
+        kwargs["chat_template"] = Path(__file__).with_suffix(".jinja").read_text()
         super().__init__(*args, **kwargs)
-        if self._hf is not None:
-            self._hf.chat_template = Path(__file__).with_suffix(".jinja").read_text()
 
     def render(self, messages, tools=None, template_kwargs=None):
         tools = deepcopy(tools)
