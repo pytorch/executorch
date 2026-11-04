@@ -185,6 +185,111 @@ class TestMLXPartitionerUnsupportedDtypes(unittest.TestCase):
                 self.assertEqual(err, 0)
 
 
+class MoeDispatch(nn.Module):
+    """The static dispatch of a mixture-of-experts block.
+
+    Routing weights come from gather, an int64 histogram counts tokens per
+    expert, tokens are scattered into expert slots, and index_add_ (which
+    becomes index_put with accumulate) brings the results back.
+    """
+
+    def __init__(self, experts=4, hidden=8, top_k=2):
+        super().__init__()
+        self.top_k = top_k
+        self.router = nn.Linear(hidden, experts, bias=False)
+        self.weight = nn.Parameter(torch.randn(experts, hidden, hidden))
+
+    def forward(self, x):
+        tokens, hidden = x.shape
+        experts = self.weight.shape[0]
+        scores = self.router(x).softmax(-1)
+        _, selected = torch.topk(scores, self.top_k, dim=-1)
+        weights = scores.gather(1, selected)
+        expert = selected.reshape(-1)
+        order = torch.argsort(expert)
+        token = torch.arange(tokens).repeat_interleave(self.top_k)[order]
+        expert = expert[order]
+        counts = torch.zeros(experts, dtype=torch.long).scatter_add(
+            0, expert, torch.ones_like(expert)
+        )
+        slot = torch.arange(tokens * self.top_k) - (counts.cumsum(0) - counts)[expert]
+        slots = torch.zeros(experts, tokens, hidden)
+        slots[expert, slot] = x[token]
+        y = torch.bmm(slots, self.weight)[expert, slot]
+        out = torch.zeros(tokens, hidden)
+        out.index_add_(0, token, weights.reshape(-1, 1)[order] * y)
+        return x + out
+
+
+class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
+    def test_moe_dispatch_is_lowered(self):
+        _, delegates, err = _run(MoeDispatch().eval(), (torch.randn(6, 8),))
+        # Only the int64 histogram stays on the CPU, between two delegates.
+        self.assertEqual(delegates, 2)
+        self.assertLess(err, 1e-5)
+
+    def test_unsupported_forms_run_on_the_cpu(self):
+        class IndexPut(nn.Module):
+            def __init__(self, accumulate=False):
+                super().__init__()
+                self.accumulate = accumulate
+
+            def forward(self, x, index, values):
+                # Some work before the refused op, so the program has a delegate.
+                x = x.logical_not() if x.dtype == torch.bool else x + 1
+                return torch.ops.aten.index_put.default(
+                    x, [index], values, self.accumulate
+                )
+
+        class Gather(nn.Module):
+            def forward(self, x, index):
+                return torch.gather(x + 1, 0, index)
+
+        index = torch.tensor([4, 1, 4])
+        cases = {
+            "int64": (
+                IndexPut(),
+                (
+                    torch.zeros(6, dtype=torch.long),
+                    index[1:],
+                    torch.ones(2, dtype=torch.long),
+                ),
+            ),
+            "bool_accumulate": (
+                IndexPut(True),
+                (
+                    torch.zeros(6, dtype=torch.bool),
+                    index,
+                    torch.ones(3, dtype=torch.bool),
+                ),
+            ),
+            "bool_mask": (
+                IndexPut(),
+                (
+                    torch.zeros(6),
+                    torch.tensor([1, 0, 1, 0, 0, 1]) == 1,
+                    torch.tensor(2.0),
+                ),
+            ),
+            # PyTorch lets a 0-d index gather from a 1-d input.
+            "gather_0d_index": (Gather(), (torch.arange(5.0), torch.tensor(2))),
+        }
+        for name, (model, inputs) in cases.items():
+            with self.subTest(name):
+                program = _lower(model.eval(), inputs)
+                self.assertEqual(_delegate_count(program), 1)
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "model.pte"
+                    path.write_bytes(program.buffer)
+                    counts = get_mlx_node_counts(path)
+                    method = Runtime.get().load_program(path).load_method("forward")
+                    out = method.execute(list(inputs))[0]
+                self.assertEqual(counts.get("ScatterNode", 0), 0)
+                self.assertEqual(counts.get("TakeAlongAxisNode", 0), 0)
+                # Exact, and bool outputs cannot be subtracted.
+                self.assertTrue(torch.equal(out, model(*inputs)))
+
+
 class Sdpa(nn.Module):
     def __init__(self, is_causal: bool = False):
         super().__init__()

@@ -472,6 +472,18 @@ table ScatterAddNode {
     axis: int32;                // Dimension to scatter along
 }
 
+// Scatter: write updates into x at the positions given by one index tensor
+// per indexed axis. Maps to mlx::scatter, or mlx::scatter_add when accumulate
+// is set.
+table ScatterNode {
+    x: Tid (required);
+    indices: [Tid] (required);   // Index tensors (one per indexed axis)
+    updates: Tid (required);     // Shape: broadcast(indices) + one slice of x
+    out: Tid (required);
+    axes: [int32] (required);    // Which axes the indices address
+    accumulate: bool = false;    // Sum values at repeated positions
+}
+
 table ConcatenateNode {
     tensors: [Tid] (required);  // List of tensors to concatenate
     out: Tid (required);
@@ -1211,7 +1223,8 @@ union OpNode {
     UpdateAndAttendNode,
     TruncNode,
     FlipNode,
-    CummaxNode
+    CummaxNode,
+    ScatterNode
     // BC: Add new op nodes here (append only)
 }
 

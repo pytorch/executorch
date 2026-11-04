@@ -898,6 +898,21 @@ inline void exec_scatter_add(
 }
 
 inline void
+exec_scatter(const ScatterNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const auto& updates = st.const_tensor_ref(n.updates);
+  std::vector<array> indices;
+  indices.reserve(n.indices.size());
+  for (auto tid : n.indices) {
+    indices.push_back(st.const_tensor_ref(tid));
+  }
+  st.set_tensor(
+      n.out,
+      n.accumulate ? scatter_add(x, indices, updates, n.axes, s)
+                   : scatter(x, indices, updates, n.axes, s));
+}
+
+inline void
 exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   const array& x = st.const_tensor_ref(n.x);
   const int rank = static_cast<int>(x.ndim());
@@ -2621,6 +2636,9 @@ class Interpreter {
         break;
       case OpCode::SCATTER_ADD:
         ops::exec_scatter_add(std::get<ScatterAddNode>(instr.node), st, s);
+        break;
+      case OpCode::SCATTER:
+        ops::exec_scatter(std::get<ScatterNode>(instr.node), st, s);
         break;
       case OpCode::GATHER_MM:
         ops::exec_gather_mm(std::get<GatherMmNode>(instr.node), st, s);
