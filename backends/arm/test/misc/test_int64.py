@@ -141,11 +141,14 @@ class Int64Buffer(torch.nn.Module):
 
 # A listed operator delegates when every operand casts to int64; an unlisted
 # operator or an operand narrower than int32 falls back instead. to_edge widens
-# the operands of some operators, such as cat, before partitioning.
+# the operands of some operators, such as cat, before partitioning. The widening
+# cast delegates from int32 or bool and stays on the CPU from int8.
 int64_extension_partition_suite = {
     "add": (lambda x, y: x + y, (_WIDE, _WIDE_2), 1),
     "pad": (lambda x: torch.nn.functional.pad(x, (1, 1)), (_WIDE,), 1),
     "cumsum": (lambda x: torch.cumsum(x, 0), (_WIDE,), 0),
+    "widen_narrow": (lambda x: x.to(torch.int64), (_NARROW,), 1),
+    "widen_bool": (lambda x: x.to(torch.int64), (_FLAGS,), 1),
     "cat_narrow_promoted": (lambda x, y: torch.cat([x, y]), (_WIDE, _NARROW), 1),
     "or_narrow": (torch.bitwise_or, (_WIDE, _NARROW), 1),
     "cat_byte_promoted": (lambda x, y: torch.cat([x, y]), (_WIDE, _BYTES), 1),
@@ -210,4 +213,27 @@ def test_int64_extension_comparison_tosa_FP_INT():
         .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
         .to_executorch()
         .run_method_and_compare_outputs(inputs)
+    )
+
+
+@common.parametrize(
+    "test_data",
+    {"narrow": (_NARROW, 0), "bool": (_FLAGS, 0), "byte": (_BYTES, 1)},
+)
+def test_int64_extension_widening_cast_placement_tosa_INT(test_data: Tuple):
+    narrow, cpu_casts = test_data
+    (
+        ArmTester(
+            Int64Op(lambda x, y: torch.cat([x, y])),
+            (_WIDE, narrow),
+            common.get_tosa_compile_spec("TOSA-1.1+INT+int64"),
+        )
+        .export()
+        .to_edge_transform_and_lower()
+        .check_count(
+            {
+                "torch.ops.higher_order.executorch_call_delegate": 1,
+                "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": cpu_casts,
+            }
+        )
     )
