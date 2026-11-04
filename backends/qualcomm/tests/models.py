@@ -1675,6 +1675,16 @@ class InstanceNorm2d(torch.nn.Module):
         return self.instance_norm(x)
 
 
+class Int64Counter(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("count", torch.zeros(2, dtype=torch.long))
+
+    def forward(self, x):
+        self.count.add_(x.argmax(-1))
+        return x * 2, self.count + 0
+
+
 class IsInf(torch.nn.Module):
     def __init__(self):
         super().__init__()

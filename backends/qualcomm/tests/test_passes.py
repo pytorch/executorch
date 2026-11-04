@@ -2278,6 +2278,46 @@ class TestPasses(unittest.TestCase):
         self.assertGreater(reads, 0)
         self.assertEqual(reads, input_spec_reads(4))
 
+    def test_partitioner_keeps_int64_mutable_buffers_on_cpu(self):
+        class Counter(torch.nn.Module):
+            def __init__(self, step):
+                super().__init__()
+                self.step = step
+                self.register_buffer("count", torch.zeros(2, dtype=torch.long))
+                self.register_buffer("total", torch.zeros(2))
+
+            def forward(self, x):
+                self.count.add_(self.step(x))
+                self.total.add_(x.sum(-1))
+                return x * 2, self.count + 0, self.total + 0
+
+        sample_input = (torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        steps = {"one": lambda x: 1, "argmax": lambda x: x.argmax(-1)}
+        for name, step in steps.items():
+            with self.subTest(step=name):
+                try:
+                    edge = to_edge_transform_and_lower_to_qnn(
+                        Counter(step).eval(), sample_input, compiler_specs
+                    )
+                except RuntimeError as e:
+                    if "Failed to initialize QNN backend" in str(e):
+                        skip_without_qnn_sdk(self, e)
+                    raise
+                ep = edge.exported_program()
+                self.assertIn("count", ep.graph_signature.buffers_to_mutate.values())
+                mutated = [
+                    lowered.original_module.graph_signature.buffers_to_mutate
+                    for lowered in get_lowered_backend_modules(ep.graph_module)
+                ]
+                # Float buffers are still delegated.
+                self.assertEqual(
+                    ["total"], [buffer for m in mutated for buffer in m.values()]
+                )
+
     def test_partitioner_falls_back_on_bfloat16(self):
         class Bf16Region(torch.nn.Module):
             def __init__(self):
