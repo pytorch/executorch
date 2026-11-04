@@ -918,11 +918,31 @@ exec_scatter(const ScatterNode& n, ExecutionState& st, StreamOrDevice s) {
 
   std::vector<array> indices;
   indices.reserve(n.indices.size());
+  size_t index_ndim = 0;
   for (auto tid : n.indices) {
     indices.push_back(st.const_tensor_ref(tid));
+    index_ndim = std::max(index_ndim, indices.back().ndim());
   }
 
+  // mlx::scatter checks neither the index values nor where a slice ends, and
+  // either one out of range would write outside x. The handler always emits
+  // a slice of size 1 on each indexed axis.
   const auto& updates = st.const_tensor_ref(n.updates);
+  for (auto axis : n.axes) {
+    const auto dim = index_ndim + static_cast<size_t>(axis);
+    if (updates.ndim() <= dim || updates.shape()[dim] != 1) {
+      throw std::runtime_error(
+          "ScatterNode: updates must have size 1 on indexed axis " +
+          std::to_string(axis));
+    }
+  }
+  // Clamped on the device: a host range check has to wait for indices that
+  // are computed on the device, which made a MoE block several times slower.
+  for (size_t i = 0; i < indices.size(); ++i) {
+    const int size = x.shape(n.axes[i]);
+    indices[i] = clip(indices[i], array(-size), array(size - 1), s);
+  }
+
   if (n.reduce == "none") {
     st.set_tensor(n.out, scatter(x, indices, updates, n.axes, s));
   } else if (n.reduce == "sum") {

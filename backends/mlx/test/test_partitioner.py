@@ -260,6 +260,12 @@ class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
             inputs = (torch.tensor([pos]), torch.randn(2, 1, 4))
             out = method.execute(list(inputs))[0]
             self.assertTrue(torch.equal(out, reference(*inputs)))
+        # Eager raises on a position outside the cache; the delegate clamps it
+        # to the nearest end, so the write stays inside the buffer.
+        for pos, clamped in ((8, 7), (-9, 0)):
+            v = torch.randn(2, 1, 4)
+            out = method.execute([torch.tensor([pos]), v])[0]
+            self.assertTrue(torch.equal(out, reference(torch.tensor([clamped]), v)))
 
     def test_unsupported_forms_run_on_the_cpu(self):
         class IndexPut(nn.Module):

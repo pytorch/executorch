@@ -4847,10 +4847,10 @@ class IndexPutTest(OpTestCase):
             cls(
                 (2, 6, 8),
                 {1: torch.tensor([3, 0, 3])},
-                (2, 3, 8),
+                (3, 8),
                 True,
                 torch.bfloat16,
-                nodes={"TransposeNode": 1},
+                nodes={"BroadcastToNode": 1, "TransposeNode": 1},
             ),
             cls(
                 (2, 5, 6, 3),
@@ -4888,18 +4888,19 @@ class IndexPutTest(OpTestCase):
     def create_model(self) -> nn.Module:
         return IndexPutModel(tuple(self.indices), self.accumulate)
 
-    def _random(self, shape):
-        if self.dtype == torch.bool:
-            return torch.randn(shape) > 0
-        # Small integers add up exactly in any order, even in half precision.
-        return torch.randint(-8, 8, shape).to(self.dtype)
-
     def _inputs(self, indices):
         n = next(iter(indices.values())).shape[0]
         values_shape = (
             (n, *self.values_shape[1:]) if self.dynamic else self.values_shape
         )
-        return (self._random(self.shape), self._random(values_shape), *indices.values())
+        if self.dtype == torch.bool:
+            # Every write flips a value, so a dropped write cannot match.
+            x, values = torch.zeros(self.shape), torch.ones(values_shape)
+        else:
+            # Small integers add up exactly in any order, even in half precision.
+            x = torch.randint(-8, 8, self.shape)
+            values = torch.randint(-8, 8, values_shape)
+        return (x.to(self.dtype), values.to(self.dtype), *indices.values())
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return self._inputs(self.indices)

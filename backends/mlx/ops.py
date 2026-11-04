@@ -2703,7 +2703,7 @@ def _scatter_add_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     scatter_add(self, dim, index, src) -> Tensor
 
-    Maps to mlx::scatter_add(a, indices, updates, axis).
+    Maps to mlx::scatter_add_axis(a, indices, updates, axis).
     """
     args = P.args(n)
     require_args(args, 4, 4, "aten.scatter_add")
@@ -2737,6 +2737,9 @@ def _index_put_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     the values are broadcast to the shape self[indices] has in PyTorch, the
     index dimensions are moved to the front, and a unit dimension is inserted
     for each indexed axis.
+
+    Unlike eager, an out-of-range index does not raise: the runtime clamps it
+    to the first or last slice so the write stays inside self.
     """
     args = P.args(n)
     require_args(args, 3, 4, "aten.index_put")
