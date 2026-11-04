@@ -180,6 +180,79 @@ class FluxDenoiser(torch.nn.Module):
         )[0]
 
 
+class Flux2TextEncoder(torch.nn.Module):
+    """Concatenate selected language-model hidden states for FLUX.2."""
+
+    def __init__(self, model: torch.nn.Module, layers: tuple[int, ...]) -> None:
+        super().__init__()
+        self.model = model
+        self.layers = layers
+
+    def forward(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
+    ) -> torch.Tensor:
+        output = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+            use_cache=False,
+            return_dict=True,
+        )
+        return torch.cat(
+            tuple(output.hidden_states[layer] for layer in self.layers), -1
+        )
+
+
+class Flux2Denoiser(torch.nn.Module):
+    """Expose the shared FLUX.2 transformer tensor interface."""
+
+    def __init__(self, model: torch.nn.Module, guidance_embeds: bool) -> None:
+        super().__init__()
+        self.model = model
+        self.guidance_embeds = guidance_embeds
+
+    def forward(
+        self,
+        latents: torch.Tensor,
+        timestep: torch.Tensor,
+        prompt_embeddings: torch.Tensor,
+        text_ids: torch.Tensor,
+        image_ids: torch.Tensor,
+        guidance: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        return self.model(
+            hidden_states=latents,
+            timestep=timestep,
+            encoder_hidden_states=prompt_embeddings,
+            txt_ids=text_ids,
+            img_ids=image_ids,
+            guidance=guidance if self.guidance_embeds else None,
+            return_dict=False,
+        )[0]
+
+
+class Flux2VAEDecoder(torch.nn.Module):
+    """Undo FLUX.2 latent batch normalization and patching before decoding."""
+
+    def __init__(self, model: torch.nn.Module, compute_dtype: torch.dtype) -> None:
+        super().__init__()
+        self.model = model
+        self.compute_dtype = compute_dtype
+        self.register_buffer("mean", model.bn.running_mean.reshape(1, -1, 1, 1))
+        self.register_buffer(
+            "std",
+            (model.bn.running_var + model.config.batch_norm_eps)
+            .sqrt()
+            .reshape(1, -1, 1, 1),
+        )
+
+    def forward(self, latents: torch.Tensor) -> torch.Tensor:
+        latents = latents.to(self.compute_dtype)
+        latents = latents * self.std + self.mean
+        latents = torch.nn.functional.pixel_shuffle(latents, 2)
+        return (self.model.decode(latents).sample / 2 + 0.5).clamp(0, 1)
+
+
 class SD15Denoiser(torch.nn.Module):
     def __init__(self, model: torch.nn.Module) -> None:
         super().__init__()

@@ -6,7 +6,9 @@
 
 """Tests for Hugging Face Diffusers export."""
 
+import copy
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -21,6 +23,7 @@ from executorch.export.huggingface.diffusers.config import (
 from executorch.export.huggingface.diffusers.export import (
     _resolve_max_sequence_lengths,
     _validate_text_encoder_lengths,
+    build_diffusion_metadata,
     export_programs,
     lower_programs,
     main,
@@ -33,6 +36,8 @@ from executorch.export.huggingface.diffusers.pipeline_discovery import (
 from executorch.export.huggingface.diffusers.pipeline_specs import (
     DiffusionComponents,
     DiffusionModelInfo,
+    Flux2KleinPipelineExportSpec,
+    Flux2PipelineExportSpec,
     FluxPipelineExportSpec,
     ResolvedDiffusionPipeline,
     SD15PipelineExportSpec,
@@ -41,6 +46,8 @@ from executorch.export.huggingface.diffusers.pipeline_specs import (
 from executorch.export.huggingface.diffusers.wrappers import (
     _guidance_scale_embedding,
     BoundedFluxPosEmbed,
+    Flux2TextEncoder,
+    Flux2VAEDecoder,
     freeze_flux_pos_embed,
 )
 
@@ -940,6 +947,321 @@ class DiffusersExportTest(unittest.TestCase):
             ),
             (512, 512, (77,)),
         )
+
+
+class LanguageModel(torch.nn.Module):
+    config = SimpleNamespace(max_position_embeddings=1024)
+
+    def __init__(self):
+        super().__init__()
+        self.embedding = torch.nn.Embedding(16, 8)
+
+    @property
+    def dtype(self):
+        return self.embedding.weight.dtype
+
+    @property
+    def device(self):
+        return self.embedding.weight.device
+
+    def forward(self, input_ids, attention_mask, **kwargs):
+        hidden = self.embedding(input_ids) * attention_mask.unsqueeze(-1)
+        return SimpleNamespace(
+            hidden_states=tuple(hidden + index * 0.01 for index in range(31))
+        )
+
+
+class Tokenizer:
+    model_max_length = 1024
+
+    def apply_chat_template(self, messages, **kwargs):
+        if kwargs.get("tokenize", False):
+            prompt = messages[0][-1]["content"][0]["text"]
+            return self(prompt, max_length=kwargs["max_length"])
+        return messages[0]["content"]
+
+    def __call__(self, prompt, *, max_length, **kwargs):
+        ids = torch.full((1, max_length), 1 if prompt else 0, dtype=torch.long)
+        mask = torch.ones_like(ids)
+        mask[:, -2:] = 0
+        return {"input_ids": ids, "attention_mask": mask}
+
+
+class Flux2ExportTest(unittest.TestCase):
+    def _components(self, guidance_embeds=False):
+        try:
+            from diffusers import AutoencoderKLFlux2, Flux2Transformer2DModel
+        except ImportError:
+            self.skipTest("requires Diffusers FLUX.2 support")
+        torch.manual_seed(0)
+        vae = AutoencoderKLFlux2(
+            block_out_channels=(4, 4, 4, 4),
+            layers_per_block=1,
+            latent_channels=4,
+            norm_num_groups=1,
+            mid_block_add_attention=False,
+        ).eval()
+        vae.bn.running_mean.copy_(torch.arange(16) * 0.02)
+        vae.bn.running_var.copy_(torch.linspace(0.3, 1.6, 16))
+        transformer = Flux2Transformer2DModel(
+            in_channels=16,
+            num_layers=1,
+            num_single_layers=1,
+            attention_head_dim=8,
+            num_attention_heads=2,
+            joint_attention_dim=24,
+            timestep_guidance_channels=8,
+            mlp_ratio=2.0,
+            axes_dims_rope=(2, 2, 2, 2),
+            guidance_embeds=guidance_embeds,
+        ).eval()
+        return DiffusionComponents(
+            {
+                "text_encoder": LanguageModel().eval(),
+                "denoiser": transformer,
+                "vae": vae,
+            }
+        )
+
+    def _config(self, *, dynamic=False):
+        return DiffusionConfig(
+            ModelConfig(height=64, width=64, max_sequence_lengths=(8,)),
+            ExportConfig(dynamic_shapes=dynamic, min_size=32, max_size=96),
+        )
+
+    def _model_info(self, *, is_distilled=False):
+        return DiffusionModelInfo(
+            scheduler_name="FlowMatchEulerDiscreteScheduler",
+            max_sequence_lengths=(8,),
+            zero_negative_prompt=False,
+            is_distilled=is_distilled,
+        )
+
+    def test_pipeline_discovery_and_sequence_length_override(self):
+        for name, spec_type in (
+            ("Flux2Pipeline", Flux2PipelineExportSpec),
+            ("Flux2KleinPipeline", Flux2KleinPipelineExportSpec),
+        ):
+            with self.subTest(pipeline=name):
+                spec = pipeline_spec_from_model_index(
+                    {
+                        "_class_name": name,
+                        "tokenizer": ["transformers", "AutoProcessor"],
+                        "text_encoder": ["transformers", "AutoModel"],
+                    }
+                )
+                self.assertIsInstance(spec, spec_type)
+                self.assertEqual(_resolve_max_sequence_lengths(spec, 128), (128,))
+
+    def test_distilled_flag_is_discovered_from_pipeline_config(self):
+        pipeline_config = {
+            "_class_name": "Flux2KleinPipeline",
+            "tokenizer": ["transformers", "Qwen2TokenizerFast"],
+            "text_encoder": ["transformers", "Qwen3ForCausalLM"],
+            "scheduler": ["diffusers", "FlowMatchEulerDiscreteScheduler"],
+            "is_distilled": True,
+        }
+        diffusers = SimpleNamespace(
+            DiffusionPipeline=SimpleNamespace(
+                load_config=mock.Mock(return_value=pipeline_config)
+            ),
+            FlowMatchEulerDiscreteScheduler=SimpleNamespace(
+                load_config=mock.Mock(return_value={})
+            ),
+        )
+        with mock.patch.dict("sys.modules", {"diffusers": diffusers}):
+            pipeline = resolve_huggingface_pipeline("klein")
+        self.assertTrue(pipeline.model_info.is_distilled)
+        self.assertIsInstance(pipeline.export_spec, Flux2KleinPipelineExportSpec)
+
+    def test_klein_base_and_distilled_defaults(self):
+        components = self._components()
+        spec = Flux2KleinPipelineExportSpec()
+        for is_distilled in (False, True):
+            with self.subTest(is_distilled=is_distilled):
+                info = spec.resolve_model_info(
+                    components, self._model_info(is_distilled=is_distilled)
+                )
+                metadata = build_diffusion_metadata(
+                    spec.pipeline_behavior, info, self._config()
+                )
+                self.assertEqual(
+                    metadata.default_inference_steps, 4 if is_distilled else 50
+                )
+                self.assertEqual(
+                    metadata.default_cfg_scale, 1.0 if is_distilled else 4.0
+                )
+                self.assertEqual(metadata.supports_cfg, not is_distilled)
+                self.assertEqual(metadata.supports_negative_prompt, not is_distilled)
+                self.assertFalse(metadata.accepts_guidance_input)
+
+    def test_rejects_incompatible_vae_channels_and_spatial_bounds(self):
+        components = self._components()
+        spec = Flux2KleinPipelineExportSpec()
+        export_config = self._config()
+        with self.assertRaisesRegex(ValueError, "multiples of 16"):
+            spec.example_inputs(
+                components,
+                replace(export_config, model=replace(export_config.model, width=72)),
+            )
+        with self.assertRaisesRegex(ValueError, "dynamic size bounds"):
+            spec.dynamic_shapes(
+                components,
+                replace(
+                    export_config,
+                    export=ExportConfig(dynamic_shapes=True, min_size=32, max_size=100),
+                ),
+            )
+        components.require("vae").register_to_config(latent_channels=8)
+        with self.assertRaisesRegex(ValueError, "latent channels must match"):
+            spec.example_inputs(components, export_config)
+
+    def test_qwen_hidden_state_export_matches_reference(self):
+        try:
+            from transformers import Qwen3Config, Qwen3Model
+        except ImportError:
+            self.skipTest("requires Transformers Qwen3 support")
+        model = Qwen3Model(
+            Qwen3Config(
+                vocab_size=16,
+                hidden_size=16,
+                intermediate_size=32,
+                num_hidden_layers=2,
+                num_attention_heads=2,
+                num_key_value_heads=2,
+                head_dim=8,
+            )
+        ).eval()
+        ids = torch.arange(8).reshape(1, 8)
+        mask = torch.tensor([[1, 1, 1, 1, 1, 1, 0, 0]])
+        with torch.no_grad():
+            reference = model(
+                input_ids=ids,
+                attention_mask=mask,
+                output_hidden_states=True,
+                use_cache=False,
+            )
+            expected = torch.cat(reference.hidden_states, dim=-1)
+            wrapper = Flux2TextEncoder(model, (0, 1, 2))
+            exported = torch.export.export(wrapper, (ids, mask))
+            torch.testing.assert_close(exported.module()(ids, mask), expected)
+
+    def test_vae_decoder_undoes_reference_batch_normalization_and_patching(self):
+        components = self._components()
+        from diffusers import Flux2Pipeline
+
+        vae = components.require("vae")
+        latents = torch.randn(1, 16, 2, 3)
+        with torch.no_grad():
+            normalized = latents * (
+                vae.bn.running_var + vae.config.batch_norm_eps
+            ).sqrt().reshape(1, -1, 1, 1)
+            normalized = normalized + vae.bn.running_mean.reshape(1, -1, 1, 1)
+            unpacked = Flux2Pipeline._unpatchify_latents(normalized)
+            expected = (vae.decode(unpacked).sample / 2 + 0.5).clamp(0, 1)
+            wrapper = Flux2VAEDecoder(vae, torch.float32)
+            exported = torch.export.export(wrapper, (latents,))
+            torch.testing.assert_close(exported.module()(latents), expected)
+
+    def test_real_transformer_export_matches_reference_at_dynamic_resolution(self):
+        for guidance in (False, True):
+            with self.subTest(guidance=guidance):
+                components = self._components(guidance)
+                reference = copy.deepcopy(components.require("denoiser"))
+                spec = (
+                    Flux2PipelineExportSpec()
+                    if guidance
+                    else Flux2KleinPipelineExportSpec()
+                )
+                programs = export_programs(components, spec, self._config(dynamic=True))
+                prompt = torch.randn(1, 8, 24)
+                inputs = spec.pipeline_behavior.prepare_denoiser_inputs(
+                    torch.randn(1, 6, 16),
+                    torch.tensor([500.0]),
+                    (prompt,),
+                    height=32,
+                    width=48,
+                    vae_scale_factor=8,
+                    dtype=torch.float32,
+                    guidance_scale=4.0 if guidance else None,
+                )
+                with torch.no_grad():
+                    expected = reference(
+                        hidden_states=inputs[0],
+                        timestep=inputs[1],
+                        encoder_hidden_states=inputs[2],
+                        txt_ids=inputs[3],
+                        img_ids=inputs[4],
+                        guidance=inputs[5] if guidance else None,
+                        return_dict=False,
+                    )[0]
+                    torch.testing.assert_close(
+                        programs["denoise"].module()(*inputs), expected
+                    )
+                    decoded = programs["decode"].module()(torch.randn(1, 16, 2, 3))
+                    self.assertEqual(decoded.shape, (1, 3, 32, 48))
+
+    def test_portable_klein_pte_matches_diffusers_at_dynamic_resolution(self):
+        from executorch.extension.diffusers.runner import DiffusionRunner
+        from executorch.runtime import Runtime, Verification
+
+        for is_distilled in (False, True):
+            with self.subTest(is_distilled=is_distilled):
+                components = self._components()
+                from diffusers import (
+                    FlowMatchEulerDiscreteScheduler,
+                    Flux2KleinPipeline,
+                )
+
+                reference = Flux2KleinPipeline(
+                    scheduler=FlowMatchEulerDiscreteScheduler(
+                        use_dynamic_shifting=True
+                    ),
+                    vae=copy.deepcopy(components.require("vae")),
+                    transformer=copy.deepcopy(components.require("denoiser")),
+                    text_encoder=copy.deepcopy(components.require("text_encoder")),
+                    tokenizer=Tokenizer(),
+                    is_distilled=is_distilled,
+                )
+                reference.set_progress_bar_config(disable=True)
+                spec = Flux2KleinPipelineExportSpec()
+                info = spec.resolve_model_info(
+                    components, self._model_info(is_distilled=is_distilled)
+                )
+                export_config = self._config(dynamic=True)
+                pipeline = ResolvedDiffusionPipeline(spec, info)
+                edge = lower_programs(
+                    export_programs(components, spec, export_config),
+                    pipeline,
+                    export_config,
+                )
+                with TemporaryDirectory() as directory:
+                    path = Path(directory) / "klein.pte"
+                    write_pte(edge, path)
+                    program = Runtime.get().load_program(
+                        str(path), verification=Verification.Minimal
+                    )
+                    runner = DiffusionRunner(
+                        program,
+                        [Tokenizer()],
+                        FlowMatchEulerDiscreteScheduler(use_dynamic_shifting=True),
+                    )
+                    actual = runner.generate(
+                        "cat", steps=2, seed=9, height=32, width=48
+                    )
+                    with torch.no_grad():
+                        expected = reference(
+                            prompt="cat",
+                            num_inference_steps=2,
+                            guidance_scale=1.0 if is_distilled else 4.0,
+                            generator=torch.Generator().manual_seed(9),
+                            height=32,
+                            width=48,
+                            max_sequence_length=8,
+                            output_type="pt",
+                        ).images
+                    torch.testing.assert_close(actual, expected, rtol=2e-4, atol=2e-4)
+                    del runner, program
 
 
 if __name__ == "__main__":

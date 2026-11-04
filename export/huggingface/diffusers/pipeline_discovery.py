@@ -105,5 +105,6 @@ def resolve_huggingface_pipeline(
             scheduler_prediction_type=prediction_type,
             max_sequence_lengths=export_spec.default_max_text_sequence_lengths,
             zero_negative_prompt=zero_negative_prompt,
+            is_distilled=index.get("is_distilled", False),
         ),
     )

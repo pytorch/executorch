@@ -103,6 +103,7 @@ class DiffusionModelInfo:
     guidance_input_dim: int = 0
     default_inference_steps: int | None = None
     default_guidance_scale: float | None = None
+    is_distilled: bool = False
 
     def __post_init__(self) -> None:
         """Validate discovered model facts."""
@@ -112,6 +113,8 @@ class DiffusionModelInfo:
             raise ValueError("max_sequence_lengths must contain positive values")
         if not isinstance(self.zero_negative_prompt, bool):
             raise ValueError("zero_negative_prompt must be a boolean")
+        if not isinstance(self.is_distilled, bool):
+            raise ValueError("is_distilled must be a boolean")
         if self.vae_scale_factor <= 0:
             raise ValueError("vae_scale_factor must be positive")
         if self.dynamic_spatial_multiple <= 0:

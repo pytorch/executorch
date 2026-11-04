@@ -29,6 +29,25 @@ class DiffusionPipelineBehavior(ABC):
     text_encoder_slots: tuple[str, ...]
     text_encoder_input_names: tuple[tuple[str, ...], ...]
 
+    def load_tokenizers(self, model_id: str, revision: str | None = None) -> list[Any]:
+        """Load the host text assets declared by this pipeline."""
+        from transformers import AutoTokenizer
+
+        return [
+            AutoTokenizer.from_pretrained(model_id, subfolder=slot, revision=revision)
+            for slot in self.tokenizer_slots
+        ]
+
+    def tokenize_prompt(self, tokenizer: Any, prompt: str, *, max_length: int) -> Any:
+        """Prepare inputs for one exported text encoder."""
+        return tokenizer(
+            prompt,
+            padding="max_length",
+            max_length=max_length,
+            truncation=True,
+            return_tensors="pt",
+        )
+
     @abstractmethod
     def assemble_conditioning(
         self, encoder_outputs: tuple[tuple[torch.Tensor, ...], ...]

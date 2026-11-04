@@ -42,7 +42,9 @@ def build_diffusion_metadata(
         scheduler_prediction_type=model_info.scheduler_prediction_type,
         supports_cfg=model_info.supports_cfg,
         accepts_guidance_input=model_info.accepts_guidance_input,
-        supports_negative_prompt=behavior.supports_negative_prompt,
+        supports_negative_prompt=(
+            behavior.supports_negative_prompt and model_info.supports_cfg
+        ),
         default_cfg_scale=(
             behavior.default_cfg_scale if model_info.supports_cfg else 1.0
         ),
