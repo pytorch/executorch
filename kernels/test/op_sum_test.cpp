@@ -305,6 +305,19 @@ class OpSumOutTest : public OperatorTest {
     op_sum_intlist_out(self, empty_dim_list, /*keepdim=*/false, dtype, out);
     EXPECT_TENSOR_CLOSE(out, tf_out.make({}, {56}));
   }
+
+  template <ScalarType DTYPE>
+  void test_sum_dim_out_is_exact() {
+    TensorFactory<DTYPE> tf;
+    // 2^24 + 1 is not representable in fp32, so an fp32 accumulator returns
+    // 2^24.
+    Tensor x = tf.make({2}, {16777216, 1});
+    Tensor out = tf.zeros({});
+    int64_t dim = 0;
+    op_sum_intlist_out(
+        x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+    EXPECT_TENSOR_EQ(out, tf.make({}, {16777217}));
+  }
 };
 
 TEST_F(OpSumOutTest, BFloat16GenericPathAccumulatesInFloat) {
@@ -347,6 +360,11 @@ TEST_F(OpSumOutTest, ZeroDimInputWithDim) {
       EXPECT_TENSOR_EQ(out, tf.make({}, {5}));
     }
   }
+}
+
+TEST_F(OpSumOutTest, LongAndDoubleSumsAreExact) {
+  test_sum_dim_out_is_exact<ScalarType::Long>();
+  test_sum_dim_out_is_exact<ScalarType::Double>();
 }
 
 TEST_F(OpSumOutTest, InvalidDimensionListDies) {
