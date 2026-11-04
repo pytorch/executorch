@@ -365,6 +365,8 @@ def define_common_targets():
             ":dim_maps",
             ":fuse_duplicate_users_pass",
             ":fuse_identical_input_transforms_pass",
+            ":permute_view_meta",
+            ":utils",
             "//executorch/exir:lib",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
@@ -395,9 +397,18 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             ":dim_maps",
-            ":permute_view_meta",
+            ":symbolic_shape_utils",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "symbolic_shape_utils",
+        srcs = ["symbolic_shape_utils.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
         ],
     )
 

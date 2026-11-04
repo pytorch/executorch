@@ -13,6 +13,7 @@ import torch.nn.functional as F
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import to_edge, to_edge_transform_and_lower
+from executorch.export.utils import is_fbcode
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
@@ -219,6 +220,10 @@ class TestXnnpackPartitioner(unittest.TestCase):
                 ).forward((bf16_x,))[0]
                 torch.testing.assert_close(output, module(bf16_x))
 
+    @unittest.skipIf(
+        is_fbcode(),
+        "skipping for fbcode",
+    )
     def test_enable_bf16_fuses_batch_norm_into_a_linear(self):
         """
         XNNPACK cannot define a bf16 BatchNorm on its own, but one that follows a
@@ -259,6 +264,10 @@ class TestXnnpackPartitioner(unittest.TestCase):
                 ).forward((x,))[0]
                 torch.testing.assert_close(output, module(x), atol=1e-2, rtol=1e-2)
 
+    @unittest.skipIf(
+        is_fbcode(),
+        "skipping for fbcode",
+    )
     def test_enable_bf16_runs_an_attention_block(self):
         """
         The linear layers and both batch matrix multiplications of a bf16 attention

@@ -30,7 +30,9 @@ FVP_ERROR_PATTERN = re.compile(
 )
 
 ETHOSU_PMU_CYCLE_PATTERN = re.compile(r"ethosu_pmu_cycle_cntr\s*:\s*(\d+)")
-ETHOSU_PMU_COUNTER_PATTERN = re.compile(r"ethosu_pmu_cntr(\d+)\s*:\s*(\d+)")
+ETHOSU_PMU_COUNTER_PATTERN = re.compile(
+    r"Ethos-U NPU 0x[0-9a-fA-F]+ PMU counter (\d+) event \d+:\s*(\d+)"
+)
 ETHOSU_DELEGATIONS_PATTERN = re.compile(r"NPU delegations:\s*(\d+)")
 ETHOSU85_EVENT_NAMES = [
     "sram_read_beats",
