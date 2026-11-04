@@ -9,6 +9,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 from executorch.exir.sym_util import eval_shape, eval_shape_upper_bound
+from torch.fx.experimental.symbolic_shapes import statically_known_true, sym_eq
 
 
 _int64_max_dim_val = torch.iinfo(torch.int64).max - 1
@@ -84,7 +85,7 @@ def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Gra
                 ):
                     # Must update the input node since replaced the original node
                     input_node = node.args[0]
-                    input_shape = list(get_shape(input_node))
+                    input_shape = list(input_node.meta["val"].shape)
                     weight_node = node.args[1]
                     if "val" not in weight_node.meta:
                         raise ValueError(f"Val not found meta of node {weight_node}")
@@ -92,8 +93,10 @@ def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Gra
                     output_channels = weight_val.shape[0]
                     output_shape = input_shape
                     output_shape[-1] = output_channels
-                    view_copy_out_shape = list(get_shape(maybe_view_copy))
-                    if output_shape == view_copy_out_shape:
+                    view_copy_out_shape = list(maybe_view_copy.meta["val"].shape)
+                    # Compare the symbolic shapes, since different dynamic shapes can
+                    # have equal upper bounds.
+                    if statically_known_true(sym_eq(output_shape, view_copy_out_shape)):
                         maybe_view_copy.replace_all_uses_with(node)
     graph.eliminate_dead_code()
     return graph
