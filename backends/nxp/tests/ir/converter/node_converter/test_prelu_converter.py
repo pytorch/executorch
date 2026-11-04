@@ -22,12 +22,12 @@ from executorch.backends.nxp.backend.ops_aliases import (
     ViewCopy,
     WhereSelf,
 )
+from executorch.backends.nxp.tests.comparators.all_close_comparator import (
+    AllCloseOutputComparator,
+)
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    AllCloseOutputComparator,
-)
 
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.simple_models import (
