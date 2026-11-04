@@ -622,6 +622,7 @@ print("lines through Python:", "".join(Sink.text).count("Program identifier"))
             self.skipTest("the script below uses the portable bindings")
 
         script = """
+import atexit
 import contextlib
 import io
 import os
@@ -633,7 +634,9 @@ captured = io.StringIO()
 if sys.argv[1] == "replaced before import":
     # As in a notebook, which replaces sys.stderr before any import.
     sys.stderr = captured
-from executorch.extension.pybindings import portable_lib
+if not sys.argv[1].startswith("runner only"):
+    # The LLM runner loads the library of these bindings without importing them.
+    from executorch.extension.pybindings import portable_lib
 
 try:
     from executorch.extension.llm.runner import TextLLMRunner
@@ -642,6 +645,19 @@ except (ImportError, RuntimeError):
     print("no LLM runner")
     sys.exit()
 missing_program = os.path.join(os.path.dirname(sys.argv[2]), "missing.pte")
+
+if sys.argv[1] == "runner only, at exit":
+
+    def log_at_exit():
+        try:
+            TextLLMRunner(missing_program, sys.argv[2])
+        except RuntimeError:
+            pass
+        print("logged at exit", file=sys.stderr)
+
+    # Python is exiting, so the runner's lines cannot wait for another thread.
+    atexit.register(log_at_exit)
+    sys.exit()
 
 if sys.argv[1] == "replaced, another thread":
     sys.stderr = captured
@@ -697,7 +713,7 @@ if sys.argv[1] == "replaced, a call after a failed load":
 
 with (
     contextlib.redirect_stderr(captured)
-    if sys.argv[1] == "replaced after import"
+    if sys.argv[1].endswith("replaced after import")
     else contextlib.nullcontext()
 ):
     try:
@@ -719,6 +735,8 @@ print("lines through Python:", captured.getvalue().count("[llm_runner_helper.cpp
                 "replaced, another thread",
                 "replaced, a call after a failed load",
                 "process stderr",
+                "runner only, replaced after import",
+                "runner only, at exit",
             ):
                 completed = subprocess.run(
                     [sys.executable, "-c", script, mode, tokenizer],
@@ -733,6 +751,12 @@ print("lines through Python:", captured.getvalue().count("[llm_runner_helper.cpp
                     self.skipTest("the LLM runner bindings are not built")
                 if mode == "process stderr":
                     self.assertIn("[llm_runner_helper.cpp:", completed.stderr)
+                elif mode == "runner only, at exit":
+                    last = completed.stderr.rfind("[llm_runner_helper.cpp:")
+                    self.assertTrue(
+                        0 <= last < completed.stderr.find("logged at exit"),
+                        completed.stderr[-2000:],
+                    )
                 elif mode.startswith("replaced, a"):
                     self.assertIn("in order: True", completed.stdout, mode)
                 else:

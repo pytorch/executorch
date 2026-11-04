@@ -635,6 +635,54 @@ void write_deferred_logs_at_exit() noexcept {
   }
 }
 
+// Sets up what the routing of runtime logs relies on, once, with the GIL held.
+// A setup that raised runs again on the next call.
+void set_up_log_routing() {
+  static bool set_up = false;
+  if (set_up) {
+    return;
+  }
+  // The Python code below can let another thread get here meanwhile.
+  set_up = true;
+  try {
+    // A line logged outside any call compares sys.stderr with the stream
+    // checked last, so the first check cannot wait for the first call.
+    stderr_is_process_stderr();
+    main_thread_id = py::module_::import("threading")
+                         .attr("main_thread")()
+                         .attr("ident")
+                         .cast<unsigned long>();
+    py::module_::import("atexit").attr("register")(
+        py::cpp_function([]() { write_deferred_logs_at_exit(); }));
+  } catch (...) {
+    set_up = false;
+    throw;
+  }
+#ifndef _WIN32
+  // A child of fork() has no writer thread, the waiting lines are the
+  // parent's, and the thread that forked is its main thread.
+  pthread_atfork(nullptr, nullptr, [] {
+    deferred_logs_state() = new DeferredLogs();
+    main_thread_id = PyThread_get_thread_ident();
+    last_deferred_batch = 0;
+  });
+#endif
+}
+
+// Runs as a pending call on Python's main thread, which raises the error that a
+// failed setup leaves, such as a KeyboardInterrupt.
+int set_up_log_routing_after_load(void*) noexcept {
+  try {
+    set_up_log_routing();
+    return 0;
+  } catch (py::error_already_set& error) {
+    error.restore();
+  } catch (const std::exception& error) {
+    PyErr_SetString(PyExc_RuntimeError, error.what());
+  }
+  return -1;
+}
+
 std::string with_runtime_errors(const char* message) {
   std::string result(message);
   if (runtime_errors_size != 0) {
@@ -5409,24 +5457,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   // It calls Python as it starts and may write to Python as it ends, so it
   // needs the GIL and never follows a py::gil_scoped_release guard.
   auto call_guard = py::call_guard<RuntimeErrorScope>();
-  // A line logged outside any call compares sys.stderr with the stream checked
-  // last, so the first check cannot wait for the first call.
-  stderr_is_process_stderr();
-  main_thread_id = py::module_::import("threading")
-                       .attr("main_thread")()
-                       .attr("ident")
-                       .cast<unsigned long>();
-  py::module_::import("atexit").attr("register")(
-      py::cpp_function([]() { write_deferred_logs_at_exit(); }));
-#ifndef _WIN32
-  // A child of fork() has no writer thread, the waiting lines are the
-  // parent's, and the thread that forked is its main thread.
-  pthread_atfork(nullptr, nullptr, [] {
-    deferred_logs_state() = new DeferredLogs();
-    main_thread_id = PyThread_get_thread_ident();
-    last_deferred_batch = 0;
-  });
-#endif
+  set_up_log_routing();
 
 #if defined(EXECUTORCH_PYBINDINGS_CUDA) && !defined(USE_ATEN_LIB)
   // Back executorch.runtime.cuda, which keeps the runtime free of PyTorch.
@@ -5932,6 +5963,13 @@ runtime::PalImpl build_pal() {
 
 // Update PAL to redirect logs.
 ET_UNUSED bool registration_result = runtime::register_pal(build_pal());
+
+// The runtime logs through emit_log_message from the moment this library
+// loads, and another module, such as the LLM runner's, can load it without
+// importing this one. Python code must not run while a library loads, so
+// Python's main thread sets up the routing at its next chance.
+ET_UNUSED bool log_routing_scheduled = Py_IsInitialized() &&
+    Py_AddPendingCall(&set_up_log_routing_after_load, nullptr) == 0;
 
 } // namespace
 
