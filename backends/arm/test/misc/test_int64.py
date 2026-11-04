@@ -146,7 +146,8 @@ int64_extension_partition_suite = {
     "cumsum": (lambda x: torch.cumsum(x, 0), (_WIDE,), 0),
     "cat_narrow": (lambda x, y: torch.cat([x, y]), (_WIDE, _NARROW), 1),
     "or_narrow": (torch.bitwise_or, (_WIDE, _NARROW), 1),
-    "cat_byte": (lambda x, y: torch.cat([x, y]), (_WIDE, _BYTES), 0),
+    # to_edge already casts the int8 operand to int64, so cat sees only int64 operands.
+    "cat_byte": (lambda x, y: torch.cat([x, y]), (_WIDE, _BYTES), 1),
     "eq_bool": (lambda x, y: x == y, (_WIDE, _FLAGS), 0),
     "cat_bool": (lambda x, y: torch.cat([x, y]), (_FLAGS, _WIDE), 1),
     "where": (torch.where, (_COND, _WIDE, _WIDE_2), 0),
