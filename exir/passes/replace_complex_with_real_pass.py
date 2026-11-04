@@ -427,8 +427,12 @@ class ReplaceComplexWithRealPass:
     """
     Replace complex tensors with real tensors that hold their real and
     imaginary parts in a last dim of size 2, and the ops on them with ops on
-    real numbers, in an ATen or Edge program. See the module docstring for
-    the ops it handles.
+    real numbers, in an ATen program. See the module docstring for the ops it
+    handles.
+
+    It also takes the Edge programs that the CUDA backend lowers, after the
+    AOTI ReplaceViewCopyWithViewPass. In an Edge program it adds views, such
+    as slice and unsqueeze, and the portable kernels have only their copies.
     """
 
     requires_exported_program = True
