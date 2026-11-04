@@ -161,22 +161,40 @@ final class SwiftSpecializationTests: XCTestCase {
       (.preferGPU, SpecializationOptions(preferredComputeUnitKind: .gpu)),
       (.preferNeuralEngine, SpecializationOptions(preferredComputeUnitKind: .neuralEngine)),
     ]
-    var identifiers = Set<String>()
+    var variants: [(options: SpecializationOptions, identifier: String)] = []
     var report: [String] = []
     for (unit, options) in expected {
       XCTAssertEqual(ETCoreAISwiftModelLoader.specializationOptions(for: unit), options)
       let loader = try XCTUnwrap(ETCoreAISwiftModelLoader(computeUnit: unit))
       XCTAssertEqual(
         loader.specializationIdentifier, try CoreAISpecialization(options: options).identifier)
-      identifiers.insert(loader.specializationIdentifier)
+      variants.append((options, loader.specializationIdentifier))
       report.append(
         "\(unit.rawValue): \(options) -> \(loader.specializationIdentifier)")
     }
-    XCTAssertEqual(
-      identifiers.count, expected.count, "\n" + report.joined(separator: "\n"))
+    assertIdentifiersMatchExactlyWhenOptionsMatch(variants, report: report)
     XCTAssertEqual(
       ETCoreAISwiftModelLoader(computeUnit: .default)?.specializationIdentifier, "default")
     XCTAssertNil(ETCoreAISwiftModelLoader(computeUnit: ETCoreAIComputeUnit(rawValue: 99)!))
+  }
+
+  // The SDK limits allowed units to the hardware (a CPU-only machine makes
+  // cpuOnly equal default), so identifiers must match exactly when options do.
+  private func assertIdentifiersMatchExactlyWhenOptionsMatch(
+    _ variants: [(options: SpecializationOptions, identifier: String)],
+    report: [String],
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    for a in variants.indices {
+      for b in variants.indices where a < b {
+        XCTAssertEqual(
+          variants[a].identifier == variants[b].identifier,
+          variants[a].options == variants[b].options,
+          "variants \(a) and \(b):\n" + report.joined(separator: "\n"),
+          file: file, line: line)
+      }
+    }
   }
 
   func testDescriptorIsVersionedAndUsesStableComputeUnitNames() throws {
