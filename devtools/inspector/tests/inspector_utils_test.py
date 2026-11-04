@@ -287,8 +287,6 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertEqual(plt.get_fignums(), [])
 
     def test_display_or_print_df_in_ipython(self):
-        # In an IPython session the dataframe should be shown as a styled
-        # table via display(), not fall back to a plain-text print.
         displayed = []
         fake_display = types.ModuleType("IPython.display")
         fake_display.display = displayed.append
@@ -300,9 +298,13 @@ class TestInspectorUtils(unittest.TestCase):
             sys.modules, {"IPython": fake_ipython, "IPython.display": fake_display}
         ), warnings.catch_warnings():
             # Styler.applymap is deprecated in pandas 2.1 and removed in 3.0.
-            warnings.simplefilter("error", FutureWarning)
+            warnings.filterwarnings(
+                "error", message=".*applymap.*", category=FutureWarning
+            )
             display_or_print_df(pd.DataFrame({"a": [1.0]}), out)
-        self.assertEqual(len(displayed), 1)
+        self.assertEqual(len(displayed), 1, out.getvalue())
+        self.assertIsInstance(displayed[0], pd.io.formats.style.Styler)
+        self.assertIn("font-size: 12px", displayed[0].to_html())
         self.assertEqual(out.getvalue(), "")
 
     def test_merge_overlapping_debug_handles_basic(self):
