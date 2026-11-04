@@ -211,6 +211,21 @@ else:
         self.assertFalse(np.shares_memory(np.asarray(copy), np.asarray(output)))
         np.testing.assert_array_equal(np.asarray(copy), np.array([3.0]))
 
+    def test_executorch_result_is_not_a_bool_or_number(self) -> None:
+        if runtime._tensor_output != "executorch":
+            self.skipTest("ExecuTorchResult output was not selected")
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        output = module(
+            (np.array([1.0], dtype=np.float32), np.array([2.0], dtype=np.float32))
+        )[0]
+
+        for convert in (bool, int, float):
+            with self.subTest(convert=convert.__name__):
+                with self.assertRaisesRegex(TypeError, r"numpy\.asarray\(result\)"):
+                    convert(output)
+
     def test_executorch_result_from_host_requires_cuda(self) -> None:
         # A build with CUDA support uploads instead; the CUDA suite covers it.
         if "CudaBackend" in runtime._get_registered_backend_names():
