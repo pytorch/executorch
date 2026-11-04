@@ -40,7 +40,7 @@ Next, download MCUXpresso SDK for the RT700 device family using the west tool:
 
 ```bash
 pip install west
-west init -m https://github.com/nxp-mcuxpresso/mcuxsdk-manifests.git mcuxpresso-sdk
+west init -m https://github.com/nxp-mcuxpresso/mcuxsdk-manifests.git --mr v26.09.00 mcuxpresso-sdk
 pushd mcuxpresso-sdk
 west update_board --set board mimxrt700evk
 popd
