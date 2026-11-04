@@ -545,7 +545,7 @@ TEST_F(ProtocolTest, AdmissionFailureDoesNotPoisonOtherRequests) {
   send(generate(2));
   auto error = receive();
   EXPECT_EQ(error.at("request_id"), 2);
-  EXPECT_EQ(error.at("code"), "capacity_exhausted");
+  EXPECT_EQ(error.at("code"), "session_capacity_exhausted");
   send({{"op", "reset"}, {"request_id", 3}, {"session_id", "owned"}});
   EXPECT_TRUE(receive().value("reset", false));
   auto request = generate(4);

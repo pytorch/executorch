@@ -115,6 +115,7 @@ class SessionCapacity(APIError):
     (capacity_exhausted -> 429)."""
 
     def __init__(self, code: str):
+        self.session_slots_exhausted = code == "session_capacity_exhausted"
         if code == "unsupported_session":
             super().__init__(
                 status=400,
@@ -125,8 +126,11 @@ class SessionCapacity(APIError):
         else:
             super().__init__(
                 status=429,
-                message="Session capacity exhausted; reuse an existing session_id "
-                "or retry later.",
+                message=(
+                    "Session capacity exhausted; reuse an existing session_id or retry later."
+                    if self.session_slots_exhausted
+                    else "Request capacity exhausted; retry later."
+                ),
                 err_type="capacity_error",
                 code="capacity_exhausted",
             )

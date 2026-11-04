@@ -377,3 +377,9 @@ deferred: no compatible local PTE/tokenizer has been confirmed, and this stack
 must not download/export weights or claim that a real combined forward was
 verified. A Glimmer `embed_text`/`forward_from_embeddings` last-logits artifact is
 not assumed compatible with this packed construction path.
+
+Idle-session recovery retries at most once and only for native
+`session_capacity_exhausted` (logical session slots), or a legacy named-session
+open refusal. Request, control-queue, executor, and output-buffer overload remain
+`capacity_exhausted` and never trigger eviction. Both map to HTTP 429. Failed
+closes retain replay state and rotate the victim for a later request.

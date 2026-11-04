@@ -137,7 +137,9 @@ class CapacityWorker(_Worker):
                 assert self.admission.wait(5)
                 if self.after_output:
                     token_callback("partial " * 8)
-                raise WorkerError("all sessions full", code="capacity_exhausted")
+                raise WorkerError(
+                    "all sessions full", code="session_capacity_exhausted"
+                )
             self.sessions.add(sid)
             token_callback("ok")
             stats_callback(
@@ -184,7 +186,7 @@ def test_stream_admission_evicts_idle_sessions_before_or_after_preflight(late, l
             assert '"error"' not in output
             assert worker.closed_sessions == ["a"]
             assert worker.sessions == set(serving._idle_sessions) == {"b", "c"}
-            assert not serving._attempted_sessions
+            assert not serving._admitted_sessions
         finally:
             worker.admission.set()
             await runtime.aclose_worker()

@@ -349,7 +349,7 @@ TEST_F(ServingRuntimeTest, LogicalCapacityRejectsWithoutCallingExecutor) {
   auto second = runtime->open_session_async("second");
   executor.opening.release();
   EXPECT_FALSE(result(std::move(first)));
-  expect_error(std::move(second), ErrorCode::CapacityExceeded);
+  expect_error(std::move(second), ErrorCode::SessionCapacityExceeded);
   EXPECT_EQ(executor.open_attempts.load(), 1);
   EXPECT_FALSE(result(runtime->close_session_async("first")));
   EXPECT_FALSE(result(runtime->open_session_async("second")));
@@ -389,7 +389,7 @@ TEST_F(ServingRuntimeTest, ResetRetainsSlotUntilColdReplacementCompletes) {
       reset.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
   executor.opening.release();
   EXPECT_FALSE(result(std::move(reset)));
-  expect_error(std::move(other), ErrorCode::CapacityExceeded);
+  expect_error(std::move(other), ErrorCode::SessionCapacityExceeded);
   ASSERT_EQ(executor.opened().size(), 2u);
   EXPECT_NE(executor.opened().back(), original);
   EXPECT_EQ(executor.open_count(), 1);
@@ -410,7 +410,7 @@ TEST_F(ServingRuntimeTest, FailedResetRetainsUnavailableSlotAndCanRetry) {
   EXPECT_EQ(executor.closed().size(), 1u);
   expect_error(runtime->open_session_async("session"), ErrorCode::NotReady);
   expect_error(
-      runtime->open_session_async("other"), ErrorCode::CapacityExceeded);
+      runtime->open_session_async("other"), ErrorCode::SessionCapacityExceeded);
   EXPECT_EQ(executor.open_attempts.load(), 2);
   EXPECT_FALSE(result(runtime->reset_session_async("session")));
   EXPECT_EQ(executor.open_attempts.load(), 3);

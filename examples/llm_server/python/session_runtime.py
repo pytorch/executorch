@@ -280,6 +280,9 @@ class _SessionLocks:
         self._users = 0
         self._limit = limit
 
+    def in_use(self, session_id):
+        return session_id in self._entries
+
     @asynccontextmanager
     async def hold(self, session_id, *, count_request=True):
         if count_request and self._limit is not None and self._users >= self._limit:

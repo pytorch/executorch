@@ -47,6 +47,8 @@ const char* error_code(serving::ErrorCode code) {
       return "session_busy";
     case serving::ErrorCode::CapacityExceeded:
       return "capacity_exhausted";
+    case serving::ErrorCode::SessionCapacityExceeded:
+      return "session_capacity_exhausted";
     case serving::ErrorCode::Internal:
       return "internal";
     case serving::ErrorCode::ContextLengthExceeded:

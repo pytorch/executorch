@@ -141,8 +141,9 @@ class OpenAITranscriptState:
         return hashlib.sha256(reasoning_content.encode("utf-8")).digest()
 
     @classmethod
-    def _history_fingerprint(cls, messages: list[ChatMessage], stored: dict) -> str:
-        history = []
+    def _history_fingerprints(cls, messages: list[ChatMessage], stored: dict):
+        digest = hashlib.sha256()
+        prefixes = [digest.hexdigest()]
         turn = 0
         for m in messages:
             reasoning = cls._reasoning_fingerprint(m.reasoning_content)
@@ -150,18 +151,20 @@ class OpenAITranscriptState:
                 if m.reasoning_content is None and turn in stored:
                     reasoning = stored[turn]["reasoning_fp"]
                 turn += 1
-            history.append(
+            entry = json.dumps(
                 [
                     m.role,
                     m.name,
                     m.tool_call_id,
                     cls._assistant_fingerprint(m.content, m.tool_calls),
                     reasoning.hex() if reasoning is not None else None,
-                ]
-            )
-        return hashlib.sha256(
-            json.dumps(history, ensure_ascii=False).encode()
-        ).hexdigest()
+                ],
+                ensure_ascii=False,
+            ).encode()
+            digest.update(len(entry).to_bytes(8, "big"))
+            digest.update(entry)
+            prefixes.append(digest.hexdigest())
+        return prefixes
 
     def _normalize_scaffold(self, text_chunk: str, preamble: str) -> Optional[str]:
         """Force the scaffold region (between the last assistant header in
@@ -306,6 +309,7 @@ class OpenAITranscriptState:
             return PromptInput(text=rendered_prompt)
         history_messages = messages if history_messages is None else history_messages
         # Missing records render as text without shifting later turn indices.
+        prefixes = self._history_fingerprints(history_messages, stored)
         positions = [i for i, m in enumerate(messages) if m.role == "assistant"]
         splice: dict[int, dict] = {}  # message index -> {"ids", "preamble"}
         for k, pos in enumerate(positions):
@@ -314,8 +318,7 @@ class OpenAITranscriptState:
                 continue
             m = messages[pos]
             if (
-                record.get("history_fp")
-                != self._history_fingerprint(history_messages[:pos], stored)
+                record.get("history_fp") != prefixes[pos]
                 or self._assistant_fingerprint(m.content, m.tool_calls) != record["fp"]
                 or (
                     m.reasoning_content is not None
@@ -405,7 +408,7 @@ class OpenAITranscriptState:
         turns[prior_turns] = {
             # Unbound records cannot safely replay after history replacement.
             "history_fp": (
-                self._history_fingerprint(request_messages, turns)
+                self._history_fingerprints(request_messages, turns)[-1]
                 if request_messages is not None
                 else None
             ),

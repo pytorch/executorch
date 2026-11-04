@@ -396,7 +396,7 @@ struct ServingRuntime::Impl {
     if (opening) {
       if (sessions_.size() == config_.max_sessions) {
         return ServingError{
-            ErrorCode::CapacityExceeded, "session limit reached"};
+            ErrorCode::SessionCapacityExceeded, "session limit reached"};
       }
       it = sessions_.try_emplace(command.key).first;
       it->second.incarnation = next_incarnation_++;
@@ -1064,8 +1064,8 @@ struct ServingRuntime::Impl {
     if (opening) {
       if (sessions_.size() == config_.max_sessions) {
         lock.unlock();
-        request->reject(
-            ServingError{ErrorCode::CapacityExceeded, "session limit reached"});
+        request->reject(ServingError{
+            ErrorCode::SessionCapacityExceeded, "session limit reached"});
         return;
       }
       it = sessions_.try_emplace(key).first;
