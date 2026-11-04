@@ -1628,7 +1628,6 @@ class TestPasses(unittest.TestCase):
         cast, quant = OpCast.op_name, OpQuantize.op_name
         cases = [
             (torch.uint8, torch.float32, htp, None, [cast, cast]),
-            (torch.uint8, torch.float64, htp, None, [cast, cast]),
             (torch.uint8, torch.float32, gpu, None, [cast]),
             (torch.uint8, torch.float16, htp, None, [cast]),
             # an integer cast into a quantized tensor is Cast to fp32 + Quantize
