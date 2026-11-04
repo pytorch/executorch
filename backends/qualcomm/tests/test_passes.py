@@ -1,6 +1,7 @@
 import contextlib
 import logging
 import operator
+import os
 import unittest
 from collections import defaultdict
 from unittest.mock import MagicMock, patch, PropertyMock
@@ -322,6 +323,18 @@ def stubbed_qnn_backend():
         },
     ):
         yield
+
+
+# Read at import, because lowering can download the SDK and set QNN_SDK_ROOT
+# for this process, too late for the loader to find the SDK libraries.
+QNN_SDK_SET_UP = "QNN_SDK_ROOT" in os.environ
+
+
+def skip_without_qnn_sdk(test, reason):
+    # With the SDK set up the backend has to load, so a failure to load is a
+    # real error that the caller reports, not a reason to skip.
+    if not QNN_SDK_SET_UP:
+        test.skipTest(f"QNN SDK not available: {reason}")
 
 
 def stubbed_compiler_specs(backend_options):
@@ -1036,7 +1049,7 @@ class TestPasses(unittest.TestCase):
             )
         except RuntimeError as e:
             if "Failed to initialize QNN backend" in str(e):
-                self.skipTest(f"QNN SDK not available: {e}")
+                skip_without_qnn_sdk(self, e)
             raise
 
     def test_uint8_to_float32_cast_goes_through_int32_only_on_htp(self):
@@ -1334,7 +1347,7 @@ class TestPasses(unittest.TestCase):
             )
         except RuntimeError as e:
             if "QNN" in str(e) or "qnn" in str(e):
-                self.skipTest(f"QNN SDK not available: {e}")
+                skip_without_qnn_sdk(self, e)
             raise
         exec_prog_mgr = edge_prog_mgr.to_executorch()
         etrecord = exec_prog_mgr.get_etrecord()
@@ -1473,7 +1486,8 @@ class TestPasses(unittest.TestCase):
             edge.to_executorch()
         except RuntimeError as e:
             if "QNN" in str(e) or "qnn" in str(e):
-                self.skipTest(f"QNN SDK not available: {e}")
+                skip_without_qnn_sdk(self, e)
+            raise
 
     def test_stack_outside_pack_ranks_is_decomposed(self):
         class Stack(torch.nn.Module):
@@ -1494,7 +1508,7 @@ class TestPasses(unittest.TestCase):
                     )
                 except RuntimeError as e:
                     if "Failed to initialize QNN backend" in str(e):
-                        self.skipTest(f"QNN SDK not available: {e}")
+                        skip_without_qnn_sdk(self, e)
                     raise
 
     def test_partitioner_keeps_constant_only_subgraph_on_cpu(self):
@@ -1537,7 +1551,7 @@ class TestPasses(unittest.TestCase):
                     )
                 except RuntimeError as e:
                     if "Failed to initialize QNN backend" in str(e):
-                        self.skipTest(f"QNN SDK not available: {e}")
+                        skip_without_qnn_sdk(self, e)
                     raise
                 edge.to_executorch()
                 self.assertEqual(
@@ -1823,7 +1837,7 @@ class TestPasses(unittest.TestCase):
                     )
                 except RuntimeError as e:
                     if "Failed to initialize QNN backend" in str(e):
-                        self.skipTest(f"QNN SDK not available: {e}")
+                        skip_without_qnn_sdk(self, e)
                     raise
                 cpu_nodes = [
                     node
@@ -1862,7 +1876,7 @@ class TestPasses(unittest.TestCase):
             )
         except RuntimeError as e:
             if "Failed to initialize QNN backend" in str(e):
-                self.skipTest(f"QNN SDK not available: {e}")
+                skip_without_qnn_sdk(self, e)
             raise
         cpu_ops = {
             node.target
@@ -1913,7 +1927,7 @@ class TestPasses(unittest.TestCase):
             )
         except RuntimeError as e:
             if "QNN" in str(e) or "qnn" in str(e):
-                self.skipTest(f"QNN SDK not available: {e}")
+                skip_without_qnn_sdk(self, e)
             raise
 
         # inspected before to_executorch(), which swaps in out-variant ops
@@ -1984,7 +1998,7 @@ class TestPasses(unittest.TestCase):
                 )
             except RuntimeError as e:
                 if "QNN" in str(e) or "qnn" in str(e):
-                    self.skipTest(f"QNN SDK not available: {e}")
+                    skip_without_qnn_sdk(self, e)
                 raise
             export_spy.assert_not_called()
 
@@ -2013,7 +2027,7 @@ class TestPasses(unittest.TestCase):
                 )
         except RuntimeError as e:
             if "QNN" in str(e) or "qnn" in str(e):
-                self.skipTest(f"QNN SDK not available: {e}")
+                skip_without_qnn_sdk(self, e)
             raise
 
     def test_index_put_int64_value_not_quantized(self):
@@ -2301,7 +2315,6 @@ class TestPasses(unittest.TestCase):
         one bundle had come and gone every later request built a fresh backend --
         even while another bundle for that type was alive.
         """
-        import os
         import tempfile
 
         import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
@@ -2323,7 +2336,9 @@ class TestPasses(unittest.TestCase):
             try:
                 first = PyQnnManager.QnnManager(option)
                 if first.InitBackend().value != 0:
-                    self.skipTest("QNN backend unavailable")
+                    skip_without_qnn_sdk(self, "QNN backend unavailable")
+                    cap.seek(0)
+                    self.fail(cap.read().decode("utf-8", "replace"))
                 first.Destroy()
                 del first
 
