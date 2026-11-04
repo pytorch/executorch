@@ -555,7 +555,15 @@ class LLMEdgeManager:
         # TODO: ConvertToLinearPass is not a sound pass and must be called before
         # const propagation.  It requires fixing:
         # https://github.com/pytorch/executorch/issues/10499
-        self.edge_manager.transform([ConvertToLinearPass()])
+        # transform() runs the passes over every method, so each method needs a
+        # pass bound to its own program. Defaulting to exported_program() would
+        # look up "forward", which a multimethod export does not have.
+        self.edge_manager.transform(
+            {
+                name: [ConvertToLinearPass(self.edge_manager.exported_program(name))]
+                for name in self.edge_manager.methods
+            }
+        )
 
         self.export_program = self.edge_manager.to_executorch(
             ExecutorchBackendConfig(
