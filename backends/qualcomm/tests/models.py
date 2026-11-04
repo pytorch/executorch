@@ -616,6 +616,13 @@ class CompositeDelegateModule(torch.nn.Module):
         return CompositeReferenceModule(self.modules)
 
 
+class ConstantGraphOutputs(torch.nn.Module):
+    def forward(self, x):
+        y = x * 2
+        c = torch.full_like(y, 0.5)
+        return y + c, c, torch.arange(3, dtype=torch.float32)
+
+
 class ContextBinaryExample(torch.nn.Module):
     def forward(self, x, y):
         x = torch.nn.functional.relu(x)
