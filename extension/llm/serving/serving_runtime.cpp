@@ -765,7 +765,17 @@ struct ServingRuntime::Impl {
            prompt->size() - 1});
     }
     std::optional<batching::Session> cloned;
-    if (upto) {
+    if (auto match = lookup_prefix(request, upto)) {
+      auto selection = select_input(request, match->matched_tokens);
+      const auto* outcome = std::get_if<Selection>(&selection);
+      if (!outcome || *outcome == Selection::Cancelled) {
+        return selection;
+      }
+      if (*outcome == Selection::Selected) {
+        cloned = std::move(match->session);
+      }
+    }
+    if (!cloned && upto) {
       auto selection = select_input(request, upto);
       const auto* outcome = std::get_if<Selection>(&selection);
       if (!outcome || *outcome == Selection::Cancelled) {
@@ -971,7 +981,9 @@ struct ServingRuntime::Impl {
     return std::nullopt;
   }
 
-  std::optional<batching::PrefixMatch> lookup_prefix(const Request& request) {
+  std::optional<batching::PrefixMatch> lookup_prefix(
+      const Request& request,
+      std::size_t longer_than = 0) {
     if (!request->text || !request->text->prompt ||
         config_.prefix_cache_capacity == 0) {
       return std::nullopt;
@@ -980,7 +992,7 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      return prefix_cache_.lookup_identity(*request->text->prompt);
+      return prefix_cache_.lookup_identity(*request->text->prompt, longer_than);
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
       return std::nullopt;

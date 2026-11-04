@@ -164,6 +164,7 @@ class Executor : public batching::testing::FakeExecutor {
   Gate cloning;
   Gate decoding;
   std::atomic<bool> refuse_clone{false};
+  std::optional<SessionId> rejected_clone_source;
   std::atomic<int> clone_calls{0};
   std::atomic<int> peak_rows{0};
   bool reject_after_decode = false;
@@ -205,7 +206,7 @@ class Executor : public batching::testing::FakeExecutor {
   std::optional<SessionId> clone(SessionId source, Position upto) override {
     ++clone_calls;
     cloning.enter();
-    if (refuse_clone.load()) {
+    if (refuse_clone.load() || rejected_clone_source == source) {
       return std::nullopt;
     }
     std::vector<Token> prefix;
@@ -1147,6 +1148,76 @@ class ReplacementSharedSnapshotTest
     : public PrefixReuseTest,
       public ::testing::WithParamInterface<bool> {};
 
+TEST_F(PrefixReuseTest, LongerSnapshotWinsOverCloneableLivePrefix) {
+  start();
+  submit(output(), {1, 2, 3}, "s").wait();
+  submit(output(), {1, 2, 3, 4, 5, 6}, "other").wait();
+  const auto snapshot = executor.clones().back();
+  const auto before = executor.clone_calls.load();
+  auto replacement = output();
+  submit(replacement, {1, 2, 3, 4, 5, 6}).wait();
+  ASSERT_TRUE(replacement->terminal);
+  ASSERT_FALSE(replacement->terminal->error);
+  EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 5u);
+  EXPECT_EQ(replacement->terminal->stats.prefilled_prompt_tokens, 1u);
+  EXPECT_EQ(executor.clones().back().source, snapshot.destination);
+  EXPECT_EQ(executor.clone_calls.load(), before + 1);
+  EXPECT_EQ(executor.feeds().back().position, 5);
+  EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{6}));
+}
+
+TEST_F(PrefixReuseTest, UnavailableLongerSnapshotFallsBackToLivePrefix) {
+  start();
+  submit(output(), {1, 2, 3}, "s").wait();
+  const auto live = executor.feeds().back().session;
+  submit(output(), {1, 2, 3, 4, 5, 6}, "other").wait();
+  executor.rejected_clone_source = executor.clones().back().destination;
+  const auto before = executor.clone_calls.load();
+  auto replacement = output();
+  submit(replacement, {1, 2, 3, 4, 5, 6}).wait();
+  ASSERT_TRUE(replacement->terminal);
+  ASSERT_FALSE(replacement->terminal->error);
+  EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clones().back().source, live);
+  EXPECT_EQ(executor.clone_calls.load(), before + 2);
+}
+
+TEST_F(PrefixReuseTest, UnusableLongerSnapshotSuffixFallsBackToLivePrefix) {
+  use_mixed_preparer();
+  start();
+  submit(output(), {1, 7, 7, 7, 6}, "s").wait();
+  const auto live = executor.feeds().back().session;
+  submit(output(), {1, 7, 7, 7, 2, 3}, "other").wait();
+  executor.rejected_view_start = 5;
+  auto replacement = output();
+  submit(replacement, {1, 7, 7, 7, 2, 9}).wait();
+  ASSERT_TRUE(replacement->terminal);
+  ASSERT_FALSE(replacement->terminal->error);
+  EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 4u);
+  EXPECT_EQ(executor.clones().back().source, live);
+  EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{2, 9}));
+}
+
+TEST_F(
+    PrefixReuseTest,
+    CancellationDuringPreferredSnapshotPreservesLivePrefix) {
+  start();
+  submit(output(), {1, 2, 3}, "s").wait();
+  submit(output(), {1, 2, 3, 4, 5, 6}, "other").wait();
+  const auto snapshot = executor.clones().back();
+  executor.cloning.hold();
+  auto replacement = submit(output(), {1, 2, 3, 4, 5, 6});
+  ASSERT_TRUE(executor.cloning.wait());
+  replacement.cancel();
+  executor.cloning.release();
+  replacement.wait();
+  EXPECT_EQ(executor.clones().back().source, snapshot.destination);
+  auto continued = output();
+  submit(continued, {1, 2, 3, 100, 4}).wait();
+  ASSERT_TRUE(continued->terminal);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+}
+
 TEST_P(ReplacementSharedSnapshotTest, LookupDoesNotDependOnLivePrefixLength) {
   start();
   const Token first = GetParam() ? 8 : 1;
@@ -1164,7 +1235,7 @@ TEST_P(ReplacementSharedSnapshotTest, LookupDoesNotDependOnLivePrefixLength) {
   EXPECT_EQ(replacement->terminal->stats.prefilled_prompt_tokens, 1u);
   EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{9}));
   EXPECT_EQ(executor.clones().back().source, snapshot.destination);
-  EXPECT_EQ(executor.clone_calls.load(), before + (GetParam() ? 2 : 1));
+  EXPECT_EQ(executor.clone_calls.load(), before + 1);
 }
 
 INSTANTIATE_TEST_SUITE_P(

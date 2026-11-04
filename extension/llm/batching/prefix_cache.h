@@ -346,7 +346,10 @@ class ET_EXPERIMENTAL PrefixCache {
     return lookup_identity(copy_tokens(request));
   }
 
-  std::optional<PrefixMatch> lookup_identity(const PrefixIdentity& request) {
+  // Skip candidates that cannot improve on an already available prefix.
+  std::optional<PrefixMatch> lookup_identity(
+      const PrefixIdentity& request,
+      std::size_t longer_than = 0) {
     if (request.size() < 2 || entries_.empty()) {
       return std::nullopt;
     }
@@ -364,7 +367,7 @@ class ET_EXPERIMENTAL PrefixCache {
       for (auto it = entries_.begin(); it != entries_.end(); ++it, ++rank) {
         const auto matched =
             std::min(common_prefix(it->tokens, request), request.size() - 1);
-        if (matched > 0) {
+        if (matched > longer_than) {
           candidates.push_back(Candidate{it, matched, rank});
         }
       }

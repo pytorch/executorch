@@ -898,6 +898,27 @@ TEST_F(PrefixCacheTest, EqualLengthMatchesPreferTheMostRecentlyUsedSnapshot) {
   EXPECT_EQ(executor.clones().back().source, first_id);
 }
 
+TEST_F(PrefixCacheTest, LookupThresholdSkipsClonesAndDoesNotRefreshLru) {
+  PrefixCache cache(2);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  ASSERT_TRUE(cache.insert({8, 9}, snapshot({8, 9})));
+  const auto request =
+      token_identity(std::make_shared<const Tokens>(Tokens{1, 2, 3, 4}));
+  const auto before = executor.clones().size();
+  EXPECT_FALSE(cache.lookup_identity(request, 3));
+  EXPECT_FALSE(
+      cache.lookup_identity(request, std::numeric_limits<size_t>::max()));
+  EXPECT_EQ(executor.clones().size(), before);
+  ASSERT_TRUE(cache.insert({6, 7}, snapshot({6, 7})));
+  EXPECT_FALSE(cache.lookup({1, 2, 3, 4}));
+  const auto other =
+      token_identity(std::make_shared<const Tokens>(Tokens{8, 9, 10}));
+  auto match = cache.lookup_identity(other, 1);
+  ASSERT_TRUE(match);
+  EXPECT_EQ(match->matched_tokens, 2u);
+  expect_cold_match(*match, {8, 9, 10});
+}
+
 TEST_F(PrefixCacheTest, DuplicateInsertRefreshesLruAndReleasesTheNewSnapshot) {
   PrefixCache cache(2);
   ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
