@@ -3161,6 +3161,43 @@ class TestPasses(unittest.TestCase):
             "indices has no consumer and must stay internal",
         )
 
+    def test_constant_graph_output_is_written_by_an_op(self):
+        """QNN only publishes a graph output that an op writes.
+
+        A constant op's static tensor has no writer, so as a graph output it was
+        left out and the delegate bound one output fewer than ExecuTorch passed.
+        """
+        import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
+
+        class ConstantOut(torch.nn.Module):
+            def __init__(self, make):
+                super().__init__()
+                self.make = make
+
+            def forward(self, x):
+                return x * 2, self.make(x)
+
+        cases = (
+            ("aten.full.default", lambda x: torch.full((2, 3), -1.0)),
+            ("aten.full_like.default", lambda x: torch.full_like(x, -1.0)),
+            ("aten.arange.start_step", lambda x: torch.arange(0, 3, 1.0)),
+            ("scalar_tensor.default", lambda x: torch.scalar_tensor(3.0)),
+        )
+        for target, make in cases:
+            with self.subTest(target):
+                edge_program = torch.export.export(
+                    ConstantOut(make), (torch.randn(2, 3),), strict=True
+                )
+                node = edge_program.graph.output_node().args[0][1]
+                visitor = get_node_visitors(edge_program)[target]
+                op = visitor.define_node(node, defaultdict(dict))
+                self.assertIsNotNone(op)
+                (output,) = op.GetOpWrapper().GetOutputTensors()
+                self.assertEqual(
+                    f"output_{node.name}@0",
+                    PyQnnManager.PyQnnTensorWrapper(output).GetName(),
+                )
+
 
 # Attributes PT2E compares in _union_input_edge_with when deciding whether an
 # input edge and its producer's output can share one observer.

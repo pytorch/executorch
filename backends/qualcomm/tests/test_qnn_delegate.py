@@ -595,6 +595,11 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_constant_graph_outputs(self):
+        module = ConstantGraphOutputs()  # noqa: F405
+        sample_input = (torch.randn(2, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv1d(self):
         modules = [Conv1dSequential(), Conv1dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3]),)

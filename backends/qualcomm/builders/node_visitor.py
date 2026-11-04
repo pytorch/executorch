@@ -34,6 +34,7 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 
+from .qnn_constants import OpReshape, QNN_OP_PACKAGE_NAME_QTI_AISW
 from .utils import (
     deduce_dtype,
     get_parameter,
@@ -522,8 +523,18 @@ class NodeVisitor:
                 False,
             )
         else:
-            # Can implement non-fake tensor when there is a need
-            return None
+            tensor_wrapper = PyQnnManager.TensorWrapper(
+                node_name,
+                tensor_type,
+                dtype,
+                quant_encoding,
+                quant_configs,
+                len(dims),
+                dims,
+                [],
+                tensor.detach().numpy(),
+                True,
+            )
         nodes_to_wrappers[node_name][wrapper_idx] = tensor_wrapper
         return tensor_wrapper
 
@@ -602,6 +613,54 @@ class NodeVisitor:
             )
         nodes_to_wrappers[node_name][wrapper_idx] = tensor_wrapper
         return tensor_wrapper
+
+    def define_constant(
+        self,
+        node: torch.fx.Node,
+        tensor: torch.Tensor,
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnManager.TensorWrapper]],
+    ) -> Optional[PyQnnManager.PyQnnOpWrapper]:
+        """
+        Define the value of an op known ahead of time, such as full or arange,
+        as a static tensor its consumers read directly. QNN only publishes a
+        graph output that an op writes, so when the value is a graph output a
+        Reshape copies the static tensor into it.
+        """
+        static_type = PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
+        if not is_graph_output(node):
+            self.define_tensor(node, node, tensor, static_type, nodes_to_wrappers)
+            return None
+
+        quant_encoding, quant_configs = self.get_quant_encoding_conf(node, node)
+        dtype = self.get_data_type(tensor, quant_configs)
+        if quant_configs:
+            tensor = self.get_quant_tensor_value(
+                tensor, node.meta[QCOM_QUANT_ATTRS], quant_configs
+            )
+        static_wrapper = self.define_custom_tensor_wrapper(
+            node_name=f"{node.name}_static",
+            tensor_type=static_type,
+            dtype=dtype,
+            quant_encoding=quant_encoding,
+            quant_configs=quant_configs,
+            dims=[1] if tensor.dim() == 0 else list(tensor.shape),
+            tensor=tensor,
+            is_fake_tensor=False,
+            nodes_to_wrappers=nodes_to_wrappers,
+        )
+        output_wrapper = self.define_tensor(
+            node,
+            node,
+            node.meta["val"],
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            nodes_to_wrappers,
+        )
+        reshape_op = PyQnnManager.PyQnnOpWrapper(
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpReshape.op_name
+        )
+        reshape_op.AddInputTensors([static_wrapper])
+        reshape_op.AddOutputTensors([output_wrapper])
+        return reshape_op
 
     def define_node(
         self,

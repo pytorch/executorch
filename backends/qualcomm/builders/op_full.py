@@ -30,13 +30,4 @@ class Full(NodeVisitor):
             tensor_shape, node.args[1], dtype=node.meta["val"].dtype
         )
 
-        # since we can derive the constant value of current op in AoT stage
-        # we only build static tensor here for consumers of current node
-        # to correctly reference the data
-        self.define_tensor(
-            node,
-            node,
-            out_tensor,
-            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
-            nodes_to_wrappers,
-        )
+        return self.define_constant(node, out_tensor, nodes_to_wrappers)
