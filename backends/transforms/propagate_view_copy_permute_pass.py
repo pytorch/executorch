@@ -1090,6 +1090,16 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
     def _get_prev_nodes(self, node: torch.fx.Node) -> Iterable[torch.fx.Node]:
         return list(node.all_input_nodes)
 
+    def _can_cross_next_nodes(
+        self, frontier: torch.fx.Node, next_nodes: Sequence[torch.fx.Node]
+    ) -> bool:
+        for next_node in next_nodes:
+            if self.is_permutable_binary(next_node):
+                rank = len(next_node.meta["val"].shape)
+                if self._layout_dependent_inputs(next_node, rank) != [frontier]:
+                    return False
+        return True
+
     def _maybe_swap_permute_args(
         self, node: torch.fx.Node, next_node: torch.fx.Node
     ) -> Any | None:

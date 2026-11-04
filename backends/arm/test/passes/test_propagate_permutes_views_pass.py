@@ -1714,6 +1714,44 @@ def test_down_pass_keeps_permutation_before_sum() -> None:
     assert transform.meta["val"].shape == torch.Size((1, 3, 4, 2))
 
 
+@pytest.mark.parametrize("shape", [(3, 3), (2, 3)])
+@pytest.mark.parametrize("mean_first", [False, True])
+@pytest.mark.parametrize("run_up_pass", [False, True])
+@pytest.mark.parametrize("fork", [False, True])
+def test_down_pass_keeps_layout_invariant_frontier_on_its_branch(
+    shape: tuple[int, int], mean_first: bool, run_up_pass: bool, fork: bool
+) -> None:
+    x_data = torch.arange(shape[0] * shape[1], dtype=torch.float32).reshape(shape)
+    y_data = x_data + 1
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty_like(x_data)
+    y = graph.placeholder("y")
+    y.meta["val"] = torch.empty_like(y_data)
+    permute = graph.call_function(PERMUTE, args=(x, [1, 0]))
+    permute.meta["val"] = torch.empty((shape[1], shape[0]))
+    mean = graph.call_function(MEAN, args=(permute, [0, 1], True))
+    mean.meta["val"] = torch.empty((1, 1))
+    add_args = (mean, y) if mean_first else (y, mean)
+    add = graph.call_function(ADD, args=add_args)
+    add.meta["val"] = torch.empty_like(y_data)
+    if fork:
+        neg = graph.call_function(NEG, args=(mean,))
+        neg.meta["val"] = torch.empty((1, 1))
+        graph.output((add, neg))
+    else:
+        graph.output(add)
+
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+    expected = graph_module(x_data, y_data)
+    graph_module = PropagateViewCopyPermuteDownPass().call(graph_module).graph_module
+    if run_up_pass:
+        graph_module = PropagateViewCopyPermuteUpPass().call(graph_module).graph_module
+
+    graph_module.graph.lint()
+    torch.testing.assert_close(graph_module(x_data, y_data), expected)
+
+
 @pytest.mark.parametrize("mean_first", [False, True])
 def test_down_pass_keeps_permute_before_reduction_with_layout_dependent_user(
     mean_first: bool,
