@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import torch
+from executorch.backends.qualcomm._passes.tag_positional_sin_cos import (
+    TagPositionalSinCos,
+)
 from executorch.backends.qualcomm._passes.utils import find_patterns, get_runtime_inputs
 from executorch.backends.qualcomm.builders.node_visitor import (
     dq_ops,
@@ -89,6 +92,7 @@ class RecomposeRmsNorm(ExportPass):
         compiler_specs=None,
         skip_node_id_set=None,
         skip_node_op_set=None,
+        tag_positional_sin_cos=False,
     ):
         super(RecomposeRmsNorm, self).__init__()
         self.edge_program = edge_program
@@ -96,6 +100,12 @@ class RecomposeRmsNorm(ExportPass):
         self.skip_node_op_set = skip_node_op_set or set()
         self.backend_info = get_backend_info(compiler_specs)
         self.may_be_htp, self.htp_fp16, _ = self.backend_info
+        # Whether TagPositionalSinCos runs later and leaves more nodes on CPU.
+        self.positional_sin_cos = (
+            TagPositionalSinCos(edge_program, compiler_specs)
+            if tag_positional_sin_cos
+            else None
+        )
         self.rms_norm_target = exir_ops.edge.aten.rms_norm.default
         self.skip_targets = [
             exir_ops.edge.aten.to.dtype,
@@ -227,19 +237,22 @@ class RecomposeRmsNorm(ExportPass):
             and (runtime_inputs is None or node.name in runtime_inputs)
         }
         nodes = list(graph.nodes)
+        qnn = {
+            node
+            for node in nodes
+            if may_be_delegated(
+                node,
+                self.edge_program,
+                self.skip_node_id_set,
+                self.skip_node_op_set,
+                self.backend_info,
+            )
+        }
+        if self.positional_sin_cos is not None:
+            qnn -= self.positional_sin_cos.find_nodes(graph)
         self.left_on_cpu = find_nodes_left_on_cpu(
             nodes,
-            {
-                node
-                for node in nodes
-                if may_be_delegated(
-                    node,
-                    self.edge_program,
-                    self.skip_node_id_set,
-                    self.skip_node_op_set,
-                    self.backend_info,
-                )
-            },
+            qnn,
             lambda arg: arg.op == "call_function" or arg in self.runtime_placeholders,
         )
 

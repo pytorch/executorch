@@ -76,6 +76,7 @@ from executorch.backends.qualcomm._passes import (
     RemoveRedundancy,
     ReplaceArangeArgs,
     ResolveDebugHandle,
+    TagPositionalSinCos,
     TagQuantIO,
 )
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -439,6 +440,8 @@ class QnnPassManager(PassManager):
                 kwargs["skip_node_id_set"] = skip_node_id_set
             if "skip_node_op_set" in kwargs:
                 kwargs["skip_node_op_set"] = skip_node_op_set
+            if "tag_positional_sin_cos" in kwargs:
+                kwargs["tag_positional_sin_cos"] = TagPositionalSinCos in active_passes
             self.add_pass(p(**kwargs))
         self._validate_edge_passes()
         return self.passes

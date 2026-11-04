@@ -8,6 +8,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeReciprocal,
     RecomposeHadamard,
     RemoveRedundancy,
+    TagPositionalSinCos,
 )
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
@@ -25,6 +26,7 @@ class QnnHtpPassManager(QnnPassManager):
         # The current change is intended to proactively prepare for the upcoming deprecation of the export pipeline.
         pass_activations = super().get_default_pass_activations()
         pass_activations.extend([(DecomposeReciprocal, True)])
+        pass_activations.append((TagPositionalSinCos, True))
         return pass_activations
 
     @classmethod
@@ -34,6 +36,15 @@ class QnnHtpPassManager(QnnPassManager):
         deps = super().get_passes_dependency_for_capture_program()
         deps.update({DecomposeReciprocal: [RemoveRedundancy]})
         return deps
+
+    @classmethod
+    def _move_terminal_passes_to_end(cls, passes):
+        # Run it last, just before the terminal passes, whatever dep_table
+        # says, so it tags the graph the partitioner sees.
+        if TagPositionalSinCos in passes:
+            passes.remove(TagPositionalSinCos)
+            passes.append(TagPositionalSinCos)
+        return super()._move_terminal_passes_to_end(passes)
 
     @classmethod
     def get_annotation_passes(cls, convert_linear_to_conv2d: bool = False):

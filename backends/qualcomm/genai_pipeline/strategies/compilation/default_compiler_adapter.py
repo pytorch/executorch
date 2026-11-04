@@ -228,9 +228,9 @@ class DefaultCompilerAdapter:
         job -- this adapter lowers the group it is handed.
 
         A recipe-based implementation (``ExportRecipe`` + ``ExportSession``) was
-        considered and rejected: ``QNNRecipeProvider`` accepts only ``soc_model``
-        and the three ``skip_*`` keys and warns-and-ignores the rest, so
-        ``dep_table``, ``passes_job``, ``constant_methods`` and
+        considered and rejected: ``QNNRecipeProvider`` accepts only ``soc_model``,
+        ``passes_job`` and the three ``skip_*`` keys and warns-and-ignores the
+        rest, so ``dep_table``, ``constant_methods`` and
         ``convert_linear_to_conv2d`` cannot be expressed through it, and its
         FP16 recipe hardcodes ``use_fp16=True``, leaving no quantized path.
     """
