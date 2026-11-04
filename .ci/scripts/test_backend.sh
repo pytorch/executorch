@@ -76,11 +76,13 @@ if [[ "$FLOW" == *arm* ]]; then
         PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
     fi
 
-    # Setup ARM deps.
+    # Setup ARM deps. Only the Ethos-U flows run on an FVP.
     if [[ "$FLOW" == *vgf* ]]; then
-        .ci/scripts/setup-arm-baremetal-tools.sh --enable-mlsdk-deps --install-mlsdk-deps-with-pip
-    else
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps --enable-mlsdk-deps --install-mlsdk-deps-with-pip
+    elif [[ "$FLOW" == *ethos_u* ]]; then
         .ci/scripts/setup-arm-baremetal-tools.sh
+    else
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
     fi
     source examples/arm/arm-scratch/setup_path.sh
 
@@ -98,7 +100,7 @@ fi
 if [[ "$FLOW" == *cortex_m* ]]; then
     # Cortex-M runs on the Corstone-300 FVP, using the same Arm toolchain as the
     # Ethos-U flows but its own semihosting runner.
-    .ci/scripts/setup-arm-baremetal-tools.sh
+    .ci/scripts/setup-arm-baremetal-tools.sh --fvp corstone300
     source examples/arm/arm-scratch/setup_path.sh
 
     backends/cortex_m/test/build_test_runner.sh
