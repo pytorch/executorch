@@ -5007,7 +5007,8 @@ class ResolveDebugHandle:
     intermediate-tensor debugging can key on it. getitem nodes inherit the
     handle from their producing tuple-output node.
 
-    Runs as the last edge pass (required — validated by _validate_edge_passes).
+    The pass manager runs it last, before only LpaiPartitionFallbackSupport on
+    LPAI.
 
     Handle numbering is assigned by graph traversal order. The quantized flow
     prepends a dequantize node that takes handle 1, shifting every subsequent
