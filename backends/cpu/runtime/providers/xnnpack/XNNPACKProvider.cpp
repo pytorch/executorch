@@ -1223,12 +1223,16 @@ class XNNImplementation final : public KernelImplementation {
           continue;
         }
         // A constant can also feed an unpacked operation in this region.
-        const bool packed_use =
-            node.target == "torch.ops.aten.linear.default" &&
+        bool packed_use = node.target == "torch.ops.aten.linear.default" &&
             arg(node, 0).as_tensor().id != value.id &&
             (arg(node, 1).as_tensor().id == value.id ||
              (arg(node, 2).kind() == ptn::ArgKind::Tensor &&
               arg(node, 2).as_tensor().id == value.id));
+        if (const auto convolution = parse_convolution(node)) {
+          packed_use = convolution->input != value.id &&
+              (convolution->weight == value.id ||
+               convolution->bias == value.id);
+        }
         packed |= packed_use;
         retained |= !packed_use;
       }
