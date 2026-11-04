@@ -48,9 +48,9 @@ def _patch_executorch_references(targets, use_static_deps = False):
     """Patches up references to "//executorch/..." in lists of build targets.
 
     References to targets under `executorch` (in
-    deps/exported_deps/visibility/etc.) must be specified as `//executorch/...`
-    in the targets.bzl file. When building for xplat, rewrite them as
-    `//xplat/executorch/...`.
+    deps/exported_deps/visibility/etc.) preferably use `//executorch/...`.
+    Canonical `//xplat/executorch/...` references are normalized to that spelling
+    before applying the existing environment and static-target mapping.
 
     Args:
         targets: A list of build target strings to fix up. Not modified in
@@ -66,8 +66,7 @@ def _patch_executorch_references(targets, use_static_deps = False):
     out_targets = []
     for target in targets:
         if target.startswith("//xplat/executorch/") or target.startswith("//xplat/executorch:"):
-            fail("References to executorch build targets must use " +
-                 "`//executorch`, not `//xplat/executorch`")
+            target = target.replace("//xplat/executorch", "//executorch", 1)
 
         # TODO(larryliu0820): it's confusing that we only apply "static" patch to target_needs_patch. We need to clean this up.
         if use_static_deps and env.target_needs_patch(target) and not target.endswith("..."):

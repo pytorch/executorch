@@ -12,6 +12,12 @@ def define_common_targets():
     # build, where the portable ops are built from source and linked with :all_deps
     runtime.cxx_library(
         name = "all_deps",
+        exported_headers = [
+            "bitwise_op.h",
+            "comparison_op.h",
+            "logical_op.h",
+            "pattern.h",
+        ],
         exported_deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
             "//executorch/kernels/portable/cpu/pattern:bitwise_op",
