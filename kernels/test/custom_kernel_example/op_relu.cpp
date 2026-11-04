@@ -34,8 +34,8 @@ namespace {
  */
 template <typename CTYPE>
 void relu(const Tensor& input, Tensor& output) {
-  const CTYPE* in_data = input.data_ptr<CTYPE>();
-  CTYPE* out_data = output.data_ptr<CTYPE>();
+  const CTYPE* in_data = input.const_data_ptr<CTYPE>();
+  CTYPE* out_data = output.mutable_data_ptr<CTYPE>();
   size_t lim = input.numel();
   Tensor::SizesType expected_output_size[16];
   for (size_t i = 0; i < output.dim(); ++i) {
