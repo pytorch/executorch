@@ -695,8 +695,7 @@ class ET_EXPERIMENTAL CudaBackend final
         NotSupported,
         "CUDA graph is not supported together with a caller-provided CUDA stream.");
 
-    // Snapshot the prior selection without creating one (peek, not get), so the
-    // restore is exact and we don't leak a stream just to snapshot.
+    // Snapshot the prior selection with peek, not get, so the restore is exact.
     std::optional<cudaStream_t> prev_stream;
     if (caller_stream) {
       prev_stream = peekCurrentCUDAStream(0);
