@@ -1119,7 +1119,9 @@ class TestCudaExport(unittest.TestCase):
                 pairs = torch.view_as_complex(
                     x.to(self.precision).unflatten(-1, (-1, 2))
                 )
-                rotated = torch.view_as_real(pairs * grid * spin.unsqueeze(1) * 0.5)
+                rotated = torch.view_as_real(
+                    pairs * grid * spin.unsqueeze(1) * torch.tensor(0.5)
+                )
                 # A view_as_real can also be an output of the program, and two
                 # of one complex tensor become one output in two slots.
                 return (
@@ -1130,17 +1132,20 @@ class TestCudaExport(unittest.TestCase):
 
         angles = torch.randn(4, 12)
         # Rotary embeddings are often computed in float64, so in complex128.
-        for dtype, precision in (
-            (torch.float32, torch.float32),
-            (torch.bfloat16, torch.float32),
-            (torch.float32, torch.float64),
+        for dtype, precision, device in (
+            (torch.float32, torch.float32, "cpu"),
+            (torch.bfloat16, torch.float32, "cpu"),
+            (torch.float32, torch.float64, "cpu"),
+            # torch.tensor(0.5) stays on the CPU, so on the GPU the product
+            # with it keeps the program complex until the backend moves the
+            # program to the GPU and rewrites it.
+            (torch.float32, torch.float64, "cuda"),
         ):
-            with self.subTest(dtype=dtype, precision=precision):
-                model = ComplexRope(precision)
+            with self.subTest(dtype=dtype, precision=precision, device=device):
+                model = ComplexRope(precision).to(device)
                 x = torch.randn(4, 3, 24, dtype=dtype)
-                program = self._export_to_cuda_with_lower(
-                    model, (x, angles)
-                ).to_executorch()
+                inputs = (x.to(device), angles.to(device))
+                program = self._export_to_cuda_with_lower(model, inputs).to_executorch()
                 with tempfile.TemporaryDirectory() as directory:
                     path = os.path.join(directory, "model.pte")
                     with open(path, "wb") as f:
@@ -1157,8 +1162,8 @@ class TestCudaExport(unittest.TestCase):
                         .load_method("forward")
                     )
                     outputs = method.execute([x, angles])
-                for output, expected in zip(outputs, model(x, angles), strict=True):
-                    torch.testing.assert_close(output.cpu(), expected)
+                for output, expected in zip(outputs, model(*inputs), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected.cpu())
 
     @unittest.skipIf(
         torch.version.hip is not None,
