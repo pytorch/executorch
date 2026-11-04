@@ -303,6 +303,10 @@ class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
         self.assertTrue(torch.equal(out, torch.zeros(4)))
         out = run(Gather(), torch.zeros(3, 0), torch.zeros(3, 0, dtype=torch.long))
         self.assertTrue(torch.equal(out, torch.zeros(3)))
+        # Eager raises on a non-empty write, but there is nowhere to write,
+        # so the delegate returns the input.
+        out = run(IndexPut(), empty, torch.tensor([0]), torch.ones(1, 4))
+        self.assertTrue(torch.equal(out, torch.zeros(4)))
         # Eager raises; with no element to clamp to, the delegate must too.
         with self.assertRaisesRegex(RuntimeError, "empty axis"):
             run(Gather(), torch.zeros(3, 0), torch.zeros(3, 2, dtype=torch.long))

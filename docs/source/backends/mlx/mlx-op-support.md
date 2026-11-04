@@ -13,8 +13,8 @@ During lowering, the MLX partitioner prints a summary of supported and unsupport
 
 Eager PyTorch raises an error when `gather` or `index_put` gets an index outside the tensor. The MLX backend does not, because a check would have to wait for the GPU in the middle of the graph. Instead, it clamps each index to `[-size, size - 1]` on the GPU, where `size` is the length of the indexed axis:
 
-- A negative index counts from the end, so `-1` is the last element. Eager `index_put` does the same, but eager `gather` rejects negative indices.
-- An index past either end reads or writes the first or last element.
+- A negative index counts from the end, so `-1` is the last position. Eager `index_put` does the same, but eager `gather` rejects negative indices.
+- An index past either end reads or writes the first or last position.
 
 For example:
 
@@ -25,6 +25,13 @@ torch.gather(x, 1, torch.tensor([[9, -1, -7]]))
 # MLX:   reads positions 3, 3 and 0, so returns [[3., 3., 0.]]
 ```
 
-So a bad index gives a wrong result instead of an error, but it never reads or writes memory outside the tensor. If your model can produce bad indices, test it in eager PyTorch first.
+So a bad index never reads or writes memory outside the tensor, but it is still a bug in the model:
+
+- `gather` returns values from the wrong place.
+- `index_put` overwrites real data at the first or last position, or adds to it with `accumulate=True`. With an 8-slot cache, `cache[:, pos] = v` with `pos = 8` overwrites slot 7.
+
+Other ops that take indices, such as `embedding`, reading `x[idx]`, `index_select` and `scatter_add`, do not clamp. An index outside `[-size, size - 1]` there can read or write memory outside the tensor.
+
+To find bad indices, run the model in eager PyTorch first, where they raise. Keep run-time indices in range too, for example by stopping generation before a cache position reaches the cache size.
 
 On an empty axis there is nothing to clamp to: `gather` with a non-empty index raises, and `index_put` returns the input unchanged.

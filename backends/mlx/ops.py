@@ -2744,7 +2744,8 @@ def _index_put_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     for each indexed axis.
 
     Unlike eager, an out-of-range index does not raise: the runtime clamps it
-    to the first or last slice so the write stays inside self.
+    to the first or last slice so the write stays inside self. If an indexed
+    axis is empty, the runtime returns self unchanged.
     """
     args = P.args(n)
     require_args(args, 3, 4, "aten.index_put")
