@@ -15,6 +15,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FoldQDQ,
+    I64toI32,
     InsertIOQDQ,
     InsertReshapeForReduceOps,
     LayoutTransform,
@@ -1639,6 +1640,106 @@ class TestPasses(unittest.TestCase):
                 )
                 self.assertEqual(expected, len(ops))
 
+    def test_i64_to_i32_casts_any_int64_result(self):
+        # A sum of bools and topk indices are int64, and masked_scatter needs
+        # them to match the int64 input the pass turns into int32.
+        class SumIntoInput(torch.nn.Module):
+            def forward(self, x, k, mask):
+                return (x > 0.5).sum(-1).masked_scatter(mask, k)
+
+        class TopkIndicesIntoInput(torch.nn.Module):
+            def forward(self, x, k, mask):
+                return x.topk(1).indices.masked_scatter(mask[:, None], k)
+
+        class LongIntoInput(torch.nn.Module):
+            def forward(self, x, k, mask):
+                return (x[:, 0] > 0.5).long().masked_scatter(mask, k)
+
+        sample_input = (
+            torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),
+            torch.tensor([3, 4]),
+            torch.tensor([True, False]),
+        )
+        # Without dim order, a user's int64 cast is a _to_copy, like the index
+        # casts the pass keeps int64.
+        cases = (
+            (SumIntoInput(), False),
+            (TopkIndicesIntoInput(), False),
+            (LongIntoInput(), True),
+        )
+        for module, skip_dim_order in cases:
+            with self.subTest(type(module).__name__):
+                ep = to_edge(
+                    torch.export.export(module, sample_input, strict=True),
+                    compile_config=EdgeCompileConfig(_skip_dim_order=skip_dim_order),
+                ).exported_program()
+                gm = I64toI32(ep)(ep.graph_module).graph_module
+                torch.testing.assert_close(gm(*sample_input)[0], module(*sample_input))
+
+    def test_i64_to_i32_casts_back_multi_output_results(self):
+        # topk of an int64 sum returns int64 values and indices.
+        class SumTopk(torch.nn.Module):
+            def forward(self, x):
+                return (x > 0.5).sum(-1).topk(2)
+
+        sample_input = (
+            torch.tensor([[0.9, 0.9, 0.1], [0.9, 0.1, 0.1], [0.9, 0.9, 0.9]]),
+        )
+        module = SumTopk()
+        ep = to_edge(
+            torch.export.export(module, sample_input, strict=True)
+        ).exported_program()
+        gm = I64toI32(ep)(ep.graph_module).graph_module
+        for result, expected in zip(gm(*sample_input), module(*sample_input)):
+            torch.testing.assert_close(result, expected)
+
+    def test_i64_to_i32_keeps_int64_indices(self):
+        # gather and the 8-bit embedding run on CPU kernels that need an int64
+        # index, even when the pass casts the op that computes it.
+        import executorch.exir.passes._quant_patterns_and_replacements  # noqa: F401
+
+        embedding_byte = exir_ops.edge.quantized_decomposed.embedding_byte.default
+        gather = exir_ops.edge.aten.gather.default
+
+        class Model(torch.nn.Module):
+            def __init__(self, use_gather, view_tokens):
+                super().__init__()
+                self.use_gather = use_gather
+                self.view_tokens = view_tokens
+                self.register_buffer("weight", torch.ones(10, 4, dtype=torch.int8))
+                self.register_buffer("scales", torch.ones(10))
+
+            def forward(self, x, tokens):
+                if self.use_gather:
+                    return x.gather(1, x.argmax(-1, keepdim=True))
+                if self.view_tokens:
+                    tokens = tokens.view(-1)
+                return torch.ops.quantized_decomposed.embedding_byte(
+                    self.weight, self.scales, None, -128, 127, tokens
+                )
+
+        sample_input = (torch.randn(2, 3), torch.tensor([1, 5, 7]))
+        for target, view_tokens in ((gather, False), (embedding_byte, True)):
+            with self.subTest(target=target.__name__):
+                module = Model(target == gather, view_tokens)
+                ep = to_edge(
+                    torch.export.export(module, sample_input, strict=True)
+                ).exported_program()
+                gm = I64toI32(ep, skip_node=frozenset({"tokens"}))(
+                    ep.graph_module
+                ).graph_module
+                node = next(n for n in gm.graph.nodes if n.target == target)
+                index = node.args[I64toI32.I64_IN_OPS[target][0]]
+                self.assertEqual(torch.int64, index.meta["val"].dtype)
+
+        # Token ids the pass skips stay int64 and need no cast.
+        ep = to_edge(
+            torch.export.export(Model(False, False), sample_input, strict=True)
+        ).exported_program()
+        gm = I64toI32(ep, skip_node=frozenset({"tokens"}))(ep.graph_module).graph_module
+        node = next(n for n in gm.graph.nodes if n.target == embedding_byte)
+        self.assertEqual("placeholder", node.args[5].op)
+
     def test_mha_to_sha(self):
         from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
         from executorch.examples.models.llama.model_args import ModelArgs
@@ -1872,8 +1973,9 @@ class TestPasses(unittest.TestCase):
             "getitem": 1,
             "getitem_1": 1,
             "aten_view_copy_default": 2,
-            "aten_index_tensor": 3,
-            "aten_add_tensor": 4,
+            "aten__to_copy_default": 3,
+            "aten_index_tensor": 4,
+            "aten_add_tensor": 5,
         }
         module = TopKandIndex()  # noqa: F405
         sample_input = (torch.randn(3, 10),)
@@ -2356,7 +2458,11 @@ class TestPasses(unittest.TestCase):
             soc_model=QcomChipset.SM8650,
             backend_options=generate_htp_compiler_spec(use_fp16=True),
         )
-        steps = {"one": lambda x: 1, "argmax": lambda x: x.argmax(-1)}
+        steps = {
+            "one": lambda x: 1,
+            "argmax": lambda x: x.argmax(-1),
+            "sum_of_bools": lambda x: (x > 0.5).sum(-1),
+        }
         for name, step in steps.items():
             for dtype in (torch.int64, torch.int32):
                 with self.subTest(step=name, dtype=dtype):

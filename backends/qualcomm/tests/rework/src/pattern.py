@@ -5034,14 +5034,16 @@ class ResolveDebugHandle:
         from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 
         # Base fp map. Extra DQ node for quantized flow due to self.idx_source.
+        # I64toI32 casts the topk indices to int32 before the index.
         offset = 0 if quantizer is None else 1
         name_handle_map = {
             "aten_topk_default": 1 + offset,
             "getitem": 1 + offset,
             "getitem_1": 1 + offset,
             "aten_view_copy_default": 2 + offset,
-            "aten_index_tensor": 3 + offset,
-            "aten_add_tensor": 4 + offset,
+            "aten__to_copy_default": 3 + offset,
+            "aten_index_tensor": 4 + offset,
+            "aten_add_tensor": 5 + offset,
         }
         if quantizer is not None:
             name_handle_map["quantized_decomposed_dequantize_per_tensor_default"] = 1

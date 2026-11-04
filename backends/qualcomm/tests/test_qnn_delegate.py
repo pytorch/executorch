@@ -1821,6 +1821,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_int64_results(self):
+        module = Int64Results()  # noqa: F405
+        sample_input = (
+            torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),
+            torch.tensor([3, 4]),
+            torch.tensor([True, False]),
+        )
+        # The sum of bools and masked_scatter stay on CPU, so the graph splits.
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=3)
+
     def test_qnn_backend_interpolate_bicubic(self):
         modules = [
             ResizeBicubic([2, 2], None, False),  # noqa: F405
@@ -5256,6 +5266,19 @@ class TestQNNQuantizedOperator(TestQNN):
         # buffer from zero, so the reference has to as well.
         module.count.zero_()
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_int64_results(self):
+        # The default rtol of 1 would pass int64 results of zeros.
+        self.rtol = 1e-1
+        module = Int64Results()  # noqa: F405
+        sample_input = (
+            torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),
+            torch.tensor([3, 4]),
+            torch.tensor([True, False]),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        # The sum of bools and masked_scatter stay on CPU, so the graph splits.
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=3)
 
     def test_qnn_backend_interpolate_bicubic(self):
         modules = [
