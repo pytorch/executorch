@@ -3843,6 +3843,110 @@ class Conv3DTest(OpTestCase):
         )
 
 
+@register_test
+class ConvStringPaddingTest(OpTestCase):
+    """Test case for conv{1,2,3}d with padding="valid" or "same".
+
+    These export as aten.conv*d.padding, which decomposes to aten.convolution
+    (plus constant_pad_nd when "same" needs more padding on one side).
+    """
+
+    name = "conv_padding"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        ndim: int = 2,
+        padding: str = "same",
+        kernel_size=3,
+        stride: int = 1,
+        dilation: int = 1,
+        groups: int = 1,
+        dtype: torch.dtype = torch.float32,
+        in_channels: int = 4,
+        out_channels: int = 8,
+        input_size: int = 11,
+    ):
+        self.ndim = ndim
+        self.padding = padding
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.dilation = dilation
+        self.groups = groups
+        self.dtype = dtype
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.input_size = input_size
+        if dtype == torch.bfloat16:
+            self.rtol = 1e-2
+            self.atol = 1e-2
+
+        kernel = kernel_size if isinstance(kernel_size, tuple) else (kernel_size,)
+        # "same" pads one side more when the total padding dilation * (k - 1) is odd.
+        uneven = padding == "same" and any(dilation * (k - 1) % 2 for k in kernel)
+        self.expected_node_counts = {f"Conv{ndim}DNode": 1, "PadNode": int(uneven)}
+
+        parts = [
+            f"conv{ndim}d",
+            padding,
+            "k" + "x".join(str(k) for k in kernel),
+        ]
+        if stride != 1:
+            parts.append(f"s{stride}")
+        if dilation != 1:
+            parts.append(f"d{dilation}")
+        if groups != 1:
+            parts.append(f"g{groups}")
+        if dtype != torch.float32:
+            parts.append(str(dtype).split(".")[-1])
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["ConvStringPaddingTest"]:
+        # Patch embedding: non-overlapping 16x16 patches.
+        patches = dict(
+            padding="valid",
+            kernel_size=16,
+            stride=16,
+            in_channels=3,
+            out_channels=16,
+            input_size=64,
+        )
+        return [
+            cls(**patches),
+            cls(padding="valid", dilation=2, groups=2),
+            cls(padding="same", kernel_size=3),
+            cls(padding="same", kernel_size=4),
+            cls(padding="same", kernel_size=(4, 3)),
+            cls(padding="same", kernel_size=4, dilation=2),
+            cls(padding="same", kernel_size=4, dilation=3),
+            cls(ndim=1, padding="valid", kernel_size=5, stride=2),
+            cls(ndim=1, padding="same", kernel_size=4),
+            cls(ndim=3, padding="valid", input_size=6),
+            cls(ndim=3, padding="same", kernel_size=2, input_size=6),
+            cls(**patches, dtype=torch.bfloat16),
+            cls(padding="same", kernel_size=4, dtype=torch.bfloat16),
+        ]
+
+    def create_model(self) -> nn.Module:
+        conv = (nn.Conv1d, nn.Conv2d, nn.Conv3d)[self.ndim - 1]
+        model = conv(
+            self.in_channels,
+            self.out_channels,
+            self.kernel_size,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+        )
+        return model.to(self.dtype)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        shape = (2, self.in_channels) + (self.input_size,) * self.ndim
+        return (torch.randn(shape, dtype=self.dtype),)
+
+
 class ConvTranspose1dModel(nn.Module):
     """Simple model using ConvTranspose1d."""
 

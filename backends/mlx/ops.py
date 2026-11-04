@@ -3884,19 +3884,16 @@ def _convolution_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     Args layout: convolution(input, weight, bias, stride, padding, dilation,
                              transposed, output_padding, groups)
 
-    This op appears when PyTorch doesn't decompose to specific conv ops
-    (e.g. grouped conv_transpose).
+    Conv ops without a handler decompose to this op. For example
+    conv2d(padding="valid") arrives as convolution with zero padding, and
+    padding="same" arrives as constant_pad_nd + convolution when one side needs
+    more padding than the other. Grouped conv_transpose arrives here too.
     """
     raw_args = n.args
     x_node, w_node = raw_args[0], raw_args[1]
     bias_node = raw_args[2] if len(raw_args) > 2 else None
     transposed = raw_args[6] if len(raw_args) > 6 else False
     groups = raw_args[8] if len(raw_args) > 8 else 1
-
-    if not transposed:
-        raise ValueError(
-            "aten.convolution with transposed=False: use aten.conv{1,2,3}d instead"
-        )
 
     x_meta = x_node.meta.get("val")
     if x_meta is None:
@@ -3906,6 +3903,12 @@ def _convolution_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     stride = _normalize_conv_param(raw_args[3] if len(raw_args) > 3 else 1, ndim, 1)
     padding = _normalize_conv_param(raw_args[4] if len(raw_args) > 4 else 0, ndim, 0)
     dilation = _normalize_conv_param(raw_args[5] if len(raw_args) > 5 else 1, ndim, 1)
+
+    if not transposed:
+        return _emit_conv(
+            P, n, x_node, w_node, bias_node, stride, padding, dilation, groups, ndim
+        )
+
     output_padding = _normalize_conv_param(
         raw_args[7] if len(raw_args) > 7 else 0, ndim, 0
     )
