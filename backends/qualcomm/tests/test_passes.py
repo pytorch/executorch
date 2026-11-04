@@ -1,4 +1,5 @@
 import contextlib
+import functools
 import logging
 import operator
 import os
@@ -12,6 +13,7 @@ from executorch.backends.qualcomm._passes import (
     ConstantFolding,
     ConvertBmmToMatmul,
     ConvertFullLikeToFull,
+    ConvertLinearToConv2d,
     ConvertMhaToSha,
     DecomposeColIm,
     DecomposeWrapWithAutocast,
@@ -26,6 +28,7 @@ from executorch.backends.qualcomm._passes import (
     RemoveRedundancy,
     ResolveDebugHandle,
     TagPositionalSinCos,
+    TagQuantIO,
 )
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
@@ -3233,6 +3236,92 @@ class TestPasses(unittest.TestCase):
                 self.assertEqual(
                     exir_ops.edge.aten.sin.default in delegated_ops(edge), not active
                 )
+
+    @stubbed_recipe_setup()
+    def test_to_edge_passes_need_resolve_debug_handle(self):
+        program = torch.export.export(
+            torch.nn.Linear(8, 8), (torch.rand(4, 8),), strict=True
+        )
+        pass_manager = get_qnn_pass_manager_cls()()
+        passes_job = pass_manager.get_capture_program_passes()
+        message = f"{type(pass_manager).__name__}.get_capture_program_passes"
+        partial = {RemoveRedundancy: passes_job[RemoveRedundancy]}
+        inactive = {
+            **passes_job,
+            ResolveDebugHandle: {
+                **passes_job[ResolveDebugHandle],
+                QCOM_PASS_ACTIVATE_KEY: False,
+            },
+        }
+        # An entry that only turns a pass on has no build arguments.
+        bare_entry = {**passes_job, TagQuantIO: {QCOM_PASS_ACTIVATE_KEY: True}}
+        no_activation = {
+            **passes_job,
+            RemoveRedundancy: {
+                k: v
+                for k, v in passes_job[RemoveRedundancy].items()
+                if k != QCOM_PASS_ACTIVATE_KEY
+            },
+        }
+        not_a_dict = {**passes_job, TagQuantIO: False}
+        by_method = {**passes_job, "forward": passes_job[RemoveRedundancy]}
+        for job, problem in (
+            (partial, "must turn on ResolveDebugHandle"),
+            (inactive, "must turn on ResolveDebugHandle"),
+            ({}, "must turn on ResolveDebugHandle"),
+            (bare_entry, "TagQuantIO has no"),
+            (no_activation, "RemoveRedundancy is not a dict"),
+            (not_a_dict, "TagQuantIO is not a dict"),
+            (by_method, "keyed by pass, not by 'forward'"),
+        ):
+            with self.subTest(problem=problem), self.assertRaisesRegex(
+                ValueError, f"{problem}.*{message}"
+            ):
+                pass_manager.get_to_edge_transform_passes(program, passes_job=job)
+        # Also when convert_linear_to_conv2d turns on a pass that is not a dict.
+        with self.assertRaisesRegex(
+            ValueError, f"ConvertLinearToConv2d is not a dict.*{message}"
+        ):
+            pass_manager.get_to_edge_transform_passes(
+                program,
+                passes_job={**passes_job, ConvertLinearToConv2d: False},
+                convert_linear_to_conv2d=True,
+            )
+        # The QNN recipe hands passes_job to the same check.
+        recipe = QNNRecipeProvider().create_recipe(
+            QNNRecipeType.FP16, soc_model=QcomChipset.SM8650, passes_job=partial
+        )
+        with self.assertRaisesRegex(ValueError, message):
+            recipe.lowering_recipe.edge_transform_passes[0](None, program)
+        # A reduced job that keeps ResolveDebugHandle runs only what it lists.
+        reduced = {p: passes_job[p] for p in (RemoveRedundancy, ResolveDebugHandle)}
+        self.assertEqual(
+            [
+                type(p)
+                for p in pass_manager.get_to_edge_transform_passes(
+                    program, passes_job=reduced
+                )
+            ],
+            [RemoveRedundancy, ResolveDebugHandle],
+        )
+        # A key may be any pass constructor, like a functools.partial.
+        with_partial = {
+            functools.partial(RemoveRedundancy): passes_job[RemoveRedundancy],
+            ResolveDebugHandle: passes_job[ResolveDebugHandle],
+        }
+        self.assertEqual(
+            [
+                type(p)
+                for p in pass_manager.get_to_edge_transform_passes(
+                    program, passes_job=with_partial
+                )
+            ],
+            [RemoveRedundancy, ResolveDebugHandle],
+        )
+        # LPAI also needs LpaiPartitionFallbackSupport after ResolveDebugHandle.
+        lpai = get_qnn_pass_manager_cls(QnnExecuTorchBackendType.kLpaiBackend)()
+        with self.assertRaisesRegex(ValueError, "QnnLpaiPassManager"):
+            lpai.get_to_edge_transform_passes(program, passes_job=reduced)
 
     def test_to_edge_passes_keep_tag_positional_sin_cos_last(self):
         program = torch.export.export(
