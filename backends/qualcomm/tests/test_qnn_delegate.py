@@ -1816,6 +1816,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         for sample_input in sample_inputs:
             self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_int64_mutable_buffer(self):
+        module = Int64Counter()  # noqa: F405
+        sample_input = (torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_interpolate_bicubic(self):
         modules = [
             ResizeBicubic([2, 2], None, False),  # noqa: F405
@@ -5240,6 +5245,17 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_int64_mutable_buffer(self):
+        # The default rtol of 1 would pass a counter that never updates.
+        self.rtol = 1e-1
+        module = Int64Counter()  # noqa: F405
+        sample_input = (torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),)
+        module = self.get_qdq_module(module, sample_input)
+        # Calibration ran the counter once. The lowered program starts its
+        # buffer from zero, so the reference has to as well.
+        module.count.zero_()
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_interpolate_bicubic(self):
         modules = [

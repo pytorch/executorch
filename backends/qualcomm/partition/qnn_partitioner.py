@@ -16,7 +16,10 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     PER_CHANNEL_GROUP_ENCODING,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.builders.utils import (
+    is_mutable_buffer_input,
+    is_parameter,
+)
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.serialization.qc_schema import (
     HtpArch,
@@ -510,12 +513,27 @@ class QnnPartitioner(Partitioner):
         if not self.skip_mutable_buffer:
             logger.info(
                 "Qnn partitioner will delegate torch mutable buffer with the same I/O address during the runtime, "
+                "except integer buffers, which stay on CPU, "
                 "so if your model contains mutable buffer, "
                 "then you can get the better performance with skip_mutable_buffer=False. "
                 "If you encounter accuracy issue during the runtime, "
                 "then please set `skip_mutable_buffer=True` and try again."
             )
             tag_mutated_buffer(edge_program)
+            # The QNN runtime does not load the starting value of a buffer that
+            # a delegate owns, so the buffer starts from leftover memory.
+            # Integer buffers, whose updates I64toI32 can make delegable, and
+            # other buffers that are not floating point stay on CPU and start
+            # like any other ExecuTorch buffer.
+            # TODO: https://github.com/pytorch/executorch/issues/24749, a
+            # delegated floating-point buffer still starts from leftover memory
+            # unless skip_mutable_buffer=True. Remove this special case once the
+            # QNN runtime initializes the buffers it owns.
+            for node in edge_program.graph.nodes:
+                if is_mutable_buffer_input(node, edge_program) and not (
+                    node.meta["val"].is_floating_point()
+                ):
+                    node.meta.pop("delegation_tag", None)
 
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
