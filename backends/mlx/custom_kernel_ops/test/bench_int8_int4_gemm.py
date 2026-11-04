@@ -18,8 +18,13 @@ the lowering:
       multiple of 32 dividing K).
     * ``BK = -1``: quantize kernel + full-K MPP ``int8 x int4b`` GEMM; MPP
       handles the whole K itself.
-The fastest config is reported against MLX. The Muse Glimmer estimate is
-``sum over shapes of (best time x times the shape occurs in the model)``.
+Tile selection has two rounds: every config is timed with ``--iters``, then
+the ``--refine-top`` fastest configs of each lowering (staged, full-K) are
+re-timed with ``--refine-iters`` and the fastest is kept. That config is then
+re-timed against MLX: the two alternate ``--final-repeats`` times and the
+median of each is the reported (official) number, so both are measured under
+the same GPU conditions. The Muse Glimmer estimate is ``sum over shapes of
+(official time x times the shape occurs in the model)``.
 
 Defaults cover speculative decoding / prefill (M = 4..512), fp16 and bf16, all
 shapes, and the full tile sweep. Just run::
@@ -28,10 +33,16 @@ shapes, and the full tile sweep. Just run::
 
 and send back the output. ``--verbose`` prints every tile config.
 
-Timing: each config / shape / M first runs ``--warmup`` untimed calls (so the
-kernel is compiled), then ``--iters`` calls built lazily and timed as a single
-``mx.eval``; the reported time is the average per call. The run pauses
-``--dtype-pause`` seconds between activation dtypes.
+Timing: each timing first runs ``--warmup`` untimed calls (so the kernel is
+compiled), then N calls built lazily as a dependent chain (each call's input
+is ``x0 + 0 * previous_output[:, :1]``) and timed as a single ``mx.eval``.
+The chain serializes calls like consecutive layers in a model; independent
+calls would let the GPU overlap them and hide per-call latency. The same chain
+without the GEMM is timed and subtracted, and the result is the average per
+call. N is ``--iters`` for the tile sweep and ``--final-iters`` for the
+official re-run.
+``--shape-pause`` seconds between shapes and ``--dtype-pause`` seconds between
+activation dtypes.
 Calls rotate across enough weight copies to exceed ``--rotate-mb`` so weights
 are not served from cache. int8_int4 times include activation quantization.
 
@@ -40,6 +51,7 @@ Requires MLX and an MPP-capable GPU (Metal 4).
 
 import argparse
 import math
+import statistics
 import time
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -108,12 +120,12 @@ def int8_int4_gemm(
     M, K = x.shape
     N = w_packed.shape[0]
     bm, bn, bk = tile
-    launch = dict(
-        grid=(math.ceil(N / bn) * op._THREADS, math.ceil(M / bm), 1),
-        threadgroup=(op._THREADS, 1, 1),
-        output_shapes=[(M, N)],
-        output_dtypes=[x.dtype],
-    )
+    launch = {
+        "grid": (math.ceil(N / bn) * op._THREADS, math.ceil(M / bm), 1),
+        "threadgroup": (op._THREADS, 1, 1),
+        "output_shapes": [(M, N)],
+        "output_dtypes": [x.dtype],
+    }
     template = [("T", x.dtype), ("N", N), ("K", K), ("BM", bm), ("BN", bn)]
     if bk != FULL_K:
         return _staged_kernel(
@@ -148,15 +160,25 @@ def check_int8_int4(
     return err.item()
 
 
-def time_per_call(fn: Callable[[int], mx.array], warmup: int, iters: int) -> float:
-    """Average seconds per call over ``iters`` timed runs after ``warmup``
-    untimed runs; ``fn(i)`` must build (not evaluate) run ``i``."""
+def time_per_call(
+    fn: Callable[[mx.array, int], mx.array], x0: mx.array, warmup: int, iters: int
+) -> float:
+    """Average serialized seconds per call; ``fn(x, i)`` must build (not
+    evaluate) run ``i`` on input ``x``."""
+
+    def chain(call: Optional[Callable[[mx.array, int], mx.array]]) -> float:
+        x = x0
+        for i in range(iters):
+            y = call(x, i) if call is not None else x
+            x = x0 + 0 * y[:, :1]
+        start = time.perf_counter()
+        mx.eval(x)
+        return time.perf_counter() - start
+
     for i in range(warmup):
-        mx.eval(fn(i))
-    outs = [fn(i) for i in range(iters)]
-    start = time.perf_counter()
-    mx.eval(outs)
-    return (time.perf_counter() - start) / iters
+        mx.eval(fn(x0, i))
+    chain(None)
+    return max(chain(fn) - chain(None), 0.0) / iters
 
 
 def tile_configs(K: int, args: argparse.Namespace) -> List[Tile]:
@@ -175,10 +197,17 @@ def tile_configs(K: int, args: argparse.Namespace) -> List[Tile]:
     return tiles
 
 
-def best(entries: List[Entry]) -> Optional[Entry]:
-    """Fastest config that ran and passed the accuracy check."""
-    ok = [e for e in entries if e[1] is not None and e[2] is not None and e[2] < 1e-2]
-    return min(ok, key=lambda e: e[1]) if ok else None
+def passed(entries: List[Entry]) -> List[Entry]:
+    """Configs that ran and passed the accuracy check."""
+    return [e for e in entries if e[1] is not None and e[2] is not None and e[2] < 1e-2]
+
+
+def refine_candidates(entries: List[Entry], top: int) -> List[Tile]:
+    """The ``top`` fastest passing tiles of each lowering (staged, full-K)."""
+    ok = sorted(passed(entries), key=lambda e: e[1])
+    full_k = [e[0] for e in ok if e[0][2] == FULL_K][:top]
+    staged = [e[0] for e in ok if e[0][2] != FULL_K][:top]
+    return full_k + staged
 
 
 def _random_bytes(shape: Tuple[int, ...]) -> mx.array:
@@ -188,7 +217,8 @@ def _random_bytes(shape: Tuple[int, ...]) -> mx.array:
 def bench_shape(
     name: str, dtype_name: str, ms: List[int], args: argparse.Namespace
 ) -> Dict[int, dict]:
-    """Returns {M: {"mlx": seconds, "int8": [Entry]}}."""
+    """Returns {M: {"mlx": seconds, "int8": [Entry], "best": (Tile, seconds)
+    or None}}; ``mlx`` and ``best`` are the official medians."""
     N, K, _ = SHAPES[name]
     dtype = DTYPES[dtype_name]
     gs = args.group_size
@@ -205,8 +235,13 @@ def bench_shape(
     ]
     mx.eval(w_packed, w_scale, mlx_w, mlx_scales, mlx_biases)
 
-    def timed(fn: Callable[[int], mx.array]) -> float:
-        return time_per_call(fn, args.warmup, args.iters)
+    def timed(
+        fn: Callable[[mx.array, int], mx.array], x0: mx.array, iters: int
+    ) -> float:
+        return time_per_call(fn, x0, args.warmup, iters)
+
+    def int8_call(xi: mx.array, i: int, tile: Tile) -> mx.array:
+        return int8_int4_gemm(xi, w_packed[i % copies], w_scale[i % copies], tile)
 
     results: Dict[int, dict] = {}
     for M in ms:
@@ -217,9 +252,7 @@ def bench_shape(
             try:
                 err = check_int8_int4(x, w_packed[0], w_scale[0], tile)
                 t = timed(
-                    lambda i: int8_int4_gemm(
-                        x, w_packed[i % copies], w_scale[i % copies], tile
-                    )
+                    lambda xi, i, tile=tile: int8_call(xi, i, tile), x, args.iters
                 )
             except Exception as e:  # compile or launch failure for this tile
                 reason = str(e).strip().splitlines()[0][:100]
@@ -233,9 +266,9 @@ def bench_shape(
                     flush=True,
                 )
 
-        def mlx_call(i: int) -> mx.array:
+        def mlx_call(xi: mx.array, i: int) -> mx.array:
             return mx.quantized_matmul(
-                x,
+                xi,
                 mlx_w[i % copies],
                 mlx_scales[i % copies],
                 mlx_biases[i % copies],
@@ -245,23 +278,50 @@ def bench_shape(
                 mode="affine",
             )
 
-        t_mlx = timed(mlx_call)
-        results[M] = {"mlx": t_mlx, "int8": entries}
+        candidates = refine_candidates(entries, args.refine_top)
+        if not candidates:
+            results[M] = {"mlx": None, "int8": entries, "best": None}
+            print(
+                f"  [{dtype_name}] {name:<8} M={M:<4} no int8_int4 config passed",
+                flush=True,
+            )
+            continue
 
-        b = best(entries)
-        summary = (
-            f"best {config_name(b[0])} {b[1] * 1e6:.1f} us, "
-            f"{t_mlx / b[1]:.2f}x vs mlx"
-            if b is not None
-            else "no int8_int4 config passed"
-        )
+        refined = {
+            tile: timed(
+                lambda xi, i, tile=tile: int8_call(xi, i, tile), x, args.refine_iters
+            )
+            for tile in candidates
+        }
+        tile = min(refined, key=refined.get)
+        if args.verbose:
+            ranked = ", ".join(
+                f"{config_name(c)} {t * 1e6:.1f}"
+                for c, t in sorted(refined.items(), key=lambda kv: kv[1])
+            )
+            print(f"    refine (us): {ranked}", flush=True)
+
+        t_int8s, t_mlxs = [], []
+        for _ in range(args.final_repeats):
+            t_int8s.append(
+                timed(
+                    lambda xi, i, tile=tile: int8_call(xi, i, tile),
+                    x,
+                    args.final_iters,
+                )
+            )
+            t_mlxs.append(timed(mlx_call, x, args.final_iters))
+        t_int8 = statistics.median(t_int8s)
+        t_mlx = statistics.median(t_mlxs)
+        results[M] = {"mlx": t_mlx, "int8": entries, "best": (tile, t_int8)}
         print(
-            f"  [{dtype_name}] {name:<8} M={M:<4} mlx {t_mlx * 1e6:>9.1f} us | {summary}",
+            f"  [{dtype_name}] {name:<8} M={M:<4} {config_name(tile):<20} "
+            f"int8_int4 {t_int8 * 1e6:>9.1f} us | mlx {t_mlx * 1e6:>9.1f} us | "
+            f"{t_mlx / t_int8:.2f}x  (refine {refined[tile] * 1e6:.1f} us, "
+            f"{len(candidates)} candidates)",
             flush=True,
         )
 
-    del w_packed, w_scale, mlx_w, mlx_scales, mlx_biases
-    mx.clear_cache()
     return results
 
 
@@ -270,6 +330,7 @@ def print_dtype_report(
 ) -> None:
     print()
     print(f"=== {dtype_name}: best int8_int4 config vs MLX 4-bit affine gs={gs} ===")
+    print("(official: refined winner and MLX re-timed alternately, medians)")
     header = (
         f"{'shape':<8} {'N':>7} {'K':>6} {'M':>4} | {'int8_int4 us':>12} "
         f"{'TOPS':>6} {'config':<20} | {'mlx us':>10} {'TOPS':>6} | {'speedup':>7}"
@@ -281,17 +342,16 @@ def print_dtype_report(
         for M in ms:
             ops = 2 * M * N * K
             t_mlx = shape_res[M]["mlx"]
-            b = best(shape_res[M]["int8"])
-            mlx_cols = f"{t_mlx * 1e6:>10.1f} {ops / t_mlx / 1e12:>6.2f}"
+            b = shape_res[M]["best"]
             if b is None:
-                int8_cols = f"{'failed':>12} {'':>6} {'':<20}"
-                speedup = f"{'-':>7}"
-            else:
-                tile, t, _ = b
-                int8_cols = (
-                    f"{t * 1e6:>12.1f} {ops / t / 1e12:>6.2f} {config_name(tile):<20}"
-                )
-                speedup = f"{t_mlx / t:>6.2f}x"
+                print(f"{name:<8} {N:>7} {K:>6} {M:>4} | {'failed':>12}")
+                continue
+            mlx_cols = f"{t_mlx * 1e6:>10.1f} {ops / t_mlx / 1e12:>6.2f}"
+            tile, t = b
+            int8_cols = (
+                f"{t * 1e6:>12.1f} {ops / t / 1e12:>6.2f} {config_name(tile):<20}"
+            )
+            speedup = f"{t_mlx / t:>6.2f}x"
             print(
                 f"{name:<8} {N:>7} {K:>6} {M:>4} | {int8_cols} | {mlx_cols} | {speedup}"
             )
@@ -305,11 +365,11 @@ def print_dtype_report(
     print(header)
     print("-" * len(header))
     for M in ms:
-        bests = {n: best(res[n][M]["int8"]) for n in res}
-        t_mlx = sum(SHAPES[n][2] * res[n][M]["mlx"] for n in res)
+        bests = {n: res[n][M]["best"] for n in res}
         if any(b is None for b in bests.values()):
-            print(f"{M:>4} | {'n/a':>12} | {t_mlx * 1e3:>10.2f} | {'-':>7}")
+            print(f"{M:>4} | {'n/a':>12} | {'n/a':>10} | {'-':>7}")
             continue
+        t_mlx = sum(SHAPES[n][2] * res[n][M]["mlx"] for n in res)
         t_int8 = sum(SHAPES[n][2] * bests[n][1] for n in res)
         print(
             f"{M:>4} | {t_int8 * 1e3:>12.2f} | {t_mlx * 1e3:>10.2f} | "
@@ -357,13 +417,45 @@ def main() -> None:
         help="Untimed runs per config / shape / M before timing (compiles kernels).",
     )
     parser.add_argument(
-        "--iters", type=int, default=10, help="Timed runs per config / shape / M."
+        "--iters", type=int, default=10, help="Timed runs per tile config in the sweep."
+    )
+    parser.add_argument(
+        "--refine-top",
+        type=int,
+        default=3,
+        help="Fastest sweep configs per lowering (staged, full-K) re-timed in "
+        "the refine round.",
+    )
+    parser.add_argument(
+        "--refine-iters",
+        type=int,
+        default=20,
+        help="Timed runs per config in the refine round.",
+    )
+    parser.add_argument(
+        "--final-iters",
+        type=int,
+        default=100,
+        help="Timed runs per official re-timing of the refined winner and MLX.",
+    )
+    parser.add_argument(
+        "--final-repeats",
+        type=int,
+        default=5,
+        help="Alternating re-timings of the refined winner and MLX; the medians "
+        "are the official numbers.",
     )
     parser.add_argument(
         "--dtype-pause",
         type=float,
         default=60,
         help="Seconds to pause between activation dtypes.",
+    )
+    parser.add_argument(
+        "--shape-pause",
+        type=float,
+        default=10,
+        help="Seconds to pause between shapes within a dtype.",
     )
     parser.add_argument(
         "--rotate-mb",
@@ -381,7 +473,9 @@ def main() -> None:
     print(
         f"device: {info.get('device_name', '?')}  mlx: {mx.__version__}  "
         f"M: {ms}  dtypes: {args.dtypes}  mlx group_size: {args.group_size}  "
-        f"warmup: {args.warmup}  iters: {args.iters}",
+        f"warmup: {args.warmup}  sweep iters: {args.iters}  "
+        f"refine: top {args.refine_top}/lowering x {args.refine_iters} iters  "
+        f"final iters: {args.final_iters}  final repeats: {args.final_repeats}",
         flush=True,
     )
 
@@ -389,7 +483,13 @@ def main() -> None:
         if i > 0 and args.dtype_pause > 0:
             print(f"pausing {args.dtype_pause:g}s before {dtype_name}...", flush=True)
             time.sleep(args.dtype_pause)
-        res = {name: bench_shape(name, dtype_name, ms, args) for name in args.shapes}
+        res = {}
+        for j, name in enumerate(args.shapes):
+            if j > 0 and args.shape_pause > 0:
+                print(f"pausing {args.shape_pause:g}s before {name}...", flush=True)
+                time.sleep(args.shape_pause)
+            res[name] = bench_shape(name, dtype_name, ms, args)
+            mx.clear_cache()
         print_dtype_report(dtype_name, ms, res, args.group_size)
         print(flush=True)
 
