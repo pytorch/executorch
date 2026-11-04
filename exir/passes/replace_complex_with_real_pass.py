@@ -44,6 +44,7 @@ import logging
 import operator
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
+import executorch.exir.passes.dim_order_ops_registry  # noqa: F401
 import torch
 import torch.utils._pytree as pytree
 from executorch.exir.dialects._ops import ops as exir_ops

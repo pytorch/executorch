@@ -829,21 +829,23 @@ class TestProgramManagers(unittest.TestCase):
             def __init__(self, precision):
                 super().__init__()
                 self.precision = precision
-                angles = torch.outer(torch.arange(8.0), torch.rand(4)).to(precision)
+                angles = torch.outer(torch.arange(16.0), torch.rand(4)).to(precision)
                 self.register_buffer(
                     "freqs", torch.polar(torch.ones_like(angles), angles)
                 )
 
             def forward(self, x, shift, gain):
                 # Export asserts the dtype of a tensor that .to() reads.
-                freqs = self.freqs.to(x.device)
+                freqs = self.freqs.to(x.device)[: x.shape[1]]
                 pairs = torch.view_as_complex(
                     x.to(self.precision).unflatten(-1, (-1, 2))
                 )
                 # A factor with no dims, real or complex, keeps the precision
                 # of its product.
                 spin = torch.polar(gain, gain) * shift
-                rotated = pairs * freqs * shift.to(freqs.dtype) * gain * spin
+                # The scalar comes first: it casts its input, so later in the
+                # chain it would hide a wrong dtype from the products before it.
+                rotated = pairs * 0.5 * freqs * shift.to(freqs.dtype) * gain * spin
                 # Views of the pair keep the dims of the complex tensor.
                 rotated = rotated.transpose(0, 1).reshape(8, -1)
                 return torch.view_as_real(rotated).flatten(-2)
@@ -855,6 +857,18 @@ class TestProgramManagers(unittest.TestCase):
                 edge = to_edge_transform_and_lower(export(model, inputs))
                 program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
                 torch.testing.assert_close(program.forward(inputs)[0], model(*inputs))
+
+    def test_to_edge_transform_and_lower_keeps_complex_kernels(self):
+        class Spectrum(torch.nn.Module):
+            def forward(self, x):
+                return torch.view_as_real(torch.fft.rfft(x))
+
+        # A program with complex ops that the pass cannot rewrite but the
+        # portable kernels support still lowers.
+        x = torch.randn(2, 16)
+        edge = to_edge_transform_and_lower(export(Spectrum(), (x,)))
+        program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        torch.testing.assert_close(program.forward((x,))[0], Spectrum()(x))
 
     def test_to_edge_transform_and_lower_with_exception(self):
         class TestLinear(torch.nn.Module):
