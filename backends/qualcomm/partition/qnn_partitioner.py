@@ -16,7 +16,10 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     PER_CHANNEL_GROUP_ENCODING,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.builders.utils import (
+    is_mutable_buffer_input,
+    is_parameter,
+)
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.serialization.qc_schema import (
     HtpArch,
@@ -512,10 +515,24 @@ class QnnPartitioner(Partitioner):
                 "Qnn partitioner will delegate torch mutable buffer with the same I/O address during the runtime, "
                 "so if your model contains mutable buffer, "
                 "then you can get the better performance with skip_mutable_buffer=False. "
+                "Buffers that are not floating point stay on CPU. "
                 "If you encounter accuracy issue during the runtime, "
                 "then please set `skip_mutable_buffer=True` and try again."
             )
             tag_mutated_buffer(edge_program)
+            # A buffer that a delegate owns starts at zero: the QNN runtime
+            # does not load the starting value that InitializedMutableBufferPass
+            # saves in the program. Buffers that are not floating point stay
+            # on CPU, which loads it.
+            # TODO: https://github.com/pytorch/executorch/issues/24749, this is
+            # a stopgap. A delegated floating-point buffer still starts at zero
+            # unless skip_mutable_buffer=True. Remove this special case once the
+            # QNN runtime loads the starting value of the buffers it owns.
+            for node in edge_program.graph.nodes:
+                if is_mutable_buffer_input(node, edge_program) and not (
+                    node.meta["val"].is_floating_point()
+                ):
+                    node.meta.pop("delegation_tag", None)
 
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
