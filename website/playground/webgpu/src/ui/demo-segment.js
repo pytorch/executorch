@@ -11,6 +11,7 @@ import { appIcon } from './app-icons.js';
 import { hfBadge } from './hf-badge.js';
 import { icon } from './icons.js';
 import { onDeviceNote } from './on-device.js';
+import { confirmModelMemory } from './memory-guard.js';
 
 const COLORS = ['#3b82f6', '#f97316', '#10b981', '#e11d48', '#8b5cf6', '#eab308', '#06b6d4', '#ec4899'];
 const MAX_WORKING_SIDE = 2048;
@@ -125,6 +126,7 @@ export function mountSegment(root, demo) {
 
   async function load() {
     if (state.phase === 'loading' || gpuState.get().status !== 'ready') return;
+    if (!(await confirmModelMemory(model))) return;
     const controller = new AbortController();
     loadAbort = controller;
     Object.assign(state, { phase: 'loading', loadError: null, load: { stage: 'runtime', done: new Set(), loaded: 0, total: 0, fromCache: false } });

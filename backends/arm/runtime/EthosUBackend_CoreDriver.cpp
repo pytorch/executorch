@@ -17,6 +17,7 @@
 #include <ethosu_driver.h>
 
 #include <executorch/backends/arm/runtime/EthosUBackend_Internal.h>
+#include <executorch/backends/arm/runtime/EthosUBackend_Pmu.h>
 #include <executorch/runtime/core/error.h>
 
 using executorch::runtime::BackendExecutionContext;
@@ -133,6 +134,9 @@ Error platform_execute(
       handles.scratch_data_size,
       ethosu_fast_scratch_size};
 #endif
+  executorch::backends::arm::EthosUInvocationContext invocation_context{};
+  invocation_context.delegate_handle =
+      reinterpret_cast<uintptr_t>(execution_handle);
   int result = ethosu_invoke_v3(
       driver.get(),
       static_cast<const void*>(handles.cmd_data),
@@ -140,7 +144,7 @@ Error platform_execute(
       bases,
       bases_size,
       ETHOSU_NUM_BASE_ADDRS, /* fixed array of pointers to binary interface*/
-      nullptr);
+      &invocation_context);
 
   if (result != 0) {
     ET_LOG(Error, "Ethos-U invocation failed error (%d)", result);
@@ -149,9 +153,26 @@ Error platform_execute(
 
   // Write outputs from scratch into EValue pointers.
   for (int i = 0; i < output_count; i++) {
-    const char* output_addr = ethosu_scratch + handles.outputs->io[i].offset;
+    // Reject offsets that would copy from outside the scratch buffer.
+    const int out_offset = handles.outputs->io[i].offset;
     auto tensor_out = args[input_count + i]->toTensor();
     const size_t tensor_bytes = tensor_out.nbytes();
+    if (out_offset < 0 ||
+        static_cast<size_t>(out_offset) + tensor_bytes >
+            handles.scratch_data_size) {
+      ET_LOG(
+          Error,
+          "Output %d scratch offset %d + size %zu out of range for scratch size %zu",
+          i,
+          out_offset,
+          tensor_bytes,
+          handles.scratch_data_size);
+      return Error::InvalidProgram;
+    }
+    const char* output_addr = ethosu_scratch + out_offset;
+    if (output_addr == tensor_out.mutable_data_ptr<char>()) {
+      continue;
+    }
 
     // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)

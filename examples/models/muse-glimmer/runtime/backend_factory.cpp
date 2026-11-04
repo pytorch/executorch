@@ -11,6 +11,7 @@
 #endif
 #if defined(EXECUTORCH_BUILD_CUDA)
 #include <executorch/backends/cuda/batching/cuda_executor.h>
+#include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
 #endif
 
 #include <memory>
@@ -32,9 +33,12 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
         InvalidArgument,
         "Muse Glimmer CUDA: a session needs room for a prompt and prediction");
     ET_CHECK_OR_RETURN_ERROR(
-        !config.use_dflash && config.dflash_n_draft == 0,
-        NotSupported,
-        "Muse Glimmer CUDA: DFlash batching is not supported");
+        config.use_dflash || config.dflash_n_draft == 0,
+        InvalidArgument,
+        "Muse Glimmer CUDA: dflash_n_draft requires DFlash");
+    if (config.use_dflash) {
+      return MuseGlimmerCudaDFlashExecutor::create(config);
+    }
     cb::CudaExecutorConfig executor_config;
     executor_config.model_path = config.model_path;
     if (!config.data_path.empty()) {

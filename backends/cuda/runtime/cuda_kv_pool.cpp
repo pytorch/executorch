@@ -183,6 +183,22 @@ Error CudaKVPool::mark_step_done() {
   return Error::Ok;
 }
 
+Error CudaKVPool::synchronize(bool all_streams) {
+  if (!device_known_) {
+    return Error::Ok;
+  }
+  const auto device = CUDAGuard::create(device_);
+  ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+  const cudaError_t error =
+      all_streams ? cudaDeviceSynchronize() : cudaStreamSynchronize(stream_);
+  ET_CHECK_OR_RETURN_ERROR(
+      error == cudaSuccess,
+      Internal,
+      "offgraph_kv: cannot synchronize the step: %s",
+      cudaGetErrorString(error));
+  return Error::Ok;
+}
+
 void* CudaKVPool::side_buffer(size_t index) const {
   return index < side_buffers_.size() ? side_buffers_[index] : nullptr;
 }

@@ -151,9 +151,11 @@ if(MSVC AND EXECUTORCH_BUILD_CUDA)
       TARGET ${parakeet_target}
       POST_BUILD
       COMMAND
-        ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
+        ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_RUNTIME_DLLS:${parakeet_target}>
         $<TARGET_FILE_DIR:${parakeet_target}>
-      COMMENT "Copying aoti_cuda_shims.dll to ${parakeet_target} directory"
+      COMMENT "Copying runtime DLLs to ${parakeet_target} directory"
+      COMMAND_EXPAND_LISTS
     )
   endforeach()
 endif()

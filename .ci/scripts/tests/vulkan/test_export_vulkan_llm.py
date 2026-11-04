@@ -13,7 +13,11 @@ import runpy
 import shlex
 import subprocess
 import sys
+import time
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from threading import Thread
 from types import SimpleNamespace
 
 import pytest
@@ -126,6 +130,158 @@ def test_existing_hf_download_accepts_matching_hash(tmp_path, monkeypatch):
     assert module.download_hf_snapshot(
         "test/model", "r" * 40, expected_sha256=hashlib.sha256(weights).hexdigest()
     ) == str(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "headers, expected_wait",
+    [
+        (
+            {
+                "RateLimit": '"api";r=0;t=36',
+                "RateLimit-Policy": '"fixed window";"api";q=500;w=300',
+            },
+            37,
+        ),
+        ({"Retry-After": "36"}, 37),
+        ({"Retry-After": "Mon, 19 Oct 2026 17:50:36 GMT"}, 37),
+        ({"RateLimit": '"api";r=0;t=36', "Retry-After": "50"}, 51),
+        ({"RateLimit": '"api";r=0;t=36', "Retry-After": "invalid"}, 37),
+        ({"RateLimit": '"api";r=10;t=900', "Retry-After": "36"}, 37),
+    ],
+)
+def test_hf_snapshot_retries_rate_limited_repo_tree(
+    tmp_path, monkeypatch, capsys, headers, expected_wait
+):
+    from huggingface_hub import HfApi
+
+    module = load_existing_module("examples/models/llama/hf_download.py")
+    requests = []
+    calls = []
+    waits = []
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    monkeypatch.setattr(time, "sleep", waits.append)
+    monkeypatch.setattr(
+        time,
+        "time",
+        lambda: datetime(2026, 10, 19, 17, 50, tzinfo=timezone.utc).timestamp(),
+    )
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append(self.path)
+            self.send_response(429 if len(requests) == 1 else 200)
+            if len(requests) == 1:
+                for name, value in headers.items():
+                    self.send_header(name, value)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(
+                b'{"error": "Rate limited"}' if len(requests) == 1 else b"[]"
+            )
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever)
+    thread.start()
+    api = HfApi(endpoint=f"http://127.0.0.1:{server.server_port}")
+
+    def snapshot(**kwargs):
+        calls.append(kwargs)
+        list(
+            api.list_repo_tree(
+                kwargs["repo_id"],
+                revision=kwargs["revision"],
+                token=kwargs["token"],
+                recursive=True,
+            )
+        )
+        return str(tmp_path)
+
+    monkeypatch.setattr(module, "snapshot_download", snapshot)
+    try:
+        assert module.download_hf_snapshot("test/model", "r" * 40) == str(tmp_path)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    assert len(requests) == 2 and requests[0] == requests[1]
+    assert (
+        calls
+        == [
+            {
+                "repo_id": "test/model",
+                "revision": "r" * 40,
+                "allow_patterns": ["*.safetensors", "*.json"],
+                "token": False,
+            }
+        ]
+        * 2
+    )
+    assert waits == [expected_wait]
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert str(expected_wait) in output.err
+
+
+@pytest.mark.parametrize(
+    "headers", [{}, {"Retry-After": "invalid"}, {"RateLimit": '"api";r=10;t=900'}]
+)
+def test_hf_snapshot_rate_limit_retry_exhaustion(monkeypatch, headers):
+    import httpx
+    from huggingface_hub.errors import HfHubHTTPError
+
+    module = load_existing_module("examples/models/llama/hf_download.py")
+    response = httpx.Response(
+        429,
+        headers=headers,
+        request=httpx.Request("GET", "https://example.com"),
+    )
+    error = HfHubHTTPError("Rate limited", response=response)
+    calls = []
+    waits = []
+
+    def rate_limited(**kwargs):
+        calls.append(kwargs)
+        raise error
+
+    monkeypatch.setattr(module, "snapshot_download", rate_limited)
+    monkeypatch.setattr(time, "sleep", waits.append)
+    with pytest.raises(HfHubHTTPError) as raised:
+        module.download_hf_snapshot("test/model", "r" * 40)
+    assert raised.value is error
+    assert len(calls) == 6
+    assert waits == [60, 120, 240, 300, 300]
+
+
+@pytest.mark.parametrize("status", [401, 404, 503, None])
+def test_hf_snapshot_does_not_retry_other_http_errors(monkeypatch, status):
+    import httpx
+    from huggingface_hub.errors import HfHubHTTPError
+
+    module = load_existing_module("examples/models/llama/hf_download.py")
+    response = httpx.Response(
+        status or 429,
+        request=httpx.Request("GET", "https://example.com"),
+    )
+    error = HfHubHTTPError("Download failed", response=response)
+    if status is None:
+        error.response = None
+    calls = []
+    waits = []
+
+    def failed(**kwargs):
+        calls.append(kwargs)
+        raise error
+
+    monkeypatch.setattr(module, "snapshot_download", failed)
+    monkeypatch.setattr(time, "sleep", waits.append)
+    with pytest.raises(HfHubHTTPError) as raised:
+        module.download_hf_snapshot("test/model", "r" * 40)
+    assert raised.value is error
+    assert len(calls) == 1
+    assert waits == []
 
 
 def test_snapshot_cli_exposes_pinned_download_and_checksum(

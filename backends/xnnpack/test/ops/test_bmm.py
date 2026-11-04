@@ -7,7 +7,8 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.test.tester import Tester, ToEdgeTransformAndLower
 
 
 class TestBMM(unittest.TestCase):
@@ -47,3 +48,23 @@ class TestBMM(unittest.TestCase):
             torch.randn(2, 4, 6),
         )
         self._test_bmm(inputs)
+
+    def test_bf16_bmm(self):
+        inputs = (
+            torch.randn(2, 3, 4).to(torch.bfloat16),
+            torch.randn(2, 4, 6).to(torch.bfloat16),
+        )
+        (
+            Tester(self.BMM(), inputs)
+            .export()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    partitioners=[XnnpackPartitioner(enable_bf16=True)]
+                )
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(atol=0.01, rtol=0.01)
+        )

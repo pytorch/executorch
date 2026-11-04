@@ -42,6 +42,15 @@ def arguments(tmp_path):
     ]
 
 
+@pytest.mark.parametrize("captures", [0, 1, 8])
+def test_prefix_capture_override_reaches_worker(arguments, captures):
+    args = serve_batching._parse_args(
+        arguments
+        + ["--prefix-cache-entries", "4", "--prefix-capture-slots", str(captures)]
+    )
+    assert f"--prefix_capture_slots={captures}" in serve_batching._worker_command(args)
+
+
 def test_worker_forwards_mg_options(arguments):
     args = serve_batching._parse_args(
         arguments
@@ -102,6 +111,8 @@ def test_draft_count_forwarded(arguments, n_draft):
         ("--max-vision-patches", str(1 << 31)),
         ("--prefix-checkpoint-interval", "8"),
         ("--prefix-checkpoint-interval", "-1"),
+        ("--prefix-capture-slots", "-1"),
+        ("--prefix-capture-slots", str(1 << 31)),
     ],
 )
 def test_launcher_rejects_invalid_options(arguments, flag, value):
@@ -123,10 +134,24 @@ def test_cuda_worker_takes_the_weights_file(arguments, tmp_path):
     assert "--pos_embed_path" not in flags
 
 
-@pytest.mark.parametrize("case", ["no_weights", "pos_embed", "dflash"])
-def test_cuda_launcher_rejects_missing_weights_vision_or_dflash(
-    arguments, tmp_path, case
-):
+def test_cuda_launcher_forwards_dflash(arguments, tmp_path):
+    data = tmp_path / "aoti_cuda_blob.ptd"
+    data.touch()
+    args = serve_batching._parse_args(
+        arguments
+        + ["--backend", "cuda", "--data-path", str(data), "--dflash"]
+        + ["--dflash-n-draft", "15"]
+    )
+    flags = dict(arg.split("=", 1) for arg in serve_batching._worker_command(args)[1:])
+    assert (flags["--backend"], flags["--dflash"], flags["--dflash_n_draft"]) == (
+        "cuda",
+        "true",
+        "15",
+    )
+
+
+@pytest.mark.parametrize("case", ["no_weights", "pos_embed"])
+def test_cuda_launcher_rejects_missing_weights_or_vision(arguments, tmp_path, case):
     data = tmp_path / "aoti_cuda_blob.ptd"
     table = tmp_path / "pos_embed.bin"
     data.touch()
@@ -136,8 +161,6 @@ def test_cuda_launcher_rejects_missing_weights_vision_or_dflash(
         argv += ["--data-path", str(data)]
     if case == "pos_embed":
         argv += ["--pos-embed-path", str(table)]
-    if case == "dflash":
-        argv += ["--dflash"]
     with pytest.raises(SystemExit) as error:
         serve_batching._parse_args(argv)
     assert error.value.code == 2

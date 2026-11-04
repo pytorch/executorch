@@ -52,28 +52,29 @@ else:
 
 
 # Auto-discover the OpenVINO C library path from the pip-installed openvino
-# package so the C++ backend's dlopen("libopenvino_c.so") works without the
-# user having to set LD_LIBRARY_PATH or OPENVINO_LIB_PATH manually.
+# package so the C++ backend can load it without the user having to set
+# OPENVINO_LIB_PATH or the platform's library search path manually.
 if not os.environ.get("OPENVINO_LIB_PATH"):
     try:
         import glob
         import importlib.util
 
+        _ov_c_lib = "openvino_c.dll" if sys.platform == "win32" else "libopenvino_c.so"
         spec = importlib.util.find_spec("openvino")
         if spec is not None and spec.submodule_search_locations:
             _ov_dir = spec.submodule_search_locations[0]
-            _ov_libs = sorted(
-                glob.glob(os.path.join(_ov_dir, "libs", "libopenvino_c.so*"))
-            )
+            _ov_libs = sorted(glob.glob(os.path.join(_ov_dir, "libs", _ov_c_lib + "*")))
             if _ov_libs:
                 os.environ["OPENVINO_LIB_PATH"] = _ov_libs[0]
             else:
                 logger.warning(
-                    "OpenVINO package found but libopenvino_c.so not in %s; "
+                    "OpenVINO package found but %s not in %s; "
                     "set OPENVINO_LIB_PATH manually if needed",
+                    _ov_c_lib,
                     os.path.join(_ov_dir, "libs"),
                 )
             del _ov_libs, _ov_dir, spec
+        del _ov_c_lib
     except Exception as e:
         logger.debug("OpenVINO auto-discovery failed: %s", e)
 

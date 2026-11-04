@@ -14,7 +14,6 @@ These assert the HTTP/wire contract only.
 import asyncio
 
 import pytest
-
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.errors import GenerationError
 from executorch.examples.llm_server.python.serving_chat import ServingChat
@@ -366,16 +365,20 @@ class _HFToolSpecials:
     eos_token = "<|im_end|>"
 
 
-def test_stop_set_narrow_but_strip_set_broad():
+@pytest.mark.parametrize("ignore_eos", [False, True])
+def test_stop_set_narrow_but_strip_set_broad(ignore_eos):
     # The generation/pre-parse-truncation set is
     # NARROW (turn terminators only) so a <tool_call> is never halted or cut
     # before the parser sees it; the final content-strip set stays BROAD so stray
     # specials can't leak into visible content.
-    from types import SimpleNamespace
+    from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
+    from executorch.examples.llm_server.python.tool_parsers import HermesDetector
 
     template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
     template._hf = _HFToolSpecials()
-    serving = ServingChat(_RaisingRuntime(), template, "test-model")
+    serving = ServingChat(
+        _RaisingRuntime(), template, "test-model", tool_detector_cls=HermesDetector
+    )
 
     assert "<|im_end|>" in serving._stops  # terminator kept
     assert "<tool_call>" not in serving._stops  # delimiter excluded
@@ -391,7 +394,15 @@ def test_stop_set_narrow_but_strip_set_broad():
         "sure<tool_call>\n<function=f>\n<parameter=x>\n1\n"
         "</parameter>\n</function>\n</tool_call>"
     )
-    assert serving._truncate_raw(raw, SimpleNamespace(stop=None)) == raw
+    req = ChatCompletionRequest(
+        model="test-model",
+        messages=[],
+        ignore_eos=ignore_eos,
+        tools=[{"type": "function", "function": {"name": "f"}}],
+    )
+    assert serving._truncate_raw(raw, req) == raw
+    req.tool_choice = "none"
+    assert serving._truncate_raw(raw, req) == "sure"
 
 
 def test_injected_assistant_exemplar_falls_back_to_text():
@@ -424,3 +435,34 @@ def test_injected_assistant_exemplar_falls_back_to_text():
         template_kwargs=None,
     )
     assert out.text == "X" and out.segments is None  # safe text fallback
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_hidden_tokens_are_not_spliced_into_next_turn(make_client, stream):
+    client, fake = make_client(
+        tokens=["answer", "<|im_end|>", "hidden"],
+        max_named_sessions=2,
+        gen_ids=[7, 8, 9],
+        finish_reason="length",
+    )
+    messages = [{"role": "user", "content": "hi"}]
+    first = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": messages,
+            "session_id": "s",
+            "ignore_eos": True,
+            "stream": stream,
+            "max_tokens": 3,
+        },
+    )
+    assert first.status_code == 200
+    messages.extend(
+        [
+            {"role": "assistant", "content": "answer"},
+            {"role": "user", "content": "more"},
+        ]
+    )
+    assert _chat_msgs(client, messages, "s").status_code == 200
+    assert fake.captured_config.prompt_segments is None

@@ -56,6 +56,15 @@ using AOTInductorModelContainerGetConstantDataSizeFunc =
         aoti::AOTInductorModelContainerHandle container_handle,
         size_t idx,
         size_t* data_size);
+using AOTInductorModelContainerGetConstantTypeFunc = aoti::AOTIRuntimeError (*)(
+    aoti::AOTInductorModelContainerHandle container_handle,
+    size_t idx,
+    int32_t* type);
+using AOTInductorModelContainerGetConstantFromFoldedFunc =
+    aoti::AOTIRuntimeError (*)(
+        aoti::AOTInductorModelContainerHandle container_handle,
+        size_t idx,
+        bool* from_folded);
 struct CudaWeightStorage {
   void* data{nullptr};
   size_t nbytes{0};
@@ -94,8 +103,12 @@ struct CudaWeightStorage {
 // Phases of the CUDA graph lifecycle for a delegate handle.
 //
 // The transition flow is:
-//   Disabled  ──(if CUDA graph is enabled for this method)──▶  Warmup
+//   Disabled  ──(if CUDA graph is enabled for this method, the device
+//                has memory pools, and every constant is known to be in
+//                device memory)──▶  Warmup
 //   Warmup    ──(after `warmup_remaining` execute() calls)──▶  Replay
+//   Warmup    ──(if the capture fails, or an output is not laid out
+//                like its ETensor)──▶  Disabled
 //
 // - Disabled: CUDA graph is not used for this method. Every execute() runs
 //   eagerly through the normal kernel-launch path.
@@ -109,7 +122,9 @@ struct CudaWeightStorage {
 // - Replay:   The captured `graph_exec` is launched on every execute() call.
 //   Inputs are memcpy'd into the static input buffers, the graph is replayed,
 //   and outputs are memcpy'd back from the static output buffers. No tensor
-//   setup or kernel launches happen on the host hot path.
+//   setup or kernel launches happen on the host hot path. The graph only
+//   works for the input shapes it was captured with, so a call whose input
+//   shapes differ from the capture call fails with InvalidArgument.
 enum class CudaGraphPhase {
   Disabled = 0,
   Warmup = 1,
@@ -132,6 +147,9 @@ struct CudaGraphState {
   std::vector<void*> static_output_ptrs;
   std::vector<size_t> static_input_nbytes;
   std::vector<size_t> static_output_nbytes;
+  // An input with another shape of the same byte count would replay with the
+  // captured shape and return a wrong result with no error.
+  std::vector<std::vector<int64_t>> static_input_sizes;
 
   // Allocations the graph makes and never frees -- the outputs AOTI allocates
   // while being captured. AutoFreeOnLaunch frees one launch's before the next
@@ -154,7 +172,8 @@ struct CudaGraphState {
   }
 
   // Records the graph's outstanding allocations: every memory-allocation node
-  // without a matching free node. Call once the graph is captured.
+  // without a matching free node. Call once the graph has launched: only a
+  // launch allocates them, so freeing them before one fails.
   void note_graph_allocations() {
     graph_allocations.clear();
 #if !defined(EXECUTORCH_USE_HIP)
@@ -218,6 +237,7 @@ struct CudaGraphState {
     static_output_ptrs.clear();
     static_input_nbytes.clear();
     static_output_nbytes.clear();
+    static_input_sizes.clear();
   }
 
   // Drops the captured graph so a new one is captured, for when memory the
@@ -244,6 +264,7 @@ struct CudaGraphState {
         static_output_ptrs(std::move(other.static_output_ptrs)),
         static_input_nbytes(std::move(other.static_input_nbytes)),
         static_output_nbytes(std::move(other.static_output_nbytes)),
+        static_input_sizes(std::move(other.static_input_sizes)),
         graph_allocations(std::move(other.graph_allocations)) {
     other.graph = nullptr;
     other.graph_exec = nullptr;
@@ -261,6 +282,7 @@ struct CudaGraphState {
       static_output_ptrs = std::move(other.static_output_ptrs);
       static_input_nbytes = std::move(other.static_input_nbytes);
       static_output_nbytes = std::move(other.static_output_nbytes);
+      static_input_sizes = std::move(other.static_input_sizes);
       graph_allocations = std::move(other.graph_allocations);
 
       other.graph = nullptr;
@@ -285,6 +307,11 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // Bytes a constant's compiled shape spans; the off-graph KV cache checks its
   // storage against it before binding.
   AOTInductorModelContainerGetConstantDataSizeFunc get_constant_data_size{
+      nullptr};
+  // With these, FQN weight binding checks completeness itself instead of
+  // AOTI's full update, which warns once per off-graph KV buffer on every load.
+  AOTInductorModelContainerGetConstantTypeFunc get_constant_type{nullptr};
+  AOTInductorModelContainerGetConstantFromFoldedFunc get_constant_from_folded{
       nullptr};
 
   // The per-thread stream. Nothing owns it: the value is a fixed sentinel the

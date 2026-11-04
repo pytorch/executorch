@@ -19,7 +19,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_tagged_as_implicit_q_dq,
     tag_as_implicit_q_dq,
 )
-from executorch.backends.xnnpack.utils.utils import is_param_node
+from executorch.backends.xnnpack.utils.utils import is_dtype_cast, is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 
@@ -61,6 +61,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
     memory_sensitive_ops_nhwc = {
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
+        exir_ops.edge.aten.upsample_nearest2d.vec,
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.max_pool2d.default,
         exir_ops.edge.aten.amax.default,
@@ -126,7 +127,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             if len(quantize_node.all_input_nodes) > 0:
                 actual_node = quantize_node.args[0]
                 if actual_node.op == "placeholder":
-                    return ChannelsLastTaggedReshapePass._is_nhwc_tensor(
+                    return ChannelsLastTaggedReshapePass.is_nhwc_tensor(
                         actual_node.meta["val"][0]
                     )
                 else:
@@ -143,7 +144,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             if len(quantize_node.all_input_nodes) > 0:
                 actual_node = quantize_node.args[0]
                 if actual_node.op == "placeholder":
-                    return not ChannelsLastTaggedReshapePass._is_nhwc_tensor(
+                    return not ChannelsLastTaggedReshapePass.is_nhwc_tensor(
                         actual_node.meta["val"][0]
                     )
                 else:
@@ -154,7 +155,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         return not ChannelsLastTaggedReshapePass.is_nhwc_node(node)
 
     @staticmethod
-    def _is_nhwc_tensor(tensor: torch.Tensor) -> bool:
+    def is_nhwc_tensor(tensor: torch.Tensor) -> bool:
         nhwc = tensor.is_contiguous(memory_format=torch.channels_last)
         nchw = tensor.is_contiguous()
         # if both are true false
@@ -171,7 +172,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             return nhwc
 
     def _is_nhwc(self, tensor: torch.Tensor) -> bool:
-        return ChannelsLastTaggedReshapePass._is_nhwc_tensor(tensor)
+        return ChannelsLastTaggedReshapePass.is_nhwc_tensor(tensor)
 
     def requires_nhwc_input(self, node: torch.fx.Node) -> bool:
         return node.target in self.memory_sensitive_ops_nhwc
@@ -562,7 +563,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 # The node requires nchw inputs
                 for input_node in node.all_input_nodes:
                     self.input_to_nchw(graph_module, input_node, node)
-            elif node.target == exir_ops.edge.aten._to_copy.default:
+            elif (
+                node.target == exir_ops.edge.aten._to_copy.default
+                and not is_dtype_cast(node)
+            ):
                 self.tag_node(node)
             else:
                 # The node can have inputs in any format (but all must be the

@@ -185,7 +185,9 @@ ET_EXPERIMENTAL inline bool valid(const CacheGeometry& geometry) {
     if (layer.n_kv_heads <= 0 || layer.head_dim <= 0) {
       return false;
     }
-    if ((layer.policy.kind == LayerPolicy::Kind::Flat &&
+    if ((layer.policy.kind != LayerPolicy::Kind::Flat &&
+         layer.policy.kind != LayerPolicy::Kind::Ring) ||
+        (layer.policy.kind == LayerPolicy::Kind::Flat &&
          layer.policy.window != 0) ||
         (layer.policy.kind == LayerPolicy::Kind::Ring &&
          layer.policy.window <= 0)) {

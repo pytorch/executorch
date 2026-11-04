@@ -7,6 +7,7 @@
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,9 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 
 
 class MuseGlimmerBatchingWorkloadTest(unittest.TestCase):
+    @unittest.skipIf(
+        sys.platform == "win32", "Builds with a GCC or Clang style c++ driver"
+    )
     def test_workload_without_a_model(self):
         compiler = shutil.which("c++")
         self.assertIsNotNone(compiler, "CI workload tests require a C++ compiler")

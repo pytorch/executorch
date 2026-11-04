@@ -1276,19 +1276,21 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
 
     Raises:
         ValueError: The requested SoC, target pairing, or backend configuration
-            is unsupported. FCB requires at least two unique HTP SoCs, no online
-            preparation, and no DLBC when reference-weight sharing is enabled.
+            is unsupported. FCB requires at least two unique HTP SoCs, an equal
+            number of SoCs and backend options, no online preparation, and no
+            DLBC when reference-weight sharing is enabled.
     """
     setup_qnn_sdk()
-    # Normalize inputs
     soc_models = soc_model if isinstance(soc_model, list) else [soc_model]
     target_backend_options = (
         backend_options if isinstance(backend_options, list) else [backend_options]
     )
     if len(soc_models) != len(target_backend_options):
         raise ValueError(
-            "soc_model and backend_options must have the same number of entries"
+            "FCB requires equal-length soc_model and backend_options lists"
         )
+    if not soc_models:
+        raise ValueError("soc_model and backend_options lists must not be empty")
     is_fcb = len(soc_models) > 1
     if len(set(soc_models)) != len(soc_models):
         raise ValueError("soc_model must contain unique QcomChipset values")
@@ -1306,8 +1308,9 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
         if fcb_reference_weight_sharing and any(
             option.htp_options.use_dlbc for option in target_backend_options
         ):
-            warnings.warn(
-                "FCB reference weight sharing might conflict with DLBC", stacklevel=1
+            raise ValueError(
+                "FCB reference weight sharing does not support DLBC; disable "
+                "use_dlbc or set fcb_reference_weight_sharing=False"
             )
         htp_arches = {_soc_info_table[model].htp_info.htp_arch for model in soc_models}
         has_v6x_target = bool(htp_arches & {HtpArch.V68, HtpArch.V69})
@@ -1431,6 +1434,7 @@ def get_soc_to_htp_arch_map():
         "SA8295": HtpArch.V68,
         "SA8797": HtpArch.V81,
         "SC8380XP": HtpArch.V73,
+        "SC8480XP": HtpArch.V81,
         "SM8350": HtpArch.V68,
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
@@ -1467,6 +1471,7 @@ def get_soc_to_chipset_map():
         "SA8295": QcomChipset.SA8295,
         "SA8797": QcomChipset.SA8797,
         "SC8380XP": QcomChipset.SC8380XP,
+        "SC8480XP": QcomChipset.SC8480XP,
         "SM7675": QcomChipset.SM7675,
         "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
