@@ -1,7 +1,17 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 # load("//caffe2/test/fb:defs.bzl", "define_tests")
 load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+def _vgf_zero_copy_test_flags():
+    if native.read_config("executorch", "vgf_zero_copy_io", "false") == "true":
+        return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=1"]
+    return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=0"]
 
 _ENABLE_VGF = True
 
@@ -80,6 +90,7 @@ def define_arm_tests():
         "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
         "misc/test_diff_pte.py",
+        "misc/test_parse_ethosu_delegate_metadata.py",
         "misc/test_external_vela_blocks.py",
         "misc/test_vela_persistent_region.py",
         "misc/test_delegated_state_partitioning.py",
@@ -137,6 +148,7 @@ def define_arm_tests():
                 "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
                 "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
+                "EMULATION_LAYER_VERSION": "0.9.0",
             })
 
         python_pytest(
@@ -261,6 +273,7 @@ def define_arm_tests():
                 "-DUSE_VULKAN_WRAPPER",
                 "-DUSE_VULKAN_VOLK",
             ],
+            preprocessor_flags = _vgf_zero_copy_test_flags(),
             deps = [
                 "//executorch/backends/arm/runtime:vgf_backend",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",

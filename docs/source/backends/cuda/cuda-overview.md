@@ -81,6 +81,27 @@ save_pte_program(exec_program, model_name, "./output_dir")
 ```
 This generates `.pte` and `.ptd` files that can be executed on CUDA devices.
 
+By default, the weights go to a data file named `aoti_cuda_blob.ptd`. To export several programs into one folder, give each program its own
+data file name. This partitioner writes `encoder.ptd`:
+
+```python
+partitioner = CudaPartitioner([
+    CudaBackend.generate_method_name_compile_spec("forward"),
+    CudaBackend.generate_data_name_compile_spec("encoder"),
+])
+```
+
+The name can have up to 200 ASCII letters, digits, `_`, `-` and `.`. It cannot start with `.` or `-`, cannot end with `.ptd`
+(the export adds it), and cannot be a Windows device name such as `NUL`. Windows and macOS usually treat names that differ
+only in case, such as `Encoder` and `encoder`, as the same file, so give programs that share a folder names that differ in
+more than case. Load each program with its own data file:
+
+```python
+from executorch.runtime import Runtime
+
+program = Runtime.get().load_program("encoder.pte", data_path="encoder.ptd")
+```
+
 For a complete working example, see the [CUDA export script](https://github.com/pytorch/executorch/blob/main/examples/cuda/scripts/export.py).
 
 
@@ -235,11 +256,14 @@ the delegate, so that the delegate reads the constant itself. `share_mutable_buf
 planned tensor in host memory, so it does not work with this flag. This flag works on its own: it
 needs neither `skip_h2d_for_method_inputs` nor unplanned inputs.
 
-**`skip_h2d_for_method_inputs` refuses inputs that the method changes.** `to_executorch` fails if
-the method changes an input, even when the delegate makes the change. This includes a mutable
-buffer, such as a KV cache, even though the caller does not pass it. For a buffer, put it and every
-operator that uses it in the delegate. The CUDA partitioner already moves the buffer in, with
-`tag_mutated_buffer`, once those operators are there.
+**`skip_h2d_for_method_inputs` refuses changed inputs that a delegate reads.** `to_executorch` fails
+if the method changes an input that a delegate reads, even when the delegate makes the change. This
+includes a mutable buffer, such as a KV cache, even though the caller does not pass it. For a
+buffer, put it and every operator that uses it in the delegate. The CUDA partitioner already moves
+the buffer in, with `tag_mutated_buffer`, once those operators are there. It keeps the buffer out
+when the method also returns the buffer's new value, or when the new value is a method input, as in
+`self.state.copy_(x)`. For a buffer that stays out, this flag refuses the method only if a delegate
+reads it.
 
 **The choice is baked into the `.pte`.** A program exported with copies expects host tensors; one
 exported without them expects device tensors. Passing the wrong kind is a caller error, not

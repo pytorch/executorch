@@ -10,7 +10,9 @@ jobs:
   claude-code:
     uses: pytorch/test-infra/.github/workflows/_claude-code.yml@main
     with:
-      additional_claude_args: --allowedTools Skill ${{ startsWith(github.event.comment.body, '@claude /pr-review') && '--effort max' || '' }}
+      # No other effort level is recognized. The issue body is read only on issue
+      # events, because on a comment it holds the issue or PR description.
+      additional_claude_args: --allowedTools Skill ${{ (startsWith(github.event.comment.body, '@claude /pr-review') || contains(github.event.comment.body, 'effort=max') || (github.event_name == 'issues' && contains(github.event.issue.body, 'effort=max'))) && '--effort max' || '' }}
       append_system_prompt: |
         When asked to review a PR, always use the /pr-review skill first.
         Put the detailed review inside a GitHub collapsible section and a

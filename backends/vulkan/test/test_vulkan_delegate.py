@@ -672,7 +672,7 @@ class TestVulkanBackend(unittest.TestCase):
         batch = Dim("batch", max=8)
         dynamic_shapes = {"x": {0: batch}}
         test_inputs = [
-            (torch.randn(3, 14, 15, 9),),
+            (torch.randn(3, 13, 15, 9),),
             (torch.randn(1, 1, 4, 6),),
             (torch.randn(5, 10, 50, 40),),
         ]
@@ -706,7 +706,7 @@ class TestVulkanBackend(unittest.TestCase):
         batch = Dim("batch", max=8)
         dynamic_shapes = {"x": {0: batch}}
         test_inputs = [
-            (torch.randn(3, 14, 15, 9),),
+            (torch.randn(3, 13, 15, 9),),
             (torch.randn(1, 1, 4, 6),),
             (torch.randn(5, 10, 50, 40),),
         ]
@@ -3048,6 +3048,19 @@ class TestVulkanBackend(unittest.TestCase):
         )
 
         self.lower_module_and_test_output(high_dim_module, sample_inputs)
+
+    def test_vulkan_backend_high_dimensional_constant(self):
+        class HighDimConstantModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("c", torch.rand(1, 2, 3, 4, 5))
+
+            def forward(self, x):
+                return x * self.c
+
+        sample_inputs = (torch.rand(size=(1, 2, 3, 4, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(HighDimConstantModule(), sample_inputs)
 
     def test_vulkan_backend_torchao_wo_quantized_linear(self):
         in_features = 1024

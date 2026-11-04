@@ -52,6 +52,7 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
     remove_unused_parameters_pass,
+    ReplaceEmptyLikePass,
 )
 from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.external_constants_pass import (
@@ -825,8 +826,8 @@ def _generate_edge_program(
     program = remove_unused_parameters_pass(program)
 
     if not config._skip_dim_order:
-        # Normalize constants, buffers and parameters before partitioning, so a
-        # delegate sees the layout the program stores, and before
+        # Normalize constants, buffers, parameters and inputs before
+        # partitioning, so a delegate sees the layout the program stores, and before
         # MemoryFormatOpsPass rewrites preserve-format copies, which cannot
         # represent arbitrary dim orders.
         program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
@@ -842,6 +843,13 @@ def _generate_edge_program(
         ReplaceViewOpsWithViewCopyOpsPass(),
     ]
     passes.extend(pre_op_replace_passes)
+    empty_like = torch.ops.aten.empty_like.default
+    if (
+        empty_like not in (preserve_ops or [])
+        and empty_like not in config.preserve_ops
+        and contains_any_call_fn_target_op(program.graph_module, [empty_like])
+    ):
+        passes.append(ReplaceEmptyLikePass())
     passes.append(OpReplacePass())
     if not config._skip_dim_order:
         passes.append(MemoryFormatOpsPass())
@@ -876,8 +884,8 @@ def _generate_edge_program(
 
     # Normalize tensor constants introduced by the preceding passes. With
     # _skip_dim_order this is the only call, so it fixes the layout of
-    # parameters, buffers and constants, but ops computed from them keep the
-    # old strides.
+    # parameters, buffers, constants and inputs, but ops computed from them
+    # keep the old strides.
     edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
         edge_program
     )
@@ -1202,7 +1210,16 @@ def _gen_edge_manager_for_partitioners(
                     # functionalized the graph. This second call only applies
                     # operator decompositions from the remaining table, so it is
                     # safe to skip when none of those targets occur in the graph.
-                    if contains_any_call_fn_target_op(program.graph_module, table):
+                    # Unless the config preserves it, empty_like does not
+                    # count: ReplaceEmptyLikePass lowers any that is left.
+                    not_counted = (
+                        set()
+                        if torch.ops.aten.empty_like.default in config.preserve_ops
+                        else {torch.ops.aten.empty_like.default}
+                    )
+                    if contains_any_call_fn_target_op(
+                        program.graph_module, table.keys() - not_counted
+                    ):
                         program = program.run_decompositions(table)
                     final_ops_to_preserve.update(ops_needing_preservation)
                 else:
@@ -1483,6 +1500,8 @@ def to_edge(
                 EXIRATenDialectVerifier(
                     edge_compile_config=config,
                     class_only=False,
+                    # ReplaceEmptyLikePass lowers it in _generate_edge_program.
+                    core_aten_ops_exception_list=[torch.ops.aten.empty_like.default],
                 )(gm)
             except ExportError as e:
                 logging.info(f"Input program {name} is not in ATen dialect.")

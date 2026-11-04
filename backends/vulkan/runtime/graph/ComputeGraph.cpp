@@ -469,6 +469,22 @@ bool ComputeGraph::is_vectorizable_width_packed_tensor(
   return is_standard_channels_packed_texture_tensor(idx);
 }
 
+bool ComputeGraph::samples_zero_outside_tensor(const ValueRef idx) const {
+  if (!val_is_tensor(idx) || is_buffer_storage(idx)) {
+    return false;
+  }
+  const api::vTensor& tensor = values_.at(idx).toConstTensor();
+  const VkExtent3D extents = tensor.image().extents();
+  const utils::uvec3 limits = utils::make_uvec3(tensor.logical_limits());
+  const vkapi::VulkanImage::SamplerProperties& sampler =
+      tensor.image().sampler_properties();
+  return extents.width == limits[0] && extents.height == limits[1] &&
+      extents.depth == limits[2] && sampler.filter == VK_FILTER_NEAREST &&
+      sampler.mipmap_mode == VK_SAMPLER_MIPMAP_MODE_NEAREST &&
+      sampler.address_mode == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER &&
+      sampler.border_color == VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+}
+
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
@@ -864,6 +880,7 @@ void ComputeGraph::register_pipeline_to_create(
     const LocalWorkGroup& lwg,
     const vkapi::SpecVarList& spec_vars,
     const std::vector<PushConstantDataInfo>& push_constants) {
+  context()->check_device_capabilities(shader_info);
   VkDescriptorSetLayout shader_layout =
       context()->shader_layout_cache().retrieve(shader_info.kernel_layout);
 

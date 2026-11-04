@@ -787,7 +787,7 @@ endif()
 if(EXECUTORCH_BUILD_NATIVE)
   string(APPEND _executorch_backend_dependencies
          "find_dependency(libzip CONFIG)\n"
-         "find_dependency(nlohmann_json CONFIG)\n" "find_dependency(Threads)\n"
+         "find_dependency(nlohmann_json CONFIG)\n"
   )
 endif()
 if(EXECUTORCH_BUILD_NATIVE_GGML)
@@ -797,8 +797,20 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
     "  add_library(executorch_ggml ALIAS ggml::ggml)\n" "endif()\n"
   )
 endif()
-if(EXECUTORCH_BUILD_VULKAN)
+if(EXECUTORCH_BUILD_NATIVE
+   OR EXECUTORCH_BUILD_CPU
+   OR EXECUTORCH_BUILD_VULKAN
+)
   string(APPEND _executorch_backend_dependencies "find_dependency(Threads)\n")
+endif()
+if(EXECUTORCH_BUILD_COREAI)
+  string(APPEND _executorch_backend_dependencies
+         "include(\"\${CMAKE_CURRENT_LIST_DIR}/coreai-dependencies.cmake\")\n"
+         "executorch_coreai_dependencies()\n"
+  )
+  install(FILES backends/apple/coreai/coreai-dependencies.cmake
+          DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
+  )
 endif()
 configure_file(
   tools/cmake/executorch-backend-dependencies.cmake.in
@@ -841,6 +853,11 @@ endif()
 if(EXECUTORCH_BUILD_COREML)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
   list(APPEND _executorch_backends coremldelegate)
+endif()
+
+if(EXECUTORCH_BUILD_COREAI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreai)
+  list(APPEND _executorch_backends coreaidelegate)
 endif()
 
 if(EXECUTORCH_BUILD_MLX)
@@ -1377,6 +1394,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs coremldelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_COREAI)
+    list(APPEND _dep_libs coreaidelegate)
+  endif()
+
   if(EXECUTORCH_BUILD_VGF)
     list(APPEND _dep_libs vgf_backend)
   endif()
@@ -1415,6 +1436,10 @@ if(EXECUTORCH_BUILD_PYBIND)
       # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
       list(APPEND _dep_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
     endif()
+  endif()
+
+  if(EXECUTORCH_BUILD_CPU)
+    list(APPEND _dep_libs cpu_backend)
   endif()
 
   if(EXECUTORCH_BUILD_VULKAN)
@@ -1624,8 +1649,13 @@ if(EXECUTORCH_BUILD_VULKAN)
   list(APPEND _executorch_backends vulkan_backend vulkan_schema)
 endif()
 
-if(EXECUTORCH_BUILD_NATIVE)
+if(EXECUTORCH_BUILD_NATIVE OR EXECUTORCH_BUILD_CPU)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/native)
+endif()
+
+if(EXECUTORCH_BUILD_CPU)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cpu)
+  list(APPEND _executorch_backends cpu_backend)
 endif()
 
 if(EXECUTORCH_BUILD_WEBGPU)

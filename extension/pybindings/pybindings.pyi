@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, TypeVar, Union
 
 import torch
 
@@ -477,3 +477,26 @@ def _threadpool_get_thread_count() -> int:
         This API is experimental and subject to change without notice.
     """
     ...
+
+class _CudaStream:
+    """A non-blocking CUDA stream on ``device`` (-1: current device). Only with
+    CUDA; use executorch.runtime.cuda.Stream.
+    """
+
+    def __init__(self, device: int) -> None: ...
+    @property
+    def handle(self) -> int: ...
+    @property
+    def device(self) -> int: ...
+    def close(self) -> None: ...
+
+class _CallerStreamScope:
+    """Selects a CUDA stream for this thread's delegates. Only with CUDA.
+
+    Use executorch.runtime.cuda.stream.
+    """
+
+    def __init__(self, stream: Union[_CudaStream, int]) -> None: ...
+    can_check_device: ClassVar[bool]
+    def __enter__(self) -> None: ...
+    def __exit__(self, *args: Any) -> None: ...

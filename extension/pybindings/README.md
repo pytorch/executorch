@@ -140,24 +140,41 @@ so while torch is loaded they still read CUDA inputs, torch tensors or DLPack,
 and return borrowed CUDA results.
 
 Execution is synchronous at the Python boundary: a call returns after its device
-work has finished, so its outputs are ready on any stream. Every wait is for the
-whole device (`cudaDeviceSynchronize`), not for one stream, so it also waits for
-unrelated work queued on that device, for example by torch. Before it runs, a
-call waits once for each device that holds a non-empty CUDA input or output.
-Another library may still be writing such an input: a torch CUDA tensor, a CUDA
-DLPack input, or a result of these bindings passed back in, which can share
-memory a caller handed to that library. It may also still be reading the memory
-of an output from an earlier call, which this call writes again. After it runs,
-a call waits once for each device that holds a CUDA input or output, since the
-method may have updated an input in place. Each cloned CUDA
-output waits once more for its copy. A torch CUDA input in another layout also
-waits before torch copies it into the exported layout. Reading a CUDA result
-through `__dlpack__` or `to_host()` waits once as well. In CUDA-enabled
-bindings a wait holds the GIL, so other Python threads pause until it ends, and
-a queued CUDA host callback that needs the GIL makes the wait hang. Bindings
-built without CUDA wait through `torch.cuda.synchronize`, which releases the
-GIL. On an idle device a wait is short:
-`cudaDeviceSynchronize` took a median of 1.5 microseconds on an A100. The
+work has finished, so its outputs are ready on any stream. How long a call with
+only host inputs and outputs waits depends on where it runs:
+
+- Inside an `executorch.runtime.cuda.stream()` block with a non-blocking stream,
+  such as `executorch.runtime.cuda.Stream()`, it waits for that stream. A
+  blocking stream, such as a `cupy.cuda.Stream()` with default flags, also waits
+  for work on CUDA's legacy default stream, which is also the default stream of
+  torch.
+- Outside a block, a program's copies between host and GPU memory run on the
+  legacy default stream, so the call waits for work on every blocking stream of
+  the device, for example delegates running on another thread.
+
+In both cases, the CUDA delegate copies an output whose memory layout has to
+change through the legacy default stream. Loading a method's CUDA weights, which
+a first call may do, copies each one with a plain `cudaMemcpy`, so it waits for
+the legacy default stream and for blocking streams. An older export keeps its
+weights in one blob, and copying that blob waits for the whole device.
+
+The waits below, for CUDA inputs and outputs, are for the whole device
+(`cudaDeviceSynchronize`), not for one stream, so they also wait for unrelated
+work queued on that device, for example by torch. Before it runs, a call waits
+once for each device that holds a non-empty CUDA input or output. Another
+library may still be writing such an input: a torch CUDA tensor, a CUDA DLPack
+input, or a result of these bindings passed back in, which can share memory a
+caller handed to that library. It may also still be reading the memory of an
+output from an earlier call, which this call writes again. After it runs, a call
+waits once for each device that holds a CUDA input or output, since the method
+may have updated an input in place. Each cloned CUDA output waits once more for
+its copy. A torch CUDA input in another layout also waits before torch copies it
+into the exported layout. Reading a CUDA result through `__dlpack__` or
+`to_host()` waits once as well. In CUDA-enabled bindings a wait holds the GIL,
+so other Python threads pause until it ends, and a queued CUDA host callback
+that needs the GIL makes the wait hang. Bindings built without CUDA wait through
+`torch.cuda.synchronize`, which releases the GIL. On an idle device a wait is
+short: `cudaDeviceSynchronize` took a median of 1.5 microseconds on an A100. The
 synchronization has no C++ ATen dependency.
 
 For bfloat16 inputs, raw byte buffers use the shape declared by the exported
@@ -184,10 +201,7 @@ The CUDA build workflow runs `test_pybindings_cuda_dlpack.py` in both output
 modes on a GPU. It checks device allocations, DLPack stream ordering, channels
 last views, cloning, and borrowed output lifetimes using a CUDA delegate.
 Set `EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1` when running this test to treat missing
-GPU hardware or a missing CUDA backend as a failure. The CUDA delegate's kernels
-need the OpenMP runtime (`libgomp.so.1` on Linux). PyTorch ships one; without PyTorch,
-install it from the system, or the two tests that run without PyTorch fail
-under this setting.
+GPU hardware or a missing CUDA backend as a failure.
 
 # Link Backends
 
@@ -220,4 +234,45 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
 This class is currently empty and serves as a placeholder for future methods and attributes.
 - `verify_result_with_bundled_expected_output(method_name: str, testset_idx: int, rtol: float = 1e-5, atol: float = 1e-8)`: Verify result with bundled expected output.
 ## Note
-Runtime logs are forwarded to Python stderr.
+Runtime logs go straight to the process's stderr as they are logged. On Windows,
+a console shows text that is not ASCII in its own code page, so such text can
+look wrong there. If Python has replaced `sys.stderr`, for example with pytest's
+`capsys`, `contextlib.redirect_stderr` or in a Jupyter notebook, the lines go to
+`sys.stderr` instead, a little later. The lines a binding call logs wait until
+the call returns. A line logged outside any binding call, for example by the LLM
+runner, goes to `sys.stderr` before the next Python code runs if Python's main
+thread logged it. A line from another thread goes there a moment later, from a
+thread that the bindings start for this. Outside a call, only a thread that
+holds the GIL can tell where `sys.stderr` goes, so a line from a thread that
+does not hold it, such as one the LLM runner logs while it generates, goes to
+the process's stderr. The lines wait rather than go to Python at once because a
+backend can log while it holds a lock, and writing to Python at that moment
+could deadlock with another thread.
+
+On Linux and macOS, a line also waits once the process's stderr is a pipe or
+socket that stays full for 100 ms, so a thread that holds the GIL does not hang
+on it while a Python thread in the same process empties it, as under
+`wurlitzer.pipes()`. The rest of a binding call's lines then wait for the call
+to return. A thread that logs outside a call does not wait for room itself. It
+hands the line to the bindings' thread, which writes it without the GIL. While
+it writes, a binding call's lines wait for the call to return. A terminal is
+written at once, since its reader is normally another process. The process can
+still hang if another writer fills the process's stderr right after the check
+for room, or if a Python thread in the same process reads a terminal that is the
+process's stderr. On macOS, a pipe that has not grown past 16 KiB takes a line
+only once the line fits in 512 bytes beside what the pipe holds, because macOS
+reports room in such a pipe that it may not have.
+
+Up to 1 MiB of lines wait at a time; past that, about the newest 512 KiB to
+1 MiB are kept, with a note of how many earlier bytes were left out. A fatal
+line goes straight to the process's stderr while it has room, with the lines its
+binding call kept, since an abort usually follows. Any crash or hang of the
+process, including that abort, or an `os._exit()` loses the lines still waiting.
+Once Python starts to exit, the lines still waiting are written, and later lines
+logged outside a call go to the process's stderr while it has room. Lines for
+the process's stderr are left out instead if the bindings' thread is still
+writing to it then.
+
+On Linux with Python before 3.13.8, a daemon thread never writes through Python,
+because at exit Python can stop such a thread in the middle of that write, which
+crashes the process. The bindings' thread writes its lines instead.
