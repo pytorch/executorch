@@ -1378,6 +1378,11 @@ class Flip(torch.nn.Module):
         return torch.flip(x, self.dims)
 
 
+class Float64Math(torch.nn.Module):
+    def forward(self, x):
+        return x + (x.double() * 2 + 1).float()
+
+
 class Floor(torch.nn.Module):
     def __init__(self):
         super().__init__()

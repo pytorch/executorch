@@ -1284,6 +1284,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = Flip()  # noqa: F405
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_float64(self):
+        module = Float64Math()  # noqa: F405
+        sample_input = (torch.linspace(0, 1, 8),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_floor(self):
         sample_input = (torch.randn(3, 4),)
         module = Floor()  # noqa: F405
@@ -4551,6 +4556,14 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_flip(self):
         sample_input = (torch.randn(3, 4, 5, 6),)
         module = Flip()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_float64(self):
+        # The default rtol of 1 would pass a float64 result of zeros.
+        self.rtol = 1e-1
+        module = Float64Math()  # noqa: F405
+        sample_input = (torch.linspace(0, 1, 8),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
