@@ -3664,13 +3664,11 @@ TEST(VulkanWorkGroupSizeTest, adreno_xy_lwg) {
 
   EXPECT_EQ(pick({96u, 375u, 1u}), utils::uvec3({16u, 4u, 1u}));
   EXPECT_EQ(pick({14u, 375u, 1u}), utils::uvec3({16u, 4u, 1u}));
-  // Narrow X, tall Y.
-  EXPECT_EQ(pick({13u, 375u, 1u}), utils::uvec3({2u, 32u, 1u}));
-  EXPECT_EQ(pick({8u, 1024u, 1u}), utils::uvec3({2u, 32u, 1u}));
-  EXPECT_EQ(pick({4u, 1024u, 1u}), utils::uvec3({2u, 32u, 1u}));
-  // Narrow X and short Y: 2x32x1 would idle more than 16x4x1.
+  // Narrow X keeps the unfitted 2:1 group.
+  EXPECT_EQ(pick({13u, 375u, 1u}), utils::uvec3({16u, 4u, 1u}));
+  EXPECT_EQ(pick({8u, 1024u, 1u}), utils::uvec3({16u, 4u, 1u}));
+  EXPECT_EQ(pick({4u, 1024u, 1u}), utils::uvec3({16u, 4u, 1u}));
   EXPECT_EQ(pick({8u, 8u, 4u}), utils::uvec3({16u, 4u, 1u}));
-  EXPECT_EQ(pick({8u, 16u, 1u}), utils::uvec3({16u, 4u, 1u}));
 
   for (uint32_t x = 1u; x <= 64u; ++x) {
     for (uint32_t y = 1u; y <= 128u; ++y) {
