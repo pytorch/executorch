@@ -1946,10 +1946,22 @@ print("CUDA DLPack roundtrip preserved device storage")
         expected = model(inputs[0])
         self.assertTrue(torch.allclose(expected, executorch_output))
 
-    def test_torch_input_layout_matches_exported_dim_order(self):
-        if self.kernel_mode != "portable":
-            self.skipTest("ATen nonstandard input layouts are deferred to a follow-up")
+    def test_channels_last_input_with_distinct_values(self) -> None:
+        # The default inputs are all ones, which every layout reads the same way.
+        for model in (ModuleChannelsLast(), ModuleChannelsLastInDefaultOut()):
+            with self.subTest(model=type(model).__name__):
+                exported_program, inputs = create_program(model)
+                input_tensor = (
+                    torch.arange(inputs[0].numel(), dtype=torch.float32)
+                    .reshape(inputs[0].shape)
+                    .to(memory_format=torch.channels_last)
+                )
+                executorch_module = self.load_fn(exported_program.buffer)
+                torch.testing.assert_close(
+                    executorch_module(input_tensor)[0], model(input_tensor)
+                )
 
+    def test_torch_input_layout_matches_exported_dim_order(self):
         class AddInput(ModuleAddSingleInput):
             def __init__(self, input_tensor):
                 super().__init__()
