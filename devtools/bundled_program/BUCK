@@ -18,6 +18,7 @@ fbcode_target(
         ":version",
         "//caffe2:torch",
         "//executorch/devtools/bundled_program/schema:bundled_program_schema_py",
+        "//executorch/exir:lib",
         "//executorch/exir:schema",
         "//executorch/exir:tensor",
     ],
