@@ -75,15 +75,14 @@ class TestMul(unittest.TestCase):
             Tester(self.ComplexMul(), (torch.randn(2, 4, 6),))
             .export()
             .to_edge_transform_and_lower()
-            # XNNPACK does not take the selects that split the pairs, so the
-            # reshape before them is its own delegate.
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 2})
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
                     "executorch_exir_dialects_edge__ops_aten_sub_Tensor",
                     "executorch_exir_dialects_edge__ops_aten_add_Tensor",
                     "executorch_exir_dialects_edge__ops_aten_cat_default",
+                    "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor",
                 ]
             )
             .to_executorch()

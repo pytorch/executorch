@@ -204,9 +204,10 @@ class _Rewriter:
         node.meta["val"] = value
         return node
 
-    def parts(self, value: Node) -> List[Node]:
-        pair = self.get(value)
-        return [self.call(_aten.select.int, pair, -1, i) for i in (0, 1)]
+    def parts(self, pair: Node) -> List[Node]:
+        # Slices keep the pair's dim, unlike select, which XNNPACK does not
+        # take.
+        return [self.call(_aten.slice.Tensor, pair, -1, i, i + 1) for i in (0, 1)]
 
     def pair(self, real: Node, imag: Node) -> Node:
         # stack is not in the Core ATen opset that Edge programs are made of.
@@ -233,14 +234,6 @@ def _polar(rw: _Rewriter, node: Node) -> Node:
 
 def _mul(rw: _Rewriter, node: Node) -> Node:
     mul = _aten.mul.Tensor
-    if all(arg in rw.complex_nodes for arg in node.args):
-        (ar, ai), (br, bi) = (rw.parts(arg) for arg in node.args)
-        real = rw.call(_aten.sub.Tensor, rw.call(mul, ar, br), rw.call(mul, ai, bi))
-        imag = rw.call(_aten.add.Tensor, rw.call(mul, ar, bi), rw.call(mul, ai, br))
-        return rw.pair(real, imag)
-    # ATen programs, unlike Edge programs, multiply by a real factor without
-    # casting it to complex first.
-    z, x = node.args if node.args[0] in rw.complex_nodes else node.args[::-1]
     # Both sides get the precision of the product. Type promotion would not
     # give it when a side has no dims, since that side's pair or unsqueezed
     # factor has dims.
@@ -251,6 +244,14 @@ def _mul(rw: _Rewriter, node: Node) -> Node:
             return value
         return rw.call(_aten._to_copy.default, value, dtype=dtype)
 
+    if all(arg in rw.complex_nodes for arg in node.args):
+        (ar, ai), (br, bi) = (rw.parts(cast(rw.get(arg))) for arg in node.args)
+        real = rw.call(_aten.sub.Tensor, rw.call(mul, ar, br), rw.call(mul, ai, bi))
+        imag = rw.call(_aten.add.Tensor, rw.call(mul, ar, bi), rw.call(mul, ai, br))
+        return rw.call(_aten.cat.default, [real, imag], -1)
+    # ATen programs, unlike Edge programs, multiply by a real factor without
+    # casting it to complex first.
+    z, x = node.args if node.args[0] in rw.complex_nodes else node.args[::-1]
     if isinstance(x, Node):
         x = rw.call(_aten.unsqueeze.default, cast(x), -1)
     return rw.call(mul, cast(rw.get(z)), x)

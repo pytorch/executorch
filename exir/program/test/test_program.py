@@ -840,15 +840,20 @@ class TestProgramManagers(unittest.TestCase):
                 pairs = torch.view_as_complex(
                     x.to(self.precision).unflatten(-1, (-1, 2))
                 )
-                # A factor with no dims, real or complex, keeps the precision
-                # of its product.
-                spin = torch.polar(gain, gain) * shift
-                # The scalar comes first: it casts its input, so later in the
-                # chain it would hide a wrong dtype from the products before it.
-                rotated = pairs * 0.5 * freqs * shift.to(freqs.dtype) * gain * spin
+                # Factors with no dims keep the precision of their product.
+                # Each product casts its inputs, so only a last product shows
+                # a wrong dtype: the outputs end with a complex and a real one.
+                turn = torch.polar(gain, gain)
+                spin = turn * shift
+                rotated = (
+                    pairs * 0.5 * freqs * shift.to(freqs.dtype) * gain * spin * turn
+                )
                 # Views of the pair keep the dims of the complex tensor.
                 rotated = rotated.transpose(0, 1).reshape(8, -1)
-                return torch.view_as_real(rotated).flatten(-2)
+                return (
+                    torch.view_as_real(rotated).flatten(-2),
+                    torch.view_as_real(spin * gain),
+                )
 
         inputs = (torch.randn(2, 8, 8), torch.randn(4), torch.tensor(0.5).double())
         for precision in (torch.float32, torch.float64):
@@ -856,7 +861,9 @@ class TestProgramManagers(unittest.TestCase):
                 model = Rope(precision)
                 edge = to_edge_transform_and_lower(export(model, inputs))
                 program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
-                torch.testing.assert_close(program.forward(inputs)[0], model(*inputs))
+                torch.testing.assert_close(
+                    tuple(program.forward(inputs)), model(*inputs)
+                )
 
     def test_to_edge_transform_and_lower_keeps_complex_kernels(self):
         class Spectrum(torch.nn.Module):
