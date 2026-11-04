@@ -15,7 +15,6 @@ from executorch.backends.qualcomm.builders.utils import (
 )
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
-    QnnExecuTorchHtpPrecision,
 )
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
@@ -108,6 +107,7 @@ class RecomposeRmsNorm(ExportPass):
             # Imported here, since partition depends on _passes.
             from executorch.backends.qualcomm.partition.utils import (
                 generate_qnn_executorch_option,
+                is_htp_fp16,
             )
 
             options = flatbuffer_to_option(
@@ -116,11 +116,7 @@ class RecomposeRmsNorm(ExportPass):
             self.may_be_htp = (
                 options.backend_type == QnnExecuTorchBackendType.kHtpBackend
             )
-            self.htp_fp16 = (
-                self.may_be_htp
-                and options.htp_options is not None
-                and options.htp_options.precision == QnnExecuTorchHtpPrecision.kHtpFp16
-            )
+            self.htp_fp16 = is_htp_fp16(options)
         self.rms_norm_target = exir_ops.edge.aten.rms_norm.default
         self.skip_targets = [
             exir_ops.edge.aten.to.dtype,

@@ -20,6 +20,7 @@ class QNNRecipeType(RecipeType):
     # 2. skip_node_id_set
     # 3. skip_node_op_set
     # 4. skip_mutable_buffer
+    # 5. passes_job, one job used for every method
 
     FP16 = "qnn_fp16"
 

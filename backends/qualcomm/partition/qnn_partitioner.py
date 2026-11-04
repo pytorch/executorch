@@ -24,7 +24,6 @@ from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.serialization.qc_schema import (
     HtpArch,
     QnnExecuTorchBackendType,
-    QnnExecuTorchHtpPrecision,
 )
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
@@ -68,6 +67,7 @@ from .utils import (
     get_skip_decomp_table,
     has_data_dependent_shape,
     has_unsupported_dtype,
+    is_htp_fp16,
     is_quantized,
     must_stay_on_cpu,
     warn_if_dilated_conv_may_not_fit_vtcm,
@@ -112,12 +112,7 @@ class QnnOperatorSupport(OperatorSupportBase):
         self.phase = phase
         self.soc_info = python_options.soc_info
         self.backend_type = python_options.backend_options.backend_type
-        htp_options = python_options.backend_options.htp_options
-        self.is_htp_fp16 = (
-            self.backend_type == QnnExecuTorchBackendType.kHtpBackend
-            and htp_options is not None
-            and htp_options.precision == QnnExecuTorchHtpPrecision.kHtpFp16
-        )
+        self.is_htp_fp16 = is_htp_fp16(python_options.backend_options)
         self.nodes_to_wrappers = defaultdict(dict)
         target_socs = (
             [

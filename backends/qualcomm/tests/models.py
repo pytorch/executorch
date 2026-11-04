@@ -2564,6 +2564,23 @@ class Roll(torch.nn.Module):
         return torch.roll(x, shifts=self.shifts, dims=self.dims)
 
 
+class RotaryPositions(torch.nn.Module):
+    def __init__(self, return_positions=False):
+        super().__init__()
+        self.register_buffer("inv_freq", 1.0 / 10000 ** (torch.arange(0, 64, 2) / 64))
+        self.return_positions = return_positions
+
+    def forward(self, mask):
+        # Positions up to 500, offset by an int64 constant made in forward.
+        positions = mask.cumsum(-1) + torch.tensor(200)
+        angle = positions.unsqueeze(-1).float() * self.inv_freq
+        embedding = torch.cat([torch.sin(angle), torch.cos(angle)], dim=-1)
+        if self.return_positions:
+            # The positions also leave the graph and feed a delegated op.
+            return embedding, positions, positions * 3
+        return embedding
+
+
 class Round(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2675,6 +2692,14 @@ class Sinh(torch.nn.Module):
 
     def forward(self, x):
         return torch.sinh(x)
+
+
+class SinusoidalEmbedding(torch.nn.Module):
+    def forward(self, t):
+        # Periods from 4e-3 to 4, so the angles reach 2 * pi / 4e-3 = 1571.
+        period = 4e-3 * 1000 ** torch.linspace(0, 1, 64)
+        angle = t * (2 * math.pi / period)
+        return torch.cat([torch.sin(angle), torch.cos(angle)], dim=-1)
 
 
 class SimpleModel(torch.nn.Module):

@@ -76,6 +76,7 @@ from .remove_redundancy import RemoveRedundancy
 from .replace_arange_args import ReplaceArangeArgs
 from .resolve_debug_handle import ResolveDebugHandle
 from .seq_mse import SeqMSE
+from .tag_positional_sin_cos import TagPositionalSinCos
 from .tag_quant_io import TagQuantIO
 
 __all__ = [
@@ -151,5 +152,6 @@ __all__ = [
     ReplaceArangeArgs,
     ResolveDebugHandle,
     SeqMSE,
+    TagPositionalSinCos,
     TagQuantIO,
 ]

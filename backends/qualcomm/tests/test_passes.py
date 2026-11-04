@@ -24,6 +24,7 @@ from executorch.backends.qualcomm._passes import (
     RecomposeRmsNorm,
     Remove0DTensor,
     RemoveRedundancy,
+    TagPositionalSinCos,
 )
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
@@ -51,6 +52,7 @@ from executorch.backends.qualcomm.partition.utils import (
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.recipes.qnn_recipe_provider import QNNRecipeProvider
+from executorch.backends.qualcomm.recipes.qnn_recipe_types import QNNRecipeType
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendType,
@@ -71,7 +73,9 @@ from executorch.backends.qualcomm.tests.tester import ToEdgeTransformAndLower
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
+    QCOM_FALLBACK_NODE,
     QCOM_INSERTED_CAST,
+    QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
     QCOM_QUANT_MAX,
     QCOM_QUANT_MIN,
@@ -84,9 +88,10 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    qnn_edge_config,
     to_edge_transform_and_lower_to_qnn,
 )
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import PreprocessResult
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -342,6 +347,17 @@ def skip_without_qnn_sdk(test, reason):
     # real error that the caller reports, not a reason to skip.
     if not QNN_SDK_SET_UP:
         test.skipTest(f"QNN SDK not available: {reason}")
+
+
+@contextlib.contextmanager
+def stubbed_recipe_setup():
+    # Builds QNN recipes without setting up the QNN SDK or changing torch
+    # flags for the other tests.
+    provider = "executorch.backends.qualcomm.recipes.qnn_recipe_provider"
+    with patch(f"{provider}.setup_qnn_sdk"), patch(
+        f"{provider}.disable_mkldnn_on_amd"
+    ), patch("executorch.backends.qualcomm.utils.utils.setup_qnn_sdk"):
+        yield
 
 
 def stubbed_compiler_specs(backend_options):
@@ -2702,6 +2718,432 @@ class TestPasses(unittest.TestCase):
                     exir_ops.edge.aten.linear.default,
                     [node.target for node in cpu_nodes],
                 )
+
+    def test_partitioner_keeps_positional_sin_cos_in_float32(self):
+        class Embedding(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(8, 8)
+
+            def forward(self, t, x):
+                period = 4e-3 * 1000 ** torch.linspace(0, 1, 8)
+                return torch.sin(t * (2 * torch.pi / period)) + torch.cos(
+                    self.linear(x)
+                )
+
+        sample_input = (torch.rand(4, 1), torch.randn(4, 8))
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
+        passes_job[TagPositionalSinCos][QCOM_PASS_ACTIVATE_KEY] = False
+        for job in (None, passes_job):
+            with self.subTest(tag_positional_sin_cos=job is None):
+                try:
+                    edge = to_edge_transform_and_lower_to_qnn(
+                        Embedding().eval(),
+                        sample_input,
+                        compiler_specs,
+                        passes_job=job,
+                    )
+                except RuntimeError as e:
+                    if "Failed to initialize QNN backend" in str(e):
+                        skip_without_qnn_sdk(self, e)
+                    raise
+                nodes = [
+                    node
+                    for node in edge.exported_program().graph.nodes
+                    if node.op == "call_function"
+                ]
+                cpu_sin = [
+                    node
+                    for node in nodes
+                    if node.target == exir_ops.edge.aten.sin.default
+                ]
+                # The sin of a positional angle and the mul computing the angle
+                # run on CPU in float32 unless the pass is off, while the cos
+                # of an activation stays delegated with the linear before it,
+                # in one delegate either way.
+                self.assertEqual(len(cpu_sin), int(job is None))
+                for sin in cpu_sin:
+                    self.assertEqual(sin.args[0].target, exir_ops.edge.aten.mul.Tensor)
+                self.assertNotIn(
+                    exir_ops.edge.aten.cos.default, [node.target for node in nodes]
+                )
+                self.assertEqual(
+                    sum("call_delegate" in str(node.target) for node in nodes), 1
+                )
+
+    @staticmethod
+    def _positional_edge_graph(
+        module, sample_input, compiler_specs, backend_type, **kwargs
+    ):
+        # The graph after the QNN to_edge passes. Without the partitioner,
+        # the ops it keeps whole, like stack and linear, are decomposed.
+        pass_manager = get_qnn_pass_manager_cls(backend_type)()
+        program = pass_manager.transform_for_export_pipeline(
+            torch.export.export(
+                module,
+                sample_input,
+                dynamic_shapes=kwargs.pop("dynamic_shapes", None),
+                strict=True,
+            )
+        )
+        return to_edge_transform_and_lower(
+            program,
+            transform_passes=pass_manager.get_to_edge_transform_passes(
+                program, compiler_specs=compiler_specs, **kwargs
+            ),
+            compile_config=qnn_edge_config(),
+        ).exported_program()
+
+    @staticmethod
+    def _computing_nodes(node):
+        nodes, stack = {node}, list(node.all_input_nodes)
+        while stack:
+            arg = stack.pop()
+            if arg not in nodes and arg.op == "call_function":
+                nodes.add(arg)
+                stack.extend(arg.all_input_nodes)
+        return nodes
+
+    @classmethod
+    def _is_fully_tagged(cls, node):
+        return all(
+            arg.meta.get(QCOM_FALLBACK_NODE)
+            for arg in cls._computing_nodes(node)
+            if not isinstance(arg.meta["val"], torch.SymInt)
+        )
+
+    def test_tag_positional_sin_cos(self):
+        class Embeddings(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("freqs", torch.linspace(1, 1000, 8))
+                self.linear = torch.nn.Linear(8, 8)
+
+            def forward(self, t, mask, x):
+                # An integer cumsum is exact, so it is followed as a position.
+                positions = mask.cumsum(-1).unsqueeze(-1).float()
+                # Offset positions, as a decoder step after a prefix builds them.
+                offsets = (mask > 0).sum(-1) + torch.ones(4, dtype=torch.bool).cumsum(0)
+                float_offsets = (mask > 0).sum(-1) + torch.ones(4).cumsum(0)
+                return (
+                    torch.sin(t * torch.linspace(1, 1000, 8)),
+                    torch.cos(positions * self.freqs),
+                    torch.cos(offsets.unsqueeze(-1).float() * self.freqs),
+                    torch.cos(float_offsets.unsqueeze(-1) * self.freqs),
+                    torch.sin(
+                        t * (torch.arange(8) * -torch.log(torch.tensor(1e4))).exp()
+                    ),
+                    # Buffers, as large as a batch one angle, are not inputs,
+                    # nor are integers built from constants, like linspace's.
+                    torch.sin(t[:1] * self.freqs),
+                    torch.sin(t[:1] * torch.linspace(1, 1000, 8)),
+                    # Integer positions may read a mask as large as the angle.
+                    torch.cos((x > 0).sum(-1, keepdim=True).float() * self.freqs),
+                    torch.sin(self.linear(x) * self.freqs),
+                    torch.sin(t),
+                    torch.sin(t.view(-1)),
+                    # Larger than t, but made by views only, so it holds no
+                    # new angles.
+                    torch.sin(t.expand(4, 8)),
+                    torch.sin((t * self.freqs).half()),
+                    # Integers computed from an activation stay delegated, and
+                    # so does their angle.
+                    torch.cos(
+                        (self.linear(x).sum(-1) > 0).cumsum(-1).unsqueeze(-1).float()
+                        * self.freqs
+                    ),
+                    torch.cos(
+                        (x.sum(-1) > 0).cumsum(-1).unsqueeze(-1).float()
+                        * torch.linspace(1, 1000, 16)
+                    ),
+                    # Not larger than its inputs, so not a positional angle.
+                    torch.sin(x * 30),
+                    torch.sin(torch.cat([t, t]) * 30),
+                    torch.sin(mask.float() * 30),
+                    torch.sin(mask * 30),
+                )
+
+        htp_fp16 = stubbed_compiler_specs(generate_htp_compiler_spec(use_fp16=True))
+        htp, gpu = (
+            QnnExecuTorchBackendType.kHtpBackend,
+            QnnExecuTorchBackendType.kGpuBackend,
+        )
+        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
+        passes_job[TagPositionalSinCos][QCOM_PASS_ACTIVATE_KEY] = False
+        sample_input = (
+            torch.rand(4, 1),
+            torch.ones(4, dtype=torch.int64),
+            torch.randn(4, 8),
+        )
+        none = [False] * 19
+        for name, compiler_specs, backend_type, quantized, expected in (
+            ("htp fp16", htp_fp16, htp, None, [True] * 8 + none[8:]),
+            ("quantized sin and cos", htp_fp16, htp, "sin_cos", none),
+            ("quantized angles", htp_fp16, htp, "angle", none),
+            (
+                "htp quantized",
+                stubbed_compiler_specs(generate_htp_compiler_spec(use_fp16=False)),
+                htp,
+                None,
+                none,
+            ),
+            (
+                "gpu",
+                stubbed_compiler_specs(generate_gpu_compiler_spec()),
+                gpu,
+                None,
+                none,
+            ),
+        ):
+            with self.subTest(name):
+                edge_program = self._positional_edge_graph(
+                    Embeddings(),
+                    sample_input,
+                    compiler_specs,
+                    backend_type,
+                    passes_job=passes_job if quantized else None,
+                )
+                graph_module = edge_program.graph_module
+                outputs = graph_module.graph.output_node().args[0]
+                for node in outputs if quantized else []:
+                    node = node.args[0] if quantized == "angle" else node
+                    node.meta[QCOM_QUANT_ATTRS] = {}
+                # The GPU pass manager does not list the pass, so run it here
+                # to check that it leaves GPU graphs alone.
+                if quantized or backend_type == gpu:
+                    TagPositionalSinCos(edge_program, compiler_specs)(graph_module)
+                # A tagged sin or cos takes its whole angle with it, integers
+                # included, so the casts I64toI32 adds stay with their
+                # producers.
+                self.assertEqual(
+                    [self._is_fully_tagged(node) for node in outputs], expected
+                )
+                for nodes in (outputs, [node.args[0] for node in outputs]):
+                    self.assertEqual(
+                        [node.meta.get(QCOM_FALLBACK_NODE, False) for node in nodes],
+                        expected,
+                    )
+                # Ops that only the untagged outputs read, like the linear of
+                # sin(linear(x) * freqs), stay delegated.
+                tagged = {
+                    node
+                    for node in graph_module.graph.nodes
+                    if node.meta.get(QCOM_FALLBACK_NODE)
+                }
+                kept = [
+                    self._computing_nodes(n) for n, e in zip(outputs, expected) if e
+                ]
+                self.assertLessEqual(tagged, set().union(*kept))
+
+    def test_tag_positional_sin_cos_dynamic_size(self):
+        class Rotary(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("inv_freq", torch.rand(8))
+
+            def forward(self, x, m: int):
+                n = x.shape[0]
+                return (
+                    torch.cos(torch.arange(n)[:, None] * self.inv_freq),
+                    torch.cos(
+                        torch.arange(n, dtype=torch.float32)[:, None] * self.inv_freq
+                    ),
+                    torch.cos(
+                        torch.arange(m, dtype=torch.float32)[:, None] * self.inv_freq
+                    ),
+                    # Without a frequency axis, an int input counts as a size.
+                    torch.sin(torch.arange(m) * 0.5),
+                    torch.sin(torch.arange(n) * 0.5),
+                    torch.cos(x * 30),
+                )
+
+        # With a dynamic size the aranges read a symbolic integer, a size or
+        # an int input.
+        graph_module = self._positional_edge_graph(
+            Rotary(),
+            (torch.rand(4, 8), 6),
+            self._htp_compiler_specs(True),
+            QnnExecuTorchBackendType.kHtpBackend,
+            dynamic_shapes={
+                "x": {0: torch.export.Dim("n", min=2, max=1024)},
+                "m": torch.export.Dim.DYNAMIC(min=1, max=1024),
+            },
+        ).graph_module
+        self.assertEqual(
+            [
+                self._is_fully_tagged(n)
+                for n in graph_module.graph.output_node().args[0]
+            ],
+            [True, True, True, True, True, False],
+        )
+
+    def test_tag_positional_sin_cos_size_limit(self):
+        class Fourier(torch.nn.Module):
+            def forward(self, x):
+                return torch.sin(x[..., None] * torch.linspace(1, 1000, 16))
+
+        class SlicedTable(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("inv_freq", torch.rand(64))
+
+            def forward(self, x):
+                table = torch.arange(32768).float()[:, None] * self.inv_freq
+                return x + torch.cos(table[:16])
+
+        def is_tagged(x, dynamic_shapes=None, module=Fourier):
+            graph_module = self._positional_edge_graph(
+                module(),
+                (x,),
+                self._htp_compiler_specs(True),
+                QnnExecuTorchBackendType.kHtpBackend,
+                dynamic_shapes=dynamic_shapes,
+            ).graph_module
+            (sin_cos,) = [
+                node
+                for node in graph_module.graph.nodes
+                if node.target
+                in (exir_ops.edge.aten.sin.default, exir_ops.edge.aten.cos.default)
+            ]
+            return self._is_fully_tagged(sin_cos)
+
+        # 1024 positions times 256 is the most a tagged sin or cos may have.
+        self.assertTrue(is_tagged(torch.rand(1024, 16)))
+        self.assertFalse(is_tagged(torch.rand(1025, 16)))
+        # The ops of the angle count too.
+        self.assertFalse(is_tagged(torch.rand(16, 64), module=SlicedTable))
+        # A dynamic size counts with its largest value, and one without a max
+        # is left delegated with a debug message.
+        with self.assertLogs(
+            "executorch.backends.qualcomm._passes.tag_positional_sin_cos",
+            level=logging.DEBUG,
+        ) as logs:
+            self.assertFalse(
+                is_tagged(torch.rand(4, 16), {"x": {0: torch.export.Dim("n", min=2)}})
+            )
+        self.assertTrue(any("needs a max" in line for line in logs.output))
+        for max_size, expected in ((1024, True), (1025, False)):
+            self.assertEqual(
+                is_tagged(
+                    torch.rand(4, 16),
+                    {"x": {0: torch.export.Dim("n", min=2, max=max_size)}},
+                ),
+                expected,
+            )
+
+    def test_tag_positional_sin_cos_mutable_buffer(self):
+        class State(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4, 8))
+                self.register_buffer("cache", torch.zeros(4, 8))
+                self.register_buffer("parts", torch.zeros(4, 8))
+                self.register_buffer("scaled", torch.zeros(4, 8))
+                self.register_buffer("step", torch.zeros(1))
+                self.register_buffer("freqs", torch.linspace(1, 1000, 8))
+
+            def forward(self, x):
+                outputs = (
+                    torch.sin(self.state * 30),
+                    torch.sin(self.cache * 30),
+                    torch.sin(self.parts * 30),
+                    torch.sin(self.scaled * 30),
+                    torch.sin(self.step[:, None] * self.freqs),
+                )
+                self.state.add_(x)
+                self.cache[:, :2] = x[:, :2]
+                self.parts.split(2)[0].add_(x[:2])
+                torch.mul(x, 2, out=self.scaled)
+                self.step.add_(1)
+                return outputs
+
+        # A buffer the graph changes, directly, through a view or as an out=
+        # argument, counts as an input, so sin(state * 30) is not larger than what it reads, while a
+        # step counter spread over frequencies still is. The program fresh
+        # from torch.export writes its buffers in place, and the edge program
+        # lists them in its signature instead.
+        compiler_specs = self._htp_compiler_specs(True)
+        sample_input = (torch.rand(4, 8),)
+        exported_program = self._positional_edge_graph(
+            State(), sample_input, compiler_specs, QnnExecuTorchBackendType.kHtpBackend
+        )
+        edge_program = to_edge(
+            torch.export.export(State(), sample_input, strict=True)
+        ).exported_program()
+        TagPositionalSinCos(edge_program, compiler_specs)(edge_program.graph_module)
+        for program in (exported_program, edge_program):
+            sin_nodes = [
+                node
+                for node in program.graph.nodes
+                if node.target == exir_ops.edge.aten.sin.default
+            ]
+            self.assertEqual(
+                [self._is_fully_tagged(node) for node in sin_nodes],
+                [False, False, False, False, True],
+            )
+
+    def test_tag_positional_sin_cos_long_integer_chain(self):
+        class Chain(torch.nn.Module):
+            def forward(self, mask):
+                positions = mask.cumsum(-1)
+                for _ in range(1000):
+                    positions = positions + 1
+                return torch.sin(
+                    positions.unsqueeze(-1).float() * torch.linspace(1, 1000, 8)
+                )
+
+        # Longer than the recursion limit once I64toI32 adds its casts.
+        graph_module = self._positional_edge_graph(
+            Chain(),
+            (torch.ones(4, dtype=torch.int64),),
+            self._htp_compiler_specs(True),
+            QnnExecuTorchBackendType.kHtpBackend,
+        ).graph_module
+        self.assertTrue(
+            self._is_fully_tagged(graph_module.graph.output_node().args[0][0])
+        )
+
+    def test_tag_positional_sin_cos_logs_without_compiler_specs(self):
+        program = torch.export.export(
+            torch.nn.Linear(8, 8), (torch.rand(4, 8),), strict=True
+        )
+        with self.assertLogs(
+            "executorch.backends.qualcomm._passes.tag_positional_sin_cos",
+            level=logging.DEBUG,
+        ) as logs:
+            TagPositionalSinCos(program)
+        self.assertIn("no compiler_specs", logs.output[0])
+
+    @stubbed_recipe_setup()
+    def test_qnn_recipe_can_turn_off_tag_positional_sin_cos(self):
+        program = torch.export.export(
+            torch.nn.Linear(8, 8), (torch.rand(4, 8),), strict=True
+        )
+        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
+        passes_job[TagPositionalSinCos][QCOM_PASS_ACTIVATE_KEY] = False
+        passes = {}
+        for job in (None, passes_job):
+            recipe = QNNRecipeProvider().create_recipe(
+                QNNRecipeType.FP16, soc_model=QcomChipset.SM8650, passes_job=job
+            )
+            edge_passes = recipe.lowering_recipe.edge_transform_passes[0](None, program)
+            passes[job is None] = {type(p) for p in edge_passes}
+        self.assertEqual(passes[True] - passes[False], {TagPositionalSinCos})
+        self.assertEqual(passes[False] - passes[True], set())
+        with self.assertRaisesRegex(ValueError, "must be a dict or None"):
+            QNNRecipeProvider().create_recipe(
+                QNNRecipeType.FP16, soc_model=QcomChipset.SM8650, passes_job=[]
+            )
+        with self.assertRaisesRegex(ValueError, "not by method name"):
+            QNNRecipeProvider().create_recipe(
+                QNNRecipeType.FP16,
+                soc_model=QcomChipset.SM8650,
+                passes_job={"forward": passes_job},
+            )
 
     def test_partitioner_falls_back_on_data_dependent_shape(self):
         class MaskedStack(torch.nn.Module):
