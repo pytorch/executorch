@@ -243,7 +243,6 @@ def build_app(
                 ModelCard(
                     id=model_id,
                     context_length=_current_serving(app).max_context,
-                    api_dialect=_current_serving(app).api_dialect,
                 )
             ]
         )

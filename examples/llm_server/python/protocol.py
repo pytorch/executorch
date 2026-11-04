@@ -208,7 +208,6 @@ class ModelCard(BaseModel):
     created: int = Field(default_factory=lambda: int(time.time()))
     owned_by: str = "executorch"
     context_length: Optional[int] = None
-    api_dialect: Optional[Literal["openai", "openrouter"]] = None
 
 
 class ModelList(BaseModel):

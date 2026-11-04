@@ -111,26 +111,12 @@ seconds. Admission errors detected before headers retain their HTTP status; late
 errors are delivered as SSE errors. Keepalives indicate a live connection, not
 measured prefill progress.
 
-### Muse CLI through OpenRouter
+### OpenRouter compatibility
 
-Start the server with `--max-sessions 8 --tool-parser atem`
-and `--stream-usage-format openrouter`, adding
-`--dflash --dflash-n-draft 7` for a matching DFlash
-export. Then launch the installed Muse CLI:
-
-```sh
-python -m executorch.examples.llm_server.python.muse \
-  --base-url http://127.0.0.1:8000/v1 --model muse_glimmer
-```
-
-The helper reads `/v1/models` and sets Muse's
-`context_compaction.provider_context_limit_tokens` to the server's actual context
-limit. Append `exec` and its flags for noninteractive use, or use `--muse-bin` to
-select an installed executable. The default endpoint is port 8000; the helper
-sets a local placeholder API key instead of forwarding an existing OpenRouter key.
-Use `--` before arguments that must be passed verbatim to Muse. Launching Muse directly without this override
-can retain its unknown-model fallback budget; model metadata alone does not
-configure the installed OpenRouter provider.
+Start the server with `--api-dialect openrouter` for OpenRouter clients and
+`--tool-parser atem` for tool calling. `/v1/models` reports the configured
+`context_length`; clients must consume that value or configure their context
+budget explicitly. The server does not configure client-side compaction.
 
 The OpenRouter usage format includes usage once on the terminal finish chunk.
 The installed Muse provider stops reading at that chunk, so a later usage-only

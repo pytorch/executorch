@@ -4,61 +4,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import asyncio
-import io
 import json
 
 import pytest
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
-from executorch.examples.llm_server.python.muse import command
 from executorch.examples.llm_server.python.protocol import ChatMessage
 from executorch.examples.llm_server.python.server import _with_heartbeats
-
-
-def test_launcher_preserves_muse_flags_and_uses_local_credentials(monkeypatch):
-    from executorch.examples.llm_server.python import muse
-
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-existing-credential")
-    monkeypatch.setattr(
-        "sys.argv",
-        ["launcher", "--muse-bin", "muse", "exec", "--mo", "fast", "--json"],
-    )
-    urls = []
-    commands = []
-
-    def models(url, **kwargs):
-        urls.append(url)
-        return io.StringIO(
-            json.dumps(
-                {
-                    "data": [
-                        {
-                            "id": "test",
-                            "context_length": 4096,
-                            "api_dialect": "openrouter",
-                        }
-                    ]
-                }
-            )
-        )
-
-    monkeypatch.setattr(muse.urllib.request, "urlopen", models)
-    monkeypatch.setattr(muse.os, "execvp", lambda binary, argv: commands.append(argv))
-    muse.main()
-    assert urls == ["http://127.0.0.1:8000/v1/models"]
-    assert commands[0][:2] == ["muse", "exec"]
-    assert commands[0][-3:] == ["--mo", "fast", "--json"]
-    assert muse.os.environ["OPENROUTER_API_KEY"] == "local"
-
-
-def test_launcher_does_not_reinterpret_option_values_as_subcommands():
-    argv = command(
-        "muse",
-        "http://127.0.0.1:8000/v1",
-        {"id": "test", "context_length": 4096, "api_dialect": "openrouter"},
-        ["--", "--some-option", "exec"],
-    )
-    assert argv[1] == "--provider"
-    assert argv[-2:] == ["--some-option", "exec"]
 
 
 def test_unknown_context_is_omitted_from_model_metadata(make_client):
@@ -128,13 +79,10 @@ def test_bad_structures_are_rejected_before_generation(make_client, body):
     assert worker.captured_config is None
 
 
-def test_model_metadata_drives_muse_compaction_budget(make_client):
-    client, _ = make_client(max_context=65536, api_dialect="openrouter")
+def test_model_metadata_reports_context_limit(make_client):
+    client, _ = make_client(max_context=65536)
     model = client.get("/v1/models").json()["data"][0]
-    argv = command("muse", "http://127.0.0.1:8088/v1", model, ["exec", "--json"])
-    assert argv[:2] == ["muse", "exec"]
-    assert "context_compaction.provider_context_limit_tokens=65536" in argv
-    assert argv[-1] == "--json"
+    assert model["context_length"] == 65536
 
 
 def test_heartbeat_does_not_cancel_or_duplicate_pending_token():
@@ -322,7 +270,6 @@ def test_hermes_encoded_object_round_trips(make_client, dialect):
     )
     assert error.status_code == 422
     assert error.json()["error"]["code"] == "invalid_value"
-    assert client.get("/v1/models").json()["data"][0]["api_dialect"] == dialect
 
 
 @pytest.mark.parametrize("arguments", [[], 42, "not json", "[]"])
@@ -357,38 +304,6 @@ def test_noop_reasoning_is_accepted(make_client, reasoning):
         ).status_code
         == 200
     )
-
-
-def test_launcher_requires_compatible_dialect():
-    with pytest.raises(ValueError, match="api-dialect openrouter"):
-        command("muse", "http://localhost/v1", {"id": "m", "context_length": 1000}, [])
-
-
-def test_launcher_main_preserves_double_dash(monkeypatch):
-    from executorch.examples.llm_server.python import muse
-
-    monkeypatch.setattr(
-        "sys.argv",
-        ["launcher", "--muse-bin", "muse", "--", "exec", "--model", "forwarded"],
-    )
-    monkeypatch.setattr(
-        muse.urllib.request,
-        "urlopen",
-        lambda *a, **kw: io.StringIO(
-            json.dumps(
-                {
-                    "data": [
-                        {"id": "m", "context_length": 1000, "api_dialect": "openrouter"}
-                    ]
-                }
-            )
-        ),
-    )
-    calls = []
-    monkeypatch.setattr(muse.os, "execvp", lambda *args: calls.append(args))
-    muse.main()
-    assert calls[0][1][:2] == ["muse", "exec"]
-    assert calls[0][1][-2:] == ["--model", "forwarded"]
 
 
 def test_template_input_errors_use_structured_400(make_client):

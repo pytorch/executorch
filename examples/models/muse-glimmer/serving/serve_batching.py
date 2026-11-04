@@ -103,8 +103,6 @@ def _parse_args(argv=None):
     )
     parser.add_argument(
         "--api-dialect",
-        "--stream-usage-format",
-        dest="api_dialect",
         choices=("openai", "openrouter"),
         default="openai",
         help="OpenRouter clients require usage on the finish chunk; OpenAI uses "

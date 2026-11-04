@@ -109,10 +109,15 @@ keepalive comments every 15 seconds. Model launchers may bound initial readiness
 waiting to return headers during prefill; errors detected after headers arrive
 as SSE error events.
 
-The Muse batching launcher's `--stream-usage-format openrouter` option instead
-attaches requested usage to the finish chunk, once, for clients that stop
-consuming on `finish_reason`. Its default `openai` format retains the separate
+The generic and Muse batching launchers accept `--api-dialect openai|openrouter`.
+The `openrouter` dialect attaches requested usage to the finish chunk, once, for
+clients that stop consuming on `finish_reason`, and supplies overflow metadata
+for context recovery. The default `openai` dialect retains the separate
 usage-only chunk described above.
+
+`--streaming-preflight-timeout` waits for first output, including prefill; `none`
+restores an indefinite wait, while finite nonnegative values allow SSE headers
+before first output. Once headers are sent, later failures are SSE error events.
 
 ### Tool calling
 
@@ -324,11 +329,3 @@ deferred: no compatible local PTE/tokenizer has been confirmed, and this stack
 must not download/export weights or claim that a real combined forward was
 verified. A Glimmer `embed_text`/`forward_from_embeddings` last-logits artifact is
 not assumed compatible with this packed construction path.
-
-
-The generic and Muse batching launchers accept `--api-dialect openai|openrouter`.
-This single setting controls both usage placement and overflow metadata, and is
-advertised as `api_dialect` on `/v1/models`. The Muse launcher requires `openrouter`.
-`--streaming-preflight-timeout` waits for first output, including prefill; `none`
-restores an indefinite wait, while finite nonnegative values allow SSE headers
-before first output. Once headers are sent, later failures are SSE error events.
