@@ -1326,6 +1326,10 @@ jobs:
         # test_mha_to_sha imports oss_scripts/llama which transitively needs torchtune
         pip install -r requirements-examples.txt
 
+        # The QNN manager loads the SDK libraries by name. Without this, every test
+        # that needs the real backend skips instead of running.
+        export LD_LIBRARY_PATH="$QNN_SDK_ROOT/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
+
         # Run QNN pass unit tests
         pytest -xvs backends/qualcomm/tests/test_passes.py
 
