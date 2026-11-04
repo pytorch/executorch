@@ -34,6 +34,8 @@ Usage:
 import argparse
 import importlib
 import multiprocessing
+import os
+import signal
 import subprocess
 import sys
 from multiprocessing import Pool
@@ -188,18 +190,26 @@ def _run_test_in_subprocess(
         cmd.append("--verbose")
 
     try:
-        result = subprocess.run(
-            cmd,
-            timeout=timeout,
-            capture_output=False,
-        )
-        return result.returncode == 0
-    except subprocess.TimeoutExpired:
-        print(f"✗ FAILED: {config_name} - Timeout after {timeout}s")
-        return False
+        # A session of its own, so a timeout also kills the op_test_runner the
+        # child started, not just the child.
+        proc = subprocess.Popen(cmd, start_new_session=True)
     except Exception as e:
         print(f"✗ FAILED: {config_name} - Subprocess error: {e}")
         return False
+    try:
+        return proc.wait(timeout=timeout) == 0
+    except subprocess.TimeoutExpired:
+        print(f"✗ FAILED: {config_name} - Timeout after {timeout}s")
+        return False
+    finally:
+        if proc.poll() is None:
+            # macOS raises PermissionError instead of ProcessLookupError when
+            # the child exited after poll() and only its zombie is left.
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            proc.wait()
 
 
 def run_tests_parallel(
