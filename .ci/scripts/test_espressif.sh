@@ -21,6 +21,7 @@ build_dir=$(cd "${build_dir}" && pwd)
 cd "${et_root}"
 
 collect_artifacts() {
+    local file operator_dir artifact_dir
     if [[ -n "${RUNNER_ARTIFACT_DIR:-}" ]]; then
         mkdir -p "${RUNNER_ARTIFACT_DIR}/esp32s3"
         for file in "${build_dir}"/*.log "${build_dir}"/*.bpte \
@@ -34,6 +35,18 @@ collect_artifacts() {
             if [[ -f "${file}" ]]; then
                 cp "${file}" "${RUNNER_ARTIFACT_DIR}/esp32s3/"
             fi
+        done
+        for operator_dir in "${build_dir}"/operator-library-*; do
+            [[ -d "${operator_dir}" ]] || continue
+            artifact_dir="${RUNNER_ARTIFACT_DIR}/esp32s3/${operator_dir##*/}"
+            mkdir -p "${artifact_dir}"
+            for file in "${operator_dir}"/*.log "${operator_dir}"/*.bpte \
+                "${operator_dir}/sdkconfig" "${operator_dir}"/*.elf \
+                "${operator_dir}/merged-binary.bin"; do
+                if [[ -f "${file}" ]]; then
+                    cp "${file}" "${artifact_dir}/"
+                fi
+            done
         done
     fi
 }
@@ -54,6 +67,9 @@ python examples/espressif/export_espnn_test_programs.py \
 # runs inline without pthreadpool, which needs POSIX calls ESP-IDF lacks.
 espnn_ops=$(tr -d '\n' < "${build_dir}/espnn-tests/operators.txt" \
     | tr ',' '\n' | grep -v '^quantized_decomposed::' | paste -sd, -)
+if [[ "${espnn_kernels}" == optimized ]]; then
+    espnn_ops="${espnn_ops},aten::sin.out"
+fi
 
 cmake --preset esp-baremetal -G Ninja -B "${build_dir}/runtime" \
     -DCMAKE_TOOLCHAIN_FILE="${IDF_PATH}/tools/cmake/toolchain-esp32s3.cmake" \
@@ -136,3 +152,16 @@ import json, sys
 for entry in json.load(open(sys.argv[1])):
     print(entry["name"], entry["atol"], entry["rtol"])
 ' "${build_dir}/espnn-tests/manifest.json")
+
+if [[ "${espnn_kernels}" == optimized ]]; then
+    # Stop on failure so later cases cannot overwrite its firmware and logs.
+    ESPRESSIF_BUILD_DIR="${build_dir}" python -m pytest \
+        -x -v --tb=short backends/espressif/test/ops -k implementation \
+        2>&1 | tee "${build_dir}/operator-library-tests.log"
+    for sdkconfig in "${build_dir}"/operator-library-*/sdkconfig; do
+        if ! grep -qx 'CONFIG_NN_OPTIMIZED=y' "${sdkconfig}"; then
+            echo "Expected CONFIG_NN_OPTIMIZED=y in ${sdkconfig}" >&2
+            exit 1
+        fi
+    done
+fi

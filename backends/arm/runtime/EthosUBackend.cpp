@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <executorch/backends/arm/runtime/EthosUBackend_Internal.h>
+#include <executorch/backends/arm/runtime/EthosUBackend_Pmu.h>
 #include <executorch/backends/arm/runtime/VelaBinStream.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -55,6 +56,10 @@ using executorch::runtime::Span;
 namespace executorch {
 namespace backends {
 namespace arm {
+
+bool __attribute__((weak)) ethosu_execution_metrics_enabled() noexcept {
+  return false;
+}
 
 namespace {
 

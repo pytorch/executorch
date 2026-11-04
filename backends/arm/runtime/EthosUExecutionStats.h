@@ -11,6 +11,12 @@
 #include <cstddef>
 #include <cstdint>
 
+// Optional runner hooks. The stats library provides weak no-op definitions.
+extern "C" {
+void EthosUBackend_npu_begin();
+void EthosUBackend_npu_end();
+}
+
 namespace executorch::backends::arm {
 
 // Containers of Ethos-U metrics.
@@ -21,7 +27,28 @@ struct EthosUExecutionStats;
 struct EthosUExecutionRecord;
 struct EthosUStatsBuffer;
 
+// Public API of the ethosu_execution_stats library.
+// Register runner-owned storage for subsequent invocations. Pass nullptr to
+// stop capture; replace the buffer only when no invocations are running.
+EthosUStatsBuffer* set_ethosu_stats_buffer(EthosUStatsBuffer* buffer) noexcept;
+// Returns true when this library is linked.
+bool ethosu_execution_metrics_enabled() noexcept;
+
 constexpr size_t kMaxPmuEventCounters = 8;
+
+constexpr char kEthosUCycleEventName[] = "ethosu.pmu.counters";
+// Experimental format; layout and fields may change without compatibility.
+// ETDump delegate_debug_metadata starts with "EUC" and ASCII version '1'
+// [0:4], followed by little-endian product [4:8], MACs per cycle [8:12],
+// EthosUPlatform [12:16], flags [16:20] (bit 0: cycle overflow,
+// bit 1: invocation succeeded), register base [20:28], NPU cycle count
+// [28:36], and counter count [36:40].
+// Each populated counter then stores
+// a symbolic event ID (4 bytes), count (8 bytes), and overflow (4 bytes).
+constexpr size_t kEthosUCycleMetadataHeaderSize = 40;
+constexpr size_t kEthosUCycleCounterMetadataSize = 16;
+constexpr size_t kEthosUCycleMetadataMaxSize = kEthosUCycleMetadataHeaderSize +
+    kMaxPmuEventCounters * kEthosUCycleCounterMetadataSize;
 
 enum class EthosUPlatform : uint8_t {
   CoreDriver,
