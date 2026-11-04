@@ -158,6 +158,9 @@ struct ET_EXPERIMENTAL LayerGeometry {
 // exactly one entry per model layer.
 struct ET_EXPERIMENTAL CacheGeometry {
   std::vector<LayerGeometry> layers;
+  // Unset means ordinary attention. DFlash K/V are [new context, block].
+  // Nonnegative temporary block length; zero persists all K/V with one dummy Q.
+  std::optional<int> dflash_block_size = std::nullopt;
 };
 
 // Runtime-selected cache sizing and storage settings.
@@ -174,14 +177,17 @@ struct ET_EXPERIMENTAL CacheConfig {
 };
 
 ET_EXPERIMENTAL inline bool valid(const CacheGeometry& geometry) {
-  if (geometry.layers.empty()) {
+  if (geometry.layers.empty() ||
+      (geometry.dflash_block_size && *geometry.dflash_block_size < 0)) {
     return false;
   }
   for (const LayerGeometry& layer : geometry.layers) {
     if (layer.n_kv_heads <= 0 || layer.head_dim <= 0) {
       return false;
     }
-    if ((layer.policy.kind == LayerPolicy::Kind::Flat &&
+    if ((layer.policy.kind != LayerPolicy::Kind::Flat &&
+         layer.policy.kind != LayerPolicy::Kind::Ring) ||
+        (layer.policy.kind == LayerPolicy::Kind::Flat &&
          layer.policy.window != 0) ||
         (layer.policy.kind == LayerPolicy::Kind::Ring &&
          layer.policy.window <= 0)) {

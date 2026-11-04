@@ -40,6 +40,7 @@ fbcode_target(
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
         "//executorch/extension/pybindings:portable_lib",
@@ -61,11 +62,22 @@ fbcode_target(
 )
 
 fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_multiple_modules",
+    srcs = ["test_multiple_modules.py"],
+    deps = [
+        "//executorch/extension/pybindings:core",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+fbcode_target(
     _kind = runtime.python_library,
     name = "test_pybindings_lib",
     srcs = ["test_pybindings.py"],
     deps = [
         ":make_test",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
     ],

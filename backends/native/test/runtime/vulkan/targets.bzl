@@ -9,34 +9,6 @@ def define_common_targets():
         ],
     )
 
-    if is_xplat():
-        return
-
-    runtime.genrule(
-        name = "vulkan_test_driver",
-        out = "vulkan_test_driver",
-        cmd = "mkdir -p $OUT && cp $(location fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_so)/libvulkan.so.1 $OUT/libvk_swiftshader.so",
-    )
-
-    runtime.cxx_test(
-        name = "vulkan_engine_test",
-        srcs = ["test_vulkan_engine.cpp"],
-        env = {
-            "ASAN_OPTIONS": "detect_leaks=0",
-            "LD_LIBRARY_PATH": "$(location :vulkan_test_driver)",
-        },
-        deps = [
-            "//executorch/backends/native/runtime:native_graph_schema",
-            "//executorch/backends/native/runtime:runtime",
-            "//executorch/backends/native/runtime/deserialize:owned_bytes",
-            "//executorch/backends/native/runtime/deserialize:package",
-            "//executorch/backends/native/runtime/deserialize:package_test_data",
-            "//executorch/backends/native/runtime/engine:engine",
-            "//executorch/backends/native/runtime/vulkan:vulkan_engine",
-            "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
-        ],
-    )
-
     runtime.cxx_test(
         name = "vulkan_passes_test",
         srcs = [
@@ -56,5 +28,45 @@ def define_common_targets():
             "//executorch/backends/native/runtime/graph:scalar_type",
             "//executorch/backends/native/runtime/graph:value",
             "//executorch/backends/native/runtime/graph:tensor_meta",
+        ],
+    )
+
+    if is_xplat():
+        return
+
+    runtime.genrule(
+        name = "vulkan_test_driver",
+        out = "vulkan_test_driver",
+        visibility = ["//executorch/backends/native/test/..."],
+        cmd = "mkdir -p $OUT && cp $(location fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_so)/libvulkan.so.1 $OUT/libvk_swiftshader.so",
+    )
+
+    runtime.cxx_binary(
+        name = "vulkan_ptn_runner",
+        srcs = ["vulkan_ptn_runner.cpp"],
+        visibility = ["//executorch/backends/native/test/..."],
+        deps = [
+            "//executorch/backends/native/runtime/vulkan:vulkan_engine",
+            "//executorch/backends/native/test/runtime:ptn_runner_main",
+            "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "vulkan_engine_test",
+        srcs = ["test_vulkan_engine.cpp"],
+        env = {
+            "ASAN_OPTIONS": "detect_leaks=0",
+            "LD_LIBRARY_PATH": "$(location :vulkan_test_driver)",
+        },
+        deps = [
+            "//executorch/backends/native/runtime:native_graph_schema",
+            "//executorch/backends/native/runtime:runtime",
+            "//executorch/backends/native/runtime/deserialize:owned_bytes",
+            "//executorch/backends/native/runtime/deserialize:package",
+            "//executorch/backends/native/runtime/deserialize:package_test_data",
+            "//executorch/backends/native/runtime/engine:engine",
+            "//executorch/backends/native/runtime/vulkan:vulkan_engine",
+            "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
         ],
     )

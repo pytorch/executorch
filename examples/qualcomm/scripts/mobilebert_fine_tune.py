@@ -107,7 +107,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
 
     # get training / validation data
     labels = {key: index for index, key in enumerate(data.Conference.unique())}
-    data["label"] = data.Conference.replace(labels)
+    data["label"] = data.Conference.map(labels)
 
     train, val, _, _ = train_test_split(
         data.index.values,

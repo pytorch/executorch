@@ -64,22 +64,19 @@ class Conv2dBlockScaledVisitor(NodeVisitor):
                 ts.DType.FP8E4M3,
                 ts.DType.FP8E5M2,
             ],
-            self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
             [inputs[1], inputs[3]],
             ts.DType.FP8UE8M0,
-            self.tosa_spec,
         )
-        validate_valid_dtype(self.target, inputs[4], ts.DType.FP32, self.tosa_spec)
+        validate_valid_dtype(self.target, inputs[4], ts.DType.FP32)
         validate_valid_dtype(
             self.target,
             [inputs[5], inputs[6], inputs[7]],
             ts.DType.SHAPE,
-            self.tosa_spec,
         )
-        validate_valid_dtype(self.target, output, ts.DType.FP32, self.tosa_spec)
+        validate_valid_dtype(self.target, output, ts.DType.FP32)
 
         if not hasattr(ts.Op, "CONV2D_BLOCK_SCALED"):
             raise NotImplementedError(

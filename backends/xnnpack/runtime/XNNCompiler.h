@@ -18,6 +18,11 @@ namespace backends {
 namespace xnnpack {
 namespace delegate {
 
+struct XNNCompilerOptions {
+  bool use_weight_cache{false};
+  bool disable_packed_lhs{false};
+};
+
 class XNNCompiler {
  public:
   // Takes Flatbuffer Serialized XNNPACK Model and rebuilds the xnn-subgraph
@@ -30,7 +35,7 @@ class XNNCompiler {
       XNNWeightsCache* weights_cache,
       xnn_workspace_t workspace,
       const NamedDataMap* named_data_map,
-      bool use_weight_cache);
+      const XNNCompilerOptions& options);
 };
 
 } // namespace delegate

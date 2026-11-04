@@ -9,6 +9,7 @@
 #include <executorch/extension/cuda/cuda_allocator.h>
 
 #include <executorch/extension/cuda/caller_stream.h>
+#include <executorch/extension/cuda/device_guard.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 
@@ -409,6 +410,11 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
           Error,
           "CudaAllocator::allocate: cudaGetDevice failed: %s",
           cudaGetErrorString(prev_device_err));
+      // Every failure return in allocate() clears the CUDA error it leaves:
+      // the return value reports the failure, and a pending error would
+      // surface in the next cudaGetLastError(), e.g. a kernel launch check, as
+      // if that call had failed.
+      (void)cudaGetLastError();
       return Error::Internal;
     }
     switch_device = static_cast<int>(index) != prev_device;
@@ -427,6 +433,7 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
           "CudaAllocator::allocate: cudaSetDevice(%d) failed: %s",
           static_cast<int>(index),
           cudaGetErrorString(set_err));
+      (void)cudaGetLastError();
       return Error::Internal;
     }
   }
@@ -448,6 +455,7 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
         nbytes,
         alignment,
         static_cast<int>(index));
+    (void)cudaGetLastError();
     return Error::MemoryAllocationFailed;
   }
 
@@ -471,6 +479,7 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
         block,
         alignment);
     (void)cudaFree(block);
+    (void)cudaGetLastError();
     return Error::NotSupported;
   }
 
@@ -561,6 +570,37 @@ DeviceType CudaAllocator::device_type() const {
   return DeviceType::CUDA;
 }
 
+Error CudaAllocator::synchronize(DeviceIndex index) {
+  ET_CHECK_OR_RETURN_ERROR(
+      index >= -1,
+      InvalidArgument,
+      "CudaAllocator::synchronize: invalid device index %d (must be >= -1)",
+      static_cast<int>(index));
+  // copy_impl switches to the device and copies on the caller stream when one
+  // is set, and otherwise with cudaMemcpy, on the default stream. Switch here
+  // too, even with a caller stream: a handle such as nullptr or
+  // cudaStreamPerThread names a stream of the current device.
+  const auto caller_stream = getCallerStream();
+  std::optional<CUDAGuard> guard;
+  if (index >= 0) {
+    Result<CUDAGuard> selected = CUDAGuard::create(index);
+    ET_CHECK_OK_OR_RETURN_ERROR(selected.error());
+    guard.emplace(std::move(selected.get()));
+  }
+  const cudaError_t err =
+      cudaStreamSynchronize(caller_stream.value_or(nullptr));
+  if (err != cudaSuccess) {
+    ET_LOG(
+        Error,
+        "CudaAllocator::synchronize: cudaStreamSynchronize failed: %s "
+        "(device %d)",
+        cudaGetErrorString(err),
+        static_cast<int>(index));
+    return Error::Internal;
+  }
+  return Error::Ok;
+}
+
 CudaAllocator& CudaAllocator::instance() {
   // Registered allocators can be called until the process exits.
   static auto* allocator = new CudaAllocator();
@@ -620,6 +660,8 @@ Result<void*> CudaAllocator::allocate_async(
         cudaGetErrorString(err),
         nbytes,
         log_device);
+    // Reported through the return value, as in allocate().
+    (void)cudaGetLastError();
     return Error::MemoryAllocationFailed;
   }
 
@@ -693,6 +735,8 @@ Result<void*> CudaAllocator::allocate_stream_ordered(
         cudaGetErrorString(err),
         nbytes,
         static_cast<int>(index));
+    // Reported through the return value, as in allocate().
+    (void)cudaGetLastError();
     return Error::MemoryAllocationFailed;
   }
   return ptr;

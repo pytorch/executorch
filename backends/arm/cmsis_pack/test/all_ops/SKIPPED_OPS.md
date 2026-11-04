@@ -2,7 +2,7 @@
 
 This test gives **every** operator the pack ships two kinds of coverage:
 
-- **Build / link** — `gen_cproject.py` selects all 198 operator components, so the
+- **Build / link** — `gen_cproject.py` selects all 199 operator components, so the
   consumer firmware links every op's generated registration, forward declaration and
   kernel source. *No operator is exempt from this.*
 - **Execution** — `generate_test_models.py` turns each op's recipe in `op_recipes.py`
@@ -11,7 +11,7 @@ This test gives **every** operator the pack ships two kinds of coverage:
 A **skip** only means an op is not *executed*; it is still build/link-covered. Every skip
 carries a reason (enforced by `test_op_recipes.py::test_no_silent_coverage_gaps`), so
 there are no silent gaps. Current status on the CPU target (Corstone-315): **167 executed
-(incl. 2 shape variants), 33 skipped** of 198 operator components, all passing.
+(incl. 2 shape variants), 34 skipped** of 199 operator components, all passing.
 
 The Ethos-U variant has a separate, weaker status — see
 [Ethos-U variant status](#ethos-u-variant-status) before citing its results.
@@ -107,7 +107,7 @@ APIs to force the conversion into the graph.
 
 ---
 
-## 7. Just needs a bespoke recipe — `grid_sampler_2d`, `cdist_forward`, `pdist_forward`, `upsample_bilinear2d_aa`
+## 7. Just needs a bespoke recipe — `grid_sampler_2d`, `cdist_forward`, `pdist_forward`, `upsample_bicubic2d_aa`, `upsample_bilinear2d_aa`
 
 **Why:** no fundamental blocker — they only need specific inputs the bulk recipes don't
 provide (a sampling grid in `[-1, 1]`; two point sets for the distance ops; the
@@ -117,6 +117,7 @@ provide (a sampling grid in `[-1, 1]`; two point sets for the distance ops; the
 - `grid_sampler_2d`: `F.grid_sample(input, grid)` with `grid` in `[-1, 1]`.
 - `cdist_forward`: `torch.cdist(a, b)` with `a:(B,N,D)`, `b:(B,M,D)`.
 - `pdist_forward`: `torch.pdist(x)` with `x:(N,D)`.
+- `upsample_bicubic2d_aa`: `F.interpolate(x, scale_factor=2, mode="bicubic", antialias=True)`.
 - `upsample_bilinear2d_aa`: `F.interpolate(x, scale_factor=2, mode="bilinear", antialias=True)`.
 
 **Effort:** small — a few lines each in `op_recipes.py`.
@@ -195,7 +196,7 @@ The Docker image used for the consumer build already provides this, so they expo
 
 ## Priority to raise execution coverage
 
-1. **§7 + §8 bespoke recipes** (5 ops) — trivial, immediate wins.
+1. **§7 + §8 bespoke recipes** (6 ops) — trivial, immediate wins.
 2. **§1 + §2 structural-assertion mode** (5 ops) — one small runner/manifest feature.
 3. **Cortex-M env** — install `cmsis_nn`; unlocks 16 ops with no new code.
 4. **§10 quantized path** (9 ops) — one quantized export path.

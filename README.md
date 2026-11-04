@@ -77,11 +77,16 @@ new language-model architecture, see the
 
 ## Install
 
-Install the latest stable Python package in a Python 3.10–3.14 environment:
+Install the latest stable Python package in a Python 3.11–3.15 environment:
 
 ```bash
 pip install executorch
 ```
+
+On Linux this is the CUDA build, matching the `torch` package on PyPI. On macOS
+and Windows it is the CPU build. For the CPU-only Linux build or another CUDA
+version, see
+[Getting Started](https://docs.pytorch.org/executorch/main/getting-started.html).
 
 Install a nightly built from `main` to use the newest features:
 
@@ -200,7 +205,7 @@ is authoritative. See also the [Desktop guide](desktop/README.md).
 | iOS / iPadOS | [XNNPACK](https://docs.pytorch.org/executorch/main/backends/xnnpack/xnnpack-overview.html) CPU; [Core ML](https://docs.pytorch.org/executorch/main/backends/coreml/coreml-overview.html); [MLX](https://docs.pytorch.org/executorch/main/backends/mlx/mlx-overview.html) on physical devices *(experimental)* |
 | macOS | [XNNPACK](https://docs.pytorch.org/executorch/main/backends/xnnpack/xnnpack-overview.html); [Core ML](https://docs.pytorch.org/executorch/main/backends/coreml/coreml-overview.html); experimental [MLX](https://docs.pytorch.org/executorch/main/backends/mlx/mlx-overview.html), [Metal/AOTInductor](backends/apple/metal/README.md), and [WebGPU](https://docs.pytorch.org/executorch/main/backends/webgpu/webgpu-overview.html) paths |
 | Linux | [XNNPACK](https://docs.pytorch.org/executorch/main/backends/xnnpack/xnnpack-overview.html); [OpenVINO](https://docs.pytorch.org/executorch/main/build-run-openvino.html); experimental [CUDA/AOTInductor](https://docs.pytorch.org/executorch/main/backends/cuda/cuda-overview.html), [Vulkan](https://docs.pytorch.org/executorch/main/backends/vulkan/vulkan-overview.html), and [WebGPU](https://docs.pytorch.org/executorch/main/backends/webgpu/webgpu-overview.html) desktop paths |
-| Windows | [XNNPACK](https://docs.pytorch.org/executorch/main/backends/xnnpack/xnnpack-overview.html); experimental [CUDA/AOTInductor](https://docs.pytorch.org/executorch/main/backends/cuda/cuda-overview.html) and [Vulkan](https://docs.pytorch.org/executorch/main/backends/vulkan/vulkan-overview.html) desktop paths |
+| Windows | [XNNPACK](https://docs.pytorch.org/executorch/main/backends/xnnpack/xnnpack-overview.html); [OpenVINO](https://docs.pytorch.org/executorch/main/build-run-openvino.html); experimental [CUDA/AOTInductor](https://docs.pytorch.org/executorch/main/backends/cuda/cuda-overview.html) and [Vulkan](https://docs.pytorch.org/executorch/main/backends/vulkan/vulkan-overview.html) desktop paths |
 | Browser / WebAssembly | [Portable WebAssembly runtime](extension/wasm/README.md) and [WebGPU](https://docs.pytorch.org/executorch/main/backends/webgpu/webgpu-overview.html) *(both experimental)* |
 | Embedded / MCU | [Arm Cortex-M with CMSIS-NN](https://docs.pytorch.org/executorch/main/backends/arm-cortex-m/arm-cortex-m-overview.html) *(beta)*; [Arm Ethos-U](https://docs.pytorch.org/executorch/main/backends/arm-ethos-u/arm-ethos-u-overview.html); [NXP eIQ Neutron](https://docs.pytorch.org/executorch/main/backends/nxp/nxp-overview.html); [Cadence DSP](https://docs.pytorch.org/executorch/main/backends-cadence.html); [Zephyr](zephyr/README.md) and [Arduino](examples/arduino/README.md) integrations |
 

@@ -24,8 +24,8 @@ from executorch.examples.nxp.models.mlperf_tiny.anomaly_detection.mlperf_tiny_an
 )
 
 BOUNDS_MSE = {
-    "PTQ": 1.4e-08,
-    "QAT": 5.205e-06,
+    "PTQ": 1.0e-8,
+    "QAT": 1.0e-6,
 }
 
 
@@ -53,7 +53,7 @@ def test_mlperf_tiny_anomaly_detection_mse_cpu_vs_npu(
         dataset, num_examples=num_samples, idx_to_label=labels
     )
 
-    input_spec = ModelInputSpec(anomaly_detection.input_shape)
+    model_input_spec = ModelInputSpec(anomaly_detection.input_shape)
     quant_type_key = "QAT" if use_qat else "PTQ"
 
     mse = BOUNDS_MSE[quant_type_key]
@@ -61,14 +61,18 @@ def test_mlperf_tiny_anomaly_detection_mse_cpu_vs_npu(
     model_verifier = BaseGraphVerifier(1, [])
     train_fn = anomaly_detection.train_model_fn if use_qat else None
 
+    ref_input_spec = ModelInputSpec(anomaly_detection.input_shape)
+    ref_input_spec.dim_order = torch.contiguous_format
+
     lower_run_compare(
         model,
-        [input_spec],
+        [model_input_spec],
         model_verifier,
         request,
         dataset_creator=dataset_creator,
         output_comparator=comparator,
         mocker=mocker,
+        reference_input_spec=[ref_input_spec],
         use_qat=use_qat,
         train_fn=train_fn,
     )

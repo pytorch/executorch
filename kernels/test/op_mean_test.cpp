@@ -439,6 +439,9 @@ TEST_F(OpMeanOutTest, ChannelsLastEmptyInput) {
 }
 
 TEST_F(OpMeanOutTest, ChannelsLastDynamicOutput) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen resizing does not preserve channels-last strides");
   TensorFactory<ScalarType::Float> tf;
   Tensor x =
       tf.channels_last_like(tf.make({1, 2, 2, 2}, {0, 1, 2, 3, 4, 5, 6, 7}));

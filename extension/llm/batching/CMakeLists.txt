@@ -31,11 +31,29 @@ target_compile_options(extension_llm_batching PUBLIC ${_common_compile_options})
 find_package(Threads REQUIRED)
 target_link_libraries(extension_llm_batching PUBLIC Threads::Threads)
 
+# Runtime-facing helpers shared by executors, separate from the core seam.
+add_library(extension_llm_batching_executor_utils INTERFACE)
+target_compile_features(
+  extension_llm_batching_executor_utils INTERFACE cxx_std_17
+)
+target_include_directories(
+  extension_llm_batching_executor_utils
+  INTERFACE ${_common_include_directories}
+)
+target_compile_options(
+  extension_llm_batching_executor_utils INTERFACE ${_common_compile_options}
+)
+target_link_libraries(
+  extension_llm_batching_executor_utils
+  INTERFACE extension_llm_batching extension_llm_cache extension_llm_sampler
+            extension_tensor
+)
+
 add_library(extension_llm_batching_util util/session_table.cpp)
 target_link_libraries(
   extension_llm_batching_util
   PUBLIC extension_llm_batching extension_llm_cache executorch_core
-  PRIVATE extension_llm_sampler extension_tensor
+  PRIVATE extension_llm_batching_executor_utils extension_llm_sampler
 )
 target_include_directories(
   extension_llm_batching_util PUBLIC ${_common_include_directories}
@@ -49,6 +67,7 @@ target_link_libraries(
   extension_llm_batching_module
   PUBLIC extension_llm_batching extension_llm_batching_util extension_llm_cache
          extension_module extension_tensor
+  PRIVATE extension_llm_sampler extension_llm_batching_executor_utils
 )
 target_include_directories(
   extension_llm_batching_module PUBLIC ${_common_include_directories}
@@ -59,7 +78,7 @@ target_compile_options(
 
 install(
   TARGETS extension_llm_batching extension_llm_batching_util
-          extension_llm_batching_module
+          extension_llm_batching_module extension_llm_batching_executor_utils
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES

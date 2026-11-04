@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
     runtime.cxx_library(
@@ -10,10 +10,6 @@ def define_common_targets():
         visibility = ["//executorch/backends/native/..."],
     )
 
-    # Host-only for now; Android integration is not wired up.
-    if is_xplat():
-        return
-
     runtime.cxx_library(
         name = "vulkan_passes",
         srcs = [
@@ -23,6 +19,7 @@ def define_common_targets():
             "passes/LowerHFAttention.cpp",
             "passes/LowerRMSNorm.cpp",
             "passes/MaterializeViewCopies.cpp",
+            "passes/UseReferenceGgufKQuant.cpp",
         ],
         exported_headers = [
             "passes/FuseQuantizedEmbedding.h",
@@ -31,12 +28,15 @@ def define_common_targets():
             "passes/LowerHFAttention.h",
             "passes/LowerRMSNorm.h",
             "passes/MaterializeViewCopies.h",
+            "passes/UseReferenceGgufKQuant.h",
         ],
         exported_deps = [
             "//executorch/backends/native/runtime:method",
             "//executorch/backends/native/runtime/graph:graph",
         ],
         deps = [
+            "//executorch/backends/native/runtime:reference_gguf_kquant",
+            "//executorch/backends/native/runtime/graph:aliases",
             "//executorch/backends/native/runtime/graph:graph_utils",
         ],
         visibility = ["PUBLIC"],
@@ -61,6 +61,7 @@ def define_common_targets():
             "//executorch/backends/native/runtime/engine:engine",
         ],
         deps = [
+            "//executorch/backends/native/runtime:reference_gguf_kquant",
             "//executorch/backends/native/runtime:method",
             "//executorch/backends/native/runtime/deserialize:package",
             "//executorch/backends/native/runtime/vulkan:constant_materialization_tracker",

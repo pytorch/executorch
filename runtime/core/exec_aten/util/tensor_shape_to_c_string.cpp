@@ -48,8 +48,11 @@ std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string_impl(
           static_cast<uint32_t>(elem));
     }
   }
-  *(p - 2) = ')';
-  *(p - 1) = '\0';
+  if (!shape.empty()) {
+    p -= 2;
+  }
+  *p++ = ')';
+  *p = '\0';
   return out;
 }
 } // namespace

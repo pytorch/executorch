@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <dlfcn.h>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -23,6 +22,7 @@ typedef struct ov_core ov_core_t;
 typedef struct ov_compiled_model ov_compiled_model_t;
 typedef struct ov_infer_request ov_infer_request_t;
 typedef struct ov_tensor ov_tensor_t;
+typedef struct ov_output_const_port ov_output_const_port_t;
 
 // Value types reproduced from openvino/c/ov_shape.h and ov_common.h.
 // These are stable C ABI — pinned via version constraint in pyproject.toml.
@@ -31,10 +31,26 @@ typedef struct {
   int64_t* dims;
 } ov_shape_t;
 
+// Reproduced from openvino/c/ov_dimension.h and ov_partial_shape.h.
+typedef struct {
+  int64_t min;
+  int64_t max;
+} ov_dimension_t;
+
+typedef struct {
+  ov_dimension_t rank;
+  ov_dimension_t* dims;
+} ov_partial_shape_t;
+
 typedef struct {
   char** devices;
   size_t size;
 } ov_available_devices_t;
+
+typedef struct {
+  const char* buildNumber;
+  const char* description;
+} ov_version_t;
 
 // Intentionally partial — only OV_STATUS_OK is needed for success checks.
 // The full enum is defined in openvino/c/ov_common.h.
@@ -65,11 +81,16 @@ typedef enum {
 } ov_element_type_e;
 
 // Function pointer types for each OpenVINO C API function we use.
+using ov_get_openvino_version_fn = ov_status_e (*)(ov_version_t*);
+using ov_version_free_fn = void (*)(ov_version_t*);
 using ov_core_create_fn = ov_status_e (*)(ov_core_t**);
 using ov_core_free_fn = void (*)(ov_core_t*);
 using ov_core_get_available_devices_fn =
     ov_status_e (*)(const ov_core_t*, ov_available_devices_t*);
 using ov_available_devices_free_fn = void (*)(ov_available_devices_t*);
+// Takes one property key and value, both strings, after the device name.
+using ov_core_set_property_fn =
+    ov_status_e (*)(const ov_core_t*, const char*, ...);
 using ov_core_import_model_fn = ov_status_e (*)(
     const ov_core_t*,
     const char*,
@@ -83,49 +104,74 @@ using ov_compiled_model_inputs_size_fn =
 using ov_compiled_model_outputs_size_fn =
     ov_status_e (*)(const ov_compiled_model_t*, size_t*);
 using ov_compiled_model_free_fn = void (*)(ov_compiled_model_t*);
+using ov_compiled_model_output_by_index_fn = ov_status_e (*)(
+    const ov_compiled_model_t*,
+    size_t,
+    ov_output_const_port_t**);
+using ov_port_get_partial_shape_fn =
+    ov_status_e (*)(const ov_output_const_port_t*, ov_partial_shape_t*);
+using ov_output_const_port_free_fn = void (*)(ov_output_const_port_t*);
 using ov_infer_request_set_input_tensor_by_index_fn =
     ov_status_e (*)(ov_infer_request_t*, size_t, const ov_tensor_t*);
 using ov_infer_request_set_output_tensor_by_index_fn =
     ov_status_e (*)(ov_infer_request_t*, size_t, const ov_tensor_t*);
 using ov_infer_request_infer_fn = ov_status_e (*)(ov_infer_request_t*);
+using ov_infer_request_get_output_tensor_by_index_fn =
+    ov_status_e (*)(const ov_infer_request_t*, size_t, ov_tensor_t**);
 using ov_infer_request_free_fn = void (*)(ov_infer_request_t*);
 using ov_tensor_create_from_host_ptr_fn =
     ov_status_e (*)(ov_element_type_e, ov_shape_t, void*, ov_tensor_t**);
+using ov_tensor_create_fn =
+    ov_status_e (*)(ov_element_type_e, ov_shape_t, ov_tensor_t**);
 using ov_tensor_free_fn = void (*)(ov_tensor_t*);
+using ov_tensor_get_shape_fn = ov_status_e (*)(const ov_tensor_t*, ov_shape_t*);
+using ov_tensor_get_byte_size_fn = ov_status_e (*)(const ov_tensor_t*, size_t*);
+using ov_tensor_data_fn = ov_status_e (*)(const ov_tensor_t*, void**);
 using ov_shape_create_fn =
     ov_status_e (*)(int64_t, const int64_t*, ov_shape_t*);
 using ov_shape_free_fn = ov_status_e (*)(ov_shape_t*);
+using ov_partial_shape_free_fn = void (*)(ov_partial_shape_t*);
 
+// Defined in OpenvinoBackend.cpp, where the platform's loader API is included.
 struct DlCloser {
-  void operator()(void* handle) {
-    if (handle) {
-      dlclose(handle);
-    }
-  }
+  void operator()(void* handle);
 };
 using DlHandle = std::unique_ptr<void, DlCloser>;
 
 struct OpenvinoFunctions {
+  ov_get_openvino_version_fn get_openvino_version = nullptr;
+  ov_version_free_fn version_free = nullptr;
   ov_core_create_fn core_create = nullptr;
   ov_core_free_fn core_free = nullptr;
   ov_core_get_available_devices_fn core_get_available_devices = nullptr;
   ov_available_devices_free_fn available_devices_free = nullptr;
+  ov_core_set_property_fn core_set_property = nullptr;
   ov_core_import_model_fn core_import_model = nullptr;
   ov_compiled_model_create_infer_request_fn
       compiled_model_create_infer_request = nullptr;
   ov_compiled_model_inputs_size_fn compiled_model_inputs_size = nullptr;
   ov_compiled_model_outputs_size_fn compiled_model_outputs_size = nullptr;
   ov_compiled_model_free_fn compiled_model_free = nullptr;
+  ov_compiled_model_output_by_index_fn compiled_model_output_by_index = nullptr;
+  ov_port_get_partial_shape_fn port_get_partial_shape = nullptr;
+  ov_output_const_port_free_fn output_const_port_free = nullptr;
   ov_infer_request_set_input_tensor_by_index_fn
       infer_request_set_input_tensor_by_index = nullptr;
   ov_infer_request_set_output_tensor_by_index_fn
       infer_request_set_output_tensor_by_index = nullptr;
   ov_infer_request_infer_fn infer_request_infer = nullptr;
+  ov_infer_request_get_output_tensor_by_index_fn
+      infer_request_get_output_tensor_by_index = nullptr;
   ov_infer_request_free_fn infer_request_free = nullptr;
   ov_tensor_create_from_host_ptr_fn tensor_create_from_host_ptr = nullptr;
+  ov_tensor_create_fn tensor_create = nullptr;
   ov_tensor_free_fn tensor_free = nullptr;
+  ov_tensor_get_shape_fn tensor_get_shape = nullptr;
+  ov_tensor_get_byte_size_fn tensor_get_byte_size = nullptr;
+  ov_tensor_data_fn tensor_data = nullptr;
   ov_shape_create_fn shape_create = nullptr;
   ov_shape_free_fn shape_free = nullptr;
+  ov_partial_shape_free_fn partial_shape_free = nullptr;
 };
 
 } // namespace openvino

@@ -12,8 +12,8 @@
 #include <limits>
 #include <utility>
 
+#include <executorch/extension/llm/batching/executor_utils.h>
 #include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
@@ -273,21 +273,14 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
 }
 
 bool ModuleExecutor::initialize() {
-  // The delegate resolves the cache from this key while the method loads.
-  ::executorch::runtime::BackendOptions<1> options;
-  ::executorch::runtime::LoadBackendOptionsMap options_map;
-  if (install_guard_.set_option(options) != Error::Ok ||
-      options_map.set_options(backend_id_.c_str(), options.view()) !=
-          Error::Ok) {
-    ET_LOG(Error, "ModuleExecutor: could not name the cache to the backend");
-    return false;
-  }
-  if (module_->load_method(
-          method_,
-          /*planned_memory=*/nullptr,
-          /*event_tracer=*/nullptr,
-          &options_map) != Error::Ok) {
-    ET_LOG(Error, "ModuleExecutor: could not load %s", method_.c_str());
+  const auto error = load_method_with_cache(
+      *module_, method_, backend_id_.c_str(), install_guard_);
+  if (error != Error::Ok) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: could not load %s with cache binding (0x%x)",
+        method_.c_str(),
+        static_cast<unsigned int>(error));
     return false;
   }
   return true;

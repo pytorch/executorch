@@ -9,17 +9,12 @@
 #include <executorch/extension/llm/batching/util/session_table.h>
 
 #include <cinttypes>
-#include <limits>
 #include <new>
 #include <random>
 #include <utility>
 
-// sampler/util.h switches on dtype with the macros this defines.
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-
+#include <executorch/extension/llm/batching/executor_utils.h>
 #include <executorch/extension/llm/sampler/sampler.h>
-#include <executorch/extension/llm/sampler/util.h>
-#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace executorch {
@@ -28,24 +23,10 @@ namespace llm {
 namespace batching {
 namespace util {
 
-using ::executorch::extension::make_tensor_ptr;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
 namespace {
-
-// Releases a sequence unless ownership passes to a session.
-struct SequenceGuard {
-  cache::BatchControl& control;
-  std::int32_t seq_id;
-  bool owned = true;
-
-  ~SequenceGuard() {
-    if (owned) {
-      control.seq_rm(seq_id);
-    }
-  }
-};
 
 std::uint64_t nondeterministic_seed() {
   std::random_device device;
@@ -111,18 +92,14 @@ std::optional<SessionId> SessionTable::open() {
 std::optional<SessionId> SessionTable::publish(
     std::int32_t seq_id,
     Position position) {
-  SequenceGuard guard{ctl_, seq_id};
-  if (ctl_.pos(seq_id) != position) {
-    return std::nullopt;
-  }
-  const SessionId session = next_session_;
-  if (!sessions_.emplace(session, Session{seq_id, nullptr}).second) {
-    return std::nullopt;
-  }
-  guard.owned = false;
-  next_session_ =
-      session == std::numeric_limits<SessionId>::max() ? 0 : session + 1;
-  return session;
+  return batching::publish_sequence(
+      ctl_,
+      seq_id,
+      position,
+      next_session_,
+      [&](SessionId session, std::int32_t sequence) {
+        return sessions_.emplace(session, Session{sequence, nullptr}).second;
+      });
 }
 
 void SessionTable::close(SessionId session) {
@@ -307,19 +284,17 @@ std::optional<Token> SessionTable::sample(
         Error, "sample: session %" PRId64 " has no sampling policy", session);
     return std::nullopt;
   }
-  if (row < 0 || row >= logits.numel() / vocab_size_) {
-    ET_LOG(Error, "sample: logits hold no row %d", row);
+  if (logits.dim() <= 0 || logits.size(logits.dim() - 1) != vocab_size_) {
+    ET_LOG(
+        Error, "sample: invalid logits shape for vocabulary %d", vocab_size_);
     return std::nullopt;
   }
-  // A one-row view over the model's own output: sample_from_logits reduces in
-  // place and reads the last dimension.
-  auto one_row = make_tensor_ptr(
-      {vocab_size_},
-      static_cast<std::uint8_t*>(logits.mutable_data_ptr()) +
-          static_cast<std::size_t>(row) * vocab_size_ *
-              ::executorch::runtime::elementSize(logits.scalar_type()),
-      logits.scalar_type());
-  return static_cast<Token>(sample_from_logits(*one_row, *it->second.sampler));
+  const auto token =
+      batching::sample_from_row(logits, row, *it->second.sampler);
+  if (!token) {
+    ET_LOG(Error, "sample: could not sample logits row %d", row);
+  }
+  return token;
 }
 
 } // namespace util

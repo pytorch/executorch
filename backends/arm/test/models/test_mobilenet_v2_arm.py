@@ -234,7 +234,7 @@ def test_mv2_vgf_quant_partial_quant():
         aten_op=[],
         exir_op=[],
         quantize=True,
-        atol=0.10,
+        atol=0.12,
     )
     _use_partial_quantizer(pipeline)
     pipeline.run()

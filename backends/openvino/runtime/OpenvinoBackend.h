@@ -28,12 +28,16 @@ namespace openvino {
 struct ExecutionHandle {
   ov_compiled_model_t* compiled_model = nullptr;
   ov_infer_request_t* infer_request = nullptr;
+  // A buffer OpenVINO owns for each output whose size can change, made on
+  // first use and reused by every call; null for the others.
+  ov_tensor_t** owned_outputs = nullptr;
+  size_t num_outputs = 0;
 };
 
 class OpenvinoBackend final : public ::exr::BackendInterface {
  public:
   OpenvinoBackend() = default;
-  ~OpenvinoBackend() override = default;
+  ~OpenvinoBackend() override;
 
   bool is_available() const override;
   exr::Result<exr::DelegateHandle*> init(
@@ -50,11 +54,22 @@ class OpenvinoBackend final : public ::exr::BackendInterface {
   bool ensure_loaded() const;
   ov_element_type_e convert_to_openvino_type(exa::ScalarType scalar_type) const;
   exr::Result<ov_tensor_t*> create_ov_tensor(const exa::Tensor& tensor) const;
+  // Creates a buffer OpenVINO owns and grows for an output whose size can
+  // change. It starts with the shape OpenVINO compiled for that output.
+  exr::Result<ov_tensor_t*> create_owned_output(
+      const ov_compiled_model_t* compiled_model,
+      size_t index,
+      exa::ScalarType scalar_type) const;
+  exr::Error copy_output(
+      const ov_tensor_t* ov_output,
+      const exa::Tensor& output) const;
 
   mutable DlHandle lib_handle_;
   mutable OpenvinoFunctions ov_;
   mutable std::once_flag load_flag_;
   mutable bool loaded_ = false;
+  // Whether core_import_model copies the blob, so init can free it.
+  mutable bool import_copies_blob_ = false;
 };
 
 } // namespace openvino
