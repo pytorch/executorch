@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 import math
-from contextlib import aclosing
+from contextlib import aclosing, asynccontextmanager
 from typing import AsyncIterator, Callable, Iterable, Optional, Protocol
 
 from .chat_template import ChatTemplate
@@ -130,6 +130,45 @@ class StreamingResponseParser(Protocol):
     def finish(self) -> Iterable[DeltaMessage]: ...
 
 
+class _AdmissionRetryStream:
+    """Retry late capacity rejection only before any raw model output."""
+
+    def __init__(self, serving, session_id, generation, factory):
+        self._serving = serving
+        self._session_id = session_id
+        self._generation = generation
+        self._factory = factory
+        self._started = False
+        self._closed = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        while not self._closed:
+            try:
+                token = await anext(self._generation)
+                self._started = True
+                return token
+            except (WorkerError, APIError) as error:
+                if self._started or error.code != "capacity_exhausted":
+                    raise
+                self._serving._attempted_sessions.discard(self._session_id)
+                await self._generation.aclose()
+                if not await self._serving._evict_idle_session():
+                    raise
+                self._serving._attempted_sessions.add(self._session_id)
+                self._generation = self._factory()
+        raise StopAsyncIteration
+
+    def cancel(self):
+        return self._generation.cancel()
+
+    async def aclose(self):
+        self._closed = True
+        await self._generation.aclose()
+
+
 class ServingChat:
     def __init__(
         self,
@@ -147,6 +186,7 @@ class ServingChat:
         streaming_parser_factory: Optional[
             Callable[[], StreamingResponseParser]
         ] = None,
+        evict_idle_sessions: bool = False,
         streaming_preflight_timeout: Optional[float] = None,
         api_dialect: str = "openai",
     ):
@@ -158,6 +198,10 @@ class ServingChat:
         self._content_filter = content_filter
         self._reasoning_extractor = reasoning_extractor
         self._streaming_parser_factory = streaming_parser_factory
+        self._evict_idle_sessions = evict_idle_sessions
+        self._idle_sessions: dict[str, None] = {}
+        self._attempted_sessions: set[str] = set()
+        self._eviction_lock = asyncio.Lock()
         self._streaming_preflight_timeout = streaming_preflight_timeout
         if api_dialect not in ("openai", "openrouter"):
             raise ValueError("api_dialect must be openai or openrouter")
@@ -498,15 +542,19 @@ class ServingChat:
         self._validate_session_id(session_id)
         try:
             async with self._transactions.hold(session_id):
-                try:
-                    await self._runtime.close(session_id)
-                except BaseException:
-                    if self._multiplexed:
-                        self._transcript.close(session_id)
-                    raise
-                self._transcript.close(session_id)
+                await self._close_session(session_id)
         except WorkerError as e:
             raise self._generation_error(e)
+
+    async def _close_session(self, session_id):
+        try:
+            await self._runtime.close(session_id)
+        except BaseException:
+            if self._multiplexed:
+                self._transcript.close(session_id)
+            raise
+        self._transcript.close(session_id)
+        self._idle_sessions.pop(session_id, None)
 
     async def reset_session(self, session_id: str) -> None:
         self._validate_session_id(session_id)
@@ -677,10 +725,39 @@ class ServingChat:
                 total += c
         return total
 
+    @asynccontextmanager
+    async def _transaction(self, session_id):
+        async with self._transactions.hold(session_id):
+            known = session_id in self._idle_sessions
+            self._idle_sessions.pop(session_id, None)
+            try:
+                yield
+            finally:
+                if (
+                    self._evict_idle_sessions
+                    and session_id is not None
+                    and (known or session_id in self._attempted_sessions)
+                ):
+                    self._idle_sessions[session_id] = None
+                self._attempted_sessions.discard(session_id)
+
+    async def _evict_idle_session(self) -> bool:
+        if not self._evict_idle_sessions:
+            return False
+        async with self._eviction_lock:
+            for session_id in list(self._idle_sessions):
+                if session_id in self._transactions._entries:
+                    continue  # Includes queued callers, not just the owner.
+                # The admitting chat already owns a request slot.
+                async with self._transactions.hold(session_id, count_request=False):
+                    await self._close_session(session_id)
+                return True
+        return False
+
     async def create(self, req: ChatCompletionRequest):
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
-        lease = self._transactions.hold(req.session_id)
+        lease = self._transaction(req.session_id)
         entered = False
         try:
             await lease.__aenter__()
@@ -756,10 +833,29 @@ class ServingChat:
     async def _create_response(
         self, req, prompt_input, options, preamble, gen_stops, lease
     ):
+        while True:
+            try:
+                return await self._start_response(
+                    req, prompt_input, options, preamble, gen_stops, lease
+                )
+            except (WorkerError, APIError) as error:
+                if error.code == "capacity_exhausted":
+                    self._attempted_sessions.discard(req.session_id)
+                if (
+                    error.code != "capacity_exhausted"
+                    or not await self._evict_idle_session()
+                ):
+                    raise
+
+    async def _start_response(
+        self, req, prompt_input, options, preamble, gen_stops, lease
+    ):
         # Legacy workers need explicit admission. Multiplexed generation opens
         # implicitly from its full prompt, preserving new-session prefix reuse.
         if req.session_id is not None and not self._multiplexed:
             await self._preflight_session(req.session_id)
+        if self._evict_idle_sessions and req.session_id is not None:
+            self._attempted_sessions.add(req.session_id)
         if req.stream:
             stats = GenStats()
             generation = self._runtime.generate_stream(
@@ -767,6 +863,15 @@ class ServingChat:
             )
             if self._multiplexed:
                 await generation.wait_ready(timeout=self._streaming_preflight_timeout)
+                if self._evict_idle_sessions:
+                    generation = _AdmissionRetryStream(
+                        self,
+                        req.session_id,
+                        generation,
+                        lambda: self._runtime.generate_stream(
+                            req.session_id, prompt_input, options, stats
+                        ),
+                    )
             return _ChatStream(
                 self._stream(req, preamble, gen_stops, generation, stats),
                 lease,
@@ -804,6 +909,7 @@ class ServingChat:
         # Compare future echoes against the finalized client-visible response.
         self._transcript.record_assistant_turn(
             session_id=req.session_id,
+            request_messages=req.messages,
             content=content,
             tool_calls=tool_calls,
             reasoning_content=reasoning,
@@ -1061,6 +1167,7 @@ class ServingChat:
             return
         self._transcript.record_assistant_turn(
             session_id=req.session_id,
+            request_messages=req.messages,
             content=content,
             tool_calls=tool_calls,
             reasoning_content=reasoning or None,

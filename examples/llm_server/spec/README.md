@@ -200,8 +200,10 @@ request is an exact-token extension of its resident context prefills only the ne
 suffix. All KV/resident state lives inside the worker/session, never the control
 plane.
 
-For named sessions, an unchanged assistant reply can reuse its original generated
-token IDs. Clients may omit `reasoning_content` or send `null` when echoing a reply;
+For named sessions, an unchanged assistant reply with the same preceding message
+history can reuse its original generated token IDs. Compaction, removal, or edits
+to earlier message content invalidate affected records, even if the assistant's
+visible answer is identical. Clients may omit `reasoning_content` or send `null` when echoing a reply;
 both allow replay of the original tokens, including reasoning. A supplied string
 must exactly match the value returned to that client. String edits, including
 whitespace or line-ending changes and `""`, invalidate that turn's stored IDs and

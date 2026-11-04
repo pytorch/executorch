@@ -140,6 +140,29 @@ class OpenAITranscriptState:
             return None
         return hashlib.sha256(reasoning_content.encode("utf-8")).digest()
 
+    @classmethod
+    def _history_fingerprint(cls, messages: list[ChatMessage], stored: dict) -> str:
+        history = []
+        turn = 0
+        for m in messages:
+            reasoning = cls._reasoning_fingerprint(m.reasoning_content)
+            if m.role == "assistant":
+                if m.reasoning_content is None and turn in stored:
+                    reasoning = stored[turn]["reasoning_fp"]
+                turn += 1
+            history.append(
+                [
+                    m.role,
+                    m.name,
+                    m.tool_call_id,
+                    cls._assistant_fingerprint(m.content, m.tool_calls),
+                    reasoning.hex() if reasoning is not None else None,
+                ]
+            )
+        return hashlib.sha256(
+            json.dumps(history, ensure_ascii=False).encode()
+        ).hexdigest()
+
     def _normalize_scaffold(self, text_chunk: str, preamble: str) -> Optional[str]:
         """Force the scaffold region (between the last assistant header in
         `text_chunk` and its end) to equal `preamble`, so the worker re-tokenizes
@@ -266,6 +289,7 @@ class OpenAITranscriptState:
         rendered_prompt: str,
         tools,
         template_kwargs,
+        history_messages: Optional[list[ChatMessage]] = None,
     ) -> PromptInput:
         """Return a PromptInput: token-ID segments when this session has faithful
         stored ids for matching prior assistant turns, else the plain rendered
@@ -273,11 +297,14 @@ class OpenAITranscriptState:
         records and only spliced when its content/tool calls and any supplied
         reasoning string match what we returned, and we kept faithful ids for it.
         Omitted or null reasoning permits reuse; a string edit invalidates the tail.
+        ``history_messages`` preserves source content before model normalization,
+        such as image URLs replaced with placeholders for rendering.
         Falls back to text on a sentinel collision or a render that
         dropped/duplicated a sentinel."""
         stored = self._turns.get(session_id or "")
         if not stored:
             return PromptInput(text=rendered_prompt)
+        history_messages = messages if history_messages is None else history_messages
         # Missing records render as text without shifting later turn indices.
         positions = [i for i, m in enumerate(messages) if m.role == "assistant"]
         splice: dict[int, dict] = {}  # message index -> {"ids", "preamble"}
@@ -286,10 +313,15 @@ class OpenAITranscriptState:
             if record is None:
                 continue
             m = messages[pos]
-            if self._assistant_fingerprint(m.content, m.tool_calls) != record["fp"] or (
-                m.reasoning_content is not None
-                and self._reasoning_fingerprint(m.reasoning_content)
-                != record["reasoning_fp"]
+            if (
+                record.get("history_fp")
+                != self._history_fingerprint(history_messages[:pos], stored)
+                or self._assistant_fingerprint(m.content, m.tool_calls) != record["fp"]
+                or (
+                    m.reasoning_content is not None
+                    and self._reasoning_fingerprint(m.reasoning_content)
+                    != record["reasoning_fp"]
+                )
             ):
                 # Discard the stale tail without shifting subsequent turn indices.
                 self._turns[session_id or ""] = {
@@ -353,6 +385,7 @@ class OpenAITranscriptState:
         prior_turns: int,
         preamble: str = "",
         reasoning_content: Optional[str] = None,
+        request_messages: Optional[list[ChatMessage]] = None,
     ) -> None:
         """Record this turn's {fingerprint, generated ids, generation preamble} at
         `prior_turns` (the assistant-turn count of the request it answers).
@@ -370,6 +403,12 @@ class OpenAITranscriptState:
         for index in [index for index in turns if index >= prior_turns]:
             del turns[index]
         turns[prior_turns] = {
+            # Unbound records cannot safely replay after history replacement.
+            "history_fp": (
+                self._history_fingerprint(request_messages, turns)
+                if request_messages is not None
+                else None
+            ),
             "fp": self._assistant_fingerprint(content, tool_calls),
             "reasoning_fp": self._reasoning_fingerprint(reasoning_content),
             "ids": (

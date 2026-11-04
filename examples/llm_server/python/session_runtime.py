@@ -281,10 +281,10 @@ class _SessionLocks:
         self._limit = limit
 
     @asynccontextmanager
-    async def hold(self, session_id):
-        if self._limit is not None and self._users >= self._limit:
+    async def hold(self, session_id, *, count_request=True):
+        if count_request and self._limit is not None and self._users >= self._limit:
             raise WorkerError("request capacity exhausted", code="capacity_exhausted")
-        self._users += 1
+        self._users += int(count_request)
         entry = None
         if session_id is not None:
             entry = self._entries.setdefault(session_id, _SessionLock())
@@ -296,7 +296,7 @@ class _SessionLocks:
                 async with entry.lock:
                     yield
         finally:
-            self._users -= 1
+            self._users -= int(count_request)
             if entry is not None:
                 entry.users -= 1
                 if not entry.users:

@@ -214,6 +214,7 @@ def make_client():
         content_filter=None,
         special_tokens=None,
         api_dialect="openai",
+        evict_idle_sessions=False,
     ):
         fake = FakeRunner(
             tokens,
@@ -245,6 +246,7 @@ def make_client():
             streaming_parser_factory=streaming_parser_factory,
             content_filter=content_filter,
             api_dialect=api_dialect,
+            evict_idle_sessions=evict_idle_sessions,
         )
         return TestClient(build_app(serving, "test-model")), fake
 
