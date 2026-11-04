@@ -162,3 +162,36 @@ class MuseGlimmerStreamParser:
         self._pending = text[pos:]
         self._previous = text[pos - 1 : pos] if pos else ""
         return result
+
+
+class MuseGlimmerToolReasoningParser:
+    """Stream only reasoning before the first ATEM block; never parse its values."""
+
+    def __init__(self):
+        self._parser = MuseGlimmerStreamParser()
+        self._pending = ""
+        self._finished = False
+        self._marker = "<atem:"
+
+    def feed(self, text):
+        if self._finished:
+            return []
+        self._pending += text
+        cut = self._pending.find(self._marker)
+        if cut >= 0:
+            result = list(self._parser.feed(self._pending[:cut]))
+            result.extend(self._parser.finish())
+            self._finished = True
+            self._pending = ""
+            return result
+        hold = len(self._marker) - 1
+        if len(self._pending) <= hold:
+            return []
+        text, self._pending = self._pending[:-hold], self._pending[-hold:]
+        return self._parser.feed(text)
+
+    def finish(self):
+        if self._finished:
+            return []
+        self._finished = True
+        return list(self._parser.feed(self._pending)) + list(self._parser.finish())

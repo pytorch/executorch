@@ -881,6 +881,8 @@ async def _create_message(serving, request):
         for field in ("content", "reasoning_content"):
             if field in delta:
                 message[field] = message.get(field, "") + delta[field]
+        if delta.get("tool_calls"):
+            message.setdefault("tool_calls", []).extend(delta["tool_calls"])
     assert done
     return message
 
@@ -1084,6 +1086,119 @@ def test_rejects_multiple_runners(monkeypatch):
     )
     with pytest.raises(SystemExit):
         serve.main()
+
+
+@pytest.mark.parametrize(
+    "control", [{"reasoning": {"effort": "low"}}, {"reasoning_effort": "low"}]
+)
+def test_openrouter_reasoning_effort_reaches_template(control):
+    class Template(_StubTemplate):
+        seen = None
+
+        def render(self, messages, tools=None, template_kwargs=None):
+            self.seen = template_kwargs
+            return super().render(
+                messages, tools=tools, template_kwargs=template_kwargs
+            )
+
+    template = Template()
+    serving, _ = _glimmer_serving(
+        [{"text": " to=user<|message|>OK"}], template=template
+    )
+    asyncio.run(
+        serving.create(
+            ChatCompletionRequest(
+                messages=[ChatMessage(role="user", content="hi")], **control
+            )
+        )
+    )
+    assert template.seen["reasoning_strength"] == "low"
+
+
+def test_bundled_template_preserves_developer_and_canonical_tool_history():
+    import os
+
+    hf = os.environ.get("MUSE_GLIMMER_HF_DIR")
+    if not hf:
+        pytest.skip("set MUSE_GLIMMER_HF_DIR to a local Muse tokenizer")
+    from executorch.examples.llm_server.python.protocol import FunctionCall, ToolCall
+    from executorch.examples.models.muse_glimmer.serving.chat_template import (
+        MuseGlimmerChatTemplate,
+    )
+
+    template = MuseGlimmerChatTemplate(
+        hf, assistant_header="<|start|>assistant", strip_rendered_bos=True
+    )
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                },
+            },
+        }
+    ]
+    messages = [
+        ChatMessage(role="system", content="SYSTEM_RULE"),
+        ChatMessage(role="developer", content="DEVELOPER_RULE"),
+        ChatMessage(role="user", content="Read it"),
+        ChatMessage(
+            role="assistant",
+            content="Opening the file",
+            tool_calls=[
+                ToolCall(
+                    id="call_1",
+                    function=FunctionCall(
+                        name="read_file", arguments='{"path":"policy.md"}'
+                    ),
+                )
+            ],
+        ),
+        ChatMessage(role="tool", tool_call_id="call_1", content="FILE_RESULT"),
+    ]
+    prompt = template.render(messages, tools=tools)
+    assert "DEVELOPER_RULE" in prompt and "SYSTEM_RULE" in prompt
+    assert "Opening the file" in prompt and "FILE_RESULT" in prompt
+    assert 'name="read_file.read_file"' in prompt
+    assert tools[0]["function"]["name"] == "read_file"
+    assert messages[3].tool_calls[0].function.name == "read_file"
+    assert prompt.count("// Function schemas") == 1
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_tool_reasoning_stream_preserves_boundary_whitespace(stream):
+    from executorch.examples.models.muse_glimmer.serving.stream_parser import (
+        MuseGlimmerToolReasoningParser,
+    )
+    from executorch.examples.models.muse_glimmer.serving.tool_parsers import (
+        AtemToolCallDetector,
+    )
+
+    raw = (
+        " to=self<|message|>First step. \n<|eom|>"
+        "<|start|>assistant to=self<|message|>Second step.\n<|eom|>"
+        "<|start|>assistant to=f.f<|message|><atem:function_calls>"
+        '<atem:invoke name="f.f"></atem:invoke></atem:function_calls>'
+    )
+    serving, _ = _glimmer_serving([{"text": raw}])
+    serving._tool_detector_cls = AtemToolCallDetector
+    serving._tool_reasoning_parser_factory = MuseGlimmerToolReasoningParser
+    message = asyncio.run(
+        _create_message(
+            serving,
+            ChatCompletionRequest(
+                messages=[ChatMessage(role="user", content="Use f")],
+                stream=stream,
+                tools=[
+                    {"type": "function", "function": {"name": "f", "parameters": {}}}
+                ],
+            ),
+        )
+    )
+    assert message["reasoning_content"] == "First step. \n\nSecond step.\n"
 
 
 @pytest.mark.parametrize("stream", [False, True])

@@ -20,7 +20,6 @@ import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
 )
@@ -32,8 +31,12 @@ from executorch.examples.llm_server.python.serve import (
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.session_runtime import SessionRuntime
 from executorch.examples.models.muse_glimmer.serving import serve as legacy
+from executorch.examples.models.muse_glimmer.serving.chat_template import (
+    MuseGlimmerChatTemplate as ChatTemplate,
+)
 from executorch.examples.models.muse_glimmer.serving.stream_parser import (
     MuseGlimmerStreamParser,
+    MuseGlimmerToolReasoningParser,
 )
 
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -240,6 +243,7 @@ def build_app_from_args(args):
                 content_filter_specials=legacy._MUSE_GLIMMER_HEADER_SPECIALS,
                 reasoning_extractor=legacy._extract_muse_glimmer_reasoning,
                 streaming_parser_factory=MuseGlimmerStreamParser,
+                tool_reasoning_parser_factory=MuseGlimmerToolReasoningParser,
             )
         finally:
             if runtime is None:

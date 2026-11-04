@@ -199,6 +199,14 @@ class _AdmissionRetryStream:
         await self._generation.aclose()
 
 
+@dataclass
+class _ToolResponse:
+    tool_calls: Optional[list[ToolCall]] = None
+    reasoning: Optional[str] = None
+    content: Optional[str] = None
+    remaining_reasoning: Optional[str] = None
+
+
 class ServingChat:
     def __init__(
         self,
@@ -219,6 +227,9 @@ class ServingChat:
         evict_idle_sessions: bool = False,
         streaming_preflight_timeout: Optional[float] = None,
         api_dialect: str = "openai",
+        tool_reasoning_parser_factory: Optional[
+            Callable[[], StreamingResponseParser]
+        ] = None,
     ):
         self._runtime = runtime
         self._template = template
@@ -228,6 +239,7 @@ class ServingChat:
         self._content_filter = content_filter
         self._reasoning_extractor = reasoning_extractor
         self._streaming_parser_factory = streaming_parser_factory
+        self._tool_reasoning_parser_factory = tool_reasoning_parser_factory
         self._evict_idle_sessions = evict_idle_sessions
         self._idle_sessions: dict[str, None] = {}
         self._cleanup_sessions: dict[str, None] = {}
@@ -1173,7 +1185,57 @@ class ServingChat:
         self._log_generation_stats(req.session_id, stats, finish)
         yield chunk(DeltaMessage(), finish=finish)
 
-    async def _stream(
+    async def _stream_tool_output(self, generation, stops, stop, parts, parser):
+        async for part in self._clean(generation, stops, stop):
+            parts.append(part)
+            if parser is not None:
+                for delta in parser.feed(part):
+                    yield delta
+        if parser is not None:
+            for delta in parser.finish():
+                yield delta
+
+    async def _stream_tool_response(
+        self, req, generation, stops, stop_hit, stats, response
+    ):
+        parts, reasoning_parts = [], []
+        parser = (
+            self._tool_reasoning_parser_factory()
+            if self._tool_reasoning_parser_factory and self._return_reasoning(req)
+            else None
+        )
+
+        def stop():
+            stop_hit[0] = True
+            self._cancel_generation(generation)
+
+        async for delta in self._stream_tool_output(
+            generation, stops, stop, parts, parser
+        ):
+            if delta.reasoning_content:
+                reasoning_parts.append(delta.reasoning_content)
+                yield DeltaMessage(reasoning_content=delta.reasoning_content)
+        response.tool_calls, response.reasoning, response.content = (
+            self._extract_response(
+                req,
+                self._truncate_raw(
+                    "".join(parts), req, stop_hit[0] or stats.finish_reason == "stop"
+                ),
+            )
+        )
+        response.remaining_reasoning = response.reasoning
+        if parser is not None:
+            emitted = "".join(reasoning_parts)
+            response.remaining_reasoning = None
+            if response.reasoning and response.reasoning.startswith(emitted):
+                response.remaining_reasoning = (
+                    response.reasoning[len(emitted) :] or None
+                )
+            response.reasoning = (
+                emitted + (response.remaining_reasoning or "")
+            ) or None
+
+    async def _stream(  # noqa: C901 - response paths share one cancellation boundary
         self,
         req: ChatCompletionRequest,
         preamble: str,
@@ -1205,6 +1267,7 @@ class ServingChat:
         tool_calls = None
         reasoning = None
         content = None
+        remaining_tool_reasoning = None
 
         stop_hit = [False]  # set when a stop boundary is reached (forces finish="stop")
         # Per-path stop set from create(): for plain chat this includes the broad
@@ -1212,19 +1275,16 @@ class ServingChat:
         # the worker, given the same set, halts + omits ids -> non-resumable turn).
         try:
             if use_tools:
-                # Buffer the (usually short) tool response, parse once.
-                # Halt early at a stop boundary, and bound the raw output
-                # BEFORE parsing so post-stop tool calls / text don't leak.
-                raw, stop_hit[0] = await self._collect_until_stop(
-                    generation,
-                    stops,
-                )
-                tool_calls, reasoning, content = self._extract_response(
-                    req,
-                    self._truncate_raw(
-                        raw, req, stop_hit[0] or stats.finish_reason == "stop"
-                    ),
-                )
+                # Stream safe reasoning, then validate complete tool calls.
+                response = _ToolResponse()
+                async for delta in self._stream_tool_response(
+                    req, generation, stops, stop_hit, stats, response
+                ):
+                    yield chunk(delta)
+                tool_calls = response.tool_calls
+                reasoning = response.reasoning
+                content = response.content
+                remaining_tool_reasoning = response.remaining_reasoning
             elif (
                 self._reasoning_extractor is not None
                 and self._streaming_parser_factory is None
@@ -1282,7 +1342,7 @@ class ServingChat:
             stats,
             use_tools,
             tool_calls,
-            reasoning,
+            remaining_tool_reasoning if use_tools else reasoning,
             content,
             stop_hit[0],
             chunk,

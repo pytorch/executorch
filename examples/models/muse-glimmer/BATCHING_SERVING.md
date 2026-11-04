@@ -97,13 +97,29 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
 
 Omit `--data-path` when weights are embedded in the program. For text-only
 artifacts, omit `--pos-embed-path`. The launcher uses one multiplexed worker
-process and the matching Hugging Face chat template. It does not fall back to a
+process and the bundled Muse chat template with the Hugging Face tokenizer. The
+template preserves developer messages and assistant commentary with tool calls.
+It does not fall back to a
 legacy worker or DFlash.
 
 Send `"stream": true` for streaming responses. The MG parser removes model
 framing and emits `reasoning_content` and `content` incrementally. Optional ATEM
-tool parsing is enabled with `--tool-parser atem`; tool-enabled responses
-currently remain buffered.
+tool parsing is enabled with `--tool-parser atem`. Reasoning preceding tool calls
+streams incrementally; complete calls are buffered and validated before delivery.
+Malformed parameter bodies, duplicate parameters, undefined calls, and arguments
+that violate their JSON Schema produce `invalid_tool_output` errors, with no tool
+calls emitted. Parameters support union schemas and local JSON pointer references;
+string values preserve whitespace and literal Harmony headers. Schema validation
+uses Draft 2020-12; remote references, `$id`, and `$dynamicRef` are rejected before
+generation. Install the serving requirements, including `jsonschema`.
+Coercion preserves correlations between object alternatives and conditional
+schemas, then validates the complete argument object. The search is bounded to
+1024 schema alternatives; exceeding that budget fails with `invalid_tool_output`.
+This is validation after generation, not token-level constrained decoding.
+`function.strict=true` is supported: a successful response contains only
+schema-valid calls; invalid generation fails the response. This supports Muse's
+strict summarizer tool. Required/named tool choice and structured response formats
+remain unsupported.
 
 The launcher waits for initial generation readiness before returning streaming
 headers. Set `--streaming-preflight-timeout 1` to bound generation-readiness
@@ -138,6 +154,13 @@ model window. A completion reservation consuming the entire window cannot be
 fixed by compacting input: diagnostic metadata remains, but the message does not
 match Muse's recoverable prompt-budget format. With no explicit `max_tokens`,
 the server reserves one output token; Muse applies its own compaction margin.
+
+The model adapter qualifies each declared flat tool name as `name.name` in the
+prompt and maps that exact alias back to the original name in responses. Dotted
+names stay unchanged; colliding aliases are rejected. This mapping is local to
+the Muse model adapter and only accepts declared tools. OpenRouter
+`reasoning: {"effort": "low"}` and `reasoning_effort` map to the template's
+`reasoning_strength`; supported values are `low`, `medium`, and `high`.
 
 Streaming intentionally differs from the legacy buffered fallback for incomplete
 `<|` headers, which are suppressed at EOF; bare `to=` suffixes remain literal text

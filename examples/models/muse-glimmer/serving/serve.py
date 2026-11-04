@@ -16,7 +16,6 @@ import os
 import re
 from pathlib import Path
 
-from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.errors import (
     APIError,
     ContextLengthExceeded,
@@ -30,8 +29,18 @@ from executorch.examples.llm_server.python.session_runtime import (
     SessionRuntime,
 )
 from executorch.examples.llm_server.python.worker_client import spawn_worker
+from executorch.examples.models.muse_glimmer.serving.chat_template import (
+    MuseGlimmerChatTemplate as ChatTemplate,
+    resolve_tool_result_names,
+)
 from executorch.examples.models.muse_glimmer.serving.tool_parsers import (
     AtemToolCallDetector,
+)
+from executorch.examples.models.muse_glimmer.serving.tool_parsers.atem import (
+    parameter_value_spans,
+)
+from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (
+    ToolSchema,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,7 +97,14 @@ def _extract_muse_glimmer_reasoning(text: str) -> tuple[str | None, str]:
     text before splicing stored generated token ids, preserving the original
     channel framing for unchanged echoes or omitted/null reasoning.
     """
-    matches = list(_MUSE_GLIMMER_ADDRESSED_HEADER_RE.finditer(text))
+    values = iter(parameter_value_spans(text))
+    span = next(values, None)
+    matches = []
+    for match in _MUSE_GLIMMER_ADDRESSED_HEADER_RE.finditer(text):
+        while span is not None and span[1] <= match.start():
+            span = next(values, None)
+        if span is None or match.start() < span[0]:
+            matches.append(match)
     if not matches:
         return None, text
 
@@ -122,7 +138,7 @@ def _repo_root() -> Path:
                 continue
             seen.add(path)
             if (path / "CMakeLists.txt").exists() and (
-                path / "examples" / "models" / "fb" / "muse_glimmer"
+                path / "examples" / "models" / "muse-glimmer"
             ).is_dir():
                 return path
     raise RuntimeError(
@@ -137,8 +153,7 @@ def _default_worker_bin() -> str:
         / "cmake-out"
         / "examples"
         / "models"
-        / "fb"
-        / "muse_glimmer"
+        / "muse-glimmer"
         / "muse_glimmer_worker"
     )
 
@@ -262,13 +277,48 @@ class MuseGlimmerServingChat(ServingChat):
         # response cleanup; only image-aware prompt construction differs here.
         if req.model is not None and req.model != self._model_id:
             raise ModelNotFound(req.model, self._model_id)
+        if req.reasoning is not None or req.reasoning_effort is not None:
+            reasoning = req.reasoning or {}
+            effort = reasoning.get("effort", req.reasoning_effort)
+            if set(reasoning) - {"effort"} or effort not in ("low", "medium", "high"):
+                raise APIError(
+                    400,
+                    "Muse reasoning effort must be low, medium or high",
+                    "invalid_request_error",
+                    "invalid_value",
+                )
+            kwargs = dict(req.chat_template_kwargs or {})
+            if (
+                req.reasoning_effort not in (None, effort)
+                or kwargs.get("reasoning_strength", effort) != effort
+            ):
+                raise APIError(
+                    400,
+                    "Conflicting reasoning effort controls",
+                    "invalid_request_error",
+                    "invalid_value",
+                )
+            kwargs["reasoning_strength"] = effort
+            req = req.model_copy(
+                update={
+                    "reasoning": None,
+                    "reasoning_effort": None,
+                    "chat_template_kwargs": kwargs,
+                }
+            )
         self._reject_invalid_values(req)
         self._reject_unsupported_params(req)
+        for tool in req.tools or []:
+            function = tool["function"]
+            ToolSchema(function.get("parameters", {}))
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
 
         history_req = req
         req, image_segment = _normalize_image_request(req, self._max_image_bytes)
+        req = req.model_copy(
+            update={"messages": resolve_tool_result_names(req.messages)}
+        )
         template_tools = None if req.tool_choice == "none" else req.tools
         template_kwargs = dict(req.chat_template_kwargs or {})
         template_kwargs.pop("return_reasoning", None)
