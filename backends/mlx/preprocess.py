@@ -18,9 +18,11 @@ This module implements the BackendDetails.preprocess() method which:
 
 from __future__ import annotations
 
+import copy
 import hashlib
-from typing import ClassVar, final, List
+from typing import ClassVar, Dict, final, List, Tuple
 
+import torch
 from executorch.backends.mlx._logging import logger
 from executorch.backends.mlx._memprofile import log_footprint, mem_phase
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
@@ -57,6 +59,42 @@ class MLXBackend(BackendDetails):
     EXPECTED_MAGIC: ClassVar[bytes] = MAGIC
     EXPECTED_LENGTH: ClassVar[int] = HEADER_LENGTH
 
+    @classmethod
+    def copy_exported_program_for_preprocess(
+        cls, edge_program: ExportedProgram, compile_specs: List[CompileSpec]
+    ) -> ExportedProgram:
+        """Copy the graph but share the constant tensors.
+
+        exir copies the program of every delegate before it preprocesses any of
+        them, so a deep copy holds all the weights twice, and a constant shared
+        by several delegates once more for each of them. preprocess only drops
+        constants from the copy's tables and never writes to a tensor, so
+        sharing them is safe.
+        """
+        tensors = {
+            id(tensor): tensor
+            for values in (edge_program.state_dict, edge_program.constants)
+            for tensor in values.values()
+            if isinstance(tensor, torch.Tensor)
+        }
+        return copy.deepcopy(edge_program, tensors)
+
+    @classmethod
+    def preprocess_multimethod(
+        cls,
+        edge_programs: Dict[str, List[ExportedProgram]],
+        compile_specs: Dict[str, List[List[CompileSpec]]],
+    ) -> Dict[str, List[PreprocessResult]]:
+        """Preprocess every delegate, sharing the bytes of the constants they share."""
+        constant_bytes: Dict[int, Tuple[torch.Tensor, bytes]] = {}
+        return {
+            method: [
+                cls._preprocess(program, specs, constant_bytes)
+                for program, specs in zip(programs, compile_specs[method], strict=True)
+            ]
+            for method, programs in edge_programs.items()
+        }
+
     @staticmethod
     def preprocess(
         edge_program: ExportedProgram,
@@ -73,6 +111,14 @@ class MLXBackend(BackendDetails):
             PreprocessResult containing the serialized MLX program and
             data_store_output with constant tensor data.
         """
+        return MLXBackend._preprocess(edge_program, compile_specs, {})
+
+    @staticmethod
+    def _preprocess(
+        edge_program: ExportedProgram,
+        compile_specs: List[CompileSpec],
+        constant_bytes: Dict[int, Tuple[torch.Tensor, bytes]],
+    ) -> PreprocessResult:
         logger.debug("MLXBackend.preprocess() called")
         logger.debug(f"Edge program:\n{edge_program}")
         log_footprint("preprocess entry")
@@ -91,7 +137,7 @@ class MLXBackend(BackendDetails):
 
             # Get constant data as NamedDataStore (ET will own this data)
             with mem_phase("get_named_data_store"):
-                named_data_store = builder.get_named_data_store()
+                named_data_store = builder.get_named_data_store(constant_bytes)
 
             logger.debug(
                 f"  named_data_store entries: {len(named_data_store.pte_data)}"

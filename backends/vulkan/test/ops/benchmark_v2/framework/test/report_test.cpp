@@ -244,7 +244,8 @@ TEST(BenchmarkReport, ShaderInputFloatsUseThreeSignificantFigures) {
           .find("[1.23,1234567], [-0.0123,10]"),
       std::string::npos);
   const Report compact = Report::parse(format_condensed_report(report));
-  EXPECT_EQ(compact.at("bindings"), report.at("bindings"));
+  EXPECT_FALSE(compact.contains("bindings"));
+  EXPECT_EQ(compact.at("bindings_str"), "[1.23,1234567], [-0.0123,10]");
   EXPECT_EQ(compact.at("push_constants"), report.at("push_constants"));
 }
 
@@ -839,13 +840,17 @@ TEST(BenchmarkReport, CondensedJsonSummarizesPassClockRanges) {
 TEST(BenchmarkReport, CondensedJsonPreservesShaderStatisticsAndCaseGroups) {
   Report report = {
       {"shader_name", "copy"},
-      {"bindings", {{"input", {{"sizes", {8}}, {"dtype", "float32"}}}}}};
+      {"bindings",
+       {{"output", {{"sizes", {8}}, {"dtype", "float32"}, {"access", "write"}}},
+        {"input", {{"sizes", {8}}, {"dtype", "float32"}}}}},
+      {"push_constants", {{{"dtype", "float32"}, {"data", {0.5, 2}}}}}};
   report.update(measurement_report(10, false, {10, 20, 30}, {30, 10, 20}));
   const Report error = error_report({{"operator", "bad"}}, "test error");
   const Report condensed =
       Report::parse(format_condensed_report(Report::array({report, error})));
   ASSERT_EQ(condensed.size(), 2);
-  EXPECT_EQ(condensed[0].at("bindings"), report.at("bindings"));
+  EXPECT_FALSE(condensed[0].contains("bindings"));
+  EXPECT_EQ(condensed[0].at("bindings_str"), "b[8]f32.width, [0.5,2]");
   EXPECT_EQ(
       condensed[0].at("gpu_timestamp_shader_us"),
       report.at("gpu_timestamp_shader_us"));

@@ -20,8 +20,11 @@ from executorch.backends.mlx.partitioner import MLXPartitioner
 from executorch.backends.mlx.passes import get_default_passes
 from executorch.backends.mlx.test.test_utils import get_mlx_node_counts
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir.lowered_backend_module import LoweredBackendModule
+from executorch.exir.program import get_fake_program
 from executorch.runtime import Runtime
 from torch.export import export
+from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 
 
 class TestMLXPartitionerRejectsToEdge(unittest.TestCase):
@@ -79,7 +82,9 @@ def _run(model, inputs, transform_passes=None):
         counts = get_mlx_node_counts(path)
         method = Runtime.get().load_program(path).load_method("forward")
         out = method.execute(list(inputs))[0]
-    return counts, delegates, (out - ref).abs().max().item()
+    assert out.shape == ref.shape, (out.shape, ref.shape)
+    diff = (out - ref).abs()
+    return counts, delegates, diff.max().item() if diff.numel() else 0.0
 
 
 class TestMLXPartitionerConstantInputs(unittest.TestCase):
@@ -162,6 +167,22 @@ class TestMLXPartitionerUnsupportedDtypes(unittest.TestCase):
         )
         self.assertGreater(delegates, 0)
         self.assertLess(err, 1e-6)
+
+    def test_int64_scatter_add_stays_off_the_delegate(self):
+        class ScatterAdd(nn.Module):
+            def forward(self, base, index, src):
+                return base.scatter_add(0, index, src) + 1
+
+        index = torch.tensor([0, 2, 2, 7])
+        for dtype, scatters in ((torch.float32, 1), (torch.int64, 0)):
+            with self.subTest(dtype=dtype):
+                counts, delegates, err = _run(
+                    ScatterAdd(),
+                    (torch.zeros(8, dtype=dtype), index, torch.ones(4, dtype=dtype)),
+                )
+                self.assertEqual(counts.get("ScatterAddNode", 0), scatters)
+                self.assertGreater(delegates, 0)
+                self.assertEqual(err, 0)
 
 
 class Sdpa(nn.Module):
@@ -353,6 +374,66 @@ class TestMLXPartitionerSharedConstants(unittest.TestCase):
         self.assertGreater(delegates, 1)
         self.assertLess(err, 1e-5)
 
+    def test_second_placeholder_for_one_constant_raises(self):
+        class TwoReads(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("c", torch.randn(4))
+
+            def forward(self, x):
+                return x + self.c, x * self.c
+
+        ep = export(TwoReads(), (torch.randn(4),), strict=False)
+        original = next(n for n in ep.graph.nodes if n.name == "b_c")
+        with ep.graph.inserting_after(original):
+            second = ep.graph.placeholder("b_c_second")
+        second.meta = dict(original.meta)
+        mul = next(n for n in ep.graph.nodes if n.target == torch.ops.aten.mul.Tensor)
+        mul.replace_input_with(original, second)
+        ep.graph_signature.input_specs.insert(
+            1, InputSpec(InputKind.BUFFER, TensorArgument("b_c_second"), "c", True)
+        )
+
+        for check_only in (True, False):
+            with self.subTest(check_only=check_only):
+                builder = MLXProgramBuilder(ep)
+                with self.assertRaisesRegex(ValueError, "more than one placeholder"):
+                    if check_only:
+                        builder.check_support_only()
+                    else:
+                        builder.build()
+
+    def test_delegates_share_the_bytes_of_a_shared_weight(self):
+        class SharedLinear(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(4, 4)
+
+            def forward(self, x):
+                # elu is not lowered, so the second use lands in another delegate.
+                return self.linear(torch.nn.functional.elu(self.linear(x)))
+
+        model = SharedLinear().eval()
+        weight = model.linear.weight.detach().clone()
+        program = to_edge_transform_and_lower(
+            export(model, (torch.randn(2, 4),), strict=False),
+            partitioner=[MLXPartitioner()],
+        ).exported_program()
+        delegates = [
+            module
+            for module in program.graph_module.children()
+            if isinstance(module, LoweredBackendModule)
+        ]
+
+        self.assertEqual(len(delegates), 2)
+        first, second = (
+            {id(buffer) for buffer in delegate.named_data_store_output.buffers}
+            for delegate in delegates
+        )
+        self.assertEqual(len(first), 2)
+        self.assertEqual(first, second)
+        self.assertTrue(torch.equal(model.linear.weight, weight))
+
 
 class TestMLXPartitionerGroupedKeys(unittest.TestCase):
     """Repeated KV heads are fused only when the caller enables the shared passes."""
@@ -441,6 +522,126 @@ class TestMLXPartitionerConstantBase(unittest.TestCase):
         counts, _, err = _run(ScatterIntoBuffer().eval(), (torch.randn(4, 2),))
         self.assertEqual(counts.get("SliceUpdateNode", 0), 1)
         self.assertLess(err, 1e-6)
+
+
+class TestMLXPartitionerBoolIndex(unittest.TestCase):
+    """The MLX runtime gathers only with integer indices."""
+
+    class ConstantMask(nn.Module):
+        def __init__(self, mask, persistent=None, axis=0, scale=True):
+            super().__init__()
+            if persistent is None:
+                self.mask = mask
+            else:
+                self.register_buffer("mask", mask, persistent=persistent)
+            self.axis = axis
+            self.scale = scale
+
+        def forward(self, x):
+            y = (x + 1)[(slice(None),) * self.axis + (self.mask,)]
+            if self.axis:
+                # The leading dim's stride depends on how many elements the
+                # mask selects, which exir spec propagation rejects, so keep it
+                # in the delegate.
+                y = y.sum(self.axis)
+            return y * 2 if self.scale else y
+
+    def test_constant_mask_becomes_positions(self):
+        mask = torch.tensor([1, 0, 1, 1, 0, 1, 0, 1]) == 1
+        cases = {
+            "1d": (self.ConstantMask(mask), (8, 16)),
+            "2d": (self.ConstantMask(mask.reshape(1, 8)), (1, 8, 16)),
+            "3d": (self.ConstantMask(mask.reshape(2, 2, 2)), (2, 2, 2, 5)),
+            "buffer": (self.ConstantMask(mask, persistent=False), (8, 16)),
+            "axis_1": (self.ConstantMask(mask.reshape(2, 4), axis=1), (3, 2, 4, 5)),
+        }
+        for name, (model, shape) in cases.items():
+            with self.subTest(name):
+                _, delegates, err = _run(model.eval(), (torch.randn(shape),))
+                self.assertEqual(delegates, 1)
+                self.assertLess(err, 1e-5)
+
+    def test_other_bool_indices_run_on_the_cpu(self):
+        class ComputedMask(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.ids = torch.tensor([[1, 7, 7, 2, 7, 3, 7, 4]])
+
+            def forward(self, x):
+                return (x + 1)[self.ids == 7] * 2
+
+        class MaskInput(nn.Module):
+            def forward(self, x, mask):
+                return (x + 1)[mask] * 2
+
+        class MaskWithIndex(nn.Module):
+            def __init__(self, mask):
+                super().__init__()
+                self.mask = mask
+
+            def forward(self, x, i):
+                return (x + 1)[self.mask, i] * 2
+
+        class MaskThenUpdate(nn.Module):
+            def __init__(self, mask):
+                super().__init__()
+                self.register_buffer("mask", mask, persistent=False)
+
+            def forward(self, x):
+                y = (x + 1)[self.mask] * 2
+                self.mask.copy_(x[:, :, 0] > 0)
+                return y
+
+        mask = torch.tensor([[1, 0, 1, 1, 0, 1, 0, 1]]) == 1
+        x = torch.randn(1, 8, 16)
+        # An all-false mask gives an empty result, so it is the graph output
+        # here: an MLX op after it would have to write an empty output too.
+        all_false = self.ConstantMask(torch.zeros(1, 8, dtype=torch.bool), scale=False)
+        cases = {
+            "computed_mask": (ComputedMask(), (x,), 2),
+            "mask_input": (MaskInput(), (x, mask), 2),
+            "mask_with_index": (MaskWithIndex(mask), (x, torch.tensor([3])), 2),
+            "persistent_buffer": (self.ConstantMask(mask, persistent=True), (x,), 2),
+            "all_false": (all_false, (x,), 1),
+        }
+        for name, (model, inputs, expected) in cases.items():
+            with self.subTest(name):
+                _, delegates, err = _run(model.eval(), inputs)
+                self.assertEqual(delegates, expected)
+                self.assertLess(err, 1e-6)
+
+        with self.subTest("mutated_buffer"):
+            # Not run: the eager reference call would overwrite the mask first.
+            program = _lower(MaskThenUpdate(mask).eval(), (x,))
+            self.assertEqual(_delegate_count(program), 2)
+
+    def test_handler_refuses_masks_it_cannot_lower(self):
+        mask = torch.tensor([1, 0, 1, 1, 0, 1, 0, 1]) == 1
+        cases = {
+            # A persistent buffer has no values in the fake copy, so the handler
+            # must refuse it rather than fail reading it.
+            "persistent_buffer": (
+                self.ConstantMask(mask, persistent=True),
+                "only a constant boolean mask",
+            ),
+            "all_false": (
+                self.ConstantMask(torch.zeros(8, dtype=torch.bool)),
+                "all-false",
+            ),
+        }
+        for name, (model, reason) in cases.items():
+            with self.subTest(name):
+                # The same fake copy of the program that to_backend gives the
+                # partitioner.
+                ep = get_fake_program(export(model.eval(), (torch.randn(8, 16),)))
+                index = next(
+                    n for n in ep.graph.nodes if n.target == torch.ops.aten.index.Tensor
+                )
+                builder = MLXProgramBuilder(ep)
+                builder.check_support_only()
+                info = builder.node_info[index]
+                self.assertFalse(info.supported)
+                self.assertIn(reason, info.unsupported_reason)
 
 
 class TestMLXPartitionerMixedSupport(unittest.TestCase):
