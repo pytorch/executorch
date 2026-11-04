@@ -52,8 +52,14 @@ target_include_directories(enn_executor_runner PRIVATE ${EXECUTORCH_ROOT}/..)
 target_compile_options(enn_executor_runner PRIVATE ${_common_compile_options})
 
 target_link_libraries(
-  enn_executor_runner PRIVATE enn_logging enn_backend gflags executorch
-                              extension_data_loader portable_ops_lib
+  enn_executor_runner
+  PRIVATE enn_logging
+          enn_backend
+          gflags
+          executorch
+          extension_data_loader
+          portable_ops_lib
+          quantized_ops_lib
 )
 
 set_target_properties(

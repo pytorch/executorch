@@ -169,13 +169,14 @@ class MobileBertFinetune:
         batch_size=8,
         num_epochs=3,
         device="cpu",
+        learning_rate=2e-5,
     ):
         # Training arguments
         training_args = TrainingArguments(
             output_dir="./results",
             eval_strategy="epoch",
             save_strategy="epoch",
-            learning_rate=2e-5,
+            learning_rate=learning_rate,
             per_device_train_batch_size=batch_size,
             per_device_eval_batch_size=batch_size,
             num_train_epochs=num_epochs,
@@ -197,7 +198,9 @@ class MobileBertFinetune:
         )
         return trainer
 
-    def get_finetune_mobilebert(self, artifacts_dir):
+    def get_finetune_mobilebert(
+        self, artifacts_dir, max_train_samples=None, learning_rate=2e-5
+    ):
         # Pretrained bert's output ranges in a large scale. It is challenge for enn backend to support directly.
         # Please finetune mobilebert on specific tasks, make sure that bert's output and hidden states are friendly
         # to resource-constraint device.
@@ -228,14 +231,22 @@ class MobileBertFinetune:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.to(device)
 
+        training_datasets = tokenized_datasets.copy()
+        if max_train_samples is not None:
+            if max_train_samples <= 0:
+                raise ValueError("max_train_samples must be positive")
+            training_datasets["train"] = tokenized_datasets["train"].select(
+                range(min(max_train_samples, len(tokenized_datasets["train"])))
+            )
         trainer = self.training(
             model,
-            tokenized_datasets,
+            training_datasets,
             self.tokenizer,
             self.compute_metrics,
             self.batch_size_training,
             self.num_epochs,
             device,
+            learning_rate=learning_rate,
         )
 
         # Train the model
