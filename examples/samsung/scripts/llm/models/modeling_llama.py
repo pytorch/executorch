@@ -215,13 +215,16 @@ class LlamaForCausalLM_ENN(LlamaPreTrainedModel_ENN, GenerationMixin):
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
-        # transformers from_pretrained pops `device_map` for accelerate dispatch
-        # and never forwards it to __init__. Poke it onto the class so the KV
-        # cache can be built on the requested device.
-        cls._loaded_device_map = kwargs.get("device_map")
-        return super().from_pretrained(
+        # transformers dispatches the weights per `device_map` and never forwards
+        # it to __init__, so move the KV cache to a requested torch.device here.
+        device_map = kwargs.get("device_map")
+        model = super().from_pretrained(
             pretrained_model_name_or_path, *model_args, **kwargs
         )
+        if isinstance(device_map, torch.device):
+            model.target_device = device_map
+            model.setup_kv_cache()
+        return model
 
     def __init__(
         self,
@@ -253,15 +256,7 @@ class LlamaForCausalLM_ENN(LlamaPreTrainedModel_ENN, GenerationMixin):
         self.max_seq_len = max_seq_len
         self.ar_len = ar_len
 
-        if device is not None:
-            self.target_device = device
-        else:
-            loaded_device_map = getattr(self.__class__, "_loaded_device_map", None)
-            self.target_device = (
-                loaded_device_map
-                if loaded_device_map is not None
-                else torch.device("cpu")
-            )
+        self.target_device = device if device is not None else torch.device("cpu")
         self.setup_kv_cache()
 
     def setup_kv_cache(self):

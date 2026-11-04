@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Optional
+
 import torch
 from executorch.backends.samsung.quantizer.annotator import (
     _get_quantization_annotation,
@@ -77,8 +79,6 @@ def annotate_2_binary_inputs(
 # Binary ops whose quantization params must NOT be shared (override the
 # SharedQuantizationSpec-based annotation from the default annotator).
 NON_SHARED_BINARY_OPS = [
-    torch.ops.aten.sub,
-    torch.ops.aten.mul,
     torch.ops.aten.sub.Tensor,
     torch.ops.aten.mul.Tensor,
     torch.ops.aten.sub_.Tensor,
@@ -102,11 +102,15 @@ def annotate_cat(node: Node, quant_config: QuantizationConfig) -> None:
     first_input = inputs[0]
     assert isinstance(first_input, Node), "first cat input must be a node"
 
-    if "quantization_annotation" in first_input.meta:
-        del first_input.meta["quantization_annotation"]
+    # Keep what the default annotator already set on the producer (e.g. a
+    # conv's input and weight specs); only give its output the cat's qspec.
+    first_annotation = first_input.meta.get("quantization_annotation")
+    if first_annotation is None:
         first_input.meta["quantization_annotation"] = QuantizationAnnotation(
-            output_qspec=quant_config.input_activation
+            output_qspec=quant_config.input_activation, _annotated=True
         )
+    elif first_annotation.output_qspec is None:
+        first_annotation.output_qspec = quant_config.input_activation
 
     input_qspec_map = {}
     shared_qspec = SharedQuantizationSpec((first_input, node))
@@ -221,19 +225,15 @@ def _is_matmul_with_call_function_inputs(node: Node) -> bool:
     )
 
 
-def _is_lm_head_weight(weight: Node) -> bool:
-    """Check whether a linear weight arg is the lm_head parameter.
-
-    The weight is a get_attr node; match on both the attribute path
-    (``lm_head.weight``) and the underscore-normalized node name
-    (``lm_head_weight``) so the match stays robust to naming variations.
-    """
-    if not isinstance(weight, Node):
-        return False
-    target = getattr(weight, "target", "")
-    return str(target).endswith("lm_head.weight") or str(weight).endswith(
-        "lm_head_weight"
-    )
+def _find_lm_head(gm: torch.fx.GraphModule) -> Optional[Node]:
+    """The lm_head is the last linear. Its weight cannot be matched by name: Gemma3
+    ties it to the embedding, so the exported weight is named after the embedding."""
+    linears = [
+        n
+        for n in gm.graph.nodes
+        if n.op == "call_function" and n.target == torch.ops.aten.linear.default
+    ]
+    return linears[-1] if linears else None
 
 
 def custom_annotate_llama_a16w4(gm: torch.fx.GraphModule) -> None:
@@ -284,6 +284,7 @@ def custom_annotate_gemma3_a16w4(gm: torch.fx.GraphModule) -> None:
         act_observer_cls=observer,
     )
 
+    lm_head = _find_lm_head(gm)
     for node in gm.graph.nodes:
         # Binary ops (sub/mul) must use independent quantization params.
         if node.op == "call_function" and node.target in NON_SHARED_BINARY_OPS:
@@ -295,11 +296,7 @@ def custom_annotate_gemma3_a16w4(gm: torch.fx.GraphModule) -> None:
             annotate_from_index_put_to_matmul_input(node.args[1], quant_config_a8w8)
 
         # Annotate the lm_head linear with the A16W8 (high-precision) config.
-        if (
-            node.op == "call_function"
-            and node.target == torch.ops.aten.linear.default
-            and _is_lm_head_weight(node.args[1])
-        ):
+        if node is lm_head:
             if "quantization_annotation" in node.meta:
                 del node.meta["quantization_annotation"]
             OP_ANNOTATOR[node.target](node, quant_config_a16w8_linear)

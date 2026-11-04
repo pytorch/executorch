@@ -21,6 +21,7 @@ from executorch.backends.samsung.quantizer import (
     EnnQuantizer,
     Precision,
 )
+from executorch.backends.samsung.quantizer.observers import PerChannelClippingObserver
 from executorch.backends.samsung.quantizer.qconfig import (
     get_a16w4_enn_quant_config,
     get_a16w8_enn_quant_config,
@@ -28,7 +29,10 @@ from executorch.backends.samsung.quantizer.qconfig import (
 )
 from executorch.backends.test.graph_builder import GraphBuilder
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torchao.quantization.pt2e.quantizer import SharedQuantizationSpec
+from torchao.quantization.pt2e.quantizer import (
+    QuantizationAnnotation,
+    SharedQuantizationSpec,
+)
 
 MUL = torch.ops.aten.mul.Tensor
 MATMUL = torch.ops.aten.matmul.default
@@ -166,9 +170,8 @@ class TestCustomAnnotation(unittest.TestCase):
 
         linears = _annotated(gm, LINEAR)
         self.assertTrue(linears, "expected linear ops in graph")
-        lm_head = next(
-            n for n in linears if n.args[1] and ca._is_lm_head_weight(n.args[1])
-        )
+        lm_head = linears[-1]
+        self.assertIs(ca._find_lm_head(gm), lm_head)
         others = [n for n in linears if n is not lm_head]
 
         lm_annot = lm_head.meta["quantization_annotation"]
@@ -181,6 +184,33 @@ class TestCustomAnnotation(unittest.TestCase):
         # Non-lm_head linears are left untouched by the custom annotation.
         for n in others:
             self.assertNotIn("quantization_annotation", n.meta)
+
+
+class TestTiedLmHead(unittest.TestCase):
+    def test_lm_head_tied_to_the_embedding_gets_high_precision(self):
+        class Tied(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.embed = torch.nn.Embedding(16, 8)
+                self.hidden_proj = torch.nn.Linear(8, 8)
+                self.lm_head = torch.nn.Linear(8, 16, bias=False)
+                self.lm_head.weight = self.embed.weight
+
+            def forward(self, ids):
+                return self.lm_head(self.hidden_proj(self.embed(ids)))
+
+        gm = torch.export.export(
+            Tied().eval(), (torch.randint(0, 16, (2, 4)),), strict=True
+        ).graph_module
+        ca.custom_annotate_gemma3_a16w4(gm)
+
+        hidden_proj, lm_head = _annotated(gm, LINEAR)
+        self.assertNotIn("quantization_annotation", hidden_proj.meta)
+        annotation = lm_head.meta["quantization_annotation"]
+        self.assertTrue(annotation._annotated)
+        weight_spec = annotation.input_qspec_map[lm_head.args[1]]
+        self.assertEqual(weight_spec.dtype, torch.int8)
+        self.assertEqual(weight_spec.qscheme, torch.per_channel_symmetric)
 
 
 class TestHelpers(unittest.TestCase):
@@ -207,32 +237,25 @@ class TestHelpers(unittest.TestCase):
         # Both inputs are placeholders, not call_function nodes.
         self.assertFalse(ca._is_matmul_with_call_function_inputs(mm_node))
 
-    def test_is_lm_head_weight_matches_robust_names(self):
-        class LM(torch.nn.Module):
+    def test_find_lm_head_is_the_last_linear(self):
+        class Two(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.lm_head = torch.nn.Linear(4, 4)
+                self.proj = torch.nn.Linear(4, 4)
+                self.head = torch.nn.Linear(4, 4)
 
             def forward(self, x):
-                return torch.nn.functional.linear(x, self.lm_head.weight)
+                return self.head(self.proj(x))
 
-        class Proj(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.hidden_proj = torch.nn.Linear(4, 4)
+        gm = torch.export.export(Two(), (torch.randn(2, 4),), strict=True).graph_module
+        linears = _annotated(gm, LINEAR)
+        self.assertEqual(len(linears), 2)
+        self.assertIs(ca._find_lm_head(gm), linears[1])
 
-            def forward(self, x):
-                return torch.nn.functional.linear(x, self.hidden_proj.weight)
-
-        ep = torch.export.export(LM(), (torch.randn(2, 4),), strict=True)
-        lin = next(n for n in ep.graph_module.graph.nodes if n.target == LINEAR)
-        self.assertTrue(ca._is_lm_head_weight(lin.args[1]))
-
-        ep2 = torch.export.export(Proj(), (torch.randn(2, 4),), strict=True)
-        lin2 = next(n for n in ep2.graph_module.graph.nodes if n.target == LINEAR)
-        self.assertFalse(ca._is_lm_head_weight(lin2.args[1]))
-        # Non-node args must not be treated as the lm_head weight.
-        self.assertFalse(ca._is_lm_head_weight(7))
+        no_linear = torch.export.export(
+            torch.nn.ReLU(), (torch.randn(2, 4),), strict=True
+        ).graph_module
+        self.assertIsNone(ca._find_lm_head(no_linear))
 
     def test_annotate_cat_accepts_tuple_inputs(self):
         builder = GraphBuilder()
@@ -250,6 +273,72 @@ class TestHelpers(unittest.TestCase):
         # Must not assert-fail on a tuple-shaped inputs argument.
         ca.annotate_cat(cat_node, cfg)
         self.assertTrue(cat_node.meta["quantization_annotation"]._annotated)
+
+
+class TestAnnotateCat(unittest.TestCase):
+    def test_existing_annotation_of_the_first_input_is_kept(self):
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 4))
+        w = builder.placeholder("w", torch.randn(4, 4))
+        y = builder.placeholder("y", torch.randn(1, 4))
+        linear = builder.call_operator(LINEAR, (x, w))
+        cat = builder.call_operator(CAT, ([linear, y],))
+        builder.output([cat])
+        gm = builder.get_graph_module()
+        linear_node = _first(gm, LINEAR)
+        cat_node = _first(gm, CAT)
+        x_node = linear_node.args[0]
+
+        cfg = get_a16w8_enn_quant_config(
+            is_per_channel=False, is_qat=False, act_symmetric=False, wei_symmetric=False
+        )
+        default_spec = get_a16w4_enn_quant_config().input_activation
+        linear_node.meta["quantization_annotation"] = QuantizationAnnotation(
+            input_qspec_map={x_node: default_spec}, _annotated=True
+        )
+
+        ca.annotate_cat(cat_node, cfg)
+
+        annotation = linear_node.meta["quantization_annotation"]
+        self.assertTrue(annotation._annotated)
+        self.assertEqual(annotation.input_qspec_map, {x_node: default_spec})
+        self.assertEqual(annotation.output_qspec, cfg.input_activation)
+
+
+class TestPerChannelClippingObserver(unittest.TestCase):
+    @staticmethod
+    def _observer():
+        return PerChannelClippingObserver(
+            ch_axis=0,
+            dtype=torch.int8,
+            qscheme=torch.per_channel_symmetric,
+            quant_min=-8,
+            quant_max=7,
+        )
+
+    def test_range_is_searched_once_until_reset(self):
+        observer = self._observer()
+        weight = torch.randn(4, 16)
+        observer(weight)
+        first_scale, _ = observer.calculate_qparams()
+
+        observer(weight * 10)
+        scale, _ = observer.calculate_qparams()
+        self.assertTrue(torch.equal(scale, first_scale))
+
+        observer.reset_min_max_vals()
+        observer(weight * 10)
+        scale, _ = observer.calculate_qparams()
+        self.assertFalse(torch.equal(scale, first_scale))
+
+    def test_zero_channel_has_a_finite_scale(self):
+        observer = self._observer()
+        weight = torch.randn(4, 16)
+        weight[1] = 0
+        observer(weight)
+        scale, _ = observer.calculate_qparams()
+        self.assertTrue(bool(torch.isfinite(scale).all()))
+        self.assertTrue(bool((scale > 0).all()))
 
 
 class TestA16W4EndToEnd(unittest.TestCase):
@@ -274,6 +363,20 @@ class TestA16W4EndToEnd(unittest.TestCase):
         with torch.inference_mode():
             out = converted(x)
         self.assertEqual(tuple(out.shape), (2, 8))
+
+        quant_ops = torch.ops.quantized_decomposed
+        activation_dtypes = {
+            n.args[-1]
+            for n in converted.graph.nodes
+            if n.target == quant_ops.quantize_per_tensor.default
+        }
+        self.assertEqual(activation_dtypes, {torch.int16})
+        weight_ranges = {
+            (n.args[-3], n.args[-2])
+            for n in converted.graph.nodes
+            if n.target == quant_ops.dequantize_per_channel.default
+        }
+        self.assertEqual(weight_ranges, {(-8, 7)})
 
 
 if __name__ == "__main__":

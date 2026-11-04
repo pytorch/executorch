@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from abc import ABCMeta
 from dataclasses import dataclass
 from enum import IntEnum, unique
 from typing import Callable, Optional
@@ -42,7 +41,7 @@ def get_quant_config(
     is_per_channel: bool = False,
     is_qat: bool = False,
     enable_spin: bool = False,
-    act_observer_cls: ABCMeta = MinMaxObserver,
+    act_observer_cls: type = MinMaxObserver,
 ) -> QuantizationConfig:
 
     precision_mappings = {

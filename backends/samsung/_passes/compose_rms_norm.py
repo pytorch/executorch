@@ -26,6 +26,11 @@ class RecomposeRmsNorm(ExportPass):
         torch.ops.aten.add.Scalar,
     )
 
+    _MEAN_TARGETS = (
+        exir_ops.edge.aten.mean.dim,
+        torch.ops.aten.mean.dim,
+    )
+
     def _get_eps_node(self, nodes):
         # eps: one of inputs of add node
         add_nodes = [
@@ -45,22 +50,17 @@ class RecomposeRmsNorm(ExportPass):
                 return a
         raise RuntimeError("Failed to locate eps argument in RMSNorm add node")
 
-    def _get_gamma_node(self, output_node, input_node):
-        # gamma: one of inputs of output node, but not the input node or call_function
-        for a in output_node.args:
-            if (
-                isinstance(a, torch.fx.Node)
-                and a.op != "call_function"
-                and a is not input_node
-            ):
-                return a
-        return None
+    def _get_gamma_node(self, src_partition, input_node):
+        # gamma: the partition input that is not the activation. A half-precision
+        # norm ends in a dtype cast, so it is not an argument of the output node.
+        others = [n for n in src_partition.input_nodes if n is not input_node]
+        return others[0] if others else None
 
     def _get_normalized_shape(self, input_node, nodes):
         # Derive normalized_shape from mean.dim's axis in the decomposed graph.
         # The RMSNorm decomposition always contains a mean.dim op.
         for n in nodes:
-            if "mean" in n.name and "dim" in n.name:
+            if n.op == "call_function" and n.target in self._MEAN_TARGETS:
                 dims = n.args[1]
                 return [input_node.meta["val"].shape[d] for d in dims]
         raise RuntimeError(
@@ -89,7 +89,7 @@ class RecomposeRmsNorm(ExportPass):
 
                 output_node = src_partition.output_nodes[0]
                 eps_node = self._get_eps_node(src_partition.nodes)
-                gamma_node = self._get_gamma_node(output_node, input_node)
+                gamma_node = self._get_gamma_node(src_partition, input_node)
                 normalized_shape = self._get_normalized_shape(
                     input_node, src_partition.nodes
                 )
@@ -101,7 +101,7 @@ class RecomposeRmsNorm(ExportPass):
                     if gamma_node is None:
                         const_name = output_node.name + "_fake_gamma"
                         weight_tensor = torch.ones(
-                            normalized_shape, dtype=input_node.meta["val"].dtype
+                            normalized_shape, dtype=output_node.meta["val"].dtype
                         )
                         graph_module.register_buffer(const_name, weight_tensor)
                         gamma_node = graph.create_node("get_attr", const_name)

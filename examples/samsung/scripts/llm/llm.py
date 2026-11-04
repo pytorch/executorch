@@ -241,6 +241,15 @@ def load_and_prepare_model(
     )
 
     exportable_model = replace_rms_norm_with_native_rms_norm(causal_model.model)
+    target_device = get_device(device, precision)
+
+    if optimized_rotation_path is not None:
+        if not precision:
+            raise ValueError("--optimized_rotation_path requires --precision.")
+        if "gemma3" in model_name:
+            raise ValueError("--optimized_rotation_path only applies to llama models.")
+        if not os.path.isfile(optimized_rotation_path):
+            raise FileNotFoundError(optimized_rotation_path)
 
     if precision:
         quant_dtype = Precision.A16W4
@@ -254,26 +263,21 @@ def load_and_prepare_model(
         else:
             custom_annotations = (custom_annotate_llama_a16w4,)
             act_observer_cls = MinMaxObserver
-            if optimized_rotation_path is not None and os.path.isfile(
-                optimized_rotation_path
-            ):
-                try:
-                    if id(causal_model.model.lm_head.weight) == id(
-                        causal_model.model.embed_tokens.weight
-                    ):
-                        causal_model.model.lm_head.weight = torch.nn.Parameter(
-                            causal_model.model.embed_tokens.weight.data.detach().clone(),
-                            requires_grad=False,
-                        )
-                        causal_model.config.tie_word_embeddings = False
-                    exportable_model = fuse_layer_norms(exportable_model)
-                    exportable_model = get_model_with_r1_r2(optimized_rotation_path)(
-                        exportable_model
+            if optimized_rotation_path is not None:
+                if id(causal_model.model.lm_head.weight) == id(
+                    causal_model.model.embed_tokens.weight
+                ):
+                    causal_model.model.lm_head.weight = torch.nn.Parameter(
+                        causal_model.model.embed_tokens.weight.data.detach().clone(),
+                        requires_grad=False,
                     )
-                    causal_model.model = exportable_model
-                    enable_spin = True
-                except Exception:
-                    print("Enable spinquant failed")
+                    causal_model.config.tie_word_embeddings = False
+                exportable_model = fuse_layer_norms(exportable_model)
+                exportable_model = get_model_with_r1_r2(optimized_rotation_path)(
+                    exportable_model
+                )
+                causal_model.model = exportable_model
+                enable_spin = True
 
         example_inputs, dynamic_shapes = causal_model.get_example_inputs(
             num_token=ar_len
@@ -296,7 +300,7 @@ def load_and_prepare_model(
         quantizer.add_custom_quant_annotations(custom_annotations)
 
         m = prepare_pt2e(exported_model.module(), quantizer)
-        m = m.to(device)
+        m = m.to(target_device)
         causal_model.model = m
 
         dataset = build_calib_dataset(
@@ -305,16 +309,12 @@ def load_and_prepare_model(
             max_length=max_seq_len,
         )
 
-        # Run the calibration sequences through the prepared (observer-instrumented)
-        # module to collect activation statistics. The ENN causal-LM wrappers have
-        # no GenerationMixin-compatible forward, so feed the model directly instead
-        # of going through `causal_model.generate`.
-        # The model processes `ar_len` tokens per step against a fixed-length KV
-        # cache, so each calibration forward must consume `ar_len` tokens.
+        # Generate from each calibration sample so the observers of the prepared
+        # module see activations for the prompt and for decoding.
         for d in dataset:
             max_new_tokens_gen = max_seq_len - d["input_ids"].shape[1]
             causal_model.generate(
-                d["input_ids"].to(device),
+                d["input_ids"].to(target_device),
                 max_new_tokens=max_new_tokens_gen,
                 disable_compile=True,
                 pad_token_id=tokenizer.pad_token_id,
@@ -332,7 +332,7 @@ def load_and_prepare_model(
 
         causal_model.model = exported_model.module()
 
-        if device != torch.device("cpu"):
+        if target_device.type != "cpu":
             target_model = target_model.to("cpu")
             target_model = removing_gpu_node_in_graph(target_model)
             causal_model.target_device = torch.device("cpu")
@@ -414,6 +414,8 @@ def export_llm(args: argparse.Namespace) -> None:
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Load and (optionally) quantize the model once, before exporting any graph.
+    # Fail before the slow load and calibration if the chipset cannot run genai_mode.
+    update_metadata_with_genai_mode({}, args.chipset, args.genai_mode)
     causal_model, target_model, metadata = load_and_prepare_model(
         model_name=args.model_name,
         max_context_len=args.max_context_len,
@@ -511,7 +513,8 @@ def main() -> None:
         default="cpu",
         help=(
             "Compute device to run the model on, e.g. 'cpu', 'cuda', or 'cuda:6'. "
-            "If not set, auto-detect using GPU availability."
+            "A GPU is only used when quantizing (--precision); otherwise the model "
+            "runs on CPU."
         ),
     )
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")

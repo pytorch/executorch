@@ -8,14 +8,16 @@ import torch
 from torchao.quantization.pt2e import PerChannelMinMaxObserver
 
 
-# Observer only for SpinQuant + A16W4
-# because the evaluation of SpinQuant requires max-clipping with MSE and GPTQ
 _EPS = torch.finfo(torch.float32).eps
 
 
 class PerChannelClippingObserver(PerChannelMinMaxObserver):
     """
-    Clipping min/max range as MSE of weights for SpinQuant + A16W4
+    Clipping min/max range as MSE of weights, for SpinQuant + A16W4 only, because
+    the evaluation of SpinQuant requires max-clipping with MSE and GPTQ.
+
+    The range is searched once, on the first tensor it sees, and forward returns
+    that tensor fake-quantized with it rather than unchanged.
     """
 
     def __init__(
@@ -45,6 +47,10 @@ class PerChannelClippingObserver(PerChannelMinMaxObserver):
         )
         self.steps = 200
         self.clipping_lower_limit = 0.1  # lower_limit of clipping range
+        self.calibrated = False
+
+    def reset_min_max_vals(self):
+        super().reset_min_max_vals()
         self.calibrated = False
 
     def mse_per_ch(self, pred, expect):

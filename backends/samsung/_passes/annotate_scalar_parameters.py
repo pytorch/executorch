@@ -51,14 +51,11 @@ class AnnotateScalarParametersPass(ExportPass):
                 continue
             param_tensor = get_param_tensor(self.edge_program, param_tensor_node)
             if not param_tensor.shape:
-                if constant_quantize_attrs := param_tensor_node.meta.get(
-                    "quantize_attrs"
-                ):
-                    scale = constant_quantize_attrs["scales"]
-                    zero_point = constant_quantize_attrs["zero_points"]
-                else:
-                    zero_point = 0
-                    scale = abs(float(param_tensor))
+                if param_tensor_node.meta.get("quantize_attrs"):
+                    # Already has complete qparams of its own, dtype range included.
+                    continue
+                zero_point = 0
+                scale = abs(float(param_tensor))
             else:
                 continue
             q_dtype = quantize_attrs[QuantConstants.QUANT_KEY.quant_dtype]

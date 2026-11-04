@@ -7,7 +7,6 @@
 import typing
 
 import torch
-from datasets import load_dataset
 
 from transformers.models.gemma3.modeling_gemma3 import Gemma3RMSNorm
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
@@ -102,8 +101,12 @@ def removing_gpu_node_in_graph(model):
 
 
 def build_calib_dataset(tokenizer, sample_number=30, max_length=1024):
+    from datasets import load_dataset
+
     texts = []
     chunk_size = max_length - 10
+    if chunk_size <= 0:
+        raise ValueError(f"max_length ({max_length}) must be greater than 10.")
     dataset = load_dataset(  # nosec B615
         "wikitext",
         "wikitext-2-raw-v1",
@@ -113,6 +116,11 @@ def build_calib_dataset(tokenizer, sample_number=30, max_length=1024):
     encodings = tokenizer(full_text, return_tensors="pt", add_special_tokens=False)
     input_ids = encodings.input_ids[0]
     bos_token_id = tokenizer.bos_token_id
+    if sample_number * chunk_size > len(input_ids):
+        raise ValueError(
+            f"{sample_number} calibration samples of {chunk_size} tokens exceed "
+            f"the {len(input_ids)} tokens of wikitext-2."
+        )
     for idx in range(sample_number):
         start_idx = idx * chunk_size
         end_idx = start_idx + chunk_size
