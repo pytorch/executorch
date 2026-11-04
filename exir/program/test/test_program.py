@@ -824,6 +824,38 @@ class TestProgramManagers(unittest.TestCase):
 
         self._test_model_with_non_decomp_partitioner(TestLSTM())
 
+    def test_to_edge_transform_and_lower_complex_rotary_embedding(self):
+        class Rope(torch.nn.Module):
+            def __init__(self, precision):
+                super().__init__()
+                self.precision = precision
+                angles = torch.outer(torch.arange(8.0), torch.rand(4)).to(precision)
+                self.register_buffer(
+                    "freqs", torch.polar(torch.ones_like(angles), angles)
+                )
+
+            def forward(self, x, shift, gain):
+                # Export asserts the dtype of a tensor that .to() reads.
+                freqs = self.freqs.to(x.device)
+                pairs = torch.view_as_complex(
+                    x.to(self.precision).unflatten(-1, (-1, 2))
+                )
+                # A factor with no dims, real or complex, keeps the precision
+                # of its product.
+                spin = torch.polar(gain, gain) * shift
+                rotated = pairs * freqs * shift.to(freqs.dtype) * gain * spin
+                # Views of the pair keep the dims of the complex tensor.
+                rotated = rotated.transpose(0, 1).reshape(8, -1)
+                return torch.view_as_real(rotated).flatten(-2)
+
+        inputs = (torch.randn(2, 8, 8), torch.randn(4), torch.tensor(0.5).double())
+        for precision in (torch.float32, torch.float64):
+            with self.subTest(precision=precision):
+                model = Rope(precision)
+                edge = to_edge_transform_and_lower(export(model, inputs))
+                program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+                torch.testing.assert_close(program.forward(inputs)[0], model(*inputs))
+
     def test_to_edge_transform_and_lower_with_exception(self):
         class TestLinear(torch.nn.Module):
             def __init__(self):

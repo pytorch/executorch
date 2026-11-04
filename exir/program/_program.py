@@ -75,6 +75,9 @@ from executorch.exir.passes.remove_graph_asserts_pass import (
 )
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
+from executorch.exir.passes.replace_complex_with_real_pass import (
+    ReplaceComplexWithRealPass,
+)
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
@@ -1253,6 +1256,8 @@ def _gen_edge_manager_for_partitioners(
                     _restore_transformed_ops_to_aten_ops(program)
             ops_set_to_not_decompose_by_program[name].extend(final_ops_to_preserve)
 
+        # Edge programs have no complex dtypes for ops such as mul.
+        ReplaceComplexWithRealPass()(program)
         edge_programs[name] = _generate_edge_program(
             config,
             program,
