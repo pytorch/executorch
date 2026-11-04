@@ -33,20 +33,30 @@ class RunAllTestsTest(unittest.TestCase):
         self.assertFalse(_run_test_in_subprocess("no_such_config"))
 
     def test_isolated_run_timeout_kills_grandchildren(self):
+        start = time.monotonic()
+        pid = self._run_child_with_grandchild("wait", timeout=10)
+        # Waiting out the sleep would mean the kill missed it.
+        self.assertLess(time.monotonic() - start, 30)
+        self._assert_exits(pid)
+
+    def test_isolated_run_kills_grandchildren_of_a_crashed_child(self):
+        self._assert_exits(self._run_child_with_grandchild("exit 1"))
+
+    def _run_child_with_grandchild(self, ending: str, timeout: int = 60) -> int:
         with tempfile.TemporaryDirectory() as tmp:
             # Stands in for the test process: it starts a long-running child,
-            # like op_test_runner, and waits for it.
+            # like op_test_runner, then waits for it or exits without it.
             child = Path(tmp) / "child.sh"
             pid_file = Path(tmp) / "grandchild.pid"
-            child.write_text(f"#!/bin/sh\nsleep 60 &\necho $! > {pid_file}\nwait\n")
+            child.write_text(f"#!/bin/sh\nsleep 60 &\necho $! > {pid_file}\n{ending}\n")
             child.chmod(0o755)
-            start = time.monotonic()
             with mock.patch.object(sys, "executable", str(child)):
-                self.assertFalse(_run_test_in_subprocess("sub_10", timeout=2))
-            # Waiting out the sleep would mean the kill missed it.
-            self.assertLess(time.monotonic() - start, 30)
+                self.assertFalse(_run_test_in_subprocess("sub_10", timeout=timeout))
             pid = int(pid_file.read_text())
         self.addCleanup(_kill_if_alive, pid)
+        return pid
+
+    def _assert_exits(self, pid: int) -> None:
         deadline = time.monotonic() + 10
         while _is_alive(pid) and time.monotonic() < deadline:
             time.sleep(0.1)
@@ -63,9 +73,6 @@ class RunAllTestsTest(unittest.TestCase):
                 while not _is_zombie(self.pid) and time.monotonic() < deadline:
                     time.sleep(0.05)
                 raise subprocess.TimeoutExpired(self.args, timeout)
-
-            def poll(self):
-                return self.returncode
 
         with mock.patch.object(sys, "executable", "/usr/bin/true"), mock.patch.object(
             subprocess, "Popen", ExitsBeforeKill

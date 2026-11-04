@@ -202,14 +202,14 @@ def _run_test_in_subprocess(
         print(f"✗ FAILED: {config_name} - Timeout after {timeout}s")
         return False
     finally:
-        if proc.poll() is None:
-            # macOS raises PermissionError instead of ProcessLookupError when
-            # the child exited after poll() and only its zombie is left.
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-            proc.wait()
+        # Also when the child has exited: if it crashed, its op_test_runner can
+        # still be running. ProcessLookupError means the group is gone; macOS
+        # raises PermissionError when only the child's zombie is left.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        proc.wait()
 
 
 def run_tests_parallel(
