@@ -57,11 +57,17 @@ PY
 }
 
 # Hosting lora adapter in personal repo for now.
+# The adapter and tokenizer downloads below are pinned to commits the read-only
+# CI cache holds. To bump a pin, seed the cache first from a pytorch/executorch
+# branch (forks cannot write the cache): run pull.yml on it with
+# workflow_dispatch, or push to it after its pull request has the
+# ci-refresh-hf-cache label.
 python -m pip install -q huggingface_hub
 HF_ADAPTER_REPO="lucylq/qwen3_06B_lora_math"
 HF_ADAPTER_PATH=$(
   bash "$(dirname "${BASH_SOURCE[0]}")/download_hf_hub.sh" \
     --model_id "${HF_ADAPTER_REPO}" \
+    --revision 0e6bc3a88a597c5abc4872734eec8db3a9fdd846 \
     --files "adapter_config.json" "adapter_model.safetensors"
 )
 
@@ -76,7 +82,7 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     +export.output_name="qwen_lora_math_full.pte"
 
 # Capture the path of the downloaded qwen artifacts
-HF_QWEN_PATH=$(python -c "from huggingface_hub import snapshot_download; print(snapshot_download('unsloth/Qwen3-0.6B'))")
+HF_QWEN_PATH=$(python -c "from huggingface_hub import snapshot_download; print(snapshot_download('unsloth/Qwen3-0.6B', revision='db4e90b8359f816f09bf5c944797ce116f26da3c'))")
 echo "Model downloaded to: $HF_QWEN_PATH"
 
 ### BUILD LLAMA RUNNER.
