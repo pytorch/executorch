@@ -13,6 +13,7 @@
 #include <executorch/backends/aoti/common_shims_slim.h>
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
+#include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/platform.h>
@@ -447,6 +448,83 @@ TEST_F(AOTITorchCopySlimTest, CudaToCpu) {
 
   EXPECT_EQ(aoti_torch_delete_tensor_object(src), Error::Ok);
   EXPECT_EQ(aoti_torch_delete_tensor_object(dst), Error::Ok);
+}
+
+TEST_F(AOTITorchCopySlimTest, RefusedInsideGraphCapture) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+
+  std::vector<int64_t> sizes = {2, 3};
+  Tensor* device = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  Tensor* other_device = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  Tensor* host = createTestTensor(sizes);
+  std::vector<int64_t> empty_sizes = {0, 3};
+  Tensor* empty_device = createTestTensor(
+      empty_sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  Tensor* other_empty_device = createTestTensor(
+      empty_sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  ASSERT_NE(device, nullptr);
+  ASSERT_NE(other_device, nullptr);
+  ASSERT_NE(host, nullptr);
+  ASSERT_NE(empty_device, nullptr);
+  ASSERT_NE(other_empty_device, nullptr);
+
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_EQ(setCurrentCUDAStream(stream, 0), Error::Ok);
+  ASSERT_EQ(
+      cudaStreamBeginCapture(stream, cudaStreamCaptureModeRelaxed),
+      cudaSuccess);
+  // A capture cannot record these synchronous copies, so each one refuses
+  // instead of failing inside the copy.
+  EXPECT_EQ(aoti_torch_copy_(host, device, 0), Error::NotSupported);
+  EXPECT_EQ(aoti_torch_copy_(device, host, 0), Error::NotSupported);
+  EXPECT_EQ(aoti_torch_copy_(other_device, device, 0), Error::NotSupported);
+  Tensor* clone = nullptr;
+  EXPECT_EQ(aoti_torch_clone(device, &clone), Error::NotSupported);
+  EXPECT_EQ(
+      aoti_torch_clone_preserve_strides(device, &clone), Error::NotSupported);
+  // A copy in host memory does not touch the stream, and an empty one copies
+  // nothing.
+  EXPECT_EQ(aoti_torch_clone(host, &clone), Error::Ok);
+  if (clone != nullptr) {
+    EXPECT_EQ(aoti_torch_delete_tensor_object(clone), Error::Ok);
+  }
+  EXPECT_EQ(aoti_torch_copy_(empty_device, other_empty_device, 0), Error::Ok);
+  cudaGraph_t graph = nullptr;
+  // Nothing reached the stream, so the capture is still valid.
+  EXPECT_EQ(cudaStreamEndCapture(stream, &graph), cudaSuccess);
+  if (graph != nullptr) {
+    EXPECT_EQ(cudaGraphDestroy(graph), cudaSuccess);
+  }
+  EXPECT_EQ(aoti_torch_copy_(host, device, 0), Error::Ok);
+
+  clearCurrentCUDAStream(0);
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(device), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(other_device), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(host), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(empty_device), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(other_empty_device), Error::Ok);
 }
 
 // ============================================================================
