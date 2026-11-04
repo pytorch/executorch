@@ -128,6 +128,11 @@ class TestCopyOperator(BaseOpenvinoOpTest):
                 lambda b, x: (b.clone(), x + 1),
                 torch.tensor([2**40, -(2**40)]),
             ),
+            # The runtime cannot bind a uint16 output.
+            "uint16": (
+                lambda b, x: (b.clone(), x + 1),
+                torch.tensor([0, 40000, 65535], dtype=torch.uint16),
+            ),
             # OpenVINO's PyTorch frontend cannot return one constant twice.
             "two copies": (copy_and_copy_of_it, floats),
             # The partitioner does not take atan, so the CPU stores the buffer

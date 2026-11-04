@@ -33,6 +33,19 @@ _COPY_OPS = {
     "dim_order_ops._clone_dim_order.default",
 }
 
+# The runtime binds outputs of these types, and the CPU plugin computes 64-bit
+# types in 32 bits, so only copies of these types can return a constant.
+_CONSTANT_COPY_DTYPES = {
+    torch.bool,
+    torch.uint8,
+    torch.int8,
+    torch.int16,
+    torch.int32,
+    torch.float16,
+    torch.bfloat16,
+    torch.float32,
+}
+
 
 class PatternNode:
     op_types: dict[str, Optional[list]] = {}
@@ -93,11 +106,11 @@ def _remove_copies_of_inputs(
     A copy of a constant that only this partition reads stays too, since the
     constant is not a partition input. Such a copy still leaves when it is not
     in the default dim order, since OpenVINO writes every output in the default
-    one, when it has a 64-bit type, since the CPU plugin computes those in 32
-    bits, or when another output also returns that constant, since OpenVINO's
-    PyTorch frontend cannot convert two outputs of one constant. Like any
-    input, a copy left out that is not in the default dim order is still read
-    wrong by the ops that use it inside.
+    one, when its type is not in _CONSTANT_COPY_DTYPES, or when another output
+    also returns that constant, since OpenVINO's PyTorch frontend cannot
+    convert two outputs of one constant. Like any input, a copy left out that is
+    not in the default dim order is still read wrong by the ops that use it
+    inside.
     """
 
     def copied(node: torch.fx.Node) -> Optional[torch.fx.Node]:
@@ -124,7 +137,7 @@ def _remove_copies_of_inputs(
                 and returns[source] == 1
                 and all(user in partition.nodes for user in source.users)
                 and node.meta["val"].is_contiguous()
-                and node.meta["val"].dtype.itemsize < 8
+                and node.meta["val"].dtype in _CONSTANT_COPY_DTYPES
             )
         ]
         if not leaving:
