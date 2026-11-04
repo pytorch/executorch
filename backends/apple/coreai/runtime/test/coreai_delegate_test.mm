@@ -24,6 +24,7 @@
 #include "coreai_cache.h"
 #include "coreai_cache_entry_fixture.h"
 #import "coreai_delegate_fixture.h"
+#include "coreai_fault_scope.h"
 #include "coreai_test_utils.h"
 
 namespace executorch::backends::coreai::testing {
@@ -245,6 +246,95 @@ TEST_F(CoreAIDelegateTest, OrderedIoBindingUsesManifestFunctionAndNames) {
     EXPECT_EQ(bridge.state().executions.load(), 1);
     EXPECT_EQ(bridge.state().output_copies.load(), 1);
     EXPECT_EQ(bridge.state().last_output_destination.load(), tensors.output);
+  }
+}
+
+NSMutableDictionary* enumerated_manifest(NSArray* functions) {
+  NSMutableDictionary* manifest = manifest_dict();
+  [manifest removeObjectForKey:@"function"];
+  manifest[@"enumerated_functions"] = functions;
+  return manifest;
+}
+
+// A 1-D float tensor of `size` elements over `data`, shaped once at
+// construction because TensorImpl caches its element count.
+struct VectorTensor final {
+  executorch::aten::TensorImpl::SizesType size[1];
+  executorch::aten::TensorImpl::DimOrderType order[1] = {0};
+  executorch::aten::TensorImpl::StridesType stride[1] = {1};
+  executorch::aten::TensorImpl impl;
+  EValue value;
+  VectorTensor(float* data, int size_value, bool dynamic = false)
+      : size{size_value},
+        impl(
+            executorch::aten::ScalarType::Float,
+            1,
+            size,
+            data,
+            order,
+            stride,
+            dynamic ? runtime::TensorShapeDynamism::DYNAMIC_BOUND
+                    : runtime::TensorShapeDynamism::STATIC),
+        value(executorch::aten::Tensor(&impl)) {}
+};
+
+TEST_F(CoreAIDelegateTest, EnumeratedFunctionsDispatchByInputShape) {
+  @autoreleasepool {
+    bridge.state().functions =
+        [NSSet setWithArray:@[ @"main_two", @"main_one" ]];
+    DelegateFixture fixture(
+        backend, bridge, enumerated_manifest(@[
+          @{@"function" : @"main_two",
+            @"input_shapes" : @[ @[ @2 ] ]},
+          @{@"function" : @"main_one",
+            @"input_shapes" : @[ @[ @1 ] ]},
+        ]));
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    EXPECT_EQ(bridge.state().binding_mismatches.load(), 0);
+
+    FloatTensors two;
+    ASSERT_EQ(fixture.execute({two.args, 2}), Error::Ok);
+    EXPECT_TRUE([bridge.state().last_function isEqual:@"main_two"]);
+    EXPECT_EQ(two.output[0], 3);
+    EXPECT_EQ(two.output[1], 7);
+
+    float one_input[1] = {5};
+    float one_output[2] = {-1, -1};
+    VectorTensor one_in(one_input, 1);
+    VectorTensor one_out(one_output, 2, /*dynamic=*/true);
+    EValue* one_args[] = {&one_in.value, &one_out.value};
+    ASSERT_EQ(fixture.execute({one_args, 2}), Error::Ok);
+    EXPECT_TRUE([bridge.state().last_function isEqual:@"main_one"]);
+    EXPECT_EQ(one_out.impl.size(0), 1);
+    EXPECT_EQ(one_output[0], 5);
+
+    float three_input[3] = {1, 2, 3};
+    float three_output[3] = {-1, -1, -1};
+    VectorTensor three_in(three_input, 3);
+    VectorTensor three_out(three_output, 3, /*dynamic=*/true);
+    EValue* three_args[] = {&three_in.value, &three_out.value};
+    const int executions = bridge.state().executions.load();
+    EXPECT_EQ(fixture.execute({three_args, 2}), Error::InvalidArgument);
+    EXPECT_EQ(bridge.state().executions.load(), executions);
+    EXPECT_EQ(three_output[0], -1);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, EnumeratedFunctionBindFailureFailsInit) {
+  @autoreleasepool {
+    bridge.state().functions =
+        [NSSet setWithArray:@[ @"main_two", @"main_one" ]];
+    bridge.state().fail_function = @"main_one";
+    DelegateFixture fixture(
+        backend, bridge, enumerated_manifest(@[
+          @{@"function" : @"main_two",
+            @"input_shapes" : @[ @[ @2 ] ]},
+          @{@"function" : @"main_one",
+            @"input_shapes" : @[ @[ @1 ] ]},
+        ]));
+    EXPECT_EQ(fixture.init(), Error::InvalidProgram);
+    EXPECT_EQ(bridge.state().function_bindings.load(), 2);
+    EXPECT_EQ(fixture.freed, 0);
   }
 }
 
@@ -1194,12 +1284,15 @@ TEST_F(CoreAIDelegateTest, WaiterAcquiresAfterConcurrentSharedLoadFails) {
     BookmarkLoaderScope fake;
     auto calls = std::make_shared<std::atomic<int>>(0);
     auto first_in_flight = std::make_shared<std::atomic<bool>>(false);
+    auto second_waiting = std::make_shared<std::atomic<bool>>(false);
     __weak BookmarkFakeLoader* loader = fake.loader;
-    // The first acquisition fails after the second load has queued behind it.
+    // The first acquisition fails only once the second load waits on it.
     fake.loader.onSpecialize = ^(NSURL*) {
       if (++*calls == 1) {
         *first_in_flight = true;
-        usleep(100000);
+        for (int i = 0; i < 1000 && !*second_waiting; ++i) {
+          usleep(5000);
+        }
         loader.specializeError = [NSError errorWithDomain:NSPOSIXErrorDomain
                                                      code:EIO
                                                  userInfo:nil];
@@ -1215,8 +1308,19 @@ TEST_F(CoreAIDelegateTest, WaiterAcquiresAfterConcurrentSharedLoadFails) {
     while (!*first_in_flight) {
       std::this_thread::yield();
     }
-    const Error second_result = init_sharing(second, true, root);
+    Error second_result = Error::Internal;
+    {
+      StorageFaultScope observe_wait(FaultPoint::BeforeSharedLoadWait);
+      observe_wait.armed = false;
+      observe_wait.observe = ^(FaultPoint point) {
+        if (point == FaultPoint::BeforeSharedLoadWait) {
+          *second_waiting = true;
+        }
+      };
+      second_result = init_sharing(second, true, root);
+    }
     worker.join();
+    EXPECT_TRUE(second_waiting->load());
     EXPECT_NE(first_result, Error::Ok);
     EXPECT_EQ(second_result, Error::Ok);
     EXPECT_EQ(calls->load(), 2);
