@@ -275,10 +275,10 @@ class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
         x = torch.arange(12.0).reshape(3, 4)
         program = _lower(Gather(), (x, torch.zeros(3, 2, dtype=torch.long)))
         method = Runtime.get().load_program(program.buffer).load_method("forward")
-        # Eager raises; the delegate clamps to the nearest end instead of
-        # reading outside x.
-        out = method.execute([x, torch.tensor([[9, 0], [-7, 1], [3, 2]])])[0]
-        clamped = torch.tensor([[3, 0], [0, 1], [3, 2]])
+        # Eager raises on 9, -1 and -7. The delegate counts -1 from the end and
+        # clamps 9 and -7 to the nearest end instead of reading outside x.
+        out = method.execute([x, torch.tensor([[9, -1], [-7, 1], [3, 2]])])[0]
+        clamped = torch.tensor([[3, 3], [0, 1], [3, 2]])
         self.assertTrue(torch.equal(out, torch.gather(x, 1, clamped)))
 
     def test_empty_axis(self):
