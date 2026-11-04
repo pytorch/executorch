@@ -126,7 +126,9 @@ python -m executorch.examples.llm_server.python.muse \
 The helper reads `/v1/models` and sets Muse's
 `context_compaction.provider_context_limit_tokens` to the server's actual context
 limit. Append `exec` and its flags for noninteractive use, or use `--muse-bin` to
-select an installed executable. Launching Muse directly without this override
+select an installed executable. The default endpoint is port 8000; the helper
+sets a local placeholder API key instead of forwarding an existing OpenRouter key.
+Use `--` before arguments that must be passed verbatim to Muse. Launching Muse directly without this override
 can retain its unknown-model fallback budget; model metadata alone does not
 configure the installed OpenRouter provider.
 
@@ -138,7 +140,9 @@ The `openrouter` mode also supplies the error metadata and message counts Muse
 needs for reactive context-overflow recovery. Counts describe the input prompt and
 its available budget after reserving completion space; metadata retains the full
 model window. A completion reservation consuming the entire window cannot be
-fixed by compacting input and does not advertise recoverable counts.
+fixed by compacting input: diagnostic metadata remains, but the message does not
+match Muse's recoverable prompt-budget format. With no explicit `max_tokens`,
+the server reserves one output token; Muse applies its own compaction margin.
 
 Streaming intentionally differs from the legacy buffered fallback for incomplete
 `<|` headers, which are suppressed at EOF; bare `to=` suffixes remain literal text
@@ -277,3 +281,8 @@ and `--max-draft-owners`), then add `--dflash` to the serve command above. The
 draft ABI and `--dflash-n-draft` behave as on MLX. Drafts are greedy; the target
 accepts or resamples them on the device under each request's sampling. Decode
 drafts of up to four owners run in CUDA graphs.
+
+The compatibility dialect changes usage placement and overflow formatting. Common
+validation, model context metadata, and legal SSE keepalives apply in both modes.
+`--streaming-preflight-timeout` defaults to 1 second; errors after response headers
+are sent are reported as SSE error events.

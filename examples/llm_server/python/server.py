@@ -80,14 +80,17 @@ def _resolve_session_id(
 
 
 async def _session_op(
-    op: Callable[[str], Awaitable[None]], session_id: str, ok: dict
+    op: Callable[[str], Awaitable[None]],
+    session_id: str,
+    ok: dict,
+    serving: ServingChat,
 ) -> JSONResponse:
     # Shared shape for the session vendor-extension routes (close/reset): run the
     # operation, mapping APIError to a structured JSON error.
     try:
         await op(session_id)
     except APIError as e:
-        return JSONResponse(e.body(), status_code=e.status)
+        return JSONResponse(serving.error_body(e), status_code=e.status)
     return JSONResponse(ok)
 
 
@@ -221,13 +224,11 @@ def build_app(
             return JSONResponse({"status": "unavailable"}, status_code=503)
         return {"status": "ok"}
 
-    @app.get("/v1/models")
+    @app.get("/v1/models", response_model_exclude_none=True)
     async def list_models() -> ModelList:
         return ModelList(
             data=[
-                ModelCard(
-                    id=model_id, context_length=_current_serving(app)._max_context
-                )
+                ModelCard(id=model_id, context_length=_current_serving(app).max_context)
             ]
         )
 
@@ -268,6 +269,7 @@ def build_app(
             _current_serving(app).close_session,
             session_id,
             {"closed": True, "session_id": session_id},
+            _current_serving(app),
         )
 
     @app.post("/v1/sessions/{session_id}/reset")
@@ -277,6 +279,7 @@ def build_app(
             _current_serving(app).reset_session,
             session_id,
             {"reset": True, "session_id": session_id},
+            _current_serving(app),
         )
 
     return app

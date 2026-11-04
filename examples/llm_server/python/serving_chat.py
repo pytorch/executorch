@@ -191,6 +191,10 @@ class ServingChat:
         )
 
     @property
+    def max_context(self) -> Optional[int]:
+        return self._max_context
+
+    @property
     def healthy(self) -> bool:
         """Whether the underlying model worker can accept new requests."""
         return self._runtime.healthy

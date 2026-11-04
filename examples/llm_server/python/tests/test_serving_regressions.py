@@ -4,12 +4,82 @@
 # LICENSE file in the root directory of this source tree.
 
 import asyncio
+import io
+import json
 
 import pytest
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.muse import command
 from executorch.examples.llm_server.python.protocol import ChatMessage
 from executorch.examples.llm_server.python.server import _with_heartbeats
+
+
+def test_launcher_preserves_muse_flags_and_uses_local_credentials(monkeypatch):
+    from executorch.examples.llm_server.python import muse
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-existing-credential")
+    monkeypatch.setattr(
+        "sys.argv",
+        ["launcher", "--muse-bin", "muse", "exec", "--mo", "fast", "--json"],
+    )
+    urls = []
+    commands = []
+
+    def models(url, **kwargs):
+        urls.append(url)
+        return io.StringIO(
+            json.dumps({"data": [{"id": "test", "context_length": 4096}]})
+        )
+
+    monkeypatch.setattr(muse.urllib.request, "urlopen", models)
+    monkeypatch.setattr(muse.os, "execvp", lambda binary, argv: commands.append(argv))
+    muse.main()
+    assert urls == ["http://127.0.0.1:8000/v1/models"]
+    assert commands[0][:2] == ["muse", "exec"]
+    assert commands[0][-3:] == ["--mo", "fast", "--json"]
+    assert muse.os.environ["OPENROUTER_API_KEY"] == "local"
+
+
+def test_launcher_does_not_reinterpret_option_values_as_subcommands():
+    argv = command(
+        "muse",
+        "http://127.0.0.1:8000/v1",
+        {"id": "test", "context_length": 4096},
+        ["--", "--some-option", "exec"],
+    )
+    assert argv[1] == "--provider"
+    assert argv[-2:] == ["--some-option", "exec"]
+
+
+def test_unknown_context_is_omitted_from_model_metadata(make_client):
+    client, _ = make_client()
+    assert "context_length" not in client.get("/v1/models").json()["data"][0]
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_heartbeat_cleanup_while_waiting_for_source(failed):
+    async def scenario():
+        gate = asyncio.Event()
+        closed = []
+
+        async def source():
+            try:
+                await gate.wait()
+                raise RuntimeError("source failed")
+                yield
+            finally:
+                closed.append(True)
+
+        stream = _with_heartbeats(source(), interval=0.001)
+        assert await anext(stream) == ": keep-alive\n\n"
+        if failed:
+            gate.set()
+            with pytest.raises(RuntimeError, match="source failed"):
+                await anext(stream)
+        await stream.aclose()
+        assert closed == [True]
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize(

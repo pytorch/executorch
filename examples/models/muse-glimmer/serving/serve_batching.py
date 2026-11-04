@@ -15,6 +15,7 @@ launcher and runners remain separate.
 import argparse
 import asyncio
 import logging
+import math
 import os
 import shutil
 from contextlib import asynccontextmanager
@@ -91,15 +92,28 @@ def _parse_args(argv=None):
     parser.add_argument("--eos-id", type=int, default=200001)
     parser.add_argument("--tool-parser", choices=("atem", "none"), default="none")
     parser.add_argument(
+        "--streaming-preflight-timeout",
+        type=float,
+        default=1.0,
+        help="Seconds to wait for admission before sending SSE headers. "
+        "Later errors are SSE events.",
+    )
+    parser.add_argument(
         "--stream-usage-format",
         choices=("openai", "openrouter"),
         default="openai",
         help="OpenRouter clients require usage on the finish chunk; OpenAI uses "
-        "a separate usage-only chunk.",
+        "a separate usage-only chunk. OpenRouter also selects "
+        "context-overflow error metadata.",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
+    if (
+        not math.isfinite(args.streaming_preflight_timeout)
+        or args.streaming_preflight_timeout < 0
+    ):
+        parser.error("--streaming-preflight-timeout must be finite and nonnegative")
     _validate_limits(parser, args, prefix_capture_slots=args.prefix_capture_slots)
     if not 0 <= args.dflash_n_draft < _INT32_MAX:
         parser.error("--dflash-n-draft must be nonnegative and below INT32_MAX")
@@ -212,7 +226,7 @@ def build_app_from_args(args):
                 template,
                 args.model_id,
                 max_context=args.max_context,
-                streaming_preflight_timeout=1.0,
+                streaming_preflight_timeout=args.streaming_preflight_timeout,
                 stream_usage_in_finish_chunk=args.stream_usage_format == "openrouter",
                 openrouter_errors=args.stream_usage_format == "openrouter",
                 max_image_bytes=args.max_image_bytes,

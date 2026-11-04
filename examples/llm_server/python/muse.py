@@ -19,8 +19,13 @@ import urllib.request
 def command(muse_bin, base_url, model, extra):
     context = model.get("context_length")
     if type(context) is not int or context <= 1:
-        raise ValueError("Server model metadata must include a positive context_length")
+        raise ValueError(
+            "Server model metadata must include a context_length greater than one"
+        )
     mode = []
+    extra = list(extra)
+    if extra[:1] == ["--"]:
+        extra.pop(0)
     if extra[:1] == ["exec"]:
         mode, extra = extra[:1], extra[1:]
     return [
@@ -39,8 +44,8 @@ def command(muse_bin, base_url, model, extra):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default="http://127.0.0.1:8088/v1")
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument("--base-url", default="http://127.0.0.1:8000/v1")
     parser.add_argument("--model")
     parser.add_argument(
         "--muse-bin", default=os.environ.get("MUSE_BIN") or shutil.which("muse")
@@ -58,7 +63,7 @@ def main():
         argv = command(args.muse_bin, base_url, models[0], extra)
     except ValueError as error:
         parser.error(str(error))
-    os.environ.setdefault("OPENROUTER_API_KEY", "local")
+    os.environ["OPENROUTER_API_KEY"] = "local"
     os.execvp(argv[0], argv)
 
 

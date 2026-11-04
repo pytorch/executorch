@@ -175,7 +175,7 @@ class ChatTemplate:
                     tokenize=False,
                     **kwargs,
                 )
-            except (TemplateError, ValueError, TypeError) as error:
+            except TemplateError as error:
                 raise APIError(
                     400,
                     f"Invalid chat template input: {error}",
