@@ -33,6 +33,7 @@ namespace batching {
 struct ET_EXPERIMENTAL PrefixMatch {
   Session session;
   std::size_t matched_tokens;
+  std::uint64_t cache_entry_id = 0;
 };
 
 struct ET_EXPERIMENTAL PrefixCheckpoint {
@@ -70,6 +71,7 @@ class ET_EXPERIMENTAL PrefixCache {
   using EntryView = PrefixCacheEntryView;
   using Entries = PrefixCacheEntries;
   using RetentionPolicy = PrefixCacheRetentionPolicy;
+  enum class MatchDecision { Use, Skip, Stop };
 
   // Best-effort capture; callbacks retain state independently of this handle.
   class PromptCapture {
@@ -327,8 +329,8 @@ class ET_EXPERIMENTAL PrefixCache {
         }
         victim = std::prev(entries_.end(), entries_.size() - *index);
       }
-      entries_.push_front(
-          Entry{tokens, std::move(snapshot), std::move(metadata)});
+      entries_.push_front(Entry{
+          tokens, std::move(snapshot), std::move(metadata), next_entry_id_++});
       if (victim != entries_.end()) {
         entries_.erase(victim);
       }
@@ -350,6 +352,20 @@ class ET_EXPERIMENTAL PrefixCache {
   std::optional<PrefixMatch> lookup_identity(
       const PrefixIdentity& request,
       std::size_t longer_than = 0) {
+    auto match = find_identity(request, longer_than);
+    if (match) {
+      touch(*match);
+    }
+    return match;
+  }
+
+  // Validate candidates before cloning, without refreshing recency. Call
+  // touch() after adopting the match. The selector must not mutate this cache.
+  std::optional<PrefixMatch> find_identity(
+      const PrefixIdentity& request,
+      std::size_t longer_than = 0,
+      std::size_t at_most = std::numeric_limits<std::size_t>::max(),
+      const std::function<MatchDecision(std::size_t)>& select = {}) {
     if (request.size() < 2 || entries_.empty()) {
       return std::nullopt;
     }
@@ -367,7 +383,7 @@ class ET_EXPERIMENTAL PrefixCache {
       for (auto it = entries_.begin(); it != entries_.end(); ++it, ++rank) {
         const auto matched =
             std::min(common_prefix(it->tokens, request), request.size() - 1);
-        if (matched > longer_than) {
+        if (matched > longer_than && matched <= at_most) {
           candidates.push_back(Candidate{it, matched, rank});
         }
       }
@@ -379,14 +395,31 @@ class ET_EXPERIMENTAL PrefixCache {
                                           : a.rank < b.rank;
           });
       for (const auto& candidate : candidates) {
-        auto session =
-            candidate.entry->snapshot
-                .clone_async(static_cast<Position>(candidate.matched))
-                .get();
-        if (session) {
-          entries_.splice(entries_.begin(), entries_, candidate.entry);
-          return PrefixMatch{std::move(*session), candidate.matched};
+        if (select) {
+          const auto decision = select(candidate.matched);
+          if (decision == MatchDecision::Stop) {
+            return std::nullopt;
+          }
+          if (decision == MatchDecision::Skip) {
+            continue;
+          }
         }
+#if ET_HAS_EXCEPTIONS
+        try {
+#endif
+          auto session =
+              candidate.entry->snapshot
+                  .clone_async(static_cast<Position>(candidate.matched))
+                  .get();
+          if (session) {
+            return PrefixMatch{
+                std::move(*session), candidate.matched, candidate.entry->id};
+          }
+#if ET_HAS_EXCEPTIONS
+        } catch (...) {
+          // A refused snapshot does not rule out the remaining candidates.
+        }
+#endif
       }
 #if ET_HAS_EXCEPTIONS
     } catch (const std::bad_alloc&) {
@@ -394,6 +427,16 @@ class ET_EXPERIMENTAL PrefixCache {
     }
 #endif
     return std::nullopt;
+  }
+
+  // Refresh only a match from this cache; eviction invalidates its entry ID.
+  void touch(const PrefixMatch& match) {
+    for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+      if (it->id == match.cache_entry_id) {
+        entries_.splice(entries_.begin(), entries_, it);
+        return;
+      }
+    }
   }
 
   // Session destruction queues closes. Runner::shutdown() is the completion
@@ -426,11 +469,13 @@ class ET_EXPERIMENTAL PrefixCache {
     PrefixIdentity tokens;
     Session snapshot;
     CheckpointMetadata metadata;
+    std::uint64_t id;
   };
 
   const std::size_t max_entries_;
   RetentionPolicy retention_policy_;
   std::list<Entry> entries_; // most recently used first
+  std::uint64_t next_entry_id_ = 1;
 };
 
 } // namespace batching

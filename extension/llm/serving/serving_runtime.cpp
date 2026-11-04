@@ -765,13 +765,14 @@ struct ServingRuntime::Impl {
            prompt->size() - 1});
     }
     std::optional<batching::Session> cloned;
-    if (auto match = lookup_prefix(request, upto)) {
-      auto selection = select_input(request, match->matched_tokens);
+    std::optional<batching::PrefixMatch> match;
+    if (upto) {
+      auto selection = lookup_prefix(request, match, upto);
       const auto* outcome = std::get_if<Selection>(&selection);
       if (!outcome || *outcome == Selection::Cancelled) {
         return selection;
       }
-      if (*outcome == Selection::Selected) {
+      if (match) {
         cloned = std::move(match->session);
       }
     }
@@ -799,11 +800,11 @@ struct ServingRuntime::Impl {
       if (request->cancelled.load()) {
         return Selection::Cancelled;
       }
-      auto match = lookup_prefix(request);
-      if (!match) {
-        return Selection::Unavailable;
-      }
-      auto selection = select_input(request, match->matched_tokens);
+      auto selection = lookup_prefix(
+          request,
+          match,
+          0,
+          upto ? upto : std::numeric_limits<std::size_t>::max());
       if (auto* outcome = std::get_if<Selection>(&selection);
           !outcome || *outcome != Selection::Selected) {
         return selection;
@@ -824,6 +825,9 @@ struct ServingRuntime::Impl {
       slot.incarnation = next_incarnation_++;
       // Completion installs the replacement prompt's history.
       slot.dirty = true;
+    }
+    if (match) {
+      prefix_cache_.touch(*match);
     }
     return Selection::Selected;
   }
@@ -981,23 +985,58 @@ struct ServingRuntime::Impl {
     return std::nullopt;
   }
 
-  std::optional<batching::PrefixMatch> lookup_prefix(
+  SelectionResult lookup_prefix(
       const Request& request,
-      std::size_t longer_than = 0) {
+      std::optional<batching::PrefixMatch>& match,
+      std::size_t longer_than = 0,
+      std::size_t at_most = std::numeric_limits<std::size_t>::max()) {
     if (!request->text || !request->text->prompt ||
         config_.prefix_cache_capacity == 0) {
-      return std::nullopt;
+      return Selection::Unavailable;
     }
+    auto original_delta = std::move(request->request.delta);
+    SelectionResult result = Selection::Unavailable;
     // A lookup clone uses the new request's reserved working-session slot.
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      return prefix_cache_.lookup_identity(*request->text->prompt, longer_than);
+      match = prefix_cache_.find_identity(
+          *request->text->prompt, longer_than, at_most, [&](std::size_t start) {
+            using Decision = batching::PrefixCache::MatchDecision;
+#if ET_HAS_EXCEPTIONS
+            try {
+#endif
+              auto selection = select_input(request, start);
+              if (const auto* outcome = std::get_if<Selection>(&selection)) {
+                if (*outcome == Selection::Selected) {
+                  return Decision::Use;
+                }
+                if (*outcome == Selection::Unavailable) {
+                  return Decision::Skip;
+                }
+              } else if (
+                  std::get<ServingError>(selection).code !=
+                  ErrorCode::NotReady) {
+                return Decision::Skip;
+              }
+              result = std::move(selection);
+              return Decision::Stop;
+#if ET_HAS_EXCEPTIONS
+            } catch (...) {
+              return Decision::Skip;
+            }
+#endif
+          });
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
-      return std::nullopt;
+      // Cache lookup is optional; keep the previously accepted input.
     }
 #endif
+    if (match) {
+      return Selection::Selected;
+    }
+    request->request.delta = std::move(original_delta);
+    return result;
   }
 
   void collect_capture(const Request& request) {
@@ -1078,25 +1117,19 @@ struct ServingRuntime::Impl {
     if (opening) {
       lock.unlock();
       std::optional<batching::Session> opened;
+      std::optional<batching::PrefixMatch> match;
       LifecycleResult preparation_error;
 #if ET_HAS_EXCEPTIONS
       try {
 #endif
-        auto match = lookup_prefix(request);
-        Selection outcome = Selection::Selected;
-        if (match) {
-          opened = std::move(match->session);
-          // Snapshot positions are committed; named history also includes
-          // pending. Keep the accepted full delta until suffix success.
-          auto selection = select_input(request, match->matched_tokens);
-          if (auto* error = std::get_if<ServingError>(&selection)) {
-            preparation_error = std::move(*error);
-          } else {
-            outcome = std::get<Selection>(selection);
-            if (outcome == Selection::Unavailable) {
-              // Queue clone closure outside mutex_ before the cold open.
-              opened.reset();
-            }
+        auto selection = lookup_prefix(request, match);
+        Selection outcome = Selection::Unavailable;
+        if (auto* error = std::get_if<ServingError>(&selection)) {
+          preparation_error = std::move(*error);
+        } else {
+          outcome = std::get<Selection>(selection);
+          if (match) {
+            opened = std::move(match->session);
           }
         }
         if (!opened && !preparation_error && outcome != Selection::Cancelled &&
@@ -1129,6 +1162,9 @@ struct ServingRuntime::Impl {
       }
       it->second.session = std::move(opened);
       it->second.phase = SessionPhase::Open;
+      if (match) {
+        prefix_cache_.touch(*match);
+      }
     }
     auto& session = *it->second.session;
     if (!request->text) {

@@ -172,10 +172,21 @@ class Executor : public batching::testing::FakeExecutor {
   bool accept_prepared = false;
   bool reject_views = false;
   std::optional<std::size_t> rejected_view_start;
+  std::optional<std::size_t> throwing_view_start;
+  mutable std::map<std::size_t, int> acceptance_calls;
   mutable std::size_t full_accepts = 0;
   std::size_t burst = 1;
 
   bool accepts(const batching::PreparedInput& input) const override {
+    if (input.kind() == &TestPreparedInput::tag) {
+      const auto offset = static_cast<const TestPreparedInput&>(input).offset;
+      ++acceptance_calls[offset];
+#if ET_HAS_EXCEPTIONS
+      if (throwing_view_start == offset) {
+        throw std::runtime_error("suffix-specific acceptance failure");
+      }
+#endif
+    }
     if (input.kind() == &TestPreparedInput::tag &&
         !static_cast<const TestPreparedInput&>(input).offset) {
       ++full_accepts;
@@ -205,6 +216,10 @@ class Executor : public batching::testing::FakeExecutor {
   }
   std::optional<SessionId> clone(SessionId source, Position upto) override {
     ++clone_calls;
+    {
+      std::lock_guard<std::mutex> lock(data_mutex_);
+      clone_sources_.push_back(source);
+    }
     cloning.enter();
     if (refuse_clone.load() || rejected_clone_source == source) {
       return std::nullopt;
@@ -303,7 +318,13 @@ class Executor : public batching::testing::FakeExecutor {
     return feeds_;
   }
 
+  int clone_attempts(SessionId source) const {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    return std::count(clone_sources_.begin(), clone_sources_.end(), source);
+  }
+
  private:
+  std::vector<SessionId> clone_sources_;
   mutable std::mutex data_mutex_;
   std::map<SessionId, std::vector<Token>> histories_;
   std::map<SessionId, std::size_t> produced_;
@@ -832,35 +853,25 @@ TEST_P(
   handle.wait();
   ASSERT_TRUE(event->terminal);
   EXPECT_EQ(prepare_calls, 1u);
-  EXPECT_EQ(executor.full_accepts, mode < 2 ? 2u : 1u);
-  EXPECT_EQ(runtime->info().active_sessions, named && mode != 2 ? 1u : 0u);
+  EXPECT_EQ(executor.full_accepts, mode == 3 ? 1u : 2u);
+  EXPECT_EQ(runtime->info().active_sessions, named ? 1u : 0u);
   const auto clones = executor.clones();
-  ASSERT_EQ(clones.size(), 2u);
-  EXPECT_EQ(clones.back().prefix, (std::vector<Token>{1, 7, 7}));
+  ASSERT_EQ(clones.size(), mode == 3 ? 2u : 1u);
+  if (mode == 3) {
+    EXPECT_EQ(clones.back().prefix, (std::vector<Token>{1, 7, 7}));
+  }
   EXPECT_LE(executor.peak_rows.load(), 2);
-  if (mode == 2) {
-    ASSERT_TRUE(handle.error());
-    EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
-    EXPECT_EQ(executor.feeds().size(), 1u);
-  } else {
-    ASSERT_FALSE(handle.error());
-    EXPECT_EQ(event->terminal->finish_reason, FinishReason::Length);
-    EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, mode == 3 ? 3u : 0u);
-    EXPECT_EQ(
-        event->terminal->stats.prefilled_prompt_tokens, mode == 3 ? 1u : 4u);
-    ASSERT_EQ(executor.feeds().size(), 2u);
-    EXPECT_EQ(
-        executor.feeds().back().tokens,
-        (mode == 3 ? std::vector<Token>{9} : std::vector<Token>{1, 7, 7, 9}));
-    EXPECT_EQ(executor.feeds().back().position, mode == 3 ? 3 : 0);
-    EXPECT_EQ(executor.feeds().back().original.offset, 0u);
-  }
-  if (mode != 3) {
-    const auto closed = executor.closed();
-    EXPECT_NE(
-        std::find(closed.begin(), closed.end(), clones.back().destination),
-        closed.end());
-  }
+  ASSERT_FALSE(handle.error());
+  EXPECT_EQ(event->terminal->finish_reason, FinishReason::Length);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, mode == 3 ? 3u : 0u);
+  EXPECT_EQ(
+      event->terminal->stats.prefilled_prompt_tokens, mode == 3 ? 1u : 4u);
+  ASSERT_EQ(executor.feeds().size(), 2u);
+  EXPECT_EQ(
+      executor.feeds().back().tokens,
+      (mode == 3 ? std::vector<Token>{9} : std::vector<Token>{1, 7, 7, 9}));
+  EXPECT_EQ(executor.feeds().back().position, mode == 3 ? 3 : 0);
+  EXPECT_EQ(executor.feeds().back().original.offset, 0u);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -1148,6 +1159,89 @@ class ReplacementSharedSnapshotTest
     : public PrefixReuseTest,
       public ::testing::WithParamInterface<bool> {};
 
+TEST_F(PrefixReuseTest, ZeroLivePrefixDoesNotRetryRefusedSnapshot) {
+  start();
+  submit(output(), {9, 8, 7}, "s").wait();
+  submit(output(), {1, 2, 3, 4, 5, 6}, "other").wait();
+  const auto snapshot = executor.clones().back().destination;
+  executor.rejected_clone_source = snapshot;
+  auto replacement = output();
+  submit(replacement, {1, 2, 3, 4, 5, 9}).wait();
+  ASSERT_TRUE(replacement->terminal);
+  ASSERT_FALSE(replacement->terminal->error);
+  EXPECT_EQ(executor.clone_attempts(snapshot), 1);
+  EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 0u);
+}
+
+TEST_F(PrefixReuseTest, RefusedPreferredAndLiveClonesTryShorterSnapshotOnce) {
+  start();
+  submit(output(), {1, 2, 3}, "s", 3).wait();
+  const auto live = executor.feeds().back().session;
+  const auto shorter = executor.clones().front().destination;
+  submit(output(), {1, 2, 3, 4, 5, 6}, "other").wait();
+  const auto longer = executor.clones().back().destination;
+  executor.rejected_clone_source = longer;
+  executor.reject_after_decode = true;
+  auto replacement = output();
+  submit(replacement, {1, 2, 3, 4, 5, 9}).wait();
+  ASSERT_TRUE(replacement->terminal);
+  ASSERT_FALSE(replacement->terminal->error);
+  EXPECT_EQ(executor.clone_attempts(longer), 1);
+  EXPECT_EQ(
+      executor.clone_attempts(live), 2); // Capture and refused live clone.
+  EXPECT_EQ(executor.clones().back().source, shorter);
+  EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 3u);
+}
+
+TEST_F(PrefixReuseTest, ZeroLivePrefixChecksUnusableSnapshotOnce) {
+  use_mixed_preparer();
+  start();
+  submit(output(), {9, 7, 7, 7, 6}, "s").wait();
+  submit(output(), {1, 7, 7, 7, 2, 3}, "other").wait();
+  const auto checked = executor.acceptance_calls[5];
+  executor.rejected_view_start = 5;
+  auto replacement = output();
+  submit(replacement, {1, 7, 7, 7, 2, 9}).wait();
+  ASSERT_TRUE(replacement->terminal);
+  ASSERT_FALSE(replacement->terminal->error);
+  EXPECT_EQ(executor.acceptance_calls[5], checked + 1);
+  EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 0u);
+}
+
+TEST_F(PrefixReuseTest, RejectedLongestSuffixStillTriesOtherLongerSnapshot) {
+  use_mixed_preparer();
+  config.prefix_cache_capacity = 3;
+  start();
+  submit(output(), {1, 7, 7, 7, 9}, "s").wait();
+  submit(output(), {1, 7, 7, 7, 2, 9}, "shorter").wait();
+  const auto shorter = executor.clones().back().destination;
+  submit(output(), {1, 7, 7, 7, 2, 3, 9}, "longer").wait();
+  executor.rejected_view_start = 6;
+  auto replacement = output();
+  submit(replacement, {1, 7, 7, 7, 2, 3, 8}).wait();
+  ASSERT_TRUE(replacement->terminal);
+  ASSERT_FALSE(replacement->terminal->error);
+  EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 5u);
+  EXPECT_EQ(executor.clones().back().source, shorter);
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST_F(PrefixReuseTest, PreferredSnapshotAcceptanceErrorFallsBackToLivePrefix) {
+  use_mixed_preparer();
+  start();
+  submit(output(), {1, 7, 7, 7, 6}, "s").wait();
+  const auto live = executor.feeds().back().session;
+  submit(output(), {1, 7, 7, 7, 2, 3}, "other").wait();
+  executor.throwing_view_start = 5;
+  auto replacement = output();
+  submit(replacement, {1, 7, 7, 7, 2, 9}).wait();
+  ASSERT_TRUE(replacement->terminal);
+  ASSERT_FALSE(replacement->terminal->error);
+  EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 4u);
+  EXPECT_EQ(executor.clones().back().source, live);
+}
+#endif
+
 TEST_F(PrefixReuseTest, LongerSnapshotWinsOverCloneableLivePrefix) {
   start();
   submit(output(), {1, 2, 3}, "s").wait();
@@ -1189,11 +1283,13 @@ TEST_F(PrefixReuseTest, UnusableLongerSnapshotSuffixFallsBackToLivePrefix) {
   const auto live = executor.feeds().back().session;
   submit(output(), {1, 7, 7, 7, 2, 3}, "other").wait();
   executor.rejected_view_start = 5;
+  const auto checked = executor.acceptance_calls[5];
   auto replacement = output();
   submit(replacement, {1, 7, 7, 7, 2, 9}).wait();
   ASSERT_TRUE(replacement->terminal);
   ASSERT_FALSE(replacement->terminal->error);
   EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 4u);
+  EXPECT_EQ(executor.acceptance_calls[5], checked + 1);
   EXPECT_EQ(executor.clones().back().source, live);
   EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{2, 9}));
 }
@@ -1205,18 +1301,72 @@ TEST_F(
   submit(output(), {1, 2, 3}, "s").wait();
   submit(output(), {1, 2, 3, 4, 5, 6}, "other").wait();
   const auto snapshot = executor.clones().back();
+  const auto before = executor.clone_calls.load();
   executor.cloning.hold();
-  auto replacement = submit(output(), {1, 2, 3, 4, 5, 6});
+  auto cancelled = output();
+  auto replacement = submit(cancelled, {1, 2, 3, 4, 5, 6});
   ASSERT_TRUE(executor.cloning.wait());
   replacement.cancel();
   executor.cloning.release();
   replacement.wait();
+  ASSERT_TRUE(cancelled->terminal);
+  EXPECT_EQ(cancelled->terminal->finish_reason, FinishReason::Cancelled);
+  EXPECT_FALSE(cancelled->terminal->error);
+  EXPECT_EQ(executor.clone_calls.load(), before + 1);
   EXPECT_EQ(executor.clones().back().source, snapshot.destination);
   auto continued = output();
   submit(continued, {1, 2, 3, 100, 4}).wait();
   ASSERT_TRUE(continued->terminal);
+  EXPECT_FALSE(continued->terminal->error);
   EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
 }
+
+class UnusedSnapshotLruTest : public PrefixReuseTest,
+                              public ::testing::WithParamInterface<bool> {};
+
+TEST_P(UnusedSnapshotLruTest, UnusedPreferredSnapshotDoesNotRefreshLru) {
+  use_mixed_preparer();
+  config.prefix_cache_capacity = 3;
+  start();
+  submit(output(), {1, 7, 7, 7, 2, 3}, "other").wait();
+  const auto snapshot = executor.clones().back().destination;
+  submit(output(), {1, 7, 7, 7, 6}, "s").wait();
+  ASSERT_FALSE(runtime->close_session_async("other").get());
+  submit(output(), {9, 7, 7, 7, 2}, "recent").wait();
+  ASSERT_FALSE(runtime->close_session_async("recent").get());
+  const auto checked = executor.acceptance_calls[5];
+  auto unused = output();
+  if (GetParam()) {
+    executor.cloning.hold();
+    auto handle = submit(unused, {1, 7, 7, 7, 2, 9});
+    ASSERT_TRUE(executor.cloning.wait());
+    handle.cancel();
+    executor.cloning.release();
+    handle.wait();
+    ASSERT_TRUE(unused->terminal);
+    EXPECT_EQ(unused->terminal->finish_reason, FinishReason::Cancelled);
+    EXPECT_EQ(executor.clones().back().source, snapshot);
+  } else {
+    executor.rejected_view_start = 5;
+    submit(unused, {1, 7, 7, 7, 2, 9}).wait();
+    ASSERT_TRUE(unused->terminal);
+    EXPECT_EQ(unused->terminal->stats.reused_prompt_tokens, 4u);
+    EXPECT_EQ(executor.acceptance_calls[5], checked + 1);
+    executor.rejected_view_start.reset();
+  }
+  EXPECT_FALSE(unused->terminal->error);
+  submit(output(), {8, 7, 7, 7, 2}, "evict").wait();
+  auto probe = output();
+  submit(probe, {1, 7, 7, 7, 2, 9}, "probe").wait();
+  ASSERT_TRUE(probe->terminal);
+  ASSERT_FALSE(probe->terminal->error);
+  EXPECT_EQ(probe->terminal->stats.reused_prompt_tokens, 4u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    RejectedAndCancelled,
+    UnusedSnapshotLruTest,
+    ::testing::Bool());
 
 TEST_P(ReplacementSharedSnapshotTest, LookupDoesNotDependOnLivePrefixLength) {
   start();
@@ -1224,7 +1374,6 @@ TEST_P(ReplacementSharedSnapshotTest, LookupDoesNotDependOnLivePrefixLength) {
   submit(output(), {first, 2, 3}, "s", 3).wait();
   submit(output(), {8, 8, 8}, "other").wait();
   const auto snapshot = executor.clones().back();
-  executor.reject_after_decode = true;
   const auto before = executor.clone_calls.load();
   auto replacement = output();
   submit(replacement, {8, 8, 8, 9}).wait();
@@ -1251,7 +1400,6 @@ TEST_P(ReplacementPreparedFallbackTest, ColdInputIsValidatedOnceAndRestored) {
   use_mixed_preparer();
   start();
   submit(output(), {1, 7, 7, 7, 2}, "s", 3).wait();
-  const auto snapshot = executor.clones().front();
   const auto before = executor.clone_calls.load();
   executor.reject_after_decode = true;
   // Live prefix is six positions; the saved prompt has five.
@@ -1277,15 +1425,8 @@ TEST_P(ReplacementPreparedFallbackTest, ColdInputIsValidatedOnceAndRestored) {
   ASSERT_EQ(executor.feeds().size(), 1u);
   EXPECT_EQ(executor.feeds().front().position, 0);
   EXPECT_EQ(executor.feeds().front().tokens, prompt);
-  EXPECT_EQ(executor.clone_calls.load(), before + (GetParam() == 2 ? 1 : 2));
-  if (GetParam() != 0) {
-    const auto discarded = executor.clones().back();
-    EXPECT_EQ(discarded.source, snapshot.destination);
-    const auto closed = executor.closed();
-    EXPECT_NE(
-        std::find(closed.begin(), closed.end(), discarded.destination),
-        closed.end());
-  }
+  const int attempts = GetParam() == 0 ? 2 : GetParam() == 1 ? 1 : 0;
+  EXPECT_EQ(executor.clone_calls.load(), before + attempts);
   EXPECT_EQ(executor.open_count(), 2); // Working session and original snapshot.
 }
 
