@@ -628,7 +628,7 @@ def show_mlx_instructions(pte_data: bytes) -> None:  # noqa: C901
         mlx_delegates = _find_mlx_delegates(pte_data)
         if not mlx_delegates:
             print("No MLX delegates found in this PTE file.", file=sys.stderr)
-            sys.exit(1)
+            return
 
         if len(mlx_delegates) > 1:
             print(
@@ -747,7 +747,6 @@ def show_mlx_instructions(pte_data: bytes) -> None:  # noqa: C901
     except Exception as e:
         print(f"Error showing MLX instructions: {e}", file=sys.stderr)
         traceback.print_exc()
-        sys.exit(1)
 
 
 def main():  # noqa: C901

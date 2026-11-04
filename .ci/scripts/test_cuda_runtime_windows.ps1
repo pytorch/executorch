@@ -35,6 +35,7 @@ $tests = @(
     "test_cuda_weight_cache",
     "test_cuda_output_copy",
     "test_cuda_sort_rand",
+    "test_cuda_current_stream",
     "test_cuda_guard",
     "test_cuda_stream_guard"
 )
