@@ -81,12 +81,7 @@ def _assert_scale(test: unittest.TestCase, node: Node, scale: float) -> None:
     test.assertEqual(node.meta["quantize_attrs"]["scales"], scale)
 
 
-class AnnotateQparamsTestBase(unittest.TestCase):
-    def _new_builder(self) -> GraphBuilder:
-        return GraphBuilder()
-
-
-class TestBackwardPropagation(AnnotateQparamsTestBase):
+class TestBackwardPropagation(unittest.TestCase):
     """Backward propagation into unannotated single-input upstream ops."""
 
     def test_silu_to_split_backward_propagation(self):
@@ -96,7 +91,7 @@ class TestBackwardPropagation(AnnotateQparamsTestBase):
         downstream split carries the shared quant scale, so backward
         propagation must annotate silu with the split's qparams.
         """
-        builder = self._new_builder()
+        builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 8, 4, 4))
         _, dq_in = _build_qdq(builder, x, 0.1)
         silu = builder.call_operator(SILU, (dq_in,))
@@ -130,7 +125,7 @@ class TestBackwardPropagation(AnnotateQparamsTestBase):
         so only cat itself may be annotated (from its single-input downstream
         neighbor); the branches above cat must stay unannotated.
         """
-        builder = self._new_builder()
+        builder = GraphBuilder()
         x1 = builder.placeholder("x1", torch.randn(1, 4, 4, 4))
         x2 = builder.placeholder("x2", torch.randn(1, 4, 4, 4))
         silu1 = builder.call_operator(SILU, (x1,))
@@ -158,7 +153,7 @@ class TestBackwardPropagation(AnnotateQparamsTestBase):
     def test_backward_through_contiguous(self):
         """silu -> contiguous -> Q pattern: contiguous is annotated as the Q's
         source and backward propagation fills the upstream silu."""
-        builder = self._new_builder()
+        builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 8, 4, 4))
         _, dq_in = _build_qdq(builder, x, 0.1)
         silu = builder.call_operator(SILU, (dq_in,))
@@ -173,13 +168,13 @@ class TestBackwardPropagation(AnnotateQparamsTestBase):
         _assert_scale(self, dq_out, 0.2)
 
 
-class TestForwardPropagation(AnnotateQparamsTestBase):
+class TestForwardPropagation(unittest.TestCase):
     """Forward propagation through SharedQuant propagate ops."""
 
     def test_propagation_through_clone_and_contiguous_chain(self):
         """DQ -> clone -> contiguous -> view -> Q: each propagate op on the
         chain is annotated with the region's shared qparams."""
-        builder = self._new_builder()
+        builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 8, 4, 4))
         _, dq_in = _build_qdq(builder, x, 0.1)
         clone = builder.call_operator(CLONE, (dq_in,), {"memory_format": None})
@@ -197,7 +192,7 @@ class TestForwardPropagation(AnnotateQparamsTestBase):
         boundary and must not be re-annotated (and its downstream chain
         re-propagated) with the upstream DQ's params.
         """
-        builder = self._new_builder()
+        builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 8, 4, 4))
         _, dq_in = _build_qdq(builder, x, 0.1)
         clone = builder.call_operator(CLONE, (dq_in,), {"memory_format": None})
@@ -212,7 +207,7 @@ class TestForwardPropagation(AnnotateQparamsTestBase):
         _assert_scale(self, dq_out, 0.2)
 
 
-class TestQDQFanout(AnnotateQparamsTestBase):
+class TestQDQFanout(unittest.TestCase):
     """_walk_qdq_chain_to_terminals and fan-out handling."""
 
     def _fanout_graph(self):
@@ -285,9 +280,7 @@ class TestQDQFanout(AnnotateQparamsTestBase):
         This is the pattern a quantizer emits when one tensor is consumed
         by two ops needing different activation scales: the DQ is the
         terminal for its float-consumer branch, so the SharedQuant op right
-        below it must receive the DQ's params. It must ALSO be collected as
-        a terminal to stay index-aligned with `_get_last_dqs`, which
-        requantize propagation relies on.
+        below it must receive the DQ's params.
         """
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 8))
@@ -302,12 +295,12 @@ class TestQDQFanout(AnnotateQparamsTestBase):
         builder.output([view1, view2])
         gm = builder.get_graph_module()
 
-        # Both walks must agree on the terminal set (requantize params are
-        # indexed by `_get_last_dqs` order, propagation walks by this one).
         passer = AnnotateQparamsPass(_dummy_exported_program())
-        last_dqs = passer._get_last_dqs(x.node)
-        terminals = passer._walk_qdq_chain_to_terminals(_nodes(gm, Q_OP)[0])
-        self.assertEqual(set(terminals), set(last_dqs))
+        q_a_node, q_b_node = _nodes(gm, Q_OP)
+        dq_a_node, dq_b_node = _nodes(gm, DQ_OP)
+        self.assertEqual(
+            passer._walk_qdq_chain_to_terminals(q_a_node), [dq_a_node, dq_b_node]
+        )
 
         gm = _run_pass(gm)
         views = _nodes(gm, VIEW_COPY)
@@ -350,8 +343,48 @@ class TestQDQFanout(AnnotateQparamsTestBase):
         _assert_scale(self, views[1], 0.1)
         self.assertEqual(views[1].meta["quantize_attrs"]["quant_dtype"], torch.int8)
 
+    def test_requantize_index_alignment_independent_of_user_order(self):
+        """Same graph with the requantize Q created before the float
+        consumer, so the shared DQ's users are [q_b, view1]. The requantize
+        params must still reach the requantize branch."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 8))
+        q_a = _build_q(builder, x, 0.5)
+        dq_a = _build_dq(builder, q_a, 0.5)
+        q_b = builder.call_operator(Q_OP, (dq_a, 0.1, 0, -128, 127, torch.int8))
+        dq_b = builder.call_operator(DQ_OP, (q_b, 0.1, 0, -128, 127, torch.int8))
+        view2 = builder.call_operator(VIEW_COPY, (dq_b, [8]))
+        view1 = builder.call_operator(VIEW_COPY, (dq_a, [8]))
+        builder.output([view1, view2])
+        gm = _run_pass(builder.get_graph_module())
 
-class TestIsPropagatable(AnnotateQparamsTestBase):
+        view2_node, view1_node = _nodes(gm, VIEW_COPY)
+        _assert_scale(self, view1_node, 0.5)
+        _assert_scale(self, view2_node, 0.1)
+        self.assertEqual(view2_node.meta["quantize_attrs"]["quant_dtype"], torch.int8)
+
+    def test_requantize_index_alignment_with_direct_consumer(self):
+        """The source feeds a SharedQuant op directly as well as a
+        requantize chain. The direct consumer must not take a requantize
+        slot that belongs to the chain."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 8))
+        silu = builder.call_operator(SILU, (x,))
+        view_direct = builder.call_operator(VIEW_COPY, (silu, [8]))
+        q_a = _build_q(builder, silu, 0.5)
+        dq_a = _build_dq(builder, q_a, 0.5)
+        q_b = builder.call_operator(Q_OP, (dq_a, 0.1, 0, -128, 127, torch.int8))
+        dq_b = builder.call_operator(DQ_OP, (q_b, 0.1, 0, -128, 127, torch.int8))
+        view_requant = builder.call_operator(VIEW_COPY, (dq_b, [8]))
+        builder.output([view_direct, view_requant])
+        gm = _run_pass(builder.get_graph_module())
+
+        view_direct_node, view_requant_node = _nodes(gm, VIEW_COPY)
+        _assert_scale(self, view_direct_node, 0.5)
+        _assert_scale(self, view_requant_node, 0.1)
+
+
+class TestIsPropagatable(unittest.TestCase):
     """Direct tests for the _is_propagatable guard."""
 
     def _propagatable_graph(self):
@@ -367,9 +400,8 @@ class TestIsPropagatable(AnnotateQparamsTestBase):
         # clone whose single user is a normal op.
         clone_free = builder.call_operator(CLONE, (dq1,), {"memory_format": None})
         view = builder.call_operator(VIEW_COPY, (clone_free, [1, 8]))
-        # silu is not a propagate op at all.
+        # silu is not a propagate op at all; view feeds both it and cat.
         silu = builder.call_operator(SILU, (view,))
-        # multi-user propagate node.
         cat = builder.call_operator(CAT, ([view, view], 1))
         builder.output([silu, cat])
         return builder.get_graph_module()
@@ -392,7 +424,7 @@ class TestIsPropagatable(AnnotateQparamsTestBase):
         # Not a propagate op.
         self.assertFalse(passer._is_propagatable(_single(gm, SILU)))
         self.assertFalse(passer._is_propagatable(_nodes(gm, Q_OP)[0]))
-        # Multi-user propagate node: propagatable.
+        # Single non-Q/DQ user (output) and multiple users: propagatable.
         self.assertTrue(passer._is_propagatable(_single(gm, CAT)))
         self.assertTrue(passer._is_propagatable(_single(gm, VIEW_COPY)))
 
