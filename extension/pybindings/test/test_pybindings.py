@@ -273,6 +273,74 @@ else:
                                 completed.stdout + completed.stderr,
                             )
 
+    def test_torch_that_is_not_ready_is_ignored(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings look torch up in sys.modules")
+        program, _ = create_program(ModuleAddSingleInput())
+        script = """
+import os
+import sys
+import threading
+
+import numpy as np
+
+program_path, case = sys.argv[1:]
+if case == "none":
+    sys.modules["torch"] = None
+elif case == "importing":
+    # A torch that another thread is still importing.
+    package = os.path.join(os.path.dirname(program_path), "partial", "torch")
+    os.makedirs(package)
+    with open(os.path.join(package, "__init__.py"), "w") as source:
+        source.write("import __main__\\n__main__.started.set()\\n__main__.release.wait()\\n")
+    sys.path.insert(0, os.path.dirname(package))
+    started, release = threading.Event(), threading.Event()
+    importer = threading.Thread(target=__import__, args=("torch",), daemon=True)
+    importer.start()
+    started.wait()
+from executorch.extension.pybindings import portable_lib
+with open(program_path, "rb") as source:
+    module = portable_lib._load_for_executorch_from_buffer(source.read())
+if case == "vanishing":
+    # Reading its __spec__ drops the only other reference to it.
+    class Vanishing:
+        @property
+        def __spec__(self):
+            del sys.modules["torch"]
+
+    sys.modules["torch"] = Vanishing()
+try:
+    output = module(np.ones((2, 2), dtype=np.float32))[0]
+except AttributeError:
+    # That object has no Tensor to check inputs against; it only must not
+    # crash the process.
+    assert case == "vanishing"
+else:
+    assert isinstance(output, portable_lib.ExecuTorchResult), type(output)
+if case == "importing":
+    release.set()
+    importer.join()
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            program_path = os.path.join(directory, "add.pte")
+            with open(program_path, "wb") as handle:
+                handle.write(program.buffer)
+            environment = dict(
+                os.environ, EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT="executorch"
+            )
+            for case in ("none", "importing", "vanishing"):
+                with self.subTest(case=case):
+                    completed = subprocess.run(
+                        [sys.executable, "-c", script, program_path, case],
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    self.assertEqual(
+                        completed.returncode, 0, completed.stdout + completed.stderr
+                    )
+
     def test_empty_numpy_buffer_input(self):
         exported_program, inputs = create_program(ModuleAddEmpty())
         array = np.zeros((3, 0), dtype=np.float32)
