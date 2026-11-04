@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 import torch
+from executorch.backends.mlx import pte_inspector
 from executorch.backends.mlx.test.run_all_tests import _run_test_in_subprocess
 from executorch.backends.mlx.test.test_utils import (
     clean_test_outputs,
@@ -72,15 +73,54 @@ class RunAllTestsTest(unittest.TestCase):
             self.assertFalse(_run_test_in_subprocess("sub_10"))
 
     def test_summary_of_program_without_mlx_delegate_returns(self):
-        program = to_edge(
-            torch.export.export(torch.nn.ReLU(), (torch.randn(4),))
-        ).to_executorch()
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "model.pte"
-            path.write_bytes(program.buffer)
+            path = _write_program_without_mlx_delegate(Path(tmp))
             # A test that lowers to no MLX delegate fails on its delegate count
             # check after this, so printing must not end the process.
             print_mlx_graph_summary(path)
+
+    def test_inspector_cli_fails_without_mlx_delegate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write_program_without_mlx_delegate(Path(tmp))
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "executorch.backends.mlx.pte_inspector",
+                    str(path),
+                    "--mlx-instructions",
+                ],
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("No MLX delegates", result.stderr)
+
+    def test_inspector_fails_on_unreadable_input(self):
+        self.assertIs(pte_inspector.show_mlx_instructions(b"not a program"), False)
+        unreadable_delegate = {
+            "load": {"_load_mlx_payload": mock.Mock(side_effect=ValueError("bad"))},
+            "parse": {
+                "_load_mlx_payload": mock.Mock(),
+                "parse_mlx_flatbuffer": mock.Mock(return_value={"error": "bad"}),
+            },
+        }
+        for name, patches in unreadable_delegate.items():
+            with self.subTest(name), mock.patch.multiple(
+                pte_inspector,
+                _find_mlx_delegates=mock.Mock(return_value=[(0, {})]),
+                **patches,
+            ):
+                self.assertIs(pte_inspector.show_mlx_instructions(b""), False)
+
+
+def _write_program_without_mlx_delegate(directory: Path) -> Path:
+    program = to_edge(
+        torch.export.export(torch.nn.ReLU(), (torch.randn(4),))
+    ).to_executorch()
+    path = directory / "model.pte"
+    path.write_bytes(program.buffer)
+    return path
 
 
 def _is_alive(pid: int) -> bool:
