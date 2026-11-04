@@ -2,6 +2,19 @@
 
 This checklist covers areas that CI cannot check. Skip items related to linting, formatting, type checking, and import ordering.
 
+## Code Quality
+
+### Abstractions and Design
+
+- [ ] **Clear abstractions** - State management is explicit; no dynamic attribute setting/getting
+- [ ] **No side-channel communication** - If behavior changes based on a hidden flag or dynamically-set attribute, the interface itself should change instead (different function signature, different class, different code path). Side-channel patterns (set a private flag in one place, check it in another via `getattr`) create undocumented behavioral modes
+- [ ] **Proper interface, not on/off flags** - A private boolean that switches between two fundamentally different behaviors should be two separate code paths or a proper interface change, not a flag
+- [ ] **Interface documentation** - New internal calling conventions, protocols, or contracts between components must have concrete documentation: what the caller provides, what the callee receives, what invariants hold, and cleanup responsibilities. Motivational comments ("this allows X") are not interface documentation
+- [ ] **Match existing patterns in the same file** - Before accepting new code in a file, read how similar features are already implemented in that same file. If the file uses class attributes for boolean flags, new boolean flags must use class attributes. If the file uses a specific setter pattern, new setters must use the same pattern
+- [ ] **No over-engineering** - Only requested changes are made; no speculative features
+- [ ] **No premature abstraction** - Helpers and utilities are only created when reused; three similar lines is better than a one-use helper
+- [ ] **No trivial helpers** - Avoid 1-2 LOC helper functions used only once (unless significantly improves readability)
+
 ## Infrastructure
 
 ### GitHub Actions Storage
@@ -103,3 +116,47 @@ Confirmed waste is a must-fix Infrastructure finding and requires
   or remove the upload.
 
 If storage is necessary and bounded, do not mention this check in the review.
+
+## Testing
+
+### Test Existence
+
+- [ ] **Tests exist** - New functionality has corresponding tests
+- [ ] **Regression tests for bug fixes** - Bug fixes must include a test that reproduces the bug before the fix
+- [ ] **Tests are in the right place** - Tests should be added to an existing test file next to other related tests
+- [ ] **New test file is rare** - New test file should only be added when new major features are added
+
+### Test Quality
+
+- [ ] **Edge cases covered** - Tests include boundary conditions, empty inputs, error cases
+- [ ] **Error conditions tested** - Expected exceptions are tested with `assertRaisesRegex`, not bare `assertRaises`. `assertRaisesRegex` verifies both the exception type and message, catching cases where the right exception is raised for the wrong reason. Bare `assertRaises` should be flagged — always require a message pattern match
+- [ ] **No duplicated test logic** - Similar tests share a private helper method called from individual tests with different configs
+- [ ] **Prefer xfail over skip** - PR disables a test on a platform/config with `skip` (e.g. `@skipIf`, `@unittest.skip`, `self.skipTest`) when the test merely fails rather than crashing. Prefer expected-failure (`@unittest.expectedFailure`) instead. A skip silently hides the test forever — once the underlying bug is fixed or the platform gains support, the test stays disabled and the new coverage is lost. An xfail flips to a hard failure the moment the test starts passing, forcing the author to remove the marker and re-enable the test. Only accept a `skip` when the test would hard-crash the process (segfault, fatal abort that takes down the whole test binary), hang, or is genuinely flaky (non-deterministic pass/fail); in those cases the author should say so explicitly. A plain deterministic assertion failure or unsupported-op error is always an xfail, never a skip
+- [ ] **Use weakref for lifetime testing** - PR uses `sys.getrefcount()` to test whether objects are kept alive. Use `weakref.ref()` instead — create a weak reference, delete the strong references, then check if the weakref is dead (`wr() is None`). `sys.getrefcount` is a CPython implementation detail that varies across versions and is fragile
+
+## Security
+
+### CI/CD and Workflow Security
+
+When reviewing changes to workflows, build scripts, or CI configuration:
+
+- [ ] **No secrets exposed to untrusted code** - Secrets must not be passed to jobs that run fork-controlled code or run on non-ephemeral runners; secrets there can be compromised via reverse shell attacks
+- [ ] **Ephemeral runners for sensitive jobs** - Binary builds, uploads, and merge actions must run on ephemeral runners only
+- [ ] **No cache-dependent binaries in sensitive contexts** - sccache-backed builds are susceptible to cache corruption; these artifacts should not access sensitive info or be published for general use
+- [ ] **Protected branch rules respected** - Changes to merge rules, release workflows, or deployment environments require extra scrutiny
+- [ ] **Immutable artifact references** - Docker images use immutable tags; no overwriting of published artifacts
+
+## Thread Safety & Concurrency
+
+### Python Threading
+
+- [ ] **No unprotected shared mutable state** - Shared data structures accessed from multiple threads are protected by locks or are inherently thread-safe
+- [ ] **Lock ordering** - When multiple locks are acquired, ordering is consistent to avoid deadlocks
+- [ ] **No GIL-reliant correctness** - Code that mutates shared state should not rely on the GIL for thread safety, since the GIL may not be present in free-threaded builds
+
+### C++ Threading
+
+- [ ] **No data races** - Shared mutable state is protected by mutexes or uses atomics with appropriate memory ordering
+- [ ] **RAII lock guards** - Prefer `std::lock_guard` or `std::unique_lock` over manual `lock()`/`unlock()` to ensure exception-safe unlocking
+- [ ] **No lock-order inversions** - When acquiring multiple locks, a consistent global ordering is followed
+- [ ] **Correct atomic memory ordering** - `std::memory_order_relaxed` is only used when ordering with other operations is genuinely unnecessary; default to `seq_cst` or use `acquire`/`release` pairs
