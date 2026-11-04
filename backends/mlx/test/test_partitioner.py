@@ -281,6 +281,21 @@ class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
         clamped = torch.tensor([[3, 3], [0, 1], [3, 2]])
         self.assertTrue(torch.equal(out, torch.gather(x, 1, clamped)))
 
+    def test_index_add_clamps_out_of_range_indices(self):
+        class IndexAdd(nn.Module):
+            def forward(self, x, index, values):
+                return x.index_add(0, index, values)
+
+        x, values = torch.randn(8, 4), torch.randn(3, 4)
+        program = _lower(IndexAdd(), (x, torch.tensor([0, 1, 2]), values))
+        self.assertEqual(_cpu_ops(program), set())
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        # Eager raises on 9, -1 and -9. The delegate counts -1 from the end,
+        # clamps 9 and -9 to the nearest end, and adds both rows aimed at row 7.
+        out = method.execute([x, torch.tensor([9, -1, -9]), values])[0]
+        expected = IndexAdd()(x, torch.tensor([7, 7, 0]), values)
+        self.assertTrue(torch.allclose(out, expected))
+
     def test_empty_axis(self):
         # The delegate cannot return an empty tensor yet, so both models sum.
         class IndexPut(nn.Module):
