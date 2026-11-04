@@ -37,6 +37,22 @@ class OpRemainderOutTest : public OperatorTest {
       Tensor& out) {
     return torch::executor::aten::remainder_outf(context_, self, other, out);
   }
+
+  template <ScalarType DTYPE>
+  void test_most_negative_by_minus_one() {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+
+    const CTYPE min = std::numeric_limits<CTYPE>::min();
+    Tensor self = tf.make({3}, {min, 7, -7});
+    Tensor out = tf.full({3}, 1);
+    op_remainder_tensor_out(self, tf.full({3}, -1), out);
+    EXPECT_TENSOR_EQ(out, tf.zeros({3}));
+
+    out = tf.full({3}, 1);
+    op_remainder_scalar_out(self, -1, out);
+    EXPECT_TENSOR_EQ(out, tf.zeros({3}));
+  }
 };
 
 TEST_F(OpRemainderOutTest, SmokeTest) {
@@ -79,26 +95,24 @@ TEST_F(OpRemainderOutTest, DoubleKeepsDoublePrecision) {
 }
 
 TEST_F(OpRemainderOutTest, MostNegativeByMinusOneIsZero) {
-  TensorFactory<ScalarType::Long> tf;
-
-  const int64_t min = std::numeric_limits<int64_t>::min();
-  Tensor self = tf.make({3}, {min, 7, -7});
-  Tensor out = tf.zeros({3});
-  op_remainder_tensor_out(self, tf.full({3}, -1), out);
-  EXPECT_TENSOR_EQ(out, tf.zeros({3}));
-
-  Tensor scalar_out = tf.full({3}, 1);
-  op_remainder_scalar_out(self, -1, scalar_out);
-  EXPECT_TENSOR_EQ(scalar_out, tf.zeros({3}));
+  test_most_negative_by_minus_one<ScalarType::Int>();
+  test_most_negative_by_minus_one<ScalarType::Long>();
 }
 
-TEST_F(OpRemainderOutTest, IntegerDivisionByZeroFails) {
+TEST_F(OpRemainderOutTest, TensorIntegerDivisionByZeroFails) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor self = tf.make({2}, {5, -3});
   Tensor out = tf.zeros({2});
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_remainder_tensor_out(self, tf.make({2}, {1, 0}), out));
+}
+
+TEST_F(OpRemainderOutTest, ScalarIntegerDivisionByZeroFails) {
+  TensorFactory<ScalarType::Int> tf;
+
+  Tensor self = tf.make({2}, {5, -3});
+  Tensor out = tf.zeros({2});
   ET_EXPECT_KERNEL_FAILURE(context_, op_remainder_scalar_out(self, 0, out));
 }
 
@@ -117,13 +131,23 @@ TEST_F(OpRemainderOutTest, ScalarIsCastToIntegerDtype) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_remainder_scalar_out(self, 256, out));
 }
 
+TEST_F(OpRemainderOutTest, ScalarIsCastToUnsignedDtype) {
+  TensorFactory<ScalarType::Byte> tf;
+
+  Tensor self = tf.make({3}, {5, 255, 0});
+  Tensor out = tf.full({3}, 1);
+  // -1 becomes 255 as uint8.
+  op_remainder_scalar_out(self, -1, out);
+  EXPECT_TENSOR_EQ(out, tf.make({3}, {5, 0, 0}));
+  // 256 becomes 0 as uint8.
+  ET_EXPECT_KERNEL_FAILURE(context_, op_remainder_scalar_out(self, 256, out));
+}
+
 TEST_F(OpRemainderOutTest, EmptyInputWithZeroScalarDivisor) {
   TensorFactory<ScalarType::Char> tf;
 
   Tensor self = tf.make({0}, {});
   Tensor out = tf.make({0}, {});
-  op_remainder_scalar_out(self, 256, out);
-  EXPECT_TENSOR_EQ(out, tf.make({0}, {}));
   op_remainder_scalar_out(self, 0, out);
   EXPECT_TENSOR_EQ(out, tf.make({0}, {}));
 }
