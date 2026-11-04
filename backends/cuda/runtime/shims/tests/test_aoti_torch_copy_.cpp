@@ -8,6 +8,7 @@
 
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
+#include <thread>
 #include <vector>
 
 #include <executorch/backends/aoti/common_shims_slim.h>
@@ -496,8 +497,7 @@ TEST_F(AOTITorchCopySlimTest, RefusedInsideGraphCapture) {
   ASSERT_EQ(
       cudaStreamBeginCapture(stream, cudaStreamCaptureModeRelaxed),
       cudaSuccess);
-  // A capture cannot record these synchronous copies, so each one refuses
-  // instead of failing inside the copy.
+  // Each copy refuses inside a capture instead of failing inside the copy.
   EXPECT_EQ(aoti_torch_copy_(host, device, 0), Error::NotSupported);
   EXPECT_EQ(aoti_torch_copy_(device, host, 0), Error::NotSupported);
   EXPECT_EQ(aoti_torch_copy_(other_device, device, 0), Error::NotSupported);
@@ -527,6 +527,80 @@ TEST_F(AOTITorchCopySlimTest, RefusedInsideGraphCapture) {
   EXPECT_EQ(aoti_torch_delete_tensor_object(host), Error::Ok);
   EXPECT_EQ(aoti_torch_delete_tensor_object(empty_device), Error::Ok);
   EXPECT_EQ(aoti_torch_delete_tensor_object(other_empty_device), Error::Ok);
+}
+
+TEST_F(AOTITorchCopySlimTest, CopiesWhileAnotherThreadCaptures) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+
+  std::vector<int64_t> sizes = {2, 3};
+  Tensor* host_src = createTestTensor(sizes);
+  Tensor* device = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  Tensor* host_dst = createTestTensor(sizes);
+  ASSERT_NE(host_src, nullptr);
+  ASSERT_NE(device, nullptr);
+  ASSERT_NE(host_dst, nullptr);
+  float* src_data = static_cast<float*>(host_src->data_ptr());
+  for (int64_t i = 0; i < host_src->numel(); i++) {
+    src_data[i] = static_cast<float>(i + 1);
+  }
+  // The other thread copies on its own stream, so let the allocation finish.
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_EQ(
+      cudaStreamBeginCapture(stream, cudaStreamCaptureModeRelaxed),
+      cudaSuccess);
+  // This thread is capturing, so the copies run on another one, which is not.
+  AOTITorchError to_device = Error::Internal;
+  AOTITorchError cloned = Error::Internal;
+  AOTITorchError read = Error::Internal;
+  AOTITorchError to_host = Error::Internal;
+  Tensor* clone = nullptr;
+  Tensor* first_element = nullptr;
+  float first = 0;
+  std::thread([&] {
+    to_device = aoti_torch_copy_(device, host_src, 0);
+    cloned = aoti_torch_clone(device, &clone);
+    if (cloned == Error::Ok) {
+      const int64_t one = 1;
+      read = aoti_torch__reinterpret_tensor(
+          clone, 1, &one, &one, 0, &first_element);
+      if (read == Error::Ok) {
+        read = aoti_torch_item_float32(first_element, &first);
+      }
+      to_host = aoti_torch_copy_(host_dst, clone, 0);
+    }
+  }).join();
+  cudaGraph_t graph = nullptr;
+  EXPECT_EQ(cudaStreamEndCapture(stream, &graph), cudaSuccess);
+  if (graph != nullptr) {
+    EXPECT_EQ(cudaGraphDestroy(graph), cudaSuccess);
+  }
+
+  EXPECT_EQ(to_device, Error::Ok);
+  ASSERT_EQ(cloned, Error::Ok);
+  EXPECT_EQ(read, Error::Ok);
+  EXPECT_FLOAT_EQ(first, 1.0f);
+  EXPECT_EQ(to_host, Error::Ok);
+  float* dst_data = static_cast<float*>(host_dst->data_ptr());
+  for (int64_t i = 0; i < host_dst->numel(); i++) {
+    EXPECT_FLOAT_EQ(dst_data[i], static_cast<float>(i + 1));
+  }
+
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(host_src), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(device), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(first_element), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(clone), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(host_dst), Error::Ok);
 }
 
 // ============================================================================
