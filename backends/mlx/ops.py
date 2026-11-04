@@ -2482,33 +2482,16 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     non_none = _constant_mask_as_positions(P, n, non_none)
 
     if len(non_none) == 1:
-        axis, idx, idx_meta = non_none[0]
-        ndim_match = (
-            x_meta is not None
-            and idx_meta is not None
-            and len(x_meta.shape) == len(idx_meta.shape)
-        )
+        axis, idx, _ = non_none[0]
         out = P.make_or_get_slot(n)
-        if ndim_match:
-            # Same ndim: use TakeAlongAxisNode (element-wise gather)
-            P.emit(
-                TakeAlongAxisNode(
-                    x=P.slot_to_tid(x),
-                    indices=P.slot_to_tid(idx),
-                    out=P.slot_to_tid(out),
-                    axis=axis,
-                )
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(x),
+                index=IntOrVidOrTid.from_tid(P.slot_to_tid(idx)),
+                out=P.slot_to_tid(out),
+                axis=axis,
             )
-        else:
-            # Different ndim (e.g. 1D indices into 3D tensor): use TakeNode
-            P.emit(
-                TakeNode(
-                    x=P.slot_to_tid(x),
-                    index=IntOrVidOrTid.from_tid(P.slot_to_tid(idx)),
-                    out=P.slot_to_tid(out),
-                    axis=axis,
-                )
-            )
+        )
         return out
 
     # Multi-index: use GatherNode (maps to mlx::gather)

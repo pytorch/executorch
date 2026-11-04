@@ -4468,26 +4468,31 @@ class IndexTest(OpTestCase):
 
     def __init__(
         self,
-        table_size: int = 100,
-        num_indices: int = 10,
+        table_shape: Tuple[int, ...] = (100,),
+        index_shape: Tuple[int, ...] = (10,),
     ):
-        self.table_size = table_size
-        self.num_indices = num_indices
-        self.name = f"index_{table_size}_idx{num_indices}"
+        self.table_shape = table_shape
+        self.index_shape = index_shape
+        self.name = (
+            f"index_{'x'.join(map(str, table_shape))}"
+            f"_idx{'x'.join(map(str, index_shape))}"
+        )
 
     @classmethod
     def get_test_configs(cls) -> List["IndexTest"]:
         return [
-            cls(table_size=100, num_indices=10),
-            cls(table_size=50, num_indices=5),
+            cls(table_shape=(100,), index_shape=(10,)),
+            cls(table_shape=(50,), index_shape=(5,)),
+            # Each index picks a whole row, unlike gather on the same shapes.
+            cls(table_shape=(5, 3), index_shape=(2, 3)),
         ]
 
     def create_model(self) -> nn.Module:
         return IndexModel()
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.table_size)
-        indices = torch.randint(0, self.table_size, (self.num_indices,))
+        x = torch.randn(self.table_shape)
+        indices = torch.randint(0, self.table_shape[0], self.index_shape)
         return (x, indices)
 
 
