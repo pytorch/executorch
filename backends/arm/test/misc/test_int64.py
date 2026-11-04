@@ -129,13 +129,14 @@ _COND = torch.tensor([True, False, True, False])
 _FLAGS = torch.tensor([False, True, True, False])
 
 
-class Int64BufferWhere(torch.nn.Module):
-    def __init__(self):
+class Int64Buffer(torch.nn.Module):
+    def __init__(self, op):
         super().__init__()
+        self.op = op
         self.register_buffer("wide", _WIDE)
 
-    def forward(self, cond, x):
-        return torch.where(cond, x, self.wide)
+    def forward(self, *args):
+        return self.op(self.wide, *args)
 
 
 # A listed operator delegates when every operand casts to int64; an unlisted
@@ -153,13 +154,24 @@ int64_extension_partition_suite = {
     "cat_bool_promoted": (lambda x, y: torch.cat([x, y]), (_FLAGS, _WIDE), 1),
     "or_bool": (torch.bitwise_or, (_FLAGS, _WIDE), 1),
     "where": (torch.where, (_COND, _WIDE, _WIDE_2), 1),
-    "where_buffer": (Int64BufferWhere(), (_COND, _WIDE_2), 1),
+    "where_buffer": (
+        Int64Buffer(lambda wide, cond, x: torch.where(cond, x, wide)),
+        (_COND, _WIDE_2),
+        1,
+    ),
+    "gt_buffer_narrow": (Int64Buffer(lambda wide, x: x > wide), (_NARROW,), 1),
     "strided_slice": (lambda x: x[::2], (torch.arange(5) * 2**33,), 1),
     "gt": (lambda x, y: x > y, (_WIDE, _WIDE_2), 1),
     "gt_scalar": (lambda x: x > 7, (_WIDE,), 1),
     "full_like": (lambda x: torch.full_like(x, 5) + x, (_WIDE,), 1),
     "zeros_like": (lambda x: torch.zeros_like(x) + x, (_WIDE,), 1),
     "add_const": (lambda x: x + 2**40, (_WIDE,), 1),
+    "full_like_output": (lambda x: (x > 0, torch.full_like(x, 2**40)), (_WIDE,), 1),
+    "full_like_dtype": (
+        lambda x: torch.full_like(x, 2**40, dtype=torch.int64) + x,
+        (_NARROW,),
+        1,
+    ),
 }
 
 
@@ -178,3 +190,19 @@ def test_int64_extension_partition_tosa_INT(test_data: Tuple):
     )
     if delegates:
         tester.to_executorch().run_method_and_compare_outputs(inputs)
+
+
+def test_int64_extension_comparison_tosa_FP_INT():
+    inputs = (_WIDE, _WIDE_2)
+    (
+        ArmTester(
+            Int64Op(lambda x, y: x > y),
+            inputs,
+            common.get_tosa_compile_spec("TOSA-1.1+FP+INT+int64"),
+        )
+        .export()
+        .to_edge_transform_and_lower()
+        .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        .to_executorch()
+        .run_method_and_compare_outputs(inputs)
+    )

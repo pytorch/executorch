@@ -252,7 +252,11 @@ def _floating_profile_negative_checks(
 ) -> list[OperatorSupportBase]:
     return [
         CheckMixedFloatingInputs(reporter),
-        CheckFPComparisonInputs(reporter, tosa_spec.support_integer()),
+        CheckFPComparisonInputs(
+            reporter,
+            tosa_spec.support_integer(),
+            tosa_spec.support_integer() and tosa_spec.support_extension("int64"),
+        ),
     ]
 
 
@@ -1625,10 +1629,15 @@ class CheckFPComparisonInputs(OperatorSupportBase):
     integer_dtypes = {torch.bool, torch.int8, torch.int16, torch.int32}
 
     def __init__(
-        self, reporter: WhyNoPartitionReporter, int_supported: bool = False
+        self,
+        reporter: WhyNoPartitionReporter,
+        int_supported: bool = False,
+        int64_supported: bool = False,
     ) -> None:
         self.reporter = reporter
         self.int_supported = int_supported
+        if int64_supported:
+            self.integer_dtypes = self.integer_dtypes | {torch.int64}
         super().__init__()
 
     def is_node_supported(

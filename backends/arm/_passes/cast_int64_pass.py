@@ -9,6 +9,9 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.cast_int_comparison_inputs_pass import (
+    CastIntComparisonInputsPass,
+)
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import is_buffer
@@ -21,7 +24,7 @@ class CastInt64BuffersToInt32Pass(ArmPass):
     """Cast int64 buffers to int32 if the int64 data is in int32 range.
 
     With the int64 extension under PRO-INT, a buffer whose users all compute in
-    int64 keeps int64.
+    int64, compare it or return it keeps int64.
 
     """
 
@@ -84,7 +87,9 @@ class CastInt64BuffersToInt32Pass(ArmPass):
             return isinstance(value, torch.Tensor) and value.dtype == torch.int64
 
         return all(
-            is_int64(user.meta.get("val"))
+            user.op == "output"
+            or user.target in CastIntComparisonInputsPass.target_ops
+            or is_int64(user.meta.get("val"))
             or any(
                 is_int64(arg.meta.get("val"))
                 for arg in user.all_input_nodes
