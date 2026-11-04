@@ -2610,6 +2610,9 @@ def _gather_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     Maps to mlx::take_along_axis, which broadcasts the index against x on the
     other axes. aten.gather instead reads only the first index.size(d) entries
     of x there, so x is sliced to the index shape first where the two differ.
+
+    Unlike eager, an out-of-range index does not raise: the runtime clamps it
+    to the first or last element so the read stays inside x.
     """
     args = P.args(n)
     require_args(args, 3, 3, "aten.gather")

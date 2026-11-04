@@ -103,6 +103,8 @@ table TileNode {
     reps: [IntOrVid] (required);
 }
 
+// Index values are clamped like ScatterNode's, so a bad index reads the
+// first or last element instead of memory outside x.
 table TakeAlongAxisNode {
     x: Tid (required);
     indices: Tid (required);
@@ -474,8 +476,9 @@ table ScatterAddNode {
 
 // Scatter: write updates into x at the positions given by one index tensor
 // per indexed axis. Maps to mlx::scatter, or mlx::scatter_add for "sum".
-// Index values are clamped to the axis range, so a bad index updates the
-// first or last slice instead of memory outside x.
+// Index values are clamped to [-size, size - 1], where negative values count
+// from the end as in PyTorch. So a bad index updates the first or last slice
+// instead of memory outside x.
 table ScatterNode {
     x: Tid (required);
     indices: [Tid] (required);   // Index tensors (one per indexed axis)

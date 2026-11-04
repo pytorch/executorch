@@ -186,10 +186,14 @@ inline void exec_take_along_axis(
     const TakeAlongAxisNode& n,
     ExecutionState& st,
     StreamOrDevice s) {
-  st.set_tensor(
-      n.out,
-      take_along_axis(
-          st.const_tensor_ref(n.x), st.const_tensor_ref(n.indices), n.axis, s));
+  const auto& x = st.const_tensor_ref(n.x);
+  const int axis =
+      normalize_axis(n.axis, static_cast<int>(x.ndim()), "TakeAlongAxis");
+  // Clamped like ScatterNode: mlx::take_along_axis would read out of range.
+  const int size = x.shape(axis);
+  const auto indices =
+      clip(st.const_tensor_ref(n.indices), array(-size), array(size - 1), s);
+  st.set_tensor(n.out, take_along_axis(x, indices, axis, s));
 }
 
 inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {

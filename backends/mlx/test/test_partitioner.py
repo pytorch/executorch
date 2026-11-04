@@ -267,6 +267,20 @@ class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
             out = method.execute([torch.tensor([pos]), v])[0]
             self.assertTrue(torch.equal(out, reference(torch.tensor([clamped]), v)))
 
+    def test_gather_clamps_out_of_range_indices(self):
+        class Gather(nn.Module):
+            def forward(self, x, index):
+                return torch.gather(x, 1, index)
+
+        x = torch.arange(12.0).reshape(3, 4)
+        program = _lower(Gather(), (x, torch.zeros(3, 2, dtype=torch.long)))
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        # Eager raises; the delegate clamps to the nearest end instead of
+        # reading outside x.
+        out = method.execute([x, torch.tensor([[9, 0], [-7, 1], [3, 2]])])[0]
+        clamped = torch.tensor([[3, 0], [0, 1], [3, 2]])
+        self.assertTrue(torch.equal(out, torch.gather(x, 1, clamped)))
+
     def test_unsupported_forms_run_on_the_cpu(self):
         class IndexPut(nn.Module):
             def __init__(self, accumulate=False):

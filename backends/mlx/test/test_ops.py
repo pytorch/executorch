@@ -4558,8 +4558,12 @@ class ExpandTest(OpTestCase):
 class IndexModel(nn.Module):
     """Model that indexes a tensor using another tensor."""
 
+    def __init__(self, dim: int = 0):
+        super().__init__()
+        self.dim = dim
+
     def forward(self, x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
-        return x[indices]
+        return x[(slice(None),) * self.dim + (indices,)]
 
 
 @register_test
@@ -4574,12 +4578,14 @@ class IndexTest(OpTestCase):
         self,
         table_shape: Tuple[int, ...] = (100,),
         index_shape: Tuple[int, ...] = (10,),
+        dim: int = 0,
     ):
         self.table_shape = table_shape
         self.index_shape = index_shape
+        self.dim = dim
         self.name = (
             f"index_{'x'.join(map(str, table_shape))}"
-            f"_idx{'x'.join(map(str, index_shape))}"
+            f"_idx{'x'.join(map(str, index_shape))}{f'_dim{dim}' if dim else ''}"
         )
 
     @classmethod
@@ -4589,14 +4595,16 @@ class IndexTest(OpTestCase):
             cls(table_shape=(50,), index_shape=(5,)),
             # Each index picks a whole row, unlike gather on the same shapes.
             cls(table_shape=(5, 3), index_shape=(2, 3)),
+            # One index tensor on a later axis, as in x[:, i].
+            cls(table_shape=(3, 5), index_shape=(3, 2), dim=1),
         ]
 
     def create_model(self) -> nn.Module:
-        return IndexModel()
+        return IndexModel(self.dim)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.table_shape)
-        indices = torch.randint(0, self.table_shape[0], self.index_shape)
+        indices = torch.randint(0, self.table_shape[self.dim], self.index_shape)
         return (x, indices)
 
 
@@ -4844,7 +4852,8 @@ class GatherTest(OpTestCase):
             cls((4, 8), 1, (4, 3)),
             cls((4, 8), 0, (2, 8)),
             cls((2, 3, 5), -1, (2, 3, 2), torch.bfloat16),
-            cls((6, 8), 1, (3, 2), torch.int32, slices=1),
+            cls((4, 8), 0, (2, 3), torch.int32, slices=1),
+            cls((4, 5, 6), 1, (2, 3, 4), slices=2),
             cls((6, 8), 1, (1, 2), torch.int64, slices=1),
             # A dynamic input size is not known to match the index size.
             cls((6, 8), 1, (3, 2), slices=1, dynamic=True),
@@ -4962,6 +4971,13 @@ class IndexPutTest(OpTestCase):
                 (2, 2, 2, 3),
                 nodes={"TransposeNode": 1},
             ),
+            # A 0-d index after a full slice adds no index dims to move.
+            cls(
+                (2, 6, 4),
+                {1: torch.tensor(3)},
+                (2, 4),
+                nodes={"TransposeNode": 0},
+            ),
             # Separated indexed axes put the index dims in front already.
             cls(
                 (2, 4, 3, 5),
@@ -4979,6 +4995,13 @@ class IndexPutTest(OpTestCase):
                 (4, 2),
                 nodes={"BroadcastToNode": 1},
             ),
+            # Values broadcast along their own size-1 dim, as in x[i] = v[:, None].
+            cls(
+                (6, 8),
+                {0: torch.tensor([5, 0, 2])},
+                (3, 1),
+                nodes={"BroadcastToNode": 1},
+            ),
             cls(
                 (8, 4),
                 {0: torch.tensor([6, 1, 1, 3, 6])},
@@ -4993,10 +5016,10 @@ class IndexPutTest(OpTestCase):
         return IndexPutModel(tuple(self.indices), self.accumulate)
 
     def _inputs(self, indices):
-        n = next(iter(indices.values())).shape[0]
-        values_shape = (
-            (n, *self.values_shape[1:]) if self.dynamic else self.values_shape
-        )
+        values_shape = self.values_shape
+        if self.dynamic:
+            n = next(iter(indices.values())).shape[0]
+            values_shape = (n, *values_shape[1:])
         if self.dtype == torch.bool:
             # Every write flips a value, so a dropped write cannot match.
             x, values = torch.zeros(self.shape), torch.ones(values_shape)
