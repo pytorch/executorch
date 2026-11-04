@@ -5447,6 +5447,15 @@ py::dict get_option(const std::string& backend_name, const py::dict& options) {
   return result;
 }
 
+auto refuse_scalar_conversion(const char* problem) {
+  return [problem](const PyExecuTorchResult&) -> py::object {
+    throw py::type_error(
+        std::string("ExecuTorchResult ") + problem +
+        ". Convert it first, for example with numpy.asarray(result) or "
+        "torch.from_dlpack(result).");
+  };
+}
+
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
@@ -5579,6 +5588,12 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           "Copy a dense CPU buffer, or a CPU ExecuTorchResult, to a CUDA "
           "device, for use as a method input. Requires bindings built with "
           "CUDA support.")
+      // Python would otherwise treat a result as always true, and int() and
+      // float() would parse its bytes as text.
+      .def("__bool__", refuse_scalar_conversion("has no truth value"))
+      .def("__int__", refuse_scalar_conversion("cannot be converted to int"))
+      .def(
+          "__float__", refuse_scalar_conversion("cannot be converted to float"))
       .def("__repr__", &PyExecuTorchResult::repr);
 #ifndef USE_ATEN_LIB
   py::class_<

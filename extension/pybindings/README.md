@@ -103,7 +103,9 @@ from executorch.extension.pybindings import portable_lib
 ```
 
 `ExecuTorchResult` preserves shape, strides, dtype, and device. CPU results expose
-the Python buffer protocol so NumPy can read them without another copy. Without
+the Python buffer protocol so NumPy can read them without another copy. A result
+is not a number or a truth value: `bool()`, `int()`, and `float()` raise
+`TypeError`, so convert it first, for example with `np.asarray(output)`. Without
 the environment setting, the bindings fall back to `ExecuTorchResult` if
 PyTorch cannot be imported. Explicitly selecting `torch` requires it to import
 successfully. ATen-mode bindings continue to return native PyTorch tensors
