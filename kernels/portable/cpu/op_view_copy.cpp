@@ -54,7 +54,8 @@ Tensor& view_copy_out(
   if (self.nbytes() == 0) {
     return out;
   }
-  if (tensor_is_default_dim_order(self)) {
+  if (is_contiguous_dim_order(
+          self.dim_order().data(), self.dim_order().size())) {
     memcpy(out.mutable_data_ptr(), self.const_data_ptr(), self.nbytes());
   } else {
     const auto* input_data = self.const_data_ptr<uint8_t>();
