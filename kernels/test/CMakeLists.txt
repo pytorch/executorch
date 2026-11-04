@@ -313,6 +313,7 @@ set(all_test_sources
     "op_unbind_copy_test.cpp"
     "op_unfold_copy_test.cpp"
     "op_unsqueeze_copy_test.cpp"
+    "op_upsample_bicubic2d_aa_test.cpp"
     "op_upsample_bilinear2d_test.cpp"
     "op_upsample_bilinear2d_aa_test.cpp"
     "op_upsample_nearest2d_test.cpp"
@@ -366,6 +367,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
       "op_native_layer_norm_test.cpp"
       "op_neg_test.cpp"
       "op_sub_test.cpp"
+      "op_sum_test.cpp"
       "op_where_test.cpp"
       "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
       ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp

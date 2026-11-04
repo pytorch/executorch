@@ -144,6 +144,24 @@ Developers who need local source builds can use:
 The current flow lowers to TOSA and converts to VGF for use in external projects,
 so the `executor_runner` is not typically used here.
 
+### Planned Ethos-U delegate scratch
+
+In Python, set
+`EthosUCompileSpec("ethos-u55-128", plan_delegate_scratch=True)` before creating
+an `EthosUPartitioner`. The `backends/arm/scripts/aot_arm_compiler.py` script
+exposes the same option as `--plan-delegate-scratch` when exporting for an
+Ethos-U target with delegation enabled.
+
+With `plan_delegate_scratch=True`, Vela's scratch requirement is included in AOT
+memory planning. With `False` (the default), the core-driver runtime allocates
+scratch from the temporary allocator for each delegate execution. Planned scratch
+works with ordinary memory planning and does not enable shared scratch IO planning.
+The option is independent of `--direct_drive` and Vela's separate IO regions.
+Use planned scratch with the bare-metal/RTOS core-driver runtime. Linux Direct
+Drive can load the same PTE, but allocates its own scratch, warns that the planned
+scratch reservation is unused, and leaves that reservation allocated in the host
+arena.
+
 ### Compiling models with the Python API
 
 Use the Python API as the primary way to compile your own models. It lets you
@@ -467,7 +485,7 @@ cp backends/arm/scripts/pre-push .git/hooks/
 
 The current TOSA version does not support int64. However, int64 is commonly used in many models. In order to lower the operators with int64 inputs and/or outputs to TOSA, a few passes have been developed to handle the int64-related issues. The main idea behind these passes is to replace the uses of int64 with int32 where feasible.
 
-- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter.
+- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter. Also pass `compile_config=EdgeCompileConfig(_check_ir_validity=False)`, as the Arm tools do: these passes can leave a `cat` or `stack` with both int64 and int32 inputs, which the edge dialect check rejects.
 - For quantized models, these transformations will be automatically handled during annotation before the export stage.
 
 List of model specific and optional passes:

@@ -213,7 +213,13 @@ jobs:
           EXECUTORCH_PYBIND_TEST_BFLOAT16_CHANNELS_LAST_PTE=cmake-out-no-aten/add_bfloat16_channels_last.pte \
           PYTHONPATH=cmake-out-no-aten:.. \
           python extension/pybindings/test/test_pybindings_no_aten.py
-        if ldd cmake-out-no-aten/_C*.so | grep -Eiq 'torch|aten|c10'; then
+        NO_ATEN_LINKS="$(ldd cmake-out-no-aten/_C*.so)"
+        printf '%s\n' "$NO_ATEN_LINKS"
+        if grep -q 'not found' <<<"$NO_ATEN_LINKS"; then
+          echo "torch-free pybindings have a missing runtime dependency"
+          exit 1
+        fi
+        if grep -Eiq '^[[:space:]]*(lib(torch|aten|c10)[^[:space:]/]*\.so|[^[:space:]]*/lib(torch|aten|c10)[^[:space:]/]*\.so)' <<<"$NO_ATEN_LINKS"; then
           echo "torch-free pybindings unexpectedly link against ATen"
           exit 1
         fi
@@ -1837,15 +1843,12 @@ jobs:
         .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Custom operator tests
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark/build_and_run.sh
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=add
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8csw_linear --set=correctness,performance
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8csw_conv2d
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q4gsw_linear --set=correctness,performance
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=choose_qparams_per_row --set=correctness,performance
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/qdq --set=correctness
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/clone --set=correctness
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/binary --set=correctness
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark_v2/build.sh
+        for op in binary/add gemm/linear/qw/q8csw convolution/qw/q8csw gemm/linear/qw/q4gsw \
+                  quantization/choose_qparams_per_row quantize/q8ta clone/q8ta binary/q8ta; do
+          ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
+            --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
+        done
 
         # "Classic" Operator tests
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build

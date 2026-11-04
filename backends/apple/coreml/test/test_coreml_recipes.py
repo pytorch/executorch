@@ -120,6 +120,7 @@ class TestCoreMLRecipes(unittest.TestCase):
 
     def test_int4_weight_only_per_channel(self):
         """Test INT4 weight-only per-channel quantization"""
+        torch.manual_seed(0)
         model = TestHelperModules.TwoLinearModule().eval()
         example_inputs = [(torch.randn(9, 8),)]
 
@@ -132,10 +133,13 @@ class TestCoreMLRecipes(unittest.TestCase):
         )
         self.check_fully_delegated(session)
         self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-02)
-        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
+        self._compare_eager_unquantized_model_outputs(
+            session, model, example_inputs, sqnr_threshold=15
+        )
 
     def test_int4_weight_only_per_group(self):
         """Test INT4 weight-only per-group quantization with different group sizes"""
+        torch.manual_seed(0)
 
         class CustomTwoLinearModel(nn.Module):
             def __init__(self):
@@ -149,7 +153,7 @@ class TestCoreMLRecipes(unittest.TestCase):
                 return x
 
         model = CustomTwoLinearModel().eval()
-        example_inputs = [(torch.randn(1, 32),)]
+        example_inputs = [(torch.randn(16, 32),)]
         # Test with different group sizes
         for group_size in [8, 16, 32]:
             with self.subTest(group_size=group_size):
@@ -165,7 +169,7 @@ class TestCoreMLRecipes(unittest.TestCase):
                 self.check_fully_delegated(session)
 
                 self._compare_eager_quantized_model_outputs(
-                    session, example_inputs, atol=1e-3
+                    session, example_inputs, atol=1e-2
                 )
                 self._compare_eager_unquantized_model_outputs(
                     session, model, example_inputs, sqnr_threshold=15

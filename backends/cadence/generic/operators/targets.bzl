@@ -436,32 +436,6 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "op_idma_copy",
-        srcs = ["op_idma_copy.cpp"],
-        exported_headers = ["op_idma_copy.h"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/kernel:kernel_runtime_context",
-        ],
-        visibility = ["PUBLIC"],
-    )
-
-    runtime.cxx_library(
-        name = "op_idma_wait",
-        srcs = ["op_idma_wait.cpp"],
-        exported_headers = ["op_idma_wait.h"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/kernel:kernel_runtime_context",
-        ],
-        visibility = ["PUBLIC"],
-    )
-
-    runtime.cxx_library(
         name = "op_im2row",
         srcs = ["op_im2row.cpp"],
         exported_headers = ["op_im2row.h"],
