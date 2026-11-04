@@ -358,7 +358,7 @@ def define_common_targets():
     _common_op_test("op_squeeze_copy_test", ["aten", "portable"])
     _common_op_test("op_stack_test", ["aten", "portable"])
     _common_op_test("op_sub_test", ["aten", "portable", "optimized"])
-    _common_op_test("op_sum_test", ["aten", "portable"])
+    _common_op_test("op_sum_test", ["aten", "portable", "optimized"])
     _common_op_test("op_t_copy_test", ["aten", "portable"])
     _common_op_test("op_tan_test", ["aten", "portable"])
     _common_op_test("op_tanh_test", ["aten", "portable"])
