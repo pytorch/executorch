@@ -367,6 +367,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
       "op_native_layer_norm_test.cpp"
       "op_neg_test.cpp"
       "op_sub_test.cpp"
+      "op_sum_test.cpp"
       "op_where_test.cpp"
       "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
       ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp

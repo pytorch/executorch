@@ -11,6 +11,11 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <pmu_ethosu.h>
+
+#include <executorch/runtime/core/array_ref.h>
+#include <executorch/runtime/core/error.h>
+
 // Optional runner hooks. The stats library provides weak no-op definitions.
 extern "C" {
 void EthosUBackend_npu_begin();
@@ -34,6 +39,16 @@ EthosUStatsBuffer* set_ethosu_stats_buffer(EthosUStatsBuffer* buffer) noexcept;
 // Returns true when this library is linked.
 bool ethosu_execution_metrics_enabled() noexcept;
 
+// Configure counter slots before inference. U55/U65 share four slots; U85 has
+// eight. Short lists are padded with ETHOSU_PMU_NO_EVENT; longer lists are
+// rejected. Pass an empty list to disable event counters for that target.
+// These functions only configure events; collection requires an event tracer
+// or a registered EthosUStatsBuffer. Do not call during inference.
+executorch::runtime::Error set_ethosu55_65_pmu_events(
+    executorch::runtime::ArrayRef<ethosu_pmu_event_type> events) noexcept;
+executorch::runtime::Error set_ethosu85_pmu_events(
+    executorch::runtime::ArrayRef<ethosu_pmu_event_type> events) noexcept;
+
 constexpr size_t kMaxPmuEventCounters = 8;
 
 constexpr char kEthosUCycleEventName[] = "ethosu.pmu.counters";
@@ -43,8 +58,8 @@ constexpr char kEthosUCycleEventName[] = "ethosu.pmu.counters";
 // EthosUPlatform [12:16], flags [16:20] (bit 0: cycle overflow,
 // bit 1: invocation succeeded), register base [20:28], NPU cycle count
 // [28:36], and counter count [36:40].
-// Each populated counter then stores
-// a symbolic event ID (4 bytes), count (8 bytes), and overflow (4 bytes).
+// Each active counter then stores a symbolic event ID (4 bytes), count
+// (8 bytes), and overflow (4 bytes). NO_EVENT slots are omitted.
 constexpr size_t kEthosUCycleMetadataHeaderSize = 40;
 constexpr size_t kEthosUCycleCounterMetadataSize = 16;
 constexpr size_t kEthosUCycleMetadataMaxSize = kEthosUCycleMetadataHeaderSize +

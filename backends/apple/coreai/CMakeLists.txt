@@ -463,6 +463,7 @@ if(_coreai_run_sdk_tests
   set(_coreai_stress_fixture "${CMAKE_CURRENT_BINARY_DIR}/stress_fixture")
   add_custom_command(
     OUTPUT "${_coreai_stress_fixture}/model.pte"
+           "${_coreai_stress_fixture}/model_multifunction.pte"
            "${_coreai_stress_fixture}/fixture.json"
     COMMAND
       "${PYTHON_EXECUTABLE}"
@@ -474,8 +475,10 @@ if(_coreai_run_sdk_tests
     VERBATIM
   )
   add_custom_target(
-    coreai_stress_fixture DEPENDS "${_coreai_stress_fixture}/model.pte"
-                                  "${_coreai_stress_fixture}/fixture.json"
+    coreai_stress_fixture
+    DEPENDS "${_coreai_stress_fixture}/model.pte"
+            "${_coreai_stress_fixture}/model_multifunction.pte"
+            "${_coreai_stress_fixture}/fixture.json"
   )
   add_executable(
     coreai_multithread_test runtime/test/coreai_multithread_test.cpp
