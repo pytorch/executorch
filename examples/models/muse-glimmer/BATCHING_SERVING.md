@@ -224,6 +224,20 @@ apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
 
 ## Session Behavior
 
+Prefix caching retains the initial prompt by default. Add
+`--prefix-capture-prompt-end` with `--prefix-cache-entries` to also retain the
+prompt boundary of subsequent requests, including tool-result continuations
+and replacements. Repeated or branched requests can then reuse those snapshots.
+New tool-result text still needs prefill. This is best-effort capture within the
+same bounded cache and transient-row limits, with global LRU retention; it can
+evict earlier prompts. Benchmark capture cost and memory for your workload
+before enabling it. It also works with `--prefix-checkpoint-interval` and adds
+the exact prompt end when it falls between periodic checkpoints. A pending
+checkpoint or another request can occupy the capture lane and skip a boundary;
+use prompt-end capture without periodic checkpoints when turn reuse is the
+priority. Automatic transient-row sizing is capped at two in either mode. The C++
+`prefix_checkpoint_policy`, when supplied, overrides both options.
+
 - Named sessions persist by default. `--evict-idle-sessions` allows the server to
   close the least recently used idle session when logical session slots are exhausted, clearing
   its transcript cache as well. Active requests and queued users of a session are

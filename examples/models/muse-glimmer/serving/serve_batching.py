@@ -88,10 +88,15 @@ def _parse_args(argv=None):
     )
     parser.add_argument("--max-vision-patches", type=int, default=4096)
     parser.add_argument(
+        "--prefix-capture-prompt-end",
+        action="store_true",
+        help="Retain each request's prompt end in the bounded prefix cache",
+    )
+    parser.add_argument(
         "--prefix-checkpoint-interval",
         type=int,
         default=0,
-        help="Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.",
+        help="Periodic checkpoint interval in tokens; 0 disables periodic capture.",
     )
     parser.add_argument("--max-image-bytes", type=int, default=_MAX_IMAGE_BYTES)
     parser.add_argument(
@@ -121,7 +126,12 @@ def _parse_args(argv=None):
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
-    _validate_limits(parser, args, prefix_capture_slots=args.prefix_capture_slots)
+    _validate_limits(
+        parser,
+        args,
+        prefix_capture_slots=args.prefix_capture_slots,
+        prefix_capture_prompt_end=args.prefix_capture_prompt_end,
+    )
     if not 0 <= args.dflash_n_draft < _INT32_MAX:
         parser.error("--dflash-n-draft must be nonnegative and below INT32_MAX")
     if args.dflash_n_draft and not args.dflash:
@@ -195,6 +205,10 @@ def _worker_command(args):
             args.prefix_capture_slots if args.prefix_cache_entries else None,
         ),
         ("prefix_checkpoint_interval", args.prefix_checkpoint_interval or None),
+        (
+            "prefix_capture_prompt_end",
+            "true" if args.prefix_capture_prompt_end else None,
+        ),
         ("max_vision_patches", args.max_vision_patches),
         ("max_image_bytes", args.max_image_bytes),
         ("max_input_frame_bytes", args.max_request_bytes),

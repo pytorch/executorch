@@ -40,7 +40,9 @@ def _parse_preflight_timeout(value):
     return timeout
 
 
-def _validate_limits(parser, args, *, prefix_capture_slots=0) -> int:
+def _validate_limits(
+    parser, args, *, prefix_capture_slots=0, prefix_capture_prompt_end=False
+) -> int:
     for flag, value in (
         ("--max-context", args.max_context),
         ("--max-sessions", args.max_sessions),
@@ -53,14 +55,14 @@ def _validate_limits(parser, args, *, prefix_capture_slots=0) -> int:
         parser.error(f"--prefix-cache-entries must be between 0 and {_MAX_INT32}")
     if not 0 <= args.prefix_checkpoint_interval <= _MAX_INT32:
         parser.error(f"--prefix-checkpoint-interval must be between 0 and {_MAX_INT32}")
-    if args.prefix_checkpoint_interval and not args.prefix_cache_entries:
+    if (args.prefix_checkpoint_interval or prefix_capture_prompt_end) and not args.prefix_cache_entries:
         parser.error("--prefix-checkpoint-interval requires --prefix-cache-entries > 0")
     if not 0 <= prefix_capture_slots <= _MAX_INT32:
         parser.error(f"--prefix-capture-slots must be between 0 and {_MAX_INT32}")
     # Mirrors ServingRuntimeConfig::resolved_prefix_captures for row validation.
     if prefix_capture_slots == 0:
         prefix_capture_slots = min(args.max_sessions, args.max_inflight_requests)
-        if args.prefix_checkpoint_interval:
+        if args.prefix_checkpoint_interval or prefix_capture_prompt_end:
             prefix_capture_slots = min(prefix_capture_slots, 2)
     if not args.prefix_cache_entries:
         prefix_capture_slots = 0
@@ -105,6 +107,10 @@ def _parse_args(argv=None):
     parser.add_argument("--max-decode-sequences", type=int, default=8)
     parser.add_argument("--max-inflight-requests", type=int, default=64)
     parser.add_argument("--prefix-cache-entries", type=int, default=0)
+    parser.add_argument(
+        "--prefix-capture-prompt-end", action="store_true",
+        help="Retain each request's prompt end in the bounded prefix cache",
+    )
     parser.add_argument(
         "--prefix-capture-slots",
         type=int,
@@ -205,7 +211,8 @@ def main(argv=None) -> None:
                     ]
                     if args.prefix_checkpoint_interval
                     else []
-                ),
+                )
+                + (["--prefix_capture_prompt_end=true"] if args.prefix_capture_prompt_end else []),
                 stderr=stderr,
             )
             runtime = None

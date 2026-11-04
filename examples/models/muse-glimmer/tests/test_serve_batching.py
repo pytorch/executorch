@@ -53,6 +53,21 @@ def test_prefix_capture_override_reaches_worker(arguments, captures):
     assert f"--prefix_capture_slots={captures}" in serve_batching._worker_command(args)
 
 
+def test_prompt_end_capture_is_opt_in_and_reaches_worker(arguments):
+    default = serve_batching._parse_args(arguments + ["--prefix-cache-entries", "4"])
+    assert not default.prefix_capture_prompt_end
+    assert not any(
+        "prefix_capture_prompt_end" in flag
+        for flag in serve_batching._worker_command(default)
+    )
+    enabled = serve_batching._parse_args(
+        arguments + ["--prefix-cache-entries", "4", "--prefix-capture-prompt-end"]
+    )
+    assert "--prefix_capture_prompt_end=true" in serve_batching._worker_command(enabled)
+    with pytest.raises(SystemExit):
+        serve_batching._parse_args(arguments + ["--prefix-capture-prompt-end"])
+
+
 def test_worker_forwards_mg_options(arguments):
     args = serve_batching._parse_args(
         arguments
