@@ -88,6 +88,8 @@ Error EnnApi::loadApiLib() {
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnAllocateAllBuffers, this);
   ENN_LOAD_API_FUNC(
       libenn_public_api_, EnnAllocateAllBuffersWithSessionId, this);
+  EnnGenerateBufferSpaceDev = reinterpret_cast<EnnGenerateBufferSpaceDev_fn>(
+      loadApiFunction(libenn_public_api_, "EnnGenerateBufferSpaceDev", true));
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnBufferCommit, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnGetBuffersInfo, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnReleaseBuffers, this);

@@ -54,6 +54,17 @@ Error EnnExecutor::initialize(const char* binary_buf_addr, size_t buf_size) {
       (int)ret);
   ET_LOG(Info, "Open successfully.");
 
+  if (enn_api_inst->EnnGenerateBufferSpaceDev != nullptr) {
+    ret = enn_api_inst->EnnGenerateBufferSpaceDev(model_id_, 1);
+    if (ret != ENN_RET_SUCCESS) {
+      ENN_LOG_WARN(
+          "EnnGenerateBufferSpaceDev returned %d for model_id = 0x%" PRIX64
+          "; continuing with session 0",
+          (int)ret,
+          model_id_);
+    }
+  }
+
   NumberOfBuffersInfo buffers_info;
   ret = enn_api_inst->EnnAllocateAllBuffersWithSessionId(
       model_id_, &alloc_buffer_, &buffers_info, 0, true);
@@ -76,13 +87,13 @@ Error EnnExecutor::eval(
   ET_CHECK_OR_RETURN_ERROR(
       inputs.size() == getInputSize(),
       InvalidArgument,
-      "Invalid number of inputs, expect %" PRIu32 " while get %ld",
+      "Invalid number of inputs, expect %" PRIu32 " while get %zu",
       getInputSize(),
       inputs.size());
   ET_CHECK_OR_RETURN_ERROR(
       outputs.size() == getOutputSize(),
       InvalidArgument,
-      "Invalid number of outputs, expected %" PRIu32 " while get %ld",
+      "Invalid number of outputs, expected %" PRIu32 " while get %zu",
       getOutputSize(),
       outputs.size());
 
@@ -116,9 +127,13 @@ Error EnnExecutor::eval(
 EnnExecutor::~EnnExecutor() {
   EXYNOS_ATRACE_FUNCTION_LINE();
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
+  if (!enn_api_inst->isInitialized() || model_id_ == 0) {
+    return;
+  }
   NumberOfBuffersInfo buffers_info;
-  if (enn_api_inst->EnnGetBuffersInfo(model_id_, &buffers_info) ==
-      ENN_RET_SUCCESS) {
+  if (alloc_buffer_ != nullptr &&
+      enn_api_inst->EnnGetBuffersInfo(model_id_, &buffers_info) ==
+          ENN_RET_SUCCESS) {
     const int32_t num_of_buffers =
         buffers_info.n_in_buf + buffers_info.n_out_buf;
     enn_api_inst->EnnReleaseBuffers(alloc_buffer_, num_of_buffers);

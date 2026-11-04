@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  *
  */
-#include <executorch/backends/samsung/runtime/enn_executor.h>
+#include <executorch/backends/samsung/runtime/enn_executor_allocator.h>
 #include <executorch/backends/samsung/runtime/logging.h>
 #include <executorch/backends/samsung/runtime/profile.hpp>
 
@@ -37,7 +37,13 @@ class EnnBackend final : public PyTorchBackendInterface {
       ArrayRef<CompileSpec> compile_specs) const override {
     EXYNOS_ATRACE_NAME_LINE("backend_init");
     MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
-    auto executor = runtime_allocator->allocateInstance<enn::EnnExecutor>();
+    if (runtime_allocator == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+    auto* executor = enn::allocateEnnExecutor(*runtime_allocator);
+    if (executor == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
     const char* binary_buf_addr =
         reinterpret_cast<const char*>(processed->data());
     size_t buf_size = processed->size();
