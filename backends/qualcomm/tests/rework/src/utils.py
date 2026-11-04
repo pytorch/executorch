@@ -180,6 +180,14 @@ class DrawGraph:
                     <TR><TD BGCOLOR="white">dims: [1, 4, 8, 8]</TD></TR>
                     <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
                 </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+        "aten_permute_copy_default@0" [label=<
+                    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                    <TR><TD BGCOLOR="white">name: aten_permute_copy_default@0</TD></TR>
+                    <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                    <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                    <TR><TD BGCOLOR="white">dims: [1, 8, 8, 4]</TD></TR>
+                    <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
         "input_1_y@0" [label=<
                     <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
                     <TR><TD BGCOLOR="lightgreen">name: input_1_y@0</TD></TR>
@@ -194,6 +202,14 @@ class DrawGraph:
                     <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
                     <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
                     <TR><TD BGCOLOR="white">dims: [1, 4, 8, 8]</TD></TR>
+                    <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+        "aten_permute_copy_default_1@0" [label=<
+                    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                    <TR><TD BGCOLOR="white">name: aten_permute_copy_default_1@0</TD></TR>
+                    <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                    <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                    <TR><TD BGCOLOR="white">dims: [1, 8, 8, 4]</TD></TR>
                     <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
                 </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
         "b__frozen_param0@0" [label=<
@@ -226,6 +242,14 @@ class DrawGraph:
                     <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
                     <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
                     <TR><TD BGCOLOR="white">dims: [1, 8, 8, 4]</TD></TR>
+                    <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+        "aten_permute_copy_default_3@0" [label=<
+                    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                    <TR><TD BGCOLOR="white">name: aten_permute_copy_default_3@0</TD></TR>
+                    <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                    <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                    <TR><TD BGCOLOR="white">dims: [1, 4, 8, 8]</TD></TR>
                     <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
                 </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
         "output_quantized_decomposed_dequantize_per_tensor_default@0" [label=<
@@ -300,6 +324,14 @@ class DrawGraph:
                     <TR><TD BGCOLOR="white">dims: [1, 8, 8, 4]</TD></TR>
                     <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
                 </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+        "aten_permute_copy_default_2@0" [label=<
+                    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                    <TR><TD BGCOLOR="white">name: aten_permute_copy_default_2@0</TD></TR>
+                    <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                    <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                    <TR><TD BGCOLOR="white">dims: [1, 4, 8, 8]</TD></TR>
+                    <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
         "output_quantized_decomposed_dequantize_per_tensor_default_1@0" [label=<
                     <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
                     <TR><TD BGCOLOR="lightgreen">name: output_quantized_decomposed_dequantize_per_tensor_default_1@0</TD></TR>
@@ -309,13 +341,16 @@ class DrawGraph:
                     <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
                 </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
         "input_0_x@0" -> "quantized_decomposed_quantize_per_tensor_default@0"
+        "quantized_decomposed_quantize_per_tensor_default@0" -> "aten_permute_copy_default@0"
         "input_1_y@0" -> "quantized_decomposed_quantize_per_tensor_default_1@0"
-        "quantized_decomposed_quantize_per_tensor_default@0" -> "aten_convolution_default@0"
+        "quantized_decomposed_quantize_per_tensor_default_1@0" -> "aten_permute_copy_default_1@0"
+        "aten_permute_copy_default@0" -> "aten_convolution_default@0"
         "b__frozen_param0@0" -> "aten_convolution_default@0"
         "b__frozen_param1@0" -> "aten_convolution_default@0"
         "aten_convolution_default@0" -> "aten_relu_default@0"
-        "aten_relu_default@0" -> "output_quantized_decomposed_dequantize_per_tensor_default@0"
-        "quantized_decomposed_quantize_per_tensor_default_1@0" -> "aten_convolution_default_1@0"
+        "aten_relu_default@0" -> "aten_permute_copy_default_3@0"
+        "aten_permute_copy_default_3@0" -> "output_quantized_decomposed_dequantize_per_tensor_default@0"
+        "aten_permute_copy_default_1@0" -> "aten_convolution_default_1@0"
         "b__frozen_param2@0" -> "aten_convolution_default_1@0"
         "b__frozen_param3@0" -> "aten_convolution_default_1@0"
         "aten_convolution_default_1@0" -> "aten_relu_default_1@0"
@@ -324,7 +359,8 @@ class DrawGraph:
         "aten_add_tensor@0" -> "aten_convolution_default_2@0"
         "b__frozen_param4@0" -> "aten_convolution_default_2@0"
         "b__frozen_param5@0" -> "aten_convolution_default_2@0"
-        "aten_convolution_default_2@0" -> "output_quantized_decomposed_dequantize_per_tensor_default_1@0"
+        "aten_convolution_default_2@0" -> "aten_permute_copy_default_2@0"
+        "aten_permute_copy_default_2@0" -> "output_quantized_decomposed_dequantize_per_tensor_default_1@0"
     }
     """
 
