@@ -164,7 +164,11 @@ class QnnConfig:
             np.random.seed(self.seed)
             random.seed(self.seed)
 
-        self.backend = get_backend_type(self.backend)
+        self.backend = (
+            get_backend_type(self.backend)
+            if isinstance(self.backend, str)
+            else self.backend
+        )
         self.skip_delegate_node_ids, self.skip_delegate_node_ops = (
             self._parse_skip_delegation_node(
                 self.skip_delegate_node_ids, self.skip_delegate_node_ops
