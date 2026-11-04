@@ -121,8 +121,8 @@ inline void synchronize_torch_cuda_device(int index) {
 }
 
 // Waits for every queued operation on a device. Bindings built without CUDA
-// support have no CUDA runtime of their own, so they wait through torch's,
-// which is loaded whenever such bindings see CUDA memory.
+// support have no CUDA runtime of their own, so they wait through torch's
+// once torch is imported.
 inline void synchronize_device(int index) {
 #ifndef EXECUTORCH_PYBINDINGS_CUDA
   if (loaded_torch_module() != nullptr) {

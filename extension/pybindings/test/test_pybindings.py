@@ -14,6 +14,7 @@ import select
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import unittest
 import weakref
@@ -163,115 +164,370 @@ class PybindingsTest(unittest.TestCase):
 
         self.assertTrue(torch.equal(output, inputs[0] + inputs[0]))
 
-    def test_buffer_input_does_not_import_torch(self):
-        exported_program, inputs = create_program(ModuleAddSingleInput())
-        executorch_module = self.load_fn(exported_program.buffer)
-        torch_module = sys.modules.pop("torch")
-        try:
-            output = executorch_module(inputs[0].numpy())[0]
-            self.assertNotIn("torch", sys.modules)
-        finally:
-            sys.modules["torch"] = torch_module
-
-        self.assertTrue(torch.equal(output, inputs[0] + inputs[0]))
-
-    def test_tensor_output_import_policy(self):
+    def test_tensor_output_type(self):
         if self.kernel_mode != "portable":
-            self.skipTest("only portable bindings configure Python tensor outputs")
-        program, _ = create_program(ModuleAddSingleInput())
-        script = """
-import importlib
+            self.skipTest("only portable bindings choose Python tensor outputs")
+        from executorch.devtools.bundled_program.config import (
+            MethodTestCase,
+            MethodTestSuite,
+        )
+        from executorch.devtools.bundled_program.core import BundledProgram
+        from executorch.devtools.bundled_program.serialize import (
+            serialize_from_bundled_program_to_flatbuffer,
+        )
+
+        inputs = ModuleAddWithAttributes().get_inputs()
+        program = to_edge(
+            export(ModuleAddWithAttributes(), inputs, strict=True),
+            constant_methods={"tensor_constant": torch.ones(2), "int_constant": 3},
+        ).to_executorch(ExecutorchBackendConfig(emit_mutable_buffer_names=True))
+        bundled_program, _ = create_program(ModuleAdd())
+        bundled = serialize_from_bundled_program_to_flatbuffer(
+            BundledProgram(
+                bundled_program,
+                [
+                    MethodTestSuite(
+                        method_name="forward",
+                        test_cases=[
+                            MethodTestCase(
+                                inputs=inputs, expected_outputs=(inputs[0] + inputs[1],)
+                            )
+                        ],
+                    )
+                ],
+            )
+        )
+        prelude = """
 import importlib.abc
-import os
 import sys
-from pathlib import Path
+import threading
+import warnings
+
+import numpy as np
+
+program_path, bundled_path = sys.argv[1:]
+x = np.ones((2, 2), dtype=np.float32)
 
 class BlockTorch(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname == "torch" or fullname.startswith("torch."):
-            raise ImportError("torch is unavailable")
+    def __init__(self, error=ModuleNotFoundError):
+        self.error = error
+        # The module the error names: torch itself, or a part of it.
+        self.missing = "torch"
+        self.attempts = 0
 
-entrypoint, native_name, policy, available, program_path, native_path = sys.argv[1:]
-if sys.platform == "win32":
-    native_directory = Path(native_path).parent
-    os.add_dll_directory(str(native_directory))
-    library_directory = native_directory.parent.parent / "lib"
-    if library_directory.is_dir():
-        os.add_dll_directory(str(library_directory))
-blocker = BlockTorch()
-if available == "no":
-    sys.meta_path.insert(0, blocker)
-try:
-    bindings = importlib.import_module(entrypoint)
-except (ImportError, SystemError) as error:
-    # Built-in extension loaders may wrap initialization errors.
-    assert policy == "torch" and available == "no"
-    while error.__cause__ is not None:
-        error = error.__cause__
-    assert isinstance(error, ImportError)
-    assert "torch is unavailable" in str(error)
-else:
-    assert policy != "torch" or available == "yes"
-    native = sys.modules[native_name]
-    expected = "torch" if policy != "executorch" and available == "yes" else "executorch"
-    assert native._tensor_output == expected
-    assert ("torch" in sys.modules) == (expected == "torch")
-    import numpy as np
-    program_data = Path(program_path).read_bytes()
-    module = bindings._load_for_executorch_from_buffer(program_data)
-    output = module(np.ones((2, 2), dtype=np.float32))[0]
-    if expected == "executorch":
-        assert isinstance(output, bindings.ExecuTorchResult)
-        np.testing.assert_array_equal(np.asarray(output), np.full((2, 2), 2.0))
-        if available == "no":
-            sys.meta_path.remove(blocker)
-            import torch
-            assert isinstance(module(torch.ones(2, 2))[0], bindings.ExecuTorchResult)
-    else:
-        import torch
-        assert isinstance(output, torch.Tensor)
-        torch.testing.assert_close(output, torch.full((2, 2), 2.0))
+    def find_spec(self, name, path=None, target=None):
+        if name == "torch" or name.startswith("torch."):
+            self.attempts += 1
+            error = self.error("torch is unavailable")
+            if isinstance(error, ImportError):
+                error.name = self.missing
+            raise error
+
+def kinds(outputs):
+    torch = sys.modules.get("torch")
+    return [
+        "torch" if torch is not None and isinstance(value, torch.Tensor)
+        else type(value).__name__
+        for value in outputs
+    ]
+
+# Importing torch can show warnings of its own, so only this one counts.
+OURS = "ExecuTorch returned torch.Tensor outputs"
+
+def ours(caught):
+    return [w for w in caught if str(w.message).startswith(OURS)]
+
+def check(call, expected, warnings_expected=0):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        outputs = call()
+    future = ours(caught)
+    assert kinds(outputs) == expected, (kinds(outputs), expected)
+    assert len(future) == warnings_expected, [str(w.message) for w in future]
+    assert all(w.category is FutureWarning for w in future)
+    return future
 """
-        native_name = self.load_fn.__module__
-        native_path = sys.modules[native_name].__spec__.origin
+        # Each runs in a fresh process, since torch imports and the
+        # warning, shown once per process, are process-wide.
+        scenarios = {
+            "NumPy inputs before torch is imported": (
+                None,
+                """
+                from executorch.runtime import Runtime
+
+                assert "torch" not in sys.modules
+                program = Runtime.get().load_program(program_path)
+                check(lambda: program.load_method("int_constant").execute([]), ["int"])
+                assert "torch" not in sys.modules
+                forward = program.load_method("forward")
+                (warning,), line = check(lambda: forward.execute([x, x]), ["torch"], 1), sys._getframe().f_lineno
+                # The warning points at the caller, not at ExecuTorch's wrapper.
+                assert (warning.filename, warning.lineno) == ("<string>", line), warning
+                assert "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT" in str(warning.message)
+                check(lambda: forward.execute([x, x]), ["torch"])
+                """,
+            ),
+            "NumPy inputs kept by set_inputs after torch is imported": (
+                None,
+                """
+                import torch
+                from executorch.extension.pybindings import portable_lib
+
+                native = sys.modules["executorch.extension.pybindings._C"]
+                assert native._tensor_output is None
+                method = portable_lib._load_program(program_path).load_method("forward")
+                method.set_inputs([x, x])
+                method.execute()
+                # An attribute does not come from the inputs.
+                check(lambda: [method.get_attribute("state")], ["torch"])
+                check(method.get_outputs, ["torch"], 1)
+                """,
+            ),
+            "NumPy inputs with every output bound to a torch tensor": (
+                None,
+                """
+                import torch
+                from executorch.exir import ExecutorchBackendConfig, to_edge
+                from executorch.exir.passes import MemoryPlanningPass
+                from executorch.extension.pybindings import portable_lib
+
+                class Add(torch.nn.Module):
+                    def forward(self, a, b):
+                        return a + b
+
+                t = torch.ones(2, 2)
+                config = ExecutorchBackendConfig(
+                    memory_planning_pass=MemoryPlanningPass(alloc_graph_output=False)
+                )
+                buffer = to_edge(torch.export.export(Add(), (t, t))).to_executorch(config).buffer
+                program = portable_lib._load_program_from_buffer(buffer)
+                method = program.load_method("forward")
+                bound = torch.empty(2, 2)
+                method.set_output(bound, 0)
+                # A bound output is the caller's own tensor, now and later.
+                check(lambda: method([x, x]), ["torch"])
+                assert method([x, x])[0] is bound
+                # Bound after the run, so the outputs of that run are not.
+                late = program.load_method("forward")
+                late.set_inputs([x, x])
+                late.execute()
+                late.set_output(torch.empty(2, 2), 0)
+                check(late.get_outputs, ["torch"], 1)
+                """,
+            ),
+            "torch inputs, kept or mixed, and no tensor inputs once torch is imported": (
+                None,
+                """
+                import torch
+                from executorch.extension.pybindings import portable_lib
+
+                t = torch.ones(2, 2)
+                module = portable_lib._load_for_executorch(program_path)
+                check(lambda: module.forward([t, t]), ["torch"])
+                # Input 1 is still the torch tensor of the last call.
+                check(lambda: module.run_method("forward", [x]), ["torch"])
+                check(lambda: module.forward([x, t]), ["torch"])
+                check(lambda: module.run_method("tensor_constant"), ["torch"])
+                with open(bundled_path, "rb") as source:
+                    bundled = portable_lib._load_bundled_program_from_buffer(
+                        source.read()
+                    )
+                check(
+                    lambda: bundled.verify_result_with_bundled_expected_output(
+                        "forward", 0
+                    ),
+                    ["torch"],
+                )
+                """,
+            ),
+            "the warning turned into an error": (
+                None,
+                """
+                from executorch.extension.pybindings import portable_lib
+
+                module = portable_lib._load_for_executorch(program_path)
+                method = portable_lib._load_program(program_path).load_method("forward")
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("error", OURS)
+                    for call in (module.forward, method) * 2:
+                        try:
+                            call([x, x])
+                        except FutureWarning:
+                            pass
+                        else:
+                            raise AssertionError("every such call must raise")
+                # The raising calls did not run: state is still 0, so 1 + 1 + 1.
+                for call in (module.forward, method):
+                    assert call([x, x])[0].tolist() == [[3.0, 3.0]] * 2
+                """,
+            ),
+            "two threads before torch is imported": (
+                None,
+                """
+                from executorch.extension.pybindings import portable_lib
+
+                modules = [portable_lib._load_for_executorch(program_path) for _ in range(2)]
+                barrier = threading.Barrier(2)
+                outputs = [None, None]
+
+                def run(index):
+                    barrier.wait()
+                    outputs[index] = modules[index].forward([x, x])[0]
+
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    threads = [threading.Thread(target=run, args=(i,)) for i in (0, 1)]
+                    for thread in threads:
+                        thread.start()
+                    for thread in threads:
+                        thread.join()
+                assert kinds(outputs) == ["torch", "torch"], kinds(outputs)
+                assert len(ours(caught)) == 1, [str(w.message) for w in caught]
+                """,
+            ),
+            "torch fails to import or is not installed": (
+                None,
+                """
+                blocker = BlockTorch(RuntimeError)
+                sys.meta_path.insert(0, blocker)
+                from executorch.extension.pybindings import portable_lib
+
+                module = portable_lib._load_for_executorch(program_path)
+                # A torch that is there but broken, even with an ImportError or
+                # a missing module of its own.
+                for error_type, missing in (
+                    (RuntimeError, "torch"),
+                    (ImportError, "torch"),
+                    (ModuleNotFoundError, "torch._C"),
+                ):
+                    blocker.error, blocker.missing = error_type, missing
+                    try:
+                        module.forward([x, x])
+                    except error_type as error:
+                        assert "torch is unavailable" in str(error), error
+                        notes = "".join(getattr(error, "__notes__", []))
+                        assert "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT" in notes, notes
+                    else:
+                        raise AssertionError("a broken torch must not be hidden")
+                blocker.missing = "torch"
+                check(lambda: module.forward([x, x]), ["ExecuTorchResult"])
+                check(lambda: module.run_method("tensor_constant"), ["ExecuTorchResult"])
+                # A missing torch is not looked for again on every call.
+                assert blocker.attempts == 4, blocker.attempts
+                assert "torch" not in sys.modules
+                """,
+            ),
+            "the setting asks for ExecuTorchResult": (
+                "executorch",
+                """
+                from executorch.extension.pybindings import portable_lib
+
+                native = sys.modules["executorch.extension.pybindings._C"]
+                assert native._tensor_output == "executorch"
+                module = portable_lib._load_for_executorch(program_path)
+                check(lambda: module.forward([x, x]), ["ExecuTorchResult"])
+                check(lambda: module.run_method("tensor_constant"), ["ExecuTorchResult"])
+                assert "torch" not in sys.modules
+                import torch
+
+                t = torch.ones(2, 2)
+                check(lambda: module.forward([t, t]), ["ExecuTorchResult"])
+                """,
+            ),
+            "the setting asks for torch.Tensor": (
+                "torch",
+                """
+                import importlib.util
+                import os
+                from pathlib import Path
+
+                # The extension imported on its own, without portable_lib, which
+                # imports torch itself and on Windows adds the folders of the
+                # extension's libraries.
+                name = "executorch.extension.pybindings._C"
+                if sys.platform == "win32":
+                    native_directory = Path(importlib.util.find_spec(name).origin).parent
+                    for directory in (native_directory, native_directory.parent.parent / "lib"):
+                        if directory.is_dir():
+                            os.add_dll_directory(str(directory.resolve()))
+                native = importlib.import_module(name)
+                assert "torch" in sys.modules
+                assert native._tensor_output == "torch"
+                from executorch.extension.pybindings import portable_lib
+
+                module = portable_lib._load_for_executorch(program_path)
+                check(lambda: module.forward([x, x]), ["torch"])
+                """,
+            ),
+            "the setting asks for torch.Tensor without torch": (
+                "torch",
+                """
+                sys.meta_path.insert(0, BlockTorch())
+                try:
+                    from executorch.extension.pybindings import portable_lib
+                except ImportError as error:
+                    assert "PyTorch could not be imported" in str(error), error
+                else:
+                    raise AssertionError("importing must fail without torch")
+                """,
+            ),
+        }
+        # Each of these calls returns torch.Tensor outputs now and will return
+        # ExecuTorchResult outputs later, so it warns: calls without tensor
+        # inputs before torch is imported, and calls with tensor inputs of
+        # other kinds after it is.
+        for call, torch_imported in (
+            ("module.run_method('tensor_constant')", False),
+            ("[method.get_attribute('state')]", False),
+            ("bundled.verify_result_with_bundled_expected_output('forward', 0)", False),
+            ("module.forward([x, x])", True),
+            ("module.forward(capsules)", True),
+            ("method(capsules)", True),
+        ):
+            scenarios[f"{call}, torch imported: {torch_imported}"] = (
+                None,
+                f"""
+                {'import torch' if torch_imported else ''}
+                from executorch.extension.pybindings import portable_lib
+
+                module = portable_lib._load_for_executorch(program_path)
+                method = portable_lib._load_program(program_path).load_method("forward")
+                with open(bundled_path, "rb") as source:
+                    bundled = portable_lib._load_bundled_program_from_buffer(source.read())
+                capsules = [x.__dlpack__(), x.__dlpack__()]
+                (warning,), line = check(lambda: {call}, ["torch"], 1), sys._getframe().f_lineno
+                assert warning.lineno == line, (warning.lineno, line)
+                """,
+            )
         with tempfile.TemporaryDirectory() as directory:
-            program_path = os.path.join(directory, "add.pte")
+            program_path = os.path.join(directory, "program.pte")
             with open(program_path, "wb") as handle:
                 handle.write(program.buffer)
-            for entrypoint in dict.fromkeys((self.runtime.__name__, native_name)):
-                for policy in (None, "torch", "executorch"):
-                    for available in ("yes", "no"):
-                        with self.subTest(
-                            entrypoint=entrypoint, policy=policy, available=available
-                        ):
-                            environment = os.environ.copy()
-                            environment.pop("EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT", None)
-                            if policy is not None:
-                                environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = (
-                                    policy
-                                )
-                            completed = subprocess.run(
-                                [
-                                    sys.executable,
-                                    "-c",
-                                    script,
-                                    entrypoint,
-                                    native_name,
-                                    str(policy),
-                                    available,
-                                    program_path,
-                                    native_path,
-                                ],
-                                env=environment,
-                                capture_output=True,
-                                text=True,
-                                timeout=60,
-                            )
-                            self.assertEqual(
-                                completed.returncode,
-                                0,
-                                completed.stdout + completed.stderr,
-                            )
+            bundled_path = os.path.join(directory, "program.bpte")
+            with open(bundled_path, "wb") as handle:
+                handle.write(bundled)
+            for name, (setting, code) in scenarios.items():
+                with self.subTest(name):
+                    environment = os.environ.copy()
+                    environment.pop("EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT", None)
+                    if setting is not None:
+                        environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = setting
+                    completed = subprocess.run(
+                        [
+                            sys.executable,
+                            "-c",
+                            prelude + textwrap.dedent(code),
+                            program_path,
+                            bundled_path,
+                        ],
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    self.assertEqual(
+                        completed.returncode, 0, completed.stdout + completed.stderr
+                    )
 
     def test_torch_that_is_not_ready_is_ignored(self):
         if self.kernel_mode != "portable":
@@ -1488,7 +1744,7 @@ print("lines through Python:", stream.text().count(expected))
             self.skipTest("only portable bindings return a view of the input")
         from executorch.extension.pybindings import _C
 
-        if _C._tensor_output != "torch":
+        if _C._tensor_output == "executorch":
             self.skipTest("only torch output mode returns a view of the input")
 
         class Identity(torch.nn.Module):
