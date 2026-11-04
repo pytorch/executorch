@@ -149,23 +149,24 @@ int64_extension_partition_suite = {
     "or_narrow": (torch.bitwise_or, (_WIDE, _NARROW), 1),
     "cat_byte_promoted": (lambda x, y: torch.cat([x, y]), (_WIDE, _BYTES), 1),
     "or_byte": (torch.bitwise_or, (_WIDE, _BYTES), 0),
-    "eq_bool": (lambda x, y: x == y, (_WIDE, _FLAGS), 0),
+    "eq_bool": (lambda x, y: x == y, (_WIDE, _FLAGS), 1),
     "cat_bool_promoted": (lambda x, y: torch.cat([x, y]), (_FLAGS, _WIDE), 1),
     "or_bool": (torch.bitwise_or, (_FLAGS, _WIDE), 1),
-    "where": (torch.where, (_COND, _WIDE, _WIDE_2), 0),
-    "where_buffer": (Int64BufferWhere(), (_COND, _WIDE_2), 0),
-    "strided_slice": (lambda x: x[::2], (torch.arange(5, dtype=torch.int64),), 0),
-    "gt": (lambda x, y: x > y, (_WIDE, _WIDE_2), 0),
-    "gt_scalar": (lambda x: x > 7, (_WIDE,), 0),
+    "where": (torch.where, (_COND, _WIDE, _WIDE_2), 1),
+    "where_buffer": (Int64BufferWhere(), (_COND, _WIDE_2), 1),
+    "strided_slice": (lambda x: x[::2], (torch.arange(5) * 2**33,), 1),
+    "gt": (lambda x, y: x > y, (_WIDE, _WIDE_2), 1),
+    "gt_scalar": (lambda x: x > 7, (_WIDE,), 1),
     "full_like": (lambda x: torch.full_like(x, 5) + x, (_WIDE,), 1),
     "zeros_like": (lambda x: torch.zeros_like(x) + x, (_WIDE,), 1),
+    "add_const": (lambda x: x + 2**40, (_WIDE,), 1),
 }
 
 
 @common.parametrize("test_data", int64_extension_partition_suite)
 def test_int64_extension_partition_tosa_INT(test_data: Tuple):
     op, inputs, delegates = test_data
-    (
+    tester = (
         ArmTester(
             op if isinstance(op, torch.nn.Module) else Int64Op(op),
             inputs,
@@ -175,3 +176,5 @@ def test_int64_extension_partition_tosa_INT(test_data: Tuple):
         .to_edge_transform_and_lower()
         .check_count({"torch.ops.higher_order.executorch_call_delegate": delegates})
     )
+    if delegates:
+        tester.to_executorch().run_method_and_compare_outputs(inputs)

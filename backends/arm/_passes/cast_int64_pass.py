@@ -9,6 +9,7 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import is_buffer, is_lifted_tensor_constant
@@ -18,7 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class CastInt64BuffersToInt32Pass(ArmPass):
-    """Cast int64 buffers and lifted tensor constants to int32 when in range."""
+    """Cast int64 buffers and lifted tensor constants to int32 when in range.
+
+    With the int64 extension under PRO-INT, a buffer whose users all compute in
+    int64 keeps int64.
+
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
@@ -137,11 +143,37 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         node.meta["val"] = node.meta["val"].to(torch.int32)
         return True
 
+    @staticmethod
+    def _users_compute_in_int64(node: torch.fx.Node) -> bool:
+        def is_int64(value) -> bool:
+            return isinstance(value, torch.Tensor) and value.dtype == torch.int64
+
+        return all(
+            is_int64(user.meta.get("val"))
+            or any(
+                is_int64(arg.meta.get("val"))
+                for arg in user.all_input_nodes
+                if arg is not node
+            )
+            for user in node.users
+        )
+
     def _to_int32(self, graph_module: torch.fx.GraphModule) -> int:
+        tosa_spec = get_context_spec()
+        keep_int64 = tosa_spec.support_integer() and tosa_spec.support_extension(
+            "int64"
+        )
         converted = 0
         for node in graph_module.graph.nodes:
-            if self._is_cast_candidate(node):
-                converted += self._cast_constant_to_int32(node)
+            if not self._is_cast_candidate(node):
+                continue
+            if (
+                keep_int64
+                and is_buffer(self.exported_program, node)
+                and self._users_compute_in_int64(node)
+            ):
+                continue
+            converted += self._cast_constant_to_int32(node)
         return converted
 
     def call(self, graph_module: torch.fx.GraphModule):

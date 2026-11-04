@@ -46,6 +46,9 @@ class WhereSupported(SupportedTOSAOperatorCheck):
         supported_float = [torch.bool, torch.float16, torch.float32]
         if tosa_spec.support_extension("bf16"):
             supported_float.append(torch.bfloat16)
+        supported_integer: tuple[torch.dtype, ...] = INT_DTYPES
+        if tosa_spec.support_extension("int64"):
+            supported_integer += (torch.int64,)
 
         if tosa_spec.support_float():
             if x_dtype in supported_float and y_dtype in supported_float:
@@ -53,10 +56,10 @@ class WhereSupported(SupportedTOSAOperatorCheck):
 
         if tosa_spec.support_integer():
             if (
-                x_dtype in INT_DTYPES
+                x_dtype in supported_integer
                 or (x_dtype == torch.float32 and x.target in DQ_OPS)
             ) and (
-                y_dtype in INT_DTYPES
+                y_dtype in supported_integer
                 or (y_dtype == torch.float32 and y.target in DQ_OPS)
             ):
                 return True
@@ -65,8 +68,8 @@ class WhereSupported(SupportedTOSAOperatorCheck):
             tosa_spec.support_integer()
             and tosa_spec.support_float()
             and (
-                (x_dtype in INT_DTYPES and y_dtype in supported_float)
-                or (x_dtype in supported_float and y_dtype in INT_DTYPES)
+                (x_dtype in supported_integer and y_dtype in supported_float)
+                or (x_dtype in supported_float and y_dtype in supported_integer)
             )
         ):
             return True
