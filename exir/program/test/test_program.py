@@ -842,7 +842,8 @@ class TestProgramManagers(unittest.TestCase):
                 )
                 # Factors with no dims keep the precision of their product.
                 # Each product casts its inputs, so only a last product shows
-                # a wrong dtype: the outputs end with a complex and a real one.
+                # a wrong dtype: the outputs end with a complex factor, and a
+                # real one on either side.
                 turn = torch.polar(gain, gain)
                 spin = turn * shift
                 rotated = (
@@ -853,6 +854,7 @@ class TestProgramManagers(unittest.TestCase):
                 return (
                     torch.view_as_real(rotated).flatten(-2),
                     torch.view_as_real(spin * gain),
+                    torch.view_as_real(gain * spin),
                 )
 
         inputs = (torch.randn(2, 8, 8), torch.randn(4), torch.tensor(0.5).double())
