@@ -959,6 +959,67 @@ class Conv3dSequential(torch.nn.Module):
         return self.second(self.first(x))
 
 
+class ConvBackward(torch.nn.Module):
+    def __init__(
+        self,
+        flatten_grad_input=False,
+        duplicate_backward=False,
+        return_grad_weight=False,
+    ):
+        super().__init__()
+        self.flatten_grad_input = flatten_grad_input
+        self.duplicate_backward = duplicate_backward
+        self.return_grad_weight = return_grad_weight
+        self.weight = torch.nn.Parameter(torch.randn(4, 3, 3, 3), requires_grad=False)
+
+    def forward(self, grad_output, x):
+        forward_output = torch.ops.aten.convolution.default(
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+        )
+        backward_outputs = torch.ops.aten.convolution_backward.default(
+            grad_output,
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+            [True, self.return_grad_weight, False],
+        )
+        grad_input = backward_outputs[0]
+        if self.flatten_grad_input:
+            grad_input = torch.flatten(grad_input, 1)
+        if self.return_grad_weight:
+            return forward_output, grad_input, torch.flatten(backward_outputs[1], 1)
+        if not self.duplicate_backward:
+            return forward_output, grad_input
+        second_grad_input = torch.ops.aten.convolution_backward.default(
+            grad_output,
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+            [True, False, False],
+        )[0]
+        return forward_output, grad_input, second_grad_input
+
+
 class ConvFull(torch.nn.Module):
     def __init__(self, fill, full_shape):
         super().__init__()

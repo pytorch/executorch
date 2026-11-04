@@ -137,6 +137,7 @@ def EXIRATenDialectVerifier(  # noqa: C901
             exception_list = (
                 [
                     torch.ops.aten.mkldnn_rnn_layer.default,
+                    torch.ops.aten._upsample_bicubic2d_aa.default,
                     torch.ops.aten._upsample_bilinear2d_aa.default,
                     torch.ops.aten.quantize_per_tensor.default,
                     torch.ops.aten.dequantize.self,

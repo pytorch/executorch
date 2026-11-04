@@ -19,6 +19,7 @@ from executorch.backends.apple.coreai.compiler.preprocess import (
     COMPILE_SPEC_KEYS,
     CoreAIBackend,
 )
+from executorch.backends.apple.coreai.passes.normalize_op_args import coreai_aten_op
 from executorch.backends.apple.coreai.passes.replace_copy_ops import functional_aten_op
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -112,6 +113,110 @@ def is_coreai_supported_target(target) -> bool:
     return False
 
 
+def _index_put_supported(node: torch.fx.Node) -> bool:
+    accumulate = node.kwargs.get(
+        "accumulate", node.args[3] if len(node.args) > 3 else False
+    )
+    if accumulate:
+        return False
+    # Only the batch dim of the input and values may be dynamic.
+    if not all(
+        isinstance(d, int)
+        for arg in (node.args[0], node.args[2])
+        for d in arg.meta["val"].shape[1:]
+    ):
+        return False
+    return not _index_put_has_partial_integer_indexing(node)
+
+
+def _index_put_has_partial_integer_indexing(node: torch.fx.Node) -> bool:
+    # TODO: report to Apple. Integer indices that leave input dims unindexed
+    # (e.g. x[idx] = rows on a 2D x) abort the process in MPS scatter_nd with a
+    # rank assertion ("2 != 1 + 0"). This is a conservative workaround, not a
+    # proven support boundary, so some working slice updates also fall back.
+    has_integer_index = False
+    indexed_dims = 0
+    for index in node.args[1]:
+        if index is None:  # A full slice; consumes a dim without indexing it.
+            continue
+        val = index.meta["val"]
+        if val.dtype in (torch.bool, torch.uint8):
+            indexed_dims += val.dim()  # One mask covers as many dims as its rank.
+        else:
+            has_integer_index = True
+            indexed_dims += 1
+    return has_integer_index and indexed_dims < node.args[0].meta["val"].dim()
+
+
+def _convolution_supported(node: torch.fx.Node) -> bool:
+    transposed = node.args[6]
+    return not (transposed and node.args[0].meta["val"].dim() == 5)
+
+
+def _add_sub_supported(node: torch.fx.Node) -> bool:
+    # DecomposeAddSubAlphaPass (in get_default_passes) removes non-unit alpha.
+    alpha = node.kwargs.get("alpha", 1)
+    return not isinstance(alpha, torch.fx.Node) and alpha == 1
+
+
+# The rest are rewritten by NormalizeCoreAIOpArgsPass (in get_default_passes).
+
+
+def _reduce_dims_supported(node: torch.fx.Node) -> bool:
+    return len(node.args) > 1 and bool(node.args[1])
+
+
+def _avg_pool_supported(node: torch.fx.Node) -> bool:
+    args = node.args
+    # The converter reads count_include_pad only if ceil_mode is present too,
+    # and doesn't expand an empty stride to kernel_size.
+    if len(args) == 5 or (len(args) > 2 and args[2] == []):
+        return False
+    # It also always pools as if ceil_mode=False and count_include_pad=True.
+    ceil_mode = len(args) > 4 and args[4]
+    padded = len(args) > 3 and any(args[3])
+    exclude_pad = len(args) > 5 and not args[5]
+    return not ceil_mode and not (padded and exclude_pad)
+
+
+def _squeeze_dims_supported(node: torch.fx.Node) -> bool:
+    # shrink_dims requires size-1 dims, and aborts the process on an empty list.
+    shape = node.args[0].meta["val"].shape
+    dims = node.args[1]
+    return bool(dims) and all(shape[d] == 1 for d in dims if isinstance(shape[d], int))
+
+
+# coreai-torch handlers that raise on, or silently mis-lower, some argument
+# combinations of an op they otherwise support. Keyed by the ATen overload the
+# converter sees (edge and ``*_copy`` variants unwrapped).
+_VARIANT_CHECKS: Dict[object, Callable[[torch.fx.Node], bool]] = {
+    torch.ops.aten.index_put.default: _index_put_supported,
+    torch.ops.aten.convolution.default: _convolution_supported,
+    # The converter ignores alpha.
+    torch.ops.aten.add.Tensor: _add_sub_supported,
+    torch.ops.aten.add.Scalar: _add_sub_supported,
+    torch.ops.aten.sub.Tensor: _add_sub_supported,
+    torch.ops.aten.sub.Scalar: _add_sub_supported,
+    torch.ops.aten.mean.dim: _reduce_dims_supported,
+    torch.ops.aten.amax.default: _reduce_dims_supported,
+    torch.ops.aten.amin.default: _reduce_dims_supported,
+    torch.ops.aten.avg_pool2d.default: _avg_pool_supported,
+    torch.ops.aten.avg_pool3d.default: _avg_pool_supported,
+    torch.ops.aten.squeeze.dims: _squeeze_dims_supported,
+}
+
+
+def is_coreai_supported_variant(node: torch.fx.Node) -> bool:
+    """Whether ``coreai-torch`` can lower this node's specific arguments.
+
+    Complements :func:`is_coreai_supported_target`, which only checks the op.
+    Rejecting these here keeps the node on CPU instead of failing lowering or
+    producing wrong results.
+    """
+    check = _VARIANT_CHECKS.get(coreai_aten_op(node.target))
+    return check is None or check(node)
+
+
 def _node_tensor_vals(node: torch.fx.Node):
     """Yield the meta ``val``s for a node's inputs and its own result.
 
@@ -157,16 +262,24 @@ class _OperatorsSupportedForCoreAIBackend(OperatorSupportBase):
             self.log_once(f"Core AI cannot lower op, leaving out of delegate: {name}")
             return False
 
-        # Core AI has no scalar-symint graph input, and it narrows i64/f64 to
-        # 32-bit, so it can't faithfully carry an i64/f64 tensor across the
-        # delegate boundary. Reject any node with a SymInt/SymFloat/SymBool
-        # operand or an i64/f64 tensor operand/result; the default
+        if not is_coreai_supported_variant(node):
+            self.log_once(
+                f"Core AI cannot lower these arguments of {name} ({node.name}); "
+                "leaving out of delegate"
+            )
+            return False
+
+        # The delegate boundary cannot carry Python or symbolic scalars, and
+        # Core AI narrows i64/f64 tensors to 32-bit. Reject nodes with scalar
+        # operands/results or i64/f64 tensor operands/results; the default
         # NarrowToCoreAIDtypesPass casts i64/f64 to 32-bit at the EP boundary so
         # only the boundary cast (which keeps an i64/f64 tensor) is left out.
         for val in _node_tensor_vals(node):
-            if isinstance(val, (torch.SymInt, torch.SymFloat, torch.SymBool)):
+            if isinstance(
+                val, (int, float, bool, torch.SymInt, torch.SymFloat, torch.SymBool)
+            ):
                 self.log_once(
-                    f"Node {node.name} has a symbolic scalar operand; "
+                    f"Node {node.name} has a scalar operand or result; "
                     "leaving out of delegate"
                 )
                 return False

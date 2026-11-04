@@ -50,9 +50,6 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
             "ovr_config//os:android": android_flags,
             "ovr_config//os:macos": mac_flags,
         }) + select({
-            "//third-party/cuda:windows-cuda-11": [
-                "-DVK_USE_PLATFORM_WIN32_KHR",
-            ],
             "DEFAULT": [],
             "ovr_config//os:android": [
                 "-DVK_USE_PLATFORM_ANDROID_KHR",

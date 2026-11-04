@@ -1394,6 +1394,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs coremldelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_COREAI)
+    list(APPEND _dep_libs coreaidelegate)
+  endif()
+
   if(EXECUTORCH_BUILD_VGF)
     list(APPEND _dep_libs vgf_backend)
   endif()

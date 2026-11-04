@@ -24,7 +24,7 @@ static Tensor q8csw_linear_reference(
   const Tensor* bias = spec.at("args").at(bi).is_null()
       ? nullptr
       : &tensor_arg(spec, bi, tensors);
-  if (quantized) {
+  if (quantized && int8_dot_product(spec)) {
     const float scale = q8ta::scale(spec, 1);
     const int64_t zp = q8ta::integer(spec, 2);
     require(
