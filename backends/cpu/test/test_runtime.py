@@ -294,3 +294,18 @@ class CPURuntimeTest(unittest.TestCase):
                 report = _plan_report(log)
                 self.assertEqual(report["released_constant_bytes"], released)
                 torch.testing.assert_close(actual, model(*inputs), rtol=1e-5, atol=1e-5)
+
+    def test_plan_report_counts_released_weight_conversions(self):
+        model = torch.nn.Conv2d(3, 4, 3).eval()
+        inputs = (torch.randn(1, 3, 8, 8),)
+
+        def run():
+            with self._lower(model, inputs) as runtime:
+                return runtime.forward(inputs)[0]
+
+        actual, log = _run_capturing_stderr(run)
+        report = _plan_report(log)
+        # The 4x3x3x3 weight and its readable tail, converted to XNNPACK's layout.
+        self.assertEqual(report["released_private_constant_bytes"], 432 + 64)
+        self.assertEqual(report["private_constant_bytes"], 0)
+        torch.testing.assert_close(actual, model(*inputs), rtol=1e-5, atol=1e-5)

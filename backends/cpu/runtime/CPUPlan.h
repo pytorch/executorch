@@ -60,6 +60,9 @@ class CPUPlan {
   size_t private_constant_bytes() const {
     return private_constant_bytes_;
   }
+  size_t released_private_constant_bytes() const {
+    return released_private_constant_bytes_;
+  }
 
  private:
   runtime::Error allocate_activations(runtime::MemoryAllocator& allocator);
@@ -75,6 +78,7 @@ class CPUPlan {
   Buffer scratch_;
   size_t arena_bytes_ = 0;
   size_t private_constant_bytes_ = 0;
+  size_t released_private_constant_bytes_ = 0;
   bool prepared_ = false;
   bool preparation_started_ = false;
 };

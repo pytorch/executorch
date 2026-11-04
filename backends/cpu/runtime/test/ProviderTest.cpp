@@ -354,6 +354,9 @@ TEST_F(ProviderTest, XNNPACKSharesWeightConversionsAcrossRegions) {
   ASSERT_TRUE(second.ok());
   EXPECT_EQ(private_bytes, 36 * sizeof(float) + kReadableTail);
   ASSERT_EQ(provider->finish(), Error::Ok);
+  EXPECT_EQ(
+      provider->released_private_constant_bytes(),
+      36 * sizeof(float) + kReadableTail);
   for (auto* executable : {first.get().get(), second.get().get()}) {
     ASSERT_EQ(executable->reshape(), Error::Ok);
   }
@@ -382,6 +385,7 @@ TEST_F(ProviderTest, XNNPACKSharesWeightConversionsAcrossRegions) {
   ASSERT_TRUE(compatible.ok());
   EXPECT_EQ(private_bytes, 0);
   ASSERT_EQ(provider->finish(), Error::Ok);
+  EXPECT_EQ(provider->released_private_constant_bytes(), 0);
   ASSERT_EQ(compatible.get()->reshape(), Error::Ok);
   std::memset(buffers[1].data, 0xFF, buffers[1].readable_bytes);
   buffers[1] = {};
