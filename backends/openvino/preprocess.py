@@ -6,7 +6,7 @@
 
 # mypy: disable-error-code=import-not-found
 
-from typing import final, List
+from typing import final, List, Optional
 
 import torch
 from executorch.backends.openvino._passes import (
@@ -63,6 +63,11 @@ def _match_partition_inputs(
         )
 
 
+def _inference_precision(device: str, requested: Optional[str]) -> Optional[str]:
+    """The INFERENCE_PRECISION_HINT to pass, or None for the device's default."""
+    return requested or ("f32" if device.startswith("CPU") else None)
+
+
 def _copy_returned_inputs(model, device: str) -> None:
     """Make the converted model compute each output that is one of its inputs.
 
@@ -70,8 +75,10 @@ def _copy_returned_inputs(model, device: str) -> None:
     is the input itself. The CPU plugin does not write it, and can overwrite
     the input with the output buffer's old contents. OpenVINO keeps an
     Identity between an input and an output, and the CPU plugin runs it as a
-    copy, while it can remove a Convert to the same type. Other devices are
-    left as they are, since neither the problem nor Identity was checked there.
+    copy, while it can remove a Convert to the same type. On an ARM CPU at
+    f16, it rounds this copy of a float input, like its other float outputs.
+    Other devices are left as they are, since neither the problem nor Identity
+    was checked there.
     """
     if not device.startswith("CPU"):
         return
@@ -169,7 +176,7 @@ class OpenvinoBackend(BackendDetails):
             ppp.input(i).preprocess().custom(lambda x: opset13.squeeze(x, 0).output(0))
         # On ARM CPUs OpenVINO fixes the precision here, not when the runtime
         # imports the model, so this must follow the same rule as the runtime.
-        precision = requested_precision or ("f32" if device.startswith("CPU") else None)
+        precision = _inference_precision(device, requested_precision)
         config = {"INFERENCE_PRECISION_HINT": precision} if precision else {}
         compiled = compile_model(ppp.build(), device, config)
         model_bytes = compiled.export_model()

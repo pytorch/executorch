@@ -56,11 +56,24 @@ class TestCopyOperator(BaseOpenvinoOpTest):
         self.execute_layer_test(ChannelsLastMean(), (torch.randn(2, 3, 4, 5),))
 
     def test_copy_of_constant_as_output(self):
+        if not self.device.startswith("CPU"):
+            self.skipTest("float copies stay only in float32, the CPU default")
+
         class CopyOfConstant(torch.nn.Module):
-            def __init__(self, kind, memory_format=None):
+            def __init__(self, kind, memory_format=None, dtype=torch.float32):
                 super().__init__()
                 self.memory_format = memory_format
-                value = torch.randn(2, 3, 4, 5)
+                if dtype.is_floating_point:
+                    value = torch.randn(2, 3, 4, 5).to(dtype)
+                elif dtype == torch.bool:
+                    value = torch.randn(2, 3, 4, 5) > 0
+                else:
+                    # float16 holds every integer only up to 2048, so these
+                    # show a copy rounded through it, and x + constant stays
+                    # in its range.
+                    info = torch.iinfo(dtype)
+                    low, high = max(info.min, -(2**15)), min(info.max, 2**15)
+                    value = torch.randint(low, high, (2, 3, 4, 5), dtype=dtype)
                 if kind == "parameter":
                     self.constant = torch.nn.Parameter(value)
                 elif kind == "buffer":
@@ -82,19 +95,40 @@ class TestCopyOperator(BaseOpenvinoOpTest):
                 CopyOfConstant("buffer", torch.preserve_format),
                 EdgeCompileConfig(_skip_dim_order=True),
             ),
+            # The precision changes only how OpenVINO computes floats.
+            "int32 buffer, f16 precision": (
+                CopyOfConstant("buffer", dtype=torch.int32),
+                None,
+                CompileSpec("inference_precision", b"f16"),
+            ),
         }
-        for name, (module, config) in cases.items():
+        for dtype in (
+            torch.bool,
+            torch.uint8,
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.float16,
+            torch.bfloat16,
+        ):
+            cases[f"{dtype} buffer"] = (CopyOfConstant("buffer", dtype=dtype), None)
+        for name, (module, config, *compile_specs) in cases.items():
             with self.subTest(case=name):
+                inputs = (torch.randn(2, 3, 4, 5),)
                 program = self.execute_layer_test(
                     module,
-                    (torch.randn(2, 3, 4, 5),),
+                    inputs,
                     more_inputs=((torch.randn(2, 3, 4, 5),),),
+                    compile_specs=tuple(compile_specs),
                     compile_config=config,
                 )
                 # OpenVINO gets a constant as its own data, not as an input, so
                 # the copy stays. Run outside, it would store the constant twice.
                 plan = program.executorch_program.execution_plan[0]
                 self.assertEqual(plan.operators, [])
+                # The tolerance above lets a copy rounded through float16 pass.
+                copy = self.execute_program(program, [inputs])[0][0]
+                torch.testing.assert_close(copy, module.constant, rtol=0, atol=0)
 
     def test_copy_of_constant_that_runs_outside(self):
         class Buffered(torch.nn.Module):
@@ -135,14 +169,22 @@ class TestCopyOperator(BaseOpenvinoOpTest):
             ),
             # OpenVINO's PyTorch frontend cannot return one constant twice.
             "two copies": (copy_and_copy_of_it, floats),
+            # In a lower precision OpenVINO can round a float copy.
+            "float16 precision": (
+                lambda b, x: (b.clone(), x + 1),
+                floats,
+                CompileSpec("inference_precision", b"f16"),
+            ),
             # The partitioner does not take atan, so the CPU stores the buffer
             # anyway, and a copy made there keeps it stored once.
             "also read outside": (lambda b, x: (b.clone(), torch.atan(b) + x), floats),
         }
-        for name, (body, buffer) in cases.items():
+        for name, (body, buffer, *compile_specs) in cases.items():
             with self.subTest(case=name):
                 program = self.execute_layer_test(
-                    Buffered(body, buffer), (torch.randn(2, 3, 4, 5),)
+                    Buffered(body, buffer),
+                    (torch.randn(2, 3, 4, 5),),
+                    compile_specs=tuple(compile_specs),
                 )
                 operators = program.executorch_program.execution_plan[0].operators
                 names = [op.name for op in operators]

@@ -10,7 +10,10 @@ from collections import Counter
 from typing import Callable, final, List, Optional, Tuple
 
 import torch
-from executorch.backends.openvino.preprocess import OpenvinoBackend
+from executorch.backends.openvino.preprocess import (
+    _inference_precision,
+    OpenvinoBackend,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -93,7 +96,7 @@ def _constants(program: ExportedProgram) -> set[torch.fx.Node]:
 
 
 def _remove_copies_of_inputs(
-    partition: Partition, constants: set[torch.fx.Node]
+    partition: Partition, constants: set[torch.fx.Node], dtypes: set[torch.dtype]
 ) -> None:
     """Leave out of the partition each copy that would return, unchanged, one
     of the partition's inputs or a constant OpenVINO cannot return.
@@ -106,11 +109,11 @@ def _remove_copies_of_inputs(
     A copy of a constant that only this partition reads stays too, since the
     constant is not a partition input. Such a copy still leaves when it is not
     in the default dim order, since OpenVINO writes every output in the default
-    one, when its type is not in _CONSTANT_COPY_DTYPES, or when another output
-    also returns that constant, since OpenVINO's PyTorch frontend cannot
-    convert two outputs of one constant. Like any input, a copy left out that is
-    not in the default dim order is still read wrong by the ops that use it
-    inside.
+    one, when its type is not in dtypes, the types OpenVINO can return, or when
+    another output also returns that constant, since OpenVINO's PyTorch
+    frontend cannot convert two outputs of one constant. Like any input, a copy
+    left out that is not in the default dim order is still read wrong by the
+    ops that use it inside.
     """
 
     def copied(node: torch.fx.Node) -> Optional[torch.fx.Node]:
@@ -137,7 +140,7 @@ def _remove_copies_of_inputs(
                 and returns[source] == 1
                 and all(user in partition.nodes for user in source.users)
                 and node.meta["val"].is_contiguous()
-                and node.meta["val"].dtype in _CONSTANT_COPY_DTYPES
+                and node.meta["val"].dtype in dtypes
             )
         ]
         if not leaving:
@@ -361,8 +364,21 @@ class OpenvinoPartitioner(Partitioner):
 
         partition_tags = {}
         constants = _constants(exported_program)
+        options = {
+            spec.key: spec.value.decode() for spec in self.delegation_spec.compile_specs
+        }
+        precision = _inference_precision(
+            options.get("device", "CPU"), options.get("inference_precision")
+        )
+        # OpenVINO can round a float copy in any precision but f32, as an ARM
+        # CPU does in f16.
+        dtypes = {
+            dtype
+            for dtype in _CONSTANT_COPY_DTYPES
+            if precision == "f32" or not dtype.is_floating_point
+        }
         for partition in partition_list:
-            _remove_copies_of_inputs(partition, constants)
+            _remove_copies_of_inputs(partition, constants, dtypes)
             for node in partition.nodes:
                 tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = tag
