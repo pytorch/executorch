@@ -11,6 +11,11 @@ on:
     branches:
       - release/*
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source ref for the complete release validation run
+        type: string
+        default: v1.6.0-rc4
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
@@ -32,6 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
+          ref: ${{ inputs.source_ref || github.sha }}
           submodules: 'false'
       - uses: actions/setup-python@v4
         with:
@@ -39,7 +45,7 @@ jobs:
       - name: Extract the list of models to test
         id: gather-models
         env:
-          EFFECTIVE_EVENT: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ciflow/periodic') && 'schedule' || github.event_name }}
+          EFFECTIVE_EVENT: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ciflow/periodic'))) && 'schedule' || github.event_name }}
         run: |
           set -eux
           PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --event "${EFFECTIVE_EVENT}"
@@ -58,7 +64,7 @@ jobs:
       runner: ${{ matrix.runner }}
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      ref: ${{ inputs.source_ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
       timeout: ${{ matrix.timeout }}
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
@@ -73,3 +79,122 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
         # Build and test ExecuTorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
+
+  # Scheduled-only checks use the same source ref as the release model matrix.
+  test-pico2-fp32-build:
+    needs: docker-image
+    name: test-pico2-fp32-build
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: recursive
+      ref: ${{ inputs.source_ref || github.sha }}
+      timeout: 120
+      script: |
+        set -euo pipefail
+        # Activate conda environment from the docker image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        # Install ARM baremetal toolchain
+        .ci/scripts/setup-arm-baremetal-tools.sh
+        source examples/arm/arm-scratch/setup_path.sh
+
+        echo "=== Step 1: Export FP32 model ==="
+        cd examples/raspberry_pi/pico2
+        python export_mlp_mnist.py
+        test -f balanced_tiny_mlp_mnist.pte
+        echo "FP32 model exported: $(ls -la balanced_tiny_mlp_mnist.pte)"
+        cd -
+
+        echo "=== Step 2: Build FP32 firmware ==="
+        ./examples/raspberry_pi/pico2/build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte
+
+        echo "=== Step 3: Validate FP32 artifacts ==="
+        ELF_FILE=examples/raspberry_pi/pico2/build/executorch_pico.elf
+        UF2_FILE=examples/raspberry_pi/pico2/build/executorch_pico.uf2
+
+        test -f "${ELF_FILE}" || { echo "FAIL: .elf not found"; exit 1; }
+        test -f "${UF2_FILE}" || { echo "FAIL: .uf2 not found"; exit 1; }
+
+        echo "--- Section sizes ---"
+        arm-none-eabi-size -A "${ELF_FILE}"
+
+        echo "--- Section headers ---"
+        arm-none-eabi-objdump -h "${ELF_FILE}"
+
+        echo "--- Key symbols ---"
+        arm-none-eabi-nm --print-size --size-sort --radix=d "${ELF_FILE}" | tail -20
+
+        # Validate binary fits in Pico2 memory using aggregated totals:
+        #   flash = text + data (4MB = 4194304 bytes)
+        #   SRAM  = data + bss  (520KB = 532480 bytes)
+        eval $(arm-none-eabi-size "${ELF_FILE}" | awk 'NR==2 {printf "TEXT_SIZE=%d DATA_SIZE=%d BSS_SIZE=%d", $1, $2, $3}')
+
+        FLASH_USED=$((TEXT_SIZE + DATA_SIZE))
+        SRAM_USED=$((DATA_SIZE + BSS_SIZE))
+        echo "FP32 binary: text=${TEXT_SIZE} data=${DATA_SIZE} bss=${BSS_SIZE} => flash=${FLASH_USED} sram=${SRAM_USED}"
+
+        if [ "${FLASH_USED}" -gt 4194304 ]; then
+          echo "FAIL: flash usage (${FLASH_USED}) exceeds 4MB"
+          exit 1
+        fi
+        if [ "${SRAM_USED}" -gt 532480 ]; then
+          echo "FAIL: SRAM usage (${SRAM_USED}) exceeds 520KB"
+          exit 1
+        fi
+        echo "PASS: FP32 firmware fits in Pico2 memory (SRAM: ${SRAM_USED}/532480, Flash: ${FLASH_USED}/4194304)"
+    if: github.event_name == 'workflow_dispatch'
+  test-pico2-cmsis-build:
+    needs: docker-image
+    name: test-pico2-cmsis-nn-build
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: recursive
+      ref: ${{ inputs.source_ref || github.sha }}
+      timeout: 120
+      script: "set -euo pipefail\n# Activate conda environment from the docker image\nCONDA_ENV=$(conda env list --json | jq -r \".envs | .[-1]\")\nconda activate \"${CONDA_ENV}\"\n\nsource .ci/scripts/utils.sh\ninstall_executorch \"--use-pt-pinned-commit\"\n\n# Install ARM baremetal toolchain\n.ci/scripts/setup-arm-baremetal-tools.sh\nsource examples/arm/arm-scratch/setup_path.sh\n\necho \"=== Step 1: Export INT8 CMSIS-NN model ===\"\ncd examples/raspberry_pi/pico2\npython export_mlp_mnist_cmsis.py\ntest -f balanced_tiny_mlp_mnist_cmsis.pte\necho \"INT8 model exported: $(ls -la balanced_tiny_mlp_mnist_cmsis.pte)\"\ncd -\n\necho \"=== Step 2: Build CMSIS-NN firmware ===\"\n./examples/raspberry_pi/pico2/build_firmware_pico.sh --cmsis --model=balanced_tiny_mlp_mnist_cmsis.pte\n\necho \"=== Step 3: Validate CMSIS-NN artifacts ===\"\nELF_FILE=examples/raspberry_pi/pico2/build/executorch_pico.elf\nUF2_FILE=examples/raspberry_pi/pico2/build/executorch_pico.uf2\n\ntest -f \"${ELF_FILE}\" || { echo\
+        \ \"FAIL: .elf not found\"; exit 1; }\ntest -f \"${UF2_FILE}\" || { echo \"FAIL: .uf2 not found\"; exit 1; }\n\necho \"--- Section sizes ---\"\narm-none-eabi-size -A \"${ELF_FILE}\"\n\necho \"--- Section headers ---\"\narm-none-eabi-objdump -h \"${ELF_FILE}\"\n\necho \"--- Key symbols ---\"\narm-none-eabi-nm --print-size --size-sort --radix=d \"${ELF_FILE}\" | tail -20\n\n# Verify CMSIS-NN symbols are linked\nCMSIS_NN_SYMBOLS=$(arm-none-eabi-nm \"${ELF_FILE}\" | grep -E '(cmsis_nn|arm_nn)' || true)\nif [ -n \"${CMSIS_NN_SYMBOLS}\" ]; then\n  echo \"PASS: CMSIS-NN symbols found in binary\"\n  printf '%s\\n' \"${CMSIS_NN_SYMBOLS}\" | head -20\nelse\n  echo \"FAIL: No CMSIS-NN symbols detected \u2014 cortex_m backend may not be linked correctly\"\n  exit 1\nfi\n\n# Validate binary fits in Pico2 memory using aggregated totals:\n#   flash = text + data (4MB = 4194304 bytes)\n#   SRAM  = data + bss  (520KB = 532480 bytes)\neval $(arm-none-eabi-size \"${ELF_FILE}\" | awk 'NR==2 {printf\
+        \ \"TEXT_SIZE=%d DATA_SIZE=%d BSS_SIZE=%d\", $1, $2, $3}')\n\nFLASH_USED=$((TEXT_SIZE + DATA_SIZE))\nSRAM_USED=$((DATA_SIZE + BSS_SIZE))\necho \"CMSIS-NN binary: text=${TEXT_SIZE} data=${DATA_SIZE} bss=${BSS_SIZE} => flash=${FLASH_USED} sram=${SRAM_USED}\"\n\nif [ \"${FLASH_USED}\" -gt 4194304 ]; then\n  echo \"FAIL: flash usage (${FLASH_USED}) exceeds 4MB\"\n  exit 1\nfi\nif [ \"${SRAM_USED}\" -gt 532480 ]; then\n  echo \"FAIL: SRAM usage (${SRAM_USED}) exceeds 520KB\"\n  exit 1\nfi\necho \"PASS: CMSIS-NN firmware fits in Pico2 memory (SRAM: ${SRAM_USED}/532480, Flash: ${FLASH_USED}/4194304)\"\n"
+    if: github.event_name == 'workflow_dispatch'
+  check-c10-sync:
+    permissions:
+      id-token: write
+      contents: read
+    name: check-c10-sync
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        ref: ${{ inputs.source_ref || github.sha }}
+    - name: Clone PyTorch
+      run: |
+        .ci/scripts/check_c10_sync.sh
+    if: github.event_name == 'workflow_dispatch'
+  coreml-nightly-int8:
+    name: Core ML nightly int8 models
+    if: github.event_name == 'workflow_dispatch'
+    uses: pytorch/executorch/.github/workflows/_test_backend.yml@v1.6.0-rc4
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      backend: coreml
+      flows: '["coreml_static_int8"]'
+      exclude: '[{"flow": "coreml_static_int8", "suite": "operators"}]'
+      ref: ${{ inputs.source_ref || github.sha }}
+      timeout: 180
+      run-macos: true
