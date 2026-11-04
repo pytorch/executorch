@@ -40,12 +40,6 @@ The main configuration point for the lowering is the `VgfCompileSpec` consumed b
 To extract the VGF file for integration into applications without the ExecuTorch runtime, use `VgfCompileSpec.dump_intermediate_artifacts_to()`.  
 The full user-facing API is documented below.
 
-For static mutable buffers such as KV caches, set `alias_buffer_mutations=True`.
-Eligible buffers must be zero-initialized `int8` tensors whose reads and mutation
-are contained in one delegated partition, and whose new value is not returned or
-read outside that partition. The backend aliases each buffer's
-input and mutation output to persistent VGF storage across invocations.
-
 ```python
 class VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specification.TosaSpecification | str | None = None, compiler_flags: list[str] | None = None, emit_debug_info: bool = False)
 ```
