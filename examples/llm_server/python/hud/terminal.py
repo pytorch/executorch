@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 from collections import deque
 from contextlib import suppress
@@ -214,8 +215,11 @@ def render(
         if len(heading) + 1 + reserve > available:
             break
         requests = sorted(
-            (row for row in rows if row.session is session),
-            key=lambda row: (row.ended is not None, -row.number),
+            (row for row in rows if row.session_id == session_id),
+            key=lambda row: (
+                row.ended is not None,
+                -(row.ended if row.ended is not None else row.started),
+            ),
         )
         count = min(
             max(1, sum(row.ended is None for row in requests)),
@@ -261,10 +265,16 @@ class TerminalHUD(logging.Handler):
         self._messages = deque(maxlen=3)
         self._handlers = []
         self._task = None
+        self._diagnostics = None
+        self._active = False
 
     def emit(self, record):
-        if record.levelno >= logging.WARNING:
-            self._messages.append(_text(self.format(record)))
+        message = self.format(record)
+        self._messages.append((record.levelno, _text(message)))
+        if record.levelno >= logging.WARNING and self._diagnostics is not None:
+            self._diagnostics.write(
+                "".join(c for c in message if c.isprintable() or c in "\n\t") + "\n"
+            )
 
     def draw(self):
         try:
@@ -287,10 +297,20 @@ class TerminalHUD(logging.Handler):
             max(1, height - len(recent)),
         )
         frame_lines = frame.splitlines()
-        messages = [message[:width] for message in recent]
+        messages = [message[:width] for _, message in recent]
         if self._color:
             frame_lines = [_colorize(line) for line in frame_lines]
-            messages = [_style(message, "33") for message in messages]
+            messages = [
+                _style(
+                    message,
+                    (
+                        "1;31"
+                        if level >= logging.ERROR
+                        else "33" if level >= logging.WARNING else "2"
+                    ),
+                )
+                for (level, _), message in zip(recent, messages)
+            ]
         lines = (frame_lines + messages)[:height]
         # Address rows directly: newlines and full-screen clears can scroll.
         self.stream.write(
@@ -304,11 +324,16 @@ class TerminalHUD(logging.Handler):
             while True:
                 self.draw()
                 await asyncio.sleep(0.5)
-        except (OSError, ValueError):
-            pass  # A detached terminal must not stop serving.
+        except Exception:  # The dashboard must not fail the serving lifespan.
+            self._restore()
+            logging.getLogger(__name__).exception(
+                "HUD stopped; continuing with plain logs"
+            )
 
     async def __aenter__(self):
+        self._diagnostics = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
         self.stream.write("\x1b[?1049h\x1b[?25l")
+        self._active = True
         for logger in [
             logging.getLogger(),
             logging.getLogger("uvicorn"),
@@ -330,18 +355,36 @@ class TerminalHUD(logging.Handler):
         self._task = asyncio.create_task(self._refresh())
         return self
 
+    def _restore(self):
+        if not self._active:
+            return
+        self._active = False
+        for logger, handlers in self._handlers:
+            logger.handlers = handlers
+        self.acquire()
+        try:
+            diagnostics, self._diagnostics = self._diagnostics, None
+            try:
+                with suppress(OSError, ValueError):
+                    if self._color:
+                        self.stream.write("\x1b[0m")
+                    self.stream.write("\x1b[?25h\x1b[?1049l")
+                    diagnostics.seek(0)
+                    shutil.copyfileobj(diagnostics, self.stream)
+                    self.stream.flush()
+            finally:
+                diagnostics.close()
+        finally:
+            self.release()
+
     async def __aexit__(self, *args):
         self._task.cancel()
         try:
             with suppress(asyncio.CancelledError):
                 await self._task
         finally:
-            for logger, handlers in self._handlers:
-                logger.handlers = handlers
+            self._restore()
             with suppress(OSError, ValueError):
-                if self._color:
-                    self.stream.write("\x1b[0m")
-                self.stream.write("\x1b[?25h\x1b[?1049l")
                 self.stream.write(
                     f"Served {self.metrics.completed} requests; {self.metrics.errors} errors, "
                     f"{self.metrics.cancelled} cancelled.\n"

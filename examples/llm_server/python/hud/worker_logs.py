@@ -10,23 +10,48 @@ import asyncio
 import logging
 import os
 import re
+import sys
 from contextlib import asynccontextmanager, suppress
-from contextvars import ContextVar
 
-worker_stderr = ContextVar("llm_worker_stderr", default=None)
+from .terminal import terminal_available
+
 logger = logging.getLogger(__name__)
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 async def _relay(reader):
-    while chunk := await reader.read(4096):
-        for line in _ANSI.sub("", chunk.decode("utf-8", errors="replace")).splitlines():
-            if line.strip():
-                logger.warning("%s", line)
+    truncated = False
+    while True:
+        try:
+            line = await reader.readuntil(b"\n")
+        except asyncio.LimitOverrunError as error:
+            await reader.readexactly(error.consumed)
+            truncated = True
+            continue
+        except asyncio.IncompleteReadError as error:
+            line = error.partial
+            if not line:
+                break
+        message = _ANSI.sub("", line.decode("utf-8", errors="replace")).rstrip()
+        if truncated:
+            message = "[truncated native log] " + message
+            truncated = False
+        if not message:
+            continue
+        if re.match(r"(?i)^(?:[ef](?:\d|\s)|error\b|fatal\b)", message):
+            level = logging.ERROR
+        elif re.match(r"(?i)^(?:i(?:\d|\s)|info\b)", message):
+            level = logging.INFO
+        else:
+            level = logging.WARNING
+        logger.log(level, "%s", message)
 
 
 @asynccontextmanager
 async def capture_worker_logs():
+    if not terminal_available(sys.stderr):
+        yield None
+        return
     read_fd, write_fd = os.pipe()
     pipe = os.fdopen(read_fd, "rb", buffering=0)
     reader = asyncio.StreamReader()
@@ -39,11 +64,9 @@ async def capture_worker_logs():
         os.close(write_fd)
         raise
     relay = asyncio.create_task(_relay(reader), name="hud-worker-logs")
-    token = worker_stderr.set(write_fd)
     try:
-        yield
+        yield write_fd
     finally:
-        worker_stderr.reset(token)
         os.close(write_fd)
         try:
             with suppress(asyncio.TimeoutError):

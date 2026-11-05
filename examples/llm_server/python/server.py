@@ -40,7 +40,7 @@ from starlette.requests import ClientDisconnect
 from .chat_template import ChatTemplate
 from .errors import APIError
 from .hud import install as install_hud
-from .hud.metrics import current_turn
+from .hud.metrics import record_error
 from .protocol import ChatCompletionRequest, ModelCard, ModelList
 from .serving_chat import ServingChat
 from .session_runtime import SessionRuntime
@@ -98,13 +98,17 @@ async def _session_op(
 
 
 async def _create_with_disconnect(
-    request: Request, serving: ServingChat, req: ChatCompletionRequest
+    request: Request, serving: ServingChat, req: ChatCompletionRequest, observer=None
 ):
     async def wait_disconnect():
         while (await request.receive())["type"] != "http.disconnect":
             pass
 
-    creation = asyncio.create_task(serving.create(req))
+    creation = asyncio.create_task(
+        serving.create(req, observer=observer)
+        if observer is not None
+        else serving.create(req)
+    )
     disconnect = asyncio.create_task(wait_disconnect())
     transferred = False
 
@@ -158,15 +162,13 @@ class _ClosingStreamingResponse(StreamingResponse):
                 # Clients may disconnect after [DONE], before iterator cleanup.
                 completed = True
 
-        token = current_turn.set(self.turn)
         try:
             await super().__call__(scope, observed_receive, observed_send)
         except (asyncio.CancelledError, ClientDisconnect):
             disconnected = True
             raise
         except Exception as error:
-            if self.turn is not None:
-                self.turn.error = type(error).__name__
+            record_error(self.turn, type(error).__name__)
             raise
         finally:
             try:
@@ -184,7 +186,6 @@ class _ClosingStreamingResponse(StreamingResponse):
                             self.turn,
                             "cancelled" if disconnected and not completed else "done",
                         )
-                    current_turn.reset(token)
 
 
 async def _with_heartbeats(stream, interval=15.0):
@@ -263,11 +264,12 @@ def _current_serving(app: FastAPI) -> ServingChat:
 async def _chat_response(app, request, req):
     metrics = app.state.telemetry
     turn = metrics.begin(req.session_id) if metrics is not None else None
-    token = current_turn.set(turn)
     transferred = False
     state = "done"
     try:
-        result = await _create_with_disconnect(request, _current_serving(app), req)
+        result = await _create_with_disconnect(
+            request, _current_serving(app), req, turn
+        )
         if req.stream:
             response = _ClosingStreamingResponse(
                 result, media_type="text/event-stream", metrics=metrics, turn=turn
@@ -282,17 +284,14 @@ async def _chat_response(app, request, req):
         state = "cancelled"
         raise
     except APIError as e:
-        if turn is not None:
-            turn.error = e.code or e.err_type
+        record_error(turn, e.code or e.err_type)
         return JSONResponse(_current_serving(app).error_body(e), status_code=e.status)
     except Exception as error:
-        if turn is not None:
-            turn.error = type(error).__name__
+        record_error(turn, type(error).__name__)
         raise
     finally:
         if turn is not None and not transferred:
             metrics.finish(turn, state)
-        current_turn.reset(token)
 
 
 def build_app(
@@ -303,20 +302,26 @@ def build_app(
     model_path: Optional[str] = None,
     max_context: Optional[int] = None,
     max_concurrent_requests: Optional[int] = None,
+    hud: bool = False,
+    listen_address: Optional[str] = None,
 ) -> FastAPI:
     """Build an app with either an injected adapter or a lifespan-owned factory.
 
     The factory owns partial-startup cleanup and awaited runtime shutdown. Direct
     instances retain FastAPI's default lifespan and are not closed by this app.
+    HUD-enabled launchers must capture worker stderr; embedders default to plain logs.
     """
     app = _create_serving_app(serving, serving_factory)
-    install_hud(
-        app,
-        model_id,
-        model_path=model_path,
-        context=max_context,
-        capacity=max_concurrent_requests,
-    )
+    app.state.telemetry = None
+    if hud:
+        install_hud(
+            app,
+            model_id,
+            model_path=model_path,
+            context=max_context,
+            capacity=max_concurrent_requests,
+            listen_address=listen_address,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):
@@ -486,13 +491,7 @@ def main() -> None:
         tool_detector_cls=HermesDetector,
     )
 
-    app = build_app(
-        serving,
-        args.model_id,
-        model_path=args.model_path,
-        max_context=args.max_context,
-        max_concurrent_requests=runtime.max_concurrent_requests,
-    )
+    app = build_app(serving, args.model_id)
 
     @app.on_event("shutdown")
     def _stop_worker():

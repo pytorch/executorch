@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
-from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -65,6 +64,7 @@ class Session:
     context_request: int = 0
     context_epoch: int = 0
     last_request: int = 0
+    closed: bool = False
 
 
 @dataclass
@@ -74,6 +74,7 @@ class Turn:
     started: float
     session: Session = field(repr=False)
     server_totals: Totals = field(repr=False)
+    metrics: Metrics = field(repr=False)
     state: str = "waiting"
     ended: Optional[float] = None
     first_output: Optional[float] = None
@@ -84,6 +85,19 @@ class Turn:
     reused_tokens: Optional[int] = None
     error: Optional[str] = None
     context_epoch: int = 0
+
+    def activate(self) -> None:
+        if self.session.closed:
+            previous = self.session
+            session = self.metrics.sessions.get(self.session_id)
+            if session is None or session.closed:
+                session = Session()
+                self.metrics.sessions[self.session_id] = session
+            previous.totals.requests -= 1
+            session.totals.requests += 1
+            session.last_request = max(session.last_request, self.number)
+            self.session = session
+        self.context_epoch = self.session.context_epoch
 
     def output(self) -> None:
         if self.first_output is None:
@@ -110,7 +124,9 @@ class Turn:
             self.session.context_request = self.number
 
 
-current_turn: ContextVar[Optional[Turn]] = ContextVar("llm_server_turn", default=None)
+def record_error(turn: Optional[Turn], category: str) -> None:
+    if turn is not None and turn.error is None:
+        turn.error = category
 
 
 class Metrics:
@@ -143,7 +159,9 @@ class Metrics:
         session.last_request = self._sequence
         session.totals.requests += 1
         self.totals.requests += 1
-        turn = Turn(self._sequence, session_id, time.monotonic(), session, self.totals)
+        turn = Turn(
+            self._sequence, session_id, time.monotonic(), session, self.totals, self
+        )
         self.turns[turn.number] = turn
         return turn
 
@@ -159,11 +177,20 @@ class Metrics:
             turn.state = "done"
         self.totals.finish(turn)
         turn.session.totals.finish(turn)
-        finished = [
-            key
-            for key, row in self.turns.items()
-            if row.session is turn.session and row.ended is not None
-        ]
+        if turn.session.closed:
+            self.turns.pop(turn.number, None)
+            if self.sessions.get(turn.session_id) is turn.session and not any(
+                row.session is turn.session for row in self.turns.values()
+            ):
+                self.sessions.pop(turn.session_id)
+        finished = sorted(
+            (
+                key
+                for key, row in self.turns.items()
+                if row.session is turn.session and row.ended is not None
+            ),
+            key=lambda key: self.turns[key].ended,
+        )
         for key in finished[: -min(3, self.history_size)]:
             del self.turns[key]
         active = {row.session_id for row in self.turns.values() if row.ended is None}
@@ -172,10 +199,15 @@ class Metrics:
             self.close_session(session_id)
 
     def close_session(self, session_id: Optional[str]) -> None:
-        session = self.sessions.pop(session_id, None)
+        session = self.sessions.get(session_id)
+        if session is None:
+            return
+        session.closed = True
         for key, turn in list(self.turns.items()):
-            if turn.session is session:
+            if turn.session is session and turn.ended is not None:
                 del self.turns[key]
+        if not any(row.session is session for row in self.turns.values()):
+            self.sessions.pop(session_id)
 
     def reset_session(self, session_id: str) -> None:
         session = self.sessions.get(session_id)

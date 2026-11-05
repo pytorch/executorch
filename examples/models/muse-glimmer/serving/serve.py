@@ -335,7 +335,7 @@ class MuseGlimmerServingChat(ServingChat):
             }
         )
 
-    async def _create(self, req: ChatCompletionRequest, lease, admission):
+    async def _create(self, req: ChatCompletionRequest, lease, admission, observer=None):
         # The inherited create() owns the transaction around preparation and
         # response cleanup; only image-aware prompt construction differs here.
         req = self._normalize_reasoning(req)
@@ -393,6 +393,7 @@ class MuseGlimmerServingChat(ServingChat):
             lease,
             admission,
             tool_context=tool_context,
+            observer=observer,
         )
 
 

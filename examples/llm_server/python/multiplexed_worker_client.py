@@ -20,7 +20,6 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
-from .hud.worker_logs import worker_stderr
 from .worker_client import (
     _decode_worker_json,
     _PROCESS_WAIT_TIMEOUT_SECONDS,
@@ -834,6 +833,7 @@ async def spawn_multiplexed_worker(
     env: Optional[dict] = None,
     cwd: Optional[str] = None,
     *,
+    stderr=None,
     mailbox_capacity: int = 64,
     max_buffered_chars: int = 1024 * 1024,
     max_message_bytes: int = _MAX_MESSAGE_BYTES,
@@ -858,7 +858,7 @@ async def spawn_multiplexed_worker(
         *cmd,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=worker_stderr.get(),
+        stderr=stderr,
         env=env,
         cwd=cwd,
         limit=max_message_bytes,

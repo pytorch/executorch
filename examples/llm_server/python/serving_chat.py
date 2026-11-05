@@ -26,7 +26,7 @@ from .errors import (
     ModelNotFound,
     SessionCapacity,
 )
-from .hud.metrics import current_turn
+from .hud.metrics import record_error
 from .openai_transcript import OpenAITranscriptState
 from .protocol import (
     _new_id,
@@ -591,9 +591,6 @@ class ServingChat:
 
     @staticmethod
     def _generation_error(error: Exception) -> APIError:
-        turn = current_turn.get()
-        if turn is not None:
-            turn.error = type(error).__name__
         if isinstance(error, APIError):
             return error
         if isinstance(error, WorkerError):
@@ -949,7 +946,8 @@ class ServingChat:
                 return True
         return False
 
-    async def create(self, req: ChatCompletionRequest):
+    async def create(self, req: ChatCompletionRequest, *, observer=None):
+        """Create a response; activate an optional request observer under the session lock."""
         if req.model is not None and req.model != self._model_id:
             raise ModelNotFound(req.model, self._model_id)
         self._reject_invalid_values(req)
@@ -971,7 +969,9 @@ class ServingChat:
         try:
             admission = await lease.__aenter__()
             entered = True
-            result = await self._create(req, lease, admission)
+            if observer is not None:
+                observer.activate()
+            result = await self._create(req, lease, admission, observer)
             if req.stream:
                 entered = False  # The returned iterator owns the transaction.
             return result
@@ -981,7 +981,7 @@ class ServingChat:
             if entered:
                 await lease.__aexit__(None, None, None)
 
-    async def _create(self, req: ChatCompletionRequest, lease, admission):
+    async def _create(self, req: ChatCompletionRequest, lease, admission, observer=None):
         self._reject_unsupported_params(req)
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
@@ -1033,7 +1033,14 @@ class ServingChat:
             template_kwargs, tools=template_tools
         )
         return await self._create_response(
-            req, prompt_input, options, preamble, gen_stops, lease, admission
+            req,
+            prompt_input,
+            options,
+            preamble,
+            gen_stops,
+            lease,
+            admission,
+            observer=observer,
         )
 
     async def _retry_admission(
@@ -1070,6 +1077,7 @@ class ServingChat:
         lease,
         admission,
         tool_context=None,
+        observer=None,
     ):
         tool_context = tool_context if tool_context is not None else ToolContext()
         while True:
@@ -1083,6 +1091,7 @@ class ServingChat:
                     lease,
                     admission,
                     tool_context,
+                    observer,
                 )
             except (WorkerError, APIError) as error:
                 if not await self._retry_admission(error, admission):
@@ -1098,6 +1107,7 @@ class ServingChat:
         lease,
         admission,
         tool_context,
+        observer=None,
     ):
         # Legacy workers need explicit admission. Multiplexed generation opens
         # implicitly from its full prompt, preserving new-session prefix reuse.
@@ -1111,7 +1121,11 @@ class ServingChat:
             admission.pending = True
         stats = GenStats()
         generation = self._runtime.generate_stream(
-            req.session_id, prompt_input, options, stats
+            req.session_id,
+            prompt_input,
+            options,
+            stats,
+            **({"observer": observer} if observer is not None else {}),
         )
         if req.stream and self._multiplexed:
             await generation.wait_ready(timeout=self._streaming_preflight_timeout)
@@ -1121,13 +1135,19 @@ class ServingChat:
                 req.session_id,
                 generation,
                 lambda: self._runtime.generate_stream(
-                    req.session_id, prompt_input, options, stats
+                    req.session_id,
+                    prompt_input,
+                    options,
+                    stats,
+                    **({"observer": observer} if observer is not None else {}),
                 ),
                 admission,
             )
         if req.stream:
             return _ChatStream(
-                self._stream(req, preamble, gen_stops, generation, stats, tool_context),
+                self._stream(
+                    req, preamble, gen_stops, generation, stats, tool_context, observer
+                ),
                 lease,
                 generation,
             )
@@ -1414,6 +1434,7 @@ class ServingChat:
         generation: AsyncIterator[str],
         stats: GenStats,
         tool_context,
+        observer=None,
     ) -> AsyncIterator[str]:
         cid = _new_id("chatcmpl")
 
@@ -1494,6 +1515,7 @@ class ServingChat:
             await generation.aclose()
 
         if error is not None:
+            record_error(observer, type(error).__name__)
             err = self.error_body(self._generation_error(error))
             yield f"data: {json.dumps(err)}\n\n"
             yield "data: [DONE]\n\n"

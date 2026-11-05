@@ -28,7 +28,7 @@ from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Optional
 
-from .hud.metrics import current_turn
+from .hud.metrics import record_error
 from .multiplexed_worker_client import MultiplexedWorkerClient
 from .worker_client import WorkerError
 
@@ -114,7 +114,6 @@ class _WorkerRequest:
 
 
 def _copy_stats(stats: GenStats, s) -> None:
-    stats.terminal_received = True
     stats.prompt_tokens = s.num_prompt_tokens
     stats.completion_tokens = s.num_generated_tokens
     stats.finish_reason = getattr(s, "finish_reason", None)
@@ -130,6 +129,7 @@ def _copy_stats(stats: GenStats, s) -> None:
     stats.vision_encoder_ms = getattr(s, "vision_encoder_ms", None)
     stats.cancelled = getattr(s, "cancelled", False)
     stats.generated_token_ids = getattr(s, "generated_token_ids", None)
+    stats.terminal_received = True
 
 
 class _GenerationBridge:
@@ -320,8 +320,9 @@ class _RuntimeOperation:
 class Generation:
     """Lazy request-scoped iterator; close it when abandoning consumption."""
 
-    def __init__(self, runtime, session_id, prompt, options, stats):
+    def __init__(self, runtime, session_id, prompt, options, stats, observer=None):
         self.stats = stats if stats is not None else GenStats()
+        self.observer = observer
         self._runtime = runtime
         self._stream = None
         self._bridge = None
@@ -333,6 +334,11 @@ class Generation:
         self._cancel_requested = False
         self._closed = False
         self._iterator = runtime._generate_stream(session_id, prompt, options, self)
+
+    def _set_future(self, future):
+        self._future = future
+        if self.observer is not None:
+            future.add_done_callback(lambda _: self.observer.record_stats(self.stats))
 
     @property
     def request_id(self):
@@ -731,7 +737,8 @@ class SessionRuntime:
         future = self._own_task(
             asyncio.create_task(self._native_terminal(stream, generation.stats))
         )
-        operation.future = generation._future = future
+        operation.future = future
+        generation._set_future(future)
         try:
             yield stream
             await asyncio.shield(future)
@@ -751,13 +758,19 @@ class SessionRuntime:
         prompt: PromptInput,
         options: GenerationOptions,
         stats: Optional[GenStats] = None,
+        *,
+        observer=None,
     ) -> Generation:
-        """Return a lazy, cancellable stream compatible with async iteration."""
-        return Generation(self, session_id, prompt, options, stats)
+        """Return a lazy, cancellable stream compatible with async iteration.
+
+        An optional request observer receives text and final worker statistics,
+        even while the consumer is suspended or cancellation cleanup is pending.
+        """
+        return Generation(self, session_id, prompt, options, stats, observer)
 
     def _generate_stream(self, session_id, prompt, options, generation):
         stream = self._run_generation(session_id, prompt, options, generation)
-        turn = current_turn.get()
+        turn = generation.observer
         return (
             stream
             if turn is None
@@ -765,7 +778,6 @@ class SessionRuntime:
         )
 
     async def _observe_generation(self, stream, generation, turn):
-        turn.context_epoch = turn.session.context_epoch
         try:
             async with aclosing(stream):
                 async for item in stream:
@@ -774,13 +786,10 @@ class SessionRuntime:
                     yield item
         except Exception as error:
             # Store a category, never a prompt or raw worker error payload.
-            turn.error = type(error).__name__
+            record_error(turn, type(error).__name__)
             raise
         finally:
             turn.record_stats(generation.stats)
-            future = generation._future
-            if future is not None and not future.done():
-                future.add_done_callback(lambda _: turn.record_stats(generation.stats))
 
     async def _run_generation(self, session_id, prompt, options, generation):
         out_stats = generation.stats
@@ -826,7 +835,7 @@ class SessionRuntime:
             try:
                 future = loop.run_in_executor(self._executor, bridge.run)
                 operation.future = future
-                generation._future = future
+                generation._set_future(future)
                 self._bridges.add(bridge)
                 future.add_done_callback(lambda _: self._bridges.discard(bridge))
             except BaseException:
