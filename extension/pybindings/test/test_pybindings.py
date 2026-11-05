@@ -8,10 +8,13 @@
 
 import ctypes
 import gc
+import json
 import os
+import select
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import weakref
 from io import StringIO
@@ -50,6 +53,22 @@ class DLPackOnly:
 
     def __dlpack_device__(self):
         return self.array.__dlpack_device__()
+
+
+def write_llm_tokenizer(directory: str) -> str:
+    """Writes a tokenizer that the LLM runner loads without printing anything,
+    so that its only lines come through the runtime, outside any call of these
+    bindings, while it finds that the model next to it is missing."""
+    path = os.path.join(directory, "tokenizer.json")
+    with open(path, "w") as file:
+        json.dump(
+            {
+                "added_tokens": [],
+                "model": {"type": "BPE", "vocab": {"a": 0, "b": 1}, "merges": []},
+            },
+            file,
+        )
+    return path
 
 
 class PybindingsTest(unittest.TestCase):
@@ -377,6 +396,951 @@ print("all calls finished")
         )
         self.assertIn("all calls finished", completed.stdout)
 
+    def test_backend_logs_do_not_deadlock_other_threads(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("the script below uses the portable bindings")
+        if "XnnpackBackend" not in self.runtime._get_registered_backend_names():
+            self.skipTest("needs the XNNPACK backend")
+
+        script = """
+import os
+import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+import torch
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+    XnnpackPartitioner,
+)
+from executorch.exir import to_edge_transform_and_lower
+from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+from executorch.exir.schema import (
+    BackendDelegateDataReference,
+    BackendDelegateInlineData,
+    DataLocation,
+)
+from executorch.extension.pybindings import portable_lib
+
+
+class Add(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
+
+
+inputs = [torch.ones(2, 2), torch.ones(2, 2)]
+exported = torch.export.export(Add(), tuple(inputs))
+
+
+def broken_program(methods):
+    # XNNPACK logs a broken payload while it holds its workspace lock, which
+    # the global sharing mode shares between all methods.
+    schema = to_edge_transform_and_lower(
+        methods, partitioner=[XnnpackPartitioner()]
+    ).to_executorch().executorch_program
+    schema.execution_plan[0].delegates[0].processed = BackendDelegateDataReference(
+        location=DataLocation.INLINE, index=len(schema.backend_delegate_data)
+    )
+    schema.backend_delegate_data.append(BackendDelegateInlineData(data=b"\\x01" * 64))
+    return bytes(serialize_pte_binary(PTEFile(schema)))
+
+
+data = to_edge_transform_and_lower(
+    exported, partitioner=[XnnpackPartitioner()]
+).to_executorch().buffer
+if sys.argv[1] == "LLM runner":
+    try:
+        from executorch.extension.llm.runner import TextLLMRunner
+    except (ImportError, RuntimeError):
+        # The package raises RuntimeError when its extension is not built.
+        print("no LLM runner")
+        sys.exit()
+    # The LLM runner reads this method as it starts, outside any call of these
+    # bindings, on a thread that holds the GIL.
+    model = os.path.join(os.path.dirname(sys.argv[2]), "broken.pte")
+    with open(model, "wb") as file:
+        file.write(broken_program({"get_max_seq_len": exported}))
+else:
+    broken = portable_lib._load_program_from_buffer(broken_program(exported))
+portable_lib._set_option("XnnpackBackend", {"workspace_sharing_mode": 2})
+method = portable_lib._load_program_from_buffer(data).load_method("forward")
+
+running = threading.Event()
+done = threading.Event()
+
+
+def run():
+    while not done.is_set():
+        method(inputs)
+        running.set()
+
+
+class SlowStderr:
+    # A real write releases the GIL for its system call. Keep that window open
+    # so the other thread surely runs inside it.
+    def write(self, text):
+        time.sleep(0.5)
+        return len(text)
+
+    def flush(self):
+        pass
+
+    def fileno(self):
+        return 2
+
+
+message = ""
+process_stderr = sys.__stderr__
+with ThreadPoolExecutor(max_workers=1) as pool:
+    worker = pool.submit(run)
+    while not running.wait(timeout=0.1):
+        if worker.done():
+            worker.result()
+    sys.stderr = SlowStderr()
+    if sys.argv[1] == "process":
+        # Stands in for the stream Python opened on fd 2, the default case.
+        sys.__stderr__ = sys.stderr
+    try:
+        if sys.argv[1] == "LLM runner":
+            TextLLMRunner(model, sys.argv[2])
+        else:
+            broken.load_method("forward")
+    except RuntimeError as error:
+        message = str(error)
+    finally:
+        sys.stderr = sys.__stderr__ = process_stderr
+        done.set()
+    worker.result()
+# XNNPACK logged this while it held its workspace lock.
+assert sys.argv[1] == "LLM runner" or "XNNCompiler::compileModel failed" in message, message
+print("no deadlock")
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            tokenizer = write_llm_tokenizer(directory)
+            for mode in ("replaced", "process", "LLM runner"):
+                completed = subprocess.run(
+                    [sys.executable, "-c", script, mode, tokenizer],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    f"{mode}:\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+                )
+                if "no LLM runner" not in completed.stdout:
+                    self.assertIn("no deadlock", completed.stdout)
+
+    def test_daemon_threads_that_log_do_not_crash_at_exit(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("the script below uses the portable bindings")
+        if not sys.platform.startswith("linux") or sys.version_info >= (3, 13, 8):
+            self.skipTest("the crash needs Linux and Python before 3.13.8")
+
+        script = """
+import atexit
+import os
+import sys
+import threading
+import time
+
+# Registered before the import, so it runs after the bindings' own exit hook,
+# and the daemon threads log while it sleeps.
+atexit.register(time.sleep, 0.1)
+
+from executorch.extension.pybindings import portable_lib
+
+
+# The daemon threads below. Python calls any thread it did not start a daemon.
+spinners = set()
+
+
+class Sink:
+    daemon_writes = 0
+    text = []
+
+    def write(self, text):
+        if threading.get_ident() in spinners:
+            Sink.daemon_writes += 1
+        Sink.text.append(text)
+        return len(text)
+
+    def flush(self):
+        pass
+
+
+def spin():
+    spinners.add(threading.get_ident())
+    while True:
+        try:
+            portable_lib._load_program_from_buffer(b"x" * 128)
+        except RuntimeError:
+            pass
+
+
+if "full" in sys.argv[1]:
+    # Nobody reads this pipe, so the lines that find it full are dropped.
+    read_end, write_end = os.pipe()
+    os.dup2(write_end, 2)
+    os.set_blocking(2, False)
+    try:
+        while True:
+            os.write(2, b"x" * 4096)
+    except BlockingIOError:
+        pass
+    os.set_blocking(2, True)
+if "replaced" in sys.argv[1]:
+    sys.stderr = Sink()
+for _ in range(2):
+    threading.Thread(target=spin, daemon=True).start()
+time.sleep(0.3)
+print("writes from daemon threads:", Sink.daemon_writes)
+print("lines through Python:", "".join(Sink.text).count("Program identifier"))
+"""
+        for mode in ("replaced", "full", "full and replaced"):
+            completed = subprocess.run(
+                [sys.executable, "-c", script, mode],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            self.assertEqual(
+                completed.returncode, 0, f"{mode}: {completed.stderr[-2000:]}"
+            )
+            self.assertIn("writes from daemon threads: 0", completed.stdout)
+            if "replaced" in mode:
+                # Another thread wrote them, as a notebook shows only Python's
+                # stderr.
+                self.assertNotIn("lines through Python: 0", completed.stdout)
+            if mode == "replaced":
+                # The lines logged after the bindings' exit hook go to fd 2.
+                self.assertIn("Program identifier", completed.stderr)
+
+    def test_runtime_logs_outside_a_call_reach_sys_stderr(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("the script below uses the portable bindings")
+
+        script = """
+import atexit
+import contextlib
+import io
+import os
+import sys
+import threading
+import time
+
+captured = io.StringIO()
+if sys.argv[1] == "replaced before import":
+    # As in a notebook, which replaces sys.stderr before any import.
+    sys.stderr = captured
+if not sys.argv[1].startswith("runner only"):
+    # The LLM runner loads the library of these bindings without importing them.
+    from executorch.extension.pybindings import portable_lib
+
+try:
+    from executorch.extension.llm.runner import TextLLMRunner
+except (ImportError, RuntimeError):
+    # The package raises RuntimeError when its extension is not built.
+    print("no LLM runner")
+    sys.exit()
+missing_program = os.path.join(os.path.dirname(sys.argv[2]), "missing.pte")
+
+if sys.argv[1] == "runner only, at exit":
+
+    def log_at_exit():
+        try:
+            TextLLMRunner(missing_program, sys.argv[2])
+        except RuntimeError:
+            pass
+        print("logged at exit", file=sys.stderr)
+
+    # Python is exiting, so the runner's lines cannot wait for another thread.
+    atexit.register(log_at_exit)
+    sys.exit()
+
+if sys.argv[1] == "replaced, another thread":
+    sys.stderr = captured
+
+    def log_twice():
+        try:
+            TextLLMRunner(missing_program, sys.argv[2])
+        except RuntimeError:
+            pass
+        try:
+            portable_lib._load_program_from_buffer(b"x" * 128)
+        except RuntimeError:
+            pass
+
+    worker = threading.Thread(target=log_twice)
+    worker.start()
+    worker.join()
+    # A thread of the bindings writes the LLM runner's lines a moment later, and
+    # the call's line must follow them.
+    deadline = time.monotonic() + 10
+    while (
+        "Program identifier" not in captured.getvalue()
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.01)
+    sys.stderr = sys.__stderr__
+    text = captured.getvalue()
+    first = text.find("[llm_runner_helper.cpp:")
+    print("in order:", 0 <= first < text.find("Program identifier"))
+    sys.exit()
+
+if sys.argv[1] == "replaced, a call after a failed load":
+    in_order = True
+    # The first round comes out in order even without the wait, so it repeats.
+    for _ in range(5):
+        captured = io.StringIO()
+        sys.stderr = captured
+        try:
+            TextLLMRunner(missing_program, sys.argv[2])
+        except RuntimeError:
+            # A call that raised runs no pending call before the next call, yet
+            # this call's line must come after the runner's lines.
+            try:
+                portable_lib._load_program_from_buffer(b"x" * 128)
+            except RuntimeError:
+                pass
+        sys.stderr = sys.__stderr__
+        text = captured.getvalue()
+        first = text.find("[llm_runner_helper.cpp:")
+        in_order = in_order and 0 <= first < text.find("Program identifier")
+    print("in order:", in_order)
+    sys.exit()
+
+with (
+    contextlib.redirect_stderr(captured)
+    if sys.argv[1].endswith("replaced after import")
+    else contextlib.nullcontext()
+):
+    try:
+        TextLLMRunner(missing_program, sys.argv[2])
+    except RuntimeError:
+        if sys.argv[1] == "process stderr":
+            # Ends the process before Python could write lines that waited.
+            os._exit(0)
+    # Python's main thread writes the lines it logged before its next bytecode,
+    # so they reach a redirect that ends right after the call.
+sys.stderr = sys.__stderr__
+print("lines through Python:", captured.getvalue().count("[llm_runner_helper.cpp:"))
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            tokenizer = write_llm_tokenizer(directory)
+            for mode in (
+                "replaced before import",
+                "replaced after import",
+                "replaced, another thread",
+                "replaced, a call after a failed load",
+                "process stderr",
+                "runner only, replaced after import",
+                "runner only, at exit",
+            ):
+                completed = subprocess.run(
+                    [sys.executable, "-c", script, mode, tokenizer],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                self.assertEqual(
+                    completed.returncode, 0, f"{mode}: {completed.stderr[-2000:]}"
+                )
+                if "no LLM runner" in completed.stdout:
+                    self.skipTest("the LLM runner bindings are not built")
+                if mode == "process stderr":
+                    self.assertIn("[llm_runner_helper.cpp:", completed.stderr)
+                elif mode == "runner only, at exit":
+                    last = completed.stderr.rfind("[llm_runner_helper.cpp:")
+                    self.assertTrue(
+                        0 <= last < completed.stderr.find("logged at exit"),
+                        completed.stderr[-2000:],
+                    )
+                elif mode.startswith("replaced, a"):
+                    self.assertIn("in order: True", completed.stdout, mode)
+                else:
+                    self.assertIn("lines through Python:", completed.stdout, mode)
+                    self.assertNotIn("lines through Python: 0", completed.stdout, mode)
+
+    def test_runtime_logs_when_writing_to_stderr_fails(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("the script below uses the portable bindings")
+
+        script = """
+import signal
+import sys
+
+from executorch.extension.pybindings import portable_lib
+
+# Python installs no SIGINT handler when SIGINT starts ignored, as in a
+# background job, and then a Ctrl-C cannot be raised again.
+signal.signal(signal.SIGINT, signal.default_int_handler)
+
+
+class FailingStderr:
+    def __init__(self, error):
+        self.error = error
+
+    def write(self, text):
+        raise self.error
+
+    def flush(self):
+        pass
+
+
+def load_broken_program():
+    try:
+        portable_lib._load_program_from_buffer(b"x" * 128)
+    except RuntimeError:
+        pass
+
+
+# A call made while sys.stderr is the process's own goes first, so that
+# replacing sys.stderr afterwards must still be noticed.
+load_broken_program()
+
+# A write that fails sends the lines to the process's stderr instead.
+sys.stderr = FailingStderr(ValueError("closed"))
+try:
+    load_broken_program()
+finally:
+    sys.stderr = sys.__stderr__
+
+# An interrupt raised in the write still reaches the caller.
+interrupted = False
+sys.stderr = FailingStderr(KeyboardInterrupt())
+try:
+    load_broken_program()
+    for _ in range(1000):
+        pass
+except KeyboardInterrupt:
+    interrupted = True
+finally:
+    sys.stderr = sys.__stderr__
+assert interrupted
+print("done")
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn("done", completed.stdout)
+        # The first load writes straight to the process's stderr. Neither
+        # write showed the other loads' lines, so they reach it too.
+        self.assertEqual(
+            completed.stderr.count("Program identifier 'xxxx'"), 3, completed.stderr
+        )
+
+    def test_fatal_runtime_log_reaches_process_stderr(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("the script below uses the portable bindings")
+        if sys.platform == "win32":
+            self.skipTest("an abort can start Windows Error Reporting")
+
+        exported_program, _ = create_program(ModuleAddSingleInput())
+        script = """
+import io
+import sys
+
+import torch
+from executorch.extension.pybindings import portable_lib
+
+# Logging the first output to a debug buffer this small fails, and the runtime
+# reports that with a fatal line before it aborts.
+module = portable_lib._load_for_executorch(
+    sys.argv[1], enable_etdump=True, debug_buffer_size=8
+)
+sys.stderr = io.StringIO()
+module.forward([torch.ones(2, 2)])
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "add.pte")
+            with open(path, "wb") as file:
+                file.write(exported_program.buffer)
+            completed = subprocess.run(
+                [sys.executable, "-c", script, path],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+        self.assertNotEqual(completed.returncode, 0, completed.stderr)
+        # The abort skips the end of the call, where kept lines go to the
+        # replaced sys.stderr, so the fatal line went out at once, after the
+        # line the call kept before it.
+        kept = completed.stderr.find("Ran out of space to store intermediate outputs")
+        fatal = completed.stderr.find("failed to write tensor to debug buffer")
+        self.assertNotEqual(kept, -1, completed.stderr)
+        self.assertGreater(fatal, kept, completed.stderr)
+
+    def test_runtime_logs_reach_process_stderr_at_once(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("the script below uses the portable bindings")
+        if sys.platform == "win32":
+            self.skipTest("uses a pseudo-terminal")
+
+        exported_program, _ = create_program(ModuleAddSingleInput())
+        script = """
+import os
+import sys
+
+import numpy as np
+from executorch.extension.pybindings import portable_lib
+
+
+class DiesDuringTheCall:
+    # Converting this input fills the terminal, logs from inside the call, and
+    # ends the process before the call returns.
+    def __dlpack__(self, stream=None):
+        os.set_blocking(2, False)
+        try:
+            while True:
+                os.write(2, b"." * 64)
+        except BlockingIOError:
+            pass
+        os.set_blocking(2, True)
+        print("filled", flush=True)
+        try:
+            portable_lib._load_program_from_buffer(b"x" * 128)
+        except RuntimeError:
+            pass
+        os.write(2, b"still in the call\\n")
+        os._exit(3)
+
+    def __dlpack_device__(self):
+        return np.ones((2, 2), dtype=np.float32).__dlpack_device__()
+
+
+with open(sys.argv[1], "rb") as file:
+    module = portable_lib._load_for_executorch_from_buffer(file.read())
+module(DiesDuringTheCall())
+"""
+        try:
+            terminal, child_end = os.openpty()
+        except OSError as error:
+            self.skipTest(f"no pseudo-terminal: {error}")
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "add.pte")
+            with open(path, "wb") as file:
+                file.write(exported_program.buffer)
+            child = subprocess.Popen(
+                [sys.executable, "-c", script, path],
+                stdout=subprocess.PIPE,
+                stderr=child_end,
+                text=True,
+            )
+            os.close(child_end)
+            # Like a busy terminal, start reading a little after the child has
+            # filled it and logged.
+            filled = (
+                child.stdout.readline()
+                if select.select([child.stdout], [], [], 120)[0]
+                else ""
+            )
+            time.sleep(0.5)
+            output = b""
+            while select.select([terminal], [], [], 120)[0]:
+                try:
+                    chunk = os.read(terminal, 65536)
+                except OSError:  # Linux reports the closed other end as EIO.
+                    break
+                if not chunk:
+                    break
+                output += chunk
+            child.kill()
+            child.wait()
+            child.stdout.close()
+            os.close(terminal)
+
+        text = output.decode(errors="replace")
+        self.assertEqual(filled, "filled\n", text)
+        self.assertEqual(child.returncode, 3, text)
+        # sys.stderr is the process's own stderr there, so the line went out as
+        # it was logged rather than with the call that never returned.
+        self.assertIn("Program identifier 'xxxx'", text)
+        self.assertLess(
+            text.index("Program identifier 'xxxx'"), text.index("still in the call")
+        )
+
+    def test_full_stderr_drained_by_a_thread_does_not_block_a_call(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("the script below uses the portable bindings")
+        if sys.platform == "win32":
+            self.skipTest("uses POSIX pipes and sockets as fd 2")
+
+        script = """
+import os
+import socket
+import sys
+import threading
+import time
+
+from executorch.extension.pybindings import portable_lib
+
+if "LLM runner" in sys.argv[1]:
+    try:
+        from executorch.extension.llm.runner import TextLLMRunner
+    except (ImportError, RuntimeError):
+        # The package raises RuntimeError when its extension is not built.
+        print("no LLM runner")
+        sys.exit()
+missing_program = os.path.join(os.path.dirname(sys.argv[3]), "missing.pte")
+if sys.argv[2] == "socket":
+    read_socket, write_socket = socket.socketpair()
+    read_end, write_end = read_socket.fileno(), write_socket.fileno()
+else:
+    read_end, write_end = os.pipe()
+# Fill it, so that a write that waits for room needs the reader below.
+os.set_blocking(write_end, False)
+for size in (4096, 512, 64, 1):
+    try:
+        while True:
+            os.write(write_end, b"x" * size)
+    except BlockingIOError:
+        pass
+os.set_blocking(write_end, True)
+saved_stderr = os.dup(2)
+os.dup2(write_end, 2)
+drained = bytearray()
+
+
+def drain():
+    # Like a capture thread, this needs the GIL after every read. It starts
+    # after the call below has begun.
+    time.sleep(0.2)
+    while True:
+        drained.extend(os.read(read_end, 4096))
+
+
+threading.Thread(target=drain, daemon=True).start()
+try:
+    if sys.argv[1] == "LLM runner":
+        # It holds the GIL and logs outside any call of these bindings.
+        try:
+            TextLLMRunner(missing_program, sys.argv[3])
+        except RuntimeError:
+            pass
+        expected = b"[llm_runner_helper.cpp:"
+    elif sys.argv[1] == "LLM runner and binding calls":
+        # The LLM runner's lines wait for a thread of the bindings, which writes
+        # them to fd 2 while the calls check it for room.
+        stop = threading.Event()
+
+        def build_runners():
+            while not stop.is_set():
+                try:
+                    TextLLMRunner(missing_program, sys.argv[3])
+                except RuntimeError:
+                    pass
+
+        builder = threading.Thread(target=build_runners)
+        builder.start()
+        end = time.monotonic() + 10
+        while time.monotonic() < end:
+            try:
+                portable_lib._load_program_from_buffer(b"x" * 128)
+            except RuntimeError:
+                pass
+        stop.set()
+        builder.join()
+        expected = b"Program identifier"
+    else:
+        try:
+            portable_lib._load_program_from_buffer(b"x" * 128)
+        except RuntimeError:
+            pass
+        expected = b"Program identifier"
+    while expected not in drained:
+        time.sleep(0.01)
+finally:
+    # Lets an error here reach the test's stderr rather than fd 2.
+    os.dup2(saved_stderr, 2)
+print("done")
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            tokenizer = write_llm_tokenizer(directory)
+            for kind in ("pipe", "socket"):
+                for mode in (
+                    "binding call",
+                    "LLM runner",
+                    "LLM runner and binding calls",
+                ):
+                    completed = subprocess.run(
+                        [sys.executable, "-c", script, mode, kind, tokenizer],
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        f"{mode}, {kind}:\nstdout:\n{completed.stdout}\n"
+                        f"stderr:\n{completed.stderr}",
+                    )
+                    if "no LLM runner" not in completed.stdout:
+                        self.assertIn("done", completed.stdout, f"{mode}, {kind}")
+
+    def test_lines_waiting_for_a_full_stderr(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("the script below uses the portable bindings")
+        if sys.platform == "win32":
+            self.skipTest("uses a POSIX pipe as fd 2")
+
+        script = """
+import io
+import os
+import sys
+import threading
+import time
+
+from executorch.extension.pybindings import portable_lib
+
+try:
+    from executorch.extension.llm.runner import TextLLMRunner
+except (ImportError, RuntimeError):
+    # The package raises RuntimeError when its extension is not built.
+    print("no LLM runner")
+    sys.exit()
+missing_program = os.path.join(os.path.dirname(sys.argv[2]), "missing.pte")
+
+
+def spin(seconds):
+    rounds = 0
+    end = time.perf_counter() + seconds
+    while time.perf_counter() < end:
+        for _ in range(100):
+            rounds += 1
+    return rounds
+
+
+normal_speed = spin(0.5)
+read_end, write_end = os.pipe()
+os.set_blocking(write_end, False)
+for size in (4096, 512, 64, 1):
+    try:
+        while True:
+            os.write(write_end, b"x" * size)
+    except BlockingIOError:
+        pass
+saved_stderr = os.dup(2)
+os.dup2(write_end, 2)
+if sys.argv[1] == "blocking":
+    os.set_blocking(2, True)
+drained = bytearray()
+
+
+def drain():
+    # Starts once the lines below wait, and needs the GIL after every read.
+    time.sleep(2)
+    os.set_blocking(read_end, False)
+    end = time.monotonic() + 3
+    while time.monotonic() < end:
+        try:
+            drained.extend(os.read(read_end, 65536))
+        except BlockingIOError:
+            time.sleep(0.01)
+
+
+drainer = threading.Thread(target=drain)
+drainer.start()
+try:
+    # fd 2 is full, so these lines go to a thread of the bindings, which waits
+    # to write them.
+    try:
+        TextLLMRunner(missing_program, sys.argv[2])
+    except RuntimeError:
+        pass
+    if sys.argv[1] == "blocking":
+        # The main thread's later lines must wait behind those without making
+        # it spin.
+        time.sleep(0.3)
+        sys.stderr = io.StringIO()
+        try:
+            portable_lib._load_program_from_buffer(b"x" * 128)
+        except RuntimeError:
+            pass
+        print("speed:", round(spin(0.5) / normal_speed, 3))
+        sys.stderr = sys.__stderr__
+    drainer.join()
+finally:
+    os.dup2(saved_stderr, 2)
+print("runner lines:", drained.count(b"[llm_runner_helper.cpp:"))
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            tokenizer = write_llm_tokenizer(directory)
+            for mode in ("blocking", "non-blocking"):
+                completed = subprocess.run(
+                    [sys.executable, "-c", script, mode, tokenizer],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                self.assertEqual(
+                    completed.returncode, 0, f"{mode}: {completed.stderr[-2000:]}"
+                )
+                if "no LLM runner" in completed.stdout:
+                    self.skipTest("the LLM runner bindings are not built")
+                self.assertNotIn("runner lines: 0", completed.stdout, mode)
+                if mode == "blocking":
+                    speed = float(completed.stdout.split("speed:")[1].split()[0])
+                    self.assertGreater(speed, 0.05, completed.stdout)
+
+    def test_deferred_runtime_logs_do_not_nest_in_a_stderr_write(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("the script below uses the portable bindings")
+
+        script = """
+import os
+import queue
+import sys
+import threading
+import time
+
+from executorch.extension.pybindings import portable_lib
+
+if sys.argv[1] == "LLM runner":
+    try:
+        from executorch.extension.llm.runner import TextLLMRunner
+    except (ImportError, RuntimeError):
+        # The package raises RuntimeError when its extension is not built.
+        print("no LLM runner")
+        sys.exit()
+    expected = "[llm_runner_helper.cpp:"
+else:
+    expected = "Program identifier"
+
+
+class QueuedStderr:
+    # Like a logging queue, its write runs Python code while it holds a lock.
+    def __init__(self):
+        self.texts = queue.Queue()
+
+    def write(self, text):
+        self.texts.put(text)
+        return len(text)
+
+    def flush(self):
+        pass
+
+    def text(self):
+        return "".join(self.texts.queue)
+
+
+def log():
+    while not done.is_set():
+        if sys.argv[1] == "LLM runner":
+            # It holds the GIL and logs outside any call of these bindings.
+            try:
+                TextLLMRunner(
+                    os.path.join(os.path.dirname(sys.argv[2]), "missing.pte"),
+                    sys.argv[2],
+                )
+            except RuntimeError:
+                pass
+        else:
+            try:
+                portable_lib._load_program_from_buffer(b"x" * 128)
+            except RuntimeError:
+                pass
+        started.set()
+
+
+done, started = threading.Event(), threading.Event()
+stream = QueuedStderr()
+sys.stderr = stream
+thread = threading.Thread(target=log, daemon=sys.argv[1] == "daemon thread")
+thread.start()
+started.wait(60)
+# The other thread's lines must never be written from inside these writes.
+deadline = time.monotonic() + 2
+while time.monotonic() < deadline:
+    print("main thread", file=sys.stderr)
+done.set()
+thread.join()
+deadline = time.monotonic() + 10
+while expected not in stream.text() and time.monotonic() < deadline:
+    time.sleep(0.01)
+sys.stderr = sys.__stderr__
+print("lines through Python:", stream.text().count(expected))
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            tokenizer = write_llm_tokenizer(directory)
+            for mode in ("LLM runner", "daemon thread"):
+                completed = subprocess.run(
+                    [sys.executable, "-c", script, mode, tokenizer],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                self.assertEqual(
+                    completed.returncode, 0, f"{mode}: {completed.stderr[-2000:]}"
+                )
+                if "no LLM runner" not in completed.stdout:
+                    self.assertIn("lines through Python:", completed.stdout, mode)
+                    self.assertNotIn("lines through Python: 0", completed.stdout, mode)
+
+    def test_long_call_keeps_its_newest_runtime_logs(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only the portable bindings take DLPack inputs")
+
+        exported_program, _ = create_program(ModuleAddSingleInput())
+        module = self.load_fn(exported_program.buffer)
+        runtime = self.runtime
+        values = np.ones((2, 2), dtype=np.float32)
+
+        class LogsDuringTheCall:
+            # Converting this input logs far more than one call keeps, ending
+            # with a line that is not valid UTF-8.
+            def __dlpack__(self, stream=None):
+                for _ in range(20000):
+                    try:
+                        runtime._load_program_from_buffer(b"x" * 128)
+                    except RuntimeError:
+                        pass
+                try:
+                    runtime._load_program_from_buffer(b"\xff" * 128)
+                except RuntimeError:
+                    pass
+                return values.__dlpack__(stream=stream)
+
+            def __dlpack_device__(self):
+                return values.__dlpack_device__()
+
+        captured = StringIO()
+        saved_stderr = sys.stderr
+        sys.stderr = captured
+        try:
+            module(LogsDuringTheCall())
+        finally:
+            sys.stderr = saved_stderr
+
+        text = captured.getvalue()
+        lines = text.splitlines()
+        self.assertRegex(
+            lines[0],
+            r"^\[\d+ earlier bytes of the runtime log were left out\]$",
+        )
+        kept = len(text) - len(lines[0]) - 1
+        self.assertGreater(kept, 512 * 1024 - 1024)
+        self.assertLessEqual(kept, 1024 * 1024)
+        self.assertIn("Program identifier '\\xff\\xff\\xff\\xff'", lines[-1])
+
+    def test_error_message_cut_in_a_character_raises_runtime_error(self):
+        # An error message is cut at a fixed length. With these paths, the cut
+        # falls inside a character for at least one of them.
+        for prefix in ("", "a", "ab"):
+            with self.assertRaises(RuntimeError):
+                self.runtime._load_for_executorch(prefix + "\u4e2d" * 60 + ".pte")
+
     def test_bfloat16_output_preserves_dtype(self):
         class ModuleAddBFloat16(ModuleAdd):
             def get_inputs(self):
@@ -397,6 +1361,25 @@ print("all calls finished")
 
         with self.assertRaisesRegex(ValueError, "dtype Long.*expects Float"):
             executorch_module(np.ones((2, 2), dtype=int))
+
+    def test_refused_input_errors_say_why(self):
+        exported_program, inputs = create_program(ModuleAddScalar())
+        executorch_module = self.load_fn(exported_program.buffer)
+        with self.assertRaises(RuntimeError) as error:
+            executorch_module.forward([None, inputs[1]])
+        self.assertIn("type Tensor but was None", str(error.exception))
+        # Only the reason is reported, not lines about other inputs.
+        self.assertNotIn("is not Tensor", str(error.exception))
+
+        # The portable runtime logs a static shape mismatch over two lines.
+        if self.kernel_mode == "portable":
+            exported_program, inputs = create_program(ModuleAdd())
+            with self.assertRaisesRegex(
+                RuntimeError, r"received \(3, 2\)\.; Error resizing tensor at input 0"
+            ):
+                self.load_fn(exported_program.buffer).forward(
+                    [torch.ones(3, 2), inputs[1]]
+                )
 
     def test_numpy_float_scalar_input(self):
         exported_program, inputs = create_program(ModuleAddScalar())
@@ -1253,7 +2236,7 @@ print("CUDA DLPack roundtrip preserved device storage")
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
 
-        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=float32, is_memory_planned=True, nbytes=16, device=cpu)"
         float_dtype = 6
         self.assertEqual(
             str(meta),
@@ -1271,6 +2254,9 @@ print("CUDA DLPack roundtrip preserved device storage")
         del meta
         self.assertEqual([t.sizes() for t in input_tensors], [(2, 2), (2, 2)])
         self.assertEqual([t.dtype() for t in input_tensors], [float_dtype, float_dtype])
+        self.assertEqual(
+            [t.dtype_name() for t in input_tensors], ["float32", "float32"]
+        )
         self.assertEqual([t.is_memory_planned() for t in input_tensors], [True, True])
         self.assertEqual([t.nbytes() for t in input_tensors], [16, 16])
         self.assertEqual(str(input_tensors), f"[{tensor_info}, {tensor_info}]")
@@ -1883,7 +2869,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(meta.num_outputs(), 1)
         self.assertEqual(meta.num_attributes(), 1)
 
-        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=float32, is_memory_planned=True, nbytes=16, device=cpu)"
 
         float_dtype = 6
         self.assertEqual(
@@ -1935,7 +2921,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
 
-        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=float32, is_memory_planned=True, nbytes=16, device=cpu)"
         float_dtype = 6
         self.assertEqual(
             str(meta),
@@ -2463,6 +3449,35 @@ print("ran after its program was dropped")
             executorch_module.plan_execute("forward")
         output = executorch_module.forward([values, torch.tensor([3])])
         torch.testing.assert_close(torch.as_tensor(np.asarray(output[0])), values[3:4])
+
+    def test_planned_inputs_are_installed_again_at_each_run(self):
+        class Accumulate(torch.nn.Module):
+            def forward(self, x, state):
+                state.add_(x)
+                return state * 1
+
+        x = torch.arange(4, dtype=torch.float32) + 1
+        state = torch.zeros(4)
+        # Each run writes the planned copy of state, so the next run has to
+        # install the caller's tensor again.
+        program = to_edge(export(Accumulate(), (x, state), strict=True)).to_executorch()
+
+        method = self.load_prog_fn(program.buffer).load_method("forward")
+        method.set_inputs([x, state])
+        for _ in range(2):
+            method.execute()
+            torch.testing.assert_close(method.get_outputs()[0], x)
+
+        module = self.load_fn(program.buffer)
+        torch.testing.assert_close(module.forward([x, state])[0], x)
+        torch.testing.assert_close(module.forward([x])[0], x)
+
+        # The inputs are read again, so a change to their storage is refused.
+        state.resize_(64, 64)
+        with self.assertRaisesRegex(ValueError, "storage changed"):
+            method.execute()
+        with self.assertRaisesRegex(ValueError, "storage changed"):
+            module.forward([x])
 
     def test_module_keeps_a_temporary_program_buffer_alive(self):
         exported_program, inputs = create_program(ModuleAdd())

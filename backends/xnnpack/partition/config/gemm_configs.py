@@ -25,7 +25,6 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_per_tensor,
     is_qparam,
     is_quant,
-    tag_as_implicit_q_dq,
 )
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
@@ -139,11 +138,6 @@ class GEMMConfig(XNNPartitionerConfig):
         valid_deps = valid_bias and valid_weight and valid_act and valid_output
         deps = list(chain(bias_deps, weight_deps, act_deps, output_deps))
 
-        # Tag q/dq nodes as implicit q/dq nodes
-        for dep in deps:
-            if is_dequant(dep) or is_quant(dep):
-                tag_as_implicit_q_dq(dep)
-
         return valid_deps, deps
 
     def _get_weight_deps(
@@ -224,9 +218,12 @@ class GEMMConfig(XNNPartitionerConfig):
             node_users = list(node.users.keys())
             if len(node_users) == 1:
                 n_output = node_users[0]
+                # After a decomposed linear, the activation can have more dims than
+                # XNNPACK allows even when the 2-D matmul does not. Leave it out then.
                 if (
                     n_output.op == "call_function"
                     and format_target_name(n_output.target.__name__) in self.fused_acts
+                    and self._check_tensor_ranks(n_output)
                 ):
                     gemm_deps.append(n_output)
 
@@ -345,6 +342,7 @@ class LinearConfig(GEMMConfig):
 
 class ConvolutionConfig(GEMMConfig):
     target_name = "convolution.default"
+    supports_bf16 = False
 
     def __init__(self, **kwargs):
         super().__init__(
@@ -364,12 +362,6 @@ class ConvolutionConfig(GEMMConfig):
 
         kernel_node = get_input_node(node, 1)
         kernel_shape = get_shape(kernel_node)
-        if any(
-            value.meta["val"].dtype == torch.bfloat16
-            for value in (node, kernel_node, get_input_node(node, 0))
-        ):
-            why(node, "XNNPACK does not support BF16 convolution")
-            return False
         # The weight rank is the only reliable indicator of the conv dimensionality.
         # stride, padding and dilation may each be a single value that ATen
         # broadcasts over every spatial dim.
@@ -532,9 +524,13 @@ class AddmmConfig(GEMMConfig):
         """
 
         def find_partition_args(input_node):
+            # A quantized tensor subclass dequantizes inside the linear call.
+            # Stop at that dequant, or its integer input is taken for a float
+            # weight.
             while (
                 len(input_node.all_input_nodes) != 0
                 and input_node not in src_partition.input_nodes
+                and not is_dequant(input_node)
             ):
                 input_node = input_node.all_input_nodes[0]
             return input_node
@@ -566,17 +562,23 @@ class AddmmConfig(GEMMConfig):
         node.args = tuple(fake_args)
         node.users = src_partition.output_nodes[0].users
         valid_deps, deps = super().get_deps(node, ep)
+        _, precision = self._overwrite_precision(node)
 
         # Reset addmm node back to old args and users
         node.args = old_args
         node.users = old_users
 
-        # When using force_non_static_weights_for_f32_linear, we want to get_deps to overwrite the source partition nodes.
-        # Else we want to be greedy.
+        # A float linear with force_non_static_weights_for_f32_linear takes only the
+        # deps inside the source partition. Else we want to be greedy, but leave out
+        # views XNNPACK cannot hold.
         ret_deps = (
             list(set(deps) & set(src_partition.nodes))
             if self.force_non_static_weights_for_f32_linear
-            else list(set(deps) | set(src_partition.nodes))
+            and precision == ConfigPrecisionType.FP32
+            else list(
+                set(deps)
+                | {n for n in src_partition.nodes if self._check_tensor_ranks(n)}
+            )
         )
 
         return valid_deps, ret_deps
