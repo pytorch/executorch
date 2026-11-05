@@ -346,11 +346,14 @@ way, because they sit next to the runtime library.
 - The model fails to load because data is missing, for example the CUDA backend reports
   `... is missing from named data`: the export wrote the weights to a separate `.ptd` file. Pass the
   file it wrote as the second argument, for example
-  `Module module("model.pte", "aoti_cuda_blob.ptd");`.
+  `Module module("model.pte", "aoti_cuda_blob.ptd");`. If there is no `.ptd` file next to the `.pte`,
+  save the program with `save_pte_program`, as
+  [the CUDA section](#running-on-a-gpu-with-the-cuda-package) does.
 - A GPU model fails on its first run because an output has no buffer: it was exported with
   `alloc_graph_output=False`, so it has no memory of its own for its outputs. Give each output a
-  buffer with `set_output` before the first run, as shown in
-  [the CUDA section](#running-on-a-gpu-with-the-cuda-package).
+  buffer with `set_output` before the first run: GPU memory if the export skipped the output copy
+  (`skip_d2h_for_method_outputs=True`), host memory otherwise. See
+  [Keeping inputs and outputs on the GPU](#keeping-inputs-and-outputs-on-the-gpu).
 - `executorch::runtime` is not a target: imported targets need CMake 3.28 or newer. On an older
   CMake the package still works, but you name variables instead of targets, and you have to pass on
   the definitions and the C++ standard requirement yourself:
@@ -524,7 +527,9 @@ outside an ARM package. Note that `torch.cuda.get_arch_list()` is not the right 
 PyTorch builds for a wider set at the bottom than these packages do, so a GPU can appear in that
 list and still not be supported.
 
-A model can also be exported to keep its inputs and outputs on the GPU, so the runtime does not copy
+#### Keeping inputs and outputs on the GPU
+
+A model can be exported to keep its inputs and outputs on the GPU, so the runtime does not copy
 them between CPU and GPU memory on every run.
 [The CUDA backend guide](backends/cuda/cuda-overview.md#activation-memory-who-owns-the-gpu-copies)
 shows how. Such a model takes GPU tensors. If it was also exported with `alloc_graph_output=False`,
