@@ -81,14 +81,14 @@ _KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
 _CUDA_BACKEND_SYMBOLS = ("executorch::backends::cuda::load_library",)
 _CUDA_EXTENSION_SYMBOLS = (
     "executorch::extension::cuda::getCallerStream",
+    "executorch::extension::cuda::internal::getCurrentCUDAStream",
     "executorch::extension::cuda::CudaAllocator::instance",
 )
 
-# The AOTI shim layer and the stream-guard state that lives with it. This is the state that was
-# genuinely duplicated: extracting the shims with a PUBLIC whole-archive replayed the extraction at
-# every consumer's link, so the guard's thread_local and these shims landed in three shipped binaries
-# at once, and a stream selected through one copy was invisible to the other two. The row above cannot
-# catch that, because its symbol only ever existed in one unconditionally shared library.
+# The AOTI shim layer. This is what was once genuinely duplicated: extracting the shims with a PUBLIC
+# whole-archive replayed the extraction at every consumer's link, so these shims, and the current-stream
+# thread_local that then lived with them, landed in three shipped binaries at once, and a stream selected
+# through one copy was invisible to the other two. That state now lives in the extension library above.
 _AOTI_SHIM_SYMBOLS = (
     "aoti_torch_empty_strided",
     "aoti_torch_delete_tensor_object",
@@ -103,6 +103,10 @@ _AOTI_SHIM_SYMBOLS = (
     "aoti_torch_cuda_randint_low_out",
     "aoti_torch_cuda_sort_stable",
     "aoti_torch_cuda_guard_set_index",
+    "aoti_torch_cuda_index_Tensor",
+    "aoti_torch_index_put_out",
+    "aoti_torch_cuda_scatter_reduce_two_out",
+    "aoti_torch_cuda_scatter_src_out",
 )
 
 _QUANTIZED_KERNEL_SYMBOLS = (

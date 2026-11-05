@@ -6,14 +6,14 @@ def define_common_targets(is_fbcode = False):
         return
 
     runtime.filegroup(
-        name = "migration_shaders",
+        name = "prototype_shaders",
         srcs = native.glob(["operators/gemm/linear/qw/q4gsw/glsl/**/*"]),
         visibility = ["PUBLIC"],
     )
 
     vulkan_spv_shader_lib(
-        name = "migration_shaderlib",
-        spv_filegroups = {":migration_shaders": "operators"},
+        name = "prototype_shaderlib",
+        spv_filegroups = {":prototype_shaders": "operators"},
         is_fbcode = is_fbcode,
     )
 
@@ -203,7 +203,7 @@ def define_common_targets(is_fbcode = False):
             "operators/convolution/q8ta/Q8taConv2dRoutes.h",
         ],
         platforms = get_platforms(),
-        exported_deps = [":config", ":migration_shaderlib", "//executorch/backends/vulkan:vulkan_graph_runtime"],
+        exported_deps = [":config", ":prototype_shaderlib", "//executorch/backends/vulkan:vulkan_graph_runtime"],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True`
         link_whole = True,
         visibility = ["PUBLIC"],

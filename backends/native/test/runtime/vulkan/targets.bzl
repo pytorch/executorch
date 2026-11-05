@@ -9,6 +9,28 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_test(
+        name = "vulkan_passes_test",
+        srcs = [
+            "test_fuse_quantized_embedding.cpp",
+            "test_fuse_quantized_linear.cpp",
+            "test_insert_prepack.cpp",
+            "test_lower_hf_attention.cpp",
+            "test_lower_rms_norm.cpp",
+            "test_materialize_view_copies.cpp",
+        ],
+        deps = [
+            "//executorch/backends/native/runtime/vulkan:vulkan_passes",
+            "//executorch/backends/native/runtime/graph:argument",
+            "//executorch/backends/native/runtime/graph:graph",
+            "//executorch/backends/native/runtime/graph:graph_utils",
+            "//executorch/backends/native/runtime/graph:node",
+            "//executorch/backends/native/runtime/graph:scalar_type",
+            "//executorch/backends/native/runtime/graph:value",
+            "//executorch/backends/native/runtime/graph:tensor_meta",
+        ],
+    )
+
     if is_xplat():
         return
 
@@ -46,27 +68,5 @@ def define_common_targets():
             "//executorch/backends/native/runtime/engine:engine",
             "//executorch/backends/native/runtime/vulkan:vulkan_engine",
             "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
-        ],
-    )
-
-    runtime.cxx_test(
-        name = "vulkan_passes_test",
-        srcs = [
-            "test_fuse_quantized_embedding.cpp",
-            "test_fuse_quantized_linear.cpp",
-            "test_insert_prepack.cpp",
-            "test_lower_hf_attention.cpp",
-            "test_lower_rms_norm.cpp",
-            "test_materialize_view_copies.cpp",
-        ],
-        deps = [
-            "//executorch/backends/native/runtime/vulkan:vulkan_passes",
-            "//executorch/backends/native/runtime/graph:argument",
-            "//executorch/backends/native/runtime/graph:graph",
-            "//executorch/backends/native/runtime/graph:graph_utils",
-            "//executorch/backends/native/runtime/graph:node",
-            "//executorch/backends/native/runtime/graph:scalar_type",
-            "//executorch/backends/native/runtime/graph:value",
-            "//executorch/backends/native/runtime/graph:tensor_meta",
         ],
     )

@@ -224,6 +224,23 @@ TEST_F(BenchmarkValidation, BenchmarkAddsRegisteredWorkAndWallThroughput) {
   }
 }
 
+TEST_F(BenchmarkValidation, SustainedReplaySkipsTimestampPass) {
+  Json spec = copy_case({8, 1, 1});
+  spec.update(
+      {{"sustain_s", 0.05},
+       {"target_ms", 0.01},
+       {"warmup_runs", 0},
+       {"max_dispatches", 2}});
+  const Report result = benchmark_shader(spec, prepare_tensor_data(spec));
+  const auto& window = result.at("sustain_monotonic_ns");
+  EXPECT_GE(
+      window.at("end").get<int64_t>() - window.at("begin").get<int64_t>(),
+      50000000);
+  EXPECT_EQ(
+      result.at("benchmark_runs"), result.at("wall_time_batch_us").size());
+  EXPECT_TRUE(result.at("gpu_timestamp_batch_us").empty());
+}
+
 TEST_F(BenchmarkValidation, UnsupportedShaderIsRejectedBeforePipelineCreation) {
   ComputeGraph graph{GraphConfig{}};
   if (graph.context()->adapter_ptr()->supports_int8_dot_product()) {

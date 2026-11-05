@@ -153,8 +153,10 @@ only host inputs and outputs waits depends on where it runs:
   the device, for example delegates running on another thread.
 
 In both cases, the CUDA delegate copies an output whose memory layout has to
-change through the legacy default stream, and loading a method's CUDA weights,
-which a first call may do, waits for the whole device.
+change through the legacy default stream. Loading a method's CUDA weights, which
+a first call may do, copies each one with a plain `cudaMemcpy`, so it waits for
+the legacy default stream and for blocking streams. An older export keeps its
+weights in one blob, and copying that blob waits for the whole device.
 
 The waits below, for CUDA inputs and outputs, are for the whole device
 (`cudaDeviceSynchronize`), not for one stream, so they also wait for unrelated
@@ -199,10 +201,7 @@ The CUDA build workflow runs `test_pybindings_cuda_dlpack.py` in both output
 modes on a GPU. It checks device allocations, DLPack stream ordering, channels
 last views, cloning, and borrowed output lifetimes using a CUDA delegate.
 Set `EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1` when running this test to treat missing
-GPU hardware or a missing CUDA backend as a failure. The CUDA delegate's kernels
-need the OpenMP runtime (`libgomp.so.1` on Linux). PyTorch ships one; without PyTorch,
-install it from the system, or the two tests that run without PyTorch fail
-under this setting.
+GPU hardware or a missing CUDA backend as a failure.
 
 # Link Backends
 
@@ -235,4 +234,50 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
 This class is currently empty and serves as a placeholder for future methods and attributes.
 - `verify_result_with_bundled_expected_output(method_name: str, testset_idx: int, rtol: float = 1e-5, atol: float = 1e-8)`: Verify result with bundled expected output.
 ## Note
-Runtime logs are forwarded to Python stderr.
+Runtime logs go straight to the process's stderr as they are logged. On Windows,
+a console shows text that is not ASCII in its own code page, so such text can
+look wrong there. If Python has replaced `sys.stderr`, for example with pytest's
+`capsys`, `contextlib.redirect_stderr` or in a Jupyter notebook, the lines go to
+`sys.stderr` instead, a little later. The lines a binding call logs wait until
+the call returns. A line logged outside any binding call, for example by the LLM
+runner, goes to `sys.stderr` soon after. If Python's main thread logged it, that
+thread writes it itself, before the lines of its next binding call. But if
+earlier lines of the main thread still wait for the bindings' thread, this line
+follows them there. A line from another thread also goes to the bindings'
+thread, which the bindings start for this. It writes to whatever `sys.stderr` is
+at that moment. Outside a call, only a thread that holds the GIL can tell where
+`sys.stderr` goes, so a line from a thread that does not hold it, such as one
+the LLM runner logs while it generates, goes to the process's stderr. The lines
+wait rather than go to Python at once because a backend can log while it holds a
+lock, and writing to Python at that moment could deadlock with another thread.
+
+On Linux and macOS, a line also waits once the process's stderr is a pipe or
+socket that stays full for 100 ms, so a thread that holds the GIL does not hang
+on it while a Python thread in the same process empties it, as under
+`wurlitzer.pipes()`. The rest of a binding call's lines then wait for the call
+to return. A thread that holds the GIL and logs outside a call does not wait for
+room itself. It hands the line to the bindings' thread, which writes it a line
+at a time without the GIL. While it writes, a binding call's lines wait for the
+call to return. A terminal is written at once, since its reader is normally
+another process. The process can still hang if another writer fills the
+process's stderr right after the check for room, if a thread that does not hold
+the GIL logs outside a call while a Python thread in the same process empties a
+full stderr and a binding call holds the GIL waiting for that thread, or if a
+Python thread in the same process reads a terminal that is the process's stderr.
+On macOS, a pipe that has not grown past 16 KiB takes a line only once the line
+fits in 512 bytes beside what the pipe holds, because macOS reports room in such
+a pipe that it may not have.
+
+Up to 1 MiB of lines wait at a time; past that, about the newest 512 KiB to
+1 MiB are kept, with a note of how many earlier bytes were left out. A fatal
+line goes straight to the process's stderr while it has room, with the lines its
+binding call kept, since an abort usually follows. Any crash or hang of the
+process, including that abort, or an `os._exit()` loses the lines still waiting.
+Once Python starts to exit, the lines still waiting are written, and later lines
+logged outside a call go to the process's stderr while it has room. Lines for
+the process's stderr are left out instead if the bindings' thread is still
+writing to it then.
+
+On Linux with Python before 3.13.8, a daemon thread never writes through Python,
+because at exit Python can stop such a thread in the middle of that write, which
+crashes the process. The bindings' thread writes its lines instead.

@@ -21,6 +21,7 @@ using cudaGraphExec_t = hipGraphExec_t;
 using cudaMemcpyKind = hipMemcpyKind;
 using cudaMemoryType = hipMemoryType;
 using cudaStreamCaptureMode = hipStreamCaptureMode;
+using cudaStreamCaptureStatus = hipStreamCaptureStatus;
 using cudaStream_t = hipStream_t;
 
 inline constexpr cudaError_t cudaSuccess = hipSuccess;
@@ -34,6 +35,8 @@ inline constexpr cudaMemoryType cudaMemoryTypeDevice = hipMemoryTypeDevice;
 inline constexpr cudaMemoryType cudaMemoryTypeManaged = hipMemoryTypeManaged;
 inline constexpr cudaStreamCaptureMode cudaStreamCaptureModeRelaxed =
     hipStreamCaptureModeRelaxed;
+inline constexpr cudaStreamCaptureStatus cudaStreamCaptureStatusNone =
+    hipStreamCaptureStatusNone;
 inline constexpr unsigned long long cudaGraphInstantiateFlagAutoFreeOnLaunch =
     hipGraphInstantiateFlagAutoFreeOnLaunch;
 
@@ -209,6 +212,12 @@ inline cudaError_t cudaStreamEndCapture(
     cudaStream_t stream,
     cudaGraph_t* graph) {
   return hipStreamEndCapture(stream, graph);
+}
+
+inline cudaError_t cudaStreamIsCapturing(
+    cudaStream_t stream,
+    cudaStreamCaptureStatus* status) {
+  return hipStreamIsCapturing(stream, status);
 }
 
 inline cudaError_t cudaStreamSynchronize(cudaStream_t stream) {
