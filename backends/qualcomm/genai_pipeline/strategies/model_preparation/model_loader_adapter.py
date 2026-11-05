@@ -7,7 +7,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol, runtime_checkable, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Optional,
+    Protocol,
+    runtime_checkable,
+    Sequence,
+    Tuple,
+)
 
 
 @runtime_checkable
@@ -44,10 +53,17 @@ class ModelLoaderAdapter(Protocol):
         contract, so the registry columns land with the transforms themselves
         once each is extracted into a named, shared function.
 
-    A single call returns **one** model. Multi-graph export configurations of the
-    same weights (hybrid prefill/decode, a separate token-embedding graph) are
-    expanded by the quantization and compilation *strategies*, and genuinely
-    multi-module models (multimodal encoders) belong in a specialized adapter.
+    ``load_model`` returns the full graph map:
+    ``{component: {graph_name: module}}``. Text-only models are the one-component
+    ``{ARTIFACT_TEXT_DECODER: {...}}`` case; multimodal adapters add encoder and
+    token-embedding components. Example inputs and metadata retain this shape
+    because they vary by graph.
+
+    The strategy drops deployed graph modules and flattens the selected weight
+    holders to ``{component: module}``, for example ``{ARTIFACT_TEXT_DECODER: decoder}``.
+    The graph axis is absent because the selected module is shared when
+    exporting every graph variant for that component; only its inputs and
+    metadata differ.
     """
 
     def load_model(
@@ -55,14 +71,45 @@ class ModelLoaderAdapter(Protocol):
         model_name: str,
         extra_options: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        """Load a model by name or path.
+        """Load the model, weights and all.
+
+        The whole weight stage lives here: acquiring the checkpoint, rewriting it
+        (key renames, value transforms) and loading it into the module. The
+        module this returns therefore already carries its final weights;
+        :meth:`apply_module_transforms` then handles the module-level preparation.
 
         Args:
             model_name: Model identifier (e.g., HuggingFace model ID or local path).
             extra_options: Additional model loading options (dtype, device_map, etc.).
 
         Returns:
-            The loaded nn.Module.
+            The weight-carrying ``{component: {graph_name: module}}`` map.
+        """
+        ...
+
+    def apply_module_transforms(
+        self,
+        module: Any,
+        module_transforms: Optional[Sequence[Callable[[Any], Any]]] = None,
+    ) -> Any:
+        """Apply transforms to one component module.
+
+        The stage that owns the modules calls this, not :meth:`load_model`: a
+        module transform may *replace* a module (``convert_linear_to_conv2d``
+        returns a new one) rather than mutate it, so the caller must own the
+        result. Implementations whose models need no preparation return the
+        modules unchanged.
+
+        The weight stage is not here -- it runs inside :meth:`load_model`, the
+        only holder of the checkpoint -- so no caller ever sees a state dict.
+
+        Args:
+            module: One value from the single-level ``{component: module}`` map
+                selected by the strategy.
+            module_transforms: Transforms to apply, in order.
+
+        Returns:
+            The transformed module. Callers must use the return value.
         """
         ...
 
@@ -98,12 +145,63 @@ class ModelLoaderAdapter(Protocol):
         (``LLMWrapper.attn_mask`` returns ``example_input[1]``).
 
         Args:
-            model: The module previously returned by :meth:`load_model`.
+            model: One graph module from ``load_model``'s nested map.
             extra_options: Additional options controlling the example shapes.
 
         Returns:
             A flat tuple positionally matching ``model.forward``, ready to pass
             straight to ``torch.export.export(model, example_inputs)``.
+        """
+        ...
+
+    def get_metadata(
+        self,
+        module: Any,
+    ) -> Any:
+        """Read one graph module's constant metadata for the ``.pte``.
+
+        The metadata (``get_n_layers``, ``get_head_dim``, ``get_max_context_len``,
+        ...) is baked into the compiled binary as constant methods and is also
+        needed downstream to reconstruct logits / KV-cache shapes during
+        quantization encoding reconciliation.
+
+        Args:
+            module: One graph module from the component/graph map returned by
+                :meth:`load_model`.
+
+        Returns:
+            The graph metadata, or an empty value when the module exposes none.
+            The strategy owns routing this into ``{component: {graph_name: meta}}``.
+        """
+        ...
+
+    def get_inference(
+        self,
+        meta: Any,
+        example_inputs: Any,
+        extra_options: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """Build the ``ModelInference`` that drives PTQ calibration.
+
+        The inference object is bound to the calibration graph -- the
+        non-deployed, KV-cache graph whose observers calibration populates. The
+        strategy passes the full per-graph metadata and example inputs; the loader
+        selects its calibration graph and assembles the ``ModelInference``, since
+        the inference shape (decoder-only vs decoder + encoder) is model-family
+        specific.
+
+        Args:
+            meta: The full per-graph metadata from :meth:`get_metadata`
+                (``{component: {graph_name: meta}}`` or ``{graph_name: meta}``).
+            example_inputs: The full per-graph example inputs from
+                :meth:`get_example_inputs`, mirroring ``meta``'s shape.
+            extra_options: Additional options; reads ``embedding_quantize`` to
+                decide the token dtype.
+
+        Returns:
+            A ``ModelInference`` wrapping a ``DecoderInference`` for the
+            calibration graph, or ``None`` when the model has no calibration
+            driver.
         """
         ...
 

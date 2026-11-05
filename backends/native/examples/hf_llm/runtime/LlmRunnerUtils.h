@@ -42,4 +42,19 @@ size_t generation_limit(
     size_t cache_length,
     size_t token_upper_bound);
 
+struct Closeness {
+  double max_abs_error = 0.0;
+  size_t nan_count = 0;
+  bool close = true;
+};
+// Largest non-NaN |got - want|, the number of elements whose difference is NaN,
+// and whether every element is within atol + rtol * |want|. Equal values,
+// infinities included, are close; a NaN never is.
+Closeness compare_close(
+    const float* got,
+    const float* want,
+    size_t n,
+    double atol,
+    double rtol);
+
 } // namespace ptn

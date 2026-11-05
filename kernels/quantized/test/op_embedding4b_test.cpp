@@ -216,6 +216,79 @@ TEST(OpQuantizedEmbedding4bTest, TestGroupWiseQuantizedEmbeddingBFloat16) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
+TEST(OpQuantizedEmbedding4bTest, DtypeOutHalfQParamsFloatOut) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Half> tfh;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  Tensor weight_scales = tfh.make({3}, {0.5, 1.0, 1.5});
+  Tensor weight_zero_points = tfh.make({3}, {1, -5, 0});
+  Tensor qweight = tfb.make({3, 2}, {89, 239, 163, 72, 11, 126});
+  Tensor indices = tfl.make({3}, {0, 2, 1});
+
+  Tensor out = tf.zeros({3, 4});
+  Tensor expected = tf.make(
+      {3, 4}, {-2.0, 0.0, 2.5, 3.0, -12.0, 4.5, -1.5, 9.0, 7.0, 0.0, 1.0, 5.0});
+
+  quantized_embedding_4bit_dtype_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      -8,
+      7,
+      indices,
+      ScalarType::Float,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST(OpQuantizedEmbedding4bTest, DtypeOutZeroPointsScalesMismatchDies) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Half> tfh;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  Tensor weight_scales = tfh.make({3}, {0.5, 1.0, 1.5});
+  Tensor weight_zero_points = tf.make({3}, {1, -5, 0});
+  Tensor qweight = tfb.make({3, 2}, {89, 239, 163, 72, 11, 126});
+  Tensor indices = tfl.make({3}, {0, 2, 1});
+
+  Tensor out = tf.zeros({3, 4});
+  ET_EXPECT_DEATH(
+      quantized_embedding_4bit_dtype_out(
+          qweight,
+          weight_scales,
+          weight_zero_points,
+          -8,
+          7,
+          indices,
+          ScalarType::Float,
+          out),
+      "does not match weight_scales");
+}
+
+TEST(OpQuantizedEmbedding4bTest, OutScalesOutMismatchDies) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Half> tfh;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  Tensor weight_scales = tfh.make({3}, {0.5, 1.0, 1.5});
+  Tensor qweight = tfb.make({3, 2}, {89, 239, 163, 72, 11, 126});
+  Tensor indices = tfl.make({3}, {0, 2, 1});
+
+  Tensor out = tf.zeros({3, 4});
+  ET_EXPECT_DEATH(
+      quantized_embedding_4bit_out(
+          qweight, weight_scales, std::nullopt, -8, 7, indices, out),
+      "does not match out.scalar_type");
+}
+
 TEST(OpQuantizedEmbedding4bTest, TestGroupWiseQuantizedEmbeddingDeath2) {
   et_pal_init();
   TensorFactory<ScalarType::Byte> tfb;

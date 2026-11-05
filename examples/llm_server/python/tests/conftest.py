@@ -16,7 +16,6 @@ pytest are required.
 """
 
 import pytest
-
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat
@@ -38,6 +37,8 @@ class FakeRunner:
     With max_named_sessions > 0 it also models the worker's session admission:
     open_session() enforces capacity and reports structured WorkerError codes,
     matching the real worker's contract."""
+
+    supports_ignore_eos = True
 
     def __init__(
         self,
@@ -131,6 +132,11 @@ def make_client():
         gen_ids=None,
         reuse=0,
         reasoning_extractor=None,
+        supports_ignore_eos=True,
+        default_stop_strings=("<|im_end|>",),
+        streaming_parser_factory=None,
+        content_filter=None,
+        special_tokens=None,
     ):
         fake = FakeRunner(
             tokens,
@@ -140,10 +146,18 @@ def make_client():
             gen_ids=gen_ids,
             reuse=reuse,
         )
+        fake.supports_ignore_eos = supports_ignore_eos
+        fake.default_stop_strings = (
+            None if default_stop_strings is None else list(default_stop_strings)
+        )
         runtime = SessionRuntime(fake)  # one fake worker
         template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
-        if prompt_tokens is not None:
-            template._hf = _FakeTokenizer(prompt_tokens)
+        if prompt_tokens is not None or special_tokens is not None:
+            template._hf = _FakeTokenizer(
+                prompt_tokens if prompt_tokens is not None else 5
+            )
+            if special_tokens is not None:
+                template._hf.all_special_tokens = special_tokens
         serving = ServingChat(
             runtime,
             template,
@@ -151,6 +165,8 @@ def make_client():
             max_context=max_context,
             tool_detector_cls=HermesDetector,
             reasoning_extractor=reasoning_extractor,
+            streaming_parser_factory=streaming_parser_factory,
+            content_filter=content_filter,
         )
         return TestClient(build_app(serving, "test-model")), fake
 
