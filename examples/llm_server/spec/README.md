@@ -35,7 +35,8 @@ uses the worker's unset/random value.
 and object parameter schemas (omitted/null means an empty schema). Historical tool calls require an ID, name, and JSON
 argument object (omitted/null/empty arguments mean `{}`); each tool result must reference a preceding unresolved call.
 Malformed structures and boolean/string values for supported numeric generation controls
-fail schema validation with HTTP 422 and an `error` object before inference. Unsupported
+fail schema validation. Integer controls also reject floats, including integral floats
+such as `1024.0`. These failures return HTTP 422 and an `error` object before inference. Unsupported
 penalty/logprob controls retain their existing Pydantic coercion before capability checks.
 
 `ignore_eos` is an optional JSON boolean (default `false`) supported by the
@@ -78,7 +79,7 @@ earlier behavior, which accepted non-boolean values as an opt-out.
 **Rejected** with `400 invalid_request_error` (`code: "unsupported_parameter"`)
 rather than silently ignored — a client relying on them would otherwise get
 wrong behavior: `n` (> 1), `reasoning_effort` and OpenRouter `reasoning`
-(unless supported by the model-specific adapter),
+(except `{}` and `{"exclude": false}`, or options supported by a model-specific adapter),
 `frequency_penalty`/`presence_penalty` (nonzero), `logit_bias`, `tool_choice` =
 `"required"` or a specific-function choice
 (forcing/restricting a call needs constrained decoding, not implemented),
@@ -104,7 +105,7 @@ first chunk carries `delta.role = "assistant"`, subsequent chunks carry
 `stream_options.include_usage`), terminated by `data: [DONE]`.
 For models with an incremental parser, reasoning is emitted as
 `delta.reasoning_content` while generation runs. Other reasoning extractors buffer
-their output. Complete tool calls remain buffered. Idle HTTP streams include SSE
+their output. With tools enabled, content and reasoning are buffered unless a model adapter supplies a tool-safe incremental reasoning parser. Complete tool calls remain buffered. Idle HTTP streams include SSE
 keepalive comments every 15 seconds. Model launchers may bound initial readiness
 waiting to return headers during prefill; errors detected after headers arrive
 as SSE error events.
@@ -115,9 +116,39 @@ clients that stop consuming on `finish_reason`, and supplies overflow metadata
 for context recovery. The default `openai` dialect retains the separate
 usage-only chunk described above.
 
-`--streaming-preflight-timeout` waits for first output, including prefill; `none`
-restores an indefinite wait, while finite nonnegative values allow SSE headers
+`--streaming-preflight-timeout` waits for first output, including prefill. The default
+`none` preserves an indefinite wait, while finite nonnegative values allow SSE headers
 before first output. Once headers are sent, later failures are SSE error events.
+
+#### OpenRouter error contract
+
+The compatibility dialect retains the common `error.message`, `error.type`, and
+`error.code` fields. For context overflow it adds `error.metadata`:
+
+| Key | Meaning |
+| --- | --- |
+| `error_type`, `provider_code` | `context_length_exceeded` |
+| `context_length` | Full configured model window |
+| `prompt_tokens` | Input prompt size |
+| `completion_tokens` | Reserved output space: the explicit positive limit, or 1 when unset |
+
+Let `budget = context_length - completion_tokens`. For a positive budget the
+message is exactly:
+
+```text
+This model's maximum context length is {budget} tokens. However, your messages resulted in {prompt_tokens} tokens (the prompt budget reserves {completion_tokens} completion tokens from the {context_length}-token model window). Please reduce the length of the messages or completion.
+```
+
+The message exposes a usable *input budget* for clients that parse those counts;
+metadata preserves the full window. The minimum one-token reservation does not
+choose a client compaction margin. If the reservation consumes the whole window,
+the ordinary diagnostic message is retained because input compaction cannot make
+that reservation fit.
+
+After streaming headers, this adapter sends a bare `data: {"error": {...}}` event,
+then `data: [DONE]`. It does not add a `choices` entry or `finish_reason: "error"`.
+This is the adapter's supported error contract in both dialects; the dialect
+selects overflow metadata and usage placement, not the full OpenRouter API.
 
 ### Tool calling
 

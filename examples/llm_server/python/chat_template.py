@@ -83,7 +83,9 @@ def _decode_tool_call_arguments(messages: list[dict[str, Any]]) -> None:
             if not isinstance(fn, dict):
                 continue
             args = fn.get("arguments")
-            if isinstance(args, str):
+            if args is None or args == "":
+                fn["arguments"] = {}
+            elif isinstance(args, str):
                 try:
                     fn["arguments"] = json.loads(args)
                 except (ValueError, TypeError):

@@ -63,13 +63,26 @@ def test_impossible_output_reservation_does_not_invent_recoverable_counts(
     assert muse_overflow_counts(response.json()) is None
 
 
-def test_default_openai_error_contract_is_unchanged(make_client):
+@pytest.mark.parametrize("completion", [None, 30])
+def test_default_openai_error_contract_is_unchanged(make_client, completion):
     client, _ = make_client(max_context=100, prompt_tokens=110)
-    response = client.post(
-        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hi"}]}
+    body = {"messages": [{"role": "user", "content": "hi"}]}
+    if completion is not None:
+        body["max_tokens"] = completion
+    response = client.post("/v1/chat/completions", json=body)
+    message = (
+        "This model's maximum context length is 100 tokens, but the request has 110 prompt tokens."
+        if completion is None
+        else "This model's maximum context length is 100 tokens. However, you requested 140 tokens "
+        "(110 in the messages, 30 in the completion). Please reduce the length of the messages or completion."
     )
-    assert response.json() == ContextLengthExceeded(110, 100).body()
-    assert "metadata" not in response.json()["error"]
+    assert response.json() == {
+        "error": {
+            "message": message,
+            "type": "invalid_request_error",
+            "code": "context_length_exceeded",
+        }
+    }
 
 
 def test_late_context_error_has_same_openrouter_contract(make_client):

@@ -356,3 +356,138 @@ def test_closing_response_sends_heartbeat_and_closes_source():
         assert closed == [True]
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("arguments", ["", None, "omitted"])
+@pytest.mark.parametrize(
+    "render_args",
+    [
+        "{{ call.function.arguments | items | list | tojson }}",
+        "{{ call.function.arguments | tojson }}",
+    ],
+)
+def test_empty_arguments_render_as_objects_in_hf_templates(
+    make_client, monkeypatch, arguments, render_args
+):
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from transformers import AutoTokenizer, PreTrainedTokenizerFast
+
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_object=Tokenizer(WordLevel({"[UNK]": 0}, unk_token="[UNK]"))
+    )
+    tokenizer.chat_template = (
+        "{% for message in messages %}{% for call in message.tool_calls | default([]) %}"
+        + render_args
+        + "{% endfor %}{% endfor %}"
+    )
+    monkeypatch.setattr(AutoTokenizer, "from_pretrained", lambda _: tokenizer)
+    client, worker = make_client()
+    client.app.state.serving._template = ChatTemplate("local")
+    function = {"name": "f"}
+    if arguments != "omitted":
+        function["arguments"] = arguments
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "messages": [
+                {
+                    "role": "assistant",
+                    "tool_calls": [{"id": "c", "function": function}],
+                },
+                {"role": "tool", "tool_call_id": "c", "content": "done"},
+            ]
+        },
+    )
+    assert response.status_code == 200, response.text
+    expected = "[]" if "items" in render_args else "{}"
+    assert (
+        client.app.state.serving._template.render(
+            [
+                ChatMessage(
+                    role="assistant", tool_calls=[{"id": "c", "function": function}]
+                )
+            ]
+        )
+        == expected
+    )
+    assert worker.captured_config is not None
+
+
+def test_hermes_empty_arguments_preserve_the_complete_call_set(make_client):
+    raw = '<tool_call>[{"name":"f","arguments":""},{"name":"f","arguments":{}}]</tool_call>'
+    client, _ = make_client(tokens=[raw])
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "call f twice"}],
+            "tools": [
+                {"type": "function", "function": {"name": "f", "parameters": {}}}
+            ],
+        },
+    )
+    assert response.status_code == 200
+    calls = response.json()["choices"][0]["message"]["tool_calls"]
+    assert [json.loads(c["function"]["arguments"]) for c in calls] == [{}, {}]
+
+
+def test_heartbeat_disconnect_closes_real_generation_and_session_lease():
+    from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
+    from executorch.examples.llm_server.python.server import _ClosingStreamingResponse
+    from executorch.examples.llm_server.python.serving_chat import ServingChat
+    from executorch.examples.llm_server.python.session_runtime import SessionRuntime
+    from executorch.examples.llm_server.python.tests.test_concurrent_serving import (
+        _NativeWorker,
+    )
+
+    async def scenario():
+        worker = _NativeWorker(tokens=())
+        runtime = SessionRuntime(worker)
+        serving = ServingChat(
+            runtime,
+            ChatTemplate(allow_fallback=True),
+            "test",
+            streaming_preflight_timeout=0,
+        )
+        disconnected = asyncio.Event()
+        bodies = []
+
+        async def receive():
+            await disconnected.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message):
+            if message["type"] == "http.response.body":
+                bodies.append(message.get("body", b""))
+                if bodies[-1] == b": keep-alive\n\n":
+                    disconnected.set()
+
+        try:
+            stream = await serving.create(
+                ChatCompletionRequest(
+                    messages=[ChatMessage(role="user", content="hi")],
+                    session_id="s",
+                    stream=True,
+                )
+            )
+            response = _ClosingStreamingResponse(stream, heartbeat_interval=0.001)
+            await asyncio.wait_for(
+                response(
+                    {"type": "http", "asgi": {"spec_version": "2.0"}}, receive, send
+                ),
+                2,
+            )
+            assert b": keep-alive\n\n" in bodies
+            assert len(worker.cancelled) == 1
+            assert runtime._admitted == 0
+
+            async def reacquire():
+                async with runtime._session_locks.hold("s"):
+                    async with serving._transactions.hold("s"):
+                        pass
+
+            await asyncio.wait_for(reacquire(), 1)
+        finally:
+            await runtime.aclose_worker()
+
+    asyncio.run(scenario())

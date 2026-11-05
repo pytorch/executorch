@@ -97,7 +97,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--streaming-preflight-timeout",
         type=_parse_preflight_timeout,
-        default=1.0,
+        default=None,
         help="Seconds to wait for first output (including prefill); none waits indefinitely. "
         "Later errors are SSE events.",
     )

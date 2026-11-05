@@ -374,6 +374,8 @@ class Generation:
 
         One prefetch task/token per admitted request lets HTTP map admission
         errors before sending headers without pre-opening native sessions.
+        A finite timeout permits headers before readiness; subsequent errors
+        are then reported in the response stream.
         """
         if self._closed:
             return

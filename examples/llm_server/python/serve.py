@@ -122,7 +122,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--streaming-preflight-timeout",
         type=_parse_preflight_timeout,
-        default=1.0,
+        default=None,
         help="Seconds to wait for first output (including prefill) before SSE headers; none waits indefinitely.",
     )
     parser.add_argument("--host", default="127.0.0.1")

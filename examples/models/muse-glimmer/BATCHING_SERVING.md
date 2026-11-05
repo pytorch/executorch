@@ -105,8 +105,9 @@ framing and emits `reasoning_content` and `content` incrementally. Optional ATEM
 tool parsing is enabled with `--tool-parser atem`; tool-enabled responses
 currently remain buffered.
 
-The launcher waits at most one second for initial generation readiness before
-returning streaming headers. Idle streams send SSE keepalive comments every 15
+The launcher waits for initial generation readiness before returning streaming
+headers. Set `--streaming-preflight-timeout 1` to return headers after at most one
+second of waiting, including prefill. Idle streams send SSE keepalive comments every 15
 seconds. Admission errors detected before headers retain their HTTP status; late
 errors are delivered as SSE errors. Keepalives indicate a live connection, not
 measured prefill progress.
@@ -267,8 +268,3 @@ and `--max-draft-owners`), then add `--dflash` to the serve command above. The
 draft ABI and `--dflash-n-draft` behave as on MLX. Drafts are greedy; the target
 accepts or resamples them on the device under each request's sampling. Decode
 drafts of up to four owners run in CUDA graphs.
-
-The compatibility dialect changes usage placement and overflow formatting. Common
-validation, model context metadata, and legal SSE keepalives apply in both modes.
-`--streaming-preflight-timeout` defaults to 1 second; errors after response headers
-are sent are reported as SSE error events.

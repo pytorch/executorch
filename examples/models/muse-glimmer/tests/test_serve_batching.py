@@ -190,7 +190,15 @@ def test_image_frame_capacity(arguments, shortfall):
 
 
 @pytest.mark.parametrize("constructor_failure", [False, True])
-def test_chat_factory_closes_worker(arguments, monkeypatch, constructor_failure):
+@pytest.mark.parametrize("bounded", [False, True])
+def test_chat_factory_closes_worker(
+    arguments, monkeypatch, constructor_failure, bounded
+):
+    arguments = arguments + (
+        ["--api-dialect", "openrouter", "--streaming-preflight-timeout", "0.25"]
+        if bounded
+        else []
+    )
     captured = {}
 
     class Worker:
@@ -235,6 +243,8 @@ def test_chat_factory_closes_worker(arguments, monkeypatch, constructor_failure)
     async def scenario():
         async with factory() as chat:
             assert isinstance(chat, serve.MuseGlimmerServingChat)
+            assert chat.api_dialect == ("openrouter" if bounded else "openai")
+            assert chat._streaming_preflight_timeout == (0.25 if bounded else None)
             assert chat._prompt_token_offset == 1
             assert chat._max_image_bytes == args.max_image_bytes
             assert not worker.closed

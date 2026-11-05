@@ -241,7 +241,7 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
         max_context=1024,
         tool_detector_cls=HermesDetector,
         api_dialect="openai",
-        streaming_preflight_timeout=1.0,
+        streaming_preflight_timeout=None,
     )
     app = launch.stages["uvicorn"].call_args.args[0]
     launch.stages["uvicorn"].assert_called_once_with(app, host="127.0.0.1", port=8000)
