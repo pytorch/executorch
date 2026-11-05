@@ -251,6 +251,7 @@ KERNELS_UTIL_ALL_DEPS_SRCS = [
     "kernels/portable/cpu/util/delinearize_index.cpp",
     "kernels/portable/cpu/util/distance_util.cpp",
     "kernels/portable/cpu/util/dtype_util.cpp",
+    "kernels/portable/cpu/util/grid_sampler_2d_util.cpp",
     "kernels/portable/cpu/util/index_util.cpp",
     "kernels/portable/cpu/util/kernel_ops_util.cpp",
     "kernels/portable/cpu/util/matmul_ops_util.cpp",
@@ -260,6 +261,7 @@ KERNELS_UTIL_ALL_DEPS_SRCS = [
     "kernels/portable/cpu/util/repeat_util.cpp",
     "kernels/portable/cpu/util/select_copy_util.cpp",
     "kernels/portable/cpu/util/slice_util.cpp",
+    "kernels/portable/cpu/util/stack_util.cpp",
     "kernels/portable/cpu/util/upsample_util.cpp",
 ]
 

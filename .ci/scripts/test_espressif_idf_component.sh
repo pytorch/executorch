@@ -45,6 +45,22 @@ bash examples/espressif/build_idf_component.sh --profiles "${profiles}" \
     --out "${component_dir}" 2>&1 | tee "${build_dir}/generate.log"
 
 project=examples/espressif/idf_component_smoke
+
+# With newlib's nano printf, the component compiles ExecuTorch logging out and
+# says so.
+printf 'CONFIG_LIBC_NEWLIB=y\nCONFIG_LIBC_NEWLIB_NANO_FORMAT=y\n' > "${build_dir}/nano.defaults"
+idf.py -C "${project}" -B "${build_dir}/firmware-nano" -DIDF_TARGET=esp32s3 \
+    -DSDKCONFIG="${build_dir}/sdkconfig-nano" \
+    "-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;${build_dir}/nano.defaults" \
+    -DET_COMPONENT_DIR="${component_dir}" -DET_SMOKE_PTE="${build_dir}/smoke.pte" \
+    reconfigure > "${build_dir}/firmware-nano.log" 2>&1
+# CMake wraps long messages, so match with whitespace runs collapsed.
+if ! tr -s ' \n' '  ' < "${build_dir}/firmware-nano.log" \
+    | grep -qF "ExecuTorch logging is DISABLED"; then
+    echo "FAIL: no nano printf warning; see ${build_dir}/firmware-nano.log" >&2
+    exit 1
+fi
+
 for profile in ${profiles//,/ }; do
     profile_upper=$(echo "${profile}" | tr '[:lower:]-' '[:upper:]_')
     firmware_dir="${build_dir}/firmware-${profile}"

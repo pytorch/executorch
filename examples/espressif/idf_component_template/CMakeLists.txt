@@ -56,6 +56,8 @@ idf_component_register(
   "src/platform/esp_pal.cpp"
   INCLUDE_DIRS
   "include"
+  PRIV_INCLUDE_DIRS
+  "priv_include"
   PRIV_REQUIRES
   ${_et_requires}
   WHOLE_ARCHIVE
@@ -81,14 +83,13 @@ else()
   set(_et_program_verification 0)
 endif()
 
-# Consumers including <executorch/...> headers need the same c10 macro mode and
-# flatbuffers alignment the runtime was built with. __FUNCTION__ instead of
-# __builtin_FUNCTION() keeps log function names without full signatures.
+# Consumers including <executorch/...> headers need the same c10 macro mode the
+# runtime was built with. __FUNCTION__ instead of __builtin_FUNCTION() keeps log
+# function names without full signatures.
 target_compile_definitions(
   ${COMPONENT_LIB}
-  PUBLIC C10_USING_CUSTOM_GENERATED_MACROS FLATBUFFERS_MAX_ALIGNMENT=1024
-         ET_USE_BUILTIN_FUNCTION_NAME=0
-  PRIVATE MAX_KERNEL_NUM=${_et_max_kernel_num}
+  PUBLIC C10_USING_CUSTOM_GENERATED_MACROS ET_USE_BUILTIN_FUNCTION_NAME=0
+  PRIVATE FLATBUFFERS_MAX_ALIGNMENT=1024 MAX_KERNEL_NUM=${_et_max_kernel_num}
           ET_ENABLE_PROGRAM_VERIFICATION=${_et_program_verification}
 )
 
@@ -100,7 +101,18 @@ if(CONFIG_ET_OPTIMIZE_SIZE)
   target_compile_options(${COMPONENT_LIB} PRIVATE -Os)
 endif()
 
-if(NOT CONFIG_ET_ENABLE_LOGGING)
+# Newlib's nano printf cannot format 64-bit integers, which ExecuTorch's error
+# messages print, so logging one could crash the app.
+if(CONFIG_ET_ENABLE_LOGGING AND CONFIG_LIBC_NEWLIB_NANO_FORMAT)
+  message(
+    WARNING
+      "ExecuTorch logging is DISABLED: CONFIG_LIBC_NEWLIB_NANO_FORMAT selects "
+      "newlib's nano printf, which cannot format the 64-bit integers in "
+      "ExecuTorch's error messages. Use Picolibc (ESP-IDF's default) or turn "
+      "off nano formatting to keep ExecuTorch logging."
+  )
+endif()
+if(NOT CONFIG_ET_ENABLE_LOGGING OR CONFIG_LIBC_NEWLIB_NANO_FORMAT)
   target_compile_definitions(${COMPONENT_LIB} PUBLIC ET_LOG_ENABLED=0)
 endif()
 
@@ -126,11 +138,8 @@ target_compile_definitions(
   PRIVATE ET_ESP_LOG_LEVEL=${_et_esp_log_level}
 )
 
-# ESP-IDF builds with warnings-as-errors; upstream ExecuTorch sources are not
-# warning-clean under the IDF flag set, so demote for vendored sources only.
+# Vendored ExecuTorch sources use ExecuTorch's own deprecated aliases.
 set_source_files_properties(
-  ${_et_vendored_srcs}
-  PROPERTIES
-    COMPILE_OPTIONS
-    "-Wno-error;-Wno-deprecated-declarations;-Wno-unused-parameter;-Wno-sign-compare;-Wno-unused-variable"
+  ${_et_vendored_srcs} PROPERTIES COMPILE_OPTIONS
+                                  "-Wno-deprecated-declarations"
 )
