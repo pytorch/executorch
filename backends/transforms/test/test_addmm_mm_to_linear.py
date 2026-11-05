@@ -56,6 +56,16 @@ class _DequantizeLinearNoOpView(torch.nn.Module):
         return self.linear(_dequantize(xq).view(-1, 16)).view(-1, 8)
 
 
+class _DequantizeLinearReadTwice(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.linear = torch.nn.Linear(16, 8)
+
+    def forward(self, xq: torch.Tensor):
+        y = self.linear(_dequantize(xq).view(-1, 16))
+        return y, y.view(xq.shape[0], xq.shape[1], 8)
+
+
 class _DequantizeSelfProduct(torch.nn.Module):
     def forward(self, xq: torch.Tensor) -> torch.Tensor:
         flat = _dequantize(xq).view(-1, 16)
@@ -189,13 +199,15 @@ class TestAddmmMmToLinear(unittest.TestCase):
                 torch.testing.assert_close(program.module()(x), model(x))
 
     def test_linear_reads_the_dequantized_input_only_when_its_view_goes(self):
-        # The first linear has no view after it, so it keeps reading the
-        # flattened input. The second has a view only to its own output shape,
-        # which goes, while the linear keeps reading the flattened input. The
-        # third reads the dequantized tensor once its view goes, while the other
-        # reader of the flattened input keeps its shape.
+        # The first linear has no view after it, and the second has another
+        # reader besides its view, so both keep reading the flattened input. The
+        # third has a view only to its own output shape, which goes, while the
+        # linear keeps reading the flattened input. The fourth reads the
+        # dequantized tensor once its view goes, while the other reader of the
+        # flattened input keeps its shape.
         for model, reads in (
             (_DequantizeLinear(), _VIEW),
+            (_DequantizeLinearReadTwice(), _VIEW),
             (_DequantizeLinearNoOpView(), _VIEW),
             (_DequantizeLinearViewAndFlatInput(), _DEQUANTIZE),
         ):

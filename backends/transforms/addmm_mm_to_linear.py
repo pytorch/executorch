@@ -60,10 +60,18 @@ def get_dqlinear_input(node: torch.fx.Node):
 
 def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Graph:
     """
-    Replaces pattern: x -> view_copy -> view_copy -> linear -> view_copy -> y
-    with
-    x -> linear -> y
+    Removes the view_copy after a linear when the linear already produces its
+    shape, so x -> linear -> view_copy -> y becomes x -> linear -> y. A linear
+    with other readers besides the view is left as is.
+
+    When the linear reads a dequantize_per_tensor.tensor node through view_copy
+    nodes and has no bias of more than one dim, it reads that node instead if
+    that makes its output match the view, so
+    dq -> view_copy -> linear -> view_copy -> y becomes dq -> linear -> y.
     Linear nodes can handle input tensor with > 2 dimensions.
+
+    A view goes only when the shapes are known to be equal. With dynamic shapes,
+    the linear's input and the view need symbolic shapes in meta["val"].
     """
     ops = exir_ops.edge
     for node in graph.nodes:
