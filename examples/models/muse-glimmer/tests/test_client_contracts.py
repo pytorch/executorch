@@ -8,14 +8,19 @@
 import json
 
 import pytest
-from executorch.examples.models.muse_glimmer.serving.chat_template import (
+
+pytest.importorskip("jsonschema", reason="requires llm_server serving dependencies")
+pytest.importorskip("regex", reason="requires llm_server serving dependencies")
+from executorch.examples.models.muse_glimmer.serving.chat_template import (  # noqa: E402
     MuseGlimmerChatTemplate,
 )
-from executorch.examples.models.muse_glimmer.serving.stream_parser import (
+from executorch.examples.models.muse_glimmer.serving.stream_parser import (  # noqa: E402
     MuseGlimmerStreamParser,
 )
-from executorch.examples.models.muse_glimmer.tests.test_atem_tool_parser import _atem
-from executorch.examples.models.muse_glimmer.tests.test_migration_contracts import (
+from executorch.examples.models.muse_glimmer.tests.test_atem_tool_parser import (  # noqa: E402
+    _atem,
+)
+from executorch.examples.models.muse_glimmer.tests.test_migration_contracts import (  # noqa: E402
     client_for,
     request,
     response_message,
