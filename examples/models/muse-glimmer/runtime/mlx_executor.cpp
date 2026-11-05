@@ -7,6 +7,7 @@
  */
 #include <executorch/examples/models/muse-glimmer/runtime/mlx_executor.h>
 
+#include <executorch/backends/mlx/runtime/backend_options.h>
 #include <executorch/examples/models/muse-glimmer/runtime/engine/sampling.h>
 #include <executorch/examples/models/muse-glimmer/runtime/model_embeddings.h>
 #include <executorch/extension/llm/batching/executor_utils.h>
@@ -385,11 +386,15 @@ bool MuseGlimmerMLXExecutor::initialize() {
 #if ET_HAS_EXCEPTIONS
   try {
 #endif
-    auto error = batching::load_method_with_cache(
-        *module_, kDecoder, kBackend, install_guard_);
+    runtime::BackendOptions<2> options;
+    auto error = options.set_option(backends::mlx::kClearCacheIntervalKey, 1);
+    if (error == Error::Ok) {
+      error = batching::load_method_with_cache(
+          *module_, kDecoder, kBackend, install_guard_, options);
+    }
     if (error == Error::Ok && dflash_) {
       error = batching::load_method_with_cache(
-          *module_, "draft_forward", kBackend, *dflash_->guard);
+          *module_, "draft_forward", kBackend, *dflash_->guard, options);
     }
     if (error == Error::Ok) {
       error = embeddings_->initialize(*module_);
