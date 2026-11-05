@@ -33,7 +33,10 @@ uses the worker's unset/random value.
 `messages` must be nonempty and roles must be `system`, `developer`, `user`,
 `assistant`, or `tool`. Tool declarations require unique nonempty function names
 and object parameter schemas (omitted/null means an empty schema). Historical tool calls require an ID, name, and JSON
-argument object (omitted/null/empty arguments mean `{}`); each tool result must reference a preceding unresolved call.
+argument object (omitted/null/empty arguments mean `{}`). Call IDs must be unique
+within an assistant message, but may be reused across turns. Tool results require
+a `tool_call_id`; they need not have a matching call in the supplied history.
+Compacted histories and repeated tool results are preserved for template rendering.
 Malformed structures and boolean/string values for supported numeric generation controls
 fail schema validation. Integer controls also reject floats, including integral floats
 such as `1024.0`. These failures return HTTP 422 and an `error` object before inference. Unsupported

@@ -54,9 +54,19 @@ def test_heartbeat_cleanup_while_waiting_for_source(failed):
         {"max_tokens": "12"},
         {
             "messages": [
-                {"role": "tool", "tool_call_id": "missing", "content": "result"}
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "duplicate",
+                            "function": {"name": "f", "arguments": "{}"},
+                        }
+                        for _ in range(2)
+                    ],
+                }
             ]
         },
+        {"messages": [{"role": "tool", "content": "result"}]},
         {
             "messages": [
                 {
@@ -491,3 +501,99 @@ def test_heartbeat_disconnect_closes_real_generation_and_session_lease():
             await runtime.aclose_worker()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("dialect", ["openai", "openrouter"])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "history",
+    [
+        "orphan",
+        "summarized",
+        "reused-id-missing-result",
+        "duplicate-result",
+        "complete-reused-id",
+    ],
+)
+def test_compacted_tool_histories_preserve_messages(
+    make_client, monkeypatch, dialect, stream, history
+):
+    from copy import deepcopy
+
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from transformers import AutoTokenizer, PreTrainedTokenizerFast
+
+    call = {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "id": "call_0",
+                "type": "function",
+                "function": {"name": "read", "arguments": '{"path":"a.py"}'},
+            }
+        ],
+    }
+    result = {
+        "role": "tool",
+        "tool_call_id": "call_0",
+        "name": "read",
+        "content": "file contents",
+    }
+    if history == "orphan":
+        messages = [result]
+    elif history == "summarized":
+        messages = [
+            {"role": "system", "content": "Earlier work was compacted."},
+            result,
+        ]
+    elif history == "reused-id-missing-result":
+        messages = [
+            call,
+            {"role": "user", "content": "Earlier result was summarized. Read again."},
+            deepcopy(call),
+            result,
+        ]
+    elif history == "duplicate-result":
+        messages = [call, result, deepcopy(result)]
+    else:
+        messages = [
+            call,
+            result,
+            {"role": "user", "content": "Read again."},
+            deepcopy(call),
+            deepcopy(result),
+        ]
+    messages.append({"role": "user", "content": "Continue from the retained results."})
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_object=Tokenizer(WordLevel({"[UNK]": 0}, unk_token="[UNK]"))
+    )
+    tokenizer.chat_template = "{{ messages | tojson }}"
+    monkeypatch.setattr(AutoTokenizer, "from_pretrained", lambda _: tokenizer)
+    client, worker = make_client(api_dialect=dialect)
+    client.app.state.serving._template = ChatTemplate("local")
+    prompts = []
+    generate = worker.generate
+
+    def capture(prompt, *args, **kwargs):
+        prompts.append(json.loads(prompt))
+        return generate(prompt, *args, **kwargs)
+
+    monkeypatch.setattr(worker, "generate", capture)
+    response = client.post(
+        "/v1/chat/completions", json={"messages": messages, "stream": stream}
+    )
+    assert response.status_code == 200, response.text
+    assert len(prompts) == 1
+    rendered = prompts[0]
+    assert len(rendered) == len(messages)
+    for original, actual in zip(messages, rendered):
+        for key in ("role", "content", "name", "tool_call_id"):
+            if key in original:
+                assert actual[key] == original[key]
+        if original.get("tool_calls"):
+            assert actual["tool_calls"][0]["id"] == "call_0"
+            assert actual["tool_calls"][0]["function"] == {
+                "name": "read",
+                "arguments": {"path": "a.py"},
+            }

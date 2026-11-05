@@ -111,8 +111,8 @@ class ChatCompletionRequest(BaseModel):
     @field_validator("messages")
     @classmethod
     def validate_history(cls, messages):
-        calls = set()
         for message in messages:
+            calls = set()
             for call in message.tool_calls or []:
                 if message.role != "assistant" or not call.id or not call.function.name:
                     raise ValueError(
@@ -129,10 +129,10 @@ class ChatCompletionRequest(BaseModel):
                     ) from error
                 if not isinstance(arguments, dict):
                     raise ValueError("historical tool arguments must be an object")
-            if message.role == "tool":
-                if not message.tool_call_id or message.tool_call_id not in calls:
-                    raise ValueError("tool result must reference a preceding tool call")
-                calls.remove(message.tool_call_id)
+            # Compaction can remove calls/results, and providers can reuse IDs
+            # across turns. Validate each message without requiring a full log.
+            if message.role == "tool" and not message.tool_call_id:
+                raise ValueError("tool result requires a tool_call_id")
         return messages
 
     def resolved_max_tokens(self) -> int:

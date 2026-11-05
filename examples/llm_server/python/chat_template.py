@@ -74,8 +74,9 @@ def _decode_tool_call_arguments(messages: list[dict[str, Any]]) -> None:
     OpenAI sends assistant tool-call arguments as a JSON-encoded string, but HF
     chat templates expect a mapping (e.g. Qwen renders ``arguments|items`` into
     ``<parameter=…>`` tags). Without this, a multi-turn tool conversation makes
-    the template raise "Can only get item pairs from a mapping". Left as-is if
-    the value isn't valid JSON, so a template that wants the raw string still works.
+    the template raise "Can only get item pairs from a mapping". HTTP request
+    validation requires object-valued JSON. Direct template callers bypassing
+    request validation retain their original value if JSON decoding fails.
     """
     for m in messages:
         for tc in m.get("tool_calls") or []:
