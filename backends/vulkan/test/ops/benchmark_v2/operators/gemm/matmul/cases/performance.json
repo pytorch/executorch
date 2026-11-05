@@ -1,0 +1,5502 @@
+[
+  {
+    "name": "mm performance [0,4096,1024,256] aten.mm.default texture3d float32",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1024, 256],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.mm.default buffer float32 float32 buffer width",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled"],
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1024, 256],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.mm.default texture3d float32",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.mm.default buffer float32 float32 buffer width",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled"],
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.mm.default texture3d float32",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.mm.default buffer float32 float32 buffer width",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled"],
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.mm.default texture3d float32",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [64, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.mm.default buffer float32 float32 buffer width",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled"],
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [64, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.mm.default buffer float32 float32 buffer width coopmat",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1024, 256],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.mm.default buffer float32 float32 buffer width coopmat",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.mm.default buffer float32 float32 buffer width coopmat",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.mm.default buffer float32 float32 buffer width coopmat",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [64, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.mm.default texture3d float16",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1024, 256],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.mm.default buffer float16",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"],
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1024, 256],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.mm.default texture3d float16",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.mm.default buffer float16",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"],
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.mm.default texture3d float16",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.mm.default buffer float16",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"],
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.mm.default texture3d float16",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [64, 128],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.mm.default buffer float16",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"],
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [64, 128],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,4096,256,1024] aten.bmm.default texture3d float32",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 4096, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 256, 1024],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 4096, 1024],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,4096,256,128] aten.bmm.default texture3d float32",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 4096, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 256, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 4096, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,4096,256,1024] aten.bmm.default buffer float32",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 256, 1024],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 4096, 1024],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,4096,256,128] aten.bmm.default buffer float32",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 256, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,256,4096,64] aten.bmm.default texture3d float32",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 256, 4096],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 4096, 64],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 256, 64],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,256,4096,64] aten.bmm.default buffer float32",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 256, 4096],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 4096, 64],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 256, 64],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,4096,256,1024] aten.bmm.default texture3d float16",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 256, 1024],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 4096, 1024],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,4096,256,128] aten.bmm.default texture3d float16",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 256, 128],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,4096,256,1024] aten.bmm.default buffer float16",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 256, 1024],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 4096, 1024],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,4096,256,128] aten.bmm.default buffer float16",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 256, 128],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,256,4096,64] aten.bmm.default texture3d float16",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 256, 4096],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 4096, 64],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 256, 64],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [1,256,4096,64] aten.bmm.default buffer float16",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 256, 4096],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1, 4096, 64],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 256, 64],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.addmm.default texture3d float32",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1024, 256],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.addmm.default texture3d float32",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.addmm.default buffer float32",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1024, 256],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.addmm.default buffer float32",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.addmm.default texture3d float32",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.addmm.default texture3d float32",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [64, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.addmm.default buffer float32",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.addmm.default buffer float32",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [64, 128],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.addmm.default texture3d float16",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1024, 256],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.addmm.default texture3d float16",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.addmm.default buffer float16",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [1024, 256],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.addmm.default buffer float16",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.addmm.default texture3d float16",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.addmm.default texture3d float16",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["texture3d", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [64, 128],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.addmm.default buffer float16",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.addmm.default buffer float16",
+    "operator": "aten.addmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [64, 128],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.linear.default",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_STORAGE": ["texture3d", "buffer"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 1024],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.linear.default",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_STORAGE": ["texture3d", "buffer"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.linear.default",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_STORAGE": ["texture3d", "buffer"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.linear.default",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_STORAGE": ["texture3d", "buffer"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 64],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.linear.default buffer float32 constant=False tiled",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "tiled",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 1024],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.linear.default buffer float32 constant=False tiled",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "tiled",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.linear.default buffer float32 constant=False tiled",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "tiled",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.linear.default buffer float32 constant=False tiled",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "tiled",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 64],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.linear.default buffer float32 constant=False coopmat",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 1024],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.linear.default buffer float32 constant=False coopmat",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.linear.default buffer float32 constant=False coopmat",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.linear.default buffer float32 constant=False coopmat",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 64],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.linear.default texture3d float16 constant=False auto",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 1024],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.linear.default buffer float16 constant=False",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 1024],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.linear.default texture3d float16 constant=False auto",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.linear.default buffer float16 constant=False",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.linear.default texture3d float16 constant=False auto",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.linear.default buffer float16 constant=False",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.linear.default texture3d float16 constant=False auto",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 64],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.linear.default buffer float16 constant=False",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 64],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.linear.default (6)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_STORAGE": ["texture3d", "buffer"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 1024],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.linear.default (6)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_STORAGE": ["texture3d", "buffer"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.linear.default (6)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_STORAGE": ["texture3d", "buffer"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.linear.default (6)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_STORAGE": ["texture3d", "buffer"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 64],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.linear.default buffer float32 constant=False tiled (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "tiled",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 1024],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.linear.default buffer float32 constant=False tiled (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "tiled",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.linear.default buffer float32 constant=False tiled (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "tiled",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.linear.default buffer float32 constant=False tiled (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "tiled",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 64],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.linear.default buffer float32 constant=False coopmat (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 1024],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.linear.default buffer float32 constant=False coopmat (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.linear.default buffer float32 constant=False coopmat (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.linear.default buffer float32 constant=False coopmat (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "route": "coopmat",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 64],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.linear.default texture3d float16 constant=False auto (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 1024],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,1024,256] aten.linear.default buffer float16 constant=False (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 1024],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 1024],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.linear.default texture3d float16 constant=False auto (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,256,128] aten.linear.default buffer float16 constant=False (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 256],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.linear.default texture3d float16 constant=False auto (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,128,256] aten.linear.default buffer float16 constant=False (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 128],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [256],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 256],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.linear.default texture3d float16 constant=False auto (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "auto",
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 64],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm performance [0,4096,64,128] aten.linear.default buffer float16 constant=False (2)",
+    "operator": "aten.linear.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.0,
+      "rtol": 0.1
+    },
+    "route": "v_ROUTE",
+    "sweep_variables": {
+      "v_ROUTE": ["auto", "tiled", "coopmat"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [4096, 64],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [128, 64],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "bias",
+            "sizes": [128],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [4096, 128],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  }
+]

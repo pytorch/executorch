@@ -37,8 +37,11 @@ to run ExecuTorch `.pte` files, with some restrictions:
 * \[Linux and Windows] [OpenVINO](docs/source/build-run-openvino.md) backend is also linked into the
   prebuilt module. OpenVINO requires the runtime to be installed separately:
   `pip install executorch[openvino]`. For now the extra installs no runtime on Python 3.15,
-  or on Linux aarch64 with Python 3.14, because the OpenVINO versions it supports publish no
-  build there.
+  where OpenVINO publishes no build. On Linux aarch64, OpenVINO needs glibc 2.35 or newer,
+  as on Ubuntu 22.04 or Raspberry Pi OS Bookworm and later. On an older aarch64 system, such as
+  RHEL 9 or Amazon Linux 2023, `pip install executorch[openvino]` does not fail but installs an
+  older ExecuTorch release; see the [OpenVINO docs](docs/source/build-run-openvino.md) for what
+  to do there.
 
 On Linux, macOS and Windows the runtime, kernels and backends also ship as shared libraries
 with headers and a CMake package, so a C++ application can link them without building

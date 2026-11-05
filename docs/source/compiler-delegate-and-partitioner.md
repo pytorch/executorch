@@ -132,6 +132,36 @@ number in the program, lets the planner reuse the bytes for tensors whose
 lifetimes do not overlap the delegate call, and makes the requirement visible to
 the memory planning inspection tools.
 
+### Sharing one handle across calls
+
+A method can call the same lowered module more than once. For example, you lower
+a step once with `to_backend`, call it in a loop from a wrapper module, and
+export the wrapper again. By default each call gets its own handle (the object
+that `init()` returns), so `init()` runs once per call. A backend can ask for
+one handle for all of these calls:
+
+```python
+return PreprocessResult(
+    processed_bytes=blob,
+    share_handle_across_calls=True,
+)
+```
+
+Then `init()` runs once, and every call runs `execute()` on that handle with its
+own arguments. Set it only if `execute()` does all of the following, in every
+runtime version of the backend and with any runtime options:
+
+- It reads its arguments again on every call.
+- It keeps nothing on the handle that is tied to one call or that changes later
+  results, for example saved argument pointers or a cache that each call
+  updates.
+- It writes outputs only into the output tensors it is given.
+
+Sharing applies to calls of one lowered module. Separate partitions get separate
+lowered modules, so they keep separate handles even when their blobs are
+identical. A backend that declares scratch always gets one handle per call,
+because the runtime keeps scratch on the delegate and each call has its own.
+
 ## Backend Interfaces: Runtime Initialization and Execution
 
 During the runtime, the compiled blob from the `preprocess` function will be
