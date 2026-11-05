@@ -335,11 +335,22 @@ way, because they sit next to the runtime library.
 
 - `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or
   points somewhere else. Run the `python -c` line on its own and check the folder exists.
+- `os.path.dirname(executorch.__file__)` fails with a `TypeError`: the `executorch` package has no
+  `__init__.py`, so its `__file__` is `None`. Use `executorch.__path__[0]` instead, as the command
+  above does.
 - The program builds but fails to load the model: the path is relative, so run it from the folder
   containing the `.pte` file.
 - A missing operator at run time: add a kernel component, usually
   `executorch::kernels_optimized`.
 - The model fails to load complaining about a backend: link the backend it was exported for.
+- The model fails to load because data is missing, for example the CUDA backend reports
+  `... is missing from named data`: the export wrote the weights to a separate `.ptd` file. Pass the
+  file it wrote as the second argument, for example
+  `Module module("model.pte", "aoti_cuda_blob.ptd");`.
+- A GPU model fails on its first run because an output has no buffer: it was exported with
+  `alloc_graph_output=False`, so it has no memory of its own for its outputs. Give each output a
+  buffer with `set_output` before the first run, as shown in
+  [the CUDA section](#running-on-a-gpu-with-the-cuda-package).
 - `executorch::runtime` is not a target: imported targets need CMake 3.28 or newer. On an older
   CMake the package still works, but you name variables instead of targets, and you have to pass on
   the definitions and the C++ standard requirement yourself:
@@ -512,6 +523,35 @@ reach fewer cards in that range than the x86_64 ones, so a card at or above `(8,
 outside an ARM package. Note that `torch.cuda.get_arch_list()` is not the right check either:
 PyTorch builds for a wider set at the bottom than these packages do, so a GPU can appear in that
 list and still not be supported.
+
+A model can also be exported to keep its inputs and outputs on the GPU, so the runtime does not copy
+them between CPU and GPU memory on every run.
+[The CUDA backend guide](backends/cuda/cuda-overview.md#activation-memory-who-owns-the-gpu-copies)
+shows how. Such a model takes GPU tensors. If it was also exported with `alloc_graph_output=False`,
+as the guide recommends, it has no memory of its own for its outputs. Give each output a GPU buffer
+with `set_output`, once, before the first run. Its second argument is the output's index; the
+example below sets output 0:
+
+```cpp
+using namespace executorch::aten;
+using namespace executorch::extension;
+using namespace executorch::runtime;
+
+// a, b and sum point to GPU memory, for example from cudaMalloc.
+auto x = from_blob(a, {2, 2}, ScalarType::Float, DeviceType::CUDA);
+auto y = from_blob(b, {2, 2}, ScalarType::Float, DeviceType::CUDA);
+auto out = from_blob(sum, {2, 2}, ScalarType::Float, DeviceType::CUDA);
+
+// Every run then writes its result to sum.
+if (module.set_output(out) != Error::Ok) {
+  return 1;
+}
+const auto result = module.forward({x, y});
+```
+
+Without `set_output` the run fails, because the output has no memory to go to. Your own CUDA calls,
+such as `cudaMalloc`, also need the CUDA runtime library, `CUDA::cudart`, as the `extension_cuda`
+row in the table above says.
 
 #### CUDA on Windows
 
