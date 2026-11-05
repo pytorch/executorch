@@ -672,7 +672,7 @@ class TestVulkanBackend(unittest.TestCase):
         batch = Dim("batch", max=8)
         dynamic_shapes = {"x": {0: batch}}
         test_inputs = [
-            (torch.randn(3, 14, 15, 9),),
+            (torch.randn(3, 13, 15, 9),),
             (torch.randn(1, 1, 4, 6),),
             (torch.randn(5, 10, 50, 40),),
         ]
@@ -706,7 +706,7 @@ class TestVulkanBackend(unittest.TestCase):
         batch = Dim("batch", max=8)
         dynamic_shapes = {"x": {0: batch}}
         test_inputs = [
-            (torch.randn(3, 14, 15, 9),),
+            (torch.randn(3, 13, 15, 9),),
             (torch.randn(1, 1, 4, 6),),
             (torch.randn(5, 10, 50, 40),),
         ]

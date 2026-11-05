@@ -272,9 +272,11 @@ $env:OPENVINO_LIB_PATH = python -c "import openvino, os; print(os.path.join(os.p
 Without it the delegate still registers and the program still links, and the failure arrives later,
 when the model is loaded.
 
-For now the openvino extra installs no runtime on Python 3.15, or on Linux aarch64 with
-Python 3.14. OpenVINO publishes no build for Python 3.15, and its aarch64 builds for Python
-3.14 need glibc 2.35 or newer.
+For now the openvino extra installs no runtime on Python 3.15, where OpenVINO publishes no
+build. On Linux aarch64, OpenVINO needs glibc 2.35 or newer, as on Ubuntu 22.04 or Raspberry
+Pi OS Bookworm and later. On an older aarch64 system, such as RHEL 9 or Amazon Linux 2023,
+`pip install executorch[openvino]` does not fail but installs an older ExecuTorch release; see
+[OpenVINO Backend](build-run-openvino.md) for what to do there.
 
 The MLX delegate has a similar requirement. Its Metal kernels live in a separate `mlx.metallib`
 file, which MLX looks for next to whichever library holds MLX code. The wheel ships it beside the

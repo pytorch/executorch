@@ -51,8 +51,9 @@ separately from the loader's Native graph and current buffer bindings. Providers
 receive Native metadata and explicit buffer extents; Reference creates its
 boxed call frames privately. Requirements are queried before constant preparation and arena
 allocation. Sequential steps share the maximum declared scratch capacity. XNNPACK
-shares compatible convolution-weight conversions within a plan and borrows weights
-whose physical order already matches.
+shares compatible convolution-weight conversions within a plan, frees them in
+`finish()` after all regions compile and the weights cache is finalized, and borrows
+weights whose physical order already matches.
 
 For a loaded method, shapes, tensor dtypes, contiguous layout, threadpool identity,
 thread count and ISA capabilities remain fixed. Input/output pointers may change
