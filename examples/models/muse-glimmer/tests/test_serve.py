@@ -19,6 +19,7 @@ import pytest
 # ExecuTorch, so skip instead of failing collection when it is absent.
 pytest.importorskip("pydantic", reason="requires llm_server serving dependencies")
 pytest.importorskip("jsonschema", reason="requires llm_server serving dependencies")
+pytest.importorskip("regex", reason="requires llm_server serving dependencies")
 
 from executorch.examples.llm_server.python import chat_template  # noqa: E402
 from executorch.examples.llm_server.python.errors import APIError  # noqa: E402

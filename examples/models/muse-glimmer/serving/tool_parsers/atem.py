@@ -12,6 +12,8 @@ declared tool schema. Malformed or invalid calls fail the entire response.
 
 import json
 import re
+from bisect import bisect_left
+from dataclasses import dataclass, field
 from typing import Optional
 
 from executorch.examples.llm_server.python.tool_parsers.types import (
@@ -27,21 +29,13 @@ _MESSAGE = "<|message|>"
 _FUNCTION_CALLS_OPEN = "<atem:function_calls>"
 _INVOKE_OPEN = "<atem:invoke"
 
-# Require a following structural boundary so delimiter-like text inside a
-# parameter value does not end the match early.
-_INVOKE_RE = re.compile(
-    r'<atem:invoke\s+name="([^"]*)"\s*>(.*?)</atem:invoke>\s*'
-    r"(?=<atem:invoke|</atem:function_calls>|<atem:function_calls>|<\|(?:eom|eot|start)\|>|\Z)",
-    re.DOTALL,
+# Tag discovery never scans an invocation body with a backtracking regex.
+_TAG_RE = re.compile(r"</?atem:(?:function_calls|invoke|parameter)\b")
+_OPEN_RE = re.compile(r'<atem:(invoke|parameter)\s+name="([^"]*)"\s*>')
+_PARAMETER_END_RE = re.compile(
+    r"</atem:parameter>\s*(?=<atem:parameter|</atem:invoke>|\Z)"
 )
-_PARAMETER_RE = re.compile(
-    r'<atem:parameter\s+name="([^"]*)"\s*>(.*?)</atem:parameter>\s*'
-    r"(?=<atem:parameter|</atem:invoke>|\Z)",
-    re.DOTALL,
-)
-
-# Match the optional assistant prefix and recipient header before an ATEM block.
-_IDENT = r"[a-zA-Z_][a-zA-Z0-9_-]*"
+_IDENT = r"[a-zA-Z0-9_-]+"
 _RECIPIENT = rf"{_IDENT}(?:\.{_IDENT})*"
 _HEADER_RE = re.compile(
     rf"(?:{re.escape(_START)}assistant)?"
@@ -51,63 +45,158 @@ _HEADER_RE = re.compile(
 )
 
 
-def tool_start(text):
-    headers = list(_HEADER_RE.finditer(text))
-    for marker in re.finditer(r"<atem:function_calls>|<atem:invoke\b", text):
-        prefix = text[: marker.start()]
-        header = next((h for h in reversed(headers) if h.end() <= marker.start()), None)
-        if header is not None:
-            if header.group(1) in ("self", "user"):
+@dataclass
+class _Invocation:
+    start: int
+    name: str | None
+    body: int
+    end: int | None = None
+    parameters: list = field(default_factory=list)
+    malformed: bool = False
+
+
+class _Syntax:
+    def __init__(self, text):
+        self.invocations = {}
+        self.markers = []
+        self.closes = []
+        self.parameters = []
+        self.text = text
+        self._parameter_ends = list(_PARAMETER_END_RE.finditer(text))
+        self._close_index = 0
+        self._active = None
+        self._cursor = 0
+        skip = 0
+        for tag in _TAG_RE.finditer(text):
+            if tag.start() < skip:
                 continue
-            if not text[header.end() : marker.start()].strip():
-                return marker.start()
-        # Standalone blocks must begin a line outside quoted Markdown code.
-        if not prefix.rsplit("\n", 1)[-1].strip() and prefix.count("```") % 2 == 0:
-            return marker.start()
-    return None
+            skip = self._parameter(tag)
+            if not skip:
+                self._record_tag(tag)
 
-
-def _tool_blocks(text):
-    offset = 0
-    while offset < len(text):
-        relative = tool_start(text[offset:])
-        if relative is None:
-            return
-        start = offset + relative
-        invokes = list(_INVOKE_RE.finditer(text, start))
-        end = None
-        if text.startswith(_INVOKE_OPEN, start):
-            invoke = _INVOKE_RE.match(text, start)
-            close = re.search(
-                r"</atem:invoke>\s*(?=<atem:|<\|(?:eom|eot|start)\|>|\Z)",
-                text[start:],
-            )
-            if invoke is not None:
-                end = invoke.end()
-            elif close is not None:
-                end = start + close.end()
-        for close in (
-            ()
-            if text.startswith(_INVOKE_OPEN, start)
-            else re.finditer(r"</atem:function_calls>", text[start:])
+    def _parameter(self, tag):
+        active = self._active
+        if tag.group() != "<atem:parameter" or active is None:
+            return 0
+        opening = _OPEN_RE.match(self.text, tag.start())
+        closes = self._parameter_ends
+        while (
+            self._close_index < len(closes)
+            and closes[self._close_index].start() < tag.start()
         ):
-            cut = start + close.start()
-            if not any(invoke.start() <= cut < invoke.end() for invoke in invokes):
-                end = start + close.end()
-                break
-        yield start, end
+            self._close_index += 1
+        if opening is None or self._close_index == len(closes):
+            return 0
+        close = closes[self._close_index]
+        active.malformed |= bool(self.text[self._cursor : tag.start()].strip())
+        active.parameters.append((opening.group(2), opening.end(), close.start()))
+        self.parameters.append((opening.end(), close.start()))
+        self._cursor = close.end()
+        return close.end()
+
+    def _record_tag(self, tag):
+        start = tag.start()
+        if tag.group() == "<atem:invoke":
+            self.markers.append(start)
+            if self._active is not None:
+                self._active.malformed = True
+            opening = _OPEN_RE.match(self.text, start)
+            self._active = _Invocation(
+                start,
+                opening.group(2) if opening else None,
+                opening.end() if opening else tag.end(),
+            )
+            self.invocations[start] = self._active
+            self._cursor = self._active.body
+        elif self.text.startswith("</atem:invoke>", start) and self._active is not None:
+            self._active.malformed |= bool(self.text[self._cursor : start].strip())
+            self._active.end = start + len("</atem:invoke>")
+            self._active = None
+        elif self.text.startswith("<atem:function_calls>", start):
+            self.markers.append(start)
+        elif self.text.startswith("</atem:function_calls>", start):
+            self.closes.append(start)
+            self._active = None
+
+    def block_end(self, start):
+        if self.text.startswith(_INVOKE_OPEN, start):
+            return self.invocations[start].end
+        index = bisect_left(self.closes, start)
+        return (
+            (self.closes[index] + len("</atem:function_calls>"))
+            if index < len(self.closes)
+            else None
+        )
+
+
+def _tool_blocks(text, syntax=None):
+    syntax = syntax if syntax is not None else _Syntax(text)
+    headers = iter(_HEADER_RE.finditer(text))
+    following = next(headers, None)
+    header = None
+    offset = scanned = 0
+    fences = 0
+    line_text = header_text = False
+    for start in syntax.markers:
+        if start < offset:
+            continue
+        prefix = text[scanned:start]
+        fences += prefix.count("```")
+        line_text = (line_text if "\n" not in prefix else False) or bool(
+            prefix.rsplit("\n", 1)[-1].strip()
+        )
+        header_prefix = prefix
+        updated = False
+        while following is not None and following.end() <= start:
+            header = following
+            header_text = False
+            updated = True
+            following = next(headers, None)
+        if updated:
+            header_prefix = text[header.end() : start]
+        scanned = start
+        header_text |= bool(header_prefix.strip())
+        if header is not None and (
+            header.start() < offset or re.search(r"<\|eo[mt]\|>", header_prefix)
+        ):
+            header = None
+        adjacent = header is not None and not header_text
+        if header is not None and header.group(1) in ("self", "user"):
+            continue
+        if not adjacent and (line_text or fences % 2):
+            continue
+        end = syntax.block_end(start)
+        yield start, end, header.start() if adjacent else start
         if end is None:
             return
-        offset = end
+        offset = scanned = end
+        fences = 0
+        line_text = header_text = False
+        header = None
+
+
+def tool_start(text):
+    block = next(_tool_blocks(text), None)
+    return block[0] if block is not None else None
 
 
 def parameter_value_spans(text):
-    return [
-        (invoke.start(2) + parameter.start(2), invoke.start(2) + parameter.end(2))
-        for start, end in _tool_blocks(text)
-        for invoke in _INVOKE_RE.finditer(text, start, end or len(text))
-        for parameter in _PARAMETER_RE.finditer(invoke.group(2))
-    ]
+    if "<atem:" not in text:
+        return []
+    syntax = _Syntax(text)
+    blocks = iter(_tool_blocks(text, syntax))
+    block = next(blocks, None)
+    result = []
+    for start, end in syntax.parameters:
+        while block is not None and block[1] is not None and block[1] <= start:
+            block = next(blocks, None)
+        if (
+            block is not None
+            and block[0] <= start
+            and (block[1] is None or end <= block[1])
+        ):
+            result.append((start, end))
+    return result
 
 
 class IncompleteToolOutputError(ToolOutputError):
@@ -132,10 +221,12 @@ class AtemToolCallDetector:
         offset = 0
         incomplete = False
         budget = ToolOutputBudget()
+        syntax = _Syntax(text)
+        invocations = iter(syntax.invocations.values())
+        invocation = next(invocations, None)
         try:
-            for start, end in _tool_blocks(text):
-                header = self._preceding_header(text, start)
-                normal.append(text[offset : header if header is not None else start])
+            for start, end, header in _tool_blocks(text, syntax):
+                normal.append(text[offset:header])
                 offset = end or len(text)
                 # Consume only framing belonging to this call block.
                 terminator = re.match(r"\s*<\|eo[mt]\|>", text[offset:])
@@ -143,11 +234,14 @@ class AtemToolCallDetector:
                     offset += terminator.end()
                 if end is None:
                     raise IncompleteToolOutputError("Incomplete ATEM tool call")
-                if _INVOKE_RE.search(text, start, end) is None:
-                    raise ToolOutputError(
-                        "Closed ATEM block has no complete invocation"
-                    )
-                calls.extend(self._parse_calls(text[start:end], tools, budget=budget))
+                selected = []
+                while invocation is not None and invocation.start < end:
+                    if invocation.start >= start:
+                        selected.append(invocation)
+                    invocation = next(invocations, None)
+                calls.extend(
+                    self._parse_calls(text, start, end, selected, tools, budget=budget)
+                )
         except IncompleteToolOutputError:
             if finish_reason != "length" and not truncated:
                 raise
@@ -162,25 +256,17 @@ class AtemToolCallDetector:
             incomplete=incomplete,
         )
 
-    @staticmethod
-    def _preceding_header(text: str, cut: int) -> Optional[int]:
-        """Return the start of a recipient header adjacent to ``cut``."""
-        last: Optional[int] = None
-        for m in _HEADER_RE.finditer(text):
-            if m.end() <= cut and text[m.end() : cut].strip() == "":
-                last = m.start()
-        return last
-
-    def _parse_calls(
-        self, text: str, tools: dict[str, ToolSchema], *, budget: ToolOutputBudget
-    ) -> list[ToolCallItem]:
-        """Parse every invocation and coerce its parameters."""
-        remainder = _INVOKE_RE.sub("", text)
-        if re.search(r"</?atem:(?:invoke|parameter)\b", remainder):
-            raise ToolOutputError("Malformed invocation in closed ATEM block")
+    def _parse_calls(self, text, start, end, invocations, tools, *, budget):
+        if not invocations:
+            raise ToolOutputError("Closed ATEM block has no complete invocation")
         calls = []
-        for im in _INVOKE_RE.finditer(text):
-            name, body = im.group(1), im.group(2)
+        cursor = start
+        for invocation in invocations:
+            gap = text[cursor : invocation.start].replace(_FUNCTION_CALLS_OPEN, "")
+            if "atem:" in gap or invocation.end is None or invocation.malformed:
+                raise ToolOutputError("Malformed invocation in closed ATEM block")
+            cursor = invocation.end
+            name = invocation.name
             if name not in tools:
                 matches = [key for key in tools if wire_tool_name(key) == name]
                 if len(matches) == 1:
@@ -191,19 +277,14 @@ class AtemToolCallDetector:
             if not isinstance(schema, ToolSchema):
                 raise TypeError("ATEM requires precompiled ToolSchema instances")
             args = {}
-            end = 0
-            for pm in _PARAMETER_RE.finditer(body):
-                if body[end : pm.start()].strip():
-                    raise ValueError("Malformed parameter body")
-                key = pm.group(1)
+            for key, begin, stop in invocation.parameters:
                 if key in args:
                     raise ValueError("Duplicate parameter")
-                args[key] = pm.group(2)
-                end = pm.end()
-            if body[end:].strip():
-                raise ValueError("Unclosed or malformed parameter")
+                args[key] = text[begin:stop]
             args = schema.coerce_arguments(name, args, budget=budget)
             calls.append(self._make_item(name, args, tools))
+        if "atem:" in text[cursor:end].replace("</atem:function_calls>", ""):
+            raise ToolOutputError("Malformed invocation in closed ATEM block")
         return calls
 
     def _make_item(

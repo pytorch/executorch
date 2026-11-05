@@ -413,7 +413,10 @@ class MultiplexedWorkerClient:
                 item for item in self._writes if item[0] != state.request_id
             )
             state.cancel_requested = True
-            self._complete(state, WorkerStats(finish_reason="stop", cancelled=True))
+            self._complete(
+                state,
+                WorkerStats(finish_reason="stop", matched_stop="", cancelled=True),
+            )
             return True
         if len(self._controls) >= self.max_inflight_requests:
             state.cancel_pending = True

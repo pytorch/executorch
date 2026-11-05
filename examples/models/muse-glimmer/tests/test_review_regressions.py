@@ -5,6 +5,7 @@
 
 """Acceptance cases from the serving review, using the actual HTTP adapter."""
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -223,6 +224,12 @@ def test_streamed_reasoning_disagreement_is_logged(caplog):
         " to=self<|message|>expected<|eom|> to=user<|message|>answer"
     )
     serving._tool_reasoning_parser_factory = Parser
-    response = client.post("/v1/chat/completions", json=request({}, True))
+    body = request({}, True)
+    body["session_id"] = "disagreement"
+    response = client.post("/v1/chat/completions", json=body)
     assert response.status_code == 200
     assert "Streamed reasoning differs" in caplog.text
+    assert (
+        serving._transcript._turns["disagreement"][0]["reasoning_fp"]
+        == hashlib.sha256(b"expected").digest()
+    )

@@ -61,7 +61,7 @@ _IMAGE_DATA_URL_RE = re.compile(
 # The optional leading space handles text already trimmed by the tool parser;
 # the lookbehind avoids matching prose such as "goto=".
 _MUSE_GLIMMER_HEADER_SPECIALS = {"<|start|>", "<|message|>", "<|eom|>"}
-_MUSE_GLIMMER_IDENT = r"[a-zA-Z_][a-zA-Z0-9_-]*"
+_MUSE_GLIMMER_IDENT = r"[a-zA-Z0-9_-]+"
 _MUSE_GLIMMER_RECIPIENT = rf"{_MUSE_GLIMMER_IDENT}(?:\.{_MUSE_GLIMMER_IDENT})*"
 _MUSE_GLIMMER_HEADER_RE = re.compile(
     rf"(?<![A-Za-z0-9_])"

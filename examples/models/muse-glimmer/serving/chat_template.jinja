@@ -103,11 +103,9 @@
 {%- endmacro -%}
 {{- bos_token -}}
 {%- set ns = namespace(has_system=false, metadata_rendered=false) -%}
-{%- for m in messages -%}
-    {%- if m['role'] in ('system', 'developer') -%}
-        {%- set ns.has_system = true -%}
-    {%- endif -%}
-{%- endfor -%}
+{%- if messages and messages[0]['role'] in ('system', 'developer') -%}
+    {%- set ns.has_system = true -%}
+{%- endif -%}
 {%- if not ns.has_system -%}
     {{- '<|start|>system<|message|>You are a helpful AI assistant.' -}}
     {%- set kc = knowledge_cutoff if knowledge_cutoff is defined and knowledge_cutoff else '2026-01-04' -%}

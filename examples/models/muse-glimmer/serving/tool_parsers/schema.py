@@ -33,6 +33,7 @@ class _ToolWorkLimit(ToolOutputError):
 
 
 _VALIDATION_BUDGET = ContextVar("muse_tool_validation_budget")
+_VALIDATION_RESOLVE = ContextVar("muse_tool_validation_resolve")
 
 
 class ToolOutputBudget:
@@ -48,12 +49,14 @@ class ToolOutputBudget:
             )
 
     @contextmanager
-    def activate(self):
+    def activate(self, resolve=None):
         token = _VALIDATION_BUDGET.set(self)
+        resolver_token = _VALIDATION_RESOLVE.set(resolve)
         try:
             yield
         finally:
             _VALIDATION_BUDGET.reset(token)
+            _VALIDATION_RESOLVE.reset(resolver_token)
 
     def search(self, pattern, value):
         self.spend()
@@ -117,12 +120,12 @@ def _evaluated_keys(validator, instance, schema, legacy):  # noqa: C901
         return set()
     keys = set()
     if "$ref" in schema:
-        resolved = validator._resolver.lookup(schema["$ref"])
+        resolved = _VALIDATION_RESOLVE.get()(schema["$ref"])
         keys.update(
             _evaluated_keys(
-                validator.evolve(schema=resolved.contents, _resolver=resolved.resolver),
+                validator.evolve(schema=resolved),
                 instance,
-                resolved.contents,
+                resolved,
                 legacy,
             )
         )
@@ -287,26 +290,56 @@ class ToolSchema:
         return node
 
     def _check_reference_work(self, root, specification):
-        pending = [(root, ())]
+        pending = [(root, (), ())]
         visits = 0
         keys = {None}
         while pending:
-            resource, ancestors = pending.pop()
+            resource, ancestors, same_instance = pending.pop()
             visits += 1
             if visits > 4096:
                 raise ValueError("tool schema exceeds 4096 expanded schema nodes")
             node = resource.contents
+            if id(node) in same_instance:
+                raise ValueError(
+                    "tool schema contains a non-descending reference cycle"
+                )
             if not isinstance(node, dict) or id(node) in ancestors:
                 continue
             ancestors = (*ancestors, id(node))
+            same_instance = (*same_instance, id(node))
             for keyword in ("properties", "dependentSchemas", "dependencies"):
                 keys.update(node.get(keyword, {}))
             if "$ref" in node:
                 referenced = Resource.from_contents(
                     self._resolve(node["$ref"]), default_specification=specification
                 )
-                pending.append((referenced, ancestors))
-            pending.extend((child, ancestors) for child in resource.subresources())
+                pending.append((referenced, ancestors, same_instance))
+            descending = set()
+            for keyword in ("properties", "patternProperties", "$defs", "definitions"):
+                descending.update(id(child) for child in node.get(keyword, {}).values())
+            for keyword in (
+                "items",
+                "prefixItems",
+                "additionalItems",
+                "contains",
+                "additionalProperties",
+                "unevaluatedProperties",
+                "unevaluatedItems",
+                "propertyNames",
+            ):
+                child = node.get(keyword)
+                if isinstance(child, list):
+                    descending.update(map(id, child))
+                else:
+                    descending.add(id(child))
+            pending.extend(
+                (
+                    child,
+                    ancestors,
+                    () if id(child.contents) in descending else same_instance,
+                )
+                for child in resource.subresources()
+            )
         return visits, keys
 
     def _check_coercion_work(self, keys, budget):
@@ -432,7 +465,7 @@ class ToolSchema:
         )
 
     def _valid_scalar(self, schema, value, budget):
-        with budget.activate():
+        with budget.activate(self._resolve):
             return self.validator.evolve(schema=schema).is_valid(value)
 
     def coerce(self, key, value, *, schema=None, budget=None):
@@ -577,7 +610,7 @@ class ToolSchema:
         budget.validation(arguments)
         try:
             json.dumps(arguments, allow_nan=False)
-            with budget.activate():
+            with budget.activate(self._resolve):
                 error = next(self.validator.iter_errors(arguments), None)
         except (ValueError, RecursionError) as error:
             raise ToolOutputError(

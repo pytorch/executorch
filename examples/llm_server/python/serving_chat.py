@@ -1316,11 +1316,8 @@ class ServingChat:
                 response.remaining_reasoning = (
                     response.reasoning[len(emitted) :] or None
                 )
-            if response.reasoning and not response.reasoning.startswith(emitted):
+            if emitted and not (response.reasoning or "").startswith(emitted):
                 logger.warning("Streamed reasoning differs from buffered extraction")
-            response.reasoning = (
-                emitted + (response.remaining_reasoning or "")
-            ) or None
 
     async def _stream(  # noqa: C901 - response paths share one cancellation boundary
         self,

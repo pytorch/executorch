@@ -80,6 +80,12 @@ class WorkerStats:
 
     @classmethod
     def from_message(cls, msg: dict) -> "WorkerStats":
+        if msg.get("matched_stop") is not None and (
+            not isinstance(msg["matched_stop"], str)
+            or not msg["matched_stop"]
+            or msg.get("finish_reason") != "stop"
+        ):
+            raise WorkerError("invalid worker matched_stop")
         return cls(
             num_prompt_tokens=msg.get("prompt_tokens", 0),
             num_generated_tokens=msg.get("completion_tokens", 0),
