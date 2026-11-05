@@ -54,10 +54,7 @@ Tensor& masked_select_out(
         ctx, false, InvalidArgument, out, "Failed to broadcast input and mask");
   }
 
-  // BroadcastIndexesRange only reads the output's sizes, dim, and numel, so a
-  // data-less tensor with the broadcast shape is enough.
-  TensorImpl broadcast_impl(in_type, broadcast_ndim, broadcast_sizes);
-  const Tensor broadcast_shape(&broadcast_impl);
+  const size_t broadcast_numel = compute_numel(broadcast_sizes, broadcast_ndim);
 
   // Compute the number of out elements
   size_t mask_true_count = 0;
@@ -68,7 +65,7 @@ Tensor& masked_select_out(
     }
   }
   Tensor::SizesType out_numel =
-      mask_true_count * (broadcast_shape.numel() / mask.numel());
+      mask_true_count * (broadcast_numel / mask.numel());
 
   // Resize the out tensor
   ET_KERNEL_CHECK(
@@ -80,15 +77,27 @@ Tensor& masked_select_out(
   const auto elem_size = in.element_size();
 
   size_t out_ix = 0;
-  for (const auto [unused_index, in_index, mask_index] :
-       BroadcastIndexesRange<2>(broadcast_shape, in, mask)) {
-    (void)unused_index;
-    if (mask_data[mask_index]) {
-      memcpy(
-          out_data + out_ix * elem_size,
-          in_data + in_index * elem_size,
-          elem_size);
-      out_ix++;
+  // Keep separate copy bodies to avoid per-element calls in GCC -Os builds.
+  if (in.sizes() == mask.sizes()) {
+    for (const auto i : c10::irange(broadcast_numel)) {
+      if (mask_data[i]) {
+        memcpy(
+            out_data + out_ix * elem_size, in_data + i * elem_size, elem_size);
+        out_ix++;
+      }
+    }
+  } else {
+    for (const auto [unused_index, in_index, mask_index] :
+         BroadcastIndexesRange<2>(
+             {broadcast_sizes, broadcast_ndim}, in, mask)) {
+      (void)unused_index;
+      if (mask_data[mask_index]) {
+        memcpy(
+            out_data + out_ix * elem_size,
+            in_data + in_index * elem_size,
+            elem_size);
+        out_ix++;
+      }
     }
   }
 

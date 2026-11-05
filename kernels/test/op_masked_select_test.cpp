@@ -114,6 +114,44 @@ TEST_F(OpMaskedSelectOutTest, BroadcastInputSameRank) {
   EXPECT_TENSOR_EQ(out, tf.make({5}, {1, 2, 3, 4, 4}));
 }
 
+TEST_F(OpMaskedSelectOutTest, BroadcastDifferentRanksInnerOne) {
+  TensorFactory<ScalarType::Int> tf;
+  TensorFactory<ScalarType::Bool> tfBool;
+
+  Tensor in = tf.make({3, 1}, {1, 2, 3});
+  Tensor mask = tfBool.make(
+      {2, 1, 4}, {true, false, true, true, false, true, false, true});
+  Tensor out = tf.zeros({15});
+
+  op_masked_select_out(in, mask, out);
+  EXPECT_TENSOR_EQ(
+      out, tf.make({15}, {1, 1, 1, 2, 2, 2, 3, 3, 3, 1, 1, 2, 2, 3, 3}));
+}
+
+TEST_F(OpMaskedSelectOutTest, BroadcastMaskMiddleDim) {
+  TensorFactory<ScalarType::Int> tf;
+  TensorFactory<ScalarType::Bool> tfBool;
+
+  Tensor in = tf.make({2, 3, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor mask = tfBool.make({2, 1, 2}, {true, false, true, true});
+  Tensor out = tf.zeros({9});
+
+  op_masked_select_out(in, mask, out);
+  EXPECT_TENSOR_EQ(out, tf.make({9}, {1, 3, 5, 7, 8, 9, 10, 11, 12}));
+}
+
+TEST_F(OpMaskedSelectOutTest, ZeroDimInputAndMask) {
+  TensorFactory<ScalarType::Int> tf;
+  TensorFactory<ScalarType::Bool> tfBool;
+
+  Tensor in = tf.make({}, {7});
+  Tensor mask = tfBool.make({}, {true});
+  Tensor out = tf.zeros({1});
+
+  op_masked_select_out(in, mask, out);
+  EXPECT_TENSOR_EQ(out, tf.make({1}, {7}));
+}
+
 TEST_F(OpMaskedSelectOutTest, ZeroDimInput) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Bool> tfBool;
