@@ -92,6 +92,7 @@ from torch.fx import Graph, GraphModule, Node
 from torch.fx.experimental.symbolic_shapes import DimDynamic, ShapeEnv
 from torch.nn import functional as F
 from torch.utils import _pytree as pytree
+from torch.utils._sympy.numbers import int_oo
 from torch.utils._sympy.value_ranges import bound_sympy
 
 
@@ -2191,6 +2192,62 @@ class TestDynamicShapeUpperBound(unittest.TestCase):
             (64 // (s + 1) + 7 * (s % 8), 64),
         ):
             self.assertEqual(eval_upper_bound(size, EnumerationBudget(1024)), largest)
+
+    def test_enumerates_when_interval_bound_is_unbounded(self) -> None:
+        """Interval arithmetic gives no bound for a window over a range that starts
+        below the window size, so the size was planned by its trace value."""
+        shape_env = ShapeEnv()
+        h = _ranged_symint(shape_env, "h", 4, 2, 16)
+        w = _ranged_symint(shape_env, "w", 5, 2, 16)
+        padded = w + (7 - w % 7) % 7
+        # The window size is always 7, and h % 9 is largest at h = 8.
+        size = (h % 9) * (padded // (padded // 7))
+
+        self.assertIs(bound_sympy(size.node.expr, shape_env.var_to_range).upper, int_oo)
+        self.assertEqual(eval_upper_bound(size), 4 * 7)
+        # The trace value is too small, so this does not depend on the budget.
+        self.assertEqual(eval_upper_bound(size, EnumerationBudget(0)), 8 * 7)
+        # Largest at h = 0, below the ShapeEnv minimum.
+        size = (64 // (h + 1)) * (padded // (padded // 7))
+        self.assertEqual(eval_upper_bound(size, EnumerationBudget(0)), 64 * 7)
+        # Not an integer at h = 0 and 1, so it is tried again from the minimum.
+        size = 2 ** ((h - 2) // 4) * (padded // (padded // 7))
+        self.assertEqual(eval_upper_bound(size, EnumerationBudget(0)), 8 * 7)
+        # Values 2 below the minimum would make 33 * 33 combinations, over the cap,
+        # but 1 below still fits and reaches the largest value, at a = 1.
+        a = _ranged_symint(shape_env, "a", 4, 2, 32)
+        b = _ranged_symint(shape_env, "b", 5, 2, 32)
+        padded = b + (7 - b % 7) % 7
+        size = (64 // a) * (padded // (padded // 7))
+        self.assertEqual(eval_upper_bound(size, EnumerationBudget(0)), 64 * 7)
+
+    def test_memory_planning_bounds_size_with_no_interval_bound(self) -> None:
+        class WindowsTimesWidth(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                h = x.shape[0]
+                padded = h + (7 - h % 7) % 7
+                return x.new_ones(padded // (padded // 7) * y.shape[0])
+
+        model = WindowsTimesWidth()
+        program = to_edge(
+            export(
+                model,
+                (torch.randn(12, 4), torch.randn(3, 4)),
+                dynamic_shapes=(
+                    {0: torch.export.Dim("h", min=1, max=32)},
+                    {0: torch.export.Dim("w", min=1, max=32)},
+                ),
+            )
+        ).to_executorch()
+
+        # The trace value is 7 * 3, but the largest inputs need 7 * 32. Starting 2
+        # below the minimum would make 33 * 33 combinations, over the cap.
+        runtime = _load_for_executorch_from_buffer(program.buffer)
+        for x, y in (
+            (torch.randn(12, 4), torch.randn(3, 4)),
+            (torch.randn(32, 4), torch.randn(32, 4)),
+        ):
+            torch.testing.assert_close(runtime.forward([x, y])[0], model(x, y))
 
     def test_keeps_interval_bound(self) -> None:
         shape_env = ShapeEnv()

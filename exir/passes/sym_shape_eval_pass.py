@@ -271,7 +271,8 @@ class ConstraintBasedSymShapeEvalPass(PassBase):
     Args:
         enumeration_budget: How many symbol value combinations one run may evaluate
             to tighten the upper bounds of sizes that use // or %. 0 keeps the
-            interval bounds.
+            interval bounds. A size with no interval bound is enumerated without
+            using the budget.
     """
 
     # The budget caps how much time tightening finite bounds can add to an export.
@@ -294,7 +295,7 @@ class ConstraintBasedSymShapeEvalPass(PassBase):
                         ]
                         # Only shapes feed memory planning and serialization, and
                         # strides would take most of the enumeration time, so strides
-                        # get no budget and keep the interval bound.
+                        # get no budget and are never enumerated.
                         concrete_stride = [eval_upper_bound(s) for s in spec.stride]
                         if any(not isinstance(s, int) for s in concrete_shape) or any(
                             not isinstance(s, int) for s in concrete_stride

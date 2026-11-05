@@ -37,7 +37,7 @@ def eval_expr(symint: Union[int, torch.SymInt]) -> Optional[int]:
     return int(output)
 
 
-# The most symbol value combinations _enumerated_upper_bound evaluates for one size.
+# The most symbol value combinations evaluated for one size.
 _MAX_ENUMERATED_POINTS = 1024
 
 
@@ -47,11 +47,12 @@ _EnumerationKey = Tuple[sympy.Expr, Tuple[Tuple[sympy.Symbol, int, int], ...], i
 
 class EnumerationBudget:
     """
-    Limits how many symbol value combinations eval_upper_bound evaluates across the
-    sizes it is given for. A size is tried only when all its combinations fit in what
-    is left, and is then charged the combinations it evaluated. Each distinct size is
-    charged once, whether or not its result is already cached, so the bounds do not
-    depend on what earlier programs evaluated. A budget of 0 tries no size.
+    Limits how many symbol value combinations eval_upper_bound evaluates to tighten
+    the finite bounds of the sizes it is given for. A size is tried only when all its
+    combinations fit in what is left, and is then charged the combinations it
+    evaluated. Each distinct size is charged once, whether or not its result is
+    already cached, so the bounds do not depend on what earlier programs evaluated. A
+    budget of 0 tries no such size. Sizes with no interval bound are not charged.
     """
 
     def __init__(self, points: int) -> None:
@@ -69,7 +70,9 @@ class EnumerationBudget:
 
 @functools.lru_cache(maxsize=4096)
 def _max_over_points(
-    expr: sympy.Expr, ranges: Tuple[Tuple[sympy.Symbol, int, int], ...], ceiling: int
+    expr: sympy.Expr,
+    ranges: Tuple[Tuple[sympy.Symbol, int, int], ...],
+    ceiling: Optional[int],
 ) -> Tuple[Optional[int], int]:
     """
     Return the largest value of expr over ranges, or None when it cannot tell, and
@@ -101,25 +104,23 @@ def _max_over_points(
         if not isinstance(result, sympy.Integer):
             return None, evaluated
         largest = int(result) if largest is None else max(largest, int(result))
-        if largest >= ceiling:
+        if ceiling is not None and largest >= ceiling:
             break
     return largest, evaluated
 
 
-def _enumerated_upper_bound(
+def _enumeration_ranges(
     expr: sympy.Expr,
     var_to_range: Dict[sympy.Symbol, ValueRanges],  # pyre-ignore[24]
-    ceiling: int,
-    budget: EnumerationBudget,
-) -> Optional[int]:
+    below_minimum: int = 2,
+) -> Optional[Tuple[Tuple[Tuple[sympy.Symbol, int, int], ...], int]]:
     """
-    Evaluate expr at every combination of its symbols' integer values and return the
-    largest result, or a result of at least ceiling once one is found. Returns None
-    when expr has no function such as // or %, since interval arithmetic is usually
-    close for those and enumerating would only cost time, when a symbol has no finite
-    range, when there are more than _MAX_ENUMERATED_POINTS combinations or more than
-    budget has left, or when no combination can be evaluated. A division by zero skips
-    that combination, unless expr is conditional, and any other failure returns None.
+    Return the integer range to try for each symbol of expr, starting up to
+    below_minimum values under its ShapeEnv minimum, and the number of
+    combinations. Returns None when expr has no function such as // or %, since
+    interval arithmetic is usually close for those and enumerating would only cost
+    time, when a symbol has no finite range, or when there are more than
+    _MAX_ENUMERATED_POINTS combinations.
     """
     if not expr.atoms(sympy.Function):
         return None
@@ -134,16 +135,36 @@ def _enumerated_upper_bound(
             return None
         # The ShapeEnv raises a declared minimum of 0 or 1 to 2, and raises the root
         # of a derived dim such as dim - 1 until that dim is at least 2, so the
-        # program can run up to 2 below the recorded minimum, so those values are
-        # tried too. Like the interval bound, this is a best effort there, since the
-        # ShapeEnv simplified expr for its own range.
+        # program can run up to 2 below the recorded minimum, so by default those
+        # values are tried too. Like the interval bound, this is a best effort there,
+        # since the ShapeEnv simplified expr for its own range.
         lower, upper = int(value_range.lower), int(value_range.upper)
-        lower = min(lower, max(lower - 2, 0))
+        lower = min(lower, max(lower - below_minimum, 0))
         points *= upper - lower + 1
         if points > _MAX_ENUMERATED_POINTS:
             return None
         ranges.append((symbol, lower, upper))
-    key = (expr, tuple(ranges), ceiling)
+    return tuple(ranges), points
+
+
+def _enumerated_upper_bound(
+    expr: sympy.Expr,
+    var_to_range: Dict[sympy.Symbol, ValueRanges],  # pyre-ignore[24]
+    ceiling: int,
+    budget: EnumerationBudget,
+) -> Optional[int]:
+    """
+    Evaluate expr at every combination of its symbols' integer values and return the
+    largest result, or a result of at least ceiling once one is found. Returns None
+    when _enumeration_ranges does, when there are more combinations than budget has
+    left, or when no combination can be evaluated. A division by zero skips that
+    combination, unless expr is conditional, and any other failure returns None.
+    """
+    enumeration = _enumeration_ranges(expr, var_to_range)
+    if enumeration is None:
+        return None
+    ranges, points = enumeration
+    key = (expr, ranges, ceiling)
     if not budget.admits(key, points):
         return None
     largest, evaluated = _max_over_points(*key)
@@ -158,8 +179,8 @@ def eval_upper_bound(
     """
     Evaluate a symint to its uppper bound value. Returns None if symint's symoblic expr's
     upper bound can not be evaluated to valid integer according to the constraints in shape_env.
-    With a budget, _enumerated_upper_bound can tighten the bound, as far as the budget
-    allows.
+    With a budget, a finite bound is tightened by enumeration as far as the budget
+    allows, and a size with no interval bound is enumerated outside the budget.
     """
     if isinstance(maybe_symint, int):
         return maybe_symint
@@ -196,6 +217,20 @@ def eval_upper_bound(
         ), f"Expect upper bound to be a concrete int but got {concrete_upper}"
         return concrete_upper
     elif int_oo is not None and upper_bound is int_oo:
+        # Interval arithmetic gives no bound when a size divides by a range that
+        # contains 0, even when every symbol is bounded, and the trace hint below
+        # is then often too small. So unlike tightening a finite bound, this is
+        # not left to what the budget has left, and when the values below the
+        # minimum push the size over the cap or fail, it is tried with fewer of them.
+        if budget is not None:
+            for below_minimum in (2, 1, 0):
+                enumeration = _enumeration_ranges(
+                    expr, shape_env.var_to_range, below_minimum
+                )
+                if enumeration is not None:
+                    largest, _ = _max_over_points(expr, enumeration[0], None)
+                    if largest is not None:
+                        return largest
         hint = eval_expr(maybe_symint)
         if hint is not None:
             return hint
