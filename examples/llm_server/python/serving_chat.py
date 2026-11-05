@@ -13,7 +13,8 @@ import asyncio
 import json
 import logging
 import math
-from contextlib import aclosing
+from contextlib import aclosing, asynccontextmanager
+from dataclasses import dataclass
 from typing import AsyncIterator, Callable, Iterable, Optional, Protocol
 
 from .chat_template import ChatTemplate
@@ -130,6 +131,74 @@ class StreamingResponseParser(Protocol):
     def finish(self) -> Iterable[DeltaMessage]: ...
 
 
+def _session_capacity_exhausted(error):
+    return (
+        isinstance(error, WorkerError)
+        and error.code == "session_capacity_exhausted"
+        or isinstance(error, SessionCapacity)
+        and error.session_slots_exhausted
+    )
+
+
+@dataclass
+class _AdmissionState:
+    pending: bool = False
+    admitted: bool = False
+    retried: bool = False
+
+
+class _AdmissionRetryStream:
+    """Retry one session-slot rejection before any raw model output."""
+
+    def __init__(self, serving, session_id, generation, factory, admission):
+        self._serving = serving
+        self._session_id = session_id
+        self._generation = generation
+        self._factory = factory
+        self._admission = admission
+        self._started = False
+        self._closed = False
+        self._cancel_requested = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        while not self._closed:
+            try:
+                token = await anext(self._generation)
+                self._started = True
+                if self._session_id is not None:
+                    self._admission.admitted = True
+                return token
+            except StopAsyncIteration:
+                if self._session_id is not None:
+                    self._admission.admitted = True
+                raise
+            except (WorkerError, APIError) as error:
+                if not await self._serving._retry_admission(
+                    error,
+                    self._admission,
+                    generation=self._generation,
+                    started=self._started,
+                ):
+                    raise
+                if self._closed or self._cancel_requested:
+                    raise StopAsyncIteration
+                if self._session_id is not None:
+                    self._admission.pending = True
+                self._generation = self._factory()
+        raise StopAsyncIteration
+
+    def cancel(self):
+        self._cancel_requested = True
+        return self._generation.cancel()
+
+    async def aclose(self):
+        self._closed = True
+        await self._generation.aclose()
+
+
 class ServingChat:
     def __init__(
         self,
@@ -147,6 +216,7 @@ class ServingChat:
         streaming_parser_factory: Optional[
             Callable[[], StreamingResponseParser]
         ] = None,
+        evict_idle_sessions: bool = False,
         streaming_preflight_timeout: Optional[float] = None,
         api_dialect: str = "openai",
     ):
@@ -158,6 +228,10 @@ class ServingChat:
         self._content_filter = content_filter
         self._reasoning_extractor = reasoning_extractor
         self._streaming_parser_factory = streaming_parser_factory
+        self._evict_idle_sessions = evict_idle_sessions
+        self._idle_sessions: dict[str, None] = {}
+        self._cleanup_sessions: dict[str, None] = {}
+        self._eviction_lock = asyncio.Lock()
         self._streaming_preflight_timeout = streaming_preflight_timeout
         if api_dialect not in ("openai", "openrouter"):
             raise ValueError("api_dialect must be openai or openrouter")
@@ -467,7 +541,11 @@ class ServingChat:
                     counts["context_length"],
                     counts["completion_tokens"],
                 )
-            if error.code in ("capacity_exhausted", "unsupported_session"):
+            if error.code in (
+                "capacity_exhausted",
+                "session_capacity_exhausted",
+                "unsupported_session",
+            ):
                 return SessionCapacity(error.code)
             if error.code is not None:
                 status = {
@@ -486,27 +564,39 @@ class ServingChat:
                 )
         return GenerationError(str(error))
 
-    async def _preflight_session(self, session_id: str) -> None:
+    async def _preflight_session(self, session_id: str, admission) -> None:
         """Reserve the session before any response bytes are emitted so a
         capacity refusal becomes an HTTP status, not an SSE error event."""
         try:
             await self._runtime.open(session_id)
         except WorkerError as e:
+            if not self._multiplexed and e.code == "capacity_exhausted":
+                raise SessionCapacity("session_capacity_exhausted") from e
             raise self._generation_error(e)
+        if self._evict_idle_sessions:
+            admission.admitted = True
 
     async def close_session(self, session_id: str) -> None:
         self._validate_session_id(session_id)
         try:
             async with self._transactions.hold(session_id):
-                try:
-                    await self._runtime.close(session_id)
-                except BaseException:
-                    if self._multiplexed:
-                        self._transcript.close(session_id)
-                    raise
-                self._transcript.close(session_id)
+                await self._close_session(session_id)
         except WorkerError as e:
             raise self._generation_error(e)
+
+    async def _close_session(self, session_id):
+        try:
+            existed = await self._runtime.close(session_id)
+        except WorkerError as error:
+            if error.code == "session_not_found":
+                self._transcript.close(session_id)
+                self._idle_sessions.pop(session_id, None)
+                self._cleanup_sessions.pop(session_id, None)
+            raise
+        self._transcript.close(session_id)
+        self._idle_sessions.pop(session_id, None)
+        self._cleanup_sessions.pop(session_id, None)
+        return existed
 
     async def reset_session(self, session_id: str) -> None:
         self._validate_session_id(session_id)
@@ -677,15 +767,74 @@ class ServingChat:
                 total += c
         return total
 
+    @asynccontextmanager
+    async def _transaction(self, session_id):
+        admission = _AdmissionState()
+        async with self._transactions.hold(session_id):
+            known = session_id in self._idle_sessions
+            self._idle_sessions.pop(session_id, None)
+            try:
+                yield admission
+            finally:
+                if self._evict_idle_sessions and session_id is not None:
+                    if known or admission.admitted:
+                        self._cleanup_sessions.pop(session_id, None)
+                        self._idle_sessions[session_id] = None
+                    elif admission.pending:
+                        self._cleanup_sessions[session_id] = None
+                        if not self._runtime.session_in_use(session_id):
+                            cleanup = asyncio.create_task(
+                                self._close_session(session_id)
+                            )
+                            try:
+                                await SessionRuntime._finish_cleanup(cleanup)
+                            except WorkerError as error:
+                                if error.code != "session_not_found":
+                                    logger.warning(
+                                        "Could not close unconfirmed session %s",
+                                        session_id,
+                                    )
+
+    async def _evict_idle_session(self) -> bool:
+        if not self._evict_idle_sessions:
+            return False
+        async with self._eviction_lock:
+            for session_id in [*self._cleanup_sessions, *self._idle_sessions]:
+                if self._transactions.in_use(
+                    session_id
+                ) or self._runtime.session_in_use(session_id):
+                    continue  # Includes queued callers, not just the owner.
+                # The admitting chat already owns a request slot.
+                async with self._transactions.hold(session_id, count_request=False):
+                    try:
+                        existed = await self._close_session(session_id)
+                        if existed is False:
+                            continue
+                    except WorkerError as error:
+                        if error.code == "session_not_found":
+                            continue
+                        if error.admitted is False:
+                            return False  # The close never reached the worker.
+                        candidates = (
+                            self._cleanup_sessions
+                            if session_id in self._cleanup_sessions
+                            else self._idle_sessions
+                        )
+                        candidates.pop(session_id, None)
+                        candidates[session_id] = None
+                        return False
+                return True
+        return False
+
     async def create(self, req: ChatCompletionRequest):
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
-        lease = self._transactions.hold(req.session_id)
+        lease = self._transaction(req.session_id)
         entered = False
         try:
-            await lease.__aenter__()
+            admission = await lease.__aenter__()
             entered = True
-            result = await self._create(req, lease)
+            result = await self._create(req, lease, admission)
             if req.stream:
                 entered = False  # The returned iterator owns the transaction.
             return result
@@ -695,7 +844,7 @@ class ServingChat:
             if entered:
                 await lease.__aexit__(None, None, None)
 
-    async def _create(self, req: ChatCompletionRequest, lease):
+    async def _create(self, req: ChatCompletionRequest, lease, admission):
         if req.model is not None and req.model != self._model_id:
             raise ModelNotFound(req.model, self._model_id)
         self._reject_invalid_values(req)
@@ -750,50 +899,106 @@ class ServingChat:
             template_kwargs, tools=template_tools
         )
         return await self._create_response(
-            req, prompt_input, options, preamble, gen_stops, lease
+            req, prompt_input, options, preamble, gen_stops, lease, admission
         )
 
+    async def _retry_admission(
+        self, error, admission, *, generation=None, started=False
+    ):
+        slots_exhausted = _session_capacity_exhausted(error)
+        if not started and (
+            slots_exhausted
+            or isinstance(error, WorkerError)
+            and error.admitted is False
+        ):
+            admission.pending = False
+        if asyncio.current_task().cancelling():
+            raise asyncio.CancelledError
+        if started or admission.retried or not slots_exhausted:
+            return False
+        admission.retried = True
+        if generation is not None:
+            await generation.aclose()
+        if asyncio.current_task().cancelling():
+            raise asyncio.CancelledError
+        evicted = await self._evict_idle_session()
+        if asyncio.current_task().cancelling():
+            raise asyncio.CancelledError
+        return evicted
+
     async def _create_response(
-        self, req, prompt_input, options, preamble, gen_stops, lease
+        self, req, prompt_input, options, preamble, gen_stops, lease, admission
+    ):
+        while True:
+            try:
+                return await self._start_response(
+                    req, prompt_input, options, preamble, gen_stops, lease, admission
+                )
+            except (WorkerError, APIError) as error:
+                if not await self._retry_admission(error, admission):
+                    raise
+
+    async def _start_response(
+        self,
+        req,
+        prompt_input,
+        options,
+        preamble,
+        gen_stops,
+        lease,
+        admission,
     ):
         # Legacy workers need explicit admission. Multiplexed generation opens
         # implicitly from its full prompt, preserving new-session prefix reuse.
         if req.session_id is not None and not self._multiplexed:
-            await self._preflight_session(req.session_id)
-        if req.stream:
-            stats = GenStats()
-            generation = self._runtime.generate_stream(
-                req.session_id, prompt_input, options, stats
+            await self._preflight_session(req.session_id, admission)
+        if (
+            self._evict_idle_sessions
+            and self._multiplexed
+            and req.session_id is not None
+        ):
+            admission.pending = True
+        stats = GenStats()
+        generation = self._runtime.generate_stream(
+            req.session_id, prompt_input, options, stats
+        )
+        if req.stream and self._multiplexed:
+            await generation.wait_ready(timeout=self._streaming_preflight_timeout)
+        if self._multiplexed and self._evict_idle_sessions:
+            generation = _AdmissionRetryStream(
+                self,
+                req.session_id,
+                generation,
+                lambda: self._runtime.generate_stream(
+                    req.session_id, prompt_input, options, stats
+                ),
+                admission,
             )
-            if self._multiplexed:
-                await generation.wait_ready(timeout=self._streaming_preflight_timeout)
+        if req.stream:
             return _ChatStream(
                 self._stream(req, preamble, gen_stops, generation, stats),
                 lease,
                 generation,
             )
-        return await self._complete(req, prompt_input, options, preamble, gen_stops)
+        return await self._complete(req, preamble, gen_stops, generation, stats)
 
     async def _complete(
         self,
         req: ChatCompletionRequest,
-        prompt: PromptInput,
-        options: GenerationOptions,
-        preamble: str = "",
-        gen_stops: Optional[list[str]] = None,
+        preamble: str,
+        gen_stops: list[str],
+        generation,
+        stats: GenStats,
     ) -> ChatCompletionResponse:
-        # Same stop set the worker was given (per-path: narrow for tools, broad
-        # content specials added for plain chat); falls back to narrow if a caller
-        # didn't supply it.
-        stops = gen_stops if gen_stops is not None else self._generation_stops(req)
-        stats = GenStats()
+        # Same stop set the worker was given (narrow for tools, broad for chat).
+        stops = gen_stops
         try:
             # Collect raw text (markers intact for tool parsing), halting early
             # at a stop boundary (special token or request stop).
-            async with aclosing(
-                self._runtime.generate_stream(req.session_id, prompt, options, stats)
-            ) as generation:
+            async with aclosing(generation):
                 text, stopped = await self._collect_until_stop(generation, stops)
+        except (WorkerError, APIError):
+            raise
         except Exception as e:  # noqa: BLE001 - surface as a structured API error
             raise self._generation_error(e)
         # Bound the raw output at the first stop/special token BEFORE tool
@@ -804,6 +1009,7 @@ class ServingChat:
         # Compare future echoes against the finalized client-visible response.
         self._transcript.record_assistant_turn(
             session_id=req.session_id,
+            request_messages=req.messages,
             content=content,
             tool_calls=tool_calls,
             reasoning_content=reasoning,
@@ -1061,6 +1267,7 @@ class ServingChat:
             return
         self._transcript.record_assistant_turn(
             session_id=req.session_id,
+            request_messages=req.messages,
             content=content,
             tool_calls=tool_calls,
             reasoning_content=reasoning or None,

@@ -3,11 +3,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import asyncio
 import json
 import re
+import threading
+from contextlib import AsyncExitStack
 
 import pytest
-from executorch.examples.llm_server.python.worker_client import WorkerError
+from executorch.examples.llm_server.python.chat_template import ChatTemplate
+from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
+from executorch.examples.llm_server.python.serving_chat import ServingChat
+from executorch.examples.llm_server.python.session_runtime import SessionRuntime
+from executorch.examples.llm_server.python.tests.test_concurrent_serving import _Worker
+from executorch.examples.llm_server.python.worker_client import WorkerError, WorkerStats
 
 
 def muse_overflow_counts(body):
@@ -108,3 +116,131 @@ def test_late_context_error_has_same_openrouter_contract(make_client):
     assert len(errors) == 1
     assert muse_overflow_counts(errors[0]) == (99, 110)
     assert '"finish_reason"' not in response.text
+
+
+class CapacityWorker(_Worker):
+    def __init__(self, late, after_output=False):
+        super().__init__()
+        self.sessions = set()
+        self.closed_sessions = []
+        self.attempts = []
+        self.admission = threading.Event()
+        self.after_output = after_output
+        if not late:
+            self.admission.set()
+
+    def generate(self, prompt, config, token_callback, stats_callback, request_id):
+        try:
+            sid = config.session_id
+            self.attempts.append(sid)
+            if sid not in self.sessions and len(self.sessions) >= 2:
+                assert self.admission.wait(5)
+                if self.after_output:
+                    token_callback("partial " * 8)
+                raise WorkerError(
+                    "all sessions full", code="session_capacity_exhausted"
+                )
+            self.sessions.add(sid)
+            token_callback("ok")
+            stats_callback(
+                WorkerStats(
+                    num_prompt_tokens=3, num_generated_tokens=1, finish_reason="stop"
+                )
+            )
+        finally:
+            self.release_request(request_id)
+
+    def close_session(self, sid):
+        existed = sid in self.sessions
+        self.sessions.discard(sid)
+        self.closed_sessions.append(sid)
+        return existed
+
+
+@pytest.mark.parametrize("late", [False, True])
+@pytest.mark.parametrize("limit", [1, 4])
+def test_stream_admission_evicts_idle_sessions_before_or_after_preflight(late, limit):
+    async def scenario():
+        worker = CapacityWorker(late)
+        runtime = SessionRuntime(worker, max_concurrent_requests=limit)
+        serving = ServingChat(
+            runtime,
+            ChatTemplate(allow_fallback=True),
+            "test",
+            evict_idle_sessions=True,
+            streaming_preflight_timeout=0.01,
+        )
+
+        def request(sid, stream=False):
+            return ChatCompletionRequest(
+                messages=[{"role": "user", "content": "hi"}],
+                session_id=sid,
+                stream=stream,
+            )
+
+        try:
+            for sid in ["a", "b"]:
+                await serving.create(request(sid))
+            stream = await serving.create(request("c", True))
+            worker.admission.set()
+            output = "".join([chunk async for chunk in stream])
+            assert '"content":"ok"' in output
+            assert '"error"' not in output
+            assert worker.closed_sessions == ["a"]
+            assert worker.sessions == set(serving._idle_sessions) == {"b", "c"}
+            assert not serving._cleanup_sessions
+        finally:
+            worker.admission.set()
+            await runtime.aclose_worker()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("after_output", [False, True])
+def test_late_error_never_evicts_active_sessions_or_replays_output(after_output):
+    async def scenario():
+        worker = CapacityWorker(True, after_output)
+        runtime = SessionRuntime(worker)
+        serving = ServingChat(
+            runtime,
+            ChatTemplate(allow_fallback=True),
+            "test",
+            evict_idle_sessions=True,
+            streaming_preflight_timeout=0.01,
+        )
+
+        def request(sid, stream=False):
+            return ChatCompletionRequest(
+                messages=[{"role": "user", "content": "hi"}],
+                session_id=sid,
+                stream=stream,
+            )
+
+        try:
+            for sid in ["a", "b"]:
+                await serving.create(request(sid))
+            async with AsyncExitStack() as stack:
+                if not after_output:
+                    await stack.enter_async_context(serving._transactions.hold("a"))
+                    await stack.enter_async_context(serving._transactions.hold("b"))
+                stream = await serving.create(request("c", True))
+                worker.admission.set()
+                output = "".join([chunk async for chunk in stream])
+            errors = [
+                json.loads(line[6:])["error"]
+                for line in output.splitlines()
+                if line.startswith('data: {"error"')
+            ]
+            assert len(errors) == 1
+            assert errors[0]["code"] == "capacity_exhausted"
+            assert not worker.closed_sessions
+            assert worker.attempts.count("c") == 1
+            if not after_output:
+                assert set(serving._idle_sessions) == {"a", "b"}
+            else:
+                assert '"content":"partial ' in output
+        finally:
+            worker.admission.set()
+            await runtime.aclose_worker()
+
+    asyncio.run(scenario())

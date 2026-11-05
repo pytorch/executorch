@@ -53,6 +53,7 @@
 //                resumable
 //                ...optional model-specific terminal stats}
 //     open/close/reset: {"opened"|"closed"|"reset": true, "session_id": str}
+//       Close also includes "existed": bool (false for an already-absent key).
 //     error:    {"error": str, "code"?: str}  // capacity_exhausted |
 //                                              // unsupported_session
 
@@ -884,8 +885,8 @@ class WorkerSessions {
   }
 
   // Destroy a named session (freeing its per-session state); idempotent.
-  void close_named(const std::string& id) {
-    named_.erase(id);
+  bool close_named(const std::string& id) {
+    return named_.erase(id) != 0;
   }
 
   // Clear a named session's context (reset KV/recurrent + resident ids) while
@@ -964,8 +965,9 @@ inline int run_worker_stdio_loop(
           throw std::runtime_error("session_id required for op");
         }
         if (op == "close") {
-          sessions.close_named(id);
-          worker_emit({{"closed", true}, {"session_id", id}});
+          const bool existed = sessions.close_named(id);
+          worker_emit(
+              {{"closed", true}, {"session_id", id}, {"existed", existed}});
         } else if (op == "reset") {
           // idempotent (no-op if absent); only acks success if the reset took
           if (sessions.reset_named(id) != ::executorch::runtime::Error::Ok) {

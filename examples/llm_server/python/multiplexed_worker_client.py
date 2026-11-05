@@ -343,7 +343,9 @@ class MultiplexedWorkerClient:
         self._ensure_usable()
         if len(self._requests) >= self.max_inflight_requests:
             raise WorkerError(
-                "worker request capacity exhausted", code="capacity_exhausted"
+                "worker request capacity exhausted",
+                code="capacity_exhausted",
+                admitted=False,
             )
         state = _Request(self._allocate_id(), op, self._loop.create_future(), ack)
         self._requests[state.request_id] = state
@@ -584,6 +586,9 @@ class MultiplexedWorkerClient:
                 or counts["context_length"] == 0
             ):
                 raise WorkerError("invalid worker context overflow counts")
+        for flag, expected_kind in (("existed", "closed"), ("admitted", "error")):
+            if flag in msg and (kind != expected_kind or type(msg[flag]) is not bool):
+                raise WorkerError(f"invalid worker {flag} flag")
         if kind == "done":
             MultiplexedWorkerClient._validate_generation_terminal(msg)
         return kind
@@ -685,9 +690,10 @@ class MultiplexedWorkerClient:
                     msg["error"],
                     code=msg.get("code"),
                     context_overflow=msg.get("context_overflow"),
+                    admitted=msg.get("admitted"),
                 )
                 if kind == "error"
-                else WorkerStats.from_message(msg) if state.op == "generate" else None
+                else WorkerStats.from_message(msg) if state.op == "generate" else msg
             )
             self._complete(state, result)
         else:
@@ -765,6 +771,7 @@ class MultiplexedWorkerClient:
             result = await asyncio.shield(state.completion)
             if isinstance(result, WorkerError):
                 raise result
+            return result
         finally:
             self._abandon(state)
 
@@ -776,9 +783,10 @@ class MultiplexedWorkerClient:
         """Wait for the named session's replacement acknowledgement."""
         await self._op("reset", session_id, "reset")
 
-    async def close_session(self, session_id: str) -> None:
-        """Wait for the named session's logical close acknowledgement."""
-        await self._op("close", session_id, "closed")
+    async def close_session(self, session_id: str) -> Optional[bool]:
+        """Close idempotently; return whether it existed, or None for older workers."""
+        result = await self._op("close", session_id, "closed")
+        return result.get("existed")
 
     async def _cleanup(self):
         self._reader.cancel()

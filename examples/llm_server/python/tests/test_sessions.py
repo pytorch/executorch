@@ -266,6 +266,7 @@ def test_worker_op_failure_keeps_transcript(op):
     template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
     serving = ServingChat(_RaisingRuntime(), template, "test-model")
     serving._transcript.record_assistant_turn(
+        request_messages=[],
         session_id="s",
         content="hi",
         tool_calls=None,
@@ -290,9 +291,11 @@ def test_record_assistant_turn_replaces_stale_at_position():
     from executorch.examples.llm_server.python.openai_transcript import (
         OpenAITranscriptState,
     )
+    from executorch.examples.llm_server.python.protocol import ChatMessage
 
     t = OpenAITranscriptState(ChatTemplate(hf_tokenizer_path=None, allow_fallback=True))
     t.record_assistant_turn(
+        request_messages=[],
         session_id="s",
         content="a0",
         tool_calls=None,
@@ -300,6 +303,7 @@ def test_record_assistant_turn_replaces_stale_at_position():
         prior_turns=0,
     )
     t.record_assistant_turn(
+        request_messages=[ChatMessage(role="assistant", content="a0")],
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -309,6 +313,7 @@ def test_record_assistant_turn_replaces_stale_at_position():
     assert [r["ids"] for r in t._turns["s"].values()] == [[1], [2]]
     # regenerate turn 2 (same prior_turns) -> replaces stale [2], no stale tail
     t.record_assistant_turn(
+        request_messages=[ChatMessage(role="assistant", content="a0")],
         session_id="s",
         content="a1b",
         tool_calls=None,
@@ -331,6 +336,7 @@ def test_divergence_truncates_stale_tail():
     t = OpenAITranscriptState(ChatTemplate(hf_tokenizer_path=None, allow_fallback=True))
     t.record_assistant_turn(
         session_id="s",
+        request_messages=[ChatMessage(role="user", content="u0")],
         content="a0",
         tool_calls=None,
         generated_token_ids=[1],
@@ -338,11 +344,27 @@ def test_divergence_truncates_stale_tail():
     )
     t.record_assistant_turn(
         session_id="s",
+        request_messages=[
+            ChatMessage(role="user", content="u0"),
+            ChatMessage(role="assistant", content="a0"),
+            ChatMessage(role="user", content="u1"),
+        ],
         content="a1",
         tool_calls=None,
         generated_token_ids=[2],
         prior_turns=1,
     )
+    unchanged = [
+        ChatMessage(role="user", content="u0"),
+        ChatMessage(role="assistant", content="a0"),
+    ]
+    assert t.build_prompt_input(
+        session_id="s",
+        messages=unchanged,
+        rendered_prompt=t._template.render(unchanged),
+        tools=None,
+        template_kwargs=None,
+    ).segments
     msgs = [
         ChatMessage(role="user", content="u0"),
         ChatMessage(role="assistant", content="a0-EDITED"),
@@ -417,11 +439,23 @@ def test_injected_assistant_exemplar_falls_back_to_text():
     t = OpenAITranscriptState(ChatTemplate(hf_tokenizer_path=None, allow_fallback=True))
     t.record_assistant_turn(
         session_id="s",
+        request_messages=[ChatMessage(role="user", content="u0")],
         content="a0",
         tool_calls=None,
         generated_token_ids=[1, 2],
         prior_turns=0,
     )
+    unchanged = [
+        ChatMessage(role="user", content="u0"),
+        ChatMessage(role="assistant", content="a0"),
+    ]
+    assert t.build_prompt_input(
+        session_id="s",
+        messages=unchanged,
+        rendered_prompt=t._template.render(unchanged),
+        tools=None,
+        template_kwargs=None,
+    ).segments
     msgs = [
         ChatMessage(role="user", content="u0"),
         ChatMessage(role="assistant", content="INJECTED EXEMPLAR"),  # not ours

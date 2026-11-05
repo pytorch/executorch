@@ -200,8 +200,10 @@ request is an exact-token extension of its resident context prefills only the ne
 suffix. All KV/resident state lives inside the worker/session, never the control
 plane.
 
-For named sessions, an unchanged assistant reply can reuse its original generated
-token IDs. Clients may omit `reasoning_content` or send `null` when echoing a reply;
+For named sessions, an unchanged assistant reply with the same preceding message
+history can reuse its original generated token IDs. Compaction, removal, or edits
+to earlier message content invalidate affected records, even if the assistant's
+visible answer is identical. Clients may omit `reasoning_content` or send `null` when echoing a reply;
 both allow replay of the original tokens, including reasoning. A supplied string
 must exactly match the value returned to that client. String edits, including
 whitespace or line-ending changes and `""`, invalidate that turn's stored IDs and
@@ -272,13 +274,24 @@ not fail unrelated requests.
 Optional `generated_token_ids` in a terminal is present only when the runtime can
 safely replay exact output IDs. Statistics describe consumed prompt and generated
 tokens, not necessarily visible text. Runtime failures have the terminal shape
-`{"request_id":8,"error":"message","code":"internal"}`. Stable error codes
+`{"request_id":8,"error":"message","code":"internal"}`. Rejections before
+runtime admission additionally include `"admitted":false`; clients must not infer
+that a named session was created from such a rejection. An absent `admitted`
+field leaves admission unknown. Stable error codes
 include `invalid_argument`, `not_ready`, `session_not_found`, `session_busy`,
-`capacity_exhausted`, `internal`, `slow_consumer`, and `frame_too_large`.
+`capacity_exhausted`, `session_capacity_exhausted`, `internal`, `slow_consumer`, and `frame_too_large`.
 
 Lifecycle commands are `open`, `close`, and `reset`, each with `session_id` and
-its own request ID. Their replies are respectively `opened:true`, `closed:true`,
-and `reset:true`, or a correlated error. They do not block the input reader.
+its own request ID. These commands do not block the input reader.
+Their replies are respectively `opened:true`, `closed:true`,
+and `reset:true`, or a correlated error. Close remains idempotent and includes
+`existed:true` when it released a logical session slot, or `existed:false` when
+the session was already absent. Older workers can omit this field; a client
+cannot then distinguish stale candidates from released slots. Older multiplexed
+workers also use `capacity_exhausted` for session-slot refusals, so automatic
+eviction does not trigger for those workers. The legacy `WorkerClient` maps its
+explicit session-open capacity refusal to session-slot exhaustion; its close
+reply may still lack existence information.
 An accepted close/reset fences its session: earlier generation text and terminals
 precede its ACK, and runtime-owned generation callbacks and captures are cleaned
 up before the ACK is enqueued. Later accepted same-session operations stay behind
@@ -375,3 +388,22 @@ deferred: no compatible local PTE/tokenizer has been confirmed, and this stack
 must not download/export weights or claim that a real combined forward was
 verified. A Glimmer `embed_text`/`forward_from_embeddings` last-logits artifact is
 not assumed compatible with this packed construction path.
+
+Idle-session recovery retries at most once and only for native
+`session_capacity_exhausted` (logical session slots), or a legacy named-session
+open refusal. Request, control-queue, executor, and output-buffer overload remain
+`capacity_exhausted` and never trigger eviction. Both map to HTTP 429. Failed
+closes retain replay state and rotate the victim for a later request.
+
+Unconfirmed native admissions whose cleanup close fails remain cleanup candidates
+until closure is confirmed. Updated workers report whether close released a slot,
+so stale candidates do not consume the admission retry. Native front-door and
+local request-limit rejections carry `admitted:false`; they cannot have created
+a session and do not need a cleanup close. Other errors without output can leave
+session state, so they still require cleanup. Eviction skips sessions whose
+runtime lease is still settling, and disconnected consumers defer their cleanup
+rather than waiting for that lease. Task cancellation prevents an admission retry,
+even when it arrives during generation cleanup.
+
+Client-only `cache_control` markers do not change the replay history fingerprint.
+A string and its equivalent single text-part content are also interchangeable.

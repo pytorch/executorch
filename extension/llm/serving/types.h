@@ -76,6 +76,7 @@ enum class ET_EXPERIMENTAL ErrorCode {
   SessionBusy,
   CapacityExceeded,
   Internal,
+  SessionCapacityExceeded,
   ContextLengthExceeded,
 };
 

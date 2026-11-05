@@ -828,6 +828,7 @@ def test_failed_multiplexed_reset_invalidates_old_transcript():
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         serving._transcript.record_assistant_turn(
+            request_messages=[],
             session_id="s",
             content="reply",
             tool_calls=None,
@@ -872,6 +873,7 @@ def test_http_reset_missing_session_is_idempotent_but_preserves_real_errors(
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         serving._transcript.record_assistant_turn(
+            request_messages=[],
             session_id="s",
             content="reply",
             tool_calls=None,

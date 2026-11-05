@@ -280,11 +280,14 @@ class _SessionLocks:
         self._users = 0
         self._limit = limit
 
+    def in_use(self, session_id):
+        return session_id in self._entries
+
     @asynccontextmanager
-    async def hold(self, session_id):
-        if self._limit is not None and self._users >= self._limit:
+    async def hold(self, session_id, *, count_request=True):
+        if count_request and self._limit is not None and self._users >= self._limit:
             raise WorkerError("request capacity exhausted", code="capacity_exhausted")
-        self._users += 1
+        self._users += int(count_request)
         entry = None
         if session_id is not None:
             entry = self._entries.setdefault(session_id, _SessionLock())
@@ -296,7 +299,7 @@ class _SessionLocks:
                 async with entry.lock:
                     yield
         finally:
-            self._users -= 1
+            self._users -= int(count_request)
             if entry is not None:
                 entry.users -= 1
                 if not entry.users:
@@ -500,6 +503,9 @@ class SessionRuntime:
         self._abort_timeout_seconds = abort_timeout_seconds
         self._failure: Optional[WorkerError] = None
 
+    def session_in_use(self, session_id: str) -> bool:
+        return self._session_locks.in_use(session_id)
+
     @property
     def healthy(self) -> bool:
         if self._failure is not None:
@@ -529,9 +535,9 @@ class SessionRuntime:
         """Replace a named session's context under the same public ID."""
         await self._session_op("reset_session", session_id)
 
-    async def close(self, session_id: str) -> None:
+    async def close(self, session_id: str) -> Optional[bool]:
         """Destroy a named session and free its state and capacity slot."""
-        await self._session_op("close_session", session_id)
+        return await self._session_op("close_session", session_id)
 
     def _own_task(self, task):
         self._native_tasks.add(task)
@@ -569,7 +575,9 @@ class SessionRuntime:
             return
         if self._admitted >= self.max_concurrent_requests:
             raise WorkerError(
-                "worker request capacity exhausted", code="capacity_exhausted"
+                "worker request capacity exhausted",
+                code="capacity_exhausted",
+                admitted=False,
             )
         self._admitted += 1
         if self._native:
@@ -597,7 +605,7 @@ class SessionRuntime:
                     await lease.__aexit__(None, None, None)
                 self._release_admission(operation)
 
-    async def _session_op(self, method: str, session_id: str) -> None:
+    async def _session_op(self, method: str, session_id: str):
         op = getattr(self._worker, method, None)
         if op is None:
             return
@@ -609,7 +617,7 @@ class SessionRuntime:
                 if self._native
                 else loop.run_in_executor(self._executor, op, session_id)
             )
-            await asyncio.shield(operation.future)
+            return await asyncio.shield(operation.future)
 
     def stop(self) -> bool:
         """Legacy stop helper; multiplexed callers must cancel their Generation."""

@@ -62,6 +62,12 @@ def _parse_args(argv=None):
     parser.add_argument("--model-id", default="muse_glimmer")
     parser.add_argument("--max-context", type=int, required=True)
     parser.add_argument("--max-sessions", type=int, default=4)
+    parser.add_argument(
+        "--evict-idle-sessions",
+        action="store_true",
+        help="Evict least recently used idle sessions when logical session slots are exhausted; "
+        "clients must send complete history.",
+    )
     parser.add_argument("--max-decode-sequences", type=int, default=4)
     parser.add_argument("--max-inflight-requests", type=int, default=4)
     parser.add_argument(
@@ -224,6 +230,7 @@ def build_app_from_args(args):
                 template,
                 args.model_id,
                 max_context=args.max_context,
+                evict_idle_sessions=args.evict_idle_sessions,
                 streaming_preflight_timeout=args.streaming_preflight_timeout,
                 api_dialect=args.api_dialect,
                 max_image_bytes=args.max_image_bytes,

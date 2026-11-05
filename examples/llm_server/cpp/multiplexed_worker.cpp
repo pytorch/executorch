@@ -47,6 +47,8 @@ const char* error_code(serving::ErrorCode code) {
       return "session_busy";
     case serving::ErrorCode::CapacityExceeded:
       return "capacity_exhausted";
+    case serving::ErrorCode::SessionCapacityExceeded:
+      return "session_capacity_exhausted";
     case serving::ErrorCode::Internal:
       return "internal";
     case serving::ErrorCode::ContextLengthExceeded:
@@ -420,10 +422,10 @@ class Worker {
     try {
       if (name == "overloaded") {
         std::lock_guard<std::mutex> lock(mutex_);
-        complete(
-            op,
-            failure(
-                "capacity_exhausted", "worker operation capacity exhausted"));
+        auto response = failure(
+            "capacity_exhausted", "worker operation capacity exhausted");
+        response["admitted"] = false;
+        complete(op, std::move(response));
       } else if (name == "generate") {
         fields(
             message,
@@ -490,7 +492,9 @@ class Worker {
         {
           std::lock_guard<std::mutex> lock(mutex_);
           if (const auto* error = std::get_if<serving::ServingError>(&result)) {
-            complete(op, failure(*error));
+            auto response = failure(*error);
+            response["admitted"] = false;
+            complete(op, std::move(response));
           } else {
             op->handle = std::get<serving::RequestHandle>(std::move(result));
             if (op->cancelled)
@@ -523,14 +527,18 @@ class Worker {
             : name == "close"            ? "closed"
                                          : "reset";
         auto completion = [this, weak = std::weak_ptr<Operation>(op), ack](
-                              serving::LifecycleResult error) {
+                              serving::LifecycleResult error,
+                              std::optional<bool> existed) {
           try {
             if (auto active = weak.lock()) {
               {
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (failed_)
                   return;
-                complete(active, error ? failure(*error) : Json{{ack, true}});
+                auto response = error ? failure(*error) : Json{{ack, true}};
+                if (!error && existed.has_value())
+                  response["existed"] = *existed;
+                complete(active, std::move(response));
               }
               checkpoint(Checkpoint::TerminalEnqueued, active->id);
             }
@@ -539,12 +547,23 @@ class Worker {
             changed_.notify_all();
           }
         };
-        if (name == "open")
-          runtime_.open_session_async(std::move(key), std::move(completion));
-        else if (name == "close")
-          runtime_.close_session_async(std::move(key), std::move(completion));
-        else
-          runtime_.reset_session_async(std::move(key), std::move(completion));
+        if (name == "close") {
+          runtime_.close_session_with_result_async(
+              std::move(key),
+              [completion =
+                   std::move(completion)](serving::CloseResult result) {
+                completion(std::move(result.error), result.existed);
+              });
+        } else {
+          auto lifecycle = [completion = std::move(completion)](
+                               serving::LifecycleResult error) {
+            completion(std::move(error), std::nullopt);
+          };
+          if (name == "open")
+            runtime_.open_session_async(std::move(key), std::move(lifecycle));
+          else
+            runtime_.reset_session_async(std::move(key), std::move(lifecycle));
+        }
       } else {
         throw std::invalid_argument("unsupported or missing op");
       }

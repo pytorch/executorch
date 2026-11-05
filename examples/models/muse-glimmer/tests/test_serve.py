@@ -987,8 +987,8 @@ def test_replay_recovers_after_edit_without_restoring_stale_turns(
             assert _assemble(prompt) == _benc(template.render(messages))
             expected = generated[:i] if i < 3 else [generated[0]]
             if i == 4:
-                expected.append(generated[3])
                 if not restore_history:
+                    expected.append(generated[3])
                     resident = _assemble(runtime.prompts[3]) + generated[3]
                     assert _assemble(prompt)[: len(resident)] == resident
             assert [s["ids"] for s in prompt.segments or [] if "ids" in s] == expected
@@ -1150,3 +1150,73 @@ def test_image_overflow_uses_worker_counts(stream, dialect, text_tokens, complet
         assert error["metadata"]["completion_tokens"] == completion
     else:
         assert "metadata" not in error
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("context_kind", ["image", "external_reasoning"])
+@pytest.mark.parametrize("changed", [False, True])
+def test_changed_model_context_cannot_restore_old_generated_tokens(
+    stream, context_kind, changed
+):
+    async def scenario():
+        def history(value):
+            if context_kind == "image":
+                return [
+                    ChatMessage(
+                        role="user",
+                        content=[
+                            {"type": "text", "text": "Describe this image"},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "data:image/png;base64,"
+                                    + base64.b64encode(value.encode()).decode()
+                                },
+                            },
+                        ],
+                    )
+                ]
+            return [
+                ChatMessage(role="user", content="Earlier question"),
+                ChatMessage(
+                    role="assistant", content="Earlier answer", reasoning_content=value
+                ),
+                ChatMessage(role="user", content="Continue"),
+            ]
+
+        serving, runtime = _glimmer_serving(
+            [
+                {
+                    "text": " to=self<|message|>Old context.<|eom|><|start|>assistant to=user<|message|>OK",
+                    "gen_ids": [777],
+                },
+                {"text": " to=user<|message|>Fresh answer"},
+            ],
+            template=_HarmonyTemplate(),
+        )
+        answer = await _create_message(
+            serving,
+            ChatCompletionRequest(
+                messages=history("before"),
+                session_id="s",
+                stream=stream,
+            ),
+        )
+        assert answer["content"] == "OK"
+        await _create_message(
+            serving,
+            ChatCompletionRequest(
+                messages=history("after" if changed else "before")
+                + [
+                    ChatMessage(role="assistant", content="OK"),
+                    ChatMessage(role="user", content="Next"),
+                ],
+                session_id="s",
+                stream=stream,
+            ),
+        )
+        assert any(
+            segment.get("ids") == [777] for segment in runtime.prompts[1].segments or []
+        ) == (not changed)
+
+    asyncio.run(scenario())
