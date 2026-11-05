@@ -46,6 +46,7 @@ PhysicalDevice::PhysicalDevice(
     : instance(instance_handle),
       handle(physical_device_handle),
       properties{},
+      shader_features{},
       memory_properties{},
 #ifdef VK_KHR_16bit_storage
       shader_16bit_storage{
@@ -168,6 +169,7 @@ PhysicalDevice::PhysicalDevice(
 void PhysicalDevice::query_extensions_vk_1_0() {
   VkPhysicalDeviceFeatures features{};
   vkGetPhysicalDeviceFeatures(handle, &features);
+  shader_features = features;
 
   if (features.shaderInt16 == VK_TRUE) {
     supports_int16_shader_types = true;
@@ -236,6 +238,7 @@ void PhysicalDevice::query_extensions_vk_1_0() {
   features2.pNext = extension_list_top;
 
   vkGetPhysicalDeviceFeatures2KHR(handle, &features2);
+  shader_features = features2.features;
 
   // Query properties separately from features
   auto vkGetPhysicalDeviceProperties2KHR =
@@ -300,6 +303,7 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   features2.pNext = extension_list_top;
 
   vkGetPhysicalDeviceFeatures2(handle, &features2);
+  shader_features = features2.features;
 
   if (features2.features.shaderInt16 == VK_TRUE) {
     supports_int16_shader_types = true;

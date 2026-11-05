@@ -118,6 +118,7 @@ def test_cast_int_comparison_inputs_keeps_int32() -> None:
     pipeline = PassPipeline(
         Comparison(operator.eq),
         inputs,
+        tosa_extensions=["INT"],
         ops_not_after_pass=[
             "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
         ],

@@ -20,7 +20,7 @@ On Linux and Windows, the OpenVINO backend is included in the ExecuTorch pip whe
 pip install executorch[openvino]
 ```
 
-For now the extra installs no runtime on Python 3.15, or on Linux aarch64 with Python 3.14, because the OpenVINO versions it supports publish no build there.
+For now the extra installs no runtime on Python 3.15, where OpenVINO publishes no build. On Linux aarch64, OpenVINO needs glibc 2.35 or newer, as on Ubuntu 22.04 or Raspberry Pi OS Bookworm and later. On an older aarch64 system, `pip install executorch[openvino]` does not fail: pip finds no OpenVINO 2025.4 or newer for that system, so it installs an older ExecuTorch release instead. On such a system, install `executorch` without the extra, then build OpenVINO from source as described below.
 
 The backend automatically discovers the OpenVINO C library from the pip-installed package, so no library search path setup is needed.
 
@@ -47,6 +47,64 @@ from executorch.extension.pybindings.portable_lib import (
 print(_get_registered_backend_names())
 # Should include 'OpenvinoBackend'
 ```
+
+## Precision
+
+When the device is `CPU`, a program computes in float32 by default. Without this default,
+OpenVINO would compute in bfloat16 on x86 CPUs with bfloat16 units, which keeps only two to
+three significant digits, and in float16 on ARM CPUs, which keeps about three.
+Both are faster. To trade accuracy for speed, ask for the faster precision when
+lowering:
+
+```python
+from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+OpenvinoPartitioner(
+    [CompileSpec("device", b"CPU"), CompileSpec("inference_precision", b"bf16")]
+)
+```
+
+On an ARM CPU, ask for `f16` instead: there float32 is about 1.8x slower than
+float16, as measured on an Orin Nano.
+
+The value is OpenVINO's `INFERENCE_PRECISION_HINT`: `f32`, `f16` or `bf16`. An
+empty value means the default, and any other value fails at lowering. A CPU
+without float16 support computes an `f16` program in bfloat16 if it has bfloat16
+units, as some x86 CPUs do, and in float32 otherwise. OpenVINO has no
+bfloat16 on ARM CPUs, so there `bf16` keeps the ARM default, float16 where the
+CPU supports it. Which x86 CPUs compute in bfloat16 is up to OpenVINO; see its
+[Precision Control](https://docs.openvino.ai/2026/openvino-workflow/running-inference/optimize-inference/precision-control.html)
+page. Other devices, such as GPUs, keep OpenVINO's default unless the option is
+set.
+
+The default also applies to a program exported in float16: on a CPU it computes
+in float32 unless you lower it with `inference_precision`.
+
+On x86 CPUs, OpenVINO applies the precision when the runtime loads a program.
+So a program lowered without `inference_precision` computes in float32, even
+one exported with an ExecuTorch release that did not have this default. On an
+x86 CPU with bfloat16 units, float32 is slower and can use more memory; export it
+again with `inference_precision` set to `bf16` to get the earlier speed. Other
+x86 CPUs already computed such a program in float32. On ARM CPUs, OpenVINO applies the
+precision when the program is lowered, so a program exported with such an
+earlier release keeps computing in float16 until it is exported again.
+
+OpenVINO's CPU plugin computes 64-bit integers in 32 bits. An integer result
+outside the int32 range wraps around without an error. This applies to every
+int64 tensor, including the int64 result of `cumsum` and `prod` over smaller
+integer types. In OpenVINO 2026.4.1, the CPU plugin also computes some int32 and
+int64 ops in float32. On x86 CPUs these are `sum`, `amax`, `amin`, `max` and
+`min`. On ARM CPUs they are element-wise ops such as `add`, `maximum` and
+`clamp`, and the same reductions along any dimension but the last. Once a value
+or a running total is above 16,777,216 (2^24) or below -16,777,216, such a
+result can be off, even inside the int32 range. For example, on x86 `sum` over a
+tensor that holds 16,777,216 and 1 gives 16,777,216, and so does `amax` over one
+that holds 16,777,217.
+
+In OpenVINO 2026.4.1, the CPU plugin's `min(dim)` and `max(dim)` can return a
+later index on ties than PyTorch, which returns the first one. This happens with
+float32 as well as integer dtypes such as int32 and uint8.
 
 ## Directory Structure
 
@@ -82,7 +140,7 @@ executorch
 
 ### Prerequisites
 
-Before you begin, ensure you have openvino installed and configured on your system.
+Before you begin, ensure you have OpenVINO 2025.4 or newer installed and configured on your system.
 
 ### Use OpenVINO from Release Packages
 
@@ -100,7 +158,7 @@ Before you begin, ensure you have openvino installed and configured on your syst
 
 ```bash
 git clone https://github.com/openvinotoolkit/openvino.git
-cd openvino
+cd openvino && git checkout releases/2026/4
 git submodule update --init --recursive
 sudo ./install_build_dependencies.sh
 mkdir build && cd build

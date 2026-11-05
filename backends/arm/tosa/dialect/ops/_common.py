@@ -16,6 +16,15 @@ from torch.types import IntLikeType
 _VALID_NAN_MODES = {"PROPAGATE", "IGNORE"}
 
 
+def validate_int64_support(op: str) -> None:
+    """Raise unless the active specification declares the int64 extension."""
+    if not get_context_spec().support_extension("int64"):
+        raise TosaValueError(
+            f"TOSA spec {get_context_spec()} doesn't support int64 for {op}",
+            op=op,
+        )
+
+
 def broadcast_shape(
     input1: torch.Tensor, input2: torch.Tensor, op: str
 ) -> tuple[int | torch.SymInt, ...]:
