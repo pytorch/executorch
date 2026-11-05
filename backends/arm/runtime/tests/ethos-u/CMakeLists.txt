@@ -92,6 +92,26 @@ target_include_directories(
     "${EXECUTORCH_ROOT}/.."
     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
 )
+target_compile_definitions(
+  ethosu_execution_stats_test_library PRIVATE ET_EVENT_TRACER_ENABLED
+)
+target_link_libraries(
+  ethosu_execution_stats_test_library PUBLIC executorch_core
+)
+
+add_library(
+  ethosu_execution_stats_no_trace_test_library STATIC
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp"
+)
+target_include_directories(
+  ethosu_execution_stats_no_trace_test_library
+  PRIVATE
+    "${EXECUTORCH_ROOT}/.."
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+)
+target_link_libraries(
+  ethosu_execution_stats_no_trace_test_library PUBLIC executorch_core
+)
 
 add_executable(
   ethosu_execution_stats_test
@@ -105,8 +125,8 @@ target_include_directories(
     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
 )
 target_link_libraries(
-  ethosu_execution_stats_test PRIVATE ethosu_execution_stats_test_library
-                                      Threads::Threads
+  ethosu_execution_stats_test
+  PRIVATE ethosu_execution_stats_no_trace_test_library Threads::Threads
 )
 add_test(NAME ethosu_execution_stats COMMAND ethosu_execution_stats_test)
 set_tests_properties(
@@ -123,6 +143,9 @@ target_include_directories(
   PRIVATE
     "${EXECUTORCH_ROOT}/.."
     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+)
+target_compile_definitions(
+  ethosu_pmu_callbacks_test PRIVATE ET_EVENT_TRACER_ENABLED
 )
 target_link_libraries(
   ethosu_pmu_callbacks_test PRIVATE ethosu_execution_stats_test_library

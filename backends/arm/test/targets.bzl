@@ -62,6 +62,11 @@ def define_arm_tests():
         "ops/test_split.py",
     ]
 
+    # Models
+    test_files += [
+        "models/test_upsample_slice_concat.py",
+    ]
+
     # Modules
     test_files += [
         "modules/test_moe.py",
@@ -85,6 +90,7 @@ def define_arm_tests():
         "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
         "misc/test_diff_pte.py",
+        "misc/test_parse_ethosu_delegate_metadata.py",
         "misc/test_external_vela_blocks.py",
         "misc/test_vela_persistent_region.py",
         "misc/test_delegated_state_partitioning.py",
@@ -201,7 +207,10 @@ def define_arm_tests():
             ] if test_file == "misc/test_version_xfail.py" else []) + ([
                 "//executorch/exir:schema",
                 "//executorch/exir/_serialize:lib",
-            ] if test_file == "misc/test_diff_pte.py" else []),
+            ] if test_file == "misc/test_diff_pte.py" else []) + ([
+                "//executorch/backends/transforms:fuse_identical_input_transforms_pass",
+                "//executorch/backends/transforms:utils",
+            ] if test_file == "passes/test_propagate_permutes_views_pass.py" else []),
         )
 
     # Preserve the label used by internal CI to select individual Vela cases.
