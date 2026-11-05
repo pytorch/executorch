@@ -13,8 +13,10 @@
 #include <exception>
 #include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -31,6 +33,8 @@
 #include <executorch/backends/native/runtime/engine/Engine.h>
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
+#include <executorch/runtime/backend/options.h>
 #include <gflags/gflags.h>
 #include <pytorch/tokenizers/error.h>
 
@@ -64,7 +68,23 @@ DEFINE_string(
     "Replay this sample set, whose calls must all run --method, instead of "
     "--prompt, comparing each call's logits and forcing the sample's next "
     "token; exits 1 on mismatch.");
+DEFINE_int32(
+    kv_capacity,
+    0,
+    "Off-graph KV cache capacity in tokens; 0 uses --max_seq_length. Only "
+    "for packages exported with --offgraph_cache.");
+DEFINE_string(
+    kv_dtype,
+    "fp32",
+    "Off-graph KV cache storage: fp32 or fp16.");
+DEFINE_int32(
+    kv_initial_capacity,
+    -1,
+    "Off-graph KV cache rows allocated up front, doubling toward "
+    "--kv_capacity as the sequence grows; -1 keeps the cache default.");
 namespace {
+
+namespace cache = executorch::extension::llm::cache;
 
 using Clock = std::chrono::steady_clock;
 
@@ -94,6 +114,141 @@ size_t kv_cache_length(const ptn::Method& method) {
     }
   }
   return length;
+}
+
+constexpr std::string_view kUpdateAndAttend =
+    "torch.ops.kvcache.update_and_attend.default";
+
+// The off-graph KV cache a method's update_and_attend calls need: one flat
+// layer per cache id, shaped like its K. nullopt if the method has none.
+std::optional<cache::CacheGeometry> offgraph_cache_geometry(
+    const ptn::Method& method) {
+  std::map<int64_t, cache::LayerGeometry> layers;
+  for (const ptn::Node& node : method.graph.nodes) {
+    if (node.target != kUpdateAndAttend) {
+      continue;
+    }
+    const auto arg = [&](std::string_view name,
+                         size_t positional) -> const ptn::Argument& {
+      for (const ptn::NamedArgument& input : node.inputs) {
+        if (input.name == name) {
+          return input.arg;
+        }
+      }
+      if (positional >= node.inputs.size()) {
+        throw std::runtime_error(
+            "update_and_attend is missing argument " + std::string(name));
+      }
+      return node.inputs[positional].arg;
+    };
+    const ptn::Argument& layer_arg = arg("layer_id", 4);
+    const ptn::Argument& k_arg = arg("k", 1);
+    if (layer_arg.kind() != ptn::ArgKind::Int ||
+        ptn::valid(layer_arg.as_int().id) ||
+        k_arg.kind() != ptn::ArgKind::Tensor) {
+      throw std::runtime_error(
+          "update_and_attend needs a constant layer_id and a K tensor");
+    }
+    const std::vector<int64_t>& k_sizes =
+        method.graph.value(k_arg.as_tensor().id).tensor_meta().sizes;
+    if (k_sizes.size() != 4) {
+      throw std::runtime_error("update_and_attend K must be [B, H, T, D]");
+    }
+    const cache::LayerGeometry layer{
+        .n_kv_heads = static_cast<int>(k_sizes[1]),
+        .head_dim = static_cast<int>(k_sizes[3])};
+    const auto [it, inserted] =
+        layers.try_emplace(layer_arg.as_int().value, layer);
+    if (!inserted &&
+        (it->second.n_kv_heads != layer.n_kv_heads ||
+         it->second.head_dim != layer.head_dim)) {
+      throw std::runtime_error(
+          "update_and_attend calls disagree on cache layer " +
+          std::to_string(it->first) + "'s shape");
+    }
+  }
+  if (layers.empty()) {
+    return std::nullopt;
+  }
+  cache::CacheGeometry geometry;
+  for (const auto& [id, layer] : layers) {
+    if (id != static_cast<int64_t>(geometry.layers.size())) {
+      throw std::runtime_error("update_and_attend cache ids must be 0..n-1");
+    }
+    geometry.layers.push_back(layer);
+  }
+  return geometry;
+}
+
+// A runner-owned off-graph KV cache, published for the engine to bind.
+struct OffGraphCache {
+  std::shared_ptr<cache::Cache> cache;
+  std::unique_ptr<cache::InstallGuard> guard;
+  cache::SequenceControl* control = nullptr;
+  ptn::EngineOptions options;
+};
+
+OffGraphCache install_offgraph_cache(
+    const char* backend_id,
+    const cache::CacheGeometry& geometry) {
+  if (backend_id == nullptr) {
+    throw std::runtime_error(
+        "the package keeps its KV cache off-graph, which this engine's "
+        "runner does not support");
+  }
+  if (FLAGS_kv_dtype != "fp16" && FLAGS_kv_dtype != "fp32") {
+    throw std::invalid_argument("--kv_dtype must be fp32 or fp16");
+  }
+  cache::CacheConfig cfg{
+      .capacity =
+          FLAGS_kv_capacity > 0 ? FLAGS_kv_capacity : FLAGS_max_seq_length,
+      .kv_dtype = static_cast<int>(
+          FLAGS_kv_dtype == "fp16" ? ptn::ScalarType::Half
+                                   : ptn::ScalarType::Float)};
+  if (FLAGS_kv_initial_capacity >= 0) {
+    cfg.initial_capacity = FLAGS_kv_initial_capacity;
+  }
+  auto built = cache::CacheFactory::global().build(
+      backend_id, cache::kind::kSingle, geometry, cfg);
+  if (!built.ok()) {
+    throw std::runtime_error(
+        "failed to build the off-graph KV cache: error " +
+        std::to_string(static_cast<int>(built.error())));
+  }
+  OffGraphCache out;
+  out.cache = built.get();
+  out.control = out.cache->as<cache::SequenceControl>();
+  if (out.control == nullptr) {
+    throw std::runtime_error("the KV cache has no single-sequence control");
+  }
+  out.guard = std::make_unique<cache::InstallGuard>(out.cache);
+  executorch::runtime::BackendOptions<1> options;
+  const char* key = nullptr;
+  if (out.guard->set_option(options) != executorch::runtime::Error::Ok ||
+      options.get_option(cache::kCacheKeyOption, key) !=
+          executorch::runtime::Error::Ok) {
+    throw std::runtime_error("failed to publish the KV cache key");
+  }
+  out.options.emplace(cache::kCacheKeyOption, key);
+  std::printf(
+      "kv cache:  off-graph, %zu layers, %d tokens (%d allocated up front), "
+      "%s\n",
+      geometry.layers.size(),
+      cfg.capacity,
+      std::min(std::max(cfg.initial_capacity, 1), cfg.capacity),
+      FLAGS_kv_dtype.c_str());
+  return out;
+}
+
+// The --kv_* flags size an off-graph cache, so they are mistakes elsewhere.
+void reject_offgraph_cache_flags() {
+  for (const char* flag : {"kv_capacity", "kv_dtype", "kv_initial_capacity"}) {
+    if (!gflags::GetCommandLineFlagInfoOrDie(flag).is_default) {
+      throw std::invalid_argument(
+          std::string("--") + flag +
+          " only applies to packages exported with --offgraph_cache");
+    }
+  }
 }
 
 // The values of an [n] or [1, n] Int or Long sample tensor.
@@ -294,7 +449,9 @@ Generation generate(
 namespace ptn {
 
 // cppcheck-suppress unusedFunction
-int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
+int run_llm(
+    const std::function<std::unique_ptr<EngineHost>()>& make_host,
+    const char* cache_backend_id) {
   if (FLAGS_package.empty() || FLAGS_tokenizer.empty()) {
     std::fprintf(stderr, "error: --package and --tokenizer are required\n");
     return 1;
@@ -352,8 +509,20 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
         method.graph.output_ids.size(), user_outputs);
 
     const std::unique_ptr<ptn::EngineHost> host = make_host();
+    // Declared before the context, which may hold the cache, so it outlives it.
+    std::optional<OffGraphCache> kv;
+    if (const auto geometry = offgraph_cache_geometry(method)) {
+      kv = install_offgraph_cache(cache_backend_id, *geometry);
+    }
+    const size_t cache_length = kv
+        ? static_cast<size_t>(kv->control->capacity())
+        : kv_cache_length(method);
+    if (!kv) {
+      reject_offgraph_cache_flags();
+    }
     std::unique_ptr<ptn::EngineContext> context =
-        host->create_context(program, package);
+        host->create_context_with_options(
+            program, package, kv ? kv->options : ptn::EngineOptions{});
     const Clock::time_point load_end = Clock::now();
     const Clock::time_point compile_start = Clock::now();
     std::unique_ptr<ptn::EngineExecutable> executable =
@@ -422,8 +591,10 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
       for (size_t i = 0; i < set.samples.size(); ++i) {
         const std::vector<ptn::SampleCall>& calls = set.samples[i].calls;
         // Mutable state lives in the context, so a fresh one is the program's
-        // initial state.
-        if (i > 0) {
+        // initial state; an off-graph cache only needs clearing.
+        if (i > 0 && kv) {
+          kv->control->clear();
+        } else if (i > 0) {
           executable.reset();
           context.reset();
           context = host->create_context(program, package);
@@ -487,7 +658,7 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
                 prompt.size(),
                 calls.size(),
                 static_cast<size_t>(FLAGS_max_seq_length),
-                kv_cache_length(method),
+                cache_length,
                 static_cast<size_t>(token_shape[1])) < calls.size()) {
           throw std::runtime_error(
               "sample " + std::to_string(i) + " does not fit the method");
@@ -551,7 +722,7 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
         prompt_tokens.size(),
         static_cast<size_t>(FLAGS_max_new_tokens),
         static_cast<size_t>(FLAGS_max_seq_length),
-        kv_cache_length(method),
+        cache_length,
         static_cast<size_t>(token_shape[1]));
     // Prefill sends the whole prompt in one call.
     if (prompt_tokens.size() > static_cast<size_t>(token_shape[1])) {
