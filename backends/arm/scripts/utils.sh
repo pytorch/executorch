@@ -76,6 +76,9 @@ function download_with_retry() {
     # both are caught here. --fail rejects HTTP errors,
     # --retry-all-errors handles transport errors, and verify_md5 catches
     # truncation / wrong-content via the published archive checksum.
+    # If the absolute path ARM_SETUP_DOWNLOAD_CACHE holds a file named after
+    # the URL with the expected MD5, it is copied instead; the CI images cache
+    # them there.
 
     # Arg 1: log context (passed to log_step)
     # Arg 2: URL to download
@@ -88,6 +91,16 @@ function download_with_retry() {
     local url="${2}"
     local output="${3}"
     local expected_md5="${4}"
+
+    if [[ -n "${ARM_SETUP_DOWNLOAD_CACHE:-}" ]]; then
+        local cached="${ARM_SETUP_DOWNLOAD_CACHE}/$(basename "${url}")"
+        if [[ -f "${cached}" ]] && verify_md5 "${expected_md5}" "${cached}" \
+           && cp "${cached}" "${output}"; then
+            log_step "${context}" "Using cached ${cached}"
+            return 0
+        fi
+        echo "::warning::[Arm Setup/${context}] No usable ${cached}; downloading"
+    fi
 
     local max_attempts=5
     for attempt in $(seq 1 ${max_attempts}); do

@@ -34,7 +34,7 @@ from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
-from torch._export.verifier import Verifier
+from torch._export.verifier import SpecViolationError, Verifier
 from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
 from torch.fx.passes.infra.pass_manager import PassManager
@@ -336,6 +336,102 @@ class TestProgramManagers(unittest.TestCase):
             ep, compile_config=exir.EdgeCompileConfig(_check_ir_validity=False)
         )
         edge_manager.to_executorch()
+
+    def test_check_tensor_all(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                torch._check_tensor_all(x.abs() < 1e9)
+                return x * 2
+
+        to_edge(export(M(), (torch.randn(4),))).to_executorch()
+
+    def test_antialiased_resize(self):
+        class Resize(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    F.interpolate(x, size=(24, 18), mode="bicubic", antialias=True),
+                    F.interpolate(
+                        x, scale_factor=(1.75, 0.45), mode="bicubic", antialias=True
+                    ),
+                    F.interpolate(
+                        x,
+                        scale_factor=(0.4, 1.3),
+                        mode="bicubic",
+                        align_corners=True,
+                        antialias=True,
+                    ),
+                )
+
+        generator = torch.Generator().manual_seed(0)
+
+        def image(h, w, dtype, memory_format=torch.contiguous_format):
+            if dtype == torch.uint8:
+                t = torch.randint(
+                    0, 256, (1, 3, h, w), dtype=dtype, generator=generator
+                )
+            else:
+                t = torch.randn(1, 3, h, w, generator=generator)
+            return t.to(memory_format=memory_format)
+
+        dims = {"x": {2: Dim("h", min=8, max=64), 3: Dim("w", min=8, max=64)}}
+        sizes = [(24, 32), (64, 64)]
+        cases = []
+        for dtype in (torch.float32, torch.uint8):
+            cases.append((None, [image(24, 32, dtype)]))
+            for f in (torch.contiguous_format, torch.channels_last):
+                cases.append((dims, [image(h, w, dtype, f) for h, w in sizes]))
+        for dynamic_shapes, inputs in cases:
+            edge = to_edge(
+                export(Resize(), (inputs[0],), dynamic_shapes=dynamic_shapes)
+            )
+            # The op stays whole and runs on its portable kernel.
+            self.assertEqual(
+                self._count_nodes(
+                    edge.exported_program().graph_module,
+                    [exir_ops.edge.aten._upsample_bicubic2d_aa.default],
+                ),
+                3,
+            )
+            program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+            for t in inputs:
+                with self.subTest(
+                    dtype=t.dtype,
+                    dynamic=dynamic_shapes is not None,
+                    shape=t.shape,
+                    channels_last=t.is_contiguous(memory_format=torch.channels_last),
+                ):
+                    # uint8 follows ATen's fixed-point path exactly.
+                    tol = 0 if t.dtype == torch.uint8 else 1e-5
+                    for actual, expected in zip(program.forward((t,)), Resize()(t)):
+                        torch.testing.assert_close(actual, expected, atol=tol, rtol=tol)
+
+    def test_float_sym_max_min_rejected(self):
+        # The runtime's sym_max and sym_min kernels only take ints.
+        def model(sym_op):
+            class M(torch.nn.Module):
+                def forward(self, x, y):
+                    return x + sym_op(y.item(), 2)
+
+            return M()
+
+        for sym_op in (torch.sym_max, torch.sym_min):
+            to_edge(export(model(sym_op), (torch.ones(1), torch.tensor(3))))
+            with self.assertRaisesRegex(SpecViolationError, "only supports int"):
+                to_edge(export(model(sym_op), (torch.ones(1), torch.tensor(1.25))))
+
+        class Cond(torch.nn.Module):
+            def forward(self, pred, x, y):
+                return torch.cond(
+                    pred,
+                    lambda x, y: x + torch.sym_max(y.item(), 2),
+                    lambda x, y: x - y,
+                    (x, y),
+                )
+
+        with self.assertRaisesRegex(SpecViolationError, "only supports int"):
+            to_edge(
+                export(Cond(), (torch.tensor(True), torch.ones(1), torch.tensor(1.25)))
+            )
 
     def test_data_dependent(self):
         with torch.library._scoped_library("mylib", "FRAGMENT") as lib:
@@ -922,6 +1018,52 @@ class TestProgramManagers(unittest.TestCase):
             [exir_ops.edge.aten.addmm.default],
         )
         self.assertEqual(addmm_count, 0)
+
+    def test_to_edge_promotes_mixed_dtype_tensor_lists(self):
+        class Cat(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                return torch.cat([x, y, x])
+
+        class Stack(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                return torch.stack([x, y, x])
+
+        class CatWithEmpty(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                empty = torch.empty(0, 3, dtype=torch.float64)
+                return torch.cat([empty, x])
+
+        bf16 = torch.randn(2, 3, dtype=torch.bfloat16)
+        f32 = torch.randn(2, 3)
+        i32 = torch.randint(-9, 9, (2, 3), dtype=torch.int32)
+        cat = exir_ops.edge.aten.cat.default
+        stack = exir_ops.edge.aten.stack.default
+        cast = exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+        # Without preserving it, stack would decompose into cat.
+        config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.stack.default])
+        for module, op, inputs, dtype in (
+            # The repeated bfloat16 input is cast once.
+            (Cat(), cat, (bf16, f32), torch.float32),
+            (Stack(), stack, (bf16, f32), torch.float32),
+            # Only an input after the first one has another dtype.
+            (Cat(), cat, (f32, i32), torch.float32),
+            # An earlier pass drops the empty float64 input, which still decides
+            # the output dtype.
+            (CatWithEmpty(), cat, (bf16,), torch.float64),
+        ):
+            with self.subTest(
+                module=type(module).__name__, dtypes=[t.dtype for t in inputs]
+            ):
+                edge = to_edge(
+                    export(module, inputs, strict=True), compile_config=config
+                )
+                graph_module = edge.exported_program().graph_module
+                node = next(n for n in graph_module.graph.nodes if n.target == op)
+                self.assertEqual({t.meta["val"].dtype for t in node.args[0]}, {dtype})
+                self.assertEqual(self._count_nodes(graph_module, [cast]), 1)
+                torch.testing.assert_close(
+                    edge.exported_program().module()(*inputs), module(*inputs)
+                )
 
     def test_save_fails(self):
         model = TestLinear()

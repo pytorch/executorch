@@ -604,12 +604,15 @@ vkapi::VulkanImage allocate_image(
   vkapi::Adapter* adapter_ptr = context_ptr->adapter_ptr();
 
   const VkFormat image_format = vkcompute::vkapi::to_vkformat(dtype);
+  const bool floating = dtype == vkapi::kHalf || dtype == vkapi::kFloat ||
+      dtype == vkapi::kDouble;
 
   vkapi::ImageSampler::Properties sampler_props{
       VK_FILTER_NEAREST,
       VK_SAMPLER_MIPMAP_MODE_NEAREST,
-      VK_SAMPLER_ADDRESS_MODE_REPEAT,
-      VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+      VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+      floating ? VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK
+               : VK_BORDER_COLOR_INT_TRANSPARENT_BLACK,
   };
 
   VkImageType image_type = VK_IMAGE_TYPE_3D;

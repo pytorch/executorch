@@ -340,7 +340,6 @@ void record_index_fill_buffer(api::Context* context, api::vTensor& v_ten) {
       break;
     default:
       throw std::runtime_error("Unsupported dtype");
-      break;
   }
 
   api::ParamsBuffer params(api::context(), int32_t(v_ten.numel()));
