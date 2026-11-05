@@ -533,9 +533,9 @@ A model can be exported to keep its inputs and outputs on the GPU, so the runtim
 them between CPU and GPU memory on every run.
 [The CUDA backend guide](backends/cuda/cuda-overview.md#activation-memory-who-owns-the-gpu-copies)
 shows how. Such a model takes GPU tensors. If it was also exported with `alloc_graph_output=False`,
-as the guide recommends, it has no memory of its own for its outputs. Give each output a GPU buffer
-with `set_output`, once, before the first run. Its second argument is the output's index; the
-example below sets output 0:
+as the guide recommends, it has no memory of its own for its outputs, and without a GPU buffer for
+each output the run fails. Give each output one with `set_output`, once, before the first run. Its
+second argument, the output's index, defaults to 0, which is what the example below uses:
 
 ```cpp
 using namespace executorch::aten;
@@ -552,11 +552,21 @@ if (module.set_output(out) != Error::Ok) {
   return 1;
 }
 const auto result = module.forward({x, y});
+if (!result.ok()) {
+  return 1;
+}
 ```
 
-Without `set_output` the run fails, because the output has no memory to go to. Your own CUDA calls,
-such as `cudaMalloc`, also need the CUDA runtime library, `CUDA::cudart`, as the `extension_cuda`
-row in the table above says.
+The result is in `sum`, in GPU memory. Copy it to the host, for example with `cudaMemcpy`, before
+you read it on the CPU.
+
+Calling the CUDA runtime yourself, for example `cudaMalloc` and `cudaMemcpy`, needs the CUDA Toolkit
+when you build. Add these lines at the end of `CMakeLists.txt`:
+
+```cmake
+find_package(CUDAToolkit REQUIRED)
+target_link_libraries(app PRIVATE CUDA::cudart)
+```
 
 #### CUDA on Windows
 
