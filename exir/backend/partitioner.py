@@ -111,7 +111,14 @@ class Partitioner(ABC):
         its top-level cond, map and scan ops.
 
         * During decomposition, on the ATen program (`ep.dialect == "ATEN"`). The list and
-          the filter decide which nodes are kept whole.
+          the filter decide which nodes are kept whole. The filter is called on the nodes in
+          graph order. Right after it accepts a node whose op is in the list, that node's
+          target is replaced by an op of the same name in the `EDGE_DO_NOT_DECOMP` namespace,
+          unless exir does not preserve that op (mutable and aliasing ops, and a few others
+          such as `aten.add.Tensor`). The original target comes back when this partitioner's
+          decomposition ends. So a filter that reads the targets of other nodes sees the
+          `EDGE_DO_NOT_DECOMP` op, not the original one, for each earlier node that was
+          replaced.
         * After lowering, on the EDGE program (`ep.dialect == "EDGE"`). A node still in the
           graph whose op is in this list, or in the list of an earlier partitioner for the
           same method, and that the filter accepts was neither decomposed nor delegated,
