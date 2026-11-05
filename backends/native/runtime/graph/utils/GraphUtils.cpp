@@ -13,6 +13,7 @@
 #include <queue>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -251,6 +252,19 @@ void stable_topological_sort(Graph& graph) {
   }
   graph.schedule = std::move(sorted);
   graph.rebuild_def_use();
+}
+
+const Argument*
+find_arg(const Node& node, std::string_view name, size_t position) {
+  const auto found = std::ranges::find_if(
+      node.inputs,
+      [name](const NamedArgument& input) { return input.name == name; });
+  if (found != node.inputs.end()) {
+    return &found->arg;
+  }
+  return position < node.inputs.size() && node.inputs[position].name.empty()
+      ? &node.inputs[position].arg
+      : nullptr;
 }
 
 // cppcheck-suppress unusedFunction

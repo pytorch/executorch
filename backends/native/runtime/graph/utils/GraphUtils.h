@@ -6,9 +6,17 @@
 
 #pragma once
 
+#include <cstddef>
+#include <string_view>
+
 #include <executorch/backends/native/runtime/graph/Graph.h>
 
 namespace ptn {
+
+// The input named `name`, else the unnamed input at `position`. A named input
+// at `position` belongs to another parameter, so it is never returned.
+const Argument*
+find_arg(const Node& node, std::string_view name, size_t position);
 
 // Orders active nodes by their data dependencies. Ties retain schedule order.
 void stable_topological_sort(Graph& graph);

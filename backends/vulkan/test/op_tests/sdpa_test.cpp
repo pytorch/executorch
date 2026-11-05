@@ -22,6 +22,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <limits>
 
 //
 // SDPA Mode Enum
@@ -637,9 +638,15 @@ at::Tensor general_sdpa_reference_impl(
   if (attn_mask.has_value()) {
     attn = attn + attn_mask.value();
   }
-  attn = at::softmax(attn, -1);
+  // ATen's SDPA returns zero for rows masked entirely with -inf.
+  attn = at::nan_to_num(at::softmax(attn, -1), 0.0);
   return at::matmul(attn, v);
 }
+
+// Bias shapes: kBroadcast is [B, 1, 1, L]. kPerQuery is [B, 1, S, L], whose
+// buffer rows start mid-texel when L % 4 != 0; kPerQueryFirstRowMasked also
+// masks query 0 entirely with -inf.
+enum class BiasKind { kNone, kBroadcast, kPerQuery, kPerQueryFirstRowMasked };
 
 void test_vulkan_general_sdpa(
     const int batch_size,
@@ -647,8 +654,10 @@ void test_vulkan_general_sdpa(
     const int q_seq_len,
     const int kv_seq_len,
     const int head_dim,
-    const bool has_bias,
-    at::ScalarType dtype = at::kFloat) {
+    const BiasKind bias_kind,
+    at::ScalarType dtype = at::kFloat,
+    vkcompute::utils::StorageType storage = vkcompute::utils::kBuffer) {
+  const bool has_bias = bias_kind != BiasKind::kNone;
   torch::manual_seed(42);
 
   // Generate random inputs in [B, H, S, D] layout
@@ -664,12 +673,15 @@ void test_vulkan_general_sdpa(
 
   std::optional<at::Tensor> bias = std::nullopt;
   if (has_bias) {
-    // Broadcastable bias: [B, 1, 1, kv_seq_len]
+    const int bias_seq_len = bias_kind == BiasKind::kBroadcast ? 1 : q_seq_len;
     bias = at::rand(
-               {batch_size, 1, 1, kv_seq_len},
+               {batch_size, 1, bias_seq_len, kv_seq_len},
                at::device(at::kCPU).dtype(at::kFloat)) *
             2.0 -
         1.0;
+    if (bias_kind == BiasKind::kPerQueryFirstRowMasked) {
+      bias.value().select(2, 0).fill_(-std::numeric_limits<float>::infinity());
+    }
   }
 
   // Compute reference output in fp32
@@ -690,24 +702,24 @@ void test_vulkan_general_sdpa(
   ComputeGraph graph(config);
 
   IOValueRef r_q = graph.add_input_tensor(
-      q.sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+      q.sizes().vec(), from_at_scalartype(dtype), storage);
   IOValueRef r_k = graph.add_input_tensor(
-      k.sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+      k.sizes().vec(), from_at_scalartype(dtype), storage);
   IOValueRef r_v = graph.add_input_tensor(
-      v.sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+      v.sizes().vec(), from_at_scalartype(dtype), storage);
 
   ValueRef r_bias = kDummyValueRef;
   IOValueRef r_bias_io = {};
   if (has_bias) {
     r_bias_io = graph.add_input_tensor(
-        bias.value().sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+        bias.value().sizes().vec(), from_at_scalartype(dtype), storage);
     r_bias = r_bias_io.value;
   }
 
   const ValueRef r_out = graph.add_tensor(
       {batch_size, num_heads, q_seq_len, head_dim},
       from_at_scalartype(dtype),
-      utils::kBuffer);
+      storage);
 
   VK_GET_OP_FN("et_vk.sdpa.default")
   (graph,
@@ -765,8 +777,8 @@ void test_vulkan_general_sdpa(
     at::Tensor diffs = at::abs(reference_out - vk_out);
     std::cout << "General SDPA test failed:" << " B=" << batch_size
               << " H=" << num_heads << " S=" << q_seq_len << " L=" << kv_seq_len
-              << " D=" << head_dim << " bias=" << has_bias << " dtype=" << dtype
-              << std::endl;
+              << " D=" << head_dim << " bias=" << static_cast<int>(bias_kind)
+              << " dtype=" << dtype << " storage=" << storage << std::endl;
     std::cout << "Max diff: " << at::max(diffs).item() << std::endl;
     std::cout << "Max value: "
               << at::max(at::abs(at::cat({reference_out, vk_out}, -1))).item()
@@ -791,37 +803,37 @@ void test_vulkan_general_sdpa(
 
 // Basic correctness: small sizes, no bias, fp32
 TEST(VulkanGeneralSDPATest, test_general_sdpa_small_no_bias) {
-  test_vulkan_general_sdpa(1, 2, 4, 4, 8, false);
+  test_vulkan_general_sdpa(1, 2, 4, 4, 8, BiasKind::kNone);
 }
 
 // With additive bias mask
 TEST(VulkanGeneralSDPATest, test_general_sdpa_small_with_bias) {
-  test_vulkan_general_sdpa(1, 2, 4, 8, 8, true);
+  test_vulkan_general_sdpa(1, 2, 4, 8, 8, BiasKind::kBroadcast);
 }
 
 // Cross-attention: Q and K have different sequence lengths
 TEST(VulkanGeneralSDPATest, test_general_sdpa_cross_attention) {
-  test_vulkan_general_sdpa(1, 4, 4, 16, 16, false);
+  test_vulkan_general_sdpa(1, 4, 4, 16, 16, BiasKind::kNone);
 }
 
 // Batch size > 1
 TEST(VulkanGeneralSDPATest, test_general_sdpa_batched) {
-  test_vulkan_general_sdpa(2, 4, 8, 8, 16, false);
+  test_vulkan_general_sdpa(2, 4, 8, 8, 16, BiasKind::kNone);
 }
 
 // Larger head_dim with bias (EdgeTAM-like)
 TEST(VulkanGeneralSDPATest, test_general_sdpa_large_head_dim) {
-  test_vulkan_general_sdpa(1, 8, 4, 4, 32, true);
+  test_vulkan_general_sdpa(1, 8, 4, 4, 32, BiasKind::kBroadcast);
 }
 
 // Non-aligned S (S is height dim, not width — no padding issue)
 TEST(VulkanGeneralSDPATest, test_general_sdpa_non_aligned_s) {
-  test_vulkan_general_sdpa(1, 2, 5, 4, 32, false);
+  test_vulkan_general_sdpa(1, 2, 5, 4, 32, BiasKind::kNone);
 }
 
 // Large number of heads
 TEST(VulkanGeneralSDPATest, test_general_sdpa_many_heads) {
-  test_vulkan_general_sdpa(1, 8, 4, 8, 32, false);
+  test_vulkan_general_sdpa(1, 8, 4, 8, 32, BiasKind::kNone);
 }
 
 // fp16 — validates fp32 internal accumulation
@@ -832,7 +844,7 @@ TEST(VulkanGeneralSDPATest, test_general_sdpa_fp16) {
       /*q_seq_len=*/8,
       /*kv_seq_len=*/8,
       /*head_dim=*/16,
-      /*has_bias=*/false,
+      /*bias_kind=*/BiasKind::kNone,
       /*dtype=*/at::kHalf);
 }
 
@@ -844,8 +856,54 @@ TEST(VulkanGeneralSDPATest, test_general_sdpa_fp16_with_bias) {
       /*q_seq_len=*/8,
       /*kv_seq_len=*/16,
       /*head_dim=*/16,
-      /*has_bias=*/true,
+      /*bias_kind=*/BiasKind::kBroadcast,
       /*dtype=*/at::kHalf);
+}
+
+// L % 4 != 0: unpadded buffer bias rows and padded attention weight rows.
+TEST(VulkanGeneralSDPATest, test_general_sdpa_non_aligned_l_per_query_bias) {
+  for (const auto storage :
+       {vkcompute::utils::kBuffer, vkcompute::utils::kTexture3D}) {
+    for (const int kv_seq_len : {1, 9}) {
+      test_vulkan_general_sdpa(
+          /*batch_size=*/2,
+          /*num_heads=*/2,
+          /*q_seq_len=*/3,
+          kv_seq_len,
+          /*head_dim=*/8,
+          BiasKind::kPerQuery,
+          at::kFloat,
+          storage);
+    }
+  }
+}
+
+TEST(VulkanGeneralSDPATest, test_general_sdpa_fully_masked_row_is_zero) {
+  for (const auto storage :
+       {vkcompute::utils::kBuffer, vkcompute::utils::kTexture3D}) {
+    test_vulkan_general_sdpa(
+        /*batch_size=*/1,
+        /*num_heads=*/2,
+        /*q_seq_len=*/3,
+        /*kv_seq_len=*/9,
+        /*head_dim=*/8,
+        BiasKind::kPerQueryFirstRowMasked,
+        at::kFloat,
+        storage);
+  }
+}
+
+TEST(
+    VulkanGeneralSDPATest,
+    test_general_sdpa_fp16_non_aligned_l_per_query_bias) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/2,
+      /*q_seq_len=*/3,
+      /*kv_seq_len=*/9,
+      /*head_dim=*/8,
+      BiasKind::kPerQuery,
+      at::kHalf);
 }
 
 //
