@@ -21,6 +21,7 @@ from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyn
 from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.passes import replace_complex_with_real_pass
 from torch.export import export
 from torch.nn.attention.varlen import varlen_attn
 
@@ -1145,7 +1146,17 @@ class TestCudaExport(unittest.TestCase):
                 model = ComplexRope(precision).to(device)
                 x = torch.randn(4, 3, 24, dtype=dtype)
                 inputs = (x.to(device), angles.to(device))
-                program = self._export_to_cuda_with_lower(model, inputs).to_executorch()
+                logs = (
+                    self.assertLogs(replace_complex_with_real_pass.logger, "INFO")
+                    if device == "cuda"
+                    else self.assertNoLogs(
+                        replace_complex_with_real_pass.logger, "INFO"
+                    )
+                )
+                with logs:
+                    program = self._export_to_cuda_with_lower(
+                        model, inputs
+                    ).to_executorch()
                 with tempfile.TemporaryDirectory() as directory:
                     path = os.path.join(directory, "model.pte")
                     with open(path, "wb") as f:
