@@ -749,7 +749,8 @@ inline void worker_handle_request(
     }
     bool stop_hit = false;
     size_t matched = std::string::npos;
-    const size_t safe = stop_safe_prefix_len(pending, stops, stop_hit, &matched);
+    const size_t safe =
+        stop_safe_prefix_len(pending, stops, stop_hit, &matched);
     if (stop_hit) {
       // The request is terminal as soon as the stop sequence is recognized.
       // Seal before worker_emit(), which may block while flushing stdout.
@@ -803,8 +804,8 @@ inline void worker_handle_request(
       {"reused_prompt_tokens", reused},
       {"prefilled_prompt_tokens", prefilled},
       {"session_reset_reason", plan.reason}};
-  done["matched_stop"] = matched_stop ? nlohmann::json(*matched_stop)
-                                      : nlohmann::json(nullptr);
+  done["matched_stop"] =
+      matched_stop ? nlohmann::json(*matched_stop) : nlohmann::json(nullptr);
   if (cancelled) {
     done["cancelled"] = true;
   }

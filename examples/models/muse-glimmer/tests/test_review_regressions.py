@@ -180,3 +180,49 @@ def test_schema_work_is_bounded_across_all_tools():
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_tool_schema"
     assert not serving._runtime.prompts
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_closed_malformed_bare_invocation_is_not_hidden_by_cutoff(stream):
+    raw = '<atem:invoke bad="edit.edit"></atem:invoke>'
+    client, serving = client_for(raw)
+    serving._runtime._outputs[0]["finish_reason"] = "length"
+    response = client.post("/v1/chat/completions", json=request({}, stream))
+    assert response.status_code == (200 if stream else 502)
+    assert '"invalid_tool_output"' in response.text
+    assert '"tool_calls"' not in response.text
+
+
+def test_detector_subclass_receives_cutoff_context():
+    from executorch.examples.models.muse_glimmer.serving.tool_parsers.atem import (
+        AtemToolCallDetector,
+    )
+
+    class Detector(AtemToolCallDetector):
+        pass
+
+    client, serving = client_for('<atem:function_calls><atem:invoke name="edit.edit">')
+    serving._tool_detector_cls = Detector
+    serving._runtime._outputs[0]["finish_reason"] = "length"
+    response = client.post("/v1/chat/completions", json=request({}))
+    assert response.status_code == 200
+    assert response.json()["choices"][0]["finish_reason"] == "length"
+
+
+def test_streamed_reasoning_disagreement_is_logged(caplog):
+    from executorch.examples.llm_server.python.protocol import DeltaMessage
+
+    class Parser:
+        def feed(self, text):
+            return []
+
+        def finish(self):
+            return [DeltaMessage(reasoning_content="different")]
+
+    client, serving = client_for(
+        " to=self<|message|>expected<|eom|> to=user<|message|>answer"
+    )
+    serving._tool_reasoning_parser_factory = Parser
+    response = client.post("/v1/chat/completions", json=request({}, True))
+    assert response.status_code == 200
+    assert "Streamed reasoning differs" in caplog.text

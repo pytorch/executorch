@@ -109,7 +109,7 @@ def _additional_properties(validator, child, instance, schema):
                 yield from validator.descend(value, child, path=key)
 
 
-def _evaluated_keys(validator, instance, schema, legacy):
+def _evaluated_keys(validator, instance, schema, legacy):  # noqa: C901
     # jsonschema's annotation helpers also evaluate patternProperties. Keep those
     # searches on the same deadline as validation and property projection.
     _VALIDATION_BUDGET.get().spend()
@@ -202,7 +202,7 @@ _BOUNDED_VALIDATORS = {
 
 
 class ToolSchema:
-    def __init__(self, schema, *, budget=None):
+    def __init__(self, schema, *, budget=None):  # noqa: C901
         budget = budget if budget is not None else ToolOutputBudget()
         self.schema = schema
         try:
