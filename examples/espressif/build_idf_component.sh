@@ -25,13 +25,14 @@
 #
 # Host requirements: python3 with ExecuTorch + torchgen importable (for
 # kernel codegen), cmake (to build flatc from third-party/flatbuffers
-# when no flatc is available), and git submodules third-party/flatcc +
+# when no flatc is available), and the git submodule
 # third-party/flatbuffers initialized. Consumers of the output need
 # only ESP-IDF. Set PYTHON=... / FLATC=... to override discovery.
 #
 # NOTE: This script is coupled to the ExecuTorch source tree layout, but
-# its source file lists come from the same build_variables.bzl the
-# CMake build uses, so upstream file moves are picked up automatically.
+# its runtime source lists come from the same build_variables.bzl the
+# CMake build uses and kernel util sources are globbed, so upstream file
+# moves are picked up automatically.
 # Consumer builds for Xtensa + RISC-V targets are the safety net.
 
 set -euo pipefail
@@ -106,12 +107,10 @@ if [[ ! "$ET_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]];
 fi
 ET_COMPONENT_VERSION="${ET_VERSION}~${PACKAGING_REV}"
 
-for dep in flatbuffers flatcc; do
-  if [ ! -f "$ET_ROOT/third-party/$dep/LICENSE" ]; then
-    echo "ERROR: third-party/$dep is empty. Run: git submodule update --init third-party/$dep" >&2
-    exit 1
-  fi
-done
+if [ ! -f "$ET_ROOT/third-party/flatbuffers/LICENSE" ]; then
+  echo "ERROR: third-party/flatbuffers is empty. Run: git submodule update --init third-party/flatbuffers" >&2
+  exit 1
+fi
 
 # Refuse to clobber a directory that is not a previous run's output.
 if [ -d "$OUT_DIR" ] && [ -n "$(ls -A "$OUT_DIR" 2>/dev/null)" ] \
@@ -473,16 +472,17 @@ echo "[2/6] Kernel registration generated for: ${PROFILES[*]}"
 
 # ─────────────────────────────────────────────────────────
 # 3. Vendor runtime + extension sources (build_variables.bzl
-#    lists) and the union of profile kernel sources.
+#    lists), kernel util sources and the union of profile kernel
+#    sources.
 #    Output mirrors upstream paths under src/executorch/.
 # ─────────────────────────────────────────────────────────
 : > "$SCRATCH/core_srcs.txt"
 
-copy_bzl_list() { # $1=bzl variable name; appends to core_srcs.txt
+copy_srcs() { # ET_ROOT-relative paths on stdin; appends to core_srcs.txt
   local f
-  bzl_list "$1" | while IFS= read -r f; do
+  while IFS= read -r f; do
     if [ ! -f "$ET_ROOT/$f" ]; then
-      echo "ERROR: build_variables.bzl lists missing file: $f" >&2; exit 1
+      echo "ERROR: missing source file: $f" >&2; exit 1
     fi
     mkdir -p "$OUT_DIR/src/executorch/$(dirname "$f")"
     cp "$ET_ROOT/$f" "$OUT_DIR/src/executorch/$f"
@@ -490,9 +490,11 @@ copy_bzl_list() { # $1=bzl variable name; appends to core_srcs.txt
   done
 }
 
-copy_bzl_list EXECUTORCH_CORE_SRCS
-copy_bzl_list EXECUTORCH_SRCS # prim ops
-copy_bzl_list KERNELS_UTIL_ALL_DEPS_SRCS
+bzl_list EXECUTORCH_CORE_SRCS | copy_srcs
+bzl_list EXECUTORCH_SRCS | copy_srcs # prim ops
+# Globbed, so a util source missing from KERNELS_UTIL_ALL_DEPS_SRCS cannot
+# break the link.
+( cd "$ET_ROOT" && printf '%s\n' kernels/portable/cpu/util/*.cpp ) | copy_srcs
 
 # Kernel sources needed by at least one shipped profile.
 : > "$SCRATCH/kernel_srcs_by_profile.txt"
@@ -504,8 +506,8 @@ done < "$SCRATCH/kernel_union/files.txt"
 echo "[3/6] Runtime, extension and kernel sources copied"
 
 # ─────────────────────────────────────────────────────────
-# 4. Vendor headers: executorch/** (public), c10/torch,
-#    flatbuffers, flatcc (+ its C runtime).
+# 4. Vendor headers: executorch/** and c10/torch (public),
+#    flatbuffers (private: only internal headers include it).
 # ─────────────────────────────────────────────────────────
 copy_headers() { # $1=src dir under ET_ROOT, $2=dest under OUT/include
   local src_dir="$1" dest_dir="$2" f
@@ -561,16 +563,9 @@ if [ "$ANY_CADENCE" = true ]; then
   copy_headers backends/cadence/generic executorch/backends/cadence/generic
 fi
 
+mkdir -p "$OUT_DIR/priv_include"
 cp -r "$ET_ROOT/third-party/flatbuffers/include/flatbuffers" \
-      "$OUT_DIR/include/flatbuffers"
-mkdir -p "$OUT_DIR/include/flatcc" "$OUT_DIR/src/flatcc/runtime"
-cp "$ET_ROOT/third-party/flatcc/include/flatcc/"*.h "$OUT_DIR/include/flatcc/"
-cp -r "$ET_ROOT/third-party/flatcc/include/flatcc/portable" \
-      "$OUT_DIR/include/flatcc/"
-cp "$ET_ROOT/third-party/flatcc/src/runtime/"*.c "$OUT_DIR/src/flatcc/runtime/"
-for f in "$OUT_DIR/src/flatcc/runtime/"*.c; do
-  echo "src/flatcc/runtime/$(basename "$f")" >> "$SCRATCH/core_srcs.txt"
-done
+      "$OUT_DIR/priv_include/flatbuffers"
 
 echo "[4/6] Headers and third-party code copied"
 
@@ -588,9 +583,7 @@ cp "$ET_ROOT/LICENSE" "$OUT_DIR/LICENSE"
 
 LICENSES="$OUT_DIR/THIRD_PARTY_LICENSES"
 mkdir -p "$LICENSES"
-for dep in flatbuffers flatcc; do
-  cp "$ET_ROOT/third-party/$dep/LICENSE" "$LICENSES/$dep-LICENSE.txt"
-done
+cp "$ET_ROOT/third-party/flatbuffers/LICENSE" "$LICENSES/flatbuffers-LICENSE.txt"
 cat > "$LICENSES/README.md" <<'NOTICE'
 # Third-party licenses
 
@@ -599,8 +592,7 @@ ExecuTorch's own BSD license is in the LICENSE file at the root.
 
 | Component | Location in this component | License |
 |---|---|---|
-| FlatBuffers (Google) | `include/flatbuffers/` | Apache-2.0 — `flatbuffers-LICENSE.txt` |
-| flatcc (Mikkel F. Jorgensen) | `include/flatcc/`, `src/flatcc/` | Apache-2.0 — `flatcc-LICENSE.txt` |
+| FlatBuffers (Google) | `priv_include/flatbuffers/` | Apache-2.0 — `flatbuffers-LICENSE.txt` |
 | PyTorch c10 (Meta) | `include/c10/`, `include/torch/` | BSD-3-Clause, as exact copies from PyTorch core |
 
 `src/profiles/*/register_kernels.cpp` is generated by ExecuTorch's
@@ -674,7 +666,10 @@ KHEAD
         help
             When disabled, ET_LOG is compiled out entirely
             (ET_LOG_ENABLED=0). When enabled, messages go through
-            ESP_LOG under the "executorch" tag.
+            ESP_LOG under the "executorch" tag. Newlib's nano printf
+            (LIBC_NEWLIB_NANO_FORMAT) cannot format the 64-bit integers
+            in ExecuTorch's error messages, so with it logging is
+            compiled out regardless, with a build warning.
 
     choice ET_LOG_LEVEL
         prompt "ExecuTorch log level floor"
@@ -696,10 +691,11 @@ KHEAD
 
     config ET_OPTIMIZE_SIZE
         bool "Build the runtime with -Os"
-        default n
+        default y
         help
             Optimize the ExecuTorch runtime for size regardless of the
-            project's compiler optimization level.
+            project's compiler optimization level. This trades speed
+            for flash; turn it off when inference time matters more.
 
     config ET_PROGRAM_VERIFICATION
         bool "Compile in full .pte verification"
