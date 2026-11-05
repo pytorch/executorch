@@ -55,6 +55,51 @@ every op of every kernel library on ESP32-S3 and ESP32-C6. macOS and Windows
 jobs configure `idf_component_smoke` with the same component
 (`.github/workflows/nightly-espressif-idf.yml`).
 
+### Publishing the component
+
+`.github/workflows/publish-esp-idf.yml` publishes the component to the ESP
+Component Registry as `pytorch/executorch`. It packs the component once,
+builds that archive in every `idf_component_consumer` configuration on
+ESP-IDF 6.0.1 and 6.1, runs each build except the build-only one for
+ESP32-P4 before rev3 on its emulator, and validates the archive with both
+registries before uploading it. After each upload, a consumer build
+resolves the new version from that registry, checks that the registry
+serves the tested files, and runs it on the emulator.
+
+- An RC tag `vX.Y.Z-rcN` publishes `X.Y.Z-rc.N` to the staging registry,
+  https://components-staging.espressif.com.
+- A release tag `vX.Y.Z` publishes `X.Y.Z` to staging, then to
+  https://components.espressif.com.
+- A fix to the component after a release is a respin, `X.Y.Z~N`. Commit it
+  to `release/X.Y`, changing nothing since the tag outside
+  `examples/espressif/`, `.ci/`, `.github/` and `docs/`, and run the
+  workflow on `release/X.Y` with `version_suffix` `~N`. A release whose
+  publishing failed in CI is published as a respin once the CI is fixed.
+- A manual run only validates unless `dry_run` is cleared. With `registry`
+  `production`, it uploads to staging first. Uploads skip versions the
+  registry already has, so **Re-run failed jobs** retries with the same
+  archive; **Re-run all jobs** packs a new one, which passes only if its
+  files match those the registry already serves.
+
+Each upload waits for a reviewer of the `esp-component-registry`
+environment, the only place the registries accept uploads from: on each
+registry, `pytorch/executorch`'s trusted uploader names this repository and
+that environment. Before approving the staging upload, dispatch the nightly
+matrix (`nightly-espressif-idf.yml`) on the tag and wait for it to pass; it
+also covers ESP-IDF master, the all-ops build and the macOS and Windows
+configure jobs. Approve the production upload once the release owner has
+built a project against the version on staging.
+
+The one-time setup goes in this order, because GitHub creates a missing
+environment, unprotected, as soon as a workflow names it:
+
+1. Create the `esp-component-registry` environment with required
+   reviewers, self-review prevented, no admin bypass, and deployments
+   limited to `v*` tags and `release/*` branches.
+2. Create the `pytorch` namespace on the staging registry.
+3. On each registry, make this repository and that environment
+   `pytorch/executorch`'s trusted uploader.
+
 The executor runner below remains the reference for the prebuilt-library
 flow and for benchmarking.
 
