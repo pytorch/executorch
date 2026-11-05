@@ -2544,6 +2544,34 @@ class TestPasses(unittest.TestCase):
                     ep.module()(*sample_input), module(*sample_input)
                 )
 
+    def test_partitioner_keeps_constants_above_rank_5_on_cpu(self):
+        class Rank6Constant(torch.nn.Module):
+            def __init__(self, use):
+                super().__init__()
+                self.use = use
+
+            def forward(self, x):
+                return x * 2, self.use(torch.zeros(1, 2, 1, 1, 3, 4))
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        # Either way the constant would be an output of the multiply's partition.
+        uses = {"graph output": lambda c: c, "CPU op": lambda c: c.cumsum(5)}
+        for name, use in uses.items():
+            with self.subTest(use=name):
+                try:
+                    edge = to_edge_transform_and_lower_to_qnn(
+                        Rank6Constant(use).eval(), (torch.randn(2, 3),), compiler_specs
+                    )
+                except RuntimeError as e:
+                    if "Failed to initialize QNN backend" in str(e):
+                        skip_without_qnn_sdk(self, e)
+                    raise
+                self.assertIn(exir_ops.edge.aten.mul.Tensor, delegated_ops(edge))
+                self.assertNotIn(exir_ops.edge.aten.full.default, delegated_ops(edge))
+
     def test_partitioner_falls_back_on_bfloat16(self):
         class Bf16Region(torch.nn.Module):
             def __init__(self):
