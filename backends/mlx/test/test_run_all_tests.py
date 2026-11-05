@@ -35,22 +35,69 @@ class RunAllTestsTest(unittest.TestCase):
         self.assertFalse(_run_test_in_subprocess("no_such_config"))
 
     def test_isolated_run_timeout_kills_grandchildren(self):
-        start = time.monotonic()
-        pid = self._run_child_with_grandchild("wait", timeout=10)
-        # Waiting out the sleep would mean the kill missed it.
-        self.assertLess(time.monotonic() - start, 30)
+        with tempfile.TemporaryDirectory() as tmp:
+            child, pid_file = _write_child(Path(tmp), "wait")
+
+            class TimesOut(subprocess.Popen):
+                # Times out as soon as the grandchild runs, without waiting.
+                def wait(self, timeout=None):
+                    if timeout is None:
+                        return super().wait()
+                    deadline = time.monotonic() + 20
+                    while not _read(pid_file) and time.monotonic() < deadline:
+                        time.sleep(0.05)
+                    raise subprocess.TimeoutExpired(self.args, timeout)
+
+            start = time.monotonic()
+            with mock.patch.object(sys, "executable", str(child)), mock.patch.object(
+                subprocess, "Popen", TimesOut
+            ):
+                self.assertFalse(_run_test_in_subprocess("sub_10"))
+            # Waiting out the sleep would mean the kill missed it.
+            self.assertLess(time.monotonic() - start, 30)
+            pid = int(pid_file.read_text())
+        self.addCleanup(_kill_if_alive, pid)
         self._assert_exits(pid)
 
     def test_isolated_run_kills_grandchildren_of_a_crashed_child(self):
-        with mock.patch("sys.stdout", new_callable=io.StringIO) as out:
-            pid = self._run_child_with_grandchild("kill -KILL $$")
+        handlers = [signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP)]
+        with tempfile.TemporaryDirectory() as tmp:
+            child, pid_file = _write_child(Path(tmp), "kill -KILL $$")
+            with mock.patch.object(sys, "executable", str(child)), mock.patch(
+                "sys.stdout", new_callable=io.StringIO
+            ) as out:
+                self.assertFalse(_run_test_in_subprocess("sub_10"))
+            pid = int(pid_file.read_text())
+        self.addCleanup(_kill_if_alive, pid)
         self.assertIn("Killed by signal 9", out.getvalue())
+        self.assertEqual(
+            [signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP)], handlers
+        )
         self._assert_exits(pid)
 
-    def test_isolated_run_kills_grandchildren_on_sigterm(self):
+    def test_isolated_run_kills_grandchildren_on_sigterm_and_sighup(self):
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            with self.subTest(sig.name), tempfile.TemporaryDirectory() as tmp:
+                harness, pid = self._start_harness(Path(tmp), "wait")
+                harness.send_signal(sig)
+                self.assertEqual(harness.wait(timeout=30), -sig)
+                self._assert_exits(pid)
+
+    def test_isolated_run_kills_grandchildren_on_a_sigterm_during_popen(self):
         with tempfile.TemporaryDirectory() as tmp:
-            harness, pid = self._start_harness(Path(tmp), "wait")
-            harness.send_signal(signal.SIGTERM)
+            pid_file = str(Path(tmp) / "grandchild.pid")
+            # The harness gets SIGTERM before Popen returns, once the test runs.
+            setup = (
+                "import os, subprocess, time\n"
+                "class Popen(subprocess.Popen):\n"
+                "    def __init__(self, *args, **kwargs):\n"
+                "        super().__init__(*args, **kwargs)\n"
+                f"        while not os.path.exists({pid_file!r}):\n"
+                "            time.sleep(0.05)\n"
+                "        os.kill(os.getpid(), signal.SIGTERM)\n"
+                "subprocess.Popen = Popen"
+            )
+            harness, pid = self._start_harness(Path(tmp), "wait", setup)
             self.assertEqual(harness.wait(timeout=30), -signal.SIGTERM)
         self._assert_exits(pid)
 
@@ -86,15 +133,6 @@ class RunAllTestsTest(unittest.TestCase):
         pid = int(pid_file.read_text())
         self.addCleanup(_kill_if_alive, pid)
         return harness, pid
-
-    def _run_child_with_grandchild(self, ending: str, timeout: int = 60) -> int:
-        with tempfile.TemporaryDirectory() as tmp:
-            child, pid_file = _write_child(Path(tmp), ending)
-            with mock.patch.object(sys, "executable", str(child)):
-                self.assertFalse(_run_test_in_subprocess("sub_10", timeout=timeout))
-            pid = int(pid_file.read_text())
-        self.addCleanup(_kill_if_alive, pid)
-        return pid
 
     def _assert_exits(self, pid: int) -> None:
         deadline = time.monotonic() + 10
@@ -143,22 +181,29 @@ class RunAllTestsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("No MLX delegates", result.stderr)
 
-    def test_inspector_fails_on_unreadable_input(self):
+    def test_inspector_reports_whether_it_read_every_delegate(self):
         self.assertIs(pte_inspector.show_mlx_instructions(b"not a program"), False)
-        unreadable_delegate = {
-            "load": {"_load_mlx_payload": mock.Mock(side_effect=ValueError("bad"))},
-            "parse": {
-                "_load_mlx_payload": mock.Mock(),
-                "parse_mlx_flatbuffer": mock.Mock(return_value={"error": "bad"}),
-            },
+        one, two = [(0, {})], [(0, {}), (1, {})]
+        readable = mock.Mock(return_value=mock.Mock())
+        cases = {
+            "readable": (one, readable, {}, True),
+            "load fails": (one, mock.Mock(side_effect=ValueError("bad")), {}, False),
+            "parse fails": (one, readable, {"error": "bad"}, False),
+            "first of two fails": (
+                two,
+                mock.Mock(side_effect=[ValueError("bad"), mock.Mock()]),
+                {},
+                False,
+            ),
         }
-        for name, patches in unreadable_delegate.items():
+        for name, (delegates, load, graph, ok) in cases.items():
             with self.subTest(name), mock.patch.multiple(
                 pte_inspector,
-                _find_mlx_delegates=mock.Mock(return_value=[(0, {})]),
-                **patches,
+                _find_mlx_delegates=mock.Mock(return_value=delegates),
+                _load_mlx_payload=load,
+                parse_mlx_flatbuffer=mock.Mock(return_value=graph),
             ):
-                self.assertIs(pte_inspector.show_mlx_instructions(b""), False)
+                self.assertIs(pte_inspector.show_mlx_instructions(b""), ok)
 
 
 def _write_child(directory: Path, ending: str) -> Tuple[Path, Path]:
