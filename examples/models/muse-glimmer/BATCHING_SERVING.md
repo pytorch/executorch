@@ -178,7 +178,7 @@ apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
 ## Session Behavior
 
 - Named sessions persist by default. `--evict-idle-sessions` allows the server to
-  close the least recently used idle session on capacity exhaustion, clearing
+  close the least recently used idle session when logical session slots are exhausted, clearing
   its transcript cache as well. Active requests and queued users of a session are
   protected. Resubmitting an evicted session with full history recreates it.
   If all slots are active, capacity errors still apply.

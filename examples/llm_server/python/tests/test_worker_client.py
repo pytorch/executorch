@@ -230,9 +230,11 @@ def test_op_non_json_raises_worker_error():
         WorkerClient(proc).open_session("abc")
 
 
-def test_close_session_sends_op_and_acks():
-    proc = _FakeProc(_lines({"closed": True, "session_id": "abc"}))
-    WorkerClient(proc).close_session("abc")
+@pytest.mark.parametrize("existed", [None, False, True])
+def test_close_session_sends_op_and_acks(existed):
+    metadata = {} if existed is None else {"existed": existed}
+    proc = _FakeProc(_lines({"closed": True, "session_id": "abc", **metadata}))
+    assert WorkerClient(proc).close_session("abc") is existed
     assert json.loads(proc.stdin.written[0]) == {"op": "close", "session_id": "abc"}
 
 

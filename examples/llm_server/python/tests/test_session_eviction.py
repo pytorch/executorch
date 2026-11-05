@@ -76,7 +76,8 @@ def test_close_failure_preserves_session_and_rotates_victim(make_client):
 
 
 @pytest.mark.parametrize("opened", [False, True])
-def test_unconfirmed_native_admission_cleanup_is_retried(opened):
+@pytest.mark.parametrize("code", ["invalid_argument", "capacity_exhausted"])
+def test_unconfirmed_native_admission_cleanup_is_retried(opened, code):
     from executorch.examples.llm_server.python.errors import APIError
     from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
     from executorch.examples.llm_server.python.serving_chat import ServingChat
@@ -95,9 +96,7 @@ def test_unconfirmed_native_admission_cleanup_is_retried(opened):
                 if opened:
                     self.sessions.add("bad")
                 self.release_request(request_id)
-                raise WorkerError(
-                    "generation failed before output", code="invalid_argument"
-                )
+                raise WorkerError("generation failed before output", code=code)
             return super().generate(
                 prompt, config, token_callback, stats_callback, request_id
             )
@@ -106,8 +105,6 @@ def test_unconfirmed_native_admission_cleanup_is_retried(opened):
             if self.fail_close:
                 self.fail_close = False
                 raise WorkerError("close queue full", code="capacity_exhausted")
-            if sid not in self.sessions:
-                raise WorkerError("no session", code="session_not_found")
             return super().close_session(sid)
 
     async def scenario():
@@ -146,14 +143,8 @@ def test_stale_idle_candidate_does_not_consume_the_retry():
         CapacityWorker,
     )
 
-    class Worker(CapacityWorker):
-        def close_session(self, sid):
-            if sid not in self.sessions:
-                raise WorkerError("missing session", code="session_not_found")
-            return super().close_session(sid)
-
     async def scenario():
-        worker = Worker(False)
+        worker = CapacityWorker(False)
         runtime = SessionRuntime(worker)
         serving = ServingChat(
             runtime, ChatTemplate(allow_fallback=True), "test", evict_idle_sessions=True
@@ -184,6 +175,7 @@ def test_cancellation_during_eviction_does_not_create_replacement(close):
     from executorch.examples.llm_server.python.serving_chat import (
         _AdmissionRetryStream,
         _AdmissionState,
+        ServingChat,
     )
 
     async def scenario():
@@ -191,6 +183,8 @@ def test_cancellation_during_eviction_does_not_create_replacement(close):
         replacements = []
 
         class Serving:
+            _retry_admission = ServingChat._retry_admission
+
             async def _evict_idle_session(self):
                 entered.set()
                 await release.wait()
@@ -214,7 +208,7 @@ def test_cancellation_during_eviction_does_not_create_replacement(close):
             _AdmissionState(pending=True),
         )
         read = asyncio.create_task(anext(stream))
-        await entered.wait()
+        await asyncio.wait_for(entered.wait(), 2)
         if close:
             await stream.aclose()
         else:
@@ -302,6 +296,18 @@ def test_history_identity_prevents_same_answer_collision():
             generated_token_ids=[100 + i],
             prior_turns=i,
         )
+    unchanged = [u1, answer, u2, answer, ChatMessage(role="user", content="continue")]
+    warm = state.build_prompt_input(
+        session_id="s",
+        messages=unchanged,
+        rendered_prompt=template.render(unchanged),
+        tools=None,
+        template_kwargs=None,
+    )
+    assert [segment["ids"] for segment in warm.segments if "ids" in segment] == [
+        [100],
+        [101],
+    ]
     messages = [u2, answer, ChatMessage(role="user", content="continue")]
     rendered = template.render(messages)
     prompt = state.build_prompt_input(
@@ -329,6 +335,15 @@ def test_changed_preceding_context_invalidates_stored_reply(changed_role):
         generated_token_ids=[123],
         prior_turns=0,
     )
+    unchanged = [*history, ChatMessage(role="assistant", content="OK")]
+    warm = state.build_prompt_input(
+        session_id="s",
+        messages=unchanged,
+        rendered_prompt=template.render(unchanged),
+        tools=None,
+        template_kwargs=None,
+    )
+    assert any(segment.get("ids") == [123] for segment in warm.segments)
     messages = [
         ChatMessage(role=changed_role, content="after"),
         ChatMessage(role="assistant", content="OK"),
@@ -343,7 +358,8 @@ def test_changed_preceding_context_invalidates_stored_reply(changed_role):
     assert prompt.segments is None
 
 
-def test_idle_eviction_protects_active_transactions(make_client):
+@pytest.mark.parametrize("runtime_lease", [False, True])
+def test_idle_eviction_protects_active_transactions(make_client, runtime_lease):
     from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
 
     client, worker = make_client(max_named_sessions=2, evict_idle_sessions=True)
@@ -357,24 +373,37 @@ def test_idle_eviction_protects_active_transactions(make_client):
 
         await serving.create(request("a"))
         await serving.create(request("b"))
-        async with serving._transactions.hold("a"):
+        locks = (
+            serving._runtime._session_locks if runtime_lease else serving._transactions
+        )
+        async with locks.hold("a"):
             await serving.create(request("c"))
             assert worker.open_named == {"a", "c"}
-            async with serving._transactions.hold("c"):
+            async with locks.hold("c"):
                 assert not await serving._evict_idle_session()
 
     asyncio.run(scenario())
 
 
-def test_cache_control_metadata_does_not_invalidate_replay():
+@pytest.mark.parametrize("before_string", [False, True])
+@pytest.mark.parametrize("after_string", [False, True])
+def test_cache_control_metadata_does_not_invalidate_replay(before_string, after_string):
     template = ChatTemplate(allow_fallback=True)
     state = OpenAITranscriptState(template)
     before = [
         ChatMessage(
             role="user",
-            content=[
-                {"type": "text", "text": "hi", "cache_control": {"type": "ephemeral"}}
-            ],
+            content=(
+                "hi"
+                if before_string
+                else [
+                    {
+                        "type": "text",
+                        "text": "hi",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+            ),
         )
     ]
     state.record_assistant_turn(
@@ -386,7 +415,10 @@ def test_cache_control_metadata_does_not_invalidate_replay():
         prior_turns=0,
     )
     after = [
-        ChatMessage(role="user", content=[{"type": "text", "text": "hi"}]),
+        ChatMessage(
+            role="user",
+            content="hi" if after_string else [{"type": "text", "text": "hi"}],
+        ),
         ChatMessage(role="assistant", content="OK"),
     ]
     result = state.build_prompt_input(
@@ -417,8 +449,6 @@ def test_task_cancellation_during_native_eviction_never_restarts(streaming):
             self.release_close = threading.Event()
 
         def close_session(self, sid):
-            if sid not in self.sessions:
-                raise WorkerError("missing", code="session_not_found")
             if sid == "a":
                 self.closing.set()
                 assert self.release_close.wait(5)
@@ -467,6 +497,155 @@ def test_task_cancellation_during_native_eviction_never_restarts(streaming):
         finally:
             worker.release_close.set()
             worker.admission.set()
+            await runtime.aclose_worker()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_task_cancellation_during_refused_generation_close(monkeypatch, streaming):
+    from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
+    from executorch.examples.llm_server.python.serving_chat import ServingChat
+    from executorch.examples.llm_server.python.session_runtime import (
+        Generation,
+        SessionRuntime,
+    )
+    from executorch.examples.llm_server.python.tests.test_openrouter_recovery import (
+        CapacityWorker,
+    )
+
+    async def scenario():
+        worker = CapacityWorker(True)
+        runtime = SessionRuntime(worker)
+        serving = ServingChat(
+            runtime,
+            ChatTemplate(allow_fallback=True),
+            "test",
+            evict_idle_sessions=True,
+            streaming_preflight_timeout=0,
+        )
+        closing, release = asyncio.Event(), asyncio.Event()
+        original_close = Generation._close
+
+        async def gated_close(generation):
+            await original_close(generation)
+            if worker.attempts == ["a", "b", "c"]:
+                closing.set()
+                await release.wait()
+
+        monkeypatch.setattr(Generation, "_close", gated_close)
+
+        def request(sid):
+            return ChatCompletionRequest(
+                messages=[ChatMessage(role="user", content="hi")],
+                session_id=sid,
+                stream=streaming and sid == "c",
+            )
+
+        async def consume():
+            response = await serving.create(request("c"))
+            if streaming:
+                async with aclosing(response):
+                    async for _ in response:
+                        pass
+
+        try:
+            for sid in ("a", "b"):
+                await serving.create(request(sid))
+            task = asyncio.create_task(consume())
+            worker.admission.set()
+            await asyncio.wait_for(closing.wait(), 2)
+            task.cancel()
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 2)
+            assert worker.attempts == ["a", "b", "c"]
+            assert worker.closed_sessions == []
+            assert worker.sessions == {"a", "b"}
+            assert not serving._cleanup_sessions
+        finally:
+            release.set()
+            worker.admission.set()
+            await runtime.aclose_worker()
+
+    asyncio.run(scenario())
+
+
+def test_local_preadmission_overload_does_not_accumulate_cleanup():
+    from executorch.examples.llm_server.python.errors import SessionCapacity
+    from executorch.examples.llm_server.python.serving_chat import ServingChat
+    from executorch.examples.llm_server.python.session_runtime import SessionRuntime
+    from executorch.examples.llm_server.python.tests.test_concurrent_serving import (
+        _NativeWorker,
+        _request,
+    )
+
+    async def scenario():
+        worker = _NativeWorker(tokens=())
+        runtime = SessionRuntime(worker, max_concurrent_requests=1)
+        serving = ServingChat(
+            runtime,
+            ChatTemplate(allow_fallback=True),
+            "test-model",
+            evict_idle_sessions=True,
+        )
+        try:
+            async with runtime._operation("busy"):
+                for i in range(20):
+                    with pytest.raises(SessionCapacity):
+                        await serving.create(_request(f"refused-{i}"))
+                    assert not serving._cleanup_sessions
+                assert worker.calls.empty()
+        finally:
+            await runtime.aclose_worker()
+
+    asyncio.run(scenario())
+
+
+def test_pending_cleanup_does_not_wait_for_unsettled_native_prefill():
+    from executorch.examples.llm_server.python.serving_chat import ServingChat
+    from executorch.examples.llm_server.python.session_runtime import SessionRuntime
+    from executorch.examples.llm_server.python.tests.test_concurrent_serving import (
+        _call,
+        _NativeWorker,
+        _request,
+    )
+
+    async def scenario():
+        worker = _NativeWorker(tokens=(), cooperative=False)
+        runtime = SessionRuntime(worker, cancel_grace_seconds=0.01)
+        serving = ServingChat(
+            runtime,
+            ChatTemplate(allow_fallback=True),
+            "test-model",
+            evict_idle_sessions=True,
+            streaming_preflight_timeout=0,
+        )
+        closing = None
+        request_id = None
+        try:
+            stream = await serving.create(_request("s", stream=True))
+            request_id = (await _call(worker))[1]
+            closing = asyncio.create_task(stream.aclose())
+            done, _ = await asyncio.wait([closing], timeout=0.5)
+            assert closing in done, "teardown waited for unsettled native prefill"
+            await closing
+            assert runtime.session_in_use("s")
+            assert list(serving._cleanup_sessions) == ["s"]
+            assert not serving._transactions.in_use("s")
+            assert worker.calls.empty()
+            assert not await serving._evict_idle_session()
+            worker.finish(request_id)
+            request_id = None
+            await asyncio.gather(*runtime._settlements)
+            assert await serving._evict_idle_session()
+            assert await _call(worker) == ("close", "s")
+            assert not serving._cleanup_sessions
+        finally:
+            if request_id is not None:
+                worker.finish(request_id)
+            if closing is not None:
+                await closing
             await runtime.aclose_worker()
 
     asyncio.run(scenario())

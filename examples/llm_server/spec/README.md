@@ -280,7 +280,10 @@ include `invalid_argument`, `not_ready`, `session_not_found`, `session_busy`,
 
 Lifecycle commands are `open`, `close`, and `reset`, each with `session_id` and
 its own request ID. Their replies are respectively `opened:true`, `closed:true`,
-and `reset:true`, or a correlated error. They do not block the input reader.
+and `reset:true`, or a correlated error. Close remains idempotent and includes
+`existed:true` when it released a logical session slot, or `existed:false` when
+the session was already absent. Older workers omit this field; eviction then
+cannot distinguish stale candidates from released slots. They do not block the input reader.
 An accepted close/reset fences its session: earlier generation text and terminals
 precede its ACK, and runtime-owned generation callbacks and captures are cleaned
 up before the ACK is enqueued. Later accepted same-session operations stay behind
@@ -385,6 +388,14 @@ open refusal. Request, control-queue, executor, and output-buffer overload remai
 closes retain replay state and rotate the victim for a later request.
 
 Unconfirmed native admissions whose cleanup close fails remain cleanup candidates
-until closure is confirmed. Stale candidates do not consume the admission retry,
-and eviction skips sessions whose runtime lease is still settling. Client-only
-`cache_control` markers do not change the replay history fingerprint.
+until closure is confirmed. Updated workers report whether close released a slot,
+so stale candidates do not consume the admission retry. Native front-door and
+local request-limit rejections carry `admitted:false`; they cannot have created
+a session and do not need a cleanup close. Other errors without output can leave
+session state, so they still require cleanup. Eviction skips sessions whose
+runtime lease is still settling, and disconnected consumers defer their cleanup
+rather than waiting for that lease. Task cancellation prevents an admission retry,
+even when it arrives during generation cleanup.
+
+Client-only `cache_control` markers do not change the replay history fingerprint.
+A string and its equivalent single text-part content are also interchangeable.

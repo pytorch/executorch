@@ -105,10 +105,16 @@ class WorkerError(RuntimeError):
     """
 
     def __init__(
-        self, message: str, code: Optional[str] = None, *, context_overflow=None
+        self,
+        message: str,
+        code: Optional[str] = None,
+        *,
+        admitted: Optional[bool] = None,
+        context_overflow=None,
     ):
         super().__init__(message)
         self.code = code
+        self.admitted = admitted
         self.context_overflow = context_overflow
 
 
@@ -382,9 +388,10 @@ class WorkerClient:
         ("capacity_exhausted" / "unsupported_session") if the worker refuses."""
         self._op({"op": "open", "session_id": session_id}, ack_key="opened")
 
-    def close_session(self, session_id: str) -> None:
-        """Destroy a named session, freeing its state (idempotent)."""
-        self._op({"op": "close", "session_id": session_id}, ack_key="closed")
+    def close_session(self, session_id: str) -> Optional[bool]:
+        """Close idempotently; return whether it existed, or None for older workers."""
+        result = self._op({"op": "close", "session_id": session_id}, ack_key="closed")
+        return result.get("existed")
 
     def reset_session(self, session_id: str) -> None:
         """Clear a named session's context (KV/recurrent + resident tokens) but
@@ -421,15 +428,23 @@ class WorkerClient:
         except WorkerError as error:
             raise self._record_failure(error)
 
-    def _op(self, request: dict, ack_key: str) -> None:
+    def _op(self, request: dict, ack_key: str) -> dict:
         with self._lock:
             self._ensure_usable()
             self._write_request(request)
             msg = self._read_message()
             if msg.get(ack_key):
-                return
+                if "existed" in msg and type(msg["existed"]) is not bool:
+                    raise self._record_failure(
+                        WorkerError("invalid worker existed flag")
+                    )
+                return msg
             if "error" in msg:
-                raise WorkerError(str(msg["error"]), code=msg.get("code"))
+                raise WorkerError(
+                    str(msg["error"]),
+                    code=msg.get("code"),
+                    admitted=msg.get("admitted"),
+                )
             raise self._record_failure(
                 WorkerError(f"unexpected worker response: {msg}")
             )
@@ -465,7 +480,11 @@ class WorkerClient:
                 self._on_done(msg, stats_callback)
                 return
             elif "error" in msg:
-                raise WorkerError(str(msg["error"]), code=msg.get("code"))
+                raise WorkerError(
+                    str(msg["error"]),
+                    code=msg.get("code"),
+                    admitted=msg.get("admitted"),
+                )
             else:
                 raise self._record_failure(
                     WorkerError(f"unexpected worker response: {msg}")

@@ -266,6 +266,7 @@ def test_worker_op_failure_keeps_transcript(op):
     template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
     serving = ServingChat(_RaisingRuntime(), template, "test-model")
     serving._transcript.record_assistant_turn(
+        request_messages=[],
         session_id="s",
         content="hi",
         tool_calls=None,
@@ -290,9 +291,11 @@ def test_record_assistant_turn_replaces_stale_at_position():
     from executorch.examples.llm_server.python.openai_transcript import (
         OpenAITranscriptState,
     )
+    from executorch.examples.llm_server.python.protocol import ChatMessage
 
     t = OpenAITranscriptState(ChatTemplate(hf_tokenizer_path=None, allow_fallback=True))
     t.record_assistant_turn(
+        request_messages=[],
         session_id="s",
         content="a0",
         tool_calls=None,
@@ -300,6 +303,7 @@ def test_record_assistant_turn_replaces_stale_at_position():
         prior_turns=0,
     )
     t.record_assistant_turn(
+        request_messages=[ChatMessage(role="assistant", content="a0")],
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -309,6 +313,7 @@ def test_record_assistant_turn_replaces_stale_at_position():
     assert [r["ids"] for r in t._turns["s"].values()] == [[1], [2]]
     # regenerate turn 2 (same prior_turns) -> replaces stale [2], no stale tail
     t.record_assistant_turn(
+        request_messages=[ChatMessage(role="assistant", content="a0")],
         session_id="s",
         content="a1b",
         tool_calls=None,

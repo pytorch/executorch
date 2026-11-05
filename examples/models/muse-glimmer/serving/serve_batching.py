@@ -65,7 +65,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--evict-idle-sessions",
         action="store_true",
-        help="Evict least recently used idle sessions when capacity is exhausted; "
+        help="Evict least recently used idle sessions when logical session slots are exhausted; "
         "clients must send complete history.",
     )
     parser.add_argument("--max-decode-sequences", type=int, default=4)

@@ -151,8 +151,10 @@ class CapacityWorker(_Worker):
             self.release_request(request_id)
 
     def close_session(self, sid):
+        existed = sid in self.sessions
         self.sessions.discard(sid)
         self.closed_sessions.append(sid)
+        return existed
 
 
 @pytest.mark.parametrize("late", [False, True])
@@ -224,7 +226,13 @@ def test_late_error_never_evicts_active_sessions_or_replays_output(after_output)
                 stream = await serving.create(request("c", True))
                 worker.admission.set()
                 output = "".join([chunk async for chunk in stream])
-            assert "capacity_exhausted" in output
+            errors = [
+                json.loads(line[6:])["error"]
+                for line in output.splitlines()
+                if line.startswith('data: {"error"')
+            ]
+            assert len(errors) == 1
+            assert errors[0]["code"] == "capacity_exhausted"
             assert not worker.closed_sessions
             assert worker.attempts.count("c") == 1
             if not after_output:

@@ -244,6 +244,7 @@ struct ServingRuntime::Impl {
     RequestId fence_through = 0;
     bool processed = false;
     LifecycleResult result = std::nullopt;
+    bool require_existing = false;
   };
 
   Impl(
@@ -322,13 +323,17 @@ struct ServingRuntime::Impl {
     return future;
   }
 
-  void
-  submit(Operation operation, std::string key, LifecycleCallback on_complete) {
+  void submit(
+      Operation operation,
+      std::string key,
+      LifecycleCallback on_complete,
+      bool require_existing = false) {
     Command command{
         operation,
         std::move(key),
         std::make_unique<LifecycleCallback>(std::move(on_complete)),
         {}};
+    command.require_existing = require_existing;
     LifecycleResult error;
     {
       std::unique_lock<std::mutex> lock(mutex_);
@@ -369,6 +374,9 @@ struct ServingRuntime::Impl {
     }
     auto it = sessions_.find(command.key);
     if (command.operation == Operation::Close) {
+      if (it == sessions_.end() && command.require_existing) {
+        return ServingError{ErrorCode::SessionNotFound, "session not found"};
+      }
       if (it != sessions_.end()) {
         if (it->second.active_request) {
           cancelled = requests_.at(it->second.active_request);
@@ -1843,7 +1851,18 @@ std::future<LifecycleResult> ServingRuntime::open_session_async(
 void ServingRuntime::close_session_async(
     std::string key,
     LifecycleCallback on_complete) {
-  impl_->submit(Impl::Operation::Close, std::move(key), std::move(on_complete));
+  close_session_async(std::move(key), std::move(on_complete), false);
+}
+
+void ServingRuntime::close_session_async(
+    std::string key,
+    LifecycleCallback on_complete,
+    bool require_existing) {
+  impl_->submit(
+      Impl::Operation::Close,
+      std::move(key),
+      std::move(on_complete),
+      require_existing);
 }
 
 std::future<LifecycleResult> ServingRuntime::close_session_async(

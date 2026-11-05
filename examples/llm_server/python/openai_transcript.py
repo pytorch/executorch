@@ -136,6 +136,13 @@ class OpenAITranscriptState:
                 {key: value for key, value in part.items() if key != "cache_control"}
                 for part in content
             ]
+            if (
+                len(content) == 1
+                and set(content[0]) == {"type", "text"}
+                and content[0]["type"] == "text"
+                and isinstance(content[0]["text"], str)
+            ):
+                content = content[0]["text"]
         blob = json.dumps([content or "", norm], sort_keys=True, ensure_ascii=False)
         return hashlib.sha1(blob.encode("utf-8")).hexdigest()
 
@@ -393,7 +400,7 @@ class OpenAITranscriptState:
         prior_turns: int,
         preamble: str = "",
         reasoning_content: Optional[str] = None,
-        request_messages: Optional[list[ChatMessage]] = None,
+        request_messages: list[ChatMessage],
     ) -> None:
         """Record this turn's {fingerprint, generated ids, generation preamble} at
         `prior_turns` (the assistant-turn count of the request it answers).
@@ -411,12 +418,7 @@ class OpenAITranscriptState:
         for index in [index for index in turns if index >= prior_turns]:
             del turns[index]
         turns[prior_turns] = {
-            # Unbound records cannot safely replay after history replacement.
-            "history_fp": (
-                self._history_fingerprints(request_messages, turns)[-1]
-                if request_messages is not None
-                else None
-            ),
+            "history_fp": self._history_fingerprints(request_messages, turns)[-1],
             "fp": self._assistant_fingerprint(content, tool_calls),
             "reasoning_fp": self._reasoning_fingerprint(reasoning_content),
             "ids": (

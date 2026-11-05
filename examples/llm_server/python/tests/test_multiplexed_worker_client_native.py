@@ -153,3 +153,14 @@ def test_valid_non_bmp_nested_values_and_integer_boundaries(active_peer):
         await asyncio.wait_for(scenario(), timeout=15)
 
     asyncio.run(bounded())
+
+
+def test_idempotent_native_close_reports_whether_it_freed_a_slot(native_worker):
+    async def scenario():
+        async with _active_peer(native_worker) as (client, peer, gate):
+            await _finish_peer_and_reuse(client, peer, gate)
+            assert await client.close_session("missing") is False
+            assert await client.close_session("session-\U0001f600") is True
+            assert await client.close_session("session-\U0001f600") is False
+
+    asyncio.run(asyncio.wait_for(scenario(), 15))

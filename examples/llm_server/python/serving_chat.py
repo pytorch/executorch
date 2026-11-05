@@ -144,14 +144,13 @@ def _session_capacity_exhausted(error):
 class _AdmissionState:
     pending: bool = False
     admitted: bool = False
+    retried: bool = False
 
 
 class _AdmissionRetryStream:
     """Retry one session-slot rejection before any raw model output."""
 
-    def __init__(
-        self, serving, session_id, generation, factory, admission, retried=False
-    ):
+    def __init__(self, serving, session_id, generation, factory, admission):
         self._serving = serving
         self._session_id = session_id
         self._generation = generation
@@ -160,7 +159,6 @@ class _AdmissionRetryStream:
         self._started = False
         self._closed = False
         self._cancel_requested = False
-        self._retried = retried
 
     def __aiter__(self):
         return self
@@ -178,21 +176,15 @@ class _AdmissionRetryStream:
                     self._admission.admitted = True
                 raise
             except (WorkerError, APIError) as error:
-                if _session_capacity_exhausted(error):
-                    self._admission.pending = False
-                if (
-                    self._started
-                    or self._retried
-                    or not _session_capacity_exhausted(error)
+                if not await self._serving._retry_admission(
+                    error,
+                    self._admission,
+                    generation=self._generation,
+                    started=self._started,
                 ):
                     raise
-                self._retried = True
-                await self._generation.aclose()
-                evicted = await self._serving._evict_idle_session()
                 if self._closed or self._cancel_requested:
                     raise StopAsyncIteration
-                if not evicted:
-                    raise
                 if self._session_id is not None:
                     self._admission.pending = True
                 self._generation = self._factory()
@@ -594,7 +586,7 @@ class ServingChat:
 
     async def _close_session(self, session_id):
         try:
-            await self._runtime.close(session_id)
+            existed = await self._runtime.close(session_id)
         except WorkerError as error:
             if error.code == "session_not_found":
                 self._transcript.close(session_id)
@@ -604,6 +596,7 @@ class ServingChat:
         self._transcript.close(session_id)
         self._idle_sessions.pop(session_id, None)
         self._cleanup_sessions.pop(session_id, None)
+        return existed
 
     async def reset_session(self, session_id: str) -> None:
         self._validate_session_id(session_id)
@@ -789,14 +782,18 @@ class ServingChat:
                         self._idle_sessions[session_id] = None
                     elif admission.pending:
                         self._cleanup_sessions[session_id] = None
-                        cleanup = asyncio.create_task(self._close_session(session_id))
-                        try:
-                            await SessionRuntime._finish_cleanup(cleanup)
-                        except WorkerError as error:
-                            if error.code != "session_not_found":
-                                logger.warning(
-                                    "Could not close unconfirmed session %s", session_id
-                                )
+                        if not self._runtime.session_in_use(session_id):
+                            cleanup = asyncio.create_task(
+                                self._close_session(session_id)
+                            )
+                            try:
+                                await SessionRuntime._finish_cleanup(cleanup)
+                            except WorkerError as error:
+                                if error.code != "session_not_found":
+                                    logger.warning(
+                                        "Could not close unconfirmed session %s",
+                                        session_id,
+                                    )
 
     async def _evict_idle_session(self) -> bool:
         if not self._evict_idle_sessions:
@@ -810,7 +807,9 @@ class ServingChat:
                 # The admitting chat already owns a request slot.
                 async with self._transactions.hold(session_id, count_request=False):
                     try:
-                        await self._close_session(session_id)
+                        existed = await self._close_session(session_id)
+                        if existed is False:
+                            continue
                     except WorkerError as error:
                         if error.code == "session_not_found":
                             continue
@@ -901,29 +900,40 @@ class ServingChat:
             req, prompt_input, options, preamble, gen_stops, lease, admission
         )
 
+    async def _retry_admission(
+        self, error, admission, *, generation=None, started=False
+    ):
+        slots_exhausted = _session_capacity_exhausted(error)
+        if not started and (
+            slots_exhausted
+            or isinstance(error, WorkerError)
+            and error.admitted is False
+        ):
+            admission.pending = False
+        if asyncio.current_task().cancelling():
+            raise asyncio.CancelledError
+        if started or admission.retried or not slots_exhausted:
+            return False
+        admission.retried = True
+        if generation is not None:
+            await generation.aclose()
+        if asyncio.current_task().cancelling():
+            raise asyncio.CancelledError
+        evicted = await self._evict_idle_session()
+        if asyncio.current_task().cancelling():
+            raise asyncio.CancelledError
+        return evicted
+
     async def _create_response(
         self, req, prompt_input, options, preamble, gen_stops, lease, admission
     ):
-        for attempt in range(2):
+        while True:
             try:
                 return await self._start_response(
-                    req,
-                    prompt_input,
-                    options,
-                    preamble,
-                    gen_stops,
-                    lease,
-                    admission,
-                    retried=bool(attempt),
+                    req, prompt_input, options, preamble, gen_stops, lease, admission
                 )
             except (WorkerError, APIError) as error:
-                if _session_capacity_exhausted(error):
-                    admission.pending = False
-                if (
-                    attempt
-                    or not _session_capacity_exhausted(error)
-                    or not await self._evict_idle_session()
-                ):
+                if not await self._retry_admission(error, admission):
                     raise
 
     async def _start_response(
@@ -935,7 +945,6 @@ class ServingChat:
         gen_stops,
         lease,
         admission,
-        retried=False,
     ):
         # Legacy workers need explicit admission. Multiplexed generation opens
         # implicitly from its full prompt, preserving new-session prefix reuse.
@@ -963,7 +972,6 @@ class ServingChat:
                             req.session_id, prompt_input, options, stats
                         ),
                         admission,
-                        retried=retried,
                     )
             return _ChatStream(
                 self._stream(req, preamble, gen_stops, generation, stats),
@@ -996,6 +1004,8 @@ class ServingChat:
                 self._runtime.generate_stream(req.session_id, prompt, options, stats)
             ) as generation:
                 text, stopped = await self._collect_until_stop(generation, stops)
+        except (WorkerError, APIError):
+            raise
         except Exception as e:  # noqa: BLE001 - surface as a structured API error
             raise self._generation_error(e)
         if self._evict_idle_sessions and req.session_id is not None:

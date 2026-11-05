@@ -156,6 +156,13 @@ class ET_EXPERIMENTAL ServingRuntime {
   void close_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> close_session_async(std::string key);
 
+  // With require_existing, an absent key reports SessionNotFound so callers
+  // can distinguish a released slot from an already-absent session.
+  void close_session_async(
+      std::string key,
+      LifecycleCallback on_complete,
+      bool require_existing);
+
   // Cold replacement, retaining the key and logical slot throughout. Success
   // means reopening and old-response callback cleanup completed. Failure
   // destroys the old state and leaves the

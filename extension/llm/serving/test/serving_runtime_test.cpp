@@ -291,6 +291,26 @@ TEST_F(ServingRuntimeTest, DuplicateOpenAndCloseAreIdempotent) {
   EXPECT_EQ(executor.closed(), executor.opened());
 }
 
+TEST_F(ServingRuntimeTest, CheckedCloseReportsAbsentSessions) {
+  start();
+  EXPECT_FALSE(result(runtime->open_session_async("session")));
+  for (bool existed : {true, false}) {
+    std::promise<LifecycleResult> completion;
+    auto future = completion.get_future();
+    runtime->close_session_async(
+        "session",
+        [&completion](auto error) { completion.set_value(std::move(error)); },
+        true);
+    if (existed) {
+      EXPECT_FALSE(result(std::move(future)));
+    } else {
+      expect_error(std::move(future), ErrorCode::SessionNotFound);
+    }
+    EXPECT_EQ(runtime->info().active_sessions, 0u);
+  }
+  EXPECT_FALSE(result(runtime->close_session_async("session")));
+}
+
 TEST_F(ServingRuntimeTest, SameKeyOperationsPreserveAdmissionOrder) {
   executor.opening.hold();
   executor.capacity = 1;

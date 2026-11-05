@@ -1314,6 +1314,19 @@ TEST_F(ProtocolTest, TerminalNewlineRetriesKeepAdmissionReserved) {
   EXPECT_EQ(finish(), 0);
 }
 
+TEST_F(ProtocolTest, IdempotentCloseReportsWhetherSessionExisted) {
+  start();
+  send({{"op", "open"}, {"request_id", 1}, {"session_id", "s"}});
+  ASSERT_TRUE(receive().at("opened"));
+  for (uint64_t id = 2; id <= 3; ++id) {
+    send({{"op", "close"}, {"request_id", id}, {"session_id", "s"}});
+    auto response = receive();
+    EXPECT_TRUE(response.at("closed"));
+    EXPECT_EQ(response.at("existed"), id == 2);
+  }
+  EXPECT_EQ(finish(), 0);
+}
+
 TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   MultiplexedWorkerConfig config;
   config.max_inflight_requests = 1;
@@ -1322,7 +1335,9 @@ TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   send(generate(1, 100));
   ASSERT_TRUE(wait_execute());
   send(generate(2));
-  EXPECT_EQ(receive().at("code"), "capacity_exhausted");
+  auto refused = receive();
+  EXPECT_EQ(refused.at("code"), "capacity_exhausted");
+  EXPECT_EQ(refused.at("admitted"), false);
   send({{"op", "cancel"}, {"request_id", 3}, {"target_request_id", 1}});
   EXPECT_TRUE(receive().value("cancelled", false));
   executor_.release();
