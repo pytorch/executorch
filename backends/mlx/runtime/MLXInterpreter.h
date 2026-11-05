@@ -322,6 +322,32 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(out));
 }
 
+// Reads a 1-D int32/int64 tensor on the host. Free for a materialized input;
+// only indices computed in the graph, which can be a strided view, cost a sync.
+inline std::vector<int64_t>
+read_host_indices(array a, const char* op, StreamOrDevice s) {
+  eval(a);
+  if (!a.flags().row_contiguous) {
+    a = contiguous(a, false, s);
+    eval(a);
+  }
+  const size_t size = a.size();
+  std::vector<int64_t> values(size);
+  switch (a.dtype()) {
+    case ::mlx::core::int32:
+      std::copy(a.data<int32_t>(), a.data<int32_t>() + size, values.begin());
+      break;
+    case ::mlx::core::int64:
+      std::copy(a.data<int64_t>(), a.data<int64_t>() + size, values.begin());
+      break;
+    default:
+      throw std::invalid_argument(
+          std::string(op) + ": indices must be int32 or int64, got " +
+          ExecutionState::dtype_str(a.dtype()));
+  }
+  return values;
+}
+
 inline void exec_update_and_attend(
     const UpdateAndAttendNode& n,
     ExecutionState& st,
@@ -342,32 +368,14 @@ inline void exec_update_and_attend(
   // bookkeeping. Every layer of a step reads the same position
   // tensor, so evaluating it in place costs one sync for the first layer and
   // nothing for the rest.
-  auto pos = st.const_tensor_ref(n.position);
-  eval(pos);
-  // The entries are read in order off the buffer, which a strided view would
-  // walk with the wrong stride.
-  if (!pos.flags().row_contiguous) {
-    throw std::runtime_error("update_and_attend: position must be contiguous");
-  }
-  const int length = static_cast<int>(pos.size());
-  std::vector<int32_t> positions(static_cast<size_t>(length));
-  switch (pos.dtype()) {
-    case ::mlx::core::int32:
-      std::copy(
-          pos.data<int32_t>(), pos.data<int32_t>() + length, positions.begin());
-      break;
-    case ::mlx::core::int64:
-      std::transform(
-          pos.data<int64_t>(),
-          pos.data<int64_t>() + length,
-          positions.begin(),
-          [](int64_t p) { return static_cast<int32_t>(p); });
-      break;
-    default:
-      throw std::runtime_error(
-          std::string("update_and_attend: position must be int32 or int64, ") +
-          "got " + ExecutionState::dtype_str(pos.dtype()));
-  }
+  const std::vector<int64_t> host_positions = read_host_indices(
+      st.const_tensor_ref(n.position), "update_and_attend", s);
+  std::vector<int32_t> positions(host_positions.size());
+  std::transform(
+      host_positions.begin(),
+      host_positions.end(),
+      positions.begin(),
+      [](int64_t p) { return static_cast<int32_t>(p); });
   array out = st.cache->attend(
       *n.layer_id,
       positions,
@@ -1324,25 +1332,12 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
   const int dst_dim = static_cast<int>(dst.shape()[uaxis]);
 
   // Like ATen, negative indices are rejected rather than wrapped. Export
-  // accepts int32 indices too, so they are widened rather than rejected.
-  // Indices computed in the graph can be a strided view, so they are made
-  // contiguous before their data is read.
-  const array idx_arr = contiguous(
-      indices.dtype() == ::mlx::core::int32
-          ? astype(indices, ::mlx::core::int64, s)
-          : indices,
-      false,
-      s);
-  eval(idx_arr); // Ensure indices are materialized before accessing data
-  if (idx_arr.dtype() != ::mlx::core::int64) {
-    throw std::invalid_argument(
-        std::string("IndexCopyNode: expected int64 or int32 indices, got ") +
-        ExecutionState::dtype_str(indices.dtype()));
-  }
-  std::vector<int32_t> idx_vec(idx_arr.size());
-  auto idx_data = idx_arr.data<int64_t>();
-  for (size_t i = 0; i < idx_arr.size(); ++i) {
-    const int64_t idx = idx_data[i];
+  // accepts int32 indices too.
+  const std::vector<int64_t> host_indices =
+      read_host_indices(indices, "IndexCopyNode", s);
+  std::vector<int32_t> idx_vec(host_indices.size());
+  for (size_t i = 0; i < host_indices.size(); ++i) {
+    const int64_t idx = host_indices[i];
     if (idx < 0 || idx >= dst_dim) {
       throw std::out_of_range(
           "index_copy: index " + std::to_string(idx) +
