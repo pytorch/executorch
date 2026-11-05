@@ -4,10 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# Paths are built from this file's directory, since idf_component_consumer
+# includes it.
 if(ET_SMOKE_MODELS)
-  set(srcs "main.c" "${CMAKE_CURRENT_BINARY_DIR}/models.S")
+  set(srcs "${CMAKE_CURRENT_LIST_DIR}/main.c"
+           "${CMAKE_CURRENT_BINARY_DIR}/models.S"
+  )
 else()
-  set(srcs "empty.c")
+  set(srcs "${CMAKE_CURRENT_LIST_DIR}/empty.c")
 endif()
 idf_component_register(SRCS ${srcs} PRIV_REQUIRES executorch)
 if(NOT ET_SMOKE_MODELS)

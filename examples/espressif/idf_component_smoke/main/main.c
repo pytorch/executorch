@@ -8,7 +8,7 @@
 
 /*
  * Runs each embedded model (see main/CMakeLists.txt) through et_model on the
- * forward test case that split_bundled_program.py extracted, and compares the
+ * forward test cases that split_bundled_program.py extracted, and compares the
  * outputs with the expected ones.
  */
 
@@ -51,15 +51,19 @@ static const uint8_t* next_tensor(
 }
 
 static bool check_outputs(
-    const smoke_model_t* model, et_model_t* m, const uint8_t** cursor) {
+    const smoke_model_t* model,
+    et_model_t* m,
+    uint32_t index,
+    const uint8_t** cursor) {
   float atol;
   float rtol;
   memcpy(&atol, model->io, sizeof(atol));
   memcpy(&rtol, model->io + sizeof(atol), sizeof(rtol));
   uint32_t count = read_u32(cursor);
   if (count != et_model_num_outputs(m)) {
-    printf("%s: %u expected outputs, model has %u\n", model->name,
-           (unsigned)count, (unsigned)et_model_num_outputs(m));
+    printf("%s: case %u has %u expected outputs, model has %u\n", model->name,
+           (unsigned)index, (unsigned)count,
+           (unsigned)et_model_num_outputs(m));
     return false;
   }
   for (uint32_t i = 0; i < count; i++) {
@@ -70,13 +74,14 @@ static bool check_outputs(
     et_tensor_info_t info;
     if (actual == NULL || actual_nbytes != nbytes ||
         !et_model_output_info(m, i, &info)) {
-      printf("%s: output %u is missing or has the wrong size\n", model->name,
-             (unsigned)i);
+      printf("%s: case %u output %u is missing or has the wrong size\n",
+             model->name, (unsigned)index, (unsigned)i);
       return false;
     }
     if (info.scalar_type != kScalarTypeFloat) {
       if (memcmp(actual, expected, nbytes) != 0) {
-        printf("%s: output %u differs\n", model->name, (unsigned)i);
+        printf("%s: case %u output %u differs\n", model->name,
+               (unsigned)index, (unsigned)i);
         return false;
       }
       continue;
@@ -87,8 +92,9 @@ static bool check_outputs(
       memcpy(&a, actual + j * sizeof(float), sizeof(float));
       memcpy(&b, expected + j * sizeof(float), sizeof(float));
       if (!(fabsf(a - b) <= atol + rtol * fabsf(b))) {
-        printf("%s: output %u[%u] is %g, expected %g\n", model->name,
-               (unsigned)i, (unsigned)j, (double)a, (double)b);
+        printf("%s: case %u output %u[%u] is %g, expected %g\n", model->name,
+               (unsigned)index, (unsigned)i, (unsigned)j, (double)a,
+               (double)b);
         return false;
       }
     }
@@ -96,15 +102,17 @@ static bool check_outputs(
   return true;
 }
 
+/* Runs the cases in order on one loaded method, so a stateful model's cases
+ * continue from the previous ones. */
 static bool run_model(const smoke_model_t* model) {
   et_model_config_t cfg = ET_MODEL_CONFIG_DEFAULT(
       model->pte, (size_t)(model->pte_end - model->pte));
   et_model_t* m = et_model_create(&cfg);
   bool api_ok = m != NULL && et_model_load_method(m, "forward");
-  bool ok = api_ok;
-  /* Twice, so a second execute on the same method is checked too. */
-  for (int run = 0; ok && run < 2; run++) {
-    const uint8_t* cursor = model->io + 2 * sizeof(float);
+  const uint8_t* cursor = model->io + 2 * sizeof(float);
+  uint32_t cases = read_u32(&cursor);
+  uint32_t passed = 0;
+  for (; api_ok && passed < cases; passed++) {
     uint32_t count = read_u32(&cursor);
     for (uint32_t i = 0; api_ok && i < count; i++) {
       uint32_t nbytes;
@@ -112,12 +120,16 @@ static bool run_model(const smoke_model_t* model) {
       api_ok = et_model_set_input(m, i, data, nbytes);
     }
     api_ok = api_ok && et_model_execute(m);
-    ok = api_ok && check_outputs(model, m, &cursor);
+    if (!api_ok || !check_outputs(model, m, passed, &cursor)) {
+      break;
+    }
   }
   if (!api_ok && m != NULL) {
     printf("%s: %s\n", model->name, et_model_last_error(m));
   }
-  printf("%s: %s\n", model->name, ok ? "PASS" : "FAIL");
+  bool ok = api_ok && passed == cases;
+  printf("%s: %s, %u/%u cases\n", model->name, ok ? "PASS" : "FAIL",
+         (unsigned)passed, (unsigned)cases);
   et_model_destroy(m);
   return ok;
 }
