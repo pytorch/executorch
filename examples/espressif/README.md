@@ -46,7 +46,14 @@ and runs on the emulator (`.ci/scripts/test_espressif_idf_component.sh`).
 `idf_component_consumer/` builds the same app from the packed component
 through the component manager, with ESP-IDF's own Python, for every
 target an emulator runs on ESP-IDF 6.1, and for ESP32-S3 and ESP32-C6
-on ESP-IDF 6.0.1 (`.ci/scripts/test_espressif_idf_consumer.sh`).
+on ESP-IDF 6.0.1 (`.ci/scripts/test_espressif_idf_consumer.sh`). Nightly,
+it is built for every target with each `sdkconfig.ci.*` configuration that
+idf-build-apps lists, on ESP-IDF 6.0.1, 6.1 and master, and each build except
+the one for ESP32-P4 before rev3 runs on its emulator
+(`.ci/scripts/test_espressif_idf_nightly.sh`). One configuration registers
+every op of every kernel library on ESP32-S3 and ESP32-C6. macOS and Windows
+jobs configure `idf_component_smoke` with the same component
+(`.github/workflows/nightly-espressif-idf.yml`).
 
 The executor runner below remains the reference for the prebuilt-library
 flow and for benchmarking.
