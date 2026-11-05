@@ -6,6 +6,7 @@
 
 """Tests for the MLX op test harness itself."""
 
+import io
 import os
 import signal
 import subprocess
@@ -40,7 +41,10 @@ class RunAllTestsTest(unittest.TestCase):
         self._assert_exits(pid)
 
     def test_isolated_run_kills_grandchildren_of_a_crashed_child(self):
-        self._assert_exits(self._run_child_with_grandchild("exit 1"))
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            pid = self._run_child_with_grandchild("kill -KILL $$")
+        self.assertIn("Killed by signal 9", out.getvalue())
+        self._assert_exits(pid)
 
     def _run_child_with_grandchild(self, ending: str, timeout: int = 60) -> int:
         with tempfile.TemporaryDirectory() as tmp:

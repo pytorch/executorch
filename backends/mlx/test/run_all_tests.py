@@ -197,7 +197,10 @@ def _run_test_in_subprocess(
         print(f"✗ FAILED: {config_name} - Subprocess error: {e}")
         return False
     try:
-        return proc.wait(timeout=timeout) == 0
+        returncode = proc.wait(timeout=timeout)
+        if returncode < 0:
+            print(f"✗ FAILED: {config_name} - Killed by signal {-returncode}")
+        return returncode == 0
     except subprocess.TimeoutExpired:
         print(f"✗ FAILED: {config_name} - Timeout after {timeout}s")
         return False
