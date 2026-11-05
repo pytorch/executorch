@@ -34,9 +34,10 @@ from executorch.examples.models.muse_glimmer.serving.chat_template import (
     resolve_tool_result_names,
 )
 from executorch.examples.models.muse_glimmer.serving.framing import (
+    ASSISTANT_HEADER as _ASSISTANT_HEADER,
     clean_body,
     END_RE,
-    recipient_headers,
+    recipient_bodies,
 )
 from executorch.examples.models.muse_glimmer.serving.tool_parsers import (
     AtemToolCallDetector,
@@ -53,7 +54,6 @@ logger = logging.getLogger(__name__)
 
 # The template ends at this prefix; the model emits the recipient and message
 # delimiter.
-_ASSISTANT_HEADER = "<|start|>assistant"
 _DEFAULT_MAX_IMAGE_BYTES = 20 * 1024 * 1024
 _IMAGE_ERROR_CODE = "invalid_image"
 _IMAGE_PLACEHOLDER = "\x00muse_glimmer_image_placeholder\x00"
@@ -64,19 +64,6 @@ _IMAGE_DATA_URL_RE = re.compile(
 # Harmony messages may recur within one assistant turn. The framing parser
 # handles their delimiters without interpreting quoted headers inside a body.
 _MUSE_GLIMMER_HEADER_SPECIALS = {"<|start|>", "<|message|>", "<|eom|>"}
-# Remove control tokens left without a complete recipient header.
-_MUSE_GLIMMER_STRAY_SPECIAL_RE = re.compile(
-    r"<\|(?:start|message|channel|constrain|end|eom|eot)\|>"
-)
-
-
-def _strip_muse_glimmer_header(text: str) -> str:
-    parts, offset = [], 0
-    for header in recipient_headers(text):
-        parts.append(clean_body(END_RE.sub("", text[offset : header.start()])))
-        offset = header.end()
-    parts.append(clean_body(END_RE.sub("", text[offset:])))
-    return "".join(parts).strip()
 
 
 def _extract_muse_glimmer_reasoning(text: str) -> tuple[str | None, str]:
@@ -88,7 +75,8 @@ def _extract_muse_glimmer_reasoning(text: str) -> tuple[str | None, str]:
     against the returned text before splicing stored generated token ids, preserving the original
     channel framing for unchanged echoes or omitted/null reasoning.
     """
-    matches = list(recipient_headers(text, parameter_value_spans(text)))
+    bodies = list(recipient_bodies(text, parameter_value_spans(text)))
+    matches = [header for header, _, _ in bodies]
     if not matches:
         return None, clean_body(END_RE.sub("", text))
 
@@ -98,11 +86,8 @@ def _extract_muse_glimmer_reasoning(text: str) -> tuple[str | None, str]:
     if prefix:
         visible.append(prefix)
 
-    for index, match in enumerate(matches):
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        body = text[match.end() : end]
-        body = re.sub(r"(?:<\|eom\|>|<\|eot\|>)\s*$", "", body)
-        body = clean_body(body)
+    for match, start, end in bodies:
+        body = clean_body(text[start:end])
         if not body.strip():
             continue
         if match.group(1) == "self":
@@ -221,7 +206,7 @@ class MuseGlimmerServingChat(ServingChat):
     def _visible_content(self, text: str) -> str:
         # The recipient-aware extractor already removed framing. Parsing the
         # resulting bodies again would reinterpret a quoted header at offset 0.
-        return text.strip()
+        return self._strip_specials(text).strip()
 
     @staticmethod
     def _with_image(prompt: PromptInput, image_segment: dict | None) -> PromptInput:
@@ -358,7 +343,6 @@ class MuseGlimmerServingChat(ServingChat):
         if req.model is not None and req.model != self._model_id:
             raise ModelNotFound(req.model, self._model_id)
         req = self._normalize_reasoning(req)
-        self._reject_invalid_values(req)
         self._reject_unsupported_params(req)
         tool_context = ToolContext()
         if self._tools_active(req):
@@ -488,7 +472,6 @@ def build_app_from_args(args):
         # The worker prepends the numeric BOS the HF template renders as text and
         # serve.py strips (strip_rendered_bos), so token counts include it.
         prompt_token_offset=1,
-        content_filter=_strip_muse_glimmer_header,
         content_filter_specials=_MUSE_GLIMMER_HEADER_SPECIALS,
         reasoning_extractor=_extract_muse_glimmer_reasoning,
     )

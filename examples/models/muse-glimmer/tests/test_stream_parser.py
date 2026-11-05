@@ -137,3 +137,26 @@ def test_tool_reasoning_stream_never_interprets_parameter_headers():
             output.extend(parser.feed(raw[i : i + width]))
         output.extend(parser.finish())
         assert "".join(d.reasoning_content or "" for d in output) == "Thinking."
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("```\n to=self<|message|>x\n```", ("", "```\n to=self<|message|>x\n```")),
+        (
+            " to=self<|message|>t<|eom|><|end|><|start|>assistant to=user<|message|>42",
+            ("t<|start|>assistant to=user<|message|>42", ""),
+        ),
+        (
+            " to=user<|message|>```\n<|start|>assistant to=self<|message|>x<|eom|><|start|>assistant to=user<|message|>y\n```",
+            (
+                "",
+                "```\n<|start|>assistant to=self<|message|>x<|eom|><|start|>assistant to=user<|message|>y\n```",
+            ),
+        ),
+    ],
+)
+def test_quoted_framing_matches_buffered_for_every_split(raw, expected):
+    reasoning, visible = _extract_muse_glimmer_reasoning(raw)
+    assert (reasoning or "", visible) == expected
+    _check_chunks(raw, expected)

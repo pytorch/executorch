@@ -98,10 +98,11 @@ wrong behavior: `n` (> 1), `reasoning_effort` and OpenRouter `reasoning`
 don't affect the output (e.g. `user`, `store`, `metadata`) are accepted and
 ignored.
 
-Non-null `thinking_token_budget`, `grammar`, `stop_regex`,
-`add_generation_prompt`, `continue_final_message`, and `cache_salt` also return
-`400 unsupported_parameter` before generation. These extensions are recognized
-but not implemented; empty strings and explicit false values are rejected too.
+Non-null `thinking_token_budget`, `grammar`, `stop_regex`, `cache_salt`,
+`guided_json`, `guided_regex`, `guided_choice`, `guided_grammar`, `structured_outputs`,
+`regex`, and `ebnf` return `400 unsupported_parameter` before generation, including
+empty values. Explicit defaults `add_generation_prompt=true` and
+`continue_final_message=false` are accepted; other non-null values are rejected.
 In particular, `cache_salt` does not partition the cache. A caller requesting
 salted isolation must not receive a successful unsalted response. Omitted/null
 values are treated as unset. Harmless metadata remains accepted as above.

@@ -341,7 +341,12 @@ tool recipient header. User-directed examples and quoted markers remain content.
 Once a recipient is established, a subsequent header changes the recipient only
 after `<|eom|>` or `<|eot|>` and optional whitespace. A quoted header inside an
 ongoing message remains literal content, including when a real tool call follows
-the terminated message. The rule applies to buffered and streamed responses.
+the terminated message. Fenced examples retain their controls, including end
+markers. An unclosed fence keeps subsequent headers literal; a tool call after
+such a fence is deliberately not executed. Unexpected text between an end marker
+and the next header also keeps the existing recipient, so text after a malformed
+self-to-user transition may remain hidden reasoning. The rule applies to buffered
+and streamed responses.
 An invocation truncated by length or a request stop suppresses the entire
 incomplete call set and ends with `finish_reason=length` or `stop`, respectively;
 malformed completed calls still return
@@ -357,10 +362,12 @@ usage is reported as `completion_tokens_details.reasoning_tokens` from exact
 generated IDs even when reasoning is hidden. When the worker omits those IDs
 (for example, a stop-trimmed turn), the breakdown is omitted.
 
-The shared API explicitly rejects non-null `thinking_token_budget`, `grammar`,
-`stop_regex`, `add_generation_prompt`, `continue_final_message`, and `cache_salt`
-with `400 unsupported_parameter`. These options are not silently ignored, and
-cache partitioning by salt is not implemented.
+The shared API rejects non-null `thinking_token_budget`, `grammar`, `stop_regex`,
+`cache_salt`, vLLM `guided_json`/`guided_regex`/`guided_choice`/`guided_grammar`/
+`structured_outputs`, and SGLang `regex`/`ebnf` with `400 unsupported_parameter`.
+Explicit defaults `add_generation_prompt=true` and `continue_final_message=false`
+are accepted; other non-null values are rejected. Cache partitioning by salt is
+not implemented.
 
 Native workers always report `matched_stop`: a removed string stop or null for
 EOS/length/cancellation. Request stops take precedence over template stops at the

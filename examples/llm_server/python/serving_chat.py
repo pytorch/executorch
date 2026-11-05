@@ -713,6 +713,27 @@ class ServingChat:
                 "invalid_request_error",
                 "invalid_value",
             )
+        visibility = []
+        if "return_reasoning" in template_kwargs:
+            visibility.append(template_kwargs["return_reasoning"])
+        if req.include_reasoning is not None:
+            visibility.append(req.include_reasoning)
+        if req.reasoning is not None and "exclude" in req.reasoning:
+            if type(req.reasoning["exclude"]) is not bool:
+                raise APIError(
+                    400,
+                    "reasoning.exclude must be a boolean",
+                    "invalid_request_error",
+                    "invalid_value",
+                )
+            visibility.append(not req.reasoning["exclude"])
+        if len(set(visibility)) > 1:
+            raise APIError(
+                400,
+                "Conflicting reasoning visibility controls",
+                "invalid_request_error",
+                "invalid_value",
+            )
         if req.temperature is not None and (
             not math.isfinite(req.temperature)
             or req.temperature < 0.0
@@ -770,9 +791,24 @@ class ServingChat:
         flags = [
             (req.thinking_token_budget is not None, "thinking_token_budget"),
             (req.grammar is not None, "grammar"),
+            (req.guided_json is not None, "guided_json"),
+            (req.guided_regex is not None, "guided_regex"),
+            (req.guided_choice is not None, "guided_choice"),
+            (req.guided_grammar is not None, "guided_grammar"),
+            (req.structured_outputs is not None, "structured_outputs"),
+            (req.regex is not None, "regex"),
+            (req.ebnf is not None, "ebnf"),
             (req.stop_regex is not None, "stop_regex"),
-            (req.add_generation_prompt is not None, "add_generation_prompt"),
-            (req.continue_final_message is not None, "continue_final_message"),
+            (
+                req.add_generation_prompt is not None
+                and req.add_generation_prompt is not True,
+                "add_generation_prompt",
+            ),
+            (
+                req.continue_final_message is not None
+                and req.continue_final_message is not False,
+                "continue_final_message",
+            ),
             (req.cache_salt is not None, "cache_salt"),
             (
                 req.ignore_eos
@@ -891,19 +927,11 @@ class ServingChat:
         return False
 
     async def create(self, req: ChatCompletionRequest):
+        if req.model is not None and req.model != self._model_id:
+            raise ModelNotFound(req.model, self._model_id)
+        self._reject_invalid_values(req)
         if req.include_reasoning is not None:
             kwargs = dict(req.chat_template_kwargs or {})
-            self._reject_invalid_values(req)
-            if (
-                kwargs.get("return_reasoning", req.include_reasoning)
-                != req.include_reasoning
-            ):
-                raise APIError(
-                    400,
-                    "Conflicting reasoning visibility controls",
-                    "invalid_request_error",
-                    "invalid_value",
-                )
             kwargs["return_reasoning"] = req.include_reasoning
             req = req.model_copy(update={"chat_template_kwargs": kwargs})
         if req.session_id is not None:
@@ -926,7 +954,6 @@ class ServingChat:
     async def _create(self, req: ChatCompletionRequest, lease, admission):
         if req.model is not None and req.model != self._model_id:
             raise ModelNotFound(req.model, self._model_id)
-        self._reject_invalid_values(req)
         self._reject_unsupported_params(req)
         if req.session_id is not None:
             self._validate_session_id(req.session_id)

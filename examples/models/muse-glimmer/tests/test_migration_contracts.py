@@ -680,6 +680,11 @@ def test_mixed_recipient_examples_never_become_calls(
     )
     assert response.status_code == 200
     message, finish = response_message(response, stream)
+    if example_first and fence == "unclosed":
+        assert finish == "stop"
+        assert not message.get("tool_calls")
+        assert "REAL" in message["content"]
+        return
     assert finish == "tool_calls"
     assert [
         json.loads(call["function"]["arguments"]) for call in message["tool_calls"]
@@ -979,7 +984,9 @@ def test_packaged_chat_template_starts_outside_source_tree(tmp_path, monkeypatch
     build.ensure_finalized()
     build.run()
     installed = Path(build.build_lib) / package.replace(".", "/") / "chat_template.py"
-    spec = importlib.util.spec_from_file_location("installed_muse_template", installed)
+    spec = importlib.util.spec_from_file_location(
+        package + "._installed_template", installed
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     tokenizer = SimpleNamespace(chat_template=None)

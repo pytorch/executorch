@@ -16,11 +16,16 @@ import pytest
     + [
         ("grammar", 'root ::= "ok"'),
         ("grammar", ""),
+        ("guided_json", "x"),
+        ("guided_regex", "x"),
+        ("guided_choice", "x"),
+        ("guided_grammar", "x"),
+        ("structured_outputs", "x"),
+        ("regex", "x"),
+        ("ebnf", "x"),
         ("stop_regex", ".+"),
-        ("add_generation_prompt", True),
         ("add_generation_prompt", False),
         ("continue_final_message", True),
-        ("continue_final_message", False),
         ("cache_salt", "tenant-a"),
         ("cache_salt", ""),
     ],
@@ -103,3 +108,59 @@ def test_harmless_metadata_and_null_extensions_remain_accepted(make_client):
         },
     )
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize("dialect", ["openai", "openrouter"])
+@pytest.mark.parametrize("stream", [False, True])
+def test_explicit_default_generation_controls_are_accepted(
+    make_client, dialect, stream
+):
+    client, worker = make_client(api_dialect=dialect)
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": stream,
+            "add_generation_prompt": True,
+            "continue_final_message": False,
+        },
+    )
+    assert response.status_code == 200
+    assert worker.captured_config is not None
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"include_reasoning": False, "reasoning": {"exclude": False}},
+        {
+            "chat_template_kwargs": {"return_reasoning": False},
+            "reasoning": {"exclude": False},
+        },
+    ],
+)
+def test_shared_visibility_conflicts_are_rejected(make_client, options):
+    client, worker = make_client()
+    response = client.post(
+        "/v1/chat/completions",
+        json={"messages": [{"role": "user", "content": "hello"}], **options},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_value"
+    assert worker.captured_config is None
+
+
+@pytest.mark.parametrize("include", [None, False, True])
+def test_unknown_model_has_consistent_error_precedence(make_client, include):
+    client, worker = make_client()
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "hello"}],
+            "model": "missing",
+            "temperature": -1,
+            "include_reasoning": include,
+        },
+    )
+    assert response.status_code == 404
+    assert worker.captured_config is None

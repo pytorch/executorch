@@ -5,7 +5,6 @@
 
 """Muse's role-complete template and canonical OpenAI tool-name translation."""
 
-import re
 from copy import deepcopy
 from functools import cached_property
 from pathlib import Path
@@ -13,9 +12,8 @@ from pathlib import Path
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.errors import APIError
 
-
-def wire_tool_name(name: str) -> str:
-    return name if "." in name else f"{name}.{name}"
+from .framing import body_spans, CONTROLS, recipient_bodies, wire_tool_name
+from .tool_parsers.atem import parameter_value_spans
 
 
 def resolve_tool_result_names(messages):
@@ -43,29 +41,23 @@ class MuseGlimmerChatTemplate(ChatTemplate):
     def _reasoning_markers(self):
         if self._hf is None:
             return None
-        markers = [
-            self._hf.encode(m, add_special_tokens=False)
-            for m in ("<|message|>", "<|eom|>", "<|eot|>")
-        ]
-        if all(len(ids) == 1 for ids in markers):
-            result = {ids[0] for ids in markers}
-            if len(result) == 3:
-                return result
+        markers = {}
+        for marker in CONTROLS:
+            ids = self._hf.encode(marker, add_special_tokens=False)
+            if len(ids) == 1 and ids[0] in self._hf.all_special_ids:
+                markers[ids[0]] = marker
+        if all(
+            marker in markers.values()
+            for marker in ("<|message|>", "<|eom|>", "<|eot|>")
+        ):
+            return markers
         return None
 
     def count_reasoning_tokens(self, token_ids):
-        """Count generated body IDs, excluding headers and end markers.
-
-        Decode runs ending at atomic framing tokens to map character boundaries
-        back to original IDs. Re-encoding rendered reasoning can merge tokens and
-        cannot account correctly for byte-fallback IDs or hidden reasoning.
-        """
-        from .framing import recipient_headers
-        from .tool_parsers.atem import parameter_value_spans
-
+        """Count original generated IDs in the same body spans as extraction."""
         if self._reasoning_markers is None:
             return None
-        parts, ends = [], {}
+        parts, boundaries = [], {0: 0}
         cursor = offset = 0
         for i, token in enumerate(token_ids):
             if token in self._reasoning_markers:
@@ -74,9 +66,13 @@ class MuseGlimmerChatTemplate(ChatTemplate):
                     skip_special_tokens=False,
                     clean_up_tokenization_spaces=False,
                 )
+                marker = self._reasoning_markers[token]
+                if not part.endswith(marker):
+                    return None
                 parts.append(part)
                 offset += len(part)
-                ends[offset] = i + 1
+                boundaries[offset - len(marker)] = i
+                boundaries[offset] = i + 1
                 cursor = i + 1
         parts.append(
             self._hf.decode(
@@ -86,21 +82,15 @@ class MuseGlimmerChatTemplate(ChatTemplate):
             )
         )
         text = "".join(parts)
+        boundaries[len(text)] = len(token_ids)
         count = 0
-        for header in recipient_headers(text, parameter_value_spans(text)):
-            if header.group(1) != "self":
+        for header, start, end in recipient_bodies(text, parameter_value_spans(text)):
+            if header.group(1) != "self" or not text[start:end].strip():
                 continue
-            start = ends.get(header.end())
-            if start is None:
-                return None
-            end = re.search(r"<\|eo[mt]\|>", text[header.end() :])
-            if end is None:
-                count += len(token_ids) - start
-            else:
-                stop = ends.get(header.end() + end.end())
-                if stop is None:
+            for begin, stop in body_spans(text, start, end):
+                if begin not in boundaries or stop not in boundaries:
                     return None
-                count += stop - 1 - start
+                count += boundaries[stop] - boundaries[begin]
         return count
 
     def render(self, messages, tools=None, template_kwargs=None):

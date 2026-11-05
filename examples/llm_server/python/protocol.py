@@ -94,6 +94,13 @@ class ChatCompletionRequest(BaseModel):
     # generation, including malformed values and empty strings.
     thinking_token_budget: Any = None
     grammar: Any = None
+    guided_json: Any = None
+    guided_regex: Any = None
+    guided_choice: Any = None
+    guided_grammar: Any = None
+    structured_outputs: Any = None
+    regex: Any = None
+    ebnf: Any = None
     stop_regex: Any = None
     add_generation_prompt: Any = None
     continue_final_message: Any = None

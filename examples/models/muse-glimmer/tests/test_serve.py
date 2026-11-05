@@ -259,8 +259,10 @@ def test_build_app_uses_muse_glimmer_options(monkeypatch):
     assert captured["serving_kwargs"]["max_image_bytes"] == 1234
     assert captured["serving_kwargs"]["prompt_token_offset"] == 1
     assert (
-        captured["serving_kwargs"]["content_filter"] is serve._strip_muse_glimmer_header
+        captured["serving_kwargs"]["reasoning_token_counter"].__func__
+        is _FakeTemplate.count_reasoning_tokens
     )
+    assert "content_filter" not in captured["serving_kwargs"]
     assert (
         captured["serving_kwargs"]["reasoning_extractor"]
         is serve._extract_muse_glimmer_reasoning
@@ -457,34 +459,6 @@ def test_muse_glimmer_prompt_count_defers_images_to_native_worker():
     assert serving._count_prompt_tokens(prompt) is None
 
 
-def test_strip_muse_glimmer_header_returns_visible_answer():
-    # The model self-emits " to=user<|message|>ANSWER" ahead of the visible text
-    # because the generation prompt ends at "<|start|>assistant".
-    assert serve._strip_muse_glimmer_header(" to=user<|message|>Paris.") == "Paris."
-
-
-def test_strip_muse_glimmer_header_strips_tool_recipient():
-    text = ' to=functions.get_weather<|message|>{"city": "Paris"}'
-    assert serve._strip_muse_glimmer_header(text) == '{"city": "Paris"}'
-
-
-def test_strip_muse_glimmer_header_passthrough_plain_text():
-    assert (
-        serve._strip_muse_glimmer_header("The capital of France is Paris.")
-        == "The capital of France is Paris."
-    )
-
-
-def test_strip_muse_glimmer_header_removes_message_terminators():
-    assert serve._strip_muse_glimmer_header("Test complete.<|eom|>") == "Test complete."
-    assert serve._strip_muse_glimmer_header("Final answer.<|eot|>") == "Final answer."
-
-
-def test_strip_muse_glimmer_header_strips_constrain_field():
-    text = ' to=functions.get_weather constrain=json<|message|>{"city": "Paris"}'
-    assert serve._strip_muse_glimmer_header(text) == '{"city": "Paris"}'
-
-
 def test_extract_muse_glimmer_reasoning_preserves_final_answer():
     text = (
         " to=self<|message|>We should calculate first.<|eom|>"
@@ -609,7 +583,6 @@ def _glimmer_serving(raw_texts, template=None):
         template or _StubTemplate(),
         "test-model",
         reasoning_extractor=serve._extract_muse_glimmer_reasoning,
-        content_filter=serve._strip_muse_glimmer_header,
         content_filter_specials=serve._MUSE_GLIMMER_HEADER_SPECIALS,
     )
     return serving, runtime
@@ -1054,14 +1027,6 @@ def test_extract_muse_glimmer_reasoning_preserves_visible_prefix():
     reasoning, visible = serve._extract_muse_glimmer_reasoning(text)
     assert reasoning == "Private step."
     assert visible == "Visible prefix.\n\nVisible final."
-
-
-def test_strip_muse_glimmer_header_preserves_prose_lookalikes():
-    # Negative cases: real prose tokens that merely CONTAIN "to=" as a substring
-    # (goto=, auto=, photo=) must NOT be stripped -- only a genuine harmony header
-    # (start-of-string / whitespace / ">"-introduced "to=<recipient><|message|>").
-    text = "Use goto=label; set auto=true; field photo=front."
-    assert serve._strip_muse_glimmer_header(text) == text
 
 
 def test_tool_parser_atem_returns_detector():

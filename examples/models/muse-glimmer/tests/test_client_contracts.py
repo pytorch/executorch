@@ -235,3 +235,121 @@ def test_unknown_generated_ids_do_not_claim_zero_reasoning(counting_template):
     response = client.post("/v1/chat/completions", json=request({}))
     assert response.status_code == 200
     assert response.json()["usage"].get("completion_tokens_details") is None
+
+
+@pytest.mark.parametrize("dialect", ["openai", "openrouter"])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("first", ["first", "```", "<|eom|> to=user<|message|>"])
+def test_adjacent_tool_blocks_isolate_parameter_framing(dialect, stream, first):
+    raw = _atem("edit.edit", [("q", first)]) + _atem("edit.edit", [("q", "second")])
+    client, serving = client_for(raw, 1)
+    serving.api_dialect = dialect
+    response = client.post(
+        "/v1/chat/completions",
+        json=request({"properties": {"q": {"type": "string"}}}, stream),
+    )
+    assert response.status_code == 200
+    message, finish = response_message(response, stream)
+    assert finish == "tool_calls"
+    assert not message.get("content")
+    assert [json.loads(c["function"]["arguments"]) for c in message["tool_calls"]] == [
+        {"q": first},
+        {"q": "second"},
+    ]
+
+
+@pytest.mark.parametrize("dialect", ["openai", "openrouter"])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("split", [1, 7, 10000])
+@pytest.mark.parametrize("prefix", ["Example:\n", ""])
+def test_fenced_end_markers_never_execute_examples(dialect, stream, split, prefix):
+    example = (
+        prefix
+        + "```\n<|start|>assistant to=self<|message|>plan<|eom|><|start|>assistant to=edit.edit<|message|>"
+        + _atem("edit.edit", [("q", "example")])
+        + "\n```"
+    )
+    client, serving = client_for(" to=user<|message|>" + example, split)
+    serving.api_dialect = dialect
+    response = client.post(
+        "/v1/chat/completions",
+        json=request({"properties": {"q": {"type": "string"}}}, stream),
+    )
+    assert response.status_code == 200
+    message, finish = response_message(response, stream)
+    assert finish == "stop"
+    assert not message.get("tool_calls")
+    assert not message.get("reasoning_content")
+    assert message["content"] == example
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_tool_turn_scrubs_specials_and_preserves_quoted_headers(stream):
+    quote = "<|start|>assistant to=self<|message|>quoted"
+    raw = (
+        " to=user<|message|>hello "
+        + quote
+        + "<|leaked_special|>discard<|eom|><|start|>assistant to=edit.edit<|message|>"
+        + _atem("edit.edit", [("q", "ok")])
+    )
+    client, serving = client_for(raw)
+    serving._content_specials = ["<|leaked_special|>"]
+    response = client.post("/v1/chat/completions", json=request({}, stream))
+    message, finish = response_message(response, stream)
+    assert finish == "tool_calls"
+    assert message["content"] == "hello " + quote
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (" to=self<|message|>abc<|eom|>def", 5),
+        (" to=self<|message|>abc<|eom|><|start|>assistant to=user<|message|>def", 2),
+    ],
+)
+def test_reasoning_counter_uses_extracted_body_boundaries(
+    counting_template, raw, expected
+):
+    ids = counting_template._hf.encode(raw, add_special_tokens=False)
+    assert counting_template.count_reasoning_tokens(ids) == expected
+
+
+def test_reasoning_counter_omits_non_atomic_markers(counting_template, monkeypatch):
+    encode = counting_template._hf.encode
+    monkeypatch.setattr(
+        counting_template._hf,
+        "encode",
+        lambda text, **kwargs: (
+            [1, 2] if text == "<|message|>" else encode(text, **kwargs)
+        ),
+    )
+    assert counting_template.count_reasoning_tokens([1, 2]) is None
+
+
+def test_reasoning_counter_omits_unaligned_body_boundary(counting_template):
+    hf = counting_template._hf
+    hf.add_tokens([" to=self<|message|>"], special_tokens=True)
+    ids = hf.encode(" to=self<|message|>abc", add_special_tokens=False)
+    assert counting_template.count_reasoning_tokens(ids) is None
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_live_inline_backticks_do_not_hide_following_tool_call(stream):
+    raw = ' to=self<|message|>So first call report.report with q = "```". That is three backticks.' "<|eom|><|start|>assistant to=edit.edit<|message|>" + _atem(
+        "edit.edit", [("q", "```")]
+    ) + "<|eom|><|start|>assistant to=edit.edit<|message|>" + _atem(
+        "edit.edit", [("q", "second")]
+    )
+    client, _ = client_for(raw, 1)
+    response = client.post(
+        "/v1/chat/completions",
+        json=request({"properties": {"q": {"type": "string"}}}, stream),
+    )
+    assert response.status_code == 200
+    message, finish = response_message(response, stream)
+    assert finish == "tool_calls"
+    assert not message.get("content")
+    assert [json.loads(c["function"]["arguments"]) for c in message["tool_calls"]] == [
+        {"q": "```"},
+        {"q": "second"},
+    ]

@@ -17,29 +17,28 @@ from collections.abc import Iterable
 from executorch.examples.llm_server.python.protocol import DeltaMessage
 
 from .framing import (
-    HEADER_RE as _MUSE_GLIMMER_ADDRESSED_HEADER_RE,
-    IDENT as _MUSE_GLIMMER_IDENT,
-    RECIPIENT as _MUSE_GLIMMER_RECIPIENT,
+    ASSISTANT_HEADER,
+    CONTROL_RE,
+    CONTROLS,
+    FenceTracker,
+    HEADER_RE,
+    IDENT,
+    RECIPIENT,
 )
-from .serve import _ASSISTANT_HEADER, _MUSE_GLIMMER_STRAY_SPECIAL_RE
 
-_IDENT = re.compile(_MUSE_GLIMMER_IDENT)
-_RECIPIENT = re.compile(_MUSE_GLIMMER_RECIPIENT)
+_IDENT = re.compile(IDENT)
+_RECIPIENT = re.compile(RECIPIENT)
 _BOUNDARY = re.compile(r"(?<![A-Za-z0-9_])")
-_CONTROLS = tuple(
-    f"<|{name}|>"
-    for name in ("start", "message", "channel", "constrain", "end", "eom", "eot")
-)
 
 
 def _header_prefix(text: str, pos: int) -> bool:
     """Recognize only unfinished prefixes of the existing header grammar."""
     if text[pos : pos + 1] == "<":
-        if len(text) - pos < len(_ASSISTANT_HEADER):
-            return _ASSISTANT_HEADER.startswith(text[pos:])
-        if not text.startswith(_ASSISTANT_HEADER, pos):
+        if len(text) - pos < len(ASSISTANT_HEADER):
+            return ASSISTANT_HEADER.startswith(text[pos:])
+        if not text.startswith(ASSISTANT_HEADER, pos):
             return False
-        pos += len(_ASSISTANT_HEADER)
+        pos += len(ASSISTANT_HEADER)
     if text[pos : pos + 1].isspace():
         pos += 1
     for literal, pattern in (
@@ -78,6 +77,7 @@ class MuseGlimmerStreamParser:
         self._end_space = ""
         self._has_header = False
         self._header_allowed = True
+        self._fences = FenceTracker()
 
     def _body(self, text: str) -> list[DeltaMessage]:
         # Post-end whitespace is framing only if a header or EOF follows it.
@@ -125,9 +125,12 @@ class MuseGlimmerStreamParser:
         pos = body_start = len(self._previous)
         result = []
         while pos < len(text):
-            header = _MUSE_GLIMMER_ADDRESSED_HEADER_RE.match(text, pos)
+            header = HEADER_RE.match(text, pos)
             if header:
-                if self._has_header and not self._header_allowed:
+                if self._fences.in_fence or (
+                    self._has_header and not self._header_allowed
+                ):
+                    self._fences.feed(header.group())
                     pos = header.end()
                     continue
                 result.extend(self._body(text[body_start:pos]))
@@ -135,18 +138,19 @@ class MuseGlimmerStreamParser:
                 self._field = (
                     "reasoning_content" if header.group(1) == "self" else "content"
                 )
+                self._fences.new_body()
                 self._has_header = True
                 self._header_allowed = False
                 pos = body_start = header.end()
                 continue
             potential = _BOUNDARY.match(text, pos) and _header_prefix(text, pos)
-            control = _MUSE_GLIMMER_STRAY_SPECIAL_RE.match(text, pos)
+            control = CONTROL_RE.match(text, pos)
             partial_control = (
                 control is None
                 and text[pos] == "<"
                 and any(
                     len(text) - pos < len(token) and token.startswith(text[pos:])
-                    for token in _CONTROLS
+                    for token in CONTROLS
                 )
             )
             if potential or partial_control:
@@ -160,12 +164,20 @@ class MuseGlimmerStreamParser:
                     pos = body_start = len(text)
                     break
             if control:
+                quoted = self._fences.in_fence
+                self._fences.feed(control.group())
+                if quoted:
+                    pos = control.end()
+                    continue
                 result.extend(self._body(text[body_start:pos]))
                 if control.group() in ("<|eom|>", "<|eot|>"):
                     self._after_end = True
                     self._header_allowed = True
+                else:
+                    self._header_allowed = False
                 pos = body_start = control.end()
             else:
+                self._fences.feed(text[pos])
                 if not text[pos].isspace():
                     self._header_allowed = False
                 pos += 1
