@@ -70,6 +70,7 @@ from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists im
     TOSA_EXT_MXFP_SupportList,
     TOSA_EXT_SHAPE_SupportList,
     TOSA_PRO_FP_SupportList,
+    TOSA_PRO_INT_EXT_INT64_SupportList,
     TOSA_PRO_INT_SupportList,
     TOSA_PRO_MIXED_INT_SupportList,
 )
@@ -643,13 +644,12 @@ def _negative_checks(
     if tosa_spec.support_integer() and tosa_spec.support_float():
         checks.append(CheckMixedProfileOperatorSupport(reporter))
 
-    if not tosa_spec.support_extension("int64"):
-        checks.append(
-            _AllowDynamicW8A8QParamsOr(
-                CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec),
-                tosa_spec,
-            )
+    checks.append(
+        _AllowDynamicW8A8QParamsOr(
+            CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec),
+            tosa_spec,
         )
+    )
 
     checks.append(CheckScalarReductionInputs(reporter))
 
@@ -911,11 +911,13 @@ class SymbolicShapeSupportCheck(OperatorSupportBase):
             return True
 
         if node.target == exir_ops.edge.aten.convolution.default:
-            return (
-                bool(node.args[6])
-                or bool(get_slices_convolution(node))
-                or has_dynamic_conv_padding(node)
-            )
+            if node.args[6]:
+                groups = node.args[8]
+                return bool(groups != 1)
+            return bool(get_slices_convolution(node)) or has_dynamic_conv_padding(node)
+        if node.target == torch.ops.aten.conv_transpose2d.input:
+            groups = node.args[6]
+            return bool(groups != 1)
         if node.target in (
             exir_ops.edge.aten.avg_pool2d.default,
             exir_ops.edge.aten.max_pool2d.default,
@@ -1206,6 +1208,16 @@ class CheckProperQuantization(OperatorSupportBase):
         return True
 
 
+def _int64_operands_agree(node: fx.Node) -> bool:
+    """Whether every operand beside an int64 operand casts to int64."""
+    dtypes = {
+        arg.meta["val"].dtype
+        for arg in node.all_input_nodes
+        if isinstance(arg.meta.get("val"), torch.Tensor)
+    }
+    return torch.int64 not in dtypes or dtypes <= {torch.int64, torch.int32, torch.bool}
+
+
 class CheckInt64InputsAndOutputs(OperatorSupportBase):
     """Reject general int64 tensors while allowing safe exceptions.
 
@@ -1430,6 +1442,13 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
     ) -> bool:
         """Return True when int64 use is absent or safe per exceptions."""
         if is_submodule_node(node):
+            return True
+        if (
+            self.tosa_spec.support_integer()
+            and self.tosa_spec.support_extension("int64")
+            and node.target in TOSA_PRO_INT_EXT_INT64_SupportList
+            and _int64_operands_agree(node)
+        ):
             return True
         vals = node.meta["val"]
         tensor_list = vals if isinstance(vals, (list, tuple)) else [vals]

@@ -103,6 +103,22 @@ class VgfPartitioner(TOSAPartitioner):
                     f"mutation tag={mutation_tag}, consumers=[{consumers}]."
                 )
 
+    def _check_mutable_buffers_owned(self, exported_program: ExportedProgram) -> None:
+        # tag_mutated_buffer also keeps a buffer out of the delegate when its
+        # new value is returned or read outside it, which
+        # _validate_mutable_buffers does not see. Aliasing needs the delegate
+        # to own the buffer.
+        signature = exported_program.graph_signature
+        mutated = set(signature.buffers_to_mutate.values())
+        for node in exported_program.graph.nodes:
+            buffer_name = signature.inputs_to_buffers.get(node.name)
+            if buffer_name in mutated and "delegation_tag" not in node.meta:
+                raise ValueError(
+                    f"VGF mutable buffer {buffer_name!r} cannot be aliased: its "
+                    "new value is returned or read outside the delegated "
+                    "partition."
+                )
+
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         """Partition the program and tag TOSA-compatible subgraphs.
 
@@ -133,4 +149,5 @@ class VgfPartitioner(TOSAPartitioner):
             }
             self._validate_mutable_buffers(result.tagged_exported_program)
             tag_mutated_buffer(result.tagged_exported_program)
+            self._check_mutable_buffers_owned(result.tagged_exported_program)
         return result

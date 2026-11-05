@@ -91,6 +91,54 @@ TEST_F(SessionTableTest, PacksInputsInOrderWithTheirRows) {
   EXPECT_EQ(step->logit_indices, std::vector<int>({2, -1}));
 }
 
+// A prompt whose rows only its executor can embed.
+class OpaquePrompt final : public batching::PreparedInput {
+ public:
+  explicit OpaquePrompt(std::size_t rows) : rows_(rows) {}
+  const void* kind() const override {
+    static char kind;
+    return &kind;
+  }
+  std::size_t size() const override {
+    return rows_;
+  }
+  batching::PreparedInputPtr suffix(std::size_t) const override {
+    return nullptr;
+  }
+
+ private:
+  std::size_t rows_;
+};
+
+TEST_F(SessionTableTest, PreparedRowsPackAsPlaceholders) {
+  const auto a = *table_->open();
+  const auto b = *table_->open();
+  batching::Input prompt;
+  prompt.sid = a;
+  prompt.payload =
+      batching::PreparedInputPtr(std::make_shared<OpaquePrompt>(4));
+  prompt.offset = 1;
+  prompt.size = 3;
+  prompt.position = 0;
+  prompt.produce_output = true;
+  batching::BatchInput batch;
+  batch.inputs = {input(b, {5, 6}, 0), prompt};
+  ASSERT_EQ(table_->pack(batch).error(), Error::InvalidArgument);
+  prompt.offset = 0;
+  batch.inputs = {input(b, {5, 6}, 0), prompt};
+  const auto step = table_->pack(batch);
+  ASSERT_EQ(step.error(), Error::Ok);
+  EXPECT_TRUE(step->prepared);
+  EXPECT_EQ(step->tokens, std::vector<std::int64_t>({5, 6, 0, 0, 0}));
+  EXPECT_EQ(step->positions, std::vector<std::int64_t>({0, 1, 0, 1, 2}));
+  EXPECT_EQ(step->logit_indices, std::vector<int>({1, 4}));
+  prompt.size = 5;
+  batch.inputs = {prompt};
+  EXPECT_EQ(table_->pack(batch).error(), Error::InvalidArgument);
+  batch.inputs = {input(b, {5, 6}, 0)};
+  EXPECT_FALSE(table_->pack(batch)->prepared);
+}
+
 TEST_F(SessionTableTest, ConsecutiveChunksOfOnePromptAbut) {
   const auto a = *table_->open();
   batching::BatchInput batch;

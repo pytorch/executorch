@@ -9,76 +9,11 @@
 #include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/runtime/platform/log.h>
 #include <limits>
-#include <optional>
-#include <unordered_map>
+
+// Keep this file free of static and thread_local state: a Windows build
+// without EXECUTORCH_BUILD_SHARED links it twice (see backends/cuda).
 
 namespace executorch::backends::cuda {
-
-namespace {
-// Thread-local stream storage (private to this file)
-thread_local std::unordered_map<DeviceIndex, cudaStream_t> current_streams_;
-} // namespace
-
-Error setCurrentCUDAStream(cudaStream_t stream, DeviceIndex device_index) {
-  if (device_index == -1) {
-    // Get current device if not specified
-    // CUDA API returns int, explicit cast to DeviceIndex (int8_t) following
-    // ATen
-    int tmp_device = -1;
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&tmp_device));
-    device_index = static_cast<DeviceIndex>(tmp_device);
-  }
-
-  current_streams_[device_index] = stream;
-  return Error::Ok;
-}
-
-Result<cudaStream_t> getCurrentCUDAStream(DeviceIndex device_index) {
-  if (device_index == -1) {
-    // CUDA API returns int, explicit cast to DeviceIndex (int8_t) following
-    // ATen
-    int tmp_device = -1;
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&tmp_device));
-    device_index = static_cast<DeviceIndex>(tmp_device);
-  }
-
-  auto it = current_streams_.find(device_index);
-  if (it != current_streams_.end()) {
-    return it->second;
-  }
-
-  cudaStream_t stream;
-  ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamCreate(&stream));
-  setCurrentCUDAStream(stream, device_index);
-  return stream;
-}
-
-std::optional<cudaStream_t> peekCurrentCUDAStream(DeviceIndex device_index) {
-  if (device_index == -1) {
-    int tmp_device = -1;
-    if (cudaGetDevice(&tmp_device) != cudaSuccess) {
-      return std::nullopt;
-    }
-    device_index = static_cast<DeviceIndex>(tmp_device);
-  }
-
-  auto it = current_streams_.find(device_index);
-  if (it == current_streams_.end()) {
-    return std::nullopt;
-  }
-  return it->second;
-}
-
-void clearCurrentCUDAStream(DeviceIndex device_index) {
-  if (device_index == -1) {
-    int tmp_device = -1;
-    if (cudaGetDevice(&tmp_device) != cudaSuccess) {
-      return;
-    }
-    device_index = static_cast<DeviceIndex>(tmp_device);
-  }
-  current_streams_.erase(device_index);
-}
 
 CUDAStreamGuard::CUDAStreamGuard(CUDAStreamGuard&& other) noexcept
     : device_guard_(std::move(other.device_guard_)),

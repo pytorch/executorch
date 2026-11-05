@@ -58,7 +58,7 @@ TEST_F(CoreAISourceTest, SourcesRemainAnchoredWhenConfiguredSymlinkChanges) {
 
 TEST_F(CoreAISourceTest, RejectsMalformedStoredBundlesWithoutReplacement) {
   for (bool aot : {false, true}) {
-    SCOPED_TRACE(aot ? "aot" : "source");
+    SCOPED_TRACE(aot ? "aimodelc" : "aimodel");
     for (NSString* damage in @[
            @"missing-file",
            @"extra-file",

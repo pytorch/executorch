@@ -213,6 +213,10 @@ def test_delete_placeholders_sharing_target():
         export(SharedWeight(), (torch.zeros(1),), strict=True)
     ).exported_program()
     (weight_name,) = exported_program.graph_signature.inputs_to_parameters
+    weight = next(n for n in exported_program.graph.nodes if n.name == weight_name)
+    # A copy is made for a user in another delegate.
+    for i, user in enumerate(weight.users):
+        user.meta["delegation_tag"] = f"tag{i}"
     duplicate_constant_node(exported_program, weight_name)
 
     weight_nodes = [

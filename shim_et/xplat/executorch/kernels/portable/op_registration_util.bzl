@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "is_xplat", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 
@@ -244,8 +249,6 @@ ATEN_OPS = (
         name = "op_addmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:dtype_util",
-            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
             ":scalar_utils",
             ":vec_ops",
@@ -637,6 +640,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
@@ -1350,6 +1354,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_upsample_bicubic2d_aa",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:upsample_util",
+        ],
+    ),
+    op_target(
         name = "op_upsample_bilinear2d",
         deps = [
             "//executorch/kernels/portable/cpu/util:upsample_util",
@@ -1394,6 +1404,7 @@ ATEN_OPS = (
     op_target(
         name = "op_view_copy",
         deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
