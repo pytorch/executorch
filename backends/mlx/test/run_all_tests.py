@@ -34,6 +34,8 @@ Usage:
 import argparse
 import importlib
 import multiprocessing
+import os
+import signal
 import subprocess
 import sys
 from multiprocessing import Pool
@@ -166,7 +168,8 @@ def _run_test_in_subprocess(
     Run a single test in an isolated subprocess.
 
     Each test gets its own Python interpreter so torch/MLX/Metal memory is
-    fully released between tests, preventing OOM on CI runners.
+    fully released between tests, preventing OOM on CI runners. Must be called
+    from the main thread, since it installs SIGTERM, SIGHUP and SIGQUIT handlers.
 
     Args:
         config_name: Name of the test configuration to run.
@@ -181,24 +184,82 @@ def _run_test_in_subprocess(
         "-m",
         "executorch.backends.mlx.test.test_utils",
         config_name,
-        "run",
+        "--timeout",
+        str(timeout),
     ]
     if verbose:
         cmd.append("--verbose")
 
+    proc = None
+    pending = []
+
+    # In its own session the child no longer gets a SIGTERM, SIGHUP or SIGQUIT
+    # sent to this process group, so kill its group, then die of the signal.
+    # Only for a signal that would end this process anyway, so an ignored
+    # SIGHUP (nohup) stays ignored.
+    def kill_test_and_die(signum, frame):
+        if proc is None:
+            # Popen may already have forked; finish once proc is known.
+            pending.append(signum)
+            return
+        _kill_process_group(proc.pid)
+        signal.signal(signum, signal.SIG_DFL)
+        _flush_and_die(signum)
+
+    handled = [
+        sig
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT)
+        if signal.getsignal(sig) == signal.SIG_DFL
+    ]
     try:
-        result = subprocess.run(
-            cmd,
-            timeout=timeout,
-            capture_output=False,
-        )
-        return result.returncode == 0
+        for sig in handled:
+            signal.signal(sig, kill_test_and_die)
+        try:
+            # A session of its own, so a timeout also kills the op_test_runner
+            # the child started, not just the child.
+            proc = subprocess.Popen(cmd, start_new_session=True)
+        except Exception as e:
+            print(f"✗ FAILED: {config_name} - Subprocess error: {e}")
+            return False
+        if pending:
+            kill_test_and_die(pending[0], None)
+        returncode = proc.wait(timeout=timeout)
+        if returncode < 0:
+            print(f"✗ FAILED: {config_name} - Killed by signal {-returncode}")
+        return returncode == 0
     except subprocess.TimeoutExpired:
         print(f"✗ FAILED: {config_name} - Timeout after {timeout}s")
         return False
-    except Exception as e:
-        print(f"✗ FAILED: {config_name} - Subprocess error: {e}")
-        return False
+    finally:
+        if proc is not None:
+            # Also when the child has exited: if it crashed, its op_test_runner
+            # can still be running.
+            _kill_process_group(proc.pid)
+        for sig in handled:
+            signal.signal(sig, signal.SIG_DFL)
+        if proc is not None:
+            proc.wait()
+        elif pending:
+            # Popen failed, but a signal came; still die of it.
+            _flush_and_die(pending[0])
+
+
+def _flush_and_die(signum: int) -> None:
+    # A flush can fail, for example when the pipe reader got the same signal
+    # and exited, and must not keep this process from dying of the signal.
+    try:
+        sys.stdout.flush()
+    finally:
+        os.kill(os.getpid(), signum)
+
+
+def _kill_process_group(pgid: int) -> None:
+    # ProcessLookupError means the group is gone; macOS raises PermissionError
+    # when only the child's zombie is left.
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def run_tests_parallel(

@@ -9,6 +9,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 from executorch.exir.sym_util import eval_shape, eval_shape_upper_bound
+from torch.fx.experimental.symbolic_shapes import statically_known_true, sym_eq
 
 
 _int64_max_dim_val = torch.iinfo(torch.int64).max - 1
@@ -66,35 +67,35 @@ def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Gra
     """
     ops = exir_ops.edge
     for node in graph.nodes:
-        if node.op == "call_function" and (node.target == ops.aten.linear.default):
-            input_node = node.args[0]
-            dqlinear_input = get_dqlinear_input(input_node)
-            if dqlinear_input is not None and dqlinear_input != input_node:
-                if len(input_node.args[0].users) == 1:
-                    input_node.replace_all_uses_with(dqlinear_input)
-                else:
-                    print(
-                        f"{input_node} has more than one user. Users: {input_node.users}"
-                    )
-            if len(node.users) == 1:
-                users = list(node.users)
-                maybe_view_copy = users[0]
-                if maybe_view_copy.op == "call_function" and (
-                    maybe_view_copy.target == ops.aten.view_copy.default
-                ):
-                    # Must update the input node since replaced the original node
-                    input_node = node.args[0]
-                    input_shape = list(get_shape(input_node))
-                    weight_node = node.args[1]
-                    if "val" not in weight_node.meta:
-                        raise ValueError(f"Val not found meta of node {weight_node}")
-                    weight_val = weight_node.meta["val"]
-                    output_channels = weight_val.shape[0]
-                    output_shape = input_shape
-                    output_shape[-1] = output_channels
-                    view_copy_out_shape = list(get_shape(maybe_view_copy))
-                    if output_shape == view_copy_out_shape:
-                        maybe_view_copy.replace_all_uses_with(node)
+        if node.op != "call_function" or node.target != ops.aten.linear.default:
+            continue
+        if len(node.users) != 1:
+            continue
+        view_copy = next(iter(node.users))
+        if view_copy.target != ops.aten.view_copy.default:
+            continue
+        weight_node = node.args[1]
+        if "val" not in weight_node.meta:
+            raise ValueError(f"Val not found meta of node {weight_node}")
+        output_channels = weight_node.meta["val"].shape[0]
+        input_node = node.args[0]
+        dqlinear_input = get_dqlinear_input(input_node)
+        # Reading the dequantized input before its views changes the shape of the
+        # linear output, so it is done only when the view after the linear goes.
+        for new_input in (dqlinear_input, input_node):
+            if new_input is None:
+                continue
+            output_shape = list(new_input.meta["val"].shape)
+            output_shape[-1] = output_channels
+            # Compare the symbolic shapes, since different dynamic shapes can
+            # have equal upper bounds.
+            if statically_known_true(
+                sym_eq(output_shape, list(view_copy.meta["val"].shape))
+            ):
+                node.replace_input_with(input_node, new_input)
+                node.meta["val"] = view_copy.meta["val"]
+                view_copy.replace_all_uses_with(node)
+                break
     graph.eliminate_dead_code()
     return graph
 
