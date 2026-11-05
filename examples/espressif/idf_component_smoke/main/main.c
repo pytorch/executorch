@@ -8,8 +8,9 @@
 
 /*
  * Runs each embedded model (see main/CMakeLists.txt) through et_model on the
- * forward test cases that split_bundled_program.py extracted, and compares the
- * outputs with the expected ones.
+ * forward test cases in its .io file (the inputs and expected outputs of a
+ * bundled program's test cases), and compares the outputs with the expected
+ * ones.
  */
 
 #include <math.h>

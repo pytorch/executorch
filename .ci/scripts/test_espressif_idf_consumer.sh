@@ -16,7 +16,8 @@
 # ESP32-S3 build an ESP-NN delegate program.
 # ESPRESSIF_IDF_VERSION selects the ESP-IDF release: v6.1 builds every target
 # an emulator runs (QEMU for ESP32, esp-emu for the rest), other releases
-# ESP32-S3 and ESP32-C6. Also lints the component's manifest.
+# ESP32-S3 and ESP32-C6. Also builds the component's example the way a registry
+# user gets it, and lints the component's manifest.
 
 set -euo pipefail
 
@@ -83,9 +84,9 @@ print(entry["atol"], entry["rtol"])
 python "${split}" "${assets}/delegate.bpte" --atol "${atol}" --rtol "${rtol}"
 
 component_dir="${build_dir}/component/executorch"
-bash examples/espressif/build_idf_component.sh --out "${component_dir}" \
+bash examples/espressif/build_idf_component.sh --allow-dev-stamp --out "${component_dir}" \
     2>&1 | tee "${build_dir}/generate.log"
-compote manifest lint "${component_dir}/idf_component.yml"
+compote manifest lint "${component_dir}"
 version=$(sed -n 's/^version: "\(.*\)"$/\1/p' "${component_dir}/idf_component.yml")
 (cd "${component_dir}" && compote component pack --name executorch --dest-dir "${build_dir}/dist")
 archive="${build_dir}/dist/executorch_${version}.tgz"
@@ -168,9 +169,9 @@ run_firmware() {
         wait "${pid}" || true
     else
         consumer "${name}" "${target}" merge-bin > "${build_dir}/merge-${name}.log" 2>&1
+        local elf=("${firmware_dir}"/*.elf)
         timeout 130s esp-emu --chip "${target}" \
-            --firmware "${firmware_dir}/merged-binary.bin" \
-            --elf "${firmware_dir}/et_component_smoke.elf" \
+            --firmware "${firmware_dir}/merged-binary.bin" --elf "${elf[0]}" \
             --net user --timeout 120s --exit-on 'Program complete.' \
             > "${log}" 2>&1 || true
     fi
@@ -219,4 +220,25 @@ if (str(entry["version"]), entry.get("component_hash")) != (
     sys.exit(f"FAIL: pytorch/executorch did not come from the mirror: {entry}")
 PY
 done
+
+# The component's example as idf.py create-project-from-example gives it to a
+# registry user: copied out of the archive, without the override_path that the
+# registry removes, so its exact version pin resolves from the mirror. The
+# component manager cannot download examples from a file:// mirror itself.
+example="${sources}/hello_executorch"
+rm -rf "${example}"
+mkdir -p "${example}"
+tar -xzf "${archive}" -C "${example}" --strip-components=3 ./examples/hello_executorch
+python - "${example}/main/idf_component.yml" <<'PY'
+import sys
+
+import yaml
+
+manifest = yaml.safe_load(open(sys.argv[1]))
+del manifest["dependencies"]["pytorch/executorch"]["override_path"]
+yaml.safe_dump(manifest, open(sys.argv[1], "w"))
+PY
+project="${example}" consumer hello_executorch esp32s3 build \
+    > "${build_dir}/firmware-hello_executorch.log" 2>&1
+project="${example}" run_firmware hello_executorch esp32s3 "smoke: PASS"
 echo "PASS: the packed ESP-IDF component built from a mirror and ran on ${targets[*]}."

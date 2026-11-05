@@ -15,18 +15,29 @@ cross-compile-then-link flow below, generate a self-contained ESP-IDF
 component from sources in this repository:
 
 ```bash
-./examples/espressif/build_idf_component.sh \
+./examples/espressif/build_idf_component.sh --allow-dev-stamp \
     --out /path/to/your_project/components/executorch
 ```
 
+Run it from a Python environment with ExecuTorch installed from this exact
+commit (reinstall after committing or pulling), or for a release or respin
+stamp, that release's package: the generator exports the component's
+example model with it, and a development build without that package
+leaves the example out. `--allow-dev-stamp` versions the component
+`X.Y.Z-dev.<commit date in UTC>`; without it the generator stamps a release
+version and requires the checkout to be at that release's tag (see the
+script's header for respin and RC stamps).
+
 The output is a registry-shaped component (`idf_component.yml`,
-`CMakeLists.txt`, `Kconfig`, `VERSION`) containing the runtime, the
+`CMakeLists.txt`, `Kconfig`, `VERSION`, `sbom*.yml`,
+`THIRD_PARTY_LICENSES/`) containing the runtime, the
 portable, quantized, Cadence generic and `esp_nn::` kernel libraries,
 the ESP-NN delegate, the shared
 ESP-IDF PAL from `platform/esp_pal.cpp` (ESP_LOG + `esp_timer` timing),
-and a C inference API (`et_model.h`, flash-XIP model bytes with
-internal/PSRAM arena placement). Only the kernels a project's models
-use are registered: the component's `tools/gen_kernels.py` makes a
+a C inference API (`et_model.h`, flash-XIP model bytes with
+internal/PSRAM arena placement), and `examples/hello_executorch`, a
+complete project that runs a small model. Only the kernels a
+project's models use are registered: the component's `tools/gen_kernels.py` makes a
 kernel bundle from the project's `.pte` files, and the project declares
 both with `executorch_add_model` and `executorch_add_kernels` (see the
 component's `README.md`). Application pipelines built on the runtime
