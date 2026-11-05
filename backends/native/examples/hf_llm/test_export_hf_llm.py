@@ -26,7 +26,10 @@ from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     golden_samples,
     LastTokenLM,
     load_gguf,
+    OffGraphLastTokenLM,
 )
+from executorch.extension.llm.cache.hf_attention import register_offgraph_attention
+from executorch.extension.llm.cache.update_and_attend import REGISTRY
 from transformers import (
     AutoModelForCausalLM,
     Gemma2Config,
@@ -269,6 +272,53 @@ class ExportHfLlmTest(unittest.TestCase):
                 self.assertTrue(torch.equal(call.outputs[0], previous))
         self.assertFalse(any(layer.keys.any() for layer in wrapper.cache.layers))
 
+    def test_offgraph_cache_matches_the_static_cache(self) -> None:
+        torch.manual_seed(7)
+        model = _tiny()
+        register_offgraph_attention("offgraph")
+        offgraph_model = copy.deepcopy(model)
+        offgraph_model.config._attn_implementation = "offgraph"
+        ref = LastTokenLM(model, 32).eval()
+        offgraph = OffGraphLastTokenLM(offgraph_model, 32).eval()
+        prompts = [[3, 4, 5, 6, 7, 8], [9, 10]]
+
+        samples = golden_samples(offgraph, prompts, 2)
+        want = golden_samples(ref, prompts, 2)
+
+        for got, expected in zip(samples.samples, want.samples, strict=True):
+            for call, ref_call in zip(got.calls, expected.calls, strict=True):
+                self.assertTrue(torch.equal(call.inputs[0], ref_call.inputs[0]))
+                self.assertTrue(
+                    torch.allclose(
+                        call.outputs[0], ref_call.outputs[0], atol=1e-5, rtol=1e-5
+                    )
+                )
+        seq = torch.export.Dim("seq", min=1, max=31)
+        ids = torch.tensor([[3, 4, 5]])
+        with torch.no_grad():
+            ep = torch.export.export(
+                offgraph,
+                (ids, torch.arange(3)),
+                dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
+                strict=True,
+            )
+        ops = _ops_except_casts(ep)
+        self.assertEqual(ops["kvcache.update_and_attend.default"], 2)
+        self.assertNotIn("aten.index_copy_.default", ops)
+        self.assertFalse(ep.graph_signature.buffers_to_mutate)
+
+    def test_offgraph_cache_excludes_in_graph_cache_flags(self) -> None:
+        for flags in (
+            ["--max_context_length", "64"],
+            ["--kv_cache_dtype", "fp16"],
+        ):
+            argv = ["export_hf_llm", "--model", "unused", "--offgraph_cache", *flags]
+            with self.subTest(flags=flags), mock.patch.object(sys, "argv", argv):
+                with mock.patch.object(export_hf_llm, "_load") as load:
+                    with self.assertRaises(SystemExit):
+                        export_hf_llm.main()
+                load.assert_not_called()
+
     def test_samples_flag_needs_a_count_in_range_and_an_output(self) -> None:
         for flags in (
             ["--samples", str(len(_PROMPTS) + 1), "--output", "m.ptn"],
@@ -319,3 +369,13 @@ class ExportHfLlmTest(unittest.TestCase):
     def test_fp16_kv_cache_rejects_sliding_window_layers(self) -> None:
         with self.assertRaisesRegex(ValueError, "cannot change the KV dtype"):
             LastTokenLM(_tiny("gemma3"), 32, torch.float16)
+
+    def test_offgraph_cache_rejects_sliding_window_layers(self) -> None:
+        with self.assertRaisesRegex(ValueError, "sliding-window"):
+            OffGraphLastTokenLM(_tiny("gemma3"), 32)
+
+    def test_offgraph_cache_scope_uninstalls_its_reference_cache(self) -> None:
+        wrapper = OffGraphLastTokenLM(_tiny(), 32)
+        with wrapper.cache_scope():
+            self.assertIn(wrapper._key, REGISTRY._caches)
+        self.assertNotIn(wrapper._key, REGISTRY._caches)
