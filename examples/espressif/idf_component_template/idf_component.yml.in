@@ -12,3 +12,4 @@ url: https://github.com/pytorch/executorch
 license: BSD-3-Clause
 dependencies:
   idf: ">=6.0"
+  espressif/esp-nn: "^1.4"

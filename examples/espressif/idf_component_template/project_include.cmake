@@ -10,6 +10,7 @@
 #
 # executorch_add_model(PTE <path.pte> [PTE ...])  # models this firmware runs
 # executorch_add_kernels(DIR <bundle-dir>)        # from tools/gen_kernels.py
+# executorch_add_backend(<BackendId>)             # force-link a delegate
 #
 # Calls are unioned across the project; a project has one kernel bundle. With
 # models but no bundle, the build makes one if EXECUTORCH_PYTHON (-D or the
@@ -48,6 +49,25 @@ function(executorch_add_kernels)
   idf_build_set_property(EXECUTORCH_KERNELS_DIR "${_dir}")
 endfunction()
 
+function(executorch_add_backend backend)
+  idf_build_set_property(EXECUTORCH_BACKENDS "${backend}" APPEND)
+endfunction()
+
+# Links the delegates named in ARGN into the component <lib>.
+function(__executorch_link_backends lib)
+  foreach(_backend IN LISTS ARGN)
+    if(_backend STREQUAL "EspNNBackend")
+      target_link_libraries(${lib} PRIVATE ${lib}_espnn)
+      target_link_libraries(${lib} INTERFACE "-Wl,-u,et_anchor_backend_espnn")
+    else()
+      message(
+        FATAL_ERROR
+          "ExecuTorch: delegate ${_backend} is not provided by this component"
+      )
+    endif()
+  endforeach()
+endfunction()
+
 # Deferred by the component to the end of the project's CMakeLists.txt, after
 # every executorch_add_* call. Checks the bundle against the declared models and
 # this component, then compiles its registration into the component.
@@ -59,14 +79,40 @@ function(__executorch_finalize)
   get_property(_options GLOBAL PROPERTY EXECUTORCH_SOURCE_OPTIONS)
   idf_build_get_property(_models EXECUTORCH_MODELS)
   idf_build_get_property(_bundle EXECUTORCH_KERNELS_DIR)
+  idf_build_get_property(_backends EXECUTORCH_BACKENDS)
 
-  if(NOT _models AND NOT _bundle)
+  if(NOT _models
+     AND NOT _bundle
+     AND NOT _backends
+  )
     message(
       STATUS
         "ExecuTorch: no models or kernel bundle; nothing registered, and an "
         "app that calls et_model fails to link with an undefined "
         "et_requires_executorch_add_kernels"
     )
+    return()
+  endif()
+
+  # et_model_create references this, so a project that runs models without
+  # declaring them fails to link instead of failing every load.
+  set(_out "${CMAKE_BINARY_DIR}/executorch")
+  file(CONFIGURE OUTPUT "${_out}/declared.cpp" CONTENT
+       "extern \"C\" const char et_requires_executorch_add_kernels = 0;\n"
+  )
+  target_sources(${_lib} PRIVATE "${_out}/declared.cpp")
+
+  if(NOT _models AND NOT _bundle)
+    list(REMOVE_DUPLICATES _backends)
+    __executorch_link_backends(${_lib} ${_backends})
+    if(CONFIG_ET_MAX_KERNEL_NUM)
+      set(_registry ${CONFIG_ET_MAX_KERNEL_NUM})
+    else()
+      # Nothing registers kernels or prim ops, so the registry needs no room.
+      set(_registry 1)
+    endif()
+    target_compile_definitions(${_lib} PRIVATE MAX_KERNEL_NUM=${_registry})
+    message(STATUS "ExecuTorch: no kernel bundle; linking ${_backends}")
     return()
   endif()
 
@@ -299,14 +345,11 @@ function(__executorch_finalize)
       list(APPEND _backends ${_backend})
     endforeach()
   endif()
-  foreach(_backend IN LISTS _backends)
-    message(
-      FATAL_ERROR
-        "ExecuTorch: delegate ${_backend} is not provided by this component"
-    )
-  endforeach()
+  if(_backends)
+    list(REMOVE_DUPLICATES _backends)
+    __executorch_link_backends(${_lib} ${_backends})
+  endif()
 
-  set(_out "${CMAKE_BINARY_DIR}/executorch")
   set(_sources "")
   set(_anchors et_anchor_prim_ops)
   set(_summary "")
@@ -347,7 +390,7 @@ function(__executorch_finalize)
     OUTPUT
     "${_out}/register_prim_ops.cpp"
     CONTENT
-    "#include \"${_dir}/${_prim_src}\"\nextern \"C\" const char et_anchor_prim_ops = 0;\nextern \"C\" const char et_requires_executorch_add_kernels = 0;\n"
+    "#include \"${_dir}/${_prim_src}\"\nextern \"C\" const char et_anchor_prim_ops = 0;\n"
   )
   set_source_files_properties(
     "${_out}/register_prim_ops.cpp" TARGET_DIRECTORY ${_lib}
@@ -363,7 +406,11 @@ function(__executorch_finalize)
   )
 
   target_sources(${_lib} PRIVATE ${_sources})
-  target_link_libraries(${_lib} PRIVATE ${_lib}_kernels)
+  # Prim op registration uses et_view and et_copy_index from the kernels.
+  string(JSON _n_prims ERROR_VARIABLE _error LENGTH "${_json}" prim_ops)
+  if(_n_libraries GREATER 0 OR _n_prims GREATER 0)
+    target_link_libraries(${_lib} PRIVATE ${_lib}_kernels)
+  endif()
   set(_kernel_num_h
       "${_bundle}/include/executorch/runtime/kernel/selected_max_kernel_num.h"
   )
@@ -405,6 +452,9 @@ function(__executorch_finalize)
              ${_models}
   )
   list(JOIN _summary ", " _summary)
+  if(NOT _summary)
+    set(_summary "no kernel libraries")
+  endif()
   message(
     STATUS
       "ExecuTorch: kernel bundle ${_bundle}: ${_summary}; ${_registry} registry slots"

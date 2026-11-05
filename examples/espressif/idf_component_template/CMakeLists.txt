@@ -28,21 +28,41 @@ idf_component_register(
   esp_timer
   log
   heap
+  freertos
+  esp-nn
 )
 
-# A plain static library, so the link pulls in only the kernels that the
-# bundle's registration references. __executorch_finalize links it only when
-# there is a bundle, so other projects never build it.
+# Plain static libraries, so the link pulls in only the kernels that the
+# bundle's registration references, and the ESP-NN delegate only when a model
+# uses it. __executorch_finalize links each only when it is needed, so other
+# projects never build them. A project may provide esp-nn as its own
+# components/esp-nn instead of the managed espressif__esp-nn.
+idf_build_get_property(_build_components BUILD_COMPONENTS)
+if("espressif__esp-nn" IN_LIST _build_components)
+  idf_component_get_property(_espnn_lib espressif__esp-nn COMPONENT_LIB)
+else()
+  idf_component_get_property(_espnn_lib esp-nn COMPONENT_LIB)
+endif()
 set(_et_kernels ${COMPONENT_LIB}_kernels)
+set(_et_espnn ${COMPONENT_LIB}_espnn)
 add_library(${_et_kernels} STATIC EXCLUDE_FROM_ALL ${ET_KERNEL_SRCS})
-target_link_libraries(${_et_kernels} PRIVATE ${COMPONENT_LIB})
+add_library(
+  ${_et_espnn} STATIC EXCLUDE_FROM_ALL ${ET_ESPNN_SRCS} "src/espnn_anchor.cpp"
+)
+foreach(_lib ${_et_kernels} ${_et_espnn})
+  target_link_libraries(${_lib} PRIVATE ${COMPONENT_LIB} ${_espnn_lib})
+endforeach()
+target_link_libraries(
+  ${_et_espnn} PRIVATE idf::esp_timer idf::heap idf::freertos
+)
+target_include_directories(${_et_espnn} PRIVATE priv_include)
 
 # Vendored ExecuTorch sources use ExecuTorch's own deprecated aliases, and
 # selective registration leaves some of their helpers unused.
 set(_et_source_options "-Wno-deprecated-declarations;-Wno-unused-function")
 set_source_files_properties(
-  ${ET_CORE_SRCS} ${ET_KERNEL_SRCS} PROPERTIES COMPILE_OPTIONS
-                                               "${_et_source_options}"
+  ${ET_CORE_SRCS} ${ET_KERNEL_SRCS} ${ET_ESPNN_SRCS}
+  PROPERTIES COMPILE_OPTIONS "${_et_source_options}"
 )
 
 set_property(GLOBAL PROPERTY EXECUTORCH_COMPONENT_LIB ${COMPONENT_LIB})
@@ -71,7 +91,7 @@ target_compile_definitions(
   PRIVATE FLATBUFFERS_MAX_ALIGNMENT=1024
           ET_ENABLE_PROGRAM_VERIFICATION=${_et_program_verification}
 )
-foreach(_target ${COMPONENT_LIB} ${_et_kernels})
+foreach(_target ${COMPONENT_LIB} ${_et_kernels} ${_et_espnn})
   if(NOT CONFIG_ET_DEBUG_ASSERTS)
     target_compile_definitions(${_target} PRIVATE NDEBUG)
   endif()

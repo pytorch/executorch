@@ -21,7 +21,8 @@ component from sources in this repository:
 
 The output is a registry-shaped component (`idf_component.yml`,
 `CMakeLists.txt`, `Kconfig`, `VERSION`) containing the runtime, the
-portable, quantized and Cadence generic kernel libraries, the shared
+portable, quantized, Cadence generic and `esp_nn::` kernel libraries,
+the ESP-NN delegate, the shared
 ESP-IDF PAL from `platform/esp_pal.cpp` (ESP_LOG + `esp_timer` timing),
 and a C inference API (`et_model.h`, flash-XIP model bytes with
 internal/PSRAM arena placement). Only the kernels a project's models
