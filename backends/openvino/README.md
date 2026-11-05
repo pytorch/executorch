@@ -20,7 +20,7 @@ On Linux and Windows, the OpenVINO backend is included in the ExecuTorch pip whe
 pip install executorch[openvino]
 ```
 
-For now the extra installs no runtime on Python 3.15, or on Linux aarch64 with Python 3.14. OpenVINO publishes no build for Python 3.15, and its aarch64 builds for Python 3.14 need glibc 2.35 or newer.
+For now the extra installs no runtime on Python 3.15, where OpenVINO publishes no build. On Linux aarch64, OpenVINO needs glibc 2.35 or newer, as on Ubuntu 22.04 or Raspberry Pi OS Bookworm and later. On an older aarch64 system, `pip install executorch[openvino]` does not fail: pip finds no OpenVINO 2025.4 or newer for that system, so it installs an older ExecuTorch release instead. On such a system, install `executorch` without the extra, then build OpenVINO from source as described below.
 
 The backend automatically discovers the OpenVINO C library from the pip-installed package, so no library search path setup is needed.
 
@@ -139,7 +139,7 @@ executorch
 
 ### Prerequisites
 
-Before you begin, ensure you have openvino installed and configured on your system.
+Before you begin, ensure you have OpenVINO 2025.4 or newer installed and configured on your system.
 
 ### Use OpenVINO from Release Packages
 
@@ -157,7 +157,7 @@ Before you begin, ensure you have openvino installed and configured on your syst
 
 ```bash
 git clone https://github.com/openvinotoolkit/openvino.git
-cd openvino
+cd openvino && git checkout releases/2026/4
 git submodule update --init --recursive
 sudo ./install_build_dependencies.sh
 mkdir build && cd build
