@@ -210,6 +210,10 @@ Tensor& div_out_mode(
     Tensor& out) {
   ET_DCHECK_MSG(!tensor_has_zero(b), "divisor tensor contains zero");
 
+  if (!mode.has_value()) {
+    return div_out(ctx, a, b, out);
+  }
+
   ET_KERNEL_CHECK(
       ctx,
       torch::executor::resize_to_broadcast_target_size(a, b, out) == Error::Ok,

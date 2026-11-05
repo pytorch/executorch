@@ -90,10 +90,10 @@ void calculate_kernel_output_sizes(
  * observed. Therefore reduce_fn should follow the signature:
  *
  * ```
- * std::tuple<T, int64_t> reduce_fn(
- *    const T in_val,
+ * std::tuple<ACC, int64_t> reduce_fn(
+ *    const CTYPE in_val,
  *    const int64_t in_idx,
- *    T accum,
+ *    ACC accum,
  *    int64_t accum_idx);
  * ```
  *
@@ -102,8 +102,11 @@ void calculate_kernel_output_sizes(
  * should follow the signature:
  *
  * ```
- * T map_fn(const int64_t count, const T accum);
+ * CTYPE map_fn(const int64_t count, const ACC accum);
  * ```
+ *
+ * ACC defaults to CTYPE. A wider ACC lets reduced precision types accumulate
+ * in a wider type.
  *
  * The index is a linear index with respect to the 2D plane formed by
  * the height and width axes. So for a tensor of size (N, C, H, W), an element
@@ -137,7 +140,11 @@ void calculate_kernel_output_sizes(
  * @param[in] batch The batch index of the output locations being computed.
  * @param[in] out_c The channels index of the output locations being computed.
  */
-template <typename CTYPE, typename ReduceOp, typename MapOp>
+template <
+    typename CTYPE,
+    typename ACC = CTYPE,
+    typename ReduceOp,
+    typename MapOp>
 void kernel_reduction_then_map_2d(
     const ReduceOp& reduce_fn,
     const MapOp& map_fn,
@@ -189,7 +196,7 @@ void kernel_reduction_then_map_2d(
       out_coord[in_dim - 1] = out_x;
 
       bool accum_initialized = false;
-      CTYPE accum = 0;
+      ACC accum = 0;
       int64_t accum_idx = 0;
       int64_t count = 0;
 
@@ -254,7 +261,7 @@ void kernel_reduction_then_map_2d(
               accum_idx = idx;
               accum_initialized = true;
             } else {
-              std::tuple<CTYPE, int64_t> ret =
+              std::tuple<ACC, int64_t> ret =
                   reduce_fn(in_val, idx, accum, accum_idx);
               accum = std::get<0>(ret);
               accum_idx = std::get<1>(ret);
@@ -281,25 +288,25 @@ void kernel_reduction_then_map_2d(
  * before writing to out. Optionally, the second accumulator value will be
  * written to indices, if provided.
  *
+ * ACC defaults to CTYPE. A wider ACC lets reduced precision types accumulate
+ * in a wider type.
+ *
  * reduce_fn should have the following
  * signature:
  *
  * ```
- * std::tuple<T, int64_t> reduce_fn(
- *    const T in_val,
+ * std::tuple<ACC, int64_t> reduce_fn(
+ *    const CTYPE in_val,
  *    const int64_t in_idx,
- *    const T accum,
+ *    const ACC accum,
  *    const int64_t accum_idx);
  * ```
  *
  * map_fn should have the following signature:
  *
  * ```
- * T map_fn(const int64_t count, const T accum);
+ * CTYPE map_fn(const int64_t count, const ACC accum);
  * ```
- *
- * TODO(ssjia) Allow this to handle 1-D kernels as well by unsqueezing
- * appropriately.
  *
  * @param[in] reduce_fn The reduction function used to update accumulator
  * values.
@@ -318,7 +325,11 @@ void kernel_reduction_then_map_2d(
  * @param[in] out The output tensor.
  * @param[in] indices An optional indices output tensor to write out to.
  */
-template <typename CTYPE, typename ReduceOp, typename MapOp>
+template <
+    typename CTYPE,
+    typename ACC = CTYPE,
+    typename ReduceOp,
+    typename MapOp>
 void apply_kernel_2d_reduce_then_map_fn(
     const ReduceOp& reduce_fn,
     const MapOp& map_fn,
@@ -361,7 +372,7 @@ void apply_kernel_2d_reduce_then_map_fn(
   }
   for (const auto batch : c10::irange(batch_size)) {
     for (const auto channel : c10::irange(in_sizes[in.dim() - 3])) {
-      kernel_reduction_then_map_2d(
+      kernel_reduction_then_map_2d<CTYPE, ACC>(
           reduce_fn,
           map_fn,
           include_pad,
@@ -382,6 +393,72 @@ void apply_kernel_2d_reduce_then_map_fn(
   }
 }
 
+/**
+ * 1-D counterpart of apply_kernel_2d_reduce_then_map_fn for contiguous inputs
+ * of shape (C, L) or (N, C, L). Values are accumulated in ACC so that reduced
+ * precision types can accumulate in a wider type.
+ *
+ * reduce_fn should have the following signature:
+ *
+ * ```
+ * ACC reduce_fn(const CTYPE in_val, const ACC accum);
+ * ```
+ *
+ * map_fn should have the following signature:
+ *
+ * ```
+ * CTYPE map_fn(const int64_t count, const ACC accum);
+ * ```
+ *
+ * @param[in] reduce_fn The reduction function used to update the accumulator
+ * value.
+ * @param[in] map_fn The map function used to post-process the accumulated
+ * value before writing to out.
+ * @param[in] include_pad Indicates if padded elements should be included in
+ * the count passed to map_fn.
+ * @param[in] in The input tensor.
+ * @param[in] kernel_size 1D array describing the length of the kernel region.
+ * @param[in] stride 1D array describing how the kernel region "traverses" over
+ * the input tensor. Defaults to kernel_size when empty.
+ * @param[in] padding 1D array describing padding to apply to the input tensor.
+ * @param[in] out The output tensor.
+ */
+template <typename CTYPE, typename ACC, typename ReduceOp, typename MapOp>
+void apply_kernel_1d_reduce_then_map_fn(
+    const ReduceOp& reduce_fn,
+    const MapOp& map_fn,
+    const bool include_pad,
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    Tensor& out) {
+  const int64_t kernel = kernel_size[0];
+  const int64_t step = val_at(stride, 0, /*default_value=*/kernel);
+  const int64_t pad = padding[0];
+  const int64_t in_len = in.size(in.dim() - 1);
+  const int64_t out_len = out.size(out.dim() - 1);
+
+  const CTYPE* const in_ptr = in.const_data_ptr<CTYPE>();
+  CTYPE* const out_ptr = out.mutable_data_ptr<CTYPE>();
+
+  for (const auto row : c10::irange(in.numel() / in_len)) {
+    const CTYPE* const in_row = in_ptr + row * in_len;
+    CTYPE* const out_row = out_ptr + row * out_len;
+    for (const auto o : c10::irange(out_len)) {
+      const int64_t start = o * step - pad;
+      const int64_t end = std::min(start + kernel, in_len + pad);
+      const int64_t begin = std::max<int64_t>(start, 0);
+      const int64_t stop = std::min(end, in_len);
+      ACC accum = 0;
+      for (const auto i : c10::irange(begin, stop)) {
+        accum = reduce_fn(in_row[i], accum);
+      }
+      out_row[o] = map_fn(include_pad ? end - start : stop - begin, accum);
+    }
+  }
+}
+
 //
 // Operator specific utility functions
 //
@@ -398,6 +475,23 @@ void get_adaptive_avg_pool2d_out_target_size(
     size_t* const out_ndim);
 
 bool check_arange_args(double start, double end, double step, Tensor& out);
+
+bool check_avg_pool1d_args(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    const Tensor& out);
+
+void get_avg_pool1d_out_target_size(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    executorch::aten::SizesType* const out_sizes,
+    size_t* const out_ndim);
 
 bool check_avg_pool2d_args(
     const Tensor& in,

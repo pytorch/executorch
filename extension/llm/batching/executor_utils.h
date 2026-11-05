@@ -108,14 +108,15 @@ ET_EXPERIMENTAL std::optional<SessionId> publish_sequence(
 
 // The caller owns both the module and the installed cache. The option storage
 // stays live throughout load_method(), where backend initialization resolves
-// it.
-template <class ModuleLike>
+// it. `options` carries any further backend options and must have room for the
+// cache key.
+template <class ModuleLike, size_t N = 1>
 ET_EXPERIMENTAL runtime::Error load_method_with_cache(
     ModuleLike& module,
     const std::string& method,
     const char* backend,
-    const cache::InstallGuard& install_guard) {
-  runtime::BackendOptions<1> options;
+    const cache::InstallGuard& install_guard,
+    runtime::BackendOptions<N> options = {}) {
   const auto option_error = install_guard.set_option(options);
   if (option_error != runtime::Error::Ok) {
     return option_error;
