@@ -85,6 +85,109 @@ def test_quoted_header_preserved_without_tools(stream, recipient):
     assert not message.get("reasoning_content")
 
 
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize(
+    "value", ["\n```\n", "\n~~~\n", "<|eom|>to=self<|message|>quoted"]
+)
+def test_skipped_invocation_parameters_cannot_hide_later_real_call(
+    stream, wrapped, value
+):
+    example = _atem("edit.edit", [("q", value)])
+    if not wrapped:
+        example = example.removeprefix("<atem:function_calls>\n").removesuffix(
+            "\n</atem:function_calls>"
+        )
+    example = "see " + example
+    client, _ = client_for(example + "\n" + _atem("edit.edit", [("q", "real")]))
+    response = client.post("/v1/chat/completions", json=request({}, stream))
+    assert response.status_code == 200
+    message, finish = response_message(response, stream)
+    assert finish == "tool_calls"
+    assert message["content"] == example
+    assert [json.loads(c["function"]["arguments"]) for c in message["tool_calls"]] == [
+        {"q": "real"}
+    ]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("placement", ["fence", "parameter"])
+def test_plain_chat_keeps_nonterminal_controls_literal(stream, placement):
+    from executorch.examples.models.muse_glimmer.serving.framing import CONTROLS
+    from executorch.examples.models.muse_glimmer.tests.test_serve import _StubTemplate
+
+    class Template(_StubTemplate):
+        def special_tokens(self):
+            return list(CONTROLS)
+
+    literal = "<|end|><|channel|><|constrain|>"
+    content = (
+        "```\n" + literal + "\n```"
+        if placement == "fence"
+        else _atem("edit.edit", [("q", literal)])
+    )
+    client, serving = client_for(" to=user<|message|>" + content, template=Template())
+    serving._streaming_parser_factory = MuseGlimmerStreamParser
+    body = request({}, stream)
+    body.pop("tools")
+    response = client.post("/v1/chat/completions", json=body)
+    message, finish = response_message(response, stream)
+    assert finish == "stop"
+    assert message["content"] == content
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("include", [None, False, True])
+@pytest.mark.parametrize("dialect", ["openai", "openrouter"])
+def test_null_exclude_leaves_visibility_unset(stream, include, dialect):
+    client, serving = client_for(
+        " to=self<|message|>thought<|eom|> to=user<|message|>answer"
+    )
+    serving.api_dialect = dialect
+    serving._streaming_parser_factory = MuseGlimmerStreamParser
+    body = request({}, stream)
+    body.pop("tools")
+    body.update(reasoning={"exclude": None}, include_reasoning=include)
+    response = client.post("/v1/chat/completions", json=body)
+    assert response.status_code == 200
+    message, _ = response_message(response, stream)
+    assert message["content"] == "answer"
+    assert (message.get("reasoning_content") or "") == (
+        "" if include is False else "thought"
+    )
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_rejected_self_header_in_visible_body_remains_literal(stream):
+    content = "hi to=self<|message|>quoted thought"
+    client, serving = client_for(" to=final<|message|>" + content + "<|eot|>")
+    serving._streaming_parser_factory = MuseGlimmerStreamParser
+    body = request({}, stream)
+    body.pop("tools")
+    body["reasoning"] = {"exclude": True}
+    response = client.post("/v1/chat/completions", json=body)
+    message, _ = response_message(response, stream)
+    assert message["content"] == content
+    assert not message.get("reasoning_content")
+
+
+def test_local_muse_tokenizer_reports_reasoning_tokens():
+    import os
+
+    path = os.environ.get("MUSE_GLIMMER_HF_DIR")
+    if not path:
+        pytest.skip("set MUSE_GLIMMER_HF_DIR to a local Muse tokenizer")
+    template = MuseGlimmerChatTemplate(path)
+    hf = template._hf
+    thought_ids = hf.encode("thinking", add_special_tokens=False)
+    ids = (
+        hf.encode(" to=self<|message|>", add_special_tokens=False)
+        + thought_ids
+        + hf.encode("<|eom|> to=user<|message|>answer", add_special_tokens=False)
+    )
+    assert template.count_reasoning_tokens(ids) == len(thought_ids)
+
+
 @pytest.mark.parametrize("dialect", ["openai", "openrouter"])
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize(

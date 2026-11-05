@@ -20,7 +20,7 @@ from executorch.examples.llm_server.python.tool_parsers.types import (
     ToolCallItem,
 )
 
-from ..framing import FenceTracker, recipient_headers, wire_tool_name
+from ..framing import _masked_text, FenceTracker, recipient_headers, wire_tool_name
 from .schema import ToolOutputBudget, ToolOutputError, ToolSchema
 
 _FUNCTION_CALLS_OPEN = "<atem:function_calls>"
@@ -127,7 +127,8 @@ class _Syntax:
 
 def _tool_blocks(text, syntax=None):
     syntax = syntax if syntax is not None else _Syntax(text)
-    headers = iter(recipient_headers(text, syntax.parameters))
+    visible = _masked_text(text, syntax.parameters)
+    headers = iter(recipient_headers(visible))
     following = next(headers, None)
     header = None
     offset = scanned = 0
@@ -137,7 +138,7 @@ def _tool_blocks(text, syntax=None):
     for start in syntax.markers:
         if start < max(offset, excluded_until):
             continue
-        prefix = text[scanned:start]
+        prefix = visible[scanned:start]
         line_text = (line_text if "\n" not in prefix else False) or bool(
             prefix.rsplit("\n", 1)[-1].strip()
         )
@@ -148,19 +149,20 @@ def _tool_blocks(text, syntax=None):
             prefix_start = header.end()
             following = next(headers, None)
             fences = FenceTracker()
-        header_text |= bool(text[prefix_start:start].strip())
-        for terminator in re.finditer(r"<\|eo[mt]\|>", text[prefix_start:start]):
+        header_text |= bool(visible[prefix_start:start].strip())
+        for terminator in re.finditer(r"<\|eo[mt]\|>", visible[prefix_start:start]):
             cut = prefix_start + terminator.start()
-            fences.scan(text, max(scanned, prefix_start), cut)
+            fences.scan(visible, max(scanned, prefix_start), cut)
             if not fences.in_fence:
                 header = None
             scanned = prefix_start + terminator.end()
-        fences.scan(text, max(scanned, prefix_start), start)
+        fences.scan(visible, max(scanned, prefix_start), start)
         scanned = start
         if header is not None and header.start() < offset:
             header = None
         adjacent = header is not None and not header_text
-        if (fences.in_fence
+        if (
+            fences.in_fence
             or (header is not None and header.group(1) in ("self", "user"))
             or (not adjacent and line_text)
         ):

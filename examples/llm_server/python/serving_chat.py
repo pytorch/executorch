@@ -721,7 +721,7 @@ class ServingChat:
             visibility.append(template_kwargs["return_reasoning"])
         if req.include_reasoning is not None:
             visibility.append(req.include_reasoning)
-        if req.reasoning is not None and "exclude" in req.reasoning:
+        if req.reasoning is not None and req.reasoning.get("exclude") is not None:
             if type(req.reasoning["exclude"]) is not bool:
                 raise APIError(
                     400,
@@ -831,7 +831,14 @@ class ServingChat:
             (req.n != 1, "n>1"),
             (req.reasoning_effort is not None, "reasoning_effort"),
             (
-                req.reasoning not in (None, {}, {"exclude": False}, {"exclude": True}),
+                req.reasoning
+                not in (
+                    None,
+                    {},
+                    {"exclude": None},
+                    {"exclude": False},
+                    {"exclude": True},
+                ),
                 "reasoning",
             ),
             (bool(req.frequency_penalty), "frequency_penalty"),
@@ -943,7 +950,11 @@ class ServingChat:
             raise ModelNotFound(req.model, self._model_id)
         self._reject_invalid_values(req)
         visible = req.include_reasoning
-        if visible is None and req.reasoning is not None and "exclude" in req.reasoning:
+        if (
+            visible is None
+            and req.reasoning is not None
+            and req.reasoning.get("exclude") is not None
+        ):
             visible = not req.reasoning["exclude"]
         if visible is not None:
             kwargs = dict(req.chat_template_kwargs or {})

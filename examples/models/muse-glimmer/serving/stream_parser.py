@@ -65,6 +65,35 @@ def _header_prefix(text: str, pos: int) -> bool:
     return pos == len(text)
 
 
+class _OpeningTag:
+    """Track an unfinished ATEM name attribute without rescanning its value."""
+
+    def __init__(self):
+        self.phase = "space"
+        self.attribute_pos = 0
+
+    def pending(self, text):
+        for char in text:
+            if self.phase == "space":
+                if not char.isspace():
+                    return False
+                self.phase = "attribute"
+            elif self.phase == "attribute":
+                if self.attribute_pos == 0 and char.isspace():
+                    continue
+                if char != 'name="'[self.attribute_pos]:
+                    return False
+                self.attribute_pos += 1
+                if self.attribute_pos == len('name="'):
+                    self.phase = "value"
+            elif self.phase == "value":
+                if char == '"':
+                    self.phase = "end"
+            elif not char.isspace():
+                return False
+        return True
+
+
 class MuseGlimmerStreamParser:
     """Keep only unresolved framing and boundary whitespace, never prior bodies."""
 
@@ -84,6 +113,7 @@ class MuseGlimmerStreamParser:
         self._wait_for = None
         self._held = []
         self._wait_tail = ""
+        self._opening = None
 
     def _body(self, text: str) -> list[DeltaMessage]:
         # Post-end whitespace is framing only if a header or EOF follows it.
@@ -119,6 +149,9 @@ class MuseGlimmerStreamParser:
         return result
 
     def _ready(self, text):
+        if self._wait_for == "opening":
+            assert self._opening is not None
+            return not self._opening.pending(text)
         tail = self._wait_tail + text
         if self._wait_for == "line":
             self._wait_tail = tail[-8:]
@@ -151,7 +184,8 @@ class MuseGlimmerStreamParser:
             self._held = [self._pending]
             self._pending = ""
             self._wait_tail = ""
-            self._ready(self._held[0])
+            if self._wait_for != "opening":
+                self._ready(self._held[0])
         return result
 
     def finish(self) -> Iterable[DeltaMessage]:
@@ -186,15 +220,22 @@ class MuseGlimmerStreamParser:
                 if not final:
                     self._wait_for = "parameter"
                     return None
-        elif (
-            not final
-            and text.startswith(("<atem:invoke", "<atem:parameter"), pos)
-            and ">" not in text[pos:]
-        ):
+                self._fences.scan(text, pos, opening.end())
+                return len(text)
+        elif not final and self._hold_opening(text, pos):
             return None
         if text.startswith("</atem:invoke>", pos):
             self._in_invocation = False
         return pos
+
+    def _hold_opening(self, text, pos):
+        for marker in ("<atem:invoke", "<atem:parameter"):
+            if text.startswith(marker, pos):
+                self._opening = _OpeningTag()
+                if self._opening.pending(text[pos + len(marker) :]):
+                    self._wait_for = "opening"
+                    return True
+        return False
 
     def _drain(self, *, final: bool) -> list[DeltaMessage]:
         # Retain one source character for the grammar's negative lookbehind.
@@ -210,6 +251,7 @@ class MuseGlimmerStreamParser:
                 break
             if atem > pos:
                 result.extend(self._body(text[body_start:atem]))
+                self._header_allowed = False
                 pos = body_start = atem
                 continue
             header = HEADER_RE.match(text, pos)
@@ -294,7 +336,6 @@ class MuseGlimmerToolReasoningParser:
         cut = self._pending.find(self._marker)
         if cut >= 0:
             result = list(self._parser.feed(self._pending[:cut]))
-            result.extend(self._parser.finish())
             self._finished = True
             self._pending = ""
             return result

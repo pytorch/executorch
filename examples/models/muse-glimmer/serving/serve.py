@@ -60,7 +60,7 @@ _IMAGE_DATA_URL_RE = re.compile(
 
 # Harmony messages may recur within one assistant turn. The framing parser
 # handles their delimiters without interpreting quoted headers inside a body.
-_MUSE_GLIMMER_HEADER_SPECIALS = {"<|start|>", "<|message|>", "<|eom|>"}
+_MUSE_GLIMMER_HEADER_SPECIALS = set(CONTROLS)
 
 
 def _extract_muse_glimmer_reasoning(text: str) -> tuple[str | None, str]:
@@ -284,7 +284,7 @@ class MuseGlimmerServingChat(ServingChat):
                 "unsupported_parameter",
             )
         for key in ("enabled", "exclude"):
-            if key in reasoning and not isinstance(reasoning[key], bool):
+            if reasoning.get(key) is not None and not isinstance(reasoning[key], bool):
                 raise APIError(
                     400,
                     f"reasoning.{key} must be a boolean",

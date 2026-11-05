@@ -185,3 +185,24 @@ def test_shared_exclude_alias_hides_reasoning(make_client, dialect, stream):
     assert response.status_code == 200
     assert "thought" not in response.text
     assert "answer" in response.text
+
+
+@pytest.mark.parametrize("include", [None, False, True])
+@pytest.mark.parametrize("stream", [False, True])
+def test_shared_null_exclude_is_unset(make_client, include, stream):
+    client, _ = make_client(
+        tokens=["thought|answer"],
+        reasoning_extractor=lambda text: tuple(text.split("|")),
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": stream,
+            "reasoning": {"exclude": None},
+            "include_reasoning": include,
+        },
+    )
+    assert response.status_code == 200
+    assert "answer" in response.text
+    assert ("thought" in response.text) == (include is not False)

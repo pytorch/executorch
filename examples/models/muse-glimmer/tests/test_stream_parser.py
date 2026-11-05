@@ -36,6 +36,103 @@ def _check_chunks(trace, expected):
         assert actual == expected, parts
 
 
+@pytest.mark.parametrize("recipient", ["self", "user"])
+@pytest.mark.parametrize(
+    "syntax",
+    [
+        '<atem:invoke name="f">',
+        '<atem:invoke name="f"><atem:parameter name="q">value</atem:parameter>',
+        '<atem:invoke name="f"><atem:parameter name="q"><|eom|>to=self<|message|>literal',
+    ],
+)
+def test_atem_body_text_blocks_channel_switch(recipient, syntax):
+    trace = (
+        f" to={recipient}<|message|>before<|eot|>" + syntax + "to=user<|message|>after"
+    )
+    reasoning, content = _extract_muse_glimmer_reasoning(trace)
+    _check_chunks(trace, (reasoning or "", content))
+
+
+def test_composed_framing_is_independent_of_chunk_boundaries():
+    from itertools import product
+
+    fragments = [
+        "plain text ",
+        "<|eom|>",
+        "\n```xml\nquoted\n```\n",
+        '<atem:invoke name="f">',
+        '<atem:parameter name="q">\n```\n<|eom|>to=user<|message|>quoted</atem:parameter></atem:invoke>',
+        "Use `<atem:parameter` tags. ",
+        "to=user<|message|>visible",
+        "to=self<|message|>thought",
+        "<|end|>",
+    ]
+    for recipient, left, right in product(("self", "user"), fragments, fragments):
+        trace = f" to={recipient}<|message|>before<|eom|>" + left + right + " tail"
+        reasoning, content = _extract_muse_glimmer_reasoning(trace)
+        _check_chunks(trace, (reasoning or "", content))
+
+
+@pytest.mark.parametrize("marker", ["<atem:invoke", "<atem:parameter"])
+def test_bare_atem_mentions_do_not_hold_subsequent_prose(marker):
+    parser = MuseGlimmerStreamParser()
+    text = "Use `" + marker + "` tags to explain the format."
+    deltas = [delta for char in text for delta in parser.feed(char)]
+    assert "".join(d.content or "" for d in deltas) == text
+    assert list(parser.finish()) == []
+
+
+def test_long_valid_tag_names_and_unclosed_parameters_have_linear_holds():
+    import subprocess
+    import sys
+
+    code = """
+from executorch.examples.models.muse_glimmer.serving.stream_parser import MuseGlimmerStreamParser
+for trace in [
+    '<atem:invoke name="' + 'a' * 64000 + '">done',
+    '<atem:invoke name="f"><atem:parameter name="q">' + 'x' * 64000,
+    'Use `<atem:parameter` tags. ' + 'x' * 64000,
+]:
+    parser = MuseGlimmerStreamParser()
+    deltas = [d for char in trace for d in parser.feed(char)] + list(parser.finish())
+    assert ''.join(d.content or '' for d in deltas) == trace
+"""
+    subprocess.run([sys.executable, "-c", code], check=True, timeout=10)
+
+
+def test_tool_reasoning_is_a_safe_prefix_without_assuming_eof_at_atem():
+    from itertools import product
+
+    from executorch.examples.models.muse_glimmer.serving.stream_parser import (
+        MuseGlimmerToolReasoningParser,
+    )
+
+    for prefix, suffix in product(
+        ["Think. ", "\n```", " to=", "\n~~~", "<|eom|>\n```"],
+        [
+            "quoted`\n to=user<|message|>example",
+            "\n</atem:invoke>",
+            "\n```\n<|eom|> to=user<|message|>answer",
+        ],
+    ):
+        trace = " to=self<|message|>" + prefix + '<atem:invoke name="f">' + suffix
+        reasoning, _ = _extract_muse_glimmer_reasoning(trace)
+        for split in range(len(trace) + 1):
+            parser = MuseGlimmerToolReasoningParser()
+            deltas = (
+                list(parser.feed(trace[:split]))
+                + list(parser.feed(trace[split:]))
+                + list(parser.finish())
+            )
+            emitted = "".join(d.reasoning_content or "" for d in deltas)
+            assert (reasoning or "").startswith(emitted), (
+                trace,
+                split,
+                emitted,
+                reasoning,
+            )
+
+
 def test_batch_equivalence_across_chunk_boundaries():
     traces = [
         " to=self<|message|>  think\nthrough this \t<|eom|>  \n"

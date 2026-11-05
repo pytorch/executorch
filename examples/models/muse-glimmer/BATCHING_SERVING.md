@@ -345,7 +345,10 @@ the terminated message. Fenced examples retain their controls, including end
 markers. An unclosed fence keeps subsequent headers literal; a tool call after
 such a fence is deliberately not executed. Unexpected text between an end marker
 and the next header also keeps the existing recipient, so text after a malformed
-self-to-user transition may remain hidden reasoning. The rule applies to buffered
+self-to-user transition may remain hidden reasoning. Conversely, a rejected
+`to=self` header inside a visible message stays literal visible text, even when
+reasoning is hidden: visibility controls filter accepted reasoning channels,
+not header-like strings quoted in ordinary content. The rule applies to buffered
 and streamed responses.
 An invocation truncated by length or a request stop suppresses the entire
 incomplete call set and ends with `finish_reason=length` or `stop`, respectively;
@@ -353,7 +356,7 @@ malformed completed calls still return
 `invalid_tool_output`. Streaming may already have delivered reasoning before that
 error. Tool calls are emitted only after the whole call set passes validation.
 
-Empty reasoning options and `enabled=true` are no-ops. `effort` accepts low,
+Empty reasoning options, null `exclude`/`enabled`, and `enabled=true` are no-ops. `effort` accepts low,
 medium, or high, and `exclude` controls response visibility. Disabling reasoning
 generation or unsupported reasoning keys returns an explicit parameter error.
 `include_reasoning` is a visibility alias available with both `--api-dialect`
@@ -380,6 +383,11 @@ cannot contain backticks, and closing runs allow only trailing whitespace. A
 Harmony message terminator (`<|eom|>` or `<|eot|>`) can also end a delimiter line.
 Streaming waits for a pending delimiter line to resolve before interpreting its
 headers. ATEM parameter values retain their literal controls and headers even
-when tools are disabled. With `ignore_eos`, reasoning-token details are omitted
+when tools are disabled. Native EOS and explicit request stops still terminate
+generation, including inside examples. Valid unfinished ATEM names and parameter
+values remain buffered until their delimiters arrive or generation ends; their
+accumulated prefixes are not rescanned. Bare tag mentions that cannot match an
+ATEM opening tag are emitted as ordinary text.
+With `ignore_eos`, reasoning-token details are omitted
 because the generated IDs can contain hidden post-EOS text; total completion
 usage still includes all generated tokens.

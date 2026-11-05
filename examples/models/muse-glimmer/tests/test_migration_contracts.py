@@ -34,8 +34,8 @@ from executorch.examples.models.muse_glimmer.tests.test_serve import (  # noqa: 
 from fastapi.testclient import TestClient  # noqa: E402
 
 
-def client_for(raw, split=1):
-    serving, _ = _glimmer_serving([])
+def client_for(raw, split=1, template=None):
+    serving, _ = _glimmer_serving([], template=template)
 
     class ChunkedRuntime(_FakeRuntime):
         async def generate_stream(self, *args, **kwargs):
