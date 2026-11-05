@@ -1172,9 +1172,7 @@ class CoreMLPartitioner(Partitioner):
 
     def _targets_ios18(self) -> bool:
         """Whether the deployment target is iOS 18 or later."""
-        target = CoreMLBackend.min_deployment_target_from_compile_specs(
-            self.delegation_spec.compile_specs
-        )
+        target = self._minimum_deployment_target
         return target is not None and target >= ct.target.iOS18
 
     def _placeholders_kept_inside(

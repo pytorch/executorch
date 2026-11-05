@@ -1033,7 +1033,8 @@ class TestCoreMLPartitioner(unittest.TestCase):
                     passes=[InitializedMutableBufferPass(["state"])]
                 )
                 buffer = edge.to_executorch(config).buffer
-                if _TEST_RUNTIME:
+                # An iOS 18 program needs macOS 15 to run.
+                if IS_VALID_TEST_RUNTIME:
                     method = Runtime.get().load_program(buffer).load_method("forward")
                     eager = model_class().eval()
                     for _ in range(2):
@@ -1296,7 +1297,8 @@ class TestCoreMLPartitioner(unittest.TestCase):
             self.assertIn(name, op_names)
         self.assertIn("executorch_call_delegate", op_names)
         buffer = edge.to_executorch().buffer
-        if _TEST_RUNTIME:
+        # An iOS 18 program needs macOS 15 to run.
+        if IS_VALID_TEST_RUNTIME:
             y = torch.randint(0, 256, (1, 3, 12, 8), dtype=torch.uint8)
             program = Runtime.get().load_program(buffer)
             out = program.load_method("forward").execute((y,))[0]
@@ -1345,7 +1347,10 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 for name in ("aten.relu.default", "aten.add.Tensor", "aten.mul.Tensor"):
                     self.assertNotIn(name, op_names)
                 buffer = edge.to_executorch().buffer
-                if _TEST_RUNTIME:
+                # An iOS 18 program needs macOS 15 to run.
+                if _TEST_RUNTIME and (
+                    target < ct.target.iOS18 or IS_VALID_TEST_RUNTIME
+                ):
                     program = Runtime.get().load_program(buffer)
                     out = program.load_method("forward").execute((x,))[0]
                     self.assertTrue(torch.allclose(out, model(x), atol=1e-2))
