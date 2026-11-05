@@ -83,7 +83,8 @@ bool is_single_token(ComputeGraph* graph, const ValueRef& q_projected) {
 
 // Unified attn_weights resize. In LLM mode the shape is padded to multiples of
 // 4 in the S/context_len dims (to match the tiled shader's iteration space);
-// in fused mode it's the unpadded [B, H, S, L].
+// in fused mode it's [B, H, S, align_up_4(L)], since the shaders address each
+// row in whole texels.
 // resize_args layout: [q, k, input_pos_symint_or_dummy, mode_as_int]
 void resize_sdpa_attn_weights_node(
     ComputeGraph* graph,
@@ -111,7 +112,7 @@ void resize_sdpa_attn_weights_node(
     const int64_t H = graph->size_at<int64_t>(-3, q);
     const int64_t S = graph->size_at<int64_t>(-2, q);
     const int64_t L = graph->size_at<int64_t>(-2, k);
-    out_sizes = {B, H, S, L};
+    out_sizes = {B, H, S, static_cast<int64_t>(utils::align_up_4(L))};
   }
   graph->virtual_resize(attn_weights, out_sizes);
 }
@@ -960,12 +961,31 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const int64_t S = graph.size_at<int64_t>(-2, q);
   const int64_t L = graph.size_at<int64_t>(-2, k);
 
-  std::vector<int64_t> attn_weight_sizes = {B, H, S, L};
+  // The shaders address each attn_weights row in whole texels, so pad L.
+  std::vector<int64_t> attn_weight_sizes = {
+      B, H, S, static_cast<int64_t>(utils::align_up_4(L))};
 
   // attn_weights and attn_weights_softmax follow the output's storage so the
   // entire fused SDPA pipeline uses a uniform storage type. attn_weights stays
   // in fp32 for numerical stability of the Q@K^T accumulation.
   const utils::StorageType attn_storage = graph.storage_type_of(out);
+  // Buffer tensors are unpadded, so their rows must be whole texels too.
+  for (const ValueRef t : {q, k, v, out}) {
+    VK_CHECK_COND(
+        graph.storage_type_of(t) != utils::kBuffer ||
+            graph.size_at<int32_t>(-1, t) % 4 == 0,
+        "fused SDPA requires head dims that are multiples of 4 in buffer "
+        "storage");
+  }
+  if (attn_storage == utils::kBuffer) {
+    // max_buffer_numel() is maxStorageBufferRange, a byte limit.
+    VK_CHECK_COND(
+        B * H * S * attn_weight_sizes.back() *
+                static_cast<int64_t>(sizeof(float)) <=
+            graph.max_buffer_numel(),
+        "fused SDPA attention weights exceed the device's storage buffer "
+        "range");
+  }
 
   TmpTensor attn_weights(
       &graph,
