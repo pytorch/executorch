@@ -911,11 +911,13 @@ class SymbolicShapeSupportCheck(OperatorSupportBase):
             return True
 
         if node.target == exir_ops.edge.aten.convolution.default:
-            return (
-                bool(node.args[6])
-                or bool(get_slices_convolution(node))
-                or has_dynamic_conv_padding(node)
-            )
+            if node.args[6]:
+                groups = node.args[8]
+                return bool(groups != 1)
+            return bool(get_slices_convolution(node)) or has_dynamic_conv_padding(node)
+        if node.target == torch.ops.aten.conv_transpose2d.input:
+            groups = node.args[6]
+            return bool(groups != 1)
         if node.target in (
             exir_ops.edge.aten.avg_pool2d.default,
             exir_ops.edge.aten.max_pool2d.default,
