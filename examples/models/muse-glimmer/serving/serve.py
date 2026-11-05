@@ -16,11 +16,7 @@ import os
 import re
 from pathlib import Path
 
-from executorch.examples.llm_server.python.errors import (
-    APIError,
-    ContextLengthExceeded,
-    ModelNotFound,
-)
+from executorch.examples.llm_server.python.errors import APIError, ContextLengthExceeded
 from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat, ToolContext
@@ -35,8 +31,9 @@ from executorch.examples.models.muse_glimmer.serving.chat_template import (
 )
 from executorch.examples.models.muse_glimmer.serving.framing import (
     ASSISTANT_HEADER as _ASSISTANT_HEADER,
+    body_spans,
     clean_body,
-    END_RE,
+    CONTROLS,
     recipient_bodies,
 )
 from executorch.examples.models.muse_glimmer.serving.tool_parsers import (
@@ -75,10 +72,13 @@ def _extract_muse_glimmer_reasoning(text: str) -> tuple[str | None, str]:
     against the returned text before splicing stored generated token ids, preserving the original
     channel framing for unchanged echoes or omitted/null reasoning.
     """
-    bodies = list(recipient_bodies(text, parameter_value_spans(text)))
+    protected = parameter_value_spans(text)
+    bodies = list(recipient_bodies(text, protected))
     matches = [header for header, _, _ in bodies]
     if not matches:
-        return None, clean_body(END_RE.sub("", text))
+        return None, "".join(
+            text[a:b] for a, b in body_spans(text, protected_spans=protected)
+        )
 
     reasoning: list[str] = []
     visible: list[str] = []
@@ -87,7 +87,7 @@ def _extract_muse_glimmer_reasoning(text: str) -> tuple[str | None, str]:
         visible.append(prefix)
 
     for match, start, end in bodies:
-        body = clean_body(text[start:end])
+        body = "".join(text[a:b] for a, b in body_spans(text, start, end, protected))
         if not body.strip():
             continue
         if match.group(1) == "self":
@@ -206,7 +206,15 @@ class MuseGlimmerServingChat(ServingChat):
     def _visible_content(self, text: str) -> str:
         # The recipient-aware extractor already removed framing. Parsing the
         # resulting bodies again would reinterpret a quoted header at offset 0.
-        return self._strip_specials(text).strip()
+        cut = min(
+            (
+                text.find(token)
+                for token in self._content_specials
+                if token not in CONTROLS and token in text
+            ),
+            default=len(text),
+        )
+        return text[:cut].strip()
 
     @staticmethod
     def _with_image(prompt: PromptInput, image_segment: dict | None) -> PromptInput:
@@ -319,16 +327,6 @@ class MuseGlimmerServingChat(ServingChat):
                     "invalid_value",
                 )
             kwargs["reasoning_strength"] = effort
-        if "exclude" in reasoning:
-            visible = not reasoning["exclude"]
-            if kwargs.get("return_reasoning", visible) != visible:
-                raise APIError(
-                    400,
-                    "Conflicting reasoning visibility controls",
-                    "invalid_request_error",
-                    "invalid_value",
-                )
-            kwargs["return_reasoning"] = visible
         return req.model_copy(
             update={
                 "reasoning": None,
@@ -340,8 +338,6 @@ class MuseGlimmerServingChat(ServingChat):
     async def _create(self, req: ChatCompletionRequest, lease, admission):
         # The inherited create() owns the transaction around preparation and
         # response cleanup; only image-aware prompt construction differs here.
-        if req.model is not None and req.model != self._model_id:
-            raise ModelNotFound(req.model, self._model_id)
         req = self._normalize_reasoning(req)
         self._reject_unsupported_params(req)
         tool_context = ToolContext()

@@ -164,3 +164,24 @@ def test_unknown_model_has_consistent_error_precedence(make_client, include):
     )
     assert response.status_code == 404
     assert worker.captured_config is None
+
+
+@pytest.mark.parametrize("dialect", ["openai", "openrouter"])
+@pytest.mark.parametrize("stream", [False, True])
+def test_shared_exclude_alias_hides_reasoning(make_client, dialect, stream):
+    client, _ = make_client(
+        api_dialect=dialect,
+        tokens=["thought|answer"],
+        reasoning_extractor=lambda text: tuple(text.split("|")),
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": stream,
+            "reasoning": {"exclude": True},
+        },
+    )
+    assert response.status_code == 200
+    assert "thought" not in response.text
+    assert "answer" in response.text

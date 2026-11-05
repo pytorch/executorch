@@ -26,6 +26,8 @@ from .framing import (
     RECIPIENT,
 )
 
+from .tool_parsers.atem import _OPEN_RE, _PARAMETER_END_RE
+
 _IDENT = re.compile(IDENT)
 _RECIPIENT = re.compile(RECIPIENT)
 _BOUNDARY = re.compile(r"(?<![A-Za-z0-9_])")
@@ -78,6 +80,10 @@ class MuseGlimmerStreamParser:
         self._has_header = False
         self._header_allowed = True
         self._fences = FenceTracker()
+        self._in_invocation = False
+        self._wait_for = None
+        self._held = []
+        self._wait_tail = ""
 
     def _body(self, text: str) -> list[DeltaMessage]:
         # Post-end whitespace is framing only if a header or EOF follows it.
@@ -112,12 +118,83 @@ class MuseGlimmerStreamParser:
         self._after_end = self._in_block = False
         return result
 
+    def _ready(self, text):
+        tail = self._wait_tail + text
+        if self._wait_for == "line":
+            self._wait_tail = tail[-8:]
+            return "\n" in tail or re.search(r"<\|eo[mt]\|>", tail) is not None
+        if re.search(r"</atem:parameter>\s*(?=<atem:parameter|</atem:invoke>)", tail):
+            return True
+        marker = "</atem:parameter>"
+        cut = tail.rfind(marker)
+        suffix = tail[cut + len(marker) :].lstrip() if cut >= 0 else None
+        if suffix is not None and any(
+            token.startswith(suffix) for token in ("<atem:parameter", "</atem:invoke>")
+        ):
+            self._wait_tail = marker + suffix
+        else:
+            self._wait_tail = tail[-len(marker) :]
+        return False
+
     def feed(self, text: str) -> Iterable[DeltaMessage]:
-        self._pending += text
-        return self._drain(final=False)
+        if self._wait_for is not None:
+            self._held.append(text)
+            if not self._ready(text):
+                return []
+            self._pending = "".join(self._held)
+            self._held = []
+            self._wait_for = None
+        else:
+            self._pending += text
+        result = self._drain(final=False)
+        if self._wait_for is not None:
+            self._held = [self._pending]
+            self._pending = ""
+            self._wait_tail = ""
+            self._ready(self._held[0])
+        return result
 
     def finish(self) -> Iterable[DeltaMessage]:
+        if self._wait_for is not None:
+            self._pending = "".join(self._held)
+            self._held = []
+            self._wait_for = None
         return self._drain(final=True) + self._close_block()
+
+    def _atem(self, text, pos, final):
+        if text[pos] != "<":
+            return pos
+        for marker in ("<atem:invoke", "<atem:parameter", "</atem:invoke>"):
+            if (
+                not final
+                and len(text) - pos < len(marker)
+                and marker.startswith(text[pos:])
+            ):
+                return None
+        opening = _OPEN_RE.match(text, pos)
+        if opening is not None:
+            if opening.group(1) == "invoke":
+                self._in_invocation = True
+                self._fences.scan(text, pos, opening.end())
+                return opening.end()
+            if self._in_invocation:
+                close = _PARAMETER_END_RE.search(text, opening.end())
+                if close is not None and (final or close.end() < len(text)):
+                    self._fences.scan(text, pos, opening.end())
+                    self._fences.scan(text, close.start(), close.end())
+                    return close.end()
+                if not final:
+                    self._wait_for = "parameter"
+                    return None
+        elif (
+            not final
+            and text.startswith(("<atem:invoke", "<atem:parameter"), pos)
+            and ">" not in text[pos:]
+        ):
+            return None
+        if text.startswith("</atem:invoke>", pos):
+            self._in_invocation = False
+        return pos
 
     def _drain(self, *, final: bool) -> list[DeltaMessage]:
         # Retain one source character for the grammar's negative lookbehind.
@@ -125,12 +202,22 @@ class MuseGlimmerStreamParser:
         pos = body_start = len(self._previous)
         result = []
         while pos < len(text):
+            if self._fences.needs_line(text, pos, final):
+                self._wait_for = "line"
+                break
+            atem = self._atem(text, pos, final)
+            if atem is None:
+                break
+            if atem > pos:
+                result.extend(self._body(text[body_start:atem]))
+                pos = body_start = atem
+                continue
             header = HEADER_RE.match(text, pos)
             if header:
                 if self._fences.in_fence or (
                     self._has_header and not self._header_allowed
                 ):
-                    self._fences.feed(header.group())
+                    self._fences.scan(text, pos, header.end())
                     pos = header.end()
                     continue
                 result.extend(self._body(text[body_start:pos]))
@@ -164,20 +251,11 @@ class MuseGlimmerStreamParser:
                     pos = body_start = len(text)
                     break
             if control:
-                quoted = self._fences.in_fence
-                self._fences.feed(control.group())
-                if quoted:
-                    pos = control.end()
-                    continue
-                result.extend(self._body(text[body_start:pos]))
-                if control.group() in ("<|eom|>", "<|eot|>"):
-                    self._after_end = True
-                    self._header_allowed = True
-                else:
-                    self._header_allowed = False
-                pos = body_start = control.end()
+                body_start, deltas = self._control(text, pos, body_start, control)
+                result.extend(deltas)
+                pos = control.end()
             else:
-                self._fences.feed(text[pos])
+                self._fences.scan(text, pos, pos + 1)
                 if not text[pos].isspace():
                     self._header_allowed = False
                 pos += 1
@@ -185,6 +263,19 @@ class MuseGlimmerStreamParser:
         self._pending = text[pos:]
         self._previous = text[pos - 1 : pos] if pos else ""
         return result
+
+    def _control(self, text, pos, body_start, control):
+        quoted = self._fences.in_fence
+        self._fences.scan(text, pos, control.end())
+        if quoted:
+            return body_start, []
+        result = self._body(text[body_start:pos])
+        if control.group() in ("<|eom|>", "<|eot|>"):
+            self._after_end = True
+            self._header_allowed = True
+        else:
+            self._header_allowed = False
+        return control.end(), result
 
 
 class MuseGlimmerToolReasoningParser:

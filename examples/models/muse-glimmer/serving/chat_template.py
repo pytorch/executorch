@@ -84,10 +84,14 @@ class MuseGlimmerChatTemplate(ChatTemplate):
         text = "".join(parts)
         boundaries[len(text)] = len(token_ids)
         count = 0
-        for header, start, end in recipient_bodies(text, parameter_value_spans(text)):
-            if header.group(1) != "self" or not text[start:end].strip():
+        protected = parameter_value_spans(text)
+        for header, start, end in recipient_bodies(text, protected):
+            spans = list(body_spans(text, start, end, protected))
+            if header.group(1) != "self" or not any(
+                text[a:b].strip() for a, b in spans
+            ):
                 continue
-            for begin, stop in body_spans(text, start, end):
+            for begin, stop in spans:
                 if begin not in boundaries or stop not in boundaries:
                     return None
                 count += boundaries[stop] - boundaries[begin]

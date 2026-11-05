@@ -353,3 +353,105 @@ def test_live_inline_backticks_do_not_hide_following_tool_call(stream):
         {"q": "```"},
         {"q": "second"},
     ]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("recipient", ["user", "edit.edit"])
+def test_line_start_inline_backticks_allow_following_recipient(stream, recipient):
+    answer = "answer" if recipient == "user" else _atem("edit.edit", [("q", "real")])
+    thought = "Use\n```q``` here"
+    raw = (
+        " to=self<|message|>"
+        + thought
+        + f"<|eom|><|start|>assistant to={recipient}<|message|>"
+        + answer
+    )
+    client, _ = client_for(raw)
+    response = client.post("/v1/chat/completions", json=request({}, stream))
+    message, finish = response_message(response, stream)
+    assert message["reasoning_content"] == thought
+    assert finish == ("stop" if recipient == "user" else "tool_calls")
+    if recipient == "user":
+        assert message["content"] == answer
+    else:
+        assert json.loads(message["tool_calls"][0]["function"]["arguments"]) == {
+            "q": "real"
+        }
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("nested", ["```py", "``` \\t extra", "~~~py"])
+def test_fence_with_info_cannot_close_quoted_example(stream, nested):
+    example = (
+        "Example:\n```\nouter\n"
+        + nested
+        + "\n<|eom|><|start|>assistant to=edit.edit<|message|>"
+        + _atem("edit.edit", [("q", "quoted")])
+        + "\n```"
+    )
+    client, _ = client_for(" to=user<|message|>" + example)
+    response = client.post("/v1/chat/completions", json=request({}, stream))
+    message, finish = response_message(response, stream)
+    assert finish == "stop"
+    assert not message.get("tool_calls")
+    assert message["content"] == example
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_real_special_tokens_inside_fenced_tool_turn_stay_literal(stream):
+    from executorch.examples.models.muse_glimmer.serving.framing import CONTROLS
+
+    example = "Example:\n```\nfoo" + "bar".join(CONTROLS) + "tail\n```\nafter"
+    client, serving = client_for(" to=user<|message|>" + example)
+    serving._content_specials = list(CONTROLS)
+    response = client.post("/v1/chat/completions", json=request({}, stream))
+    message, finish = response_message(response, stream)
+    assert finish == "stop"
+    assert message["content"] == example
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ignore_eos_does_not_report_unaligned_reasoning_usage(
+    counting_template, stream
+):
+    raw = " to=self<|message|>before<|eot|>hidden after EOS"
+    ids = counting_template._hf.encode(raw, add_special_tokens=False)
+    client, serving = client_for(raw)
+    serving._runtime.supports_ignore_eos = True
+    serving._native_stops = ["<|eot|>"]
+    serving._reasoning_token_counter = counting_template.count_reasoning_tokens
+    serving._runtime._outputs[0].update(
+        gen_ids=ids, completion_tokens=len(ids), finish_reason="length"
+    )
+    body = request({}, stream)
+    body.pop("tools")
+    body.update(ignore_eos=True, stream_options={"include_usage": True})
+    response = client.post("/v1/chat/completions", json=body)
+    assert response.status_code == 200
+    if stream:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        usage = [c["usage"] for c in chunks if c.get("usage")][-1]
+    else:
+        usage = response.json()["usage"]
+    assert usage["completion_tokens"] == len(ids)
+    assert "completion_tokens_details" not in usage
+
+
+def test_cleaned_empty_reasoning_body_has_zero_tokens(counting_template):
+    counting_template._hf.add_special_tokens(
+        {
+            "additional_special_tokens": counting_template._hf.all_special_tokens
+            + ["<|channel|>"]
+        }
+    )
+    raw = " to=self<|message|> <|channel|> <|eom|>"
+    assert (
+        counting_template.count_reasoning_tokens(
+            counting_template._hf.encode(raw, add_special_tokens=False)
+        )
+        == 0
+    )

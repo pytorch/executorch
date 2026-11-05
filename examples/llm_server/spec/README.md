@@ -444,3 +444,5 @@ Tool-definition changes are rendered into the next full prompt and checked by th
 native prefix comparison. They do not invalidate an unchanged historical assistant
 echo: stored token IDs still describe that past output, while changed prompt
 prefixes require fresh prefill.
+
+`reasoning.exclude` and `include_reasoning` control reasoning visibility in both API dialects. With `ignore_eos`, completion usage still counts every generated token, but reasoning-token details are omitted when the visible span cannot be aligned safely.

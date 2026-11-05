@@ -374,3 +374,12 @@ EOS/length/cancellation. Request stops take precedence over template stops at th
 same position. Older workers that omit the field cannot distinguish EOS from a
 removed request stop; with request stops configured, incomplete blocks are
 conservatively treated as cutoffs. Completed malformed blocks still fail.
+
+Fence delimiters are checked as complete lines: backtick opening info strings
+cannot contain backticks, and closing runs allow only trailing whitespace. A
+Harmony message terminator (`<|eom|>` or `<|eot|>`) can also end a delimiter line.
+Streaming waits for a pending delimiter line to resolve before interpreting its
+headers. ATEM parameter values retain their literal controls and headers even
+when tools are disabled. With `ignore_eos`, reasoning-token details are omitted
+because the generated IDs can contain hidden post-EOS text; total completion
+usage still includes all generated tokens.

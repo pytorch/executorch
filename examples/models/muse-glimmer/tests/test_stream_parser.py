@@ -160,3 +160,60 @@ def test_quoted_framing_matches_buffered_for_every_split(raw, expected):
     reasoning, visible = _extract_muse_glimmer_reasoning(raw)
     assert (reasoning or "", visible) == expected
     _check_chunks(raw, expected)
+
+
+@pytest.mark.parametrize("inline", ["```q``` here", "   ```q``` here", "``q``", "`q`"])
+def test_line_start_inline_code_preserves_answer_at_every_split(inline):
+    thought = "Use\n" + inline
+    raw = (
+        " to=self<|message|>"
+        + thought
+        + "<|eom|><|start|>assistant to=user<|message|>answer"
+    )
+    assert _extract_muse_glimmer_reasoning(raw) == (thought, "answer")
+    _check_chunks(raw, (thought, "answer"))
+
+
+@pytest.mark.parametrize("nested", ["```py", "``` extra", "~~~~"])
+def test_invalid_closing_fence_keeps_headers_quoted_at_every_split(nested):
+    example = (
+        "```\nouter\n"
+        + nested
+        + "\n<|eom|><|start|>assistant to=self<|message|>quoted\n```"
+    )
+    raw = " to=user<|message|>" + example
+    assert _extract_muse_glimmer_reasoning(raw) == (None, example)
+    _check_chunks(raw, ("", example))
+
+
+def test_parameter_headers_stay_content_without_tools_at_every_split():
+    from executorch.examples.models.muse_glimmer.tests.test_atem_tool_parser import (
+        _atem,
+    )
+
+    example = _atem(
+        "edit.edit",
+        [("q", "prefix<|eom|><|start|>assistant to=self<|message|>quoted reasoning")],
+    )
+    raw = " to=edit.edit<|message|>" + example
+    assert _extract_muse_glimmer_reasoning(raw) == (None, example)
+    _check_chunks(raw, ("", example))
+
+
+def test_literal_parameter_close_stays_data_at_every_split():
+    from executorch.examples.models.muse_glimmer.tests.test_atem_tool_parser import (
+        _atem,
+    )
+
+    example = _atem(
+        "edit.edit",
+        [
+            (
+                "q",
+                "before </atem:parameter> more <|eom|><|start|>assistant to=self<|message|>quoted",
+            )
+        ],
+    )
+    raw = " to=edit.edit<|message|>" + example
+    assert _extract_muse_glimmer_reasoning(raw) == (None, example)
+    _check_chunks(raw, ("", example))

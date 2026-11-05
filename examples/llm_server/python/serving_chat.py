@@ -483,9 +483,13 @@ class ServingChat:
             self._visible_content(text) or None,
         )
 
-    def _usage(self, stats: GenStats) -> Usage:
+    def _usage(self, stats: GenStats, *, ignore_eos=False) -> Usage:
         reasoning_tokens = None
-        if self._reasoning_token_counter and stats.generated_token_ids is not None:
+        if (
+            not ignore_eos
+            and self._reasoning_token_counter
+            and stats.generated_token_ids is not None
+        ):
             reasoning_tokens = self._reasoning_token_counter(stats.generated_token_ids)
         return Usage(
             prompt_tokens=stats.prompt_tokens,
@@ -826,7 +830,10 @@ class ServingChat:
             ),
             (req.n != 1, "n>1"),
             (req.reasoning_effort is not None, "reasoning_effort"),
-            (req.reasoning not in (None, {}, {"exclude": False}), "reasoning"),
+            (
+                req.reasoning not in (None, {}, {"exclude": False}, {"exclude": True}),
+                "reasoning",
+            ),
             (bool(req.frequency_penalty), "frequency_penalty"),
             (bool(req.presence_penalty), "presence_penalty"),
             (bool(req.logit_bias), "logit_bias"),
@@ -935,9 +942,12 @@ class ServingChat:
         if req.model is not None and req.model != self._model_id:
             raise ModelNotFound(req.model, self._model_id)
         self._reject_invalid_values(req)
-        if req.include_reasoning is not None:
+        visible = req.include_reasoning
+        if visible is None and req.reasoning is not None and "exclude" in req.reasoning:
+            visible = not req.reasoning["exclude"]
+        if visible is not None:
             kwargs = dict(req.chat_template_kwargs or {})
-            kwargs["return_reasoning"] = req.include_reasoning
+            kwargs["return_reasoning"] = visible
             req = req.model_copy(update={"chat_template_kwargs": kwargs})
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
@@ -957,8 +967,6 @@ class ServingChat:
                 await lease.__aexit__(None, None, None)
 
     async def _create(self, req: ChatCompletionRequest, lease, admission):
-        if req.model is not None and req.model != self._model_id:
-            raise ModelNotFound(req.model, self._model_id)
         self._reject_unsupported_params(req)
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
@@ -1179,7 +1187,7 @@ class ServingChat:
                     finish_reason=finish,
                 )
             ],
-            usage=self._usage(stats),
+            usage=self._usage(stats, ignore_eos=req.ignore_eos),
         )
 
     async def _stream_plain_content(
@@ -1400,7 +1408,7 @@ class ServingChat:
                 model=self._model_id,
                 choices=[ChunkChoice(delta=delta, finish_reason=finish)],
                 usage=(
-                    self._usage(stats)
+                    self._usage(stats, ignore_eos=req.ignore_eos)
                     if finish is not None
                     and self.api_dialect == "openrouter"
                     and req.stream_options
@@ -1511,7 +1519,7 @@ class ServingChat:
                 id=cid,
                 model=self._model_id,
                 choices=[],
-                usage=self._usage(stats),
+                usage=self._usage(stats, ignore_eos=req.ignore_eos),
             )
             yield f"data: {usage_chunk.model_dump_json(exclude_none=True)}\n\n"
         yield "data: [DONE]\n\n"
