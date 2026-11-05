@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <any>
+#include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -216,6 +218,134 @@ Graph make_graph() {
   return graph;
 }
 
+// One Whisper static-cache attention block: learned positions (no RoPE),
+// .contiguous() clones after each head-major permute, the broadcast form
+// of HF's causal mask, and scale=1 with q pre-scaled upstream.
+Graph make_whisper_graph(int64_t cache_len = kCache) {
+  Graph graph;
+  graph.values = {
+      Value("q", ScalarType::Float, {1, kTokens, kHeads, kDim}),
+      Value("k", ScalarType::Float, {1, kTokens, kHeads, kDim}),
+      Value("v", ScalarType::Float, {1, kTokens, kHeads, kDim}),
+      Value("cache_position", ScalarType::Long, {kTokens}),
+      Value("key_cache", ScalarType::Float, {1, kHeads, cache_len, kDim}),
+      Value("value_cache", ScalarType::Float, {1, kHeads, cache_len, kDim}),
+      Value("kv_offset", ScalarType::Long, {}),
+      Value("kv_arange", ScalarType::Long, {cache_len}),
+      Value("kv_index", ScalarType::Long, {cache_len}),
+      Value("q_perm", ScalarType::Float, {1, kHeads, kTokens, kDim}),
+      Value("q_clone", ScalarType::Float, {1, kHeads, kTokens, kDim}),
+      Value("k_perm", ScalarType::Float, {1, kHeads, kTokens, kDim}),
+      Value("k_clone", ScalarType::Float, {1, kHeads, kTokens, kDim}),
+      Value("v_perm", ScalarType::Float, {1, kHeads, kTokens, kDim}),
+      Value("v_clone", ScalarType::Float, {1, kHeads, kTokens, kDim}),
+      Value("k_all", ScalarType::Float, {1, kHeads, cache_len, kDim}),
+      Value("v_all", ScalarType::Float, {1, kHeads, cache_len, kDim}),
+      Value("kv_u0", ScalarType::Long, {1, cache_len}),
+      Value("kv_u1", ScalarType::Long, {1, 1, cache_len}),
+      Value("kv_u2", ScalarType::Long, {1, 1, 1, cache_len}),
+      Value("q_u0", ScalarType::Long, {1, kTokens}),
+      Value("q_u1", ScalarType::Long, {1, 1, kTokens}),
+      Value("q_u2", ScalarType::Long, {1, 1, kTokens, 1}),
+      Value("le", ScalarType::Bool, {1, 1, kTokens, cache_len}),
+      Value("mask", ScalarType::Bool, {1, 1, kTokens, cache_len}),
+      Value("attention", ScalarType::Float, {1, kHeads, kTokens, kDim}),
+      Value("out", ScalarType::Float, {1, kTokens, kHeads, kDim}),
+  };
+  graph.value(4).role = ValueRole::Buffer;
+  graph.value(5).role = ValueRole::Buffer;
+  graph.value(6).role = ValueRole::Buffer;
+  const auto clone = [](const char* name, ValueId in, ValueId out) {
+    return call(
+        name,
+        "torch.ops.aten.clone.default",
+        {{.name = "self", .arg = TensorArg{in}}},
+        out);
+  };
+  const auto unsqueeze =
+      [](const char* name, ValueId in, int64_t dim, ValueId out) {
+        return call(
+            name,
+            "torch.ops.aten.unsqueeze_copy.default",
+            {{.name = "self", .arg = TensorArg{in}},
+             {.name = "dim", .arg = IntArg{dim}}},
+            out);
+      };
+  graph.nodes = {
+      placeholder("q", 0),
+      placeholder("k", 1),
+      placeholder("v", 2),
+      placeholder("cache_position", 3),
+      placeholder("key_cache", 4),
+      placeholder("value_cache", 5),
+      placeholder("kv_offset", 6),
+      permute("q_perm", 0, 9),
+      clone("q_clone", 9, 10),
+      permute("k_perm", 1, 11),
+      clone("k_clone", 11, 12),
+      permute("v_perm", 2, 13),
+      clone("v_clone", 13, 14),
+      cache_write("k_all", 4, 12, 15),
+      cache_write("v_all", 5, 14, 16),
+      call(
+          "kv_arange",
+          "torch.ops.aten.arange.start_step",
+          {{.name = "start", .arg = IntArg{0}},
+           {.name = "end", .arg = IntArg{cache_len}}},
+          7),
+      call(
+          "kv_index",
+          "torch.ops.aten.add.Tensor",
+          {{.name = "self", .arg = TensorArg{7}},
+           {.name = "other", .arg = TensorArg{6}}},
+          8),
+      unsqueeze("kv_u0", 8, 0, 17),
+      unsqueeze("kv_u1", 17, 1, 18),
+      unsqueeze("kv_u2", 18, 2, 19),
+      unsqueeze("q_u0", 3, 0, 20),
+      unsqueeze("q_u1", 20, 1, 21),
+      unsqueeze("q_u2", 21, 3, 22),
+      call(
+          "le",
+          "torch.ops.aten.le.Tensor",
+          {{.name = "self", .arg = TensorArg{19}},
+           {.name = "other", .arg = TensorArg{22}}},
+          23),
+      call(
+          "mask",
+          "torch.ops.aten.expand_copy.default",
+          {{.name = "self", .arg = TensorArg{23}},
+           {.name = "size",
+            .arg = IntListArg{{1, -1, kTokens, cache_len}, {}}}},
+          24),
+      call(
+          "attention",
+          "torch.ops.aten.scaled_dot_product_attention.default",
+          {{.name = "query", .arg = TensorArg{10}},
+           {.name = "key", .arg = TensorArg{15}},
+           {.name = "value", .arg = TensorArg{16}},
+           {.name = "attn_mask", .arg = TensorArg{24}},
+           {.name = "dropout_p", .arg = FloatArg{0.0}},
+           {.name = "is_causal", .arg = BoolArg{false}},
+           {.name = "scale", .arg = FloatArg{1.0}},
+           {.name = "enable_gqa", .arg = BoolArg{false}}},
+          25),
+      permute("out", 25, 26),
+      Node{
+          .name = "output",
+          .op_kind = OpKind::Output,
+          .inputs = {{.name = "output", .arg = TensorArg{26}}},
+      },
+  };
+  for (NodeId id = 0; id < static_cast<NodeId>(graph.nodes.size()); ++id) {
+    graph.schedule.push_back(id);
+  }
+  graph.input_ids = {0, 1, 2, 3};
+  graph.output_ids = {26};
+  graph.rebuild_def_use();
+  return graph;
+}
+
 std::vector<std::string> scheduled_targets(const Graph& graph) {
   std::vector<std::string> targets;
   for (const NodeId id : graph.schedule) {
@@ -263,6 +393,7 @@ TEST(LowerHFAttentionTest, RewritesStaticCacheAttention) {
   EXPECT_EQ(sdpa.inputs[1].arg.as_tensor().id, 5);
   EXPECT_EQ(sdpa.inputs[2].arg.as_tensor().id, 6);
   EXPECT_TRUE(sdpa.inputs[6].arg.as_bool().value);
+  EXPECT_DOUBLE_EQ(sdpa.inputs[7].arg.as_float().value, 0.25);
 
   const Node& rotary = producer_of(graph, sdpa.inputs[0].arg.as_tensor().id);
   EXPECT_EQ(rotary.inputs[0].arg.as_tensor().id, 0);
@@ -291,6 +422,138 @@ TEST(LowerHFAttentionTest, RewritesStaticCacheAttention) {
     EXPECT_EQ(spec.use_sin, i == 3);
     EXPECT_DOUBLE_EQ(spec.attention_scale, 1.0);
   }
+}
+
+TEST(LowerHFAttentionTest, RewritesWhisperStaticCacheAttention) {
+  Graph graph = make_whisper_graph();
+
+  EXPECT_EQ(lower_hf_attention(graph), 1);
+
+  // No RoPE node and no leftover SDPA / cache writes.
+  EXPECT_EQ(
+      scheduled_targets(graph),
+      (std::vector<std::string>{
+          "torch.ops.et_vk.select_as_symint.default",
+          "torch.ops.llama.update_cache.default",
+          "torch.ops.llama.update_cache.default",
+          "torch.ops.llama.custom_sdpa.default",
+      }));
+
+  const ValueId output = graph.output_ids.at(0);
+  const Node& sdpa = producer_of(graph, output);
+  EXPECT_EQ(sdpa.target, "torch.ops.llama.custom_sdpa.default");
+  EXPECT_EQ(sdpa.inputs[1].arg.as_tensor().id, 4);
+  EXPECT_EQ(sdpa.inputs[2].arg.as_tensor().id, 5);
+  EXPECT_EQ(sdpa.inputs[0].arg.as_tensor().id, 0);
+  EXPECT_DOUBLE_EQ(sdpa.inputs[7].arg.as_float().value, 1.0);
+
+  EXPECT_EQ(
+      graph.value(4).tensor_meta().sizes,
+      (std::vector<int64_t>{1, kCache, kHeads, kDim}));
+  EXPECT_TRUE(graph.value(3).attrs.contains(kCachePositionAttr));
+  EXPECT_TRUE(graph.value(4).attrs.contains(kWrittenBeforeReadAttr));
+  EXPECT_NO_THROW(validate_graph(graph));
+}
+
+TEST(LowerHFAttentionTest, RewritesClonedRopeOutputs) {
+  for (const std::vector<ValueId>& sources :
+       {std::vector<ValueId>{11},
+        std::vector<ValueId>{13},
+        std::vector<ValueId>{11, 13}}) {
+    for (const int depth : {1, 2}) {
+      Graph graph = make_graph();
+      for (const ValueId source : sources) {
+        const NodeId consumer = source == 11 ? 24 : 14;
+        const size_t input = source == 11 ? 0 : 2;
+        ValueId value = source;
+        for (int i = 0; i < depth; ++i) {
+          const std::string name =
+              "clone_" + std::to_string(source) + "_" + std::to_string(i);
+          const TensorMeta meta = graph.value(source).tensor_meta();
+          const ValueId cloned = graph.append_value(Value(name, meta));
+          graph.insert_node_before(
+              consumer,
+              call(
+                  name.c_str(),
+                  "torch.ops.aten.clone.default",
+                  {{.name = "self", .arg = TensorArg{value}}},
+                  cloned));
+          value = cloned;
+        }
+        graph.node(consumer).inputs[input].arg = TensorArg{value};
+      }
+      graph.rebuild_def_use();
+
+      EXPECT_EQ(lower_hf_attention(graph), 1);
+      const auto targets = scheduled_targets(graph);
+      EXPECT_EQ(
+          std::ranges::count(targets, "torch.ops.native.rope.default"), 0);
+      EXPECT_EQ(std::ranges::count(targets, "torch.ops.aten.clone.default"), 0);
+      EXPECT_EQ(
+          std::ranges::count(targets, "torch.ops.llama.custom_sdpa.default"),
+          1);
+      EXPECT_NO_THROW(validate_graph(graph));
+    }
+  }
+}
+
+TEST(LowerHFAttentionTest, ChecksBroadcastMaskAxesForFullCachePrefill) {
+  for (const bool transposed : {false, true}) {
+    SCOPED_TRACE(transposed);
+    Graph graph = make_whisper_graph(kTokens);
+    if (transposed) {
+      graph.node(19).inputs[1].arg = IntArg{3};
+      graph.value(19).tensor_meta().sizes = {1, 1, kTokens, 1};
+      graph.node(22).inputs[1].arg = IntArg{2};
+      graph.value(22).tensor_meta().sizes = {1, 1, 1, kTokens};
+    }
+    const auto schedule = graph.schedule;
+
+    EXPECT_EQ(lower_hf_attention(graph), transposed ? 0 : 1);
+    if (transposed) {
+      EXPECT_EQ(graph.schedule, schedule);
+      EXPECT_EQ(
+          graph.node(25).target,
+          "torch.ops.aten.scaled_dot_product_attention.default");
+    }
+    EXPECT_NO_THROW(validate_graph(graph));
+  }
+}
+
+TEST(LowerHFAttentionTest, RewritesMaskWithInterleavedExpands) {
+  Graph graph = make_graph();
+  graph.node(21) = call(
+      "mask_1",
+      "torch.ops.aten.expand_copy.default",
+      {{.name = "self", .arg = TensorArg{20}},
+       {.name = "size", .arg = IntListArg{{1, kTokens, kCache}, {}}}},
+      21);
+  graph.value(21).tensor_meta().sizes = {1, kTokens, kCache};
+  graph.node(22) = call(
+      "mask_2",
+      "torch.ops.aten.unsqueeze_copy.default",
+      {{.name = "self", .arg = TensorArg{21}},
+       {.name = "dim", .arg = IntArg{1}}},
+      22);
+  const ValueId expanded = graph.append_value(
+      Value("expanded", ScalarType::Bool, {1, 1, kTokens, kCache}));
+  graph.insert_node_before(
+      23,
+      call(
+          "expanded",
+          "torch.ops.aten.expand_copy.default",
+          {{.name = "self", .arg = TensorArg{22}},
+           {.name = "size", .arg = IntListArg{{1, 1, kTokens, kCache}, {}}}},
+          expanded));
+  graph.node(23).inputs[0].arg = TensorArg{expanded};
+  graph.rebuild_def_use();
+
+  EXPECT_EQ(lower_hf_attention(graph), 1);
+  const auto targets = scheduled_targets(graph);
+  EXPECT_EQ(std::ranges::count(targets, "torch.ops.aten.le.Tensor"), 0);
+  EXPECT_EQ(
+      std::ranges::count(targets, "torch.ops.llama.custom_sdpa.default"), 1);
+  EXPECT_NO_THROW(validate_graph(graph));
 }
 
 TEST(LowerHFAttentionTest, ChecksCachePositions) {
@@ -375,12 +638,61 @@ TEST(LowerHFAttentionTest, RejectsInterleavedRope) {
   EXPECT_NO_THROW(validate_graph(graph));
 }
 
-TEST(LowerHFAttentionTest, RejectsNonDefaultScale) {
-  Graph graph = make_graph();
-  graph.node(24).inputs[6].arg = FloatArg{0.5};
+// HF passes head_dim**-0.5 explicitly; any positive literal scale is passed
+// through to llama.custom_sdpa without rescaling q.
+TEST(LowerHFAttentionTest, PassesExplicitScaleThrough) {
+  for (const double scale : {0.5, std::pow(128.0, -0.5)}) {
+    SCOPED_TRACE(scale);
+    Graph graph = make_graph();
+    graph.node(24).inputs[6].arg = FloatArg{scale};
 
-  EXPECT_EQ(lower_hf_attention(graph), 0);
-  EXPECT_EQ(scheduled_targets(graph).size(), 18);
+    EXPECT_EQ(lower_hf_attention(graph), 1);
+
+    const Node& sdpa = producer_of(graph, graph.output_ids.at(0));
+    EXPECT_DOUBLE_EQ(sdpa.inputs[7].arg.as_float().value, scale);
+    EXPECT_EQ(
+        producer_of(graph, sdpa.inputs[0].arg.as_tensor().id).target,
+        "torch.ops.et_vk.apply_rotary_emb_hf.default");
+    EXPECT_EQ(
+        std::ranges::count(
+            scheduled_targets(graph), "torch.ops.aten.mul.Scalar"),
+        0);
+    EXPECT_NO_THROW(validate_graph(graph));
+  }
+}
+
+TEST(LowerHFAttentionTest, RejectsUnsupportedScale) {
+  for (const double scale :
+       {0.0,
+        -0.25,
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity()}) {
+    SCOPED_TRACE(scale);
+    Graph graph = make_graph();
+    graph.node(24).inputs[6].arg = FloatArg{scale};
+
+    EXPECT_EQ(lower_hf_attention(graph), 0);
+    EXPECT_EQ(scheduled_targets(graph).size(), 18);
+  }
+}
+
+// RoPE is optional only as a pair.
+TEST(LowerHFAttentionTest, RejectsRopeOnOnlyOneOfQueryAndKey) {
+  for (const bool rotate_query : {false, true}) {
+    SCOPED_TRACE(rotate_query);
+    Graph graph = make_graph();
+    if (rotate_query) {
+      graph.node(14).inputs[2].arg = TensorArg{12};
+    } else {
+      graph.node(24).inputs[0].arg = TensorArg{10};
+    }
+    graph.rebuild_def_use();
+
+    EXPECT_EQ(lower_hf_attention(graph), 0);
+    EXPECT_EQ(
+        graph.node(24).target,
+        "torch.ops.aten.scaled_dot_product_attention.default");
+  }
 }
 
 TEST(LowerHFAttentionTest, RejectsUnmaskedAttention) {

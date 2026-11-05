@@ -13,6 +13,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,6 +27,7 @@
 #include <executorch/backends/native/runtime/deserialize/test/PackageTestData.h>
 #include <executorch/backends/native/runtime/engine/Engine.h>
 #include <executorch/backends/native/runtime/native_graph_generated.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
 
 namespace ptn {
 namespace {
@@ -682,17 +684,28 @@ std::vector<uint8_t> make_relu_program(const std::vector<int32_t>& dim_order) {
       builder, graph, {fbs::CreateOutputSpecDirect(builder, "relu")});
 }
 
-std::vector<uint8_t> make_dynamic_view_mm_program() {
+std::vector<uint8_t> make_dynamic_view_mm_program(
+    bool static_reshape = false,
+    bool permute = false) {
   flatbuffers::FlatBufferBuilder builder;
-  const auto input_meta =
-      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {4, 2}, {1, 2});
+  const auto input_meta = static_reshape
+      ? create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 4})
+      : create_tensor_meta(builder, fbs::ScalarType::FLOAT, {4, 2}, {1, 2});
+  const auto matrix_meta = static_reshape
+      ? create_tensor_meta(
+            builder,
+            fbs::ScalarType::FLOAT,
+            {4, 2},
+            {},
+            permute ? std::vector<int32_t>{1, 0} : std::vector<int32_t>{})
+      : input_meta;
   const auto weight_meta =
       create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 1});
   const auto output_meta =
       create_tensor_meta(builder, fbs::ScalarType::FLOAT, {4, 1}, {1, 1});
   const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
       fbs::CreateTensorValueDirect(builder, "input", input_meta),
-      fbs::CreateTensorValueDirect(builder, "matrix", input_meta),
+      fbs::CreateTensorValueDirect(builder, "matrix", matrix_meta),
       fbs::CreateTensorValueDirect(builder, "weight", weight_meta),
       fbs::CreateTensorValueDirect(builder, "product", output_meta),
   };
@@ -709,7 +722,12 @@ std::vector<uint8_t> make_dynamic_view_mm_program() {
       fbs::CreateNamedArgumentDirect(
           builder, "self", create_tensor_arg(builder, "input")),
       fbs::CreateNamedArgumentDirect(
-          builder, "size", create_int_list_arg(builder, {-1, 2})),
+          builder,
+          permute ? "dims" : "size",
+          create_int_list_arg(
+              builder,
+              permute ? std::vector<int64_t>{1, 0}
+                      : std::vector<int64_t>{-1, 2})),
   };
   const std::vector<flatbuffers::Offset<fbs::NamedArgument>> mm_inputs = {
       fbs::CreateNamedArgumentDirect(
@@ -739,7 +757,8 @@ std::vector<uint8_t> make_dynamic_view_mm_program() {
           builder,
           "view",
           fbs::OpKind::CALL_FUNCTION,
-          "torch.ops.aten.view.default",
+          permute ? "torch.ops.aten.permute.default"
+                  : "torch.ops.aten.view.default",
           &view_inputs,
           &view_outputs),
       fbs::CreateNodeDirect(
@@ -764,17 +783,19 @@ std::vector<uint8_t> make_dynamic_view_mm_program() {
 
 // index.Tensor keeps its operands in buffer storage, so `rows` is a zero-copy
 // buffer view of `input`, and gathering along dim 1 sizes the output by it.
-std::vector<uint8_t> make_dynamic_buffer_view_index_program() {
+std::vector<uint8_t> make_dynamic_buffer_view_index_program(
+    bool repeat_index = false,
+    bool add_output = false) {
   flatbuffers::FlatBufferBuilder builder;
   const auto input_meta =
       create_tensor_meta(builder, fbs::ScalarType::FLOAT, {4, 2}, {1, 2});
   const auto rows_meta =
       create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 4}, {1, 4});
-  const auto index_meta =
-      create_tensor_meta(builder, fbs::ScalarType::LONG, {2});
+  const auto index_meta = create_tensor_meta(
+      builder, fbs::ScalarType::LONG, {repeat_index ? 1 : 2});
   const auto gathered_meta =
       create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 2}, {1, 2});
-  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+  std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
       fbs::CreateTensorValueDirect(builder, "input", input_meta),
       fbs::CreateTensorValueDirect(builder, "index", index_meta),
       fbs::CreateTensorValueDirect(builder, "rows", rows_meta),
@@ -797,7 +818,7 @@ std::vector<uint8_t> make_dynamic_buffer_view_index_program() {
   };
   const auto indices = fbs::CreateOptionalTensorListArg(
       builder,
-      create_strings(builder, {"", "index"}),
+      create_strings(builder, {"", repeat_index ? "repeated" : "index"}),
       builder.CreateVector(std::vector<uint8_t>{0, 1}));
   const std::vector<flatbuffers::Offset<fbs::NamedArgument>> index_inputs = {
       fbs::CreateNamedArgumentDirect(
@@ -810,10 +831,11 @@ std::vector<uint8_t> make_dynamic_buffer_view_index_program() {
               fbs::ArgumentValue::OptionalTensorListArg,
               indices.Union())),
   };
+  const char* output_name = add_output ? "sum" : "gathered";
   const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
       fbs::CreateNamedArgumentDirect(
-          builder, "", create_tensor_arg(builder, "gathered"))};
-  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+          builder, "", create_tensor_arg(builder, output_name))};
+  std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
       fbs::CreateNodeDirect(
           builder,
           "input",
@@ -845,14 +867,58 @@ std::vector<uint8_t> make_dynamic_buffer_view_index_program() {
       fbs::CreateNodeDirect(
           builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
   };
+  if (repeat_index) {
+    tensor_values.push_back(fbs::CreateTensorValueDirect(
+        builder,
+        "repeated",
+        create_tensor_meta(builder, fbs::ScalarType::LONG, {2})));
+    const std::vector<flatbuffers::Offset<fbs::NamedArgument>> repeat_inputs = {
+        fbs::CreateNamedArgumentDirect(
+            builder, "self", create_tensor_arg(builder, "index")),
+        fbs::CreateNamedArgumentDirect(
+            builder, "repeats", create_int_list_arg(builder, {2}))};
+    const std::vector<flatbuffers::Offset<fbs::Output>> repeat_outputs = {
+        fbs::CreateOutputDirect(builder, "repeated")};
+    nodes.insert(
+        nodes.begin() + 2,
+        fbs::CreateNodeDirect(
+            builder,
+            "repeat",
+            fbs::OpKind::CALL_FUNCTION,
+            "torch.ops.aten.repeat.default",
+            &repeat_inputs,
+            &repeat_outputs));
+  }
+  if (add_output) {
+    tensor_values.push_back(
+        fbs::CreateTensorValueDirect(builder, "sum", gathered_meta));
+    const std::vector<flatbuffers::Offset<fbs::NamedArgument>> add_inputs = {
+        fbs::CreateNamedArgumentDirect(
+            builder, "self", create_tensor_arg(builder, "gathered")),
+        fbs::CreateNamedArgumentDirect(
+            builder, "other", create_tensor_arg(builder, "gathered")),
+        fbs::CreateNamedArgumentDirect(
+            builder, "alpha", create_int_arg(builder, 1))};
+    const std::vector<flatbuffers::Offset<fbs::Output>> add_outputs = {
+        fbs::CreateOutputDirect(builder, "sum")};
+    nodes.insert(
+        nodes.end() - 1,
+        fbs::CreateNodeDirect(
+            builder,
+            "add",
+            fbs::OpKind::CALL_FUNCTION,
+            "torch.ops.aten.add.Tensor",
+            &add_inputs,
+            &add_outputs));
+  }
   const auto graph = fbs::CreateGraph(
       builder,
       builder.CreateVector(nodes),
       create_strings(builder, {"input", "index"}),
-      create_strings(builder, {"gathered"}),
+      create_strings(builder, {output_name}),
       builder.CreateVector(tensor_values));
   return finish_program(
-      builder, graph, {fbs::CreateOutputSpecDirect(builder, "gathered")});
+      builder, graph, {fbs::CreateOutputSpecDirect(builder, output_name)});
 }
 
 // Grouped-query causal attention of a query with a dynamic sequence length,
@@ -990,6 +1056,284 @@ std::vector<uint8_t> make_dynamic_sdpa_program() {
       builder.CreateVector(tensor_values));
   return finish_program(
       builder, graph, {fbs::CreateOutputSpecDirect(builder, "flat")});
+}
+
+// Cache-free SDPA over query [B, H, S, D] and key/value [B, H, L, D]. An
+// identity index on dimension 0 after SDPA places its output in buffer storage;
+// one before it places key and value there while the output stays in texture.
+struct CacheFreeSdpaCase {
+  int64_t batch = 2;
+  int64_t heads = 2;
+  int64_t queries = 3;
+  int64_t keys = 9;
+  int64_t dim = 8;
+  fbs::ScalarType mask_dtype = fbs::ScalarType::BOOL;
+  std::vector<int64_t> mask_sizes;
+  bool constant_mask = false;
+  bool index_output = false;
+  bool index_key_value = false;
+
+  bool indexed() const {
+    return index_output || index_key_value;
+  }
+};
+
+int64_t numel_of(const std::vector<int64_t>& sizes) {
+  int64_t numel = 1;
+  for (const int64_t size : sizes) {
+    numel *= size;
+  }
+  return numel;
+}
+
+// Masks key positions pseudo-randomly, and masks a whole query row when the
+// mask has a query axis.
+bool cache_free_sdpa_keeps(const CacheFreeSdpaCase& c, int64_t i, int salt) {
+  const bool has_query_axis =
+      c.mask_sizes.size() >= 2 && c.mask_sizes[c.mask_sizes.size() - 2] > 1;
+  return !(has_query_axis && i < c.keys) && (i * salt + salt) % 5 != 0;
+}
+
+// The additive bias the mask stands for, one entry per mask element.
+std::vector<float> cache_free_sdpa_bias(const CacheFreeSdpaCase& c, int salt) {
+  std::vector<float> bias(numel_of(c.mask_sizes));
+  for (int64_t i = 0; i < static_cast<int64_t>(bias.size()); ++i) {
+    const bool keep = cache_free_sdpa_keeps(c, i, salt);
+    if (!keep) {
+      bias[i] = -std::numeric_limits<float>::infinity();
+    } else if (c.mask_dtype == fbs::ScalarType::FLOAT) {
+      bias[i] = 0.25f * static_cast<float>((i * 3) % 5) - 0.5f;
+    }
+  }
+  return bias;
+}
+
+std::vector<uint8_t> cache_free_sdpa_keep(
+    const CacheFreeSdpaCase& c,
+    int salt) {
+  std::vector<uint8_t> keep(numel_of(c.mask_sizes));
+  for (int64_t i = 0; i < static_cast<int64_t>(keep.size()); ++i) {
+    keep[i] = cache_free_sdpa_keeps(c, i, salt);
+  }
+  return keep;
+}
+
+std::vector<uint8_t> make_cache_free_sdpa_program(const CacheFreeSdpaCase& c) {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto query_meta = create_tensor_meta(
+      builder, fbs::ScalarType::FLOAT, {c.batch, c.heads, c.queries, c.dim});
+  const auto kv_meta = create_tensor_meta(
+      builder, fbs::ScalarType::FLOAT, {c.batch, c.heads, c.keys, c.dim});
+  const auto mask_meta =
+      create_tensor_meta(builder, c.mask_dtype, c.mask_sizes);
+  std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "query", query_meta),
+      fbs::CreateTensorValueDirect(builder, "key", kv_meta),
+      fbs::CreateTensorValueDirect(builder, "value", kv_meta),
+      fbs::CreateTensorValueDirect(builder, "attention", query_meta),
+  };
+  std::vector<std::string> input_names = {"query"};
+  if (c.index_key_value) {
+    input_names.insert(input_names.end(), {"key_src", "value_src"});
+    tensor_values.push_back(
+        fbs::CreateTensorValueDirect(builder, "key_src", kv_meta));
+    tensor_values.push_back(
+        fbs::CreateTensorValueDirect(builder, "value_src", kv_meta));
+  } else {
+    input_names.insert(input_names.end(), {"key", "value"});
+  }
+  if (!c.constant_mask) {
+    input_names.emplace_back("mask");
+    tensor_values.push_back(
+        fbs::CreateTensorValueDirect(builder, "mask", mask_meta));
+  }
+  if (c.indexed()) {
+    input_names.emplace_back("index");
+    tensor_values.push_back(fbs::CreateTensorValueDirect(
+        builder,
+        "index",
+        create_tensor_meta(builder, fbs::ScalarType::LONG, {c.batch})));
+  }
+  if (c.index_output) {
+    tensor_values.push_back(
+        fbs::CreateTensorValueDirect(builder, "gathered", query_meta));
+  }
+
+  std::vector<flatbuffers::Offset<fbs::Node>> nodes;
+  const auto add_placeholder = [&](const std::string& name) {
+    const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+        fbs::CreateOutputDirect(builder, name.c_str())};
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder,
+        name.c_str(),
+        fbs::OpKind::PLACEHOLDER,
+        "",
+        nullptr,
+        &outputs));
+  };
+  for (const auto& name : input_names) {
+    add_placeholder(name);
+  }
+  if (c.constant_mask) {
+    add_placeholder("mask");
+  }
+  const auto add_index = [&](const char* self, const char* output) {
+    const auto indices = fbs::CreateOptionalTensorListArg(
+        builder,
+        create_strings(builder, {"index"}),
+        builder.CreateVector(std::vector<uint8_t>{1}));
+    const std::vector<flatbuffers::Offset<fbs::NamedArgument>> inputs = {
+        fbs::CreateNamedArgumentDirect(
+            builder, "self", create_tensor_arg(builder, self)),
+        fbs::CreateNamedArgumentDirect(
+            builder,
+            "indices",
+            fbs::CreateArgument(
+                builder,
+                fbs::ArgumentValue::OptionalTensorListArg,
+                indices.Union())),
+    };
+    const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+        fbs::CreateOutputDirect(builder, output)};
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder,
+        output,
+        fbs::OpKind::CALL_FUNCTION,
+        "torch.ops.aten.index.Tensor",
+        &inputs,
+        &outputs));
+  };
+  if (c.index_key_value) {
+    add_index("key_src", "key");
+    add_index("value_src", "value");
+  }
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> sdpa_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "query", create_tensor_arg(builder, "query")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "key", create_tensor_arg(builder, "key")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "value", create_tensor_arg(builder, "value")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "attn_mask", create_tensor_arg(builder, "mask")),
+  };
+  const std::vector<flatbuffers::Offset<fbs::Output>> sdpa_outputs = {
+      fbs::CreateOutputDirect(builder, "attention")};
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder,
+      "sdpa",
+      fbs::OpKind::CALL_FUNCTION,
+      "torch.ops.aten.scaled_dot_product_attention.default",
+      &sdpa_inputs,
+      &sdpa_outputs));
+  if (c.index_output) {
+    add_index("attention", "gathered");
+  }
+  const char* output_name = c.index_output ? "gathered" : "attention";
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, output_name))};
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs));
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, input_names),
+      create_strings(builder, {output_name}),
+      builder.CreateVector(tensor_values));
+  std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants;
+  if (c.constant_mask) {
+    constants.push_back(fbs::CreateNamedTensorRefDirect(
+        builder, "mask", "mask", mask_meta, fbs::InputKind::CONSTANT_TENSOR));
+  }
+  return finish_program(
+      builder,
+      graph,
+      {fbs::CreateOutputSpecDirect(builder, output_name)},
+      constants);
+}
+
+// The stored mask of make_cache_free_sdpa_program when it is a constant.
+std::vector<uint8_t> make_cache_free_sdpa_tensors(
+    const CacheFreeSdpaCase& c,
+    int salt) {
+  std::vector<uint8_t> payload;
+  if (c.mask_dtype == fbs::ScalarType::BOOL) {
+    payload = cache_free_sdpa_keep(c, salt);
+  } else {
+    const std::vector<float> bias = cache_free_sdpa_bias(c, salt);
+    payload.resize(bias.size() * sizeof(float));
+    std::memcpy(payload.data(), bias.data(), payload.size());
+  }
+  std::string shape;
+  for (const int64_t size : c.mask_sizes) {
+    shape += (shape.empty() ? "" : ",") + std::to_string(size);
+  }
+  const std::string header = std::string(R"({"mask":{"dtype":")") +
+      (c.mask_dtype == fbs::ScalarType::BOOL ? "BOOL" : "F32") +
+      R"(","shape":[)" + shape + R"(],"data_offsets":[0,)" +
+      std::to_string(payload.size()) + "]}}";
+  std::vector<uint8_t> tensors =
+      testing::make_safetensors(header, payload.size());
+  std::memcpy(
+      tensors.data() + sizeof(uint64_t) + header.size(),
+      payload.data(),
+      payload.size());
+  return tensors;
+}
+
+// softmax(q k^T / sqrt(D) + bias) v, with rows masked entirely set to zero as
+// in ATen. `bias` broadcasts against [B, H, S, L] from the right.
+std::vector<float> cache_free_sdpa_reference(
+    const CacheFreeSdpaCase& c,
+    const std::vector<float>& query,
+    const std::vector<float>& key,
+    const std::vector<float>& value,
+    const std::vector<float>& bias) {
+  const std::array<int64_t, 4> score_sizes{c.batch, c.heads, c.queries, c.keys};
+  const size_t offset = score_sizes.size() - c.mask_sizes.size();
+  const float scale = 1.0f / std::sqrt(static_cast<float>(c.dim));
+  std::vector<float> output(query.size(), 0.0f);
+  for (int64_t b = 0; b < c.batch; ++b) {
+    for (int64_t h = 0; h < c.heads; ++h) {
+      const int64_t bh = b * c.heads + h;
+      for (int64_t s = 0; s < c.queries; ++s) {
+        const float* q = &query[(bh * c.queries + s) * c.dim];
+        std::vector<float> scores(c.keys);
+        float max_score = -std::numeric_limits<float>::infinity();
+        for (int64_t l = 0; l < c.keys; ++l) {
+          const std::array<int64_t, 4> coords{b, h, s, l};
+          int64_t mask_index = 0;
+          for (size_t i = 0; i < c.mask_sizes.size(); ++i) {
+            mask_index = mask_index * c.mask_sizes[i] +
+                (c.mask_sizes[i] == 1 ? 0 : coords[offset + i]);
+          }
+          const float* k = &key[(bh * c.keys + l) * c.dim];
+          float dot = 0.0f;
+          for (int64_t d = 0; d < c.dim; ++d) {
+            dot += q[d] * k[d];
+          }
+          scores[l] = dot * scale + bias[mask_index];
+          max_score = std::max(max_score, scores[l]);
+        }
+        if (std::isinf(max_score)) {
+          continue;
+        }
+        float total = 0.0f;
+        for (float& score : scores) {
+          score = std::exp(score - max_score);
+          total += score;
+        }
+        float* out = &output[(bh * c.queries + s) * c.dim];
+        for (int64_t l = 0; l < c.keys; ++l) {
+          for (int64_t d = 0; d < c.dim; ++d) {
+            out[d] += scores[l] / total * value[(bh * c.keys + l) * c.dim + d];
+          }
+        }
+      }
+    }
+  }
+  return output;
 }
 
 float sdpa_input_value(size_t index, int64_t salt) {
@@ -1483,7 +1827,7 @@ constexpr int64_t kHfCache = 32;
 // k, index_put_ into zero-initialized KV caches at cache_position, and SDPA
 // under the causal mask le(arange(0, cache) + kv_offset, cache_position).
 // kv_offset is a stored buffer, as in HF's StaticCache.
-std::vector<uint8_t> make_hf_attention_program() {
+std::vector<uint8_t> make_hf_attention_program(bool use_rope = true) {
   flatbuffers::FlatBufferBuilder builder;
   using fbs::ScalarType;
   std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values;
@@ -1616,11 +1960,13 @@ std::vector<uint8_t> make_hf_attention_program() {
             cache);
       };
   permute("q_perm", "q");
-  rope("q_rope", "q_perm");
   permute("k_perm", "k");
-  rope("k_rope", "k_perm");
+  if (use_rope) {
+    rope("q_rope", "q_perm");
+    rope("k_rope", "k_perm");
+  }
   permute("v_perm", "v");
-  cache_write("k_all", "key_cache", "k_rope");
+  cache_write("k_all", "key_cache", use_rope ? "k_rope" : "k_perm");
   cache_write("v_all", "value_cache", "v_perm");
   call(
       "kv_arange",
@@ -1664,13 +2010,13 @@ std::vector<uint8_t> make_hf_attention_program() {
   call(
       "attention",
       "torch.ops.aten.scaled_dot_product_attention.default",
-      {arg("query", create_tensor_arg(builder, "q_rope")),
+      {arg("query", create_tensor_arg(builder, use_rope ? "q_rope" : "q_perm")),
        arg("key", create_tensor_arg(builder, "k_all")),
        arg("value", create_tensor_arg(builder, "v_all")),
        arg("attn_mask", create_tensor_arg(builder, "mask")),
        arg("dropout_p", float_arg(0.0)),
        arg("is_causal", create_bool_arg(builder, false)),
-       arg("scale", create_none_arg(builder)),
+       arg("scale", use_rope ? create_none_arg(builder) : float_arg(1.0)),
        arg("enable_gqa", create_bool_arg(builder, true))});
   permute("out", "attention");
   const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
@@ -2265,6 +2611,40 @@ TEST(VulkanEngineTest, ResizesWidthPackedViewOfWidthPackedInput) {
   EXPECT_EQ(output, (std::vector<float>{12.0f, 34.0f}));
 }
 
+TEST(VulkanEngineTest, MaterializesStaticWidthPackedReshape) {
+  CompiledProgram compiled =
+      compile_program(make_dynamic_view_mm_program(true));
+  const std::vector<float> input = {1, 2, 3, 4, 5, 6, 7, 8};
+  const std::vector<float> weight = {10, 1};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      1, weight.data(), weight.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  std::vector<float> output(4);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, (std::vector<float>{12, 34, 56, 78}));
+}
+
+TEST(VulkanEngineTest, MaterializesStaticWidthPackedPermute) {
+  CompiledProgram compiled =
+      compile_program(make_dynamic_view_mm_program(true, true));
+  const std::vector<float> input = {1, 2, 3, 4, 5, 6, 7, 8};
+  const std::vector<float> weight = {10, 1};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      1, weight.data(), weight.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  std::vector<float> output(4);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, (std::vector<float>{15, 26, 37, 48}));
+}
+
 TEST(VulkanEngineTest, ResizesBufferViewWithItsSource) {
   CompiledProgram compiled =
       compile_program(make_dynamic_buffer_view_index_program());
@@ -2304,6 +2684,45 @@ TEST(VulkanEngineTest, ConvertsStoredLongConstant) {
   compiled.executable->get_output(
       0, output.data(), output.size(), ScalarType::Float);
   EXPECT_EQ(output, (std::vector<float>{3.5f, -0.5f, 9.5f, 103.5f}));
+}
+
+TEST(VulkanEngineTest, ConvertsRepeatedIndicesToBufferStorage) {
+  CompiledProgram compiled =
+      compile_program(make_dynamic_buffer_view_index_program(true));
+  compiled.executable->resize_input(0, {2, 2});
+  const std::vector<float> input = {1.0f, 2.0f, 3.0f, 4.0f};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+
+  for (const int64_t index : {3, 1}) {
+    compiled.executable->set_input(1, &index, 1, ScalarType::Long);
+    compiled.executable->execute();
+    EXPECT_EQ(
+        compiled.executable->output_sizes(0), (std::vector<int64_t>{1, 2}));
+    std::vector<float> output(2);
+    compiled.executable->get_output(
+        0, output.data(), output.size(), ScalarType::Float);
+    EXPECT_EQ(output, (std::vector<float>(2, input[index])));
+  }
+}
+
+TEST(VulkanEngineTest, AddsBufferValuesIntoTextureOutput) {
+  CompiledProgram compiled =
+      compile_program(make_dynamic_buffer_view_index_program(false, true));
+  compiled.executable->resize_input(0, {2, 2});
+  const std::vector<float> input = {1.0f, 2.0f, 3.0f, 4.0f};
+  const std::vector<int64_t> index = {3, 0};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      1, index.data(), index.size(), ScalarType::Long);
+  compiled.executable->execute();
+
+  EXPECT_EQ(compiled.executable->output_sizes(0), (std::vector<int64_t>{1, 2}));
+  std::vector<float> output(2);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, (std::vector<float>{8.0f, 2.0f}));
 }
 
 TEST(VulkanEngineTest, RejectsBufferViewResizeThatDoesNotDivide) {
@@ -2511,6 +2930,133 @@ TEST(VulkanEngineTest, RejectsQuantizedGraphInput) {
   }
 }
 
+void expect_cache_free_sdpa_matches_reference(const CacheFreeSdpaCase& c) {
+  constexpr int kConstantSalt = 3;
+  CompiledProgram compiled = compile_program(
+      make_cache_free_sdpa_program(c),
+      c.constant_mask ? make_cache_free_sdpa_tensors(c, kConstantSalt)
+                      : std::vector<uint8_t>{});
+  std::vector<float> query(c.batch * c.heads * c.queries * c.dim);
+  std::vector<float> key(c.batch * c.heads * c.keys * c.dim);
+  std::vector<float> value(key.size());
+  for (size_t i = 0; i < query.size(); ++i) {
+    query[i] = sdpa_input_value(i, 5);
+  }
+  for (size_t i = 0; i < key.size(); ++i) {
+    key[i] = sdpa_input_value(i, 7);
+    value[i] = sdpa_input_value(i, 4);
+  }
+  size_t input = 0;
+  compiled.executable->set_input(
+      input++, query.data(), query.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      input++, key.data(), key.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      input++, value.data(), value.size(), ScalarType::Float);
+  const size_t mask_input = input;
+  if (!c.constant_mask) {
+    ++input;
+  }
+  if (c.indexed()) {
+    std::vector<int64_t> index(c.batch);
+    std::iota(index.begin(), index.end(), 0);
+    compiled.executable->set_input(
+        input, index.data(), index.size(), ScalarType::Long);
+  }
+  // Repeated execution with new masks, unless the mask is a constant.
+  for (const int salt : c.constant_mask ? std::vector<int>{kConstantSalt}
+                                        : std::vector<int>{3, 7}) {
+    SCOPED_TRACE(salt);
+    const std::vector<float> bias = cache_free_sdpa_bias(c, salt);
+    if (!c.constant_mask && c.mask_dtype == fbs::ScalarType::BOOL) {
+      const std::vector<uint8_t> keep = cache_free_sdpa_keep(c, salt);
+      compiled.executable->set_input(
+          mask_input, keep.data(), keep.size(), ScalarType::Bool);
+    } else if (!c.constant_mask) {
+      compiled.executable->set_input(
+          mask_input, bias.data(), bias.size(), ScalarType::Float);
+    }
+    compiled.executable->execute();
+    std::vector<float> output(query.size());
+    compiled.executable->get_output(
+        0, output.data(), output.size(), ScalarType::Float);
+    const std::vector<float> expected =
+        cache_free_sdpa_reference(c, query, key, value, bias);
+    for (size_t i = 0; i < output.size(); ++i) {
+      EXPECT_NEAR(output[i], expected[i], 1e-4f) << i;
+    }
+  }
+}
+
+TEST(VulkanEngineTest, CacheFreeSdpaMatchesReference) {
+  for (const int64_t keys : {1, 8, 9}) {
+    for (const auto& [dtype, mask_sizes] :
+         std::vector<std::pair<fbs::ScalarType, std::vector<int64_t>>>{
+             {fbs::ScalarType::BOOL, {2, 2, 3, keys}},
+             {fbs::ScalarType::FLOAT, {1, 1, 3, keys}},
+             {fbs::ScalarType::BOOL, {keys}}}) {
+      for (const auto& [index_output, index_key_value] :
+           {std::pair{false, false},
+            std::pair{true, false},
+            std::pair{false, true}}) {
+        SCOPED_TRACE(
+            "keys " + std::to_string(keys) + " mask rank " +
+            std::to_string(mask_sizes.size()) + " index_output " +
+            std::to_string(index_output) + " index_key_value " +
+            std::to_string(index_key_value));
+        expect_cache_free_sdpa_matches_reference({
+            .keys = keys,
+            .mask_dtype = dtype,
+            .mask_sizes = mask_sizes,
+            .index_output = index_output,
+            .index_key_value = index_key_value,
+        });
+      }
+    }
+  }
+}
+
+TEST(VulkanEngineTest, CacheFreeSdpaWithKeysExceedingTextureLimit) {
+  auto* adapter = vkcompute::vkapi::runtime()->get_adapter_p();
+  const int64_t texture_limit = adapter->max_texture3d_dim();
+  CacheFreeSdpaCase c;
+  c.batch = 1;
+  c.heads = 1;
+  c.queries = 1;
+  c.keys = texture_limit + 1;
+  c.mask_sizes = {c.keys};
+  for (const auto dtype : {fbs::ScalarType::FLOAT, fbs::ScalarType::BOOL}) {
+    if (dtype == fbs::ScalarType::BOOL &&
+        !adapter->has_full_int8_buffers_support()) {
+      continue;
+    }
+    for (const bool constant_mask : {false, true}) {
+      SCOPED_TRACE(
+          "dtype " + std::to_string(static_cast<int>(dtype)) +
+          " constant_mask " + std::to_string(constant_mask));
+      c.mask_dtype = dtype;
+      c.constant_mask = constant_mask;
+      expect_cache_free_sdpa_matches_reference(c);
+    }
+  }
+}
+
+TEST(VulkanEngineTest, CacheFreeSdpaReadsConstantMasks) {
+  for (const auto dtype : {fbs::ScalarType::BOOL, fbs::ScalarType::FLOAT}) {
+    for (const bool index_output : {false, true}) {
+      SCOPED_TRACE(
+          "dtype " + std::to_string(static_cast<int>(dtype)) +
+          " index_output " + std::to_string(index_output));
+      expect_cache_free_sdpa_matches_reference({
+          .mask_dtype = dtype,
+          .mask_sizes = {1, 1, 3, 9},
+          .constant_mask = true,
+          .index_output = index_output,
+      });
+    }
+  }
+}
+
 TEST(VulkanEngineTest, RejectsHFAttentionWithNonzeroKvOffset) {
   try {
     compile_program(make_hf_attention_program(), make_hf_attention_tensors(1));
@@ -2520,6 +3066,71 @@ TEST(VulkanEngineTest, RejectsHFAttentionWithNonzeroKvOffset) {
         std::string(e.what()).find("constant 'kv_offset' must all be zero"),
         std::string::npos)
         << e.what();
+  }
+}
+
+// Prefill then a decode call through the learned-position (no RoPE) path with
+// scale=1, against keys and values accumulated across both calls.
+TEST(VulkanEngineTest, ExecutesLearnedPositionAttentionAcrossCalls) {
+  CompiledProgram compiled = compile_program(
+      make_hf_attention_program(false), make_hf_attention_tensors(0));
+  std::vector<float> all_k;
+  std::vector<float> all_v;
+  for (int64_t call = 0; call < 2; ++call) {
+    SCOPED_TRACE(call);
+    std::vector<int64_t> positions(kHfTokens);
+    std::iota(positions.begin(), positions.end(), call * kHfTokens);
+    std::vector<float> q(kHfTokens * kHfHeads * kHfDim);
+    std::vector<float> k(kHfTokens * kHfKvHeads * kHfDim);
+    std::vector<float> v(k.size());
+    for (size_t i = 0; i < q.size(); ++i) {
+      q[i] = sdpa_input_value(i, 5 + call);
+    }
+    for (size_t i = 0; i < k.size(); ++i) {
+      k[i] = sdpa_input_value(i, 7 + call);
+      v[i] = sdpa_input_value(i, 2 + call);
+    }
+    all_k.insert(all_k.end(), k.begin(), k.end());
+    all_v.insert(all_v.end(), v.begin(), v.end());
+    compiled.executable->set_input(0, q.data(), q.size(), ScalarType::Float);
+    compiled.executable->set_input(1, k.data(), k.size(), ScalarType::Float);
+    compiled.executable->set_input(2, v.data(), v.size(), ScalarType::Float);
+    compiled.executable->set_input(
+        3, positions.data(), positions.size(), ScalarType::Long);
+    compiled.executable->execute();
+    std::vector<float> output(q.size());
+    compiled.executable->get_output(
+        0, output.data(), output.size(), ScalarType::Float);
+
+    for (int64_t t = 0; t < kHfTokens; ++t) {
+      const int64_t context = positions[t] + 1;
+      for (int64_t h = 0; h < kHfHeads; ++h) {
+        const int64_t kv_head = h / (kHfHeads / kHfKvHeads);
+        std::vector<float> weights(context, 0.0f);
+        for (int64_t s = 0; s < context; ++s) {
+          for (int64_t d = 0; d < kHfDim; ++d) {
+            weights[s] += q[(t * kHfHeads + h) * kHfDim + d] *
+                all_k[(s * kHfKvHeads + kv_head) * kHfDim + d];
+          }
+        }
+        const float max_score =
+            *std::max_element(weights.begin(), weights.end());
+        float sum = 0.0f;
+        for (float& weight : weights) {
+          weight = std::exp(weight - max_score);
+          sum += weight;
+        }
+        for (int64_t d = 0; d < kHfDim; ++d) {
+          float expected = 0.0f;
+          for (int64_t s = 0; s < context; ++s) {
+            expected += weights[s] / sum *
+                all_v[(s * kHfKvHeads + kv_head) * kHfDim + d];
+          }
+          EXPECT_NEAR(output[(t * kHfHeads + h) * kHfDim + d], expected, 1e-4f)
+              << "token " << t << ", head " << h << ", dimension " << d;
+        }
+      }
+    }
   }
 }
 

@@ -134,10 +134,23 @@ void apply_bias(
         const int bias_c4 = c4_start + c4;
         if (bias_c4 < bias_C4) {
 #ifdef INPUT_BUFFER
-          const LINEAR_FP_OUTPUT_TILE_VEC4_T bias_val =
-              LINEAR_FP_OUTPUT_TILE_VEC4_T(VEC4_T(
-                  t_bias[(bias_bh * bias_S * bias_C4) + (bias_s * bias_C4) +
-                         bias_c4]));
+          // Buffer rows are unpadded, so when L % 4 != 0 a texel may start
+          // mid-vec4 or overhang the row; only those are read per component.
+          const int bias_c = mul_4(bias_c4);
+          const int bias_idx =
+              (bias_bh * bias_S + bias_s) * bias_sizes.x + bias_c;
+          LINEAR_FP_OUTPUT_TILE_VEC4_T bias_val;
+          if (mod_4(bias_idx) == 0 && bias_c + 4 <= bias_sizes.x) {
+            bias_val = LINEAR_FP_OUTPUT_TILE_VEC4_T(
+                VEC4_T(t_bias[div_4(bias_idx)]));
+          } else {
+            bias_val = LINEAR_FP_OUTPUT_TILE_VEC4_T(0);
+            const int valid = min(4, bias_sizes.x - bias_c);
+            for (int comp = 0; comp < valid; ++comp) {
+              const int idx = bias_idx + comp;
+              bias_val[comp] = t_bias[div_4(idx)][mod_4(idx)];
+            }
+          }
 #else
           const LINEAR_FP_OUTPUT_TILE_VEC4_T bias_val =
               LINEAR_FP_OUTPUT_TILE_VEC4_T(VEC4_T(
