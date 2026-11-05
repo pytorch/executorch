@@ -181,7 +181,8 @@ def _run_test_in_subprocess(
         "-m",
         "executorch.backends.mlx.test.test_utils",
         config_name,
-        "run",
+        "--timeout",
+        str(timeout),
     ]
     if verbose:
         cmd.append("--verbose")

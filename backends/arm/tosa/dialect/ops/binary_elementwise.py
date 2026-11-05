@@ -7,6 +7,7 @@ import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops._common import (
     binary_meta,
+    validate_int64_support,
     validate_nan_mode,
 )
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
@@ -62,6 +63,10 @@ def _validate_int_dtype(dtype: torch.dtype, op: str) -> None:
         _require_int_profile_support(dtype, op)
         return
 
+    if dtype == torch.int64:
+        validate_int64_support(op)
+        return
+
     _raise_unsupported_dtype(dtype, op)
 
 
@@ -87,12 +92,20 @@ def _validate_add_sub_dtype(dtype: torch.dtype, op: str) -> None:
     if dtype == torch.int32:
         return
 
+    if dtype == torch.int64:
+        validate_int64_support(op)
+        return
+
     _validate_fp_dtype(dtype, op)
 
 
 def _validate_profile_int32_or_fp_dtype(dtype: torch.dtype, op: str) -> None:
     if dtype == torch.int32:
         _require_int_profile_support(dtype, op)
+        return
+
+    if dtype == torch.int64:
+        validate_int64_support(op)
         return
 
     _validate_fp_dtype(dtype, op)
@@ -117,6 +130,10 @@ def _validate_and_infer_mul_output_dtype(dtype: torch.dtype) -> torch.dtype:  # 
         if dtype != torch.int32:
             _require_int_profile_support(dtype, "MUL")
         return torch.int32
+
+    if dtype == torch.int64:
+        validate_int64_support("MUL")
+        return torch.int64
 
     _raise_unsupported_dtype(dtype, "MUL")
 
@@ -256,24 +273,26 @@ def MINIMUM(
 
 
 @register_fake_tosa_op(
-    "MUL(Tensor input1, Tensor input2, *, int shift=0) -> Tensor",
+    "MUL(Tensor input1, Tensor input2, Tensor shift) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
 def MUL(
     input1: torch.Tensor,
     input2: torch.Tensor,
-    *,
-    shift: int = 0,
+    shift: torch.Tensor,
 ) -> torch.Tensor:
     output_dtype = _validate_and_infer_mul_output_dtype(input1.dtype)
 
-    if shift < 0 or shift > 63:
-        raise TosaValueError("shift must be in the range [0, 63]", op="MUL")
-    if input1.dtype != torch.int32 and shift != 0:
-        raise TosaValueError(
-            "Only int32 MUL supports a non-zero shift value",
-            op="MUL",
-        )
+    if shift.dtype != torch.int8 or shift.shape != (1,):
+        raise TosaValueError("MUL shift must be a single-element int8 tensor", op="MUL")
+    if not isinstance(shift, torch._subclasses.fake_tensor.FakeTensor):
+        shift_value = shift.item()
+        if not 0 <= shift_value <= 63:
+            raise TosaValueError("shift must be in the range [0, 63]", op="MUL")
+        if input1.dtype != torch.int32 and shift_value != 0:
+            raise TosaValueError(
+                "Only int32 MUL supports a non-zero shift value", op="MUL"
+            )
 
     return binary_meta(input1, input2, "MUL", output_dtype=output_dtype)
 
