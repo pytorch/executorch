@@ -47,6 +47,9 @@ from executorch.examples.models.smollm3 import (
 from executorch.examples.models.smolvlm import (
     convert_weights as convert_smolvlm_weights,
 )
+from executorch.examples.qualcomm.oss_scripts.lfm3.convert_weights import (
+    convert_weights as convert_lfm3_weights,
+)
 
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
@@ -78,6 +81,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     Granite_3_3_2B_InstructQuantRecipe,
     GraniteSpeech_3_3_2B_InstructQuantRecipe,
     InternVL3_1B_QuantRecipe,
+    Lfm3QuantRecipe,
     Llama3_1BQuantRecipe,
     Llama3_3BQuantRecipe,
     LlamaStories110MQuantRecipe,
@@ -530,6 +534,39 @@ class Qwen3_1_7B(LLMModelConfig):
     r2 = False
     r3 = True
     quant_recipe = Qwen3_1_7BQuantRecipe
+
+
+@dataclass(init=False, frozen=True)
+class _Lfm3Decoder(LLMModelConfig):
+    """LFM3 1.7B text decoder; multimodal checkpoints export their decoder only."""
+
+    params_path: str = os.path.join(BASE_DIR, "../lfm3/config/1_7b_config.json")
+    convert_weights = convert_lfm3_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 1
+    masked_softmax = False
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = Lfm3QuantRecipe
+    # Differs from the generic-path converter for the same repo; keep caches apart.
+    converted_checkpoint_suffix = "_qnn_static"
+
+
+@register_llm_model("lfm3-1_7b")
+@dataclass(init=False, frozen=True)
+class Lfm3_1_7B(_Lfm3Decoder):
+    repo_id: str = "LiquidAI/LFM3-1.7B"
+
+
+@register_llm_model("lfm3-1_7b_base")
+@dataclass(init=False, frozen=True)
+class Lfm3_1_7B_Base(_Lfm3Decoder):
+    repo_id: str = "LiquidAI/LFM3-1.7B-Base"
+    instruct_model = False
+
 
 
 @register_llm_model("smollm2_135m")

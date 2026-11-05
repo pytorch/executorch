@@ -91,6 +91,56 @@ def annotate_mimi_decoder(gm: torch.fx.GraphModule):
             break
 
 
+def annotate_conv_state(gm: torch.fx.GraphModule) -> None:
+    """
+    For static LLMs with short-convolution layers (e.g. LFM2/LFM3) whose rolling
+    conv state is graph IO: share one 16-bit encoding across the state input,
+    the new conv inputs and their concat. The runner shifts the new conv inputs
+    (a graph output) straight into the next call's state buffer, which is only
+    valid if both use the same scale/offset.
+
+    Matched structurally: a row-wise cat(state_placeholder, new_rows) of
+    [batch, rows, dim] tensors where new_rows is also a graph output. KV-cache
+    concats (rank 4, annotated by annotate_kv_8bit) have the same shape of
+    pattern and must not match.
+    """
+    act = get_16a8w_qnn_ptq_config(act_observer=MinMaxObserver).input_activation
+    for node in gm.graph.nodes:
+        if node.target not in (
+            torch.ops.aten.cat.default,
+            torch.ops.aten.concat.default,
+        ):
+            continue
+        inputs = node.args[0]
+        if len(inputs) != 2:
+            continue
+        state, new_rows = inputs
+        if not (
+            isinstance(state, Node)
+            and state.op == "placeholder"
+            and state.meta["val"].dim() == 3
+            and isinstance(new_rows, Node)
+            and any(u.op == "output" for u in new_rows.users)
+            and (node.args[1] if len(node.args) > 1 else 0) in (1, -2)
+        ):
+            continue
+        producer = new_rows.meta.get(Q_ANNOTATION_KEY)
+        if producer is not None:
+            # The new rows' producer owns the observer; it precedes the concat in
+            # graph order, so every user of the shared spec can reference it.
+            producer.output_qspec = act
+            shared = SharedQuantizationSpec(new_rows)
+            input_qspec_map = {state: shared, new_rows: shared}
+        else:
+            shared = SharedQuantizationSpec((state, node))
+            input_qspec_map = {state: act, new_rows: shared}
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=shared,
+            _annotated=True,
+        )
+
+
 def annotate_kv_8bit(  # noqa: C901
     gm: torch.fx.GraphModule,
     is_qat=False,

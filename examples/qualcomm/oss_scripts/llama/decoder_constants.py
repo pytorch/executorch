@@ -64,4 +64,13 @@ DECODER_MODEL_VERSION = {
     "smolvlm_500m_instruct": "smolvlm",
     "internvl3_1b": "internvl3",
     "gemma4-e2b": "gemma4",
+    "lfm3-1_7b": "lfm3",
+    "lfm3-1_7b_base": "lfm3_base",
+}
+
+# Text decoders sharing the LFM3-1.7B backbone.
+LFM3_DECODER_MODELS = {
+    name
+    for name, version in DECODER_MODEL_VERSION.items()
+    if version.startswith("lfm3")
 }

@@ -107,6 +107,7 @@ std::string get_formatted_prompt(
   std::string formatted_prompt;
   switch (decoder_model_version) {
     case example::DecoderModelVersion::kLlama2:
+    case example::DecoderModelVersion::kLfm3Base:
     case example::DecoderModelVersion::kQwen2_5:
     case example::DecoderModelVersion::kCodegen:
       formatted_prompt.append(prompt);
@@ -183,6 +184,18 @@ std::string get_formatted_prompt(
         formatted_prompt.append("<|im_end|>\n");
       }
       formatted_prompt.append("<|im_start|>assistant");
+      break;
+    case example::DecoderModelVersion::kLfm3:
+      if (!system_prompt.empty()) {
+        formatted_prompt.append("<|im_start|>system\n");
+        formatted_prompt.append(system_prompt);
+        formatted_prompt.append("<|im_end|>\n");
+      }
+      formatted_prompt.append("<|im_start|>user\n");
+      formatted_prompt.append(prompt);
+      formatted_prompt.append("<|im_end|>\n");
+      // Non-thinking mode: an empty think block skips the reasoning trace.
+      formatted_prompt.append("<|im_start|>assistant\n<think></think>");
       break;
     case example::DecoderModelVersion::kSmollm2_135m:
       if (!system_prompt.empty()) {
