@@ -2512,6 +2512,74 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(module, sample_inputs)
 
+    def test_vulkan_backend_warp(self):
+        class WarpModule(torch.nn.Module):
+            def forward(self, x, flow):
+                return torch.ops.et_vk.warp(x, flow)
+
+        self.lower_module_and_test_output(
+            WarpModule(),
+            (
+                torch.randn(size=[1, 8, 16, 24]),
+                torch.randn(size=[1, 2, 16, 24]),
+            ),
+        )
+
+    def test_vulkan_backend_warp_mismatched_flow_not_delegated(self):
+        class WarpModule(torch.nn.Module):
+            def forward(self, x, flow):
+                return torch.ops.et_vk.warp(x, flow)
+
+        self.lower_module_and_test_output(
+            WarpModule(),
+            (
+                torch.randn(size=[1, 8, 16, 24]),
+                torch.randn(size=[1, 2, 1, 1]),
+            ),
+            expect_no_delegates=True,
+        )
+
+    def _test_warp_blend(self, img_hw, flow_hw):
+        class WarpBlendModule(torch.nn.Module):
+            def forward(self, img0, img1, flow, mask):
+                return torch.ops.et_vk.warp_blend(img0, img1, flow, mask)
+
+        img_h, img_w = img_hw
+        flow_h, flow_w = flow_hw
+        # img0/img1 in [0, 1]: warp_blend clamps its output to that range, so
+        # out-of-range inputs would make the comparison test the clamp instead
+        # of the warp + blend math.
+        self.lower_module_and_test_output(
+            WarpBlendModule(),
+            (
+                torch.rand(size=[1, 3, img_h, img_w]),
+                torch.rand(size=[1, 3, img_h, img_w]),
+                torch.randn(size=[1, 4, flow_h, flow_w]),
+                torch.randn(size=[1, 1, flow_h, flow_w]),
+            ),
+        )
+
+    def test_vulkan_backend_warp_blend(self):
+        # flow/mask already at the output size: the in-shader upsample is the
+        # identity and only the warp + blend math is exercised.
+        self._test_warp_blend(img_hw=(16, 24), flow_hw=(16, 24))
+
+    def test_vulkan_backend_warp_blend_upsampled_flow(self):
+        # flow/mask at half the output size, as RIFE emits them: exercises the
+        # fused bilinear upsample and the per-axis displacement rescale, which
+        # the equal-size case leaves as a no-op.
+        self._test_warp_blend(img_hw=(16, 24), flow_hw=(8, 12))
+
+    def test_vulkan_backend_et_vk_pixel_shuffle(self):
+        class PixelShuffleModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.ops.et_vk.pixel_shuffle(x, 2)
+
+        self.lower_module_and_test_output(
+            PixelShuffleModule(),
+            (torch.randn(size=[1, 8, 8, 12]),),
+        )
+
     def _test_conv2d_lrelu(self, c_in, c_out, hw, stride, residual):
         conv = torch.nn.Conv2d(c_in, c_out, 3, stride, 1)
 

@@ -1468,3 +1468,154 @@ lib.define(
     f"*, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.impl(name, conv2d_lrelu_out_impl, "CompositeExplicitAutograd")
+
+
+################
+## warp_blend ##
+################
+
+
+def _warp_blend_warp(img: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
+    # Mirror RIFE's WarpModule (mode=bilinear, padding=border, align_corners=True)
+    # so this reference impl is numerically identical to the unfused graph. The
+    # Vulkan shader exploits the align_corners=True identity (sample coord ==
+    # out_px + flow) and skips the normalized-grid round trip.
+    _, _, height, width = img.shape
+    xs = torch.linspace(-1.0, 1.0, width, dtype=img.dtype, device=img.device)
+    ys = torch.linspace(-1.0, 1.0, height, dtype=img.dtype, device=img.device)
+    grid_y, grid_x = torch.meshgrid(ys, xs, indexing="ij")
+    base_grid = torch.stack((grid_x, grid_y), dim=-1).unsqueeze(0)
+    norm_scale = torch.tensor(
+        [2.0 / (width - 1.0), 2.0 / (height - 1.0)],
+        dtype=img.dtype,
+        device=img.device,
+    )
+    grid = base_grid + flow.permute(0, 2, 3, 1) * norm_scale
+    return torch.nn.functional.grid_sample(
+        img, grid, mode="bilinear", padding_mode="border", align_corners=True
+    )
+
+
+def warp_blend_impl(
+    img0: torch.Tensor,
+    img1: torch.Tensor,
+    flow: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    # img0/img1: [N, 3, Hout, Wout]. flow: [N, 4, Hin, Win] internal-pixel-unit
+    # displacements (ch 0,1 warp img0; ch 2,3 warp img1). mask: [N, 1, Hin, Win]
+    # raw logits. flow/mask are bilinearly upsampled to the output size (and the
+    # displacement rescaled per axis) -- the shader fuses this; the reference
+    # does it explicitly so the two stay numerically identical. When the sizes
+    # already match, F.interpolate is the identity, so this is a no-op.
+    _, _, out_h, out_w = img0.shape
+    _, _, in_h, in_w = flow.shape
+    if in_h != out_h or in_w != out_w:
+        flow = torch.nn.functional.interpolate(
+            flow, size=(out_h, out_w), mode="bilinear", align_corners=False
+        )
+        sx = out_w / in_w
+        sy = out_h / in_h
+        flow = flow * torch.tensor(
+            [sx, sy, sx, sy], dtype=flow.dtype, device=flow.device
+        ).view(1, 4, 1, 1)
+        mask = torch.nn.functional.interpolate(
+            mask, size=(out_h, out_w), mode="bilinear", align_corners=False
+        )
+    warped0 = _warp_blend_warp(img0, flow[:, :2])
+    warped1 = _warp_blend_warp(img1, flow[:, 2:4])
+    m = torch.sigmoid(mask)
+    merged = warped0 * m + warped1 * (1.0 - m)
+    return torch.clamp(merged, 0.0, 1.0)
+
+
+name = "warp_blend"
+lib.define(f"{name}(Tensor img0, Tensor img1, Tensor flow, Tensor mask) -> Tensor")
+lib.impl(name, warp_blend_impl, "CompositeExplicitAutograd")
+warp_blend_op = getattr(getattr(torch.ops, namespace), name)
+
+
+# When lowering to executorch, ops are converted from default to out variant.
+def warp_blend_out_impl(
+    img0: torch.Tensor,
+    img1: torch.Tensor,
+    flow: torch.Tensor,
+    mask: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    out = warp_blend_impl(img0, img1, flow, mask)
+    return out
+
+
+name = "warp_blend.out"
+lib.define(
+    f"{name}(Tensor img0, Tensor img1, Tensor flow, Tensor mask, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, warp_blend_out_impl, "CompositeExplicitAutograd")
+
+##########
+## warp ##
+##########
+
+
+def warp_impl(input: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
+    # Single bilinear/border warp WITHOUT explicitly constructing a grid.
+    # `input`: [N, C, H, W] (C arbitrary); `flow`: [N, 2, H, W] pixel-unit
+    # displacement. Reference matches RIFE's WarpModule exactly (the Vulkan
+    # shader exploits the align_corners=True identity: sample at out_px + flow).
+    return _warp_blend_warp(input, flow)
+
+
+name = "warp"
+lib.define(f"{name}(Tensor input, Tensor flow) -> Tensor")
+lib.impl(name, warp_impl, "CompositeExplicitAutograd")
+warp_op = getattr(getattr(torch.ops, namespace), name)
+
+
+# When lowering to executorch, ops are converted from default to out variant.
+def warp_out_impl(
+    input: torch.Tensor,
+    flow: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    out = warp_impl(input, flow)
+    return out
+
+
+name = "warp.out"
+lib.define(f"{name}(Tensor input, Tensor flow, *, Tensor(a!) out) -> Tensor(a!)")
+lib.impl(name, warp_out_impl, "CompositeExplicitAutograd")
+
+###################
+## pixel_shuffle ##
+###################
+
+
+def pixel_shuffle_impl(input: torch.Tensor, upscale_factor: int) -> torch.Tensor:
+    # Custom-op alias for aten.pixel_shuffle that survives ExecuTorch's
+    # decomposition into view/permute/clone/view. The Vulkan dispatch reuses the
+    # native fused kernel (PixelShuffle.cpp). Reference == eager pixel_shuffle.
+    return torch.nn.functional.pixel_shuffle(input, upscale_factor)
+
+
+name = "pixel_shuffle"
+lib.define(f"{name}(Tensor input, int upscale_factor) -> Tensor")
+lib.impl(name, pixel_shuffle_impl, "CompositeExplicitAutograd")
+pixel_shuffle_op = getattr(getattr(torch.ops, namespace), name)
+
+
+# When lowering to executorch, ops are converted from default to out variant.
+def pixel_shuffle_out_impl(
+    input: torch.Tensor,
+    upscale_factor: int,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    out = pixel_shuffle_impl(input, upscale_factor)
+    return out
+
+
+name = "pixel_shuffle.out"
+lib.define(
+    f"{name}(Tensor input, int upscale_factor, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, pixel_shuffle_out_impl, "CompositeExplicitAutograd")

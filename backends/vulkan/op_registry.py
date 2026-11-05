@@ -1805,6 +1805,20 @@ def register_pixel_shuffle():
     )
 
 
+
+@update_features(exir_ops.edge.et_vk.pixel_shuffle.default)
+def register_et_vk_pixel_shuffle():
+    # Custom-op alias for the native pixel_shuffle kernel (PixelShuffle.cpp).
+    # A model emits this instead of aten.pixel_shuffle to keep the fused op
+    # intact -- aten.pixel_shuffle is otherwise decomposed into
+    # view/permute/clone/view before the partitioner can claim it.
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
 # =============================================================================
 # GridPriors.cpp
 # =============================================================================
@@ -1883,6 +1897,84 @@ def register_grid_sampler_2d():
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
         are_node_inputs_supported_fn=check_grid_sampler_2d_node,
+    )
+
+
+# =============================================================================
+# Warp.cpp
+# =============================================================================
+
+
+def _node_vals(node: torch.fx.Node, n_args: int) -> Optional[List[torch.Tensor]]:
+    vals = []
+    for arg in list(node.args[:n_args]) + [node]:
+        if not isinstance(arg, torch.fx.Node) or arg.meta.get("val") is None:
+            return None
+        vals.append(arg.meta["val"])
+    return vals
+
+
+def _check_warp_shapes(node: torch.fx.Node) -> bool:
+    """Mirror the runtime checks in Warp.cpp so a graph that would fail them
+    stays on CPU instead of failing at load time."""
+    vals = _node_vals(node, 2)
+    if vals is None:
+        return False
+    inp, flow, out = vals
+    return (
+        inp.dtype == flow.dtype == out.dtype
+        and inp.shape == out.shape
+        and flow.dim() == 4
+        and flow.shape[-2:] == out.shape[-2:]
+    )
+
+
+def _check_warp_blend_shapes(node: torch.fx.Node) -> bool:
+    """Mirror the runtime checks in WarpBlend.cpp so a graph that would fail
+    them stays on CPU instead of failing at load time."""
+    vals = _node_vals(node, 4)
+    if vals is None:
+        return False
+    img0, img1, flow, mask, out = vals
+    return (
+        img0.dtype == img1.dtype == flow.dtype == mask.dtype == out.dtype
+        and img0.shape == out.shape
+        and img1.shape == out.shape
+        and flow.dim() == 4
+        and mask.dim() == 4
+        and flow.shape[-2:] == mask.shape[-2:]
+    )
+
+
+@update_features(exir_ops.edge.et_vk.warp.default)
+def register_warp():
+    # Single bilinear/border warp without an explicitly constructed grid.
+    # in/flow/out must be channels-packed textures (in/out: [N, C, H, W] with C
+    # arbitrary; flow: [N, 2, H, W]). Replaces WarpModule's grid_sampler_2d.
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=_check_warp_shapes,
+    )
+
+
+# =============================================================================
+# WarpBlend.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.warp_blend.default)
+def register_warp_blend():
+    # Fused final warp + blend for RIFE: two bilinear/border/align_corners=True
+    # warps + sigmoid + blend + clamp in one shader. All tensors must be
+    # channels-packed textures (img0/img1/out: 3ch, flow: 4ch, mask: 1ch) so each
+    # has one z-slice per batch and the output texel indexes the matching slice.
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=_check_warp_blend_shapes,
     )
 
 
