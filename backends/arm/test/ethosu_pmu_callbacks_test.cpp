@@ -13,6 +13,7 @@
 
 #include "ethosu_pmu_test_stubs.h"
 
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -267,5 +268,125 @@ int main() {
     CHECK(read_le(other_tracer.metadata + offset + 12, 4) == (slot == 3));
   }
   CHECK(buffer.size == 2);
+
+  CHECK(pmu(&u85).events[7] == ETHOSU_PMU_NO_EVENT);
+  CHECK((pmu(&u85).enabled_mask & 0xff) == 0x7f);
+
+  ethosu_pmu_event_type u55_events[] = {ETHOSU_PMU_MAC_ACTIVE};
+  CHECK(set_ethosu55_65_pmu_events(u55_events) == Error::Ok);
+  u55_events[0] = ETHOSU_PMU_NPU_IDLE;
+  std::array<ethosu_pmu_event_type, 9> too_many_events{};
+  std::array<ethosu_pmu_event_type, 5> too_many_u55_events{};
+  CHECK(set_ethosu85_pmu_events(too_many_events) == Error::InvalidArgument);
+  CHECK(
+      set_ethosu55_65_pmu_events(too_many_u55_events) ==
+      Error::InvalidArgument);
+
+  buffer.reset();
+  CHECK(set_ethosu_stats_buffer(&buffer) == nullptr);
+  EthosUInvocationContext u55_invocation{};
+  ethosu_inference_begin(&u55, &u55_invocation);
+  CHECK((pmu(&u55).enabled_mask & 0xf) == 1);
+  CHECK(pmu(&u55).events[0] == ETHOSU_PMU_MAC_ACTIVE);
+  CHECK(pmu(&u55).events[3] == ETHOSU_PMU_NO_EVENT);
+  pmu(&u55).counts[0] = 91;
+  CHECK(set_ethosu55_65_pmu_events({}) == Error::Ok);
+  ethosu_inference_end(&u55, &u55_invocation);
+  CHECK(buffer.size == 1);
+  CHECK(records[0].stats.counter_count == 1);
+  CHECK(records[0].stats.counters[0].event_id == ETHOSU_PMU_MAC_ACTIVE);
+  CHECK(records[0].stats.counters[0].value == 91);
+  CHECK(set_ethosu_stats_buffer(nullptr) == &buffer);
+
+  ethosu_pmu_event_type u55_configured_events[] = {
+      ETHOSU_PMU_NPU_IDLE,
+      ETHOSU_PMU_NO_EVENT,
+      ETHOSU_PMU_MAC_ACTIVE,
+      ETHOSU_PMU_WD_ACTIVE,
+  };
+  ethosu_pmu_event_type u85_configured_events[] = {
+      ETHOSU_PMU_NPU_IDLE,
+      ETHOSU_PMU_NO_EVENT,
+      ETHOSU_PMU_MAC_ACTIVE,
+      ETHOSU_PMU_WD_ACTIVE,
+      ETHOSU_PMU_NPU_ACTIVE,
+  };
+  CHECK(set_ethosu55_65_pmu_events(u55_configured_events) == Error::Ok);
+  CHECK(set_ethosu85_pmu_events(u85_configured_events) == Error::Ok);
+  u55_configured_events[0] = ETHOSU_PMU_NO_EVENT;
+  u85_configured_events[0] = ETHOSU_PMU_NO_EVENT;
+  CHECK(set_ethosu85_pmu_events(too_many_events) == Error::InvalidArgument);
+  buffer.reset();
+  CHECK(set_ethosu_stats_buffer(&buffer) == nullptr);
+  EthosUInvocationContext configured_u55{};
+  ethosu_inference_begin(&u55, &configured_u55);
+  CHECK((pmu(&u55).enabled_mask & 0xf) == 0xd);
+  CHECK(pmu(&u55).events[0] == ETHOSU_PMU_NPU_IDLE);
+  CHECK(pmu(&u55).events[1] == ETHOSU_PMU_NO_EVENT);
+  CHECK(pmu(&u55).events[3] == ETHOSU_PMU_WD_ACTIVE);
+  ethosu_inference_end(&u55, &configured_u55);
+  CapturingTracer sparse_tracer;
+  EthosUInvocationContext configured_u85{};
+  configured_u85.event_tracer = &sparse_tracer;
+  ethosu_inference_begin(&u85, &configured_u85);
+  CHECK((pmu(&u85).enabled_mask & 0xff) == 0x1d);
+  CHECK(pmu(&u85).events[0] == ETHOSU_PMU_NPU_IDLE);
+  CHECK(pmu(&u85).events[4] == ETHOSU_PMU_NPU_ACTIVE);
+  CHECK(pmu(&u85).events[7] == ETHOSU_PMU_NO_EVENT);
+  pmu(&u85).counts[2] = 31;
+  pmu(&u85).counts[4] = 59;
+  ethosu_inference_end(&u85, &configured_u85);
+  CHECK(buffer.size == 2);
+  CHECK(records[0].stats.counter_count == 3);
+  CHECK(records[0].stats.counters[1].event_id == ETHOSU_PMU_MAC_ACTIVE);
+  CHECK(records[1].stats.counter_count == 4);
+  CHECK(records[1].stats.counters[3].event_id == ETHOSU_PMU_NPU_ACTIVE);
+  CHECK(records[1].stats.counters[1].value == 31);
+  CHECK(records[1].stats.counters[3].value == 59);
+  CHECK(sparse_tracer.started && sparse_tracer.ended);
+  CHECK(
+      sparse_tracer.metadata_size ==
+      kEthosUCycleMetadataHeaderSize + 4 * kEthosUCycleCounterMetadataSize);
+  CHECK(read_le(sparse_tracer.metadata + 36, 4) == 4);
+  CHECK(
+      read_le(
+          sparse_tracer.metadata + kEthosUCycleMetadataHeaderSize +
+              kEthosUCycleCounterMetadataSize,
+          4) == ETHOSU_PMU_MAC_ACTIVE);
+  CHECK(
+      read_le(
+          sparse_tracer.metadata + kEthosUCycleMetadataHeaderSize +
+              3 * kEthosUCycleCounterMetadataSize + 4,
+          8) == 59);
+  CHECK(set_ethosu_stats_buffer(nullptr) == &buffer);
+
+  CHECK(
+      set_ethosu85_pmu_events(
+          std::array{ETHOSU_PMU_MAC_ACTIVE, ETHOSU_PMU_NO_EVENT}) == Error::Ok);
+  buffer.reset();
+  CHECK(set_ethosu_stats_buffer(&buffer) == nullptr);
+  EthosUInvocationContext short_u85{};
+  ethosu_inference_begin(&u85, &short_u85);
+  CHECK((pmu(&u85).enabled_mask & 0xff) == 1);
+  CHECK(pmu(&u85).events[0] == ETHOSU_PMU_MAC_ACTIVE);
+  CHECK(pmu(&u85).events[7] == ETHOSU_PMU_NO_EVENT);
+  ethosu_inference_end(&u85, &short_u85);
+  CHECK(buffer.size == 1);
+  CHECK(records[0].stats.counter_count == 1);
+  CHECK(set_ethosu_stats_buffer(nullptr) == &buffer);
+
+  CHECK(set_ethosu85_pmu_events({}) == Error::Ok);
+  CHECK(set_ethosu55_65_pmu_events({}) == Error::Ok);
+  buffer.reset();
+  CHECK(set_ethosu_stats_buffer(&buffer) == nullptr);
+  EthosUInvocationContext cycles_only{};
+  ethosu_inference_begin(&u55, &cycles_only);
+  CHECK((pmu(&u55).enabled_mask & 0xf) == 0);
+  pmu(&u55).cycles = 77;
+  ethosu_inference_end(&u55, &cycles_only);
+  CHECK(buffer.size == 1);
+  CHECK(records[0].stats.counter_count == 0);
+  CHECK(records[0].stats.cycle_count == 77);
+  CHECK(set_ethosu_stats_buffer(nullptr) == &buffer);
   std::puts("Ethos-U PMU callbacks: PASS");
 }

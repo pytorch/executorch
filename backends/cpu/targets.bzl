@@ -47,6 +47,7 @@ def define_common_targets():
         exported_headers = ["runtime/providers/xnnpack/XNNPACKProvider.h"],
         exported_deps = [":cpu_runtime"],
         deps = [
+            "//executorch/extension/memory_allocator:malloc_memory_allocator",
             "//executorch/extension/threadpool:threadpool",
             third_party_dep("XNNPACK"),
         ],

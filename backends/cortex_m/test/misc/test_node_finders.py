@@ -94,6 +94,52 @@ def test_node_target_finder_missing_target():
     assert str(node_finder) == "NodeTargetNodeFinder targeting node targets: aten::relu"
 
 
+def test_node_target_activation_finder():
+    """Test NodeTargetActivationNodeFinder skips activations not consuming the target."""
+
+    class LinearRelu(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(4, 4)
+
+        def forward(self, x: torch.Tensor):
+            return torch.relu(self.linear(torch.relu(x)))
+
+    graph_module = export(LinearRelu(), (torch.ones(4),)).graph_module
+
+    node_finder = node_finders.NodeTargetActivationNodeFinder(
+        torch.ops.aten.linear.default, torch.ops.aten.relu.default
+    )
+    nodes = list(node_finder.find_nodes(graph_module))
+    assert [n.name for n in nodes] == ["linear", "relu_1"]
+    assert (
+        str(node_finder)
+        == "NodeTargetActivationNodeFinder targeting node target: aten::linear "
+        "with activations: aten::relu"
+    )
+
+
+def test_node_target_activation_finder_skips_forked_target():
+    """Test NodeTargetActivationNodeFinder skips activations of a target with other users."""
+
+    class ForkedLinearRelu(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(4, 4)
+
+        def forward(self, x: torch.Tensor):
+            y = self.linear(x)
+            return torch.relu(y) + y
+
+    graph_module = export(ForkedLinearRelu(), (torch.ones(4),)).graph_module
+
+    node_finder = node_finders.NodeTargetActivationNodeFinder(
+        torch.ops.aten.linear.default, torch.ops.aten.relu.default
+    )
+    nodes = list(node_finder.find_nodes(graph_module))
+    assert [n.name for n in nodes] == ["linear"]
+
+
 def test_global_node_finder():
     """Test GlobalNodeFinder finds all nodes."""
     graph_module = _export_graph_module()

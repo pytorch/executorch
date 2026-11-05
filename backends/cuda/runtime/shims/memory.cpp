@@ -46,10 +46,11 @@ using c10::ScalarType;
 
 namespace {
 
-// A graph capture cannot record a synchronous copy to or from device memory,
-// and such a copy aborts the process when it fails, so a shim that makes one
-// refuses first. Info, not Error: the backend then retries the call without a
-// graph. An empty tensor copies nothing, so it needs no check.
+// A graph capture cannot record a copy that the host waits for, and such a copy
+// aborts the process when it fails, so a shim that copies refuses first, even
+// between device buffers, to keep one rule. Info, not Error: the backend then
+// retries the call without a graph. An empty tensor copies nothing, so it needs
+// no check.
 AOTITorchError refuse_inside_capture(
     const SlimTensor* tensor,
     const char* what) {
@@ -438,7 +439,7 @@ AOTITorchError aoti_torch_as_strided(
 
 AOTITorchError
 aoti_torch_copy_(SlimTensor* self, SlimTensor* src, int32_t non_blocking) {
-  (void)non_blocking; // SlimTensor::copy_() is always synchronous for now
+  (void)non_blocking; // SlimTensor::copy_() decides when the host waits
 
   ET_CHECK_OR_RETURN_ERROR(
       self != nullptr, InvalidArgument, "aoti_torch_copy_: self is null");
