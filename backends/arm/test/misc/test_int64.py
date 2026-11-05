@@ -139,16 +139,19 @@ class Int64BufferWhere(torch.nn.Module):
 
 
 # A listed operator delegates when every operand casts to int64; an unlisted
-# operator or an operand narrower than int32 falls back instead.
+# operator or an operand narrower than int32 falls back instead. to_edge widens
+# the operands of some operators, such as cat, before partitioning.
 int64_extension_partition_suite = {
     "add": (lambda x, y: x + y, (_WIDE, _WIDE_2), 1),
     "pad": (lambda x: torch.nn.functional.pad(x, (1, 1)), (_WIDE,), 1),
     "cumsum": (lambda x: torch.cumsum(x, 0), (_WIDE,), 0),
-    "cat_narrow": (lambda x, y: torch.cat([x, y]), (_WIDE, _NARROW), 1),
+    "cat_narrow_promoted": (lambda x, y: torch.cat([x, y]), (_WIDE, _NARROW), 1),
     "or_narrow": (torch.bitwise_or, (_WIDE, _NARROW), 1),
-    "cat_byte": (lambda x, y: torch.cat([x, y]), (_WIDE, _BYTES), 0),
+    "cat_byte_promoted": (lambda x, y: torch.cat([x, y]), (_WIDE, _BYTES), 1),
+    "or_byte": (torch.bitwise_or, (_WIDE, _BYTES), 0),
     "eq_bool": (lambda x, y: x == y, (_WIDE, _FLAGS), 0),
-    "cat_bool": (lambda x, y: torch.cat([x, y]), (_FLAGS, _WIDE), 1),
+    "cat_bool_promoted": (lambda x, y: torch.cat([x, y]), (_FLAGS, _WIDE), 1),
+    "or_bool": (torch.bitwise_or, (_FLAGS, _WIDE), 1),
     "where": (torch.where, (_COND, _WIDE, _WIDE_2), 0),
     "where_buffer": (Int64BufferWhere(), (_COND, _WIDE_2), 0),
     "strided_slice": (lambda x: x[::2], (torch.arange(5, dtype=torch.int64),), 0),
