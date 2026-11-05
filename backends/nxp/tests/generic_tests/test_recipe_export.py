@@ -549,6 +549,7 @@ class TestInt8QATNeutron:
         assert qr is not None
         assert qr.is_qat is True
         assert qr.train_fn is _noop_train_fn
+        assert qr.qat_export_in_eval_mode is True
         assert len(qr.quantizers) == 1
         assert recipe.lowering_recipe.partitioners is not None
         assert len(recipe.lowering_recipe.partitioners) == 1

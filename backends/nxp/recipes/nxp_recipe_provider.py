@@ -336,6 +336,7 @@ def _build_quantization_recipe(
             quantizers=[_quantizer],
             is_qat=True,
             train_fn=rc.train_fn,
+            qat_export_in_eval_mode=True,
             post_prepare_passes=post_prepare,
             pre_convert_passes=pre_convert,
             post_convert_passes=post_convert,
