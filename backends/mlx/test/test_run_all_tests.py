@@ -15,7 +15,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 from unittest import mock
 
 import torch
@@ -68,6 +68,9 @@ class RunAllTestsTest(unittest.TestCase):
         self._assert_exits(pid)
 
     def test_isolated_run_kills_grandchildren_of_a_crashed_child(self):
+        # An ignored SIGHUP, as under nohup, must still be ignored afterwards.
+        self.addCleanup(signal.signal, signal.SIGHUP, signal.getsignal(signal.SIGHUP))
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
         handlers = [signal.getsignal(s) for s in _HANDLED_SIGNALS]
         with tempfile.TemporaryDirectory() as tmp:
             child, pid_file = _write_child(Path(tmp), "kill -KILL $$")
@@ -86,7 +89,10 @@ class RunAllTestsTest(unittest.TestCase):
             with self.subTest(sig.name), tempfile.TemporaryDirectory() as tmp:
                 harness, pid = self._start_harness(Path(tmp), "wait")
                 harness.send_signal(sig)
-                self.assertEqual(harness.wait(timeout=30), -sig)
+                out = harness.communicate(timeout=30)[0]
+                self.assertEqual(harness.returncode, -sig)
+                # Printed into a pipe before the signal, so it must be flushed.
+                self.assertIn("harness started", out)
                 self._assert_exits(pid)
 
     def test_isolated_run_kills_grandchildren_on_a_sigterm_during_popen(self):
@@ -127,16 +133,20 @@ class RunAllTestsTest(unittest.TestCase):
     def test_isolated_run_keeps_an_ignored_sighup_ignored(self):
         # As under nohup: the test must finish instead of dying with the harness.
         with tempfile.TemporaryDirectory() as tmp:
+            go = Path(tmp) / "go"
             harness, _ = self._start_harness(
-                Path(tmp), "sleep 2", "signal.signal(signal.SIGHUP, signal.SIG_IGN)"
+                Path(tmp),
+                f"while [ ! -f {go} ]; do sleep 0.1; done",
+                "signal.signal(signal.SIGHUP, signal.SIG_IGN)",
             )
             harness.send_signal(signal.SIGHUP)
+            go.touch()
             # 0 means the test passed, so it was not killed.
             self.assertEqual(harness.wait(timeout=60), 0)
 
     def _start_harness(
         self, directory: Path, ending: str, setup: str = "", wait: bool = True
-    ) -> Tuple[subprocess.Popen, int]:
+    ) -> Tuple[subprocess.Popen, Optional[int]]:
         child, pid_file = _write_child(directory, ending)
         # Stands in for run_all_tests --isolate running one test.
         harness = subprocess.Popen(
@@ -151,16 +161,22 @@ class RunAllTestsTest(unittest.TestCase):
                 "signal.signal(signal.SIGQUIT, signal.SIG_DFL)\n"
                 f"{setup}\n"
                 f"sys.executable = {str(child)!r}\n"
+                "print('harness started')\n"
                 "sys.exit(0 if run_all_tests._run_test_in_subprocess('sub_10') else 1)\n",
             ],
             stdout=subprocess.PIPE,
             text=True,
         )
+        self.addCleanup(harness.stdout.close)
         self.addCleanup(harness.kill)
         if not wait:
-            return harness, 0
+            return harness, None
         deadline = time.monotonic() + 120
-        while not _read(pid_file) and time.monotonic() < deadline:
+        while (
+            not _read(pid_file)
+            and harness.poll() is None
+            and time.monotonic() < deadline
+        ):
             time.sleep(0.1)
         pid = int(pid_file.read_text())
         self.addCleanup(_kill_if_alive, pid)
