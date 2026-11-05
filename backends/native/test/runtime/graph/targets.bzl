@@ -10,6 +10,15 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "aliases_test",
+        srcs = ["test_aliases.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/graph:aliases",
+            "//executorch/backends/native/runtime/graph:graph_utils",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "graph_utils_test",
         srcs = ["test_graph_utils.cpp"],
         deps = [

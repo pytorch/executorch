@@ -51,8 +51,10 @@ inline scalar_t compute_scales_value(
     const std::optional<double>& scale,
     int64_t input_size,
     int64_t output_size) {
-  return scale.has_value() ? static_cast<scalar_t>(1.0 / scale.value())
-                           : (static_cast<scalar_t>(input_size) / output_size);
+  // Like ATen, ignores a scale that is not positive.
+  return (scale.has_value() && scale.value() > 0)
+      ? static_cast<scalar_t>(1.0 / scale.value())
+      : (static_cast<scalar_t>(input_size) / output_size);
 }
 
 // Ported from aten/src/ATen/native/UpSample.h

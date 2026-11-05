@@ -63,6 +63,7 @@ def define_common_targets():
         "ModuleAddHalf",
         "ModuleAddMul",
         "ModuleBasic",
+        "ModuleChannelsLast",
         "ModuleKVCacheCachePos",
         "ModuleKVCacheInputPos",
         "ModuleMultipleEntry",
@@ -226,6 +227,9 @@ def define_common_targets():
         cmd = "$(exe :export_program_with_device_info) --outdir $OUT",
         outs = {
             "ModuleAddWithDevice.pte": ["ModuleAddWithDevice.pte"],
+            "ModuleAddConstantWithDevice.pte": ["ModuleAddConstantWithDevice.pte"],
+            "ModuleAddConstantWithDeviceProgram.pte": ["ModuleAddConstantWithDeviceProgram.pte"],
+            "ModuleAddConstantWithDeviceProgram.ptd": ["ModuleAddConstantWithDeviceProgram.ptd"],
         },
         default_outs = ["."],
         visibility = [
