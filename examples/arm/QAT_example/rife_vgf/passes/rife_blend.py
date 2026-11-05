@@ -28,23 +28,29 @@ class RifeBlend:
     complement: torch.Tensor
     image_zero_points: tuple[int, int]
     mask_zero_points: tuple[int, int]
+    output_rescale: Node | None = None
 
 
-def _rescale(node, dtype, nodes):
+def _rescale(node, dtype, nodes, *, output_unsigned=False):
+    output_min, output_max = (0, 255) if output_unsigned else (-128, 127)
     if (
         not _is_op(node, TOSA.RESCALE.default, 5)
         or node.args[1] != dtype
         or len(node.args[2]) != 1
         or not math.isfinite(node.args[2][0])
         or node.args[2][0] <= 0
-        or any(node.kwargs.values())
-        or not all(
-            type(node.args[i]) is int and -128 <= node.args[i] <= 127 for i in (3, 4)
-        )
+        or node.kwargs.get("output_unsigned", False) != output_unsigned
+        or node.kwargs.get("input_unsigned", False)
+        or not all(type(value) is int for value in node.args[3:5])
+        or not -128 <= node.args[3] <= 127
+        or not output_min <= node.args[4] <= output_max
+        or (output_unsigned and node.args[0].meta["val"].dtype != torch.int8)
         or (dtype == torch.int32 and node.args[4] != 0)
         or (node.args[0].meta["val"].dtype == torch.int32 and node.args[3] != 0)
     ):
-        raise ValueError("Expected a signed per-tensor blend rescale.")
+        raise ValueError(
+            "Unsupported blend rescale dtype, scale, zero points or flags."
+        )
     nodes.add(node)
     return node.args[0]
 
@@ -57,7 +63,9 @@ def _apply_rescale(values, node, *, clamp=True):
     ) >> shifts[0]
     if not clamp:
         return scaled + node.args[4]
-    limits = torch.iinfo(node.args[1])
+    limits = torch.iinfo(
+        torch.uint8 if node.kwargs.get("output_unsigned", False) else node.args[1]
+    )
     return (scaled + node.args[4]).clamp(limits.min, limits.max)
 
 
@@ -135,7 +143,14 @@ def match_rife_blend(program, warps, sigmoid):
     if _tensor_shape(result) != shape or result.meta["val"].dtype != torch.int8:
         raise ValueError("Expected an NCHW INT8 RGB result.")
     nodes = {*warps, sigmoid}
-    add = _rescale(result, torch.int8, nodes)
+    output_rescale = None
+    blend_result = result
+    if result.kwargs.get("output_unsigned", False):
+        blend_result = _rescale(result, torch.int8, nodes, output_unsigned=True)
+        if _tensor_shape(blend_result) != shape:
+            raise ValueError("Expected an NCHW INT8 blend before the output rescale.")
+        output_rescale = result
+    add = _rescale(blend_result, torch.int8, nodes)
     if not _is_op(add, TOSA.ADD.default, 2):
         raise ValueError("Expected the final weighted image addition.")
     nodes.add(add)
@@ -156,8 +171,9 @@ def match_rife_blend(program, warps, sigmoid):
         raise ValueError("Weighted image addition could overflow INT32.")
     return RifeBlend(
         result,
-        (mul0, mul1, left, right, result),
+        (mul0, mul1, left, right, blend_result),
         complement,
         (image_zp0, image_zp1),
         (mask_zp0, mask_zp1),
+        output_rescale,
     )

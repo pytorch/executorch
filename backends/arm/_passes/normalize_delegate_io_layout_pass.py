@@ -13,6 +13,9 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     is_param_node,
     permute_fake_tensor_metadata,
 )
+from executorch.backends.arm._passes.insert_sym_size_int_for_input_dims_pass import (
+    InsertSymSizeIntForInputDimsPass,
+)
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -21,7 +24,9 @@ from executorch.exir.pass_base import ExportPass, PassResult
 class NormalizeDelegateIOLayoutPass(ArmPass):
     """Adjust delegated boundary tensor shapes and insert permutes at I/O."""
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        InsertSymSizeIntForInputDimsPass,
+    }
 
     def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)

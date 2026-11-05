@@ -6,7 +6,7 @@
 
 # mypy: disable-error-code=import-not-found
 
-from typing import final, List
+from typing import final, List, Optional
 
 import torch
 from executorch.backends.openvino._passes import (
@@ -22,7 +22,7 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
-from openvino import compile_model, opset13  # type: ignore[import-untyped]
+from openvino import compile_model, opset13, opset16  # type: ignore[import-untyped]
 from openvino.frontend import FrontEndManager  # type: ignore[import-untyped]
 from openvino.frontend.pytorch.fx_decoder import (  # type: ignore[import-untyped]
     TorchFXPythonDecoder,
@@ -61,6 +61,31 @@ def _match_partition_inputs(
             f"OpenVINO backend: expected {len(input_types)} parameters in the "
             f"converted model, got {len(model.get_parameters())}"
         )
+
+
+def _inference_precision(device: str, requested: Optional[str]) -> Optional[str]:
+    """The INFERENCE_PRECISION_HINT to pass, or None for the device's default."""
+    return requested or ("f32" if device.startswith("CPU") else None)
+
+
+def _copy_returned_inputs(model, device: str) -> None:
+    """Make the converted model compute each output that is one of its inputs.
+
+    The converter turns copies like aten.clone into nothing, so such an output
+    is the input itself. The CPU plugin does not write it, and can overwrite
+    the input with the output buffer's old contents. OpenVINO keeps an
+    Identity between an input and an output, and the CPU plugin runs it as a
+    copy, while it can remove a Convert to the same type. On an ARM CPU at
+    f16, it rounds this copy of a float input, like its other float outputs.
+    Other devices are left as they are, since neither the problem nor Identity
+    was checked there.
+    """
+    if not device.startswith("CPU"):
+        return
+    for result in model.get_results():
+        source = result.input_value(0)
+        if source.get_node().get_type_name() == "Parameter":
+            result.input(0).replace_source_output(opset16.identity(source).output(0))
 
 
 @final
@@ -142,6 +167,7 @@ class OpenvinoBackend(BackendDetails):
         frontend = FrontEndManager().load_by_framework("pytorch")
         model = frontend.convert(frontend.load(decoder))
         _match_partition_inputs(model, module, input_shapes, input_types)
+        _copy_returned_inputs(model, device)
         ppp = PrePostProcessor(model)
         # The converter takes an int input, like a SymInt size, as a scalar, but
         # the runtime passes it as an int64 tensor of shape [1].
@@ -150,7 +176,7 @@ class OpenvinoBackend(BackendDetails):
             ppp.input(i).preprocess().custom(lambda x: opset13.squeeze(x, 0).output(0))
         # On ARM CPUs OpenVINO fixes the precision here, not when the runtime
         # imports the model, so this must follow the same rule as the runtime.
-        precision = requested_precision or ("f32" if device.startswith("CPU") else None)
+        precision = _inference_precision(device, requested_precision)
         config = {"INFERENCE_PRECISION_HINT": precision} if precision else {}
         compiled = compile_model(ppp.build(), device, config)
         model_bytes = compiled.export_model()

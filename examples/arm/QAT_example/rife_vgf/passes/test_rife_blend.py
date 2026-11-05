@@ -33,7 +33,7 @@ from torch.export.graph_signature import (
 TOSA = fuse.TOSA
 
 
-def _blend_program(height=4, width=6):
+def _blend_program(height=4, width=6, *, output_unsigned=False):
     program, packed, phase, previous, delta, flow, sigmoid, old_blend = _program(
         height, width
     )
@@ -97,6 +97,9 @@ def _blend_program(height=4, width=6):
         sides.append(rescale(weighted, torch.int32, add_scale, -127))
     add = node(TOSA.ADD.default, tuple(sides), image_shape)
     result = rescale(add, torch.int8, 1.9043485036435921e-6, 0, -127)
+    if output_unsigned:
+        result = rescale(result, torch.int8, 1.0038925936873089, -127, 0)
+        result.kwargs = {"input_unsigned": False, "output_unsigned": True}
     graph.output((result,))
     program.graph_signature.output_specs[:] = [
         OutputSpec(OutputKind.USER_OUTPUT, TensorArgument(name=result.name), None)
@@ -105,8 +108,11 @@ def _blend_program(height=4, width=6):
 
 
 @pytest.mark.parametrize("adapted", [False, True])
-def test_fuses_blend_and_writes_only_final_rgb(adapted):
-    program, warps, sigmoid, _, _, result = _blend_program()
+@pytest.mark.parametrize("output_unsigned", [False, True])
+def test_fuses_blend_and_writes_only_final_rgb(adapted, output_unsigned):
+    program, warps, sigmoid, _, _, result = _blend_program(
+        output_unsigned=output_unsigned
+    )
     expected = match_rife_blend(program, warps, sigmoid)
     with patch.object(fuse, "build_final_warps_payload", return_value={}) as build:
         outcome = (
@@ -123,6 +129,8 @@ def test_fuses_blend_and_writes_only_final_rgb(adapted):
     assert len(custom.meta["val"]) == 1
     assert tuple(custom.meta["val"][0].shape) == (1, 3, 4, 6)
     assert build.call_args.kwargs["blend"].rescales == expected.rescales
+    assert (expected.output_rescale is not None) == output_unsigned
+    assert not any(n.target == TOSA.RESCALE.default for n in result.users)
     assert not any(
         n.target
         in (
@@ -207,8 +215,9 @@ def test_integer_blend_matches_tosa_for_all_image_and_mask_codes():
     assert torch.equal(actual, expected.to(torch.int64))
 
 
-def test_blend_payload_and_fake_output_contract():
-    program, warps, sigmoid, _, _, _ = _blend_program()
+@pytest.mark.parametrize("output_unsigned", [False, True])
+def test_blend_payload_and_fake_output_contract(output_unsigned):
+    program, warps, sigmoid, _, _, _ = _blend_program(output_unsigned=output_unsigned)
     _, payloads, rescales, _, _, _, table, _, _ = fuse.FuseRifeFinalWarpsPass(
         program
     )._match(program.graph_module)
@@ -222,9 +231,10 @@ def test_blend_payload_and_fake_output_contract():
     source = compile_shader.call_args.args[0]
     assert "@" not in source
     assert "#define FUSE_BLEND 1" in source
+    assert f"#define OUTPUT_UNSIGNED {int(output_unsigned)}" in source
     assert "rescaleOutput(rescaleAdd0(left) + rescaleAdd1(right))" in source
     assert "tensorWriteARM(output0" in source
-    assert source.count("imulExtended") == 8
+    assert source.count("imulExtended") == 8 + int(output_unsigned)
     assert "int(roundEven(float(value -" not in source
     assert payload["output_0_type"] == "Tensor"
     assert payload["output_0_vkformat"] == "VK_FORMAT_R8_SINT"
@@ -234,3 +244,37 @@ def test_blend_payload_and_fake_output_contract():
         [image, image], final_warps.BLEND_OPERATOR_NAME, None, None
     )
     assert len(values) == 1 and tuple(values[0].shape) == (1, 3, 8, 12)
+
+
+@pytest.mark.parametrize("scale", [0.5, 1.0038925936873089, 2.0])
+@pytest.mark.parametrize("zero_point", [0, 128, 255])
+def test_unsigned_output_rescale_matches_tosa_for_every_int8_code(scale, zero_point):
+    program, warps, sigmoid, _, _, result = _blend_program(output_unsigned=True)
+    result.args = (*result.args[:2], [scale], -127, zero_point)
+    blend = match_rife_blend(program, warps, sigmoid)
+    assert blend.output_rescale is result
+    codes = torch.arange(-128, 128, dtype=torch.int8)
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        expected = TOSA.RESCALE.default(codes, *result.args[1:], **result.kwargs)
+    unsigned_codes = _apply_rescale(codes, result)
+    stored_codes = torch.where(
+        unsigned_codes < 128, unsigned_codes, unsigned_codes - 256
+    )
+    assert torch.equal(stored_codes.to(torch.int8), expected)
+
+
+@pytest.mark.parametrize("invalid", ["input_unsigned", "zero_point", "shared_result"])
+def test_rejects_invalid_unsigned_boundary(invalid):
+    program, warps, sigmoid, _, _, result = _blend_program(output_unsigned=True)
+    if invalid == "input_unsigned":
+        result.kwargs = {"input_unsigned": True, "output_unsigned": True}
+    elif invalid == "zero_point":
+        result.args = (*result.args[:4], 256)
+    else:
+        with program.graph.inserting_before(result):
+            program.graph.call_function(
+                TOSA.RESCALE.default,
+                (result.args[0], torch.int8, [1.0], 0, 0),
+            )
+    with pytest.raises(ValueError):
+        match_rife_blend(program, warps, sigmoid)
