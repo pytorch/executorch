@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List
+from typing import Any, cast, List
 
 import torch
 
@@ -20,6 +20,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 @register_node_visitor
@@ -37,19 +38,23 @@ class TosaPadVisitor(NodeVisitor):
     ) -> None:
         supported_dtypes = supported_data_layout_dtypes(self.tosa_spec)
 
-        validate_num_inputs(self.target, inputs, 2)
+        validate_num_inputs(self.target, inputs, 3)
         validate_same_dtype(self.target, [inputs[0], output])
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
             supported_dtypes,
         )
-        pad_const = tosa_graph.addConst(
-            [1],
-            output.dtype,
-            [node.kwargs.get("value", 0)],
-            name=node.name + "_padding_value",
-        )
+        value_node = cast(torch.fx.Node, node.args[2])
+        pad_value_name = inputs[2].name
+        if value_node.target == exir_ops.backend.tosa.CONST.default:
+            pad_value = tosa_graph.addConst(
+                [1],
+                output.dtype,
+                value_node.args[0],
+                name=node.name + "_padding_value",
+            )
+            pad_value_name = pad_value.name
 
         attr = ts.TosaSerializerAttribute()
         attr.PadAttribute()
@@ -61,7 +66,7 @@ class TosaPadVisitor(NodeVisitor):
             [
                 inputs[0].name,
                 inputs[1].name,
-                pad_const.name,
+                pad_value_name,
             ],
             [output.name],
             attr,

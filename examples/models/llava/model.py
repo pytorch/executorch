@@ -214,9 +214,9 @@ class Llava(torch.nn.Module):
         #     fill=tuple(int(x * 255) for x in self.image_mean),
         # )
 
-        # TODO: implement _upsample_bicubic_aa.out in portable kernel library.
-        # here padded shape should be max(h, w) x max(h, w)
-        # skipping resize for now due to missing _upsample_bicubic_aa kernel in portable
+        # prepare_image() already resized the image to fit in the crop size,
+        # so only the padding is exported. The original pads to
+        # max(h, w) x max(h, w) and then resizes:
         # resized = resize(
         #     padded,
         #     size=[

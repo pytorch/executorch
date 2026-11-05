@@ -369,29 +369,6 @@ def print_memory_planning_info(
     )
 
 
-class SimplifyIdmaOpsPass(PassBase):
-    """Replace idma_load and idma_store with idma_copy."""
-
-    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:
-        modified = False
-        for node in graph_module.graph.find_nodes(
-            op="call_function", target=torch.ops.cadence.idma_load.out
-        ):
-            modified = True
-            node.target = torch.ops.cadence.idma_copy.out
-            node.args = (node.args[0], *node.args[2:])
-
-        for node in graph_module.graph.find_nodes(
-            op="call_function", target=torch.ops.cadence.idma_store.out
-        ):
-            modified = True
-            node.target = torch.ops.cadence.idma_copy.out
-
-        graph_module.graph.eliminate_dead_code()
-        graph_module.recompile()
-        return PassResult(graph_module, modified)
-
-
 class RemoveNopOpsPass(PassBase):
     """Erase the cat/slice/select nop nodes once memory planning is done.
 
@@ -404,9 +381,8 @@ class RemoveNopOpsPass(PassBase):
     This has to happen here rather than as its own pass. Before planning the
     nodes cannot go, because they are what carries the placement constraint;
     after it nothing may run at all (see the warning in
-    exir/program/_program.py). Running inside the memory planning pass, in the
-    slot SimplifyIdmaOpsPass already occupies, is the one point where the
-    placement is decided but the program is not yet emitted.
+    exir/program/_program.py). Here placement is decided but the program
+    is not yet emitted.
     """
 
     def __init__(self, graph_signature: Optional[ExportGraphSignature] = None) -> None:
@@ -545,7 +521,6 @@ class CadenceMemoryPlanning:
         mem_planning = MemoryPlanningPass(
             self.algo,
             # Always allow lifetime and storage overlap.
-            # At opt level 0, we need overlap for idma wait.
             allow_lifetime_and_storage_overlap=True,
             alloc_graph_input=self.alloc_graph_input,
             alloc_graph_output=self.alloc_graph_output,
@@ -554,7 +529,6 @@ class CadenceMemoryPlanning:
 
         graph_module = PassManager(
             passes=[
-                SimplifyIdmaOpsPass(),
                 RemoveNopOpsPass(graph_signature),
             ]
         )(graph_module).graph_module

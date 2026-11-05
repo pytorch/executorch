@@ -434,6 +434,7 @@ class ReplaceViewCopyWithViewPass(PassBase):
 
         This should be run after the NormalizeViewCopyBasePass.
 
+        Only contiguous inputs can share storage with the contiguous view spec.
         During memory planning, view nodes share the same storage as their base.
         """
 
@@ -449,6 +450,7 @@ class ReplaceViewCopyWithViewPass(PassBase):
                 if (
                     _is_view_copy(node)
                     and all(u.op != "output" for u in node.users)
+                    and node.args[0].meta["val"].is_contiguous()
                     and is_copy_to_view_safe(node)
                 ):
                     base, _ = node.args
@@ -495,6 +497,7 @@ class ReplaceViewCopyWithViewPass(PassBase):
                 assert not (
                     _is_view_copy(node)
                     and all(u.op != "output" for u in node.users)
+                    and node.args[0].meta["val"].is_contiguous()
                     and is_copy_to_view_safe(node)
                 )
                 if node.op == "call_function" and node.target == _VIEW_OP:

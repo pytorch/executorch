@@ -4393,6 +4393,29 @@ class LayoutTransform:
         def forward(self, x):
             return self.relu(self.conv(x))
 
+    class _ConvBackward(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(
+                torch.randn(4, 3, 3, 3), requires_grad=False
+            )
+
+        def forward(self, grad_output, x):
+            grad_input, grad_weight, _ = torch.ops.aten.convolution_backward.default(
+                grad_output,
+                x,
+                self.weight,
+                None,
+                [2, 2],
+                [1, 1],
+                [1, 1],
+                False,
+                [0, 0],
+                1,
+                [True, True, False],
+            )
+            return grad_input.flatten(1), grad_weight.flatten(1)
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
@@ -4438,6 +4461,39 @@ class LayoutTransform:
             )
             assertions.assert_target_count(gm, permute, 2)
             assertions.assert_meta_key_on_targets(gm, permute, QCOM_INSERTED_PERMUTE)
+
+        with subtests.test(msg="conv_backward_tuple_outputs"):
+            gm = pass_pipeline.lower_preprocess_gm(
+                module=LayoutTransform._ConvBackward(),
+                sample_input=(torch.randn(1, 4, 4, 4), torch.randn(1, 3, 8, 8)),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+            )
+            conv_backward = next(
+                node
+                for node in gm.graph.nodes
+                if node.target == exir_ops.edge.aten.convolution_backward.default
+            )
+            getitems = [
+                node
+                for node in conv_backward.users
+                if node.target is operator.getitem and node.args[1] in (0, 1)
+            ]
+            permutes = [
+                node
+                for node in gm.graph.nodes
+                if node.target == exir_ops.edge.aten.permute_copy.default
+            ]
+            assert len(getitems) == 2
+            assert all(
+                any(permute_node.args[0] is getitem for permute_node in permutes)
+                for getitem in getitems
+            )
+            assert not any(
+                permute_node.args[0] is conv_backward for permute_node in permutes
+            )
 
 
 class LiftConstantScalarOperands:
