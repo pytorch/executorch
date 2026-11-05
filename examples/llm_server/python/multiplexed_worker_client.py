@@ -20,6 +20,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
+from .hud.worker_logs import worker_stderr
 from .worker_client import (
     _decode_worker_json,
     _PROCESS_WAIT_TIMEOUT_SECONDS,
@@ -857,6 +858,7 @@ async def spawn_multiplexed_worker(
         *cmd,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
+        stderr=worker_stderr.get(),
         env=env,
         cwd=cwd,
         limit=max_message_bytes,

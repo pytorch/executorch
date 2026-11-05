@@ -236,7 +236,7 @@ def test_chat_factory_closes_worker(
     monkeypatch.setattr(
         serve_batching,
         "build_app",
-        lambda _, model_id, *, serving_factory: serving_factory,
+        lambda _, model_id, *, serving_factory, **kwargs: serving_factory,
     )
     args = serve_batching._parse_args(arguments)
     factory = serve_batching.build_app_from_args(args)

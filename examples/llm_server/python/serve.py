@@ -222,7 +222,14 @@ def main(argv=None) -> None:
             else:
                 await runtime.aclose_worker()
 
-    app = build_app(None, args.model_id, serving_factory=serving_factory)
+    app = build_app(
+        None,
+        args.model_id,
+        serving_factory=serving_factory,
+        model_path=args.model_path,
+        max_context=args.max_context,
+        max_concurrent_requests=args.max_inflight_requests,
+    )
     uvicorn.run(app, host=args.host, port=args.port)
 
 

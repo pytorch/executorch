@@ -247,7 +247,12 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
     launch.stages["uvicorn"].assert_called_once_with(app, host="127.0.0.1", port=8000)
     factory = launch.stages["app"].call_args.kwargs["serving_factory"]
     launch.stages["app"].assert_called_once_with(
-        None, "executorch", serving_factory=factory
+        None,
+        "executorch",
+        serving_factory=factory,
+        model_path=args.model_path,
+        max_context=1024,
+        max_concurrent_requests=64,
     )
     launch.runtime.aclose_worker.assert_awaited_once_with()
     launch.worker.close.assert_not_called()

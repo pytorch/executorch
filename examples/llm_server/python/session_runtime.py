@@ -24,10 +24,11 @@ import logging
 import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Optional
 
+from .hud.metrics import current_turn
 from .multiplexed_worker_client import MultiplexedWorkerClient
 from .worker_client import WorkerError
 
@@ -93,6 +94,7 @@ class GenStats:
     # worker explicitly reported a known-empty, resumable token sequence.
     generated_token_ids: Optional[list[int]] = None
     cancelled: bool = False
+    terminal_received: bool = False
 
 
 # Forwarded to WorkerClient.generate() as the per-request config it reads fields
@@ -112,6 +114,7 @@ class _WorkerRequest:
 
 
 def _copy_stats(stats: GenStats, s) -> None:
+    stats.terminal_received = True
     stats.prompt_tokens = s.num_prompt_tokens
     stats.completion_tokens = s.num_generated_tokens
     stats.finish_reason = getattr(s, "finish_reason", None)
@@ -752,7 +755,34 @@ class SessionRuntime:
         """Return a lazy, cancellable stream compatible with async iteration."""
         return Generation(self, session_id, prompt, options, stats)
 
-    async def _generate_stream(self, session_id, prompt, options, generation):
+    def _generate_stream(self, session_id, prompt, options, generation):
+        stream = self._run_generation(session_id, prompt, options, generation)
+        turn = current_turn.get()
+        return (
+            stream
+            if turn is None
+            else self._observe_generation(stream, generation, turn)
+        )
+
+    async def _observe_generation(self, stream, generation, turn):
+        turn.context_epoch = turn.session.context_epoch
+        try:
+            async with aclosing(stream):
+                async for item in stream:
+                    if item:
+                        turn.output()
+                    yield item
+        except Exception as error:
+            # Store a category, never a prompt or raw worker error payload.
+            turn.error = type(error).__name__
+            raise
+        finally:
+            turn.record_stats(generation.stats)
+            future = generation._future
+            if future is not None and not future.done():
+                future.add_done_callback(lambda _: turn.record_stats(generation.stats))
+
+    async def _run_generation(self, session_id, prompt, options, generation):
         out_stats = generation.stats
         request = _WorkerRequest(
             max_new_tokens=options.max_new_tokens,

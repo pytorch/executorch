@@ -26,6 +26,7 @@ from .errors import (
     ModelNotFound,
     SessionCapacity,
 )
+from .hud.metrics import current_turn
 from .openai_transcript import OpenAITranscriptState
 from .protocol import (
     _new_id,
@@ -590,6 +591,9 @@ class ServingChat:
 
     @staticmethod
     def _generation_error(error: Exception) -> APIError:
+        turn = current_turn.get()
+        if turn is not None:
+            turn.error = type(error).__name__
         if isinstance(error, APIError):
             return error
         if isinstance(error, WorkerError):

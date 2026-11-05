@@ -1279,6 +1279,7 @@ def test_native_prefetch_preserves_tokens_and_final_metadata(
                 decode_tok_s=400.0,
                 vision_encoder_ms=123.5,
                 generated_token_ids=generated_ids,
+                terminal_received=True,
             )
             assert not worker._requests and runtime._admitted == 0
         finally:

@@ -252,7 +252,14 @@ def build_app_from_args(args):
             else:
                 await runtime.aclose_worker()
 
-    return build_app(None, args.model_id, serving_factory=serving_factory)
+    return build_app(
+        None,
+        args.model_id,
+        serving_factory=serving_factory,
+        model_path=args.model_path,
+        max_context=args.max_context,
+        max_concurrent_requests=args.max_inflight_requests,
+    )
 
 
 def main(argv=None):

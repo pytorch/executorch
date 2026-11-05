@@ -137,6 +137,41 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   -d '{"model":"<model-id>","messages":[{"role":"user","content":"hello"}]}'
 ```
 
+## Terminal HUD
+
+Interactive terminals always show a live ASCII dashboard. Redirected output and
+`TERM=dumb` keep plain logs. State colors distinguish active, completed, failed,
+and cancelled requests; `NO_COLOR=1` keeps the HUD monochrome.
+
+Requests are grouped by session ID, with active requests and the latest three
+completed requests per session. Active sessions appear first; requests without a
+session ID appear under "Ungrouped requests". The display fits the terminal and
+updates in place. Native multiplexed-worker diagnostics appear in the recent
+log lines instead of scrolling the terminal; redirect stderr for full logs.
+Prompt and response text are never displayed.
+
+Session totals include all observed turns, including ones no longer displayed:
+request/error/cancellation counts, generated tokens, average TTFT, prefill/decode
+throughput, and cache reuse. Throughput uses total tokens divided by total phase
+time; cache reuse uses total reused tokens divided by total prompt tokens.
+Context is the latest reported prompt plus output length, not a cumulative sum.
+Reset clears the context value while retaining history and totals; close removes
+the session. Up to 32 inactive groups are retained, plus all active groups.
+Tracked session counts describe these observations, not native cache allocations.
+
+The server header shows aggregate prefill/decode tokens per second since startup,
+using reported tokens divided by wall-clock uptime, including idle time. Prefill
+counts only newly processed prompt tokens. Worker counts arrive at turn end, so
+these are startup averages, not live rates; incomplete requests contribute once
+their terminal stats arrive. Per-request rates/counts stay `--` until reported.
+TTFT measures first worker text from entry into the validated HTTP handler,
+including session waiting and prompt preparation, but excluding network transfer
+and parsing. Text fragments are not used as token counts.
+
+Model launchers use `build_app(..., model_path=..., max_context=...,
+max_concurrent_requests=...)`. The implementation lives in `hud/`. Noninteractive
+output installs no collector or refresh task and leaves logging unchanged.
+
 ## Sessions
 
 When the worker reports named-session capacity (a worker whose engine supports
