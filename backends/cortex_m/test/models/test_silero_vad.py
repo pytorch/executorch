@@ -71,7 +71,7 @@ ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 5,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_activation_default": 2,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_nhwc_default": 6,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_packed_nhwc_default": 6,
 }
 
 

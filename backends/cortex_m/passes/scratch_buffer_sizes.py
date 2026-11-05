@@ -85,6 +85,7 @@ def cmsis_nn_conv_buffer_size(
     backend: cmsis_nn.Backend,
     conv_node: torch.fx.Node,
     nhwc_logical: bool = False,
+    packed_weights: bool = False,
 ) -> list[int]:
     (
         input_nhwc,
@@ -123,9 +124,7 @@ def cmsis_nn_conv_buffer_size(
                 output_offset=output_offset,
                 activation_min=output_qmin,
                 activation_max=output_qmax,
-                weights_packed=cast(
-                    bool, conv_node.kwargs.get("packed_weights", False)
-                ),
+                weights_packed=packed_weights,
             )
         )
     ]
@@ -294,6 +293,12 @@ _target_to_buffer_sizes_registry: dict[Any, BufferSizeFunction] = {
     exir_ops.edge.cortex_m.quantized_conv2d.default: cmsis_nn_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: partial(
         cmsis_nn_conv_buffer_size, nhwc_logical=True
+    ),
+    exir_ops.edge.cortex_m.quantized_conv2d_packed.default: partial(
+        cmsis_nn_conv_buffer_size, packed_weights=True
+    ),
+    exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default: partial(
+        cmsis_nn_conv_buffer_size, nhwc_logical=True, packed_weights=True
     ),
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default: cmsis_nn_depthwise_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d_nhwc.default: partial(

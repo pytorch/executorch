@@ -26,6 +26,18 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 
+@pytest.mark.parametrize("nhwc", [False, True])
+def test_original_conv_schema(nhwc):
+    op = (
+        torch.ops.cortex_m.quantized_conv2d_nhwc
+        if nhwc
+        else torch.ops.cortex_m.quantized_conv2d
+    )
+    assert len(op.default._schema.arguments) == 13
+    assert len(op.out._schema.arguments) == 14
+    assert op.out._schema.arguments[-1].name == "out"
+
+
 @pytest.mark.parametrize(
     "shape,groups", [((7, 1, 1, 19), 1), ((21, 3, 2, 19), 3), ((8, 1, 3, 8), 2)]
 )
@@ -63,7 +75,6 @@ class PackedConv(torch.nn.Module):
         self.shape = shape
         self.groups = groups
         self.nhwc = nhwc
-        self.packed_weights = True
         self.stride = stride
         self.padding = padding
         self.dilation = dilation
@@ -81,9 +92,9 @@ class PackedConv(torch.nn.Module):
 
     def forward(self, x, scratch):
         op = (
-            torch.ops.cortex_m.quantized_conv2d_nhwc.default
+            torch.ops.cortex_m.quantized_conv2d_packed_nhwc.default
             if self.nhwc
-            else torch.ops.cortex_m.quantized_conv2d.default
+            else torch.ops.cortex_m.quantized_conv2d_packed.default
         )
         return op(
             x,
@@ -100,7 +111,6 @@ class PackedConv(torch.nn.Module):
             127,
             scratch,
             filter_shape=self.shape,
-            packed_weights=self.packed_weights,
         )
 
 
@@ -143,8 +153,7 @@ def test_packed_reference(nhwc, bias, batch, shape, groups, stride, padding, dil
 
 @pytest.mark.parametrize("nhwc", [False, True])
 @pytest.mark.parametrize("bias", [False, True])
-@pytest.mark.parametrize("kwargs", [{}, {"filter_shape": None}])
-def test_unpacked_without_filter_shape(nhwc, bias, kwargs):
+def test_unpacked_original_api(nhwc, bias):
     shape = (21, 3, 2, 3)
     model = PackedConv(shape, 3, bias, nhwc)
     x = int8_values((2, 9, 7, 9))
@@ -175,9 +184,9 @@ def test_unpacked_without_filter_shape(nhwc, bias, kwargs):
         127,
         scratch,
     )
-    torch.testing.assert_close(op(*args, **kwargs), expected)
+    torch.testing.assert_close(op(*args), expected)
     with FakeTensorMode(allow_non_fake_inputs=True):
-        assert op(*args, **kwargs).shape == expected.shape
+        assert op(*args).shape == expected.shape
 
 
 @pytest.mark.parametrize("nhwc", [False, True])
@@ -202,9 +211,9 @@ def test_implementation_packed(nhwc, shape, groups, stride, padding, cortex_m_ta
         else x.to(memory_format=torch.channels_last)
     )
     target = (
-        exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default
+        exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default
         if nhwc
-        else exir_ops.edge.cortex_m.quantized_conv2d.default
+        else exir_ops.edge.cortex_m.quantized_conv2d_packed.default
     )
     run_on_fvp(model, x, target, cortex_m_target, 1)
 
@@ -230,10 +239,16 @@ def test_packed_lowering(backend, groups, nhwc):
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
     ep = tester.get_artifact(StageType.RUN_PASSES).exported_program()
     [conv] = [n for n in ep.graph.nodes if "cortex_m.quantized_conv2d" in str(n.target)]
-    assert list(conv.kwargs["filter_shape"]) == [21, 3, 2, 9 // groups]
     weight = get_param_tensor(ep, conv.args[1])
     if backend == cmsis_nn.Backend.MVE:
-        assert weight.dim() == 1 and conv.kwargs["packed_weights"]
+        expected = (
+            exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default
+            if nhwc
+            else exir_ops.edge.cortex_m.quantized_conv2d_packed.default
+        )
+        assert conv.target == expected
+        assert list(conv.kwargs["filter_shape"]) == [21, 3, 2, 9 // groups]
+        assert weight.dim() == 1
         assert get_param_tensor(ep, conv.args[2]).shape == (21,)
         constants = (*ep.state_dict.values(), *ep.constants.values())
         assert (
@@ -245,7 +260,13 @@ def test_packed_lowering(backend, groups, nhwc):
         )
     else:
         assert weight.shape == (21, 3, 2, 9 // groups)
-        assert not conv.kwargs.get("packed_weights", False)
+        expected = (
+            exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default
+            if nhwc
+            else exir_ops.edge.cortex_m.quantized_conv2d.default
+        )
+        assert conv.target == expected
+        assert not conv.kwargs
 
 
 @pytest.mark.parametrize("fake", [False, True])
@@ -258,10 +279,9 @@ def test_packed_lowering(backend, groups, nhwc):
         "missing_bias",
         "bias_dtype",
         "shape",
-        "missing_shape",
         "empty_shape",
         "groups",
-        "unpacked_flag",
+        "unpacked_weights",
     ],
 )
 def test_invalid_packed_inputs(fake, nhwc, invalid):
@@ -276,14 +296,12 @@ def test_invalid_packed_inputs(fake, nhwc, invalid):
         model.effective_bias = model.effective_bias.to(torch.int64)
     elif invalid == "shape":
         model.shape = (7, 1, 19)
-    elif invalid == "missing_shape":
-        model.shape = None
     elif invalid == "empty_shape":
         model.shape = ()
     elif invalid == "groups":
         model.shape = (7, 1, 1, 3)
     else:
-        model.packed_weights = False
+        model.weight = int8_values(model.shape)
     x = int8_values((1, 19, 3, 5))
     if nhwc:
         x = x.permute(0, 2, 3, 1).contiguous()
@@ -358,5 +376,17 @@ def test_aot_disabled_lowering(monkeypatch, groups):
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
     ep = tester.get_artifact(StageType.RUN_PASSES).exported_program()
     [conv] = [n for n in ep.graph.nodes if "cortex_m.quantized_conv2d" in str(n.target)]
-    assert not conv.kwargs.get("packed_weights", False) and conv.args[2] is not None
+    assert conv.target == exir_ops.edge.cortex_m.quantized_conv2d.default
+    assert not conv.kwargs and conv.args[2] is not None
     assert get_param_tensor(ep, conv.args[1]).shape == (21, 3, 3, 9 // groups)
+
+
+@pytest.mark.parametrize("nhwc", [False, True])
+def test_implementation_aot_disabled_lowering(monkeypatch, nhwc, cortex_m_target):
+    monkeypatch.setattr(cmsis_nn._require_cmsis_nn(), "aot_enabled", False)
+    model = torch.nn.Sequential(torch.nn.Conv2d(3, 7, 3)).eval()
+    x = torch.randn(2, 3, 7, 9)
+    inputs = (x if nhwc else x.to(memory_format=torch.channels_last),)
+    CortexMTester(model, inputs, target_config=cortex_m_target).test_implementation(
+        qtol=1, use_explicit_layout=nhwc
+    )

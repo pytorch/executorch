@@ -22,6 +22,7 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 namespace {
 constexpr int64_t kConvDim = 4;
 
+template <bool packed_weights>
 bool validate_conv2d_arguments(
     KernelRuntimeContext& context,
     const Tensor& input,
@@ -34,7 +35,6 @@ bool validate_conv2d_arguments(
     const Tensor& requantize_multipliers,
     const Tensor& requantize_shifts,
     const Int64ArrayRef filter_shape,
-    const bool packed_weights,
     ActivationLayout layout) {
   if (input.dim() != kConvDim ||
       weight.dim() != (packed_weights ? 1 : kConvDim) ||
@@ -112,7 +112,7 @@ bool validate_conv2d_arguments(
     context.fail(Error::InvalidArgument);
     return false;
   }
-  if (packed_weights) {
+  if constexpr (packed_weights) {
 #if !ARM_NN_ENABLE_AOT || !defined(__ARM_FEATURE_MVE) || \
     !(__ARM_FEATURE_MVE & 1)
     ET_LOG(Error, "Packed convolution requires AOT-enabled CMSIS-NN and MVE");
@@ -171,6 +171,7 @@ bool validate_conv2d_arguments(
 } // namespace
 
 // cppcheck-suppress unusedFunction
+template <bool packed_weights>
 static Tensor& quantized_conv2d_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input,
@@ -187,12 +188,11 @@ static Tensor& quantized_conv2d_out_impl(
     const int64_t activation_max,
     const Tensor& scratch,
     const std::optional<Int64ArrayRef> optional_filter_shape,
-    const bool packed_weights,
     ActivationLayout layout,
     Tensor& out) {
   int64_t unpacked_filter_shape[kConvDim] = {};
   if (!optional_filter_shape.has_value()) {
-    if (packed_weights) {
+    if constexpr (packed_weights) {
       ET_LOG(Error, "Packed convolution requires filter_shape");
       context.fail(Error::InvalidArgument);
       return out;
@@ -205,7 +205,7 @@ static Tensor& quantized_conv2d_out_impl(
   }
   const Int64ArrayRef filter_shape = optional_filter_shape.value_or(
       Int64ArrayRef(unpacked_filter_shape, kConvDim));
-  if (!validate_conv2d_arguments(
+  if (!validate_conv2d_arguments<packed_weights>(
           context,
           input,
           weight,
@@ -217,7 +217,6 @@ static Tensor& quantized_conv2d_out_impl(
           requantize_multipliers,
           requantize_shifts,
           filter_shape,
-          packed_weights,
           layout)) {
     return out;
   }
@@ -281,7 +280,7 @@ static Tensor& quantized_conv2d_out_impl(
   const int32_t* bias_data =
       bias.has_value() ? bias.value().const_data_ptr<int32_t>() : nullptr;
 #if ARM_NN_ENABLE_AOT
-  if (packed_weights) {
+  if constexpr (packed_weights) {
     conv_params.filter_format = ARM_NN_FILTER_FORMAT_PACKED_4X16;
     conv_params.bias_format = ARM_NN_BIAS_FORMAT_EFFECTIVE;
   }
@@ -354,10 +353,8 @@ Tensor& quantized_conv2d_out(
     const int64_t activation_min,
     const int64_t activation_max,
     const Tensor& scratch,
-    const std::optional<Int64ArrayRef> filter_shape,
-    const bool packed_weights,
     Tensor& out) {
-  return quantized_conv2d_out_impl(
+  return quantized_conv2d_out_impl<false>(
       context,
       input,
       weight,
@@ -372,8 +369,7 @@ Tensor& quantized_conv2d_out(
       activation_min,
       activation_max,
       scratch,
-      filter_shape,
-      packed_weights,
+      std::nullopt,
       ActivationLayout::NCHWLogical,
       out);
 }
@@ -394,10 +390,46 @@ Tensor& quantized_conv2d_nhwc_out(
     const int64_t activation_min,
     const int64_t activation_max,
     const Tensor& scratch,
-    const std::optional<Int64ArrayRef> filter_shape,
-    const bool packed_weights,
     Tensor& out) {
-  return quantized_conv2d_out_impl(
+  return quantized_conv2d_out_impl<false>(
+      context,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      input_offset,
+      output_offset,
+      requantize_multipliers,
+      requantize_shifts,
+      activation_min,
+      activation_max,
+      scratch,
+      std::nullopt,
+      ActivationLayout::NHWCLogical,
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_conv2d_packed_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Tensor& weight,
+    const std::optional<Tensor>& bias,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
+    const int64_t input_offset,
+    const int64_t output_offset,
+    const Tensor& requantize_multipliers,
+    const Tensor& requantize_shifts,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    const Tensor& scratch,
+    const Int64ArrayRef filter_shape,
+    Tensor& out) {
+  return quantized_conv2d_out_impl<true>(
       context,
       input,
       weight,
@@ -413,7 +445,44 @@ Tensor& quantized_conv2d_nhwc_out(
       activation_max,
       scratch,
       filter_shape,
-      packed_weights,
+      ActivationLayout::NCHWLogical,
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_conv2d_packed_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Tensor& weight,
+    const std::optional<Tensor>& bias,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
+    const int64_t input_offset,
+    const int64_t output_offset,
+    const Tensor& requantize_multipliers,
+    const Tensor& requantize_shifts,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    const Tensor& scratch,
+    const Int64ArrayRef filter_shape,
+    Tensor& out) {
+  return quantized_conv2d_out_impl<true>(
+      context,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      input_offset,
+      output_offset,
+      requantize_multipliers,
+      requantize_shifts,
+      activation_min,
+      activation_max,
+      scratch,
+      filter_shape,
       ActivationLayout::NHWCLogical,
       out);
 }

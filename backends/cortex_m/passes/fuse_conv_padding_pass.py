@@ -16,6 +16,8 @@ class FuseConvPaddingPass(ExportPass):
         conv_ops = {
             exir_ops.edge.cortex_m.quantized_conv2d.default: (False, 6),
             exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: (True, 6),
+            exir_ops.edge.cortex_m.quantized_conv2d_packed.default: (False, 6),
+            exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default: (True, 6),
             exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default: (False, 7),
             exir_ops.edge.cortex_m.quantized_depthwise_conv2d_nhwc.default: (True, 7),
         }

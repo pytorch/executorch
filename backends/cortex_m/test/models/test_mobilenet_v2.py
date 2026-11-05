@@ -31,7 +31,7 @@ ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 10,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 35,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_packed_default": 35,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 17,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 1,
 }
@@ -53,7 +53,7 @@ ops_after_explicit_layout: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 10,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_nhwc_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_nhwc_default": 35,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_packed_nhwc_default": 35,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_nhwc_default": 17,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 1,
 }
@@ -74,7 +74,7 @@ ops_absent_after_transforms: list[str] = []
 ops_absent_after_explicit_layout: list[str] = [
     "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default",
     "executorch_exir_dialects_edge__ops_aten_convolution_default",
-    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default",
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_packed_default",
 ]
 
 

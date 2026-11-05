@@ -52,10 +52,9 @@ def test_unsupported_four_value_padding(
         127,
         torch.empty(0, dtype=torch.uint8),
     )
-    kwargs = {} if depthwise else {"filter_shape": weight.shape}
     with FakeTensorMode(allow_non_fake_inputs=True) if fake else nullcontext():
         with pytest.raises(ValueError, match=error):
-            ops[depthwise, nhwc](*args, **kwargs)
+            ops[depthwise, nhwc](*args)
 
 
 class PaddedConv(torch.nn.Module):

@@ -421,7 +421,7 @@ def _prepare_convolution_weights(
     dialect_pass: AtenToCortexMPass,
     weight: torch.Tensor,
     use_depthwise_conv: bool,
-) -> tuple[torch.Tensor, torch.Tensor | None, list[int]]:
+) -> tuple[torch.Tensor, torch.Tensor | None, list[int], bool]:
     """Prepare weights at export and preserve their logical filter shape.
 
     AOT-enabled MVE regular convolution packs weights and precomputes effective
@@ -432,11 +432,12 @@ def _prepare_convolution_weights(
     prepared_weight = weight.permute(permutation).contiguous()
     logical_filter_shape = list(prepared_weight.shape)
     effective_bias = None
-    if (
+    use_packed_conv = (
         not use_depthwise_conv
         and dialect_pass.target_config.backend == cmsis_nn.Backend.MVE
         and cmsis_nn.is_aot_enabled()
-    ):
+    )
+    if use_packed_conv:
         bias = cast(Node | None, node.args[2])
         bias_tensor = (
             get_param_tensor(dialect_pass.exported_program, bias)
@@ -449,7 +450,7 @@ def _prepare_convolution_weights(
             bias_tensor,
             groups=cast(int, node.args[8]),
         )
-    return prepared_weight, effective_bias, logical_filter_shape
+    return prepared_weight, effective_bias, logical_filter_shape, use_packed_conv
 
 
 @AtenToCortexMPass.register_dialect_substitution(
@@ -550,7 +551,7 @@ def _get_convolution_replacement(
     # )
     use_depthwise_conv = is_depthwise and (batch_size == 1)
 
-    prepared_weight, effective_bias_tensor, logical_filter_shape = (
+    prepared_weight, effective_bias_tensor, logical_filter_shape, use_packed_conv = (
         _prepare_convolution_weights(
             node, dialect_pass, param_weight_tensor, use_depthwise_conv
         )
@@ -633,14 +634,14 @@ def _get_convolution_replacement(
         )
 
     # Use regular convolution operator
-    if effective_bias_tensor is not None:
+    if use_packed_conv:
         with node.graph.inserting_after(prepared_weight_node):
             bias = create_constant_placeholder(
                 exported_program,
                 node.graph,
                 node.name + "_effective_bias",
                 InputKind.PARAMETER,
-                effective_bias_tensor,
+                cast(torch.Tensor, effective_bias_tensor),
             )
 
     scratch = _create_uninitialized_alloc_node(node, exported_program)
@@ -660,6 +661,16 @@ def _get_convolution_replacement(
         output_qmax,
         scratch,
     )
+    if use_packed_conv:
+        return DialectNodeSpec(
+            (
+                exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default
+                if explicit_nhwc
+                else exir_ops.edge.cortex_m.quantized_conv2d_packed.default
+            ),
+            conv2d_args,
+            {"filter_shape": logical_filter_shape},
+        )
     return DialectNodeSpec(
         (
             exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default
@@ -667,10 +678,6 @@ def _get_convolution_replacement(
             else exir_ops.edge.cortex_m.quantized_conv2d.default
         ),
         conv2d_args,
-        {
-            "filter_shape": logical_filter_shape,
-            "packed_weights": effective_bias_tensor is not None,
-        },
     )
 
 
