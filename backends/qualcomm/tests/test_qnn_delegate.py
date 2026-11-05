@@ -1311,6 +1311,14 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_full_like_shape_only(self):
+        sample_input = (torch.randn(2, 3), torch.randn(2, 3))
+        module = FullLikeShapeOnly()  # noqa: F405
+        self.lower_module_and_test_output(module, sample_input)
+        # A full alone reads nothing at runtime, so it stays on CPU.
+        module = FullLikeShapeOnly(scale_y=False)  # noqa: F405
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=0)
+
     def test_qnn_backend_gather(self):
         modules = [
             Gather(),  # noqa: F405
@@ -4568,6 +4576,13 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full_like_shape_only(self):
+        sample_input = (torch.randn(2, 3), torch.randn(2, 3))
+        module = FullLikeShapeOnly(scale_y=False)  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        # A full alone reads nothing at runtime, so it stays on CPU.
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=0)
 
     def test_qnn_backend_gather(self):
         modules = [

@@ -10,6 +10,7 @@ import torch
 from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     ConvertBmmToMatmul,
+    ConvertFullLikeToFull,
     ConvertMhaToSha,
     DecomposeColIm,
     DecomposeWrapWithAutocast,
@@ -59,6 +60,7 @@ from executorch.backends.qualcomm.tests.models import (
     BroadcastAndMutate,
     CastToFloat,
     ConvBackward,
+    FullLikeShapeOnly,
     HardSigmoid,
     Reciprocal,
     ScaledRmsNorm,
@@ -1580,6 +1582,44 @@ class TestPasses(unittest.TestCase):
                     cast, defaultdict(dict)
                 )
                 self.assertEqual(expected, len(ops))
+
+    def test_convert_full_like_to_full(self):
+        sample_input = (torch.randn(2, 3), torch.randn(2, 3))
+        # An int fill on a float input must still give a float tensor.
+        for dynamic, fill in ((False, 0.5), (False, 1), (True, 0.5)):
+            with self.subTest(dynamic=dynamic, fill=fill):
+                module = FullLikeShapeOnly(fill=fill)
+                dynamic_shapes = (
+                    {"x": {0: torch.export.Dim("n", min=2, max=4)}, "y": None}
+                    if dynamic
+                    else None
+                )
+                ep = to_edge(
+                    torch.export.export(
+                        module,
+                        sample_input,
+                        dynamic_shapes=dynamic_shapes,
+                        strict=True,
+                    )
+                ).exported_program()
+                graph_module = ConvertFullLikeToFull()(ep.graph_module).graph_module
+                targets = {node.target for node in graph_module.graph.nodes}
+                x = next(n for n in graph_module.graph.nodes if n.name == "x")
+                # A dynamic shape has to be read at runtime. Otherwise the ops
+                # that only gave full_like its shape are removed, so nothing
+                # reads x.
+                self.assertEqual(
+                    exir_ops.edge.aten.full_like.default in targets, dynamic
+                )
+                self.assertEqual(
+                    exir_ops.edge.aten.full.default in targets, not dynamic
+                )
+                self.assertEqual(len(x.users) > 0, dynamic)
+                # The pass rewrites ep's graph in place.
+                for result, expected in zip(
+                    ep.module()(*sample_input), module(*sample_input)
+                ):
+                    torch.testing.assert_close(result, expected)
 
     def test_i64_to_i32_casts_any_int64_result(self):
         # A sum of bools and topk indices are int64, and masked_scatter needs
