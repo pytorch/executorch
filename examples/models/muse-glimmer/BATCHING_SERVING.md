@@ -113,7 +113,11 @@ string values preserve whitespace and literal Harmony headers. Schema validation
 accepts Draft 7, 2019-09, and 2020-12 (the default), including root `$id` and local
 fragment references. External references, nested schema identifiers/dialect changes,
 dynamic references, more than 1023 coercion alternatives, and more than 4096 expanded
-schema nodes are rejected before generation. Disabled tools are not validated.
+schema nodes are rejected before generation with HTTP 400 `invalid_tool_schema`.
+All active tool schemas must pass validation, including tools with `strict=false`
+and tools the model does not call. Malformed schemas (for example, a property with
+`"required": true`), Draft 4 or 6, and unknown `$schema` dialects are rejected.
+Disabled tools (`tool_choice="none"`) are not validated.
 Validators are compiled once per request and never fetch schemas. Install the
 serving requirements, including `jsonschema`.
 Coercion preserves correlations between object alternatives and conditional schemas,

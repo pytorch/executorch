@@ -654,13 +654,15 @@ def test_invalid_literal_string_is_not_unquoted_to_satisfy_schema(
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("split", [1, 7, 10000])
 @pytest.mark.parametrize("example_first", [False, True])
-@pytest.mark.parametrize("fenced", [False, True])
+@pytest.mark.parametrize("fence", ["none", "balanced", "unclosed"])
 def test_mixed_recipient_examples_never_become_calls(
-    stream, split, example_first, fenced
+    stream, split, example_first, fence
 ):
     example = _atem("edit.edit", [("q", "EXAMPLE")])
-    if fenced:
-        example = "```xml\n" + example + "\n```"
+    if fence != "none":
+        example = "```xml\n" + example
+        if fence == "balanced":
+            example += "\n```"
     user = "<|start|>assistant to=user<|message|>Example:\n" + example + "<|eom|>"
     real = (
         "<|start|>assistant to=edit.edit<|message|>"
@@ -791,7 +793,11 @@ def test_null_parameters_are_normalized_before_schema_compilation(stream):
 
 @pytest.mark.parametrize(
     "system",
-    ["Explain how reasoning strength changes answers.", "Reasoning strength: high."],
+    [
+        "Explain how reasoning strength changes answers.",
+        "Reasoning strength: high.",
+        "Use high reasoning effort for proofs",
+    ],
 )
 def test_explicit_reasoning_effort_survives_system_prose(system):
     from pathlib import Path
@@ -850,3 +856,62 @@ def test_compiled_schemas_are_not_copied_with_request_normalization(monkeypatch)
         "/v1/chat/completions", json=request({"properties": {"q": {"type": "string"}}})
     )
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize("strict", [False, True])
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"properties": {"q": {"type": "string", "required": True}}},
+        {"$schema": "http://json-schema.org/draft-04/schema#"},
+        {"$schema": "http://json-schema.org/draft-06/schema#"},
+        {"$schema": "https://example.invalid/unknown-draft"},  # @lint-ignore
+    ],
+)
+def test_invalid_active_schemas_fail_before_generation_regardless_of_strict(
+    schema, strict
+):
+    client, serving = client_for(" to=user<|message|>No tool needed")
+    response = client.post("/v1/chat/completions", json=request(schema, strict=strict))
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_tool_schema"
+    assert not serving._runtime.prompts
+
+
+def test_packaged_chat_template_starts_outside_source_tree(tmp_path, monkeypatch):
+    import importlib.util
+    import tomllib
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from setuptools import Distribution
+    from setuptools.command.build_py import build_py
+
+    root = Path(__file__).resolve().parents[4]
+    config = tomllib.loads((root / "pyproject.toml").read_text())["tool"]["setuptools"]
+    package = "executorch.examples.models.muse_glimmer.serving"
+    monkeypatch.chdir(tmp_path)
+    distribution = Distribution(
+        {
+            "packages": [package],
+            "package_dir": {
+                name: str(root / path) for name, path in config["package-dir"].items()
+            },
+            "package_data": config["package-data"],
+        }
+    )
+    distribution.script_name = "setup.py"
+    build = build_py(distribution)
+    build.build_lib = str(tmp_path / "installed")
+    build.ensure_finalized()
+    build.run()
+    installed = Path(build.build_lib) / package.replace(".", "/") / "chat_template.py"
+    spec = importlib.util.spec_from_file_location("installed_muse_template", installed)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    tokenizer = SimpleNamespace(chat_template=None)
+    monkeypatch.setattr(
+        "transformers.AutoTokenizer.from_pretrained", lambda *args, **kwargs: tokenizer
+    )
+    module.MuseGlimmerChatTemplate("unused")
+    assert "<atem:function_calls>" in tokenizer.chat_template
