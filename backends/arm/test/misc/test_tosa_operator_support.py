@@ -334,3 +334,16 @@ def test_int64_operand_check_skips_symbolic_inputs() -> None:
     node = graph.call_function(exir_ops.edge.aten.view_copy.default, (x, [size, -1]))
 
     assert _int64_operands_agree(node)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "agree"),
+    ((torch.int64, True), (torch.int32, True), (torch.bool, True), (torch.int8, False)),
+)
+def test_int64_operand_check_widths(dtype, agree) -> None:
+    graph = torch.fx.Graph()
+    x = _placeholder(graph, "x", (4,), torch.int64)
+    y = _placeholder(graph, "y", (4,), dtype)
+    node = graph.call_function(exir_ops.edge.aten.bitwise_or.Tensor, (x, y))
+
+    assert _int64_operands_agree(node) == agree

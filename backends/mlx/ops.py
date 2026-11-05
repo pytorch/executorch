@@ -2611,8 +2611,10 @@ def _gather_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     other axes. aten.gather instead reads only the first index.size(d) entries
     of x there, so x is sliced to the index shape first where the two differ.
 
-    Unlike eager, an out-of-range index does not raise: the runtime clamps it
-    to the first or last element so the read stays inside x.
+    Unlike eager, a bad index does not raise. Eager rejects any index outside
+    [0, size - 1]; the runtime clamps it to [-size, size - 1] instead, and a
+    negative index counts from the end, so the read stays inside x. A
+    non-empty gather from an empty axis still raises.
     """
     args = P.args(n)
     require_args(args, 3, 3, "aten.gather")
@@ -2742,7 +2744,8 @@ def _index_put_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     for each indexed axis.
 
     Unlike eager, an out-of-range index does not raise: the runtime clamps it
-    to the first or last slice so the write stays inside self.
+    to the first or last slice so the write stays inside self. If an indexed
+    axis is empty, the runtime returns self unchanged.
     """
     args = P.args(n)
     require_args(args, 3, 4, "aten.index_put")

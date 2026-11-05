@@ -695,8 +695,7 @@ class ET_EXPERIMENTAL CudaBackend final
         NotSupported,
         "CUDA graph is not supported together with a caller-provided CUDA stream.");
 
-    // Snapshot the prior selection without creating one (peek, not get), so the
-    // restore is exact and we don't leak a stream just to snapshot.
+    // Snapshot the prior selection with peek, not get, so the restore is exact.
     std::optional<cudaStream_t> prev_stream;
     if (caller_stream) {
       prev_stream = peekCurrentCUDAStream(0);
@@ -723,15 +722,16 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         args.size())
 
-    // Verify device info on all memory-planned, ET-driven IO tensors.
+    // Verify device info on all ET-driven IO tensors.
     // All input and output tensors should have device_type = CUDA, which
     // is set during serialization by PropagateDevicePass based on the
     // target_device compile spec from CudaPartitioner.
     //
     // Under device memory planning, these tensors are GPU-resident: their
-    // storage lives in a planned CUDA arena. The backend wraps them in place
-    // and performs no host<->device copies — graph-level et_copy ops handle
-    // any host<->device transfers outside the delegate.
+    // storage lives in a planned CUDA arena, or in a buffer the caller set for
+    // an input or output that is not memory planned. The backend wraps them
+    // in place and performs no host<->device copies; graph-level et_copy ops
+    // handle any host<->device transfers outside the delegate.
     for (size_t i = 0; i < n_inputs + n_outputs; i++) {
       auto* tensor = &(args[i]->toTensor());
       auto device_type = tensor->unsafeGetTensorImpl()->device_type();
@@ -743,27 +743,39 @@ class ET_EXPERIMENTAL CudaBackend final
           i,
           static_cast<int>(device_type));
 
+      // A method output that is not memory planned has no buffer until the
+      // caller sets one, and the run below cannot wrap a null pointer.
+      const void* data_ptr = tensor->const_data_ptr();
+      ET_CHECK_OR_RETURN_ERROR(
+          data_ptr != nullptr,
+          InvalidArgument,
+          "Method '%s': CUDA delegate %s %zu has no data buffer.%s",
+          handle->method_name.c_str(),
+          i < n_inputs ? "input" : "output",
+          i < n_inputs ? i : i - n_inputs,
+          i < n_inputs ? ""
+                       : " If it is a method output that is not memory "
+                         "planned, set a CUDA buffer for it with "
+                         "Method::set_output_data_ptr or Module::set_output.");
+
       // device_type above is only metadata. Also verify the storage actually
       // lives in CUDA device memory, so a CUDA-typed tensor that is secretly
       // backed by host memory is caught here instead of corrupting the run.
-      const void* data_ptr = tensor->const_data_ptr();
-      if (data_ptr != nullptr) {
-        cudaPointerAttributes attributes{};
-        const cudaError_t attr_err =
-            cudaPointerGetAttributes(&attributes, data_ptr);
-        ET_CHECK_OR_RETURN_ERROR(
-            attr_err == cudaSuccess &&
-                (attributes.type == cudaMemoryTypeDevice ||
-                 attributes.type == cudaMemoryTypeManaged),
-            InvalidArgument,
-            "Tensor %zu has device_type=CUDA but its data pointer %p is not "
-            "backed by CUDA device memory (cudaPointerGetAttributes err=%d, "
-            "cudaMemoryType=%d).",
-            i,
-            data_ptr,
-            static_cast<int>(attr_err),
-            static_cast<int>(attributes.type));
-      }
+      cudaPointerAttributes attributes{};
+      const cudaError_t attr_err =
+          cudaPointerGetAttributes(&attributes, data_ptr);
+      ET_CHECK_OR_RETURN_ERROR(
+          attr_err == cudaSuccess &&
+              (attributes.type == cudaMemoryTypeDevice ||
+               attributes.type == cudaMemoryTypeManaged),
+          InvalidArgument,
+          "Tensor %zu has device_type=CUDA but its data pointer %p is not "
+          "backed by CUDA device memory (cudaPointerGetAttributes err=%d, "
+          "cudaMemoryType=%d).",
+          i,
+          data_ptr,
+          static_cast<int>(attr_err),
+          static_cast<int>(attributes.type));
     }
 
     // The cache has to grow, and its storage be rebound, before the compiled
