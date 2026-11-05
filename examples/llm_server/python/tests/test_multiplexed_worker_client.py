@@ -174,7 +174,8 @@ async def _barrier(client, proc):
 
 def test_interleaved_generation_lifecycle_and_out_of_order_completion():
     async def scenario():
-        async with _real_client("""
+        async with _real_client(
+            """
             a = recv()
             send(a, token='a1')
             requests = [recv(), recv()]
@@ -186,7 +187,8 @@ def test_interleaved_generation_lifecycle_and_out_of_order_completion():
             send(b, done=True, completion_tokens=1)
             send(a, token='a2')
             send(a, done=True, completion_tokens=2)
-            """) as client:
+            """
+        ) as client:
             a_id, b_id = client.reserve_request(), client.reserve_request()
             a = client.generate("a", SimpleNamespace(), request_id=a_id)
             assert a.request_id == a_id
@@ -207,7 +209,8 @@ def test_interleaved_generation_lifecycle_and_out_of_order_completion():
 @pytest.mark.parametrize("ack_first", [True, False])
 def test_targeted_cancel_ack_and_generation_terminal_are_independent(ack_first):
     async def scenario():
-        async with _real_client(f"""
+        async with _real_client(
+            f"""
             a, b = sorted([recv(), recv()], key=lambda r: r['prompt'])
             send(a, token='started')
             c = recv()
@@ -222,7 +225,8 @@ def test_targeted_cancel_ack_and_generation_terminal_are_independent(ack_first):
                 send(c, cancelled=True)
             barrier = recv()
             send(barrier, opened=True)
-            """) as client:
+            """
+        ) as client:
             a = client.generate("a", SimpleNamespace())
             b = client.generate("b", SimpleNamespace())
             assert await anext(a) == "started"
@@ -241,11 +245,13 @@ def test_targeted_cancel_ack_and_generation_terminal_are_independent(ack_first):
 
 def test_cancel_before_submission_is_latched_without_sending():
     async def scenario():
-        async with _real_client("""
+        async with _real_client(
+            """
             b = recv()
             assert b['op'] == 'generate' and b['request_id'] == 2
             send(b, done=True)
-            """) as client:
+            """
+        ) as client:
             request_id = client.reserve_request()
             assert client.cancel(request_id)
             stream = client.generate("cancelled", SimpleNamespace(), request_id)
@@ -782,7 +788,8 @@ def test_capacity_release_reset_and_uint64_exhaustion():
 
 def test_generation_shape_stats_and_lifecycle_errors():
     async def scenario():
-        async with _real_client("""
+        async with _real_client(
+            """
             g = recv()
             assert g == dict(op='generate', request_id=1, prompt_segments=[dict(ids=[1,2])], session_id='s', max_new_tokens=8, temperature=.5, top_p=.9, top_k=3, seed=9, stop=['end'])
             send(g, done=True, generated_token_ids=[7], prompt_tokens=2,
@@ -799,7 +806,8 @@ def test_generation_shape_stats_and_lifecycle_errors():
             o = recv()
             assert o['op'] == 'open'
             send(o, error='full', code='capacity_exhausted')
-            """) as client:
+            """
+        ) as client:
             config = SimpleNamespace(
                 prompt_segments=[{"ids": [1, 2]}],
                 session_id="s",
