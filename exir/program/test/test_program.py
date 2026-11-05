@@ -850,22 +850,30 @@ class TestProgramManagers(unittest.TestCase):
                     pairs * 0.5 * freqs * shift.to(freqs.dtype) * gain * spin * turn
                 )
                 # Views of the pair keep the dims of the complex tensor.
-                rotated = rotated.transpose(0, 1).reshape(8, -1)
+                rotated = rotated.transpose(0, 1).reshape(x.shape[1], -1)
                 return (
                     torch.view_as_real(rotated).flatten(-2),
                     torch.view_as_real(spin * gain),
                     torch.view_as_real(gain * spin),
                 )
 
-        inputs = (torch.randn(2, 8, 8), torch.randn(4), torch.tensor(0.5).double())
+        shift, gain = torch.randn(4), torch.tensor(0.5).double()
+        length = Dim("length", min=2, max=16)
         for precision in (torch.float32, torch.float64):
             with self.subTest(precision=precision):
                 model = Rope(precision)
-                edge = to_edge_transform_and_lower(export(model, inputs))
-                program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
-                torch.testing.assert_close(
-                    tuple(program.forward(inputs)), model(*inputs)
+                exported = export(
+                    model,
+                    (torch.randn(2, 8, 8), shift, gain),
+                    dynamic_shapes=({1: length}, None, None),
                 )
+                edge = to_edge_transform_and_lower(exported)
+                program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+                for x in (torch.randn(2, 8, 8), torch.randn(2, 5, 8)):
+                    torch.testing.assert_close(
+                        tuple(program.forward((x, shift, gain))),
+                        model(x, shift, gain),
+                    )
 
     def test_to_edge_transform_and_lower_keeps_complex_kernels(self):
         class Spectrum(torch.nn.Module):
