@@ -563,10 +563,10 @@ you read it on the CPU.
 default stream of the thread that calls `forward`, and a `cudaMemcpy` on that thread waits for it.
 If you write the inputs on a stream of your own, call `cudaStreamSynchronize` on it before
 `forward`. If you use the result on a stream of your own, call
-`cudaStreamSynchronize(cudaStreamPerThread)` after `forward`. Or run the model on your stream with
-`cuda::CallerStreamGuard`, as
-[the TensorRT guide](backends/tensorrt/tensorrt-overview.md#performance-options) shows, and add
-`executorch::extension_cuda` to `target_link_libraries`.
+`cudaStreamSynchronize(cudaStreamPerThread)` on the same thread, after `forward`. To run the model on
+your own stream instead, see "Choosing the CUDA stream" under
+[Performance Options in the TensorRT guide](backends/tensorrt/tensorrt-overview.md#performance-options).
+It works for a model that uses only the CUDA backend too, and it lists the limits.
 
 Calling the CUDA runtime yourself, for example `cudaMalloc` and `cudaMemcpy`, needs the CUDA Toolkit
 when you build. Add these lines at the end of `CMakeLists.txt`:
