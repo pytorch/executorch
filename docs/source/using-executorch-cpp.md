@@ -561,9 +561,9 @@ you read it on the CPU.
 
 `forward` can return before the GPU has finished. The model runs on `cudaStreamPerThread`, the
 default stream of the thread that calls `forward`, and a `cudaMemcpy` on that thread waits for it.
-If you write the inputs on a stream of your own, call `cudaStreamSynchronize` on it before
-`forward`. If you use the result on a stream of your own, call
-`cudaStreamSynchronize(cudaStreamPerThread)` on the same thread, after `forward`. To run the model on
+Before `forward`, call `cudaStreamSynchronize` on each stream of yours that wrote the inputs or still
+reads the previous result. After `forward`, call `cudaStreamSynchronize(cudaStreamPerThread)` on the
+same thread before a stream of yours reads the result or overwrites the inputs. To run the model on
 your own stream instead, see "Choosing the CUDA stream" under
 [Performance Options in the TensorRT guide](backends/tensorrt/tensorrt-overview.md#performance-options).
 It works for a model that uses only the CUDA backend too, and it lists the limits.
