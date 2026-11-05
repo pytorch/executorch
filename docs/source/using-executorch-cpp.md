@@ -488,8 +488,8 @@ save_pte_program(program, "model", ".")
 
 `save_pte_program` is used instead of writing the buffer by hand because the CUDA backend puts its
 model weights in a **separate data file** next to `model.pte`. The compiled GPU code stays
-inside `model.pte`. Writing only the program file loses the weights, so the model then fails when it
-runs.
+inside `model.pte`. For a model with weights, writing only the program file leaves them out, and the
+model then fails to load.
 
 The backend chooses that file's name, so check what was written:
 
