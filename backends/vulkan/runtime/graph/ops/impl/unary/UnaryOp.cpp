@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/unary/UnaryOp.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -19,7 +20,6 @@
 namespace vkcompute {
 
 constexpr float kDummyFloat = -1.0f;
-const std::string kClampShaderName = "clamp";
 
 void resize_unary_op_node(
     ComputeGraph* graph,
@@ -39,8 +39,9 @@ void add_unary_op_node(
     const float min,
     const float max,
     const ValueRef out,
-    const std::string& op_name) {
-  std::string kernel_name(op_name);
+    const UnaryOpType op_type) {
+  std::string kernel_name("unary_op");
+  kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
@@ -60,9 +61,8 @@ void add_unary_op_node(
                                        : graph.logical_limits_pc_of(out),
           PushConstantDataInfo(&min_max, sizeof(min_max)),
       },
-      // pcs,
       // Specialization Constants
-      {},
+      {static_cast<int32_t>(op_type)},
       // Resize Args
       {},
       // Resizing Logic
@@ -75,7 +75,8 @@ void add_dynamic_clamp_node(
     const ValueRef min,
     const ValueRef max,
     const ValueRef out) {
-  std::string kernel_name("clamp_dynamic");
+  std::string kernel_name("unary_op_dynamic");
+  kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
@@ -104,7 +105,7 @@ void add_dynamic_clamp_node(
       {graph.is_buffer_storage(out) ? graph.numel_pc_of(out)
                                     : graph.logical_limits_pc_of(out),
        PushConstantDataInfo(&bounds_are_int, sizeof(bounds_are_int))},
-      {},
+      {static_cast<int32_t>(UnaryOpType::kClamp)},
       {},
       resize_unary_op_node));
 }
@@ -117,10 +118,15 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
              : -std::numeric_limits<float>::infinity();
 }
 
-#define DEFINE_ACTIVATION_FN(op_name)                                    \
+#define DEFINE_ACTIVATION_FN(op_name, op_type)                           \
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
     return add_unary_op_node(                                            \
-        graph, args[0], kDummyFloat, kDummyFloat, args[1], #op_name);    \
+        graph,                                                           \
+        args[0],                                                         \
+        kDummyFloat,                                                     \
+        kDummyFloat,                                                     \
+        args[1],                                                         \
+        UnaryOpType::op_type);                                           \
   }
 
 #define DEFINE_CLAMP_FN(op_name)                                         \
@@ -135,23 +141,13 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         get_val_or_inf(graph, args[1], /*max = */ false),                \
         get_val_or_inf(graph, args[2], /*max = */ true),                 \
         args[3],                                                         \
-        kClampShaderName);                                               \
+        UnaryOpType::kClamp);                                            \
   }
 
-#define DEFINE_RELU_FN(op_name)                                          \
+#define DEFINE_RELU6_FN(op_name)                                         \
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
     return add_unary_op_node(                                            \
-        graph,                                                           \
-        args[0],                                                         \
-        0,                                                               \
-        std::numeric_limits<float>::infinity(),                          \
-        args[1],                                                         \
-        kClampShaderName);                                               \
-  }
-
-#define DEFINE_RELU6_FN(op_name)                                               \
-  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) {       \
-    return add_unary_op_node(graph, args[0], 0, 6, args[1], kClampShaderName); \
+        graph, args[0], 0, 6, args[1], UnaryOpType::kClamp);             \
   }
 
 #define DEFINE_HARDSHRINK_FN(op_name)                                    \
@@ -162,7 +158,7 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         get_val_or_inf(graph, args[1], /*max = */ false),                \
         -get_val_or_inf(graph, args[1], /*max = */ true),                \
         args[2],                                                         \
-        "hardshrink");                                                   \
+        UnaryOpType::kHardshrink);                                       \
   }
 
 #define DEFINE_LEAKY_RELU_FN(op_name)                                    \
@@ -173,7 +169,7 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         get_val_or_inf(graph, args[1], /*neg slope*/ false),             \
         kDummyFloat,                                                     \
         args[2],                                                         \
-        "leaky_relu");                                                   \
+        UnaryOpType::kLeakyRelu);                                        \
   }
 
 void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
@@ -185,29 +181,30 @@ void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       kDummyFloat,
       kDummyFloat,
       args[2],
-      approximate == "tanh" ? "gelu" : "gelu_erf");
+      approximate == "tanh" ? UnaryOpType::kGelu : UnaryOpType::kGeluErf);
 }
 
-DEFINE_ACTIVATION_FN(abs);
-DEFINE_ACTIVATION_FN(cos);
-DEFINE_ACTIVATION_FN(exp);
-DEFINE_ACTIVATION_FN(neg);
-DEFINE_ACTIVATION_FN(sigmoid);
-DEFINE_ACTIVATION_FN(sin);
-DEFINE_ACTIVATION_FN(sqrt);
-DEFINE_ACTIVATION_FN(rsqrt);
-DEFINE_ACTIVATION_FN(tanh);
+DEFINE_ACTIVATION_FN(abs, kAbs);
+DEFINE_ACTIVATION_FN(cos, kCos);
+DEFINE_ACTIVATION_FN(exp, kExp);
+DEFINE_ACTIVATION_FN(neg, kNeg);
+DEFINE_ACTIVATION_FN(sigmoid, kSigmoid);
+DEFINE_ACTIVATION_FN(sin, kSin);
+DEFINE_ACTIVATION_FN(sqrt, kSqrt);
+DEFINE_ACTIVATION_FN(rsqrt, kRsqrt);
+DEFINE_ACTIVATION_FN(tanh, kTanh);
+DEFINE_ACTIVATION_FN(tan, kTan);
 DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
-DEFINE_RELU_FN(relu);
+DEFINE_ACTIVATION_FN(relu, kRelu);
 DEFINE_RELU6_FN(relu6);
 DEFINE_HARDSHRINK_FN(hardshrink);
-DEFINE_ACTIVATION_FN(hardswish);
-DEFINE_ACTIVATION_FN(hardsigmoid);
+DEFINE_ACTIVATION_FN(hardswish, kHardswish);
+DEFINE_ACTIVATION_FN(hardsigmoid, kHardsigmoid);
 DEFINE_LEAKY_RELU_FN(leaky_relu);
-DEFINE_ACTIVATION_FN(log10);
-DEFINE_ACTIVATION_FN(round);
-DEFINE_ACTIVATION_FN(bitwise_not);
+DEFINE_ACTIVATION_FN(log10, kLog10);
+DEFINE_ACTIVATION_FN(round, kRound);
+DEFINE_ACTIVATION_FN(bitwise_not, kBitwiseNot);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -224,6 +221,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sqrt.default, sqrt);
   VK_REGISTER_OP(aten.rsqrt.default, rsqrt);
   VK_REGISTER_OP(aten.tanh.default, tanh);
+  VK_REGISTER_OP(aten.tan.default, tan);
   VK_REGISTER_OP(aten.hardshrink.default, hardshrink);
   VK_REGISTER_OP(aten.hardswish.default, hardswish);
   VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
