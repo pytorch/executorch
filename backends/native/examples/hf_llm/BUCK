@@ -26,6 +26,8 @@ fbcode_target(
         "//executorch/backends/native:lib",
         "//executorch/exir:lib",
         "//executorch/exir/native:native",
+        "//executorch/extension/llm/cache:cache",
+        "//executorch/extension/llm/cache:hf_attention",
         "//executorch/extension/llm/export:load",
         "fbsource//third-party/pypi/safetensors:safetensors",
         "fbsource//third-party/pypi/transformers:transformers",
