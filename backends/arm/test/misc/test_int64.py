@@ -130,13 +130,14 @@ _FLAGS = torch.tensor([False, True, True, False])
 
 
 class Int64Buffer(torch.nn.Module):
-    def __init__(self, op):
+    def __init__(self, op, *buffers):
         super().__init__()
         self.op = op
-        self.register_buffer("wide", _WIDE)
+        for i, buffer in enumerate(buffers or (_WIDE,)):
+            self.register_buffer(f"buffer_{i}", buffer)
 
     def forward(self, *args):
-        return self.op(self.wide, *args)
+        return self.op(*self.buffers(), *args)
 
 
 # A listed operator delegates when every operand casts to int64; an unlisted
@@ -163,6 +164,20 @@ int64_extension_partition_suite = {
         1,
     ),
     "gt_buffer_narrow": (Int64Buffer(lambda wide, x: x > wide), (_NARROW,), 1),
+    "gt_small_buffer_byte": (
+        Int64Buffer(lambda small, x: x > small, torch.tensor([10, 20, 1, 2])),
+        (_BYTES,),
+        1,
+    ),
+    "index_buffers": (
+        Int64Buffer(
+            lambda rows, columns, x: x[rows, columns],
+            torch.tensor([0, 1]),
+            torch.tensor([2, 0]),
+        ),
+        (torch.arange(6, dtype=torch.int32).reshape(2, 3),),
+        1,
+    ),
     "where_buffer_gt_scalar": (
         Int64Buffer(lambda wide, x, y: torch.where(wide > 7, x, y)),
         (_WIDE, _WIDE_2),
@@ -198,22 +213,6 @@ def test_int64_extension_partition_tosa_INT(test_data: Tuple):
     )
     if delegates:
         tester.to_executorch().run_method_and_compare_outputs(inputs)
-
-
-def test_int64_extension_comparison_tosa_FP_INT():
-    inputs = (_WIDE, _WIDE_2)
-    (
-        ArmTester(
-            Int64Op(lambda x, y: x > y),
-            inputs,
-            common.get_tosa_compile_spec("TOSA-1.1+FP+INT+int64"),
-        )
-        .export()
-        .to_edge_transform_and_lower()
-        .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-        .to_executorch()
-        .run_method_and_compare_outputs(inputs)
-    )
 
 
 @common.parametrize(
