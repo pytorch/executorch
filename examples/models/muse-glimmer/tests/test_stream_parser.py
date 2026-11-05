@@ -9,6 +9,8 @@
 import pytest
 
 pytest.importorskip("pydantic", reason="requires llm_server serving dependencies")
+pytest.importorskip("jsonschema", reason="requires llm_server serving dependencies")
+pytest.importorskip("regex", reason="requires llm_server serving dependencies")
 
 from executorch.examples.llm_server.python.protocol import DeltaMessage  # noqa: E402
 from executorch.examples.models.muse_glimmer.serving.serve import (  # noqa: E402

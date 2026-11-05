@@ -183,20 +183,7 @@ def tool_start(text):
 def parameter_value_spans(text):
     if "<atem:" not in text:
         return []
-    syntax = _Syntax(text)
-    blocks = iter(_tool_blocks(text, syntax))
-    block = next(blocks, None)
-    result = []
-    for start, end in syntax.parameters:
-        while block is not None and block[1] is not None and block[1] <= start:
-            block = next(blocks, None)
-        if (
-            block is not None
-            and block[0] <= start
-            and (block[1] is None or end <= block[1])
-        ):
-            result.append((start, end))
-    return result
+    return _Syntax(text).parameters
 
 
 class IncompleteToolOutputError(ToolOutputError):
