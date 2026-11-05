@@ -4,7 +4,7 @@ The batching runner and multiplexed worker support MLX and CUDA autoregressive
 generation with text only or text plus one image across the submitted
 conversation. They are opt-in entry points; the
 legacy runners and export defaults remain unchanged. DFlash batching runs on MLX
-and CUDA (text only).
+(text only) and CUDA, which also serves images when exported with `--mmproj`.
 CUDA specifics are in [CUDA](#cuda) below.
 
 ## Export
