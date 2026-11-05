@@ -82,7 +82,7 @@ earlier behavior, which accepted non-boolean values as an opt-out.
 **Rejected** with `400 invalid_request_error` (`code: "unsupported_parameter"`)
 rather than silently ignored — a client relying on them would otherwise get
 wrong behavior: `n` (> 1), `reasoning_effort` and OpenRouter `reasoning`
-(except `{}` and `{"exclude": false}`),
+(except `{}` and `{"exclude": false}`, or options supported by a model-specific adapter),
 `frequency_penalty`/`presence_penalty` (nonzero), `logit_bias`, `tool_choice` =
 `"required"` or a specific-function choice
 (forcing/restricting a call needs constrained decoding, not implemented),
@@ -108,8 +108,9 @@ first chunk carries `delta.role = "assistant"`, subsequent chunks carry
 `stream_options.include_usage`), terminated by `data: [DONE]`.
 For models with an incremental parser, reasoning is emitted as
 `delta.reasoning_content` while generation runs. Other reasoning extractors buffer
-their output. With tools enabled, content, reasoning, and complete tool calls are
-buffered. Idle HTTP streams include SSE
+their output. With tools enabled, content and reasoning are buffered unless a
+model adapter supplies a tool-safe incremental reasoning parser. Complete tool
+calls remain buffered. Idle HTTP streams include SSE
 keepalive comments every 15 seconds. Model launchers may bound initial readiness
 waiting to return headers during prefill; errors detected after headers arrive
 as SSE error events.
