@@ -230,6 +230,16 @@ class QnnOperatorSupport(OperatorSupportBase):
             node, self.nodes_to_wrappers
         )
         if node.target in constant_operator:
+            # Constant ops skip the QNN op check, but HTP cannot build one of
+            # more than 5 dims as a partition output (see define_constant).
+            if (
+                self.backend_type == QnnExecuTorchBackendType.kHtpBackend
+                and node.meta["val"].dim() > 5
+            ):
+                logger.info(
+                    f"[{self.phase}] {node.target.__name__} | Skipped, more than 5 dims"
+                )
+                return False
             return True
 
         op_wrapper_list = []
