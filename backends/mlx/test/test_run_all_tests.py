@@ -130,6 +130,22 @@ class RunAllTestsTest(unittest.TestCase):
             # Printed into a pipe just before dying, so it must be flushed.
             self.assertIn("Subprocess error: no memory to fork", out)
 
+    def test_isolated_run_dies_of_the_signal_when_the_flush_fails(self):
+        # As when the pipe reader got the same signal and exited first.
+        with tempfile.TemporaryDirectory() as tmp:
+            setup = (
+                "class BrokenPipe:\n"
+                "    def write(self, text):\n"
+                "        return len(text)\n"
+                "    def flush(self):\n"
+                "        raise BrokenPipeError\n"
+                "sys.stdout = BrokenPipe()"
+            )
+            harness, pid = self._start_harness(Path(tmp), "wait", setup)
+            harness.send_signal(signal.SIGTERM)
+            self.assertEqual(harness.wait(timeout=30), -signal.SIGTERM)
+        self._assert_exits(pid)
+
     def test_isolated_run_keeps_an_ignored_sighup_ignored(self):
         # As under nohup: the test must finish instead of dying with the harness.
         with tempfile.TemporaryDirectory() as tmp:

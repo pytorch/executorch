@@ -204,8 +204,7 @@ def _run_test_in_subprocess(
             return
         _kill_process_group(proc.pid)
         signal.signal(signum, signal.SIG_DFL)
-        sys.stdout.flush()
-        os.kill(os.getpid(), signum)
+        _flush_and_die(signum)
 
     handled = [
         sig
@@ -242,8 +241,16 @@ def _run_test_in_subprocess(
             proc.wait()
         elif pending:
             # Popen failed, but a signal came; still die of it.
-            sys.stdout.flush()
-            os.kill(os.getpid(), pending[0])
+            _flush_and_die(pending[0])
+
+
+def _flush_and_die(signum: int) -> None:
+    # A flush can fail, for example when the pipe reader got the same signal
+    # and exited, and must not keep this process from dying of the signal.
+    try:
+        sys.stdout.flush()
+    finally:
+        os.kill(os.getpid(), signum)
 
 
 def _kill_process_group(pgid: int) -> None:
