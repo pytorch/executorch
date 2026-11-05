@@ -246,8 +246,15 @@ bool is_activation_input(std::string_view key, std::string_view input) {
 // included, in the output's storage. InsertPrepack gives their constants a
 // tensor, so dispatch can convert any input whose storage differs.
 bool binds_output_storage(std::string_view key) {
-  return key == "aten.view_copy.default" || key == "aten.where.self" ||
-      key == "et_vk.sdpa.default";
+  return key == "aten.add.Tensor" || key == "aten.view_copy.default" ||
+      key == "aten.where.self" || key == "et_vk.sdpa.default";
+}
+
+// Ops whose ET-VK kernels pick their shader by the output's layout and storage
+// alone and read `self` in them, which later layout steps can leave unlike the
+// input's.
+bool reads_self_as_output(std::string_view key) {
+  return key == "aten.constant_pad_nd.default" || key == "aten.repeat.default";
 }
 
 // Width-packed texture texels address [C * N, H, ceil(W / 4)], so a reshape
@@ -1851,9 +1858,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
             storage_at(value_id),
             utils::kChannelsPacked);
       }
-      // ET-VK's pad picks its shader by the output's layout and storage
-      // alone, which later layout steps can leave unlike its input's.
-      if (key == "aten.constant_pad_nd.default" && na.name == "self" &&
+      if (reads_self_as_output(key) && na.name == "self" &&
           na.arg.kind() == ArgKind::Tensor && valid(na.arg.as_tensor().id)) {
         const ValueId in_id = na.arg.as_tensor().id;
         ValueId out_id = kInvalid;

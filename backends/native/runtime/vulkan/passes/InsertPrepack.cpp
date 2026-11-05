@@ -19,11 +19,12 @@ namespace ptn::vulkan {
 namespace {
 
 bool needs_prepack(const Node& node) {
-  constexpr std::array<std::string_view, 7> kOps{
+  constexpr std::array<std::string_view, 8> kOps{
       "torch.ops.aten._to_copy.default",
       "torch.ops.aten.add.Tensor",
       "torch.ops.aten.index.Tensor",
       "torch.ops.aten.mul.Tensor",
+      "torch.ops.aten.repeat.default",
       "torch.ops.aten.slice_copy.Tensor",
       "torch.ops.aten.where.self",
       "torch.ops.et_vk.sdpa.default",

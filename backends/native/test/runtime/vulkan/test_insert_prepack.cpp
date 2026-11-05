@@ -107,6 +107,15 @@ TEST(InsertPrepackTest, PrepacksConstantToCopyInput) {
       method.graph.node(2).input_value_ids(), std::vector<ValueId>({0, 4}));
 }
 
+TEST(InsertPrepackTest, PrepacksConstantRepeatInput) {
+  Method method = make_method();
+  method.graph.node(2).target = "torch.ops.aten.repeat.default";
+
+  EXPECT_EQ(insert_prepack_nodes(method), 1);
+  EXPECT_EQ(
+      method.graph.node(2).input_value_ids(), std::vector<ValueId>({0, 4}));
+}
+
 TEST(InsertPrepackTest, PrepacksConstantWhereAndSdpaInputs) {
   for (const char* target :
        {"torch.ops.aten.where.self", "torch.ops.et_vk.sdpa.default"}) {
