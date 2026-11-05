@@ -26,7 +26,7 @@ class GetItemConverter(NodeConverter):
         return True
 
     def convert(self, node: Node):
-        """Skip the `GetItem` node, as it serves no purpose in NeutronIR."""
+        """Convert the `GetItem` node to identity as it serves no purpose in the Neutron IR."""
         self.assert_convertible(node)
 
         t_op = self._create_tflite_op_with_io_tensors(node)
