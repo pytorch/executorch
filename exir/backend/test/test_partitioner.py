@@ -658,32 +658,42 @@ class TestPartitioner(unittest.TestCase):
 
     def test_tag_mutated_buffer_detects_indirect_buffer_mutation(self) -> None:
         class MutableStateModule(torch.nn.Module):
-            def __init__(self):
+            def __init__(self, compute_new_value: bool):
                 super().__init__()
+                self.compute_new_value = compute_new_value
                 self.register_buffer("state", torch.zeros(1))
 
             def forward(self, x):
                 result = x + self.state
-                self.state.copy_(x)
+                self.state.copy_(x + 1 if self.compute_new_value else x)
                 return result
 
-        edge = exir.to_edge(
-            torch.export.export(MutableStateModule(), (torch.ones(1),), strict=True)
-        )
-        exported_program = edge.exported_program()
-        state_node = next(
-            node
-            for node in exported_program.graph.nodes
-            if exported_program.graph_signature.inputs_to_buffers.get(node.name)
-            == "state"
-        )
+        # A new value that is a graph input is never in a partition, so the
+        # buffer then stays in the owning program.
         delegate_tag = "test_partition"
-        for user in state_node.users:
-            user.meta["delegation_tag"] = delegate_tag
+        for compute_new_value, expected_tag in ((True, delegate_tag), (False, None)):
+            with self.subTest(compute_new_value=compute_new_value):
+                edge = exir.to_edge(
+                    torch.export.export(
+                        MutableStateModule(compute_new_value),
+                        (torch.ones(1),),
+                        strict=True,
+                    )
+                )
+                exported_program = edge.exported_program()
+                state_node = next(
+                    node
+                    for node in exported_program.graph.nodes
+                    if exported_program.graph_signature.inputs_to_buffers.get(node.name)
+                    == "state"
+                )
+                for node in exported_program.graph.nodes:
+                    if node.op == "call_function":
+                        node.meta["delegation_tag"] = delegate_tag
 
-        tag_mutated_buffer(exported_program)
+                tag_mutated_buffer(exported_program)
 
-        self.assertEqual(state_node.meta.get("delegation_tag"), delegate_tag)
+                self.assertEqual(state_node.meta.get("delegation_tag"), expected_tag)
 
     def test_buffer_mutation1(self):
         class TestModule(torch.nn.Module):

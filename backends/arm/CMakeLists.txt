@@ -91,11 +91,17 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     )
     target_link_libraries(executorch_delegate_ethos_u PUBLIC ethosu_core_driver)
     add_library(
-      ethosu_execution_stats STATIC
+      ethosu_execution_stats STATIC EXCLUDE_FROM_ALL
       ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp
     )
     target_include_directories(
       ethosu_execution_stats PRIVATE ${_common_include_directories}
+    )
+    target_include_directories(
+      ethosu_execution_stats PRIVATE ${DRIVER_ETHOSU_INCLUDE_DIR}
+    )
+    target_link_libraries(
+      ethosu_execution_stats PUBLIC ethosu_core_driver executorch_core
     )
   elseif(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     target_sources(
@@ -284,8 +290,8 @@ if(EXECUTORCH_BUILD_VGF)
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
   add_library(vgf_backend ${_vgf_backend_sources})
 
-  option(EXECUTORCH_VGF_ZERO_COPY_IO
-         "Enable VGF model-boundary host zero-copy I/O" OFF
+  option(EXECUTORCH_VGF_ZERO_COPY_IO "Enable VGF model-boundary zero-copy I/O"
+         OFF
   )
   if(EXECUTORCH_VGF_ZERO_COPY_IO)
     target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_ZERO_COPY_IO=1)

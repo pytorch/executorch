@@ -24,6 +24,7 @@ from executorch.exir.tensor import (
     scalar_type_enum,
     stride_from_dim_order,
     TensorSpec,
+    without_zero_strides,
 )
 
 
@@ -383,6 +384,23 @@ class TestTensor(unittest.TestCase):
             dim_order_from_stride((490, 1, 10, 1), (2, 1, height, 10)),
         )
         self.assertEqual(shape_env.guards, [])
+
+    def test_without_zero_strides(self) -> None:
+        dense = torch.arange(4.0)
+        self.assertIs(without_zero_strides(dense), dense)
+
+        for tensor, stride in [
+            (torch.tensor(2.0).expand(1), (1,)),
+            (torch.zeros(3).expand(0, 3), (3, 1)),
+            (
+                torch.randn(1, 3, 4, 4).as_strided((1, 3, 4, 4), (0, 1, 12, 3)),
+                (48, 1, 12, 3),
+            ),
+        ]:
+            self.assertIn(0, tensor.stride())
+            copy = without_zero_strides(tensor)
+            self.assertEqual(copy.stride(), stride)
+            self.assertTrue(torch.equal(copy, tensor))
 
     def test_strides_from_dim_order(self) -> None:
         sizes = []

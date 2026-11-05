@@ -173,6 +173,7 @@ def test_alias_buffer_mutation_compile_specs_are_partition_local(monkeypatch):
     monkeypatch.setattr(TOSAPartitioner, "partition", fake_partition)
     monkeypatch.setattr(partitioner, "_validate_mutable_buffers", lambda _: None)
     monkeypatch.setattr(vgf_partitioner, "tag_mutated_buffer", lambda _: None)
+    monkeypatch.setattr(partitioner, "_check_mutable_buffers_owned", lambda _: None)
 
     result = partitioner.partition(tagged_program)
     tag0_specs = result.partition_tags["tag0"].compile_specs
@@ -191,6 +192,37 @@ def test_alias_buffer_mutation_compile_specs_are_partition_local(monkeypatch):
     tag0_specs.append(CompileSpec("mutable_buffer_pairs", b"0:0:0"))
     assert all(spec.key != "mutable_buffer_pairs" for spec in tag1_specs)
     assert all(spec.key != "mutable_buffer_pairs" for spec in shared_spec.compile_specs)
+
+
+@mark.parametrize("returned", [False, True])
+def test_vgf_aliasing_rejects_a_buffer_the_delegate_cannot_own(monkeypatch, returned):
+    class MutatingCache(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("cache", torch.zeros(4, dtype=torch.int8))
+
+        def forward(self, x):
+            self.cache.add_(x)
+            # A delegate cannot own a buffer whose new value is returned.
+            return self.cache if returned else self.cache + 1
+
+    partitioner = VgfPartitioner(VgfCompileSpec(alias_buffer_mutations=True))
+
+    def tag_every_op(_self, program):
+        for node in program.graph.nodes:
+            if node.op == "call_function":
+                node.meta["delegation_tag"] = "tag0"
+        return PartitionResult(program, {"tag0": partitioner.delegation_spec})
+
+    monkeypatch.setattr(TOSAPartitioner, "partition", tag_every_op)
+    exported_program = torch.export.export(
+        MutatingCache(), (torch.ones(4, dtype=torch.int8),)
+    ).run_decompositions()
+    if returned:
+        with raises(ValueError, match="cannot be aliased"):
+            partitioner.partition(exported_program)
+    else:
+        partitioner.partition(exported_program)
 
 
 def test_vgf_direct_aliasing_requires_partitioner(monkeypatch):
