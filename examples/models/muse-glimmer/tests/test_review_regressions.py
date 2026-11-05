@@ -229,7 +229,9 @@ def test_streamed_reasoning_disagreement_is_logged(caplog):
     response = client.post("/v1/chat/completions", json=body)
     assert response.status_code == 200
     assert "Streamed reasoning differs" in caplog.text
+    message, _ = response_message(response, True)
+    assert message["reasoning_content"] == "different"
     assert (
         serving._transcript._turns["disagreement"][0]["reasoning_fp"]
-        == hashlib.sha256(b"expected").digest()
+        == hashlib.sha256(b"different").digest()
     )

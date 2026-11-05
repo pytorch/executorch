@@ -408,9 +408,13 @@ even when it arrives during generation cleanup.
 
 Client-only `cache_control` markers do not change the replay history fingerprint.
 A string and its equivalent single text-part content are also interchangeable.
-Worker completion metadata may include `matched_stop`, the exact string removed
-from generated text. Token EOS does not set this field. Tool adapters use it to
-distinguish request-stop truncation from malformed completed model output.
+Worker completion metadata includes `matched_stop`, the exact string removed
+from generated text, or `null` when no string stop matched (including token EOS).
+An omitted key identifies a legacy worker whose string-stop cause is unknown.
+Tool adapters use this distinction to separate request-stop truncation from
+malformed completed model output. Request stops must precede model stops in the
+worker's stop list: matching uses the earliest text position, then the earliest
+list entry to break ties, so request stops win at the same position.
 
 Tool-definition changes are rendered into the next full prompt and checked by the
 native prefix comparison. They do not invalidate an unchanged historical assistant

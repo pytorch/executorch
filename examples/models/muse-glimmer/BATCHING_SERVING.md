@@ -131,9 +131,12 @@ spellings such as `+5`, `007`, `.5`, and `5.`; declared strings stay literal.
 Before generation, the server walks every coercion alternative and declared parameter,
 including map-property projections. All active tools share a 65,536-visit preflight
 budget. Requests exceeding that budget return HTTP 400 `invalid_tool_schema`. The output budget also
-counts actual keyword checks and nested values, and is shared across all invocations
+counts actual keyword checks, nested values, and deep comparison work, and is shared across all invocations
 in a response. Client `pattern` and `patternProperties` searches share a separate
 100 ms regex execution budget, including annotation and property-projection searches.
+Patterns are compiled and evaluated with the same timeout-capable `regex` engine,
+including Unicode properties and named groups. `uniqueItems` uses bounded structural
+keys rather than pairwise comparisons of objects; `enum` and `const` share this budget.
 Extra parameters, large nested arguments, or multiple calls can exhaust this budget
 and return `invalid_tool_output`; coercion tries at most 1024 alternatives per call.
 This is validation after generation, not token-level constrained decoding.

@@ -92,6 +92,48 @@ def _pattern(validator, pattern, instance, schema):
         yield ValidationError("String does not match pattern")
 
 
+def _comparison_key(value):
+    budget = _VALIDATION_BUDGET.get()
+    budget.spend()
+    if isinstance(value, dict):
+        return (
+            "object",
+            frozenset(
+                (_comparison_key(k), _comparison_key(v)) for k, v in value.items()
+            ),
+        )
+    if isinstance(value, list):
+        return ("array", tuple(_comparison_key(item) for item in value))
+    if isinstance(value, str):
+        budget.spend(len(value) // 64)
+        return ("string", value)
+    if value is None or isinstance(value, bool):
+        return (type(value), value)
+    return ("number", value)
+
+
+def _unique_items(validator, unique, instance, schema):
+    if unique and validator.is_type(instance, "array"):
+        seen = set()
+        for item in instance:
+            key = _comparison_key(item)
+            if key in seen:
+                yield ValidationError("Array items are not unique")
+                return
+            seen.add(key)
+
+
+def _enum(validator, choices, instance, schema):
+    key = _comparison_key(instance)
+    if not any(key == _comparison_key(choice) for choice in choices):
+        yield ValidationError("Value is not an enum member")
+
+
+def _const(validator, expected, instance, schema):
+    if _comparison_key(instance) != _comparison_key(expected):
+        yield ValidationError("Value does not match const")
+
+
 def _pattern_properties(validator, patterns, instance, schema):
     if validator.is_type(instance, "object"):
         for pattern, child in patterns.items():
@@ -192,6 +234,9 @@ def _bounded_validator(cls):
         pattern=_pattern,
         patternProperties=_pattern_properties,
         additionalProperties=_additional_properties,
+        uniqueItems=_unique_items,
+        enum=_enum,
+        const=_const,
     )
     if "unevaluatedProperties" in keywords:
         keywords["unevaluatedProperties"] = unevaluated
@@ -224,7 +269,7 @@ class ToolSchema:
                     "supported JSON Schema drafts are 7, 2019-09 and 2020-12"
                 )
             self._legacy_ref = cls is Draft7Validator
-            cls.check_schema(schema)
+            cls.check_schema(schema, format_checker=None)
             # The dialect is selected once. Keeping $schema in resolved roots
             # would let jsonschema.evolve switch back to an unbounded validator.
             schema = {key: value for key, value in schema.items() if key != "$schema"}
@@ -260,7 +305,7 @@ class ToolSchema:
                 self._check_coercion_work(keys, budget)
             except _ToolWorkLimit as error:
                 raise ValueError(
-                    "tool schema exceeds 65536 estimated coercion work visits"
+                    "tool schemas exceed the request-wide budget of 65536 visits during coercion work"
                 ) from error
         except (
             _ToolWorkLimit,
@@ -273,9 +318,14 @@ class ToolSchema:
             RecursionError,
             Unresolvable,
         ) as error:
+            detail = (
+                "tool schemas exceed the request-wide budget of 65536 work visits"
+                if isinstance(error, _ToolWorkLimit)
+                else str(error).splitlines()[0]
+            )
             raise APIError(
                 400,
-                "Invalid or unsupported tool schema: " + str(error).splitlines()[0],
+                "Invalid or unsupported tool schema: " + detail,
                 "invalid_request_error",
                 "invalid_tool_schema",
             ) from error

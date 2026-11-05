@@ -35,6 +35,7 @@ _OPEN_RE = re.compile(r'<atem:(invoke|parameter)\s+name="([^"]*)"\s*>')
 _PARAMETER_END_RE = re.compile(
     r"</atem:parameter>\s*(?=<atem:parameter|</atem:invoke>|\Z)"
 )
+_TERMINATOR_RE = re.compile(r"\s*<\|eo[mt]\|>")
 _IDENT = r"[a-zA-Z0-9_-]+"
 _RECIPIENT = rf"{_IDENT}(?:\.{_IDENT})*"
 _HEADER_RE = re.compile(
@@ -85,8 +86,11 @@ class _Syntax:
             and closes[self._close_index].start() < tag.start()
         ):
             self._close_index += 1
-        if opening is None or self._close_index == len(closes):
+        if opening is None:
             return 0
+        if self._close_index == len(closes):
+            self.parameters.append((opening.end(), len(self.text)))
+            return len(self.text)
         close = closes[self._close_index]
         active.malformed |= bool(self.text[self._cursor : tag.start()].strip())
         active.parameters.append((opening.group(2), opening.end(), close.start()))
@@ -135,10 +139,11 @@ def _tool_blocks(text, syntax=None):
     following = next(headers, None)
     header = None
     offset = scanned = 0
+    excluded_until = 0
     fences = 0
     line_text = header_text = False
     for start in syntax.markers:
-        if start < offset:
+        if start < max(offset, excluded_until):
             continue
         prefix = text[scanned:start]
         fences += prefix.count("```")
@@ -161,9 +166,12 @@ def _tool_blocks(text, syntax=None):
         ):
             header = None
         adjacent = header is not None and not header_text
-        if header is not None and header.group(1) in ("self", "user"):
-            continue
-        if not adjacent and (line_text or fences % 2):
+        if (header is not None and header.group(1) in ("self", "user")) or (
+            not adjacent and (line_text or fences % 2)
+        ):
+            # An ineligible wrapper owns its children, including bare invokes.
+            if text.startswith(_FUNCTION_CALLS_OPEN, start):
+                excluded_until = syntax.block_end(start) or len(text)
             continue
         end = syntax.block_end(start)
         yield start, end, header.start() if adjacent else start
@@ -216,9 +224,9 @@ class AtemToolCallDetector:
                 normal.append(text[offset:header])
                 offset = end or len(text)
                 # Consume only framing belonging to this call block.
-                terminator = re.match(r"\s*<\|eo[mt]\|>", text[offset:])
+                terminator = _TERMINATOR_RE.match(text, offset)
                 if terminator:
-                    offset += terminator.end()
+                    offset = terminator.end()
                 if end is None:
                     raise IncompleteToolOutputError("Incomplete ATEM tool call")
                 selected = []
