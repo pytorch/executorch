@@ -72,20 +72,33 @@ class RunAllTestsTest(unittest.TestCase):
         self.addCleanup(signal.signal, signal.SIGHUP, signal.getsignal(signal.SIGHUP))
         signal.signal(signal.SIGHUP, signal.SIG_IGN)
         handlers = [signal.getsignal(s) for s in _HANDLED_SIGNALS]
+        during = []
+
+        class RecordsHandlers(subprocess.Popen):
+            def __init__(self, *args, **kwargs):
+                during.extend(signal.getsignal(s) for s in _HANDLED_SIGNALS)
+                super().__init__(*args, **kwargs)
+
         with tempfile.TemporaryDirectory() as tmp:
             child, pid_file = _write_child(Path(tmp), "kill -KILL $$")
-            with mock.patch.object(sys, "executable", str(child)), mock.patch(
-                "sys.stdout", new_callable=io.StringIO
-            ) as out:
+            with mock.patch.object(sys, "executable", str(child)), mock.patch.object(
+                subprocess, "Popen", RecordsHandlers
+            ), mock.patch("sys.stdout", new_callable=io.StringIO) as out:
                 self.assertFalse(_run_test_in_subprocess("sub_10"))
             pid = int(pid_file.read_text())
         self.addCleanup(_kill_if_alive, pid)
+        # SIGTERM and SIGQUIT share the handler; the ignored SIGHUP is left alone.
+        sigterm, sighup, sigquit = during
+        self.assertTrue(callable(sigterm))
+        self.assertIs(sigquit, sigterm)
+        self.assertEqual(sighup, signal.SIG_IGN)
         self.assertIn("Killed by signal 9", out.getvalue())
         self.assertEqual([signal.getsignal(s) for s in _HANDLED_SIGNALS], handlers)
         self._assert_exits(pid)
 
-    def test_isolated_run_kills_grandchildren_on_sigterm_sighup_and_sigquit(self):
-        for sig in _HANDLED_SIGNALS:
+    def test_isolated_run_kills_grandchildren_on_sigterm_and_sighup(self):
+        # SIGQUIT takes the same path; sending it would leave a crash report.
+        for sig in (signal.SIGTERM, signal.SIGHUP):
             with self.subTest(sig.name), tempfile.TemporaryDirectory() as tmp:
                 harness, pid = self._start_harness(Path(tmp), "wait")
                 harness.send_signal(sig)
