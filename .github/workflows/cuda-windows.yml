@@ -5,6 +5,9 @@
 name: Test CUDA Windows Export and E2E
 
 on:
+  schedule:
+    # Nightly: runs the full model matrix (see select-models).
+    - cron: 0 7 * * *
   push:
     branches:
       - main
@@ -48,6 +51,42 @@ jobs:
     name: CI run decision
     uses: ./.github/workflows/_ci-run-decision.yml
 
+  select-models:
+    name: Select CUDA Windows models
+    # Every model costs ~46 min on windows.g5.4xlarge.nvidia.gpu plus an export
+    # on an A10G. PRs and pushes to main run CORE_MODELS, which still cover both
+    # the non-quantized and int4 paths; the nightly, release branches, manual
+    # runs and ciflow/cuda tags run CORE_MODELS + EXTENDED_MODELS.
+    runs-on: ubuntu-latest
+    outputs:
+      models: ${{ steps.select.outputs.models }}
+    steps:
+      - name: Select models
+        id: select
+        env:
+          FULL_MATRIX: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/ciflow/') }}
+        run: |
+          set -euo pipefail
+          CORE_MODELS='[
+            {"model_repo": "mistralai", "model_name": "Voxtral-Mini-3B-2507", "quant": "quantized-int4-weight-only"},
+            {"model_repo": "nvidia", "model_name": "parakeet-tdt", "quant": "non-quantized"}
+          ]'
+          # TODO: sortformer produces 0 segments on Windows after D97788666.
+          # Temporarily disabled until root cause is debugged:
+          #   {"model_repo": "nvidia", "model_name": "diar_streaming_sortformer_4spk-v2", "quant": "non-quantized"}
+          EXTENDED_MODELS='[
+            {"model_repo": "mistralai", "model_name": "Voxtral-Mini-3B-2507", "quant": "non-quantized"},
+            {"model_repo": "nvidia", "model_name": "parakeet-tdt", "quant": "quantized-int4-weight-only"},
+            {"model_repo": "mistralai", "model_name": "Voxtral-Mini-4B-Realtime-2602", "quant": "quantized-int4-tile-packed", "mode": "vr-offline"},
+            {"model_repo": "facebook", "model_name": "dinov2-small-imagenet1k-1-layer", "quant": "non-quantized"}
+          ]'
+          if [ "${FULL_MATRIX}" = "true" ]; then
+            MODELS=$(jq -cn --argjson a "${CORE_MODELS}" --argjson b "${EXTENDED_MODELS}" '$a + $b')
+          else
+            MODELS=$(jq -cn --argjson a "${CORE_MODELS}" '$a')
+          fi
+          echo "models=${MODELS}" | tee -a "${GITHUB_OUTPUT}"
+
   export-model-cuda-windows-artifact:
     name: export-model-cuda-windows-artifact
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
@@ -55,10 +94,11 @@ jobs:
     # filter so push commits that don't touch CUDA-relevant paths skip
     # this job on non-sampled commits. See _ci-run-decision.yml for
     # the sampling policy.
-    needs: [docker-image, changed-files, run-decision]
+    needs: [docker-image, changed-files, run-decision, select-models]
     if: |
       (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (
+        github.event_name == 'schedule' ||
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
@@ -75,31 +115,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - model_repo: "mistralai"
-            model_name: "Voxtral-Mini-3B-2507"
-            quant: "non-quantized"
-          - model_repo: "mistralai"
-            model_name: "Voxtral-Mini-3B-2507"
-            quant: "quantized-int4-weight-only"
-          - model_repo: "nvidia"
-            model_name: "parakeet-tdt"
-            quant: "non-quantized"
-          - model_repo: "nvidia"
-            model_name: "parakeet-tdt"
-            quant: "quantized-int4-weight-only"
-          # TODO: sortformer produces 0 segments on Windows after D97788666.
-          # Temporarily disabled until root cause is debugged.
-          # - model_repo: "nvidia"
-          #   model_name: "diar_streaming_sortformer_4spk-v2"
-          #   quant: "non-quantized"
-          - model_repo: "mistralai"
-            model_name: "Voxtral-Mini-4B-Realtime-2602"
-            quant: "quantized-int4-tile-packed"
-            mode: "vr-offline"
-          - model_repo: "facebook"
-            model_name: "dinov2-small-imagenet1k-1-layer"
-            quant: "non-quantized"
+        include: ${{ fromJSON(needs.select-models.outputs.models) }}
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -161,10 +177,11 @@ jobs:
     # (e.g. fork PR), GitHub still evaluates this if:, so without the
     # explicit success-check this job would run and then fail trying
     # to download an artifact that was never produced.
-    needs: [changed-files, export-model-cuda-windows-artifact, run-decision]
+    needs: [changed-files, export-model-cuda-windows-artifact, run-decision, select-models]
     if: |
       needs.export-model-cuda-windows-artifact.result == 'success' &&
       (
+        github.event_name == 'schedule' ||
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
@@ -177,31 +194,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - model_repo: "mistralai"
-            model_name: "Voxtral-Mini-3B-2507"
-            quant: "non-quantized"
-          - model_repo: "mistralai"
-            model_name: "Voxtral-Mini-3B-2507"
-            quant: "quantized-int4-weight-only"
-          - model_repo: "nvidia"
-            model_name: "parakeet-tdt"
-            quant: "non-quantized"
-          - model_repo: "nvidia"
-            model_name: "parakeet-tdt"
-            quant: "quantized-int4-weight-only"
-          # TODO: sortformer produces 0 segments on Windows after D97788666.
-          # Temporarily disabled until root cause is debugged.
-          # - model_repo: "nvidia"
-          #   model_name: "diar_streaming_sortformer_4spk-v2"
-          #   quant: "non-quantized"
-          - model_repo: "mistralai"
-            model_name: "Voxtral-Mini-4B-Realtime-2602"
-            quant: "quantized-int4-tile-packed"
-            mode: "vr-offline"
-          - model_repo: "facebook"
-            model_name: "dinov2-small-imagenet1k-1-layer"
-            quant: "non-quantized"
+        include: ${{ fromJSON(needs.select-models.outputs.models) }}
     with:
       timeout: 240
       runner: windows.g5.4xlarge.nvidia.gpu
