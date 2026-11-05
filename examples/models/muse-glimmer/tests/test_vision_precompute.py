@@ -54,13 +54,41 @@ class PatchifyTest(unittest.TestCase):
 
 class PosEmbInterpTest(unittest.TestCase):
     def test_identity_grid_matches_table(self):
-        """Interpolating to the native 32x32 grid ~ returns the table itself."""
+        """Interpolating to the native 32x32 grid returns the table exactly.
+
+        Every sample lands on a texel center with weight 1, and all grid
+        coordinates are exact in bf16, so no rounding is involved.
+        """
+        torch.manual_seed(0)
         cfg = _small_config()
         gh, gw = cfg.pos_emb_grid_h, cfg.pos_emb_grid_w
         table = torch.randn(gh * gw, cfg.latent_dim, dtype=torch.bfloat16)
         pos = interpolate_pos_emb(table, gh, gw, cfg)
         self.assertEqual(pos.shape, (1, gh * gw, cfg.latent_dim))
         self.assertEqual(pos.dtype, torch.bfloat16)
+        torch.testing.assert_close(pos[0], table, rtol=0, atol=0)
+
+    def test_downscaled_matches_float32(self):
+        """The bf16 result matches a float32 reference up to bf16 rounding."""
+        torch.manual_seed(0)
+        cfg = _small_config()
+        table = torch.randn(
+            cfg.pos_emb_grid_h * cfg.pos_emb_grid_w,
+            cfg.latent_dim,
+            dtype=torch.bfloat16,
+        )
+        pos = interpolate_pos_emb(table, 8, 8, cfg).float()
+        # The 8x8 sample points are exact in bf16, so both calls use the same
+        # grid. Each output sums four texels weighted 1/4, accumulated with
+        # three bf16 roundings of at most eps/2 * sum|w * a| each; the bound
+        # allows eps per rounding as headroom.
+        ref = interpolate_pos_emb(table.float(), 8, 8, cfg)
+        weighted_abs = interpolate_pos_emb(table.float().abs(), 8, 8, cfg)
+        bound = 3 * torch.finfo(torch.bfloat16).eps * weighted_abs
+        within = (pos - ref).abs() <= bound
+        self.assertTrue(
+            within.all(), f"{(~within).sum().item()} of {within.numel()} out of bound"
+        )
 
     def test_downscaled_shape(self):
         cfg = _small_config()

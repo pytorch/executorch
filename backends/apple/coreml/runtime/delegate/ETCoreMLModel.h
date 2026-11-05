@@ -6,6 +6,7 @@
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import <CoreML/CoreML.h>
+#import <CoreVideo/CoreVideo.h>
 #import <vector>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -82,6 +83,24 @@ __attribute__((objc_subclassing_restricted))
                                                     error:(NSError* __autoreleasing*)error;
 
 - (BOOL)prewarmAndReturnError:(NSError* __autoreleasing*)error;
+
+/// Binds an IOSurface-backed `kCVPixelFormatType_OneComponent16Half` pixel buffer to this model, so that an input or
+/// output whose data pointer is the buffer's base address is passed to Core ML as the pixel buffer: Core ML reads or
+/// writes it in place at the buffer's row stride instead of copying it. Must be called before the first prediction.
+///
+/// @param pixelBuffer The pixel buffer, retained for the model's lifetime.
+/// @param error On failure, error is filled with the failure information.
+/// @retval `YES` if the buffer was bound, `NO` if it is not an IOSurface-backed fp16 buffer, the OS is older than
+/// macOS 12 / iOS 16, locking fails, or the buffer has no base address.
+- (BOOL)bindPixelBuffer:(CVPixelBufferRef)pixelBuffer error:(NSError* __autoreleasing*)error;
+
+/// Sets `multiArray` to an array backed by the pixel buffer bound at `arg`'s data pointer, or to `nil` if no buffer is
+/// bound there. While `arg`'s shape stays the same, every call returns the same array.
+///
+/// @retval `NO` if the bound pixel buffer doesn't have `arg`'s shape and data type.
+- (BOOL)getPixelBufferMultiArray:(MLMultiArray* _Nullable __autoreleasing* _Nonnull)multiArray
+                          forArg:(const executorchcoreml::MultiArray&)arg
+                           error:(NSError* __autoreleasing*)error;
 
 @end
 

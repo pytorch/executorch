@@ -8,7 +8,12 @@
 
 #include <executorch/runtime/backend/backend_init_context.h>
 #include <executorch/runtime/backend/options.h>
+#include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/schema/program_generated.h>
+
+#include <cstdint>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -17,6 +22,7 @@ using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendOption;
 using executorch::runtime::BackendOptions;
 using executorch::runtime::Error;
+using executorch::runtime::MethodMeta;
 using executorch::runtime::Span;
 
 class BackendInitContextTest : public ::testing::Test {
@@ -32,6 +38,32 @@ TEST_F(BackendInitContextTest, DefaultConstructorNoRuntimeSpecs) {
 
   auto specs = context.runtime_specs();
   EXPECT_EQ(specs.size(), 0);
+  EXPECT_EQ(context.method_meta(), nullptr);
+}
+
+TEST_F(BackendInitContextTest, ConstructorPreservesMethodMeta) {
+  namespace fb = executorch_flatbuffer;
+  flatbuffers::FlatBufferBuilder builder;
+  const auto plan = fb::CreateExecutionPlan(
+      builder,
+      builder.CreateString("forward"),
+      /*container_meta_type=*/0,
+      builder.CreateVector(std::vector<flatbuffers::Offset<fb::EValue>>{}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      /*chains=*/0,
+      /*operators=*/0,
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<fb::BackendDelegate>>{}));
+  builder.Finish(plan);
+  const auto meta = MethodMeta::from_serialized_execution_plan(
+      builder.GetBufferPointer(), builder.GetSize());
+  ASSERT_TRUE(meta.ok());
+
+  BackendInitContext context(
+      nullptr, nullptr, "forward", nullptr, {}, &meta.get());
+
+  EXPECT_EQ(context.method_meta(), &meta.get());
 }
 
 // Test constructor with runtime specs

@@ -53,9 +53,8 @@ if(EXECUTORCH_BUILD_PYBIND)
   # is resolved from it rather than from the whole-archive-forcing static
   # `executorch` target, so this module shares the one backend registry.
   #
-  # torch_cpu_library is the CPU half of torch. Linking torch would also force
-  # libtorch_cuda into DT_NEEDED in a CUDA build, and a CPU-only torch could
-  # then not load this library.
+  # torch would record libtorch_cuda with a CUDA build of PyTorch, so a CPU-only
+  # torch could not load this. torch_cpu_library does not.
   if(EXECUTORCH_BUILD_SHARED)
     set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump aten_bridge
                                   torch_cpu_library extension_training
