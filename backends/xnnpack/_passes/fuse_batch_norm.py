@@ -102,6 +102,12 @@ class FuseBatchNormPass(XNNPACKPass):
 
         is_conv = input_node.target == exir_ops.edge.aten.convolution.default
 
+        # Fusing changes what the input node computes, so nothing else may use it.
+        if len(input_node.users) != 1:
+            if why:
+                why(bn, "Batch norm must be the only user of the input node.")
+            return False
+
         # All users of the batch_norm node must be getitem ops.
         # batch_norm returns a 3-element tuple.
         # Each user must only access the first element of the tuple.
@@ -141,6 +147,12 @@ class FuseBatchNormPass(XNNPACKPass):
                 if why:
                     why("Convolution input must be rank 3 or 4.")
                 return False
+        # BatchNorm normalizes dim 1, which holds the linear's output features only
+        # when the linear output is 2-D.
+        elif "val" not in input_node.meta or len(input_node.meta["val"].shape) != 2:
+            if why:
+                why(bn, "Linear output must be rank 2.")
+            return False
 
         return True
 
@@ -226,13 +238,16 @@ class FuseBatchNormPass(XNNPACKPass):
             # Otherwise, this is a linear node.
             fused_weight, fused_bias = fuse_linear_bn_weights(*fuse_args)
 
-        fused_weight_name = (input_node_weight_name + "_fused_bn").replace(".", "_")
+        # Several convolutions or linears can share one weight and fold different
+        # batch norms, so the names must include the batch norm.
+        fused_suffix = f"_{bn.name}_fused_bn"
+        fused_weight_name = (input_node_weight_name + fused_suffix).replace(".", "_")
         if input_node_bias_name == "":
-            fused_bias_name = (input_node_weight_name + "_bias_fused_bn").replace(
+            fused_bias_name = (input_node_weight_name + "_bias" + fused_suffix).replace(
                 ".", "_"
             )
         else:
-            fused_bias_name = (input_node_bias_name + "_fused_bn").replace(".", "_")
+            fused_bias_name = (input_node_bias_name + fused_suffix).replace(".", "_")
 
         # Modify the graph by updating the weight and bias of the conv or linear op
         # with the fused weight and bias params, and replacing all the users

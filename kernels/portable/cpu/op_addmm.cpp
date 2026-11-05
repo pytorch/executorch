@@ -7,7 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
-#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
+#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/matmul_ops_util.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -56,52 +56,27 @@ Tensor& addmm_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   ET_DEFINE_OPERATOR_NAME(op_name, "addmm.out");
 
+  // in broadcasts to [m, p] and has at most 2 dims. A missing or size-1 dim
+  // gets stride 0, so every bias shape takes the same single-rounding path.
+  const ssize_t in_dim = in.dim();
+  const int64_t col_stride = in_dim >= 1 && in.size(in_dim - 1) != 1 ? 1 : 0;
+  const int64_t row_stride = in_dim == 2 && in.size(0) != 1 ? in.size(1) : 0;
+
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&]() {
-    CTYPE alpha_val = utils::scalar_to<CTYPE>(alpha);
-    CTYPE beta_val = utils::scalar_to<CTYPE>(beta);
-    size_t m = mat1.size(0);
-    size_t n = mat1.size(1);
-    size_t p = mat2.size(1);
-
-    if (out.sizes() == in.sizes()) {
-      // vec_addmm assumes that no broadcasting is required.
-      vec_addmm<CTYPE, CTYPE>(
-          out.mutable_data_ptr<CTYPE>(),
-          in.const_data_ptr<CTYPE>(),
-          mat1.const_data_ptr<CTYPE>(),
-          mat2.const_data_ptr<CTYPE>(),
-          m,
-          n,
-          p,
-          beta_val,
-          alpha_val);
-    } else {
-      // If broadcasting is required, them compute the matmul
-      // and addition separately, using
-      // apply_binary_elementwise_fn to perform the addition
-      // while applying broadcasting
-      vec_matmul<CTYPE, CTYPE>(
-          out.mutable_data_ptr<CTYPE>(),
-          mat1.const_data_ptr<CTYPE>(),
-          mat2.const_data_ptr<CTYPE>(),
-          m,
-          n,
-          p);
-
-      utils::apply_bitensor_elementwise_fn<
-          CTYPE,
-          op_name,
-          utils::SupportedTensorDtypes::REALHBF16>(
-          [alpha_val, beta_val](const auto& val_a, const auto& val_b) {
-            return val_a * alpha_val + val_b * beta_val;
-          },
-          ctx,
-          out,
-          utils::SupportedTensorDtypes::REALHBF16,
-          in,
-          utils::SupportedTensorDtypes::REALHBF16,
-          out);
-    }
+    using ACC = typename executorch::runtime::
+        promote_types<CTYPE, CTYPE, /*half_to_float=*/true>::type;
+    vec_addmm<CTYPE>(
+        out.mutable_data_ptr<CTYPE>(),
+        in.const_data_ptr<CTYPE>(),
+        mat1.const_data_ptr<CTYPE>(),
+        mat2.const_data_ptr<CTYPE>(),
+        mat1.size(0),
+        mat1.size(1),
+        mat2.size(1),
+        utils::scalar_to<ACC>(beta),
+        utils::scalar_to<ACC>(alpha),
+        row_stride,
+        col_stride);
   });
 
   return out;

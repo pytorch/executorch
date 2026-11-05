@@ -447,6 +447,25 @@ def test_conv2d_transpose(request, kwargs):
     [
         pytest.param(
             {
+                "act": None,
+                "expected": pytest.raises(
+                    AssertionError, match=EXPECT_NOT_FULLY_DELEGATED
+                ),
+            },
+            id="fp_fallback",
+        )
+    ],
+)
+@with_htp_context
+def test_conv_backward(request, kwargs):
+    ConvBackward.test(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {
                 "act": 16,
                 "param": 4,
                 "lpbq": True,
