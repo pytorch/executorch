@@ -145,6 +145,21 @@ StagingBuffer::StagingBuffer(
           direction)),
       mapped_data_(nullptr) {}
 
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+StagingBuffer::StagingBuffer(
+    Context* context_p,
+    const vkapi::ScalarType dtype,
+    AHardwareBuffer* ahb)
+    : context_p_(context_p),
+      dtype_(dtype),
+      vulkan_buffer_(context_p_->adapter_ptr()->vma().import_android_hardware_buffer(
+          ahb,
+          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+              VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+              VK_BUFFER_USAGE_TRANSFER_DST_BIT)),
+      mapped_data_(nullptr) {}
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+
 vkapi::ScalarType get_staging_dtype(
     Context* context_p,
     vkapi::ScalarType dtype) {

@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/api/ExternalIO.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
@@ -32,6 +33,7 @@
 #include <cstdio>
 #include <cstdlib> /* strtol */
 #include <cstring>
+#include <map>
 #include <memory>
 #include <type_traits>
 #include <unordered_map>
@@ -41,6 +43,12 @@ namespace executorch {
 namespace backends {
 namespace vulkan {
 namespace {
+
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+using ExternalIOBuffers = std::map<std::pair<bool, size_t>, AHardwareBuffer*>;
+#else
+using ExternalIOBuffers = std::map<std::pair<bool, size_t>, void*>;
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
 
 using executorch::runtime::ArrayRef;
 using executorch::runtime::Backend;
@@ -618,11 +626,72 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     return vkapi::set_and_get_external_adapter() != nullptr || api::available();
   }
 
+  // Swap the staging of every graph input/output registered with
+  // `api::set_external_io_buffer` for its AHardwareBuffer.
+  ET_NODISCARD static Error apply_external_io(
+      ComputeGraph* compute_graph,
+      const ExternalIOBuffers& buffers) {
+    if (buffers.empty()) {
+      return Error::Ok;
+    }
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+    // Data-dependent shapes read input staging on the CPU (select_as_symint),
+    // which external memory does not support.
+    ET_CHECK_OR_RETURN_ERROR(
+        !compute_graph->has_data_dependent_shapes(),
+        InvalidArgument,
+        "external AHardwareBuffer I/O is not supported for a graph with "
+        "data-dependent shapes");
+    const auto swap = [&](const bool is_input,
+                          std::vector<IOValueRef>& io) -> Error {
+      for (size_t i = 0; i < io.size(); ++i) {
+        const auto it = buffers.find({is_input, i});
+        if (it == buffers.end() || io[i].staging == kDummyValueRef) {
+          continue;
+        }
+        auto staging = compute_graph->get_staging(io[i].staging);
+        // The tensor's contiguous bytes; the staging allocation itself may be
+        // padded (e.g. channels rounded up to a texel).
+        const size_t needed = compute_graph->numel_of(io[i].value) *
+            vkapi::element_size(staging->dtype());
+        try {
+          api::StagingBuffer external(
+              compute_graph->context(), staging->dtype(), it->second);
+          ET_CHECK_OR_RETURN_ERROR(
+              external.nbytes() >= needed,
+              InvalidArgument,
+              "external AHardwareBuffer for %s %zu holds %zu bytes, needs %zu",
+              is_input ? "input" : "output",
+              i,
+              external.nbytes(),
+              needed);
+          *staging = std::move(external);
+        } catch (const vkapi::Error& error) {
+          ET_LOG(
+              Error,
+              "cannot import the AHardwareBuffer for %s %zu: %s",
+              is_input ? "input" : "output",
+              i,
+              error.what());
+          return Error::InvalidArgument;
+        }
+      }
+      return Error::Ok;
+    };
+    ET_CHECK_OK_OR_RETURN_ERROR(swap(true, compute_graph->inputs()));
+    ET_CHECK_OK_OR_RETURN_ERROR(swap(false, compute_graph->outputs()));
+#else
+    (void)compute_graph;
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+    return Error::Ok;
+  }
+
   ET_NODISCARD Error compileModel(
       const void* buffer_pointer,
       size_t buffer_size,
       ComputeGraph* compute_graph,
-      const NamedDataMap* named_data_map) const {
+      const NamedDataMap* named_data_map,
+      const ExternalIOBuffers& external_io) const {
     Result<VulkanDelegateHeader> header =
         VulkanDelegateHeader::parse(buffer_pointer, buffer_size);
 
@@ -697,6 +766,9 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     compute_graph->prepack();
 
+    // Before the warmup: it records the command buffers that bind the staging.
+    ET_CHECK_OK_OR_RETURN_ERROR(apply_external_io(compute_graph, external_io));
+
     compute_graph->optional_warmup_execute();
 
     return Error::Ok;
@@ -706,6 +778,13 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
+    // Taken first so that no failure below leaves registrations behind.
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+    const ExternalIOBuffers external_io = api::take_external_io_buffers();
+#else
+    const ExternalIOBuffers external_io;
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+
     ComputeGraph* compute_graph =
         context.get_runtime_allocator()->allocateInstance<ComputeGraph>();
     if (compute_graph == nullptr) {
@@ -720,7 +799,11 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     Error err = Error::Ok;
     try {
       err = compileModel(
-          processed->data(), processed->size(), compute_graph, named_data_map);
+          processed->data(),
+          processed->size(),
+          compute_graph,
+          named_data_map,
+          external_io);
     } catch (const vkapi::ShaderNotSupportedError& error) {
       ET_LOG(Error, "Unsupported Vulkan shader: %s", error.what());
       err = Error::NotSupported;
@@ -787,6 +870,12 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
         bool was_resized =
             maybe_resize_input(compute_graph, i, args[i]->toTensor());
         should_propagate_resize = should_propagate_resize || was_resized;
+        // An external staging buffer is written on the GPU by its producer.
+        if (compute_graph->inputs()[i].staging != kDummyValueRef &&
+            compute_graph->get_staging(compute_graph->inputs()[i].staging)
+                ->is_external()) {
+          continue;
+        }
         compute_graph->maybe_cast_and_copy_into_staging(
             compute_graph->inputs()[i].staging,
             args[i]->toTensor().const_data_ptr(),
@@ -890,6 +979,12 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       if (compute_graph->val_is_tensor(oref)) {
         VK_CHECK_COND(args[o]->isTensor());
         maybe_resize_output(compute_graph, i, args[o]->toTensor());
+        // An external staging buffer is read on the GPU by its consumer.
+        if (compute_graph->outputs()[i].staging != kDummyValueRef &&
+            compute_graph->get_staging(compute_graph->outputs()[i].staging)
+                ->is_external()) {
+          continue;
+        }
         compute_graph->maybe_cast_and_copy_from_staging(
             compute_graph->outputs()[i].staging,
             args[o]->toTensor().mutable_data_ptr(),

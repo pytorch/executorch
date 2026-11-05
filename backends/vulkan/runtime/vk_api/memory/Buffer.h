@@ -59,6 +59,26 @@ class VulkanBuffer final {
       const VkBufferUsageFlags,
       const bool allocate_memory = true);
 
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+  /*
+   * A buffer backed by the memory of a BLOB AHardwareBuffer, which other APIs
+   * (e.g. GLES via GL_EXT_external_buffer) can import too. The memory is
+   * imported, not mapped: such a buffer has no host pointer.
+   */
+  static VulkanBuffer import_android_hardware_buffer(
+      const VmaAllocator,
+      AHardwareBuffer* ahb,
+      const VkBufferUsageFlags);
+
+ private:
+  static void bind_android_hardware_buffer(
+      VulkanBuffer& buffer,
+      AHardwareBuffer* ahb,
+      const VkAndroidHardwareBufferPropertiesANDROID& props);
+
+ public:
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+
  protected:
   /*
    * The Copy constructor and allows for creation of a class instance that are
@@ -108,6 +128,8 @@ class VulkanBuffer final {
   // thus it does not have ownership of the underlying VKBuffer
   bool is_copy_;
   VkBuffer handle_;
+  // Memory imported from outside VMA (an AHardwareBuffer); freed directly.
+  VkDeviceMemory external_memory_;
 
  public:
   inline VkDevice device() const {
@@ -147,7 +169,12 @@ class VulkanBuffer final {
   }
 
   inline bool has_memory() const {
-    return (memory_.allocation != VK_NULL_HANDLE);
+    return memory_.allocation != VK_NULL_HANDLE ||
+        external_memory_ != VK_NULL_HANDLE;
+  }
+
+  inline bool is_external() const {
+    return external_memory_ != VK_NULL_HANDLE;
   }
 
   inline bool owns_memory() const {
