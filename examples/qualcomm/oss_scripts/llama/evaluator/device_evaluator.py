@@ -289,7 +289,7 @@ class DefaultEval(EvalBase):
         super().__init__(
             args, pte_paths, runtime_tokenizer_path, is_multimodal, dataset_builder
         )
-        self.device = self._get_device()
+        self.target_device = self._get_device()
         self.inference_speed = 0
         self.decoder_model_config = decoder_model_config
 
@@ -375,9 +375,9 @@ class DefaultEval(EvalBase):
             extra_files = [self.runtime_tokenizer_path]
             if self.is_multimodal:
                 extra_files.extend(self.modality_input_files)
-            self.device.push(inputs=[], files=extra_files)
-            self.device.execute(custom_runner_cmd=runner_cmd)
-            self.device.pull(
+            self.target_device.push(inputs=[], files=extra_files)
+            self.target_device.execute(custom_runner_cmd=runner_cmd)
+            self.target_device.pull(
                 host_output_path=self.host_output_response_path,
                 device_output_path=self.device_output_response_path,
                 callback=partial(
@@ -386,7 +386,7 @@ class DefaultEval(EvalBase):
                     host_output_response_path=self.host_output_response_path,
                 ),
             )
-            self.device.pull(
+            self.target_device.pull(
                 host_output_path=self.host_performance_path,
                 device_output_path=self.device_performance_path,
                 callback=partial(
@@ -427,7 +427,7 @@ class SqnrEval(EvalBase):
         self.inference_speed = 0
         self.source_model = source_model
         self.get_example_inputs = get_example_inputs
-        self.device = self._get_device()
+        self.target_device = self._get_device()
         self.tokenizer = tokenizer_wrapper.tokenizer
         self.enable_x86_64 = args.enable_x86_64
         self.max_seq_length = args.max_seq_len
@@ -575,12 +575,12 @@ class SqnrEval(EvalBase):
             extra_files = [input_file_name, self.runtime_tokenizer_path]
             if self.is_multimodal:
                 extra_files.extend(self.modality_input_files)
-            self.device.push(
+            self.target_device.push(
                 inputs=[],
                 files=extra_files,
             )
-            self.device.execute(custom_runner_cmd=runner_cmd)
-            self.device.pull(
+            self.target_device.execute(custom_runner_cmd=runner_cmd)
+            self.target_device.pull(
                 host_output_path=self.host_logits_path,
                 device_output_path=self.device_logits_path,
                 callback=partial(
@@ -594,7 +594,7 @@ class SqnrEval(EvalBase):
                     logits_zero_point=self.logits_zero_point,
                 ),
             )
-            self.device.pull(
+            self.target_device.pull(
                 host_output_path=self.host_performance_path,
                 device_output_path=self.device_performance_path,
                 callback=partial(
@@ -632,7 +632,7 @@ class TaskEval(EvalBase):
 
             self.args = args
             self.runner_base_cmd = runner_base_cmd
-            self.device = device
+            self.target_device = device
             self.pte_path = pte_path
             self.runtime_tokenizer_path = runtime_tokenizer_path
 
@@ -670,7 +670,7 @@ class TaskEval(EvalBase):
                     self.max_seq_length = pte_max_context_len
 
             if not self.enable_x86_64:
-                self.device.push(inputs=[], files=[self.runtime_tokenizer_path])
+                self.target_device.push(inputs=[], files=[self.runtime_tokenizer_path])
             # pyre-ignore
             super().__init__(None, tokenizer, self.max_seq_length - 1)
 
@@ -724,9 +724,11 @@ class TaskEval(EvalBase):
                         f"--tokenized_prompt {os.path.basename(input_file_name)}",
                     ]
                 )
-                self.device.push(inputs=[], files=[input_file_name], init_env=False)
-                self.device.execute(custom_runner_cmd=runner_cmd)
-                self.device.pull(
+                self.target_device.push(
+                    inputs=[], files=[input_file_name], init_env=False
+                )
+                self.target_device.execute(custom_runner_cmd=runner_cmd)
+                self.target_device.pull(
                     host_output_path=self.host_logits_path,
                     device_output_path=self.device_logits_path,
                     callback=partial(
@@ -740,7 +742,7 @@ class TaskEval(EvalBase):
                         logits_zero_point=self.logits_zero_point,
                     ),
                 )
-                self.device.pull(
+                self.target_device.pull(
                     host_output_path=self.host_performance_path,
                     device_output_path=self.device_performance_path,
                     callback=partial(
