@@ -71,6 +71,60 @@ class TestContainsAnyCallFnTargetOp(unittest.TestCase):
             contains_any_call_fn_target_op(graph_module, {torch.ops.aten.mul.Tensor})
         )
 
+    def test_matches_op_in_while_loop_body(self) -> None:
+        cond_graph = torch.fx.Graph()
+        cond_graph.output(cond_graph.placeholder("pred"))
+        body_graph, _ = self._add_graph()
+
+        graph = torch.fx.Graph()
+        lhs = graph.placeholder("lhs")
+        rhs = graph.placeholder("rhs")
+        result = graph.call_function(
+            torch.ops.higher_order.while_loop,
+            (
+                graph.get_attr("cond_graph"),
+                graph.get_attr("body_graph"),
+                (lhs, rhs),
+                (),
+            ),
+        )
+        graph.output(result)
+        graph_module = torch.fx.GraphModule(
+            {
+                "cond_graph": torch.fx.GraphModule({}, cond_graph),
+                "body_graph": body_graph,
+            },
+            graph,
+        )
+
+        self.assertTrue(
+            contains_any_call_fn_target_op(graph_module, {torch.ops.aten.add.Tensor})
+        )
+        self.assertFalse(
+            contains_any_call_fn_target_op(graph_module, {torch.ops.aten.mul.Tensor})
+        )
+
+    def test_matches_overload_packet_by_its_overloads(self) -> None:
+        graph_module, add = self._add_graph()
+
+        class EdgePacket:
+            _op = torch.ops.aten.add
+
+        for target in (torch.ops.aten.add, EdgePacket()):
+            with self.subTest(target=target):
+                add.target = target
+
+                self.assertTrue(
+                    contains_any_call_fn_target_op(
+                        graph_module, {torch.ops.aten.add.Tensor}
+                    )
+                )
+                self.assertFalse(
+                    contains_any_call_fn_target_op(
+                        graph_module, {torch.ops.aten.mul.Tensor}
+                    )
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
