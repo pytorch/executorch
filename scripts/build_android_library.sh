@@ -33,6 +33,8 @@ build_android_native_library() {
   fi
 
   EXECUTORCH_BUILD_VULKAN="${EXECUTORCH_BUILD_VULKAN:-OFF}"
+  EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED="${EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED:-OFF}"
+  EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED="${EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED:-OFF}"
   XNNPACK_ENABLE_ARM_SME2="${XNNPACK_ENABLE_ARM_SME2:-ON}"
 
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
@@ -52,6 +54,8 @@ build_android_native_library() {
     -DEXECUTORCH_BUILD_QNN="${EXECUTORCH_BUILD_QNN}" \
     -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
     -DEXECUTORCH_BUILD_VULKAN="${EXECUTORCH_BUILD_VULKAN}" \
+    -DEXECUTORCH_BUILD_VULKAN_BACKEND_SHARED="${EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED}" \
+    -DEXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED="${EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED}" \
     -DXNNPACK_ENABLE_ARM_SME2="${XNNPACK_ENABLE_ARM_SME2}" \
     -DFLATCC_ALLOW_WERROR=OFF \
     -DSUPPORT_REGEX_LOOKAHEAD=ON \
@@ -65,10 +69,25 @@ build_android_native_library() {
   fi
   cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
-  # Copy artifacts to ABI specific directory
+  # Copy artifacts to ABI specific directory. Recreate it rather than copying
+  # over it: CMake leaves the outputs of a target that has since been switched
+  # off in place, and a stale backend .so staged here would be packaged into
+  # the AAR as if it had just been built.
   local SO_STAGE_DIR="cmake-out-android-so/${ANDROID_ABI}"
+  rm -rf "${SO_STAGE_DIR}"
   mkdir -p ${SO_STAGE_DIR}
-  cp "${CMAKE_OUT}"/extension/android/*.so "${SO_STAGE_DIR}/libexecutorch.so"
+  cp "${CMAKE_OUT}"/extension/android/libexecutorch_jni.so "${SO_STAGE_DIR}/libexecutorch.so"
+
+  # Standalone backend shared libraries, when they were asked for. Gate on the
+  # option rather than on the file existing, so a build that turned one off
+  # cannot pick up the .so a previous build left in CMAKE_OUT.
+  if [ "${EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED}" == "ON" ]; then
+    cp "${CMAKE_OUT}"/extension/android/libvulkan_executorch_backend.so "${SO_STAGE_DIR}/"
+  fi
+
+  if [ "${EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED}" == "ON" ]; then
+    cp "${CMAKE_OUT}"/extension/android/libxnnpack_executorch_backend.so "${SO_STAGE_DIR}/"
+  fi
 
   # Copy QNN related so library
   if [ -n "$QNN_SDK_ROOT" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
