@@ -15,9 +15,16 @@ cross-compile-then-link flow below, generate a self-contained ESP-IDF
 component from sources in this repository:
 
 ```bash
-./examples/espressif/build_idf_component.sh \
+./examples/espressif/build_idf_component.sh --allow-dev-stamp \
     --out /path/to/your_project/components/executorch
 ```
+
+Run it from a Python environment with ExecuTorch installed from this exact
+commit (reinstall after committing or pulling): the generator exports the
+component's example model with it. `--allow-dev-stamp` versions the component
+`X.Y.Z-dev.<commit date>`; without it the generator stamps a release
+version and requires the checkout to be at that release's tag (see the
+script's header for respin and RC stamps).
 
 The output is a registry-shaped component (`idf_component.yml`,
 `CMakeLists.txt`, `Kconfig`, `VERSION`) containing the runtime, the
