@@ -6,13 +6,16 @@
 
 # Minimal ESP-IDF consumer of the generated ExecuTorch component, used by
 # .ci/scripts/test_espressif_idf_component.sh. Pass the generated component
-# directory as ET_COMPONENT_DIR and the plain smoke .pte from
-# export_smoke_model.py as ET_SMOKE_PTE.
+# directory as ET_COMPONENT_DIR, the plain smoke .pte from export_smoke_model.py
+# as ET_SMOKE_PTE, and its kernel bundle from the component's
+# tools/gen_kernels.py as ET_SMOKE_KERNELS. ET_SMOKE_UNDECLARED runs the model
+# without declaring it. Without ET_SMOKE_PTE it builds an app that does not use
+# ExecuTorch, for size comparisons.
 
 cmake_minimum_required(VERSION 3.16)
 
-if(NOT ET_COMPONENT_DIR OR NOT ET_SMOKE_PTE)
-  message(FATAL_ERROR "Set ET_COMPONENT_DIR and ET_SMOKE_PTE")
+if(NOT ET_COMPONENT_DIR)
+  message(FATAL_ERROR "Set ET_COMPONENT_DIR")
 endif()
 set(EXTRA_COMPONENT_DIRS "${ET_COMPONENT_DIR}")
 
