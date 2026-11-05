@@ -15,6 +15,9 @@ The control plane imports no runtime pybind; only fastapi, pydantic, httpx, and
 pytest are required.
 """
 
+import os
+from pathlib import Path
+
 import pytest
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.server import build_app
@@ -23,6 +26,16 @@ from executorch.examples.llm_server.python.session_runtime import SessionRuntime
 from executorch.examples.llm_server.python.tool_parsers import HermesDetector
 from executorch.examples.llm_server.python.worker_client import WorkerError
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(scope="module")
+def native_worker():
+    """Require an explicitly selected, freshly built native test executable."""
+    executable = os.environ.get("EXECUTORCH_TEST_MULTIPLEXED_WORKER")
+    if not executable:
+        pytest.skip("set EXECUTORCH_TEST_MULTIPLEXED_WORKER to the native test target")
+    assert Path(executable).is_file(), executable
+    return executable
 
 
 class _FakeStats:

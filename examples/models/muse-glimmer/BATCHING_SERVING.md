@@ -106,8 +106,10 @@ tool parsing is enabled with `--tool-parser atem`; tool-enabled responses
 currently remain buffered.
 
 The launcher waits for initial generation readiness before returning streaming
-headers. Set `--streaming-preflight-timeout 1` to return headers after at most one
-second of waiting, including prefill. Idle streams send SSE keepalive comments every 15
+headers. Set `--streaming-preflight-timeout 1` to bound generation-readiness
+waiting, including prefill, to one second. This does not bound earlier request
+preparation or waiting behind another request on the same session.
+Idle streams send SSE keepalive comments every 15
 seconds. Admission errors detected before headers retain their HTTP status; late
 errors are delivered as SSE errors. Keepalives indicate a live connection, not
 measured prefill progress.
@@ -124,7 +126,10 @@ The installed Muse provider stops reading at that chunk, so a later usage-only
 chunk would be lost. The default `openai` format keeps the separate usage-only
 chunk. Both formats honor `stream_options.include_usage`.
 The `openrouter` mode also supplies the error metadata and message counts Muse
-needs for reactive context-overflow recovery. Counts describe the input prompt and
+needs for reactive context-overflow recovery, including worker-detected overflow
+when using an updated native worker. Worker counts include image positions and
+numeric BOS; older unstructured worker errors cannot provide recovery counts.
+Counts describe the input prompt and
 its available budget after reserving completion space; metadata retains the full
 model window. A completion reservation consuming the entire window cannot be
 fixed by compacting input: diagnostic metadata remains, but the message does not

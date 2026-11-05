@@ -49,12 +49,26 @@ const char* error_code(serving::ErrorCode code) {
       return "capacity_exhausted";
     case serving::ErrorCode::Internal:
       return "internal";
+    case serving::ErrorCode::ContextLengthExceeded:
+      return "context_length_exceeded";
   }
   return "internal";
 }
 
 Json failure(const char* code, const std::string& message) {
   return {{"error", message}, {"code", code}};
+}
+
+Json failure(const serving::ServingError& error) {
+  auto out = failure(error_code(error.code), error.message);
+  if (error.context_overflow) {
+    const auto& counts = *error.context_overflow;
+    out["context_overflow"] = {
+        {"prompt_tokens", counts.prompt_tokens},
+        {"context_length", counts.context_length},
+        {"completion_tokens", counts.completion_tokens}};
+  }
+  return out;
 }
 
 Id unsigned_integer(const Json& value, bool positive = false) {
@@ -199,7 +213,7 @@ serving::GenerationOptions generation_options(const Json& request) {
 
 Json terminal_json(const serving::TerminalEvent& event) {
   if (event.error)
-    return failure(error_code(event.error->code), event.error->message);
+    return failure(*event.error);
   if (event.finish_reason == serving::FinishReason::Failed) {
     return failure("internal", "generation failed");
   }
@@ -476,7 +490,7 @@ class Worker {
         {
           std::lock_guard<std::mutex> lock(mutex_);
           if (const auto* error = std::get_if<serving::ServingError>(&result)) {
-            complete(op, failure(error_code(error->code), error->message));
+            complete(op, failure(*error));
           } else {
             op->handle = std::get<serving::RequestHandle>(std::move(result));
             if (op->cancelled)
@@ -516,10 +530,7 @@ class Worker {
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (failed_)
                   return;
-                complete(
-                    active,
-                    error ? failure(error_code(error->code), error->message)
-                          : Json{{ack, true}});
+                complete(active, error ? failure(*error) : Json{{ack, true}});
               }
               checkpoint(Checkpoint::TerminalEnqueued, active->id);
             }

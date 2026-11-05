@@ -959,7 +959,10 @@ TEST_F(TextGenerationTest, OpaqueMetadataAndOptionsPreserveRawHistory) {
     const auto handle = submit(event, std::move(prompt), options);
     handle.wait();
     ASSERT_TRUE(handle.error());
-    EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
+    EXPECT_EQ(
+        handle.error()->code,
+        i >= 2 && i <= 4 ? ErrorCode::ContextLengthExceeded
+                         : ErrorCode::InvalidArgument);
     ASSERT_TRUE(event->terminal);
     EXPECT_EQ(event->terminal->finish_reason, FinishReason::Failed);
     EXPECT_EQ(event->terminals, 1u);
@@ -2143,7 +2146,10 @@ TEST_F(TextGenerationTest, UnsetAndExplicitBudgetsUseRemainingContext) {
   auto full = output();
   submit(full, ids({1, 2, 3, 4, 5})).wait();
   ASSERT_TRUE(full->terminal);
-  EXPECT_EQ(full->terminal->error->code, ErrorCode::InvalidArgument);
+  EXPECT_EQ(full->terminal->error->code, ErrorCode::ContextLengthExceeded);
+  ASSERT_TRUE(full->terminal->error->context_overflow);
+  EXPECT_EQ(full->terminal->error->context_overflow->prompt_tokens, 5u);
+  EXPECT_EQ(full->terminal->error->context_overflow->context_length, 5u);
 }
 
 TEST_F(TextGenerationTest, UnknownContextUsesServiceDefaultOnlyForUnsetLimit) {

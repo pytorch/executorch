@@ -7,7 +7,7 @@ import json
 import re
 
 import pytest
-from executorch.examples.llm_server.python.errors import ContextLengthExceeded
+from executorch.examples.llm_server.python.worker_client import WorkerError
 
 
 def muse_overflow_counts(body):
@@ -70,12 +70,7 @@ def test_default_openai_error_contract_is_unchanged(make_client, completion):
     if completion is not None:
         body["max_tokens"] = completion
     response = client.post("/v1/chat/completions", json=body)
-    message = (
-        "This model's maximum context length is 100 tokens, but the request has 110 prompt tokens."
-        if completion is None
-        else "This model's maximum context length is 100 tokens. However, you requested 140 tokens "
-        "(110 in the messages, 30 in the completion). Please reduce the length of the messages or completion."
-    )
+    message = "This model's maximum context length is 100 tokens, but the request has 110 prompt tokens."
     assert response.json() == {
         "error": {
             "message": message,
@@ -89,7 +84,15 @@ def test_late_context_error_has_same_openrouter_contract(make_client):
     client, worker = make_client(api_dialect="openrouter")
 
     def fail(*args, **kwargs):
-        raise ContextLengthExceeded(110, 100)
+        raise WorkerError(
+            "context length exceeded",
+            code="context_length_exceeded",
+            context_overflow={
+                "prompt_tokens": 110,
+                "context_length": 100,
+                "completion_tokens": 1,
+            },
+        )
 
     worker.generate = fail
     response = client.post(

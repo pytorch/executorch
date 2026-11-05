@@ -457,6 +457,16 @@ class ServingChat:
         if isinstance(error, APIError):
             return error
         if isinstance(error, WorkerError):
+            if (
+                error.code == "context_length_exceeded"
+                and error.context_overflow is not None
+            ):
+                counts = error.context_overflow
+                return ContextLengthExceeded(
+                    counts["prompt_tokens"],
+                    counts["context_length"],
+                    counts["completion_tokens"],
+                )
             if error.code in ("capacity_exhausted", "unsupported_session"):
                 return SessionCapacity(error.code)
             if error.code is not None:
@@ -465,6 +475,7 @@ class ServingChat:
                     "session_busy": 409,
                     "not_ready": 503,
                     "invalid_argument": 400,
+                    "context_length_exceeded": 400,
                     "unsupported_parameter": 400,
                 }.get(error.code, 500)
                 return APIError(

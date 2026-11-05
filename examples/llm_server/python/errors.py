@@ -37,7 +37,7 @@ class ContextLengthExceeded(APIError):
         # completion_tokens > 0: prompt + requested max_tokens would run
         # past the window — reject up front rather than
         # fail (or truncate) mid-generation.
-        if completion_tokens > 0:
+        if completion_tokens > 0 and num_tokens < max_context:
             message = (
                 f"This model's maximum context length is {max_context} tokens. "
                 f"However, you requested {num_tokens + completion_tokens} tokens "

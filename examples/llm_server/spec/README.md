@@ -79,7 +79,7 @@ earlier behavior, which accepted non-boolean values as an opt-out.
 **Rejected** with `400 invalid_request_error` (`code: "unsupported_parameter"`)
 rather than silently ignored — a client relying on them would otherwise get
 wrong behavior: `n` (> 1), `reasoning_effort` and OpenRouter `reasoning`
-(except `{}` and `{"exclude": false}`, or options supported by a model-specific adapter),
+(except `{}` and `{"exclude": false}`),
 `frequency_penalty`/`presence_penalty` (nonzero), `logit_bias`, `tool_choice` =
 `"required"` or a specific-function choice
 (forcing/restricting a call needs constrained decoding, not implemented),
@@ -105,7 +105,8 @@ first chunk carries `delta.role = "assistant"`, subsequent chunks carry
 `stream_options.include_usage`), terminated by `data: [DONE]`.
 For models with an incremental parser, reasoning is emitted as
 `delta.reasoning_content` while generation runs. Other reasoning extractors buffer
-their output. With tools enabled, content and reasoning are buffered unless a model adapter supplies a tool-safe incremental reasoning parser. Complete tool calls remain buffered. Idle HTTP streams include SSE
+their output. With tools enabled, content, reasoning, and complete tool calls are
+buffered. Idle HTTP streams include SSE
 keepalive comments every 15 seconds. Model launchers may bound initial readiness
 waiting to return headers during prefill; errors detected after headers arrive
 as SSE error events.
@@ -119,11 +120,20 @@ usage-only chunk described above.
 `--streaming-preflight-timeout` waits for first output, including prefill. The default
 `none` preserves an indefinite wait, while finite nonnegative values allow SSE headers
 before first output. Once headers are sent, later failures are SSE error events.
+This bounds generation-readiness waiting, not waiting for a session transaction
+lease or preparing the request before generation starts.
 
 #### OpenRouter error contract
 
 The compatibility dialect retains the common `error.message`, `error.type`, and
-`error.code` fields. For context overflow it adds `error.metadata`:
+`error.code` fields. Context overflows detected by Python preflight or by an
+updated native worker carry `error.metadata`. Native counts include all prompt
+positions, including image positions and numeric BOS. Older workers that report
+only an unstructured error cannot supply recovery counts.
+
+The multiplexed error frame uses `code: "context_length_exceeded"` and
+`context_overflow: {"prompt_tokens": N, "context_length": C, "completion_tokens": M}`.
+Other `invalid_argument` errors are never reclassified as context overflow.
 
 | Key | Meaning |
 | --- | --- |

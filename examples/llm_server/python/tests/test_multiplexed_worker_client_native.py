@@ -12,29 +12,16 @@ set EXECUTORCH_TEST_MULTIPLEXED_WORKER to the built test executable for pytest.
 
 import asyncio
 import json
-import os
 import socket
 from contextlib import asynccontextmanager
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     MultiplexedWorkerClient,
 )
 from executorch.examples.llm_server.python.worker_client import WorkerError
-
-
-@pytest.fixture(scope="module")
-def native_worker():
-    """Require an explicitly selected, freshly built native test executable."""
-    executable = os.environ.get("EXECUTORCH_TEST_MULTIPLEXED_WORKER")
-    if not executable:
-        pytest.skip("set EXECUTORCH_TEST_MULTIPLEXED_WORKER to the native test target")
-    assert Path(executable).is_file(), executable
-    return executable
 
 
 @asynccontextmanager
