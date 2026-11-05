@@ -17,45 +17,64 @@ import logging
 import os
 import sys
 import warnings as _warnings
-
-# A DeprecationWarning, like exir's ExperimentalWarning, without importing exir.
-# Importing it would load the exporter into a process that only runs programs.
-_warnings.warn(
-    "This API is experimental and subject to change without notice.",
-    DeprecationWarning,
-)
-
-# When installed as a pip wheel, we must import `torch` before trying to import
-# the pybindings shared library extension. This will load libtorch.so and
-# related libs, ensuring that the pybindings lib can resolve those runtime
-# dependencies.
-import torch as _torch
+from importlib import import_module as _import_module
 
 logger = logging.getLogger(__name__)
 
+
+class _LightweightExperimentalWarning(DeprecationWarning):
+    pass
+
+
+_TENSOR_OUTPUT_ENV = "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"
+_tensor_output = os.environ.get(_TENSOR_OUTPUT_ENV)
+if _tensor_output in (None, "torch"):
+    try:
+        # Preserve the existing API: importing portable_lib also imports Torch,
+        # and tensor outputs are torch.Tensor objects.
+        import torch as _torch
+    except ImportError as error:
+        if _tensor_output == "torch":
+            raise ImportError(
+                "ExecuTorch portable pybindings were configured to return "
+                "torch.Tensor outputs, but PyTorch could not be imported. "
+                f"Install PyTorch or set {_TENSOR_OUTPUT_ENV}=executorch "
+                "before importing portable_lib."
+            ) from error
+        _torch = None
+elif _tensor_output == "executorch":
+    _torch = None
+else:
+    raise ValueError(
+        f"{_TENSOR_OUTPUT_ENV} must be either 'torch' or 'executorch', "
+        f"but was {_tensor_output!r}"
+    )
+
+
 # Auto-discover the OpenVINO C library path from the pip-installed openvino
-# package so the C++ backend's dlopen("libopenvino_c.so") works without the
-# user having to set LD_LIBRARY_PATH or OPENVINO_LIB_PATH manually.
+# package so the C++ backend can load it without the user having to set
+# OPENVINO_LIB_PATH or the platform's library search path manually.
 if not os.environ.get("OPENVINO_LIB_PATH"):
     try:
         import glob
         import importlib.util
 
+        _ov_c_lib = "openvino_c.dll" if sys.platform == "win32" else "libopenvino_c.so"
         spec = importlib.util.find_spec("openvino")
         if spec is not None and spec.submodule_search_locations:
             _ov_dir = spec.submodule_search_locations[0]
-            _ov_libs = sorted(
-                glob.glob(os.path.join(_ov_dir, "libs", "libopenvino_c.so*"))
-            )
+            _ov_libs = sorted(glob.glob(os.path.join(_ov_dir, "libs", _ov_c_lib + "*")))
             if _ov_libs:
                 os.environ["OPENVINO_LIB_PATH"] = _ov_libs[0]
             else:
                 logger.warning(
-                    "OpenVINO package found but libopenvino_c.so not in %s; "
+                    "OpenVINO package found but %s not in %s; "
                     "set OPENVINO_LIB_PATH manually if needed",
+                    _ov_c_lib,
                     os.path.join(_ov_dir, "libs"),
                 )
             del _ov_libs, _ov_dir, spec
+        del _ov_c_lib
     except Exception as e:
         logger.debug("OpenVINO auto-discovery failed: %s", e)
 
@@ -66,12 +85,32 @@ if sys.platform == "win32":
         # The extension DLL should be in the same directory as this file.
         pybindings_dir = os.path.dirname(os.path.abspath(__file__))
         os.add_dll_directory(pybindings_dir)
+        # The shared runtime and its components ship in executorch/lib. Windows
+        # records no search path in a DLL, so the directory is registered here.
+        _lib_dir = os.path.join(pybindings_dir, os.pardir, os.pardir, "lib")
+        if os.path.isdir(_lib_dir):
+            os.add_dll_directory(os.path.abspath(_lib_dir))
     except Exception as e:
         logger.error(
             "Failed to add the pybinding extension DLL to the search path. "
             "The extension may not work: %s",
             e,
         )
+
+_bindings = _import_module("executorch.extension.pybindings._C")
+
+if _bindings._uses_aten:
+    import executorch.exir._warnings as _exir_warnings
+
+    _warning_category = _exir_warnings.ExperimentalWarning
+else:
+    _exir_warnings = None
+    _warning_category = _LightweightExperimentalWarning
+
+_warnings.warn(
+    "This API is experimental and subject to change without notice.",
+    _warning_category,
+)
 
 # Let users import everything from the C++ _C extension as if this
 # python file defined them. Although we could import these dynamically, it
@@ -83,6 +122,7 @@ from executorch.extension.pybindings._C import (  # noqa: F401
     _create_profile_block,  # noqa: F401
     _dump_profile_results,  # noqa: F401
     _get_operator_names,  # noqa: F401
+    _get_option,  # noqa: F401
     _get_registered_backend_names,  # noqa: F401
     _is_available,  # noqa: F401
     _load_bundled_program_from_buffer,  # noqa: F401
@@ -93,12 +133,15 @@ from executorch.extension.pybindings._C import (  # noqa: F401
     _load_program,  # noqa: F401
     _load_program_from_buffer,  # noqa: F401
     _reset_profile_results,  # noqa: F401
+    _set_option,  # noqa: F401
     _threadpool_get_thread_count,  # noqa: F401
     _unsafe_reset_threadpool,  # noqa: F401
+    _uses_aten,  # noqa: F401
     BundledModule,  # noqa: F401
     ExecuTorchMethod,  # noqa: F401
     ExecuTorchModule,  # noqa: F401
     ExecuTorchProgram,  # noqa: F401
+    ExecuTorchResult,  # noqa: F401
     MethodMeta,  # noqa: F401
     TensorInfo,  # noqa: F401
     Verification,  # noqa: F401
@@ -106,5 +149,11 @@ from executorch.extension.pybindings._C import (  # noqa: F401
 
 # Clean up so that `dir(portable_lib)` is the same as `dir(_C)`
 # (apart from some __dunder__ names).
+del _bindings
+del _tensor_output
+del _TENSOR_OUTPUT_ENV
 del _torch
+del _warning_category
+del _import_module
+del _exir_warnings
 del _warnings

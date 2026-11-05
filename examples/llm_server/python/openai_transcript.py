@@ -349,7 +349,7 @@ class OpenAITranscriptState:
         session_id: Optional[str],
         content,
         tool_calls,
-        generated_token_ids: list,
+        generated_token_ids: Optional[list[int]],
         prior_turns: int,
         preamble: str = "",
         reasoning_content: Optional[str] = None,
@@ -359,7 +359,8 @@ class OpenAITranscriptState:
         Records at/after that index are dropped first, so a regenerated/branched
         turn replaces stale records rather than shadowing later hits. ids is None
         when the worker omitted them (stop-trimmed -> non-resumable), kept for
-        positional alignment. `reasoning_content` is the client-visible value,
+        positional alignment. An explicit [] is a known-empty, resumable turn.
+        `reasoning_content` is the client-visible value,
         including None when the client opted out. `preamble` is the generation
         scaffold (e.g. the Qwen3 `<think>` block) reproduced ahead of the spliced
         ids next request."""
@@ -371,7 +372,9 @@ class OpenAITranscriptState:
         turns[prior_turns] = {
             "fp": self._assistant_fingerprint(content, tool_calls),
             "reasoning_fp": self._reasoning_fingerprint(reasoning_content),
-            "ids": list(generated_token_ids) if generated_token_ids else None,
+            "ids": (
+                list(generated_token_ids) if generated_token_ids is not None else None
+            ),
             "preamble": preamble,
         }
 

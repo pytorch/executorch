@@ -35,7 +35,8 @@ GlobalWorkGrid make_linear_dispatch(
 
 bool is_bitw8(vkapi::ScalarType dtype) {
   return dtype == vkapi::kByte || dtype == vkapi::kChar ||
-      dtype == vkapi::kQInt8 || dtype == vkapi::kQUInt8;
+      dtype == vkapi::kQInt8 || dtype == vkapi::kQUInt8 ||
+      dtype == vkapi::kBool;
 }
 
 vkapi::ShaderInfo get_nchw_to_tensor_shader(
@@ -339,7 +340,6 @@ void record_index_fill_buffer(api::Context* context, api::vTensor& v_ten) {
       break;
     default:
       throw std::runtime_error("Unsupported dtype");
-      break;
   }
 
   api::ParamsBuffer params(api::context(), int32_t(v_ten.numel()));

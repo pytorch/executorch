@@ -1439,6 +1439,52 @@ class Conv(torch.nn.Module):
         )
 
 
+class ConvBackward(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(4, 3, 3, 3), requires_grad=False)
+
+    def forward(self, grad_output, x):
+        forward_output = torch.ops.aten.convolution.default(
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+        )
+        grad_input = torch.ops.aten.convolution_backward.default(
+            grad_output,
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+            [True, False, False],
+        )[0]
+        return forward_output, grad_input
+
+    @staticmethod
+    @unpack_fixtures
+    def test(qnn_config, quantizer, compile_spec, expected):
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(),
+                inputs=(torch.randn(1, 4, 5, 5), torch.randn(1, 3, 9, 10)),
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
+
+
 class Cos(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -3070,6 +3116,42 @@ class Linear(torch.nn.Module):
                     with expected as metrics:
                         export_and_verify(
                             module=__class__(use_bias=use_bias),
+                            inputs=(torch.randn(input_shape),),
+                            qnn_config=qnn_config,
+                            quantizer=quantizer,
+                            compile_specs=compile_spec,
+                            metrics=metrics,
+                        )
+
+
+class LinearLargeBias(torch.nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_features, out_features)
+        # Default init keeps |bias| <= 1/sqrt(in_features), so a bias dropped by
+        # the HTP FullyConnected block-scale over-read (pytorch/executorch#23746)
+        # still passes a loose tolerance.
+        with torch.no_grad():
+            self.linear.bias.uniform_(-2.0, 2.0)
+
+    def forward(self, x):
+        return self.linear(x)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        # The over-read depends on heap layout, so each case is lowered twice.
+        repeats = 2
+        with torch.random.fork_rng():
+            torch.manual_seed(0)
+            for (in_f, out_f), rank, it in itertools.product(
+                [(512, 32), (1024, 512), (64, 128)], [2, 4], range(repeats)
+            ):
+                input_shape = (3,) * (rank - 1) + (in_f,)
+                with subtests.test(msg=f"in:{in_f}, out:{out_f}, rank:{rank}, it:{it}"):
+                    with expected as metrics:
+                        export_and_verify(
+                            module=__class__(in_f, out_f),
                             inputs=(torch.randn(input_shape),),
                             qnn_config=qnn_config,
                             quantizer=quantizer,

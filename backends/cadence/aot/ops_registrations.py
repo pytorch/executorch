@@ -482,6 +482,13 @@ lib.define(
     "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
 )
+# Sub-byte weights: `weight` is a [out_dim, packed_row_bytes] int8 blob, so
+# in_dim and the bit width can no longer be read off its shape.
+lib.define(
+    "quantized_fully_connected_packed(Tensor src, Tensor weight, Tensor bias, int in_dim, int weight_bits, "
+    "int src_zero_point, Tensor? weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, "
+    "Tensor? offset) -> (Tensor Z)"
+)
 lib.define("where_Scalar(Tensor condition, float self, float other) -> (Tensor Z)")
 lib.define(
     "where_Scalar.out(Tensor condition, float self, float other, *, Tensor(a!) out) -> Tensor(a!)"
@@ -533,26 +540,12 @@ lib.define(
     "sdpa_bitwise_causal_mask_gen.out(Tensor positions, int key_length, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
-# Load/store with iDMA. These only exist before memory planning.
-# Post memory planning, we check that outputs/inputs for the load/store are in
-# DTCM and replace idma_load/idma_store with idma_copy.
-lib.define("idma_load(Tensor src, int task_num=0, int channel=0) -> Tensor")
 lib.define(
-    "idma_load.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
+    "sdpa_bitwise_ring_mask_gen(Tensor positions, int sliding_window, int cache_length) -> Tensor"
 )
-lib.define("idma_store(Tensor src, int task_num=0, int channel=0) -> Tensor")
 lib.define(
-    "idma_store.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
+    "sdpa_bitwise_ring_mask_gen.out(Tensor positions, int sliding_window, int cache_length, *, Tensor(a!) out) -> Tensor(a!)"
 )
-
-# Non-blocking iDMA copy.
-lib.define("idma_copy(Tensor src, int task_num=0, int channel=0) -> Tensor")
-lib.define(
-    "idma_copy.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
-)
-# iDMA wait.
-lib.define("idma_wait(Tensor src, int task_num=0) -> Tensor")
-lib.define("idma_wait.out(Tensor src, int task_num=0, *, Tensor(a!) out) -> Tensor(a!)")
 
 # ------------------------------------ #
 #   Migrated from custom_ops.yaml      #
@@ -665,6 +658,11 @@ lib.define(
 lib.define(
     "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor_out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_fully_connected_packed.out(Tensor src, Tensor weight, Tensor bias, int in_dim, int weight_bits, "
+    "int src_zero_point, Tensor? weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, "
+    "Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
@@ -2769,6 +2767,33 @@ def quantized_fully_connected_per_tensor_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
+@register_fake("cadence::quantized_fully_connected_packed")
+def quantized_fully_connected_packed_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_dim: int,
+    weight_bits: int,
+    in_zero_point: int,
+    weight_zero_point: Optional[torch.Tensor],
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+    out_zero_point: int,
+    offset: Optional[torch.Tensor],
+) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
+    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [out_dim, packed_row_bytes], so out_dim is still
+    # size(0) - that is what packing per row buys us - but in_dim is an
+    # argument rather than size(1).
+    torch._check(src.size(-1) == in_dim, lambda: "src last dim must equal in_dim")
+    out_size = list(src.size())
+    out_size[-1] = weight.size(0)
+    return src.new_empty(out_size, dtype=src.dtype)
+
+
 @register_fake("cadence::quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor")
 def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_meta(
     src: torch.Tensor,
@@ -3245,45 +3270,6 @@ def quantized_rope_rotate_stacked_halves_meta(
     return rope_rotate_stacked_halves_meta(input, sin_tensor, cos_tensor, pos)
 
 
-@register_fake("cadence::idma_copy")
-def copy_idma_copy_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-    channel: int = 0,
-) -> torch.Tensor:
-    return src.new_empty(*src.shape, dtype=src.dtype)
-
-
-@register_fake("cadence::idma_wait")
-def copy_idma_wait_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-) -> torch.Tensor:
-    return src.new_empty(*src.shape, dtype=src.dtype)
-
-
-@register_fake("cadence::idma_load")
-def idma_load_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-    channel: int = 0,
-) -> torch.Tensor:
-    res = copy_idma_copy_impl(src, task_num, channel)
-    assert isinstance(res, torch.Tensor)
-    return res
-
-
-@register_fake("cadence::idma_store")
-def idma_store_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-    channel: int = 0,
-) -> torch.Tensor:
-    res = copy_idma_copy_impl(src, task_num, channel)
-    assert isinstance(res, torch.Tensor)
-    return res
-
-
 @register_fake("cadence::roi_align_box_processor")
 def roi_align_box_processor_meta(
     rois: torch.Tensor,
@@ -3369,6 +3355,26 @@ def sdpa_bitwise_causal_mask_gen_meta(
     torch._check(key_length > 0, lambda: "key_length must be positive")
     torch._check(key_length % 8 == 0, lambda: "key_length must be a multiple of 8")
     return positions.new_empty((positions.numel(), key_length // 8), dtype=torch.uint8)
+
+
+@register_fake("cadence::sdpa_bitwise_ring_mask_gen")
+def sdpa_bitwise_ring_mask_gen_meta(
+    positions: torch.Tensor, sliding_window: int, cache_length: int
+) -> torch.Tensor:
+    torch._check(
+        positions.dtype in (torch.int32, torch.int64),
+        lambda: "expected int32 or int64 positions",
+    )
+    torch._check(positions.dim() == 1, lambda: "positions must be one-dimensional")
+    torch._check(cache_length > 0, lambda: "cache_length must be positive")
+    torch._check(cache_length % 8 == 0, lambda: "cache_length must be a multiple of 8")
+    torch._check(
+        0 < sliding_window <= cache_length,
+        lambda: "sliding_window must be positive and at most cache_length",
+    )
+    return positions.new_empty(
+        (positions.numel(), cache_length // 8), dtype=torch.uint8
+    )
 
 
 @register_fake("cadence::quantized_w8a32_linear")

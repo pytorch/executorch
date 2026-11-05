@@ -21,6 +21,7 @@ fbcode_target(_kind = runtime.python_library,
         "weight_packing_utils.py",
         "sdpa.py",
         "select_as_symint.py",
+        "swiglu.py",
     ],
     visibility = [
         "//executorch/backends/...",

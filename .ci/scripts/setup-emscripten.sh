@@ -15,10 +15,15 @@ install_node() {
 }
 
 install_emscripten() {
+    # The WebGPU backend's instance API (WGPUInstanceFeatureName /
+    # WGPUInstanceDescriptor::requiredFeatures) needs the emdawnwebgpu port
+    # pinned by Emscripten 4.0.13 or newer; 4.0.10 ships the older
+    # capabilities-based descriptor and does not compile it.
+    local emscripten_version="${EMSCRIPTEN_VERSION:-4.0.19}"
     git clone https://github.com/emscripten-core/emsdk.git
     pushd emsdk || return
-    ./emsdk install 4.0.10
-    ./emsdk activate 4.0.10
+    ./emsdk install "${emscripten_version}"
+    ./emsdk activate "${emscripten_version}"
     source ./emsdk_env.sh
     popd || return
 }

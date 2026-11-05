@@ -259,9 +259,9 @@ class MuseGlimmerServingChat(ServingChat):
             return self._prompt_token_offset
         return super()._count_prompt_tokens(PromptInput(segments=text_segments))
 
-    async def create(self, req: ChatCompletionRequest):
-        # This intentionally tracks ServingChat.create closely. The generic class
-        # has no prompt-segment hook, while all response work remains inherited.
+    async def _create(self, req: ChatCompletionRequest, lease):
+        # The inherited create() owns the transaction around preparation and
+        # response cleanup; only image-aware prompt construction differs here.
         if req.model is not None and req.model != self._model_id:
             raise ModelNotFound(req.model, self._model_id)
         self._reject_invalid_values(req)
@@ -293,19 +293,14 @@ class MuseGlimmerServingChat(ServingChat):
                 if requested > 0 and count + requested > self._max_context:
                     raise ContextLengthExceeded(count, self._max_context, requested)
 
-        if self._tools_active(req):
-            gen_stops = self._stops + self._request_stops(req)
-        else:
-            gen_stops = self._stops + self._content_specials + self._request_stops(req)
+        gen_stops = self._generation_stops(req)
         options = self._options(req, gen_stops)
         preamble = self._template.generation_preamble(
             template_kwargs, tools=template_tools
         )
-        if req.session_id is not None:
-            await self._preflight_session(req.session_id)
-        if req.stream:
-            return self._stream(req, prompt_input, options, preamble, gen_stops)
-        return await self._complete(req, prompt_input, options, preamble, gen_stops)
+        return await self._create_response(
+            req, prompt_input, options, preamble, gen_stops, lease
+        )
 
 
 def _spawn(args):

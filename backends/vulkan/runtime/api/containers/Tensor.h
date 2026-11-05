@@ -354,6 +354,8 @@ class vTensor final {
 
   // Whether the tensor has elements of type float, int, etc.
   vkapi::ScalarType dtype_;
+  // Requested dtype before device-specific storage emulation.
+  vkapi::ScalarType original_dtype_;
   // Information about packed dimension padding and block packing
   PackedDimInfo packed_dim_info_;
   // sizes of the tensor in NCHW dimension order
@@ -517,6 +519,10 @@ class vTensor final {
    */
   inline vkapi::ScalarType dtype() const {
     return dtype_;
+  }
+
+  inline vkapi::ScalarType original_dtype() const {
+    return original_dtype_;
   }
 
   /*

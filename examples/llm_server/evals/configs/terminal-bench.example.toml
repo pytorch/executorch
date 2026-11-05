@@ -1,0 +1,23 @@
+[server]
+python = "/path/to/model-env/bin/python"
+module = "executorch.examples.models.muse_glimmer.serving.serve_batching"
+worker_bin = "/path/to/executorch/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_worker"
+# Requires an MLX solo export with --use-offgraph-kv-cache.
+model_path = "/path/to/muse-glimmer-offgraph/model.pte"
+# Keep tokenizer.json, tokenizer_config.json, and chat_template.jinja together.
+tokenizer_path = "/path/to/tokenizer/tokenizer.json"
+hf_tokenizer = "/path/to/tokenizer"
+model_id = "muse-glimmer-30b"
+max_context = 131072
+tool_parser = "atem"
+# host = "0.0.0.0" # Exposes the server on all network interfaces.
+# port = 8000
+
+[terminal_bench]
+tasks = ["fix-git", "git-multibranch", "log-summary-date-ranges", "db-wal-recovery"]
+max_output_tokens = 4096
+temperature = 0.8
+step_limit = 100
+attempts = 1
+concurrency = 4
+# agent_host = "host.lima.internal" # Override automatic Docker host detection.

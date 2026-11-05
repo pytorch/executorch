@@ -60,6 +60,11 @@ class TensorWrapper {
     created_ = true;
   }
 
+  void ResetGraphState() {
+    created_ = false;
+    QNN_TENSOR_VER_PTR(tensor_)->id = 0u;
+  }
+
   // Return true if the tensor is static:
   bool IsTensorStatic() const {
     return QNN_TENSOR_VER_PTR(tensor_)->type == QNN_TENSOR_TYPE_STATIC;

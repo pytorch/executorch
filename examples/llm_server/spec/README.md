@@ -26,6 +26,32 @@ uses the worker's unset/random value.
 `model` must match the id returned by `/v1/models`; unknown ids return
 `404 model_not_found`.
 
+`ignore_eos` is an optional JSON boolean (default `false`) supported by the
+multiplexed batching worker. It disables model EOS and automatic chat-template
+stops, allowing generation through terminator tokens up to the requested budget
+or context limit. Explicit request `stop` strings and cancellation still apply.
+Response parsing ends at the first decoded turn terminator from the worker or
+chat template. Plain chat also treats content-special tokens as visible boundaries;
+under `ignore_eos`, these boundaries hide text without stopping generation.
+If a request stop cuts through a special-token spelling, an ambiguous trailing
+fragment is hidden too, even if it came from literal text.
+The worker advertises the decoded strings of all its default EOS
+IDs; HTTP `ignore_eos` is rejected if that metadata is absent or any EOS marker
+cannot decode to a nonempty string. Use matching model/tokenizer assets. Tokens
+past a recognized terminator contribute to usage but are excluded from parsing. Explicit
+stops still apply to hidden text, and exhausting the budget reports `length` even
+if the visible answer ended earlier. Exact generated-token splicing is disabled
+for these turns. A later prompt rebuilt from the visible answer can differ from
+the resident history containing hidden tokens, so direct continuation may reset
+and re-prefill. Enabled prefix caching can recover a matching retained prefix.
+AgentX synthesizes later prompts independently; enable prefix caching when
+benchmarking reuse. Explicit `max_tokens` is recommended;
+without it generation uses the remaining context budget. The worker advertises
+support and `default_stop_strings` in its readiness frame (`null` when unavailable).
+Older and legacy workers reject
+`ignore_eos: true` with `400 unsupported_parameter`. Non-boolean values, including
+null, fail schema validation with HTTP 422.
+
 `chat_template_kwargs.return_reasoning` is an ExecuTorch response-visibility
 control and defaults to `true`. For models with a reasoning extractor, set it
 to `false` to omit reasoning from the response; the model still computes reasoning.
@@ -92,7 +118,8 @@ op) is future work.
 
 ### Prefix / KV reuse
 
-No global (cross-session) prefix cache: the control plane holds no KV state and
+On the legacy path there is no global (cross-session) prefix cache: the control
+plane holds no KV state and
 does no prefix-reuse routing, so a system prompt shared by two different sessions
 is prefilled independently for each. Per-session append-only warm resume *is*
 implemented worker-side for engines that support it — a named session whose next
@@ -114,3 +141,164 @@ The generic launcher accepts `--assistant-header` and warns at startup if it is
 absent from the template's generation prompt. The worker checks the resulting
 token sequence before reusing KV state in either case; text fallback may still
 reuse KV when the tokens match.
+
+## Multiplexed Native Worker (Opt-In)
+
+This is a distinct text-only transport, not a capability of the legacy worker
+loop. It requires a multiplex-aware client and exposes one `ServingRuntime`,
+which owns one batching Runner. The adapter owns only JSONL framing and wire request
+identities; tokenization, decoding, stop handling, and session history belong to
+the runtime. Chat templates and OpenAI response presentation remain in Python.
+The legacy cancellation and cross-session cache limitations above do not describe
+this opt-in path. See the [batching-backed serving guide](batching.md) for launch
+selection, creation-only caching, and native-backed Python integration checks.
+
+Before accepting requests the worker emits one readiness record, with no request
+ID:
+
+```json
+{"ready":true,"multiplexed":true,"max_named_sessions":4,"max_inflight_requests":64}
+```
+
+Despite its legacy name, `max_named_sessions` reports the shared capacity for
+named and anonymous sessions; there is no additional reserved anonymous slot.
+
+Every subsequent request has an explicit `op` and positive uint64 `request_id`.
+Clients allocate IDs monotonically and guarantee lifetime uniqueness, but requests
+may arrive out of order after reservation. The worker remembers only in-flight
+operations, not a completed-ID set or watermark. Responses for different requests
+may interleave and finish out of order; each admitted generation has zero or more
+text records followed by exactly one terminal record. An admission error itself
+is terminal and has no later runtime callback.
+
+```json
+{"op":"generate","request_id":8,"prompt":"Hello","max_new_tokens":32,"temperature":0,"top_p":1,"top_k":0,"seed":0,"stop":[]}
+{"request_id":8,"token":" world"}
+{"request_id":8,"done":true,"finish_reason":"length","cancelled":false,"prompt_tokens":1,"completion_tokens":32,"reused_prompt_tokens":0,"prefilled_prompt_tokens":1,"prefill_ms":2.0,"decode_ms":30.0,"total_ms":32.0,"prefill_tok_s":500.0,"decode_tok_s":1066.67,"session_reset_reason":""}
+```
+
+Generate accepts exactly one of `prompt` (string) and `prompt_segments` (array).
+Segments are `{"text":"..."}` or `{"ids":[1,2]}`, with exactly one field;
+IDs are nonnegative uint64 integers. Text segments
+are encoded individually and IDs appended verbatim. Optional `session_id` names a
+persistent session; it must be a nonempty string of at most 1024 UTF-8 bytes.
+The full prompt is supplied each time, not a token delta. `max_new_tokens` is an
+integer in `[-1, INT32_MAX]`; omitted or `-1` selects the runtime's automatic
+budget. Sampling fields must be numeric, never booleans: temperature is finite
+and nonnegative, top_p is in `(0, 1]`, top_k is a nonnegative int32, and seed is a
+uint64 (zero preserves the existing unset/random sentinel). `stop` is an array
+of strings. `ignore_eos` is a JSON boolean, default `false`; it suppresses
+service-default stop tokens while preserving explicit stop strings. Unknown
+fields and segment types, including images or image payload fields on otherwise
+valid text segments, fail explicitly instead of silently dropping modalities.
+
+Output JSON strings replace invalid/incomplete UTF-8 with U+FFFD, matching the
+legacy worker's serialization policy; a generation ending mid-character does
+not fail unrelated requests.
+
+Optional `generated_token_ids` in a terminal is present only when the runtime can
+safely replay exact output IDs. Statistics describe consumed prompt and generated
+tokens, not necessarily visible text. Runtime failures have the terminal shape
+`{"request_id":8,"error":"message","code":"internal"}`. Stable error codes
+include `invalid_argument`, `not_ready`, `session_not_found`, `session_busy`,
+`capacity_exhausted`, `internal`, `slow_consumer`, and `frame_too_large`.
+
+Lifecycle commands are `open`, `close`, and `reset`, each with `session_id` and
+its own request ID. Their replies are respectively `opened:true`, `closed:true`,
+and `reset:true`, or a correlated error. They do not block the input reader.
+An accepted close/reset fences its session: earlier generation text and terminals
+precede its ACK, and runtime-owned generation callbacks and captures are cleaned
+up before the ACK is enqueued. Later accepted same-session operations stay behind
+that ACK, including commands submitted before it. Other sessions can progress.
+Immediate validation/admission rejections and cancel replies are not covered by
+this ordering. Close acknowledges logical release, not physical executor cleanup.
+Reset acknowledges a cold replacement; a failed replacement does not restore the
+old state.
+
+Cancellation is in-band, not the legacy worker's separate FD pipe:
+
+```json
+{"op":"cancel","request_id":9,"target_request_id":8}
+{"request_id":9,"cancelled":true}
+{"request_id":8,"done":true,"cancelled":true,"finish_reason":"stop"}
+```
+
+The cancel acknowledgement is idempotent, including unknown or already completed
+targets. It acknowledges the cancellation request, not generation completion.
+The original generation finishes separately. Cancellation racing an already
+selected completion does not rewrite that outcome.
+
+### Bounds And Failure Policy
+
+The default input/output record limit is 1 MiB including newline. The input reader
+never accumulates an unbounded line. Invalid JSON, missing/invalid request IDs,
+incomplete or oversized input records, and duplicate in-flight IDs fail the
+transport. Duplicate IDs cannot receive an independent correlated error without
+ambiguously terminating the original operation. Valid-ID field errors are isolated
+to that request. EOF initiates runtime shutdown, drains generation and lifecycle
+callbacks, and joins the Runner for physical cleanup before draining wire output.
+
+Generation/lifecycle entries are bounded by `max_inflight_requests`, including
+completed responses not yet written. A separate equally sized budget handles
+cancel acknowledgements and capacity rejection responses; exhausting it fails the
+transport. Every registered operation reserves one terminal/control record up to
+the frame limit. Each generation additionally permits 64 queued token frames and
+256 KiB of queued token bytes by default, plus at most one globally active writer
+record. A full token queue requests cancellation only for its owning request,
+drops its queued text, and waits for the runtime terminal before returning an
+explicit `slow_consumer` terminal instead of a truncated success. This reports a
+transport failure; it does not rewrite the runtime result or roll back committed
+session history. An oversized terminal is replaced with `frame_too_large`, not
+silently trimmed.
+
+One writer emits queued JSONL records in FIFO order with bounded nonblocking POSIX
+writes. Generation and lifecycle callbacks only enqueue; they never wait for
+stdout. Runtime admission is released before those callbacks, so terminal output
+does not wait for callback return or poll request handles. The serial input reader
+retains its operation through handle assignment even if terminal output finishes
+first, and replays any cancellation latched before assignment. Writing a terminal's
+final newline and retiring its wire ID/capacity are atomic with respect to reader
+admission. No lifecycle collector or per-command thread is needed.
+
+If a record cannot finish writing within 10 seconds, stdout fails,
+or the control reserve is exhausted, the entire transport fails and shuts down
+the runtime. A permanently unread pipe cannot guarantee terminal delivery; clients
+must settle all outstanding operations on EOF. Worker executables ignore SIGPIPE
+and reserve stdout exclusively for protocol output.
+
+### ModuleExecutor Construction And Deferred Smoke Test
+
+The MLX example target `llm_worker` builds the shared ModuleExecutor bootstrap.
+It requires a compatible packed, off-graph-cache text artifact and tokenizer. It
+loads only the program before ModuleExecutor construction, reads activation dtype
+and context length, resolves model/tokenizer EOS, binds the backend's default
+batched cache via `cache::kind::kBatched`, derives scheduler width from
+`preferred_batch_tokens()`, and constructs
+one `ServingRuntime`. It does not preload `forward`, run token-step loops, or use
+Glimmer's legacy session implementation. Prefix caching is disabled by default.
+`--prefix_cache_entries=N` enables creation-only reuse for both greedy and
+sampled requests. With `--prefix_capture_slots=C`, it adds `N + C` physical rows
+for retained snapshots and transient captures; logical `--max_sessions` remains
+unchanged. The default `--prefix_capture_slots=0` resolves `C` automatically to
+`min(max_sessions, max_inflight_requests)`, so overlapping requests can each capture
+their initial prompt. With checkpoints enabled, automatic sizing uses at most two
+rows because checkpoint collection remains serialized and one replacement can
+overlap. A positive value overrides automatic sizing; values above two add unused
+row capacity in checkpoint mode. Disabled prefix caching reserves no capture rows.
+
+With an existing MLX-enabled ExecuTorch installation and matching gflags package,
+configure the MLX LLM examples and build `llm_worker`. Launch with `--pte`,
+`--tokenizer`, `--max_sessions=4`, `--max_session_tokens=2048`, and
+`--max_decode_sequences=2`; the last value must be smaller than the artifact's
+packed forward width. Send two generate records without waiting for the first
+terminal, observe both request IDs, cancel one, then verify the other still
+completes and named-session continuation remains correct.
+
+This exercises transport concurrency only. To establish physical GPU batching,
+instrument a compatible ModuleExecutor forward and verify that one invocation
+contains multiple session slices. Overlapping HTTP requests or sequential
+single-session forwards are not proof. Real-model smoke testing is explicitly
+deferred: no compatible local PTE/tokenizer has been confirmed, and this stack
+must not download/export weights or claim that a real combined forward was
+verified. A Glimmer `embed_text`/`forward_from_embeddings` last-logits artifact is
+not assumed compatible with this packed construction path.

@@ -129,7 +129,8 @@ def _adjust_weight_qspec_for_conv_transpose(
     if (
         node.target != torch.ops.aten.conv_transpose2d.input
         or weight_qspec is None
-        or weight_qspec.qscheme != torch.per_channel_symmetric
+        or weight_qspec.qscheme
+        not in (torch.per_channel_symmetric, torch.per_channel_affine)
     ):
         return weight_qspec
 
@@ -556,6 +557,7 @@ _one_to_one: set[OpOverload] = {
     torch.ops.aten.pow.Tensor_Scalar,
     torch.ops.aten.gelu.default,
     torch.ops.aten.silu.default,
+    torch.ops.aten.softplus.default,
     torch.ops.aten.silu_.default,
     torch.ops.aten.sinh.default,
     torch.ops.aten.atan.default,

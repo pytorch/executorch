@@ -376,7 +376,6 @@ ET_NODISCARD Error load_bundled_input(
             NotSupported,
             "Data type %hhu not supported",
             static_cast<uint8_t>(bundled_input->val_type()));
-        break;
       }
     }
 
@@ -470,7 +469,6 @@ ET_NODISCARD ErrorStats compute_method_output_error_stats(
             "Data type %hhd not supported",
             static_cast<uint8_t>(bundled_expected_output->val_type()));
         return {Error::NotSupported, 0, 0, 0, 0};
-        break; // Never reached
       }
     }
   }
@@ -606,7 +604,6 @@ ET_NODISCARD Error verify_method_outputs(
             NotSupported,
             "Data type %hhd not supported",
             static_cast<uint8_t>(bundled_expected_output->val_type()));
-        break;
       }
     }
   }

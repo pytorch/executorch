@@ -60,6 +60,15 @@ set(_executorch_host_osx_args
     "$<${_executorch_apple_cross}:-DCMAKE_OSX_SYSROOT=>"
     "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=$<IF:${_executorch_apple_cross},${_executorch_host_macos_floor},${CMAKE_OSX_DEPLOYMENT_TARGET}>"
 )
+# The host's executable suffix, for the byproducts and the imported locations
+# alike. Not CMAKE_EXECUTABLE_SUFFIX, which is the target's: a cross toolchain
+# such as Zephyr's sets .elf, and a byproduct named after it is not the file the
+# host build writes, so Ninja would have no rule for the tool.
+if(CMAKE_HOST_WIN32)
+  set(_executorch_host_executable_suffix ".exe")
+else()
+  set(_executorch_host_executable_suffix "")
+endif()
 
 # Allow reusing a prebuilt host flatc instead of building it from source. This is
 # required when cross-compiling with the Ninja generator on Windows: the WIN32
@@ -91,24 +100,21 @@ ExternalProject_Add(
     # flatc runs on the build machine, so it must target the host, not the app's
     # iOS platform. See _executorch_host_osx_args above.
     ${_executorch_host_osx_args}
-  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
+  # With the suffix, or Ninja on Windows has no rule producing the flatc.exe
+  # that the generated schema headers depend on.
+  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc${_executorch_host_executable_suffix}
                    ${_executorch_external_project_additional_args}
                    ${_flatbuffers_ep_additional_args}
 )
 ExternalProject_Get_Property(flatbuffers_ep INSTALL_DIR)
 add_executable(flatc IMPORTED GLOBAL)
 add_dependencies(flatc flatbuffers_ep)
-if(CMAKE_HOST_WIN32)
-  # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces
-  # Release config, but from CMake's perspective the build type is always Debug.
-  set_target_properties(
-    flatc PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatc.exe
-  )
-else()
-  set_target_properties(
-    flatc PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatc
-  )
-endif()
+# flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
+# config, but from CMake's perspective the build type is always Debug.
+set_target_properties(
+  flatc PROPERTIES IMPORTED_LOCATION
+                   ${INSTALL_DIR}/bin/flatc${_executorch_host_executable_suffix}
+)
 endif()
 
 # TODO: re-enable once flatbuffers is added as a subdirectory.
@@ -158,22 +164,18 @@ ExternalProject_Add(
     -DCMAKE_TOOLCHAIN_FILE=
     ${_executorch_host_osx_args}
     ${_flatcc_extra_cmake_args}
-  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
+  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc${_executorch_host_executable_suffix}
                    ${_executorch_external_project_additional_args}
                    ${_flatbuffers_ep_additional_args}
 )
 ExternalProject_Get_Property(flatcc_ep INSTALL_DIR)
 add_executable(flatcc_cli IMPORTED GLOBAL)
 add_dependencies(flatcc_cli flatcc_ep)
-if(CMAKE_HOST_WIN32)
-  set_target_properties(
-    flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc.exe
-  )
-else()
-  set_target_properties(
-    flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc
-  )
-endif()
+set_target_properties(
+  flatcc_cli
+  PROPERTIES IMPORTED_LOCATION
+             ${INSTALL_DIR}/bin/flatcc${_executorch_host_executable_suffix}
+)
 endif()
 
 set(FLATCC_RTONLY

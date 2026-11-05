@@ -30,6 +30,15 @@
  * - EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES (flag) - Sizes the threadpool
  * equal to the number of logical cores on system. This is the historical
  * behavior.
+ *
+ * On Linux other than Android, the threadpool starts with no more threads than
+ * the CPUs in the affinity mask of the thread that first calls
+ * get_threadpool(). taskset and cgroup cpusets shrink that mask, CPU quotas do
+ * not. The mask also sizes the threadpool when the performance core count is
+ * unknown, as on x86. It is read once: the threadpool does not follow later
+ * changes to the mask, and a child created by fork() keeps its parent's size.
+ * If the mask can grow later, set the thread count you need with
+ * _unsafe_reset_threadpool() before loading any model.
  */
 
 namespace executorch::extension::threadpool {

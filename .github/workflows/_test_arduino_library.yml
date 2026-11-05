@@ -47,6 +47,9 @@ jobs:
         cd examples/arduino
         ./build_arduino_library.sh
 
+        test "$(sed -n 's/^version=//p' arduino_lib/ExecuTorch/library.properties)" \
+          = "$(cat ../../version.txt)"
+
         # A model exported against a different ExecuTorch commit than the one
         # that built the library loads fine, resolves every operator, and then
         # fails inside Method::execute. Catch that here rather than on a board.

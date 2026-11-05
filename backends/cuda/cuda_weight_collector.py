@@ -12,8 +12,8 @@ import os
 import struct
 import tempfile
 import threading
-from dataclasses import dataclass, replace
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+from dataclasses import dataclass, field, replace
+from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 import torch
 from executorch.backends.cuda.passes.lower_offgraph_kv import OFFGRAPH_KV_FQN_PREFIX
@@ -45,6 +45,9 @@ class CudaWeightEntry:
 class CudaWeightArtifact:
     entries: List[CudaWeightEntry]
     storages: Dict[str, FileBackedData]
+    # Storage keys an earlier method of this collector already stored with the
+    # same bytes; they are not written again.
+    stored: Set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -124,6 +127,22 @@ def _materialize_storage(tensor: torch.Tensor, directory: str) -> FileBackedData
         with contextlib.suppress(OSError):
             os.remove(storage_path)
         raise
+
+
+def _storage_bytes(tensor: torch.Tensor) -> torch.Tensor:
+    storage = tensor.untyped_storage()
+    return torch.empty(0, dtype=torch.uint8, device=tensor.device).set_(
+        storage, 0, (storage.nbytes(),), (1,)
+    )
+
+
+def _same_cuda_storage(first: torch.Tensor, second: torch.Tensor) -> bool:
+    """Whether two CUDA tensors' whole storages hold the same bytes, compared on the device."""
+    if first.device != second.device:
+        return False
+    if first.untyped_storage().nbytes() != second.untyped_storage().nbytes():
+        return False
+    return torch.equal(_storage_bytes(first), _storage_bytes(second))
 
 
 def _required_view_nbytes(
@@ -365,6 +384,13 @@ class CudaWeightCollector:
     def __init__(self) -> None:
         self._store = NamedDataStore()
         self._results: List[PreprocessResult] = []
+        # The CUDA storages already written to the store, by storage key. Methods
+        # share their weights, so a later method's identical storage is compared
+        # with the first one on the device and not written again. The weights
+        # must not change until finish() releases them.
+        self._stored_storages: Dict[str, torch.Tensor] = {}
+        # The key each storage was written under, which ends in its SHA-256.
+        self._content_keys: Dict[str, str] = {}
 
     @contextlib.contextmanager
     def capture(
@@ -397,17 +423,32 @@ class CudaWeightCollector:
         trim_host_memory()
         entries: List[CudaWeightEntry] = []
         storages: Dict[str, FileBackedData] = {}
+        stored: Set[str] = set()
 
         for fqn, (tensor, properties) in weights.items():
+            is_offgraph_kv = _is_offgraph_kv_fqn(fqn)
             storage = tensor.untyped_storage()
             storage_nbytes = storage.nbytes()
+            # AOTI clones buffers into compact storage that starts at the view,
+            # with the same shape and strides, so the original storage size and
+            # offset do not describe it.
+            is_compact_clone = (
+                not is_offgraph_kv
+                and getattr(properties, "storage_ptr", None)
+                not in (None, storage.data_ptr())
+                and tuple(tensor.shape) == tuple(getattr(properties, "shape", ()))
+                and tuple(tensor.stride()) == tuple(getattr(properties, "stride", ()))
+            )
             del storage
             device_type = device_type_for_weight(tensor)
-            is_offgraph_kv = _is_offgraph_kv_fqn(fqn)
             expected_storage_nbytes = int(
                 getattr(properties, "storage_size", None) or 0
             )
-            if not is_offgraph_kv and storage_nbytes < expected_storage_nbytes:
+            if (
+                not is_offgraph_kv
+                and not is_compact_clone
+                and storage_nbytes < expected_storage_nbytes
+            ):
                 raise RuntimeError(
                     "AOTI cloned storage is smaller than its TensorProperties "
                     f"({storage_nbytes} < {expected_storage_nbytes} bytes)"
@@ -415,11 +456,22 @@ class CudaWeightCollector:
 
             storage_key = _storage_key(fqn, device_type)
             if not is_offgraph_kv:
-                data = _materialize_storage(tensor, directory)
-                if storage_key in storages:
-                    data.close()
+                if storage_key in storages or storage_key in stored:
                     raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
-                storages[storage_key] = data
+                # Library-local constants are keyed per shared library, so
+                # only FQN weights can match an earlier method's storage.
+                shareable = tensor.is_cuda and not _is_aoti_library_local_fqn(fqn)
+                first = self._stored_storages.get(storage_key)
+                if (
+                    shareable
+                    and first is not None
+                    and _same_cuda_storage(first, tensor)
+                ):
+                    stored.add(storage_key)
+                else:
+                    storages[storage_key] = _materialize_storage(tensor, directory)
+                    if shareable:
+                        self._stored_storages.setdefault(storage_key, tensor)
 
             sizes = tuple(
                 int(size) for size in getattr(properties, "shape", tensor.shape)
@@ -427,7 +479,11 @@ class CudaWeightCollector:
             strides = tuple(
                 int(stride) for stride in getattr(properties, "stride", tensor.stride())
             )
-            storage_offset = int(getattr(properties, "offset", tensor.storage_offset()))
+            storage_offset = (
+                tensor.storage_offset()
+                if is_compact_clone
+                else int(getattr(properties, "offset", tensor.storage_offset()))
+            )
             required_nbytes = _required_view_nbytes(
                 fqn, sizes, strides, storage_offset, tensor.element_size()
             )
@@ -435,6 +491,11 @@ class CudaWeightCollector:
                 raise RuntimeError(
                     f"AOTI view {fqn!r} requires {required_nbytes} bytes from a "
                     f"{storage_nbytes}-byte cloned storage"
+                )
+            if is_compact_clone and required_nbytes != storage_nbytes:
+                raise RuntimeError(
+                    f"AOTI compact clone of {fqn!r} should span exactly its "
+                    f"{storage_nbytes}-byte storage, but its view needs {required_nbytes}"
                 )
             if is_offgraph_kv:
                 # Preserve the AOTI view contract; the runtime supplies storage.
@@ -455,7 +516,7 @@ class CudaWeightCollector:
             )
 
         trim_host_memory()
-        return CudaWeightArtifact(entries=entries, storages=storages)
+        return CudaWeightArtifact(entries=entries, storages=storages, stored=stored)
 
     def _merge_aoti_data(
         self,
@@ -509,6 +570,7 @@ class CudaWeightCollector:
         device_name: str,
         target_sm: Optional[int] = None,
         ptx_compute: int = 0,
+        external_tag: Optional[str] = None,
     ) -> None:
         if result.data_store_output is None:
             raise RuntimeError("CUDA AOTI preprocess returned no named data")
@@ -528,7 +590,7 @@ class CudaWeightCollector:
             keep_compatibility_blob=not artifact.entries,
         )
 
-        external_tag = f"aoti_{device_name}_blob"
+        external_tag = external_tag or f"aoti_{device_name}_blob"
         serialized_entries = []
         for entry in artifact.entries:
             data = artifact.storages.get(entry.storage_key)
@@ -540,7 +602,27 @@ class CudaWeightCollector:
                     ),
                 )
             if data is not None:
+                # Programs can write their weights to the same file name, so the
+                # key carries the content: another program's file then fails to
+                # load instead of running this program with its weights.
+                content_key = f"{entry.storage_key}:{data.sha256().hex()}"
+                if (
+                    self._content_keys.setdefault(entry.storage_key, content_key)
+                    != content_key
+                ):
+                    data.close()
+                    raise ValueError(
+                        f"CUDA FQN weight {entry.fqn!r} is stored with different data"
+                    )
+                entry = replace(entry, storage_key=content_key)
                 self._add_weight(entry, data, external_tag)
+            elif entry.storage_key in artifact.stored:
+                content_key = self._content_keys.get(entry.storage_key)
+                if content_key not in self._store.key_to_buffer_idx:
+                    raise RuntimeError(
+                        f"CUDA FQN weight {entry.fqn!r} was reused but never stored"
+                    )
+                entry = replace(entry, storage_key=content_key)
             elif not _is_offgraph_kv_fqn(entry.fqn):
                 raise RuntimeError(f"Missing CUDA FQN weight storage for {entry.fqn!r}")
             serialized_entries.append(entry)
@@ -555,3 +637,5 @@ class CudaWeightCollector:
         shared_output = self._store.get_named_data_store_output()
         for result in self._results:
             result.data_store_output = shared_output
+        self._stored_storages.clear()
+        self._content_keys.clear()

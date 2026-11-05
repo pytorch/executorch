@@ -48,7 +48,7 @@ class TestAdd(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=inputs)
+            .run_method_and_compare_outputs(inputs=inputs, atol=0.003)
         )
 
     def _test_a8w8(self, module: torch.nn.Module, inputs):

@@ -14,10 +14,9 @@ templating, tool parsing, request validation. It runs NO model code and imports
 no runtime pybind. Model execution lives in a separate C++ worker process driven
 over JSONL via WorkerClient.
 
-One worker process, serialized execution (one in-flight request; concurrent
-requests queue). Session capacity is set by the worker/engine -- a single worker
-hosts many isolated sessions on one weight load; extra worker processes would
-duplicate the weights, so `--num-runners` accepts 1.
+One worker process: explicit multiplexing permits bounded concurrent requests;
+legacy workers serialize execution. Session capacity is set by the worker/engine.
+Extra worker processes would duplicate weights, so `--num-runners` accepts 1.
 
 Example:
     python -m executorch.examples.llm_server.python.server \\
@@ -27,13 +26,16 @@ Example:
 """
 
 import argparse
+import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 
-from typing import Awaitable, Callable, Optional
+from typing import AsyncContextManager, Awaitable, Callable, Optional
 
-from fastapi import FastAPI, Header
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import FastAPI, Header, Request
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from starlette.requests import ClientDisconnect
 
 from .chat_template import ChatTemplate
 from .errors import APIError
@@ -82,7 +84,7 @@ async def _session_op(
     op: Callable[[str], Awaitable[None]], session_id: str, ok: dict
 ) -> JSONResponse:
     # Shared shape for the session vendor-extension routes (close/reset): run the
-    # idempotent op, mapping APIError to a structured JSON error.
+    # operation, mapping APIError to a structured JSON error.
     try:
         await op(session_id)
     except APIError as e:
@@ -90,12 +92,101 @@ async def _session_op(
     return JSONResponse(ok)
 
 
-def build_app(serving: ServingChat, model_id: str) -> FastAPI:
-    app = FastAPI(title="ExecuTorch LLM Server")
+async def _create_with_disconnect(
+    request: Request, serving: ServingChat, req: ChatCompletionRequest
+):
+    async def wait_disconnect():
+        while (await request.receive())["type"] != "http.disconnect":
+            pass
+
+    creation = asyncio.create_task(serving.create(req))
+    disconnect = asyncio.create_task(wait_disconnect())
+    transferred = False
+
+    async def cleanup():
+        disconnect.cancel()
+        creation.cancel()
+        result, _ = await asyncio.gather(creation, disconnect, return_exceptions=True)
+        if req.stream and not transferred and not isinstance(result, BaseException):
+            await result.aclose()
+
+    try:
+        done, _ = await asyncio.wait(
+            (creation, disconnect), return_when=asyncio.FIRST_COMPLETED
+        )
+        if disconnect in done:
+            raise ClientDisconnect()
+        result = await creation
+        transferred = True
+        return result
+    finally:
+        await SessionRuntime._finish_cleanup(asyncio.create_task(cleanup()))
+
+
+class _ClosingStreamingResponse(StreamingResponse):
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await SessionRuntime._finish_cleanup(
+                asyncio.create_task(self.body_iterator.aclose())
+            )
+
+
+def _create_serving_app(serving, serving_factory):
+    if (serving is None) == (serving_factory is None):
+        raise ValueError("exactly one of serving or serving_factory must be supplied")
+    if serving_factory is not None and not callable(serving_factory):
+        raise TypeError("serving_factory must be an async context manager factory")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        try:
+            async with serving_factory() as serving:
+                if serving is None:
+                    raise RuntimeError("serving_factory yielded no serving adapter")
+                app.state.serving = serving
+                try:
+                    yield
+                finally:
+                    app.state.serving = None
+        finally:
+            app.state.serving = None
+
+    if serving_factory is None:
+        app = FastAPI(title="ExecuTorch LLM Server")
+    else:
+        app = FastAPI(title="ExecuTorch LLM Server", lifespan=lifespan)
+    app.state.serving = serving
+    return app
+
+
+def _current_serving(app: FastAPI) -> ServingChat:
+    serving = app.state.serving
+    if serving is None:
+        raise RuntimeError(
+            "serving adapter is unavailable; run the application lifespan "
+            "before requests and do not use it after shutdown"
+        )
+    return serving
+
+
+def build_app(
+    serving: Optional[ServingChat],
+    model_id: str,
+    *,
+    serving_factory: Optional[Callable[[], AsyncContextManager[ServingChat]]] = None,
+) -> FastAPI:
+    """Build an app with either an injected adapter or a lifespan-owned factory.
+
+    The factory owns partial-startup cleanup and awaited runtime shutdown. Direct
+    instances retain FastAPI's default lifespan and are not closed by this app.
+    """
+    app = _create_serving_app(serving, serving_factory)
 
     @app.get("/health")
     async def health():
-        if not serving.healthy:
+        if not _current_serving(app).healthy:
             return JSONResponse({"status": "unavailable"}, status_code=503)
         return {"status": "ok"}
 
@@ -106,6 +197,7 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
     @app.post("/v1/chat/completions")
     async def chat_completions(
         req: ChatCompletionRequest,
+        request: Request,
         # FastAPI dependency: the Header() call in the default is required.
         # `session_id` is matched verbatim (underscore).
         x_executorch_session_id: Optional[str] = Header(default=None),  # noqa: B008
@@ -121,28 +213,29 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
             req, x_executorch_session_id, session_id_header, x_session_affinity
         )
         try:
-            result = await serving.create(req)
+            result = await _create_with_disconnect(request, _current_serving(app), req)
+        except ClientDisconnect:
+            return Response(status_code=499)
         except APIError as e:
             return JSONResponse(e.body(), status_code=e.status)
         if req.stream:
-            return StreamingResponse(result, media_type="text/event-stream")
+            return _ClosingStreamingResponse(result, media_type="text/event-stream")
         return JSONResponse(result.model_dump(exclude_none=True))
 
     @app.delete("/v1/sessions/{session_id}")
     async def close_session(session_id: str):
-        # Free a named session's state + capacity slot (vendor extension; idempotent).
+        # Free a named session's state + capacity slot (vendor extension).
         return await _session_op(
-            serving.close_session,
+            _current_serving(app).close_session,
             session_id,
             {"closed": True, "session_id": session_id},
         )
 
     @app.post("/v1/sessions/{session_id}/reset")
     async def reset_session(session_id: str):
-        # Clear a named session's context but keep its slot (vendor extension;
-        # idempotent): reuse a slot for a new conversation without reopening it.
+        # Replace a named session's context under its public ID (vendor extension).
         return await _session_op(
-            serving.reset_session,
+            _current_serving(app).reset_session,
             session_id,
             {"reset": True, "session_id": session_id},
         )

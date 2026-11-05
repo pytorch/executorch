@@ -17,7 +17,6 @@ import pytest
 _VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation"
 _VALIDATION_ENV = "EXECUTORCH_VGF_VULKAN_VALIDATION"
 _EXPECTED_VUID = "VUID-VkApplicationInfo-sType-sType"
-
 # We check that validation layer is enabled.
 # Run the actual Vulkan call in a child process so loading Vulkan/VVL does not
 # modify the pytest process.
@@ -337,6 +336,90 @@ def test_vgf_validation_wrapper_fails_on_validation_error():
         f"stdout:\n{result.stdout}\n\n"
         f"stderr:\n{result.stderr}"
     )
+
+
+def test_vgf_validation_wrapper_enables_object_lifetime_checks():
+    """Lifetime/core validation must be enabled without leaking Vulkan
+    objects.
+    """
+
+    if not _env_flag_enabled(_VALIDATION_ENV):
+        pytest.skip(f"{_VALIDATION_ENV} is not enabled for this test run")
+
+    expected_settings = {
+        "VK_LAYER_OBJECT_LIFETIME": "1",
+        "VK_LAYER_VALIDATE_CORE": "1",
+    }
+
+    # Verify the pytest/runner configuration first. This checks that
+    # runner_utils._enable_vulkan_validation() and the autouse fixture propagate
+    # the settings into VGF tests.
+    for name, expected in expected_settings.items():
+        assert os.environ.get(name) == expected, (
+            f"VGF Vulkan validation is enabled, but {name} is not explicitly "
+            f"enabled. Expected {name}={expected}."
+        )
+
+    validation_wrapper = (
+        Path(__file__).resolve().parents[1] / "run_with_vulkan_validation.sh"
+    )
+
+    if not validation_wrapper.is_file():
+        pytest.skip(
+            "Vulkan validation shell wrapper is not available in this "
+            "test environment"
+        )
+
+    env = os.environ.copy()
+    env[_VALIDATION_ENV] = "1"
+
+    # Remove the inherited values so this child verifies that the wrapper
+    # itself exports the settings. No Vulkan object is created by this probe.
+    for name in expected_settings:
+        env.pop(name, None)
+
+    settings_probe = """\
+import os
+
+settings = (
+    "VK_LAYER_OBJECT_LIFETIME",
+    "VK_LAYER_VALIDATE_CORE",
+)
+
+for name in settings:
+    value = os.environ.get(name)
+    print(f"{name}={value}")
+    if value != "1":
+        raise SystemExit(f"{name} must be 1, got {value!r}")
+"""
+
+    result = subprocess.run(  # nosec B603
+        [
+            str(validation_wrapper),
+            sys.executable,
+            "-c",
+            settings_probe,
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, (
+        "The Vulkan validation wrapper did not propagate the explicit "
+        "object-lifetime/core validation settings.\n\n"
+        f"stdout:\n{result.stdout}\n\n"
+        f"stderr:\n{result.stderr}"
+    )
+
+    for name, expected in expected_settings.items():
+        assert f"{name}={expected}" in result.stdout, (
+            f"The wrapper child did not observe {name}={expected}.\n\n"
+            f"stdout:\n{result.stdout}\n\n"
+            f"stderr:\n{result.stderr}"
+        )
 
 
 def test_vgf_validation_wrapper_preserves_error_from_earlier_vulkan_child():

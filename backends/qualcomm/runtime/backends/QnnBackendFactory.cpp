@@ -60,10 +60,15 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
         QNN_EXECUTORCH_LOG_INFO(
             "use_weight_sharing in htp_options: %d",
             htp_options->use_weight_sharing());
+        QNN_EXECUTORCH_LOG_INFO(
+            "use_graph_splitting in htp_options: %d",
+            htp_options->use_graph_splitting());
       }
       backend_params->qnn_backend_cache_ptr_ =
           std::make_unique<HtpBackendCache>(
-              qnn_context_blob, system_implementation_ptr);
+              qnn_context_blob,
+              system_implementation_ptr,
+              options->target_options() != nullptr);
 
       backend_params->qnn_context_ptr_ = std::make_unique<HtpContext>(
           implementation_ptr,
@@ -72,6 +77,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           qnn_device_ptr,
           backend_params->qnn_backend_cache_ptr_.get(),
           htp_options,
+          options->target_options(),
           qnn_dlc_manager,
           get_option(options->profile_level(), QNN_RUNTIME_PROFILE_LEVEL));
 

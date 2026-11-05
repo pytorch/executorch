@@ -9,10 +9,12 @@ controls the test pipeline, TOSA profile, output path, infrastructure xfails and
 backend-specific registry filtering. Run from the ExecuTorch repository root.
 
 Examples:
+    python backends/arm/scripts/docgen/generate_op_support.py --backend all
     python backends/arm/scripts/docgen/generate_op_support.py --backend vgf
     python backends/arm/scripts/docgen/generate_op_support.py --backend u55
     python backends/arm/scripts/docgen/generate_op_support.py --backend u85
     python backends/arm/scripts/docgen/generate_op_support.py --backend u55 --debug --html
+    python backends/arm/scripts/docgen/generate_op_support.py --backend all --check
     python backends/arm/scripts/docgen/generate_op_support.py --backend vgf --check --strict-ast
 
 """
@@ -41,7 +43,8 @@ import torch
 # below are shared. Backend differences belong in BackendConfig.
 # ---------------------------------------------------------------------------
 BACKEND_NAME = "VGF"
-BACKEND_PIPELINE_CLASS_NAMES = frozenset({"VgfPipeline"})
+# VgfPipelineFP8 is testing pipeline for MXFP dtypes
+BACKEND_PIPELINE_CLASS_NAMES = frozenset({"VgfPipeline", "VgfPipelineFP8"})
 BACKEND_PIPELINE_LABEL = "VgfPipeline"
 BACKEND_TOSA_SPEC = "TOSA-1.0+FP+INT+int4+int16"
 BACKEND_PROFILE_TOSA_SPECS = {
@@ -74,12 +77,13 @@ class BackendConfig:
 GENERATOR_PATH = Path("backends/arm/scripts/docgen/generate_op_support.py")
 TEST_ROOT = Path("backends/arm/test")
 DEFAULT_BACKEND_KEY = "vgf"
+ALL_BACKENDS_KEY = "all"
 
 BACKENDS: dict[str, BackendConfig] = {
     "vgf": BackendConfig(
         key="vgf",
         name="VGF",
-        pipeline_class_names=frozenset({"VgfPipeline"}),
+        pipeline_class_names=frozenset({"VgfPipeline", "VgfPipelineFP8"}),
         pipeline_label="VgfPipeline",
         tosa_spec="TOSA-1.0+FP+INT+int4+int16",
         default_output=Path("docs/source/backends/arm-vgf/VGF_op_support.md"),
@@ -356,6 +360,9 @@ DECOMPOSED_OPS = {
     "torch.ops.aten.native_layer_norm.default",
     "torch.ops.aten.embedding.default",
     "torch.ops.aten.pow.Tensor_Tensor",
+    "torch.ops.aten.scaled_dot_product_attention.default",
+    "torch.ops.aten.adaptive_avg_pool1d.default",
+    "torch.ops.aten.linalg_vector_norm.default",
 }
 
 
@@ -404,6 +411,42 @@ VGF_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
     ): {
         "INT": {"torch.ops.aten.embedding.default"},
     },
+    (
+        "backends/arm/test/ops/test_sdpa.py",
+        "test_sdpa_vgf_no_quant",
+    ): {
+        "FP": {"torch.ops.aten.scaled_dot_product_attention.default"},
+    },
+    (
+        "backends/arm/test/ops/test_sdpa.py",
+        "test_sdpa_vgf_quant",
+    ): {
+        "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
+    },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_vgf_no_quant",
+    ): {
+        "FP": {"torch.ops.aten.linalg_vector_norm.default"},
+    },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_vgf_quant",
+    ): {
+        "INT": {"torch.ops.aten.linalg_vector_norm.default"},
+    },
+    (
+        "backends/arm/test/ops/test_to_copy.py",
+        "test_to_vgf_no_quant_fp8_with_extension",
+    ): {
+        "FP": {"torch.ops.aten._to_copy.default"},
+    },
+    (
+        "backends/arm/test/ops/test_to_copy.py",
+        "test_to_vgf_no_quant_bf16_fp8_with_extensions",
+    ): {
+        "FP": {"torch.ops.aten._to_copy.default"},
+    },
 }
 
 # Existing U55 runtime tests below intentionally suppress direct ATen/Edge
@@ -446,6 +489,18 @@ U55_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
     ): {
         "INT": {"torch.ops.aten.pow.Tensor_Tensor"},
     },
+    (
+        "backends/arm/test/ops/test_sdpa.py",
+        "test_sdpa_u55_INT",
+    ): {
+        "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
+    },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_u55_INT_fvp",
+    ): {
+        "INT": {"torch.ops.aten.linalg_vector_norm.default"},
+    },
 }
 
 # Existing U85 runtime tests below intentionally suppress direct ATen/Edge
@@ -477,6 +532,18 @@ U85_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
         "test_pow_tensor_tensor_u85_INT",
     ): {
         "INT": {"torch.ops.aten.pow.Tensor_Tensor"},
+    },
+    (
+        "backends/arm/test/ops/test_sdpa.py",
+        "test_sdpa_u85_INT",
+    ): {
+        "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
+    },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_u85_INT_fvp",
+    ): {
+        "INT": {"torch.ops.aten.linalg_vector_norm.default"},
     },
 }
 
@@ -573,11 +640,13 @@ PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
     "torch.ops.aten.logical_xor.default": ("torch.logical_xor",),
     "torch.ops.aten.logical_not.default": ("torch.logical_not",),
     # Linear algebra and neural-network layers.
+    "torch.ops.aten.softplus.default": ("torch.nn.functional.softplus",),
     "torch.ops.aten.linear.default": ("torch.nn.Linear", "torch.nn.functional.linear"),
     "torch.ops.aten.mm.default": ("torch.mm",),
     "torch.ops.aten.bmm.default": ("torch.bmm",),
     "torch.ops.aten.matmul.default": ("torch.matmul", "@"),
     "torch.ops.aten.addmm.default": ("torch.addmm",),
+    "torch.ops.aten.linalg_vector_norm.default": ("torch.linalg.vector_norm",),
     "torch.ops.aten.convolution.default": (
         "torch.nn.Conv2d",
         "torch.nn.functional.conv2d",
@@ -589,6 +658,10 @@ PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
     "torch.ops.aten.avg_pool2d.default": (
         "torch.nn.AvgPool2d",
         "torch.nn.functional.avg_pool2d",
+    ),
+    "torch.ops.aten.adaptive_avg_pool1d.default": (
+        "torch.nn.AdaptiveAvgPool1d",
+        "torch.nn.functional.adaptive_avg_pool1d",
     ),
     "torch.ops.aten.adaptive_avg_pool2d.default": (
         "torch.nn.AdaptiveAvgPool2d",
@@ -609,6 +682,9 @@ PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
     "torch.ops.aten.embedding.default": (
         "torch.nn.Embedding",
         "torch.nn.functional.embedding",
+    ),
+    "torch.ops.aten.scaled_dot_product_attention.default": (
+        "torch.nn.functional.scaled_dot_product_attention",
     ),
     # Activations.
     "torch.ops.aten.relu.default": ("torch.relu", "torch.nn.ReLU"),
@@ -1015,6 +1091,10 @@ def _positional_or_keyword(call: ast.Call, index: int, name: str) -> ast.AST | N
 
 
 def _pipeline_profile(call: ast.Call) -> str:
+    # VgfPipelineFP8 injects quantize=False in its own constructor,
+    # so this setting is not visible at the call site.
+    if ACTIVE_BACKEND_KEY == "vgf" and _call_name(call.func) == "VgfPipelineFP8":
+        return "FP"
     if PIPELINE_QUANTIZE_KEYWORD is None:
         return PIPELINE_DEFAULT_PROFILE
     quantize = _literal_bool(
@@ -1918,10 +1998,31 @@ def _has_xfail_marker(node: ast.AST) -> bool:
     return "xfail" in _expr_text(node).lower()
 
 
+def _fp8_dtypes_from_text(text: str) -> set[str]:
+    """Recognize concrete FP8 tensor dtypes, not enabled TOSA extensions.
+
+    E4M3FN and E5M2 have different encodings. In particular, PyTorch's FNUZ
+    variants must not be silently conflated with the TOSA/VGF FP8 formats.
+
+    """
+    value = text.lower()
+    dtypes: set[str] = set()
+    # "fp8e4m3" and "fp8e5m2" are also TOSA extension names.
+    # Only the PyTorch float8_* dtype tokens prove the tensor dtype.
+    if re.search(r"(?<![a-z0-9_])float8_e4m3fn(?![a-z0-9_])", value):
+        dtypes.add("FP8E4M3")
+    if re.search(r"(?<![a-z0-9_])float8_e5m2(?![a-z0-9_])", value):
+        dtypes.add("FP8E5M2")
+    return dtypes
+
+
 def _dtype_from_expr(node: ast.AST) -> str | None:
     text = _expr_text(node).lower()
     attr = _attribute_name(node).lower() if isinstance(node, ast.Attribute) else ""
     combined = f"{text} {attr}"
+    fp8_dtypes = _fp8_dtypes_from_text(combined)
+    if len(fp8_dtypes) == 1:
+        return next(iter(fp8_dtypes))
     if "bfloat16" in combined or "bf16" in combined:
         return "BF16"
     if "float16" in combined or "fp16" in combined:
@@ -1931,6 +2032,38 @@ def _dtype_from_expr(node: ast.AST) -> str | None:
     if "torch.bool" in combined or "dtype=torch.bool" in combined:
         return "BOOL"
     return None
+
+
+def _dtype_hints_from_call_expr(node: ast.Call, context: ModuleContext) -> set[str]:
+    name = _call_name(node.func)
+    if name == "param" and _has_xfail_marker(node):
+        return set()
+    if name == "param":
+        # pytest.param has one positional value per parametrized name.
+        # A dtype can appear after a shape, module, or other case argument.
+        dtypes: set[str] = set()
+        for arg in node.args:
+            dtypes.update(_dtype_hints_from_data_expr(arg, context))
+        return dtypes
+    # Factory arguments hold the concrete dtype even when the helper return
+    # body is generic (e.g. _make_test_case(... .to(torch.float8_e4m3fn))).
+    call_dtypes = _dtype_hints_from_text(_expr_text(node))
+    if call_dtypes:
+        return call_dtypes
+    if name in context.functions:
+        return _dtype_hints_from_helper(context.functions[name])
+    return set()
+
+
+def _dtype_hints_from_class_attribute(
+    node: ast.Attribute, context: ModuleContext
+) -> set[str]:
+    # Support class-held parameter tables, e.g. Cat.test_parameters_fp8.
+    if isinstance(node.value, ast.Name):
+        class_value = _class_attr_value(node.value.id, node.attr, context)
+        if class_value is not None and class_value is not node:
+            return _dtype_hints_from_data_expr(class_value, context)
+    return _dtype_hints_from_text(_attribute_name(node))
 
 
 def _dtype_hints_from_data_expr(node: ast.AST, context: ModuleContext) -> set[str]:
@@ -1952,10 +2085,7 @@ def _dtype_hints_from_data_expr(node: ast.AST, context: ModuleContext) -> set[st
         return dictionary_dtypes
 
     if isinstance(node, ast.Call):
-        name = _call_name(node.func)
-        if name in context.functions:
-            return _dtype_hints_from_helper(context.functions[name])
-        return _dtype_hints_from_text(_expr_text(node))
+        return _dtype_hints_from_call_expr(node, context)
 
     if isinstance(node, ast.Name):
         assigned = context.assignments.get(node.id)
@@ -1964,7 +2094,7 @@ def _dtype_hints_from_data_expr(node: ast.AST, context: ModuleContext) -> set[st
         return _dtype_hints_from_text(node.id)
 
     if isinstance(node, ast.Attribute):
-        return _dtype_hints_from_text(_attribute_name(node))
+        return _dtype_hints_from_class_attribute(node, context)
 
     return _dtype_hints_from_text(_expr_text(node))
 
@@ -1984,8 +2114,8 @@ def _dtype_hints_from_helper(function: ast.FunctionDef) -> set[str]:
             # missing runtime support.
             if _has_xfail_marker(node):
                 return
-            if node.args:
-                collect(node.args[0])
+            for arg in node.args:
+                collect(arg)
             return
 
         dtype = _dtype_from_expr(node)
@@ -2002,6 +2132,12 @@ def _dtype_hints_from_helper(function: ast.FunctionDef) -> set[str]:
 
 def _dtype_hints_from_text(text: str) -> set[str]:
     value = text.lower()
+    fp8_dtypes = _fp8_dtypes_from_text(value)
+    if fp8_dtypes:
+        # FP8 tensors are commonly created via float32/float16 .to(FP8).
+        # The source constructor dtype is not the operator's FP8 input dtype.
+        # Dtypes from separate parameter cases are still unioned by the caller.
+        return fp8_dtypes
     dtypes: set[str] = set()
     if "test_data_bf16" in value or "bfloat16" in value or "bf16" in value:
         dtypes.add("BF16")
@@ -2016,35 +2152,734 @@ def _dtype_hints_from_text(text: str) -> set[str]:
     return dtypes
 
 
-def _infer_fp_dtypes(
-    function: ast.FunctionDef, call: ast.Call, context: ModuleContext
+def _fp_parameter_alias(node: ast.AST, context: ModuleContext) -> ast.AST | None:
+    """Resolve a test table stored in a module variable or class field."""
+    if isinstance(node, ast.Name):
+        return context.assignments.get(node.id)
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+        return _class_attr_value(node.value.id, node.attr, context)
+    return None
+
+
+def _fp_parameter_dict_cases(
+    node: ast.Dict, context: ModuleContext, seen: set[str]
+) -> list[ast.AST]:
+    """Expand the entries of one dictionary parameter table."""
+    cases: list[ast.AST] = []
+    for key, value in zip(node.keys, node.values):
+        if value is None:
+            continue
+        # Dict unpacking (`{**baseline, **fp8}`) is another way to
+        # assemble mixed tables. Preserve the individual case boundary.
+        if key is None:
+            cases.extend(_fp_parameter_cases(value, context, seen))
+        else:
+            cases.append(value)
+    return cases
+
+
+def _fp_parameter_alias_cases(
+    node: ast.AST, context: ModuleContext, seen: set[str]
+) -> list[ast.AST] | None:
+    """Expand a module/class alias while preventing cycles."""
+    alias = _fp_parameter_alias(node, context)
+    if alias is not None:
+        key = _expr_text(node)
+        if key not in seen:
+            return _fp_parameter_cases(alias, context, seen | {key})
+    return None
+
+
+def _fp_parameter_function_cases(
+    node: ast.Call, context: ModuleContext, seen: set[str]
+) -> list[ast.AST] | None:
+    """Expand a table returned by a local helper function."""
+    helper = context.functions.get(_call_name(node.func))
+    if helper is not None:
+        key = _call_name(node.func)
+        if key not in seen:
+            results: list[ast.AST] = []
+            for child in ast.walk(helper):
+                if isinstance(child, ast.Return) and child.value is not None:
+                    results.extend(
+                        _fp_parameter_cases(child.value, context, seen | {key})
+                    )
+            if results:
+                return results
+    return None
+
+
+def _fp_parameter_cases(
+    node: ast.AST,
+    context: ModuleContext,
+    seen: set[str] | None = None,
+) -> list[ast.AST]:
+    """Expand the *outer* parametrization table into independent cases.
+
+    Crucially, do not combine dtype information for different cases before
+    deciding whether one of them uses the implicit FP32 default.
+
+    """
+    if seen is None:
+        seen = set()
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _fp_parameter_cases(node.left, context, seen) + _fp_parameter_cases(
+            node.right, context, seen
+        )
+    if isinstance(node, ast.Dict):
+        return _fp_parameter_dict_cases(node, context, seen)
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return list(node.elts)
+
+    alias_cases = _fp_parameter_alias_cases(node, context, seen)
+    if alias_cases is not None:
+        return alias_cases
+
+    if isinstance(node, ast.Call):
+        function_cases = _fp_parameter_function_cases(node, context, seen)
+        if function_cases is not None:
+            return function_cases
+    return [node]
+
+
+def _fp_case_uses_implicit_fp32(case: ast.AST) -> bool:
+    """Identify a case that constructs default-FP32 floating-point tensors.
+
+    This is only consulted when the *case* lacks an explicit dtype. For a
+    `torch.randn(..., dtype=torch.float32).to(torch.float8_e4m3fn)` case,
+    concrete FP8 inference takes priority and this fallback is not invoked.
+
+    """
+    default_factories = {
+        "torch.rand",
+        "torch.randn",
+        "torch.ones",
+        "torch.zeros",
+        "torch.empty",
+        "torch.eye",
+        "torch.linspace",
+        "torch.logspace",
+        "torch.normal",
+        "torch.Tensor",
+    }
+    for node in ast.walk(case):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _expr_text(node.func)
+        if name in default_factories and not any(
+            keyword.arg == "dtype" for keyword in node.keywords
+        ):
+            return True
+        if name == "torch.full" and len(node.args) >= 2:
+            if any(keyword.arg == "dtype" for keyword in node.keywords):
+                continue
+            if isinstance(node.args[1], ast.Constant) and isinstance(
+                node.args[1].value, float
+            ):
+                return True
+        if name == "torch.tensor" and node.args:
+            if any(keyword.arg == "dtype" for keyword in node.keywords):
+                continue
+            if any(
+                isinstance(child, ast.Constant) and isinstance(child.value, float)
+                for child in ast.walk(node.args[0])
+            ):
+                return True
+    return False
+
+
+def _fp_case_local_helper_returns(
+    case: ast.AST,
+    context: ModuleContext,
+    seen: frozenset[str] = frozenset(),
+) -> list[ast.AST]:
+    """Follow local helper return expressions without expanding call cycles.
+
+    `seen` is path-local: separate cases can share helpers, and recursive
+    helpers (direct or mutual) cannot make the documentation scan loop.
+
+    """
+    values: list[ast.AST] = []
+    for node in ast.walk(case):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node.func)
+        if name in seen:
+            continue
+        helper = context.functions.get(name)
+        if helper is None:
+            continue
+        next_seen = seen | {name}
+        for child in ast.walk(helper):
+            if isinstance(child, ast.Return) and child.value is not None:
+                values.append(child.value)
+                values.extend(
+                    _fp_case_local_helper_returns(child.value, context, next_seen)
+                )
+    return values
+
+
+def _fp_helper_return_dtype_hints(node: ast.AST, context: ModuleContext) -> set[str]:
+    """Prefer the final conversion/factory dtype over an FP32 source buffer."""
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        dtypes: set[str] = set()
+        for element in node.elts:
+            dtypes.update(_fp_helper_return_dtype_hints(element, context))
+        return dtypes
+    if isinstance(node, ast.Call):
+        dtype_expr = next(
+            (keyword.value for keyword in node.keywords if keyword.arg == "dtype"),
+            None,
+        )
+        if (
+            dtype_expr is None
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "to"
+            and node.args
+        ):
+            dtype_expr = node.args[0]
+        if dtype_expr is not None:
+            dtype = _dtype_from_expr(dtype_expr)
+            if dtype is not None:
+                return {dtype}
+    return _dtype_hints_from_data_expr(node, context)
+
+
+def _fp_case_dtypes_with_local_helpers(
+    case: ast.AST, context: ModuleContext
+) -> set[str]:
+    """Resolve helper-based test cases before the existing FP32 fallback.
+
+    Inspect each helper's returned expression, not unrelated statements in its
+    body. An explicit final dtype takes precedence over construction buffers,
+    while a returned default floating-point factory proves FP32.
+
+    """
+    dtypes = _dtype_hints_from_data_expr(case, context)
+    if dtypes:
+        return dtypes
+    for returned in _fp_case_local_helper_returns(case, context):
+        hints = _fp_helper_return_dtype_hints(returned, context)
+        if hints:
+            dtypes.update(hints)
+        elif _fp_case_uses_implicit_fp32(returned):
+            dtypes.add("FP32")
+    return dtypes
+
+
+def _fp_named_parameter_names(node: ast.AST) -> list[str]:
+    """Handle both pytest's comma-separated and tuple/list argname forms."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [name for name in node.value.replace(",", " ").split() if name]
+    if isinstance(node, (ast.Tuple, ast.List)):
+        if all(
+            isinstance(part, ast.Constant) and isinstance(part.value, str)
+            for part in node.elts
+        ):
+            return [
+                part.value.strip()
+                for part in node.elts
+                if isinstance(part, ast.Constant)
+                and isinstance(part.value, str)
+                and part.value.strip()
+            ]
+    return []
+
+
+def _fp_is_input_parameter(name: str) -> bool:
+    """Do not confuse masks, expected outputs, or compiler settings with
+    inputs.
+    """
+    name = name.strip().lower()
+    auxiliary = (
+        "mask",
+        "expected",
+        "reference",
+        "output",
+        "result",
+        "extension",
+        "config",
+        "cfg",
+        "spec",
+        "weight_dtype",
+        "bias_dtype",
+        "scale",
+        "zero_point",
+        "quant",
+        "device",
+        "shape",
+        "stride",
+        "layout",
+        "tol",
+        "rtol",
+        "atol",
+        "kernel",
+        "padding",
+        "axis",
+        "dim",
+        "index",
+        "indices",
+        "value_dtype",
+        "target_dtype",
+    )
+    if any(token in name for token in auxiliary):
+        return False
+    return (
+        name
+        in {
+            "dtype",
+            "data",
+            "input",
+            "inputs",
+            "tensor",
+            "x",
+            "lhs",
+            "rhs",
+            "a",
+            "b",
+        }
+        or name.startswith(
+            (
+                "test_data",
+                "test_input",
+                "test_case",
+                "test_module",
+                "input_dtype",
+                "input_data",
+                "input_tensor",
+                "test_dtype",
+                "activation_dtype",
+                "tensor_dtype",
+                "data_dtype",
+            )
+        )
+        or name.endswith("_input")
+    )
+
+
+def _fp_is_dtype_parameter(name: str) -> bool:
+    """A named input dtype is stronger evidence than its construction buffer."""
+    name = name.strip().lower()
+    return _fp_is_input_parameter(name) and (name == "dtype" or name.endswith("_dtype"))
+
+
+def _fp_primary_data_expression(node: ast.AST, name: str) -> ast.AST:
+    """Extract MaskedFill's data input, not its separate BOOL mask.
+
+    The Arm masked_fill test encodes a case as
+    lambda: (MaskedFill(), (data_tensor, boolean_mask, scalar)).
+    This rule is intentionally limited to that recognizable fixture shape;
+    arbitrary multi-input operators are not assumed to use their first tensor.
+
+    """
+    if not name.strip().lower().startswith(("test_module", "test_case")):
+        return node
+    body = node.body if isinstance(node, ast.Lambda) else node
+    if not isinstance(body, (ast.Tuple, ast.List)) or len(body.elts) < 2:
+        return node
+    module, inputs = body.elts[:2]
+    if not isinstance(module, ast.Call) or _call_name(module.func) != "MaskedFill":
+        return node
+    if isinstance(inputs, (ast.Tuple, ast.List)) and inputs.elts:
+        return inputs.elts[0]
+    return node
+
+
+def _fp_named_case_values(case: ast.AST, names: Sequence[str]) -> Sequence[ast.AST]:
+    """Return positional values without considering pytest.param metadata."""
+    if isinstance(case, ast.Call) and _call_name(case.func) == "param":
+        return [] if _has_xfail_marker(case) else case.args
+    if len(names) > 1 and isinstance(case, (ast.Tuple, ast.List)):
+        return case.elts
+    if len(names) == 1:
+        return [case]
+    # An opaque row for multiple names has no reliable positional mapping.
+    return []
+
+
+def _fp_named_case_inputs(
+    case: ast.AST, names: Sequence[str]
+) -> list[tuple[str, ast.AST]]:
+    """Zip active positional case values with their decorator argnames.
+
+    pytest.param metadata (id/marks) is never a dtype source. If a multi-name
+    row cannot be aligned, do not guess that one of its values is an input.
+
+    """
+    if not names or not any(_fp_is_input_parameter(name) for name in names):
+        return []
+    values = _fp_named_case_values(case, names)
+    if len(values) != len(names):
+        return []
+    return [
+        (name, _fp_primary_data_expression(value, name))
+        for name, value in zip(names, values)
+        if _fp_is_input_parameter(name)
+    ]
+
+
+def _fp_module_forward_positional_names(
+    module: ast.AST, context: ModuleContext
+) -> list[str] | None:
+    """Find the positional forward signature of a module defined in this
+    test.
+    """
+    if not isinstance(module, ast.Call):
+        return None
+    class_name = _call_name(module.func)
+    for statement in context.tree.body:
+        if not isinstance(statement, ast.ClassDef) or statement.name != class_name:
+            continue
+        for member in statement.body:
+            if isinstance(member, ast.FunctionDef) and member.name == "forward":
+                names = [
+                    arg.arg for arg in (*member.args.posonlyargs, *member.args.args)
+                ]
+                return names[1:] if names and names[0] == "self" else names
+    return None
+
+
+def _fp_forward_parameter_is_data(name: str) -> bool:
+    """Filter masks, conditions, indices, and scalar controls from input
+    dtype.
+    """
+    value = name.lower()
+    if value.startswith(("mask", "condition", "indices", "index")):
+        return False
+    if value.endswith(("_mask", "_index", "_indices")):
+        return False
+    return value not in {
+        "cond",
+        "dim",
+        "dims",
+        "axis",
+        "axes",
+        "shape",
+        "size",
+        "sizes",
+        "keepdim",
+        "keep_dims",
+        "value",
+        "scalar",
+        "fill_value",
+        "threshold",
+        "stride",
+        "padding",
+        "device",
+        "dtype",
+        "layout",
+        "expected",
+        "result",
+        "output",
+        "out",
+    }
+
+
+def _fp_module_fixture_inputs(
+    module: ast.AST, inputs: ast.AST, context: ModuleContext
+) -> list[ast.AST] | None:
+    """Match (module, positional_forward_inputs) to its input names."""
+    if not isinstance(inputs, (ast.Tuple, ast.List)):
+        return None
+    names = _fp_module_forward_positional_names(module, context)
+    if names is None or len(inputs.elts) > len(names):
+        return None
+    # Scope the forward-signature rule to modules with an auxiliary mask.
+    # Other modules retain their previous operator-dtype inference behavior.
+    has_mask = any(
+        name.lower() in {"mask", "condition", "cond"}
+        or name.lower().startswith("mask_")
+        or name.lower().endswith("_mask")
+        for name in names
+    )
+    if not has_mask or not any(_fp_forward_parameter_is_data(n) for n in names):
+        return None
+    return [
+        expression
+        for name, expression in zip(names, inputs.elts)
+        if _fp_forward_parameter_is_data(name)
+    ]
+
+
+def _fp_case_fixture_data_expressions(
+    case: ast.AST, context: ModuleContext
+) -> list[ast.AST] | None:
+    """Find data operands even behind lambda wrappers or local return helpers.
+
+    Unlike a MaskedFill()-specific lambda pattern, this uses the actual module's
+    forward signature to exclude boolean masks. Other modules with
+    mask/condition arguments benefit from the same rule.
+
+    """
+    values = [case, *_fp_case_local_helper_returns(case, context)]
+    relevant: list[ast.AST] = []
+    found = False
+    for value in values:
+        for node in ast.walk(value):
+            if isinstance(node, (ast.Tuple, ast.List)) and len(node.elts) >= 2:
+                data = _fp_module_fixture_inputs(node.elts[0], node.elts[1], context)
+            elif isinstance(node, ast.Call) and len(node.args) >= 2:
+                data = _fp_module_fixture_inputs(node.args[0], node.args[1], context)
+            else:
+                continue
+            if data is not None:
+                found = True
+                relevant.extend(data)
+    return relevant if found else None
+
+
+def _fp_fixture_primary_input_dtypes(
+    value: ast.AST, context: ModuleContext
+) -> set[str] | None:
+    """Infer each selected forward data operand, never the BOOL mask."""
+    operands = _fp_case_fixture_data_expressions(value, context)
+    if operands is None:
+        return None
+    dtypes: set[str] = set()
+    for operand in operands:
+        hints = _fp_case_dtypes_with_local_helpers(operand, context)
+        if hints:
+            dtypes.update(hints)
+        elif _fp_case_uses_implicit_fp32(operand):
+            dtypes.add("FP32")
+    return dtypes
+
+
+def _fp_is_default_float_constructor(node: ast.Call) -> bool:
+    """Recognize an implicit-FP32 factory without traversing sibling tensors."""
+    if any(keyword.arg == "dtype" for keyword in node.keywords):
+        return False
+    name = _expr_text(node.func)
+    if name in {
+        "torch.rand",
+        "torch.randn",
+        "torch.ones",
+        "torch.zeros",
+        "torch.empty",
+        "torch.eye",
+        "torch.linspace",
+        "torch.logspace",
+        "torch.normal",
+        "torch.Tensor",
+    }:
+        return True
+    if name == "torch.full" and len(node.args) >= 2:
+        return isinstance(node.args[1], ast.Constant) and isinstance(
+            node.args[1].value, float
+        )
+    if name == "torch.tensor" and node.args:
+        return any(
+            isinstance(child, ast.Constant) and isinstance(child.value, float)
+            for child in ast.walk(node.args[0])
+        )
+    return False
+
+
+def _fp_factory_is_converted_or_compared(
+    factory: ast.Call, parents: dict[ast.AST, ast.AST]
+) -> bool:
+    """A temporary factory used for .to(FP8/FP16) or a BOOL mask is not FP32."""
+    current: ast.AST = factory
+    while current in parents:
+        current = parents[current]
+        if isinstance(current, ast.Compare):
+            return True
+        if isinstance(current, ast.Call) and isinstance(current.func, ast.Attribute):
+            if current.func.attr == "to" and (
+                current.args
+                or any(keyword.arg == "dtype" for keyword in current.keywords)
+            ):
+                return True
+    return False
+
+
+def _fp_has_unconverted_implicit_fp32(value: ast.AST, context: ModuleContext) -> bool:
+    """Inspect factories independently instead of allowing BOOL to mask FP32."""
+    expressions = [value, *_fp_case_local_helper_returns(value, context)]
+    for expression in expressions:
+        parents = {
+            child: parent
+            for parent in ast.walk(expression)
+            for child in ast.iter_child_nodes(parent)
+        }
+        for node in ast.walk(expression):
+            if (
+                isinstance(node, ast.Call)
+                and _fp_is_default_float_constructor(node)
+                and not _fp_factory_is_converted_or_compared(node, parents)
+            ):
+                return True
+    return False
+
+
+def _fp_named_expression_dtypes(value: ast.AST, context: ModuleContext) -> set[str]:
+    """An implicit FP32 factory is evidence only for its selected input."""
+    # Read the forward data operands before considering mask dtypes.
+    fixture_dtypes = _fp_fixture_primary_input_dtypes(value, context)
+    if fixture_dtypes is not None:
+        return fixture_dtypes
+    # Separate implicit FP32 tensors from any explicit auxiliary dtype.
+    if _fp_has_unconverted_implicit_fp32(value, context):
+        return _fp_case_dtypes_with_local_helpers(value, context) | {"FP32"}
+
+    hints = _fp_case_dtypes_with_local_helpers(value, context)
+    if hints:
+        return hints
+    return {"FP32"} if _fp_case_uses_implicit_fp32(value) else set()
+
+
+def _fp_named_case_dtype_hints(
+    case: ast.AST, context: ModuleContext, names: Sequence[str]
+) -> set[str]:
+    """Classify only relevant input values from one active parameter case."""
+    if (
+        isinstance(case, ast.Call)
+        and _call_name(case.func) == "param"
+        and _has_xfail_marker(case)
+    ):
+        return set()
+    selected = _fp_named_case_inputs(case, names)
+    # An explicit input dtype determines the test's final dtype; do not also
+    # claim FP32 from temporary source tensors in other positions.
+    dtype_hints: set[str] = set()
+    for name, value in selected:
+        if _fp_is_dtype_parameter(name):
+            dtype_hints.update(_fp_case_dtypes_with_local_helpers(value, context))
+    if dtype_hints:
+        return dtype_hints
+    dtypes: set[str] = set()
+    for _name, value in selected:
+        dtypes.update(_fp_named_expression_dtypes(value, context))
+    return dtypes
+
+
+def _fp_named_case_unresolved(
+    case: ast.AST, context: ModuleContext, names: Sequence[str]
+) -> bool:
+    """Conservatively retain FP32 if an active input case stays opaque."""
+    if (
+        isinstance(case, ast.Call)
+        and _call_name(case.func) == "param"
+        and _has_xfail_marker(case)
+    ):
+        return False
+    if not any(_fp_is_input_parameter(name) for name in names):
+        return False  # Auxiliary-only decorators are irrelevant to input dtype.
+    selected = _fp_named_case_inputs(case, names)
+    if not selected:
+        return True  # Ambiguous positional mapping: cannot prove the dtype.
+    return not _fp_named_case_dtype_hints(case, context, names)
+
+
+def _fp_dtype_hints_from_cases(
+    table: ast.AST, context: ModuleContext, names: Sequence[str] = ()
+) -> set[str]:
+    """Union input dtype evidence from independently classified active cases."""
+    dtypes: set[str] = set()
+    for case in _fp_parameter_cases(table, context):
+        dtypes.update(_fp_named_case_dtype_hints(case, context, names))
+    return dtypes
+
+
+def _parametrized_fp_dtype_hints(
+    function: ast.FunctionDef, context: ModuleContext
 ) -> set[str]:
     dtypes: set[str] = set()
-
-    test_data_expr = _positional_or_keyword(call, 1, "test_data")
-    if test_data_expr is not None:
-        dtypes.update(_dtype_hints_from_data_expr(test_data_expr, context))
-
     for decorator in function.decorator_list:
         decorator_text = _expr_text(decorator).lower()
         if "parametrize" not in decorator_text:
             continue
-        if isinstance(decorator, ast.Call) and len(decorator.args) >= 2:
-            param_name = decorator.args[0]
-            if isinstance(param_name, ast.Constant) and isinstance(
-                param_name.value, str
-            ):
-                if "test_data" in param_name.value or "dtype" in param_name.value:
-                    dtypes.update(
-                        _dtype_hints_from_data_expr(decorator.args[1], context)
-                    )
-        else:
+        if not isinstance(decorator, ast.Call) or len(decorator.args) < 2:
             dtypes.update(_dtype_hints_from_text(decorator_text))
+            continue
+        param_names = _fp_named_parameter_names(decorator.args[0])
+        if any(_fp_is_input_parameter(name) for name in param_names):
+            dtypes.update(
+                _fp_dtype_hints_from_cases(decorator.args[1], context, param_names)
+            )
+    return dtypes
 
-    # The common test_data dictionaries use torch.randn/torch.ones without an
-    # explicit dtype, which means FP32. Keep that as the default FP path.
-    if not dtypes:
+
+def _fp_case_has_unresolved_dtype(
+    case: ast.AST, context: ModuleContext, names: Sequence[str] = ()
+) -> bool:
+    """Whether an active case has an unresolved primary input dtype."""
+    return _fp_named_case_unresolved(case, context, names)
+
+
+def _fp_table_has_unresolved_dtype_cases(
+    table: ast.AST, context: ModuleContext, names: Sequence[str] = ()
+) -> bool:
+    """Check resolution for each relevant input position, not auxiliary
+    dtypes.
+    """
+    return any(
+        _fp_case_has_unresolved_dtype(case, context, names)
+        for case in _fp_parameter_cases(table, context)
+    )
+
+
+def _fp_has_unresolved_parametrized_cases(
+    function: ast.FunctionDef, context: ModuleContext
+) -> bool:
+    """Inspect active input/dtype parametrizations used for FP evidence.
+
+    Use the same parameter-name categories as _parametrized_fp_dtype_hints(). An
+    unrecognized case makes the table non-exhaustively classified; the
+    historical FP32 placeholder must not be discarded on that basis.
+
+    """
+    for decorator in function.decorator_list:
+        if not isinstance(decorator, ast.Call) or len(decorator.args) < 2:
+            continue
+        if "parametrize" not in _expr_text(decorator.func).lower():
+            continue
+        names = _fp_named_parameter_names(decorator.args[0])
+        if not any(_fp_is_input_parameter(name) for name in names):
+            continue
+        if _fp_table_has_unresolved_dtype_cases(decorator.args[1], context, names):
+            return True
+    return False
+
+
+def _infer_fp_dtypes(
+    function: ast.FunctionDef, call: ast.Call, context: ModuleContext
+) -> set[str]:
+    test_data_expr = _positional_or_keyword(call, 1, "test_data")
+    input_dtypes = (
+        _dtype_hints_from_data_expr(test_data_expr, context)
+        if test_data_expr is not None
+        else set()
+    )
+    parametrized_dtypes = _parametrized_fp_dtype_hints(function, context)
+
+    # `test_data` and `test_data()` are parameter placeholders, not
+    # independent FP32 cases. The table scan above records FP32 from actual
+    # default-FP32 cases and FP8 only from concrete FP8 cases.
+    if (
+        parametrized_dtypes
+        and input_dtypes == {"FP32"}
+        and test_data_expr is not None
+        and _expr_text(test_data_expr).lower() in {"test_data", "test_data()"}
+    ):
+        if not _fp_has_unresolved_parametrized_cases(function, context):
+            input_dtypes = set()
+
+    dtypes = input_dtypes | parametrized_dtypes
+    # AACR: unresolved cases may include default FP32 through local aliases.
+    if (
+        parametrized_dtypes
+        and _call_name(call.func) != "VgfPipelineFP8"
+        and _fp_has_unresolved_parametrized_cases(function, context)
+    ):
         dtypes.add("FP32")
+    if not dtypes:
+        # A missing FP8 case resolution must not silently turn into FP32.
+        if (
+            _call_name(call.func) != "VgfPipelineFP8"
+            and "fp8" not in function.name.lower()
+        ):
+            dtypes.add("FP32")
     return dtypes
 
 
@@ -2639,6 +3474,16 @@ def generate_markdown(repo_root: Path, *, debug: bool = False) -> str:
         "",
     ]
 
+    if ACTIVE_BACKEND_KEY == "vgf":
+        lines.extend(
+            [
+                "`FP8E4M3` and `FP8E5M2` require their respective TOSA "
+                "extensions (`fp8e4m3`, `fp8e5m2`); they are not enabled "
+                "by the default VGF compile spec. ",
+                "",
+            ]
+        )
+
     if debug:
         sorted_rows = sorted(
             exact_rows.values(),
@@ -2734,6 +3579,13 @@ def generate_html(repo_root: Path, *, debug: bool = False) -> str:
         f"    <p>{html.escape(PAGE_DESCRIPTION)}</p>",
         "    <p><code>8x8</code> means 8-bit activations and 8-bit weights. <code>16x8</code> means 16-bit activations and 8-bit weights.</p>",
     ]
+
+    if ACTIVE_BACKEND_KEY == "vgf":
+        lines.append(
+            "    <p>FP8E4M3 and FP8E5M2 require explicit TOSA "
+            "extensions (fp8e4m3, fp8e5m2); they are not enabled by "
+            "the default VGF compile spec. </p>"
+        )
 
     if debug:
         sorted_rows = sorted(
@@ -3067,6 +3919,29 @@ def run_check(repo_root: Path, *, strict_ast: bool = False) -> int:  # noqa: C90
     return 1
 
 
+def _write_documentation(
+    root: Path,
+    *,
+    output: Path | None,
+    debug: bool,
+    write_html: bool,
+) -> None:
+    resolved_output = output or root / DEFAULT_OUTPUT
+    if not resolved_output.is_absolute():
+        resolved_output = root / resolved_output
+
+    markdown = generate_markdown(root, debug=debug)
+    resolved_output.parent.mkdir(parents=True, exist_ok=True)
+    resolved_output.write_text(markdown, encoding="utf-8")
+    print(f"Wrote {resolved_output}")
+
+    if write_html:
+        html_output = resolved_output.with_suffix(".html")
+        html_page = generate_html(root, debug=debug)
+        html_output.write_text(html_page, encoding="utf-8")
+        print(f"Wrote {html_output}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Generate Arm backend PyTorch operator-support documentation.",
@@ -3074,9 +3949,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--backend",
-        choices=sorted(BACKENDS),
+        choices=sorted([*BACKENDS, ALL_BACKENDS_KEY]),
         default=DEFAULT_BACKEND_KEY,
-        help="Backend to document. Defaults to vgf.",
+        help=(
+            "Backend to document, or 'all' to process every configured backend. "
+            "Defaults to vgf."
+        ),
     )
     parser.add_argument(
         "--repo-root",
@@ -3088,7 +3966,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--output",
         type=Path,
         default=None,
-        help="Markdown output path. Defaults to the selected backend output path.",
+        help=(
+            "Markdown output path. Defaults to the selected backend output path. "
+            "Cannot be used with --backend all."
+        ),
     )
     parser.add_argument(
         "--html",
@@ -3108,7 +3989,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help=(
             "Do not write the page. Compare exact selected-backend pipeline "
-            "coverage against backend support registries."
+            "coverage against backend support registries. With --backend all, "
+            "check every configured backend."
         ),
     )
     parser.add_argument(
@@ -3122,33 +4004,53 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--explain",
         metavar="EXPORTED_OP",
-        help="Explain how one exported ATen operator is covered per profile.",
+        help=(
+            "Explain how one exported ATen operator is covered per profile. "
+            "Cannot be used with --backend all."
+        ),
     )
     args = parser.parse_args(argv)
-    _activate_backend(args.backend)
+
+    if args.backend == ALL_BACKENDS_KEY:
+        if args.output is not None:
+            parser.error("--output cannot be used with --backend all")
+        if args.explain:
+            parser.error("--explain cannot be used with --backend all")
 
     root = _repo_root(args.repo_root)
+
+    if args.backend == ALL_BACKENDS_KEY:
+        previous_backend = ACTIVE_BACKEND_KEY
+        try:
+            result = 0
+            for backend in BACKENDS:
+                _activate_backend(backend)
+                if args.check:
+                    result = max(result, run_check(root, strict_ast=args.strict_ast))
+                else:
+                    _write_documentation(
+                        root,
+                        output=None,
+                        debug=args.debug,
+                        write_html=args.html,
+                    )
+            return result
+        finally:
+            _activate_backend(previous_backend)
+
+    _activate_backend(args.backend)
 
     if args.explain:
         return explain_operator(root, args.explain)
     if args.check:
         return run_check(root, strict_ast=args.strict_ast)
 
-    output = args.output or root / DEFAULT_OUTPUT
-    if not output.is_absolute():
-        output = root / output
-
-    markdown = generate_markdown(root, debug=args.debug)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(markdown, encoding="utf-8")
-    print(f"Wrote {output}")
-
-    if args.html:
-        html_output = output.with_suffix(".html")
-        html_page = generate_html(root, debug=args.debug)
-        html_output.write_text(html_page, encoding="utf-8")
-        print(f"Wrote {html_output}")
-
+    _write_documentation(
+        root,
+        output=args.output,
+        debug=args.debug,
+        write_html=args.html,
+    )
     return 0
 
 

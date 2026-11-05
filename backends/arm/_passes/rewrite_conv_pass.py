@@ -45,6 +45,7 @@ from executorch.backends.transforms.fuse_duplicate_users_pass import (
     build_node_signature,
     DO_NOT_FUSE_DUPLICATE_META_KEY,
 )
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -1167,7 +1168,7 @@ class RewriteConvPass(ArmPass):
                 isinstance(p, torch.SymInt) for p in pad
             ):
                 with graph_module.graph.inserting_before(node):
-                    materialized_pad = graph_module.graph.materialize_symints(pad)
+                    materialized_pad = materialize_symints(graph_module.graph, pad)
                 new_conv_args = list(conv_args)
                 new_conv_args[4] = materialized_pad
                 conv_args = tuple(new_conv_args)

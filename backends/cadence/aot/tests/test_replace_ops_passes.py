@@ -328,6 +328,33 @@ class TestReplaceOpsPasses(unittest.TestCase):
 
     @expand(
         [
+            ["add", exir_ops.edge.aten.add.Scalar, exir_ops.edge.aten.add.Tensor],
+            ["sub", exir_ops.edge.aten.sub.Scalar, exir_ops.edge.aten.sub.Tensor],
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_scalar_with_tensor_arg_positional_alpha(
+        self,
+        _,
+        scalar_op: torch._ops.OpOverload,
+        tensor_op: torch._ops.OpOverload,
+    ) -> None:
+        x = torch.randn(7, 5)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=scalar_op,
+            args=(x, 1.5, 2),
+        )
+        gm_before = copy.deepcopy(original_gm)
+        p = ReplaceScalarWithTensorArgPass()
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+
+        validate(gm_before, graph_after_passes, [x], "ReplaceScalarWithTensorArgPass")
+        self.assertEqual(count_node(graph_after_passes, tensor_op), 1)
+        self.assertEqual(count_node(graph_after_passes, scalar_op), 0)
+
+    @expand(
+        [
             ["3d", (7, 5, 6), 1.23],
             ["2d", (7, 5), 2],
             ["1d", (10,), 42949],
@@ -520,6 +547,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 groups,
             ),
         )
+        if not bias_enabled:
+            convolution.node.meta["debug_handle"] = 1234
         builder.output([convolution])
         original_gm = builder.get_graph_module()
 
@@ -550,11 +579,169 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.cadence.conv1d.default),
             1,
         )
+        for node in graph_after_passes.graph.nodes:
+            if node.target == exir_ops.edge.cadence.conv1d.default:
+                self.assertIsNotNone(node.args[2])
+                if not bias_enabled:
+                    bias_node = node.args[2]
+                    self.assertIsInstance(bias_node, torch.fx.Node)
+                    self.assertEqual(
+                        exir_ops.edge.aten.full.default,
+                        cast(torch.fx.Node, bias_node).target,
+                    )
+                    self.assertEqual(
+                        1234, cast(torch.fx.Node, bias_node).meta["debug_handle"]
+                    )
+                    self.assertEqual(
+                        (out_channels,),
+                        tuple(cast(torch.fx.Node, bias_node).meta["val"].shape),
+                    )
         self.assertEqual(
             count_node(
                 graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
             ),
             0,
+        )
+
+    @expand([[2], [3]])
+    @torch.no_grad()
+    def test_replace_aten_multidimensional_conv_materializes_zero_bias(
+        self,
+        spatial_dims: int,
+    ) -> None:
+        in_channels = 4
+        out_channels = 6
+        builder = GraphBuilder()
+        x_tensor = torch.randn(
+            1,
+            in_channels,
+            *([8] * spatial_dims),
+            dtype=torch.float32,
+        )
+        weights_tensor = torch.randn(
+            out_channels,
+            in_channels,
+            *([3] * spatial_dims),
+            dtype=torch.float32,
+        )
+        x = builder.placeholder("x", x_tensor)
+        weights = builder.placeholder("weights", weights_tensor)
+        convolution = builder.call_operator(
+            op=exir_ops.edge.aten.convolution.default,
+            args=(
+                x,
+                weights,
+                None,
+                [1] * spatial_dims,
+                [0] * spatial_dims,
+                [1] * spatial_dims,
+                False,
+                [0] * spatial_dims,
+                1,
+            ),
+        )
+        convolution.node.meta["debug_handle"] = 1234
+        convolution.node.meta["stack_trace"] = "convolution-only provenance"
+        builder.output([convolution])
+        original_gm = builder.get_graph_module()
+        gm_before = copy.deepcopy(original_gm)
+
+        result = cast(
+            PassResult,
+            ReplaceAtenConvolutionWithCadenceConvolutionPass()(original_gm),
+        )
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+        validate(
+            gm_before,
+            graph_after_passes,
+            (x_tensor, weights_tensor),
+            "ReplaceAtenConvolutionWithCadenceConvolutionPass",
+        )
+
+        target = (
+            exir_ops.edge.cadence.conv2d.default
+            if spatial_dims == 2
+            else exir_ops.edge.cadence.conv3d.default
+        )
+        replacement = next(
+            node for node in graph_after_passes.graph.nodes if node.target == target
+        )
+        bias_node = replacement.args[2]
+        self.assertIsInstance(bias_node, torch.fx.Node)
+        assert isinstance(bias_node, torch.fx.Node)
+        self.assertEqual(exir_ops.edge.aten.full.default, bias_node.target)
+        self.assertEqual((out_channels,), tuple(bias_node.meta["val"].shape))
+        self.assertEqual(1234, bias_node.meta["debug_handle"])
+        self.assertNotIn("stack_trace", bias_node.meta)
+
+    @torch.no_grad()
+    def test_materialized_zero_bias_metadata_matches_runtime_value(self) -> None:
+        for weight_dtype, bias_dtype in (
+            (torch.float32, torch.float32),
+            (torch.float64, torch.float64),
+        ):
+            with self.subTest(weight_dtype=weight_dtype):
+                graph = torch.fx.Graph()
+                input_node = graph.placeholder("x")
+                weight = graph.placeholder("weight")
+                weight.meta["val"] = torch.ones(6, 2, 3, dtype=weight_dtype)
+                source = graph.call_function(
+                    exir_ops.edge.aten.relu.default,
+                    args=(input_node,),
+                )
+                source.meta["val"] = torch.ones(2, 6, 4, dtype=torch.float32)
+                source.meta["debug_handle"] = 1234
+
+                zero_bias = ReplaceAtenConvolutionWithCadenceConvolutionPass().materialize_zero_bias(
+                    source,
+                    weight,
+                )
+
+                self.assertEqual(exir_ops.edge.aten.full.default, zero_bias.target)
+                self.assertEqual(([6], 0.0), zero_bias.args)
+                self.assertEqual({"dtype": bias_dtype}, zero_bias.kwargs)
+                torch.testing.assert_close(
+                    zero_bias.meta["val"],
+                    weight.meta["val"].new_zeros(6, dtype=bias_dtype),
+                )
+                self.assertEqual(bias_dtype, zero_bias.meta["val"].dtype)
+                self.assertEqual(
+                    weight.meta["val"].device,
+                    zero_bias.meta["val"].device,
+                )
+                self.assertEqual(1234, zero_bias.meta["debug_handle"])
+                self.assertLess(
+                    list(graph.nodes).index(zero_bias),
+                    list(graph.nodes).index(source),
+                )
+
+    @torch.no_grad()
+    def test_rejected_convolution_does_not_materialize_zero_bias(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 4, 8))
+        weights = builder.placeholder("weights", torch.randn(6, 4, 3))
+        convolution = builder.call_operator(
+            op=exir_ops.edge.aten.convolution.default,
+            args=(x, weights, None, [1], [0], [1], False, [1], 1),
+        )
+        builder.output([convolution])
+
+        result = cast(
+            PassResult,
+            ReplaceAtenConvolutionWithCadenceConvolutionPass()(
+                builder.get_graph_module()
+            ),
+        )
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            1,
+            count_node(result.graph_module, exir_ops.edge.aten.convolution.default),
+        )
+        self.assertEqual(
+            0,
+            count_node(result.graph_module, exir_ops.edge.aten.full.default),
         )
 
     @expand(
@@ -649,6 +836,16 @@ class TestReplaceOpsPasses(unittest.TestCase):
             ),
             1,
         )
+        for node in graph_after_passes.graph.nodes:
+            if node.target == exir_ops.edge.cadence.transposed_convolution.default:
+                self.assertIsNotNone(node.args[2])
+                if not bias_enabled:
+                    bias_node = node.args[2]
+                    self.assertIsInstance(bias_node, torch.fx.Node)
+                    self.assertEqual(
+                        exir_ops.edge.aten.full.default,
+                        cast(torch.fx.Node, bias_node).target,
+                    )
 
     @expand(
         [
@@ -947,7 +1144,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
     def test_replace_masked_scalar_tensor_with_full(
         self,
         shape: Tuple[int],
-        mask_shape: Union[Tuple[int, ...], None] = None,
+        mask_shape: Optional[Tuple[int, ...]] = None,
     ) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
@@ -2176,6 +2373,53 @@ class TestReplaceWhereWithFullArgsWithWhereScalar(unittest.TestCase):
                 exir_ops.edge.aten.mul.Tensor,
             ),
             0,
+        )
+
+    @expand([[2.0], [3.0]])
+    def test_replace_pow_with_mul_not_applied_on_type_promotion(
+        self, exponent: float
+    ) -> None:
+        # int32 ** float promotes to float32, but int32 * int32 stays int32.
+        x = torch.randint(0, 8, (2, 1, 64), dtype=torch.int32)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.pow.Tensor_Scalar,
+            args=(x, exponent),
+        )
+        p = ReplacePowWithMulPass()
+        result = cast(PassResult, p(original_gm))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.pow.Tensor_Scalar),
+            1,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.mul.Tensor), 0
+        )
+
+    @expand([[2], [3]])
+    def test_replace_pow_with_mul_int_input_int_exponent(self, exponent: int) -> None:
+        # int32 ** int stays int32, so the dtype guard still allows the rewrite.
+        x = torch.randint(0, 8, (2, 1, 64), dtype=torch.int32)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.pow.Tensor_Scalar,
+            args=(x, exponent),
+        )
+        gm_before = copy.deepcopy(original_gm)
+        p = ReplacePowWithMulPass()
+        result = cast(PassResult, p(original_gm))
+
+        self.assertTrue(result.modified)
+        validate(gm_before, result.graph_module, [x], "ReplacePowWithMulPass")
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.pow.Tensor_Scalar),
+            0,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.mul.Tensor),
+            exponent - 1,
         )
 
 

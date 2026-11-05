@@ -47,7 +47,7 @@ cover.
 
 ### Using the prebuilt libraries from the pip package
 
-On Linux and macOS, current main/nightly wheels ship the runtime as prebuilt
+On Linux, macOS and Windows, current main/nightly wheels ship the runtime as prebuilt
 shared libraries together with the headers and a CMake package. Stable releases
 from before this packaging was introduced do not contain the namespaced CMake
 targets used below; use the documentation for your installed release.
@@ -159,6 +159,21 @@ That is the two input arrays added together. The long `python -c` part just prin
 CMake package, so CMake can find it. Run `./build/app` from the folder holding `model.pte`, because
 the path in `main.cpp` is relative.
 
+On Windows, three things differ. Add the DLL copy step from [the Windows section](#on-windows) to
+`CMakeLists.txt`, since a Windows program finds the DLLs only next to itself. Build Release, because
+the DLLs use the release C++ library and a Debug build is refused at compile time. And with Visual
+Studio the program ends up in a `Release` folder:
+
+```
+cmake -S . -B build -DCMAKE_PREFIX_PATH="..." -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+.\build\Release\app.exe
+```
+
+`-DCMAKE_BUILD_TYPE` is what a single-configuration generator such as Ninja, the default in VS Code
+and CLion, reads; it ignores `--config` and leaves the program in `build\app.exe`. Visual Studio
+reads `--config` instead. Giving both covers either.
+
 #### Adding kernels and backends
 
 Add a component to both lines to get more. Nothing else in the program changes.
@@ -175,16 +190,16 @@ These are the components the package provides:
 
 | Component | What it gives you | Where |
 | --- | --- | --- |
-| `runtime` | The engine. Always needed. | Linux, macOS |
-| `kernels_optimized` | Fast CPU operators. The usual choice. | Linux, macOS |
-| `backend_xnnpack` | The XNNPACK backend, for models exported with it. | Linux, macOS |
-| `threadpool` | Multi-threaded execution. | Linux, macOS |
+| `runtime` | The engine. Always needed. | Linux, macOS, Windows |
+| `kernels_optimized` | Fast CPU operators. The usual choice. | Linux, macOS, Windows |
+| `backend_xnnpack` | The XNNPACK backend, for models exported with it. | Linux, macOS, Windows |
+| `threadpool` | Multi-threaded execution. | Linux, macOS, Windows |
 | `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
-| `kernels_quantized` | The quantized operator kernels | Linux, macOS |
+| `kernels_quantized` | The quantized operator kernels | Linux, macOS, Windows |
 | `kernels_torchao` | The TorchAO low-bit quantized kernels | Linux and macOS, aarch64 only |
-| `backend_cuda` | The CUDA delegate | Linux |
-| `extension_cuda` | The CUDA stream extension | Linux |
-| `backend_openvino` | The OpenVINO delegate | Linux |
+| `backend_cuda` | The CUDA delegate | Linux, Windows (runs programs exported on Linux) |
+| `extension_cuda` | Shared CUDA allocator, stream and device helpers. Allocator headers require the CUDA toolkit. A program that calls the CUDA runtime itself links `CUDA::cudart`. | Linux, Windows |
+| `backend_openvino` | The OpenVINO delegate | Linux, Windows |
 | `backend_coreml` | The Core ML delegate, for Apple GPU and Neural Engine execution | macOS |
 | `backend_mlx` | The MLX delegate, for Apple GPU execution | macOS, Apple Silicon |
 
@@ -238,17 +253,30 @@ The quantized kernels are deliberately left out of that variable, because loadin
 stops the runtime.
 
 The OpenVINO delegate needs one more step. The wheel ships the adapter, not the OpenVINO runtime
-itself, and the adapter opens `libopenvino_c.so` by name when the model is loaded. Python callers
-get that path set for them on import; a standalone C++ program does not, so install the runtime and
-point the program at it:
+itself, and the adapter opens `libopenvino_c.so` (`openvino_c.dll` on Windows) by name when the
+model is loaded. Python callers get that path set for them on import; a standalone C++ program does
+not, so install the runtime and point the program at it:
 
 ```bash
 pip install "executorch[openvino]"
 export OPENVINO_LIB_PATH="$(python -c 'import glob, openvino, os; print(sorted(glob.glob(os.path.join(os.path.dirname(openvino.__file__), "libs", "libopenvino_c.so*")))[0])')"
 ```
 
+On Windows, in PowerShell:
+
+```powershell
+pip install "executorch[openvino]"
+$env:OPENVINO_LIB_PATH = python -c "import openvino, os; print(os.path.join(os.path.dirname(openvino.__file__), 'libs', 'openvino_c.dll'))"
+```
+
 Without it the delegate still registers and the program still links, and the failure arrives later,
 when the model is loaded.
+
+For now the openvino extra installs no runtime on Python 3.15, where OpenVINO publishes no
+build. On Linux aarch64, OpenVINO needs glibc 2.35 or newer, as on Ubuntu 22.04 or Raspberry
+Pi OS Bookworm and later. On an older aarch64 system, such as RHEL 9 or Amazon Linux 2023,
+`pip install executorch[openvino]` does not fail but installs an older ExecuTorch release; see
+[OpenVINO Backend](build-run-openvino.md) for what to do there.
 
 The MLX delegate has a similar requirement. Its Metal kernels live in a separate `mlx.metallib`
 file, which MLX looks for next to whichever library holds MLX code. The wheel ships it beside the
@@ -263,8 +291,9 @@ message(STATUS "Metal kernels: ${MLX_METALLIB_PATH}")
 
 #### Using pkg-config
 
-Build systems such as Meson and Autotools read pkg-config files. The wheel ships one for the
-runtime. It covers the engine and the thread pool. Name the kernel libraries yourself, the same
+Build systems such as Meson and Autotools read pkg-config files. The Linux and macOS wheels ship
+one for the runtime; the Windows wheel does not, so use the CMake package there. It covers the
+engine and the thread pool. Name the kernel libraries yourself, the same
 way you add CMake components. Point pkg-config at the file with an absolute path, because the
 library search path it gives the linker is built from that path:
 
@@ -308,11 +337,24 @@ way, because they sit next to the runtime library.
 
 - `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or
   points somewhere else. Run the `python -c` line on its own and check the folder exists.
+- `os.path.dirname(executorch.__file__)` fails with a `TypeError`: the `executorch` package has no
+  `__init__.py`, so its `__file__` is `None`. Use `executorch.__path__[0]` instead, as the command
+  above does.
 - The program builds but fails to load the model: the path is relative, so run it from the folder
   containing the `.pte` file.
 - A missing operator at run time: add a kernel component, usually
   `executorch::kernels_optimized`.
 - The model fails to load complaining about a backend: link the backend it was exported for.
+- The model fails to load because data is missing, for example the CUDA backend reports
+  `... is missing from named data`: the model expects its weights in a separate `.ptd` file. Pass that
+  file as the second argument, for example `Module module("model.pte", "aoti_cuda_blob.ptd");`. If
+  the export saved only `program.buffer`, no `.ptd` was written. Save the program with
+  `save_pte_program`, as [the CUDA section](#running-on-a-gpu-with-the-cuda-package) does.
+- A GPU model fails on its first run because an output has no buffer: it was exported with
+  `alloc_graph_output=False`, so it has no memory of its own for its outputs. Give each output a
+  buffer with `set_output` before the first run: GPU memory if the export skipped the output copy
+  (`skip_d2h_for_method_outputs=True`), host memory otherwise. See
+  [Keeping inputs and outputs on the GPU](#keeping-inputs-and-outputs-on-the-gpu).
 - `executorch::runtime` is not a target: imported targets need CMake 3.28 or newer. On an older
   CMake the package still works, but you name variables instead of targets, and you have to pass on
   the definitions and the C++ standard requirement yourself:
@@ -347,8 +389,9 @@ way, because they sit next to the runtime library.
   target_link_libraries(app PRIVATE ${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY})
   ```
 
-You should not need `LD_LIBRARY_PATH`. The shipped libraries record where their neighbours live, so
-they find each other once the program links against the installed package.
+On Linux and macOS you should not need `LD_LIBRARY_PATH`. The shipped libraries record where their
+neighbours live, so they find each other once the program links against the installed package.
+Windows has no such record; see below.
 
 On Linux, linking the runtime asks the linker for `DT_RUNPATH` rather than the older `DT_RPATH`.
 That is deliberate: `DT_RPATH` is searched before `LD_LIBRARY_PATH` and applies to a dependency's
@@ -368,18 +411,45 @@ target_link_libraries(app PRIVATE executorch::runtime prefer_rpath)
 The order matters. A target's own link options are emitted before those of its dependencies, and the
 last of the two settings decides the tag for every entry in the link.
 
+#### On Windows
+
+A Windows DLL records no search path, so the loader finds the shipped DLLs only next to your
+program (or on `PATH`). Copy them there after each build; the imported targets name every DLL your
+program links:
+
+```cmake
+add_custom_command(
+  TARGET app POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:app> $<TARGET_FILE_DIR:app>
+  COMMAND_EXPAND_LISTS
+)
+```
+
+Build Release: configure with `-DCMAKE_BUILD_TYPE=Release` for a single-configuration generator such
+as Ninja, or build with `cmake --build build --config Release` under Visual Studio. The DLLs are built
+against the release C++ library, and a Debug program uses the debug one, whose types are laid out
+differently, so mixing the two would corrupt memory. The runtime headers therefore refuse a Debug
+build at compile time, with an error asking for Release. On CMake older than 3.28, copy the DLLs from
+`${EXECUTORCH_RUNTIME_LIBRARY_DIR}` instead, together with any listed in
+`${EXECUTORCH_RUNTIME_DLLS_EXTRA}`, and apply `${EXECUTORCH_COMPILE_DEFINITIONS}`, which carries
+that check.
+
+The `etdump` component is not offered on Windows, because the Windows wheel is built without the
+event tracer.
+
 ### Running on a GPU with the CUDA package
 
-The CUDA build is a separate package. Releases cover CUDA 13.0, 13.2 and 13.4, so pick the index
-matching the CUDA version you have (`cu130`, `cu132` or `cu134`). For CUDA 13.0:
+On Linux, the package on PyPI is the CUDA build, for the same CUDA version as the `torch` package
+there. Releases also cover CUDA 13.2 and 13.4 on their own indexes, so you can pick the one
+matching the CUDA version you have (`cu132` or `cu134`). For CUDA 13.2:
 
 ```
 pip install executorch torch \
-  --index-url https://download.pytorch.org/whl/cu130 \
+  --index-url https://download.pytorch.org/whl/cu132 \
   --extra-index-url https://pypi.org/simple
 ```
 
-CUDA wheels are built for Python 3.10 through 3.14, which is every Python this project supports.
+CUDA wheels are built for Python 3.11 through 3.15, which is every Python this project supports.
 
 The second index is required: a bare `--index-url` replaces PyPI rather than adding to it, and some
 dependencies are only on PyPI. The torch you install has to come from the same CUDA index, because
@@ -420,8 +490,8 @@ save_pte_program(program, "model", ".")
 
 `save_pte_program` is used instead of writing the buffer by hand because the CUDA backend puts its
 model weights in a **separate data file** next to `model.pte`. The compiled GPU code stays
-inside `model.pte`. Writing only the program file loses the weights, so the model then fails when it
-runs.
+inside `model.pte`. For a model with weights, writing only the program file leaves them out, and the
+model then fails to load.
 
 The backend chooses that file's name, so check what was written:
 
@@ -457,6 +527,93 @@ reach fewer cards in that range than the x86_64 ones, so a card at or above `(8,
 outside an ARM package. Note that `torch.cuda.get_arch_list()` is not the right check either:
 PyTorch builds for a wider set at the bottom than these packages do, so a GPU can appear in that
 list and still not be supported.
+
+#### Keeping inputs and outputs on the GPU
+
+A model can be exported to keep its inputs and outputs on the GPU, so the runtime does not copy
+them between CPU and GPU memory on every run.
+[The CUDA backend guide](backends/cuda/cuda-overview.md#activation-memory-who-owns-the-gpu-copies)
+shows how. Such a model takes GPU tensors. If it was also exported with `alloc_graph_output=False`,
+as the guide recommends, it has no memory of its own for its outputs, and without a GPU buffer for
+each output the run fails. Give each output one with `set_output`, once, before the first run. Its
+second argument, the output's index, defaults to 0, which is what the example below uses:
+
+```cpp
+using namespace executorch::aten;
+using namespace executorch::extension;
+using namespace executorch::runtime;
+
+// a, b and sum point to GPU memory, for example from cudaMalloc.
+auto x = from_blob(a, {2, 2}, ScalarType::Float, DeviceType::CUDA);
+auto y = from_blob(b, {2, 2}, ScalarType::Float, DeviceType::CUDA);
+auto out = from_blob(sum, {2, 2}, ScalarType::Float, DeviceType::CUDA);
+
+// Every run then writes its result to sum.
+if (module.set_output(out) != Error::Ok) {
+  return 1;
+}
+const auto result = module.forward({x, y});
+if (!result.ok()) {
+  return 1;
+}
+```
+
+The result is in `sum`, in GPU memory. Copy it to the host, for example with `cudaMemcpy`, before
+you read it on the CPU.
+
+`forward` can return before the GPU has finished. The model runs on `cudaStreamPerThread`, the
+default stream of the thread that calls `forward`, and a `cudaMemcpy` on that thread waits for it.
+Before `forward`, call `cudaStreamSynchronize` on each stream of yours that wrote the inputs or still
+reads the previous result. After `forward`, call `cudaStreamSynchronize(cudaStreamPerThread)` on the
+same thread before a stream of yours reads the result or overwrites the inputs. To run the model on
+your own stream instead, see "Choosing the CUDA stream" under
+[Performance Options in the TensorRT guide](backends/tensorrt/tensorrt-overview.md#performance-options).
+It works for a model that uses only the CUDA backend too, and it lists the limits.
+
+Calling the CUDA runtime yourself, for example `cudaMalloc` and `cudaMemcpy`, needs the CUDA Toolkit
+when you build. Add these lines at the end of `CMakeLists.txt`:
+
+```cmake
+find_package(CUDAToolkit REQUIRED)
+target_link_libraries(app PRIVATE CUDA::cudart)
+```
+
+#### CUDA on Windows
+
+The Windows CUDA package runs CUDA programs; it cannot lower them. Lowering compiles the model with
+a toolchain only the Linux side has, so export on Linux or in WSL, adding one compile spec that
+names the Windows target, then copy `model.pte` and `aoti_cuda_blob.ptd` to the Windows machine:
+
+```python
+from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+compile_specs = [
+    CudaBackend.generate_method_name_compile_spec("forward"),
+    CompileSpec("platform", b"windows"),
+]
+partitioner = [CudaPartitioner(compile_specs)]
+```
+
+That export also needs the MinGW cross compiler and, from the same CUDA train as the torch that
+exports, the Windows CUDA runtime on the Linux side. Both commands use scripts from the
+repository, so run them from a clone of it:
+
+```bash
+sudo bash .ci/docker/common/install_cuda_windows_cross_compile.sh --mingw
+python .ci/scripts/wheel/install_cuda_redist.py --train 13.2 \
+    --platform windows-x86_64 --dest ~/cuda-windows-13.2 --components cuda_cudart
+export WINDOWS_CUDA_HOME=~/cuda-windows-13.2
+```
+
+On Windows, link the same components as on Linux and copy the DLLs beside your program as described
+in the Windows section above. `$<TARGET_RUNTIME_DLLS>` also brings the delegate's CUDA extension
+(allocator and stream helpers) and its AOTI shim layer. Those need only the NVIDIA driver, but the
+model itself does not: the library
+AOTInductor compiles into `model.pte` imports `cudart64_13.dll` (for the CUDA 13 packages), which
+comes from the CUDA Toolkit, whose installer puts its `bin` directory on `PATH`. The Python module in
+this package carries no CUDA; it is the C++ SDK that runs the program.
 
 ### Building from source
 

@@ -34,7 +34,7 @@ class MinVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_same_dtype(self.target, [inputs[0], output])
         valid_dtypes = [
             ts.DType.INT8,
             ts.DType.INT16,
@@ -49,7 +49,6 @@ class MinVisitor(NodeVisitor):
             self.target,
             [inputs[0], output],
             valid_dtypes,
-            self.tosa_spec,
         )
 
         input = inputs[0]

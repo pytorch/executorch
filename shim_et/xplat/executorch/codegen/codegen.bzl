@@ -1184,7 +1184,7 @@ def check_recursive_dependencies(
     runtime.genrule(
         name = name,
         macros_only = False,
-        cmd = 'mkdir -p $OUT;paths="$(query_targets allpaths({}, {}))"; echo "$paths" > $OUT/dep.txt; if [ -z "$paths" ]; then echo "Dependencies look good"; else echo {}. This will cause duplicate symbol errors when building with dtype selective build. The dependency path is: "$paths"; fail; fi'.format(parent, child, message),
+        cmd = 'mkdir -p $OUT;paths="$(query_targets allpaths({}, {}))"; echo "$paths" > $OUT/dep.txt; if [ -z "$paths" ]; then echo "Dependencies look good"; else echo {}. This will cause duplicate symbol errors when building with dtype selective build. The dependency path is: "$paths"; exit 1; fi'.format(parent, child, message),
         define_static_target = False,
         # The path is saved to $OUT/dep.txt and can be accessed via genrule_name[result].
         outs = {"result": ["dep.txt"]},

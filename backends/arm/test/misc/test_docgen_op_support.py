@@ -215,6 +215,39 @@ def test_u85_explicit_coverage_attribution() -> None:
         docgen._activate_backend(original)
 
 
+SDPA_OP = "torch.ops.aten.scaled_dot_product_attention.default"
+
+
+def test_sdpa_is_decomposed_with_public_api_alias() -> None:
+    assert SDPA_OP in docgen.DECOMPOSED_OPS
+    assert docgen._pytorch_api_aliases(SDPA_OP) == (
+        "torch.nn.functional.scaled_dot_product_attention",
+    )
+
+
+@pytest.mark.parametrize(
+    ("backend", "function", "profile"),
+    [
+        ("vgf", "test_sdpa_vgf_no_quant", "FP"),
+        ("vgf", "test_sdpa_vgf_quant", "INT"),
+        ("u55", "test_sdpa_u55_INT", "INT"),
+        ("u85", "test_sdpa_u85_INT", "INT"),
+    ],
+)
+def test_sdpa_explicit_backend_coverage(
+    backend: str, function: str, profile: str
+) -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend(backend)
+        coverage = docgen._active_explicit_backend_coverage()
+        assert coverage[("backends/arm/test/ops/test_sdpa.py", function)][profile] == {
+            SDPA_OP
+        }
+    finally:
+        docgen._activate_backend(original)
+
+
 def test_non_vgf_backend_does_not_collect_vgf_custom_partition_ops() -> None:
     original = docgen.ACTIVE_BACKEND_KEY
     try:
@@ -695,3 +728,1425 @@ def test_main_writes_requested_markdown_and_html(
     assert result == 0
     assert (tmp_path / "generated/support.md").read_text(encoding="utf-8") == "md\n"
     assert (tmp_path / "generated/support.html").read_text(encoding="utf-8") == "html\n"
+
+
+def test_main_backend_all_writes_all_markdown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        docgen,
+        "generate_markdown",
+        lambda _root, debug=False: f"{docgen.ACTIVE_BACKEND_KEY}\n",
+    )
+
+    result = docgen.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--backend",
+            "all",
+        ]
+    )
+
+    assert result == 0
+    for backend, config in docgen.BACKENDS.items():
+        assert (tmp_path / config.default_output).read_text(encoding="utf-8") == (
+            f"{backend}\n"
+        )
+
+
+def test_main_backend_all_check_runs_every_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checked: list[tuple[str, bool]] = []
+
+    def fake_run_check(_root: Path, *, strict_ast: bool = False) -> int:
+        checked.append((docgen.ACTIVE_BACKEND_KEY, strict_ast))
+        return 1 if docgen.ACTIVE_BACKEND_KEY == "u55" else 0
+
+    monkeypatch.setattr(docgen, "run_check", fake_run_check)
+
+    result = docgen.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--backend",
+            "all",
+            "--check",
+            "--strict-ast",
+        ]
+    )
+
+    assert result == 1
+    assert checked == [(backend, True) for backend in docgen.BACKENDS]
+
+
+def test_main_backend_all_rejects_custom_output(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        docgen.main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "--backend",
+                "all",
+                "--output",
+                "generated/support.md",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+
+
+ADAPTIVE_AVG_POOL1D_OP = "torch.ops.aten.adaptive_avg_pool1d.default"
+
+
+def test_adaptive_avg_pool1d_is_decomposed_with_public_api_alias() -> None:
+    assert ADAPTIVE_AVG_POOL1D_OP in docgen.DECOMPOSED_OPS
+    assert docgen._pytorch_api_aliases(ADAPTIVE_AVG_POOL1D_OP) == (
+        "torch.nn.AdaptiveAvgPool1d",
+        "torch.nn.functional.adaptive_avg_pool1d",
+    )
+
+
+def test_linalg_vector_norm_is_decomposed_with_public_api_alias() -> None:
+    op = "torch.ops.aten.linalg_vector_norm.default"
+
+    assert op in docgen.DECOMPOSED_OPS
+    assert docgen._pytorch_api_aliases(op) == ("torch.linalg.vector_norm",)
+
+
+@pytest.mark.parametrize(
+    ("backend", "function", "profile"),
+    [
+        ("vgf", "test_vector_norm_vgf_no_quant", "FP"),
+        ("vgf", "test_vector_norm_vgf_quant", "INT"),
+        ("u55", "test_vector_norm_u55_INT_fvp", "INT"),
+        ("u85", "test_vector_norm_u85_INT_fvp", "INT"),
+    ],
+)
+def test_linalg_vector_norm_explicit_backend_coverage(
+    backend: str, function: str, profile: str
+) -> None:
+    op = "torch.ops.aten.linalg_vector_norm.default"
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend(backend)
+        coverage = docgen._active_explicit_backend_coverage()
+        assert coverage[
+            (
+                "backends/arm/test/ops/test_linalg_vector_norm.py",
+                function,
+            )
+        ][profile] == {op}
+    finally:
+        docgen._activate_backend(original)
+
+
+# FP8 VGF documentation evidence tests.
+
+
+def test_docgen_recognizes_vgf_fp8_pipeline_and_unquantized_profile() -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        config = docgen._activate_backend("vgf")
+        assert "VgfPipelineFP8" in config.pipeline_class_names
+        for expression in ("VgfPipelineFP8()", "VgfPipelineFP8[input_t]()"):
+            statement = ast.parse(expression).body[0]
+            assert isinstance(statement, ast.Expr)
+            assert isinstance(statement.value, ast.Call)
+            assert docgen._pipeline_profile(statement.value) == "FP"
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_fp8_dtype_inference_ignores_fp32_tensor_creation() -> None:
+    assert docgen._dtype_hints_from_text(
+        "torch.rand(2, dtype=torch.float32).to(torch.float8_e4m3fn)"
+    ) == {"FP8E4M3"}
+    assert docgen._dtype_hints_from_text(
+        "torch.rand(2, dtype=torch.float32).to(torch.float8_e5m2)"
+    ) == {"FP8E5M2"}
+    assert docgen._fp8_dtypes_from_text("torch.float8_e4m3fnuz") == set()
+    assert docgen._fp8_dtypes_from_text("torch.float8_e5m2fnuz") == set()
+
+
+def test_scan_vgf_fp8_cases_with_factory_calls(tmp_path: Path) -> None:
+    _write_test_module(
+        tmp_path,
+        "backends/arm/test/ops/test_fp8_matmul.py",
+        """
+        test_suite_fp8 = {
+            "e4m3": lambda: make_case(
+                lambda: torch.rand(2, dtype=torch.float32).to(torch.float8_e4m3fn)
+            ),
+            "e5m2": lambda: make_case(
+                lambda: torch.rand(2, dtype=torch.float32).to(torch.float8_e5m2)
+            ),
+        }
+
+        @common.parametrize("test_case", test_suite_fp8)
+        def test_matmul_vgf_no_quant_fp8(test_case):
+            VgfPipelineFP8(
+                object(), test_case(),
+                aten_op="torch.ops.aten.matmul.default", exir_op=[]
+            )
+        """,
+    )
+    rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+    assert unresolved == []
+    assert diagnostics == []
+    row = rows["torch.ops.aten.matmul.default"]
+    assert row.support_profiles == {"FP"}
+    assert row.dtypes == {"FP8E4M3", "FP8E5M2"}
+    assert not row.quantization_modes
+
+
+def test_scan_vgf_fp8_cases_from_class_attribute(tmp_path: Path) -> None:
+    _write_test_module(
+        tmp_path,
+        "backends/arm/test/ops/test_fp8_cat.py",
+        """
+        class Cat:
+            test_parameters_fp8 = {
+                "e4m3": lambda: (
+                    torch.rand(2, dtype=torch.float32).to(torch.float8_e4m3fn),
+                    "fp8e4m3",
+                ),
+                "e5m2": lambda: (
+                    torch.rand(2, dtype=torch.float32).to(torch.float8_e5m2),
+                    "fp8e5m2",
+                ),
+            }
+
+        @common.parametrize("test_data", Cat.test_parameters_fp8)
+        def test_cat_vgf_no_quant_fp8(test_data):
+            VgfPipeline(
+                object(), test_data(),
+                aten_op="torch.ops.aten.cat.default", exir_op=[],
+                quantize=False,
+                tosa_extensions=["fp8e4m3", "fp8e5m2"],
+            )
+        """,
+    )
+    rows, unresolved, _diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+    assert unresolved == []
+    row = rows["torch.ops.aten.cat.default"]
+    assert row.support_profiles == {"FP"}
+    assert row.dtypes == {"FP8E4M3", "FP8E5M2"}
+
+
+def test_scan_vgf_fp8_cast_with_suppressed_operator_assertions(tmp_path: Path) -> None:
+    _write_test_module(
+        tmp_path,
+        "backends/arm/test/ops/test_to_copy.py",
+        """
+        fp8_inputs = {
+            "e4m3": lambda: torch.rand(2, dtype=torch.float32).to(torch.float8_e4m3fn),
+            "e5m2": lambda: torch.rand(2, dtype=torch.float32).to(torch.float8_e5m2),
+        }
+
+        @common.parametrize("test_data", fp8_inputs)
+        def test_to_vgf_no_quant_fp8_with_extension(test_data):
+            VgfPipeline(
+                object(), test_data(), aten_op=[], exir_op=[], quantize=False
+            )
+        """,
+    )
+    rows, unresolved, _diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+    assert unresolved == []
+    row = rows["torch.ops.aten._to_copy.default"]
+    assert row.support_profiles == {"FP"}
+    assert row.dtypes == {"FP8E4M3", "FP8E5M2"}
+
+
+def test_scan_vgf_fp8_no_false_fp32_fallback(tmp_path: Path) -> None:
+    _write_test_module(
+        tmp_path,
+        "backends/arm/test/ops/test_fp8_unresolved_dtype.py",
+        """
+        def test_unknown_vgf_fp8():
+            VgfPipelineFP8(
+                object(), opaque_inputs(),
+                aten_op="torch.ops.aten.relu.default", exir_op=[],
+            )
+        """,
+    )
+    rows, unresolved, _diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+    assert unresolved == []
+    assert rows["torch.ops.aten.relu.default"].dtypes == set()
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Merely enabling TOSA extensions must NOT establish tensor dtype.
+        ('tosa_extensions=["fp8e4m3", "fp8e5m2"]', set()),
+        ('{"tosa_extensions": ["fp8e4m3"]}', set()),
+        ('{"tosa_extensions": ["fp8e5m2"]}', set()),
+        ("fp8e4m3", set()),
+        ("fp8e5m2", set()),
+        ("case_fp8e4m3", set()),
+        # Real PyTorch tensor dtypes still establish FP8 evidence.
+        ("torch.float8_e4m3fn", {"FP8E4M3"}),
+        ("torch.float8_e5m2", {"FP8E5M2"}),
+        (
+            "torch.randn(4, dtype=torch.float32).to(torch.float8_e4m3fn)",
+            {"FP8E4M3"},
+        ),
+        (
+            "torch.randn(4, dtype=torch.float32).to(torch.float8_e5m2)",
+            {"FP8E5M2"},
+        ),
+        # Unsupported FNUZ variants and larger names are not the same dtype.
+        ("torch.float8_e4m3fnuz", set()),
+        ("torch.float8_e5m2fnuz", set()),
+        ("custom_float8_e4m3fn_suffix", set()),
+    ],
+)
+def test_fp8_dtype_recognizer_excludes_tosa_extension_names(
+    text: str, expected: set[str]
+) -> None:
+    assert docgen._fp8_dtypes_from_text(text) == expected
+    assert (docgen._dtype_hints_from_text(text) & {"FP8E4M3", "FP8E5M2"}) == expected
+
+
+def test_vgf_fp8_extensions_without_fp8_tensors_are_not_dtype_evidence(
+    tmp_path: Path,
+) -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_vgf_fp8_extension_only.py",
+            """
+            test_cases = {
+                "case_e4m3": {
+                    "tensor": torch.ones(4, dtype=torch.float32),
+                    "tosa_extensions": ["fp8e4m3"],
+                },
+                "case_e5m2": {
+                    "tensor": torch.ones(4, dtype=torch.float32),
+                    "tosa_extensions": ["fp8e5m2"],
+                },
+            }
+
+            @common.parametrize("test_data", test_cases)
+            def test_relu_vgf_no_quant_with_extensions(test_data):
+                VgfPipeline(
+                    object(),
+                    test_data,
+                    aten_op="torch.ops.aten.relu.default",
+                    exir_op=[],
+                    quantize=False,
+                    tosa_extensions=["fp8e4m3", "fp8e5m2"],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        row = rows["torch.ops.aten.relu.default"]
+        assert row.support_profiles == {"FP"}
+        assert row.dtypes == {"FP32"}
+    finally:
+        docgen._activate_backend(original)
+
+
+# Regression tests for multi-argument pytest.param dtype inference.
+
+
+def test_vgf_fp8_pytest_param_all_positional_dtypes(tmp_path: Path) -> None:
+    """The dtype in pytest.param(shape, dtype) must not be discarded."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_vgf_fp8_multi_param.py",
+            """
+            @pytest.mark.parametrize(
+                "shape,dtype",
+                [
+                    pytest.param((2, 2), torch.float8_e4m3fn, id="e4m3"),
+                    pytest.param((2, 2), torch.float8_e5m2, id="e5m2"),
+                    pytest.param((2, 2), torch.float16, id="fp16"),
+                    pytest.param((2, 2), torch.bfloat16, id="bf16"),
+                    pytest.param(
+                        (2, 2), torch.float32,
+                        marks=pytest.mark.xfail(reason="unsupported"),
+                        id="xfail-fp32",
+                    ),
+                ],
+            )
+            def test_matmul_vgf_no_quant_fp8(shape, dtype):
+                VgfPipelineFP8(
+                    object(), opaque_inputs,
+                    aten_op="torch.ops.aten.matmul.default", exir_op=[],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        row = rows["torch.ops.aten.matmul.default"]
+        assert row.support_profiles == {"FP"}
+        assert row.dtypes == {"FP8E4M3", "FP8E5M2", "FP16", "BF16"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_pytest_param_from_helper_collects_all_args(
+    tmp_path: Path,
+) -> None:
+    """Case factories returning pytest.param also retain later dtype args."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_vgf_fp8_helper_param.py",
+            """
+            def make_cases():
+                return [
+                    pytest.param((2, 2), torch.float8_e4m3fn),
+                    pytest.param((4, 4), torch.float16),
+                    pytest.param(
+                        (8, 8), torch.bfloat16,
+                        marks=pytest.mark.xfail(reason="unsupported"),
+                    ),
+                ]
+
+            @pytest.mark.parametrize("shape,dtype", make_cases())
+            def test_relu_vgf_no_quant_fp8(shape, dtype):
+                VgfPipelineFP8(
+                    object(), opaque_inputs,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        row = rows["torch.ops.aten.relu.default"]
+        assert row.support_profiles == {"FP"}
+        assert row.dtypes == {"FP8E4M3", "FP16"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_pytest_param_extensions_are_not_dtype_evidence(
+    tmp_path: Path,
+) -> None:
+    """A later tosa_extensions argument must not claim FP8 tensors."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_vgf_fp8_extensions_param.py",
+            """
+            @pytest.mark.parametrize(
+                "shape,dtype,extensions",
+                [
+                    pytest.param(
+                        (2, 2), torch.float32, ["fp8e4m3", "fp8e5m2"],
+                    ),
+                ],
+            )
+            def test_add_vgf_no_quant_fp8_extensions(shape, dtype, extensions):
+                VgfPipeline(
+                    object(), opaque_inputs,
+                    aten_op="torch.ops.aten.add.Tensor", exir_op=[],
+                    quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        row = rows["torch.ops.aten.add.Tensor"]
+        assert row.support_profiles == {"FP"}
+        assert row.dtypes == {"FP32"}
+    finally:
+        docgen._activate_backend(original)
+
+
+# Regression coverage for AACR: mixed FP8 and default-FP32 parametrization.
+
+
+def test_vgf_fp8_mixed_case_table_preserves_implicit_fp32(tmp_path: Path) -> None:
+    """Implicit FP32 remains when a separate case converts its input to FP8."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_docgen_mixed_fp8_fp32.py",
+            """
+            regular_cases = {
+                "default_fp32": lambda: (torch.rand(2, 2),),
+                "another_default": lambda: (torch.randn(4, 4),),
+            }
+            fp8_cases = {
+                "e4m3": lambda: (
+                    torch.rand(2, 2, dtype=torch.float32).to(torch.float8_e4m3fn),
+                ),
+                "e5m2": lambda: (
+                    torch.rand(4, 4, dtype=torch.float32).to(torch.float8_e5m2),
+                ),
+            }
+
+            @common.parametrize("test_data", regular_cases | fp8_cases)
+            def test_add_vgf_no_quant(test_data):
+                VgfPipeline(
+                    object(), test_data,
+                    aten_op="torch.ops.aten.add.Tensor", exir_op=[], quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        row = rows["torch.ops.aten.add.Tensor"]
+        assert row.support_profiles == {"FP"}
+        assert row.dtypes == {"FP32", "FP8E4M3", "FP8E5M2"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_only_case_table_does_not_invent_fp32(tmp_path: Path) -> None:
+    """The FP32 source buffer of .to(float8_*) is not an FP32 test case."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_docgen_only_fp8.py",
+            """
+            fp8_cases = {
+                "e4m3": lambda: (
+                    torch.rand(2, 2, dtype=torch.float32).to(torch.float8_e4m3fn),
+                ),
+                "e5m2": lambda: (
+                    torch.randn(2, 2, dtype=torch.float32).to(torch.float8_e5m2),
+                ),
+            }
+
+            @common.parametrize("test_data", fp8_cases)
+            def test_add_vgf_no_quant_fp8(test_data):
+                VgfPipelineFP8(
+                    object(), test_data,
+                    aten_op="torch.ops.aten.add.Tensor", exir_op=[],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.add.Tensor"].dtypes == {"FP8E4M3", "FP8E5M2"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_multi_argument_and_xfail_cases_preserve_fp32(
+    tmp_path: Path,
+) -> None:
+    """A later dtype arg and active FP32 case count; an xfail does not."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_docgen_fp8_multi_args_mixed.py",
+            """
+            @pytest.mark.parametrize(
+                "shape,dtype",
+                [
+                    pytest.param((2, 2), torch.float8_e4m3fn),
+                    pytest.param((4, 4), torch.float32),
+                    pytest.param(
+                        (8, 8), torch.bfloat16,
+                        marks=pytest.mark.xfail(reason="unsupported"),
+                    ),
+                ],
+            )
+            def test_relu_vgf_no_quant_fp8(shape, dtype):
+                VgfPipelineFP8(
+                    object(), opaque_inputs,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.relu.default"].dtypes == {"FP32", "FP8E4M3"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_class_held_mixed_table_retains_fp32(tmp_path: Path) -> None:
+    """Class attributes and dict unions must preserve default-FP32 entries."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_docgen_fp8_class_mixed.py",
+            """
+            class Inputs:
+                defaults = {
+                    "default": lambda: (torch.zeros(2, 2),),
+                }
+                e4m3 = {
+                    "fp8": lambda: (
+                        torch.randn(2, 2, dtype=torch.float32)
+                        .to(torch.float8_e4m3fn),
+                    ),
+                }
+
+            @common.parametrize("test_data", Inputs.defaults | Inputs.e4m3)
+            def test_max_vgf_no_quant(test_data):
+                VgfPipeline(
+                    object(), test_data,
+                    aten_op="torch.ops.aten.max.dim", exir_op=[], quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.max.dim"].dtypes == {"FP32", "FP8E4M3"}
+    finally:
+        docgen._activate_backend(original)
+
+
+# Regression tests: AACR review of helper-hidden implicit FP32 evidence.
+
+
+def test_vgf_fp8_local_helpers_restore_implicit_fp32(tmp_path: Path) -> None:
+    """Mixed cases must retain FP32 when a nested local helper creates it."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_docgen_helper_fp32_mixed.py",
+            """
+            def make_default(shape):
+                return torch.randn(shape)
+
+            def make_nested(shape):
+                return make_default(shape)
+
+            cases = {
+                "implicit_fp32": lambda: (make_nested((2, 2)),),
+                "fp16": lambda: (torch.randn(2, dtype=torch.float16),),
+                "bf16": lambda: (torch.randn(2, dtype=torch.bfloat16),),
+                "fp8": lambda: (
+                    torch.randn(2, dtype=torch.float32).to(torch.float8_e4m3fn),
+                ),
+            }
+
+            @common.parametrize("test_data", cases)
+            def test_relu_vgf_no_quant(test_data):
+                VgfPipeline(
+                    object(), test_data,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                    quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.relu.default"].dtypes == {
+            "FP32",
+            "FP16",
+            "BF16",
+            "FP8E4M3",
+        }
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_local_helper_final_dtype_precedes_source_fp32(
+    tmp_path: Path,
+) -> None:
+    """Do not claim FP32 from an FP8/FP16 helper's temporary buffer."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_docgen_helper_fp8_casts.py",
+            """
+            def make_e4m3():
+                return torch.randn(2, dtype=torch.float32).to(torch.float8_e4m3fn)
+
+            def make_fp16():
+                return torch.randn(2, dtype=torch.float32).to(torch.float16)
+
+            cases = {
+                "fp8": lambda: (make_e4m3(),),
+                "fp16": lambda: (make_fp16(),),
+            }
+
+            @common.parametrize("test_data", cases)
+            def test_cat_vgf_no_quant(test_data):
+                VgfPipeline(
+                    object(), test_data,
+                    aten_op="torch.ops.aten.cat.default", exir_op=[],
+                    quantize=False,
+                    tosa_extensions=["fp8e4m3"],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.cat.default"].dtypes == {"FP8E4M3", "FP16"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_recursive_local_helpers_are_cycle_safe(tmp_path: Path) -> None:
+    """Mutually recursive helpers must not loop or fabricate FP32 coverage."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_docgen_recursive_helpers.py",
+            """
+            def make_a():
+                return make_b()
+
+            def make_b():
+                return make_a()
+
+            cases = {
+                "cycle": lambda: make_a(),
+                "fp16": lambda: (torch.randn(2, dtype=torch.float16),),
+            }
+
+            @common.parametrize("test_data", cases)
+            def test_relu_vgf_no_quant(test_data):
+                VgfPipeline(
+                    object(), test_data,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                    quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.relu.default"].dtypes == {"FP16", "FP32"}
+    finally:
+        docgen._activate_backend(original)
+
+
+# AACR Patchset 5: unresolved parameter entries must not erase FP32.
+
+
+def test_vgf_fp8_unknown_imported_case_retains_fp32(tmp_path: Path) -> None:
+    """Opaque imported helper plus FP16 must preserve legacy FP32 coverage."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_opaque_imported_fp32.py",
+            """
+            cases = {
+                "imported_default": lambda: imported_make_case(),
+                "fp16": lambda: (torch.randn(2, dtype=torch.float16),),
+            }
+
+            @common.parametrize("test_data", cases)
+            def test_relu_vgf_no_quant(test_data):
+                VgfPipeline(
+                    object(), test_data,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                    quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.relu.default"].dtypes == {"FP32", "FP16"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_opaque_case_with_local_data_alias_retains_fp32(
+    tmp_path: Path,
+) -> None:
+    """Unknown parameter cases preserve FP32 even when passed as `data`."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_local_data_alias_mixed.py",
+            """
+            cases = {
+                "opaque": lambda: imported_default_case(),
+                "fp16": lambda: (torch.randn(2, dtype=torch.float16),),
+            }
+
+            @common.parametrize("test_data", cases)
+            def test_relu_vgf_no_quant(test_data):
+                data = test_data()
+                VgfPipeline(
+                    object(), data,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                    quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.relu.default"].dtypes == {"FP32", "FP16"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_unknown_fp32_case_with_fp8_preserves_both(tmp_path: Path) -> None:
+    """An opaque case plus explicit FP8 must not erase possible FP32."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_opaque_fp8_mixed.py",
+            """
+            cases = {
+                "opaque": lambda: fixture_make_case(),
+                "e4m3": lambda: (
+                    torch.randn(2, dtype=torch.float32).to(torch.float8_e4m3fn),
+                ),
+            }
+
+            @common.parametrize("test_data", cases)
+            def test_relu_vgf_no_quant(test_data):
+                VgfPipeline(
+                    object(), test_data,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                    quantize=False, tosa_extensions=["fp8e4m3"],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.relu.default"].dtypes == {"FP32", "FP8E4M3"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_resolved_only_fp8_cases_do_not_gain_fp32(tmp_path: Path) -> None:
+    """Suppress the FP32 placeholder when *all* entries resolve as FP8."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_only_resolved_fp8_cases.py",
+            """
+            cases = {
+                "e4m3": lambda: (
+                    torch.randn(2, dtype=torch.float32).to(torch.float8_e4m3fn),
+                ),
+                "e5m2": lambda: (
+                    torch.randn(2, dtype=torch.float32).to(torch.float8_e5m2),
+                ),
+            }
+
+            @common.parametrize("test_data", cases)
+            def test_relu_vgf_no_quant(test_data):
+                VgfPipeline(
+                    object(), test_data,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                    quantize=False, tosa_extensions=["fp8e4m3", "fp8e5m2"],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.relu.default"].dtypes == {"FP8E4M3", "FP8E5M2"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_xfailed_opaque_case_does_not_force_fp32(tmp_path: Path) -> None:
+    """An excluded xfail case does not make the active table unresolved."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_fp8_with_xfailed_opaque.py",
+            """
+            @pytest.mark.parametrize(
+                "test_data",
+                [
+                    pytest.param(
+                        lambda: opaque_imported_factory(),
+                        marks=pytest.mark.xfail(reason="unsupported"),
+                    ),
+                    pytest.param(
+                        lambda: torch.randn(2).to(torch.float8_e4m3fn),
+                    ),
+                ],
+            )
+            def test_relu_vgf_no_quant(test_data):
+                VgfPipeline(
+                    object(), test_data,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                    quantize=False, tosa_extensions=["fp8e4m3"],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.relu.default"].dtypes == {"FP8E4M3"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_fp8_unknown_class_held_case_preserves_fp32(tmp_path: Path) -> None:
+    """Opaque module instances in class tables also retain FP32."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_class_held_opaque_cases.py",
+            """
+            class Cases:
+                inputs = {
+                    "opaque": external_instance,
+                    "bf16": lambda: (torch.randn(2, dtype=torch.bfloat16),),
+                }
+
+            @common.parametrize("test_data", Cases.inputs)
+            def test_relu_vgf_no_quant(test_data):
+                VgfPipeline(
+                    object(), test_data,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                    quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert {"FP32", "BF16"} <= rows["torch.ops.aten.relu.default"].dtypes
+    finally:
+        docgen._activate_backend(original)
+
+
+# AACR: only operator input positions in multi-argument pytest.param count.
+
+
+def test_vgf_docgen_named_params_ignore_auxiliary_dtypes(tmp_path: Path) -> None:
+    """Do not advertise masks, expected outputs, or TOSA config as input
+    dtypes.
+    """
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_named_param_aux.py",
+            """
+            @pytest.mark.parametrize(
+                "input_dtype,mask_dtype,expected_dtype,extensions",
+                [
+                    pytest.param(
+                        torch.float32, torch.bool, torch.float8_e4m3fn,
+                        ["fp8e4m3"], id="fp32-data",
+                    ),
+                    pytest.param(
+                        torch.float16, torch.bool, torch.float8_e5m2,
+                        ["fp8e5m2"], id="fp16-data",
+                    ),
+                ],
+            )
+            def test_add_vgf_no_quant(
+                input_dtype, mask_dtype, expected_dtype, extensions
+            ):
+                VgfPipeline(
+                    object(), opaque_inputs,
+                    aten_op="torch.ops.aten.add.Tensor", exir_op=[], quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.add.Tensor"].dtypes == {"FP32", "FP16"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_docgen_multi_arg_data_mask_expected_preserves_fp32(
+    tmp_path: Path,
+) -> None:
+    """A default FP32 input plus FP8 input must not inherit BOOL mask dtype."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_named_data_mask.py",
+            """
+            @pytest.mark.parametrize(
+                "data,mask,expected",
+                [
+                    pytest.param(
+                        torch.rand(2), torch.ones(2, dtype=torch.bool),
+                        torch.float16,
+                    ),
+                    pytest.param(
+                        torch.rand(2, dtype=torch.float32).to(torch.float8_e4m3fn),
+                        torch.ones(2, dtype=torch.bool), torch.bfloat16,
+                    ),
+                ],
+            )
+            def test_add_vgf_no_quant(data, mask, expected):
+                VgfPipeline(
+                    object(), opaque_inputs,
+                    aten_op="torch.ops.aten.add.Tensor", exir_op=[],
+                    quantize=False, tosa_extensions=["fp8e4m3"],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.add.Tensor"].dtypes == {"FP32", "FP8E4M3"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_docgen_named_params_keep_input_fp8_not_mask_or_expected(
+    tmp_path: Path,
+) -> None:
+    """Shape/dtype mapping counts FP8, not a BOOL mask or FP16 output."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_named_fp8_param.py",
+            """
+            @pytest.mark.parametrize(
+                ("shape", "dtype", "mask", "expected"),
+                [
+                    pytest.param(
+                        (2, 2), torch.float8_e4m3fn,
+                        torch.ones(2, dtype=torch.bool), torch.float16,
+                        id="fp8-with-bool-mask",
+                    ),
+                    pytest.param(
+                        (2, 2), torch.float8_e5m2,
+                        torch.ones(2, dtype=torch.bool), torch.bfloat16,
+                        id="another-fp8",
+                    ),
+                ],
+            )
+            def test_add_vgf_no_quant_fp8(shape, dtype, mask, expected):
+                VgfPipelineFP8(
+                    object(), opaque_inputs,
+                    aten_op="torch.ops.aten.add.Tensor", exir_op=[],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.add.Tensor"].dtypes == {"FP8E4M3", "FP8E5M2"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_docgen_named_params_exclude_auxiliary_only_dtypes(
+    tmp_path: Path,
+) -> None:
+    """A table of mask/expected values cannot establish FP8 or BOOL inputs."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_named_aux_only.py",
+            """
+            @pytest.mark.parametrize(
+                "mask_dtype,expected_dtype",
+                [pytest.param(torch.bool, torch.float8_e4m3fn)],
+            )
+            def test_add_vgf_no_quant_fp8(mask_dtype, expected_dtype):
+                VgfPipelineFP8(
+                    object(), opaque_inputs,
+                    aten_op="torch.ops.aten.add.Tensor", exir_op=[],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.add.Tensor"].dtypes == set()
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_docgen_masked_fill_uses_primary_data_dtype(tmp_path: Path) -> None:
+    """BOOL mask must not replace the implicit FP32 masked_fill data tensor."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_masked_fill.py",
+            """
+            class MaskedFill:
+                pass
+
+            test_modules = {
+                "bool_mask": lambda: (
+                    MaskedFill(),
+                    (
+                        torch.rand(2, 2),
+                        torch.ones(2, 2, dtype=torch.bool),
+                        3.14,
+                    ),
+                ),
+                "comparison_mask": lambda: (
+                    MaskedFill(),
+                    (torch.randn(2, 2), torch.rand(2, 2) < 0.5, 0.0),
+                ),
+            }
+
+            @common.parametrize("test_module", test_modules)
+            def test_masked_fill_scalar_vgf_no_quant(test_module):
+                module, inputs = test_module()
+                VgfPipeline(
+                    module, inputs,
+                    aten_op="torch.ops.aten.masked_fill.Scalar",
+                    exir_op=[], quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.masked_fill.Scalar"].dtypes == {"FP32"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_docgen_named_params_xfail_not_counted(tmp_path: Path) -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_named_xfail.py",
+            """
+            @pytest.mark.parametrize(
+                "shape,dtype,mask",
+                [
+                    pytest.param(
+                        (2, 2), torch.float8_e4m3fn,
+                        torch.bool,
+                        marks=pytest.mark.xfail(reason="unsupported"),
+                    ),
+                    pytest.param((2, 2), torch.float32, torch.bool),
+                ],
+            )
+            def test_relu_vgf_no_quant(shape, dtype, mask):
+                VgfPipeline(
+                    object(), opaque_inputs,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                    quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.relu.default"].dtypes == {"FP32"}
+    finally:
+        docgen._activate_backend(original)
+
+
+# Patchset 7 AACR: explicit BOOL masks must not replace data-tensor FP32.
+
+
+def test_vgf_docgen_masked_fill_actual_fixture_primary_dtype(tmp_path: Path) -> None:
+    """Match the real test_masked_fill module/input tuple and aten_op=[]
+    flow.
+    """
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_masked_fill.py",
+            """
+            aten_op = "torch.ops.aten.masked_fill.Scalar"
+
+            class MaskedFill(torch.nn.Module):
+                def forward(self, x, mask, value):
+                    return torch.masked_fill(x, mask, value)
+
+            def make_fp32_masked_fill_case():
+                return (
+                    MaskedFill(),
+                    (
+                        torch.rand(1, 3, 4, 5),
+                        torch.ones(1, 3, 4, 5, dtype=torch.bool),
+                        7.0,
+                    ),
+                )
+
+            test_modules = {
+                "boolean_mask": lambda: (
+                    MaskedFill(),
+                    (
+                        torch.rand(1, 3, 4, 5),
+                        torch.rand(1, 3, 4, 5) < 0.5,
+                        -1.0,
+                    ),
+                ),
+                "full_mask": lambda: make_fp32_masked_fill_case(),
+            }
+
+            @common.parametrize("test_module", test_modules)
+            def test_masked_fill_scalar_vgf_no_quant(test_module):
+                module, inputs = test_module()
+                pipeline = VgfPipeline(
+                    module, inputs, aten_op=[], quantize=False,
+                )
+                pipeline.run()
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        row = rows["torch.ops.aten.masked_fill.Scalar"]
+        assert row.support_profiles == {"FP"}
+        assert row.dtypes == {"FP32"}, row.dtypes
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_docgen_masked_fill_fp16_data_not_bool_mask(tmp_path: Path) -> None:
+    """Explicit FP16 data with a BOOL mask must not gain FP32 or BOOL."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_masked_fill.py",
+            """
+            aten_op = "torch.ops.aten.masked_fill.Scalar"
+            class MaskedFill(torch.nn.Module):
+                def forward(self, x, mask, value):
+                    return torch.masked_fill(x, mask, value)
+
+            def make_case():
+                return (MaskedFill(), (
+                    torch.rand(2, dtype=torch.float16),
+                    torch.ones(2, dtype=torch.bool), 1.0,
+                ))
+
+            test_modules = {"fp16": lambda: make_case()}
+
+            @common.parametrize("test_module", test_modules)
+            def test_masked_fill_scalar_vgf_no_quant(test_module):
+                module, inputs = test_module()
+                VgfPipeline(module, inputs, aten_op=[], quantize=False)
+            """,
+        )
+        rows, unresolved, _ = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert rows["torch.ops.aten.masked_fill.Scalar"].dtypes == {"FP16"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_docgen_fp8_construction_buffer_is_not_fp32(tmp_path: Path) -> None:
+    """A separate FP8 operator test must not inherit its FP32 cast source."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_fp8_no_false_fp32.py",
+            """
+            test_data = {
+                "fp8": lambda: torch.randn(2).to(torch.float8_e4m3fn),
+            }
+
+            @common.parametrize("test_data", test_data)
+            def test_relu_vgf_no_quant_fp8(test_data):
+                VgfPipelineFP8(
+                    object(), test_data(),
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                )
+            """,
+        )
+        rows, unresolved, _ = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert rows["torch.ops.aten.relu.default"].dtypes == {"FP8E4M3"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_vgf_docgen_masks_in_opaque_fixture_preserve_fp32(tmp_path: Path) -> None:
+    """Unknown fixture signatures still find distinct non-converted FP32."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_opaque_mask.py",
+            """
+            cases = {
+                "default": lambda: (
+                    imported_model(),
+                    (torch.rand(2), torch.ones(2, dtype=torch.bool)),
+                ),
+            }
+
+            @common.parametrize("test_module", cases)
+            def test_add_vgf_no_quant(test_module):
+                model, inputs = test_module()
+                VgfPipeline(
+                    model, inputs,
+                    aten_op="torch.ops.aten.add.Tensor", exir_op=[],
+                    quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, _ = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert "FP32" in rows["torch.ops.aten.add.Tensor"].dtypes
+    finally:
+        docgen._activate_backend(original)
+
+
+# AACR Patchset 9: keep the parametrization name gates consistent with the
+# existing _fp_is_input_parameter() classifier.
+
+
+@pytest.mark.parametrize("parameter_name", ["input", "data", "inputs", "tensor", "x"])
+def test_docgen_vgf_fp8_direct_input_parameter_names(
+    tmp_path: Path, parameter_name: str
+) -> None:
+    """Recognize FP8 dtype cases for ordinary input parameter names."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_vgf_fp8_input_name.py",
+            f"""
+            @pytest.mark.parametrize(
+                "{parameter_name}",
+                [
+                    pytest.param(torch.float8_e4m3fn, id="e4m3"),
+                    pytest.param(torch.float8_e5m2, id="e5m2"),
+                ],
+            )
+            def test_relu_vgf_fp8_{parameter_name}({parameter_name}):
+                VgfPipelineFP8(
+                    object(), {parameter_name},
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        row = rows["torch.ops.aten.relu.default"]
+        assert row.support_profiles == {"FP"}
+        assert row.dtypes == {"FP8E4M3", "FP8E5M2"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_docgen_vgf_unresolved_plain_input_retains_fp32(tmp_path: Path) -> None:
+    """An opaque `input` case must participate in unresolved-case filtering."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_vgf_unresolved_input_name.py",
+            """
+            @pytest.mark.parametrize(
+                "input",
+                [
+                    pytest.param(imported_make_case(), id="opaque"),
+                    pytest.param(torch.randn(2, dtype=torch.float16), id="fp16"),
+                ],
+            )
+            def test_relu_vgf_no_quant(input):
+                VgfPipeline(
+                    object(), input,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                    quantize=False,
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.relu.default"].dtypes == {"FP16", "FP32"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_docgen_vgf_fp8_input_name_excludes_auxiliary_dtype(tmp_path: Path) -> None:
+    """Select data dtype and ignore a named BOOL mask and expected output."""
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("vgf")
+        _write_test_module(
+            tmp_path,
+            "backends/arm/test/ops/test_vgf_input_with_mask.py",
+            """
+            @pytest.mark.parametrize(
+                "input,mask,expected",
+                [
+                    pytest.param(
+                        torch.float8_e4m3fn, torch.bool, torch.float16,
+                    ),
+                    pytest.param(
+                        torch.float8_e5m2, torch.bool, torch.bfloat16,
+                    ),
+                ],
+            )
+            def test_relu_vgf_fp8_with_mask(input, mask, expected):
+                VgfPipelineFP8(
+                    object(), input,
+                    aten_op="torch.ops.aten.relu.default", exir_op=[],
+                )
+            """,
+        )
+        rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+        assert not unresolved
+        assert not diagnostics
+        assert rows["torch.ops.aten.relu.default"].dtypes == {"FP8E4M3", "FP8E5M2"}
+    finally:
+        docgen._activate_backend(original)

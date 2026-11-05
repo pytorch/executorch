@@ -3364,6 +3364,7 @@ class GroupNormTest(OpTestCase):
         shape: Tuple[int, ...] = (2, 32, 8, 8),
         eps: float = 1e-5,
         affine: bool = True,
+        dynamic_spatial: bool = False,
         suffix: str = "",
     ):
         self.num_groups = num_groups
@@ -3371,6 +3372,7 @@ class GroupNormTest(OpTestCase):
         self.shape = shape
         self.eps = eps
         self.affine = affine
+        self.dynamic_spatial = dynamic_spatial
         self.name = f"group_norm{suffix}"
 
     @classmethod
@@ -3385,6 +3387,7 @@ class GroupNormTest(OpTestCase):
             # non-square spatial extent, and a 3D (N, C, L) input
             cls(num_groups=4, num_channels=16, shape=(1, 16, 5, 7), suffix="_odd"),
             cls(num_groups=4, num_channels=12, shape=(2, 12, 7), suffix="_3d"),
+            cls(shape=(1, 32, 8, 8), dynamic_spatial=True, suffix="_dynamic"),
         ]
 
     def create_model(self) -> nn.Module:
@@ -3392,6 +3395,21 @@ class GroupNormTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(*self.shape),)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.dynamic_spatial:
+            return (torch.randn(self.shape[0], self.shape[1], 12, 16),)
+        return self.create_inputs()
+
+    def get_dynamic_shapes(self) -> Optional[Dict]:
+        if self.dynamic_spatial:
+            return {
+                "x": {
+                    2: Dim("height", min=4, max=32),
+                    3: Dim("width", min=4, max=32),
+                }
+            }
+        return None
 
 
 class UpsampleNearest2dModel(nn.Module):
@@ -3425,17 +3443,20 @@ class UpsampleNearest2dTest(OpTestCase):
         shape: Tuple[int, ...] = (1, 3, 4, 4),
         scale_factor: Optional[Tuple[float, float]] = (2.0, 2.0),
         size: Optional[Tuple[int, int]] = None,
+        dynamic_spatial: bool = False,
         suffix: str = "",
     ):
         self.shape = shape
         self.scale_factor = scale_factor
         self.size = size
+        self.dynamic_spatial = dynamic_spatial
         self.name = f"upsample_nearest2d{suffix}"
 
     @classmethod
     def get_test_configs(cls) -> List["UpsampleNearest2dTest"]:
         return [
             cls(),
+            cls(dynamic_spatial=True, suffix="_dynamic"),
             # different scale per axis
             cls(shape=(2, 5, 3, 7), scale_factor=(3.0, 2.0), suffix="_anisotropic"),
             # non-integer ratios, which a repeat-based lowering could not express
@@ -3460,6 +3481,21 @@ class UpsampleNearest2dTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(*self.shape),)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.dynamic_spatial:
+            return (torch.randn(self.shape[0], self.shape[1], 6, 10),)
+        return self.create_inputs()
+
+    def get_dynamic_shapes(self) -> Optional[Dict]:
+        if self.dynamic_spatial:
+            return {
+                "x": {
+                    2: Dim("height", min=2, max=16),
+                    3: Dim("width", min=2, max=16),
+                }
+            }
+        return None
 
 
 class Conv1dModel(nn.Module):
@@ -3805,6 +3841,110 @@ class Conv3DTest(OpTestCase):
             self.padding,
             self.bias,
         )
+
+
+@register_test
+class ConvStringPaddingTest(OpTestCase):
+    """Test case for conv{1,2,3}d with padding="valid" or "same".
+
+    These export as aten.conv*d.padding, which decomposes to aten.convolution
+    (plus constant_pad_nd when "same" needs more padding on one side).
+    """
+
+    name = "conv_padding"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        ndim: int = 2,
+        padding: str = "same",
+        kernel_size=3,
+        stride: int = 1,
+        dilation: int = 1,
+        groups: int = 1,
+        dtype: torch.dtype = torch.float32,
+        in_channels: int = 4,
+        out_channels: int = 8,
+        input_size: int = 11,
+    ):
+        self.ndim = ndim
+        self.padding = padding
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.dilation = dilation
+        self.groups = groups
+        self.dtype = dtype
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.input_size = input_size
+        if dtype == torch.bfloat16:
+            self.rtol = 1e-2
+            self.atol = 1e-2
+
+        kernel = kernel_size if isinstance(kernel_size, tuple) else (kernel_size,)
+        # "same" pads one side more when the total padding dilation * (k - 1) is odd.
+        uneven = padding == "same" and any(dilation * (k - 1) % 2 for k in kernel)
+        self.expected_node_counts = {f"Conv{ndim}DNode": 1, "PadNode": int(uneven)}
+
+        parts = [
+            f"conv{ndim}d",
+            padding,
+            "k" + "x".join(str(k) for k in kernel),
+        ]
+        if stride != 1:
+            parts.append(f"s{stride}")
+        if dilation != 1:
+            parts.append(f"d{dilation}")
+        if groups != 1:
+            parts.append(f"g{groups}")
+        if dtype != torch.float32:
+            parts.append(str(dtype).split(".")[-1])
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["ConvStringPaddingTest"]:
+        # Patch embedding: non-overlapping 16x16 patches.
+        patches = {
+            "padding": "valid",
+            "kernel_size": 16,
+            "stride": 16,
+            "in_channels": 3,
+            "out_channels": 16,
+            "input_size": 64,
+        }
+        return [
+            cls(**patches),
+            cls(padding="valid", dilation=2, groups=2),
+            cls(padding="same", kernel_size=3),
+            cls(padding="same", kernel_size=4),
+            cls(padding="same", kernel_size=(4, 3)),
+            cls(padding="same", kernel_size=4, dilation=2),
+            cls(padding="same", kernel_size=4, dilation=3),
+            cls(ndim=1, padding="valid", kernel_size=5, stride=2),
+            cls(ndim=1, padding="same", kernel_size=4),
+            cls(ndim=3, padding="valid", input_size=6),
+            cls(ndim=3, padding="same", kernel_size=2, input_size=6),
+            cls(**patches, dtype=torch.bfloat16),
+            cls(padding="same", kernel_size=4, dtype=torch.bfloat16),
+        ]
+
+    def create_model(self) -> nn.Module:
+        conv = (nn.Conv1d, nn.Conv2d, nn.Conv3d)[self.ndim - 1]
+        model = conv(
+            self.in_channels,
+            self.out_channels,
+            self.kernel_size,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+        )
+        return model.to(self.dtype)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        shape = (2, self.in_channels) + (self.input_size,) * self.ndim
+        return (torch.randn(shape, dtype=self.dtype),)
 
 
 class ConvTranspose1dModel(nn.Module):
@@ -4418,8 +4558,12 @@ class ExpandTest(OpTestCase):
 class IndexModel(nn.Module):
     """Model that indexes a tensor using another tensor."""
 
+    def __init__(self, dim: int = 0):
+        super().__init__()
+        self.dim = dim
+
     def forward(self, x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
-        return x[indices]
+        return x[(slice(None),) * self.dim + (indices,)]
 
 
 @register_test
@@ -4432,26 +4576,35 @@ class IndexTest(OpTestCase):
 
     def __init__(
         self,
-        table_size: int = 100,
-        num_indices: int = 10,
+        table_shape: Tuple[int, ...] = (100,),
+        index_shape: Tuple[int, ...] = (10,),
+        dim: int = 0,
     ):
-        self.table_size = table_size
-        self.num_indices = num_indices
-        self.name = f"index_{table_size}_idx{num_indices}"
+        self.table_shape = table_shape
+        self.index_shape = index_shape
+        self.dim = dim
+        self.name = (
+            f"index_{'x'.join(map(str, table_shape))}"
+            f"_idx{'x'.join(map(str, index_shape))}{f'_dim{dim}' if dim else ''}"
+        )
 
     @classmethod
     def get_test_configs(cls) -> List["IndexTest"]:
         return [
-            cls(table_size=100, num_indices=10),
-            cls(table_size=50, num_indices=5),
+            cls(table_shape=(100,), index_shape=(10,)),
+            cls(table_shape=(50,), index_shape=(5,)),
+            # Each index picks a whole row, unlike gather on the same shapes.
+            cls(table_shape=(5, 3), index_shape=(2, 3)),
+            # One index tensor on a later axis, as in x[:, i].
+            cls(table_shape=(3, 5), index_shape=(3, 2), dim=1),
         ]
 
     def create_model(self) -> nn.Module:
-        return IndexModel()
+        return IndexModel(self.dim)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        x = torch.randn(self.table_size)
-        indices = torch.randint(0, self.table_size, (self.num_indices,))
+        x = torch.randn(self.table_shape)
+        indices = torch.randint(0, self.table_shape[self.dim], self.index_shape)
         return (x, indices)
 
 
@@ -4661,6 +4814,234 @@ class AdvancedIndexLayoutTest(OpTestCase):
             torch.randint(self.input_shape[self.axes[0]], self.index_shape),
             torch.randint(self.input_shape[self.axes[1]], self.index_shape),
         )
+
+
+class GatherModel(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
+        return torch.gather(x, self.dim, index)
+
+
+@register_test
+class GatherTest(OpTestCase):
+    """aten.gather, including an index smaller than the input on another dim."""
+
+    name = "gather"
+
+    def __init__(
+        self, shape, dim, index_shape, dtype=torch.float32, slices=0, dynamic=False
+    ):
+        self.shape = shape
+        self.dim = dim
+        self.index_shape = index_shape
+        self.dtype = dtype
+        self.dynamic = dynamic
+        self.expected_node_counts = {"TakeAlongAxisNode": 1, "SliceNode": slices}
+        self.name = (
+            f"gather_{'x'.join(map(str, shape))}_dim{dim}"
+            f"_idx{'x'.join(map(str, index_shape))}_{str(dtype).split('.')[-1]}"
+            f"{'_dynamic' if dynamic else ''}"
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["GatherTest"]:
+        return [
+            cls((4, 8), 1, (4, 3)),
+            cls((4, 8), 0, (2, 8)),
+            cls((2, 3, 5), -1, (2, 3, 2), torch.bfloat16),
+            cls((4, 8), 0, (2, 3), torch.int32, slices=1),
+            cls((4, 5, 6), 1, (2, 3, 4), slices=2),
+            cls((6, 8), 1, (1, 2), torch.int64, slices=1),
+            # A dynamic input size is not known to match the index size.
+            cls((6, 8), 1, (3, 2), slices=1, dynamic=True),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return GatherModel(self.dim)
+
+    def _inputs(self, shape):
+        x = (torch.randn(shape) * 100).to(self.dtype)
+        index = torch.randint(0, shape[self.dim], self.index_shape)
+        return (x, index)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(self.shape)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if not self.dynamic:
+            return self.create_inputs()
+        return self._inputs((4, *self.shape[1:]))
+
+    def get_dynamic_shapes(self) -> Optional[Dict]:
+        if not self.dynamic:
+            return None
+        return {"x": {0: Dim("rows", min=3, max=8)}, "index": None}
+
+
+class IndexPutModel(nn.Module):
+    def __init__(self, axes: Tuple[int, ...], accumulate: bool):
+        super().__init__()
+        self.axes = axes
+        self.accumulate = accumulate
+
+    def forward(self, x, values, *indices):
+        index_list = [None] * (max(self.axes) + 1)
+        for axis, index in zip(self.axes, indices):
+            index_list[axis] = index
+        return torch.ops.aten.index_put.default(x, index_list, values, self.accumulate)
+
+
+@register_test
+class IndexPutTest(OpTestCase):
+    """aten.index_put with tensor indices, plain and with accumulate.
+
+    Plain index_put leaves the winner of a repeated position undefined, so
+    plain configs index each position once. Accumulate configs repeat
+    positions on purpose, since those must add up.
+    """
+
+    name = "index_put"
+
+    def __init__(
+        self,
+        shape,
+        indices,
+        values_shape,
+        accumulate=False,
+        dtype=torch.float32,
+        dynamic=False,
+        nodes=None,
+    ):
+        self.shape = shape
+        self.indices = indices
+        self.values_shape = values_shape
+        self.accumulate = accumulate
+        self.dtype = dtype
+        self.dynamic = dynamic
+        self.expected_node_counts = {"ScatterNode": 1, **(nodes or {})}
+        self.name = (
+            f"index_put_{'x'.join(map(str, shape))}_axes"
+            f"{''.join(map(str, indices))}_acc{int(accumulate)}"
+            f"_{str(dtype).split('.')[-1]}{'_dynamic' if dynamic else ''}"
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["IndexPutTest"]:
+        rows, cols = torch.tensor([[0], [2], [3]]), torch.tensor([[1, 4, 0, 5]])
+        return [
+            # The MoE dispatch: slots[expert, slot] = x[token].
+            cls(
+                (4, 6, 8),
+                {0: torch.tensor([3, 0, 1, 3, 2]), 1: torch.tensor([0, 2, 5, 1, 4])},
+                (5, 8),
+                dtype=torch.bfloat16,
+            ),
+            # The MoE combine: out.index_add_(0, token, y), with repeats.
+            cls(
+                (6, 8),
+                {0: torch.tensor([1, 4, 1, 0, 4, 1])},
+                (6, 8),
+                True,
+                torch.float16,
+            ),
+            cls((6, 8), {0: torch.tensor([5, 0, 5, 2])}, (4, 8), True, torch.int32),
+            # A scalar value and negative indices.
+            cls(
+                (4, 6),
+                {0: torch.tensor([-1, 0, 2])},
+                (),
+                nodes={"BroadcastToNode": 1},
+            ),
+            cls((6,), {0: torch.tensor([4, 1])}, (2,), dtype=torch.bool),
+            # A leading full slice: the index dims move to the front.
+            cls(
+                (2, 6, 8),
+                {1: torch.tensor([3, 0, 3])},
+                (3, 8),
+                True,
+                torch.bfloat16,
+                nodes={"BroadcastToNode": 1, "TransposeNode": 1},
+            ),
+            cls(
+                (2, 5, 6, 3),
+                {1: torch.tensor([[0, 1], [2, 3]]), 2: torch.tensor([[5, 0], [1, 4]])},
+                (2, 2, 2, 3),
+                nodes={"TransposeNode": 1},
+            ),
+            # A 0-d index after a full slice adds no index dims to move.
+            cls(
+                (2, 6, 4),
+                {1: torch.tensor(3)},
+                (2, 4),
+                nodes={"TransposeNode": 0},
+            ),
+            # Separated indexed axes put the index dims in front already.
+            cls(
+                (2, 4, 3, 5),
+                {
+                    1: torch.tensor([1, 3], dtype=torch.int32),
+                    3: torch.tensor([4, 0], dtype=torch.int32),
+                },
+                (2, 2, 3),
+                nodes={"TransposeNode": 0},
+            ),
+            # Broadcast indices, and values broadcast along the leading dim.
+            cls(
+                (5, 6, 2),
+                {0: rows, 1: cols},
+                (4, 2),
+                nodes={"BroadcastToNode": 1},
+            ),
+            # Values broadcast along their own size-1 dim, as in x[i] = v[:, None].
+            cls(
+                (6, 8),
+                {0: torch.tensor([5, 0, 2])},
+                (3, 1),
+                nodes={"BroadcastToNode": 1},
+            ),
+            cls(
+                (8, 4),
+                {0: torch.tensor([6, 1, 1, 3, 6])},
+                (5, 4),
+                True,
+                dynamic=True,
+                nodes={"BroadcastToNode": 0, "SymSizeNode": 0},
+            ),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return IndexPutModel(tuple(self.indices), self.accumulate)
+
+    def _inputs(self, indices):
+        values_shape = self.values_shape
+        if self.dynamic:
+            n = next(iter(indices.values())).shape[0]
+            values_shape = (n, *values_shape[1:])
+        if self.dtype == torch.bool:
+            # Every write flips a value, so a dropped write cannot match.
+            x, values = torch.zeros(self.shape), torch.ones(values_shape)
+        else:
+            # Small integers add up exactly in any order, even in half precision.
+            x = torch.randint(-8, 8, self.shape)
+            values = torch.randint(-8, 8, values_shape)
+        return (x.to(self.dtype), values.to(self.dtype), *indices.values())
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(self.indices)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if not self.dynamic:
+            return self.create_inputs()
+        return self._inputs({0: torch.tensor([2, 7, 2])})
+
+    def get_dynamic_shapes(self) -> Optional[Dict]:
+        if not self.dynamic:
+            return None
+        n = Dim("n", min=2, max=16)
+        return {"x": None, "values": {0: n}, "indices": ({0: n},)}
 
 
 class IndexUpdateModel(nn.Module):

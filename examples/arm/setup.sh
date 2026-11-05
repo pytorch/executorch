@@ -25,6 +25,7 @@ enable_baremetal_toolchain=1
 target_toolchain=""
 target_toolchains=()
 enable_fvps=1
+fvps=()
 enable_vela=1
 enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
@@ -52,6 +53,8 @@ OPTION_LIST=(
   "--enable-baremetal-toolchain Enable baremetal toolchain setup"
   "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl. Repeat the option to install multiple toolchains."
   "--enable-fvps Enable FVP setup"
+  "--disable-fvps Disable FVP setup"
+  "--fvp Select FVP instead of the default corstone300 and corstone320: corstone300, corstone320, or corstone1000. Repeat the option to install multiple."
   "--enable-vela Enable VELA setup"
   "--enable-model-converter Enable MLSDK model converter setup"
   "--enable-vgf-lib Enable MLSDK vgf library setup"
@@ -125,6 +128,18 @@ function check_options() {
             --enable-fvps)
                 enable_fvps=1
                 shift
+                ;;
+            --disable-fvps)
+                enable_fvps=0
+                shift
+                ;;
+            --fvp)
+                if [[ $# -lt 2 ]]; then
+                    print_usage "$@"
+                    exit 1
+                fi
+                add_fvp "$2"
+                shift 2
                 ;;
             --enable-vela)
                 enable_vela=1
@@ -223,6 +238,22 @@ function add_target_toolchain() {
     target_toolchains+=("${toolchain}")
 }
 
+function add_fvp() {
+    local fvp=$1
+    if [[ "${fvp}" != "corstone300" && "${fvp}" != "corstone320" && "${fvp}" != "corstone1000" ]]; then
+        echo "Error: Unsupported FVP '${fvp}'. Valid options are corstone300, corstone320, corstone1000." >&2
+        exit 1
+    fi
+
+    local selected_fvp
+    for selected_fvp in ${fvps[@]+"${fvps[@]}"}; do
+        if [[ "${selected_fvp}" == "${fvp}" ]]; then
+            return
+        fi
+    done
+    fvps+=("${fvp}")
+}
+
 function setup_root_dir() {
     mkdir -p "${root_dir}"
     root_dir=$(realpath "${root_dir}")
@@ -289,7 +320,7 @@ function warn_if_mlsdk_python_is_untested() {
     py_version="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
     if ! python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'; then
         log_step "mlsdk" \
-            "Warning: Python 3.12 is the recommended minimum for ML SDK 0.10 VGF; detected Python ${py_version}."
+            "Warning: Python 3.12 is the recommended minimum for the VGF flow; detected Python ${py_version}."
         log_step "mlsdk" \
             "Older ExecuTorch-supported Python versions may work, but are not the reference VGF configuration."
     fi
@@ -389,6 +420,14 @@ if [[ $is_script_sourced -eq 0 ]]; then
     fi
     target_toolchains_display="$(IFS=,; echo "${target_toolchains[*]}")"
 
+    if [[ "${#fvps[@]}" -eq 0 ]]; then
+        fvps=("corstone300" "corstone320")
+    elif [[ "${enable_fvps}" -eq 0 ]]; then
+        echo "Error: --fvp cannot be combined with disabled FVP setup." >&2
+        exit 1
+    fi
+    fvps_display="$(IFS=,; echo "${fvps[*]}")"
+
     # Import utils
     source $et_dir/backends/arm/scripts/fvp_utils.sh
     source $et_dir/backends/arm/scripts/toolchain_utils.sh
@@ -424,7 +463,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     # Setup FVP
     if [[ "${enable_fvps}" -eq 1 ]]; then
-        log_step "fvp" "Setting up Arm Fixed Virtual Platforms"
+        log_step "fvp" "Setting up Arm Fixed Virtual Platforms: ${fvps_display}"
         if [[ "${OS}" == "Linux" ]]; then
             check_fvp_eula
             install_fvp

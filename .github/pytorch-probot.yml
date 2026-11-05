@@ -5,7 +5,6 @@ ciflow_push_tags:
 - ciflow/apple
 - ciflow/coreai
 - ciflow/cuda
-- ciflow/cuda-perf
 - ciflow/docker
 - ciflow/metal
 - ciflow/mlx

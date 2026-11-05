@@ -11,7 +11,7 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "linear_fp_input_tile.glslh"
+#include "gemm/tile_utils/linear_fp_input_tile.glslh"
 
 VEC4_T load_fp_input_texel(const Conv2dTensorIndex tidx) {
 #ifdef INPUT_BUFFER

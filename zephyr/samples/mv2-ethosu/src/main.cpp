@@ -269,6 +269,17 @@ void print_top_k(const std::vector<EValue>& outputs) {
         top_indices[j],
         static_cast<double>(top_values[j]));
   }
+
+#if defined(MV2_HOST_TOP1) && defined(MV2_HOST_LABEL)
+  // gen_input.py records what float32 torchvision predicts for this image, so
+  // the class ID can be interpreted without an ImageNet label table on target.
+  ET_LOG(
+      Info,
+      "\nhost float32 reference: class %d (%s) -> device top-1 %s",
+      MV2_HOST_TOP1,
+      MV2_HOST_LABEL,
+      (top_indices[0] == MV2_HOST_TOP1) ? "MATCHES" : "DIFFERS");
+#endif
 }
 
 } // namespace
