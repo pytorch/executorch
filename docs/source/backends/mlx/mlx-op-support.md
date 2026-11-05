@@ -30,10 +30,11 @@ So a bad index never reads or writes memory outside the tensor, but it is still 
 - `gather` returns values from the wrong place.
 - `index_put` overwrites real data at the first or last position, or adds to it with `accumulate=True`. For example, if an 8-slot cache is written as `cache[:, pos] = v` with `pos = torch.tensor([8])`, the write goes to slot 7.
 - `index_add_` lowers to `index_put` with `accumulate=True`, so it treats a bad index the same way, but adds instead of overwriting.
+- `index_copy_` also lowers to `index_put` and overwrites the first or last position, unless it is the last write to a mutable buffer or input in the method.
 
 Other ops that take indices behave differently, for example:
 
-- `index_copy_` into a mutable buffer, and reading `x[i]` with a Python int, raise an error on an index outside `[-size, size - 1]`.
+- An `index_copy_` that is the last write to a mutable buffer or input, and reading `x[i]` with a Python int, raise an error on an index outside `[-size, size - 1]`. But if one `index_copy_` in the method lowers to `index_put`, all of them do, and they clamp.
 - `embedding`, `index_select`, `scatter_add`, and reading `x[idx]` with an index tensor do not check or clamp. An index outside `[-size, size - 1]` there can read or write memory outside the tensor.
 
 To find bad indices, run the model in eager PyTorch on the CPU first, where they raise. Keep run-time indices in range too, for example by stopping generation before a cache position reaches the cache size.
