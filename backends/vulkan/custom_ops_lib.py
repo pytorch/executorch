@@ -1349,3 +1349,122 @@ lib.define(f"{name}(Tensor latent, Tensor scales, int group_size) -> Tensor")
 lib.impl(name, q4gsw_requant_impl, "CompositeExplicitAutograd")
 lib.impl(name, q4gsw_requant_meta, "Meta")
 q4gsw_requant_op = getattr(getattr(torch.ops, namespace), name)
+
+
+###########################
+## conv2d_residual_lrelu ##
+###########################
+
+
+def conv2d_residual_lrelu_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    residual: torch.Tensor,
+    stride,
+    padding,
+    dilation,
+    groups: int,
+    negative_slope: float,
+) -> torch.Tensor:
+    # `leaky_relu(conv2d(input) + residual)`, e.g. a ResConv tail. The direct
+    # conv shader applies the residual add and the LeakyReLU in its epilogue.
+    conv = torch.nn.functional.conv2d(
+        input, weight, bias, stride, padding, dilation, groups
+    )
+    return torch.nn.functional.leaky_relu(conv + residual, negative_slope)
+
+
+name = "conv2d_residual_lrelu"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor bias, Tensor residual, "
+    f"SymInt[] stride, SymInt[] padding, SymInt[] dilation, SymInt groups, "
+    f"float negative_slope) -> Tensor"
+)
+lib.impl(name, conv2d_residual_lrelu_impl, "CompositeExplicitAutograd")
+conv2d_residual_lrelu_op = getattr(getattr(torch.ops, namespace), name)
+
+
+def conv2d_residual_lrelu_out_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    residual: torch.Tensor,
+    stride,
+    padding,
+    dilation,
+    groups: int,
+    negative_slope: float,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    out = conv2d_residual_lrelu_impl(
+        input, weight, bias, residual, stride, padding, dilation, groups, negative_slope
+    )
+    return out
+
+
+name = "conv2d_residual_lrelu.out"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor bias, Tensor residual, "
+    f"SymInt[] stride, SymInt[] padding, SymInt[] dilation, SymInt groups, "
+    f"float negative_slope, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, conv2d_residual_lrelu_out_impl, "CompositeExplicitAutograd")
+
+
+##################
+## conv2d_lrelu ##
+##################
+
+
+def conv2d_lrelu_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride,
+    padding,
+    dilation,
+    groups: int,
+    negative_slope: float,
+) -> torch.Tensor:
+    # `leaky_relu(conv2d(input))`; the LeakyReLU runs in the conv epilogue.
+    conv = torch.nn.functional.conv2d(
+        input, weight, bias, stride, padding, dilation, groups
+    )
+    return torch.nn.functional.leaky_relu(conv, negative_slope)
+
+
+name = "conv2d_lrelu"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor bias, SymInt[] stride, "
+    f"SymInt[] padding, SymInt[] dilation, SymInt groups, float negative_slope) "
+    f"-> Tensor"
+)
+lib.impl(name, conv2d_lrelu_impl, "CompositeExplicitAutograd")
+conv2d_lrelu_op = getattr(getattr(torch.ops, namespace), name)
+
+
+def conv2d_lrelu_out_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride,
+    padding,
+    dilation,
+    groups: int,
+    negative_slope: float,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    out = conv2d_lrelu_impl(
+        input, weight, bias, stride, padding, dilation, groups, negative_slope
+    )
+    return out
+
+
+name = "conv2d_lrelu.out"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor bias, SymInt[] stride, "
+    f"SymInt[] padding, SymInt[] dilation, SymInt groups, float negative_slope, "
+    f"*, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, conv2d_lrelu_out_impl, "CompositeExplicitAutograd")

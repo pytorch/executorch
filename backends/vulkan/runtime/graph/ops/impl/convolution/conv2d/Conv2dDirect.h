@@ -31,7 +31,12 @@ void conv2d_direct_impl(
     const bool clamp_out,
     const float out_min_val,
     const float out_max_val,
-    const bool force_masked = false);
+    const bool force_masked = false,
+    // With `residual` the output is leaky_relu(conv + residual, neg_slope);
+    // with `lrelu` alone it is leaky_relu(conv, neg_slope).
+    const ValueRef residual = kDummyValueRef,
+    const float neg_slope = 0.0f,
+    const bool lrelu = false);
 
 // Eligibility for the tiled shaders' workgroup tuning and the im2col bypass.
 bool can_use_fast_tiled_conv2d(
