@@ -261,13 +261,6 @@ def export_dflash(
             activation_dtype=activation_dtype,
         )
 
-    if (
-        draft_model is not None
-        and use_offgraph_kv_cache
-        and backend == "cuda"
-        and vision_model is not None
-    ):
-        raise ValueError("the CUDA batching DFlash export does not support vision yet")
     if use_offgraph_kv_cache and backend == "cuda":
         from executorch.examples.models.muse_glimmer.export.export_solo import (
             DEFAULT_FORWARD_SIZES,
