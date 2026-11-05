@@ -66,6 +66,8 @@ static void train(
   const int steps = config.value("steps", kDefaultSteps);
   const float lr = config.value("lr", kDefaultLr);
   const int log_every = config.value("log_every", kDefaultLogEvery);
+  ET_CHECK_MSG(
+      log_every > 0, "config.json's log_every must be > 0, got %d.", log_every);
 
   TensorPtr x = make_random_tensor(x_shape, rng);
   TensorPtr target = make_random_tensor(target_shape, rng);
@@ -86,6 +88,16 @@ static void train(
 
     for (size_t i = 0; i < num_weights; i++) {
       const auto& grad = outputs->at(2 + i).toTensor();
+      ET_CHECK_MSG(
+          grad.scalar_type() == weights[i]->scalar_type(),
+          "Gradient %zu dtype mismatch with its weight.",
+          i);
+      ET_CHECK_MSG(
+          grad.numel() == weights[i]->numel(),
+          "Gradient %zu numel (%zd) does not match its weight's numel (%zd).",
+          i,
+          grad.numel(),
+          weights[i]->numel());
       float* w = weights[i]->mutable_data_ptr<float>();
       const float* g = grad.const_data_ptr<float>();
       const size_t n = weights[i]->numel();

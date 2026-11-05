@@ -36,6 +36,14 @@ std::unordered_map<std::string, TensorPtr> load_safetensors(
   file.read(reinterpret_cast<char*>(&header_size), sizeof(header_size));
   ET_CHECK_MSG(file.good(), "Failed to read header size from %s", path.c_str());
 
+  const auto header_start = file.tellg();
+  file.seekg(0, std::ios::end);
+  ET_CHECK_MSG(
+      header_size <= static_cast<uint64_t>(file.tellg() - header_start),
+      "Corrupt safetensors header in %s: header size exceeds file size.",
+      path.c_str());
+  file.seekg(header_start);
+
   std::string header_bytes(header_size, '\0');
   file.read(header_bytes.data(), static_cast<std::streamsize>(header_size));
   ET_CHECK_MSG(file.good(), "Failed to read header from %s", path.c_str());
