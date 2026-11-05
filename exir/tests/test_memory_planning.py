@@ -25,7 +25,7 @@ except ModuleNotFoundError:
     del logging
 
 import torch
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, memory, to_edge
 from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.error import InternalError
@@ -33,6 +33,7 @@ from executorch.exir.inplace_aliasing import is_inplace_node
 from executorch.exir.memory_planning import (
     _do_user_inputs_exist,
     _extend_storage_base_lifetimes,
+    _reserve_memory_for_views,
     apply_algo,
     collect_specs_from_nodes,
     filter_nodes,
@@ -51,9 +52,13 @@ from executorch.exir.passes import (  # noqa
     ToOutVarPass,
 )
 from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
+from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.schema import DeviceType
 from executorch.exir.tensor import TensorSpec
+from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
+    _load_for_executorch_from_buffer,
+)
 from functorch.experimental.control_flow import map as torch_map
 from parameterized import parameterized
 from torch import nn
@@ -2115,3 +2120,67 @@ class TestInPlaceElemWise(unittest.TestCase):
             if node.op == "call_function"
         )
         self.assertFalse(has_inplace)
+
+
+class TestViewPlanning(unittest.TestCase):
+    def test_view_planned_larger_than_base_loads(self) -> None:
+        class PadThenSplit(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                h = x.shape[1]
+                x = torch.nn.functional.pad(x, (0, 0, 0, (8 - h % 8) % 8))
+                # These run in place, so their results live in the product's memory.
+                x = torch.softmax(torch.softmax(x * 2, -1), -1)
+                windows = x.view(x.shape[0], x.shape[1] // 8, -1, x.shape[2])
+                return windows.sum(-1) + x.view(-1).sum()
+
+        model = PadThenSplit()
+        h = torch.export.Dim("h", min=1, max=16) * 4
+        program = to_edge(
+            export(model, (torch.randn(1, 20, 4),), dynamic_shapes=({1: h},))
+        ).to_executorch(
+            ExecutorchBackendConfig(
+                reinplace_extra_ops=frozenset({exir_ops.edge.aten._softmax.default})
+            )
+        )
+
+        views = [
+            node
+            for node in program.exported_program().graph_module.graph.nodes
+            if node.op == "call_function" and node.target == memory.view
+        ]
+        self.assertEqual(len(views), 2)
+        # Each dim of the windows view is bounded on its own, so it is planned
+        # larger than the tensor it points into, which must make room.
+        base = views[0].args[0].meta["spec"]
+        self.assertIsNotNone(base.storage_base)
+        self.assertGreater(views[0].meta["spec"].nbytes(), base.nbytes())
+        for view in views:
+            self.assertGreaterEqual(base.allocated_memory, view.meta["spec"].nbytes())
+
+        runtime = _load_for_executorch_from_buffer(program.buffer)
+        for size in (4, 64):
+            x = torch.randn(1, size, 4)
+            torch.testing.assert_close(
+                runtime.forward([x])[0], model(x), rtol=1e-4, atol=1e-4
+            )
+
+    def test_reserves_room_up_the_storage_chain(self) -> None:
+        root = TensorSpec.from_tensor(torch.empty(48, dtype=torch.uint8))
+        storage = TensorSpec.from_tensor(torch.empty(32, dtype=torch.uint8))
+        storage.storage_base = root
+        storage.storage_base_offset = 16
+        base = TensorSpec.from_tensor(torch.empty(16, dtype=torch.uint8))
+        base.storage_base = storage
+        base.storage_base_offset = 16
+        view = _ViewSpec(base, [16])
+        view.shape = [64]
+
+        graph = Graph()
+        node = graph.call_function(memory.view, (graph.placeholder("base"), [64]))
+        node.meta["spec"] = view
+        graph.output(())
+        _reserve_memory_for_views(GraphModule({}, graph))
+
+        self.assertEqual(base.allocated_memory, 64)
+        self.assertEqual(storage.allocated_memory, 16 + 64)
+        self.assertEqual(root.allocated_memory, 16 + 16 + 64)
