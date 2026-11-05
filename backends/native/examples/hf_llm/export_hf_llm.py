@@ -12,12 +12,16 @@ adapter from ``transformers.integrations.executorch``, and exports the
 ``(input_ids [1, T], cache_position [T])`` signature. Reports which operators
 the native partitioner leaves behind. ``--gguf`` takes the weights from a GGUF
 file of an architecture ``gguf_hf`` supports instead, keeping its quantized blocks
-packed in the PTN. ``--samples`` appends a ``golden`` sample set: eager logits
+packed in the PTN. ``--offgraph_cache`` exports attention as
+``kvcache::update_and_attend`` with no KV cache in the graph; the runner owns the
+cache. ``--samples`` appends a ``golden`` sample set: eager logits
 for a prefill and a few greedy decode steps per prompt.
 """
 
 import argparse
+import contextlib
 import logging
+from collections.abc import Iterator
 
 import torch
 import torch.nn as nn
@@ -27,6 +31,12 @@ from executorch.backends.native.examples.hf_llm.gguf_hf import (
 )
 from executorch.backends.native.examples.hf_llm.hf_utils import report_lowering
 from executorch.exir.native import Call, Sample, SampleSet, to_native, write_samples
+from executorch.extension.llm.cache.hf_attention import register_offgraph_attention
+from executorch.extension.llm.cache.reference_cache import (
+    CacheConfig,
+    SequenceReferenceCache,
+)
+from executorch.extension.llm.cache.update_and_attend import REGISTRY
 from executorch.extension.llm.export.load import assign_one, iter_checkpoint, RawIter
 from torch.export import Dim, export
 from torchao.quantization import (
@@ -53,8 +63,15 @@ from transformers.masking_utils import (
 )
 
 
+_OFFGRAPH_ATTENTION = "offgraph"
+
+
 def _load(
-    path: str, layers: int, random_weights: bool, empty_weights: bool
+    path: str,
+    layers: int,
+    random_weights: bool,
+    empty_weights: bool,
+    offgraph_cache: bool = False,
 ) -> PreTrainedModel:
     config = AutoConfig.from_pretrained(path)
     text_config = config.get_text_config()
@@ -62,7 +79,10 @@ def _load(
         text_config.num_hidden_layers = layers
         if getattr(text_config, "layer_types", None):
             text_config.layer_types = text_config.layer_types[:layers]
-    kwargs = {"torch_dtype": torch.float32, "attn_implementation": "sdpa"}
+    if offgraph_cache:
+        register_offgraph_attention(_OFFGRAPH_ATTENTION)
+    attn = _OFFGRAPH_ATTENTION if offgraph_cache else "sdpa"
+    kwargs = {"torch_dtype": torch.float32, "attn_implementation": attn}
     if empty_weights:
         with init_empty_weights():
             model = AutoModelForCausalLM.from_config(config, **kwargs)
@@ -185,6 +205,77 @@ class LastTokenLM(nn.Module):
             logits_to_keep=1,
         ).logits
 
+    def reset_cache(self) -> None:
+        self.cache.reset()
+
+    def cache_scope(self) -> contextlib.AbstractContextManager:
+        return contextlib.nullcontext()
+
+
+class OffGraphLastTokenLM(nn.Module):
+    """Last-position logits with the KV cache outside the graph.
+
+    Each attention layer emits ``kvcache::update_and_attend`` over this step's
+    K/V. Eager calls (golden samples) run inside ``cache_scope()``, which makes
+    a reference cache of ``capacity`` positions the active one.
+    """
+
+    def __init__(self, model: PreTrainedModel, capacity: int) -> None:
+        super().__init__()
+        self.model = model
+        config = model.config.get_text_config()
+        # The cache op attends every position it holds, so a windowed layer
+        # would silently attend past its window. Without layer_types (e.g.
+        # Mistral), HF windows every layer when sliding_window is set.
+        layer_types = getattr(config, "layer_types", None)
+        if (
+            "sliding_attention" in layer_types
+            if layer_types
+            else getattr(config, "sliding_window", None) is not None
+        ):
+            raise ValueError(
+                "--offgraph_cache does not support sliding-window attention "
+                f"layers ({config.model_type})"
+            )
+        head_dim = (
+            getattr(config, "head_dim", None)
+            or config.hidden_size // config.num_attention_heads
+        )
+        self._reference = SequenceReferenceCache(
+            CacheConfig(
+                n_layers=config.num_hidden_layers,
+                n_kv_heads=config.num_key_value_heads,
+                head_dim=head_dim,
+                capacity=capacity,
+            )
+        )
+        self._key = f"export_hf_llm/{id(self)}"
+
+    def forward(
+        self, input_ids: torch.Tensor, cache_position: torch.Tensor
+    ) -> torch.Tensor:
+        return self.model(
+            input_ids=input_ids,
+            cache_position=cache_position,
+            # The model would derive positions from its (absent) cache's length.
+            position_ids=cache_position.unsqueeze(0),
+            use_cache=False,
+            past_key_values=None,
+            logits_to_keep=1,
+        ).logits
+
+    def reset_cache(self) -> None:
+        self._reference.reset()
+
+    @contextlib.contextmanager
+    def cache_scope(self) -> Iterator[None]:
+        REGISTRY.install(self._key, self._reference)
+        try:
+            with REGISTRY.active(self._key):
+                yield
+        finally:
+            REGISTRY.uninstall(self._key)
+
 
 # TEMPORARY: use torchao-based 8da4w quantization until PTN export has its own
 # quantization flow.
@@ -238,15 +329,17 @@ def _sample_prompts(
 
 
 def golden_samples(
-    wrapper: LastTokenLM, prompts: list[list[int]], decode_steps: int
+    wrapper: LastTokenLM | OffGraphLastTokenLM,
+    prompts: list[list[int]],
+    decode_steps: int,
 ) -> SampleSet:
     """Per tokenized prompt, from an empty cache: a prefill call, then
     `decode_steps` calls each fed the previous call's eager argmax."""
     quantized = any(isinstance(p, TorchAOBaseTensor) for p in wrapper.parameters())
     samples = []
-    with torch.no_grad():
+    with torch.no_grad(), wrapper.cache_scope():
         for ids in prompts:
-            wrapper.cache.reset()
+            wrapper.reset_cache()
             input_ids = torch.tensor([ids], dtype=torch.long)
             positions = torch.arange(len(ids), dtype=torch.long)
             calls = []
@@ -256,7 +349,7 @@ def golden_samples(
                 input_ids = logits[:, -1].argmax(dim=-1, keepdim=True)
                 positions = positions[-1:] + 1
             samples.append(Sample(calls))
-    wrapper.cache.reset()
+    wrapper.reset_cache()
     tol = _QUANTIZED_TOL if quantized else _FLOAT_TOL
     return SampleSet(samples, source="eager/cpu", tol=tol)
 
@@ -286,6 +379,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--kv_cache_dtype", choices=["fp32", "fp16"], default="fp32")
     parser.add_argument(
+        "--offgraph_cache",
+        action="store_true",
+        help="Export attention as kvcache::update_and_attend with no KV cache in "
+        "the graph; the runner owns the cache and sets its capacity and dtype.",
+    )
+    parser.add_argument(
         "--samples",
         type=int,
         default=0,
@@ -300,6 +399,13 @@ def _parse_args() -> argparse.Namespace:
         parser.error(
             "--gguf loads every weight; it excludes --layers, --random_weights "
             "and --quantize"
+        )
+    if args.offgraph_cache and (
+        args.max_context_length or args.kv_cache_dtype != "fp32"
+    ):
+        parser.error(
+            "--offgraph_cache leaves the KV cache to the runner; it excludes "
+            "--max_context_length and --kv_cache_dtype"
         )
     if args.max_seq_length < 7:
         parser.error(
@@ -323,14 +429,23 @@ def main() -> None:
     torch.manual_seed(0)
 
     model = _load(
-        args.model, args.layers, args.random_weights, empty_weights=bool(args.gguf)
+        args.model,
+        args.layers,
+        args.random_weights,
+        empty_weights=bool(args.gguf),
+        offgraph_cache=args.offgraph_cache,
     )
     if args.gguf:
         load_gguf(model, args.gguf)
     if args.quantize == "8da4w":
         _quantize_8da4w(model, args.group_size, args.embedding_group_size)
-    kv_cache_dtype = torch.float16 if args.kv_cache_dtype == "fp16" else torch.float32
-    wrapper = LastTokenLM(model, cache_len, kv_cache_dtype).eval()
+    if args.offgraph_cache:
+        wrapper = OffGraphLastTokenLM(model, cache_len).eval()
+    else:
+        kv_cache_dtype = (
+            torch.float16 if args.kv_cache_dtype == "fp16" else torch.float32
+        )
+        wrapper = LastTokenLM(model, cache_len, kv_cache_dtype).eval()
 
     input_ids = torch.zeros((1, 6), dtype=torch.long)
     cache_position = torch.arange(input_ids.shape[1], dtype=torch.long)
@@ -351,3 +466,7 @@ def main() -> None:
         samples = golden_samples(wrapper, prompts, _DECODE_STEPS)
         write_samples(args.output, "golden", samples)
         print(f"wrote {len(prompts)} golden samples")
+
+
+if __name__ == "__main__":
+    main()
