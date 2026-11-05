@@ -875,6 +875,35 @@ class TestProgramManagers(unittest.TestCase):
                         model(x, shift, gain),
                     )
 
+    def test_to_edge_transform_and_lower_keeps_complex_tensors_of_its_input(self):
+        class Rope(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                angles = torch.outer(torch.arange(8.0), torch.rand(4))
+                freqs = torch.polar(torch.ones_like(angles), angles)
+                # The pass writes both to the constants and to the state of
+                # the program it lowers.
+                self.register_buffer("freqs", freqs, persistent=False)
+                self.phase = torch.polar(torch.ones(4), torch.rand(4))
+                self.register_buffer("turn", torch.polar(torch.ones(4), torch.rand(4)))
+
+            def forward(self, x):
+                pairs = torch.view_as_complex(x.unflatten(-1, (-1, 2)))
+                rotated = pairs * self.freqs * self.phase * self.turn
+                return torch.view_as_real(rotated).flatten(-2)
+
+        model = Rope()
+        x = torch.randn(2, 8, 8)
+        exported = export(model, (x,))
+
+        def tensors():
+            return [*exported.constants.values(), *exported.state_dict.values()]
+
+        self.assertEqual(len(tensors()), 3)
+        to_edge_transform_and_lower(exported)
+        self.assertTrue(all(t.is_complex() for t in tensors()))
+        torch.testing.assert_close(exported.module()(x), model(x))
+
     def test_to_edge_transform_and_lower_keeps_complex_kernels(self):
         class Spectrum(torch.nn.Module):
             def forward(self, x):
