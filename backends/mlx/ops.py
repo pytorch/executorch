@@ -134,6 +134,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     RoundNode,
     RsqrtNode,
     ScatterAddNode,
+    ScatterNode,
     SdpaNode,
     SigmoidNode,
     SignNode,
@@ -2406,6 +2407,53 @@ def _roll_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+def _constant_mask_as_positions(
+    P: MLXProgramBuilder, n: Node, non_none: List[Tuple[int, Slot, Any]]
+) -> List[Tuple[int, Slot, Any]]:
+    """Replace a constant boolean index of aten.index.Tensor with its positions.
+
+    The MLX runtime gathers only with integer indices. A boolean mask that is
+    a constant of the program, used as the only index, becomes one integer
+    index per mask dimension. Any other boolean index is refused, so the CPU
+    runs it.
+    """
+    masks = [
+        (axis, idx)
+        for axis, idx, val in non_none
+        if isinstance(val, torch.Tensor) and val.dtype == torch.bool
+    ]
+    if not masks:
+        return non_none
+    axis, mask = masks[0]
+    mask_node = n.args[1][axis]
+    # The partitioner sees parameters and persistent buffers as fake tensors,
+    # so only a mask in ep.constants has values it can read.
+    if (
+        len(non_none) > 1
+        or mask.id_space != IdSpace.Constant
+        or (target := P.get_placeholder_target(mask_node)) not in P.ep.constants
+    ):
+        raise NotImplementedError(
+            "aten.index.Tensor: the MLX runtime gathers only with integer "
+            "indices, so only a constant boolean mask used as the only index "
+            "is lowered"
+        )
+    value = P.ep.constants[target]
+    if not value.any():
+        raise NotImplementedError(
+            "aten.index.Tensor: an all-false mask selects nothing, and the MLX "
+            "runtime cannot write an empty output"
+        )
+    return [
+        (
+            axis + i,
+            P.make_or_get_constant(f"{target}_positions_{i}", positions),
+            positions,
+        )
+        for i, positions in enumerate(value.nonzero(as_tuple=True))
+    ]
+
+
 @REGISTRY.register(target=[torch.ops.aten.index.Tensor])
 def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     args = P.args(n)
@@ -2422,40 +2470,28 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     x_ndim = len(x_meta.shape) if x_meta is not None else None
 
     # Filter out None indices and track which axes they correspond to
-    non_none = [(i, idx) for i, idx in enumerate(idx_list) if idx is not None]
+    non_none = [
+        (i, idx, n.args[1][i].meta.get("val"))
+        for i, idx in enumerate(idx_list)
+        if idx is not None
+    ]
 
     if len(non_none) == 0:
         raise ValueError("aten.index.Tensor: all indices are None")
 
+    non_none = _constant_mask_as_positions(P, n, non_none)
+
     if len(non_none) == 1:
-        axis, idx = non_none[0]
-        idx_meta = n.args[1][axis].meta.get("val")
-        ndim_match = (
-            x_meta is not None
-            and idx_meta is not None
-            and len(x_meta.shape) == len(idx_meta.shape)
-        )
+        axis, idx, _ = non_none[0]
         out = P.make_or_get_slot(n)
-        if ndim_match:
-            # Same ndim: use TakeAlongAxisNode (element-wise gather)
-            P.emit(
-                TakeAlongAxisNode(
-                    x=P.slot_to_tid(x),
-                    indices=P.slot_to_tid(idx),
-                    out=P.slot_to_tid(out),
-                    axis=axis,
-                )
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(x),
+                index=IntOrVidOrTid.from_tid(P.slot_to_tid(idx)),
+                out=P.slot_to_tid(out),
+                axis=axis,
             )
-        else:
-            # Different ndim (e.g. 1D indices into 3D tensor): use TakeNode
-            P.emit(
-                TakeNode(
-                    x=P.slot_to_tid(x),
-                    index=IntOrVidOrTid.from_tid(P.slot_to_tid(idx)),
-                    out=P.slot_to_tid(out),
-                    axis=axis,
-                )
-            )
+        )
         return out
 
     # Multi-index: use GatherNode (maps to mlx::gather)
@@ -2464,8 +2500,8 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             "aten.index.Tensor with multiple indices requires input shape metadata"
         )
 
-    indices = [P.slot_to_tid(idx) for _, idx in non_none]
-    axes = [i for i, _ in non_none]
+    indices = [P.slot_to_tid(idx) for _, idx, _ in non_none]
+    axes = [i for i, _, _ in non_none]
 
     # slice_sizes: 1 for indexed axes, full static size for non-indexed axes.
     indexed_axes = set(axes)
@@ -2567,6 +2603,62 @@ def _index_select_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.gather.default])
+def _gather_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.gather: pick elements of x along dim at the index positions.
+
+    Maps to mlx::take_along_axis, which broadcasts the index against x on the
+    other axes. aten.gather instead reads only the first index.size(d) entries
+    of x there, so x is sliced to the index shape first where the two differ.
+
+    Unlike eager, an out-of-range index does not raise: the runtime clamps it
+    to the first or last element so the read stays inside x.
+    """
+    args = P.args(n)
+    require_args(args, 3, 3, "aten.gather")
+    # sparse_grad only changes the backward pass.
+    require_kwargs(P.kwargs(n), {"sparse_grad"}, "aten.gather")
+    x, dim, index = args
+    x_shape = n.args[0].meta["val"].shape
+    index_shape = n.args[2].meta["val"].shape
+    if len(x_shape) == 0 or len(index_shape) != len(x_shape):
+        raise NotImplementedError(
+            f"aten.gather: input of rank {len(x_shape)} with index of rank "
+            f"{len(index_shape)} is not supported"
+        )
+    require_static_int(dim, "dim", "aten.gather")
+    axis = dim % len(x_shape)
+    for d, (x_size, index_size) in enumerate(zip(x_shape, index_shape)):
+        if d == axis or statically_known_true(x_size == index_size):
+            continue
+        if not isinstance(index_size, int):
+            raise NotImplementedError(
+                f"aten.gather: index size {index_size} on dim {d} may differ "
+                f"from the input size {x_size}"
+            )
+        _, sliced = P.make_tmp_slot()
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(sliced),
+                axis=IntOrVid.from_literal(d),
+                start=IntOrVid.from_literal(0),
+                stop=IntOrVid.from_literal(index_size),
+            )
+        )
+        x = sliced
+    out = P.make_or_get_slot(n)
+    P.emit(
+        TakeAlongAxisNode(
+            x=P.slot_to_tid(x),
+            indices=P.slot_to_tid(index),
+            out=P.slot_to_tid(out),
+            axis=axis,
+        )
+    )
+    return out
+
+
 @REGISTRY.register(target=[torch.ops.aten.slice_scatter.default])
 def _slice_scatter_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.slice_scatter: return a copy of self with self[dim][start:end:step] = src."""
@@ -2614,11 +2706,15 @@ def _scatter_add_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     scatter_add(self, dim, index, src) -> Tensor
 
-    Maps to mlx::scatter_add(a, indices, updates, axis).
+    Maps to mlx::scatter_add_axis(a, indices, updates, axis).
     """
     args = P.args(n)
     require_args(args, 4, 4, "aten.scatter_add")
     require_kwargs(P.kwargs(n), set(), "aten.scatter_add")
+    dtype = n.meta["val"].dtype
+    # MLX's Metal scatter kernels reject 8-byte element types at run time.
+    if dtype.itemsize == 8:
+        raise NotImplementedError(f"aten.scatter_add on {dtype} is not supported")
     x, dim, indices, src = args
     out = P.make_or_get_slot(n)
     P.emit(
@@ -2628,6 +2724,114 @@ def _scatter_add_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             updates=P.slot_to_tid(src),
             out=P.slot_to_tid(out),
             axis=dim,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.index_put.default])
+def _index_put_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.index_put: write values into self at the indexed positions.
+
+    index_put(self, indices, values, accumulate=False) -> Tensor
+
+    Maps to mlx::scatter, or mlx::scatter_add when accumulate is set. MLX takes
+    the updates as broadcast(indices).shape followed by one slice of self. So
+    the values are broadcast to the shape self[indices] has in PyTorch, the
+    index dimensions are moved to the front, and a unit dimension is inserted
+    for each indexed axis.
+
+    Unlike eager, an out-of-range index does not raise: the runtime clamps it
+    to the first or last slice so the write stays inside self.
+    """
+    args = P.args(n)
+    require_args(args, 3, 4, "aten.index_put")
+    require_kwargs(P.kwargs(n), set(), "aten.index_put")
+    x, indices, values = args[:3]
+    accumulate = args[3] if len(args) > 3 else False
+    dtype = n.meta["val"].dtype
+    # MLX's Metal scatter kernels reject 8-byte element types at run time.
+    if dtype.itemsize == 8:
+        raise NotImplementedError(f"aten.index_put on {dtype} is not supported")
+    if accumulate and dtype == torch.bool:
+        raise NotImplementedError("aten.index_put with accumulate on bool")
+
+    index_vals = [i.meta["val"] for i in n.args[1] if i is not None]
+    axes = [d for d, i in enumerate(n.args[1]) if i is not None]
+    if not axes:
+        raise NotImplementedError("aten.index_put: all indices are None")
+    if any(i.dtype not in (torch.int32, torch.int64) for i in index_vals):
+        raise NotImplementedError(
+            "aten.index_put: only int32 and int64 index tensors are supported"
+        )
+
+    # PyTorch puts the index dimensions where the indexed axes were when those
+    # axes are adjacent, and in front otherwise.
+    x_shape = list(n.args[0].meta["val"].shape)
+    index_shape = list(torch.broadcast_shapes(*(i.shape for i in index_vals)))
+    rest = [size for d, size in enumerate(x_shape) if d not in axes]
+    lead = axes[0] if axes == list(range(axes[0], axes[-1] + 1)) else 0
+    target = rest[:lead] + index_shape + rest[lead:]
+
+    values_shape = list(n.args[2].meta["val"].shape)
+    offset = len(target) - len(values_shape)
+    if offset or not all(
+        statically_known_true(v == t) for v, t in zip(values_shape, target)
+    ):
+        shape = []
+        for d, size in enumerate(target):
+            if d >= offset and statically_known_true(values_shape[d - offset] == size):
+                shape.append(IntOrVid.from_literal(-1))
+            elif isinstance(size, int):
+                shape.append(IntOrVid.from_literal(size))
+            else:
+                raise NotImplementedError(
+                    f"aten.index_put: cannot broadcast values to dynamic size {size}"
+                )
+        _, broadcast = P.make_tmp_slot()
+        P.emit(
+            BroadcastToNode(
+                x=P.slot_to_tid(values),
+                out=P.slot_to_tid(broadcast),
+                shape=shape,
+            )
+        )
+        values = broadcast
+
+    if lead and index_shape:
+        index_ndim = len(index_shape)
+        _, transposed = P.make_tmp_slot()
+        P.emit(
+            TransposeNode(
+                x=P.slot_to_tid(values),
+                out=P.slot_to_tid(transposed),
+                perm=list(range(lead, lead + index_ndim))
+                + list(range(lead))
+                + list(range(lead + index_ndim, len(target))),
+            )
+        )
+        values = transposed
+
+    for axis in axes:
+        _, expanded = P.make_tmp_slot()
+        P.emit(
+            ExpandDimsNode(
+                x=P.slot_to_tid(values),
+                out=P.slot_to_tid(expanded),
+                axis=len(index_shape) + axis,
+            )
+        )
+        values = expanded
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        ScatterNode(
+            x=P.slot_to_tid(x),
+            indices=[P.slot_to_tid(i) for i in indices if i is not None],
+            updates=P.slot_to_tid(values),
+            out=P.slot_to_tid(out),
+            axes=axes,
+            reduce="sum" if accumulate else "none",
         )
     )
     return out
@@ -3683,19 +3887,16 @@ def _convolution_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     Args layout: convolution(input, weight, bias, stride, padding, dilation,
                              transposed, output_padding, groups)
 
-    This op appears when PyTorch doesn't decompose to specific conv ops
-    (e.g. grouped conv_transpose).
+    Conv ops without a handler decompose to this op. For example
+    conv2d(padding="valid") arrives as convolution with zero padding, and
+    padding="same" arrives as constant_pad_nd + convolution when one side needs
+    more padding than the other. Grouped conv_transpose arrives here too.
     """
     raw_args = n.args
     x_node, w_node = raw_args[0], raw_args[1]
     bias_node = raw_args[2] if len(raw_args) > 2 else None
     transposed = raw_args[6] if len(raw_args) > 6 else False
     groups = raw_args[8] if len(raw_args) > 8 else 1
-
-    if not transposed:
-        raise ValueError(
-            "aten.convolution with transposed=False: use aten.conv{1,2,3}d instead"
-        )
 
     x_meta = x_node.meta.get("val")
     if x_meta is None:
@@ -3705,6 +3906,12 @@ def _convolution_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     stride = _normalize_conv_param(raw_args[3] if len(raw_args) > 3 else 1, ndim, 1)
     padding = _normalize_conv_param(raw_args[4] if len(raw_args) > 4 else 0, ndim, 0)
     dilation = _normalize_conv_param(raw_args[5] if len(raw_args) > 5 else 1, ndim, 1)
+
+    if not transposed:
+        return _emit_conv(
+            P, n, x_node, w_node, bias_node, stride, padding, dilation, groups, ndim
+        )
+
     output_padding = _normalize_conv_param(
         raw_args[7] if len(raw_args) > 7 else 0, ndim, 0
     )

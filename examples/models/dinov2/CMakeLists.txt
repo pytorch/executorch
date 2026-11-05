@@ -90,8 +90,10 @@ if(MSVC)
   add_custom_command(
     TARGET dinov2_runner
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
-            $<TARGET_FILE_DIR:dinov2_runner>
-    COMMENT "Copying aoti_cuda_shims.dll to dinov2_runner directory"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:dinov2_runner>
+      $<TARGET_FILE_DIR:dinov2_runner>
+    COMMENT "Copying runtime DLLs to dinov2_runner directory"
+    COMMAND_EXPAND_LISTS
   )
 endif()

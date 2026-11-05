@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
     runtime.cxx_library(
@@ -9,10 +9,6 @@ def define_common_targets():
         ],
         visibility = ["//executorch/backends/native/..."],
     )
-
-    # Host-only for now; Android integration is not wired up.
-    if is_xplat():
-        return
 
     runtime.cxx_library(
         name = "vulkan_passes",
@@ -40,6 +36,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/backends/native/runtime:reference_gguf_kquant",
+            "//executorch/backends/native/runtime/graph:aliases",
             "//executorch/backends/native/runtime/graph:graph_utils",
         ],
         visibility = ["PUBLIC"],

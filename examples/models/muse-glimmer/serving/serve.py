@@ -293,10 +293,7 @@ class MuseGlimmerServingChat(ServingChat):
                 if requested > 0 and count + requested > self._max_context:
                     raise ContextLengthExceeded(count, self._max_context, requested)
 
-        if self._tools_active(req):
-            gen_stops = self._stops + self._request_stops(req)
-        else:
-            gen_stops = self._stops + self._content_specials + self._request_stops(req)
+        gen_stops = self._generation_stops(req)
         options = self._options(req, gen_stops)
         preamble = self._template.generation_preamble(
             template_kwargs, tools=template_tools

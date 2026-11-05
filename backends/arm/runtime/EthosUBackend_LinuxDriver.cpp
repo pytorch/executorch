@@ -10,6 +10,8 @@
  * ethos-u-linux-driver-stack for hardware interaction.
  */
 
+#include <unistd.h>
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -49,6 +51,7 @@ struct LinuxDriverOptions {
 
 struct PlatformState {
   LinuxDriverOptions options;
+  bool warned_ignored_planned_scratch = false;
   std::shared_ptr<EthosU::Network> network;
   std::shared_ptr<EthosU::Buffer> constant_buffer;
   std::shared_ptr<EthosU::Buffer> intermediate_buffer;
@@ -217,7 +220,17 @@ Error invoke_linux_driver(
           ET_LOG(Error, "Missing input buffer for index %d", i);
           return Error::InvalidState;
         }
-        state.ifm_buffers[i]->write(const_cast<char*>(src), copy_size);
+        const VelaIO& io = handles.inputs->io[i];
+        const auto& ifm = state.ifm_buffers.front();
+        if (io.offset < 0 || io.offset + copy_size > ifm->size()) {
+          ET_LOG(Error, "Input %d does not fit the Ethos-U input region", i);
+          return Error::InvalidState;
+        }
+        if (lseek(ifm->getFd(), io.offset, SEEK_SET) == -1) {
+          ET_LOG(Error, "Failed to seek to input %d", i);
+          return Error::InvalidState;
+        }
+        ifm->write(const_cast<char*>(src), copy_size);
       }
     }
 
@@ -287,7 +300,17 @@ Error invoke_linux_driver(
         ET_LOG(Error, "Missing output buffer for index %d", i);
         return Error::InvalidState;
       }
-      state.ofm_buffers[i]->read(dst, copy_size);
+      const VelaIO& io = handles.outputs->io[i];
+      const auto& ofm = state.ofm_buffers.front();
+      if (io.offset < 0 || io.offset + copy_size > ofm->size()) {
+        ET_LOG(Error, "Output %d does not fit the Ethos-U output region", i);
+        return Error::InvalidState;
+      }
+      if (lseek(ofm->getFd(), io.offset, SEEK_SET) == -1) {
+        ET_LOG(Error, "Failed to seek to output %d", i);
+        return Error::InvalidState;
+      }
+      ofm->read(dst, copy_size);
     }
   } catch (const std::exception& e) {
     ET_LOG(Error, "Ethos-U Linux driver invocation failed: %s", e.what());
@@ -304,6 +327,16 @@ size_t vela_io_bytes(const VelaIO& io) {
     count *= static_cast<size_t>(io.shape[i]);
   }
   return count * static_cast<size_t>(io.elem_size);
+}
+
+// Get the buffer size needed to hold every IO at its Vela offset.
+size_t vela_region_bytes(const VelaIOs& ios) {
+  size_t size = 0;
+  for (int i = 0; i < ios.count; ++i) {
+    size = std::max(
+        size, static_cast<size_t>(ios.io[i].offset) + vela_io_bytes(ios.io[i]));
+  }
+  return size;
 }
 
 // Created once in platform_init(), reused by every invoke_linux_driver().
@@ -335,18 +368,12 @@ Error create_driver_objects(const VelaHandles& handles, PlatformState* state) {
     }
 
     if (handles.inputs != nullptr && handles.inputs->count > 0) {
-      std::vector<size_t> ifm_sizes;
-      for (int i = 0; i < handles.inputs->count; ++i) {
-        ifm_sizes.push_back(vela_io_bytes(handles.inputs->io[i]));
-      }
-      state->ifm_buffers = device.createBuffers(ifm_sizes);
+      state->ifm_buffers =
+          device.createBuffers({vela_region_bytes(*handles.inputs)});
     }
 
-    std::vector<size_t> ofm_sizes;
-    for (int i = 0; i < handles.outputs->count; ++i) {
-      ofm_sizes.push_back(vela_io_bytes(handles.outputs->io[i]));
-    }
-    state->ofm_buffers = device.createBuffers(ofm_sizes);
+    state->ofm_buffers =
+        device.createBuffers({vela_region_bytes(*handles.outputs)});
   } catch (const std::exception& e) {
     ET_LOG(Error, "Ethos-U Linux driver setup failed: %s", e.what());
     return Error::InvalidState;
@@ -393,12 +420,16 @@ void platform_destroy(PlatformState* state) {
   delete state;
 }
 
+// Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
+// cppcheck-suppress unusedFunction
 bool needs_scratch_allocation() {
   return false;
 }
 
+// Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
+// cppcheck-suppress unusedFunction
 Error platform_execute(
-    BackendExecutionContext& /*context*/,
+    BackendExecutionContext& context,
     const ExecutionHandle* execution_handle,
     const VelaHandles& handles,
     int input_count,
@@ -423,10 +454,17 @@ Error platform_execute(
     linux_output_ptrs[i] = tensor_out.mutable_data_ptr<char>();
   }
 
-  const PlatformState* state = execution_handle->platform_state;
+  PlatformState* state = execution_handle->platform_state;
   if (state == nullptr) {
     ET_LOG(Error, "Ethos-U Linux backend missing platform state");
     return Error::InvalidState;
+  }
+  if (!context.scratch_buffers().empty() &&
+      !state->warned_ignored_planned_scratch) {
+    ET_LOG(
+        Info,
+        "WARNING: Planned Ethos-U scratch is unused on Linux Direct Drive; using driver-managed scratch instead");
+    state->warned_ignored_planned_scratch = true;
   }
   return invoke_linux_driver(
       handles,
