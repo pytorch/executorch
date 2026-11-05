@@ -2024,6 +2024,34 @@ document.write(`
 <li><p><strong><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/mlx/patterns.py">patterns.py</a></strong> — Multi-node fused patterns (quantized linear, SDPA, KV cache, etc.)</p></li>
 </ul>
 <p>During lowering, the MLX partitioner prints a summary of supported and unsupported ops so you can see which ones are delegated and which fall back to CPU.</p>
+<section id="out-of-range-indices-in-gather-and-index-put">
+<h2>Out-of-Range Indices in <code class="docutils literal notranslate"><span class="pre">gather</span></code> and <code class="docutils literal notranslate"><span class="pre">index_put</span></code><a class="headerlink" href="#out-of-range-indices-in-gather-and-index-put" title="Link to this heading">#</a></h2>
+<p>Eager PyTorch raises an error when <code class="docutils literal notranslate"><span class="pre">gather</span></code> or <code class="docutils literal notranslate"><span class="pre">index_put</span></code> gets an index outside the tensor. The MLX backend does not, because a check would have to wait for the GPU in the middle of the graph. Instead, it clamps each index to <code class="docutils literal notranslate"><span class="pre">[-size,</span> <span class="pre">size</span> <span class="pre">-</span> <span class="pre">1]</span></code> on the GPU, where <code class="docutils literal notranslate"><span class="pre">size</span></code> is the length of the indexed axis:</p>
+<ul class="simple">
+<li><p>A negative index counts from the end, so <code class="docutils literal notranslate"><span class="pre">-1</span></code> is the last position. Eager <code class="docutils literal notranslate"><span class="pre">index_put</span></code> does the same, but many other eager index ops, such as <code class="docutils literal notranslate"><span class="pre">gather</span></code>, <code class="docutils literal notranslate"><span class="pre">index_add_</span></code>, <code class="docutils literal notranslate"><span class="pre">index_copy_</span></code> and <code class="docutils literal notranslate"><span class="pre">embedding</span></code>, reject negative indices. On MLX, the other index ops below also count from the end.</p></li>
+<li><p>An index past either end reads or writes the first or last position.</p></li>
+</ul>
+<p>For example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mf">4.0</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mi">9</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">7</span><span class="p">]]))</span>
+<span class="c1"># eager: raises an error</span>
+<span class="c1"># MLX:   reads positions 3, 3 and 0, so returns [[3., 3., 0.]]</span>
+</pre></div>
+</div>
+<p>So a bad index never reads or writes memory outside the tensor, but it is still a bug in the model:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">gather</span></code> returns values from the wrong place.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">index_put</span></code> overwrites real data at the first or last position, or adds to it with <code class="docutils literal notranslate"><span class="pre">accumulate=True</span></code>. For example, if an 8-slot cache is written as <code class="docutils literal notranslate"><span class="pre">cache[:,</span> <span class="pre">pos]</span> <span class="pre">=</span> <span class="pre">v</span></code> with <code class="docutils literal notranslate"><span class="pre">pos</span> <span class="pre">=</span> <span class="pre">torch.tensor([8])</span></code>, the write goes to slot 7.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">index_add_</span></code> lowers to <code class="docutils literal notranslate"><span class="pre">index_put</span></code> with <code class="docutils literal notranslate"><span class="pre">accumulate=True</span></code>, so it treats a bad index the same way, but adds instead of overwriting.</p></li>
+</ul>
+<p>Other ops that take indices behave differently, for example:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">index_copy_</span></code> into a mutable buffer, and reading <code class="docutils literal notranslate"><span class="pre">x[i]</span></code> with a Python int, raise an error on an index outside <code class="docutils literal notranslate"><span class="pre">[-size,</span> <span class="pre">size</span> <span class="pre">-</span> <span class="pre">1]</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">embedding</span></code>, <code class="docutils literal notranslate"><span class="pre">index_select</span></code>, <code class="docutils literal notranslate"><span class="pre">scatter_add</span></code>, and reading <code class="docutils literal notranslate"><span class="pre">x[idx]</span></code> with an index tensor do not check or clamp. An index outside <code class="docutils literal notranslate"><span class="pre">[-size,</span> <span class="pre">size</span> <span class="pre">-</span> <span class="pre">1]</span></code> there can read or write memory outside the tensor.</p></li>
+</ul>
+<p>To find bad indices, run the model in eager PyTorch on the CPU first, where they raise. Keep run-time indices in range too, for example by stopping generation before a cache position reaches the cache size.</p>
+<p>On an empty axis there is nothing to clamp to: <code class="docutils literal notranslate"><span class="pre">gather</span></code> with a non-empty index raises, and <code class="docutils literal notranslate"><span class="pre">index_put</span></code> returns the input unchanged.</p>
+</section>
 </section>
 
 
@@ -2134,6 +2162,18 @@ document.write(`
               
                 <div class="bd-sidebar-secondary bd-toc">
 <div class="sidebar-secondary-items sidebar-secondary__inner">
+    
+       <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#out-of-range-indices-in-gather-and-index-put">Out-of-Range Indices in <code class="docutils literal notranslate"><span class="pre">gather</span></code> and <code class="docutils literal notranslate"><span class="pre">index_put</span></code></a></li>
+</ul>
+  </nav></div>
     
        <div class="sidebar-secondary-item">
 
@@ -2357,7 +2397,7 @@ document.write(`
        "headline": "Op Support",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/backends/mlx/mlx-op-support.html",
-       "articleBody": "Op Support# The MLX backend supports ~90 ATen operators plus multi-node fused patterns and custom ops. The partitioner automatically determines which ops in your model can be delegated to MLX. Unsupported ops fall back to ExecuTorch\u2019s portable CPU runtime. For the current list of supported operators and fused patterns, see the source: ops.py \u2014 Single-op handlers (ATen op \u2192 MLX IR node) patterns.py \u2014 Multi-node fused patterns (quantized linear, SDPA, KV cache, etc.) During lowering, the MLX partitioner prints a summary of supported and unsupported ops so you can see which ones are delegated and which fall back to CPU.",
+       "articleBody": "Op Support# The MLX backend supports ~90 ATen operators plus multi-node fused patterns and custom ops. The partitioner automatically determines which ops in your model can be delegated to MLX. Unsupported ops fall back to ExecuTorch\u2019s portable CPU runtime. For the current list of supported operators and fused patterns, see the source: ops.py \u2014 Single-op handlers (ATen op \u2192 MLX IR node) patterns.py \u2014 Multi-node fused patterns (quantized linear, SDPA, KV cache, etc.) During lowering, the MLX partitioner prints a summary of supported and unsupported ops so you can see which ones are delegated and which fall back to CPU. Out-of-Range Indices in gather and index_put# Eager PyTorch raises an error when gather or index_put gets an index outside the tensor. The MLX backend does not, because a check would have to wait for the GPU in the middle of the graph. Instead, it clamps each index to [-size, size - 1] on the GPU, where size is the length of the indexed axis: A negative index counts from the end, so -1 is the last position. Eager index_put does the same, but many other eager index ops, such as gather, index_add_, index_copy_ and embedding, reject negative indices. On MLX, the other index ops below also count from the end. An index past either end reads or writes the first or last position. For example: x = torch.arange(4.0).reshape(1, 4) torch.gather(x, 1, torch.tensor([[9, -1, -7]])) # eager: raises an error # MLX: reads positions 3, 3 and 0, so returns [[3., 3., 0.]] So a bad index never reads or writes memory outside the tensor, but it is still a bug in the model: gather returns values from the wrong place. index_put overwrites real data at the first or last position, or adds to it with accumulate=True. For example, if an 8-slot cache is written as cache[:, pos] = v with pos = torch.tensor([8]), the write goes to slot 7. index_add_ lowers to index_put with accumulate=True, so it treats a bad index the same way, but adds instead of overwriting. Other ops that take indices behave differently, for example: index_copy_ into a mutable buffer, and reading x[i] with a Python int, raise an error on an index outside [-size, size - 1]. embedding, index_select, scatter_add, and reading x[idx] with an index tensor do not check or clamp. An index outside [-size, size - 1] there can read or write memory outside the tensor. To find bad indices, run the model in eager PyTorch on the CPU first, where they raise. Keep run-time indices in range too, for example by stopping generation before a cache position reaches the cache size. On an empty axis there is nothing to clamp to: gather with a non-empty index raises, and index_put returns the input unchanged.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
