@@ -18,7 +18,12 @@ namespace ptn {
 // position per token [T] of HuggingFace exports. Only Llama 3 TikToken
 // tokenizers are supported, and the default EOS IDs are Llama 3's. Reads the
 // runner's command line flags, which the caller has parsed, and creates the
-// host of the one engine the binary links. Returns the process exit status.
-int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host);
+// host of the one engine the binary links. A package exported with an
+// off-graph KV cache needs `cache_backend_id`, the CacheFactory backend id
+// whose kind::kSingle cache the engine binds through kCacheKeyOption. Returns
+// the process exit status.
+int run_llm(
+    const std::function<std::unique_ptr<EngineHost>()>& make_host,
+    const char* cache_backend_id = nullptr);
 
 } // namespace ptn
