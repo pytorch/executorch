@@ -46,6 +46,7 @@
 #include <executorch/backends/native/runtime/vulkan/passes/InsertPrepack.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerHFAttention.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerRMSNorm.h>
+#include <executorch/backends/native/runtime/vulkan/passes/LowerSDPA.h>
 #include <executorch/backends/native/runtime/vulkan/passes/MaterializeViewCopies.h>
 #include <executorch/backends/native/runtime/vulkan/passes/UseReferenceGgufKQuant.h>
 #include <executorch/runtime/core/freeable_buffer.h>
@@ -200,7 +201,7 @@ bool is_functional_in_place(const std::string& target) {
 // Ops whose ET-VK implementations require width-packed operands. This list
 // seeds layout assignment; propagation below determines the final layouts.
 bool is_width_packed_op(std::string_view key) {
-  constexpr std::array<std::string_view, 12> kOps{
+  constexpr std::array<std::string_view, 13> kOps{
       "aten.linear.default",
       "aten.addmm.default",
       "aten.mm.default",
@@ -210,6 +211,7 @@ bool is_width_packed_op(std::string_view key) {
       "et_vk.linear_dq8ca_q4gsw.default",
       "et_vk.linear_q4gsw.default",
       "et_vk.rms_norm.default",
+      "et_vk.sdpa.default",
       "llama.custom_sdpa.default",
       "update_cache.default",
       "torchao.choose_qparams_affine.default"};
@@ -218,7 +220,7 @@ bool is_width_packed_op(std::string_view key) {
 
 // Ops whose activation input is converted to the storage of their output.
 bool converts_activation_storage(std::string_view key) {
-  return key == "aten.linear.default" ||
+  return key == "aten.linear.default" || key == "et_vk.sdpa.default" ||
       key == "et_vk.linear_dq8ca_q4gsw.default" ||
       key == "et_vk.linear_q4gsw.default" ||
       key == "et_vk.apply_rotary_emb_hf.default" ||
@@ -226,16 +228,41 @@ bool converts_activation_storage(std::string_view key) {
 }
 
 // Which inputs of a converts_activation_storage op take its output storage.
-// Only activation tensors are converted: dispatch leaves constants, such as the
-// rotary cos and sin tables, in their own storage.
+// Outside binds_output_storage ops, dispatch converts only activations and
+// leaves constants, such as the rotary cos and sin tables, in their own
+// storage.
 bool is_activation_input(std::string_view key, std::string_view input) {
-  if (key == "et_vk.apply_rotary_emb_hf.default") {
+  if (key == "et_vk.sdpa.default" ||
+      key == "et_vk.apply_rotary_emb_hf.default") {
     return true;
   }
   if (key == "llama.custom_sdpa.default") {
     return input == "query";
   }
   return input == "input";
+}
+
+// Ops whose ET-VK kernels bind every tensor input, constants and state
+// included, in the output's storage. InsertPrepack gives their constants a
+// tensor, so dispatch can convert any input whose storage differs.
+bool binds_output_storage(std::string_view key) {
+  return key == "aten.view_copy.default" || key == "aten.where.self" ||
+      key == "et_vk.sdpa.default";
+}
+
+// Width-packed texture texels address [C * N, H, ceil(W / 4)], so a reshape
+// that keeps W, H and C * N reads the same texels as its source.
+bool remaps_width_packed_texels(
+    const std::vector<int64_t>& sizes,
+    const std::vector<int64_t>& source_sizes) {
+  const auto extents = [](const std::vector<int64_t>& s) {
+    std::array<int64_t, 3> whc{1, 1, 1};
+    for (size_t i = 0; i < s.size(); ++i) {
+      whc[std::min<size_t>(i, 2)] *= s[s.size() - 1 - i];
+    }
+    return whc;
+  };
+  return extents(sizes) != extents(source_sizes);
 }
 
 bool preserves_packed_layout(std::string_view key) {
@@ -643,6 +670,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
     method_.graph.rebuild_def_use();
     warn_reference_fallback(vulkan::use_reference_gguf_kquant(method_));
     vulkan::lower_hf_attention(method_.graph);
+    vulkan::lower_sdpa(method_.graph);
     vulkan::fuse_quantized_embeddings(method_);
     vulkan::fuse_quantized_linears(method_);
     vulkan::lower_rms_norms(method_.graph);
@@ -948,6 +976,27 @@ class VulkanEngineExecutable final : public EngineExecutable {
         storage_at(id) = utils::kBuffer;
       }
     }
+    for (const NodeId node_id : nodes_) {
+      const Node& node = g().node(node_id);
+      const std::string key = registry_key(node.target);
+      if (!node.is_call() || !binds_output_storage(key)) {
+        continue;
+      }
+      const bool needs_buffer =
+          std::ranges::any_of(node.input_value_ids(), [&](ValueId input_id) {
+            const Value& input = g().value(input_id);
+            const auto layout = is_width_packed_op(key) ? utils::kWidthPacked
+                                                        : layout_at(input_id);
+            return input.is_tensor() &&
+                exceeds_texture_limit(
+                       input.tensor_meta(), layout, texture_limit);
+          });
+      if (needs_buffer) {
+        for_each_output_value(node, [&](ValueId output_id) {
+          storage_at(output_id) = utils::kBuffer;
+        });
+      }
+    }
     // Sibling views and alias chains need repeated passes before every alias
     // agrees with the storage of its root.
     do {
@@ -985,15 +1034,23 @@ class VulkanEngineExecutable final : public EngineExecutable {
     std::vector<ValueId> value_ids;
     for (const NodeId node_id : nodes_) {
       const Node& node = g().node(node_id);
-      if (!node.is_call() || registry_key(node.target) != "aten.view.default") {
+      const std::string key = registry_key(node.target);
+      const bool permute = key == "aten.permute.default";
+      if (!node.is_call() || (key != "aten.view.default" && !permute)) {
         continue;
       }
       for_each_output_value(node, [&](ValueId output_id) {
         const ValueId source_id = g().value(output_id).alias_id;
-        if (valid(source_id) &&
-            ((!g().value(output_id).tensor_meta().lower_bounds.empty() &&
-              layout_at(output_id) == utils::kWidthPacked) ||
-             layout_at(output_id) != layout_at(source_id)) &&
+        if (!valid(source_id)) {
+          return;
+        }
+        const TensorMeta& meta = g().value(output_id).tensor_meta();
+        const bool remaps_texels =
+            layout_at(output_id) == utils::kWidthPacked &&
+            (permute || !meta.lower_bounds.empty() ||
+             remaps_width_packed_texels(
+                 meta.sizes, g().value(source_id).tensor_meta().sizes));
+        if ((remaps_texels || layout_at(output_id) != layout_at(source_id)) &&
             storage_at(output_id) != utils::kBuffer) {
           value_ids.push_back(output_id);
         }
@@ -1607,6 +1664,14 @@ class VulkanEngineExecutable final : public EngineExecutable {
       const Value& v,
       utils::StorageType storage,
       utils::GPUMemoryLayout layout) {
+    if (storage == utils::kTexture3D &&
+        exceeds_texture_limit(
+            v.tensor_meta(),
+            layout,
+            graph_->context()->adapter_ptr()->max_texture3d_dim())) {
+      throw std::runtime_error(
+          "vulkan: repack exceeds the device's 3D texture limit");
+    }
     const std::vector<int64_t>& sizes = v.tensor_meta().sizes;
     const VkRef dst = graph_->add_tensor(
         sizes,
@@ -1767,7 +1832,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
           const bool storage_mismatch = activation_storage.has_value() &&
               is_activation_input(key, na.name) &&
               storage_at(value_id) != *activation_storage;
-          if (activation &&
+          if ((activation || binds_output_storage(key)) &&
               (layout_at(value_id) != utils::kWidthPacked ||
                storage_mismatch)) {
             a = repack_to_width(
@@ -1800,23 +1865,14 @@ class VulkanEngineExecutable final : public EngineExecutable {
               a, g().value(in_id), storage_at(out_id), layout_at(out_id));
         }
       }
-      // ET-VK's view_copy shaders read and write one storage type.
-      if (key == "aten.view_copy.default" && na.name == "self" &&
+      if (!width && binds_output_storage(key) &&
           na.arg.kind() == ArgKind::Tensor) {
         const ValueId in_id = na.arg.as_tensor().id;
         ValueId out_id = kInvalid;
         for_each_output_value(n, [&](ValueId id) { out_id = id; });
         if (valid(in_id) && valid(out_id) &&
             storage_at(in_id) != storage_at(out_id)) {
-          const Value& v = g().value(in_id);
-          const VkRef dst = graph_->add_tensor(
-              v.tensor_meta().sizes,
-              to_vk_dtype(device_dtype(v.tensor_meta().dtype)),
-              storage_at(out_id),
-              layout_at(in_id));
-          std::vector<VkRef> clone_args = {a, none_ref_, dst};
-          VK_GET_OP_FN("aten.clone.default")(*graph_, clone_args);
-          a = dst;
+          a = repack(a, g().value(in_id), storage_at(out_id), layout_at(in_id));
         }
       }
       args.push_back(a);

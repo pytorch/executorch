@@ -17,6 +17,7 @@ def define_common_targets():
             "test_insert_prepack.cpp",
             "test_lower_hf_attention.cpp",
             "test_lower_rms_norm.cpp",
+            "test_lower_sdpa.cpp",
             "test_materialize_view_copies.cpp",
         ],
         deps = [
@@ -67,6 +68,7 @@ def define_common_targets():
             "//executorch/backends/native/runtime/deserialize:package_test_data",
             "//executorch/backends/native/runtime/engine:engine",
             "//executorch/backends/native/runtime/vulkan:vulkan_engine",
+            "//executorch/backends/native/runtime/vulkan:xplat_vulkan_runtime",
             "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
         ],
     )
