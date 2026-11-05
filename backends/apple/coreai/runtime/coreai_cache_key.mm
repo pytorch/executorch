@@ -80,7 +80,7 @@ Result<NSString*> compute_bundle_identity(
     bool aot_compiled) {
   // Bumping the leading version makes every existing cache entry unreachable.
   auto encoded = encode_json(
-      @[ @"1", digest, aot_compiled ? @"aot" : @"source", bundle_name ]);
+      @[ @"1", digest, aot_compiled ? @"aimodelc" : @"aimodel", bundle_name ]);
   if (!encoded.ok()) {
     return encoded.error();
   }

@@ -24,6 +24,10 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import export
 from torch.nn.attention.varlen import varlen_attn
 
+_AUTOTUNE_OFFLOAD = "autotune_offload_constants_min_device_fraction"
+_TORCH_CAN_OFFLOAD = hasattr(torch._inductor.config.aot_inductor, _AUTOTUNE_OFFLOAD)
+_LOW_MEMORY_ON = CompileSpec(key="low_memory_mode", value=b"ON")
+
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
     def test_low_memory_triton_reduction_loads_stay_loop_scoped(self):
@@ -82,6 +86,21 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
             CudaBackend.get_aoti_compile_options(
                 [CompileSpec(key="emulate_precision_casts", value=b"MAYBE")]
             )
+
+    def test_low_memory_mode_offloads_weights_during_autotune(self):
+        key = f"aot_inductor.{_AUTOTUNE_OFFLOAD}"
+        default = CudaBackend.get_aoti_compile_options([])
+        self.assertNotIn(key, default)
+        self.assertEqual(
+            CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="low_memory_mode", value=b"OFF")]
+            ),
+            default,
+        )
+        low_memory = CudaBackend.get_aoti_compile_options([_LOW_MEMORY_ON])
+        # The offload is the only compile option low-memory mode changes.
+        expected = dict(default, **{key: 0.0}) if _TORCH_CAN_OFFLOAD else default
+        self.assertEqual(low_memory, expected)
 
     def test_max_autotune_compile_spec(self):
         options = CudaBackend.get_aoti_compile_options(
@@ -613,6 +632,66 @@ class TestCudaExport(unittest.TestCase):
         # Test export
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Linear operation export failed")
+
+    @unittest.skipUnless(
+        _TORCH_CAN_OFFLOAD,
+        "This PyTorch cannot move the weights off the GPU during autotuning",
+    )
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_low_memory_mode_holds_weights_once(self):
+        """Autotuning runs kernels on random stand-ins for the weights. In
+        low-memory mode, the real weights leave the GPU meanwhile instead of
+        doubling up."""
+
+        class ScaleShift(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weights = torch.nn.ParameterList(
+                    torch.nn.Parameter(torch.randn(1 << 24)) for _ in range(8)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                for weight in self.weights:
+                    x = x * weight + 1
+                return x
+
+        from executorch.runtime import Runtime
+
+        module = ScaleShift().eval()
+        x = torch.randn(1 << 24)
+        weight_bytes = sum(weight.nbytes for weight in module.weights)
+        before = torch.cuda.memory_allocated()
+        torch.cuda.reset_peak_memory_stats()
+        program = self._export_to_cuda_with_lower(
+            module,
+            (x,),
+            [
+                CudaBackend.generate_method_name_compile_spec("forward"),
+                _LOW_MEMORY_ON,
+            ],
+        ).to_executorch()
+        self.assertLess(torch.cuda.max_memory_allocated() - before, 2 * weight_bytes)
+        # The weights come back from the file, so the program must still match.
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                program.write_to_file(f)
+            program.write_tensor_data_to_file(directory)
+            (data,) = [
+                os.path.join(directory, name)
+                for name in os.listdir(directory)
+                if name.endswith(".ptd")
+            ]
+            method = (
+                Runtime.get().load_program(path, data_path=data).load_method("forward")
+            )
+            (output,) = method.execute([x])
+        with torch.no_grad():
+            expected = module(x)
+        torch.testing.assert_close(output.cpu(), expected, atol=1e-4, rtol=1e-4)
 
     def test_resnet_block(self):
         """Test CUDA export for a ResNet-style block."""

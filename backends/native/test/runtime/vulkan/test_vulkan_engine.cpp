@@ -1370,6 +1370,109 @@ std::vector<uint8_t> make_quantized_input_tensors() {
   return tensors;
 }
 
+// sum = input + _to_copy(offsets, float), where `offsets` is a stored int64
+// constant.
+std::vector<uint8_t> make_stored_long_to_copy_program() {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto float_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {4});
+  const auto long_meta =
+      create_tensor_meta(builder, fbs::ScalarType::LONG, {4});
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", float_meta),
+      fbs::CreateTensorValueDirect(builder, "offsets", long_meta),
+      fbs::CreateTensorValueDirect(builder, "converted", float_meta),
+      fbs::CreateTensorValueDirect(builder, "sum", float_meta),
+  };
+  const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
+      fbs::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> offsets_outputs = {
+      fbs::CreateOutputDirect(builder, "offsets")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> converted_outputs = {
+      fbs::CreateOutputDirect(builder, "converted")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> sum_outputs = {
+      fbs::CreateOutputDirect(builder, "sum")};
+  const auto dtype = fbs::CreateScalarTypeArg(builder, fbs::ScalarType::FLOAT);
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> to_copy_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "offsets")),
+      fbs::CreateNamedArgumentDirect(
+          builder,
+          "dtype",
+          fbs::CreateArgument(
+              builder, fbs::ArgumentValue::ScalarTypeArg, dtype.Union())),
+      fbs::CreateNamedArgumentDirect(
+          builder, "layout", create_none_arg(builder)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "device", create_none_arg(builder)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "pin_memory", create_none_arg(builder)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "non_blocking", create_bool_arg(builder, false)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "memory_format", create_none_arg(builder)),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> add_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "input")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "other", create_tensor_arg(builder, "converted")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "alpha", create_int_arg(builder, 1)),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "sum"))};
+  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+      fbs::CreateNodeDirect(
+          builder,
+          "input",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &input_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "offsets",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &offsets_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "converted",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten._to_copy.default",
+          &to_copy_inputs,
+          &converted_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "sum",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.add.Tensor",
+          &add_inputs,
+          &sum_outputs),
+      fbs::CreateNodeDirect(
+          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
+  };
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input"}),
+      create_strings(builder, {"sum"}),
+      builder.CreateVector(tensor_values));
+  const std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants = {
+      fbs::CreateNamedTensorRefDirect(
+          builder,
+          "offsets",
+          "offsets",
+          long_meta,
+          fbs::InputKind::CONSTANT_TENSOR),
+  };
+  return finish_program(
+      builder, graph, {fbs::CreateOutputSpecDirect(builder, "sum")}, constants);
+}
+
 constexpr int64_t kHfTokens = 4;
 constexpr int64_t kHfHeads = 4;
 constexpr int64_t kHfKvHeads = 2;
@@ -2180,6 +2283,27 @@ TEST(VulkanEngineTest, ResizesBufferViewWithItsSource) {
   compiled.executable->get_output(
       0, output.data(), output.size(), ScalarType::Float);
   EXPECT_EQ(output, (std::vector<float>{4.0f, 1.0f}));
+}
+
+TEST(VulkanEngineTest, ConvertsStoredLongConstant) {
+  const std::string header =
+      R"({"offsets":{"dtype":"I64","shape":[4],"data_offsets":[0,32]}})";
+  std::vector<uint8_t> tensors = testing::make_safetensors(header, 32);
+  const std::vector<int64_t> offsets = {3, -2, 7, 100};
+  std::memcpy(
+      tensors.data() + sizeof(uint64_t) + header.size(),
+      offsets.data(),
+      offsets.size() * sizeof(int64_t));
+  CompiledProgram compiled =
+      compile_program(make_stored_long_to_copy_program(), std::move(tensors));
+  const std::vector<float> input = {0.5f, 1.5f, 2.5f, 3.5f};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+  std::vector<float> output(4);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, (std::vector<float>{3.5f, -0.5f, 9.5f, 103.5f}));
 }
 
 TEST(VulkanEngineTest, RejectsBufferViewResizeThatDoesNotDivide) {

@@ -47,6 +47,16 @@ fi
 
 MODEL_OUT=model.pte
 
+# Hugging Face Hub revisions, pinned. On OSDC runners HF_HUB_CACHE is a read-only
+# mount seeded with these snapshots, so downloading an unpinned repo fails with
+# "Read-only file system" as soon as the repo gets a new commit, even a README
+# edit (LiquidAI/LFM2.5-1.2B-Instruct on 2026-11-03). To move to a newer
+# revision, update it here and add the ci-refresh-hf-cache label to the PR so
+# the cache gets seeded.
+QWEN3_4B_REVISION=3d10de24598fff7a1ff7297103693fe1d2b82a5e
+PHI_4_MINI_REVISION=ca214ad7becf450bed20235bc677418a092a718a
+LFM2_5_1_2B_REVISION=0f604ada3f766f9f257460c4c9f0b5d6f69d431b
+
 
 # Default to XNNPACK
 BACKEND_ARGS="-X --xnnpack-extended-ops"
@@ -57,7 +67,7 @@ fi
 case "$MODEL_NAME" in
   qwen3_4b)
     echo "Running Qwen3-4B export..."
-    HF_MODEL_DIR=$(hf download pytorch/Qwen3-4B-INT8-INT4)
+    HF_MODEL_DIR=$(hf download pytorch/Qwen3-4B-INT8-INT4 --revision "${QWEN3_4B_REVISION}")
     EXPECTED_MODEL_SIZE_UPPER_BOUND=$((3 * 1024 * 1024 * 1024)) # 3GB
     $PYTHON_EXECUTABLE -m executorch.examples.models.qwen3.convert_weights \
       $HF_MODEL_DIR \
@@ -80,7 +90,7 @@ case "$MODEL_NAME" in
 
   phi_4_mini)
     echo "Running Phi-4-mini export..."
-    HF_MODEL_DIR=$(hf download pytorch/Phi-4-mini-instruct-INT8-INT4)
+    HF_MODEL_DIR=$(hf download pytorch/Phi-4-mini-instruct-INT8-INT4 --revision "${PHI_4_MINI_REVISION}")
     EXPECTED_MODEL_SIZE_UPPER_BOUND=$((3 * 1024 * 1024 * 1024)) # 3GB
     $PYTHON_EXECUTABLE -m executorch.examples.models.phi_4_mini.convert_weights \
       $HF_MODEL_DIR \
@@ -103,7 +113,7 @@ case "$MODEL_NAME" in
 
   lfm2_5_1_2b)
     echo "Running LFM2.5-1.2B export..."
-    HF_MODEL_DIR=$(hf download LiquidAI/LFM2.5-1.2B-Instruct)
+    HF_MODEL_DIR=$(hf download LiquidAI/LFM2.5-1.2B-Instruct --revision "${LFM2_5_1_2B_REVISION}")
     EXPECTED_MODEL_SIZE_UPPER_BOUND=$((2500 * 1024 * 1024)) # 2.5GB
     $PYTHON_EXECUTABLE -m executorch.examples.models.lfm2.convert_weights \
       $HF_MODEL_DIR \

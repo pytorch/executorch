@@ -16,7 +16,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 import torch
 from executorch.exir.backend.backend_details import ExportedProgram
 from executorch.exir.backend.canonical_partitioners.duplicate_constant_node_pass import (
-    duplicate_constant_node,
+    duplicate_constant_nodes,
 )
 from executorch.exir.common import setting_python_recursive_limit
 from executorch.exir.delegate import executorch_call_delegate
@@ -209,7 +209,7 @@ def _assign_new_tag(
 
 def _maybe_duplicate_constant_nodes(
     tagged_exported_program: ExportedProgram,
-    tag: str,
+    tags: Iterable[str],
 ) -> None:
     """
     If the constants node is shared by different tagged nodes, like
@@ -222,9 +222,13 @@ def _maybe_duplicate_constant_nodes(
 
     backend can estimate how much they want to duplicate the constant node, either error out or default to duplicate
     """
+    if isinstance(tags, str):
+        raise TypeError("tags is an iterable of tags, not one tag")
+    tags = set(tags)
     candidate_nodes = set()
     for node in tagged_exported_program.graph.nodes:
-        if node.meta.get("delegation_tag", "") == tag:
+        tag = node.meta.get("delegation_tag", None)
+        if tag in tags:
             if node.op == "placeholder":
                 for user in node.users:
                     users_tag = user.meta.get("delegation_tag", None)
@@ -236,12 +240,10 @@ def _maybe_duplicate_constant_nodes(
                             )
                         else:
                             candidate_nodes.add(node.name)
-    copied_nodes = set()
-    for candidate_node in candidate_nodes:
-        # Both tagged exported program and the owning program need to go through the same duplication pass
-        copied_nodes = copied_nodes.union(
-            duplicate_constant_node(tagged_exported_program, candidate_node)
-        )
+    if not candidate_nodes:
+        return
+    # Both tagged exported program and the owning program need to go through the same duplication pass
+    copied_nodes = duplicate_constant_nodes(tagged_exported_program, candidate_nodes)
     candidate_node_with_copies = candidate_nodes.union(copied_nodes)
     _assign_new_tag(tagged_exported_program, candidate_node_with_copies)
 
