@@ -107,6 +107,19 @@ class RunAllTestsTest(unittest.TestCase):
             self.assertEqual(harness.wait(timeout=30), -signal.SIGTERM)
         self._assert_exits(pid)
 
+    def test_isolated_run_dies_of_a_sigterm_that_arrives_when_popen_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            setup = (
+                "import os, subprocess\n"
+                "class Popen(subprocess.Popen):\n"
+                "    def __init__(self, *args, **kwargs):\n"
+                "        os.kill(os.getpid(), signal.SIGTERM)\n"
+                "        raise OSError('no memory to fork')\n"
+                "subprocess.Popen = Popen"
+            )
+            harness = self._start_harness(Path(tmp), "wait", setup, wait=False)[0]
+            self.assertEqual(harness.wait(timeout=60), -signal.SIGTERM)
+
     def test_isolated_run_keeps_an_ignored_sighup_ignored(self):
         # As under nohup: the test must finish instead of dying with the harness.
         with tempfile.TemporaryDirectory() as tmp:
@@ -118,7 +131,7 @@ class RunAllTestsTest(unittest.TestCase):
             self.assertEqual(harness.wait(timeout=60), 0)
 
     def _start_harness(
-        self, directory: Path, ending: str, setup: str = ""
+        self, directory: Path, ending: str, setup: str = "", wait: bool = True
     ) -> Tuple[subprocess.Popen, int]:
         child, pid_file = _write_child(directory, ending)
         # Stands in for run_all_tests --isolate running one test.
@@ -137,6 +150,8 @@ class RunAllTestsTest(unittest.TestCase):
             ]
         )
         self.addCleanup(harness.kill)
+        if not wait:
+            return harness, 0
         deadline = time.monotonic() + 120
         while not _read(pid_file) and time.monotonic() < deadline:
             time.sleep(0.1)

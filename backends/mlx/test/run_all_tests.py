@@ -239,6 +239,9 @@ def _run_test_in_subprocess(
             signal.signal(sig, signal.SIG_DFL)
         if proc is not None:
             proc.wait()
+        elif pending:
+            # Popen failed, but a signal came; still die of it.
+            os.kill(os.getpid(), pending[0])
 
 
 def _kill_process_group(pgid: int) -> None:
