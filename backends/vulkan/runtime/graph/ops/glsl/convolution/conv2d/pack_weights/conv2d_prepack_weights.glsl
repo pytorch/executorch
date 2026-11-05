@@ -10,6 +10,9 @@
 
 ${define_required_extensions("texture3d", DTYPE)}
 ${define_required_extensions("buffer", BUF_DTYPE)}
+$if OUTPUT_BUFFER:
+  ${define_required_extensions("buffer", DTYPE)}
+  #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 
 #define PRECISION ${PRECISION}
 
@@ -21,7 +24,12 @@ ${define_required_extensions("buffer", BUF_DTYPE)}
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[2][DTYPE]} image_out;
+$if OUTPUT_BUFFER:
+  layout(set = 0, binding = 0) buffer PRECISION restrict writeonly OutputBuffer {
+    f16vec4 buffer_out[];
+  };
+$else:
+  layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[2][DTYPE]} image_out;
 layout(set = 0, binding = 1) buffer  PRECISION restrict readonly Buffer {
   BUF_T buffer_in[];
 };
@@ -89,5 +97,8 @@ void main() {
     texel.w = SCALAR_T(buffer_in[buf_i.w]);
   }
 
-  imageStore(image_out, pos.xy, texel);
+  $if OUTPUT_BUFFER:
+    buffer_out[pos.y * sizes.x + pos.x] = f16vec4(texel);
+  $else:
+    imageStore(image_out, pos.xy, texel);
 }

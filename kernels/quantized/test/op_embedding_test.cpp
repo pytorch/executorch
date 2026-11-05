@@ -510,3 +510,78 @@ TEST(OpQuantizedEmbeddingTest, BFloat16Rounding) {
 
   EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, 1e-2, 1e-2);
 }
+
+// Zero points share the scales' dtype, which may differ from the output dtype.
+TEST(OpQuantizedEmbeddingTest, DtypeOutHalfQParamsFloatOut) {
+  et_pal_init();
+  TensorFactory<ScalarType::Half> tfh;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Long> tf_l;
+
+  Tensor weight_scales = tfh.full({3}, 0.5);
+  Tensor weight_zero_points = tfh.full({3}, 1);
+  Tensor qweight = tfb.make({3, 2}, {8, 5, 9, 3, 12, 27});
+  Tensor indices = tf_l.make({2}, {0, 2});
+
+  Tensor out = tf.zeros({2, 2});
+  Tensor expected = tf.make({2, 2}, {3.5, 2, 5.5, 13});
+
+  quantized_embedding_byte_dtype_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      0,
+      255,
+      indices,
+      ScalarType::Float,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST(OpQuantizedEmbeddingTest, DtypeOutZeroPointsScalesMismatchDies) {
+  et_pal_init();
+  TensorFactory<ScalarType::Half> tfh;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Long> tf_l;
+
+  Tensor weight_scales = tfh.full({3}, 0.5);
+  Tensor weight_zero_points = tf.full({3}, 1);
+  Tensor qweight = tfb.make({3, 2}, {8, 5, 9, 3, 12, 27});
+  Tensor indices = tf_l.make({2}, {0, 2});
+
+  Tensor out = tf.zeros({2, 2});
+  ET_EXPECT_DEATH(
+      quantized_embedding_byte_dtype_out(
+          qweight,
+          weight_scales,
+          weight_zero_points,
+          0,
+          255,
+          indices,
+          ScalarType::Float,
+          out),
+      "does not match weight_scales");
+}
+
+// Without a dtype argument the scales are read as the output type, so a
+// narrower scales tensor would be read past its end.
+TEST(OpQuantizedEmbeddingTest, OutScalesOutMismatchDies) {
+  et_pal_init();
+  TensorFactory<ScalarType::Half> tfh;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Long> tf_l;
+
+  Tensor weight_scales = tfh.full({3}, 0.5);
+  Tensor qweight = tfb.make({3, 2}, {8, 5, 9, 3, 12, 27});
+  Tensor indices = tf_l.make({2}, {0, 2});
+
+  Tensor out = tf.zeros({2, 2});
+  ET_EXPECT_DEATH(
+      quantized_embedding_byte_out(
+          qweight, weight_scales, std::nullopt, 0, 255, indices, out),
+      "does not match out.scalar_type");
+}
