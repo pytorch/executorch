@@ -2,20 +2,24 @@
 
 The Core AI backend compresses models with [coreai-opt](https://pypi.org/project/coreai-opt/), which is installed with the backend's pinned requirements. ExecuTorch wraps it in two classes:
 
-- `CoreAIQuantizer` for linear quantization, which stores weights (and optionally activations) as 8- or 4-bit integers. It follows the PT2E prepare, calibrate and convert flow.
+- `CoreAIQuantizer` for linear quantization, which stores weights (and optionally activations) in a lower-precision integer or floating-point format. It follows the PT2E prepare, calibrate and convert flow.
 - `CoreAIPalettizer` for palettization, which replaces each weight with a small lookup table of values plus, for each element, an index into that table.
 
-Both run on your model before `torch.export`. You then export and lower the result as usual.
+Both run on your model before the final `torch.export` for lowering. You then export and lower the result as usual.
 
 ## Supported Quantization Schemes
 
-| Scheme | Front-end | Configuration |
-|---|---|---|
-| INT8 weights and activations | `CoreAIQuantizer` | `QuantizerConfig()` (the default) |
-| INT8 weight-only | `CoreAIQuantizer` | `QuantizerConfig.presets.w8()` |
-| INT4 weight-only | `CoreAIQuantizer` | `QuantizerConfig.presets.w4()` or `QuantizerConfig.presets.w4_per_block()` |
-| INT2, FP8 or FP4 weight-only | `CoreAIQuantizer` | A custom configuration. See [Other weight formats](#other-weight-formats). |
-| 4-, 6- or 8-bit palettization | `CoreAIPalettizer` | `KMeansPalettizerConfig.presets.w4()`, `.w6()` or `.w8()` |
+| Scheme | Front-end | Configuration | Granularity |
+|---|---|---|---|
+| INT8 weights and activations | `CoreAIQuantizer` | `QuantizerConfig()` (the default) | Weights per channel; activations per tensor, static |
+| INT8 weight-only | `CoreAIQuantizer` | `QuantizerConfig.presets.w8()` | Per channel |
+| INT4 weight-only | `CoreAIQuantizer` | `QuantizerConfig.presets.w4()` | Per channel |
+| INT4 weight-only, per block | `CoreAIQuantizer` | `QuantizerConfig.presets.w4_per_block()` | Blocks of 32 elements |
+| INT2, FP8 or FP4 weight-only | `CoreAIQuantizer` | A custom configuration. See [Other weight formats](#other-weight-formats). | Per channel or per block |
+| 4- or 6-bit palettization | `CoreAIPalettizer` | `KMeansPalettizerConfig.presets.w4()` or `.w6()` | One lookup table per group of 16 output channels |
+| 8-bit palettization | `CoreAIPalettizer` | `KMeansPalettizerConfig.presets.w8()` | One lookup table per weight |
+
+The integer presets are all symmetric. Activation quantization is static: calibration fixes each activation's scale, which is then stored in the model, rather than computing it at runtime. `w4_per_block()` gives each block of 32 weights its own scale instead of `w4()`'s single scale per output channel. The finer scales can preserve more accuracy, at the cost of storing more of them.
 
 `QuantizerConfig` comes from `coreai_opt.quantization` and `KMeansPalettizerConfig` from `coreai_opt.palettization`. The presets cover common cases; construct a configuration yourself for finer control.
 

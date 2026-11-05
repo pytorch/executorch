@@ -38,7 +38,19 @@ All options are keyword arguments.
 | `input_enumerations` | `None` | Compile dynamic input dimensions to a fixed set of sizes. See [Enumerated shapes](#enumerated-shapes). |
 | `multifunction` | `False` | Put the partitions of every method into one shared Core AI model. See [Multi-method models](#multi-method-models). |
 | `take_over_constant_data` | `True` | Store constants, such as weights, inside the Core AI model. If `False`, they're passed to the delegate as inputs instead. |
-| `take_over_mutable_buffer` | `True` | Move the model's mutable buffers into the delegate. Note that the runtime doesn't support stateful models yet, so models that update buffers in place, such as with a KV cache, can't run on Core AI. |
+| `take_over_mutable_buffer` | `True` | Move the model's mutable buffers, and the in-place updates to them, into the Core AI model. The runtime doesn't run stateful Core AI models yet, so set this to `False` for models that update buffers in place. See [Stateful models](#stateful-models). |
+
+## Stateful Models
+
+Models that update a buffer in place, such as a KV cache, export fine with the default `take_over_mutable_buffer=True`, but the runtime doesn't run the resulting stateful Core AI model yet. Loading fails with `NotSupported`, and the log shows `Stateful functions are not supported`.
+
+To run these models today, pass `take_over_mutable_buffer=False`:
+
+```python
+partitioner = CoreAIPartitioner(take_over_mutable_buffer=False)
+```
+
+The buffers then stay in ExecuTorch. Core AI computes each new buffer value, and ExecuTorch writes it back to the buffer after the delegate runs, so the state carries over from one call to the next. This adds a copy of each updated buffer per call.
 
 ## Excluding Nodes from Delegation
 
@@ -84,15 +96,15 @@ partitioner = CoreAIPartitioner(
 | `platform` | `macOS` | The target platform: `iOS`, `macOS`, `watchOS`, `visionOS` or `tvOS`. |
 | `architectures` | All | The Core AI device architectures to compile for, such as `h17p`. These are Core AI's names, not CPU architectures like `arm64`. If omitted, the compiler builds every architecture it supports for the platform. |
 | `preferred_compute` | `none` | A compute unit to optimize for: `gpu`, `neural-engine` or `none`. |
-| `expect_frequent_reshapes` | `False` | Optimize for input shapes that change between calls. Set the [runtime option](coreai-overview.md#frequent-reshapes) of the same name too. |
+| `expect_frequent_reshapes` | `False` | Optimize for input shapes that change between calls. Set the [runtime option](coreai-runtime.md#frequent-reshapes) of the same name too. |
 
 This requires `xcrun coreai-build`, which comes with the Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`).
 
-At load time, the runtime asks Core AI for the device's architecture and uses the compiled model with exactly that name. There's no fallback: if the `.pte` doesn't include the device's architecture, loading fails with an error naming the device's architecture and the ones the `.pte` contains. Compiled models can still need specialization on the device, which the runtime [caches](coreai-overview.md#cache) as usual.
+At load time, the runtime asks Core AI for the device's architecture and uses the compiled model with exactly that name. There's no fallback: if the `.pte` doesn't include the device's architecture, loading fails with an error naming the device's architecture and the ones the `.pte` contains. Compiled models can still need specialization on the device, which the runtime [caches](coreai-runtime.md#cache) as usual.
 
 ## Dynamic and Enumerated Shapes
 
-Dimensions exported as dynamic, with `torch.export.Dim`, stay dynamic in the Core AI model. If a model's input shapes change between calls, also set the [`coreai_expect_frequent_reshapes`](coreai-overview.md#frequent-reshapes) runtime option.
+Dimensions exported as dynamic, with `torch.export.Dim`, stay dynamic in the Core AI model. If a model's input shapes change between calls, also set the [`coreai_expect_frequent_reshapes`](coreai-runtime.md#frequent-reshapes) runtime option.
 
 ### Enumerated shapes
 
@@ -134,7 +146,7 @@ et_program = to_edge_transform_and_lower(
 
 Here `forward` runs the function `forward_0` and `prefill` runs `prefill_0`. If a method has several partitions, they become `forward_0`, `forward_1` and so on. Weights the methods have in common are stored once, so two methods that use the same weights produce a `.pte` about the size of one.
 
-On the device, all the methods share one cache entry: the first load specializes the model, and the others restore it from the cache. Each method still loads its own copy of the model, with its own weights in memory, unless you also set the [`coreai_share_multifunction_model`](coreai-overview.md#sharing-a-multi-method-model) runtime option.
+On the device, all the methods share one cache entry: the first load specializes the model, and the others restore it from the cache. Each method still loads its own copy of the model, with its own weights in memory, unless you also set the [`coreai_share_multifunction_model`](coreai-runtime.md#sharing-a-multi-method-model) runtime option.
 
 Rules for multi-method exports:
 

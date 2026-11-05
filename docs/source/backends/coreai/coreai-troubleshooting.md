@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 ### At runtime
 
-Build ExecuTorch with `EXECUTORCH_ENABLE_LOGGING=ON` and `EXECUTORCH_LOG_LEVEL=Info` to log what happens to each model in the [cache](coreai-overview.md#cache):
+Build ExecuTorch with `EXECUTORCH_ENABLE_LOGGING=ON` and `EXECUTORCH_LOG_LEVEL=Info` to log what happens to each model in the [cache](coreai-runtime.md#cache):
 
 - cache lookups, and whether the model was restored from its bookmark or missed (no bookmark, or Core AI couldn't restore it)
 - specialization starting and finishing, and the bookmark being saved
@@ -47,6 +47,16 @@ Core AI AOT has no bundle for device architecture <arch>; available architecture
 
 To fix it, either add that architecture to `AOTCompileConfig(architectures=...)`, leave `architectures` unset to compile for every architecture the platform supports, or export without `aot_compile_config` to use the portable format, which runs on any device.
 
+### Loading fails with `NotSupported`: stateful functions
+
+A model that updates a buffer in place, such as a KV cache, exported with the default `take_over_mutable_buffer=True` produces a stateful Core AI model, which the runtime doesn't run yet. Loading fails, and the log shows:
+
+```
+Stateful functions are not supported
+```
+
+Re-export with `CoreAIPartitioner(take_over_mutable_buffer=False)`, which keeps the buffers and their updates in ExecuTorch. See [Stateful models](coreai-partitioner.md#stateful-models).
+
 ### Loading fails with `InvalidArgument`
 
 Check the runtime options:
@@ -62,7 +72,7 @@ Check the runtime options:
 
 ## Loading Is Slow
 
-The first load of a model is slow because Core AI specializes it for the device. Later loads restore it from the [cache](coreai-overview.md#cache) and are much faster. If every load is slow:
+The first load of a model is slow because Core AI specializes it for the device. Later loads restore it from the [cache](coreai-runtime.md#cache) and are much faster. If every load is slow:
 
 - **Check the bookmark directory.** Loads only find each other's bookmarks if they use the same `coreai_cache_dir`. A temporary or per-launch directory means no load finds a bookmark to restore from.
 - **Check the options.** Each `coreai_compute_unit` and `coreai_expect_frequent_reshapes` value is cached separately.
@@ -98,7 +108,7 @@ Core AI loading, inference and cache operations are synchronous, and can hang yo
 
 ## Recovering from Repeated Core AI Errors
 
-When Core AI fails to restore or remove a cached model, the backend keeps that model's bookmark so a later attempt can retry; it can't tell whether the error is temporary. If loading or [clearing](coreai-overview.md#clearing-the-cache) one model keeps failing:
+When Core AI fails to restore or remove a cached model, the backend keeps that model's bookmark so a later attempt can retry; it can't tell whether the error is temporary. If loading or [clearing](coreai-runtime.md#clearing-the-cache) one model keeps failing:
 
 1. Stop every process that uses the bookmark directory.
 2. Find the model's cache key in the [runtime logs](#at-runtime). Move `bookmarks/<key>.bookmark` and the `sources/<key>` directory, if present, out of the bookmark directory, and keep them as a backup. Don't touch the `locks` directory.
