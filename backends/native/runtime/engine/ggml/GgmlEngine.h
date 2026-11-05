@@ -14,6 +14,15 @@
 
 namespace ptn {
 
+// CacheFactory backend id of the ggml engine's off-graph KV caches. A method
+// that calls kvcache::update_and_attend compiles only in a context created
+// with the kCacheKeyOption ("llm_cache_registry_key") option naming a cache
+// built under this id with kind::kSingle.
+inline constexpr char kGgmlCacheBackendId[] = "NativeGgml";
+
+// Registers the ggml cache builders with CacheFactory::global(). Idempotent.
+void register_ggml_cache_builders();
+
 enum class GgmlDevice {
   Cpu,
   // The GPU backend is whichever one the linked ggml variant registers (CUDA,
@@ -43,6 +52,7 @@ struct GgmlEngineOptions {
 };
 
 class GgmlEngineContext;
+class GgmlSequenceCache;
 
 class GgmlEngineHost final : public EngineHost {
  public:
@@ -57,9 +67,17 @@ class GgmlEngineHost final : public EngineHost {
       std::shared_ptr<const Program> program,
       std::shared_ptr<const Package> package) override;
 
+  // Accepts kCacheKeyOption, resolved through CacheRegistry::global(). Contexts
+  // bound to one cache share its sequence: the caller must serialize them.
+  std::unique_ptr<EngineContext> create_context_with_options(
+      std::shared_ptr<const Program> program,
+      std::shared_ptr<const Package> package,
+      const EngineOptions& options) override;
+
   std::unique_ptr<GgmlEngineContext> create_ggml_context(
       std::shared_ptr<const Program> program,
-      std::shared_ptr<const Package> package);
+      std::shared_ptr<const Package> package,
+      const EngineOptions& options = {});
 
  private:
   struct Impl;
@@ -86,7 +104,8 @@ class GgmlEngineContext final : public EngineContext {
   GgmlEngineContext(
       std::shared_ptr<const Program> program,
       std::shared_ptr<const Package> package,
-      GgmlEngineOptions options);
+      GgmlEngineOptions options,
+      std::shared_ptr<GgmlSequenceCache> cache);
 
   std::unique_ptr<EngineExecutable> compile_method(
       const Method& method) override;

@@ -248,6 +248,46 @@ std::optional<HostInts> HostIntEvaluator::compute(ValueId id) {
     out.sizes.insert(out.sizes.begin() + *dim, 1);
     return out;
   }
+  if (op == "aten.select.int" || op == "aten.select_copy.int") {
+    const HostInts* self = arg_tensor(node, "self", 0);
+    std::optional<int64_t> dim = arg_int(node, "dim", 1);
+    std::optional<int64_t> index = arg_int(node, "index", 2);
+    if (self == nullptr || !dim || !index || self->sizes.empty()) {
+      return std::nullopt;
+    }
+    const auto rank = static_cast<int64_t>(self->sizes.size());
+    if (*dim < 0) {
+      *dim += rank;
+    }
+    if (*dim < 0 || *dim >= rank) {
+      return std::nullopt;
+    }
+    const int64_t extent = self->sizes[static_cast<size_t>(*dim)];
+    if (*index < 0) {
+      *index += extent;
+    }
+    if (*index < 0 || *index >= extent) {
+      return std::nullopt;
+    }
+    size_t inner = 1;
+    for (int64_t d = *dim + 1; d < rank; ++d) {
+      inner *= static_cast<size_t>(self->sizes[static_cast<size_t>(d)]);
+    }
+    const size_t outer = self->data.size() / (inner * static_cast<size_t>(extent));
+    HostInts out;
+    out.sizes = self->sizes;
+    out.sizes.erase(out.sizes.begin() + *dim);
+    for (size_t o = 0; o < outer; ++o) {
+      const size_t offset =
+          (o * static_cast<size_t>(extent) + static_cast<size_t>(*index)) *
+          inner;
+      const auto first =
+          self->data.begin() + static_cast<std::ptrdiff_t>(offset);
+      out.data.insert(
+          out.data.end(), first, first + static_cast<std::ptrdiff_t>(inner));
+    }
+    return out;
+  }
   if (op == "aten.view.default" || op == "aten.view_copy.default" ||
       op == "aten.reshape.default" || op == "aten._unsafe_view.default") {
     const HostInts* self = arg_tensor(node, "self", 0);
