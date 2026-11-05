@@ -87,3 +87,43 @@ class RemoveRedundantOpsTransform(ExportPass):
         graph_module.recompile()
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
+
+
+class FoldForceFp16CastsPass(ExportPass):
+    """
+    Under `force_fp16` every fp32 tensor runs as fp16, so a cast between the two
+    copies identical data (a Blit_Half_to_Half per call). Drop them: the
+    consumers of an fp16 -> fp32 cast read its fp16 input directly, and the
+    producer of an fp32 -> fp16 cast is marked fp16 so that, as a graph output,
+    it is still staged as fp16. Runs after SpecPropPass, which would reject the
+    mixed dtypes this leaves behind.
+    """
+
+    _casts: Set[OpType] = {
+        exir_ops.edge.aten._to_copy.default,
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    }
+    _pair: Set[torch.dtype] = {torch.float16, torch.float32}
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        modified = False
+        for node in list(graph_module.graph.nodes):
+            if node.op != "call_function" or node.target not in self._casts:
+                continue
+            src = node.args[0]
+            if not isinstance(src, torch.fx.Node):
+                continue
+            src_dtype = src.meta["val"].dtype
+            dst_dtype = node.meta["val"].dtype
+            if {src_dtype, dst_dtype} != self._pair:
+                continue
+            if dst_dtype == torch.float16:
+                if "spec" not in src.meta:
+                    continue
+                src.meta["spec"].scalar_type = torch.float16
+            node.replace_all_uses_with(src)
+            graph_module.graph.erase_node(node)
+            modified = True
+        if modified:
+            graph_module.recompile()
+        return PassResult(graph_module, modified)
