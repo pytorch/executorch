@@ -169,7 +169,7 @@ def _run_test_in_subprocess(
 
     Each test gets its own Python interpreter so torch/MLX/Metal memory is
     fully released between tests, preventing OOM on CI runners. Must be called
-    from the main thread, since it installs SIGTERM and SIGHUP handlers.
+    from the main thread, since it installs SIGTERM, SIGHUP and SIGQUIT handlers.
 
     Args:
         config_name: Name of the test configuration to run.
@@ -193,10 +193,10 @@ def _run_test_in_subprocess(
     proc = None
     pending = []
 
-    # In its own session the child no longer gets a SIGTERM or SIGHUP sent to
-    # this process group, so kill its group, then die of the signal. Only for a
-    # signal that would end this process anyway, so an ignored SIGHUP (nohup)
-    # stays ignored.
+    # In its own session the child no longer gets a SIGTERM, SIGHUP or SIGQUIT
+    # sent to this process group, so kill its group, then die of the signal.
+    # Only for a signal that would end this process anyway, so an ignored
+    # SIGHUP (nohup) stays ignored.
     def kill_test_and_die(signum, frame):
         if proc is None:
             # Popen may already have forked; finish once proc is known.
@@ -204,11 +204,12 @@ def _run_test_in_subprocess(
             return
         _kill_process_group(proc.pid)
         signal.signal(signum, signal.SIG_DFL)
+        sys.stdout.flush()
         os.kill(os.getpid(), signum)
 
     handled = [
         sig
-        for sig in (signal.SIGTERM, signal.SIGHUP)
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT)
         if signal.getsignal(sig) == signal.SIG_DFL
     ]
     try:
@@ -241,6 +242,7 @@ def _run_test_in_subprocess(
             proc.wait()
         elif pending:
             # Popen failed, but a signal came; still die of it.
+            sys.stdout.flush()
             os.kill(os.getpid(), pending[0])
 
 

@@ -28,6 +28,9 @@ from executorch.backends.mlx.test.test_utils import (
 from executorch.exir import to_edge
 
 
+_HANDLED_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT)
+
+
 class RunAllTestsTest(unittest.TestCase):
     def test_isolated_run_reports_result(self):
         self.addCleanup(clean_test_outputs, ["sub_10"])
@@ -65,7 +68,7 @@ class RunAllTestsTest(unittest.TestCase):
         self._assert_exits(pid)
 
     def test_isolated_run_kills_grandchildren_of_a_crashed_child(self):
-        handlers = [signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP)]
+        handlers = [signal.getsignal(s) for s in _HANDLED_SIGNALS]
         with tempfile.TemporaryDirectory() as tmp:
             child, pid_file = _write_child(Path(tmp), "kill -KILL $$")
             with mock.patch.object(sys, "executable", str(child)), mock.patch(
@@ -75,13 +78,11 @@ class RunAllTestsTest(unittest.TestCase):
             pid = int(pid_file.read_text())
         self.addCleanup(_kill_if_alive, pid)
         self.assertIn("Killed by signal 9", out.getvalue())
-        self.assertEqual(
-            [signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP)], handlers
-        )
+        self.assertEqual([signal.getsignal(s) for s in _HANDLED_SIGNALS], handlers)
         self._assert_exits(pid)
 
-    def test_isolated_run_kills_grandchildren_on_sigterm_and_sighup(self):
-        for sig in (signal.SIGTERM, signal.SIGHUP):
+    def test_isolated_run_kills_grandchildren_on_sigterm_sighup_and_sigquit(self):
+        for sig in _HANDLED_SIGNALS:
             with self.subTest(sig.name), tempfile.TemporaryDirectory() as tmp:
                 harness, pid = self._start_harness(Path(tmp), "wait")
                 harness.send_signal(sig)
@@ -118,7 +119,10 @@ class RunAllTestsTest(unittest.TestCase):
                 "subprocess.Popen = Popen"
             )
             harness = self._start_harness(Path(tmp), "wait", setup, wait=False)[0]
-            self.assertEqual(harness.wait(timeout=60), -signal.SIGTERM)
+            out = harness.communicate(timeout=60)[0]
+            self.assertEqual(harness.returncode, -signal.SIGTERM)
+            # Printed into a pipe just before dying, so it must be flushed.
+            self.assertIn("Subprocess error: no memory to fork", out)
 
     def test_isolated_run_keeps_an_ignored_sighup_ignored(self):
         # As under nohup: the test must finish instead of dying with the harness.
@@ -144,10 +148,13 @@ class RunAllTestsTest(unittest.TestCase):
                 # Not inherited from a test run under nohup.
                 "signal.signal(signal.SIGTERM, signal.SIG_DFL)\n"
                 "signal.signal(signal.SIGHUP, signal.SIG_DFL)\n"
+                "signal.signal(signal.SIGQUIT, signal.SIG_DFL)\n"
                 f"{setup}\n"
                 f"sys.executable = {str(child)!r}\n"
                 "sys.exit(0 if run_all_tests._run_test_in_subprocess('sub_10') else 1)\n",
-            ]
+            ],
+            stdout=subprocess.PIPE,
+            text=True,
         )
         self.addCleanup(harness.kill)
         if not wait:
