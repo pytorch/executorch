@@ -70,7 +70,8 @@ float16, as measured on an Orin Nano.
 
 The value is OpenVINO's `INFERENCE_PRECISION_HINT`: `f32`, `f16` or `bf16`. An
 empty value means the default, and any other value fails at lowering. A CPU
-without float16 support computes an `f16` program in float32. OpenVINO has no
+without float16 support computes an `f16` program in bfloat16 if it has bfloat16
+units, as some x86 CPUs do, and in float32 otherwise. OpenVINO has no
 bfloat16 on ARM CPUs, so there `bf16` keeps the ARM default, float16 where the
 CPU supports it. Which x86 CPUs compute in bfloat16 is up to OpenVINO; see its
 [Precision Control](https://docs.openvino.ai/2026/openvino-workflow/running-inference/optimize-inference/precision-control.html)
