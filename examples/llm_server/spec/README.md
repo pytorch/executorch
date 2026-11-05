@@ -14,6 +14,10 @@ of language and engine.
 | `GET /health` | implemented |
 | `POST /v1/completions` | planned |
 
+Each `/v1/models` entry includes `context_length` when the server has a configured
+context limit. Clients must use this value or an explicit override for compaction
+budgeting; advertising it does not make every client consume it automatically.
+
 ## `POST /v1/chat/completions`
 
 OpenAI Chat Completions subset. **Honored** request fields: `model`, `messages`,
@@ -25,6 +29,18 @@ defaults to `0` (disabled), and an explicit `seed` must be positive; omitted see
 uses the worker's unset/random value.
 `model` must match the id returned by `/v1/models`; unknown ids return
 `404 model_not_found`.
+
+`messages` must be nonempty and roles must be `system`, `developer`, `user`,
+`assistant`, or `tool`. Tool declarations require unique nonempty function names
+and object parameter schemas (omitted/null means an empty schema). Historical tool calls require an ID, name, and JSON
+argument object (omitted/null/empty arguments mean `{}`). Call IDs must be unique
+within an assistant message, but may be reused across turns. Tool results require
+a `tool_call_id`; they need not have a matching call in the supplied history.
+Compacted histories and repeated tool results are preserved for template rendering.
+Malformed structures and boolean/string values for supported numeric generation controls
+fail schema validation. Integer controls also reject floats, including integral floats
+such as `1024.0`. These failures return HTTP 422 and an `error` object before inference. Unsupported
+penalty/logprob controls retain their existing Pydantic coercion before capability checks.
 
 `ignore_eos` is an optional JSON boolean (default `false`) supported by the
 multiplexed batching worker. It disables model EOS and automatic chat-template
@@ -65,7 +81,8 @@ earlier behavior, which accepted non-boolean values as an opt-out.
 
 **Rejected** with `400 invalid_request_error` (`code: "unsupported_parameter"`)
 rather than silently ignored — a client relying on them would otherwise get
-wrong behavior: `n` (> 1), `reasoning_effort`,
+wrong behavior: `n` (> 1), `reasoning_effort` and OpenRouter `reasoning`
+(except `{}` and `{"exclude": false}`),
 `frequency_penalty`/`presence_penalty` (nonzero), `logit_bias`, `tool_choice` =
 `"required"` or a specific-function choice
 (forcing/restricting a call needs constrained decoding, not implemented),
@@ -89,8 +106,64 @@ first chunk carries `delta.role = "assistant"`, subsequent chunks carry
 `delta.content` (or buffered `delta.tool_calls`), a final chunk carries
 `finish_reason`, optionally a usage-only chunk (with
 `stream_options.include_usage`), terminated by `data: [DONE]`.
-For models with a reasoning extractor, output is buffered and returned reasoning
-is emitted as `delta.reasoning_content` before visible content or tool calls.
+For models with an incremental parser, reasoning is emitted as
+`delta.reasoning_content` while generation runs. Other reasoning extractors buffer
+their output. With tools enabled, content, reasoning, and complete tool calls are
+buffered. Idle HTTP streams include SSE
+keepalive comments every 15 seconds. Model launchers may bound initial readiness
+waiting to return headers during prefill; errors detected after headers arrive
+as SSE error events.
+
+The generic and Muse batching launchers accept `--api-dialect openai|openrouter`.
+The `openrouter` dialect attaches requested usage to the finish chunk, once, for
+clients that stop consuming on `finish_reason`, and supplies overflow metadata
+for context recovery. The default `openai` dialect retains the separate
+usage-only chunk described above.
+
+`--streaming-preflight-timeout` waits for first output, including prefill. The default
+`none` preserves an indefinite wait, while finite nonnegative values allow SSE headers
+before first output. Once headers are sent, later failures are SSE error events.
+This bounds generation-readiness waiting, not waiting for a session transaction
+lease or preparing the request before generation starts.
+
+#### OpenRouter error contract
+
+The compatibility dialect retains the common `error.message`, `error.type`, and
+`error.code` fields. Context overflows detected by Python preflight or by an
+updated native worker carry `error.metadata`. Native counts include all prompt
+positions, including image positions and numeric BOS. Adapters that cannot count
+all positions defer overflow checks to the worker instead of publishing a lower
+bound as `prompt_tokens`. Older workers that report
+only an unstructured error cannot supply recovery counts.
+
+The multiplexed error frame uses `code: "context_length_exceeded"` and
+`context_overflow: {"prompt_tokens": N, "context_length": C, "completion_tokens": M}`.
+Other `invalid_argument` errors are never reclassified as context overflow.
+
+| Key | Meaning |
+| --- | --- |
+| `error_type`, `provider_code` | `context_length_exceeded` |
+| `context_length` | Full configured model window |
+| `prompt_tokens` | Input prompt size |
+| `completion_tokens` | Reserved output space: the explicit positive limit, or 1 when unset |
+
+Let `budget = context_length - completion_tokens`. For a positive budget the
+message is exactly:
+
+```text
+This model's maximum context length is {budget} tokens. However, your messages resulted in {prompt_tokens} tokens (the prompt budget reserves {completion_tokens} completion tokens from the {context_length}-token model window). Please reduce the length of the messages or completion.
+```
+
+The message exposes a usable *input budget* for clients that parse those counts;
+metadata preserves the full window. The minimum one-token reservation does not
+choose a client compaction margin. If the reservation consumes the whole window,
+the ordinary diagnostic message is retained because input compaction cannot make
+that reservation fit.
+
+After streaming headers, this adapter sends a bare `data: {"error": {...}}` event,
+then `data: [DONE]`. It does not add a `choices` entry or `finish_reason: "error"`.
+This is the adapter's supported error contract in both dialects; the dialect
+selects overflow metadata and usage placement, not the full OpenRouter API.
 
 ### Tool calling
 

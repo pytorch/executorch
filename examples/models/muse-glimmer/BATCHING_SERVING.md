@@ -105,6 +105,39 @@ framing and emits `reasoning_content` and `content` incrementally. Optional ATEM
 tool parsing is enabled with `--tool-parser atem`; tool-enabled responses
 currently remain buffered.
 
+The launcher waits for initial generation readiness before returning streaming
+headers. Set `--streaming-preflight-timeout 1` to bound generation-readiness
+waiting, including prefill, to one second. This does not bound earlier request
+preparation or waiting behind another request on the same session.
+Idle streams send SSE keepalive comments every 15
+seconds. Admission errors detected before headers retain their HTTP status; late
+errors are delivered as SSE errors. Keepalives indicate a live connection, not
+measured prefill progress.
+
+### OpenRouter compatibility
+
+Start the server with `--api-dialect openrouter` for OpenRouter clients and
+`--tool-parser atem` for tool calling. `/v1/models` reports the configured
+`context_length`; clients must consume that value or configure their context
+budget explicitly. The server does not configure client-side compaction.
+
+The OpenRouter usage format includes usage once on the terminal finish chunk.
+The installed Muse provider stops reading at that chunk, so a later usage-only
+chunk would be lost. The default `openai` format keeps the separate usage-only
+chunk. Both formats honor `stream_options.include_usage`.
+The `openrouter` mode also supplies the error metadata and message counts Muse
+needs for reactive context-overflow recovery, including worker-detected overflow
+when using an updated native worker. Worker counts include image positions and
+numeric BOS. Image prompts bypass Python token-count preflight so only the
+worker publishes their image-expanded count; older unstructured worker errors
+cannot provide recovery counts.
+Counts describe the input prompt and
+its available budget after reserving completion space; metadata retains the full
+model window. A completion reservation consuming the entire window cannot be
+fixed by compacting input: diagnostic metadata remains, but the message does not
+match Muse's recoverable prompt-budget format. With no explicit `max_tokens`,
+the server reserves one output token; Muse applies its own compaction margin.
+
 Streaming intentionally differs from the legacy buffered fallback for incomplete
 `<|` headers, which are suppressed at EOF; bare `to=` suffixes remain literal text
 unless a complete addressed header resolves them. Streaming also removes known

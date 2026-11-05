@@ -18,6 +18,7 @@ import json
 import logging
 from typing import Any, Optional
 
+from .errors import APIError
 from .protocol import ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -73,8 +74,9 @@ def _decode_tool_call_arguments(messages: list[dict[str, Any]]) -> None:
     OpenAI sends assistant tool-call arguments as a JSON-encoded string, but HF
     chat templates expect a mapping (e.g. Qwen renders ``arguments|items`` into
     ``<parameter=…>`` tags). Without this, a multi-turn tool conversation makes
-    the template raise "Can only get item pairs from a mapping". Left as-is if
-    the value isn't valid JSON, so a template that wants the raw string still works.
+    the template raise "Can only get item pairs from a mapping". HTTP request
+    validation requires object-valued JSON. Direct template callers bypassing
+    request validation retain their original value if JSON decoding fails.
     """
     for m in messages:
         for tc in m.get("tool_calls") or []:
@@ -82,7 +84,9 @@ def _decode_tool_call_arguments(messages: list[dict[str, Any]]) -> None:
             if not isinstance(fn, dict):
                 continue
             args = fn.get("arguments")
-            if isinstance(args, str):
+            if args is None or args == "":
+                fn["arguments"] = {}
+            elif isinstance(args, str):
                 try:
                     fn["arguments"] = json.loads(args)
                 except (ValueError, TypeError):
@@ -164,13 +168,23 @@ class ChatTemplate:
         if self._hf is not None:
             dumped = [m.model_dump(exclude_none=True) for m in messages]
             _decode_tool_call_arguments(dumped)
-            rendered = self._hf.apply_chat_template(
-                dumped,
-                tools=tools,
-                add_generation_prompt=True,
-                tokenize=False,
-                **kwargs,
-            )
+            from jinja2 import TemplateError
+
+            try:
+                rendered = self._hf.apply_chat_template(
+                    dumped,
+                    tools=tools,
+                    add_generation_prompt=True,
+                    tokenize=False,
+                    **kwargs,
+                )
+            except TemplateError as error:
+                raise APIError(
+                    400,
+                    f"Invalid chat template input: {error}",
+                    "invalid_request_error",
+                    "invalid_value",
+                ) from error
             if self._strip_rendered_prefix and rendered.startswith(
                 self._strip_rendered_prefix
             ):

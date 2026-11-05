@@ -369,11 +369,13 @@ class Generation:
             self._reader = None
             self._read_done.set_result(None)
 
-    async def wait_ready(self) -> None:
+    async def wait_ready(self, timeout: Optional[float] = None) -> None:
         """Start generation and retain its first raw token, terminal, or error.
 
         One prefetch task/token per admitted request lets HTTP map admission
         errors before sending headers without pre-opening native sessions.
+        A finite timeout permits headers before readiness; subsequent errors
+        are then reported in the response stream.
         """
         if self._closed:
             return
@@ -384,6 +386,10 @@ class Generation:
             if self._runtime._native:
                 self._runtime._own_task(self._prefetch)
         try:
+            if timeout is not None:
+                done, _ = await asyncio.wait((self._prefetch,), timeout=timeout)
+                if not done:
+                    return  # Late admission errors are delivered in the SSE stream.
             await asyncio.shield(self._prefetch)
         except StopAsyncIteration:
             self._closed = True

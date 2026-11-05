@@ -24,7 +24,11 @@ from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
 )
-from executorch.examples.llm_server.python.serve import _validate_limits
+
+from executorch.examples.llm_server.python.serve import (
+    _parse_preflight_timeout,
+    _validate_limits,
+)
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.session_runtime import SessionRuntime
 from executorch.examples.models.muse_glimmer.serving import serve as legacy
@@ -90,6 +94,21 @@ def _parse_args(argv=None):
     parser.add_argument("--bos-id", type=int, default=200000)
     parser.add_argument("--eos-id", type=int, default=200001)
     parser.add_argument("--tool-parser", choices=("atem", "none"), default="none")
+    parser.add_argument(
+        "--streaming-preflight-timeout",
+        type=_parse_preflight_timeout,
+        default=None,
+        help="Seconds to wait for first output (including prefill); none waits indefinitely. "
+        "Later errors are SSE events.",
+    )
+    parser.add_argument(
+        "--api-dialect",
+        choices=("openai", "openrouter"),
+        default="openai",
+        help="OpenRouter clients require usage on the finish chunk; OpenAI uses "
+        "a separate usage-only chunk. OpenRouter also selects "
+        "context-overflow error metadata.",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
@@ -205,6 +224,8 @@ def build_app_from_args(args):
                 template,
                 args.model_id,
                 max_context=args.max_context,
+                streaming_preflight_timeout=args.streaming_preflight_timeout,
+                api_dialect=args.api_dialect,
                 max_image_bytes=args.max_image_bytes,
                 tool_detector_cls=legacy._tool_detector(args.tool_parser),
                 prompt_token_offset=1,

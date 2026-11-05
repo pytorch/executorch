@@ -4,25 +4,101 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Fixtures for hermetic contract tests.
+"""Fixtures for serving contract tests.
 
-We build a SessionRuntime over a single FakeRunner worker, so the tests exercise
-the real server, protocol, templating, and streaming code over the HTTP boundary
-with NO model, tokenizer, GPU, or worker subprocess. This mirrors ExecuTorch's
-fake_llm_executor approach: fake the worker, test the real surface.
-
-The control plane imports no runtime pybind; only fastapi, pydantic, httpx, and
-pytest are required.
+Most tests use SessionRuntime over a fake worker to exercise the HTTP boundary
+without a model or GPU. Tests depending on native_worker are marked for a
+separate CI pass after the native executables have been built.
 """
+
+import asyncio
+import json
+import os
+import socket
+from contextlib import asynccontextmanager
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
+from executorch.examples.llm_server.python.multiplexed_worker_client import (
+    MultiplexedWorkerClient,
+)
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import SessionRuntime
 from executorch.examples.llm_server.python.tool_parsers import HermesDetector
 from executorch.examples.llm_server.python.worker_client import WorkerError
 from fastapi.testclient import TestClient
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "native_worker: requires a native test worker executable"
+    )
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        if "native_worker" in item.fixturenames:
+            item.add_marker(pytest.mark.native_worker)
+
+
+@pytest.fixture(scope="module")
+def native_worker():
+    """Require an explicitly selected, freshly built native test executable."""
+    executable = os.environ.get("EXECUTORCH_TEST_MULTIPLEXED_WORKER")
+    if not executable:
+        pytest.skip("set EXECUTORCH_TEST_MULTIPLEXED_WORKER to the native test target")
+    assert Path(executable).is_file(), executable
+    return executable
+
+
+@pytest.fixture
+def active_peer(native_worker):
+    @asynccontextmanager
+    async def start():
+        loop = asyncio.get_running_loop()
+        parent, child = socket.socketpair()
+        parent.setblocking(False)
+        proc = None
+        client = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                native_worker,
+                "--validation-worker",
+                str(child.fileno()),
+                pass_fds=(child.fileno(),),
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                limit=1024 * 1024,
+            )
+            child.close()
+            ready = json.loads(await proc.stdout.readline())
+            assert ready["ready"] and ready["multiplexed"]
+            client = MultiplexedWorkerClient(
+                proc,
+                max_named_sessions=ready["max_named_sessions"],
+                max_inflight_requests=2,
+            )
+            peer = client.generate("active peer", SimpleNamespace(max_new_tokens=3))
+            # Native execute() is blocked on this socket until explicitly released.
+            assert await loop.sock_recv(parent, 1) == b"A"
+            assert not peer._state.completion.done()
+            yield client, peer, parent
+        finally:
+            parent.close()
+            child.close()
+            try:
+                if client is not None:
+                    await client.close()
+            finally:
+                if proc is not None:
+                    if proc.returncode is None:
+                        proc.kill()
+                    await proc.wait()
+
+    return start
 
 
 class _FakeStats:
@@ -137,6 +213,7 @@ def make_client():
         streaming_parser_factory=None,
         content_filter=None,
         special_tokens=None,
+        api_dialect="openai",
     ):
         fake = FakeRunner(
             tokens,
@@ -167,6 +244,7 @@ def make_client():
             reasoning_extractor=reasoning_extractor,
             streaming_parser_factory=streaming_parser_factory,
             content_filter=content_filter,
+            api_dialect=api_dialect,
         )
         return TestClient(build_app(serving, "test-model")), fake
 

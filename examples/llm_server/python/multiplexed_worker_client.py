@@ -572,6 +572,18 @@ class MultiplexedWorkerClient:
             raise WorkerError(f"invalid worker {kind} acknowledgement")
         if "code" in msg and not isinstance(msg["code"], str):
             raise WorkerError("invalid worker error code")
+        if "context_overflow" in msg:
+            counts = msg["context_overflow"]
+            if (
+                kind != "error"
+                or msg.get("code") != "context_length_exceeded"
+                or not isinstance(counts, dict)
+                or set(counts)
+                != {"prompt_tokens", "context_length", "completion_tokens"}
+                or any(type(value) is not int or value < 0 for value in counts.values())
+                or counts["context_length"] == 0
+            ):
+                raise WorkerError("invalid worker context overflow counts")
         if kind == "done":
             MultiplexedWorkerClient._validate_generation_terminal(msg)
         return kind
@@ -669,7 +681,11 @@ class MultiplexedWorkerClient:
             state.changed.set()
         elif kind in (state.ack, "error"):
             result = (
-                WorkerError(msg["error"], code=msg.get("code"))
+                WorkerError(
+                    msg["error"],
+                    code=msg.get("code"),
+                    context_overflow=msg.get("context_overflow"),
+                )
                 if kind == "error"
                 else WorkerStats.from_message(msg) if state.op == "generate" else None
             )

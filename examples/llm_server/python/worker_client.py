@@ -104,9 +104,12 @@ class WorkerError(RuntimeError):
     to the right status; None for unstructured failures.
     """
 
-    def __init__(self, message: str, code: Optional[str] = None):
+    def __init__(
+        self, message: str, code: Optional[str] = None, *, context_overflow=None
+    ):
         super().__init__(message)
         self.code = code
+        self.context_overflow = context_overflow
 
 
 def _decode_worker_json(line: str) -> dict:

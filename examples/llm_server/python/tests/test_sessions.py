@@ -396,7 +396,7 @@ def test_stop_set_narrow_but_strip_set_broad(ignore_eos):
     )
     req = ChatCompletionRequest(
         model="test-model",
-        messages=[],
+        messages=[{"role": "user", "content": "hi"}],
         ignore_eos=ignore_eos,
         tools=[{"type": "function", "function": {"name": "f"}}],
     )
