@@ -58,10 +58,10 @@ add_custom_command(
     ${CMAKE_COMMAND} -E env MKL_CBWR=COMPATIBLE ONEDNN_MAX_CPU_ISA=AVX2
     ATEN_CPU_CAPABILITY=avx2 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
     "PYTHONPATH=${EXECUTORCH_ROOT}/src:${EXECUTORCH_ROOT}/backends/cadence/utils/FACTO"
-    ${PYTHON_EXECUTABLE} -m executorch.backends.native.test.samples.generate
-    --out ${_native_op_samples}
+    FLATC_EXECUTABLE=$<TARGET_FILE:flatc> ${PYTHON_EXECUTABLE} -m
+    executorch.backends.native.test.samples.generate --out ${_native_op_samples}
   COMMAND ${CMAKE_COMMAND} -E touch ${_native_op_samples}.stamp
-  DEPENDS ${_native_op_samples_srcs}
+  DEPENDS flatc ${_native_op_samples_srcs}
           ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_linear.py
   VERBATIM
 )
