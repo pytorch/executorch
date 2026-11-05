@@ -315,7 +315,7 @@ class _ViewSpec(TensorSpec):
         self._base = base
         self.shape: List[int] = shape
         self.stride: Tuple[int] = contiguous_stride_from_shape(torch.Size(self.shape))
-        self.dim_order: Tuple[bytes] = dim_order_from_stride(self.stride)
+        self.dim_order: Tuple[int, ...] = dim_order_from_stride(self.stride)
         self.shape_dynamism: TensorShapeDynamism = determine_tensor_dynanism(
             torch.Size(self.shape)
         )
