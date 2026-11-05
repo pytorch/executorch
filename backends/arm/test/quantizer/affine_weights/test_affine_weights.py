@@ -17,11 +17,13 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 )
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineINT
+from executorch.backends.arm.tosa.constant_pool import TosaSerializerWithConstantPool
 from executorch.backends.test.harness.stages import StageType
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     QuantizationSpec,
 )
+from tosa.TosaGraph import TosaGraph  # type: ignore[import-untyped]
 
 
 def _affine_config(per_channel: bool) -> QuantizationConfig:
@@ -58,7 +60,7 @@ def test_affine_weight_specs_and_derived_channel_bias(per_channel: bool) -> None
     assert bias.ch_axis == (0 if per_channel else None)
 
 
-def test_equal_channel_weight_zero_points_serialize_as_one_scalar() -> None:
+def test_equal_channel_weight_zero_points_preserve_tensor_shape() -> None:
     graph = torch.fx.Graph()
     node = graph.placeholder("conv")
     node.meta["input_qparams"] = {
@@ -69,14 +71,80 @@ def test_equal_channel_weight_zero_points_serialize_as_one_scalar() -> None:
     serializer = Mock()
     input_const, weight_const = Mock(), Mock()
     input_const.name, weight_const.name = "input_zp", "weight_zp"
-    serializer.addConst.side_effect = [input_const, weight_const]
+    serializer.addConst.return_value = input_const
+    serializer.addUnpooledConst.side_effect = [input_const, weight_const]
     add_input_weight_zp_consts(serializer, node, inputs, "conv")
-    assert serializer.addConst.call_args_list[1].args == ([1], ts.DType.INT8, [-28])
+    assert serializer.addUnpooledConst.call_args_list[0].args == (
+        [2],
+        ts.DType.INT8,
+        [-28, -28],
+    )
     node.meta["input_qparams"][1] = QuantArgs(
         [0.01, 0.02], [-28, -27], -128, 127, torch.int8, per_channel=True
     )
     with pytest.raises(ValueError, match="common weight zero point"):
         add_input_weight_zp_consts(serializer, node, inputs, "conv")
+
+
+def test_zero_point_constants_do_not_alias_across_roles() -> None:
+    graph = torch.fx.Graph()
+    node = graph.placeholder("conv")
+    node.meta["input_qparams"] = {
+        0: QuantArgs(0.1, -7, -127, 127, torch.int8),
+        1: QuantArgs(0.01, -7, -128, 127, torch.int8),
+    }
+    inputs = [Mock(dtype=ts.DType.INT8), Mock(dtype=ts.DType.INT8)]
+    serializer = TosaSerializerWithConstantPool()
+
+    first_input, first_weight = add_input_weight_zp_consts(
+        serializer, node, inputs, "conv0"
+    )
+    second_input, second_weight = add_input_weight_zp_consts(
+        serializer, node, inputs, "conv1"
+    )
+
+    assert first_input == "conv0_input_zp"
+    assert first_weight == "conv0_weight_zp"
+    assert first_input != first_weight
+    assert second_input == first_input
+    assert second_weight == first_weight
+
+    graph = TosaGraph.GetRootAs(bytes(serializer.serialize()), 0)
+    block = graph.Regions(0).Blocks(0)
+    tensors = [
+        block.Tensors(index).Name().decode() for index in range(block.TensorsLength())
+    ]
+    assert tensors == ["conv0_input_zp", "conv0_weight_zp"]
+
+
+def test_equal_channel_weight_zero_points_pool_by_full_tensor() -> None:
+    graph = torch.fx.Graph()
+    node = graph.placeholder("conv")
+    node.meta["input_qparams"] = {
+        0: QuantArgs(0.1, 0, -127, 127, torch.int8),
+        1: QuantArgs([0.01, 0.02], [-7, -7], -128, 127, torch.int8, per_channel=True),
+    }
+    inputs = [Mock(dtype=ts.DType.INT8), Mock(dtype=ts.DType.INT8)]
+    serializer = TosaSerializerWithConstantPool()
+
+    first_input, first_weight = add_input_weight_zp_consts(
+        serializer, node, inputs, "conv0"
+    )
+    second_input, second_weight = add_input_weight_zp_consts(
+        serializer, node, inputs, "conv1"
+    )
+
+    assert first_input == second_input
+    assert first_weight == second_weight == "conv0_weight_zp"
+
+    graph = TosaGraph.GetRootAs(bytes(serializer.serialize()), 0)
+    block = graph.Regions(0).Blocks(0)
+    weight_zp = next(
+        block.Tensors(index)
+        for index in range(block.TensorsLength())
+        if block.Tensors(index).Name().decode() == "conv0_weight_zp"
+    )
+    assert [weight_zp.Shape(i) for i in range(weight_zp.ShapeLength())] == [2]
 
 
 def _affine_model(
