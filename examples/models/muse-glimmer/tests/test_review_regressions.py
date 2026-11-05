@@ -212,6 +212,9 @@ def test_detector_subclass_receives_cutoff_context():
 
 def test_streamed_reasoning_disagreement_is_logged(caplog):
     from executorch.examples.llm_server.python.protocol import DeltaMessage
+    from executorch.examples.models.muse_glimmer.tests.test_serve import (
+        _HarmonyTemplate,
+    )
 
     class Parser:
         def feed(self, text):
@@ -224,6 +227,8 @@ def test_streamed_reasoning_disagreement_is_logged(caplog):
         " to=self<|message|>expected<|eom|> to=user<|message|>answer"
     )
     serving._tool_reasoning_parser_factory = Parser
+    serving._template = serving._transcript._template = _HarmonyTemplate()
+    serving._runtime._outputs[0]["gen_ids"] = [1, 2, 3]
     body = request({}, True)
     body["session_id"] = "disagreement"
     response = client.post("/v1/chat/completions", json=body)
@@ -235,3 +240,20 @@ def test_streamed_reasoning_disagreement_is_logged(caplog):
         serving._transcript._turns["disagreement"][0]["reasoning_fp"]
         == hashlib.sha256(b"different").digest()
     )
+    body["messages"].extend(
+        [
+            {
+                "role": "assistant",
+                "content": message["content"],
+                "reasoning_content": message["reasoning_content"],
+            },
+            {"role": "user", "content": "next"},
+        ]
+    )
+    serving._runtime._outputs.append({"text": " to=user<|message|>next answer"})
+    assert client.post("/v1/chat/completions", json=body).status_code == 200
+    assert [
+        segment["ids"]
+        for segment in serving._runtime.prompts[-1].segments or []
+        if "ids" in segment
+    ] == [[1, 2, 3]]

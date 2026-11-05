@@ -109,7 +109,11 @@ def _comparison_key(value):
         return ("string", value)
     if value is None or isinstance(value, bool):
         return (type(value), value)
-    return ("number", value)
+    # String hashing avoids deliberate collisions between large integer hashes.
+    number = int(value) if isinstance(value, float) and value.is_integer() else value
+    encoded = str(number)
+    budget.spend(len(encoded) // 64)
+    return ("number", encoded)
 
 
 def _unique_items(validator, unique, instance, schema):

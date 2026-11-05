@@ -12,7 +12,6 @@ declared tool schema. Malformed or invalid calls fail the entire response.
 
 import json
 import re
-from bisect import bisect_left
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -60,7 +59,9 @@ class _Syntax:
     def __init__(self, text):
         self.invocations = {}
         self.markers = []
-        self.closes = []
+        self.wrapper_ends = {}
+        self.nested_wrappers = set()
+        self._wrappers = []
         self.parameters = []
         self.text = text
         self._parameter_ends = list(_PARAMETER_END_RE.finditer(text))
@@ -118,19 +119,20 @@ class _Syntax:
             self._active = None
         elif self.text.startswith("<atem:function_calls>", start):
             self.markers.append(start)
+            if self._wrappers:
+                self.nested_wrappers.add(self._wrappers[0])
+            self._wrappers.append(start)
         elif self.text.startswith("</atem:function_calls>", start):
-            self.closes.append(start)
+            if self._wrappers:
+                self.wrapper_ends[self._wrappers.pop()] = start + len(
+                    "</atem:function_calls>"
+                )
             self._active = None
 
     def block_end(self, start):
         if self.text.startswith(_INVOKE_OPEN, start):
             return self.invocations[start].end
-        index = bisect_left(self.closes, start)
-        return (
-            (self.closes[index] + len("</atem:function_calls>"))
-            if index < len(self.closes)
-            else None
-        )
+        return self.wrapper_ends.get(start)
 
 
 def _tool_blocks(text, syntax=None):
@@ -229,6 +231,8 @@ class AtemToolCallDetector:
                     offset = terminator.end()
                 if end is None:
                     raise IncompleteToolOutputError("Incomplete ATEM tool call")
+                if start in syntax.nested_wrappers:
+                    raise ToolOutputError("Nested ATEM call wrappers are malformed")
                 selected = []
                 while invocation is not None and invocation.start < end:
                     if invocation.start >= start:

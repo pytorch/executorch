@@ -315,6 +315,7 @@ def test_large_unique_object_array_does_not_do_pairwise_comparisons():
 from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import ToolSchema
 schema = ToolSchema({'type': 'array', 'uniqueItems': True, 'items': {'type': 'object'}})
 schema.validate('edit', [{'value': i} for i in range(5000)])
+schema.validate('edit', [{'value': i * (2**61 - 1)} for i in range(5000)])
 """
     subprocess.run([sys.executable, "-c", code], check=True, timeout=8)
 
@@ -411,3 +412,31 @@ def test_http_tool_parameters_require_schema_objects(parameters):
         client.post("/v1/chat/completions", json=request(parameters)).status_code == 422
     )
     assert not serving._runtime.prompts
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("quoted", [False, True])
+def test_nested_wrapper_ownership_is_preserved(stream, quoted):
+    inner = _atem("edit.edit", [("q", "inner")])
+    example_call = '<atem:invoke name="edit.edit"><atem:parameter name="q">example</atem:parameter></atem:invoke>'
+    nested = (
+        "<atem:function_calls>\n"
+        + inner
+        + "\n"
+        + example_call
+        + "\n</atem:function_calls>"
+    )
+    prefix = "Example: " if quoted else ""
+    client, _ = client_for(prefix + nested + "\n" + _atem("edit.edit", [("q", "real")]))
+    response = client.post("/v1/chat/completions", json=request({}, stream))
+    if not quoted:
+        assert response.status_code == (200 if stream else 502)
+        assert '"invalid_tool_output"' in response.text
+        return
+    assert response.status_code == 200
+    message, finish = response_message(response, stream)
+    assert finish == "tool_calls"
+    assert message["content"] == prefix + nested
+    assert [json.loads(c["function"]["arguments"]) for c in message["tool_calls"]] == [
+        {"q": "real"}
+    ]
