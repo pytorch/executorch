@@ -981,7 +981,9 @@ class ServingChat:
             if entered:
                 await lease.__aexit__(None, None, None)
 
-    async def _create(self, req: ChatCompletionRequest, lease, admission, observer=None):
+    async def _create(
+        self, req: ChatCompletionRequest, lease, admission, observer=None
+    ):
         self._reject_unsupported_params(req)
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
@@ -1125,7 +1127,7 @@ class ServingChat:
             prompt_input,
             options,
             stats,
-            **({"observer": observer} if observer is not None else {}),
+            observer=observer,
         )
         if req.stream and self._multiplexed:
             await generation.wait_ready(timeout=self._streaming_preflight_timeout)
@@ -1139,7 +1141,7 @@ class ServingChat:
                     prompt_input,
                     options,
                     stats,
-                    **({"observer": observer} if observer is not None else {}),
+                    observer=observer,
                 ),
                 admission,
             )

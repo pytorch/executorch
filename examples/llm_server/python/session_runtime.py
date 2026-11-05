@@ -22,6 +22,7 @@ Named-session operations remain ordered. Multi-worker scheduling is out of scope
 import asyncio
 import logging
 import threading
+import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import aclosing, asynccontextmanager
@@ -142,6 +143,7 @@ class _GenerationBridge:
         request_id: Optional[int],
         mailbox_capacity: int = 256,
         max_buffered_chars: int = 1024 * 1024,
+        on_first_text=None,
     ):
         self._worker = worker
         self._prompt_text = prompt_text
@@ -151,6 +153,7 @@ class _GenerationBridge:
         self._loop = asyncio.get_running_loop()
         self._mailbox_capacity = mailbox_capacity
         self._max_buffered_chars = max_buffered_chars
+        self._on_first_text = on_first_text
         self._tokens = deque()
         self._buffered_chars = 0
         self._terminal = None
@@ -191,6 +194,14 @@ class _GenerationBridge:
         with self._mailbox_lock:
             if self.drop_tokens.is_set() or self._terminal is not None:
                 return
+            if token and self._on_first_text is not None:
+                try:
+                    self._loop.call_soon_threadsafe(
+                        self._on_first_text, time.monotonic()
+                    )
+                except RuntimeError:
+                    pass  # The event loop may have closed during shutdown.
+                self._on_first_text = None
             if (
                 len(self._tokens) >= self._mailbox_capacity
                 or self._buffered_chars + len(token) > self._max_buffered_chars
@@ -725,7 +736,14 @@ class SessionRuntime:
             if generation._cancel_requested:
                 self._worker.cancel(request_id)
             stream = self._worker.generate(
-                prompt.text or "", request, request_id=request_id
+                prompt.text or "",
+                request,
+                request_id=request_id,
+                on_first_text=(
+                    generation.observer.output
+                    if generation.observer is not None
+                    else None
+                ),
             )
         except BaseException:
             try:
@@ -781,12 +799,17 @@ class SessionRuntime:
         try:
             async with aclosing(stream):
                 async for item in stream:
-                    if item:
-                        turn.output()
                     yield item
         except Exception as error:
             # Store a category, never a prompt or raw worker error payload.
-            record_error(turn, type(error).__name__)
+            record_error(
+                turn,
+                (
+                    error.code
+                    if isinstance(error, WorkerError) and error.code
+                    else type(error).__name__
+                ),
+            )
             raise
         finally:
             turn.record_stats(generation.stats)
@@ -827,6 +850,11 @@ class SessionRuntime:
                 request_id,
                 self._mailbox_capacity,
                 self._max_buffered_chars,
+                on_first_text=(
+                    generation.observer.output
+                    if generation.observer is not None
+                    else None
+                ),
             )
             generation._bridge = bridge
             if generation._cancel_requested:

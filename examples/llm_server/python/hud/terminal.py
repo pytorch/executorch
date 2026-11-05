@@ -7,6 +7,7 @@
 """ASCII serving dashboard; terminal I/O happens at most twice per second."""
 
 import asyncio
+import atexit
 import logging
 import os
 import re
@@ -75,7 +76,7 @@ def _colorize(line):
             ),
             line,
         )
-    elif line.startswith("Avg since startup:"):
+    elif line.startswith("Avg since ready:"):
         return re.sub(
             r"(?:Decode|Prefill) [\d.,k]+ tok/s|Output [\d.,k]+",
             lambda m: _style(m[0], "1"),
@@ -186,7 +187,7 @@ def render(
         f" | Requests: {sum(row.ended is None for row in rows)} running"
         f" | Done: {metrics.completed} | Errors: {metrics.errors}"
         f" | Cancelled: {metrics.cancelled}",
-        f"Avg since startup: Decode {_number(decode)} tok/s"
+        f"Avg since ready: Decode {_number(decode)} tok/s"
         f" | Prefill {_number(prefill)} tok/s | Output {_number(totals.output_tokens)}",
         f"Context limit: {_number(context)} | Concurrency: {capacity or '--'}"
         f" | Uptime: {int(uptime)}s",
@@ -194,7 +195,7 @@ def render(
         f"{'Prefill/s':>9} {'Decode/s':>8} {'TTFT':>7} {'Elapsed':>7} {'Cache':>6}",
     ]
     footer = [
-        "Rates/counts update at turn end; startup averages include idle time.",
+        "Rates/counts update at turn end; averages include idle time.",
         "Last 3 completed/session + active. TTFT = first text. -- = unavailable. Ctrl+C.",
     ]
     errors = [row for row in rows if row.error is not None]
@@ -269,12 +270,20 @@ class TerminalHUD(logging.Handler):
         self._active = False
 
     def emit(self, record):
-        message = self.format(record)
-        self._messages.append((record.levelno, _text(message)))
-        if record.levelno >= logging.WARNING and self._diagnostics is not None:
-            self._diagnostics.write(
-                "".join(c for c in message if c.isprintable() or c in "\n\t") + "\n"
-            )
+        try:
+            message = self.format(record)
+            self._messages.append((record.levelno, _text(message)))
+            if record.levelno >= logging.WARNING and self._diagnostics is not None:
+                self._diagnostics.write(
+                    "".join(c for c in message if c.isprintable() or c in "\n\t") + "\n"
+                )
+        except Exception:
+            # Log storage must never stop the worker stderr pipe being drained.
+            diagnostics, self._diagnostics = self._diagnostics, None
+            if diagnostics is not None:
+                with suppress(OSError, ValueError):
+                    diagnostics.close()
+            self.handleError(record)
 
     def draw(self):
         try:
@@ -334,6 +343,7 @@ class TerminalHUD(logging.Handler):
         self._diagnostics = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
         self.stream.write("\x1b[?1049h\x1b[?25l")
         self._active = True
+        atexit.register(self._restore)
         for logger in [
             logging.getLogger(),
             logging.getLogger("uvicorn"),
@@ -359,6 +369,7 @@ class TerminalHUD(logging.Handler):
         if not self._active:
             return
         self._active = False
+        atexit.unregister(self._restore)
         for logger, handlers in self._handlers:
             logger.handlers = handlers
         self.acquire()
@@ -369,11 +380,15 @@ class TerminalHUD(logging.Handler):
                     if self._color:
                         self.stream.write("\x1b[0m")
                     self.stream.write("\x1b[?25h\x1b[?1049l")
-                    diagnostics.seek(0)
-                    shutil.copyfileobj(diagnostics, self.stream)
                     self.stream.flush()
+                    if diagnostics is not None:
+                        diagnostics.seek(0)
+                        shutil.copyfileobj(diagnostics, self.stream)
+                        self.stream.flush()
             finally:
-                diagnostics.close()
+                if diagnostics is not None:
+                    with suppress(OSError, ValueError):
+                        diagnostics.close()
         finally:
             self.release()
 

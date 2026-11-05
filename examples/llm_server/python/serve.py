@@ -199,7 +199,10 @@ def main(argv=None) -> None:
                     else []
                 )
                 + (
-                    ["--prefix_checkpoint_interval", str(args.prefix_checkpoint_interval)]
+                    [
+                        "--prefix_checkpoint_interval",
+                        str(args.prefix_checkpoint_interval),
+                    ]
                     if args.prefix_checkpoint_interval
                     else []
                 ),

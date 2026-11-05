@@ -104,11 +104,7 @@ async def _create_with_disconnect(
         while (await request.receive())["type"] != "http.disconnect":
             pass
 
-    creation = asyncio.create_task(
-        serving.create(req, observer=observer)
-        if observer is not None
-        else serving.create(req)
-    )
+    creation = asyncio.create_task(serving.create(req, observer=observer))
     disconnect = asyncio.create_task(wait_disconnect())
     transferred = False
 
@@ -262,6 +258,13 @@ def _current_serving(app: FastAPI) -> ServingChat:
 
 
 async def _chat_response(app, request, req):
+    try:
+        if req.session_id is not None:
+            ServingChat._validate_session_id(req.session_id)
+    except APIError as error:
+        return JSONResponse(
+            _current_serving(app).error_body(error), status_code=error.status
+        )
     metrics = app.state.telemetry
     turn = metrics.begin(req.session_id) if metrics is not None else None
     transferred = False
@@ -374,30 +377,42 @@ def build_app(
     @app.delete("/v1/sessions/{session_id}")
     async def close_session(session_id: str):
         # Free a named session's state + capacity slot (vendor extension).
-        serving = _current_serving(app)
-        response = await _session_op(
-            serving.close_session,
-            session_id,
-            {"closed": True, "session_id": session_id},
-            serving,
-        )
-        if response.status_code == 200 and app.state.telemetry is not None:
-            app.state.telemetry.close_session(session_id)
-        return response
+        closed = False
+        try:
+            serving = _current_serving(app)
+            response = await _session_op(
+                serving.close_session,
+                session_id,
+                {"closed": True, "session_id": session_id},
+                serving,
+            )
+            closed = response.status_code == 200
+            return response
+        finally:
+            if app.state.telemetry is not None:
+                if closed:
+                    app.state.telemetry.close_session(session_id)
+                else:
+                    app.state.telemetry.reset_context(session_id, None)
 
     @app.post("/v1/sessions/{session_id}/reset")
     async def reset_session(session_id: str):
         # Replace a named session's context under its public ID (vendor extension).
-        serving = _current_serving(app)
-        response = await _session_op(
-            serving.reset_session,
-            session_id,
-            {"reset": True, "session_id": session_id},
-            serving,
-        )
-        if response.status_code == 200 and app.state.telemetry is not None:
-            app.state.telemetry.reset_session(session_id)
-        return response
+        context = None
+        try:
+            serving = _current_serving(app)
+            response = await _session_op(
+                serving.reset_session,
+                session_id,
+                {"reset": True, "session_id": session_id},
+                serving,
+            )
+            if response.status_code == 200:
+                context = 0
+            return response
+        finally:
+            if app.state.telemetry is not None:
+                app.state.telemetry.reset_context(session_id, context)
 
     return app
 

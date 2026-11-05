@@ -7,6 +7,7 @@
 """Terminal HUD shared by model-specific serving applications."""
 
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -30,6 +31,7 @@ def install(
     @asynccontextmanager
     async def lifespan(app):
         async with original(app) as state:
+            metrics.started = time.monotonic()
             async with TerminalHUD(metrics, model, context, capacity):
                 yield state
 

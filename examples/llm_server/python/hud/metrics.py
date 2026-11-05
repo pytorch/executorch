@@ -99,9 +99,9 @@ class Turn:
             self.session = session
         self.context_epoch = self.session.context_epoch
 
-    def output(self) -> None:
+    def output(self, arrived: float) -> None:
         if self.first_output is None:
-            self.first_output = time.monotonic()
+            self.first_output = arrived
         if self.ended is None:
             self.state = "generating"
 
@@ -153,7 +153,10 @@ class Metrics:
         return self.totals.cancelled
 
     def begin(self, session_id: Optional[str]) -> Turn:
-        session = self.sessions.setdefault(session_id, Session())
+        session = self.sessions.get(session_id)
+        if session is None or session.closed:
+            session = Session()
+            self.sessions[session_id] = session
         self.sessions.move_to_end(session_id)
         self._sequence += 1
         session.last_request = self._sequence
@@ -209,9 +212,9 @@ class Metrics:
         if not any(row.session is session for row in self.turns.values()):
             self.sessions.pop(session_id)
 
-    def reset_session(self, session_id: str) -> None:
+    def reset_context(self, session_id: str, value: Optional[int] = 0) -> None:
         session = self.sessions.get(session_id)
         if session is not None:
-            session.context = 0
+            session.context = value
             session.context_request = 0
             session.context_epoch += 1

@@ -921,7 +921,7 @@ def test_completed_response_racing_disconnect_only_closes_stream(stream):
             async def aclose(self):
                 closed.append(True)
 
-        async def create(_):
+        async def create(_, *, observer=None):
             completed.set()
             return Stream() if stream else object()
 

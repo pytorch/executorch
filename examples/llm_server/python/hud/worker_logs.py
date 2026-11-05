@@ -17,33 +17,43 @@ from .terminal import terminal_available
 
 logger = logging.getLogger(__name__)
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_LEVEL = re.compile(
+    r"^(?:(?:DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL)\b|[DIWEF](?=\d|\s))", re.IGNORECASE
+)
+_LEVELS = {
+    "D": logging.DEBUG,
+    "I": logging.INFO,
+    "W": logging.WARNING,
+    "E": logging.ERROR,
+    "F": logging.CRITICAL,
+}
 
 
 async def _relay(reader):
-    truncated = False
+    head = b""
     while True:
         try:
             line = await reader.readuntil(b"\n")
         except asyncio.LimitOverrunError as error:
-            await reader.readexactly(error.consumed)
-            truncated = True
+            chunk = await reader.readexactly(error.consumed)
+            if not head:
+                head = chunk[: 64 * 1024]
             continue
         except asyncio.IncompleteReadError as error:
             line = error.partial
-            if not line:
+            if not line and not head:
                 break
-        message = _ANSI.sub("", line.decode("utf-8", errors="replace")).rstrip()
+        truncated = bool(head)
+        message = _ANSI.sub(
+            "", (head or line).decode("utf-8", errors="replace")
+        ).rstrip()
+        head = b""
         if truncated:
-            message = "[truncated native log] " + message
-            truncated = False
+            message += " [truncated]"
         if not message:
             continue
-        if re.match(r"(?i)^(?:[ef](?:\d|\s)|error\b|fatal\b)", message):
-            level = logging.ERROR
-        elif re.match(r"(?i)^(?:i(?:\d|\s)|info\b)", message):
-            level = logging.INFO
-        else:
-            level = logging.WARNING
+        severity = _LEVEL.match(message)
+        level = _LEVELS[severity[0][0].upper()] if severity else logging.INFO
         logger.log(level, "%s", message)
 
 

@@ -149,6 +149,7 @@ session ID appear under "Ungrouped requests". The display fits the terminal and
 updates in place. Native multiplexed-worker diagnostics appear in the recent
 log lines instead of scrolling the terminal; redirect stderr for full logs.
 Warnings and errors, including full tracebacks, are replayed after the HUD exits.
+A process-exit fallback restores the terminal if the serving lifespan is skipped.
 A rendering failure restores the terminal and falls back to plain logs.
 Prompt and response text are never displayed.
 
@@ -159,17 +160,21 @@ time; cache reuse uses total reused tokens divided by total prompt tokens.
 Context is the latest reported prompt plus output length, not a cumulative sum.
 Reset sets context to zero while retaining history and totals. Close removes
 completed history; unfinished requests remain visible until they settle, and
-queued requests are tracked under the reopened session. Up to 32 inactive groups are retained, plus all active groups.
+queued requests are tracked under the reopened session. Failed close/reset
+operations keep the group with unknown context (`--`) until another request
+reports its state. Invalid session IDs do not create groups. Up to 32 inactive
+groups are retained, plus all active groups.
 Tracked session counts describe these observations, not native cache allocations.
 
-The server header shows the listen address and aggregate prefill/decode tokens per second since startup,
-using reported tokens divided by wall-clock uptime, including idle time. Prefill
+The server header shows the listen address and aggregate prefill/decode tokens
+per second since the model became ready, excluding model load and including idle
+time. These use reported tokens divided by wall-clock uptime. Prefill
 counts only newly processed prompt tokens. Worker counts arrive at turn end, so
-these are startup averages, not live rates; incomplete requests contribute once
-their terminal stats arrive. Per-request rates/counts stay `--` until reported.
-TTFT measures first worker text from entry into the validated HTTP handler,
-including session waiting and prompt preparation, but excluding network transfer
-and parsing. Text fragments are not used as token counts.
+these are averages since readiness, not live rates; incomplete requests contribute
+once their terminal stats arrive. Per-request rates/counts stay `--` until reported.
+TTFT timestamps the first nonempty worker text on receipt in Python, measured
+from entry into the validated HTTP handler. It includes session waiting and
+prompt preparation, but excludes HTTP transmission and response formatting. Text fragments are not used as token counts.
 
 Embedders default to plain logs. The batching launchers enable `build_app(...,
 hud=True, model_path=..., max_context=..., max_concurrent_requests=...)` and use

@@ -16,9 +16,10 @@ import asyncio
 import json
 import logging
 import math
+import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from .worker_client import (
     _decode_worker_json,
@@ -130,6 +131,7 @@ class _Request:
     tokens: deque[str] = field(default_factory=deque)
     token_chars: int = 0
     local_error: Optional[WorkerError] = None
+    on_first_text: Optional[Callable[[float], None]] = None
 
 
 @dataclass
@@ -387,6 +389,7 @@ class MultiplexedWorkerClient:
             self._requests.pop(state.request_id, None)
 
     def _complete(self, state, result):
+        state.on_first_text = None
         if not state.completion.done():
             state.completion.set_result(result)
         state.changed.set()
@@ -686,6 +689,9 @@ class MultiplexedWorkerClient:
             if state.local_error is not None or state.consumed:
                 return
             token = msg["token"]
+            if token and state.on_first_text is not None:
+                self._loop.call_soon(state.on_first_text, time.monotonic())
+                state.on_first_text = None
             if self._mailbox_full(state, token):
                 state.tokens.clear()
                 state.token_chars = 0
@@ -748,8 +754,14 @@ class MultiplexedWorkerClient:
                 else WorkerError(f"worker read failed: {error}")
             )
 
-    def generate(self, prompt, config, request_id=None) -> WorkerGeneration:
-        """Enqueue a generation and return its async token stream, without I/O waits."""
+    def generate(
+        self, prompt, config, request_id=None, *, on_first_text=None
+    ) -> WorkerGeneration:
+        """Enqueue a generation without I/O waits.
+
+        on_first_text receives the first nonempty fragment's monotonic arrival
+        time on this event loop, independently of token consumption.
+        """
         self._ensure_usable()
         if request_id is not None:
             self._validate_id(request_id)
@@ -772,7 +784,9 @@ class MultiplexedWorkerClient:
             session_id = getattr(config, "session_id", None)
             if session_id:
                 request["session_id"] = session_id
-            return WorkerGeneration(self, self._submit(request, request_id=request_id))
+            state = self._submit(request, request_id=request_id)
+            state.on_first_text = on_first_text
+            return WorkerGeneration(self, state)
         except BaseException:
             if request_id is not None and self._terminal_error is None:
                 self.release_request(request_id)
