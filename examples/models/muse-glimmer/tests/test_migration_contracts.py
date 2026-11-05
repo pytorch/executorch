@@ -366,7 +366,9 @@ def test_union_and_local_ref_preserve_numeric_strings(property_schema):
     }
     calls = (
         AtemToolCallDetector()
-        .detect_and_parse(_atem("edit", [("content", "123")]), {"edit": schema})
+        .detect_and_parse(
+            _atem("edit", [("content", "123")]), {"edit": ToolSchema(schema)}
+        )
         .calls
     )
     assert json.loads(calls[0].arguments) == {"content": "123"}
@@ -894,7 +896,7 @@ def test_explicit_reasoning_effort_survives_system_prose(system):
 
 
 @pytest.mark.parametrize("stream", [False, True])
-@pytest.mark.parametrize("matched_stop", [None, "<|eot|>", "\n\n"])
+@pytest.mark.parametrize("matched_stop", [None, "", "<|eot|>", "\n\n"])
 def test_native_stop_metadata_distinguishes_truncation_from_malformed_eos(
     stream, matched_stop
 ):
@@ -904,7 +906,7 @@ def test_native_stop_metadata_distinguishes_truncation_from_malformed_eos(
     body = request({"properties": {"q": {"type": "string"}}}, stream)
     body["stop"] = "\n\n"
     response = client.post("/v1/chat/completions", json=body)
-    if matched_stop == "\n\n":
+    if matched_stop in (None, "\n\n"):
         assert response.status_code == 200
         message, finish = response_message(response, stream)
         assert finish == "stop"
@@ -1023,7 +1025,7 @@ def test_nested_argument_validation_is_charged_before_validator_runs(monkeypatch
 
     monkeypatch.setattr(type(schema.validator), "iter_errors", unexpected)
     with pytest.raises(ToolOutputError, match="traversal budget"):
-        schema.validate("edit", {"q": ["ok"] * 25000})
+        schema.validate("edit", {"q": ["ok"] * 70000})
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -1035,7 +1037,7 @@ def test_tool_output_budget_is_shared_across_invocations(stream, separate_blocks
     response = client.post("/v1/chat/completions", json=request(schema, stream))
     assert response.status_code == 200
     assert response_message(response, stream)[1] == "tool_calls"
-    raw = "\n".join([one] * 3)
+    raw = "\n".join([one] * 4)
     if not separate_blocks:
         raw = raw.replace("</atem:function_calls>\n<atem:function_calls>", "")
     client, _ = client_for(raw, split=10000)

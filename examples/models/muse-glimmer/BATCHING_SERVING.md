@@ -119,14 +119,21 @@ and tools the model does not call. Malformed schemas (for example, a property wi
 `"required": true`), Draft 4 or 6, and unknown `$schema` dialects are rejected.
 Disabled tools (`tool_choice="none"`) are not validated.
 Validators are compiled once per request and never fetch schemas. Install the
-serving requirements, including `jsonschema`.
+serving requirements, including `jsonschema` and `regex`.
+Schemas without `$schema` use Draft 2020-12; legacy tuple `items` need an explicit
+Draft 7 declaration, and Draft 4 boolean `exclusiveMinimum` is unsupported.
+Undefined tools, invalid arguments, and exhausted output budgets return HTTP 502
+`invalid_tool_output` (or an SSE error after streaming starts). SDKs may retry
+these responses; clients wanting a single attempt should disable automatic retries.
 Coercion preserves correlations between object alternatives and conditional schemas,
 then validates the complete argument object. Declared numeric parameters also accept
 spellings such as `+5`, `007`, `.5`, and `5.`; declared strings stay literal.
 Before generation, the server walks every coercion alternative and declared parameter,
-including map-property projections, and estimates scalar validation work. Schemas
-exceeding 65,536 visits return HTTP 400 `invalid_tool_schema`. The output budget also
-charges validation of nested values and is shared across all invocations in a response.
+including map-property projections. All active tools share a 65,536-visit preflight
+budget. Requests exceeding that budget return HTTP 400 `invalid_tool_schema`. The output budget also
+counts actual keyword checks and nested values, and is shared across all invocations
+in a response. Client `pattern` and `patternProperties` searches share a separate
+100 ms regex execution budget, including annotation and property-projection searches.
 Extra parameters, large nested arguments, or multiple calls can exhaust this budget
 and return `invalid_tool_output`; coercion tries at most 1024 alternatives per call.
 This is validation after generation, not token-level constrained decoding.
@@ -338,6 +345,8 @@ Empty reasoning options and `enabled=true` are no-ops. `effort` accepts low,
 medium, or high, and `exclude` controls response visibility. Disabling reasoning
 generation or unsupported reasoning keys returns an explicit parameter error.
 
-Native workers report the matched string stop separately from EOS, including when
-the stop was removed from their text stream. Rebuild the worker with this adapter
-to support native-trimmed request stops inside tool arguments.
+Native workers always report `matched_stop`: a removed string stop or null for
+EOS/length/cancellation. Request stops take precedence over template stops at the
+same position. Older workers that omit the field cannot distinguish EOS from a
+removed request stop; with request stops configured, incomplete blocks are
+conservatively treated as cutoffs. Completed malformed blocks still fail.

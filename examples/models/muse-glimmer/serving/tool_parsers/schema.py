@@ -8,12 +8,16 @@
 import json
 import math
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from itertools import chain
+from time import perf_counter
 
+import regex
 from executorch.examples.llm_server.python.errors import APIError
 from jsonschema import Draft201909Validator, Draft202012Validator, Draft7Validator
-from jsonschema.exceptions import SchemaError
-from jsonschema.validators import validator_for
+from jsonschema.exceptions import SchemaError, ValidationError
+from jsonschema.validators import extend, validator_for
 from referencing import Registry, Resource
 from referencing.exceptions import Unresolvable
 from referencing.jsonschema import DRAFT201909, DRAFT202012, DRAFT7
@@ -28,9 +32,13 @@ class _ToolWorkLimit(ToolOutputError):
     pass
 
 
+_VALIDATION_BUDGET = ContextVar("muse_tool_validation_budget")
+
+
 class ToolOutputBudget:
     def __init__(self):
         self.remaining = 65536
+        self.regex_seconds = 0.1
 
     def spend(self, visits=1):
         self.remaining -= visits
@@ -39,21 +47,166 @@ class ToolOutputBudget:
                 "Tool argument processing exceeded its traversal budget"
             )
 
-    def validation(self, schema_nodes, value):
+    @contextmanager
+    def activate(self):
+        token = _VALIDATION_BUDGET.set(self)
+        try:
+            yield
+        finally:
+            _VALIDATION_BUDGET.reset(token)
+
+    def search(self, pattern, value):
+        self.spend()
+        start = perf_counter()
+        try:
+            if self.regex_seconds <= 0:
+                raise TimeoutError
+            return regex.search(
+                pattern, value, flags=regex.VERSION0, timeout=self.regex_seconds
+            )
+        except TimeoutError as error:
+            raise _ToolWorkLimit(
+                "Tool regex validation exceeded its 100 ms budget"
+            ) from error
+        finally:
+            self.regex_seconds -= perf_counter() - start
+
+    def validation(self, value):
         pending = [value]
         while pending:
             value = pending.pop()
-            self.spend(schema_nodes)
+            self.spend()
             if isinstance(value, dict):
                 pending.extend(value.values())
             elif isinstance(value, list):
                 pending.extend(value)
 
 
+def _pattern(validator, pattern, instance, schema):
+    if validator.is_type(instance, "string") and not _VALIDATION_BUDGET.get().search(
+        pattern, instance
+    ):
+        yield ValidationError("String does not match pattern")
+
+
+def _pattern_properties(validator, patterns, instance, schema):
+    if validator.is_type(instance, "object"):
+        for pattern, child in patterns.items():
+            for key, value in instance.items():
+                if _VALIDATION_BUDGET.get().search(pattern, key):
+                    yield from validator.descend(
+                        value, child, path=key, schema_path=pattern
+                    )
+
+
+def _additional_properties(validator, child, instance, schema):
+    if validator.is_type(instance, "object"):
+        for key, value in instance.items():
+            if key not in schema.get("properties", {}) and not any(
+                _VALIDATION_BUDGET.get().search(pattern, key)
+                for pattern in schema.get("patternProperties", {})
+            ):
+                yield from validator.descend(value, child, path=key)
+
+
+def _evaluated_keys(validator, instance, schema, legacy):
+    # jsonschema's annotation helpers also evaluate patternProperties. Keep those
+    # searches on the same deadline as validation and property projection.
+    _VALIDATION_BUDGET.get().spend()
+    if isinstance(schema, bool):
+        return set()
+    keys = set()
+    if "$ref" in schema:
+        resolved = validator._resolver.lookup(schema["$ref"])
+        keys.update(
+            _evaluated_keys(
+                validator.evolve(schema=resolved.contents, _resolver=resolved.resolver),
+                instance,
+                resolved.contents,
+                legacy,
+            )
+        )
+    if legacy:
+        for keyword in ("properties", "additionalProperties", "unevaluatedProperties"):
+            child = schema.get(keyword)
+            if child is True:
+                keys.update(instance)
+            elif isinstance(child, dict):
+                keys.update(child.keys() & instance.keys())
+    else:
+        keys.update(schema.get("properties", {}).keys() & instance.keys())
+        for keyword in ("additionalProperties", "unevaluatedProperties"):
+            if keyword in schema:
+                keys.update(
+                    key
+                    for key, value in instance.items()
+                    if next(validator.descend(value, schema[keyword]), None) is None
+                )
+    for key in instance:
+        if any(
+            _VALIDATION_BUDGET.get().search(pattern, key)
+            for pattern in schema.get("patternProperties", {})
+        ):
+            keys.add(key)
+    for key, child in schema.get("dependentSchemas", {}).items():
+        if key in instance:
+            keys.update(_evaluated_keys(validator, instance, child, legacy))
+    for keyword in ("allOf", "anyOf", "oneOf"):
+        for child in schema.get(keyword, []):
+            if next(validator.descend(instance, child), None) is None:
+                keys.update(_evaluated_keys(validator, instance, child, legacy))
+    if "if" in schema:
+        if validator.evolve(schema=schema["if"]).is_valid(instance):
+            keys.update(_evaluated_keys(validator, instance, schema["if"], legacy))
+            keys.update(
+                _evaluated_keys(validator, instance, schema.get("then", {}), legacy)
+            )
+        else:
+            keys.update(
+                _evaluated_keys(validator, instance, schema.get("else", {}), legacy)
+            )
+    return keys
+
+
+def _bounded_validator(cls):
+    def unevaluated(validator, child, instance, schema):
+        if validator.is_type(instance, "object"):
+            keys = _evaluated_keys(
+                validator, instance, schema, cls is Draft201909Validator
+            )
+            for key in instance.keys() - keys:
+                yield from validator.descend(instance[key], child, path=key)
+
+    def bounded(validate):
+        def check(validator, value, instance, schema):
+            _VALIDATION_BUDGET.get().spend()
+            yield from validate(validator, value, instance, schema)
+
+        return check
+
+    keywords = dict(cls.VALIDATORS)
+    keywords.update(
+        pattern=_pattern,
+        patternProperties=_pattern_properties,
+        additionalProperties=_additional_properties,
+    )
+    if "unevaluatedProperties" in keywords:
+        keywords["unevaluatedProperties"] = unevaluated
+    return extend(cls, {key: bounded(check) for key, check in keywords.items()})
+
+
+_BOUNDED_VALIDATORS = {
+    cls: _bounded_validator(cls)
+    for cls in (Draft7Validator, Draft201909Validator, Draft202012Validator)
+}
+
+
 class ToolSchema:
-    def __init__(self, schema):
+    def __init__(self, schema, *, budget=None):
+        budget = budget if budget is not None else ToolOutputBudget()
         self.schema = schema
         try:
+            budget.validation(schema)
             cls = validator_for(
                 schema,
                 default=Draft202012Validator if "$schema" not in schema else None,
@@ -69,6 +222,10 @@ class ToolSchema:
                 )
             self._legacy_ref = cls is Draft7Validator
             cls.check_schema(schema)
+            # The dialect is selected once. Keeping $schema in resolved roots
+            # would let jsonschema.evolve switch back to an unbounded validator.
+            schema = {key: value for key, value in schema.items() if key != "$schema"}
+            self.schema = schema
             root = Resource.from_contents(schema, default_specification=specs[cls])
             base = root.id() or ""
             registry = Registry().with_resource(base, root).crawl()
@@ -88,17 +245,23 @@ class ToolSchema:
                         )
                     if "$ref" in node:
                         self._resolve(node["$ref"])
+                    for pattern in list(node.get("patternProperties", {})) + (
+                        [node["pattern"]] if "pattern" in node else []
+                    ):
+                        regex.compile(pattern, flags=regex.VERSION0)
                 resources.extend(resource.subresources())
             self._schema_nodes, keys = self._check_reference_work(root, specs[cls])
             if self._variant_count(schema) > 1023:
                 raise ValueError("tool schema exceeds 1023 coercion alternatives")
             try:
-                self._check_coercion_work(keys)
+                self._check_coercion_work(keys, budget)
             except _ToolWorkLimit as error:
                 raise ValueError(
                     "tool schema exceeds 65536 estimated coercion work visits"
                 ) from error
         except (
+            _ToolWorkLimit,
+            regex.error,
             SchemaError,
             ValueError,
             KeyError,
@@ -113,7 +276,7 @@ class ToolSchema:
                 "invalid_request_error",
                 "invalid_tool_schema",
             ) from error
-        self.validator = cls(schema, registry=registry)
+        self.validator = _BOUNDED_VALIDATORS[cls](schema, registry=registry)
 
     def _resolve(self, ref):
         if not ref.startswith("#"):
@@ -146,11 +309,9 @@ class ToolSchema:
             pending.extend((child, ancestors) for child in resource.subresources())
         return visits, keys
 
-    def _check_coercion_work(self, keys):
-        # Walk all alternatives and declared keys before generation, including a
-        # wildcard projection for map properties. Charge worst-case scalar
-        # validation too; nested values and extra keys consume the output budget.
-        budget = ToolOutputBudget()
+    def _check_coercion_work(self, keys, budget):
+        # Bound actual coercion traversal, without charging unrelated nested
+        # properties for every scalar check.
         for variant in chain(
             [self.schema], self._object_variants(self.schema, keys, budget=budget)
         ):
@@ -160,8 +321,6 @@ class ToolSchema:
                 )
                 for kind in ("null", "string", "boolean", "integer", "number"):
                     self._declares(projected, kind, budget=budget)
-                budget.spend(2 * 4 * self._schema_nodes)
-            budget.spend(self._schema_nodes * (len(keys) + 1))
 
     def _variant_count(self, schema, seen=()):
         if not isinstance(schema, dict) or id(schema) in seen:
@@ -220,7 +379,7 @@ class ToolSchema:
             pieces.append(schema["properties"][key])
         matched = key in schema.get("properties", {})
         for pattern, child in schema.get("patternProperties", {}).items():
-            if all_patterns or re.search(pattern, key):
+            if all_patterns or budget.search(pattern, key):
                 pieces.append(child)
                 matched = True
         if (all_patterns or not matched) and "additionalProperties" in schema:
@@ -273,10 +432,8 @@ class ToolSchema:
         )
 
     def _valid_scalar(self, schema, value, budget):
-        # Property projection introduces composition wrappers. Charge a
-        # conservative estimate of their validation work before calling jsonschema.
-        budget.spend(4 * self._schema_nodes)
-        return self.validator.evolve(schema=schema).is_valid(value)
+        with budget.activate():
+            return self.validator.evolve(schema=schema).is_valid(value)
 
     def coerce(self, key, value, *, schema=None, budget=None):
         budget = budget if budget is not None else ToolOutputBudget()
@@ -417,10 +574,11 @@ class ToolSchema:
 
     def validate(self, name, arguments, *, budget=None):
         budget = budget if budget is not None else ToolOutputBudget()
-        budget.validation(self._schema_nodes, arguments)
+        budget.validation(arguments)
         try:
             json.dumps(arguments, allow_nan=False)
-            error = next(self.validator.iter_errors(arguments), None)
+            with budget.activate():
+                error = next(self.validator.iter_errors(arguments), None)
         except (ValueError, RecursionError) as error:
             raise ToolOutputError(
                 f"Tool {name!r} returned invalid arguments"

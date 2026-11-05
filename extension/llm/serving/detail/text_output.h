@@ -114,22 +114,15 @@ class TextOutput {
       return;
     }
     pending_ += piece;
+    size_t matched = std::string::npos;
     const auto safe =
-        stop_safe_prefix_len(pending_, stop_strings_, string_stop_);
+        stop_safe_prefix_len(pending_, stop_strings_, string_stop_, &matched);
     if (safe != 0 && sink_) {
       sink_(pending_.substr(0, safe));
     }
     pending_.erase(0, safe);
     if (string_stop_) {
-      const auto match = std::find_if(
-          stop_strings_.begin(),
-          stop_strings_.end(),
-          [&](const std::string& stop) {
-            return pending_.compare(0, stop.size(), stop) == 0;
-          });
-      if (match != stop_strings_.end()) {
-        matched_stop_ = *match;
-      }
+      matched_stop_ = stop_strings_[matched];
       pending_.clear();
     }
   }

@@ -31,7 +31,7 @@ _INVOKE_OPEN = "<atem:invoke"
 # parameter value does not end the match early.
 _INVOKE_RE = re.compile(
     r'<atem:invoke\s+name="([^"]*)"\s*>(.*?)</atem:invoke>\s*'
-    r"(?=<atem:invoke|</atem:function_calls>|<atem:function_calls>|\Z)",
+    r"(?=<atem:invoke|</atem:function_calls>|<atem:function_calls>|<\|(?:eom|eot|start)\|>|\Z)",
     re.DOTALL,
 )
 _PARAMETER_RE = re.compile(
@@ -76,7 +76,21 @@ def _tool_blocks(text):
         start = offset + relative
         invokes = list(_INVOKE_RE.finditer(text, start))
         end = None
-        for close in re.finditer(r"</atem:function_calls>", text[start:]):
+        if text.startswith(_INVOKE_OPEN, start):
+            invoke = _INVOKE_RE.match(text, start)
+            close = re.search(
+                r"</atem:invoke>\s*(?=<atem:|<\|(?:eom|eot|start)\|>|\Z)",
+                text[start:],
+            )
+            if invoke is not None:
+                end = invoke.end()
+            elif close is not None:
+                end = start + close.end()
+        for close in (
+            ()
+            if text.startswith(_INVOKE_OPEN, start)
+            else re.finditer(r"</atem:function_calls>", text[start:])
+        ):
             cut = start + close.start()
             if not any(invoke.start() <= cut < invoke.end() for invoke in invokes):
                 end = start + close.end()
@@ -158,7 +172,7 @@ class AtemToolCallDetector:
         return last
 
     def _parse_calls(
-        self, text: str, tools: dict[str, dict], *, budget: ToolOutputBudget
+        self, text: str, tools: dict[str, ToolSchema], *, budget: ToolOutputBudget
     ) -> list[ToolCallItem]:
         """Parse every invocation and coerce its parameters."""
         remainder = _INVOKE_RE.sub("", text)
@@ -175,7 +189,7 @@ class AtemToolCallDetector:
                 raise ToolOutputError(f"Model called undefined tool {name!r}")
             schema = tools[name]
             if not isinstance(schema, ToolSchema):
-                schema = ToolSchema(schema)
+                raise TypeError("ATEM requires precompiled ToolSchema instances")
             args = {}
             end = 0
             for pm in _PARAMETER_RE.finditer(body):
@@ -193,7 +207,7 @@ class AtemToolCallDetector:
         return calls
 
     def _make_item(
-        self, name: Optional[str], arguments: dict, tools: dict[str, dict]
+        self, name: Optional[str], arguments: dict, tools: dict[str, ToolSchema]
     ) -> ToolCallItem:
         if not name or name not in tools:
             raise ToolOutputError(f"Model called undefined tool {name!r}")

@@ -1024,7 +1024,13 @@ def test_self_reasoning_then_tool_call_content_clean_calls_unchanged():
         "<|start|>assistant to=get_weather<|message|>" + block + "<|eom|>"
     )
     tools = {"get_weather": {"properties": {"city": {"type": "string"}}}}
-    parsed = AtemToolCallDetector().detect_and_parse(text, tools)
+    from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (
+        ToolSchema,
+    )
+
+    parsed = AtemToolCallDetector().detect_and_parse(
+        text, {name: ToolSchema(schema) for name, schema in tools.items()}
+    )
     # tool_calls extraction is unchanged: the get_weather call is still parsed.
     assert [c.name for c in parsed.calls] == ["get_weather"]
     reasoning, visible = serve._extract_muse_glimmer_reasoning(parsed.normal_text)

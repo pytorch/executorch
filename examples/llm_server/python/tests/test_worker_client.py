@@ -728,3 +728,10 @@ def test_generate_preserves_matched_stop_metadata(matched_stop):
     seen = []
     WorkerClient(proc).generate("hi", _Cfg(stop=["\n\n"]), stats_callback=seen.append)
     assert seen[0].matched_stop == matched_stop
+
+
+def test_explicit_null_stop_metadata_is_distinct_from_old_worker():
+    from executorch.examples.llm_server.python.worker_client import WorkerStats
+
+    assert WorkerStats.from_message({"matched_stop": None}).matched_stop == ""
+    assert WorkerStats.from_message({}).matched_stop is None

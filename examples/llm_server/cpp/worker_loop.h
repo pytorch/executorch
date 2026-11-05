@@ -748,7 +748,8 @@ inline void worker_handle_request(
       buf.erase(0, cut);
     }
     bool stop_hit = false;
-    const size_t safe = stop_safe_prefix_len(pending, stops, stop_hit);
+    size_t matched = std::string::npos;
+    const size_t safe = stop_safe_prefix_len(pending, stops, stop_hit, &matched);
     if (stop_hit) {
       // The request is terminal as soon as the stop sequence is recognized.
       // Seal before worker_emit(), which may block while flushing stdout.
@@ -761,13 +762,7 @@ inline void worker_handle_request(
     if (stop_hit) {
       finish = "stop"; // reached a stop string: drop it and everything after
       stop_string = true;
-      const auto match = std::find_if(
-          stops.begin(), stops.end(), [&](const std::string& stop) {
-            return pending.compare(0, stop.size(), stop) == 0;
-          });
-      if (match != stops.end()) {
-        matched_stop = *match;
-      }
+      matched_stop = stops[matched];
       // Trimming at the stop means the next turn's prompt won't be an exact
       // token extension of resident, so force a reset (no false prefix match).
       //
@@ -808,9 +803,8 @@ inline void worker_handle_request(
       {"reused_prompt_tokens", reused},
       {"prefilled_prompt_tokens", prefilled},
       {"session_reset_reason", plan.reason}};
-  if (matched_stop) {
-    done["matched_stop"] = *matched_stop;
-  }
+  done["matched_stop"] = matched_stop ? nlohmann::json(*matched_stop)
+                                      : nlohmann::json(nullptr);
   if (cancelled) {
     done["cancelled"] = true;
   }

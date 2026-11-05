@@ -54,7 +54,6 @@ class StreamOptions(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-
     model: Optional[str] = None
     messages: list[ChatMessage] = Field(min_length=1)
     stream: bool = False

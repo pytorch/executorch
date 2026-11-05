@@ -40,6 +40,7 @@ from executorch.examples.models.muse_glimmer.serving.tool_parsers.atem import (
     parameter_value_spans,
 )
 from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (
+    ToolOutputBudget,
     ToolSchema,
 )
 
@@ -275,8 +276,10 @@ class MuseGlimmerServingChat(ServingChat):
     def _parse_tools(
         self, req, text, finish_reason, raw_text, context, request_stopped
     ):
-        if self._tool_detector_cls is AtemToolCallDetector:
-            parsed = AtemToolCallDetector().detect_and_parse(
+        if self._tool_detector_cls is not None and issubclass(
+            self._tool_detector_cls, AtemToolCallDetector
+        ):
+            parsed = self._tool_detector_cls().detect_and_parse(
                 raw_text,
                 context.schemas,
                 finish_reason=finish_reason,
@@ -370,8 +373,9 @@ class MuseGlimmerServingChat(ServingChat):
         self._reject_unsupported_params(req)
         tool_context = ToolContext()
         if self._tools_active(req):
+            budget = ToolOutputBudget()
             tool_context.schemas = {
-                name: ToolSchema(schema)
+                name: ToolSchema(schema, budget=budget)
                 for name, schema in self._tool_schemas(req).items()
             }
         if req.session_id is not None:

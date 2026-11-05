@@ -361,7 +361,7 @@ class ServingChat:
         stops = self._request_stops(req)
         if req.ignore_eos:
             return stops
-        return self._visible_stops(req) + stops
+        return stops + self._visible_stops(req)
 
     @staticmethod
     def _apply_stop(text: str, stops: list[str]) -> str:
@@ -448,9 +448,18 @@ class ServingChat:
         context = context if context is not None else ToolContext()
         request_cut = _earliest_stop(text, self._request_stops(req))
         visible_cut = _earliest_stop(text, self._visible_stops(req))
-        request_stopped = matched_stop in self._request_stops(req) or (
-            request_cut is not None
-            and (visible_cut is None or request_cut <= visible_cut)
+        request_stops = self._request_stops(req)
+        request_stopped = (
+            any(
+                matched_stop and matched_stop.startswith(stop) for stop in request_stops
+            )
+            or (
+                matched_stop is None and finish_reason == "stop" and bool(request_stops)
+            )
+            or (
+                request_cut is not None
+                and (visible_cut is None or request_cut <= visible_cut)
+            )
         )
         raw_text = self._truncate_raw(text, req, stopped)
         reasoning, text = self._split_reasoning(raw_text)
@@ -1307,6 +1316,8 @@ class ServingChat:
                 response.remaining_reasoning = (
                     response.reasoning[len(emitted) :] or None
                 )
+            if response.reasoning and not response.reasoning.startswith(emitted):
+                logger.warning("Streamed reasoning differs from buffered extraction")
             response.reasoning = (
                 emitted + (response.remaining_reasoning or "")
             ) or None

@@ -32,6 +32,7 @@ from executorch.examples.models.muse_glimmer.serving.tool_parsers import (  # no
 )
 from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (  # noqa: E402
     ToolOutputError,
+    ToolSchema,
 )
 
 # Harmony framing fragments, assembled by hand into model-output strings.
@@ -69,7 +70,9 @@ _TOOLS = {
 
 
 def _parse(text, tools=_TOOLS):
-    return AtemToolCallDetector().detect_and_parse(text, tools)
+    return AtemToolCallDetector().detect_and_parse(
+        text, {name: ToolSchema(schema) for name, schema in tools.items()}
+    )
 
 
 def test_basic_call_terminated():
@@ -429,7 +432,7 @@ def test_value_with_angle_brackets_kept_as_string():
 def test_per_request_index_is_isolated():
     # A fresh detector per request restarts tool_index at 0.
     text = f" to=add{_MESSAGE}" + _atem("add", [("a", "1"), ("b", "2")])
-    first = AtemToolCallDetector().detect_and_parse(text, _TOOLS)
-    second = AtemToolCallDetector().detect_and_parse(text, _TOOLS)
+    first = _parse(text)
+    second = _parse(text)
     assert first.calls[0].tool_index == 0
     assert second.calls[0].tool_index == 0

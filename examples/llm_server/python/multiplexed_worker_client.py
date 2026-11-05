@@ -617,6 +617,16 @@ class MultiplexedWorkerClient:
                 or msg[key] < 0
             ):
                 raise WorkerError(f"invalid worker statistic: {key}")
+        if (
+            "matched_stop" in msg
+            and msg["matched_stop"] is not None
+            and (
+                not isinstance(msg["matched_stop"], str)
+                or not msg["matched_stop"]
+                or msg.get("finish_reason") != "stop"
+            )
+        ):
+            raise WorkerError("invalid worker matched_stop")
         if "finish_reason" in msg and msg["finish_reason"] not in ("stop", "length"):
             raise WorkerError("invalid worker finish_reason")
         if "cancelled" in msg and type(msg["cancelled"]) is not bool:
