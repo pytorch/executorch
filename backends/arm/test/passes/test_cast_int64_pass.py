@@ -82,6 +82,7 @@ def test_cast_non_persistent_int64_buffers_to_int32_tosa_FP(test_data: input_t):
 
 
 class Int64BufferAddModel(torch.nn.Module):
+    offset: torch.Tensor
     test_data = {
         "wide": (torch.tensor([2**40, -(2**38), 2**31, -1]),),
     }
