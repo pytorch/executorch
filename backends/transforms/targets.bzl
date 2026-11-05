@@ -632,6 +632,17 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_reserve_node_names",
+        srcs = [
+            "test/test_reserve_node_names.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":utils",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_convert_dtype_pass",
         srcs = [
             "test/test_convert_dtype_pass.py",
