@@ -12,6 +12,7 @@
 #include <cstring>
 #include <exception>
 #include <functional>
+#include <iostream>
 #include <limits>
 #include <map>
 #include <memory>
@@ -82,6 +83,12 @@ DEFINE_int32(
     -1,
     "Off-graph KV cache rows allocated up front, doubling toward "
     "--kv_capacity as the sequence grows; -1 keeps the cache default.");
+DEFINE_bool(
+    interactive,
+    false,
+    "Chat on stdin with the Llama 3 chat template, keeping the conversation "
+    "in the off-graph KV cache. Needs a package exported with "
+    "--offgraph_cache.");
 namespace {
 
 namespace cache = executorch::extension::llm::cache;
@@ -285,16 +292,22 @@ struct Generation {
   double prompt_ms = 0.0;
   double decode_ms = 0.0;
   size_t decode_steps = 0;
+  // The last token chosen, which was never fed to the model.
+  uint64_t unfed_token = 0;
+  bool ended_on_eos = false;
 };
 
-// Prefills `prompt_tokens` in one call, then decodes one token per call until
-// `limit` tokens or an EOS, streaming the text to stdout.
+// Prefills `prompt_tokens` from `start_position` in calls of at most
+// `max_chunk` tokens, then decodes one token per call until `limit` tokens or
+// an EOS, streaming the text to stdout.
 Generation generate(
     ptn::EngineExecutable& executable,
     size_t logits_output,
     bool per_token_positions,
+    size_t max_chunk,
     ::tokenizers::Tiktoken& tokenizer,
     const std::vector<uint64_t>& prompt_tokens,
+    int64_t start_position,
     size_t limit,
     const std::unordered_set<uint64_t>& eos_ids,
     const NextToken& next_token_of) {
@@ -356,22 +369,6 @@ Generation generate(
     logits.resize(logits_numel);
     executable.get_output(
         logits_output, logits.data(), logits.size(), ptn::kFloat);
-    if (position == 0 && !FLAGS_dump_first_logits.empty()) {
-      FILE* output = std::fopen(FLAGS_dump_first_logits.c_str(), "wbx");
-      if (output == nullptr) {
-        throw std::runtime_error(
-            "cannot create new logits dump: " + FLAGS_dump_first_logits);
-      }
-      const float* row = logits.data() + logits_numel - vocabulary_size;
-      const size_t written =
-          std::fwrite(row, sizeof(float), vocabulary_size, output);
-      const int close_status = std::fclose(output);
-      if (written != vocabulary_size || close_status != 0) {
-        std::remove(FLAGS_dump_first_logits.c_str());
-        throw std::runtime_error(
-            "failed to write complete initial logits dump");
-      }
-    }
     if (FLAGS_print_top_logits) {
       const float* row = logits.data() + logits_numel - vocabulary_size;
       const std::vector<size_t> ranks =
@@ -384,6 +381,36 @@ Generation generate(
     }
     return vocabulary_size;
   };
+  auto prefill = [&](int64_t start) {
+    size_t vocabulary_size = 0;
+    for (size_t offset = 0; offset < prompt_tokens.size();
+         offset += max_chunk) {
+      const auto first = prompt_tokens.begin() + static_cast<ptrdiff_t>(offset);
+      vocabulary_size = run_tokens(
+          {first,
+           first +
+               static_cast<ptrdiff_t>(
+                   std::min(max_chunk, prompt_tokens.size() - offset))},
+          start + static_cast<int64_t>(offset));
+    }
+    if (start == 0 && !FLAGS_dump_first_logits.empty()) {
+      FILE* output = std::fopen(FLAGS_dump_first_logits.c_str(), "wbx");
+      if (output == nullptr) {
+        throw std::runtime_error(
+            "cannot create new logits dump: " + FLAGS_dump_first_logits);
+      }
+      const float* row = logits.data() + logits.size() - vocabulary_size;
+      const size_t written =
+          std::fwrite(row, sizeof(float), vocabulary_size, output);
+      const int close_status = std::fclose(output);
+      if (written != vocabulary_size || close_status != 0) {
+        std::remove(FLAGS_dump_first_logits.c_str());
+        throw std::runtime_error(
+            "failed to write complete initial logits dump");
+      }
+    }
+    return vocabulary_size;
+  };
 
   // The same prompt and positions overwrite the same cache rows. Keep this
   // explicitly opt-in so the normal timing still includes first-use GPU
@@ -393,18 +420,20 @@ Generation generate(
       throw std::invalid_argument(
           "warmup_prefill cannot be combined with logits diagnostics");
     }
-    run_tokens(prompt_tokens, 0);
+    prefill(start_position);
   }
 
   Generation generation;
   const Clock::time_point prompt_start = Clock::now();
-  uint64_t next_token = next_token_of(logits, run_tokens(prompt_tokens, 0));
+  uint64_t next_token = next_token_of(logits, prefill(start_position));
   generation.prompt_ms = elapsed_ms(prompt_start, Clock::now());
 
   size_t generated = 0;
   std::vector<uint64_t> generated_ids;
   uint64_t previous_token = prompt_tokens.back();
-  std::printf("text:      ");
+  if (!FLAGS_interactive) {
+    std::printf("text:      ");
+  }
   std::fflush(stdout);
   while (generated < limit && !eos_ids.contains(next_token)) {
     auto decoded = tokenizer.decode(previous_token, next_token);
@@ -424,13 +453,16 @@ Generation generate(
       const Clock::time_point step_start = Clock::now();
       const size_t vocabulary_size = run_tokens(
           {previous_token},
-          static_cast<int64_t>(prompt_tokens.size() + generated - 1));
+          start_position +
+              static_cast<int64_t>(prompt_tokens.size() + generated - 1));
       next_token = next_token_of(logits, vocabulary_size);
       generation.decode_ms += elapsed_ms(step_start, Clock::now());
       ++generation.decode_steps;
     }
   }
   std::printf("\n");
+  generation.unfed_token = next_token;
+  generation.ended_on_eos = eos_ids.contains(next_token);
   if (FLAGS_print_token_ids) {
     std::printf("token_ids: ");
     for (size_t i = 0; i < generated_ids.size(); ++i) {
@@ -513,6 +545,9 @@ int run_llm(
     std::optional<OffGraphCache> kv;
     if (const auto geometry = offgraph_cache_geometry(method)) {
       kv = install_offgraph_cache(cache_backend_id, *geometry);
+    } else if (FLAGS_interactive) {
+      throw std::invalid_argument(
+          "--interactive needs a package exported with --offgraph_cache");
     }
     const size_t cache_length = kv
         ? static_cast<size_t>(kv->control->capacity())
@@ -704,8 +739,10 @@ int run_llm(
             *executable,
             logits_output,
             per_token_positions,
+            static_cast<size_t>(token_shape[1]),
             *tokenizer,
             prompt,
+            0,
             calls.size(),
             {},
             check_then_force);
@@ -718,26 +755,105 @@ int run_llm(
       return failed_calls == 0 ? 0 : 1;
     }
 
+    if (FLAGS_interactive) {
+      if (FLAGS_warmup_prefill) {
+        throw std::invalid_argument(
+            "--warmup_prefill cannot be combined with --interactive");
+      }
+      const int64_t capacity = kv->control->capacity();
+      std::printf("chat:      Ctrl-D quits, /reset starts over\n");
+      int64_t position = 0;
+      // The last reply's final token, never fed, unless it was an EOS; and
+      // whether a reply precedes the next turn, which closes it with
+      // <|eot_id|> whichever way it ended.
+      std::optional<uint64_t> unfed;
+      bool after_reply = false;
+      std::string line;
+      while (true) {
+        std::printf("\n> ");
+        std::fflush(stdout);
+        if (!std::getline(std::cin, line)) {
+          std::printf("\n");
+          return 0;
+        }
+        if (line == "/reset" || line.empty()) {
+          if (line == "/reset") {
+            kv->control->clear();
+            position = 0;
+            unfed.reset();
+            after_reply = false;
+          }
+          continue;
+        }
+        const auto encode_turn = [&] {
+          const std::string text =
+              std::string(after_reply ? "<|eot_id|>" : "") +
+              "<|start_header_id|>user<|end_header_id|>\n\n" + line +
+              "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
+          auto turn = tokenizer->encode(
+              text, static_cast<int8_t>(position == 0 ? FLAGS_num_bos : 0), 0);
+          if (!turn.ok()) {
+            throw std::runtime_error(
+                "failed to encode message: tokenizer error " +
+                std::to_string(static_cast<uint32_t>(turn.error())));
+          }
+          std::vector<uint64_t> tokens = std::move(turn.get());
+          if (unfed) {
+            tokens.insert(tokens.begin(), *unfed);
+          }
+          return tokens;
+        };
+        std::vector<uint64_t> tokens = encode_turn();
+        // Room for the turn and at least one reply token.
+        if (position + static_cast<int64_t>(tokens.size()) >= capacity) {
+          std::printf("[context full, starting a new conversation]\n");
+          kv->control->clear();
+          position = 0;
+          unfed.reset();
+          after_reply = false;
+          tokens = encode_turn();
+          if (static_cast<int64_t>(tokens.size()) >= capacity) {
+            std::printf("[message exceeds the KV cache capacity]\n");
+            continue;
+          }
+        }
+        const size_t limit = std::min(
+            static_cast<size_t>(FLAGS_max_new_tokens),
+            static_cast<size_t>(
+                capacity + 1 - position - static_cast<int64_t>(tokens.size())));
+        const Generation reply = generate(
+            *executable,
+            logits_output,
+            per_token_positions,
+            static_cast<size_t>(token_shape[1]),
+            *tokenizer,
+            tokens,
+            position,
+            limit,
+            eos_ids,
+            ptn::greedy_argmax_last_row);
+        position += static_cast<int64_t>(tokens.size() + reply.decode_steps);
+        unfed = reply.ended_on_eos ? std::nullopt
+                                   : std::optional(reply.unfed_token);
+        after_reply = true;
+      }
+    }
+
     const size_t limit = ptn::generation_limit(
         prompt_tokens.size(),
         static_cast<size_t>(FLAGS_max_new_tokens),
         static_cast<size_t>(FLAGS_max_seq_length),
         cache_length,
         static_cast<size_t>(token_shape[1]));
-    // Prefill sends the whole prompt in one call.
-    if (prompt_tokens.size() > static_cast<size_t>(token_shape[1])) {
-      throw std::runtime_error(
-          "prompt of " + std::to_string(prompt_tokens.size()) +
-          " tokens exceeds the method's " + std::to_string(token_shape[1]) +
-          "-token input; chunked prefill is not implemented");
-    }
 
     const Generation generation = generate(
         *executable,
         logits_output,
         per_token_positions,
+        static_cast<size_t>(token_shape[1]),
         *tokenizer,
         prompt_tokens,
+        0,
         limit,
         eos_ids,
         ptn::greedy_argmax_last_row);
