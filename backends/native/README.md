@@ -217,8 +217,9 @@ enabled, `native_runner_utils_test` covers their shared runner utilities. Run th
 with `ctest --test-dir cmake-out -R native_` after `cmake --build cmake-out`.
 
 The engines' sample tests judge them on the bundled op samples. Building them runs
-the sample generator, which needs `torch` and `torchao`. Those with failing cases
-are disabled in CTest; run their binaries directly with
+the sample generator, which needs `torch`, `torchao` and the FACTO submodule at
+`backends/cadence/utils/FACTO`. Those with failing cases are disabled in CTest;
+run their binaries directly with
 `--packages=<build-dir>/backends/native/test/op_samples`.
 
 The `Test Native Engines` CI workflow has separate Linux jobs for the shared

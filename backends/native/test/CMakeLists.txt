@@ -48,16 +48,18 @@ endforeach()
 # environment pins the eager kernels' ISA and threads, so the golden is the same
 # on any x86 host with AVX2. Other hosts can differ.
 set(_native_op_samples ${CMAKE_CURRENT_BINARY_DIR}/op_samples)
-file(GLOB _native_op_samples_srcs CONFIGURE_DEPENDS
+file(GLOB_RECURSE _native_op_samples_srcs CONFIGURE_DEPENDS
      ${CMAKE_CURRENT_SOURCE_DIR}/samples/*.py
+     ${EXECUTORCH_ROOT}/backends/cadence/utils/FACTO/facto/*.py
 )
 add_custom_command(
   OUTPUT ${_native_op_samples}.stamp
   COMMAND
     ${CMAKE_COMMAND} -E env MKL_CBWR=COMPATIBLE ONEDNN_MAX_CPU_ISA=AVX2
     ATEN_CPU_CAPABILITY=avx2 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
-    "PYTHONPATH=${EXECUTORCH_ROOT}/src" ${PYTHON_EXECUTABLE} -m
-    executorch.backends.native.test.samples.generate --out ${_native_op_samples}
+    "PYTHONPATH=${EXECUTORCH_ROOT}/src:${EXECUTORCH_ROOT}/backends/cadence/utils/FACTO"
+    ${PYTHON_EXECUTABLE} -m executorch.backends.native.test.samples.generate
+    --out ${_native_op_samples}
   COMMAND ${CMAKE_COMMAND} -E touch ${_native_op_samples}.stamp
   DEPENDS ${_native_op_samples_srcs}
           ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_linear.py
