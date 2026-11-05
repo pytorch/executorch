@@ -243,6 +243,7 @@ def build_app_from_args(args):
                 reasoning_extractor=legacy._extract_muse_glimmer_reasoning,
                 streaming_parser_factory=MuseGlimmerStreamParser,
                 tool_reasoning_parser_factory=MuseGlimmerToolReasoningParser,
+                reasoning_token_counter=template.count_reasoning_tokens,
             )
         finally:
             if runtime is None:

@@ -16,13 +16,12 @@ from collections.abc import Iterable
 
 from executorch.examples.llm_server.python.protocol import DeltaMessage
 
-from .serve import (
-    _ASSISTANT_HEADER,
-    _MUSE_GLIMMER_ADDRESSED_HEADER_RE,
-    _MUSE_GLIMMER_IDENT,
-    _MUSE_GLIMMER_RECIPIENT,
-    _MUSE_GLIMMER_STRAY_SPECIAL_RE,
+from .framing import (
+    HEADER_RE as _MUSE_GLIMMER_ADDRESSED_HEADER_RE,
+    IDENT as _MUSE_GLIMMER_IDENT,
+    RECIPIENT as _MUSE_GLIMMER_RECIPIENT,
 )
+from .serve import _ASSISTANT_HEADER, _MUSE_GLIMMER_STRAY_SPECIAL_RE
 
 _IDENT = re.compile(_MUSE_GLIMMER_IDENT)
 _RECIPIENT = re.compile(_MUSE_GLIMMER_RECIPIENT)
@@ -77,6 +76,8 @@ class MuseGlimmerStreamParser:
         self._space = ""
         self._after_end = False
         self._end_space = ""
+        self._has_header = False
+        self._header_allowed = True
 
     def _body(self, text: str) -> list[DeltaMessage]:
         # Post-end whitespace is framing only if a header or EOF follows it.
@@ -126,11 +127,16 @@ class MuseGlimmerStreamParser:
         while pos < len(text):
             header = _MUSE_GLIMMER_ADDRESSED_HEADER_RE.match(text, pos)
             if header:
+                if self._has_header and not self._header_allowed:
+                    pos = header.end()
+                    continue
                 result.extend(self._body(text[body_start:pos]))
                 result.extend(self._close_block())
                 self._field = (
                     "reasoning_content" if header.group(1) == "self" else "content"
                 )
+                self._has_header = True
+                self._header_allowed = False
                 pos = body_start = header.end()
                 continue
             potential = _BOUNDARY.match(text, pos) and _header_prefix(text, pos)
@@ -147,7 +153,9 @@ class MuseGlimmerStreamParser:
                 if not final:
                     break
                 suffix = text[pos:].lstrip()
-                if suffix.startswith("<|"):
+                if suffix.startswith("<|") and (
+                    partial_control or not self._has_header or self._header_allowed
+                ):
                     result.extend(self._body(text[body_start:pos]))
                     pos = body_start = len(text)
                     break
@@ -155,8 +163,11 @@ class MuseGlimmerStreamParser:
                 result.extend(self._body(text[body_start:pos]))
                 if control.group() in ("<|eom|>", "<|eot|>"):
                     self._after_end = True
+                    self._header_allowed = True
                 pos = body_start = control.end()
             else:
+                if not text[pos].isspace():
+                    self._header_allowed = False
                 pos += 1
         result.extend(self._body(text[body_start:pos]))
         self._pending = text[pos:]

@@ -89,6 +89,15 @@ class ChatCompletionRequest(BaseModel):
     tool_choice: Optional[Union[str, dict[str, Any]]] = None
     reasoning_effort: Optional[str] = None
     reasoning: Optional[dict[str, Any]] = None
+    include_reasoning: Optional[bool] = Field(default=None, strict=True)
+    # Retain output/cache controls so capability checks can reject them before
+    # generation, including malformed values and empty strings.
+    thinking_token_budget: Any = None
+    grammar: Any = None
+    stop_regex: Any = None
+    add_generation_prompt: Any = None
+    continue_final_message: Any = None
+    cache_salt: Any = None
 
     @field_validator("tools")
     @classmethod
@@ -151,11 +160,16 @@ class PromptTokensDetails(BaseModel):
     cached_tokens: int = 0
 
 
+class CompletionTokensDetails(BaseModel):
+    reasoning_tokens: int
+
+
 class Usage(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
     prompt_tokens_details: Optional[PromptTokensDetails] = None
+    completion_tokens_details: Optional[CompletionTokensDetails] = None
 
 
 class ResponseMessage(BaseModel):

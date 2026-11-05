@@ -338,6 +338,10 @@ drafts of up to four owners run in CUDA graphs.
 
 ATEM tool intent must start a line outside Markdown code or immediately follow a
 tool recipient header. User-directed examples and quoted markers remain content.
+Once a recipient is established, a subsequent header changes the recipient only
+after `<|eom|>` or `<|eot|>` and optional whitespace. A quoted header inside an
+ongoing message remains literal content, including when a real tool call follows
+the terminated message. The rule applies to buffered and streamed responses.
 An invocation truncated by length or a request stop suppresses the entire
 incomplete call set and ends with `finish_reason=length` or `stop`, respectively;
 malformed completed calls still return
@@ -347,6 +351,16 @@ error. Tool calls are emitted only after the whole call set passes validation.
 Empty reasoning options and `enabled=true` are no-ops. `effort` accepts low,
 medium, or high, and `exclude` controls response visibility. Disabling reasoning
 generation or unsupported reasoning keys returns an explicit parameter error.
+`include_reasoning` is a visibility alias available with both `--api-dialect`
+settings; contradictory visibility controls fail before generation. Reasoning
+usage is reported as `completion_tokens_details.reasoning_tokens` from exact
+generated IDs even when reasoning is hidden. When the worker omits those IDs
+(for example, a stop-trimmed turn), the breakdown is omitted.
+
+The shared API explicitly rejects non-null `thinking_token_budget`, `grammar`,
+`stop_regex`, `add_generation_prompt`, `continue_final_message`, and `cache_salt`
+with `400 unsupported_parameter`. These options are not silently ignored, and
+cache partitioning by salt is not implemented.
 
 Native workers always report `matched_stop`: a removed string stop or null for
 EOS/length/cancellation. Request stops take precedence over template stops at the

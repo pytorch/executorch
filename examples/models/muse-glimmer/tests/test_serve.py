@@ -218,6 +218,9 @@ def test_build_app_uses_muse_glimmer_options(monkeypatch):
         def __init__(self, *args, **kwargs):
             captured["template_kwargs"] = kwargs
 
+        def count_reasoning_tokens(self, ids):
+            return None
+
     class _FakeRuntime:
         def close_worker(self):
             pass
@@ -501,6 +504,9 @@ class _StubTemplate:
 
     def turn_stop_sequences(self):
         return []
+
+    def count_reasoning_tokens(self, ids):
+        return None
 
     def special_tokens(self):
         return []

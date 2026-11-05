@@ -34,6 +34,7 @@ from .protocol import (
     ChatCompletionResponse,
     Choice,
     ChunkChoice,
+    CompletionTokensDetails,
     DeltaMessage,
     FunctionCall,
     PromptTokensDetails,
@@ -236,6 +237,7 @@ class ServingChat:
         tool_reasoning_parser_factory: Optional[
             Callable[[], StreamingResponseParser]
         ] = None,
+        reasoning_token_counter: Optional[Callable[[list[int]], Optional[int]]] = None,
     ):
         self._runtime = runtime
         self._template = template
@@ -244,6 +246,7 @@ class ServingChat:
         self._prompt_token_offset = prompt_token_offset
         self._content_filter = content_filter
         self._reasoning_extractor = reasoning_extractor
+        self._reasoning_token_counter = reasoning_token_counter
         self._streaming_parser_factory = streaming_parser_factory
         self._tool_reasoning_parser_factory = tool_reasoning_parser_factory
         self._evict_idle_sessions = evict_idle_sessions
@@ -480,14 +483,21 @@ class ServingChat:
             self._visible_content(text) or None,
         )
 
-    @staticmethod
-    def _usage(stats: GenStats) -> Usage:
+    def _usage(self, stats: GenStats) -> Usage:
+        reasoning_tokens = None
+        if self._reasoning_token_counter and stats.generated_token_ids is not None:
+            reasoning_tokens = self._reasoning_token_counter(stats.generated_token_ids)
         return Usage(
             prompt_tokens=stats.prompt_tokens,
             completion_tokens=stats.completion_tokens,
             total_tokens=stats.prompt_tokens + stats.completion_tokens,
             prompt_tokens_details=PromptTokensDetails(
                 cached_tokens=stats.reused_prompt_tokens
+            ),
+            completion_tokens_details=(
+                CompletionTokensDetails(reasoning_tokens=reasoning_tokens)
+                if reasoning_tokens is not None
+                else None
             ),
         )
 
@@ -758,6 +768,12 @@ class ServingChat:
         constraining); logprobs are not returned at all."""
         rf = req.response_format
         flags = [
+            (req.thinking_token_budget is not None, "thinking_token_budget"),
+            (req.grammar is not None, "grammar"),
+            (req.stop_regex is not None, "stop_regex"),
+            (req.add_generation_prompt is not None, "add_generation_prompt"),
+            (req.continue_final_message is not None, "continue_final_message"),
+            (req.cache_salt is not None, "cache_salt"),
             (
                 req.ignore_eos
                 and getattr(self._runtime, "supports_ignore_eos", False) is not True,
@@ -875,6 +891,21 @@ class ServingChat:
         return False
 
     async def create(self, req: ChatCompletionRequest):
+        if req.include_reasoning is not None:
+            kwargs = dict(req.chat_template_kwargs or {})
+            self._reject_invalid_values(req)
+            if (
+                kwargs.get("return_reasoning", req.include_reasoning)
+                != req.include_reasoning
+            ):
+                raise APIError(
+                    400,
+                    "Conflicting reasoning visibility controls",
+                    "invalid_request_error",
+                    "invalid_value",
+                )
+            kwargs["return_reasoning"] = req.include_reasoning
+            req = req.model_copy(update={"chat_template_kwargs": kwargs})
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
         lease = self._transaction(req.session_id)

@@ -1,0 +1,237 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""Cross-client regressions derived from SGLang and vLLM Muse-Glimmer contracts."""
+
+import json
+
+import pytest
+from executorch.examples.models.muse_glimmer.serving.chat_template import (
+    MuseGlimmerChatTemplate,
+)
+from executorch.examples.models.muse_glimmer.serving.stream_parser import (
+    MuseGlimmerStreamParser,
+)
+from executorch.examples.models.muse_glimmer.tests.test_atem_tool_parser import _atem
+from executorch.examples.models.muse_glimmer.tests.test_migration_contracts import (
+    client_for,
+    request,
+    response_message,
+)
+
+
+@pytest.mark.parametrize("dialect", ["openai", "openrouter"])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("split", [1, 7, 10000])
+@pytest.mark.parametrize(
+    "prefix,suffix", [("", ""), ("after prose:\n", ""), ("Example:\n```xml\n", "\n```")]
+)
+@pytest.mark.parametrize("real_call", [False, True])
+def test_quoted_tool_header_remains_user_content(
+    dialect, stream, split, prefix, suffix, real_call
+):
+    # SGLang: test_pipeline_quoted_header_in_answer_is_not_a_call. A header
+    # inside the ongoing user-directed body does not start another message.
+    example = (
+        prefix
+        + "<|start|>assistant to=edit.edit<|message|>"
+        + _atem("edit.edit", [("q", "example")])
+        + suffix
+    )
+    raw = (
+        " to=self<|message|>Think.<|eom|><|start|>assistant to=user<|message|>"
+        + example
+    )
+    if real_call:
+        raw += "<|eom|><|start|>assistant to=edit.edit<|message|>" + _atem(
+            "edit.edit", [("q", "real")]
+        )
+    client, serving = client_for(raw, split)
+    serving.api_dialect = dialect
+    response = client.post(
+        "/v1/chat/completions",
+        json=request({"properties": {"q": {"type": "string"}}}, stream),
+    )
+    assert response.status_code == 200
+    message, finish = response_message(response, stream)
+    assert message["content"] == example
+    assert message["reasoning_content"] == "Think."
+    assert finish == ("tool_calls" if real_call else "stop")
+    calls = message.get("tool_calls") or []
+    assert [
+        (c["function"]["name"], json.loads(c["function"]["arguments"])) for c in calls
+    ] == ([("edit", {"q": "real"})] if real_call else [])
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("recipient", ["self", "user", "edit.edit"])
+def test_quoted_header_preserved_without_tools(stream, recipient):
+    example = f"<|start|>assistant to={recipient}<|message|>example"
+    client, serving = client_for(" to=user<|message|>" + example)
+    serving._streaming_parser_factory = MuseGlimmerStreamParser
+    body = request({}, stream)
+    body.pop("tools")
+    response = client.post("/v1/chat/completions", json=body)
+    message, finish = response_message(response, stream)
+    assert finish == "stop"
+    assert message["content"] == example
+    assert not message.get("reasoning_content")
+
+
+@pytest.mark.parametrize("dialect", ["openai", "openrouter"])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"include_reasoning": False},
+        {"reasoning": {"exclude": True}},
+        {
+            "include_reasoning": False,
+            "reasoning": {"exclude": True},
+            "chat_template_kwargs": {"return_reasoning": False},
+        },
+        {"include_reasoning": True},
+    ],
+)
+def test_reasoning_aliases_across_clients(dialect, stream, options):
+    client, serving = client_for(
+        " to=self<|message|>Think.<|eom|><|start|>assistant to=user<|message|>42"
+    )
+    serving.api_dialect = dialect
+    serving._streaming_parser_factory = MuseGlimmerStreamParser
+    body = request({}, stream)
+    body.pop("tools")
+    body.update(options)
+    response = client.post("/v1/chat/completions", json=body)
+    assert response.status_code == 200
+    message, _ = response_message(response, stream)
+    assert message["content"] == "42"
+    assert (message.get("reasoning_content") or "") == (
+        "Think." if options.get("include_reasoning") is True else ""
+    )
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"include_reasoning": True, "reasoning": {"exclude": True}},
+        {"include_reasoning": False, "reasoning": {"exclude": False}},
+        {
+            "include_reasoning": False,
+            "chat_template_kwargs": {"return_reasoning": True},
+        },
+        {"include_reasoning": True, "chat_template_kwargs": {"return_reasoning": 1}},
+        {"include_reasoning": False, "chat_template_kwargs": {"return_reasoning": 0}},
+    ],
+)
+def test_conflicting_visibility_rejected_before_generation(options):
+    client, serving = client_for("unused")
+    body = request({})
+    body.update(options)
+    response = client.post("/v1/chat/completions", json=body)
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_value"
+    assert not serving._runtime.prompts
+
+
+@pytest.fixture
+def counting_template(tmp_path):
+    from tokenizers import decoders, models, pre_tokenizers, Tokenizer
+    from transformers import PreTrainedTokenizerFast
+
+    alphabet = sorted(pre_tokenizers.ByteLevel.alphabet())
+    vocab = {token: i for i, token in enumerate(alphabet + ["ab"])}
+    backend = Tokenizer(models.BPE(vocab=vocab, merges=[("a", "b")]))
+    backend.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+    backend.decoder = decoders.ByteLevel()
+    hf = PreTrainedTokenizerFast(
+        tokenizer_object=backend,
+        additional_special_tokens=["<|start|>", "<|message|>", "<|eom|>", "<|eot|>"],
+    )
+    hf.save_pretrained(tmp_path)
+    return MuseGlimmerChatTemplate(str(tmp_path))
+
+
+@pytest.mark.parametrize("dialect", ["openai", "openrouter"])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("include", [False, True])
+@pytest.mark.parametrize("tools", [False, True])
+def test_reasoning_usage_counts_generated_ids_when_hidden(
+    counting_template, dialect, stream, include, tools
+):
+    template = counting_template
+    hf = template._hf
+    prefix = " to=self<|message|>"
+    suffix = "<|eom|><|start|>assistant to=user<|message|>42"
+    # Forced generation of separate a/b IDs: re-encoding "ab" would count one.
+    ids = (
+        hf.encode(prefix, add_special_tokens=False)
+        + [hf.get_vocab()["a"], hf.get_vocab()["b"]]
+        + hf.encode(suffix, add_special_tokens=False)
+    )
+    raw = hf.decode(ids, skip_special_tokens=False, clean_up_tokenization_spaces=False)
+    client, serving = client_for(raw, 1)
+    serving.api_dialect = dialect
+    serving._streaming_parser_factory = MuseGlimmerStreamParser
+    serving._reasoning_token_counter = template.count_reasoning_tokens
+    serving._runtime._outputs[0].update(gen_ids=ids, completion_tokens=len(ids))
+    body = request({}, stream)
+    if not tools:
+        body.pop("tools")
+    body.update(include_reasoning=include, stream_options={"include_usage": True})
+    response = client.post("/v1/chat/completions", json=body)
+    assert response.status_code == 200
+    message, _ = response_message(response, stream)
+    assert message["content"] == "42"
+    assert (message.get("reasoning_content") or "") == ("ab" if include else "")
+    if stream:
+        usages = [
+            json.loads(line[6:])["usage"]
+            for line in response.text.splitlines()
+            if line.startswith("data: ")
+            and line != "data: [DONE]"
+            and json.loads(line[6:]).get("usage")
+        ]
+        assert len(usages) == 1
+        usage = usages[0]
+    else:
+        usage = response.json()["usage"]
+    assert usage["completion_tokens_details"]["reasoning_tokens"] == 2
+    assert usage["completion_tokens"] == len(ids)
+    assert usage["total_tokens"] == usage["prompt_tokens"] + len(ids)
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (" to=self<|message|>abc", 2),
+        (" to=self<|message|>é", 2),
+        (" to=self<|message|>abc<|eom|> to=self<|message|>de<|eot|>", 4),
+        (" to=user<|message|>abc", 0),
+        (" to=user<|message|>Example: <|start|>assistant to=self<|message|>abc", 0),
+        (
+            " to=edit.edit<|message|>"
+            + _atem(
+                "edit.edit", [("q", "<|eom|><|start|>assistant to=self<|message|>abc")]
+            ),
+            0,
+        ),
+    ],
+)
+def test_reasoning_count_handles_truncation_and_quoted_headers(
+    counting_template, raw, expected
+):
+    ids = counting_template._hf.encode(raw, add_special_tokens=False)
+    assert counting_template.count_reasoning_tokens(ids) == expected
+
+
+def test_unknown_generated_ids_do_not_claim_zero_reasoning(counting_template):
+    client, serving = client_for(
+        " to=self<|message|>Think.<|eom|> to=user<|message|>42"
+    )
+    serving._reasoning_token_counter = counting_template.count_reasoning_tokens
+    response = client.post("/v1/chat/completions", json=request({}))
+    assert response.status_code == 200
+    assert response.json()["usage"].get("completion_tokens_details") is None

@@ -15,7 +15,6 @@ pytest.importorskip("regex", reason="requires llm_server serving dependencies")
 from executorch.examples.llm_server.python.protocol import DeltaMessage  # noqa: E402
 from executorch.examples.models.muse_glimmer.serving.serve import (  # noqa: E402
     _extract_muse_glimmer_reasoning,
-    _strip_muse_glimmer_header,
 )
 from executorch.examples.models.muse_glimmer.serving.stream_parser import (  # noqa: E402
     MuseGlimmerStreamParser,
@@ -62,7 +61,7 @@ def test_batch_equivalence_across_chunk_boundaries():
     ]
     for trace in traces:
         reasoning, visible = _extract_muse_glimmer_reasoning(trace)
-        expected = (reasoning or "", _strip_muse_glimmer_header(visible))
+        expected = (reasoning or "", visible.strip())
         _check_chunks(trace, expected)
 
 
@@ -72,19 +71,19 @@ def test_batch_equivalence_across_chunk_boundaries():
         ("answer <|sta", ("", "answer"), ("", "answer <|sta")),
         (
             "to=self<|message|>before<|eom|>after to=user<|message|>answer",
-            ("beforeafter ", "answer"),
-            ("before<|eom|>after ", "answer"),
+            ("beforeafter to=user<|message|>answer", ""),
+            ("beforeafter to=user<|message|>answer", ""),
         ),
         (
             "to=user<|message|>A to=user<|message|><|start|> to=user<|message|>B",
-            ("", "A\n\nB"),
-            ("", "A\n\n\n\nB"),
+            ("", "A to=user<|message|> to=user<|message|>B"),
+            ("", "A to=user<|message|> to=user<|message|>B"),
         ),
     ],
 )
 def test_intentional_framing_differences(trace, streamed, buffered):
     reasoning, visible = _extract_muse_glimmer_reasoning(trace)
-    assert (reasoning or "", _strip_muse_glimmer_header(visible)) == buffered
+    assert (reasoning or "", visible.strip()) == buffered
     _check_chunks(trace, streamed)
 
 
