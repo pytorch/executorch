@@ -14,9 +14,6 @@ from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
 from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import SessionRuntime
-from executorch.examples.llm_server.python.tests.test_multiplexed_worker_client_native import (
-    _active_peer,
-)
 
 
 def request(sid=None, stream=False):
@@ -32,10 +29,10 @@ def request(sid=None, stream=False):
 @pytest.mark.parametrize("stale", [False, True])
 @pytest.mark.parametrize("sid", [None, "new"])
 def test_native_slot_refusal_evicts_and_retries(
-    native_worker, stream, timeout, stale, sid
+    active_peer, stream, timeout, stale, sid
 ):
     async def scenario():
-        async with _active_peer(native_worker) as (worker, peer, gate):
+        async with active_peer() as (worker, peer, gate):
             await asyncio.get_running_loop().sock_sendall(gate, b"R")
             async for _ in peer:
                 pass
@@ -98,9 +95,9 @@ def test_native_slot_refusal_evicts_and_retries(
     asyncio.run(asyncio.wait_for(scenario(), 15))
 
 
-def test_local_close_overload_preserves_native_lru(native_worker):
+def test_local_close_overload_preserves_native_lru(active_peer):
     async def scenario():
-        async with _active_peer(native_worker) as (worker, peer, gate):
+        async with active_peer() as (worker, peer, gate):
             await asyncio.get_running_loop().sock_sendall(gate, b"R")
             async for _ in peer:
                 pass
