@@ -50,12 +50,20 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch --use-pt-pinned-commit --minimal
         bash .ci/scripts/test_espressif_idf_nightly.sh prepare "${RUNNER_ARTIFACT_DIR}"
+        # Runs the release stamp's checks at a throwaway local tag, so they do
+        # not first run at a real one. The check of the executorch package,
+        # which --version stops before, runs only when publishing.
+        git tag -f "v$(cat version.txt)"
+        bash examples/espressif/build_idf_component.sh --version --version-suffix ""
+        # Exercises fetch, which otherwise runs only when publishing, on a
+        # local copy of the tar that publishing keeps.
+        tar -cf "${RUNNER_TEMP}/release.tar" -C "${RUNNER_ARTIFACT_DIR}" version dist models
+        bash .ci/scripts/test_espressif_idf_nightly.sh fetch "${RUNNER_TEMP}/fetched" \
+          "file://${RUNNER_TEMP}/release.tar" "$(sha256sum "${RUNNER_TEMP}/release.tar" | cut -d' ' -f1)"
         # The registry's validation of the packed archive, last, since it
         # installs the component manager into this environment.
-        pip install --progress-bar off "idf-component-manager~=3.1"
-        version=$(cat "${RUNNER_ARTIFACT_DIR}/version")
-        compote component upload --namespace pytorch --name executorch \
-          --archive "${RUNNER_ARTIFACT_DIR}/dist/executorch_${version}.tgz" --dry-run --allow-existing
+        bash .ci/scripts/upload_espressif_idf_component.sh "${RUNNER_ARTIFACT_DIR}" \
+          https://components.espressif.com --dry-run
 
   build:
     name: ESP-IDF ${{ matrix.idf-version }} (${{ matrix.shard }}/4)

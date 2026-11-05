@@ -41,9 +41,10 @@ libraries (portable, quantized, the Cadence backend's generic kernels
 and the `esp_nn::` op library) and the ESP-NN delegate
 (`EspNNBackend`), but registers only the kernels your models use and
 links the delegate only when one of them uses it. It depends on
-`espressif/esp-nn`, which the component manager fetches; a project
-that builds without the component manager provides it as
-`components/esp-nn`. The kernels come
+`espressif/esp-nn`, which the component manager fetches from the
+production registry, components.espressif.com, even for a project that
+names another registry; a project that builds without the component
+manager provides it as `components/esp-nn`. The kernels come
 from a kernel bundle that `tools/gen_kernels.py` makes from your
 `.pte` files. Run it with the Python environment you exported the
 models with, after every export, ExecuTorch upgrade or update of this
