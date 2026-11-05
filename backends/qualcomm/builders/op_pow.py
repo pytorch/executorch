@@ -12,6 +12,7 @@ import torch
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpElementWisePower, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .utils import is_parameter
 
 
 # pow.Tensor_Scalar should fall in this visitor because LiftConstantScalarOperands pass
@@ -40,6 +41,13 @@ class PowTensorTensor(NodeVisitor):
         # tensor input
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
+        # pow.Scalar's base is lifted to a one-element constant, and quantized
+        # HTP ElementWisePower does not broadcast its first input: only the
+        # first output element is computed. Materialize the base at full shape.
+        if is_parameter(input_node, self.edge_program) and (
+            input_tensor.shape != out_tensor.shape
+        ):
+            input_tensor = input_tensor.expand(out_tensor.shape).contiguous()
 
         tensor_type = PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
 
