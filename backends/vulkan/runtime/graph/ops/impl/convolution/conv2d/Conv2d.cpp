@@ -12,6 +12,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2dDirect.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/im2col/Conv2dGemm.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 
 namespace vkcompute {
@@ -241,6 +242,138 @@ void conv2d_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       clamp_out,
       out_min_val,
       out_max_val);
+}
+
+namespace {
+
+/*
+ * leaky_relu(conv2d(in) [+ residual], neg_slope). Shapes that take the direct
+ * conv shader get the residual and the LeakyReLU in its epilogue, one dispatch
+ * instead of two or three; anything else runs the ops separately.
+ */
+void add_conv2d_lrelu(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef weight_data,
+    const ValueRef bias,
+    const ValueRef residual,
+    const ValueRef stride,
+    const ValueRef padding,
+    const ValueRef dilation,
+    const ValueRef groups,
+    const ValueRef neg_slope,
+    const ValueRef out) {
+  const bool has_residual = residual != kDummyValueRef;
+  const ValueRef transposed = graph.add_scalar<bool>(false);
+  const ValueRef output_padding =
+      graph.add_scalar_list<int64_t>(std::vector<int64_t>{0, 0});
+  const int64_t groups_val = graph.get_int(groups);
+  const Kernel2dParams kernel_params = create_kernel2d_params(
+      graph,
+      weight_data,
+      /*kernel_size_only = */ false,
+      stride,
+      padding,
+      dilation);
+  const bool fast_tiled = can_use_fast_tiled_conv2d(
+      graph, in, out, kernel_params, /*transposed = */ false, groups_val);
+  // A constant residual is not a tensor yet; the separate-op path prepacks it.
+  const bool residual_ok = !has_residual ||
+      (graph.val_is_tensor(residual) &&
+       graph.sizes_of(residual) == graph.sizes_of(out) &&
+       graph.storage_type_of(residual) == utils::kTexture3D &&
+       graph.packed_dim_of(residual) == WHCN::kChannelsDim);
+  const bool direct = get_conv2d_method(graph, weight_data, groups_val, false) ==
+          Conv2dMethod::SlidingWindow &&
+      !should_use_conv2d_im2col(
+          graph, weight_data, groups_val, kernel_params, out, fast_tiled) &&
+      can_use_direct_conv2d(
+          graph, in, weight_data, out, kernel_params, groups_val) &&
+      residual_ok;
+  if (direct) {
+    return conv2d_direct_impl(
+        graph,
+        in,
+        weight_data,
+        bias,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        output_padding,
+        groups,
+        out,
+        /*clamp_out = */ false,
+        0.0f,
+        0.0f,
+        /*force_masked = */ false,
+        residual,
+        graph.extract_scalar<float>(neg_slope),
+        /*lrelu = */ true);
+  }
+
+  const auto like_out = [&]() {
+    return graph.add_tensor_like(
+        out, graph.storage_type_of(out), graph.estimate_memory_layout_of(out));
+  };
+  ValueRef pre_act = like_out();
+  VK_GET_OP_FN("aten.convolution.default")
+  (graph,
+   {in,
+    weight_data,
+    bias,
+    stride,
+    padding,
+    dilation,
+    transposed,
+    output_padding,
+    groups,
+    pre_act});
+  if (has_residual) {
+    const ValueRef summed = like_out();
+    VK_GET_OP_FN("aten.add.Tensor")
+    (graph, {pre_act, residual, kDummyValueRef, summed});
+    pre_act = summed;
+  }
+  VK_GET_OP_FN("aten.leaky_relu.default")(graph, {pre_act, neg_slope, out});
+}
+
+} // namespace
+
+// et_vk.conv2d_residual_lrelu(input, weight, bias, residual, stride, padding,
+// dilation, groups, negative_slope), e.g. a ResConv tail.
+void conv2d_residual_lrelu_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  add_conv2d_lrelu(
+      graph,
+      args.at(0),
+      args.at(1),
+      args.at(2),
+      args.at(3),
+      args.at(4),
+      args.at(5),
+      args.at(6),
+      args.at(7),
+      args.at(8),
+      args.at(9));
+}
+
+// et_vk.conv2d_lrelu(input, weight, bias, stride, padding, dilation, groups,
+// negative_slope).
+void conv2d_lrelu_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  add_conv2d_lrelu(
+      graph,
+      args.at(0),
+      args.at(1),
+      args.at(2),
+      kDummyValueRef,
+      args.at(3),
+      args.at(4),
+      args.at(5),
+      args.at(6),
+      args.at(7),
+      args.at(8));
 }
 
 } // namespace vkcompute
