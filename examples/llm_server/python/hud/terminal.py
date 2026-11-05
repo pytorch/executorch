@@ -273,7 +273,10 @@ class TerminalHUD(logging.Handler):
         try:
             message = self.format(record)
             self._messages.append((record.levelno, _text(message)))
-            if record.levelno >= logging.WARNING and self._diagnostics is not None:
+            native = record.name == f"{__package__}.worker_logs"
+            if self._diagnostics is not None and (
+                native or record.levelno >= logging.WARNING
+            ):
                 self._diagnostics.write(
                     "".join(c for c in message if c.isprintable() or c in "\n\t") + "\n"
                 )

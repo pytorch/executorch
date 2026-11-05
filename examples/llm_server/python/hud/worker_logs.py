@@ -16,6 +16,8 @@ from contextlib import asynccontextmanager, suppress
 from .terminal import terminal_available
 
 logger = logging.getLogger(__name__)
+# Raw stderr must reach the HUD even when the application's log level is WARNING.
+logger.setLevel(logging.DEBUG)
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _LEVEL = re.compile(
     r"^(?:(?:DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL)\b|[DIWEF](?=\d|\s))", re.IGNORECASE

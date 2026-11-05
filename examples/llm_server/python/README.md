@@ -148,7 +148,8 @@ completed requests per session. Active sessions appear first; requests without a
 session ID appear under "Ungrouped requests". The display fits the terminal and
 updates in place. Native multiplexed-worker diagnostics appear in the recent
 log lines instead of scrolling the terminal; redirect stderr for full logs.
-Warnings and errors, including full tracebacks, are replayed after the HUD exits.
+All captured native stderr, including crash messages without a severity prefix,
+is replayed after the HUD exits, along with Python warnings, errors, and tracebacks.
 A process-exit fallback restores the terminal if the serving lifespan is skipped.
 A rendering failure restores the terminal and falls back to plain logs.
 Prompt and response text are never displayed.
