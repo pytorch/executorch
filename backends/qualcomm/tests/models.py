@@ -1471,6 +1471,19 @@ class FullLike(torch.nn.Module):
         return torch.min(x, torch.full_like(x, self.fill))
 
 
+class FullLikeShapeOnly(torch.nn.Module):
+    def __init__(self, scale_y=True, fill=0.5, dtype=None):
+        super().__init__()
+        self.scale_y = scale_y
+        self.fill = fill
+        self.dtype = dtype
+
+    def forward(self, x, y):
+        # full_like only needs the shape of frac(x), so nothing reads x.
+        full = torch.full_like(torch.frac(x), self.fill, dtype=self.dtype)
+        return (full, y * 2) if self.scale_y else full
+
+
 class Gather(torch.nn.Module):
     def __init__(self):
         super().__init__()

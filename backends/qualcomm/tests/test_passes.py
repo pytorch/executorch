@@ -11,6 +11,7 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     ConstantFolding,
     ConvertBmmToMatmul,
+    ConvertFullLikeToFull,
     ConvertMhaToSha,
     DecomposeColIm,
     DecomposeWrapWithAutocast,
@@ -63,6 +64,7 @@ from executorch.backends.qualcomm.tests.models import (
     BroadcastAndMutate,
     CastToFloat,
     ConvBackward,
+    FullLikeShapeOnly,
     HardSigmoid,
     Reciprocal,
     ScaledRmsNorm,
@@ -1663,6 +1665,48 @@ class TestPasses(unittest.TestCase):
                 self.assertEqual(
                     expected, [op.GetOpWrapper().GetOpType() for op in ops]
                 )
+
+    def test_convert_full_like_to_full(self):
+        sample_input = (torch.randn(2, 3), torch.randn(2, 3))
+        # An int fill on a float input must still give a float tensor.
+        # A dynamic shape has to be read at runtime, and I64toI32 would cast
+        # an int64 full to int32, so both keep the full_like.
+        cases = (
+            (False, 0.5, None, False),
+            (False, 1, None, False),
+            (False, 3, torch.int64, True),
+            (False, 2**40, torch.int64, True),
+            (True, 0.5, None, True),
+        )
+        for dynamic, fill, dtype, kept in cases:
+            with self.subTest(dynamic=dynamic, fill=fill):
+                module = FullLikeShapeOnly(fill=fill, dtype=dtype)
+                dynamic_shapes = (
+                    {"x": {0: torch.export.Dim("n", min=2, max=4)}, "y": None}
+                    if dynamic
+                    else None
+                )
+                ep = to_edge(
+                    torch.export.export(
+                        module,
+                        sample_input,
+                        dynamic_shapes=dynamic_shapes,
+                        strict=True,
+                    )
+                ).exported_program()
+                graph_module = ConvertFullLikeToFull()(ep.graph_module).graph_module
+                targets = {node.target for node in graph_module.graph.nodes}
+                x = next(n for n in graph_module.graph.nodes if n.name == "x")
+                # Otherwise the ops that only gave full_like its shape are
+                # removed, so nothing reads x.
+                self.assertEqual(exir_ops.edge.aten.full_like.default in targets, kept)
+                self.assertEqual(exir_ops.edge.aten.full.default in targets, not kept)
+                self.assertEqual(len(x.users) > 0, kept)
+                # The pass rewrites ep's graph in place.
+                for result, expected in zip(
+                    ep.module()(*sample_input), module(*sample_input)
+                ):
+                    torch.testing.assert_close(result, expected)
 
     def test_mha_to_sha(self):
         from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d

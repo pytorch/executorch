@@ -14,6 +14,7 @@ from .canonicalize_conv import CanonicalizeConv
 from .constant_folding import ConstantFolding
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_complex_stft import ConvertComplexStft
+from .convert_full_like_to_full import ConvertFullLikeToFull
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
@@ -88,6 +89,7 @@ __all__ = [
     ConstantFolding,
     ConvertBmmToMatmul,
     ConvertComplexStft,
+    ConvertFullLikeToFull,
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
