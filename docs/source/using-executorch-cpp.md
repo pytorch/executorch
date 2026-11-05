@@ -559,6 +559,15 @@ if (!result.ok()) {
 The result is in `sum`, in GPU memory. Copy it to the host, for example with `cudaMemcpy`, before
 you read it on the CPU.
 
+`forward` can return before the GPU has finished. The model runs on `cudaStreamPerThread`, the
+default stream of the thread that calls `forward`, and a `cudaMemcpy` on that thread waits for it.
+If you write the inputs on a stream of your own, call `cudaStreamSynchronize` on it before
+`forward`. If you use the result on a stream of your own, call
+`cudaStreamSynchronize(cudaStreamPerThread)` after `forward`. Or run the model on your stream with
+`cuda::CallerStreamGuard`, as
+[the TensorRT guide](backends/tensorrt/tensorrt-overview.md#performance-options) shows, and add
+`executorch::extension_cuda` to `target_link_libraries`.
+
 Calling the CUDA runtime yourself, for example `cudaMalloc` and `cudaMemcpy`, needs the CUDA Toolkit
 when you build. Add these lines at the end of `CMakeLists.txt`:
 
