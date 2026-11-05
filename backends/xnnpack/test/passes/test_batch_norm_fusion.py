@@ -55,6 +55,19 @@ class TestBatchNormFusion(unittest.TestCase):
             y = y + y
             return self.bn(y)
 
+    class ModelSharedLinearTwoBN(torch.nn.Module):
+        def __init__(self, bias: bool):
+            super().__init__()
+            self.linear = torch.nn.Linear(8, 4, bias=bias)
+            self.bn1 = torch.nn.BatchNorm1d(4)
+            self.bn2 = torch.nn.BatchNorm1d(4)
+            for bn in (self.bn1, self.bn2):
+                bn.running_mean.uniform_(-1, 1)
+                bn.running_var.uniform_(0.5, 2)
+
+        def forward(self, x, y):
+            return self.bn1(self.linear(x)), self.bn2(self.linear(y))
+
     class ModelConv3dBN(torch.nn.Module):
         def __init__(
             self,
@@ -134,6 +147,43 @@ class TestBatchNormFusion(unittest.TestCase):
                 .check_count({self.bn_name: 0})
                 .run_method_and_compare_outputs()
             )
+
+    def test_fp32_shared_linear_two_batch_norms_fusion(self):
+        """
+        One linear feeds two batch norms with different statistics, so each fold
+        must get its own fused weight and bias.
+        """
+        for bias in [True, False]:
+            (
+                Tester(
+                    self.ModelSharedLinearTwoBN(bias).eval(),
+                    (torch.randn(2, 8), torch.randn(2, 8)),
+                )
+                .export()
+                .to_edge_transform_and_lower()
+                .check_count({self.bn_name: 0})
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs()
+            )
+
+    def test_fp32_linear_batch_norm_on_3d_output(self):
+        """
+        BatchNorm1d normalizes dim 1. When the linear output is 3-D, dim 1 is not the
+        linear's output features, so the batch norm must not fold into the linear.
+        """
+        model = torch.nn.Sequential(torch.nn.Linear(8, 4), torch.nn.BatchNorm1d(4))
+        model[1].running_mean.uniform_(-1, 1)
+        model[1].running_var.uniform_(0.5, 2)
+        (
+            Tester(model.eval(), (torch.randn(2, 4, 8),))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({self.bn_name: 0})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
 
     def test_fp32_conv3d_batch_norm_doesnt_partition(self):
         """

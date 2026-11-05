@@ -112,3 +112,35 @@ Reliability guidance:
 
 See [Terminal-Bench](evals/terminal_bench/README.md) for setup, configuration,
 and evaluation commands on macOS.
+
+## Benchmark with agentx-mini
+
+[agentx-mini](https://huggingface.co/datasets/SocialLocalMobile/agentx-mini) replays
+shortened agent traces, including parallel subagent calls. Follow its README to
+install AgentX Harness, download the dataset, and configure its 8-token blocks.
+
+Build the MLX `llm_worker` and export a packed off-graph-cache model following the
+[MLX LLM guide](../../backends/mlx/examples/llm/README.md). Start the batching server:
+
+```bash
+python -m executorch.examples.llm_server.python.serve \
+  --worker-bin cmake-out/backends/mlx/examples/llm/llm_worker \
+  --model-path /path/to/model.pte \
+  --tokenizer-path /path/to/hf-tokenizer-directory \
+  --model-id Qwen/Qwen3-0.6B \
+  --max-context 40960 --max-sessions 8 --max-decode-sequences 8 \
+  --prefix-cache-entries 8 --port 8000
+```
+
+Use the model ID and tokenizer matching your export, and its context limit. Point
+AgentX at `http://127.0.0.1:8000`, enable streaming, and set
+`benchmark.endpoint.extra: {ignore_eos: true}`. Keep AgentX's root concurrency at
+`1` and `trace_idle_gap_cap_seconds: 1`; the worker's eight decode slots let
+subagents within a session overlap. Run `agentx profile --config benchmark.yaml`
+using the dataset README's configuration.
+
+`ignore_eos` is per request: normal chat requests still stop at EOS, and explicit
+request stop strings remain active. Rebuild the multiplexed worker to include this
+support; no chat-template changes are needed. Generation continues after EOS, but
+the HTTP response only parses and displays the first assistant turn. Usage counts
+include all generated tokens.
