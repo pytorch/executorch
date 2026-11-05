@@ -261,16 +261,6 @@ def cmsis_nn_transpose_conv_buffer_size(
         ),
     )
 
-    # A zero reverse buffer means CMSIS-NN selected its rolling-buffer path.
-    if reverse_buffer_bytes == 0:
-        # The sizing API uses stride.h where the kernel uses stride.w. Preserve
-        # the API's requirement while ensuring enough space for the kernel.
-        # TODO: Remove this correction once our CMSIS-NN pin includes
-        # https://github.com/ARM-software/CMSIS-NN/pull/243.
-        buffer_w = (input_nhwc[2] - 1) * stride_hw[1] + max(kernel_w, stride_hw[1])
-        buffer_h = max(kernel_h, stride_hw[0])
-        buffer_bytes = max(buffer_bytes, buffer_w * buffer_h * c_out * 4)
-
     return [buffer_bytes, reverse_buffer_bytes]
 
 
