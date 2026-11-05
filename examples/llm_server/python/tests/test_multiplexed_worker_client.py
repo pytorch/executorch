@@ -913,6 +913,9 @@ def test_sync_factory_rejects_multiplexing_with_async_guidance_and_reaps():
         {"ready": True, "multiplexed": True, "max_inflight_requests": 0},
         {"ready": True, "multiplexed": True, "max_inflight_requests": True},
         {"ready": True, "multiplexed": True, "max_named_sessions": -1},
+        {"ready": True, "multiplexed": True, "default_stop_strings": "<eos>"},
+        {"ready": True, "multiplexed": True, "default_stop_strings": [""]},
+        {"ready": True, "multiplexed": True, "default_stop_strings": [123]},
     ],
 )
 def test_async_readiness_failure_reaps_process(readiness):
@@ -1679,3 +1682,22 @@ def test_client_and_generation_reject_cross_loop_use():
     finally:
         owner.run_until_complete(client.close())
         owner.close()
+
+
+@pytest.mark.parametrize("advertised", [None, False, True])
+@pytest.mark.parametrize("stops", [None, [], ["<|native_eos|>", "<|other_eos|>"]])
+def test_ignore_eos_capability_comes_from_native_readiness(advertised, stops):
+    async def scenario():
+        frame = {"ready": True, "multiplexed": True}
+        if advertised is not None:
+            frame["supports_ignore_eos"] = advertised
+            frame["default_stop_strings"] = stops
+        async with _real_client(
+            f"print({json.dumps(frame)!r}, flush=True)", negotiate=True
+        ) as client:
+            assert client.supports_ignore_eos is (advertised is True)
+            assert client.default_stop_strings == (
+                stops if advertised is not None else None
+            )
+
+    _run(scenario())

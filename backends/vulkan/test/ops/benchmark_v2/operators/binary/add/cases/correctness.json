@@ -1,0 +1,72 @@
+[
+  {
+    "name": "add correctness",
+    "operator": "aten.add.Tensor",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.002,
+      "rtol": 0.001
+    },
+    "sweep_variables": {
+      "v_DTYPE": ["float32", "float16"],
+      "v_SIZES": [
+        [1, 64, 64],
+        [1, 128, 128],
+        [1, 256, 256],
+        [1, 512, 512],
+        [1, 1, 1024],
+        [1, 1024, 1],
+        [32, 32, 32],
+        [16, 128, 64]
+      ],
+      "v_STORAGE": ["texture3d", "buffer"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "a",
+            "sizes": "v_SIZES",
+            "dtype": "v_DTYPE",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "b",
+            "sizes": "v_SIZES",
+            "dtype": "v_DTYPE",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_int": [1, 1]
+            }
+          }
+        },
+        {
+          "float": 1.0
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "v_DTYPE",
+            "storage": "v_STORAGE",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  }
+]

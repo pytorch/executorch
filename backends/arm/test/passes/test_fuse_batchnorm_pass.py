@@ -8,7 +8,10 @@ from typing import cast, ClassVar, Dict, Protocol, Tuple
 import torch
 from executorch.backends.arm._passes.fuse_batch_norm2d_pass import FuseBatchNorm2dPass
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import (
+    PassPipeline,
+    TosaPipelineFP,
+)
 
 input_t = Tuple[torch.Tensor]  # Input x
 
@@ -189,6 +192,22 @@ class MergeMultipleUsersBN(torch.nn.Module):
         return z, a
 
 
+class SharedConvTwoBN(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv2d = torch.nn.Conv2d(3, 4, kernel_size=3, padding=1)
+        self.batch_norm2d_1 = torch.nn.BatchNorm2d(4)
+        self.batch_norm2d_2 = torch.nn.BatchNorm2d(4)
+        for batch_norm in (self.batch_norm2d_1, self.batch_norm2d_2):
+            batch_norm.running_mean = torch.rand(4) * 2 - 1
+            batch_norm.running_var = torch.rand(4) + 0.5
+
+    def forward(
+        self, x: torch.Tensor, y: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.batch_norm2d_1(self.conv2d(x)), self.batch_norm2d_2(self.conv2d(y))
+
+
 modules: Dict[str, ModuleWithBatchNormAttrs] = {
     "merge_one_of_two_bn_affine": cast(ModuleWithBatchNormAttrs, MergeOneOfTwoBN(True)),
     "merge_one_of_two_bn": cast(ModuleWithBatchNormAttrs, MergeOneOfTwoBN(False)),
@@ -244,4 +263,17 @@ def test_fuse_batch_norm2d_tosa_FP_bf16_skips_fusion() -> None:
         passes_with_exported_program=[FuseBatchNorm2dPass],
         tosa_extensions=["bf16"],
     )
+    pipeline.run()
+
+
+def test_fuse_batch_norm2d_tosa_FP_shared_conv() -> None:
+    """One Conv2d is called twice and each call feeds its own batch norm, so the
+    two folds share a weight but each needs its own fused weight and bias.
+    """
+    pipeline = TosaPipelineFP[Tuple[torch.Tensor, torch.Tensor]](
+        SharedConvTwoBN().eval(),
+        (torch.randn(1, 3, 8, 8), torch.randn(1, 3, 8, 8)),
+        aten_op=[],
+    )
+    pipeline.count_tosa_ops({"CONV2D": 2, "MUL": 0, "SUB": 0})
     pipeline.run()

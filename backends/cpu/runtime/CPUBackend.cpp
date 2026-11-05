@@ -6,7 +6,6 @@
 
 #include <executorch/backends/cpu/runtime/CPUPlan.h>
 #include <executorch/backends/native/runtime/Program.h>
-#include <executorch/extension/threadpool/threadpool.h>
 
 #include <algorithm>
 #include <chrono>
@@ -19,6 +18,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <utility>
 
 namespace executorch::backends::cpu {
 namespace {
@@ -29,20 +29,6 @@ constexpr uint32_t kCpuDelegateVersion = 1;
 std::optional<RuntimeConfigurationFactory>& runtime_configuration_factory() {
   static std::optional<RuntimeConfigurationFactory> factory;
   return factory;
-}
-
-ExecutionContext execution_context(runtime::EventTracer* tracer = nullptr) {
-  ExecutionContext context;
-  context.threadpool = extension::threadpool::get_pthreadpool();
-  context.threads = context.threadpool
-      ? extension::threadpool::get_threadpool()->get_thread_count()
-      : 1;
-#if defined(__x86_64__) || defined(__i386__)
-  context.avx2_fma =
-      __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
-#endif
-  context.event_tracer = tracer;
-  return context;
 }
 
 class CPUExecution {
@@ -67,7 +53,7 @@ class CPUExecution {
       ET_CHECK_OR_RETURN_ERROR(
           spec.kind == ptn::OutputKind::UserOutput,
           NotSupported,
-          "CpuBackend static FP32 delegate does not support mutation");
+          "CpuBackend static delegate does not support mutation");
     }
     buffers_.resize(graph.values.size());
     bytes_.reserve(graph.values.size());
@@ -77,6 +63,19 @@ class CPUExecution {
           NotSupported,
           "CPU static delegate requires unaliased values: %s",
           value.name.c_str());
+      if (value.is_tensor()) {
+        const auto dtype = value.tensor_meta().dtype;
+        ET_CHECK_OR_RETURN_ERROR(
+            dtype == ptn::ScalarType::Float || dtype == ptn::ScalarType::Byte ||
+                dtype == ptn::ScalarType::Char ||
+                dtype == ptn::ScalarType::Short ||
+                dtype == ptn::ScalarType::Int ||
+                dtype == ptn::ScalarType::Long ||
+                dtype == ptn::ScalarType::Bool,
+            NotSupported,
+            "CPU static delegate requires a supported dtype: %s",
+            value.name.c_str());
+      }
       auto bytes = tensor_bytes(value);
       if (!bytes.ok()) {
         return bytes.error();
@@ -94,7 +93,7 @@ class CPUExecution {
       return error;
     }
     plan_ = std::make_unique<CPUPlan>(
-        graph, buffers_, std::move(configuration), execution_context());
+        graph, buffers_, std::move(configuration), current_execution_context());
     error = plan_->select();
     if (error != Error::Ok) {
       return error;
@@ -140,11 +139,18 @@ class CPUExecution {
         copied_constant_bytes_ += buffer.readable_bytes;
       }
       buffers_[id] = buffer;
-      constants_.push_back(std::move(data.get()));
+      constants_.emplace_back(id, std::move(data.get()));
     }
     error = plan_->prepare(allocator);
     if (error != Error::Ok) {
       return error;
+    }
+    for (auto& [id, constant] : constants_) {
+      if (plan_->can_release_constant(id)) {
+        released_constant_bytes_ += constant.size();
+        buffers_[id] = {};
+        constant.Free();
+      }
     }
     const double milliseconds = std::chrono::duration<double, std::milli>(
                                     std::chrono::steady_clock::now() - start)
@@ -171,7 +177,8 @@ class CPUExecution {
       const auto& tensor = args[index]->toTensor();
       const auto& expected = method_->graph.value(id).tensor_meta();
       ET_CHECK_OR_RETURN_ERROR(
-          tensor.scalar_type() == aten::ScalarType::Float &&
+          tensor.scalar_type() ==
+                  static_cast<aten::ScalarType>(expected.dtype) &&
               tensor.dim() == expected.sizes.size() &&
               std::equal(
                   expected.sizes.begin(),
@@ -182,15 +189,20 @@ class CPUExecution {
           InvalidArgument,
           "CPU static shape/dtype/layout/storage mismatch: %s",
           method_->graph.value(id).name.c_str());
-      int64_t stride = 1;
-      for (size_t reverse = expected.sizes.size(); reverse > 0; --reverse) {
-        const size_t dim = reverse - 1;
-        ET_CHECK_OR_RETURN_ERROR(
-            tensor.dim_order()[dim] == dim && tensor.strides()[dim] == stride,
-            InvalidArgument,
-            "CPU binding must be contiguous: %s",
-            method_->graph.value(id).name.c_str());
-        stride *= expected.sizes[dim];
+      // Empty bindings carry no data, so their strides and dim order are
+      // meaningless (PyTorch does not canonicalize them); skip the contiguity
+      // check rather than rejecting valid empty tensors.
+      if (tensor.nbytes() != 0) {
+        int64_t stride = 1;
+        for (size_t reverse = expected.sizes.size(); reverse > 0; --reverse) {
+          const size_t dim = reverse - 1;
+          ET_CHECK_OR_RETURN_ERROR(
+              tensor.dim_order()[dim] == dim && tensor.strides()[dim] == stride,
+              InvalidArgument,
+              "CPU binding must be contiguous: %s",
+              method_->graph.value(id).name.c_str());
+          stride *= expected.sizes[dim];
+        }
       }
     }
     // EValue exposes the logical span, but no backing capacity or readable
@@ -205,7 +217,7 @@ class CPUExecution {
       }
     }
     const auto error =
-        plan_->execute(execution_context(context.event_tracer()));
+        plan_->execute(current_execution_context(context.event_tracer()));
     if (error != Error::Ok) {
       return error;
     }
@@ -227,7 +239,8 @@ class CPUExecution {
     report.pop_back();
     report +=
         ",\"copied_constant_bytes\":" + std::to_string(copied_constant_bytes_) +
-        "}";
+        ",\"released_constant_bytes\":" +
+        std::to_string(released_constant_bytes_) + "}";
     constexpr size_t chunk_bytes = 80;
     constexpr std::string_view hex = "0123456789abcdef";
     const size_t chunks = (report.size() + chunk_bytes - 1) / chunk_bytes;
@@ -246,12 +259,13 @@ class CPUExecution {
 
   ptn::Program program_;
   const ptn::Method* method_ = nullptr;
-  std::vector<FreeableBuffer> constants_;
+  std::vector<std::pair<ptn::ValueId, FreeableBuffer>> constants_;
   std::vector<size_t> bytes_;
   std::vector<Buffer> buffers_;
   std::vector<ptn::ValueId> input_ids_;
   std::unique_ptr<CPUPlan> plan_;
   size_t copied_constant_bytes_ = 0;
+  size_t released_constant_bytes_ = 0;
   std::mutex mutex_;
 };
 

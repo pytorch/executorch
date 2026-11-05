@@ -80,10 +80,10 @@ class CudaWeightReuseTest(unittest.TestCase):
         self.assertEqual(set(first.storages), {e.storage_key for e in first.entries})
         self.assertEqual(second.storages, {})
         self.assertEqual(second.stored, {e.storage_key for e in second.entries})
-        for entry in first.entries:
-            self.assertIn(entry.storage_key, collector._store.key_to_buffer_idx)
         first_manifest = decode_cuda_aoti_metadata(first_result.processed_bytes)
         second_manifest = decode_cuda_aoti_metadata(second_result.processed_bytes)
+        for entry in first_manifest.entries:
+            self.assertIn(entry.storage_key, collector._store.key_to_buffer_idx)
         self.assertEqual(second_manifest.entries, first_manifest.entries)
 
     def test_the_stored_bytes_match_writing_every_method(self) -> None:
