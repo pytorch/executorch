@@ -379,8 +379,9 @@ The shared `reference: "copy"` checks identical logical outputs for both shaders
 
 The global picker is `default_pick_gwg`. It uses the first tensor binding whose
 `access` is `write` or `read_write`: logical element count for buffers, texture
-extents for textures. Local pickers are `default_pick_lwg`, `pick_required_lwg`,
-`pick_xy_square_lwg`, `pick_xz_square_lwg`, and `pick_120shape_lwg`.
+extents for textures. Local pickers are `default_pick_lwg`, `pick_balanced_lwg`,
+`pick_required_lwg`, `pick_xy_square_lwg`, `pick_xz_square_lwg`, and
+`pick_120shape_lwg`.
 `pick_required_lwg` needs a global grid with a wrapping hint, such as the default
 buffer grid. Unsupported names produce a case error.
 
