@@ -30,6 +30,19 @@ fbcode_target(_kind = runtime.python_library,
     ],
 )
 
+fbcode_target(_kind = runtime.python_library,
+    name = "hf_attention",
+    srcs = [
+        "hf_attention.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":cache",
+        "//caffe2:torch",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
 fbcode_target(_kind = runtime.python_test,
     name = "test_update_and_attend",
     srcs = [
