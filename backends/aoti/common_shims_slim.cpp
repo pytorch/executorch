@@ -10,6 +10,9 @@
 #include <executorch/runtime/platform/abort.h>
 #include <executorch/runtime/platform/log.h>
 
+// Keep this file free of static and thread_local state: a Windows build
+// without EXECUTORCH_BUILD_SHARED links it twice (see backends/cuda).
+
 namespace executorch {
 namespace backends {
 namespace aoti {

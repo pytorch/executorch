@@ -13,7 +13,7 @@ import functools
 
 import numpy as np
 import torch as _torch
-from coremltools import _logger
+from coremltools import _logger, target
 from coremltools.converters.mil import Builder as mb
 from coremltools.converters.mil.frontend import _utils
 from coremltools.converters.mil.frontend.torch import ops as _ct_ops
@@ -31,6 +31,9 @@ from coremltools.converters.mil.frontend.torch.torch_op_registry import (
     register_torch_op,
 )
 from coremltools.converters.mil.mil import types
+from coremltools.converters.mil.mil.block import (
+    is_current_opset_version_compatible_with,
+)
 from coremltools.converters.mil.mil.types.symbolic import is_symbolic
 from executorch.exir.dim_order_utils import get_memory_format
 
@@ -92,6 +95,16 @@ def _add_fill(context, node, shape, value):
     context.add(_make_fill_op(shape, _core_ml_type(node)(value), node.name))
 
 
+def _add_fill_like(context, node, x, value):
+    # A fill of a shape known at conversion becomes a constant as big as x in
+    # the model, which fill_like avoids from iOS 16.
+    if is_current_opset_version_compatible_with(target.iOS16):
+        value = _core_ml_type(node)(value)
+        context.add(mb.fill_like(ref_tensor=x, value=value, name=node.name))
+    else:
+        _add_fill(context, node, mb.shape(x=x), value)
+
+
 # coremltools gives these fills the type of their fill value or of their input,
 # or makes them float, instead of the dtype torch gives them, so an int or bool
 # fill could come out as float. https://github.com/apple/coremltools/pull/2865
@@ -119,7 +132,7 @@ def _fill_like(context, node, convert):
     inputs = _get_inputs(context, node, min_expected=2)
     if _torch_dtype(node) is None or inputs[1].val is None:
         return convert(context, node)
-    _add_fill(context, node, mb.shape(x=inputs[0]), inputs[1].val)
+    _add_fill_like(context, node, inputs[0], inputs[1].val)
 
 
 @register_torch_op(override=True)
@@ -153,7 +166,7 @@ def zeros_like(context, node):
     if _torch_dtype(node) is None:
         return _ct_ops.zeros_like(context, node)
     x = _get_inputs(context, node, min_expected=1)[0]
-    _add_fill(context, node, mb.shape(x=x), 0)
+    _add_fill_like(context, node, x, 0)
 
 
 @register_torch_op(override=True)
@@ -161,7 +174,7 @@ def ones_like(context, node):
     if _torch_dtype(node) is None:
         return _ct_ops.ones_like(context, node)
     x = _get_inputs(context, node, min_expected=1)[0]
-    _add_fill(context, node, mb.shape(x=x), 1)
+    _add_fill_like(context, node, x, 1)
 
 
 @register_torch_op(override=True)

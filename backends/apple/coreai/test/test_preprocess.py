@@ -142,7 +142,7 @@ class PortablePreprocessTest(unittest.TestCase):
     def test_inline_embeds_files_in_nds(self):
         result = CoreAIBackend.preprocess(_edge_program(), [])
         manifest = json.loads(result.processed_bytes)
-        self.assertEqual(manifest["packaging"], "inline")
+        self.assertEqual(manifest["packaging"], "aimodel")
         self.assertTrue(manifest["files"], "expected at least one asset file")
         out = result.data_store_output
         self.assertIsNotNone(out)
@@ -215,7 +215,9 @@ class AssetMetadataTest(unittest.TestCase):
                 (bundle / "metadata.json").write_text(
                     json.dumps({"creationDate": timestamp})
                 )
-                result = _deliver(root, AssetPackaging.INLINE, {"path": bundle.name})
+                result = _deliver(
+                    root, AssetPackaging.AIMODEL, {"path": bundle.name}, [{}]
+                )[0]
                 manifest = json.loads(result.processed_bytes)
                 manifests.append(manifest)
                 self.assertEqual(
@@ -241,8 +243,8 @@ class AssetMetadataTest(unittest.TestCase):
             for payload in (b"original", b"modified"):
                 (root / archs["h16"] / "model.mil").write_bytes(payload)
                 result = _deliver(
-                    root, AssetPackaging.AOT_COMPILED_INLINE, {"archs": archs}
-                )
+                    root, AssetPackaging.AIMODELC, {"archs": archs}, [{}]
+                )[0]
                 manifest = json.loads(result.processed_bytes)
                 manifests.append(manifest)
                 for arch, name in archs.items():
@@ -378,7 +380,7 @@ class CompiledPreprocessTest(unittest.TestCase):
             [_aot_spec({"platform": "iOS", "architectures": ["h15g", "h16"]})],
         )
         manifest = json.loads(result.processed_bytes)
-        self.assertEqual(manifest["packaging"], "aot_compiled_inline")
+        self.assertEqual(manifest["packaging"], "aimodelc")
         self.assertEqual(manifest["platform"], "iOS")
         self.assertEqual(sorted(manifest["archs"]), ["h15g", "h16"])
         # Compiled bundle contents are embedded (files under a *.aimodelc dir).
@@ -400,7 +402,7 @@ class CompiledPreprocessTest(unittest.TestCase):
         # Empty architectures => coreai-build decides (our fake yields one).
         result = CoreAIBackend.preprocess(_edge_program(), [_aot_spec({})])
         manifest = json.loads(result.processed_bytes)
-        self.assertEqual(manifest["packaging"], "aot_compiled_inline")
+        self.assertEqual(manifest["packaging"], "aimodelc")
         self.assertEqual(manifest["platform"], "macOS")  # default
         self.assertTrue(manifest["archs"])
 
@@ -448,7 +450,7 @@ class CoreAIAOTCompileTest(unittest.TestCase):
             CoreAIPartitioner(aot_compile_config=AOTCompileConfig(platform="macOS"))
         )
         lbm, manifest = _lowered_manifest(lowered)
-        self.assertEqual(manifest["packaging"], "aot_compiled_inline")
+        self.assertEqual(manifest["packaging"], "aimodelc")
         self.assertEqual(manifest["platform"], "macOS")
         self.assertGreaterEqual(len(manifest["archs"]), 1)
         self.assertTrue(any(".aimodelc/" in f for f in manifest["files"]))
