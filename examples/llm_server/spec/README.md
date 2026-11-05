@@ -26,6 +26,32 @@ uses the worker's unset/random value.
 `model` must match the id returned by `/v1/models`; unknown ids return
 `404 model_not_found`.
 
+`ignore_eos` is an optional JSON boolean (default `false`) supported by the
+multiplexed batching worker. It disables model EOS and automatic chat-template
+stops, allowing generation through terminator tokens up to the requested budget
+or context limit. Explicit request `stop` strings and cancellation still apply.
+Response parsing ends at the first decoded turn terminator from the worker or
+chat template. Plain chat also treats content-special tokens as visible boundaries;
+under `ignore_eos`, these boundaries hide text without stopping generation.
+If a request stop cuts through a special-token spelling, an ambiguous trailing
+fragment is hidden too, even if it came from literal text.
+The worker advertises the decoded strings of all its default EOS
+IDs; HTTP `ignore_eos` is rejected if that metadata is absent or any EOS marker
+cannot decode to a nonempty string. Use matching model/tokenizer assets. Tokens
+past a recognized terminator contribute to usage but are excluded from parsing. Explicit
+stops still apply to hidden text, and exhausting the budget reports `length` even
+if the visible answer ended earlier. Exact generated-token splicing is disabled
+for these turns. A later prompt rebuilt from the visible answer can differ from
+the resident history containing hidden tokens, so direct continuation may reset
+and re-prefill. Enabled prefix caching can recover a matching retained prefix.
+AgentX synthesizes later prompts independently; enable prefix caching when
+benchmarking reuse. Explicit `max_tokens` is recommended;
+without it generation uses the remaining context budget. The worker advertises
+support and `default_stop_strings` in its readiness frame (`null` when unavailable).
+Older and legacy workers reject
+`ignore_eos: true` with `400 unsupported_parameter`. Non-boolean values, including
+null, fail schema validation with HTTP 422.
+
 `chat_template_kwargs.return_reasoning` is an ExecuTorch response-visibility
 control and defaults to `true`. For models with a reasoning extractor, set it
 to `false` to omit reasoning from the response; the model still computes reasoning.
@@ -161,7 +187,8 @@ integer in `[-1, INT32_MAX]`; omitted or `-1` selects the runtime's automatic
 budget. Sampling fields must be numeric, never booleans: temperature is finite
 and nonnegative, top_p is in `(0, 1]`, top_k is a nonnegative int32, and seed is a
 uint64 (zero preserves the existing unset/random sentinel). `stop` is an array
-of strings. Unknown
+of strings. `ignore_eos` is a JSON boolean, default `false`; it suppresses
+service-default stop tokens while preserving explicit stop strings. Unknown
 fields and segment types, including images or image payload fields on otherwise
 valid text segments, fail explicitly instead of silently dropping modalities.
 
@@ -250,8 +277,14 @@ batched cache via `cache::kind::kBatched`, derives scheduler width from
 one `ServingRuntime`. It does not preload `forward`, run token-step loops, or use
 Glimmer's legacy session implementation. Prefix caching is disabled by default.
 `--prefix_cache_entries=N` enables creation-only reuse for both greedy and
-sampled requests. It adds `N + 1` physical rows for retained snapshots and one
-transient capture; logical `--max_sessions` remains unchanged.
+sampled requests. With `--prefix_capture_slots=C`, it adds `N + C` physical rows
+for retained snapshots and transient captures; logical `--max_sessions` remains
+unchanged. The default `--prefix_capture_slots=0` resolves `C` automatically to
+`min(max_sessions, max_inflight_requests)`, so overlapping requests can each capture
+their initial prompt. With checkpoints enabled, automatic sizing uses at most two
+rows because checkpoint collection remains serialized and one replacement can
+overlap. A positive value overrides automatic sizing; values above two add unused
+row capacity in checkpoint mode. Disabled prefix caching reserves no capture rows.
 
 With an existing MLX-enabled ExecuTorch installation and matching gflags package,
 configure the MLX LLM examples and build `llm_worker`. Launch with `--pte`,

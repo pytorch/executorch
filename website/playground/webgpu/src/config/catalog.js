@@ -18,7 +18,7 @@ export const CATEGORIES = [
   { id: 'language', label: 'Language', blurb: 'Chat with a model running on your GPU.' },
   { id: 'vision', label: 'Vision', blurb: 'Pixels in, structure out. Works on your camera, live.' },
   { id: 'generative', label: 'Generative', blurb: 'Images made and remade in the tab.' },
-  { id: 'audio', label: 'Audio', blurb: 'Speech to text, without a server.' },
+  { id: 'audio', label: 'Audio', blurb: 'Speech to text and text to speech, without a server.' },
 ];
 
 export const DEMOS = [
@@ -127,13 +127,47 @@ export const DEMOS = [
     view: 'stt',
     art: 'stt',
   },
+  {
+    id: 'text-to-speech',
+    category: 'audio',
+    title: 'Text to Speech',
+    blurb: 'Type a sentence and hear it spoken in a natural voice, generated frame by frame on your GPU.',
+    meta: { label: 'Model', value: 'Phonon 31M (English)' },
+    models: ['phonon-31m-en'],
+    compute: COMPUTE.EXECUTORCH,
+    view: 'tts',
+    art: 'tts',
+  },
 ];
 
 // Visitors see a demo only when it is listed and every model it needs is published.
-export const LISTED_DEMOS = DEMOS.filter((d) => !d.unlisted && d.models.every((id) => isPublished(getModel(id))));
-export const LISTED_CATEGORIES = CATEGORIES.filter((c) => LISTED_DEMOS.some((d) => d.category === c.id));
+export let LISTED_DEMOS = DEMOS.filter((d) => !d.unlisted && d.models.every((id) => isPublished(getModel(id))));
+export let LISTED_CATEGORIES = CATEGORIES.filter((c) => LISTED_DEMOS.some((d) => d.category === c.id));
 
 const BY_ID = new Map(LISTED_DEMOS.map((d) => [d.id, d]));
+const PREVIEW = new Set();
+
+// Local review only. The dev server's /__dev__/config.json (loopback, or the
+// shared dev proxy) can provide a model that is not published yet; a listed demo
+// whose every model is published or provided there joins the catalog as a
+// preview. Deployed builds have no dev config, so this never adds anything there.
+export function enablePreview(devModels) {
+  const available = (id) => isPublished(getModel(id)) || Boolean(devModels?.[id]?.spec);
+  const extra = DEMOS.filter((d) => !d.unlisted && !BY_ID.has(d.id) && d.models.every(available));
+  for (const d of extra) {
+    BY_ID.set(d.id, d);
+    PREVIEW.add(d.id);
+  }
+  if (extra.length) {
+    LISTED_DEMOS = DEMOS.filter((d) => BY_ID.has(d.id));
+    LISTED_CATEGORIES = CATEGORIES.filter((c) => LISTED_DEMOS.some((d) => d.category === c.id));
+  }
+  return extra;
+}
+
+export function isPreview(demo) {
+  return PREVIEW.has(demo.id);
+}
 
 export function getDemo(id) {
   return BY_ID.get(id) ?? null;
