@@ -25,6 +25,7 @@ enable_baremetal_toolchain=1
 target_toolchain=""
 target_toolchains=()
 enable_fvps=1
+fvps=()
 enable_vela=1
 enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
@@ -52,6 +53,8 @@ OPTION_LIST=(
   "--enable-baremetal-toolchain Enable baremetal toolchain setup"
   "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl. Repeat the option to install multiple toolchains."
   "--enable-fvps Enable FVP setup"
+  "--disable-fvps Disable FVP setup"
+  "--fvp Select FVP instead of the default corstone300 and corstone320: corstone300, corstone320, or corstone1000. Repeat the option to install multiple."
   "--enable-vela Enable VELA setup"
   "--enable-model-converter Enable MLSDK model converter setup"
   "--enable-vgf-lib Enable MLSDK vgf library setup"
@@ -125,6 +128,18 @@ function check_options() {
             --enable-fvps)
                 enable_fvps=1
                 shift
+                ;;
+            --disable-fvps)
+                enable_fvps=0
+                shift
+                ;;
+            --fvp)
+                if [[ $# -lt 2 ]]; then
+                    print_usage "$@"
+                    exit 1
+                fi
+                add_fvp "$2"
+                shift 2
                 ;;
             --enable-vela)
                 enable_vela=1
@@ -221,6 +236,22 @@ function add_target_toolchain() {
         fi
     done
     target_toolchains+=("${toolchain}")
+}
+
+function add_fvp() {
+    local fvp=$1
+    if [[ "${fvp}" != "corstone300" && "${fvp}" != "corstone320" && "${fvp}" != "corstone1000" ]]; then
+        echo "Error: Unsupported FVP '${fvp}'. Valid options are corstone300, corstone320, corstone1000." >&2
+        exit 1
+    fi
+
+    local selected_fvp
+    for selected_fvp in ${fvps[@]+"${fvps[@]}"}; do
+        if [[ "${selected_fvp}" == "${fvp}" ]]; then
+            return
+        fi
+    done
+    fvps+=("${fvp}")
 }
 
 function setup_root_dir() {
@@ -389,6 +420,14 @@ if [[ $is_script_sourced -eq 0 ]]; then
     fi
     target_toolchains_display="$(IFS=,; echo "${target_toolchains[*]}")"
 
+    if [[ "${#fvps[@]}" -eq 0 ]]; then
+        fvps=("corstone300" "corstone320")
+    elif [[ "${enable_fvps}" -eq 0 ]]; then
+        echo "Error: --fvp cannot be combined with disabled FVP setup." >&2
+        exit 1
+    fi
+    fvps_display="$(IFS=,; echo "${fvps[*]}")"
+
     # Import utils
     source $et_dir/backends/arm/scripts/fvp_utils.sh
     source $et_dir/backends/arm/scripts/toolchain_utils.sh
@@ -424,7 +463,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     # Setup FVP
     if [[ "${enable_fvps}" -eq 1 ]]; then
-        log_step "fvp" "Setting up Arm Fixed Virtual Platforms"
+        log_step "fvp" "Setting up Arm Fixed Virtual Platforms: ${fvps_display}"
         if [[ "${OS}" == "Linux" ]]; then
             check_fvp_eula
             install_fvp

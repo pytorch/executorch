@@ -160,6 +160,24 @@ def is_dequant_per_channel_node(node: torch.fx.Node) -> bool:
     return node_name == "dequantize_per_channel.default"
 
 
+def conv1d_transposed_is_rewritable(node: torch.fx.Node) -> bool:
+    """True if Conv1dAsConv2dPass can lower this transposed 1-D convolution onto
+    the conv2d transposed path: batch fixed at 1, a constant weight used by this
+    convolution alone (it is reshaped in place), one group and unit dilation.
+    """
+    in_node, weight_node = node.args[0], node.args[1]
+    if not isinstance(in_node, torch.fx.Node) or not isinstance(
+        weight_node, torch.fx.Node
+    ):
+        return False
+    in_shape = in_node.meta["val"].shape
+    if len(in_shape) != 3 or not isinstance(in_shape[0], int) or in_shape[0] != 1:
+        return False
+    if weight_node.op != "placeholder" or len(weight_node.users) != 1:
+        return False
+    return node.args[8] == 1 and list(node.args[5]) == [1]
+
+
 def is_view_copy_node(node: torch.fx.Node) -> bool:
     if node.op != "call_function":
         return False
@@ -192,6 +210,18 @@ def is_param_node(program: ExportedProgram, node: torch.fx.Node) -> bool:
         or is_buffer(program, node)
         or is_lifted_tensor_constant(program, node)
     )
+
+
+def get_constant_nodes(program: ExportedProgram) -> Set[torch.fx.Node]:
+    """
+    Return the nodes of the exported program that hold constant data:
+    parameters, lifted tensor constants and buffers that are never mutated.
+    """
+    return {
+        node
+        for node in program.graph.nodes
+        if is_param_node(program, node) and not is_mutable_buffer_node(node, program)
+    }
 
 
 def is_mutable_buffer_node(

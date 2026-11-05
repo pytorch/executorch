@@ -36,10 +36,14 @@ from executorch.backends.qualcomm.quantizer.validators import NormalizedConstrai
 
 from executorch.backends.qualcomm.serialization.qc_schema import (
     _soc_info_table,
+    HtpArch,
     QcomChipset,
     QnnExecuTorchBackendType,
 )
-from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ANNOTATION_KEY
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_CONVERTED_LINEAR,
+    QCOM_QUANT_ANNOTATION_KEY,
+)
 from executorch.backends.qualcomm.utils.qnn_sdk_setup import disable_mkldnn_on_amd
 from torch._ops import OpOverload
 
@@ -420,6 +424,9 @@ class QnnQuantizer(Quantizer):
         ] = []
 
         self.block_size_map = {}
+        # Block sizes of linears lowered as conv2d, keyed by conv node name.
+        # Rebuilt on every transform_for_annotation call.
+        self._converted_block_sizes: Dict[str, Tuple] = {}
         self.custom_quant_annotations: Sequence[Callable] = []
         self.discard_nodes: Set[str] = set()
         self._recipe = None
@@ -535,6 +542,8 @@ class QnnQuantizer(Quantizer):
             GraphModule: The annotated model.
         """
         if self._recipe:
+            if self.block_size_map:
+                logging.warning("block_size_map is ignored when a quant recipe is set.")
             self._recipe.annotate(model, self._rules_map)
         else:
             if self.default_quant_config.is_qat:
@@ -563,11 +572,53 @@ class QnnQuantizer(Quantizer):
         Returns:
             GraphModule: The transformed model.
         """
-        return get_qnn_pass_manager_cls(
+        per_block_linears = self._get_per_block_linears(model)
+        # HTP FullyConnected reads BLOCKWISE_EXPANSION block scales past their
+        # documented size, which can corrupt the output (pytorch/executorch#23746),
+        # so per-block linears are lowered as 1x1 conv2d instead. V68 does not
+        # support per-block conv2d, so its linears stay FullyConnected.
+        route_to_conv = (
+            self.backend == QnnExecuTorchBackendType.kHtpBackend
+            and self.soc_info.htp_info.htp_arch >= HtpArch.V69
+        )
+        model = get_qnn_pass_manager_cls(
             self.backend
         )().transform_for_annotation_pipeline(
-            model, convert_linear_to_conv2d=self._convert_linear_to_conv2d
+            model,
+            convert_linear_to_conv2d=self._convert_linear_to_conv2d,
+            linear_node_names=set(per_block_linears) if route_to_conv else None,
         )
+
+        self._converted_block_sizes = {}
+        converted_strategies = {}
+        for node in model.graph.nodes:
+            linear_name = node.meta.get(QCOM_CONVERTED_LINEAR)
+            if linear_name not in per_block_linears:
+                continue
+            block_size, strategy = per_block_linears[linear_name]
+            block_size = tuple(block_size) + (1,) * (4 - len(block_size))
+            self._converted_block_sizes[node.name] = block_size
+            if strategy is not None:
+                converted_strategies[node.name] = (strategy, block_size)
+        if self._recipe:
+            self._recipe.set_converted_block_strategies(converted_strategies)
+        return model
+
+    def _get_per_block_linears(self, model: GraphModule) -> Dict[str, Tuple]:
+        """Map each per-block linear name to (block_size, recipe strategy or None)."""
+        per_block_linears = {}
+        for node in model.graph.nodes:
+            if node.target != torch.ops.aten.linear.default:
+                continue
+            if self._recipe:
+                if strategy := self._recipe.get_per_block_strategy(node):
+                    per_block_linears[node.name] = (
+                        strategy.extra_kwargs["block_size"],
+                        strategy,
+                    )
+            elif node.name in self.block_size_map:
+                per_block_linears[node.name] = (self.block_size_map[node.name], None)
+        return per_block_linears
 
     def validate(self, model: GraphModule) -> None:
         # Validate: only for mapped nodes (qnn_op present); unmapped → skip validation
@@ -621,7 +672,10 @@ class QnnQuantizer(Quantizer):
         if isinstance(op, str):
             return
         config = self._get_submodule_qconfig(node)
-        if block_size := self.block_size_map.get(node.name):
+        block_size = self._converted_block_sizes.get(
+            node.name
+        ) or self.block_size_map.get(node.name)
+        if block_size:
             ch_axis = config.op_axis_dict.get(node.target, 0)
             assert (
                 len(config.per_block_quant_config_list) > ch_axis
@@ -717,6 +771,10 @@ class QnnQuantizer(Quantizer):
         """
         Set the mapping from node names to block sizes for per-block quantization.
 
+        On HTP V69 and later, a linear in this map with an input of rank 2-4 is
+        lowered as a 1x1 conv2d, and its block size is padded to 4D for the conv
+        weight (e.g. (1, 32) -> (1, 32, 1, 1)). Other ranks stay linear.
+
         Args:
             block_size_map (Dict[str, Tuple]): Mapping from node name to block size.
         """
@@ -727,6 +785,7 @@ class QnnQuantizer(Quantizer):
         Convert linear to conv2d during the annotation pipeline.
 
         If this is enabled, quant_recipe will need to target conv node instead of linear node.
+        A per-block linear keeps its block size on the converted conv node.
 
         Args:
             convert_linear_to_conv2d (bool): True to convert during annotation.

@@ -150,6 +150,10 @@ aoti_torch_new_tensor_handle(SlimTensor* orig_handle, SlimTensor** new_handle);
 
 /**
  * Clone APIs.
+ *
+ * A clone of a CUDA tensor is a synchronous copy, which a CUDA graph capture
+ * cannot record, so both return Error::NotSupported while the current stream
+ * is capturing.
  */
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_clone_preserve_strides(
     SlimTensor* self,
@@ -181,6 +185,23 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
     SlimTensor** ret_new_tensor);
 
 /**
+ * Creates a view of a tensor with new sizes and strides and the same storage
+ * offset, like torch.as_strided(self, sizes, strides). The view has as many
+ * dimensions as self.
+ *
+ * @param self Original tensor (must not be null)
+ * @param sizes_ptr Pointer to array of dimension sizes
+ * @param strides_ptr Pointer to array of strides for each dimension
+ * @param ret_new_tensor Output parameter for the tensor view
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_as_strided(
+    SlimTensor* self,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    SlimTensor** ret_new_tensor);
+
+/**
  * Copies data from source tensor to destination tensor.
  *
  * Handles all device combinations (CPU-CPU, CPU-CUDA, CUDA-CPU, CUDA-CUDA)
@@ -190,7 +211,9 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
  * @param self Destination tensor (must not be null)
  * @param src Source tensor to copy from (must not be null)
  * @param non_blocking If true, the copy may be asynchronous (currently ignored)
- * @return AOTITorchError error code (Error::Ok on success)
+ * @return Error::Ok on success, Error::NotSupported if either tensor is a CUDA
+ * tensor and the current stream is capturing a CUDA graph, which cannot record
+ * the synchronous copy
  */
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(SlimTensor* self, SlimTensor* src, int32_t non_blocking);
@@ -214,7 +237,8 @@ aoti_torch_item_bool(SlimTensor* tensor, bool* ret_value);
  *
  * @param tensor Single-element tensor (must not be null)
  * @param ret_value Output parameter for the extracted value
- * @return AOTITorchError error code (Error::Ok on success)
+ * @return Error::Ok on success, Error::NotSupported for a CUDA tensor while the
+ * current stream is capturing a CUDA graph, which cannot record the copy
  */
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_item_uint8(SlimTensor* tensor, uint8_t* ret_value);
@@ -238,6 +262,14 @@ aoti_torch_item_int64(SlimTensor* tensor, int64_t* ret_value);
 /// See aoti_torch_item_uint8.
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_item_float32(SlimTensor* tensor, float* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_float64(SlimTensor* tensor, double* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_float16(SlimTensor* tensor, c10::Half* ret_value);
 
 /// See aoti_torch_item_uint8.
 AOTI_SHIM_EXPORT AOTITorchError
