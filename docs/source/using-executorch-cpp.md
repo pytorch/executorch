@@ -344,11 +344,10 @@ way, because they sit next to the runtime library.
   `executorch::kernels_optimized`.
 - The model fails to load complaining about a backend: link the backend it was exported for.
 - The model fails to load because data is missing, for example the CUDA backend reports
-  `... is missing from named data`: the export wrote the weights to a separate `.ptd` file. Pass the
-  file it wrote as the second argument, for example
-  `Module module("model.pte", "aoti_cuda_blob.ptd");`. If there is no `.ptd` file next to the `.pte`,
-  save the program with `save_pte_program`, as
-  [the CUDA section](#running-on-a-gpu-with-the-cuda-package) does.
+  `... is missing from named data`: the model expects its weights in a separate `.ptd` file. Pass that
+  file as the second argument, for example `Module module("model.pte", "aoti_cuda_blob.ptd");`. If
+  the export saved only `program.buffer`, no `.ptd` was written. Save the program with
+  `save_pte_program`, as [the CUDA section](#running-on-a-gpu-with-the-cuda-package) does.
 - A GPU model fails on its first run because an output has no buffer: it was exported with
   `alloc_graph_output=False`, so it has no memory of its own for its outputs. Give each output a
   buffer with `set_output` before the first run: GPU memory if the export skipped the output copy
