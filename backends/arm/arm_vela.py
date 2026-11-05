@@ -126,6 +126,7 @@ class VelaCompileResult:
     """Binary stream and external payloads produced by Vela."""
 
     processed_bytes: bytes
+    scratch_size: int
     external_blocks: tuple[VelaExternalBlock, ...] = ()
 
 
@@ -164,6 +165,27 @@ def vela_bin_pack_io(prefix, data):
         )
         ios += io_struct
     return ios
+
+
+def _get_scratch_size(scratch_value: np.generic, max_scratch_size: int | None) -> int:
+    """Validate Vela scratch size and the optional platform capacity."""
+    if not isinstance(scratch_value, np.int64):
+        raise RuntimeError("Expected scratch to be int64")
+    scratch_size = int(scratch_value)
+    if scratch_size < 0 or scratch_size > 2**32 - 1:
+        raise ValueError(f"scratch size out of uint32 range: {scratch_size}")
+    if max_scratch_size is not None and scratch_size > max_scratch_size:
+        raise RuntimeError(
+            f"Ethos-U delegate scratch arena requires {scratch_size} bytes, "
+            f"exceeding the configured capacity of {max_scratch_size} bytes "
+            f"by {scratch_size - max_scratch_size} bytes. "
+            "Reduce the model's memory requirements or target a platform "
+            "with sufficient scratch memory. See Vela's documentation "
+            "for memory-mode and arena-cache-size options: "
+            "https://gitlab.arm.com/artificial-intelligence/ethos-u/"
+            "ethos-u-vela/-/blob/main/OPTIONS.md"
+        )
+    return scratch_size
 
 
 # Output via Vela to binary stream for ArmBackendEthosU
@@ -213,24 +235,10 @@ def vela_compile(
             # copy weight data through unmodified
             bin_blocks["weight_data"] = data["weight_data"].tobytes()
 
-            # Add a block for scratch, inputs and outputs;  scratch shape is a 1 element
-            # array giving us size in bytes so extract this and add a block of 0's.
-            # Currently we preallocated this on the host to provide SRAM for computation.
-            if not isinstance(data["scratch_shape"][0], np.int64):
-                raise RuntimeError("Expected scratch to be int64")
-            block_length = int(data["scratch_shape"][0])
-            if max_scratch_size is not None and block_length > max_scratch_size:
-                raise RuntimeError(
-                    f"Ethos-U delegate scratch arena requires {block_length} bytes, "
-                    f"exceeding the configured capacity of {max_scratch_size} bytes "
-                    f"by {block_length - max_scratch_size} bytes. "
-                    "Reduce the model's memory requirements or target a platform "
-                    "with sufficient scratch memory. See Vela's documentation "
-                    "for memory-mode and arena-cache-size options: "
-                    "https://gitlab.arm.com/artificial-intelligence/ethos-u/"
-                    "ethos-u-vela/-/blob/main/OPTIONS.md"
-                )
-            bin_blocks["scratch_size"] = struct.pack("<I", block_length)
+            # Vela's scratch_shape contains the required scratch size in bytes.
+            # Store the size; scratch storage is supplied at runtime.
+            scratch_size = _get_scratch_size(data["scratch_shape"][0], max_scratch_size)
+            bin_blocks["scratch_size"] = struct.pack("<I", scratch_size)
 
             # Delegate-owned streaming (persistent/variable) state lives in its
             # own region (region 5), with 0-based offsets independent of scratch
@@ -322,7 +330,11 @@ def vela_compile(
                 block = block_header + block_data
                 blocks = blocks + block
 
-            return VelaCompileResult(blocks, tuple(external_blocks))
+            return VelaCompileResult(
+                processed_bytes=blocks,
+                scratch_size=scratch_size,
+                external_blocks=tuple(external_blocks),
+            )
 
     if intermediate_path is not None:
         return run(intermediate_path)

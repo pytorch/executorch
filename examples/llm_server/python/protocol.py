@@ -67,6 +67,8 @@ class ChatCompletionRequest(BaseModel):
     frequency_penalty: Optional[float] = None
     presence_penalty: Optional[float] = None
     top_k: Optional[int] = None
+    # Disable model/template termination; explicit request stops still apply.
+    ignore_eos: bool = Field(default=False, strict=True)
     logit_bias: Optional[dict[str, float]] = None
     # Output-contract fields: modeled (not dropped) so we reject the ones we
     # can't honor rather than returning an output that violates what was asked.
