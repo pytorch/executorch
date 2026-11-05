@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -105,6 +106,10 @@ class EngineContext {
   std::shared_ptr<const Package> package_;
 };
 
+// Named load-time settings for one context, such as the registry key of an
+// off-graph KV cache the caller installed.
+using EngineOptions = std::map<std::string, std::string>;
+
 // Process-wide backend and device resources shared by its contexts. Must
 // outlive every context and executable it creates.
 // Callers serialize create_context(); distinct contexts may execute
@@ -129,6 +134,16 @@ class EngineHost {
   virtual std::unique_ptr<EngineContext> create_context(
       std::shared_ptr<const Program> program,
       std::shared_ptr<const Package> package) = 0;
+
+  // create_context with `options`. Throws std::invalid_argument on an option
+  // the engine does not recognize; the default recognizes none. An option may
+  // bind caller-owned state, such as a KV cache, into the context. Contexts
+  // bound to the same state are not isolated from each other: the caller must
+  // serialize their executables as if they shared one context.
+  virtual std::unique_ptr<EngineContext> create_context_with_options(
+      std::shared_ptr<const Program> program,
+      std::shared_ptr<const Package> package,
+      const EngineOptions& options);
 };
 
 } // namespace ptn
