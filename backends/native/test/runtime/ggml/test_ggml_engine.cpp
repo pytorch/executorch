@@ -29,6 +29,8 @@
 #include <executorch/backends/native/runtime/deserialize/test/PackageTestData.h>
 #include <executorch/backends/native/runtime/engine/Engine.h>
 #include <executorch/backends/native/runtime/native_graph_generated.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
+#include <executorch/runtime/backend/options.h>
 #include <flatbuffers/flatbuffers.h>
 #include <gtest/gtest.h>
 
@@ -234,7 +236,8 @@ std::vector<uint8_t> make_linear_program(
 
 std::unique_ptr<GgmlEngineContext> make_context(
     GgmlEngineHost& host,
-    const std::vector<uint8_t>& program_bytes) {
+    const std::vector<uint8_t>& program_bytes,
+    const EngineOptions& options = {}) {
   // One block_q4_K: d = 1.0 (fp16), dmin = 0, every sub-block scale 1 and
   // min 0, and nibbles 1 (low) / 2 (high), so half the weights are 1 and
   // half are 2.
@@ -257,7 +260,8 @@ std::unique_ptr<GgmlEngineContext> make_context(
       }))));
   auto program = std::make_shared<const Program>(
       Program::load(program_bytes.data(), program_bytes.size()));
-  return host.create_ggml_context(std::move(program), std::move(package));
+  return host.create_ggml_context(
+      std::move(program), std::move(package), options);
 }
 
 // A tensor (by name), an int, a float, an int list, or None.
@@ -1327,6 +1331,332 @@ TEST(GgmlEngineTest, CustomSdpaMatchesReferenceWithoutMask) {
       EXPECT_NEAR(out[i], expected[i], 1e-3f) << i;
     }
   }
+}
+
+namespace kv = ::executorch::extension::llm::cache;
+
+constexpr int64_t kOffGraphHeads = 4;
+constexpr int64_t kOffGraphKvHeads = 2;
+constexpr int64_t kOffGraphDim = 8;
+const double kOffGraphScale = 1.0 / std::sqrt(static_cast<double>(kOffGraphDim));
+
+// One kvcache::update_and_attend over q [1, 4, T, 8] and k, v [1, 2, T, 8] at
+// positions [T, 1], addressing cache layer `layer`.
+std::vector<uint8_t> make_update_and_attend_program(
+    int64_t tokens,
+    int64_t layer = 0) {
+  TestProgram program;
+  program.input(
+      "q", fbs::ScalarType::FLOAT, {1, kOffGraphHeads, tokens, kOffGraphDim});
+  program.input(
+      "k", fbs::ScalarType::FLOAT, {1, kOffGraphKvHeads, tokens, kOffGraphDim});
+  program.input(
+      "v", fbs::ScalarType::FLOAT, {1, kOffGraphKvHeads, tokens, kOffGraphDim});
+  program.input("position", fbs::ScalarType::LONG, {tokens, 1});
+  program.call(
+      "attention",
+      "torch.ops.kvcache.update_and_attend.default",
+      {{"q", std::string("q")},
+       {"k", std::string("k")},
+       {"v", std::string("v")},
+       {"position", std::string("position")},
+       {"layer_id", layer},
+       {"scale", kOffGraphScale}},
+      fbs::ScalarType::FLOAT,
+      {1, kOffGraphHeads, tokens, kOffGraphDim});
+  return program.finish("attention");
+}
+
+// A ggml cache built through the factory and published under a registry key,
+// with the context option that names it.
+struct InstalledCache {
+  std::shared_ptr<kv::Cache> cache;
+  std::unique_ptr<kv::InstallGuard> guard;
+  EngineOptions options;
+
+  kv::SequenceControl& control() {
+    return *cache->as<kv::SequenceControl>();
+  }
+};
+
+InstalledCache install_cache(
+    int capacity,
+    int initial_capacity,
+    ScalarType kv_dtype = ScalarType::Float,
+    int head_dim = static_cast<int>(kOffGraphDim)) {
+  register_ggml_cache_builders();
+  kv::CacheGeometry geometry;
+  geometry.layers.push_back(kv::LayerGeometry{
+      .n_kv_heads = static_cast<int>(kOffGraphKvHeads), .head_dim = head_dim});
+  const kv::CacheConfig cfg{
+      .capacity = capacity,
+      .kv_dtype = static_cast<int>(kv_dtype),
+      .initial_capacity = initial_capacity};
+  auto built = kv::CacheFactory::global().build(
+      kGgmlCacheBackendId, kv::kind::kSingle, geometry, cfg);
+  if (!built.ok()) {
+    throw std::runtime_error("failed to build the test cache");
+  }
+  InstalledCache out;
+  out.cache = built.get();
+  out.guard = std::make_unique<kv::InstallGuard>(out.cache);
+  ::executorch::runtime::BackendOptions<1> options;
+  const char* key = nullptr;
+  if (out.guard->set_option(options) != ::executorch::runtime::Error::Ok ||
+      options.get_option(kv::kCacheKeyOption, key) !=
+          ::executorch::runtime::Error::Ok) {
+    throw std::runtime_error("failed to publish the test cache");
+  }
+  out.options.emplace(kv::kCacheKeyOption, key);
+  return out;
+}
+
+// What the cache should hold: K and V [Hkv, D] per position, written by each
+// step, attended causally by naive softmax attention.
+class OffGraphReference {
+ public:
+  // Runs `tokens` tokens from `start` through `executable`, with inputs that
+  // depend on the position and `seed`, and returns the largest difference
+  // from the reference.
+  float step(
+      EngineExecutable& executable,
+      int64_t start,
+      int64_t tokens,
+      int seed = 0) {
+    const int64_t kv_row = kOffGraphKvHeads * kOffGraphDim;
+    std::vector<float> q(kOffGraphHeads * tokens * kOffGraphDim);
+    std::vector<float> k(kOffGraphKvHeads * tokens * kOffGraphDim);
+    std::vector<float> v(k.size());
+    std::vector<int64_t> positions(tokens);
+    for (int64_t t = 0; t < tokens; ++t) {
+      const int64_t pos = start + t;
+      positions[t] = pos;
+      if (static_cast<int64_t>(k_.size()) <= pos) {
+        k_.resize(pos + 1, std::vector<float>(kv_row));
+        v_.resize(pos + 1, std::vector<float>(kv_row));
+      }
+      for (int64_t h = 0; h < kOffGraphHeads; ++h) {
+        for (int64_t d = 0; d < kOffGraphDim; ++d) {
+          q[(h * tokens + t) * kOffGraphDim + d] = static_cast<float>(
+              std::sin(0.17 * pos + 0.9 * h - 0.21 * d + seed));
+        }
+      }
+      for (int64_t h = 0; h < kOffGraphKvHeads; ++h) {
+        for (int64_t d = 0; d < kOffGraphDim; ++d) {
+          const auto key = static_cast<float>(
+              std::sin(0.3 * pos + 0.7 * h + 0.13 * d + 2 * seed));
+          const auto value = static_cast<float>(
+              std::cos(0.2 * pos - 0.5 * h + 0.31 * d + seed) * (1 + pos % 3));
+          k[(h * tokens + t) * kOffGraphDim + d] = key;
+          v[(h * tokens + t) * kOffGraphDim + d] = value;
+          k_[pos][h * kOffGraphDim + d] = key;
+          v_[pos][h * kOffGraphDim + d] = value;
+        }
+      }
+    }
+    executable.set_input(0, q.data(), q.size(), ScalarType::Float);
+    executable.set_input(1, k.data(), k.size(), ScalarType::Float);
+    executable.set_input(2, v.data(), v.size(), ScalarType::Float);
+    executable.set_input(
+        3, positions.data(), positions.size(), ScalarType::Long);
+    executable.execute();
+    std::vector<float> out(q.size());
+    executable.get_output(0, out.data(), out.size(), ScalarType::Float);
+
+    float worst = 0.0f;
+    for (int64_t h = 0; h < kOffGraphHeads; ++h) {
+      const int64_t kv_head = h / (kOffGraphHeads / kOffGraphKvHeads);
+      for (int64_t t = 0; t < tokens; ++t) {
+        const float* query = &q[(h * tokens + t) * kOffGraphDim];
+        const int64_t keys = start + t + 1;
+        std::vector<double> weights(keys);
+        for (int64_t s = 0; s < keys; ++s) {
+          weights[s] = std::exp(
+              std::inner_product(
+                  query,
+                  query + kOffGraphDim,
+                  &k_[s][kv_head * kOffGraphDim],
+                  0.0) *
+              kOffGraphScale);
+        }
+        const double total =
+            std::accumulate(weights.begin(), weights.end(), 0.0);
+        for (int64_t d = 0; d < kOffGraphDim; ++d) {
+          double sum = 0.0;
+          for (int64_t s = 0; s < keys; ++s) {
+            sum += weights[s] * v_[s][kv_head * kOffGraphDim + d];
+          }
+          worst = std::max(
+              worst,
+              std::abs(
+                  out[(h * tokens + t) * kOffGraphDim + d] -
+                  static_cast<float>(sum / total)));
+        }
+      }
+    }
+    return worst;
+  }
+
+ private:
+  std::vector<std::vector<float>> k_;
+  std::vector<std::vector<float>> v_;
+};
+
+// A three-token prefill and decode steps in two contexts sharing one cache,
+// across graph caching modes and both storage types. Storage starts at one
+// row, so it regrows in the prefill and twice while decoding.
+TEST(GgmlEngineTest, OffGraphAttentionMatchesReferenceAsTheCacheGrows) {
+  for (const size_t graphs : {size_t{0}, size_t{1}, size_t{4}}) {
+    for (const auto& [dtype, tol] :
+         {std::pair{ScalarType::Float, 1e-4f},
+          std::pair{ScalarType::Half, 2e-2f}}) {
+      SCOPED_TRACE(
+          "graphs " + std::to_string(graphs) + ", " +
+          std::string(scalar_type_name(dtype)));
+      InstalledCache cache = install_cache(64, 1, dtype);
+      auto host = GgmlEngineHost::create({.max_cached_graphs = graphs});
+      auto prefill_context = make_context(
+          *host, make_update_and_attend_program(3), cache.options);
+      auto decode_context = make_context(
+          *host, make_update_and_attend_program(1), cache.options);
+      auto prefill = prefill_context->compile("forward");
+      auto decode = decode_context->compile("forward");
+      OffGraphReference reference;
+      EXPECT_LT(reference.step(*prefill, 0, 3), tol);
+      for (int64_t pos = 3; pos < 12; ++pos) {
+        SCOPED_TRACE(pos);
+        EXPECT_LT(reference.step(*decode, pos, 1), tol);
+      }
+    }
+  }
+}
+
+// After a clear, the old rows are masked out, including in an executable
+// whose storage binding went stale when another regrew the cache.
+TEST(GgmlEngineTest, OffGraphAttentionReplaysFromEmptyAfterClear) {
+  InstalledCache cache = install_cache(64, 2);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  {
+    OffGraphReference reference;
+    EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+    for (int64_t pos = 3; pos < 10; ++pos) {
+      EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+    }
+  }
+  cache.control().clear();
+  OffGraphReference reference;
+  EXPECT_LT(reference.step(*prefill, 0, 3, /*seed=*/5), 1e-4f);
+  EXPECT_LT(reference.step(*decode, 3, 1, /*seed=*/5), 1e-4f);
+}
+
+// After a rewind, the next step overwrites the rewound rows and attends
+// nothing past them.
+TEST(GgmlEngineTest, OffGraphAttentionContinuesFromARewind) {
+  InstalledCache cache = install_cache(64, 4);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  OffGraphReference reference;
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  for (int64_t pos = 3; pos < 8; ++pos) {
+    EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+  }
+  ASSERT_TRUE(cache.control().rewind(2));
+  EXPECT_LT(reference.step(*decode, 2, 1, /*seed=*/9), 1e-4f);
+  EXPECT_LT(reference.step(*decode, 3, 1, /*seed=*/9), 1e-4f);
+}
+
+// A step that starts before the sequence's length rewinds to its start, as a
+// re-run of the same positions (warmup) does; one that starts past the length
+// would attend rows nothing wrote, so it is rejected.
+TEST(GgmlEngineTest, OffGraphStepsStartAtOrBeforeTheLength) {
+  InstalledCache cache = install_cache(64, 4);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  OffGraphReference reference;
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  // The length is 3 again.
+  EXPECT_THROW(reference.step(*decode, 4, 1), std::invalid_argument);
+  for (int64_t pos = 3; pos < 8; ++pos) {
+    EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+  }
+  // Back to position 4, so the length is 5.
+  EXPECT_LT(reference.step(*decode, 4, 1, /*seed=*/3), 1e-4f);
+  EXPECT_THROW(reference.step(*decode, 6, 1), std::invalid_argument);
+  EXPECT_LT(reference.step(*decode, 5, 1, /*seed=*/3), 1e-4f);
+}
+
+TEST(GgmlEngineTest, RejectsOffGraphStepsPastCapacityOrNotConsecutive) {
+  InstalledCache cache = install_cache(4, 4);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  OffGraphReference reference;
+  EXPECT_THROW(reference.step(*decode, 1, 1), std::invalid_argument);
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  EXPECT_LT(reference.step(*decode, 3, 1), 1e-4f);
+  EXPECT_THROW(reference.step(*decode, 4, 1), std::out_of_range);
+  EXPECT_THROW(reference.step(*prefill, 2, 3), std::out_of_range);
+
+  const std::vector<float> q(kOffGraphHeads * 3 * kOffGraphDim);
+  const std::vector<float> kv_step(kOffGraphKvHeads * 3 * kOffGraphDim);
+  const std::vector<int64_t> positions = {0, 2, 3};
+  prefill->set_input(0, q.data(), q.size(), ScalarType::Float);
+  prefill->set_input(1, kv_step.data(), kv_step.size(), ScalarType::Float);
+  prefill->set_input(2, kv_step.data(), kv_step.size(), ScalarType::Float);
+  prefill->set_input(3, positions.data(), positions.size(), ScalarType::Long);
+  EXPECT_THROW(prefill->execute(), std::invalid_argument);
+}
+
+TEST(GgmlEngineTest, OffGraphAttentionNeedsAMatchingCache) {
+  auto host = GgmlEngineHost::create();
+  // No cache option.
+  EXPECT_THROW(
+      make_context(*host, make_update_and_attend_program(1))
+          ->compile("forward"),
+      std::runtime_error);
+  // A key nothing is installed under, and an option the engine does not know.
+  EXPECT_THROW(
+      make_context(
+          *host,
+          make_update_and_attend_program(1),
+          {{std::string(kv::kCacheKeyOption), "no-such-cache"}}),
+      std::invalid_argument);
+  EXPECT_THROW(
+      make_context(
+          *host, make_update_and_attend_program(1), {{"unknown", "value"}}),
+      std::invalid_argument);
+  // A layer the cache does not have, and K/V shaped unlike the cache.
+  InstalledCache cache = install_cache(8, 8);
+  EXPECT_THROW(
+      make_context(*host, make_update_and_attend_program(1, 1), cache.options)
+          ->compile("forward"),
+      std::runtime_error);
+  InstalledCache narrow = install_cache(8, 8, ScalarType::Float, 4);
+  EXPECT_THROW(
+      make_context(*host, make_update_and_attend_program(1), narrow.options)
+          ->compile("forward"),
+      std::runtime_error);
 }
 
 TEST(GgmlEngineTest, RejectsQuantizedGraphInputsAndOutputs) {
