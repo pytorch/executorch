@@ -38,11 +38,14 @@ class RunAllTestsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             child, pid_file = _write_child(Path(tmp), "wait")
 
+            timeouts = []
+
             class TimesOut(subprocess.Popen):
                 # Times out as soon as the grandchild runs, without waiting.
                 def wait(self, timeout=None):
                     if timeout is None:
                         return super().wait()
+                    timeouts.append(timeout)
                     deadline = time.monotonic() + 20
                     while not _read(pid_file) and time.monotonic() < deadline:
                         time.sleep(0.05)
@@ -51,8 +54,10 @@ class RunAllTestsTest(unittest.TestCase):
             start = time.monotonic()
             with mock.patch.object(sys, "executable", str(child)), mock.patch.object(
                 subprocess, "Popen", TimesOut
-            ):
-                self.assertFalse(_run_test_in_subprocess("sub_10"))
+            ), mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+                self.assertFalse(_run_test_in_subprocess("sub_10", timeout=10))
+            self.assertEqual(timeouts, [10])
+            self.assertIn("Timeout after 10s", out.getvalue())
             # Waiting out the sleep would mean the kill missed it.
             self.assertLess(time.monotonic() - start, 30)
             pid = int(pid_file.read_text())
@@ -92,7 +97,8 @@ class RunAllTestsTest(unittest.TestCase):
                 "class Popen(subprocess.Popen):\n"
                 "    def __init__(self, *args, **kwargs):\n"
                 "        super().__init__(*args, **kwargs)\n"
-                f"        while not os.path.exists({pid_file!r}):\n"
+                f"        while not os.path.isfile({pid_file!r})"
+                f" or not os.path.getsize({pid_file!r}):\n"
                 "            time.sleep(0.05)\n"
                 "        os.kill(os.getpid(), signal.SIGTERM)\n"
                 "subprocess.Popen = Popen"
@@ -108,6 +114,7 @@ class RunAllTestsTest(unittest.TestCase):
                 Path(tmp), "sleep 2", "signal.signal(signal.SIGHUP, signal.SIG_IGN)"
             )
             harness.send_signal(signal.SIGHUP)
+            # 0 means the test passed, so it was not killed.
             self.assertEqual(harness.wait(timeout=60), 0)
 
     def _start_harness(
@@ -121,9 +128,12 @@ class RunAllTestsTest(unittest.TestCase):
                 "-c",
                 "import signal, sys\n"
                 "from executorch.backends.mlx.test import run_all_tests\n"
+                # Not inherited from a test run under nohup.
+                "signal.signal(signal.SIGTERM, signal.SIG_DFL)\n"
+                "signal.signal(signal.SIGHUP, signal.SIG_DFL)\n"
                 f"{setup}\n"
                 f"sys.executable = {str(child)!r}\n"
-                "run_all_tests._run_test_in_subprocess('sub_10')\n",
+                "sys.exit(0 if run_all_tests._run_test_in_subprocess('sub_10') else 1)\n",
             ]
         )
         self.addCleanup(harness.kill)
@@ -197,6 +207,7 @@ class RunAllTestsTest(unittest.TestCase):
             ),
         }
         for name, (delegates, load, graph, ok) in cases.items():
+            load.reset_mock()
             with self.subTest(name), mock.patch.multiple(
                 pte_inspector,
                 _find_mlx_delegates=mock.Mock(return_value=delegates),
@@ -204,6 +215,8 @@ class RunAllTestsTest(unittest.TestCase):
                 parse_mlx_flatbuffer=mock.Mock(return_value=graph),
             ):
                 self.assertIs(pte_inspector.show_mlx_instructions(b""), ok)
+                # A bad delegate must not stop the others from being read.
+                self.assertEqual(load.call_count, len(delegates))
 
 
 def _write_child(directory: Path, ending: str) -> Tuple[Path, Path]:
