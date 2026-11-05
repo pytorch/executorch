@@ -1,0 +1,1900 @@
+[
+  {
+    "name": "conv2d pw_performance [1, 48, 96, 16, 16, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 48, 16, 16],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [96, 48, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 96, 16, 16],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 96, 48, 16, 16, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 96, 16, 16],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [48, 96, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 48, 16, 16],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 48, 96, 256, 256, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 48, 256, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [96, 48, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 96, 256, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 48, 96, 256, 256, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 48, 256, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [96, 48, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 96, 256, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 96, 48, 256, 256, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 96, 256, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [48, 96, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 48, 256, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 96, 48, 256, 256, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 96, 256, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [48, 96, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 48, 256, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 96, 192, 128, 128, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 96, 128, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [192, 96, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 192, 128, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 96, 192, 128, 128, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 96, 128, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [192, 96, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 192, 128, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 192, 96, 128, 128, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 192, 128, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [96, 192, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 96, 128, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 192, 96, 128, 128, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 192, 128, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [96, 192, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 96, 128, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 192, 384, 64, 64, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 192, 64, 64],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [384, 192, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 384, 64, 64],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 192, 384, 64, 64, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 192, 64, 64],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [384, 192, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 384, 64, 64],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 384, 192, 64, 64, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 384, 64, 64],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [192, 384, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 192, 64, 64],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 384, 192, 64, 64, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 384, 64, 64],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [192, 384, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 192, 64, 64],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 384, 768, 32, 32, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 384, 32, 32],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [768, 384, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 768, 32, 32],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 384, 768, 32, 32, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 384, 32, 32],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [768, 384, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 768, 32, 32],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 768, 384, 32, 32, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 768, 32, 32],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [384, 768, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 384, 32, 32],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 768, 384, 32, 32, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 768, 32, 32],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [384, 768, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 384, 32, 32],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 48, 256, 256, 256, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 48, 256, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 48, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 256, 256, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 48, 256, 256, 256, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 48, 256, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 48, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 256, 256, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 256, 32, 256, 256, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 256, 256, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [32, 256, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 32, 256, 256],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 256, 32, 256, 256, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 256, 256, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [32, 256, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 32, 256, 256],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 96, 256, 128, 128, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 96, 128, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 96, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 256, 128, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 96, 256, 128, 128, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 96, 128, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [256, 96, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 256, 128, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 256, 64, 128, 128, False] float32 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 256, 128, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [64, 256, 1, 1],
+            "dtype": "float32",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 64, 128, 128],
+            "dtype": "float32",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_performance [1, 256, 64, 128, 128, False] float16 auto",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.1,
+      "rtol": 0.01
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [1, 256, 128, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [64, 256, 1, 1],
+            "dtype": "float16",
+            "storage": "constant",
+            "layout": "channels",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        null,
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int_list": [1, 1]
+        },
+        {
+          "bool": false
+        },
+        {
+          "int_list": [0, 0]
+        },
+        {
+          "int": 1
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [1, 64, 128, 128],
+            "dtype": "float16",
+            "storage": "texture3d",
+            "layout": "channels",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  }
+]

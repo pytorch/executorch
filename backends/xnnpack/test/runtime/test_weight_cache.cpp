@@ -20,6 +20,7 @@
 
 using namespace ::testing;
 
+using executorch::backends::xnnpack::disable_packed_lhs_option_key;
 using executorch::backends::xnnpack::get_packed_cache_report;
 using executorch::backends::xnnpack::packed_cache_path_option_key;
 using executorch::backends::xnnpack::PackedCacheHeapReason;
@@ -51,6 +52,24 @@ static void set_and_check_weight_cache_enabled(bool enabled) {
   status = get_option(xnnpack_backend_key, read_option);
 
   ASSERT_EQ(std::get<bool>(read_option.value), enabled);
+}
+
+static void set_and_check_disable_packed_lhs(bool disabled) {
+  executorch::runtime::runtime_init();
+
+  BackendOptions<1> backend_options;
+  backend_options.set_option(disable_packed_lhs_option_key, disabled);
+
+  auto status = executorch::runtime::set_option(
+      xnnpack_backend_key, backend_options.view());
+  ASSERT_EQ(status, Error::Ok);
+
+  BackendOption read_option;
+  strcpy(read_option.key, disable_packed_lhs_option_key);
+  read_option.value = !disabled;
+  status = get_option(xnnpack_backend_key, read_option);
+
+  ASSERT_EQ(std::get<bool>(read_option.value), disabled);
 }
 
 static TensorPtr create_input_tensor(float val) {
@@ -95,6 +114,22 @@ TEST(WeightCache, SetInvalidType) {
   // Weight cache option expects a bool, not an int.
   BackendOptions<1> backend_options;
   backend_options.set_option(weight_cache_option_key, 1);
+
+  auto status = executorch::runtime::set_option(
+      xnnpack_backend_key, backend_options.view());
+  ASSERT_EQ(status, Error::InvalidArgument);
+}
+
+TEST(PackedLhs, SetDisabled) {
+  set_and_check_disable_packed_lhs(true);
+  set_and_check_disable_packed_lhs(false);
+}
+
+TEST(PackedLhs, SetInvalidType) {
+  executorch::runtime::runtime_init();
+
+  BackendOptions<1> backend_options;
+  backend_options.set_option(disable_packed_lhs_option_key, 1);
 
   auto status = executorch::runtime::set_option(
       xnnpack_backend_key, backend_options.view());
