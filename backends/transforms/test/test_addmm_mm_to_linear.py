@@ -113,6 +113,21 @@ class _StandaloneAddmm(torch.nn.Module):
         return torch.addmm(self.bias, x, self.weight)
 
 
+class _PermutedWeightMatmul(torch.nn.Module):
+    def __init__(self, dims: tuple, use_bias: bool) -> None:
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(16, 16))
+        self.bias = torch.nn.Parameter(torch.randn(16))
+        self.dims = dims
+        self.use_bias = use_bias
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        weight = (
+            self.weight.t() if self.dims is None else self.weight.permute(*self.dims)
+        )
+        return torch.addmm(self.bias, x, weight) if self.use_bias else x @ weight
+
+
 class _DequantizeLinearViewAndFlatInput(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -289,6 +304,25 @@ class TestAddmmMmToLinear(unittest.TestCase):
                 program = self._transform(model, x)
                 self.assertEqual(len(self._linears(program)), linears)
                 torch.testing.assert_close(program.module()(x), model(x))
+
+    def test_only_a_transposed_weight_becomes_a_linear_weight(self):
+        # permute(0, 1) leaves the weight as it is, so it is not a transpose.
+        keep_t = EdgeCompileConfig(
+            _check_ir_validity=False, preserve_ops=[torch.ops.aten.t.default]
+        )
+        for dims, config, linears in (
+            ((0, 1), None, 0),
+            ((1, 0), None, 1),
+            ((-1, -2), None, 1),
+            (None, keep_t, 1),
+        ):
+            for use_bias in (True, False):
+                with self.subTest(dims=dims, use_bias=use_bias):
+                    model = _PermutedWeightMatmul(dims, use_bias)
+                    x = torch.randn(6, 16)
+                    program = self._transform(model, x, compile_config=config)
+                    self.assertEqual(len(self._linears(program)), linears)
+                    torch.testing.assert_close(program.module()(x), model(x))
 
     def test_linears_sharing_a_dequantized_input_both_lose_their_views(self):
         model = _DequantizeTwoLinearViews()

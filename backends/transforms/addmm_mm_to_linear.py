@@ -114,15 +114,25 @@ def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Gra
     return graph
 
 
+def is_transpose(node: torch.fx.Node) -> bool:
+    """
+    Returns whether node transposes a 2-D tensor, so that a linear can take the
+    tensor before it as its weight.
+    """
+    ops = exir_ops.edge
+    if node.target == ops.aten.permute_copy.default:
+        return [d % 2 for d in node.args[1]] == [1, 0]
+    return node.target == ops.aten.t_copy.default
+
+
 def addmm_can_be_linear(node: torch.fx.Node) -> bool:
     """
     Returns whether linear(x, w, b) can replace addmm(b, x, w.t()). The weight
-    must be a t_copy or permute_copy, linear cannot scale its bias or its
-    product, and ExecuTorch's linear kernel takes only a 1-D bias.
+    must be transposed, linear cannot scale its bias or its product, and
+    ExecuTorch's linear kernel takes only a 1-D bias.
     """
-    ops = exir_ops.edge
     return (
-        node.args[2].target in (ops.aten.t_copy.default, ops.aten.permute_copy.default)
+        is_transpose(node.args[2])
         and node.kwargs.get("beta", 1) == 1
         and node.kwargs.get("alpha", 1) == 1
         and len(node.args[0].meta["val"].shape) == 1
@@ -159,14 +169,9 @@ def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
                         args[0].meta["val"], args[1].meta["val"], args[2].meta["val"]
                     )
                 else:
-                    weight_t_node = node.args[1]
-                    if weight_t_node.target not in [
-                        ops.aten.t_copy.default,
-                        ops.aten.permute_copy.default,
-                    ]:
-                        # Skip this node as it appears to be a standalone `mm`
+                    if not is_transpose(node.args[1]):
                         continue
-                    weight_node = weight_t_node.args[0]
+                    weight_node = node.args[1].args[0]
                     args = (node.args[0], weight_node)
                     linear_node = graph.create_node(
                         "call_function", ops.aten.linear.default, args
