@@ -98,7 +98,7 @@ def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Gra
             if statically_known_true(
                 sym_eq(output_shape, list(view_copy.meta["val"].shape))
             ):
-                node.replace_input_with(input_node, new_input)
+                node.update_arg(0, new_input)
                 node.meta["val"] = view_copy.meta["val"]
                 view_copy.replace_all_uses_with(node)
                 break

@@ -56,6 +56,12 @@ class _DequantizeLinearNoOpView(torch.nn.Module):
         return self.linear(_dequantize(xq).view(-1, 16)).view(-1, 8)
 
 
+class _DequantizeSelfProduct(torch.nn.Module):
+    def forward(self, xq: torch.Tensor) -> torch.Tensor:
+        flat = _dequantize(xq).view(-1, 16)
+        return (flat @ flat.t()).view(xq.shape[0], xq.shape[1], -1)
+
+
 class _DequantizeLinearBias(torch.nn.Module):
     def __init__(self, input_as_bias: bool) -> None:
         super().__init__()
@@ -203,6 +209,20 @@ class TestAddmmMmToLinear(unittest.TestCase):
                         program.graph_module.graph.output_node().args[0][0], linear
                     )
                     torch.testing.assert_close(program.module()(x), model(x))
+
+    def test_weight_that_is_also_the_input_is_kept(self):
+        # flat @ flat.t() becomes a linear whose input and weight are one node.
+        # Only the input is pointed at the dequantized tensor when the view goes.
+        model = _DequantizeSelfProduct()
+        x = _int8(2, 3, 16)
+        program = self._transform(model, x)
+        (linear,) = self._linears(program)
+        self.assertEqual(linear.args[0].target, _DEQUANTIZE)
+        self.assertEqual(linear.args[1].target, _VIEW)
+        self.assertIs(program.graph_module.graph.output_node().args[0][0], linear)
+        # Products of 2 dequantized inputs reach about 1e3, and the 3-D linear
+        # and the 2-D matmul round them differently.
+        torch.testing.assert_close(program.module()(x), model(x), rtol=1e-4, atol=1e-3)
 
     def test_bias_with_more_than_one_dim_keeps_the_input(self):
         # A linear kept from export can add a bias per row of the flattened
