@@ -6,8 +6,6 @@ def define_common_targets():
         name = "nxp_backend_base",
         srcs = ["NeutronBackend.cpp"],
         exported_headers = [
-            "NeutronDriver.h",
-            "NeutronErrors.h",
         ],
         link_whole = True,
         # Constructor needed for backend registration.
