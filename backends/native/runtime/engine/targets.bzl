@@ -49,6 +49,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "ggml_engine_" + variant,
             srcs = [
+                "ggml/GgmlCache.cpp",
                 "ggml/GgmlEngine.cpp",
                 "ggml/GgmlExecutor.cpp",
                 "ggml/GgmlGraphBuilder.cpp",
@@ -61,6 +62,7 @@ def define_common_targets():
                 "ggml/GgmlTypes.cpp",
             ],
             headers = [
+                "ggml/GgmlCache.h",
                 "ggml/GgmlExecutor.h",
                 "ggml/GgmlGraphBuilder.h",
                 "ggml/GgmlHostInts.h",
@@ -81,6 +83,8 @@ def define_common_targets():
                 "//executorch/backends/native/runtime/graph:scalar_type",
                 "//executorch/backends/native/runtime/graph:tensor_meta",
                 "//executorch/backends/native/runtime/graph:value",
+                "//executorch/extension/llm/cache:kv_cache",
+                "//executorch/runtime/platform:platform",
                 ggml_dep,
             ],
             labels = ggml_ci_labels(variant),
