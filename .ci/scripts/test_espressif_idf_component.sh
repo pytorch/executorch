@@ -50,16 +50,17 @@ python examples/espressif/export_espnn_test_programs.py --output-dir "${build_di
     --only conv-act-pool-linear 2>&1 | tee -a "${build_dir}/export.log"
 cp "${build_dir}/espnn/conv-act-pool-linear.bpte" "${build_dir}/delegate.bpte"
 split=examples/espressif/idf_component_smoke/split_bundled_program.py
-python "${split}" "${build_dir}/smoke.bpte" --atol 0 --rtol 0
+# Each case twice, so a second execute of the same method is checked too.
+python "${split}" "${build_dir}/smoke.bpte" --atol 0 --rtol 0 --repeat 2
 # test_mul.py's tolerance, torch.finfo(torch.float32).eps (1.1920929e-07),
 # rounded up.
-python "${split}" "${build_dir}/mul.bpte" --atol 0 --rtol 1.2e-7
+python "${split}" "${build_dir}/mul.bpte" --atol 0 --rtol 1.2e-7 --repeat 2
 read -r atol rtol < <(python -c '
 import json, sys
 (entry,) = json.load(open(sys.argv[1]))
 print(entry["atol"], entry["rtol"])
 ' "${build_dir}/espnn/manifest.json")
-python "${split}" "${build_dir}/delegate.bpte" --atol "${atol}" --rtol "${rtol}"
+python "${split}" "${build_dir}/delegate.bpte" --atol "${atol}" --rtol "${rtol}" --repeat 2
 cpu_models="${build_dir}/smoke.pte;${build_dir}/mul.pte"
 models="${cpu_models};${build_dir}/delegate.pte"
 
