@@ -339,6 +339,12 @@ TEST_F(ProviderTest, XNNPACKSharesWeightConversionsAcrossRegions) {
   PreparationContext context{
       graph, buffers, allocator, private_bytes, execution_context};
   auto provider = create_xnnpack_provider();
+  auto requirements = provider->implementations()[0]->requirements(
+      {{0, 1}, {0, 1}, {2, 3}}, graph, execution_context);
+  ASSERT_TRUE(requirements.ok());
+  for (const auto& value : requirements->values) {
+    EXPECT_EQ(value.preparation_only, value.id == 1);
+  }
   auto first =
       provider->implementations()[0]->compile({{0}, {0, 1}, {2}}, context);
   ASSERT_TRUE(first.ok());
@@ -348,8 +354,16 @@ TEST_F(ProviderTest, XNNPACKSharesWeightConversionsAcrossRegions) {
   ASSERT_TRUE(second.ok());
   EXPECT_EQ(private_bytes, 36 * sizeof(float) + kReadableTail);
   ASSERT_EQ(provider->finish(), Error::Ok);
+  EXPECT_EQ(
+      provider->released_private_constant_bytes(),
+      36 * sizeof(float) + kReadableTail);
   for (auto* executable : {first.get().get(), second.get().get()}) {
     ASSERT_EQ(executable->reshape(), Error::Ok);
+  }
+  const auto original_weight = buffers[1];
+  std::memset(buffers[1].data, 0xFF, buffers[1].readable_bytes);
+  buffers[1] = {};
+  for (auto* executable : {first.get().get(), second.get().get()}) {
     ASSERT_EQ(executable->bind(), Error::Ok);
     ASSERT_EQ(executable->run(execution_context), Error::Ok);
   }
@@ -362,6 +376,8 @@ TEST_F(ProviderTest, XNNPACKSharesWeightConversionsAcrossRegions) {
   graph.values[1] = ptn::Value("weight", ptn::ScalarType::Float, {2, 2, 1, 1});
   graph.values[1].role = ptn::ValueRole::Parameter;
   graph.nodes[0].inputs[4].arg = ptn::IntListArg{{0, 0}, {}};
+  buffers[1] = original_weight;
+  std::fill_n(static_cast<float*>(buffers[1].data), 4, 2);
   private_bytes = 0;
   provider = create_xnnpack_provider();
   auto compatible =
@@ -369,7 +385,10 @@ TEST_F(ProviderTest, XNNPACKSharesWeightConversionsAcrossRegions) {
   ASSERT_TRUE(compatible.ok());
   EXPECT_EQ(private_bytes, 0);
   ASSERT_EQ(provider->finish(), Error::Ok);
+  EXPECT_EQ(provider->released_private_constant_bytes(), 0);
   ASSERT_EQ(compatible.get()->reshape(), Error::Ok);
+  std::memset(buffers[1].data, 0xFF, buffers[1].readable_bytes);
+  buffers[1] = {};
   ASSERT_EQ(compatible.get()->bind(), Error::Ok);
   ASSERT_EQ(compatible.get()->run(execution_context), Error::Ok);
   EXPECT_FLOAT_EQ(static_cast<float*>(buffers[2].data)[0], 4);

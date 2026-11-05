@@ -7,6 +7,10 @@
 
 set -euxo pipefail
 
+# conda-forge's pip reads CA certificates from sys.prefix
+# (conda-forge/pip-feedstock#151), which `python -m build`'s isolated venv
+# lacks. PyPI's pip bundles its own.
+python -m pip install --force-reinstall pip
 python -m pip install build 'setuptools>=77' 'cmake>=3.26,<4' ninja auditwheel patchelf
 python -m unittest discover -s "${NATIVE_WHEEL_ROOT}/.ci/scripts/tests" \
     -p test_native_wheel_version.py

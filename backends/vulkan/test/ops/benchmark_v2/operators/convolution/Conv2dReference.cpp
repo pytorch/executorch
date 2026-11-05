@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/convolution/Conv2dReferenceCommon.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/convolution/conv1d/Conv1dReference.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace vkcompute::shader_profiling::reference {
@@ -60,9 +61,28 @@ conv2d_reference(const Json& spec, const TensorMap& tensors, size_t threads) {
       });
 }
 
+namespace {
+
+Tensor conv_with_clamp_reference(
+    const Json& spec,
+    const TensorMap& tensors,
+    size_t threads) {
+  const float min = spec.at("args").at(9).at("float");
+  const float max = spec.at("args").at(10).at("float");
+  Tensor output = conv2d_reference(spec, tensors, threads);
+  for (double& value : output.values) {
+    value = std::clamp(float(value), min, max);
+  }
+  return output;
+}
+
+} // namespace
+
 REGISTER_REFERENCE_FUNCTIONS {
   REGISTER_REFERENCE_FN(conv2d, conv2d_reference);
+  REGISTER_REFERENCE_FN(conv_with_clamp, conv_with_clamp_reference);
   REGISTER_OPERATOR_REFERENCE(aten.convolution.default, conv2d);
+  REGISTER_OPERATOR_REFERENCE(et_vk.conv_with_clamp.default, conv_with_clamp);
 }
 
 } // namespace vkcompute::shader_profiling::reference

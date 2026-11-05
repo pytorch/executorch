@@ -176,6 +176,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/exir:tensor",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/operator:util",
@@ -506,6 +507,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/exir:tensor",
     ],
 )
 

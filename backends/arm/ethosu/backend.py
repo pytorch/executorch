@@ -21,7 +21,11 @@ from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
 
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.exir._serialize._named_data_store import NamedDataStore
-from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.backend_details import (
+    BackendDetails,
+    DelegateScratchSpec,
+    PreprocessResult,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
 
@@ -133,8 +137,21 @@ class EthosUBackend(BackendDetails):
         compile_result = EthosUBackend._compile_tosa_flatbuffer(
             tosa_preprocess.processed_bytes, compile_spec
         )
+        scratch_specs = (
+            [
+                DelegateScratchSpec(
+                    nbytes=compile_result.scratch_size,
+                    label="ethosu_scratch",
+                )
+            ]
+            if compile_result.scratch_size > 0 and compile_spec.plan_delegate_scratch
+            else []
+        )
         if not compile_result.external_blocks:
-            return PreprocessResult(processed_bytes=compile_result.processed_bytes)
+            return PreprocessResult(
+                processed_bytes=compile_result.processed_bytes,
+                scratch_specs=scratch_specs,
+            )
 
         data_store = NamedDataStore()
         for external_block in compile_result.external_blocks:
@@ -147,4 +164,5 @@ class EthosUBackend(BackendDetails):
         return PreprocessResult(
             processed_bytes=compile_result.processed_bytes,
             data_store_output=data_store.get_named_data_store_output(),
+            scratch_specs=scratch_specs,
         )
