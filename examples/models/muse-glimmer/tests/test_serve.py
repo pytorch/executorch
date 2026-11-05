@@ -439,7 +439,7 @@ def test_muse_glimmer_serving_injects_image_segment_into_runtime(stream):
     assert len(request.messages[0].content) == 3
 
 
-def test_muse_glimmer_prompt_count_ignores_image_segment():
+def test_muse_glimmer_prompt_count_defers_images_to_native_worker():
     serving = serve.MuseGlimmerServingChat(object(), _ImageTemplate(), "muse_glimmer")
     prompt = PromptInput(
         segments=[
@@ -449,7 +449,7 @@ def test_muse_glimmer_prompt_count_ignores_image_segment():
         ]
     )
 
-    assert serving._count_prompt_tokens(prompt) == 5
+    assert serving._count_prompt_tokens(prompt) is None
 
 
 def test_strip_muse_glimmer_header_returns_visible_answer():
@@ -1084,3 +1084,69 @@ def test_rejects_multiple_runners(monkeypatch):
     )
     with pytest.raises(SystemExit):
         serve.main()
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("dialect", ["openai", "openrouter"])
+@pytest.mark.parametrize("text_tokens,completion", [(10, 1), (6, 2)])
+def test_image_overflow_uses_worker_counts(stream, dialect, text_tokens, completion):
+    from executorch.examples.llm_server.python.server import build_app
+    from executorch.examples.llm_server.python.worker_client import WorkerError
+    from fastapi.testclient import TestClient
+
+    image_positions = 16
+    expected = text_tokens + 1 + image_positions
+
+    class Template(_ImageTemplate):
+        def render(self, messages, *, tools, template_kwargs):
+            return "text " * text_tokens + serve._IMAGE_PLACEHOLDER
+
+    class Runtime(_ImageRuntime):
+        async def generate_stream(self, session_id, prompt, options, stats):
+            self.prompt = prompt
+            raise WorkerError(
+                "image-expanded prompt exceeds context",
+                code="context_length_exceeded",
+                context_overflow={
+                    "prompt_tokens": expected,
+                    "context_length": 8,
+                    "completion_tokens": completion,
+                },
+            )
+            yield
+
+    runtime = Runtime()
+    serving = serve.MuseGlimmerServingChat(
+        runtime,
+        Template(),
+        "muse_glimmer",
+        max_context=8,
+        prompt_token_offset=1,
+        api_dialect=dialect,
+    )
+    body = _image_request("data:image/png;base64,eA==").model_dump(exclude_none=True)
+    body.update(stream=stream, max_tokens=completion)
+    response = TestClient(build_app(serving, "muse_glimmer")).post(
+        "/v1/chat/completions", json=body
+    )
+    assert runtime.prompt is not None
+    assert any("image" in segment for segment in runtime.prompt.segments)
+    if stream:
+        assert response.status_code == 200
+        errors = [
+            json.loads(line[6:])["error"]
+            for line in response.text.splitlines()
+            if line.startswith('data: {"error"')
+        ]
+        assert len(errors) == 1
+        error = errors[0]
+    else:
+        assert response.status_code == 400
+        error = response.json()["error"]
+    assert error["code"] == "context_length_exceeded"
+    assert str(expected) in error["message"]
+    if dialect == "openrouter":
+        assert error["metadata"]["prompt_tokens"] == expected
+        assert error["metadata"]["completion_tokens"] == completion
+    else:
+        assert "metadata" not in error

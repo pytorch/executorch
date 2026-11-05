@@ -252,12 +252,10 @@ class MuseGlimmerServingChat(ServingChat):
     def _count_prompt_tokens(self, prompt: PromptInput) -> int | None:
         if prompt.text is not None:
             return super()._count_prompt_tokens(prompt)
-        text_segments = [
-            segment for segment in prompt.segments or [] if "image" not in segment
-        ]
-        if not text_segments:
-            return self._prompt_token_offset
-        return super()._count_prompt_tokens(PromptInput(segments=text_segments))
+        if any("image" in segment for segment in prompt.segments or []):
+            # Only native preparation knows the image-expanded decoder positions.
+            return None
+        return super()._count_prompt_tokens(prompt)
 
     async def _create(self, req: ChatCompletionRequest, lease):
         # The inherited create() owns the transaction around preparation and

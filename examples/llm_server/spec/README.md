@@ -131,7 +131,9 @@ lease or preparing the request before generation starts.
 The compatibility dialect retains the common `error.message`, `error.type`, and
 `error.code` fields. Context overflows detected by Python preflight or by an
 updated native worker carry `error.metadata`. Native counts include all prompt
-positions, including image positions and numeric BOS. Older workers that report
+positions, including image positions and numeric BOS. Adapters that cannot count
+all positions defer overflow checks to the worker instead of publishing a lower
+bound as `prompt_tokens`. Older workers that report
 only an unstructured error cannot supply recovery counts.
 
 The multiplexed error frame uses `code: "context_length_exceeded"` and

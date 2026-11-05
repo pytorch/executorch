@@ -597,3 +597,49 @@ def test_compacted_tool_histories_preserve_messages(
                 "name": "read",
                 "arguments": {"path": "a.py"},
             }
+
+
+@pytest.mark.parametrize("close_early", [False, True])
+def test_heartbeat_source_and_cleanup_stay_in_one_task_with_bounded_read_ahead(
+    close_early,
+):
+    async def scenario():
+        owners = set()
+        produced = []
+        closed = []
+
+        async def source():
+            try:
+                for i in range(100):
+                    owners.add(asyncio.current_task())
+                    produced.append(i)
+                    yield str(i)
+            finally:
+                owners.add(asyncio.current_task())
+                closed.append(True)
+
+        stream = _with_heartbeats(source())
+        assert await anext(stream) == "0"
+        if close_early:
+            for _ in range(5):
+                await asyncio.sleep(0)
+            assert len(produced) <= 3
+            await stream.aclose()
+        else:
+            assert [chunk async for chunk in stream] == [str(i) for i in range(1, 100)]
+        assert closed == [True]
+        assert len(owners) == 1
+
+    asyncio.run(scenario())
+
+
+def test_heartbeat_propagates_source_cancellation():
+    async def scenario():
+        async def source():
+            raise asyncio.CancelledError()
+            yield
+
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(anext(_with_heartbeats(source())), 1)
+
+    asyncio.run(scenario())

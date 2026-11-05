@@ -128,7 +128,9 @@ chunk. Both formats honor `stream_options.include_usage`.
 The `openrouter` mode also supplies the error metadata and message counts Muse
 needs for reactive context-overflow recovery, including worker-detected overflow
 when using an updated native worker. Worker counts include image positions and
-numeric BOS; older unstructured worker errors cannot provide recovery counts.
+numeric BOS. Image prompts bypass Python token-count preflight so only the
+worker publishes their image-expanded count; older unstructured worker errors
+cannot provide recovery counts.
 Counts describe the input prompt and
 its available budget after reserving completion space; metadata retains the full
 model window. A completion reservation consuming the entire window cannot be

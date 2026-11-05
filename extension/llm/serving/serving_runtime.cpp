@@ -886,11 +886,15 @@ struct ServingRuntime::Impl {
             ? static_cast<std::int32_t>(
                   std::min(available, static_cast<std::size_t>(INT32_MAX)))
             : config_.default_max_new_tokens);
-    if (wanted <= 0 || available == 0) {
+    if (available == 0) {
       return context_length_error(
           text.terminal.stats.prompt_tokens,
           context_limit,
           options.max_new_tokens.value_or(1));
+    }
+    if (wanted <= 0) {
+      return ServingError{
+          ErrorCode::InvalidArgument, "no generation budget available"};
     }
     auto& config = request->request.config;
     config.max_new_tokens = static_cast<std::int32_t>(

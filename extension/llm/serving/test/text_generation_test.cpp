@@ -2168,6 +2168,35 @@ TEST_F(TextGenerationTest, UnknownContextUsesServiceDefaultOnlyForUnsetLimit) {
   EXPECT_GE(event->terminal->stats.total_ms, event->terminal->stats.prefill_ms);
 }
 
+TEST_F(TextGenerationTest, InvalidDefaultBudgetIsNotContextOverflow) {
+  for (const auto default_budget : {0, -1}) {
+    config.max_context_length = 0;
+    config.default_max_new_tokens = default_budget;
+    start();
+    auto invalid = output();
+    auto result = runtime->generate(
+        std::nullopt, ids({10, 11}), {}, [invalid](GenerationEvent update) {
+          invalid->accept(std::move(update));
+        });
+    ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+    std::get<RequestHandle>(result).wait();
+    ASSERT_TRUE(invalid->terminal);
+    ASSERT_TRUE(invalid->terminal->error);
+    EXPECT_EQ(invalid->terminal->error->code, ErrorCode::InvalidArgument);
+    EXPECT_FALSE(invalid->terminal->error->context_overflow);
+
+    GenerationOptions options;
+    options.max_new_tokens = 1;
+    auto valid = output();
+    submit(valid, ids({10, 11}), options, std::nullopt).wait();
+    ASSERT_TRUE(valid->terminal);
+    EXPECT_FALSE(valid->terminal->error);
+    EXPECT_EQ(valid->terminal->stats.completion_tokens, 1u);
+    EXPECT_EQ(runtime->info().active_sessions, 0u);
+    runtime.reset();
+  }
+}
+
 TEST_F(TextGenerationTest, StreamingStringStopIgnoresLaterRawTokens) {
   tokenizer.pieces = {{100, "hello EN"}, {101, "Dhidden"}, {102, "ignored"}};
   executor.burst = 3;

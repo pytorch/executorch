@@ -16,17 +16,14 @@ from executorch.examples.llm_server.python.protocol import ChatMessage
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import SessionRuntime
-from executorch.examples.llm_server.python.tests.test_multiplexed_worker_client_native import (
-    _active_peer,
-)
 from executorch.examples.llm_server.python.worker_client import WorkerError
 
 
 @pytest.mark.parametrize("dialect", ["openai", "openrouter"])
 @pytest.mark.parametrize("stream,timeout", [(False, None), (True, None), (True, 0)])
-def test_native_overflow_counts_reach_http(native_worker, dialect, stream, timeout):
+def test_native_overflow_counts_reach_http(active_peer, dialect, stream, timeout):
     async def scenario():
-        async with _active_peer(native_worker) as (worker, peer, gate):
+        async with active_peer() as (worker, peer, gate):
             await asyncio.get_running_loop().sock_sendall(gate, b"R")
             async for _ in peer:
                 pass

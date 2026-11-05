@@ -146,26 +146,38 @@ class _ClosingStreamingResponse(StreamingResponse):
 
 
 async def _with_heartbeats(stream, interval=15.0):
-    pending = None
+    chunks = asyncio.Queue(maxsize=1)
+    ready = asyncio.Event()
+
+    async def produce():
+        try:
+            async for chunk in stream:
+                await chunks.put(chunk)
+                ready.set()
+        finally:
+            await stream.aclose()
+
+    producer = asyncio.create_task(produce())
+    producer.add_done_callback(lambda _: ready.set())
     try:
         while True:
-            if pending is None:
-                pending = asyncio.create_task(stream.__anext__())
-            done, _ = await asyncio.wait((pending,), timeout=interval)
-            if not done:
-                yield ": keep-alive\n\n"
-                continue
+            ready.clear()
             try:
-                value = pending.result()
-            except StopAsyncIteration:
-                return
-            pending = None
-            yield value
+                chunk = chunks.get_nowait()
+            except asyncio.QueueEmpty:
+                if producer.done():
+                    await producer
+                    return
+                try:
+                    async with asyncio.timeout(interval):
+                        await ready.wait()
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+            else:
+                yield chunk
     finally:
-        if pending is not None:
-            pending.cancel()
-            await asyncio.gather(pending, return_exceptions=True)
-        await stream.aclose()
+        producer.cancel()
+        await asyncio.gather(producer, return_exceptions=True)
 
 
 def _create_serving_app(serving, serving_factory):

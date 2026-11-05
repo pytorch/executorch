@@ -42,6 +42,13 @@ jobs:
         export PYTHONPATH="$(dirname "${PWD}"):${PYTHONPATH:-}"
         export PYTHONDONTWRITEBYTECODE=1
 
+        python -m pytest -q -ra -m 'not native_worker' \
+          --junitxml="${RUNNER_TEST_RESULTS_DIR}/llm-server.xml" \
+          examples/llm_server/python/tests \
+          examples/models/muse-glimmer/tests/test_serve.py \
+          examples/models/muse-glimmer/tests/test_serve_batching.py \
+          examples/models/muse-glimmer/tests/test_stream_parser.py
+
         cmake -S . -B cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
@@ -60,8 +67,6 @@ jobs:
         export EXECUTORCH_BATCHING_TEST_WORKER="${PWD}/cmake-out/examples/llm_server/cpp/test_batching_worker"
         test -x "${EXECUTORCH_TEST_MULTIPLEXED_WORKER}"
         test -x "${EXECUTORCH_BATCHING_TEST_WORKER}"
-        python -m pytest -q -ra --junitxml="${RUNNER_TEST_RESULTS_DIR}/llm-server.xml" \
-          examples/llm_server/python/tests \
-          examples/models/muse-glimmer/tests/test_serve.py \
-          examples/models/muse-glimmer/tests/test_serve_batching.py \
-          examples/models/muse-glimmer/tests/test_stream_parser.py
+        python -m pytest -q -ra -m native_worker \
+          --junitxml="${RUNNER_TEST_RESULTS_DIR}/llm-server-native.xml" \
+          examples/llm_server/python/tests
