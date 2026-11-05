@@ -11,7 +11,9 @@
 # executorch_add_model(PTE <path.pte> [PTE ...])  # models this firmware runs
 # executorch_add_kernels(DIR <bundle-dir>)        # from tools/gen_kernels.py
 #
-# Calls are unioned across the project; a project has one kernel bundle.
+# Calls are unioned across the project; a project has one kernel bundle. With
+# models but no bundle, the build makes one if EXECUTORCH_PYTHON (-D or the
+# environment; default: the build's Python) can import executorch.
 
 function(executorch_add_model)
   cmake_parse_arguments(_arg "" "" "PTE" ${ARGN})
@@ -71,20 +73,70 @@ function(__executorch_finalize)
   list(REMOVE_DUPLICATES _models)
   set(_command "python \"${_dir}/tools/gen_kernels.py\"")
   set(_pte_args "")
+  set(_gen_args "")
   foreach(_pte IN LISTS _models)
     if(NOT EXISTS "${_pte}")
       message(FATAL_ERROR "ExecuTorch: declared model ${_pte} does not exist")
     endif()
     string(APPEND _pte_args " --pte \"${_pte}\"")
+    list(APPEND _gen_args --pte "${_pte}")
   endforeach()
   if(NOT _bundle)
-    message(
-      FATAL_ERROR
-        "ExecuTorch: models are declared but no kernel bundle is. Make one "
-        "with the Python environment the models were exported with:\n"
-        "  ${_command}${_pte_args} --out <bundle-dir>\n"
-        "then call executorch_add_kernels(DIR <bundle-dir>)."
+    if(NOT EXECUTORCH_PYTHON)
+      set(EXECUTORCH_PYTHON "$ENV{EXECUTORCH_PYTHON}")
+    endif()
+    if(NOT EXECUTORCH_PYTHON)
+      idf_build_get_property(EXECUTORCH_PYTHON PYTHON)
+    elseif(NOT IS_ABSOLUTE "${EXECUTORCH_PYTHON}" OR NOT EXISTS
+                                                     "${EXECUTORCH_PYTHON}"
     )
+      message(
+        FATAL_ERROR
+          "ExecuTorch: EXECUTORCH_PYTHON must be the absolute path of a "
+          "python, not ${EXECUTORCH_PYTHON}"
+      )
+    endif()
+    string(
+      CONCAT
+        _manual
+        "Make the bundle with the Python environment the models were exported "
+        "with:\n  ${_command}${_pte_args} --out <bundle-dir>\nthen call "
+        "executorch_add_kernels(DIR <bundle-dir>), or set EXECUTORCH_PYTHON to "
+        "that environment's python."
+    )
+    execute_process(
+      COMMAND "${EXECUTORCH_PYTHON}" -c
+              "import executorch.codegen.tools.selective_build"
+      RESULT_VARIABLE _no_executorch
+      OUTPUT_QUIET
+      ERROR_VARIABLE _probe_error
+    )
+    if(_no_executorch)
+      message(
+        FATAL_ERROR
+          "ExecuTorch: models are declared but no kernel bundle is, and "
+          "${EXECUTORCH_PYTHON} cannot import executorch to make one:\n"
+          "${_probe_error}${_manual}"
+      )
+    endif()
+    set(_bundle "${CMAKE_BINARY_DIR}/executorch_kernels")
+    message(
+      STATUS "ExecuTorch: making the kernel bundle with ${EXECUTORCH_PYTHON}"
+    )
+    execute_process(
+      COMMAND "${EXECUTORCH_PYTHON}" "${_dir}/tools/gen_kernels.py" ${_gen_args}
+              --out "${_bundle}"
+      RESULT_VARIABLE _failed
+      OUTPUT_VARIABLE _output
+      ERROR_VARIABLE _output
+    )
+    if(_failed)
+      message(
+        FATAL_ERROR
+          "ExecuTorch: ${EXECUTORCH_PYTHON} failed to make the kernel bundle:\n"
+          "${_output}${_manual}"
+      )
+    endif()
   endif()
 
   set(_manifest "${_bundle}/kernels.json")

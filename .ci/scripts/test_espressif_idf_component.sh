@@ -6,11 +6,11 @@
 # LICENSE file in the root directory of this source tree.
 
 # Generates the ExecuTorch ESP-IDF component and a kernel bundle for the smoke
-# model, builds the idf_component_smoke consumer for ESP32-S3 and, with the
-# Cadence kernels too, for ESP32-C6, and runs the ESP32-S3 build on the
-# emulator. Also checks that stale or mismatched bundles fail at configure time,
-# and that an app declaring nothing links to the same size as one without the
-# component.
+# model, builds the idf_component_smoke consumer for ESP32-C6 with that bundle,
+# plus the Cadence kernels, and for ESP32-S3 with one the build generates
+# itself, and runs the ESP32-S3 build on the emulator. Also checks that stale or
+# mismatched bundles fail at configure time, and that an app declaring nothing
+# links to the same size as one without the component.
 
 set -euo pipefail
 
@@ -126,7 +126,12 @@ expect_configure_error commit-mismatch component_commit \
     -DET_SMOKE_PTE="${build_dir}/smoke.pte" \
     -DET_SMOKE_KERNELS="${build_dir}/mismatch_kernels"
 
-expect_configure_error no-bundle "no kernel bundle is" -DET_SMOKE_PTE="${build_dir}/smoke.pte"
+# Without an ExecuTorch Python to generate one, a missing bundle is an error.
+python -m venv --without-pip --clear "${build_dir}/bare_python"
+EXECUTORCH_PYTHON="${build_dir}/bare_python/bin/python" expect_configure_error \
+    no-bundle "cannot import executorch" -DET_SMOKE_PTE="${build_dir}/smoke.pte"
+expect_configure_error relative-python "must be the absolute path" \
+    -DET_SMOKE_PTE="${build_dir}/smoke.pte" -DEXECUTORCH_PYTHON=python
 
 # A model the bundle was not made from, declared instead of the one it was.
 mkdir -p "${build_dir}/other"
@@ -211,11 +216,14 @@ if ! tr -s ' \n' '  ' < "${build_dir}/firmware-nano.log" \
     exit 1
 fi
 
-consumer smoke-esp32s3 esp32s3 -DET_COMPONENT_DIR="${component_dir}" \
-    -DET_SMOKE_PTE="${build_dir}/smoke.pte" -DET_SMOKE_KERNELS="${kernels_dir}" build
 consumer smoke-esp32c6 esp32c6 -DET_COMPONENT_DIR="${component_dir}" \
     "-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;${build_dir}/large_registry.defaults" \
     -DET_SMOKE_PTE="${build_dir}/smoke.pte" -DET_SMOKE_KERNELS="${build_dir}/wakeword_kernels" build
+# No bundle declared: the build makes one with its own Python, which has
+# executorch here, and it must match the one gen_kernels.py made above.
+consumer smoke-esp32s3 esp32s3 -DET_COMPONENT_DIR="${component_dir}" \
+    -DET_SMOKE_PTE="${build_dir}/smoke.pte" build
+diff -r "${build_dir}/firmware-smoke-esp32s3/executorch_kernels" "${kernels_dir}"
 
 firmware_dir="${build_dir}/firmware-smoke-esp32s3"
 idf.py -C "${project}" -B "${firmware_dir}" merge-bin \
