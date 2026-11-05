@@ -12,7 +12,10 @@
 
 ${define_active_storage_type("buffer")}
 
-#define op(X) ${OPERATOR}
+#define IN_T vec4
+#define OUT_T vec4
+#define PARAM_T float
+#define UNARY_OP_IS_FLOAT
 
 layout(std430) buffer;
 
@@ -45,6 +48,9 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 ${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "in_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "block_config", "0")}
+${layout_declare_spec_const(C, "int", "op_type", "0")}
+
+#include "unary_op.glslh"
 
 // Generate loading functions for input buffer
 define_load_int8x4_buffer_fns(t_in)
@@ -74,7 +80,8 @@ void main() {
     vec4 in_texel = unpack_and_dequantize(
         in_block[row], input_scale, input_zp);
 
-    vec4 out_texel = op(in_texel);
+    // Only ops without parameters are dispatched to this shader
+    vec4 out_texel = apply_unary_op(in_texel, 0.0, 0.0);
     out_block[row] = quantize_and_pack(out_texel, output_inv_scale, output_zp);
   }
 
