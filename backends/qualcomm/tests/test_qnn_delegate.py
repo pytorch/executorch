@@ -11510,6 +11510,26 @@ class TestExampleScript(TestQNN):
                 Path("{0}/{1}.pte".format(tmp_dir, self.model_name)).exists()
             )
 
+    def test_toy_model_training_export(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cmds = [
+                "python",
+                "qualcomm/training/toy_model/export/export_toy_model.py",
+                "--output_folder",
+                tmp_dir,
+            ]
+
+            p = subprocess.Popen(
+                cmds, stdout=subprocess.DEVNULL, cwd=f"{self.executorch_root}/examples"
+            )
+            p.communicate()
+            self.assertTrue(Path(f"{tmp_dir}/no_ws/manifest.json").exists())
+            self.assertTrue(Path(f"{tmp_dir}/no_ws/toy_model_fwd.pte").exists())
+            self.assertTrue(Path(f"{tmp_dir}/no_ws/toy_model_fwd_bwd.pte").exists())
+
 
 class TestUtilsScript(TestQNN):
     TestQNN.atol = 1e-1

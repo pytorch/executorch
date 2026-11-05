@@ -58,13 +58,21 @@ the initial weights next to it as `init_weights.safetensors`, keyed by
 
 `on-device/trainer.cpp` (built as `qnn_toy_model_trainer`, wired into
 `examples/qualcomm/CMakeLists.txt` behind the `BUILD_QNN_TRAINING_EXAMPLE`
-CMake option, OFF by default -- pass `-DBUILD_QNN_TRAINING_EXAMPLE=ON` when
-configuring `examples/qualcomm` to build it),
-for exercising the training loop mechanics on real Hexagon/HTP hardware --
+CMake option, OFF by default), for exercising the training loop mechanics on
+real Hexagon/HTP hardware --
 including the `weight_sharing=true` variant. It uses the plain
 `executorch::extension::Module` API (`method_meta` + `execute`), joint graph's weights
 are plain method I/O (anonymous `primals_N` placeholders), not
 `nn.Parameter`-like mutable buffers.
+
+Building (from the repo root):
+
+```bash
+./backends/qualcomm/scripts/build.sh --skip_x86_64
+cd build-android
+cmake examples/qualcomm -Bexamples/qualcomm -DBUILD_QNN_TRAINING_EXAMPLE=ON
+cmake --build examples/qualcomm --target qnn_toy_model_trainer qnn_toy_model_inference -j16
+```
 
 Usage:
 
@@ -99,13 +107,13 @@ python run_toy_model.py ... --skip_push --skip_inference
 python run_toy_model.py ... --skip_push --skip_train
 ```
 
-Use `--weight_sharing true` to select the `ws/` variant (default: `no_ws/`).
+Use `--weight_sharing` (or `--no-weight_sharing`) to select the `ws/` variant (default: `no_ws/`).
 `QNN_SDK_ROOT` must be set (same requirement as all other Qualcomm examples).
 
 This lands `qnn_toy_model_trainer`, `qnn_toy_model_inference`, and the QNN/HTP
 shared libraries into `bin/`, and `config.json`/`manifest.json`/the `.pte`(s)/
 `init_weights.safetensors` into `artifacts/` -- both under
-`/data/local/tmp/$(whoami)/qnn_toy_model_trainer/` on the device.
+`/data/local/tmp/${USER:-user}/qnn_toy_model_trainer/` on the device.
 
 ## Configuration
 

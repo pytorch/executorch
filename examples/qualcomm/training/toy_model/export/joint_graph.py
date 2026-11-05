@@ -21,9 +21,6 @@ from torch import nn
 from torch._decomp import core_aten_decompositions, remove_decompositions
 from torch._functorch.aot_autograd import aot_export_joint_with_descriptors
 
-# _PyTreeCodeGen/_PyTreeInfo are private torch internals; verified against
-# PyTorch 2.13. Graph.set_codegen() (public) is used for the write path;
-# ._codegen is still needed to read orig_args/in_spec (no public getter exists).
 from torch.fx.graph import _PyTreeCodeGen, _PyTreeInfo
 from torch.utils._pytree import tree_flatten
 
@@ -156,11 +153,10 @@ class JointGraphCreator:
                         )
                     )
                 except (AttributeError, TypeError) as exc:
-                    logger.warning(
-                        "Could not reset pytree out_spec (%s); export will "
-                        "likely fail with a leaf-count mismatch.",
-                        exc,
-                    )
+                    raise RuntimeError(
+                        f"Could not reset pytree out_spec on torch {torch.__version__} "
+                        "-- _PyTreeCodeGen/_PyTreeInfo's shape has likely changed."
+                    ) from exc
 
         gm.recompile()
         return gm

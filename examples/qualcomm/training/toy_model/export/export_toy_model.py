@@ -32,31 +32,36 @@ import os
 import torch
 import torch.nn as nn
 
-from config import load_config
-
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_soc_to_chipset_map,
     to_edge_transform_and_lower_to_qnn,
 )
+from executorch.examples.qualcomm.training.toy_model.export.config import load_config
+from executorch.examples.qualcomm.training.toy_model.export.joint_graph import (
+    JointGraphCreator,
+)
+from executorch.examples.qualcomm.training.toy_model.export.model import (
+    ToyModel,
+    ToyModelWithLoss,
+)
 from executorch.extension.export_util.utils import save_pte_program
-from joint_graph import JointGraphCreator
-from model import ToyModel, ToyModelWithLoss
 from safetensors.torch import save_file
 
 
-def _make_fwd_wrapper(toy_model: ToyModel) -> nn.Module:
+def _make_fwd_wrapper(toy_model: ToyModel, param_names: list) -> nn.Module:
     """Return an nn.Module whose forward(w1, w2, w3, w4, x) runs toy_model via
     functional_call so the exported graph has weights as USER_INPUTs, not baked
     constants. The wrapper holds no parameters of its own."""
-    param_names = list(dict(toy_model.named_parameters()).keys())
+
+    local_names = [name.split(".", 1)[1] for name in param_names]
 
     class _FwdWrapper(nn.Module):
         def forward(self, *args):
-            weights = args[: len(param_names)]
-            x = args[len(param_names)]
-            params = dict(zip(param_names, weights))
+            weights = args[: len(local_names)]
+            x = args[len(local_names)]
+            params = dict(zip(local_names, weights))
             return torch.func.functional_call(toy_model, params, (x,))
 
     return _FwdWrapper()
@@ -142,7 +147,7 @@ def export_toy_model(
     joint_inputs = ((*weights, x, target), (tangent,))
 
     # functional_call wrapper: same ToyModel computation, weights as USER_INPUTs.
-    fwd_wrapper = _make_fwd_wrapper(toy_model)
+    fwd_wrapper = _make_fwd_wrapper(toy_model, param_names)
     fwd_inputs = (*weights, x)
 
     pte_info = _compile_and_save(
