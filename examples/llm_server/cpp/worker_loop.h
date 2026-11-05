@@ -53,6 +53,7 @@
 //                resumable
 //                ...optional model-specific terminal stats}
 //     open/close/reset: {"opened"|"closed"|"reset": true, "session_id": str}
+//       Close also includes "existed": bool (false for an already-absent key).
 //     error:    {"error": str, "code"?: str}  // capacity_exhausted |
 //                                              // unsupported_session
 

@@ -291,21 +291,21 @@ TEST_F(ServingRuntimeTest, DuplicateOpenAndCloseAreIdempotent) {
   EXPECT_EQ(executor.closed(), executor.opened());
 }
 
-TEST_F(ServingRuntimeTest, CheckedCloseReportsAbsentSessions) {
+TEST_F(ServingRuntimeTest, CloseReportsExistenceWithoutFailingAbsentSessions) {
   start();
   EXPECT_FALSE(result(runtime->open_session_async("session")));
   for (bool existed : {true, false}) {
-    std::promise<LifecycleResult> completion;
+    std::promise<executorch::extension::llm::serving::CloseResult> completion;
     auto future = completion.get_future();
-    runtime->close_session_async(
-        "session",
-        [&completion](auto error) { completion.set_value(std::move(error)); },
-        true);
-    if (existed) {
-      EXPECT_FALSE(result(std::move(future)));
-    } else {
-      expect_error(std::move(future), ErrorCode::SessionNotFound);
-    }
+    runtime->close_session_with_result_async(
+        "session", [&completion](auto closed) {
+          completion.set_value(std::move(closed));
+        });
+    ASSERT_EQ(
+        future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    auto closed = future.get();
+    EXPECT_FALSE(closed.error);
+    EXPECT_EQ(closed.existed, existed);
     EXPECT_EQ(runtime->info().active_sessions, 0u);
   }
   EXPECT_FALSE(result(runtime->close_session_async("session")));

@@ -526,27 +526,19 @@ class Worker {
         const char* ack = name == "open" ? "opened"
             : name == "close"            ? "closed"
                                          : "reset";
-        auto completion = [this,
-                           weak = std::weak_ptr<Operation>(op),
-                           ack,
-                           closing = name ==
-                               "close"](serving::LifecycleResult error) {
+        auto completion = [this, weak = std::weak_ptr<Operation>(op), ack](
+                              serving::LifecycleResult error,
+                              std::optional<bool> existed) {
           try {
             if (auto active = weak.lock()) {
               {
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (failed_)
                   return;
-                if (closing &&
-                    (!error ||
-                     error->code == serving::ErrorCode::SessionNotFound)) {
-                  complete(active, {{"closed", true}, {"existed", !error}});
-                } else {
-                  complete(
-                      active,
-                      error ? failure(*error)
-                            : Json{{ack, true}});
-                }
+                auto response = error ? failure(*error) : Json{{ack, true}};
+                if (!error && existed.has_value())
+                  response["existed"] = *existed;
+                complete(active, std::move(response));
               }
               checkpoint(Checkpoint::TerminalEnqueued, active->id);
             }
@@ -555,13 +547,23 @@ class Worker {
             changed_.notify_all();
           }
         };
-        if (name == "open")
-          runtime_.open_session_async(std::move(key), std::move(completion));
-        else if (name == "close")
-          runtime_.close_session_async(
-              std::move(key), std::move(completion), true);
-        else
-          runtime_.reset_session_async(std::move(key), std::move(completion));
+        if (name == "close") {
+          runtime_.close_session_with_result_async(
+              std::move(key),
+              [completion =
+                   std::move(completion)](serving::CloseResult result) {
+                completion(std::move(result.error), result.existed);
+              });
+        } else {
+          auto lifecycle = [completion = std::move(completion)](
+                               serving::LifecycleResult error) {
+            completion(std::move(error), std::nullopt);
+          };
+          if (name == "open")
+            runtime_.open_session_async(std::move(key), std::move(lifecycle));
+          else
+            runtime_.reset_session_async(std::move(key), std::move(lifecycle));
+        }
       } else {
         throw std::invalid_argument("unsupported or missing op");
       }

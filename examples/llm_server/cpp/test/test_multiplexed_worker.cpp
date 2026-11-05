@@ -1327,6 +1327,27 @@ TEST_F(ProtocolTest, IdempotentCloseReportsWhetherSessionExisted) {
   EXPECT_EQ(finish(), 0);
 }
 
+TEST_F(ProtocolTest, RuntimeAdmissionRejectionReportsNotAdmitted) {
+  // Keep transport capacity available while filling the runtime request limit.
+  start({}, 4, 1);
+  executor_.hold();
+  send(generate(1, 1));
+  ASSERT_TRUE(wait_execute());
+  send(generate(2, 1));
+  auto refused = receive();
+  EXPECT_EQ(refused.at("request_id"), 2);
+  EXPECT_EQ(refused.at("code"), "capacity_exhausted");
+  EXPECT_EQ(refused.at("admitted"), false);
+  EXPECT_NE(refused.at("error"), "worker operation capacity exhausted");
+  executor_.release();
+  EXPECT_EQ(receive().at("token"), tokenizer_.piece);
+  EXPECT_TRUE(receive().value("done", false));
+  send(generate(3, 1));
+  EXPECT_EQ(receive().at("token"), tokenizer_.piece);
+  EXPECT_TRUE(receive().value("done", false));
+  EXPECT_EQ(finish(), 0);
+}
+
 TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   MultiplexedWorkerConfig config;
   config.max_inflight_requests = 1;

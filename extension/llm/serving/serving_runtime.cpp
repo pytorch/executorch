@@ -235,16 +235,18 @@ struct ServingRuntime::Impl {
     bool dirty = false;
   };
 
+  using Completion = std::function<void(LifecycleResult, bool)>;
+
   struct Command {
     Operation operation;
     std::string key;
     // Queue transfers must not destroy user captures under mutex_.
-    std::unique_ptr<LifecycleCallback> completion;
+    std::unique_ptr<Completion> completion;
     Request request;
     RequestId fence_through = 0;
     bool processed = false;
     LifecycleResult result = std::nullopt;
-    bool require_existing = false;
+    bool existed = false;
   };
 
   Impl(
@@ -295,15 +297,16 @@ struct ServingRuntime::Impl {
   }
 
   static void complete(
-      std::unique_ptr<LifecycleCallback> completion,
-      LifecycleResult result) {
+      std::unique_ptr<Completion> completion,
+      LifecycleResult result,
+      bool existed = false) {
     if (!completion || !*completion) {
       return;
     }
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      (*completion)(std::move(result));
+      (*completion)(std::move(result), existed);
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
       ET_LOG(Error, "Lifecycle completion callback threw");
@@ -323,17 +326,23 @@ struct ServingRuntime::Impl {
     return future;
   }
 
-  void submit(
-      Operation operation,
-      std::string key,
-      LifecycleCallback on_complete,
-      bool require_existing = false) {
+  void
+  submit(Operation operation, std::string key, LifecycleCallback on_complete) {
+    submit(
+        operation,
+        std::move(key),
+        [callback = std::move(on_complete)](LifecycleResult result, bool) {
+          if (callback)
+            callback(std::move(result));
+        });
+  }
+
+  void submit(Operation operation, std::string key, Completion on_complete) {
     Command command{
         operation,
         std::move(key),
-        std::make_unique<LifecycleCallback>(std::move(on_complete)),
+        std::make_unique<Completion>(std::move(on_complete)),
         {}};
-    command.require_existing = require_existing;
     LifecycleResult error;
     {
       std::unique_lock<std::mutex> lock(mutex_);
@@ -374,9 +383,7 @@ struct ServingRuntime::Impl {
     }
     auto it = sessions_.find(command.key);
     if (command.operation == Operation::Close) {
-      if (it == sessions_.end() && command.require_existing) {
-        return ServingError{ErrorCode::SessionNotFound, "session not found"};
-      }
+      command.existed = it != sessions_.end();
       if (it != sessions_.end()) {
         if (it->second.active_request) {
           cancelled = requests_.at(it->second.active_request);
@@ -1625,7 +1632,10 @@ struct ServingRuntime::Impl {
               ServingError{ErrorCode::NotReady, "runtime is stopping"};
         }
       }
-      complete(std::move(command.completion), std::move(command.result));
+      complete(
+          std::move(command.completion),
+          std::move(command.result),
+          command.existed);
     }
     decltype(sessions_) retired;
     {
@@ -1851,18 +1861,19 @@ std::future<LifecycleResult> ServingRuntime::open_session_async(
 void ServingRuntime::close_session_async(
     std::string key,
     LifecycleCallback on_complete) {
-  close_session_async(std::move(key), std::move(on_complete), false);
+  impl_->submit(Impl::Operation::Close, std::move(key), std::move(on_complete));
 }
 
-void ServingRuntime::close_session_async(
+void ServingRuntime::close_session_with_result_async(
     std::string key,
-    LifecycleCallback on_complete,
-    bool require_existing) {
+    CloseCallback on_complete) {
   impl_->submit(
       Impl::Operation::Close,
       std::move(key),
-      std::move(on_complete),
-      require_existing);
+      [callback = std::move(on_complete)](LifecycleResult error, bool existed) {
+        if (callback)
+          callback(CloseResult{std::move(error), existed});
+      });
 }
 
 std::future<LifecycleResult> ServingRuntime::close_session_async(

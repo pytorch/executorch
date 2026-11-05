@@ -813,6 +813,8 @@ class ServingChat:
                     except WorkerError as error:
                         if error.code == "session_not_found":
                             continue
+                        if error.admitted is False:
+                            return False  # The close never reached the worker.
                         candidates = (
                             self._cleanup_sessions
                             if session_id in self._cleanup_sessions
@@ -956,60 +958,49 @@ class ServingChat:
             and req.session_id is not None
         ):
             admission.pending = True
-        if req.stream:
-            stats = GenStats()
-            generation = self._runtime.generate_stream(
-                req.session_id, prompt_input, options, stats
+        stats = GenStats()
+        generation = self._runtime.generate_stream(
+            req.session_id, prompt_input, options, stats
+        )
+        if req.stream and self._multiplexed:
+            await generation.wait_ready(timeout=self._streaming_preflight_timeout)
+        if self._multiplexed and self._evict_idle_sessions:
+            generation = _AdmissionRetryStream(
+                self,
+                req.session_id,
+                generation,
+                lambda: self._runtime.generate_stream(
+                    req.session_id, prompt_input, options, stats
+                ),
+                admission,
             )
-            if self._multiplexed:
-                await generation.wait_ready(timeout=self._streaming_preflight_timeout)
-                if self._evict_idle_sessions:
-                    generation = _AdmissionRetryStream(
-                        self,
-                        req.session_id,
-                        generation,
-                        lambda: self._runtime.generate_stream(
-                            req.session_id, prompt_input, options, stats
-                        ),
-                        admission,
-                    )
+        if req.stream:
             return _ChatStream(
                 self._stream(req, preamble, gen_stops, generation, stats),
                 lease,
                 generation,
             )
-        return await self._complete(
-            req, prompt_input, options, preamble, gen_stops, admission=admission
-        )
+        return await self._complete(req, preamble, gen_stops, generation, stats)
 
     async def _complete(
         self,
         req: ChatCompletionRequest,
-        prompt: PromptInput,
-        options: GenerationOptions,
-        preamble: str = "",
-        gen_stops: Optional[list[str]] = None,
-        *,
-        admission,
+        preamble: str,
+        gen_stops: list[str],
+        generation,
+        stats: GenStats,
     ) -> ChatCompletionResponse:
-        # Same stop set the worker was given (per-path: narrow for tools, broad
-        # content specials added for plain chat); falls back to narrow if a caller
-        # didn't supply it.
-        stops = gen_stops if gen_stops is not None else self._generation_stops(req)
-        stats = GenStats()
+        # Same stop set the worker was given (narrow for tools, broad for chat).
+        stops = gen_stops
         try:
             # Collect raw text (markers intact for tool parsing), halting early
             # at a stop boundary (special token or request stop).
-            async with aclosing(
-                self._runtime.generate_stream(req.session_id, prompt, options, stats)
-            ) as generation:
+            async with aclosing(generation):
                 text, stopped = await self._collect_until_stop(generation, stops)
         except (WorkerError, APIError):
             raise
         except Exception as e:  # noqa: BLE001 - surface as a structured API error
             raise self._generation_error(e)
-        if self._evict_idle_sessions and req.session_id is not None:
-            admission.admitted = True
         # Bound the raw output at the first stop/special token BEFORE tool
         # parsing, so a call after the stop boundary is not parsed/emitted.
         tool_calls, reasoning, content = self._extract_response(

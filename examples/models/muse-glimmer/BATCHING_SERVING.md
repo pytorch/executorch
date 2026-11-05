@@ -181,7 +181,11 @@ apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
   close the least recently used idle session when logical session slots are exhausted, clearing
   its transcript cache as well. Active requests and queued users of a session are
   protected. Resubmitting an evicted session with full history recreates it.
-  If all slots are active, capacity errors still apply.
+  This opt-in policy also allows anonymous requests to evict named idle sessions;
+  the anonymous request releases its temporary slot when it finishes. If all
+  slots are active, capacity errors still apply. Request/queue overload does not
+  trigger eviction. Streaming and non-streaming requests both confirm a new
+  named session on the first raw output or successful terminal response.
 - Generated-token replay is bound to preceding history as well as the assistant
   response. Compaction or edited earlier messages invalidate affected records,
   preventing an identical visible answer from restoring another turn's reasoning.

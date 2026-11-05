@@ -649,3 +649,46 @@ def test_pending_cleanup_does_not_wait_for_unsettled_native_prefill():
             await runtime.aclose_worker()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_partial_decode_error_preserves_admitted_session(stream):
+    from executorch.examples.llm_server.python.errors import APIError
+    from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
+    from executorch.examples.llm_server.python.serving_chat import ServingChat
+    from executorch.examples.llm_server.python.session_runtime import SessionRuntime
+    from executorch.examples.llm_server.python.tests.test_concurrent_serving import (
+        _NativeWorker,
+    )
+
+    async def scenario():
+        worker = _NativeWorker(
+            tokens=("partial",), errors={"generate": ("decode failed", "internal")}
+        )
+        runtime = SessionRuntime(worker)
+        serving = ServingChat(
+            runtime, ChatTemplate(allow_fallback=True), "test", evict_idle_sessions=True
+        )
+        try:
+            req = ChatCompletionRequest(
+                messages=[{"role": "user", "content": "hi"}],
+                session_id="new",
+                stream=stream,
+            )
+            if stream:
+                result = await serving.create(req)
+                output = "".join([chunk async for chunk in result])
+                assert '"error"' in output
+            else:
+                with pytest.raises(APIError):
+                    await serving.create(req)
+            assert list(serving._idle_sessions) == ["new"]
+            assert not serving._cleanup_sessions
+            calls = []
+            while not worker.calls.empty():
+                calls.append(worker.calls.get_nowait()[0])
+            assert calls == ["generate"]  # Neither response mode closes the session.
+        finally:
+            await runtime.aclose_worker()
+
+    asyncio.run(asyncio.wait_for(scenario(), 5))

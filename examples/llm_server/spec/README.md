@@ -274,16 +274,24 @@ not fail unrelated requests.
 Optional `generated_token_ids` in a terminal is present only when the runtime can
 safely replay exact output IDs. Statistics describe consumed prompt and generated
 tokens, not necessarily visible text. Runtime failures have the terminal shape
-`{"request_id":8,"error":"message","code":"internal"}`. Stable error codes
+`{"request_id":8,"error":"message","code":"internal"}`. Rejections before
+runtime admission additionally include `"admitted":false`; clients must not infer
+that a named session was created from such a rejection. An absent `admitted`
+field leaves admission unknown. Stable error codes
 include `invalid_argument`, `not_ready`, `session_not_found`, `session_busy`,
 `capacity_exhausted`, `session_capacity_exhausted`, `internal`, `slow_consumer`, and `frame_too_large`.
 
 Lifecycle commands are `open`, `close`, and `reset`, each with `session_id` and
-its own request ID. Their replies are respectively `opened:true`, `closed:true`,
+its own request ID. These commands do not block the input reader.
+Their replies are respectively `opened:true`, `closed:true`,
 and `reset:true`, or a correlated error. Close remains idempotent and includes
 `existed:true` when it released a logical session slot, or `existed:false` when
-the session was already absent. Older workers omit this field; eviction then
-cannot distinguish stale candidates from released slots. They do not block the input reader.
+the session was already absent. Older workers can omit this field; a client
+cannot then distinguish stale candidates from released slots. Older multiplexed
+workers also use `capacity_exhausted` for session-slot refusals, so automatic
+eviction does not trigger for those workers. The legacy `WorkerClient` maps its
+explicit session-open capacity refusal to session-slot exhaustion; its close
+reply may still lack existence information.
 An accepted close/reset fences its session: earlier generation text and terminals
 precede its ACK, and runtime-owned generation callbacks and captures are cleaned
 up before the ACK is enqueued. Later accepted same-session operations stay behind
