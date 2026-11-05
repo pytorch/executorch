@@ -45,7 +45,7 @@ def test_native_overflow_counts_reach_http(native_worker, dialect, stream, timeo
             expected = len(template.render(messages).encode("utf-8"))
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=build_app(serving, "test")),
-                base_url="http://test",
+                base_url="http://test",  # @lint-ignore: in-process ASGI transport
             ) as client:
                 response = await client.post(
                     "/v1/chat/completions",
