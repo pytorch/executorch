@@ -24,11 +24,18 @@ jobs:
       contents: read
     with:
       backend: arm
+      # The full flow matrix runs nightly, on release branches, and on manual
+      # or ciflow-tag runs. Pushes to main get the same reduced matrix as pull
+      # requests: a regression in the other flows still surfaces within a day,
+      # without paying for the full matrix on every merge.
       flows: >-
-        ${{ github.event_name == 'pull_request'
-            && '["arm_tosa_fp"]'
-            || '["arm_tosa_fp", "arm_tosa_int",
-                 "arm_ethos_u55", "arm_ethos_u85"]' }}
+        ${{ (github.event_name == 'schedule'
+             || github.event_name == 'workflow_dispatch'
+             || startsWith(github.ref, 'refs/heads/release/')
+             || startsWith(github.ref, 'refs/tags/ciflow/'))
+            && '["arm_tosa_fp", "arm_tosa_int",
+                 "arm_ethos_u55", "arm_ethos_u85"]'
+            || '["arm_tosa_fp"]' }}
       ref: ${{ github.event_name == 'pull_request'
                && github.event.pull_request.head.sha
                || github.sha }}
@@ -43,10 +50,17 @@ jobs:
       contents: read
     with:
       backend: arm-vgf
+      # The full flow matrix runs nightly, on release branches, and on manual
+      # or ciflow-tag runs. Pushes to main get the same reduced matrix as pull
+      # requests: a regression in the other flows still surfaces within a day,
+      # without paying for the full matrix on every merge.
       flows: >-
-        ${{ github.event_name == 'pull_request'
-            && '["arm_vgf_fp"]'
-            || '["arm_vgf_fp", "arm_vgf_int"]' }}
+        ${{ (github.event_name == 'schedule'
+             || github.event_name == 'workflow_dispatch'
+             || startsWith(github.ref, 'refs/heads/release/')
+             || startsWith(github.ref, 'refs/tags/ciflow/'))
+            && '["arm_vgf_fp", "arm_vgf_int"]'
+            || '["arm_vgf_fp"]' }}
       ref: ${{ github.event_name == 'pull_request'
                && github.event.pull_request.head.sha
                || github.sha }}
