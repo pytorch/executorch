@@ -15,6 +15,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import Tuple
 from unittest import mock
 
 import torch
@@ -46,14 +47,49 @@ class RunAllTestsTest(unittest.TestCase):
         self.assertIn("Killed by signal 9", out.getvalue())
         self._assert_exits(pid)
 
+    def test_isolated_run_kills_grandchildren_on_sigterm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            harness, pid = self._start_harness(Path(tmp), "wait")
+            harness.send_signal(signal.SIGTERM)
+            self.assertEqual(harness.wait(timeout=30), -signal.SIGTERM)
+        self._assert_exits(pid)
+
+    def test_isolated_run_keeps_an_ignored_sighup_ignored(self):
+        # As under nohup: the test must finish instead of dying with the harness.
+        with tempfile.TemporaryDirectory() as tmp:
+            harness, _ = self._start_harness(
+                Path(tmp), "sleep 2", "signal.signal(signal.SIGHUP, signal.SIG_IGN)"
+            )
+            harness.send_signal(signal.SIGHUP)
+            self.assertEqual(harness.wait(timeout=60), 0)
+
+    def _start_harness(
+        self, directory: Path, ending: str, setup: str = ""
+    ) -> Tuple[subprocess.Popen, int]:
+        child, pid_file = _write_child(directory, ending)
+        # Stands in for run_all_tests --isolate running one test.
+        harness = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import signal, sys\n"
+                "from executorch.backends.mlx.test import run_all_tests\n"
+                f"{setup}\n"
+                f"sys.executable = {str(child)!r}\n"
+                "run_all_tests._run_test_in_subprocess('sub_10')\n",
+            ]
+        )
+        self.addCleanup(harness.kill)
+        deadline = time.monotonic() + 120
+        while not _read(pid_file) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        pid = int(pid_file.read_text())
+        self.addCleanup(_kill_if_alive, pid)
+        return harness, pid
+
     def _run_child_with_grandchild(self, ending: str, timeout: int = 60) -> int:
         with tempfile.TemporaryDirectory() as tmp:
-            # Stands in for the test process: it starts a long-running child,
-            # like op_test_runner, then waits for it or exits without it.
-            child = Path(tmp) / "child.sh"
-            pid_file = Path(tmp) / "grandchild.pid"
-            child.write_text(f"#!/bin/sh\nsleep 60 &\necho $! > {pid_file}\n{ending}\n")
-            child.chmod(0o755)
+            child, pid_file = _write_child(Path(tmp), ending)
             with mock.patch.object(sys, "executable", str(child)):
                 self.assertFalse(_run_test_in_subprocess("sub_10", timeout=timeout))
             pid = int(pid_file.read_text())
@@ -123,6 +159,20 @@ class RunAllTestsTest(unittest.TestCase):
                 **patches,
             ):
                 self.assertIs(pte_inspector.show_mlx_instructions(b""), False)
+
+
+def _write_child(directory: Path, ending: str) -> Tuple[Path, Path]:
+    # Stands in for the test process: it starts a long-running child, like
+    # op_test_runner, then runs `ending`, for example waits for it.
+    child = directory / "child.sh"
+    pid_file = directory / "grandchild.pid"
+    child.write_text(f"#!/bin/sh\nsleep 60 &\necho $! > {pid_file}\n{ending}\n")
+    child.chmod(0o755)
+    return child, pid_file
+
+
+def _read(path: Path) -> str:
+    return path.read_text() if path.exists() else ""
 
 
 def _write_program_without_mlx_delegate(directory: Path) -> Path:
