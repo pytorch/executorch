@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from math import ceil, floor
+from dataclasses import dataclass
 from typing import Set, Type
 
 import torch
@@ -41,11 +41,20 @@ def _get_decomposition(op) -> tuple:
     raise RuntimeError(f"Unable to get decomposition for op {op}")
 
 
+@dataclass(frozen=True)
+class _PoolRegion:
+    start: int
+    end: int
+    kernel: int
+    stride: int = 1
+    padding: int = 0
+
+
 class DecomposeAdaptiveAvgPool2dPass(ArmOpTargetedPass):
     """Decompose static-shape topology-changing AdaptiveAvgPool2d cases.
 
-    Static input/output shapes use the existing slice + avg_pool2d + cat
-    lowering, with a fast path for directly representable uniform regions.
+    Static shapes use directly representable pooling regions. See
+    ``adaptive_avg_pool2d.md`` for illustrated grouping and padding examples.
 
     Dynamic cases are left untouched for dedicated dynamic rewrite/decompose
     passes later in the TOSA pipeline.
@@ -163,9 +172,80 @@ class DecomposeAdaptiveAvgPool2dPass(ArmOpTargetedPass):
     def _static_bin_bounds(
         input_size: int, output_size: int, out_idx: int
     ) -> tuple[int, int]:
-        start = floor(out_idx * input_size / output_size)
-        end = ceil((out_idx + 1) * input_size / output_size)
+        start = out_idx * input_size // output_size
+        end = ((out_idx + 1) * input_size + output_size - 1) // output_size
         return start, end
+
+    @classmethod
+    def _pool_regions(
+        cls,
+        input_size: int,
+        output_size: int,
+        max_stride: int | None,
+        allow_padding: bool = True,
+    ) -> list[_PoolRegion]:
+        bounds = [
+            cls._static_bin_bounds(input_size, output_size, index)
+            for index in range(output_size)
+        ]
+        if output_size == 1:
+            return [_PoolRegion(0, input_size, input_size)]
+
+        stride = input_size // output_size
+        if (
+            stride > 0
+            and (max_stride is None or stride <= max_stride)
+            and input_size % output_size in (0, 1)
+        ):
+            return [
+                _PoolRegion(0, input_size, stride + input_size % output_size, stride)
+            ]
+
+        if allow_padding and output_size >= 3:
+            stride = bounds[2][0] - bounds[1][0]
+            kernel = bounds[1][1] - bounds[1][0]
+            padding = stride - bounds[1][0]
+            if (
+                stride > 0
+                and (max_stride is None or stride <= max_stride)
+                and 0 <= padding <= kernel // 2
+                and (input_size + 2 * padding - kernel) // stride + 1 == output_size
+                and all(
+                    start == max(0, index * stride - padding)
+                    and end == min(input_size, index * stride - padding + kernel)
+                    for index, (start, end) in enumerate(bounds)
+                )
+            ):
+                return [_PoolRegion(0, input_size, kernel, stride, padding)]
+
+        regions = []
+        first = 0
+        while first < output_size:
+            start, end = bounds[first]
+            kernel = end - start
+            stop = first + 1
+            stride = 1
+            if stop < output_size:
+                next_start, next_end = bounds[stop]
+                candidate_stride = next_start - start
+                if (
+                    next_end - next_start == kernel
+                    and candidate_stride > 0
+                    and (max_stride is None or candidate_stride <= max_stride)
+                ):
+                    stride = candidate_stride
+                    stop += 1
+                    while stop < output_size:
+                        next_start, next_end = bounds[stop]
+                        if (
+                            next_end - next_start != kernel
+                            or next_start != start + (stop - first) * stride
+                        ):
+                            break
+                        stop += 1
+            regions.append(_PoolRegion(start, bounds[stop - 1][1], kernel, stride))
+            first = stop
+        return regions
 
     def _symbolic_bin_bounds(self, input_size, output_size: int, out_idx: int, meta):
         start_num = self._shape_mul_const(input_size, out_idx, meta)
@@ -284,70 +364,52 @@ class DecomposeAdaptiveAvgPool2dPass(ArmOpTargetedPass):
             and tosa_spec.support_extension("shape")
         )
 
-    def _decompose_static(
+    def _emit_pool_regions(
         self,
         avg_pool2d_op,
         slice_op,
         cat_op,
         x,
-        output_size_h,
-        output_size_w,
+        height_regions,
+        width_regions,
         kwargs,
         meta,
     ):
         _, _, input_size_h, input_size_w = x.data.shape
 
-        stride_h = floor(input_size_h / output_size_h)
-        stride_w = floor(input_size_w / output_size_w)
-        if (
-            self._is_directly_representable(input_size_h, output_size_h)
-            and self._is_directly_representable(input_size_w, output_size_w)
-            and stride_h in (1, 2, 3)
-            and stride_w in (1, 2, 3)
-        ):
-            kernel_h = stride_h + (input_size_h % output_size_h)
-            kernel_w = stride_w + (input_size_w % output_size_w)
-            return super().call_operator(
-                avg_pool2d_op,
-                (x, (kernel_h, kernel_w), (stride_h, stride_w), (0, 0)),
-                kwargs,
-                meta,
-                True,
-            )
-
         meta_with_no_qparams = meta_without_qparams(meta)
-
         res = []
-        for out_i in range(output_size_h):
-            row = []
-            for out_j in range(output_size_w):
-                start_h, end_h = self._static_bin_bounds(
-                    input_size_h, output_size_h, out_i
-                )
-                start_w, end_w = self._static_bin_bounds(
-                    input_size_w, output_size_w, out_j
-                )
-
+        for height in height_regions:
+            x_h = x
+            if height.start != 0 or height.end != input_size_h:
                 x_h = super().call_operator(
                     slice_op,
-                    (x, 2, start_h, end_h),
+                    (x, 2, height.start, height.end),
                     kwargs,
                     meta_with_no_qparams,
                     True,
                 )
-                x_hw = super().call_operator(
-                    slice_op,
-                    (x_h, 3, start_w, end_w),
-                    kwargs,
-                    meta_with_no_qparams,
-                    True,
-                )
-
-                kernel_h = end_h - start_h
-                kernel_w = end_w - start_w
+            row = []
+            for width in width_regions:
+                x_hw = x_h
+                if width.start != 0 or width.end != input_size_w:
+                    x_hw = super().call_operator(
+                        slice_op,
+                        (x_h, 3, width.start, width.end),
+                        kwargs,
+                        meta_with_no_qparams,
+                        True,
+                    )
                 pooled = super().call_operator(
                     avg_pool2d_op,
-                    (x_hw, (kernel_h, kernel_w), (1, 1), (0, 0)),
+                    (
+                        x_hw,
+                        (height.kernel, width.kernel),
+                        (height.stride, width.stride),
+                        (height.padding, width.padding),
+                        False,
+                        False,
+                    ),
                     kwargs,
                     meta,
                     True,
@@ -377,6 +439,45 @@ class DecomposeAdaptiveAvgPool2dPass(ArmOpTargetedPass):
             )
             if len(res) > 1
             else res[0]
+        )
+
+    def _decompose_static(
+        self,
+        avg_pool2d_op,
+        slice_op,
+        cat_op,
+        x,
+        output_size_h,
+        output_size_w,
+        kwargs,
+        meta,
+    ):
+        _, _, input_size_h, input_size_w = x.data.shape
+        is_u55 = get_context_spec().is_U55_subset
+        max_stride = 3 if is_u55 else None
+        height_regions = self._pool_regions(input_size_h, output_size_h, max_stride)
+        width_regions = self._pool_regions(input_size_w, output_size_w, max_stride)
+        if (
+            is_u55
+            and any(region.padding for region in height_regions + width_regions)
+            and any(region.kernel > 8 for region in height_regions + width_regions)
+        ):
+            height_regions = self._pool_regions(
+                input_size_h, output_size_h, max_stride, allow_padding=False
+            )
+            width_regions = self._pool_regions(
+                input_size_w, output_size_w, max_stride, allow_padding=False
+            )
+
+        return self._emit_pool_regions(
+            avg_pool2d_op,
+            slice_op,
+            cat_op,
+            x,
+            height_regions,
+            width_regions,
+            kwargs,
+            meta,
         )
 
     def _decompose_dynamic_static_output(

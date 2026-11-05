@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/platform/runtime.h>
 
@@ -16,6 +17,14 @@
 #include <executorch/extension/threadpool/threadpool_guard.h>
 
 #include <gtest/gtest.h>
+
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <sched.h>
+
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#endif
 
 using namespace ::testing;
 
@@ -69,6 +78,59 @@ void run_lambda_with_size(
   auto threadpool = ::executorch::extension::threadpool::get_threadpool();
   threadpool->run(f, range);
 }
+
+// The pool has no more threads than the CPUs this process may run on.
+bool may_use_more_than_one_cpu() {
+#if defined(__linux__) && !defined(__ANDROID__)
+  // Grows the mask as get_num_allowed_cpus() does, for kernels with more
+  // possible CPUs than a cpu_set_t holds.
+  for (int num_cpus = CPU_SETSIZE; num_cpus <= (1 << 20); num_cpus *= 2) {
+    std::unique_ptr<cpu_set_t, void (*)(cpu_set_t*)> cpus(
+        CPU_ALLOC(num_cpus), [](cpu_set_t* set) { CPU_FREE(set); });
+    if (!cpus) {
+      break;
+    }
+    const size_t size = CPU_ALLOC_SIZE(num_cpus);
+    if (sched_getaffinity(0, size, cpus.get()) == 0) {
+      return CPU_COUNT_S(size, cpus.get()) > 1;
+    }
+    if (errno != EINVAL) {
+      break;
+    }
+  }
+#endif
+  return true;
+}
+
+#if defined(__linux__) && !defined(__ANDROID__)
+// Limits this thread to the CPU it runs on, then prints the default pool size
+// and the performance core count for the test to match. Failing to set the
+// limit aborts instead.
+[[noreturn]] void print_counts_on_one_cpu() {
+  const int cpu = sched_getcpu();
+  if (cpu < 0) {
+    std::abort();
+  }
+  std::unique_ptr<cpu_set_t, void (*)(cpu_set_t*)> cpus(
+      CPU_ALLOC(cpu + 1), [](cpu_set_t* set) { CPU_FREE(set); });
+  if (!cpus) {
+    std::abort();
+  }
+  const size_t size = CPU_ALLOC_SIZE(cpu + 1);
+  CPU_ZERO_S(size, cpus.get());
+  CPU_SET_S(cpu, size, cpus.get());
+  if (sched_setaffinity(0, size, cpus.get()) != 0) {
+    std::abort();
+  }
+  std::fprintf(
+      stderr,
+      "pool %zu perf %u end\n",
+      ::executorch::extension::threadpool::get_threadpool()->get_thread_count(),
+      static_cast<unsigned>(
+          ::executorch::extension::cpuinfo::get_num_performant_cores()));
+  std::exit(EXIT_SUCCESS);
+}
+#endif
 } // namespace
 
 TEST(ThreadPoolTest, ParallelAdd) {
@@ -88,7 +150,9 @@ TEST(ThreadPoolTest, ParallelAdd) {
   };
 
   auto threadpool = ::executorch::extension::threadpool::get_threadpool();
-  EXPECT_GT(threadpool->get_thread_count(), 1);
+  if (may_use_more_than_one_cpu()) {
+    EXPECT_GT(threadpool->get_thread_count(), 1);
+  }
 
   generate_add_test_inputs(a, b, c_ref, c, vector_size);
   run_lambda_with_size(add_lambda, vector_size, grain_size);
@@ -133,7 +197,9 @@ TEST(ThreadPoolTest, ParallelReduce) {
   };
 
   auto threadpool = ::executorch::extension::threadpool::get_threadpool();
-  EXPECT_GT(threadpool->get_thread_count(), 1);
+  if (may_use_more_than_one_cpu()) {
+    EXPECT_GT(threadpool->get_thread_count(), 1);
+  }
 
   generate_reduce_test_inputs(a, c_ref, vector_size);
   run_lambda_with_size(reduce_lambda, vector_size, grain_size);
@@ -201,3 +267,25 @@ TEST(TestNoThreadPoolGuard, TestRunWithGuard) {
   }
   ASSERT_EQ(inner, 6);
 }
+
+#if defined(__linux__) && !defined(__ANDROID__)
+// gtest runs death tests before the other tests, so the forked child creates
+// the pool itself, and the CPU limit it sets does not reach the other tests.
+TEST(ThreadPoolDeathTest, DefaultSizeHonorsCpuAffinity) {
+  // A later run, as with --gtest_repeat, forks after the other tests created
+  // the pool, and the child keeps that pool's size.
+  static int runs = 0;
+  if (runs++ > 0) {
+    GTEST_SKIP() << "The pool may already exist in this process";
+  }
+  executorch::runtime::runtime_init();
+
+  // A known performance core count drops to 1, and an unknown one stays 0.
+  const char* expected =
+      ::executorch::extension::cpuinfo::get_num_performant_cores() > 0
+      ? "pool 1 perf 1 end"
+      : "pool 1 perf 0 end";
+  EXPECT_EXIT(
+      print_counts_on_one_cpu(), ExitedWithCode(EXIT_SUCCESS), expected);
+}
+#endif

@@ -255,8 +255,8 @@ set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
 
 # Only build CUDA-only operator shims when the CUDA toolchain is available.
 if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
-  list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu
-       runtime/shims/sort.cu runtime/shims/rand.cu
+  list(APPEND _aoti_cuda_shim_sources runtime/shims/index.cu
+       runtime/shims/int4mm.cu runtime/shims/sort.cu runtime/shims/rand.cu
   )
 endif()
 
@@ -493,6 +493,12 @@ if(BUILD_TESTING)
     EXTRA_LIBS aoti_cuda_backend
   )
   target_compile_definitions(test_cuda_weight_cache PRIVATE CUDA_AVAILABLE=1)
+
+  et_cxx_test(
+    test_cuda_output_copy SOURCES runtime/test/test_cuda_output_copy.cpp
+    EXTRA_LIBS aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_output_copy PRIVATE CUDA_AVAILABLE=1)
   # sort.cu and rand.cu are compiled only under this condition (see
   # _aoti_cuda_shim_sources), so the test that calls them is too.
   if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)

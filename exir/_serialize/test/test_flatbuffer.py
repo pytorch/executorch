@@ -10,6 +10,7 @@ import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from typing import Dict, Optional, Sequence
 from unittest.mock import patch
 
@@ -309,3 +310,32 @@ class TestReplaceNonFiniteInJson(unittest.TestCase):
         result = json.loads(_replace_non_finite_in_json(content))
         self.assertEqual(result["name"], "a:Infinity,b")
         self.assertEqual(result["v"], "inf")
+
+
+class TestGetFlatcPath(unittest.TestCase):
+    def assert_finds_packaged_flatc(self, platform: str, filename: str) -> None:
+        """Checks that flatc is found in executorch.data.bin under its wheel name."""
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = Path(tmp, "bin")
+            bin_dir.mkdir()
+            (bin_dir / filename).touch()
+            packages = {
+                _flatbuffer.__package__: Path(tmp),
+                "executorch.data.bin": bin_dir,
+            }
+            with patch.object(
+                _flatbuffer.importlib.resources,
+                "files",
+                side_effect=packages.__getitem__,
+            ), patch("sys.platform", platform), patch.multiple(
+                _flatbuffer, _flatc_cached_path=None, _flatc_exit_stack=None
+            ):
+                self.assertEqual(_flatbuffer._get_flatc_path(), str(bin_dir / filename))
+
+    def test_windows_wheel_flatc_exe(self) -> None:
+        self.assert_finds_packaged_flatc("win32", "flatc.exe")
+
+    def test_non_windows_wheel_flatc(self) -> None:
+        for platform in ("linux", "darwin"):
+            with self.subTest(platform=platform):
+                self.assert_finds_packaged_flatc(platform, "flatc")
