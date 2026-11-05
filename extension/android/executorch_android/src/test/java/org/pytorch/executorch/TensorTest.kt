@@ -7,6 +7,7 @@
  */
 package org.pytorch.executorch
 
+import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.Assert.assertArrayEquals
@@ -637,6 +638,59 @@ class TensorTest {
     assertThatThrownBy { Tensor.fromBlob(data, mismatchShape) }
         .isInstanceOf(IllegalArgumentException::class.java)
         .hasMessage("Inconsistent data capacity:4 and shape number elements:2 shape:[1, 2]")
+  }
+
+  @Test
+  fun testDimOrder() {
+    val shape = longArrayOf(1, 3, 2, 2)
+    val dimOrder = intArrayOf(0, 2, 3, 1)
+    val data = FloatArray(12) { it.toFloat() }
+
+    assertArrayEquals(dimOrder, Tensor.fromBlob(data, shape, dimOrder).dimOrder())
+
+    val buffer = Tensor.allocateFloatBuffer(data.size)
+    buffer.put(data)
+    assertArrayEquals(dimOrder, Tensor.fromBlob(buffer, shape, dimOrder).dimOrder())
+    assertArrayEquals(intArrayOf(0, 1, 2, 3), Tensor.fromBlob(data, shape).dimOrder())
+
+    assertThatThrownBy { Tensor.fromBlob(data, shape, intArrayOf(0, 1, 2)) }
+        .isInstanceOf(IllegalArgumentException::class.java)
+    assertThatThrownBy { Tensor.fromBlob(data, shape, intArrayOf(0, 1, 2, 2)) }
+        .isInstanceOf(IllegalArgumentException::class.java)
+  }
+
+  @Test
+  fun testDimOrderSerde() {
+    val shape = longArrayOf(1, 3, 2, 2)
+    val dimOrder = intArrayOf(0, 2, 3, 1)
+    val data = FloatArray(12) { it.toFloat() }
+
+    val deser = Tensor.fromByteArray(Tensor.fromBlob(data, shape, dimOrder).toByteArray())
+
+    assertArrayEquals(shape, deser.shape())
+    assertArrayEquals(dimOrder, deser.dimOrder())
+    assertArrayEquals(data, deser.dataAsFloatArray, 0f)
+  }
+
+  @Test
+  fun testSerdeWithoutDimOrder() {
+    val shape = longArrayOf(2, 2)
+    val data = intArrayOf(1, 2, 3, 4)
+    val buffer = ByteBuffer.allocate(1 + 1 + 4 * shape.size + 4 * data.size)
+    buffer.put(DType.INT32.jniCode.toByte())
+    buffer.put(shape.size.toByte())
+    for (s in shape) {
+      buffer.putInt(s.toInt())
+    }
+    for (d in data) {
+      buffer.putInt(d)
+    }
+
+    val deser = Tensor.fromByteArray(buffer.array())
+
+    assertArrayEquals(shape, deser.shape())
+    assertArrayEquals(intArrayOf(0, 1), deser.dimOrder())
+    assertArrayEquals(data, deser.dataAsIntArray)
   }
 
   @Test

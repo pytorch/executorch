@@ -160,6 +160,7 @@ union XNodeUnion {
   XNNCopy: _XNNNode1x1,
   XNNCos: _XNNNode1x1,
   XNNApproxGelu: _XNNNode1x1,
+  XNNDepthToSpace2d,
 }
 
 union XValueUnion {
@@ -293,6 +294,13 @@ table _XNNPooling2D {
 table XNNStaticReshape {
   num_dims:uint;
   new_shape:[uint];
+  input_id: uint;
+  output_id: uint;
+  flags: uint;
+}
+
+table XNNDepthToSpace2d {
+  block_size: uint;
   input_id: uint;
   output_id: uint;
   flags: uint;

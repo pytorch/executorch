@@ -8,6 +8,40 @@ ESP32-S3 microcontrollers. It is based on the
 [Arm Cortex-M executor runner](../arm/executor_runner/) and adapted for the
 ESP-IDF build system and ESP32 memory architecture.
 
+## ESP-IDF component (generated, source-vendored)
+
+For integrating ExecuTorch into an existing ESP-IDF project without the
+cross-compile-then-link flow below, generate a self-contained ESP-IDF
+component from sources in this repository:
+
+```bash
+./examples/espressif/build_idf_component.sh --profiles wakeword_int8 \
+    --out /path/to/your_project/components/executorch
+```
+
+The output is a registry-shaped component (`idf_component.yml`,
+`CMakeLists.txt`, `Kconfig`, `VERSION`) containing the runtime,
+per-profile kernel registration (selected via
+`CONFIG_ET_OP_PROFILE_*`; the component is off until
+`CONFIG_ET_ENABLE=y`), the shared ESP-IDF PAL from
+`platform/esp_pal.cpp` (ESP_LOG + `esp_timer` timing), and a C
+inference API (`et_model.h`, flash-XIP model bytes
+with internal/PSRAM arena placement). Application pipelines built on
+the runtime (for example wake word front ends and detectors) stay
+with the application. Op profiles are defined in
+`idf_profiles/<name>.ops`; `wakeword_int8` is an int8 wake-word
+example profile for a Cadence-backend export — profiles may list
+`cadence::` ops, which the generator binds to the Cadence backend's
+generic (portable) kernels under `backends/cadence/generic`, next to
+the `aten::` ops the same profile needs from the portable kernels.
+Consumers need only ESP-IDF — no host CMake build, no flatc.
+`idf_component_smoke/` is a minimal consumer that CI generates, builds
+and runs on the ESP32-S3 emulator
+(`.ci/scripts/test_espressif_idf_component.sh`).
+
+The executor runner below remains the reference for the prebuilt-library
+flow and for benchmarking.
+
 ## Supported Targets
 
 | Chip     | CPU           | Internal SRAM | PSRAM (optional) |
@@ -202,12 +236,13 @@ bash examples/espressif/setup.sh
 source ~/.cache/executorch-espressif/setup_path.sh
 ```
 
-The installer uses ESP-IDF **v6.1** and esp-emulator **0.48.0**, verifying the
-emulator installer's pinned SHA-256 checksum before running it. ESP-IDF's Python
-dependencies are installed into your active environment, so the SDK and
-ExecuTorch share the same Python. The generated `setup_path.sh` adds the installed
-tools to `PATH` and selects the ESP32-S3 target. In a new shell, activate the same
-Python environment and source this file. Installation only needs to be done once.
+The ESP-IDF and esp-emulator versions are pinned in [setup.sh](setup.sh). The
+installer verifies the emulator installer's pinned SHA-256 checksum before
+running it. ESP-IDF's Python dependencies are installed into your active
+environment, so the SDK and ExecuTorch share the same Python. The generated
+`setup_path.sh` adds the installed tools to `PATH` and selects the ESP32-S3 target.
+In a new shell, activate the same Python environment and source this file.
+Installation only needs to be done once.
 
 The default install includes ESP-IDF's standard ESP32-S3 development tools,
 including GDB, OpenOCD, and the ULP toolchains. OpenOCD requires your platform's
@@ -225,7 +260,7 @@ the tools. Rerun setup without `--minimal` to add the full development toolset.
 
 Set `ESPRESSIF_TOOLS_DIR` to choose another installation directory. The installer
 prints the corresponding activation command. It also accepts `IDF_PATH` and
-`IDF_TOOLS_PATH` for an existing ESP-IDF v6.1 installation. The setup script checks
+`IDF_TOOLS_PATH` for an existing ESP-IDF installation. The setup script checks
 the SDK version before installing dependencies into the active environment.
 Use `--skip-idf` or `--skip-emulator` to install only the tools you need.
 
@@ -304,15 +339,17 @@ fails the test. This also detects incomplete runs when the emulator's optional
 without rebuilding or starting the emulator.
 
 The [CI wrapper](../../.ci/scripts/test_espressif.sh) composes these same steps,
-adds a host timeout, and collects logs and firmware. The
+adds a host timeout, and collects logs and firmware. It also runs the ESP-NN
+delegate's BundleIO fixtures with optimized S3 kernels and ANSI C reference
+kernels in separate jobs. The
 [GitHub Actions workflow](../../.github/workflows/test-espressif.yml) runs it on
 pull requests changing the ESP integration, pushes to `main` and `release/*`,
 weekly, and on manual dispatch. Branch and scheduled runs cover changes to
 shared runtime and export code.
 
-This covers CPU execution and the ESP-IDF integration on S3. It does not establish
-performance or peripheral behavior on real boards, and the emulator does not
-support the original ESP32.
+This covers portable and ESP-NN delegate execution and ESP-IDF integration on S3.
+It does not establish performance or peripheral behavior on real boards, and the
+emulator does not support the original ESP32.
 
 ## Memory Considerations
 

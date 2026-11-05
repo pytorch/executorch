@@ -22,6 +22,7 @@ from executorch.backends.apple.coreai import (
     get_default_compile_config,
     get_default_passes,
 )
+from executorch.backends.apple.coreai.compiler.constants import MAIN_ENTRYPOINT
 from executorch.backends.apple.coreai.compiler.io_compat import (
     assert_io_compatible,
     io_mismatches,
@@ -54,7 +55,7 @@ class OrderedNamesTest(unittest.TestCase):
         inputs = ["input_0", "input_1"]
         outputs = ["output_0", "output_1"]
         program = _convert_to_aiprogram(
-            edge, input_names=inputs[::-1], output_names=outputs
+            [(edge, MAIN_ENTRYPOINT, inputs[::-1], outputs)]
         )
         with self.assertRaisesRegex(ValueError, "input names mismatch"):
             assert_io_compatible(
@@ -63,6 +64,27 @@ class OrderedNamesTest(unittest.TestCase):
 
 
 class IoMismatchesTest(unittest.TestCase):
+    def test_coreai_dynamic_dimensions(self):
+        from coreai._compiler.ir import ShapedType
+
+        dynamic = ShapedType.get_dynamic_size()
+        for kind in ("input", "output"):
+            for coreai_shape, edge_shape, compatible in (
+                ((2, dynamic, dynamic), (2, 56, 56), True),
+                ((dynamic, 8), (_Sym(), 8), True),
+                ((dynamic, 8), (2, 16), False),
+                ((-2, 8), (2, 8), False),
+            ):
+                with self.subTest(kind=kind, shape=coreai_shape, compatible=compatible):
+                    errors = io_mismatches(
+                        [("f32", coreai_shape)], [(torch.float32, edge_shape)], kind
+                    )
+                    if compatible:
+                        self.assertEqual(errors, [])
+                    else:
+                        self.assertEqual(len(errors), 1)
+                        self.assertIn("static shape mismatch", errors[0])
+
     def test_io_mismatches(self):
         # (name, coreai_io, edge_io, expected substring or None if compatible)
         cases = [

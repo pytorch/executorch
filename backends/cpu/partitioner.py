@@ -23,11 +23,19 @@ from torch.utils._pytree import tree_leaves
 
 # Serialized as a little-endian uint32. Bump for incompatible artifact contracts.
 CPU_DELEGATE_VERSION = 1
+CPU_SUPPORTED_DTYPES = (
+    torch.float32,
+    torch.uint8,
+    torch.int8,
+    torch.int16,
+    torch.int32,
+    torch.int64,
+    torch.bool,
+)
 
 
 class CPUSemanticOperators(OperatorSupportBase):
-    """Pure tensor operations representable by the initial static FP32
-    delegate version.
+    """Pure static tensor operations on FP32, integer and boolean values.
 
     Runtime providers determine implementation coverage. An unresolved operation
     is reported by name when the CPU runtime prepares the graph.
@@ -64,7 +72,7 @@ class CPUSemanticOperators(OperatorSupportBase):
         if any(related_node.meta.get("val") is None for related_node in related_nodes):
             return False
         return all(
-            value.dtype == torch.float32
+            value.dtype in CPU_SUPPORTED_DTYPES
             and all(isinstance(size, int) for size in value.shape)
             and value.is_contiguous()
             for related_node in related_nodes
@@ -74,7 +82,7 @@ class CPUSemanticOperators(OperatorSupportBase):
 
 
 class CPUPartitioner(Partitioner):
-    """Retain the static FP32 semantic graph for runtime provider selection."""
+    """Retain the static semantic graph for runtime provider selection."""
 
     def ops_to_not_decompose(self, ep: torch.export.ExportedProgram):
         support = CPUSemanticOperators()

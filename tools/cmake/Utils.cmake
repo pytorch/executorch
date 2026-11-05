@@ -278,6 +278,36 @@ macro(find_package_torch)
     add_torch_to_cmake_prefix_path()
     find_package(Torch CONFIG REQUIRED)
   endif()
+  # TorchConfig gives its include dirs, compile flags and C++ standard to torch
+  # only. Our targets link torch_cpu_library instead, so copy them there once,
+  # also when the project found torch before calling this. This affects every
+  # target in the build that links torch_cpu_library.
+  if(TARGET torch_cpu_library)
+    get_target_property(
+      _torch_settings_copied torch_cpu_library EXECUTORCH_TORCH_SETTINGS_COPIED
+    )
+    if(NOT _torch_settings_copied)
+      foreach(_torch_property
+              INTERFACE_INCLUDE_DIRECTORIES INTERFACE_COMPILE_OPTIONS
+              INTERFACE_COMPILE_FEATURES
+      )
+        get_target_property(_torch_value torch ${_torch_property})
+        if(_torch_value)
+          set_property(
+            TARGET torch_cpu_library
+            APPEND
+            PROPERTY ${_torch_property} ${_torch_value}
+          )
+        endif()
+      endforeach()
+      set_property(
+        TARGET torch_cpu_library PROPERTY EXECUTORCH_TORCH_SETTINGS_COPIED TRUE
+      )
+    endif()
+    unset(_torch_settings_copied)
+    unset(_torch_property)
+    unset(_torch_value)
+  endif()
 endmacro()
 
 # Modify ${targetName}'s INTERFACE_INCLUDE_DIRECTORIES by wrapping each entry in
