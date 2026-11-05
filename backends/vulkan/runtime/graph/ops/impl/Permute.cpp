@@ -171,7 +171,7 @@ void add_permute_node(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       default_pick_gwg,
-      default_pick_lwg,
+      pick_balanced_lwg,
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       param_ubos,
       push_constants,

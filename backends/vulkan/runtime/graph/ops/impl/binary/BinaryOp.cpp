@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/binary/BinaryOp.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -60,7 +61,7 @@ void add_binary_op_node(
     const ValueRef in2,
     const ValueRef alpha,
     const ValueRef out,
-    const std::string& op_name) {
+    const BinaryOpType op_type) {
   ValueRef arg1 = prepack_standard_like(graph, in1, out, true);
   ValueRef arg2 = prepack_standard_like(graph, in2, out, true);
 
@@ -73,9 +74,10 @@ void add_binary_op_node(
     alpha_val = graph.extract_scalar<float>(alpha);
   }
 
-  std::string kernel_name("binary_");
+  const bool is_comparison =
+      op_type >= BinaryOpType::kEq && op_type <= BinaryOpType::kGe;
+  std::string kernel_name(is_comparison ? "binary_cmp" : "binary_op");
   kernel_name.reserve(kShaderNameReserve);
-  kernel_name += op_name;
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(in1));
 
@@ -91,6 +93,13 @@ void add_binary_op_node(
         is_packed_dim_broadcasted(graph, out, arg2) ? 1 : 0;
   }
 
+  const std::vector<int64_t> out_sizes = graph.sizes_of(out);
+  const int32_t out_layout = graph.hashed_layout_of(out);
+  const bool should_broadcast = graph.sizes_of(arg1) != out_sizes ||
+      graph.sizes_of(arg2) != out_sizes ||
+      graph.hashed_layout_of(arg1) != out_layout ||
+      graph.hashed_layout_of(arg2) != out_layout;
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
@@ -103,48 +112,55 @@ void add_binary_op_node(
       // Push Constants
       {{PushConstantDataInfo(&alpha_val, sizeof(float))}},
       // Specialization Constants
-      {graph.hashed_layout_of(out),
+      {out_layout,
        graph.hashed_layout_of(arg1),
        graph.hashed_layout_of(arg2),
        in_broadcast_packed,
-       other_broadcast_packed},
+       other_broadcast_packed,
+       static_cast<int32_t>(op_type),
+       should_broadcast ? 1 : 0},
       // Resize Args
       {},
       // Resizing Logic
       resize_binary_op_node));
 }
 
-#define DEFINE_BINARY_OP_WITH_ALPHA_FN(op_name)                          \
-  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
-    return add_binary_op_node(                                           \
-        graph, args[0], args[1], args[2], args[3], #op_name);            \
+#define DEFINE_BINARY_OP_WITH_ALPHA_FN(op_name, op_type)                   \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) {   \
+    return add_binary_op_node(                                             \
+        graph, args[0], args[1], args[2], args[3], BinaryOpType::op_type); \
   }
 
-#define DEFINE_BINARY_OP_FN(op_name)                                     \
+#define DEFINE_BINARY_OP_FN(op_name, op_type)                            \
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
     return add_binary_op_node(                                           \
-        graph, args[0], args[1], kDummyValueRef, args[2], #op_name);     \
+        graph,                                                           \
+        args[0],                                                         \
+        args[1],                                                         \
+        kDummyValueRef,                                                  \
+        args[2],                                                         \
+        BinaryOpType::op_type);                                          \
   }
 
-DEFINE_BINARY_OP_WITH_ALPHA_FN(add);
-DEFINE_BINARY_OP_WITH_ALPHA_FN(sub);
+DEFINE_BINARY_OP_WITH_ALPHA_FN(add, kAdd);
+DEFINE_BINARY_OP_WITH_ALPHA_FN(sub, kSub);
 
 // Floor div does not have an alpha, but a string argument (which is unused) is
 // passed in at the same location as the alpha argument in other op.
-DEFINE_BINARY_OP_WITH_ALPHA_FN(floor_divide);
+DEFINE_BINARY_OP_WITH_ALPHA_FN(floor_divide, kFloorDivide);
 
-DEFINE_BINARY_OP_FN(mul);
-DEFINE_BINARY_OP_FN(swiglu);
-DEFINE_BINARY_OP_FN(div);
-DEFINE_BINARY_OP_FN(pow);
-DEFINE_BINARY_OP_FN(minimum);
-DEFINE_BINARY_OP_FN(eq);
-DEFINE_BINARY_OP_FN(lt);
-DEFINE_BINARY_OP_FN(le);
-DEFINE_BINARY_OP_FN(gt);
-DEFINE_BINARY_OP_FN(ge);
-DEFINE_BINARY_OP_FN(bitwise_and);
-DEFINE_BINARY_OP_FN(bitwise_or);
+DEFINE_BINARY_OP_FN(mul, kMul);
+DEFINE_BINARY_OP_FN(swiglu, kSwiglu);
+DEFINE_BINARY_OP_FN(div, kDiv);
+DEFINE_BINARY_OP_FN(pow, kPow);
+DEFINE_BINARY_OP_FN(minimum, kMinimum);
+DEFINE_BINARY_OP_FN(eq, kEq);
+DEFINE_BINARY_OP_FN(lt, kLt);
+DEFINE_BINARY_OP_FN(le, kLe);
+DEFINE_BINARY_OP_FN(gt, kGt);
+DEFINE_BINARY_OP_FN(ge, kGe);
+DEFINE_BINARY_OP_FN(bitwise_and, kBitwiseAnd);
+DEFINE_BINARY_OP_FN(bitwise_or, kBitwiseOr);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.add.Tensor, add);

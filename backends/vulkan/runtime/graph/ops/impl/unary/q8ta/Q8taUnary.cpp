@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/unary/q8ta/Q8taUnary.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -35,7 +36,7 @@ void add_q8ta_unary_node(
     const ValueRef output_scale,
     const ValueRef output_zp,
     const ValueRef packed_int8_output,
-    const std::string& op_name) {
+    const UnaryOpType op_type) {
   const api::PackedDimInfo& output_info =
       graph.packed_dim_info_of(packed_int8_output);
   const api::PackedDimInfo& input_info =
@@ -51,7 +52,7 @@ void add_q8ta_unary_node(
   float output_inv_scale_val = 1.0f / graph.extract_scalar<float>(output_scale);
   int32_t output_zp_val = graph.extract_scalar<int32_t>(output_zp);
 
-  std::string kernel_name = "q8ta_" + op_name;
+  std::string kernel_name = "q8ta_unary";
   add_storage_type_suffix(
       kernel_name, graph.storage_type_of(packed_int8_output));
 
@@ -86,7 +87,8 @@ void add_q8ta_unary_node(
       // Specialization Constants
       {graph.hashed_layout_of(packed_int8_output),
        graph.hashed_layout_of(packed_int8_input),
-       block_config.as_packed_int()},
+       block_config.as_packed_int(),
+       static_cast<int32_t>(op_type)},
       // Resize args
       {block_config_ref},
       // Resizing Logic
@@ -114,7 +116,7 @@ void q8ta_relu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output_scale,
       output_zp,
       packed_int8_output,
-      "relu");
+      UnaryOpType::kRelu);
 }
 
 REGISTER_OPERATORS {
