@@ -100,6 +100,20 @@ def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Gra
     return graph
 
 
+def addmm_can_be_linear(node: torch.fx.Node) -> bool:
+    """
+    Returns whether linear(x, w, b) can replace addmm(b, x, w.t()). The weight
+    must be a t_copy or permute_copy, and linear cannot scale its bias or its
+    product.
+    """
+    ops = exir_ops.edge
+    return (
+        node.args[2].target in (ops.aten.t_copy.default, ops.aten.permute_copy.default)
+        and node.kwargs.get("beta", 1) == 1
+        and node.kwargs.get("alpha", 1) == 1
+    )
+
+
 def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
     """
     Replace calls to addmm/mm with linear node
@@ -118,14 +132,9 @@ def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
         ):
             with graph.inserting_after(node):
                 if node.target == ops.aten.addmm.default:
-                    weight_t_node = node.args[2]
-                    if weight_t_node.target not in [
-                        ops.aten.t_copy.default,
-                        ops.aten.permute_copy.default,
-                    ]:
-                        # Skip this node as it appears to be a standalone `addmm`
+                    if not addmm_can_be_linear(node):
                         continue
-                    weight_node = weight_t_node.args[0]
+                    weight_node = node.args[2].args[0]
                     args = (node.args[1], weight_node, node.args[0])
                     linear_node = graph.create_node(
                         "call_function", ops.aten.linear.default, args

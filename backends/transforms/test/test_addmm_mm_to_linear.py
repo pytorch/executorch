@@ -8,6 +8,7 @@ import unittest
 
 import torch
 from executorch.backends.transforms.addmm_mm_to_linear import (
+    addmm_can_be_linear,
     apply_addmm_mm_to_linear_transform,
 )
 from executorch.exir import to_edge
@@ -55,6 +56,30 @@ class _DequantizeLinearNoOpView(torch.nn.Module):
         return self.linear(_dequantize(xq).view(-1, 16)).view(-1, 8)
 
 
+class _Addmm(torch.nn.Module):
+    def __init__(self, beta: float = 1.0, alpha: float = 1.0) -> None:
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(8, 16))
+        self.bias = torch.nn.Parameter(torch.randn(8))
+        self.beta = beta
+        self.alpha = alpha
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.addmm(
+            self.bias, x, self.weight.t(), beta=self.beta, alpha=self.alpha
+        )
+
+
+class _StandaloneAddmm(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(16, 8))
+        self.bias = torch.nn.Parameter(torch.randn(8))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.addmm(self.bias, x, self.weight)
+
+
 class _DequantizeLinearViewAndFlatInput(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -86,6 +111,7 @@ _UNBOUNDED = ({0: Dim("a"), 1: Dim("b")},)
 
 
 _DEQUANTIZE = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor
+_ADDMM = exir_ops.edge.aten.addmm.default
 _LINEAR = exir_ops.edge.aten.linear.default
 _VIEW = exir_ops.edge.aten.view_copy.default
 
@@ -160,6 +186,26 @@ class TestAddmmMmToLinear(unittest.TestCase):
                         program.graph_module.graph.output_node().args[0][0], linear
                     )
                     torch.testing.assert_close(program.module()(x), model(x))
+
+    def test_only_an_addmm_without_scales_becomes_a_linear(self):
+        # linear cannot scale its bias or its product, so only an addmm with
+        # beta and alpha of 1 becomes a linear.
+        for beta, alpha, linears in ((1.0, 1.0, 1), (2.0, 1.0, 0), (1.0, 0.5, 0)):
+            with self.subTest(beta=beta, alpha=alpha):
+                model = _Addmm(beta, alpha)
+                x = torch.randn(6, 16)
+                program = self._transform(model, x)
+                self.assertEqual(len(self._linears(program)), linears)
+                torch.testing.assert_close(program.module()(x), model(x))
+
+    def test_only_an_addmm_of_a_transposed_weight_can_be_linear(self):
+        # A standalone addmm(b, x, w) has no transpose for a linear to absorb.
+        for model, expected in ((_Addmm(), True), (_StandaloneAddmm(), False)):
+            with self.subTest(model=type(model).__name__):
+                ep = torch.export.export(model, (torch.randn(6, 16),))
+                graph = to_edge(ep).exported_program().graph
+                (addmm,) = [n for n in graph.nodes if n.target == _ADDMM]
+                self.assertEqual(addmm_can_be_linear(addmm), expected)
 
     def test_linears_sharing_a_dequantized_input_both_lose_their_views(self):
         model = _DequantizeTwoLinearViews()

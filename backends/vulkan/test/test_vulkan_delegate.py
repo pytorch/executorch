@@ -863,6 +863,30 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(module, sample_inputs)
 
+    def test_vulkan_backend_addmm(self):
+        class AddmmModule(torch.nn.Module):
+            def __init__(self, bias_shape, beta, alpha):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(8, 16))
+                self.bias = torch.nn.Parameter(torch.randn(bias_shape))
+                self.beta = beta
+                self.alpha = alpha
+
+            def forward(self, x):
+                return torch.addmm(
+                    self.bias, x, self.weight.t(), beta=self.beta, alpha=self.alpha
+                )
+
+        for bias_shape, beta, alpha in (
+            ((8,), 1.0, 1.0),
+            ((8,), 2.0, 1.0),
+            ((8,), 1.0, 0.5),
+        ):
+            with self.subTest(bias_shape=bias_shape, beta=beta, alpha=alpha):
+                self.lower_module_and_test_output(
+                    AddmmModule(bias_shape, beta, alpha), (torch.randn(4, 16),)
+                )
+
     def test_vulkan_backend_bmm(self):
         class BMMModule(torch.nn.Module):
             def __init__(self):
