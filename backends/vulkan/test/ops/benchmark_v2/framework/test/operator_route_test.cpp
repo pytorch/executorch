@@ -192,13 +192,58 @@ TEST_F(
       UnsupportedRoute);
 }
 
-TEST_F(BenchmarkOperatorRoute, ForcedDirectSupportsAlignedGroupedConvolution) {
-  FpConvCase test(
-      vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, 1, 8, 2);
-  EXPECT_EQ(
-      build_conv2d_direct(test.graph, test.args, Json::object()).at("name"),
-      "direct");
+TEST_F(BenchmarkOperatorRoute, ForcedDirectSupportsGroupedConvolution) {
+  // 16 channels in 4 groups give output groups of 2, which cross texels.
+  for (const int64_t channels : {8, 16}) {
+    FpConvCase test(
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kChannelsPacked,
+        1,
+        channels,
+        channels / 4);
+    EXPECT_EQ(
+        build_conv2d_direct(test.graph, test.args, Json::object()).at("name"),
+        "direct");
+    EXPECT_EQ(test.graph.execute_nodes().size(), 1);
+  }
+}
+
+TEST_F(BenchmarkOperatorRoute, ForcedDirectHonorsMaskedOption) {
+  FpConvCase test;
+  const Json selected =
+      build_conv2d_direct(test.graph, test.args, {{"masked", true}});
+  EXPECT_EQ(selected.at("name"), "direct");
+  EXPECT_EQ(selected.at("options"), Json({{"masked", true}}));
   EXPECT_EQ(test.graph.execute_nodes().size(), 1);
+  FpConvCase invalid;
+  EXPECT_THROW(
+      build_conv2d_direct(invalid.graph, invalid.args, {{"masked", 1}}),
+      std::invalid_argument);
+  EXPECT_THROW(
+      build_conv2d_im2col(invalid.graph, invalid.args, {{"masked", true}}),
+      std::invalid_argument);
+  EXPECT_TRUE(invalid.graph.execute_nodes().empty());
+}
+
+TEST_F(BenchmarkOperatorRoute, ClampedConvolutionBuildsBothRoutes) {
+  for (const bool im2col : {false, true}) {
+    FpConvCase test;
+    test.args.insert(
+        test.args.begin() + 9,
+        {test.graph.add_scalar(-0.25), test.graph.add_scalar(0.5)});
+    const Json selected = im2col
+        ? build_conv2d_im2col(test.graph, test.args, Json::object())
+        : build_conv2d_direct(test.graph, test.args, Json::object());
+    EXPECT_EQ(selected.at("name"), im2col ? "im2col" : "direct");
+    EXPECT_EQ(test.graph.execute_nodes().size(), im2col ? 2 : 1);
+  }
+  FpConvCase wrong_count;
+  wrong_count.args.insert(
+      wrong_count.args.begin() + 9, wrong_count.graph.add_scalar(0.5));
+  EXPECT_THROW(
+      build_conv2d_direct(wrong_count.graph, wrong_count.args, Json::object()),
+      std::invalid_argument);
 }
 
 TEST_F(BenchmarkOperatorRoute, UnknownOptionsAndGpuWeightsAreRejected) {
@@ -324,12 +369,9 @@ TEST_F(
   EXPECT_TRUE(test.graph.prepack_nodes().empty());
 }
 
-TEST_F(BenchmarkOperatorRoute, GroupedRoutesRejectOutputBlocksCrossingGroups) {
-  FpConvCase fp(
-      vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, 1, 16, 4);
-  EXPECT_THROW(
-      build_conv2d_direct(fp.graph, fp.args, Json::object()), UnsupportedRoute);
-  EXPECT_TRUE(fp.graph.prepack_nodes().empty());
+TEST_F(
+    BenchmarkOperatorRoute,
+    Q8GroupedRoutesRejectOutputBlocksCrossingGroups) {
   Q8ConvCase q8(1, 16, 4);
   EXPECT_THROW(
       build_q8ta_conv2d_direct(q8.graph, q8.args, Json::object()),

@@ -23,6 +23,10 @@ $ ./examples/nxp/setup.sh
 ## Supported models
 * CifarNet
 * MobileNetV2
+* MLPerfTinyAnomalyDetection
+* MLPerfTinyImageClassification
+* MLPerfTinyKeywordSpotting
+* MLPerfTinyVisualWakeWords
 
 ## PyTorch Model Delegation to Neutron Backend
 First we will start with an example script converting the model. This example show the CifarNet model preparation. 

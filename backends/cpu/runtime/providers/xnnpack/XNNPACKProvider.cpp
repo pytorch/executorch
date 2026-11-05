@@ -6,6 +6,7 @@
 
 #include <executorch/backends/cpu/runtime/op_helpers/Convolution.h>
 #include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKProvider.h>
+#include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <xnnpack.h>
 
 #include <algorithm>
@@ -16,6 +17,7 @@
 #include <numeric>
 #include <string_view>
 #include <unordered_set>
+#include <utility>
 
 namespace executorch::backends::cpu {
 namespace {
@@ -228,9 +230,26 @@ class XNNState {
     CPU_XNN_CHECK(xnn_create_workspace(&workspace));
     return Error::Ok;
   }
+  // Runtime creation packs these copies and never reads them again.
+  Result<Buffer> allocate_packing_source(size_t bytes) {
+    auto storage = allocate_buffer(packing_sources_, bytes);
+    if (storage.ok()) {
+      packing_source_bytes_ += storage->readable_bytes;
+    }
+    return storage;
+  }
+  size_t release_packing_sources() {
+    converted_weights.clear();
+    packing_sources_.reset();
+    return std::exchange(packing_source_bytes_, 0);
+  }
   std::map<std::pair<ptn::ValueId, bool>, Buffer> converted_weights;
   xnn_workspace_t workspace = nullptr;
   xnn_weights_cache_t cache = nullptr;
+
+ private:
+  extension::MallocMemoryAllocator packing_sources_;
+  size_t packing_source_bytes_ = 0;
 };
 
 class XNNExecutable final : public Executable {
@@ -470,8 +489,7 @@ class XNNExecutable final : public Executable {
       if (cached != state_.converted_weights.end()) {
         packed = static_cast<const float*>(cached->second.data);
       } else {
-        auto storage = allocate_buffer(
-            context_.allocator,
+        auto storage = state_.allocate_packing_source(
             tensor_bytes(context_.graph.value(weight)).get());
         if (!storage.ok()) {
           return storage.error();
@@ -1223,12 +1241,16 @@ class XNNImplementation final : public KernelImplementation {
           continue;
         }
         // A constant can also feed an unpacked operation in this region.
-        const bool packed_use =
-            node.target == "torch.ops.aten.linear.default" &&
+        bool packed_use = node.target == "torch.ops.aten.linear.default" &&
             arg(node, 0).as_tensor().id != value.id &&
             (arg(node, 1).as_tensor().id == value.id ||
              (arg(node, 2).kind() == ptn::ArgKind::Tensor &&
               arg(node, 2).as_tensor().id == value.id));
+        if (const auto convolution = parse_convolution(node)) {
+          packed_use = convolution->input != value.id &&
+              (convolution->weight == value.id ||
+               convolution->bias == value.id);
+        }
         packed |= packed_use;
         retained |= !packed_use;
       }
@@ -1270,12 +1292,17 @@ class XNNProvider final : public KernelProvider {
       CPU_XNN_CHECK(xnn_finalize_weights_cache(
           state_.cache, xnn_weights_cache_finalization_kind_hard));
     }
+    released_private_constant_bytes_ += state_.release_packing_sources();
     return Error::Ok;
+  }
+  size_t released_private_constant_bytes() const override {
+    return released_private_constant_bytes_;
   }
 
  private:
   XNNState state_;
   XNNImplementation implementation_;
+  size_t released_private_constant_bytes_ = 0;
 };
 } // namespace
 // Referenced by generated provider registries and provider tests.

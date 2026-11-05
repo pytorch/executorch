@@ -60,8 +60,9 @@ def replace_et_kv_cache_with_mlx(
     Replace ET's KVCache with MLX-optimized KVCache.
 
     Recursively finds all KVCache instances (from examples/models/llama/attention.py)
-    and replaces them with KVCache, which uses mlx::kv_cache_update instead of
-    unsupported index_put operations.
+    and replaces them with KVCache, which writes the new positions into the
+    cache in place with mlx::kv_cache_update. A plain index_put lowers to a
+    scatter that copies the whole cache on every step.
 
     Args:
         module: Model to modify (in place)

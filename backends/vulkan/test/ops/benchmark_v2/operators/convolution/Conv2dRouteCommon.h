@@ -20,7 +20,9 @@ struct ConvShape {
 };
 
 void supported(bool condition, const std::string& message);
-void check_options(const Json& options, bool intermediate_storage = false);
+void check_options(
+    const Json& options,
+    const std::vector<std::string>& allowed = {});
 std::array<int64_t, 2>
 spatial_parameter(ComputeGraph& graph, ValueRef value, bool positive);
 void constant_tensor(

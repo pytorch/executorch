@@ -18,7 +18,7 @@ using namespace convolution;
 namespace {
 
 std::optional<utils::StorageType> storage_option(const Json& options) {
-  check_options(options, true);
+  check_options(options, {"intermediate_storage"});
   if (!options.contains("intermediate_storage")) {
     return std::nullopt;
   }
@@ -55,8 +55,36 @@ bool floating(vkapi::ScalarType dtype) {
   return dtype == vkapi::kFloat || dtype == vkapi::kHalf;
 }
 
+bool masked_option(const Json& options) {
+  check_options(options, {"masked"});
+  if (!options.contains("masked")) {
+    return false;
+  }
+  if (!options.at("masked").is_boolean()) {
+    throw std::invalid_argument("masked must be a boolean");
+  }
+  return options.at("masked").get<bool>();
+}
+
+// conv_with_clamp passes output_min and output_max before the output.
+struct Clamp {
+  bool enabled = false;
+  float min = 0;
+  float max = 0;
+};
+
+Clamp clamp_args(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  if (args.size() == 10u) {
+    return {};
+  }
+  return {
+      true,
+      graph.extract_scalar<float>(args[9]),
+      graph.extract_scalar<float>(args[10])};
+}
+
 ConvShape conv_shape(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  if (args.size() != 10u)
+  if (args.size() != 10u && args.size() != 12u)
     throw std::invalid_argument(
         "Convolution route received wrong argument count");
   const ValueRef input = args[0];
@@ -143,9 +171,9 @@ Json build_conv2d_direct(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args,
     const Json& options) {
-  check_options(options);
-  const ConvShape shape = conv_shape(graph, args);
-  grouped_packing(shape);
+  const bool masked = masked_option(options);
+  conv_shape(graph, args);
+  const Clamp clamp = clamp_args(graph, args);
   conv2d_direct_impl(
       graph,
       args[0],
@@ -157,11 +185,12 @@ Json build_conv2d_direct(
       args[6],
       args[7],
       args[8],
-      args[9],
-      false,
-      0,
-      0);
-  return selected("direct");
+      args.back(),
+      clamp.enabled,
+      clamp.min,
+      clamp.max,
+      masked);
+  return masked ? selected("direct", {{"masked", true}}) : selected("direct");
 }
 
 Json build_conv2d_im2col(
@@ -172,6 +201,7 @@ Json build_conv2d_im2col(
   const ConvShape shape = conv_shape(graph, args);
   supported(shape.groups == 1, "FP im2col convolution requires groups 1");
   check_fp_im2col_buffer_resources(graph, args[0], shape, storage);
+  const Clamp clamp = clamp_args(graph, args);
   const size_t first = graph.execute_nodes().size();
   conv2d_gemm_impl(
       graph,
@@ -181,10 +211,10 @@ Json build_conv2d_im2col(
       args[3],
       args[4],
       args[5],
-      args[9],
-      false,
-      0,
-      0,
+      args.back(),
+      clamp.enabled,
+      clamp.min,
+      clamp.max,
       storage);
   const ValueRef scratch =
       graph.execute_nodes().at(first)->args().at(0).refs.at(0);
@@ -230,6 +260,11 @@ REGISTER_OPERATOR_ROUTES {
   REGISTER_OPERATOR_ROUTE(
       aten.convolution.default, im2col, build_conv2d_im2col);
   REGISTER_ROUTE_INSPECTOR(aten.convolution.default, inspect_conv2d_route);
+  REGISTER_OPERATOR_ROUTE(
+      et_vk.conv_with_clamp.default, direct, build_conv2d_direct);
+  REGISTER_OPERATOR_ROUTE(
+      et_vk.conv_with_clamp.default, im2col, build_conv2d_im2col);
+  REGISTER_ROUTE_INSPECTOR(et_vk.conv_with_clamp.default, inspect_conv2d_route);
 }
 
 } // namespace vkcompute::shader_profiling

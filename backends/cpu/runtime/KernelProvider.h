@@ -161,6 +161,11 @@ class KernelProvider {
   virtual runtime::Error finish() {
     return runtime::Error::Ok;
   }
+  /// Cumulative bytes charged to PreparationContext::private_constant_bytes
+  /// and freed by finish(). Queried after finish() succeeds, once per plan.
+  virtual size_t released_private_constant_bytes() const {
+    return 0;
+  }
 };
 
 using ProviderFactory = std::unique_ptr<KernelProvider> (*)();
