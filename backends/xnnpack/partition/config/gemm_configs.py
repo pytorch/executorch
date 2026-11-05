@@ -484,6 +484,13 @@ class AddmmConfig(GEMMConfig):
 
         return super()._get_weight_deps(node, ep, precision)
 
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        # XNNPACK's fully connected op cannot scale the bias or the product.
+        if node.kwargs.get("beta", 1) != 1 or node.kwargs.get("alpha", 1) != 1:
+            why(node, "Addmm with beta or alpha other than 1 is not supported")
+            return False
+        return super().check_constraints(node, ep)
+
     def get_deps(
         self,
         node: torch.fx.Node,
