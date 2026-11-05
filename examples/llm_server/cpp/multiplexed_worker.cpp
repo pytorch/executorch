@@ -223,6 +223,20 @@ Json terminal_json(const serving::TerminalEvent& event) {
       {"decode_tok_s",
        s.decode_ms > 0 ? s.completion_tokens * 1000.0 / s.decode_ms : 0},
       {"session_reset_reason", s.session_reset_reason}};
+  if (s.first_token_ms)
+    out["first_token_ms"] = *s.first_token_ms;
+  if (s.active_prefix.candidates || s.active_prefix.attempted) {
+    const auto& active = s.active_prefix;
+    out["active_prefix"] = {
+        {"candidates", active.candidates},
+        {"insufficient_committed", active.insufficient_committed},
+        {"attempted", active.attempted},
+        {"reused", active.reused},
+        {"matched_tokens", active.matched_tokens},
+        {"shared_tokens", active.shared_tokens},
+        {"committed_tokens", active.committed_tokens},
+        {"clone_ms", active.clone_ms}};
+  }
   if (s.generated_token_ids)
     out["generated_token_ids"] = *s.generated_token_ids;
   return out;

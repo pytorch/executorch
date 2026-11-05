@@ -25,6 +25,10 @@ DEFINE_string(backend, "cuda", "Executor backend");
 #else
 DEFINE_string(backend, "mlx", "Executor backend");
 #endif
+DEFINE_int32(
+    active_prefix_reuse_min_tokens,
+    0,
+    "Minimum extra tokens saved by active prompt reuse; zero disables");
 DEFINE_int32(max_sessions, 4, "Maximum logical sessions");
 DEFINE_int32(
     max_session_tokens,
@@ -65,6 +69,7 @@ std::unique_ptr<MuseGlimmerBatchingRuntime>
 create_muse_glimmer_batching_runtime() {
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_max_decode_sequences <= 0 ||
+      FLAGS_active_prefix_reuse_min_tokens < 0 ||
       FLAGS_prefix_cache_entries < 0 || FLAGS_max_image_bytes == 0 ||
       FLAGS_prefix_checkpoint_interval < 0 || FLAGS_prefix_capture_slots < 0 ||
       (FLAGS_prefix_checkpoint_interval > 0 &&
@@ -79,6 +84,7 @@ create_muse_glimmer_batching_runtime() {
   }
   serving::ServingRuntimeConfig serving;
   serving.max_sessions = FLAGS_max_sessions;
+  serving.active_prefix_reuse_min_tokens = FLAGS_active_prefix_reuse_min_tokens;
   serving.max_requests = FLAGS_max_inflight_requests;
   serving.max_pending_operations = FLAGS_max_inflight_requests;
   serving.prefix_cache_capacity = FLAGS_prefix_cache_entries;

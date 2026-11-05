@@ -224,7 +224,13 @@ struct ServingRuntime::Impl {
   using SessionKey = std::variant<std::string, RequestId>;
   enum class Operation { Open, Close, Reset, Generate };
   enum class Lifecycle { Running, Stopping, Stopped };
-  enum class SessionPhase { Opening, Open, Reopening, Unavailable };
+  enum class SessionPhase {
+    Opening,
+    ClonePending,
+    Open,
+    Reopening,
+    Unavailable
+  };
 
   struct Slot {
     SessionPhase phase = SessionPhase::Opening;
@@ -233,6 +239,23 @@ struct ServingRuntime::Impl {
     RequestId active_request = 0;
     batching::PrefixIdentityPtr logical_history;
     bool dirty = false;
+  };
+
+  struct ActivePrefix {
+    const batching::Session* source =
+        nullptr; // Used only within this control turn.
+    RequestId donor = 0;
+    std::size_t matched = 0;
+    std::size_t shared = 0;
+    std::size_t committed = 0;
+  };
+
+  struct CloneCompletion {
+    Request request;
+    std::uint64_t incarnation;
+    std::optional<batching::Session> session;
+    bool cache_tried;
+    double elapsed_ms;
   };
 
   struct Command {
@@ -270,6 +293,10 @@ struct ServingRuntime::Impl {
             config.prefix_cache_capacity,
             config.prefix_cache_retention) {
     if (valid_config_) {
+      if (config_.active_prefix_reuse_min_tokens) {
+        // Each admitted recipient can own at most one undelivered result.
+        clone_completions_.reserve(config_.max_requests);
+      }
       runner_ =
           std::make_unique<batching::Runner>(executor, std::move(scheduler));
 #if ET_HAS_EXCEPTIONS
@@ -622,6 +649,12 @@ struct ServingRuntime::Impl {
       if (update.finish_reason) {
         text->emit(std::move(text->terminal));
         return;
+      }
+      if (!update.tokens.empty() && !text->terminal.stats.first_token_ms) {
+        text->terminal.stats.first_token_ms =
+            std::chrono::duration<double, std::milli>(
+                batching::MetricsClock::now() - text->submitted)
+                .count();
       }
       text->raw_tokens.insert(
           text->raw_tokens.end(), update.tokens.begin(), update.tokens.end());
@@ -1063,26 +1096,148 @@ struct ServingRuntime::Impl {
     }
     it->second.active_request = request->id;
     request->completion.incarnation = it->second.incarnation;
+    lock.unlock();
     if (opening) {
-      lock.unlock();
-      std::optional<batching::Session> opened;
-      LifecycleResult preparation_error;
+      open_generation(request);
+    } else {
+      start_generation(request, false);
+    }
+  }
+
+  static bool active_prefix_eligible(const Request& request) {
+    return !request->request.key && request->text && request->text->prompt &&
+        request->text->prepared &&
+        request->text->prepared->kind() == detail::TokenPreparedInput::type();
+  }
+
+  ActivePrefix select_active_prefix(const Request& request) {
+    ActivePrefix best;
+    if (!config_.active_prefix_reuse_min_tokens ||
+        !active_prefix_eligible(request) || request->text->prompt->size() < 2) {
+      return best;
+    }
+    auto& stats = request->text->terminal.stats.active_prefix;
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& entry : sessions_) {
+      const auto& slot = entry.second;
+      if (slot.phase != SessionPhase::Open || !slot.session ||
+          !slot.session->valid() || !slot.active_request ||
+          slot.active_request == request->id) {
+        continue;
+      }
+      auto it = requests_.find(slot.active_request);
+      if (it == requests_.end()) {
+        continue;
+      }
+      const auto& donor = it->second;
+      if (!active_prefix_eligible(donor) || !donor->text->started ||
+          donor->cancelled.load()) {
+        continue;
+      }
+      {
+        std::lock_guard<std::mutex> donor_lock(donor->mutex);
+        if (donor->settled) {
+          continue;
+        }
+      }
+      const auto shared =
+          batching::common_prefix(*donor->text->prompt, *request->text->prompt);
+      if (!shared) {
+        continue;
+      }
+      ++stats.candidates;
+      const auto committed = static_cast<std::size_t>(slot.session->position());
+      const auto matched =
+          std::min({shared, committed, request->text->prompt->size() - 1});
+      if (matched < config_.active_prefix_reuse_min_tokens) {
+        ++stats.insufficient_committed;
+        continue;
+      }
+      if (!best.source || matched > best.matched ||
+          (matched == best.matched && donor->id < best.donor)) {
+        best = {&*slot.session, donor->id, matched, shared, committed};
+      }
+    }
+    return best;
+  }
+
+  void clone_active_prefix(
+      const Request& request,
+      const ActivePrefix& candidate,
+      bool cache_tried) {
+    auto& stats = request->text->terminal.stats.active_prefix;
+    stats.attempted = true;
+    stats.matched_tokens = candidate.matched;
+    stats.shared_tokens = candidate.shared;
+    stats.committed_tokens = candidate.committed;
+    const auto incarnation = request->completion.incarnation;
+    const auto started = batching::MetricsClock::now();
+    // Build the callback before publishing pending state. Runner contains all
+    // failures after admission and invokes it exactly once, possibly inline.
+    std::function<void(std::optional<batching::Session>)> callback =
+        [this, request, incarnation, cache_tried, started](auto session) {
+          const auto elapsed = std::chrono::duration<double, std::milli>(
+                                   batching::MetricsClock::now() - started)
+                                   .count();
+          {
+            std::lock_guard<std::mutex> lock(mutex_);
+            clone_completions_.push_back(
+                {request,
+                 incarnation,
+                 std::move(session),
+                 cache_tried,
+                 elapsed});
+          }
+          cv_.notify_one();
+        };
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      sessions_.at(SessionKey(request->id)).phase = SessionPhase::ClonePending;
+    }
+    candidate.source->clone_async(
+        static_cast<batching::Position>(candidate.matched),
+        std::move(callback));
+  }
+
+  void open_generation(
+      const Request& request,
+      bool cache_tried = false,
+      std::optional<batching::PrefixMatch> match = std::nullopt,
+      bool active_tried = false) {
+    std::optional<batching::Session> opened;
+    LifecycleResult preparation_error;
 #if ET_HAS_EXCEPTIONS
-      try {
+    try {
 #endif
-        auto match = lookup_prefix(request);
+      if (!request->cancelled.load()) {
+        const auto candidate =
+            active_tried ? ActivePrefix{} : select_active_prefix(request);
+        const auto cached = candidate.source
+            ? prefix_cache_.best_match_length(*request->text->prompt)
+            : 0;
+        if (candidate.source && candidate.matched >= cached &&
+            candidate.matched - cached >=
+                config_.active_prefix_reuse_min_tokens) {
+          clone_active_prefix(request, candidate, false);
+          return;
+        }
+        if (!match && !cache_tried) {
+          match = lookup_prefix(request);
+          cache_tried = true;
+        }
+        if (!match && candidate.source) {
+          clone_active_prefix(request, candidate, cache_tried);
+          return;
+        }
         Selection outcome = Selection::Selected;
         if (match) {
           opened = std::move(match->session);
-          // Snapshot positions are committed; named history also includes
-          // pending. Keep the accepted full delta until suffix success.
           auto selection = select_input(request, match->matched_tokens);
           if (auto* error = std::get_if<ServingError>(&selection)) {
             preparation_error = std::move(*error);
           } else {
             outcome = std::get<Selection>(selection);
             if (outcome == Selection::Unavailable) {
-              // Queue clone closure outside mutex_ before the cold open.
               opened.reset();
             }
           }
@@ -1091,33 +1246,76 @@ struct ServingRuntime::Impl {
             !request->cancelled.load()) {
           opened = runner_->open_session_async().get();
         }
-#if ET_HAS_EXCEPTIONS
-      } catch (...) {
-        preparation_error =
-            ServingError{ErrorCode::Internal, "session preparation failed"};
       }
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      preparation_error =
+          ServingError{ErrorCode::Internal, "session preparation failed"};
+    }
 #endif
-      lock.lock();
-      const bool cancelled =
-          lifecycle_ != Lifecycle::Running || request->cancelled.load();
-      if (!opened || cancelled || preparation_error) {
+    const SessionKey key = request->request.key
+        ? SessionKey(*request->request.key)
+        : SessionKey(request->id);
+    std::unique_lock<std::mutex> lock(mutex_);
+    auto it = sessions_.find(key);
+    const bool current = it != sessions_.end() &&
+        it->second.incarnation == request->completion.incarnation &&
+        it->second.active_request == request->id;
+    const bool cancelled = !current || lifecycle_ != Lifecycle::Running ||
+        request->cancelled.load();
+    if (!opened || cancelled || preparation_error) {
+      if (current) {
         sessions_.erase(it);
-        const auto code = runner_->initialization_state() ==
-                batching::InitializationState::Failed
-            ? ErrorCode::NotReady
-            : ErrorCode::CapacityExceeded;
-        lock.unlock();
-        opened.reset();
-        request->reject(
-            cancelled ? std::nullopt
-                : preparation_error
-                ? std::move(preparation_error)
-                : std::optional<ServingError>({code, "session open failed"}));
+      }
+      const auto code = runner_->initialization_state() ==
+              batching::InitializationState::Failed
+          ? ErrorCode::NotReady
+          : ErrorCode::CapacityExceeded;
+      lock.unlock();
+      opened.reset();
+      request->reject(
+          cancelled ? std::nullopt
+              : preparation_error
+              ? std::move(preparation_error)
+              : std::optional<ServingError>({code, "session open failed"}));
+      return;
+    }
+    it->second.session = std::move(opened);
+    it->second.phase = SessionPhase::Open;
+    lock.unlock();
+    start_generation(request, true);
+  }
+
+  void resume_clone(CloneCompletion completion) {
+    const auto& request = completion.request;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      auto it = sessions_.find(SessionKey(request->id));
+      if (it == sessions_.end() ||
+          it->second.incarnation != completion.incarnation ||
+          it->second.active_request != request->id ||
+          it->second.phase != SessionPhase::ClonePending) {
         return;
       }
-      it->second.session = std::move(opened);
-      it->second.phase = SessionPhase::Open;
     }
+    auto& stats = request->text->terminal.stats.active_prefix;
+    stats.clone_ms = completion.elapsed_ms;
+    stats.reused = completion.session.has_value() && !request->cancelled.load();
+    std::optional<batching::PrefixMatch> match;
+    if (completion.session) {
+      match = batching::PrefixMatch{
+          std::move(*completion.session), stats.matched_tokens};
+    }
+    open_generation(request, completion.cache_tried, std::move(match), true);
+    schedule(request);
+  }
+
+  void start_generation(const Request& request, bool opening) {
+    const SessionKey key = request->request.key
+        ? SessionKey(*request->request.key)
+        : SessionKey(request->id);
+    std::unique_lock<std::mutex> lock(mutex_);
+    auto it = sessions_.find(key);
     auto& session = *it->second.session;
     if (!request->text) {
       it->second.dirty = true;
@@ -1549,15 +1747,19 @@ struct ServingRuntime::Impl {
       std::size_t command_index = 0;
       Request finalizer;
       Request checkpoint;
+      std::optional<CloneCompletion> clone;
       {
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this] {
-          return pending_checkpoint_ || !finalizers_.empty() ||
-              runnable_command() != inbox_.end() ||
+          return !clone_completions_.empty() || pending_checkpoint_ ||
+              !finalizers_.empty() || runnable_command() != inbox_.end() ||
               (lifecycle_ != Lifecycle::Running && inbox_.empty() &&
                requests_.empty() && !retiring_);
         });
-        if (pending_checkpoint_) {
+        if (!clone_completions_.empty()) {
+          clone = std::move(clone_completions_.front());
+          clone_completions_.erase(clone_completions_.begin());
+        } else if (pending_checkpoint_) {
           checkpoint = std::move(pending_checkpoint_);
         } else if (!finalizers_.empty()) {
           finalizer = std::move(finalizers_.front());
@@ -1569,6 +1771,10 @@ struct ServingRuntime::Impl {
         } else {
           break;
         }
+      }
+      if (clone) {
+        resume_clone(std::move(*clone));
+        continue;
       }
       if (checkpoint) {
         collect_capture(checkpoint);
@@ -1709,6 +1915,7 @@ struct ServingRuntime::Impl {
   Lifecycle lifecycle_ = Lifecycle::Running;
   std::size_t outstanding_ = 0;
   std::deque<Command> inbox_;
+  std::vector<CloneCompletion> clone_completions_;
   std::unordered_map<SessionKey, Slot> sessions_;
   std::uint64_t next_incarnation_ = 1;
   RequestId next_request_id_ = 1;

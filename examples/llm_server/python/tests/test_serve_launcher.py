@@ -195,6 +195,7 @@ def test_capture_capacity_validation_and_worker_override(
         max_inflight_requests=requests,
         prefix_cache_entries=1,
         prefix_checkpoint_interval=interval,
+        active_prefix_reuse_min_tokens=0,
         port=8000,
     )
     assert (
@@ -771,9 +772,7 @@ def test_launcher_rejects_legacy_readiness_and_reaps_real_child(
     real_spawn = asyncio.create_subprocess_exec
     readiness = json.dumps({"ready": True, **capability})
     script = (
-        "import sys\n"
-        f"print({readiness!r}, flush=True)\n"
-        "for line in sys.stdin: pass\n"
+        f"import sys\nprint({readiness!r}, flush=True)\nfor line in sys.stdin: pass\n"
     )
 
     async def spawn(*command, **kwargs):
@@ -810,3 +809,16 @@ def test_launcher_rejects_legacy_readiness_and_reaps_real_child(
 
     launch.stages["uvicorn"].side_effect = lambda app, **kwargs: _run(scenario(app))
     serve.main(argv)
+
+
+def test_active_prefix_reuse_flag_reaches_worker(argv, launch):
+    serve.main(argv + ["--active-prefix-reuse-min-tokens", "1024"])
+    command = launch.stages["spawn"].await_args.args[0]
+    index = command.index("--active_prefix_reuse_min_tokens")
+    assert command[index + 1] == "1024"
+
+
+@pytest.mark.parametrize("value", ["-1", str(2**31)])
+def test_active_prefix_reuse_rejects_invalid_limits(argv, value):
+    with pytest.raises(SystemExit):
+        serve._parse_args(argv + ["--active-prefix-reuse-min-tokens", value])

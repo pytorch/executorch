@@ -220,6 +220,13 @@ class ET_EXPERIMENTAL Session {
   // Never wait for the returned future in a callback serviced by this runner.
   std::future<std::optional<Session>> clone_async(Position upto) const;
 
+  // Same operation, with completion outside runner locks. Admission failure
+  // may complete inline; accepted commands complete on the engine thread.
+  // Must not block or wait for runner work. Exceptions are contained.
+  void clone_async(
+      Position upto,
+      std::function<void(std::optional<Session>)> on_complete) const;
+
   // `delta` is the caller-resolved suffix to append. The session tracks its
   // committed position and any pending generated token, so consecutive
   // generations continue where prior executor work left them. Retain this

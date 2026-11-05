@@ -73,6 +73,12 @@ def _parse_args(argv=None):
         default=0,
         help="Transient capture rows; 0 (default): size from session/request limits",
     )
+    parser.add_argument(
+        "--active-prefix-reuse-min-tokens",
+        type=int,
+        default=0,
+        help="Minimum extra tokens saved by active text prompt reuse; 0 disables",
+    )
     parser.add_argument("--max-vision-patches", type=int, default=4096)
     parser.add_argument(
         "--prefix-checkpoint-interval",
@@ -162,6 +168,7 @@ def _worker_command(args):
         ("max_decode_sequences", args.max_decode_sequences),
         ("max_inflight_requests", args.max_inflight_requests),
         ("prefix_cache_entries", args.prefix_cache_entries),
+        ("active_prefix_reuse_min_tokens", args.active_prefix_reuse_min_tokens or None),
         (
             "prefix_capture_slots",
             args.prefix_capture_slots if args.prefix_cache_entries else None,

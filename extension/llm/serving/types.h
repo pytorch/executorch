@@ -109,6 +109,18 @@ using ModelPreparer ET_EXPERIMENTAL = std::function<
 ModelPreparationResult make_token_prepared_input(
     std::vector<batching::Token> tokens);
 
+struct ET_EXPERIMENTAL ActivePrefixStats {
+  std::size_t candidates = 0;
+  std::size_t insufficient_committed = 0;
+  bool attempted = false;
+  bool reused = false;
+  std::size_t matched_tokens = 0;
+  std::size_t shared_tokens = 0;
+  std::size_t committed_tokens = 0;
+  // Includes engine queueing; not isolated GPU copy time.
+  double clone_ms = 0.0;
+};
+
 struct ET_EXPERIMENTAL GenerationStats {
   // Full prompt size in decoder positions, including any reused prefix.
   std::size_t prompt_tokens = 0;
@@ -125,6 +137,9 @@ struct ET_EXPERIMENTAL GenerationStats {
   double prefill_ms = 0.0;
   double decode_ms = 0.0;
   double total_ms = 0.0;
+  // Submission through first generated token delivery, including admission.
+  std::optional<double> first_token_ms;
+  ActivePrefixStats active_prefix;
   std::string session_reset_reason;
   // Original output IDs counted by completion_tokens, excluding EOS/stop
   // tokens; not a retokenization of visible text or the full logical history
