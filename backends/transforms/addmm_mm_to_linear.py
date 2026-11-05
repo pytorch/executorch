@@ -80,6 +80,12 @@ def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Gra
         output_channels = weight_node.meta["val"].shape[0]
         input_node = node.args[0]
         dqlinear_input = get_dqlinear_input(input_node)
+        bias_node = node.args[2] if len(node.args) > 2 else None
+        if bias_node is not None and len(bias_node.meta["val"].shape) > 1:
+            # A linear kept from export can have a bias of more than one dim
+            # that follows the rows of the flattened input, and then it would
+            # not broadcast to the dequantized shape.
+            dqlinear_input = None
         # Reading the dequantized input before its views changes the shape of the
         # linear output, so it is done only when the view after the linear goes.
         for new_input in (dqlinear_input, input_node):

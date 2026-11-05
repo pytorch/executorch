@@ -11,7 +11,7 @@ from executorch.backends.transforms.addmm_mm_to_linear import (
     addmm_can_be_linear,
     apply_addmm_mm_to_linear_transform,
 )
-from executorch.exir import to_edge
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import Dim
 
@@ -54,6 +54,21 @@ class _DequantizeLinearNoOpView(torch.nn.Module):
 
     def forward(self, xq: torch.Tensor) -> torch.Tensor:
         return self.linear(_dequantize(xq).view(-1, 16)).view(-1, 8)
+
+
+class _DequantizeLinearBias(torch.nn.Module):
+    def __init__(self, input_as_bias: bool) -> None:
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(16, 16))
+        self.bias = torch.nn.Parameter(torch.randn(6, 16))
+        self.input_as_bias = input_as_bias
+
+    def forward(self, xq: torch.Tensor) -> torch.Tensor:
+        flat = _dequantize(xq).view(-1, 16)
+        bias = flat if self.input_as_bias else self.bias
+        return torch.nn.functional.linear(flat, self.weight, bias).view(
+            xq.shape[0], xq.shape[1], 16
+        )
 
 
 class _Addmm(torch.nn.Module):
@@ -119,9 +134,9 @@ _VIEW = exir_ops.edge.aten.view_copy.default
 
 
 class TestAddmmMmToLinear(unittest.TestCase):
-    def _transform(self, model, example, dynamic_shapes=None):
+    def _transform(self, model, example, dynamic_shapes=None, compile_config=None):
         ep = torch.export.export(model, (example,), dynamic_shapes=dynamic_shapes)
-        program = to_edge(ep).exported_program()
+        program = to_edge(ep, compile_config=compile_config).exported_program()
         apply_addmm_mm_to_linear_transform(program.graph_module.graph)
         return program
 
@@ -188,6 +203,22 @@ class TestAddmmMmToLinear(unittest.TestCase):
                         program.graph_module.graph.output_node().args[0][0], linear
                     )
                     torch.testing.assert_close(program.module()(x), model(x))
+
+    def test_bias_with_more_than_one_dim_keeps_the_input(self):
+        # A linear kept from export can add a bias per row of the flattened
+        # input, which does not broadcast to the dequantized shape, so the
+        # linear and its view stay.
+        config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.linear.default])
+        for input_as_bias in (False, True):
+            with self.subTest(input_as_bias=input_as_bias):
+                model = _DequantizeLinearBias(input_as_bias)
+                x = _int8(2, 3, 16)
+                program = self._transform(model, x, compile_config=config)
+                (linear,) = self._linears(program)
+                self.assertEqual(linear.args[0].target, _VIEW)
+                output = program.graph_module.graph.output_node().args[0][0]
+                self.assertEqual(output.target, _VIEW)
+                torch.testing.assert_close(program.module()(x), model(x))
 
     def test_only_an_addmm_without_scales_becomes_a_linear(self):
         # linear cannot scale its bias or its product, so only an addmm with
