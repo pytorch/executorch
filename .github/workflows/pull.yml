@@ -885,7 +885,27 @@ jobs:
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
+  # The editable install exercises the same unit tests as `unittest`; what it
+  # adds is coverage of the editable install path. Run it on PRs that touch
+  # Python packaging or the unittest/setup scripts, and on every push to main.
   unittest-editable:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_unittest.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'setup.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'pyproject.toml') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_executorch') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'requirements-') ||
+      contains(needs.changed-files.outputs.changed-files, 'src/executorch') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/unittest-') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-linux.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-windows.ps1') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh')
     uses: ./.github/workflows/_unittest.yml
     permissions:
       id-token: write
