@@ -2572,6 +2572,69 @@ class TestPasses(unittest.TestCase):
                 self.assertIn(exir_ops.edge.aten.mul.Tensor, delegated_ops(edge))
                 self.assertNotIn(exir_ops.edge.aten.full.default, delegated_ops(edge))
 
+    def test_partitioner_keeps_bool_cat_of_static_tensor_on_cpu(self):
+        class CatConstant(torch.nn.Module):
+            def __init__(self, dtype, constant):
+                super().__init__()
+                self.dtype = dtype
+                self.constant = constant
+                self.register_buffer("ones", torch.ones(2, 2, dtype=dtype))
+
+            def forward(self, x):
+                return torch.cat([(x > 0).to(self.dtype), self.constant(self)], 1)
+
+        constants = {
+            "full": lambda m: torch.full((2, 2), 1, dtype=m.dtype),
+            "buffer": lambda m: m.ones,
+        }
+        # Quantized first: some QNN SDKs crash on a quantized lowering that
+        # follows an fp16 one in the same process. Quantized HTP graphs read
+        # the constant right, so the cat stays.
+        module = CatConstant(torch.bool, constants["full"]).eval()
+        sample_input = (torch.randn(2, 3),)
+        prepared = prepare_pt2e(
+            torch.export.export(module, sample_input, strict=True).module(),
+            QnnQuantizer(),
+        )
+        prepared(*sample_input)
+        try:
+            edge = to_edge_transform_and_lower_to_qnn(
+                convert_pt2e(prepared),
+                sample_input,
+                generate_qnn_executorch_compiler_spec(
+                    soc_model=QcomChipset.SM8650,
+                    backend_options=generate_htp_compiler_spec(use_fp16=False),
+                ),
+            )
+        except RuntimeError as e:
+            if "Failed to initialize QNN backend" in str(e):
+                skip_without_qnn_sdk(self, e)
+            raise
+        self.assertIn(exir_ops.edge.aten.cat.default, delegated_ops(edge))
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        for dtype in (torch.bool, torch.float32):
+            for name, constant in constants.items():
+                with self.subTest(dtype=dtype, constant=name):
+                    try:
+                        edge = to_edge_transform_and_lower_to_qnn(
+                            CatConstant(dtype, constant).eval(),
+                            (torch.randn(2, 3),),
+                            compiler_specs,
+                        )
+                    except RuntimeError as e:
+                        if "Failed to initialize QNN backend" in str(e):
+                            skip_without_qnn_sdk(self, e)
+                        raise
+                    self.assertIn(exir_ops.edge.aten.gt.Tensor, delegated_ops(edge))
+                    self.assertEqual(
+                        dtype != torch.bool,
+                        exir_ops.edge.aten.cat.default in delegated_ops(edge),
+                    )
+
     def test_partitioner_falls_back_on_bfloat16(self):
         class Bf16Region(torch.nn.Module):
             def __init__(self):
