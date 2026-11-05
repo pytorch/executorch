@@ -702,9 +702,8 @@ class ServingChat:
         return "length" if mt and mt > 0 and completion_tokens >= mt else "stop"
 
     @staticmethod
-    def _reject_invalid_values(req: ChatCompletionRequest) -> None:
-        """Reject invalid types/ranges (invalid_value); these take precedence over
-        the unsupported-parameter error."""
+    def _reject_invalid_visibility(req: ChatCompletionRequest) -> None:
+        """Require boolean, mutually consistent reasoning visibility controls."""
         template_kwargs = req.chat_template_kwargs or {}
         if not isinstance(template_kwargs.get("return_reasoning", True), bool):
             raise APIError(
@@ -734,6 +733,12 @@ class ServingChat:
                 "invalid_request_error",
                 "invalid_value",
             )
+
+    @staticmethod
+    def _reject_invalid_values(req: ChatCompletionRequest) -> None:
+        """Reject invalid types/ranges (invalid_value); these take precedence over
+        the unsupported-parameter error."""
+        ServingChat._reject_invalid_visibility(req)
         if req.temperature is not None and (
             not math.isfinite(req.temperature)
             or req.temperature < 0.0
