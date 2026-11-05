@@ -103,14 +103,15 @@ def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Gra
 def addmm_can_be_linear(node: torch.fx.Node) -> bool:
     """
     Returns whether linear(x, w, b) can replace addmm(b, x, w.t()). The weight
-    must be a t_copy or permute_copy, and linear cannot scale its bias or its
-    product.
+    must be a t_copy or permute_copy, linear cannot scale its bias or its
+    product, and ExecuTorch's linear kernel takes only a 1-D bias.
     """
     ops = exir_ops.edge
     return (
         node.args[2].target in (ops.aten.t_copy.default, ops.aten.permute_copy.default)
         and node.kwargs.get("beta", 1) == 1
         and node.kwargs.get("alpha", 1) == 1
+        and len(node.args[0].meta["val"].shape) == 1
     )
 
 

@@ -881,6 +881,7 @@ class TestVulkanBackend(unittest.TestCase):
             ((8,), 1.0, 1.0),
             ((8,), 2.0, 1.0),
             ((8,), 1.0, 0.5),
+            ((4, 8), 1.0, 1.0),
         ):
             with self.subTest(bias_shape=bias_shape, beta=beta, alpha=alpha):
                 self.lower_module_and_test_output(

@@ -57,10 +57,12 @@ class _DequantizeLinearNoOpView(torch.nn.Module):
 
 
 class _Addmm(torch.nn.Module):
-    def __init__(self, beta: float = 1.0, alpha: float = 1.0) -> None:
+    def __init__(
+        self, beta: float = 1.0, alpha: float = 1.0, bias_shape: tuple = (8,)
+    ) -> None:
         super().__init__()
         self.weight = torch.nn.Parameter(torch.randn(8, 16))
-        self.bias = torch.nn.Parameter(torch.randn(8))
+        self.bias = torch.nn.Parameter(torch.randn(bias_shape))
         self.beta = beta
         self.alpha = alpha
 
@@ -206,6 +208,24 @@ class TestAddmmMmToLinear(unittest.TestCase):
                 graph = to_edge(ep).exported_program().graph
                 (addmm,) = [n for n in graph.nodes if n.target == _ADDMM]
                 self.assertEqual(addmm_can_be_linear(addmm), expected)
+
+    def test_only_an_addmm_with_a_1d_bias_becomes_a_linear(self):
+        # ExecuTorch's linear kernel takes only a 1-D bias, while addmm takes
+        # any bias that broadcasts to the output.
+        for bias_shape, linears in (
+            ((8,), 1),
+            ((1,), 1),
+            ((1, 8), 0),
+            ((6, 8), 0),
+            ((6, 1), 0),
+            ((), 0),
+        ):
+            with self.subTest(bias_shape=bias_shape):
+                model = _Addmm(bias_shape=bias_shape)
+                x = torch.randn(6, 16)
+                program = self._transform(model, x)
+                self.assertEqual(len(self._linears(program)), linears)
+                torch.testing.assert_close(program.module()(x), model(x))
 
     def test_linears_sharing_a_dequantized_input_both_lose_their_views(self):
         model = _DequantizeTwoLinearViews()
