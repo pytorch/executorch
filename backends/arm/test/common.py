@@ -240,6 +240,7 @@ def get_vgf_compile_spec(
     custom_path: Optional[str] = None,
     tosa_debug_mode: VgfCompileSpec.DebugMode | None = None,
     preserve_io_quantization: bool = False,
+    alias_buffer_mutations: bool = False,
 ) -> VgfCompileSpec:
     """Get the ArmCompileSpec for the default VGF tests, to modify the compile
     spec before calling .build() to finalize it.
@@ -262,7 +263,11 @@ def get_vgf_compile_spec(
         compiler_flags_list = []
 
     compile_spec = (
-        VgfCompileSpec(tosa_spec, compiler_flags_list)
+        VgfCompileSpec(
+            tosa_spec,
+            compiler_flags_list,
+            alias_buffer_mutations=alias_buffer_mutations,
+        )
         .dump_intermediate_artifacts_to(custom_path)
         .dump_debug_info(tosa_debug_mode)
     )
@@ -406,6 +411,33 @@ def xfail_if_model_converter_version(
         if version_text is not None
         else None
     )
+    return xfail_if_version(
+        version, specifier, reason=reason, strict=strict, raises=raises
+    )
+
+
+def xfail_if_emulation_layer_version(
+    specifier: str,
+    *,
+    reason: str,
+    strict: bool = True,
+    raises: type[Exception] | None = None,
+) -> pytest.MarkDecorator:
+    """Xfail for matching versions of the ML Emulation Layer for Vulkan.
+
+    EMULATION_LAYER_VERSION takes precedence for layers built from source, which
+    have no Python distribution metadata.
+
+    """
+    version = os.environ.get("EMULATION_LAYER_VERSION")
+    if version is None:
+        return xfail_if_dependency_version(
+            "ai-ml-emulation-layer-for-vulkan",
+            specifier,
+            reason=reason,
+            strict=strict,
+            raises=raises,
+        )
     return xfail_if_version(
         version, specifier, reason=reason, strict=strict, raises=raises
     )

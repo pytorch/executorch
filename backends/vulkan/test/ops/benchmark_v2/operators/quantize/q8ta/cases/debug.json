@@ -1,0 +1,274 @@
+[
+  {
+    "name": "q8ta/qdq/debug float32 buffer auto",
+    "operator": "quantized_decomposed.quantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_INPUT_LAYOUT": ["width", "channels"],
+      "v_SIZES": [
+        [1, 16, 16, 16],
+        [1, 144],
+        [1, 90],
+        [2, 3, 16, 16],
+        [2, 4, 8, 16]
+      ],
+      "v_OUTPUT_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "v_INPUT_LAYOUT",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "v_OUTPUT_LAYOUT",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/qdq/debug float32 buffer legacy_4w4c",
+    "operator": "quantized_decomposed.quantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 1.014060718249784,
+      "rtol": 0
+    },
+    "route": "legacy_4w4c",
+    "sweep_variables": {
+      "v_INPUT_LAYOUT": ["width", "channels"],
+      "v_SIZES": [
+        [1, 16, 16, 16],
+        [1, 144],
+        [1, 90]
+      ]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "v_INPUT_LAYOUT",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w4c",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/qdq/debug int8x4 buffer auto",
+    "operator": "quantized_decomposed.dequantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0072119999676942825,
+      "rtol": 0.0010000000474974513
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_INPUT_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"],
+      "v_SIZES": [
+        [1, 16, 16, 16],
+        [1, 144],
+        [1, 90],
+        [2, 3, 16, 16],
+        [2, 4, 8, 16]
+      ],
+      "v_OUTPUT_LAYOUT": ["width", "channels"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "v_INPUT_LAYOUT",
+            "data": {
+              "rand_uniform_int": [-128, 127]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "int": 10
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "v_OUTPUT_LAYOUT",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/qdq/debug int8x4 buffer 4w4c legacy_4w4c",
+    "operator": "quantized_decomposed.dequantize_per_tensor.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.0072119999676942825,
+      "rtol": 0.0010000000474974513
+    },
+    "route": "legacy_4w4c",
+    "sweep_variables": {
+      "v_SIZES": [
+        [1, 16, 16, 16],
+        [1, 144],
+        [1, 90]
+      ],
+      "v_OUTPUT_LAYOUT": ["width", "channels"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": "v_SIZES",
+            "dtype": "int8x4",
+            "storage": "buffer",
+            "layout": "4w4c",
+            "data": {
+              "rand_uniform_int": [-128, 127]
+            }
+          }
+        },
+        {
+          "float": 0.00711200013756752
+        },
+        {
+          "int": 0
+        },
+        {
+          "int": -128
+        },
+        {
+          "int": 127
+        },
+        {
+          "int": 2
+        },
+        {
+          "int": 10
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": "v_SIZES",
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "v_OUTPUT_LAYOUT",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  }
+]

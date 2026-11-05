@@ -25,6 +25,7 @@ from executorch.backends.cuda.cuda_weight_collector import (
     CUDA_AOTI_METADATA_MAGIC,
     CudaAotiVariant,
     CudaWeightCollector,
+    decode_cuda_aoti_metadata,
     encode_cuda_aoti_metadata,
 )
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
@@ -32,6 +33,7 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     parse_offgraph_kv_manifest,
     ring_physical_capacity,
 )
+from executorch.exir import to_edge
 from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import PreprocessResult
@@ -431,7 +433,11 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertNotEqual(
                 first_result.processed_bytes, second_result.processed_bytes
             )
-            weight_key = first_artifact.entries[0].storage_key
+            weight_key = (
+                decode_cuda_aoti_metadata(first_result.processed_bytes)
+                .entries[0]
+                .storage_key
+            )
             self.assertIn(
                 weight_key,
                 first_result.data_store_output.external_data["aoti_cuda_blob"],
@@ -481,12 +487,14 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             external_data = first_result.data_store_output.external_data[
                 "aoti_cuda_blob"
             ]
-            first_key = "cuda_fqn_weight:cpu:first_so:_tensor_constant0"
-            second_key = "cuda_fqn_weight:cpu:second_so:_tensor_constant0"
-            self.assertIn(first_key, external_data)
-            self.assertIn(second_key, external_data)
-            self.assertIn(first_key.encode(), first_result.processed_bytes)
-            self.assertIn(second_key.encode(), second_result.processed_bytes)
+            for result, library in ((first_result, "first"), (second_result, "second")):
+                (entry,) = decode_cuda_aoti_metadata(result.processed_bytes).entries
+                self.assertTrue(
+                    entry.storage_key.startswith(
+                        f"cuda_fqn_weight:cpu:{library}_so:_tensor_constant0:"
+                    )
+                )
+                self.assertIn(entry.storage_key, external_data)
 
             for artifact in (first_artifact, second_artifact):
                 for storage in artifact.storages.values():
@@ -511,7 +519,11 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertIs(
                 first_result.data_store_output, second_result.data_store_output
             )
-            weight_key = first_artifact.entries[0].storage_key
+            weight_key = (
+                decode_cuda_aoti_metadata(first_result.processed_bytes)
+                .entries[0]
+                .storage_key
+            )
             self.assertIn(
                 weight_key,
                 first_result.data_store_output.external_data["aoti_cuda_blob"],
@@ -806,6 +818,86 @@ class TestCudaPartitioner(unittest.TestCase):
                 expected_tag,
                 f"Constant placeholder {node.name} has tag '{actual_tag}' but expected '{expected_tag}'",
             )
+
+    def test_unread_mutated_buffer_copied_from_an_input_stays_out(self) -> None:
+        """
+        A mutated buffer that no op reads stays in the owning program when its
+        new value is a method input, as in self.state.copy_(x). When the only
+        partition computes the new value, the buffer goes to that delegate.
+        """
+
+        class WriteState(torch.nn.Module):
+            def __init__(self, copy_input: bool) -> None:
+                super().__init__()
+                self.copy_input = copy_input
+                self.register_buffer("state", torch.zeros(2))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.state.copy_(x if self.copy_input else x + x)
+                return torch.sin(x)
+
+        for copy_input in (False, True):
+            # to_edge removes the copy, so the new value comes straight from x or x + x.
+            edge = to_edge(export(WriteState(copy_input), (torch.randn(2),)))
+            result = CudaPartitioner([]).partition(edge.exported_program())
+            program = result.tagged_exported_program
+            state = next(
+                n
+                for n in program.graph.nodes
+                if n.op == "placeholder" and is_buffer(program, n)
+            )
+            tag = state.meta.get("delegation_tag")
+            if copy_input:
+                self.assertIsNone(tag)
+            else:
+                self.assertIn(tag, result.partition_tags)
+
+    def test_unread_mutated_buffer_goes_to_the_partition_that_writes_it(
+        self,
+    ) -> None:
+        """
+        With several partitions, a mutated buffer that no op reads goes to the
+        delegate whose op computes its new value, even when that partition is
+        not the one listed first.
+        """
+
+        class WriteState(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.zeros(2))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                s = x + x
+                self.state.copy_(s)
+                return torch.cos(s * 3)
+
+        program = to_edge(export(WriteState(), (torch.randn(2),))).exported_program()
+        graph = program.graph_module.graph
+        nodes = {n.name: n for n in graph.nodes}
+        add, mul, cos = (
+            nodes[name]
+            for name in ("aten_add_tensor", "aten_mul_tensor", "aten_cos_default")
+        )
+        # A delegate of another backend between mul and cos splits this
+        # backend's ops into two partitions.
+        program.graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(cos):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(executorch_call_delegate, (lowered, mul))
+            output = graph.call_function(operator.getitem, (delegate, 0))
+        cos.replace_input_with(mul, output)
+        graph.lint()
+
+        result = CudaPartitioner([]).partition(program)
+        state = next(
+            n
+            for n in program.graph.nodes
+            if n.op == "placeholder" and is_buffer(program, n)
+        )
+        self.assertNotEqual(
+            add.meta["delegation_tag"], next(iter(result.partition_tags))
+        )
+        self.assertEqual(state.meta.get("delegation_tag"), add.meta["delegation_tag"])
 
     def test_does_not_retag_already_lowered_delegate(self) -> None:
         """
