@@ -45,8 +45,9 @@ inline std::shared_ptr<void> allocate_cuda_result(size_t nbytes, int index) {
 #endif
 }
 
-// The Python boundary is synchronous until the runtime exposes readiness
-// events for inputs, output allocations, and caller-selected execution streams.
+// A tensor handed across the Python boundary carries no readiness event, and
+// another library may write it on any stream, so the boundary waits for the
+// whole device, even inside an executorch.runtime.cuda stream block.
 inline void synchronize_cuda_device(int index) {
 #ifdef EXECUTORCH_PYBINDINGS_CUDA
   auto guard = executorch::extension::cuda::CUDAGuard::create(index);
@@ -121,8 +122,8 @@ auto with_cuda_device(int index, Function&& function) {
 // Copies on the legacy default stream. A copy to the host returns once it has
 // finished. A copy to the device may still be in flight when this returns, but
 // it runs before anything queued afterwards on a blocking stream, including the
-// delegates' cudaStreamPerThread; a result holding such memory waits for it
-// only when it hands the memory to another library.
+// delegates' cudaStreamPerThread; a result holding such memory still waits for
+// the device before another library or a call reads it.
 inline void copy_cuda_storage(
     void* destination,
     const void* source,

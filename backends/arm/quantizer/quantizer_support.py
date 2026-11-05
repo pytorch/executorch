@@ -56,8 +56,8 @@ class ReluFusedPatternCheck(PatternCheck):
 class ArithmeticFloatInputsCheck(PatternCheck):
     @classmethod
     def check_pattern(cls, pattern):
-        """For arithmetic ops all inputs must be quantizeable for quantization
-        to make sense.
+        """For arithmetic and comparison ops all inputs must be quantizeable for
+        quantization to make sense.
         """
         for node in pattern:
             for input_node in node.all_input_nodes:
@@ -150,6 +150,12 @@ BINARY_OP_PATTERNS = [
     (torch.ops.aten.bmm.default,),
     (torch.ops.aten.mul.Tensor,),
     (torch.ops.aten.mul_.Tensor,),
+    (torch.ops.aten.lt.Tensor,),
+    (torch.ops.aten.le.Tensor,),
+    (torch.ops.aten.gt.Tensor,),
+    (torch.ops.aten.ge.Tensor,),
+    (torch.ops.aten.eq.Tensor,),
+    (torch.ops.aten.ne.Tensor,),
 ]
 ACTIVATION_FUNCTION_PATTERNS = [
     (torch.ops.aten.hardswish.default,),
@@ -240,12 +246,6 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.abs.default,),
         (torch.ops.aten.minimum.default,),
         (torch.ops.aten.maximum.default,),
-        (torch.ops.aten.lt.Tensor,),
-        (torch.ops.aten.le.Tensor,),
-        (torch.ops.aten.gt.Tensor,),
-        (torch.ops.aten.ge.Tensor,),
-        (torch.ops.aten.eq.Tensor,),
-        (torch.ops.aten.ne.Tensor,),
         (torch.ops.aten.lt.Scalar,),
         (torch.ops.aten.le.Scalar,),
         (torch.ops.aten.gt.Scalar,),

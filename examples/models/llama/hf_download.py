@@ -9,14 +9,39 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
+import time
 
 from contextlib import redirect_stdout
+from email.utils import parsedate_to_datetime
 from importlib.metadata import EntryPoint
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 
 from huggingface_hub import snapshot_download
+from huggingface_hub.errors import HfHubHTTPError
+
+_MAX_RATE_LIMIT_RETRIES = 5
+
+
+def _rate_limit_retry_delay(headers: Mapping[str, str], attempt: int) -> float:
+    delay = None
+    retry_after = headers.get("Retry-After", "").strip()
+    if retry_after.isdigit():
+        delay = float(retry_after)
+    elif retry_after:
+        try:
+            delay = max(0, parsedate_to_datetime(retry_after).timestamp() - time.time())
+        except (TypeError, ValueError, OverflowError):
+            pass
+    rate_limit = re.search(r"\br=0;\s*t=(\d+)\b", headers.get("RateLimit", ""))
+    if rate_limit:
+        delay = max(delay or 0, float(rate_limit[1]))
+    if delay is not None:
+        # Quota reset times are rounded to whole seconds.
+        return delay + 1
+    return min(60 * 2**attempt, 300)
 
 
 def download_hf_snapshot(
@@ -26,12 +51,29 @@ def download_hf_snapshot(
     metadata_path: Path | None = None,
 ) -> str:
     """Download a pinned Safetensors checkpoint and optionally verify its hash."""
-    snapshot = snapshot_download(
-        repo_id=repo_id,
-        revision=revision,
-        allow_patterns=["*.safetensors", "*.json"],
-        token=False,
-    )
+    for attempt in range(_MAX_RATE_LIMIT_RETRIES + 1):
+        try:
+            snapshot = snapshot_download(
+                repo_id=repo_id,
+                revision=revision,
+                allow_patterns=["*.safetensors", "*.json"],
+                token=False,
+            )
+            break
+        except HfHubHTTPError as error:
+            if (
+                error.response is None
+                or error.response.status_code != 429
+                or attempt == _MAX_RATE_LIMIT_RETRIES
+            ):
+                raise
+            delay = _rate_limit_retry_delay(error.response.headers, attempt)
+            print(
+                f"Rate limited downloading {repo_id}; retrying in {delay:g}s "
+                f"({attempt + 1}/{_MAX_RATE_LIMIT_RETRIES})",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
     if expected_sha256:
         checksum = hashlib.sha256()
         with (Path(snapshot) / "model.safetensors").open("rb") as checkpoint:

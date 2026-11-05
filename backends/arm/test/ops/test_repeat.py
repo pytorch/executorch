@@ -179,6 +179,23 @@ def test_repeat_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_suite_fp8)
+@common.SkipIfNoModelConverter
+def test_repeat_vgf_no_quant_fp8(test_data: Tuple):
+    module, test_data, _ = test_data()
+    pipeline = VgfPipeline[input_t1](
+        module,
+        test_data,
+        module.aten_op,
+        exir_op=[],
+        tosa_extensions=["fp8e4m3", "fp8e5m2"],
+        quantize=False,
+        atol=0,
+        rtol=0,
+    )
+    pipeline.run()
+
+
 @common.parametrize(
     "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
 )

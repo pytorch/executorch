@@ -170,31 +170,34 @@ Run a binary with `--help` for its model-specific arguments.
 
 ## Serve
 
+The following instructions use the regular worker built above. For off-graph
+exports, use [the batching server](#start-the-batching-server) below instead.
+
 Install the shared server dependencies:
 
 ```bash
-pip install -r examples/llm_server/python/requirements.txt
+pip install -r /path/to/executorch/examples/llm_server/python/requirements.txt
 ```
 
-Serve a CUDA target export:
+Serve a CUDA target export, replacing the example paths with your local paths:
 
 ```bash
 python -m executorch.examples.models.muse_glimmer.serving.serve \
-  --model-path exports/solo/model.pte \
-  --data-path exports/solo/aoti_cuda_blob.ptd \
-  --tokenizer-path assets/hf/tokenizer.json \
-  --hf-tokenizer assets/hf \
-  --worker-bin cmake-out/examples/models/muse-glimmer/muse_glimmer_worker \
+  --model-path /path/to/exports/solo/model.pte \
+  --data-path /path/to/exports/solo/aoti_cuda_blob.ptd \
+  --tokenizer-path /path/to/assets/hf/tokenizer.json \
+  --hf-tokenizer /path/to/assets/hf \
+  --worker-bin /path/to/executorch/cmake-out/examples/models/muse-glimmer/muse_glimmer_worker \
   --model-id muse-glimmer-30B \
   --tool-parser atem \
   --host 127.0.0.1 \
   --port 8000
 ```
 
-For MLX, use the MLX `model.pte` and omit `--data-path`. For DFlash, replace
-`exports/solo` with `exports/dflash` in both artifact paths; the server detects
-the exported method contract. For vision, also pass
-`--pos-embed-path <export-dir>/pos_embed.bin`.
+For MLX, use the MLX export and omit `--data-path`. For DFlash, use the matching
+DFlash export paths; the server detects the exported method contract. For
+vision, also pass `--pos-embed-path /path/to/exports/solo/pos_embed.bin`, using
+the matching export directory.
 
 Smoke test:
 
@@ -206,13 +209,143 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 Tool calling is supported with `--tool-parser atem`. The canonical Hugging Face
 template renders tool definitions, and the server converts Muse Glimmer 30B ATEM
-output into OpenAI-compatible `tool_calls`. See
-[`serving/tool_parsers/atem.py`](serving/tool_parsers/atem.py) and
-[`tests/test_atem_tool_parser.py`](tests/test_atem_tool_parser.py).
+output into OpenAI-compatible `tool_calls`.
 
-### Use from pi
+## Off-graph KV cache and batching
 
-Point pi at the server via `~/.pi/agent/models.json`:
+The off-graph path keeps KV cache state in the runtime rather than inside the
+exported model graph. It supports packed multi-session batching, runtime-managed
+cache growth, and optional prefix snapshots for reuse across requests.
+Batching supports both text-only and vision-enabled exports, with or without
+DFlash.
+
+It uses separate batching runners and workers. Regular runner artifacts and
+workers are not interchangeable with batching artifacts and workers.
+
+The commands below use MLX as an example. Select the backend matching your
+hardware, export, and worker build.
+
+### Export
+
+Export with `--use-offgraph-kv-cache`. For example, using MLX and the checkpoint
+variables from [Model assets](#model-assets), export a text-only target:
+
+```bash
+python -m executorch.examples.models.muse_glimmer.export.export_solo \
+  --backend mlx \
+  --gguf "$TARGET" \
+  --use-offgraph-kv-cache \
+  --activation-dtype float16 \
+  --max-prefill-chunk 512 \
+  --output-dir /path/to/exports/mg-offgraph
+```
+
+Or export the target and drafter for DFlash:
+
+```bash
+python -m executorch.examples.models.muse_glimmer.export.export_dflash \
+  --backend mlx \
+  --target-gguf "$TARGET" \
+  --draft-gguf "$DRAFT" \
+  --use-offgraph-kv-cache \
+  --activation-dtype float16 \
+  --output-dir /path/to/exports/mg-offgraph-dflash
+```
+
+For CUDA exports, use `--backend cuda` and `--activation-dtype bfloat16` instead.
+
+To enable image input, add `--mmproj "$MMPROJ"` to either export command above.
+This includes the vision encoder and writes its position-embedding data alongside
+the model. The resulting export can serve both text-only and image requests;
+a separate text-only export is not required.
+
+The server's `--max-context` sets the per-session runtime limit and must not
+exceed the exported limit. Runtime cache allocation is separate from that limit.
+For MLX, off-graph exports use the checkpoint's native context limit rather than
+`--max-seq-len`, and KV storage grows as needed instead of allocating the full
+context up front.
+
+### Set up the batching runtime
+
+After the general [environment setup](#supported-backends), use the Make target
+for your backend to build and install ExecuTorch and build the batching runner
+and worker. For MLX:
+
+```bash
+cd /path/to/executorch
+make muse-glimmer-batching-mlx
+pip install -r /path/to/executorch/examples/llm_server/python/requirements.txt
+```
+
+The Make target builds the native dependencies and both batching executables;
+it does not export a model or start the server. Use a batching build target,
+not a regular runner target.
+
+### Start the batching server
+
+Replace the absolute example paths below with your checkout, export, and
+tokenizer locations. Select the backend matching the export and worker build.
+This MLX example uses four concurrent sessions, a 128K (131072-token) context
+limit, and up to 32 prefix snapshots:
+
+```bash
+python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
+  --worker-bin /path/to/executorch/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_worker \
+  --model-path /path/to/exports/mg-offgraph/model.pte \
+  --tokenizer-path /path/to/assets/hf/tokenizer.json \
+  --hf-tokenizer /path/to/assets/hf \
+  --backend mlx \
+  --model-id muse-glimmer-30B \
+  --max-context 131072 \
+  --max-sessions 4 \
+  --max-decode-sequences 4 \
+  --max-inflight-requests 4 \
+  --prefix-cache-entries 32 \
+  --tool-parser atem \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+For DFlash, use `/path/to/exports/mg-offgraph-dflash/model.pte` and add
+`--dflash --dflash-n-draft 3` to the launch command. `--dflash-n-draft` is a
+runtime server option controlling the number of proposals per verification step
+(N). Set it when starting the server; changing N does not require re-exporting.
+N must be smaller than the exported drafter block size (D). Omitting the option,
+or setting it to zero, uses N = D - 1.
+
+On CUDA, D is fixed at export time from the drafter checkpoint configuration and
+cannot be changed at runtime. The exporter currently has no separate block-size
+override option. To use a different D, export a new artifact with the corresponding
+drafter configuration. Changing N does not change D: a D = 16 export still
+evaluates 16 drafter rows per session when N = 3, and its default is N = 15.
+
+Choose concurrency and prefix-cache limits to fit available memory. Prefix
+snapshots are disabled by default; omit `--prefix-cache-entries` to disable them.
+If the export stores weights separately, also pass `--data-path` with its data
+file.
+
+For a vision-enabled export, add
+`--pos-embed-path /path/to/exports/mg-offgraph/pos_embed.bin` to the server command,
+using the matching export directory. Send images as OpenAI `image_url` content
+parts containing inline base64 JPEG or PNG data URLs. The batching server accepts
+one image across each submitted conversation; remote image URLs and local image
+paths are not supported.
+
+The endpoint is `http://127.0.0.1:8000/v1/chat/completions`; the smoke request in
+[Serve](#serve) and the [Pi configuration](#use-from-pi) below work with this
+server too. See the
+[batching serving guide](BATCHING_SERVING.md) for image support, session behavior,
+and detailed limits.
+
+## Use from Pi
+
+This configuration works with both the regular server and the off-graph
+batching server. Batching and DFlash are server-side choices; Pi uses the same
+OpenAI-compatible endpoint for either path. Enable `--tool-parser atem` on the
+server for tool calling.
+
+Point Pi at the server via `/path/to/home/.pi/agent/models.json`, replacing
+`/path/to/home` with your home directory:
 
 ```json
 {

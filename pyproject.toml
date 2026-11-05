@@ -86,7 +86,10 @@ ethos_u = [
   "tosa-tools==2026.5.0",
 ]
 openvino = [
-  "openvino>=2025.1.0,<2026.0.0; platform_system == 'Linux'",
+  # OpenVINO publishes no build for Python 3.15. Its Linux aarch64 builds need glibc 2.35 or
+  # newer while the wheel needs only 2.28, so on an older aarch64 system pip installs an older
+  # ExecuTorch for this extra instead; the docs say what to do there.
+  "openvino>=2025.4.0,<2027.0.0; (platform_system == 'Linux' or (platform_system == 'Windows' and platform_machine == 'AMD64')) and python_version < '3.15'",
 ]
 
 [project.urls]
@@ -129,6 +132,10 @@ license-files = ["LICENSE"]
 "executorch.backends.arm.vgf.shaders" = [
   "*.glsl",
   "*.spirv.b64",
+]
+# Marks the Python bindings as typed, so type checkers read their stubs.
+"executorch.extension.pybindings" = [
+  "py.typed",
 ]
 
 [tool.setuptools.exclude-package-data]

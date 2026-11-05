@@ -16,17 +16,14 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
 )
-from executorch.backends.xnnpack.utils.quant_utils import (
-    is_dequant,
-    is_quant,
-    tag_as_implicit_q_dq,
-)
+from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
     get_param_tensor,
     is_param_node,
     normalize_mean_dims,
     normalize_pool2d_args,
+    why_not_x2_nearest_upsample,
 )
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
@@ -164,15 +161,6 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
                 # Expected node --> fused_act (optional) --> dequant
                 return deps
 
-            # Tag input nodes (dq nodes) as implicit q/dq nodes
-            for dq_input in node.all_input_nodes:
-                if is_dequant(dq_input):
-                    tag_as_implicit_q_dq(dq_input)
-
-            # Tag node_output (q node) as an implicit q/dq node
-            if is_quant(node_output):
-                tag_as_implicit_q_dq(node_output)
-
             quantized_deps.append(node_output)
 
         return deps + quantized_deps
@@ -246,6 +234,7 @@ class AbsConfig(GenericNodePartitionerConfig):
 
 class AvgPoolingConfig(GenericNodePartitionerConfig):
     target_name = "avg_pool2d.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -369,9 +358,35 @@ class EluConfig(GenericNodePartitionerConfig):
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.elu.default
 
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+        # XNNPACK's ELU has only alpha, stored in the compute dtype. An alpha
+        # that overflows it gives NaN, and on x86 an infinite, zero or
+        # subnormal alpha is also mishandled. SELU decomposes to elu with
+        # scale != 1.
+        alpha, scale, input_scale = (
+            node.args[i] if len(node.args) > i else node.kwargs.get(name, 1)
+            for i, name in enumerate(("alpha", "scale", "input_scale"), start=1)
+        )
+        finfo = torch.finfo(node.meta["val"].dtype)
+        if (
+            isinstance(alpha, bool)
+            or not finfo.tiny <= alpha <= finfo.max
+            or scale != 1
+            or input_scale != 1
+        ):
+            why(
+                node,
+                reason="ELU only supports a positive normal alpha, scale = 1 and input_scale = 1",
+            )
+            return False
+        return True
+
 
 class SoftmaxConfig(GenericNodePartitionerConfig):
     target_name = "_softmax.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -449,6 +464,7 @@ class MaximumConfig(GenericNodePartitionerConfig):
 
 class MaxPool2dConfig(GenericNodePartitionerConfig):
     target_name = "max_pool2d.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -483,6 +499,7 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
 
 class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
     target_name = "upsample_bilinear2d.vec"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -501,6 +518,26 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.upsample_bilinear2d.vec
+
+
+class UpsampleNearest2dConfig(GenericNodePartitionerConfig):
+    target_name = "upsample_nearest2d.vec"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        reason = why_not_x2_nearest_upsample(node)
+        if reason is not None:
+            why(node, reason=reason)
+            return False
+        return True
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.upsample_nearest2d.vec
 
 
 class ExpConfig(GenericNodePartitionerConfig):
@@ -620,13 +657,22 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
         input_dtype = input_node.meta["val"].dtype
         output_dtype = node.meta["val"].dtype
 
-        # Return False if doing dtype conversion
         if input_dtype != output_dtype:
-            why(
-                node,
-                reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
+            # A dtype cast is lowered to an XNNPACK convert node, as long as
+            # the op does not change the dim order at the same time.
+            supported_cast = {input_dtype, output_dtype} <= {
+                torch.float32,
+                torch.float16,
+            }
+            same_dim_order = list(input_node.meta["val"].dim_order()) == list(
+                node.meta["val"].dim_order()
             )
-            return False
+            if not (supported_cast and same_dim_order):
+                why(
+                    node,
+                    reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
+                )
+                return False
 
         return True
 
@@ -636,6 +682,7 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """

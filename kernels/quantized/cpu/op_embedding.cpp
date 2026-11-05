@@ -87,9 +87,10 @@ void check_embedding_byte_args(
         static_cast<int8_t>(weight_scales.dim()));
 
     ET_CHECK_MSG(
-        opt_weight_zero_points.value().scalar_type() == out.scalar_type(),
+        opt_weight_zero_points.value().scalar_type() ==
+            weight_scales.scalar_type(),
         "weight zero points scalar type %" PRId8
-        " does not match out.scalar_type()",
+        " does not match weight_scales.scalar_type()",
         static_cast<int8_t>(opt_weight_zero_points.value().scalar_type()));
 
     for (int32_t i = 0; i < weight_scales.dim(); ++i) {
@@ -258,6 +259,15 @@ Tensor& quantized_embedding_byte_out(
       indices,
       out_type,
       out);
+
+  // Without a dtype argument the output takes the scales' dtype, and the
+  // kernel reads the scales as the output type.
+  ET_CHECK_MSG(
+      weight_scales.scalar_type() == out_type,
+      "weight_scales.scalar_type() %" PRId8
+      " does not match out.scalar_type() %" PRId8,
+      static_cast<int8_t>(weight_scales.scalar_type()),
+      static_cast<int8_t>(out_type));
 
   constexpr auto name = "quantized_decomposed::embedding_byte.out";
   ET_SWITCH_TWO_TYPES(Byte, Char, w_type, ctx, name, CTYPE_W, [&]() {

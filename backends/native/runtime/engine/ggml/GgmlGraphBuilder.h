@@ -186,7 +186,7 @@ class GraphBuilder {
   void set_single_output(const Node& node, TensorRef result);
   void lower(const Node& node);
   void lower_linear(const Node& node);
-  void lower_embedding(const Node& node);
+  void lower_row_gather(const Node& node);
   void check_row_indices(ValueId id, int64_t rows);
   void lower_rms_norm(const Node& node);
   void lower_layer_norm(const Node& node);
@@ -244,6 +244,7 @@ class GraphBuilder {
   void lower_unsqueeze(const Node& node);
   void lower_squeeze(const Node& node);
   void lower_expand(const Node& node);
+  void lower_repeat(const Node& node);
   void lower_cat(const Node& node);
   void lower_matmul(const Node& node);
   void lower_update_cache(const Node& node);
