@@ -28,19 +28,24 @@ int main(int argc, char** argv) {
   gflags::SetUsageMessage(
       "Generate text from an LLM .ptn with the native ggml engine.");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
-  return ptn::run_llm([] {
-    ptn::GgmlEngineOptions options;
-    if (FLAGS_device == "gpu") {
-      options.device = ptn::GgmlDevice::Gpu;
-    } else if (FLAGS_device != "cpu") {
-      throw std::invalid_argument("--device must be cpu or gpu");
-    }
-    options.device_index = FLAGS_device_index;
-    options.cpu_threads = FLAGS_cpu_threads;
-    if (FLAGS_max_cached_graphs < 0) {
-      throw std::invalid_argument("--max_cached_graphs must be non-negative");
-    }
-    options.max_cached_graphs = static_cast<size_t>(FLAGS_max_cached_graphs);
-    return ptn::GgmlEngineHost::create(options);
-  });
+  ptn::register_ggml_cache_builders();
+  return ptn::run_llm(
+      [] {
+        ptn::GgmlEngineOptions options;
+        if (FLAGS_device == "gpu") {
+          options.device = ptn::GgmlDevice::Gpu;
+        } else if (FLAGS_device != "cpu") {
+          throw std::invalid_argument("--device must be cpu or gpu");
+        }
+        options.device_index = FLAGS_device_index;
+        options.cpu_threads = FLAGS_cpu_threads;
+        if (FLAGS_max_cached_graphs < 0) {
+          throw std::invalid_argument(
+              "--max_cached_graphs must be non-negative");
+        }
+        options.max_cached_graphs =
+            static_cast<size_t>(FLAGS_max_cached_graphs);
+        return ptn::GgmlEngineHost::create(options);
+      },
+      ptn::kGgmlCacheBackendId);
 }
