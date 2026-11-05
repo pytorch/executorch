@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,8 +14,15 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.native.test.samples.cases import Case, draws, suite_cases
 from executorch.backends.native.test.samples.record import record
-from executorch.backends.native.test.samples.schemes import Scheme, schemes
+from executorch.backends.native.test.samples.schemes import (
+    Gguf,
+    Scheme,
+    schemes,
+    Torchao,
+)
 from executorch.exir.native import read_samples
+from torchao.quantization import IntxWeightOnlyConfig, quantize_
+from torchao.quantization.granularity import PerGroup
 
 
 class RecordTest(unittest.TestCase):
@@ -107,3 +115,43 @@ class RecordTest(unittest.TestCase):
             record([case], Scheme(), path, dtypes=["f32"])
             precise = read_samples(str(path))["precise"].samples
         self.assertEqual(precise[0].calls[0].outputs[0].dtype, torch.int64)
+
+    def test_precise_decodes_gguf_weights_whatever_the_method_dtype(self) -> None:
+        # Halves are exact in every recorded dtype and the methods share their
+        # GGUF blocks, so their precise outputs must match.
+        x = torch.randint(-8, 9, (3, 256)) / 2
+        model = torch.nn.Linear(256, 8, bias=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "linear.ptn"
+            record([Case("linear", model, [(x,)])], Gguf("q6_k"), path)
+            samples = read_samples(str(path))["precise"].samples
+        outputs = {s.calls[0].method: s.calls[0].outputs[0] for s in samples}
+        for dtype in ("f16", "bf16"):
+            torch.testing.assert_close(
+                outputs[f"linear_{dtype}"], outputs["linear_f32"], rtol=0, atol=0
+            )
+
+    def test_precise_decodes_intx_weights_in_float32(self) -> None:
+        # A code times its scale can need more bits than bf16 holds, so decoding
+        # in the method's dtype would round the weights.
+        x = torch.randint(-8, 9, (3, 64)) / 2
+        model = torch.nn.Linear(64, 8, bias=False)
+        config = IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "linear.ptn"
+            record([Case("linear", model, [(x,)])], Torchao(config), path)
+            samples = read_samples(str(path))["precise"].samples
+        outputs = {s.calls[0].method: s.calls[0].outputs[0] for s in samples}
+        bf16 = copy.deepcopy(model).to(torch.bfloat16)
+        quantize_(bf16, config)
+        w = bf16.weight
+        codes = (
+            w.qdata.double().unflatten(1, (-1, 32)) - w.zero_point.double()[..., None]
+        )
+        weight = (codes * w.scale.double()[..., None]).flatten(1)
+        torch.testing.assert_close(
+            outputs["linear_bf16"],
+            torch.nn.functional.linear(x.double(), weight).float(),
+            rtol=0,
+            atol=0,
+        )

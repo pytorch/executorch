@@ -14,11 +14,13 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
-from executorch.extension.llm.export.gguf import iter_gguf, QK_K
+from executorch.extension.llm.export.gguf import ExportableGGUFTensor, iter_gguf, QK_K
 from gguf import GGML_QUANT_SIZES, GGMLQuantizationType, GGUFWriter
 from torchao.core.config import AOBaseConfig
 from torchao.quantization import (
+    dequantize_affine,
     Int8DynamicActivationIntxWeightConfig,
+    IntxUnpackedToInt8Tensor,
     IntxWeightOnlyConfig,
     quantize_,
 )
@@ -48,7 +50,9 @@ class Scheme:
         pass
 
     def decode(self, value: torch.Tensor) -> torch.Tensor:
-        """A state tensor of a quantized model as a plain tensor."""
+        """A state tensor of a quantized model as a plain tensor, with quantized
+        weights decoded in float32 rather than the method's dtype, which can
+        round them."""
         return value
 
 
@@ -88,7 +92,13 @@ class Torchao(Scheme):
         quantize_(model, self.config)
 
     def decode(self, value: torch.Tensor) -> torch.Tensor:
-        return value.dequantize() if isinstance(value, TorchAOBaseTensor) else value
+        if isinstance(value, IntxUnpackedToInt8Tensor):
+            return dequantize_affine(
+                value.qdata, value.block_size, value.scale, value.zero_point, torch.int8
+            )
+        if isinstance(value, TorchAOBaseTensor):
+            raise TypeError(f"no float32 decode for {type(value).__name__}")
+        return value
 
 
 # fp16 super-block scales by byte offset in each block, kept in fp16's normal
@@ -149,7 +159,9 @@ class Gguf(Scheme):
         _load_gguf(model, self.ggml_type)
 
     def decode(self, value: torch.Tensor) -> torch.Tensor:
-        return value.dequantize() if isinstance(value, TorchAOBaseTensor) else value
+        if isinstance(value, ExportableGGUFTensor):
+            return value.dequantize(torch.float32)
+        return value
 
 
 @contextlib.contextmanager
