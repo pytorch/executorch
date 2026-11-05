@@ -4238,6 +4238,52 @@ class I64toI32:
         )
 
 
+class InsertCastForFpActQuantizedWeight:
+    class _Conv2d(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            # 3x3: the HTP rejects it under fp16a8w, so it must stay valid on CPU
+            self.conv = torch.nn.Conv2d(8, 16, kernel_size=3, padding=1)
+
+        def forward(self, x):
+            return self.conv(x)
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        pass_pipeline: PassPipeline,
+    ):
+        from executorch.backends.qualcomm.export_utils import make_quantizer
+        from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+
+        module = InsertCastForFpActQuantizedWeight._Conv2d()
+        bias = module.conv.bias.detach().to(torch.float16)
+        ep = pass_pipeline.lower_edge_ep(
+            module=module,
+            sample_input=(torch.randn(1, 8, 16, 16),),
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            target_pass=_passes.InsertCastForFpActQuantizedWeight,
+            quantizer=make_quantizer(
+                quant_dtype=QuantDtype.use_fp16a8w, backend=backend_type
+            ),
+        )
+        (conv,) = [
+            n
+            for n in ep.graph.nodes
+            if n.target == exir_ops.edge.aten.convolution.default
+        ]
+        weight_dq, bias_node = conv.args[1], conv.args[2]
+        assert weight_dq.target in dq_ops
+        assert weight_dq.kwargs.get("out_dtype") == torch.float16
+        assert weight_dq.meta["val"].dtype == torch.float16
+        assert bias_node.meta["val"].dtype == torch.float16
+        bias_name = ep.graph_signature.inputs_to_buffers[bias_node.name]
+        assert torch.equal(ep.state_dict[bias_name], bias)
+
+
 class InsertIOQDQ:
     class _Basic(torch.nn.Module):
         def __init__(self):
