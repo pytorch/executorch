@@ -104,7 +104,7 @@
 {{- bos_token -}}
 {%- set ns = namespace(has_system=false, metadata_rendered=false) -%}
 {%- for m in messages -%}
-    {%- if m['role'] == 'system' -%}
+    {%- if m['role'] in ('system', 'developer') -%}
         {%- set ns.has_system = true -%}
     {%- endif -%}
 {%- endfor -%}
@@ -135,28 +135,21 @@
         {#- ATEM uses system blocks for developer instructions. Preserve their
             position and content; tool definitions belong in the first block. -#}
         {%- set sys_text = render_content(message['content']) -%}
-        {%- if not ns.metadata_rendered -%}
-            {%- set sys_text = sys_text
-                  | replace('Reasoning effort', 'Reasoning strength')
-                  | replace('Reasoning Effort', 'Reasoning Strength')
-                  | replace('reasoning effort', 'reasoning strength')
-                  | replace('REASONING EFFORT', 'REASONING STRENGTH') -%}
-        {%- endif -%}
-        {%- set reasoning_meta = namespace(declared=false, removed=false, lines=[]) -%}
+        {%- set reasoning_meta = namespace(declared=false, changed=false, lines=[]) -%}
         {%- for line in sys_text.splitlines() -%}
-            {%- if not ns.metadata_rendered and (line | trim | lower).startswith('reasoning strength:') -%}
+            {%- set meta_line = line | trim | lower -%}
+            {%- if not ns.metadata_rendered and (meta_line.startswith('reasoning strength:') or meta_line.startswith('reasoning effort:')) -%}
+                {%- set reasoning_meta.changed = true -%}
                 {%- if reasoning_strength is not defined -%}
                     {%- set reasoning_meta.declared = true -%}
-                    {%- set reasoning_meta.lines = reasoning_meta.lines + [line] -%}
-                {%- else -%}
-                    {%- set reasoning_meta.removed = true -%}
+                    {%- set reasoning_meta.lines = reasoning_meta.lines + ['Reasoning strength:' + line.split(':', 1)[1]] -%}
                 {%- endif -%}
             {%- else -%}
                 {%- set reasoning_meta.lines = reasoning_meta.lines + [line] -%}
             {%- endif -%}
         {%- endfor -%}
         {{- '<|start|>system<|message|>' -}}
-        {{- (reasoning_meta.lines | join('\n')) if reasoning_meta.removed else sys_text -}}
+        {{- (reasoning_meta.lines | join('\n')) if reasoning_meta.changed else sys_text -}}
         {%- if not ns.metadata_rendered -%}
             {%- if not reasoning_meta.declared -%}
                 {{- '\n\n' -}}

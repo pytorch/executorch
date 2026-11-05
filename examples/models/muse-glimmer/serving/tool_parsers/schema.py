@@ -24,16 +24,30 @@ class ToolOutputError(APIError):
         super().__init__(502, message, "server_error", "invalid_tool_output")
 
 
-class _WorkBudget:
+class _ToolWorkLimit(ToolOutputError):
+    pass
+
+
+class ToolOutputBudget:
     def __init__(self):
         self.remaining = 65536
 
-    def spend(self):
-        self.remaining -= 1
+    def spend(self, visits=1):
+        self.remaining -= visits
         if self.remaining < 0:
-            raise ToolOutputError(
-                "Tool argument coercion exceeded its traversal budget"
+            raise _ToolWorkLimit(
+                "Tool argument processing exceeded its traversal budget"
             )
+
+    def validation(self, schema_nodes, value):
+        pending = [value]
+        while pending:
+            value = pending.pop()
+            self.spend(schema_nodes)
+            if isinstance(value, dict):
+                pending.extend(value.values())
+            elif isinstance(value, list):
+                pending.extend(value)
 
 
 class ToolSchema:
@@ -75,9 +89,15 @@ class ToolSchema:
                     if "$ref" in node:
                         self._resolve(node["$ref"])
                 resources.extend(resource.subresources())
-            self._check_reference_work(root, specs[cls])
+            self._schema_nodes, keys = self._check_reference_work(root, specs[cls])
             if self._variant_count(schema) > 1023:
                 raise ValueError("tool schema exceeds 1023 coercion alternatives")
+            try:
+                self._check_coercion_work(keys)
+            except _ToolWorkLimit as error:
+                raise ValueError(
+                    "tool schema exceeds 65536 estimated coercion work visits"
+                ) from error
         except (
             SchemaError,
             ValueError,
@@ -106,6 +126,7 @@ class ToolSchema:
     def _check_reference_work(self, root, specification):
         pending = [(root, ())]
         visits = 0
+        keys = {None}
         while pending:
             resource, ancestors = pending.pop()
             visits += 1
@@ -115,12 +136,32 @@ class ToolSchema:
             if not isinstance(node, dict) or id(node) in ancestors:
                 continue
             ancestors = (*ancestors, id(node))
+            for keyword in ("properties", "dependentSchemas", "dependencies"):
+                keys.update(node.get(keyword, {}))
             if "$ref" in node:
                 referenced = Resource.from_contents(
                     self._resolve(node["$ref"]), default_specification=specification
                 )
                 pending.append((referenced, ancestors))
             pending.extend((child, ancestors) for child in resource.subresources())
+        return visits, keys
+
+    def _check_coercion_work(self, keys):
+        # Walk all alternatives and declared keys before generation, including a
+        # wildcard projection for map properties. Charge worst-case scalar
+        # validation too; nested values and extra keys consume the output budget.
+        budget = ToolOutputBudget()
+        for variant in chain(
+            [self.schema], self._object_variants(self.schema, keys, budget=budget)
+        ):
+            for key in keys:
+                projected = self._property(
+                    variant, key, budget=budget, all_patterns=True
+                )
+                for kind in ("null", "string", "boolean", "integer", "number"):
+                    self._declares(projected, kind, budget=budget)
+                budget.spend(2 * 4 * self._schema_nodes)
+            budget.spend(self._schema_nodes * (len(keys) + 1))
 
     def _variant_count(self, schema, seen=()):
         if not isinstance(schema, dict) or id(schema) in seen:
@@ -151,7 +192,7 @@ class ToolSchema:
             ) + self._variant_count(schema.get("else", {}), seen)
         return count
 
-    def _property(self, schema, key, seen=(), *, budget):
+    def _property(self, schema, key, seen=(), *, budget, all_patterns=False):
         budget.spend()
         if not isinstance(schema, dict) or id(schema) in seen:
             return {}
@@ -159,20 +200,30 @@ class ToolSchema:
         pieces = []
         if "$ref" in schema and self._legacy_ref:
             return self._property(
-                self._resolve(schema["$ref"]), key, seen, budget=budget
+                self._resolve(schema["$ref"]),
+                key,
+                seen,
+                budget=budget,
+                all_patterns=all_patterns,
             )
         if "$ref" in schema:
             pieces.append(
-                self._property(self._resolve(schema["$ref"]), key, seen, budget=budget)
+                self._property(
+                    self._resolve(schema["$ref"]),
+                    key,
+                    seen,
+                    budget=budget,
+                    all_patterns=all_patterns,
+                )
             )
         if key in schema.get("properties", {}):
             pieces.append(schema["properties"][key])
         matched = key in schema.get("properties", {})
         for pattern, child in schema.get("patternProperties", {}).items():
-            if re.search(pattern, key):
+            if all_patterns or re.search(pattern, key):
                 pieces.append(child)
                 matched = True
-        if not matched and "additionalProperties" in schema:
+        if (all_patterns or not matched) and "additionalProperties" in schema:
             pieces.append(schema["additionalProperties"])
         for keyword in ("anyOf", "oneOf", "allOf"):
             if keyword in schema:
@@ -181,7 +232,13 @@ class ToolSchema:
                 pieces.append(
                     {
                         "anyOf" if keyword == "oneOf" else keyword: [
-                            self._property(child, key, seen, budget=budget)
+                            self._property(
+                                child,
+                                key,
+                                seen,
+                                budget=budget,
+                                all_patterns=all_patterns,
+                            )
                             for child in schema[keyword]
                         ]
                     }
@@ -215,21 +272,26 @@ class ToolSchema:
             for child in schema.get(keyword, [])
         )
 
+    def _valid_scalar(self, schema, value, budget):
+        # Property projection introduces composition wrappers. Charge a
+        # conservative estimate of their validation work before calling jsonschema.
+        budget.spend(4 * self._schema_nodes)
+        return self.validator.evolve(schema=schema).is_valid(value)
+
     def coerce(self, key, value, *, schema=None, budget=None):
-        budget = budget if budget is not None else _WorkBudget()
+        budget = budget if budget is not None else ToolOutputBudget()
         schema = self._property(
             self.schema if schema is None else schema, key, budget=budget
         )
-        validator = self.validator.evolve(schema=schema)
         stripped = value.strip()
         if (
             stripped == "null"
             and self._declares(schema, "null", budget=budget)
-            and validator.is_valid(None)
+            and self._valid_scalar(schema, None, budget)
         ):
             return None
-        if self._declares(schema, "string", budget=budget) and validator.is_valid(
-            value
+        if self._declares(schema, "string", budget=budget) and self._valid_scalar(
+            schema, value, budget
         ):
             return value
         if self._declares(schema, "boolean", budget=budget) and stripped.lower() in (
@@ -327,8 +389,8 @@ class ToolSchema:
                     parts + [variant], groups[1:], keys, seen, budget=budget
                 )
 
-    def coerce_arguments(self, name, raw):
-        budget = _WorkBudget()
+    def coerce_arguments(self, name, raw, *, budget=None):
+        budget = budget if budget is not None else ToolOutputBudget()
         variants = chain(
             [self.schema], self._object_variants(self.schema, raw.keys(), budget=budget)
         )
@@ -343,15 +405,19 @@ class ToolSchema:
                 for key, value in raw.items()
             }
             try:
-                self.validate(name, arguments)
+                self.validate(name, arguments, budget=budget)
                 return arguments
+            except _ToolWorkLimit:
+                raise
             except ToolOutputError as error:
                 last_error = error
         raise last_error or ToolOutputError(
             f"Tool {name!r} has no valid argument schema"
         )
 
-    def validate(self, name, arguments):
+    def validate(self, name, arguments, *, budget=None):
+        budget = budget if budget is not None else ToolOutputBudget()
+        budget.validation(self._schema_nodes, arguments)
         try:
             json.dumps(arguments, allow_nan=False)
             error = next(self.validator.iter_errors(arguments), None)

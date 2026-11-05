@@ -737,22 +737,92 @@ def test_bounded_shared_reference_schema_still_validates():
     assert schema.coerce_arguments("edit", {"q": "123"}) == {"q": "123"}
 
 
-def test_coercion_work_is_bounded_across_alternatives():
-    schema = ToolSchema(
-        {
-            "allOf": [
-                {
-                    "anyOf": [
-                        {"properties": {f"q{i}": {"const": value}}}
-                        for value in ("a", "b")
-                    ]
-                }
-                for i in range(9)
-            ]
-        }
+@pytest.mark.parametrize("stream", [False, True])
+def test_excessive_coercion_work_fails_before_generation(stream):
+    schema = {
+        "allOf": [
+            {
+                "anyOf": [
+                    {"properties": {f"q{i}": {"const": value}}} for value in ("a", "b")
+                ]
+            }
+            for i in range(9)
+        ]
+    }
+    client, serving = client_for(_atem("edit.edit", [("q0", "a")]))
+    response = client.post("/v1/chat/completions", json=request(schema, stream))
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_tool_schema"
+    assert "coercion work" in response.json()["error"]["message"]
+    assert not serving._runtime.prompts
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("cutoff", ["length", "request-stop", "native-stop"])
+@pytest.mark.parametrize(
+    "block",
+    [
+        '<atem:function_calls><atem:invoke name="edit.edit"></atem:function_calls>',
+        "<atem:function_calls></atem:function_calls>",
+        _atem("edit.edit", [("q", "ok")]).replace(
+            "</atem:function_calls>", '<atem:parameter name="q"></atem:function_calls>'
+        ),
+    ],
+)
+def test_closed_malformed_tool_blocks_remain_errors_after_cutoff(stream, cutoff, block):
+    client, serving = client_for(block + "\nTrailing prose STOP tail")
+    body = request({"properties": {"q": {"type": "string"}}}, stream)
+    if cutoff == "length":
+        serving._runtime._outputs[0]["finish_reason"] = "length"
+    else:
+        body["stop"] = "STOP"
+        if cutoff == "native-stop":
+            serving._runtime._outputs[0].update(
+                text=block + "\nTrailing prose ", matched_stop="STOP"
+            )
+    response = client.post("/v1/chat/completions", json=body)
+    if stream:
+        assert '"invalid_tool_output"' in response.text
+        assert '"tool_calls"' not in response.text
+        assert '"finish_reason"' not in response.text
+    else:
+        assert response.status_code == 502
+        assert response.json()["error"]["code"] == "invalid_tool_output"
+
+
+@pytest.mark.parametrize("role", ["system", "developer"])
+@pytest.mark.parametrize("metadata", ["Reasoning strength", "Reasoning effort"])
+@pytest.mark.parametrize("explicit", [False, True])
+def test_developer_and_system_metadata_share_one_reasoning_control(
+    role, metadata, explicit
+):
+    from pathlib import Path
+
+    from executorch.examples.models.muse_glimmer.serving import chat_template
+    from jinja2 import Environment
+
+    template = Environment().from_string(
+        Path(chat_template.__file__).with_suffix(".jinja").read_text()
     )
-    with pytest.raises(ToolOutputError, match="traversal budget"):
-        schema.coerce_arguments("edit", {f"q{i}": "x" for i in range(9)})
+    prose = "Keep your reasoning effort brief."
+    kwargs = {"reasoning_strength": "high"} if explicit else {}
+    prompt = template.render(
+        messages=[
+            {"role": role, "content": prose + "\n" + metadata + ": low."},
+            {"role": "user", "content": "hi"},
+        ],
+        tools=[{"function": {"name": "edit.edit"}}],
+        add_generation_prompt=True,
+        bos_token="<s>",
+        **kwargs,
+    )
+    assert prompt.count("<|start|>system<|message|>") == 1
+    assert prose in prompt
+    assert prompt.count("Reasoning strength:") == 1
+    assert "Reasoning strength: " + ("high." if explicit else "low.") in prompt
+    assert "Reasoning effort:" not in prompt
+    assert prompt.count("// Function schemas") == 1
+    assert prompt.count("# Valid recipients:") == 1
 
 
 @pytest.mark.parametrize(
@@ -915,3 +985,79 @@ def test_packaged_chat_template_starts_outside_source_tree(tmp_path, monkeypatch
     )
     module.MuseGlimmerChatTemplate("unused")
     assert "<atem:function_calls>" in tokenizer.chat_template
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("valid", [False, True])
+def test_bounded_alternatives_report_argument_errors_not_work_limits(stream, valid):
+    schema = {
+        "allOf": [
+            {"anyOf": [{"properties": {f"q{i}": {"const": v}}} for v in ("a", "b")]}
+            for i in range(4)
+        ]
+    }
+    raw = _atem("edit.edit", [(f"q{i}", "b" if valid else "x") for i in range(4)])
+    client, _ = client_for(raw)
+    response = client.post("/v1/chat/completions", json=request(schema, stream))
+    if valid:
+        assert response.status_code == 200
+        message, finish = response_message(response, stream)
+        assert finish == "tool_calls"
+        assert json.loads(message["tool_calls"][0]["function"]["arguments"]) == {
+            f"q{i}": "b" for i in range(4)
+        }
+    else:
+        assert "arguments violate" in response.text
+        assert "budget" not in response.text
+        assert '"tool_calls"' not in response.text
+        assert response.status_code == (200 if stream else 502)
+
+
+def test_nested_argument_validation_is_charged_before_validator_runs(monkeypatch):
+    schema = ToolSchema(
+        {"properties": {"q": {"type": "array", "items": {"type": "string"}}}}
+    )
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("oversized nested output must exhaust the budget before validation")
+
+    monkeypatch.setattr(type(schema.validator), "iter_errors", unexpected)
+    with pytest.raises(ToolOutputError, match="traversal budget"):
+        schema.validate("edit", {"q": ["ok"] * 25000})
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("separate_blocks", [False, True])
+def test_tool_output_budget_is_shared_across_invocations(stream, separate_blocks):
+    schema = {"properties": {"q": {"type": "array", "items": {"type": "string"}}}}
+    one = _atem("edit.edit", [("q", json.dumps(["ok"] * 9000))])
+    client, _ = client_for(one, split=10000)
+    response = client.post("/v1/chat/completions", json=request(schema, stream))
+    assert response.status_code == 200
+    assert response_message(response, stream)[1] == "tool_calls"
+    raw = "\n".join([one] * 3)
+    if not separate_blocks:
+        raw = raw.replace("</atem:function_calls>\n<atem:function_calls>", "")
+    client, _ = client_for(raw, split=10000)
+    response = client.post("/v1/chat/completions", json=request(schema, stream))
+    assert response.status_code == (200 if stream else 502)
+    assert "traversal budget" in response.text
+    assert '"invalid_tool_output"' in response.text
+    assert '"tool_calls"' not in response.text
+
+
+def test_schema_work_estimate_does_not_execute_parameter_patterns(monkeypatch):
+    from executorch.examples.models.muse_glimmer.serving.tool_parsers import schema
+
+    def unexpected(*args, **kwargs):
+        pytest.fail(
+            "preflight must count every pattern without executing regex searches"
+        )
+
+    monkeypatch.setattr(schema.re, "search", unexpected)
+    ToolSchema(
+        {
+            "properties": {"q": {"type": "string"}},
+            "patternProperties": {"^q$": {"type": "string"}},
+        }
+    )

@@ -123,8 +123,12 @@ serving requirements, including `jsonschema`.
 Coercion preserves correlations between object alternatives and conditional schemas,
 then validates the complete argument object. Declared numeric parameters also accept
 spellings such as `+5`, `007`, `.5`, and `5.`; declared strings stay literal.
-Coercion has a separate 65,536-visit budget and tries at most 1024 alternatives;
-exceeding either returns `invalid_tool_output`.
+Before generation, the server walks every coercion alternative and declared parameter,
+including map-property projections, and estimates scalar validation work. Schemas
+exceeding 65,536 visits return HTTP 400 `invalid_tool_schema`. The output budget also
+charges validation of nested values and is shared across all invocations in a response.
+Extra parameters, large nested arguments, or multiple calls can exhaust this budget
+and return `invalid_tool_output`; coercion tries at most 1024 alternatives per call.
 This is validation after generation, not token-level constrained decoding.
 `function.strict=true` is supported: a successful response contains only
 schema-valid calls; invalid generation fails the response. This supports Muse's

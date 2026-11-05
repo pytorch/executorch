@@ -12,6 +12,7 @@ import sys
 import pytest
 
 pytest.importorskip("pydantic", reason="requires llm_server serving dependencies")
+pytest.importorskip("jsonschema", reason="requires llm_server serving dependencies")
 
 from executorch.examples.models.muse_glimmer.serving import (  # noqa: E402
     serve,

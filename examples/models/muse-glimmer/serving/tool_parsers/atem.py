@@ -20,7 +20,7 @@ from executorch.examples.llm_server.python.tool_parsers.types import (
 )
 
 from ..chat_template import wire_tool_name
-from .schema import ToolOutputError, ToolSchema
+from .schema import ToolOutputBudget, ToolOutputError, ToolSchema
 
 _START = "<|start|>"
 _MESSAGE = "<|message|>"
@@ -117,6 +117,7 @@ class AtemToolCallDetector:
         normal, calls = [], []
         offset = 0
         incomplete = False
+        budget = ToolOutputBudget()
         try:
             for start, end in _tool_blocks(text):
                 header = self._preceding_header(text, start)
@@ -126,9 +127,13 @@ class AtemToolCallDetector:
                 terminator = re.match(r"\s*<\|eo[mt]\|>", text[offset:])
                 if terminator:
                     offset += terminator.end()
-                if end is None or _INVOKE_RE.search(text, start, end) is None:
+                if end is None:
                     raise IncompleteToolOutputError("Incomplete ATEM tool call")
-                calls.extend(self._parse_calls(text[start:end], tools))
+                if _INVOKE_RE.search(text, start, end) is None:
+                    raise ToolOutputError(
+                        "Closed ATEM block has no complete invocation"
+                    )
+                calls.extend(self._parse_calls(text[start:end], tools, budget=budget))
         except IncompleteToolOutputError:
             if finish_reason != "length" and not truncated:
                 raise
@@ -152,11 +157,13 @@ class AtemToolCallDetector:
                 last = m.start()
         return last
 
-    def _parse_calls(self, text: str, tools: dict[str, dict]) -> list[ToolCallItem]:
+    def _parse_calls(
+        self, text: str, tools: dict[str, dict], *, budget: ToolOutputBudget
+    ) -> list[ToolCallItem]:
         """Parse every invocation and coerce its parameters."""
         remainder = _INVOKE_RE.sub("", text)
         if re.search(r"</?atem:(?:invoke|parameter)\b", remainder):
-            raise IncompleteToolOutputError("Incomplete invocation")
+            raise ToolOutputError("Malformed invocation in closed ATEM block")
         calls = []
         for im in _INVOKE_RE.finditer(text):
             name, body = im.group(1), im.group(2)
@@ -181,7 +188,7 @@ class AtemToolCallDetector:
                 end = pm.end()
             if body[end:].strip():
                 raise ValueError("Unclosed or malformed parameter")
-            args = schema.coerce_arguments(name, args)
+            args = schema.coerce_arguments(name, args, budget=budget)
             calls.append(self._make_item(name, args, tools))
         return calls
 
