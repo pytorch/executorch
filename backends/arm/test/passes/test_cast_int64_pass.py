@@ -229,6 +229,7 @@ def test_cast_empty_lifted_int64_index_constant_to_int32():
 
 
 class Int64BufferAddModel(torch.nn.Module):
+    offset: torch.Tensor
     test_data = {
         "wide": (torch.tensor([2**40, -(2**38), 2**31, -1]),),
     }
