@@ -2420,11 +2420,18 @@ def _index_copy_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), set(), "aten.index_copy.default")
     dst, axis, indices, update = args
     require_static_int(axis, "dim", "aten.index_copy.default")
-    # The runtime takes a 1-D index into a tensor with at least one dim; ATen also
-    # allows 0-d ones, which stay off the delegate.
-    if n.args[0].meta["val"].dim() == 0 or n.args[2].meta["val"].dim() != 1:
+    # The runtime takes a 1-D index into a tensor with at least one dim, and a
+    # source of the same rank; ATen also allows 0-d ones, which stay off the
+    # delegate.
+    dst_rank = n.args[0].meta["val"].dim()
+    if (
+        dst_rank == 0
+        or n.args[2].meta["val"].dim() != 1
+        or n.args[3].meta["val"].dim() != dst_rank
+    ):
         raise NotImplementedError(
-            "aten.index_copy.default needs a 1-D index into a tensor of rank >= 1"
+            "aten.index_copy.default needs a 1-D index and a source of the "
+            "destination's rank, into a tensor of rank >= 1"
         )
     out = P.make_or_get_slot(n)
     P.emit(

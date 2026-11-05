@@ -505,6 +505,20 @@ class TestMLXPartitionerFunctionalIndexCopy(unittest.TestCase):
         self.assertEqual(counts.get("IndexCopyNode", 0), 1)
         self.assertEqual(err, 0)
 
+    def test_scalar_source_stays_off_the_delegate(self):
+        # ATen copies a 0-d source into a 1-D destination; the delegate only
+        # takes a source of the destination's rank.
+        class ScalarSource(nn.Module):
+            def forward(self, data, indices, update):
+                return data.index_copy(0, indices, update)
+
+        counts, _, err = _run(
+            ScalarSource().eval(),
+            (torch.zeros(4), torch.tensor([2]), torch.tensor(5.0)),
+        )
+        self.assertEqual(counts.get("IndexCopyNode", 0), 0)
+        self.assertEqual(err, 0)
+
     def test_strided_indices(self):
         # Indices sliced in the graph are a strided view the delegate must
         # read in order.
