@@ -96,6 +96,7 @@ REQUIRED_SUBMODULES = {
     "cpuinfo": "CMakeLists.txt",
     "eigen": "CMakeLists.txt",
     "flatbuffers": "CMakeLists.txt",
+    "flatcc": "CMakeLists.txt",
     "FP16": "CMakeLists.txt",
     "FXdiv": "CMakeLists.txt",
     "gflags": "CMakeLists.txt",
@@ -145,7 +146,8 @@ def check_and_update_submodules():
         try:
             subprocess.check_call(["git", "submodule", "sync", "--recursive"])
             subprocess.check_call(
-                ["git", "submodule", "update", "--init", "--recursive"]
+                ["git", "submodule", "update", "--init", "--recursive", "--"]
+                + list(missing_submodules)
             )
         except subprocess.CalledProcessError as e:
             logger.error(f"Error updating submodules: {e}")
