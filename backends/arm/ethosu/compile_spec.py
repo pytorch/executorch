@@ -81,6 +81,7 @@ class EthosUCompileSpec(ArmCompileSpec):
     _DELEGATE_MUTABLE_BUFFERS_KEY = "delegate_mutable_buffers"
     _SEPARATE_PERSISTENT_REGION_FLAG = "--separate-persistent-region"
     _PLAN_DELEGATE_SCRATCH_KEY = "plan_delegate_scratch"
+    _PLACE_NAMED_DATA_INLINE_KEY = "place_named_data_inline"
 
     @staticmethod
     def _default_system_config_and_memory_mode(
@@ -154,11 +155,17 @@ class EthosUCompileSpec(ArmCompileSpec):
         external_block_placements: VelaExternalBlockPlacements | None = None,
         max_scratch_size: int | None = None,
         plan_delegate_scratch: bool = False,
+        place_named_data_inline: bool = False,
     ):
         self.target = target
         self.max_scratch_size = max_scratch_size
         self.delegate_mutable_buffers = False
         self.plan_delegate_scratch = plan_delegate_scratch
+        # When True, blocks selected via external_block_placements are emitted as
+        # deduplicated named data inline in the .pte (resolved on-device by the
+        # program's PteDataMap) instead of a separate external .ptd file. Lets
+        # multiple methods share one weight buffer in a single self-contained .pte.
+        self.place_named_data_inline = place_named_data_inline
         self.external_block_placements = (
             VelaExternalBlockPlacements()
             if external_block_placements is None
@@ -223,6 +230,8 @@ class EthosUCompileSpec(ArmCompileSpec):
             )
         if self.plan_delegate_scratch:
             compile_specs.append(CompileSpec(self._PLAN_DELEGATE_SCRATCH_KEY, b"True"))
+        if self.place_named_data_inline:
+            compile_specs.append(CompileSpec(self._PLACE_NAMED_DATA_INLINE_KEY, b"True"))
         block_placements = self.external_block_placements.to_block_placements()
         if block_placements:
             # CompileSpec values are bytes, so use deterministic JSON to
@@ -256,6 +265,12 @@ class EthosUCompileSpec(ArmCompileSpec):
             if plan_delegate_scratch is not None
             else False
         )
+        place_named_data_inline = specs.get(cls._PLACE_NAMED_DATA_INLINE_KEY)
+        compile_spec.place_named_data_inline = (
+            str(place_named_data_inline).lower() in ("1", "true", "yes")
+            if place_named_data_inline is not None
+            else False
+        )
         serialized_placements = specs.get(cls._EXTERNAL_BLOCK_PLACEMENTS_KEY)
         if serialized_placements is None:
             compile_spec.external_block_placements = VelaExternalBlockPlacements()
@@ -277,6 +292,8 @@ class EthosUCompileSpec(ArmCompileSpec):
         """Validate the configuration against supported Ethos-U settings."""
         if type(self.plan_delegate_scratch) is not bool:
             raise ValueError("plan_delegate_scratch must be a boolean.")
+        if type(self.place_named_data_inline) is not bool:
+            raise ValueError("place_named_data_inline must be a boolean.")
         if self.max_scratch_size is not None and (
             type(self.max_scratch_size) is not int or self.max_scratch_size <= 0
         ):
