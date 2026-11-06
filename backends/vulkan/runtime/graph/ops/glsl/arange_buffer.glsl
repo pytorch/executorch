@@ -44,7 +44,13 @@ void main() {
     return;
   }
 
+  const TensorIndex out_tidx = linear_idx_to_tensor_idx(outp, out_bufi);
+  if (out_of_bounds(out_tidx, outp)) {
+    t_out[out_bufi] = T(0);
+    return;
+  }
+
   const float start_val = decode_param(start, params_are_int.x);
   const float step_val = decode_param(step, params_are_int.y);
-  t_out[out_bufi] = T(start_val + out_bufi * step_val);
+  t_out[out_bufi] = T(start_val + idx_at(out_tidx, 0) * step_val);
 }

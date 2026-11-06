@@ -368,9 +368,8 @@ bool is_metadata_only_view(std::string_view key) {
       std::ranges::find(kOps, key) != kOps.end();
 }
 
-// ET-VK tensor views keep the sizes they were created with, so a view of a
-// dynamically sized source must be resized whenever that source is.
-void resize_view_alias(
+// View shapes must be validated and updated whenever their source resizes.
+void resize_view(
     ComputeGraph* graph,
     const std::vector<vkcompute::ArgGroup>& /*args*/,
     const std::vector<VkRef>& resize_args) {
@@ -981,25 +980,51 @@ class VulkanEngineExecutable final : public EngineExecutable {
     } while (changed);
   }
 
+  bool buffer_padding_possible(ValueId id) {
+    const TensorMeta& meta = meta_of(id);
+    const int64_t axis =
+        static_cast<int64_t>(meta.sizes.size()) - 1 - packed_dim(layout_at(id));
+    return axis < 0 || meta.sizes.at(axis) % 4 != 0 ||
+        (!meta.lower_bounds.empty() &&
+         meta.lower_bounds.at(axis) != meta.sizes.at(axis));
+  }
+
   void materialize_packed_views() {
     std::vector<ValueId> value_ids;
     for (const NodeId node_id : nodes_) {
       const Node& node = g().node(node_id);
-      if (!node.is_call() || registry_key(node.target) != "aten.view.default") {
+      const std::string target = registry_key(node.target);
+      // A view pads its own sizes along its source's packed dim, which can
+      // disagree with the source's physical layout. An alias keeps its
+      // source's sizes and dim order, so it always agrees.
+      if (!node.is_call() || !is_metadata_only_view(target) ||
+          target == "aten.alias.default") {
         continue;
       }
       for_each_output_value(node, [&](ValueId output_id) {
         const ValueId source_id = g().value(output_id).alias_id;
         if (valid(source_id) &&
-            ((!g().value(output_id).tensor_meta().lower_bounds.empty() &&
-              layout_at(output_id) == utils::kWidthPacked) ||
-             layout_at(output_id) != layout_at(source_id)) &&
-            storage_at(output_id) != utils::kBuffer) {
+            (layout_at(output_id) != layout_at(source_id) ||
+             (storage_at(output_id) == utils::kBuffer
+                  ? buffer_padding_possible(source_id) ||
+                      buffer_padding_possible(output_id)
+                  : !g().value(output_id).tensor_meta().lower_bounds.empty() &&
+                      layout_at(output_id) == utils::kWidthPacked))) {
           value_ids.push_back(output_id);
         }
       });
     }
     vulkan::materialize_view_copies(method_.graph, value_ids);
+    // Views in mutated alias groups stay aliases, which a buffer view whose
+    // padding can disagree with its source's cannot do.
+    const auto aliased = std::ranges::find_if(value_ids, [&](ValueId id) {
+      return storage_at(id) == utils::kBuffer && valid(g().value(id).alias_id);
+    });
+    if (aliased != value_ids.end()) {
+      throw std::runtime_error(
+          "vulkan: buffer view '" + g().value(*aliased).name +
+          "' of a mutated tensor cannot alias its padded source");
+    }
     validate_graph(method_.graph);
   }
 
@@ -1863,7 +1888,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
 
   void add_view_resize(const Node& n) {
     graph_->execute_nodes().emplace_back(new vkcompute::ExecuteNode(
-        resize_view_alias,
+        resize_view,
         {vref_at(n.outputs.at(0).value_id),
          resolve_arg(n.inputs.at(0).arg),
          resolve_arg(n.inputs.at(1).arg)}));
@@ -2143,6 +2168,9 @@ class VulkanEngineExecutable final : public EngineExecutable {
               "): only aten.view can alias a dynamically shaped source");
         }
         continue;
+      }
+      if (key == "aten.view_copy.default") {
+        add_view_resize(n);
       }
       try {
         dispatch(n);

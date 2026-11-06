@@ -30,11 +30,15 @@ def register_test_suite(aten_op, skip=False):
         if skip:
             return fn
 
-        if isinstance(aten_op, str):
-            test_suites[aten_op] = fn()
-        elif isinstance(aten_op, list):
-            for op in aten_op:
-                test_suites[op] = fn()
+        for op in [aten_op] if isinstance(aten_op, str) else aten_op:
+            suites = fn()
+            if op in test_suites:
+                previous = test_suites[op]
+                test_suites[op] = (
+                    previous if isinstance(previous, list) else [previous]
+                ) + (suites if isinstance(suites, list) else [suites])
+            else:
+                test_suites[op] = suites
         return fn
 
     return test_suite_decorator
@@ -893,6 +897,9 @@ def get_native_group_norm_inputs():
     test_suite.arg_storage_types = {
         "out": [None, "utils::kBuffer", "utils::kBuffer"],
     }
+    test_suite.arg_memory_layouts = {
+        "out": [None, "utils::kWidthPacked", "utils::kWidthPacked"],
+    }
 
     test_suite.prepacked_args = ["weight", "bias"]
     test_suite.requires_prepack = True
@@ -910,6 +917,7 @@ def get_native_group_norm_inputs():
     large_offset_suite.storage_types = test_suite.storage_types
     large_offset_suite.dtypes = ["at::kFloat"]
     large_offset_suite.arg_storage_types = test_suite.arg_storage_types
+    large_offset_suite.arg_memory_layouts = test_suite.arg_memory_layouts
     large_offset_suite.prepacked_args = test_suite.prepacked_args
     large_offset_suite.requires_prepack = True
     large_offset_suite.arg_data_range["input"] = (1000, 1001)
@@ -1082,6 +1090,10 @@ def get_permute_inputs():
 def get_view_inputs():
     test_suite = VkTestSuite(
         [
+            ((2, 3, 5), [2, 3, 5]),
+            ((2, 3, 5), [6, 5]),
+            ((2, 4), [8]),
+            ((2, 3), [6]),
             ((3, 4, 5), [1, 1, -1]),
             ((3, 4, 5), [1, -1, 1]),
             ((3, 4, 5), [-1, 1, 1]),
@@ -1127,7 +1139,7 @@ def get_view_inputs():
 
     for suite in [test_suite, highdim_test_suite, large_buffer_test_suite]:
         suite.layouts = [
-            # "utils::kWidthPacked",
+            "utils::kWidthPacked",
             "utils::kHeightPacked",
             "utils::kChannelsPacked",
         ]
@@ -1955,8 +1967,111 @@ def get_unary_ops_inputs():
         ]
     )
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
     test_suite.atol = "1e-4"
     test_suite.rtol = "1e-4"
+    test_suite.check_zero_padding = True
+    return test_suite
+
+
+@register_test_suite(
+    [
+        "aten.relu.default",
+        "aten.sigmoid.default",
+        "aten.tanh.default",
+        "aten.abs.default",
+    ]
+)
+def get_activation_inputs():
+    test_suite = VkTestSuite(
+        [
+            (M1,),
+            (M1, M2),
+            (S1, M1, M2),
+            (S1, S2, S2, M2),
+        ]
+    )
+    test_suite.data_range = (-2, 2)
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.atol = "1e-4"
+    test_suite.rtol = "1e-4"
+    test_suite.check_zero_padding = True
+    return test_suite
+
+
+@register_test_suite(["aten.clamp.default", "aten.hardtanh.default"])
+def get_clamp_inputs():
+    # Bounds that exclude zero map zero padding to a nonzero value.
+    bounds = [(-0.5, 0.5), (0.25, 1.5), (-1.5, -0.25)]
+    shapes = [(M1,), (M1, M2), (S1, M1, M2), (S1, S2, S2, M2)]
+    test_suite = VkTestSuite(
+        [(shape, low, high) for shape in shapes for low, high in bounds]
+    )
+    test_suite.data_range = (-2, 2)
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.check_zero_padding = True
+    return test_suite
+
+
+@register_test_suite("aten.clamp.default")
+def get_clamp_optional_bound_inputs():
+    shapes = [(M1, M2), (S1, S2, S2, M2)]
+    bounds = [(0.25, None), (None, -0.25), (None, 0.5)]
+    float_suite = VkTestSuite(
+        [(shape, low, high) for shape in shapes for low, high in bounds]
+    )
+    float_suite.data_range = (-2, 2)
+    float_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    float_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    float_suite.check_zero_padding = True
+    float_suite.test_name_suffix = "optional_bounds"
+
+    # make_casted_randint_tensor draws from [1, 20).
+    int_bounds = [(5, 15), (None, 10), (-3, None)]
+    int_suite = VkTestSuite(
+        [(shape, low, high) for shape in shapes for low, high in int_bounds]
+    )
+    int_suite.dtypes = ["at::kInt"]
+    int_suite.data_gen = "make_casted_randint_tensor"
+    int_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    int_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    int_suite.check_zero_padding = True
+    int_suite.test_name_suffix = "int"
+    return [float_suite, int_suite]
+
+
+@register_test_suite(["aten.bitwise_not.default", "aten.logical_not.default"])
+def get_bool_unary_inputs():
+    test_suite = VkTestSuite(
+        [
+            (M1,),
+            (M1, M2),
+            (S1, M1, M2),
+            (S1, S2, S2, M2),
+        ]
+    )
+    test_suite.dtypes = ["at::kBool"]
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.check_zero_padding = True
     return test_suite
 
 
@@ -2020,7 +2135,14 @@ def get_tan_inputs():
         ]
     )
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
     test_suite.dtypes = ["at::kFloat", "at::kHalf"]
+    test_suite.test_name_suffix = "dedicated"
+    test_suite.check_zero_padding = True
     return test_suite
 
 
@@ -2114,6 +2236,12 @@ def get_gelu_inputs():
     )
     test_suite.data_range = (-6, 6)
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.check_zero_padding = True
     return test_suite
 
 
