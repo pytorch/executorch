@@ -7,8 +7,12 @@
  */
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
+#include <executorch/runtime/platform/compiler.h>
 
 #include <pal/DynamicLoading.h>
+
+#include <limits>
+#include <new>
 
 // Refer to the QNN HTP Shared Buffer Tutorial
 // in Qualcomm® AI Engine Direct document
@@ -63,6 +67,7 @@ intptr_t alignTo(size_t alignment, intptr_t offset) {
 std::mutex SharedBuffer::init_mutex_;
 
 void* SharedBuffer::GetCustomMemBase(void* buf) {
+  std::lock_guard<std::mutex> lock(memory_mutex_);
   auto it = tensor_addr_to_custom_mem_.find(buf);
   if (it == tensor_addr_to_custom_mem_.end()) {
     return nullptr;
@@ -71,6 +76,7 @@ void* SharedBuffer::GetCustomMemBase(void* buf) {
 }
 
 size_t SharedBuffer::GetAllocatedSize(void* buf) {
+  std::lock_guard<std::mutex> lock(memory_mutex_);
   auto it = allocated_size_map_.find(buf);
   if (it == allocated_size_map_.end()) {
     return 0;
@@ -107,26 +113,56 @@ void* SharedBuffer::AllocMem(size_t bytes, size_t alignment) {
     QNN_EXECUTORCH_LOG_ERROR("Shared memory not initialized.");
     return nullptr;
   }
+  const size_t max_bytes = std::numeric_limits<int32_t>::max();
+  if (bytes == 0 || alignment == 0 || (alignment & (alignment - 1)) != 0 ||
+      alignment > max_bytes || bytes > max_bytes - alignment) {
+    QNN_EXECUTORCH_LOG_ERROR("Invalid shared memory size or alignment.");
+    return nullptr;
+  }
+  std::lock_guard<std::mutex> lock(memory_mutex_);
   // do alignment:
   auto allocate_bytes = static_cast<int32_t>(bytes + alignment);
-  void* buf = rpc_mem_alloc_(
-      RPCMEM_HEAP_ID_SYSTEM, RPCMEM_DEFAULT_FLAGS, allocate_bytes);
-  if (buf == nullptr) {
+  void* aligned_buf = nullptr;
+  bool restored = false;
+  auto release_allocation = [&](void* original) {
+    if (restored) {
+      restore_map_.erase(aligned_buf);
+      allocated_size_map_.erase(aligned_buf);
+    }
+    rpc_mem_free_(original);
+  };
+  std::unique_ptr<void, decltype(release_allocation)> allocation(
+      rpc_mem_alloc_(
+          RPCMEM_HEAP_ID_SYSTEM, RPCMEM_DEFAULT_FLAGS, allocate_bytes),
+      release_allocation);
+  if (!allocation) {
     QNN_EXECUTORCH_LOG_WARN("Failed to allocate the tensor by RPC memory.");
     return nullptr;
   }
-  auto aligned_buf = reinterpret_cast<void*>(
-      alignTo(alignment, reinterpret_cast<intptr_t>(buf)));
-  bool status = restore_map_.insert({aligned_buf, buf}).second;
-  allocated_size_map_.insert({aligned_buf, allocate_bytes});
-  if (!status) {
-    QNN_EXECUTORCH_LOG_ERROR("Failed to allocate the tensor by RPC memory.");
-    rpc_mem_free_(buf);
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  aligned_buf = reinterpret_cast<void*>(
+      alignTo(alignment, reinterpret_cast<intptr_t>(allocation.get())));
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    restored = restore_map_.insert({aligned_buf, allocation.get()}).second;
+    if (!restored) {
+      QNN_EXECUTORCH_LOG_ERROR("Failed to allocate the tensor by RPC memory.");
+      return nullptr;
+    }
+    allocated_size_map_.insert({aligned_buf, allocate_bytes});
+#if ET_HAS_EXCEPTIONS
+  } catch (const std::bad_alloc&) {
+    QNN_EXECUTORCH_LOG_ERROR("Failed to allocate shared memory bookkeeping.");
+    return nullptr;
   }
+#endif
+  restore_map_[aligned_buf] = allocation.release();
   return aligned_buf;
 }
 
 int32_t SharedBuffer::MemToFd(void* buf) {
+  std::lock_guard<std::mutex> lock(memory_mutex_);
   int32_t memFd = -1;
   if (!initialize_) {
     QNN_EXECUTORCH_LOG_ERROR("Shared memory not initialized.");
@@ -137,6 +173,7 @@ int32_t SharedBuffer::MemToFd(void* buf) {
 }
 
 void SharedBuffer::FreeMem(void* buf) {
+  std::lock_guard<std::mutex> lock(memory_mutex_);
   if (!initialize_) {
     QNN_EXECUTORCH_LOG_ERROR("Shared memory not initialized.");
   } else if (restore_map_.count(buf) == 0) {
@@ -157,6 +194,7 @@ void SharedBuffer::FreeMem(void* buf) {
 }
 
 bool SharedBuffer::IsAllocated(void* buf) {
+  std::lock_guard<std::mutex> lock(memory_mutex_);
   return restore_map_.count(buf) != 0U;
 }
 
@@ -190,6 +228,7 @@ Error SharedBuffer::Load() {
 }
 
 void SharedBuffer::AddCusomMemTensorAddr(void* tensor_addr, void* custom_mem) {
+  std::lock_guard<std::mutex> lock(memory_mutex_);
   bool status =
       tensor_addr_to_custom_mem_.insert({tensor_addr, custom_mem}).second;
   if (!status) {
