@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import logging
 from functools import partial
 from typing import Callable, List
@@ -16,6 +17,13 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import make_quantizer
+from executorch.backends.qualcomm.hf_transformers.api import HUGGING_FACE_QUANT_RECIPES
+from executorch.backends.qualcomm.hf_transformers.causal_lm.decoder_model_wrapper import (
+    QnnCausalLMExportableModule,
+)
+from executorch.backends.qualcomm.hf_transformers.causal_lm.hf_llm_quant_recipe import (
+    DefaultQuantRecipe,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
@@ -28,18 +36,6 @@ from executorch.backends.qualcomm.utils.utils import (
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.devtools.backend_debug import print_delegation_info
-from executorch.examples.qualcomm.oss_scripts.llm_utils.decoder_model_wrapper import (
-    QnnCausalLMExportableModule,
-)
-from executorch.examples.qualcomm.oss_scripts.llm_utils.llm_quant_recipe import (
-    DefaultQuantRecipe,
-    Granite_3_3_2B_Instruct_HFQuantRecipe,
-    Llama3_2_1B_HFQuantRecipe,
-    Qwen2_5_0_5B_HFQuantRecipe,
-    Qwen2_5_1_5B_HFQuantRecipe,
-    Qwen3_0_6B_HFQuantRecipe,
-    Smollm2_HFQuantRecipe,
-)
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from pytorch_tokenizers import get_tokenizer
@@ -54,32 +50,8 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 # (see examples/qualcomm/oss_scripts/llama/runner/runner.cpp).
 KV_FORWARD = "kv_forward"
 
-HUGGING_FACE_REPO_IDS = {
-    "llama3_2-1b": "NousResearch/Llama-3.2-1B",
-    "qwen2_5-0_5b": "Qwen/Qwen2.5-0.5B",
-    "qwen2_5-1_5b_instruct": "Qwen/Qwen2.5-1.5B-Instruct",
-    "qwen2_5-0_5b_instruct": "Qwen/Qwen2.5-0.5B-Instruct",
-    "qwen3-0_6b": "Qwen/Qwen3-0.6B",
-    "smollm2_135m": "HuggingFaceTB/SmolLM2-135M",
-    "granite-3_3-2b": "ibm-granite/granite-3.3-2b-instruct",
-}
 
-# TODO: This dict is temporary and will require a refactor later.
-# Will create a file similar to executorch/examples/qualcomm/oss_scripts/llama/__init__.py
-# and migrate model specific configs there.
-HUGGING_FACE_QUANT_RECIPES = {
-    "llama3_2-1b": Llama3_2_1B_HFQuantRecipe,
-    "qwen2_5-0_5b": Qwen2_5_0_5B_HFQuantRecipe,
-    "qwen2_5-0_5b_instruct": Qwen2_5_0_5B_HFQuantRecipe,
-    "qwen2_5-1_5b_instruct": Qwen2_5_1_5B_HFQuantRecipe,
-    "qwen3-0_6b": Qwen3_0_6B_HFQuantRecipe,
-    "smollm2_135m": Smollm2_HFQuantRecipe,
-    "granite-3_3-2b": Granite_3_3_2B_Instruct_HFQuantRecipe,
-}
-
-
-def get_qnn_llm_edge_manager(model_name, max_seq_len=128):
-    model_id = HUGGING_FACE_REPO_IDS[model_name]
+def get_qnn_llm_edge_manager(model_id, max_seq_len=128):
     config = AutoConfig.from_pretrained(model_id)
     device = "cpu"
     batch_size = 1
@@ -113,14 +85,15 @@ def get_qnn_llm_edge_manager(model_name, max_seq_len=128):
             },
         ),
     ).eval()
-    model_wrapper = QnnCausalLMExportableModule(model)
+    model_wrapper = QnnCausalLMExportableModule(
+        model=model, max_seq_len=max_seq_len, ar_len=config.ar_len
+    )
 
-    return QnnLLMEdgeManager(model_name, model_wrapper, config)
+    return QnnLLMEdgeManager(model_id, model_wrapper, config)
 
 
 class QnnLLMEdgeManager:
-    def __init__(self, model_name, model_wrapper, config, verbose=True) -> None:
-        self.model_name = model_name
+    def __init__(self, model_id, model_wrapper, config, verbose=True) -> None:
         self.model_wrapper = model_wrapper
         self.graph_module = model_wrapper
         self.config = config
@@ -129,10 +102,10 @@ class QnnLLMEdgeManager:
         self.passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
         self.edge_prog_mgr = None
         self.logits_quant_attrs = None
-        recipe_cls = HUGGING_FACE_QUANT_RECIPES.get(model_name, DefaultQuantRecipe)
+        recipe_cls = HUGGING_FACE_QUANT_RECIPES.get(model_id, DefaultQuantRecipe)
         if recipe_cls is DefaultQuantRecipe:
             logging.warning(
-                f"{model_name} does not have customized quant recipe using default quant recipe."
+                f"{model_id} does not have customized quant recipe using default quant recipe."
             )
         self.quant_recipe = recipe_cls(verbose)
 
@@ -210,27 +183,18 @@ class QnnLLMEdgeManager:
         with torch.no_grad():
             self.graph_module = torch.export.export(
                 self.graph_module,
-                args=self.model_wrapper.get_example_inputs(),
+                args=(),
+                kwargs=copy.deepcopy(dict(self.model_wrapper.get_example_inputs())),
                 strict=True,
             ).module()
 
     def pt2e_calibrate(
         self,
-        calibration_tasks,
-        calibration_limit,
         calibration_seq_length,
         calibration_data,
         tokenizer_path,
     ):
-        if calibration_tasks is not None:
-            raise ValueError(
-                "Task calibration is not supported yet. "
-                "Pass calibration_tasks=None and calibrate with calibration_data instead."
-            )
         tokenizer = get_tokenizer(tokenizer_path)
-        logging.info(
-            f"Calibrating with tasks: {calibration_tasks}, limit: {calibration_limit}, calibration_data: {calibration_data}, tokenizer_path: {tokenizer_path}, seq_length: {self.config.max_seq_len}"
-        )
 
         def _empty_past():
             past_k = [
@@ -301,44 +265,11 @@ class QnnLLMEdgeManager:
             prompts=calibration_data,
             max_len=calibration_seq_length,
         )
-        if calibration_tasks is not None and calibration_limit is not None:
-            # Import lazily so only import lm_eval when user use it.
-            try:
-                from executorch.examples.qualcomm.oss_scripts.llm_utils.eval_decoder_model_qnn import (
-                    GraphModuleCalibrationWrapper,
-                )
-                from lm_eval.evaluator import simple_evaluate
-            except ImportError:
-                raise ImportError(
-                    "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
-                )
-
-            eval_wrapper = GraphModuleCalibrationWrapper(
-                model=self.graph_module,
-                tokenizer=tokenizer,
-                max_seq_length=calibration_seq_length,
-                use_kv_cache=True,
-                generate_full_logits=True,
-                enable_dynamic_shape=False,
-            )
-
-            # Evaluate the model
-            with torch.no_grad():
-                eval_results = simple_evaluate(
-                    model=eval_wrapper,
-                    tasks=calibration_tasks,
-                    limit=calibration_limit,
-                )
-
-            for task, res in eval_results["results"].items():
-                print(f"{task}: {res}")
         logging.info("Calibration finish...")
 
     def pt2e_quantize(
         self,
         fixed_point_type,
-        calibration_tasks,
-        calibration_limit,
         calibration_data,
         tokenizer_path,
         backend,
@@ -352,8 +283,6 @@ class QnnLLMEdgeManager:
 
         self.graph_module = prepare_pt2e(self.graph_module, quantizer)
         self.pt2e_calibrate(
-            calibration_tasks,
-            calibration_limit,
             self.config.max_seq_len,
             calibration_data,
             tokenizer_path,
