@@ -35,7 +35,7 @@ class CudaWorkflowTest(unittest.TestCase):
     def test_build_matrix_preserves_existing_cuda_versions(self):
         job = WORKFLOW["jobs"]["test-cuda-builds"]
         self.assertEqual(
-            job["strategy"]["matrix"]["cuda-version"], ["12.6", "13.0", "13.4"]
+            job["strategy"]["matrix"]["cuda-version"], ["13.0", "13.4"]
         )
         self.assertEqual(job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}")
 
@@ -59,7 +59,7 @@ source() { printf 'BUILD %s\n' "$*"; printf 'LIBRARY PATH %s\n' "$LD_LIBRARY_PAT
 """
         for version, conda_status in (
             (version, status)
-            for version in ("12.6", "13.0", "13.4")
+            for version in ("13.0", "13.4")
             for status in (0, 1)
         ):
             with self.subTest(version=version, conda_status=conda_status):

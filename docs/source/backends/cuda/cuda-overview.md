@@ -17,7 +17,7 @@ Below are the requirements for running a CUDA-delegated ExecuTorch model:
 - **Hardware**: NVIDIA GPU with compute capability 8.0 (Ampere) or newer. This is the floor the
   prebuilt packages are built for.
 - **CUDA**: 13 for the prebuilt packages. On Linux they bring the CUDA runtime with them. On
-  Windows it comes from a CUDA 13 toolkit install. A build from source also supports CUDA 12.6.
+  Windows it comes from a CUDA 13 toolkit install. A build from source also supports CUDA 13.0.
 - **Operating System**: Linux, or Windows from C++ for programs exported on Linux (see
   [CUDA on Windows](../../using-executorch-cpp.md#cuda-on-windows))
 - **Drivers**: An NVIDIA driver that supports the CUDA version you use: CUDA 13 for the prebuilt
