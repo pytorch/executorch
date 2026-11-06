@@ -102,6 +102,60 @@ TEST_F(OpAddmmOutTest, AllDtypesSupported) {
   // for those types.
 }
 
+TEST_F(OpAddmmOutTest, BFloat16AccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // Each output sums 257 products of 1, plus a bias of 1. A BFloat16 running
+  // sum stops growing at 256. Rounding the float sum before adding the bias
+  // also gives 256, since 256 + 1 rounds back to 256. Every bias shape must get
+  // 258, which is 257 + 1 rounded once.
+  constexpr int K = 257;
+  Tensor x = tf.ones({2, K});
+  Tensor y = tf.ones({K, 3});
+  Tensor out = tf.zeros({2, 3});
+  for (const auto& bias :
+       {tf.ones({2, 3}),
+        tf.ones({3}),
+        tf.ones({2, 1}),
+        tf.ones({1, 1}),
+        tf.ones({})}) {
+    op_addmm_out(bias, x, y, Scalar(1), Scalar(1), out);
+    EXPECT_TENSOR_EQ(out, tf.full({2, 3}, 258));
+  }
+
+  // alpha and beta are not rounded to BFloat16 first: 0.3 would become
+  // 0.30078125, and 50 * 0.30078125 rounds to 15.0625 instead of 15.
+  Tensor out_scalar = tf.zeros({1, 1});
+  op_addmm_out(
+      tf.zeros({1}),
+      tf.ones({1, 50}),
+      tf.ones({50, 1}),
+      Scalar(1),
+      Scalar(0.3),
+      out_scalar);
+  EXPECT_TENSOR_EQ(out_scalar, tf.full({1, 1}, 15));
+  op_addmm_out(
+      tf.full({1}, 50),
+      tf.zeros({1, 1}),
+      tf.zeros({1, 1}),
+      Scalar(0.3),
+      Scalar(1),
+      out_scalar);
+  EXPECT_TENSOR_EQ(out_scalar, tf.full({1, 1}, 15));
+}
+
+TEST_F(OpAddmmOutTest, ZeroBetaIgnoresNanInSelf) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor out = tf.zeros({1, 1});
+  op_addmm_out(
+      tf.full({1, 1}, std::numeric_limits<float>::quiet_NaN()),
+      tf.ones({1, 1}),
+      tf.full({1, 1}, 2),
+      Scalar(0),
+      Scalar(1),
+      out);
+  EXPECT_TENSOR_EQ(out, tf.full({1, 1}, 2));
+}
+
 TEST_F(OpAddmmOutTest, EmptyInputWithEmptyOutTensorPasses) {
   TensorFactory<ScalarType::Float> tf;
 
@@ -250,6 +304,19 @@ TEST_F(OpAddmmOutTest, BroadcastTest) {
   EXPECT_TENSOR_EQ(
       op_addmm_out(self, x, y, Scalar(1), Scalar(1), out),
       tf.make({2, 2}, {8, 11, 16, 23}));
+
+  // A column bias adds a different value to each row.
+  TensorFactory<ScalarType::Float> tf_float;
+  Tensor x_float = tf_float.make({2, 2}, {1, 2, 3, 4});
+  Tensor out_float = tf_float.zeros({2, 2});
+  op_addmm_out(
+      tf_float.make({2, 1}, {10, 20}),
+      x_float,
+      x_float,
+      Scalar(1),
+      Scalar(1),
+      out_float);
+  EXPECT_TENSOR_EQ(out_float, tf_float.make({2, 2}, {17, 20, 35, 42}));
 }
 TEST_F(OpAddmmOutTest, BroadcastDimSize1) {
   TensorFactory<ScalarType::Float> tf;

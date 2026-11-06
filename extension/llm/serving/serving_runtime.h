@@ -96,6 +96,12 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
 // operation.
 using LifecycleResult ET_EXPERIMENTAL = std::optional<ServingError>;
 using LifecycleCallback ET_EXPERIMENTAL = std::function<void(LifecycleResult)>;
+struct ET_EXPERIMENTAL CloseResult {
+  LifecycleResult error;
+  // Meaningful on success: false means the session was already absent.
+  bool existed = false;
+};
+using CloseCallback ET_EXPERIMENTAL = std::function<void(CloseResult)>;
 using GenerateResult ET_EXPERIMENTAL =
     std::variant<RequestHandle, ServingError>;
 
@@ -155,6 +161,11 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Session closure is through RAII, not synchronous physical cleanup.
   void close_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> close_session_async(std::string key);
+
+  // Same idempotent close, additionally reporting whether a slot existed.
+  void close_session_with_result_async(
+      std::string key,
+      CloseCallback on_complete);
 
   // Cold replacement, retaining the key and logical slot throughout. Success
   // means reopening and old-response callback cleanup completed. Failure

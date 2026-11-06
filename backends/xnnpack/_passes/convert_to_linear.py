@@ -142,8 +142,7 @@ class ConvertToLinearPass(ExportPass):
                 exir_ops.edge.aten.linear.default,  # HACK not edge_op/CATen
                 args,
             )
-        # TODO - calculate output even when dynamic_shape=True
-        linear_node.meta["val"] = torch.zeros(get_shape(output))
+        linear_node.meta["val"] = output.meta["val"]
         logger.debug(
             f"Replacing {output}{get_shape(output)} node with {linear_node}{get_shape(linear_node)}"
         )

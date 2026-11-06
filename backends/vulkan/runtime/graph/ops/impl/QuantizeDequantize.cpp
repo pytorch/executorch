@@ -32,11 +32,10 @@ bool is_gemv(ComputeGraph* graph, const ValueRef& fp_input) {
 std::tuple<int64_t, int64_t> get_quantized_input_num_blocks(
     ComputeGraph& graph,
     const ValueRef input) {
-  std::vector<int64_t> input_sizes = graph.sizes_of(input);
-  const int64_t ndim = graph.dim_of(input);
+  const std::vector<int64_t> input_sizes = graph.sizes_of(input);
 
-  const int64_t M = input_sizes.at(ndim - 2);
-  const int64_t K = input_sizes.at(ndim - 1);
+  const int64_t M = utils::val_at(-2, input_sizes);
+  const int64_t K = utils::val_at(-1, input_sizes);
 
   const int64_t num_blocks_M = utils::div_up(M, int64_t(4));
   const int64_t num_blocks_K = utils::div_up(K, int64_t(4));

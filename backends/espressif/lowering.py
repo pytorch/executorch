@@ -59,7 +59,8 @@ def to_espnn_edge(
     the program for the portable CPU kernels. Returns (edge_manager, report).
 
     With use_operator_library=True, run EspPassManager without partitioning.
-    This route currently preserves portable operators and executable Q/DQ.
+    Supported patterns become direct ESP-NN operators; others retain portable
+    operators and executable Q/DQ.
     Its report counts esp_nn_ops and lists remaining cpu_ops by method,
     excluding Q/DQ and structural getitem nodes.
     """

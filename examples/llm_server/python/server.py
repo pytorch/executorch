@@ -30,10 +30,10 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-
 from typing import AsyncContextManager, Awaitable, Callable, Optional
 
 from fastapi import FastAPI, Header, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.requests import ClientDisconnect
 
@@ -81,14 +81,17 @@ def _resolve_session_id(
 
 
 async def _session_op(
-    op: Callable[[str], Awaitable[None]], session_id: str, ok: dict
+    op: Callable[[str], Awaitable[None]],
+    session_id: str,
+    ok: dict,
+    serving: ServingChat,
 ) -> JSONResponse:
     # Shared shape for the session vendor-extension routes (close/reset): run the
     # operation, mapping APIError to a structured JSON error.
     try:
         await op(session_id)
     except APIError as e:
-        return JSONResponse(e.body(), status_code=e.status)
+        return JSONResponse(serving.error_body(e), status_code=e.status)
     return JSONResponse(ok)
 
 
@@ -124,13 +127,57 @@ async def _create_with_disconnect(
 
 
 class _ClosingStreamingResponse(StreamingResponse):
+    def __init__(self, content, *, heartbeat_interval=15.0, **kwargs):
+        self._source = content
+        super().__init__(_with_heartbeats(content, heartbeat_interval), **kwargs)
+
     async def __call__(self, scope, receive, send):
         try:
             await super().__call__(scope, receive, send)
         finally:
-            await SessionRuntime._finish_cleanup(
-                asyncio.create_task(self.body_iterator.aclose())
-            )
+            try:
+                await SessionRuntime._finish_cleanup(
+                    asyncio.create_task(self.body_iterator.aclose())
+                )
+            finally:
+                await SessionRuntime._finish_cleanup(
+                    asyncio.create_task(self._source.aclose())
+                )
+
+
+async def _with_heartbeats(stream, interval=15.0):
+    chunks = asyncio.Queue(maxsize=1)
+    ready = asyncio.Event()
+
+    async def produce():
+        try:
+            async for chunk in stream:
+                await chunks.put(chunk)
+                ready.set()
+        finally:
+            await stream.aclose()
+
+    producer = asyncio.create_task(produce())
+    producer.add_done_callback(lambda _: ready.set())
+    try:
+        while True:
+            ready.clear()
+            try:
+                chunk = chunks.get_nowait()
+            except asyncio.QueueEmpty:
+                if producer.done():
+                    await producer
+                    return
+                try:
+                    async with asyncio.timeout(interval):
+                        await ready.wait()
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+            else:
+                yield chunk
+    finally:
+        producer.cancel()
+        await asyncio.gather(producer, return_exceptions=True)
 
 
 def _create_serving_app(serving, serving_factory):
@@ -184,15 +231,33 @@ def build_app(
     """
     app = _create_serving_app(serving, serving_factory)
 
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request, error):
+        first = error.errors()[0]
+        location = ".".join(str(part) for part in first["loc"])
+        api_error = APIError(
+            422, f"{location}: {first['msg']}", "invalid_request_error", "invalid_value"
+        )
+        return JSONResponse(
+            _current_serving(app).error_body(api_error), status_code=422
+        )
+
     @app.get("/health")
     async def health():
         if not _current_serving(app).healthy:
             return JSONResponse({"status": "unavailable"}, status_code=503)
         return {"status": "ok"}
 
-    @app.get("/v1/models")
+    @app.get("/v1/models", response_model_exclude_none=True)
     async def list_models() -> ModelList:
-        return ModelList(data=[ModelCard(id=model_id)])
+        return ModelList(
+            data=[
+                ModelCard(
+                    id=model_id,
+                    context_length=_current_serving(app).max_context,
+                )
+            ]
+        )
 
     @app.post("/v1/chat/completions")
     async def chat_completions(
@@ -217,7 +282,9 @@ def build_app(
         except ClientDisconnect:
             return Response(status_code=499)
         except APIError as e:
-            return JSONResponse(e.body(), status_code=e.status)
+            return JSONResponse(
+                _current_serving(app).error_body(e), status_code=e.status
+            )
         if req.stream:
             return _ClosingStreamingResponse(result, media_type="text/event-stream")
         return JSONResponse(result.model_dump(exclude_none=True))
@@ -225,19 +292,23 @@ def build_app(
     @app.delete("/v1/sessions/{session_id}")
     async def close_session(session_id: str):
         # Free a named session's state + capacity slot (vendor extension).
+        serving = _current_serving(app)
         return await _session_op(
-            _current_serving(app).close_session,
+            serving.close_session,
             session_id,
             {"closed": True, "session_id": session_id},
+            serving,
         )
 
     @app.post("/v1/sessions/{session_id}/reset")
     async def reset_session(session_id: str):
         # Replace a named session's context under its public ID (vendor extension).
+        serving = _current_serving(app)
         return await _session_op(
-            _current_serving(app).reset_session,
+            serving.reset_session,
             session_id,
             {"reset": True, "session_id": session_id},
+            serving,
         )
 
     return app

@@ -40,6 +40,8 @@
 
 - op: _unique2.out
 
+- op: _upsample_bicubic2d_aa.out
+
 - op: _upsample_bilinear2d_aa.out
 
 - op: abs.out

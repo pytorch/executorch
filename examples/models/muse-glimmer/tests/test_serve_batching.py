@@ -12,6 +12,8 @@ import sys
 import pytest
 
 pytest.importorskip("pydantic", reason="requires llm_server serving dependencies")
+pytest.importorskip("jsonschema", reason="requires llm_server serving dependencies")
+pytest.importorskip("regex", reason="requires llm_server serving dependencies")
 
 from executorch.examples.models.muse_glimmer.serving import (  # noqa: E402
     serve,
@@ -150,20 +152,24 @@ def test_cuda_launcher_forwards_dflash(arguments, tmp_path):
     )
 
 
-@pytest.mark.parametrize("case", ["no_weights", "pos_embed"])
-def test_cuda_launcher_rejects_missing_weights_or_vision(arguments, tmp_path, case):
+def test_cuda_launcher_requires_the_weights_file(arguments):
+    with pytest.raises(SystemExit) as error:
+        serve_batching._parse_args(arguments + ["--backend", "cuda"])
+    assert error.value.code == 2
+
+
+def test_cuda_worker_takes_the_vision_table(arguments, tmp_path):
     data = tmp_path / "aoti_cuda_blob.ptd"
     table = tmp_path / "pos_embed.bin"
     data.touch()
     table.touch()
-    argv = arguments + ["--backend", "cuda"]
-    if case != "no_weights":
-        argv += ["--data-path", str(data)]
-    if case == "pos_embed":
-        argv += ["--pos-embed-path", str(table)]
-    with pytest.raises(SystemExit) as error:
-        serve_batching._parse_args(argv)
-    assert error.value.code == 2
+    args = serve_batching._parse_args(
+        arguments
+        + ["--backend", "cuda", "--data-path", str(data)]
+        + ["--pos-embed-path", str(table)]
+    )
+    flags = dict(arg.split("=", 1) for arg in serve_batching._worker_command(args)[1:])
+    assert flags["--pos_embed_path"] == str(table)
 
 
 @pytest.mark.parametrize("shortfall", [0, 1])
@@ -186,7 +192,15 @@ def test_image_frame_capacity(arguments, shortfall):
 
 
 @pytest.mark.parametrize("constructor_failure", [False, True])
-def test_chat_factory_closes_worker(arguments, monkeypatch, constructor_failure):
+@pytest.mark.parametrize("bounded", [False, True])
+def test_chat_factory_closes_worker(
+    arguments, monkeypatch, constructor_failure, bounded
+):
+    arguments = arguments + (
+        ["--api-dialect", "openrouter", "--streaming-preflight-timeout", "0.25"]
+        if bounded
+        else []
+    )
     captured = {}
 
     class Worker:
@@ -231,6 +245,8 @@ def test_chat_factory_closes_worker(arguments, monkeypatch, constructor_failure)
     async def scenario():
         async with factory() as chat:
             assert isinstance(chat, serve.MuseGlimmerServingChat)
+            assert chat.api_dialect == ("openrouter" if bounded else "openai")
+            assert chat._streaming_preflight_timeout == (0.25 if bounded else None)
             assert chat._prompt_token_offset == 1
             assert chat._max_image_bytes == args.max_image_bytes
             assert not worker.closed
@@ -242,3 +258,19 @@ def test_chat_factory_closes_worker(arguments, monkeypatch, constructor_failure)
         asyncio.run(scenario())
     assert worker.closed
     assert captured["command"] == serve_batching._worker_command(args)
+
+
+@pytest.mark.parametrize("value,expected", [("none", None), ("0", 0.0), ("0.25", 0.25)])
+def test_api_dialect_and_preflight_options(arguments, value, expected):
+    args = serve_batching._parse_args(
+        arguments
+        + ["--api-dialect", "openrouter", "--streaming-preflight-timeout", value]
+    )
+    assert args.api_dialect == "openrouter"
+    assert args.streaming_preflight_timeout == expected
+
+
+@pytest.mark.parametrize("value", ["-1", "inf", "nan", "invalid"])
+def test_invalid_preflight_option(arguments, value):
+    with pytest.raises(SystemExit):
+        serve_batching._parse_args(arguments + ["--streaming-preflight-timeout", value])

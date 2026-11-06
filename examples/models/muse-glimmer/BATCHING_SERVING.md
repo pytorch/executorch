@@ -1,10 +1,10 @@
 # Muse Glimmer Batching Serving
 
-The batching runner and multiplexed worker support MLX autoregressive generation
-with text only or text plus one image across the submitted conversation, and
-CUDA autoregressive generation with text only. They are opt-in entry points; the
+The batching runner and multiplexed worker support MLX and CUDA autoregressive
+generation with text only or text plus one image across the submitted
+conversation. They are opt-in entry points; the
 legacy runners and export defaults remain unchanged. DFlash batching runs on MLX
-and CUDA (text only).
+(text only) and CUDA, which also serves images when exported with `--mmproj`.
 CUDA specifics are in [CUDA](#cuda) below.
 
 ## Export
@@ -97,13 +97,94 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
 
 Omit `--data-path` when weights are embedded in the program. For text-only
 artifacts, omit `--pos-embed-path`. The launcher uses one multiplexed worker
-process and the matching Hugging Face chat template. It does not fall back to a
+process and the bundled Muse chat template with the Hugging Face tokenizer. The
+template preserves developer messages and assistant commentary with tool calls.
+It does not fall back to a
 legacy worker or DFlash.
 
 Send `"stream": true` for streaming responses. The MG parser removes model
 framing and emits `reasoning_content` and `content` incrementally. Optional ATEM
-tool parsing is enabled with `--tool-parser atem`; tool-enabled responses
-currently remain buffered.
+tool parsing is enabled with `--tool-parser atem`. Reasoning preceding tool calls
+streams incrementally; complete calls are buffered and validated before delivery.
+Malformed parameter bodies, duplicate parameters, undefined calls, and arguments
+that violate their JSON Schema produce `invalid_tool_output` errors, with no tool
+calls emitted. Parameters support union schemas and local JSON pointer references;
+string values preserve whitespace and literal Harmony headers. Schema validation
+accepts Draft 7, 2019-09, and 2020-12 (the default), including root `$id` and local
+fragment references. External references, nested schema identifiers/dialect changes,
+dynamic references, more than 1023 coercion alternatives, and more than 4096 expanded
+schema nodes are rejected before generation with HTTP 400 `invalid_tool_schema`.
+All active tool schemas must pass validation, including tools with `strict=false`
+and tools the model does not call. Malformed schemas (for example, a property with
+`"required": true`), Draft 4 or 6, and unknown `$schema` dialects are rejected.
+Disabled tools (`tool_choice="none"`) are not validated.
+Validators are compiled once per request and never fetch schemas. Install the
+serving requirements, including `jsonschema` and `regex`.
+Schemas without `$schema` use Draft 2020-12; legacy tuple `items` need an explicit
+Draft 7 declaration, and Draft 4 boolean `exclusiveMinimum` is unsupported.
+Undefined tools, invalid arguments, and exhausted output budgets return HTTP 502
+`invalid_tool_output` (or an SSE error after streaming starts). SDKs may retry
+these responses; clients wanting a single attempt should disable automatic retries.
+Coercion preserves correlations between object alternatives and conditional schemas,
+then validates the complete argument object. Declared numeric parameters also accept
+spellings such as `+5`, `007`, `.5`, and `5.`; declared strings stay literal.
+Before generation, the server walks every coercion alternative and declared parameter,
+including map-property projections. All active tools share a 65,536-visit preflight
+budget. Requests exceeding that budget return HTTP 400 `invalid_tool_schema`. The output budget also
+counts actual keyword checks, nested values, and deep comparison work, and is shared across all invocations
+in a response. Client `pattern` and `patternProperties` searches share a separate
+100 ms regex execution budget, including annotation and property-projection searches.
+Patterns are compiled and evaluated with the same timeout-capable `regex` engine,
+including Unicode properties and named groups. `uniqueItems` uses bounded structural
+keys rather than pairwise comparisons of objects; `enum` and `const` share this budget.
+Extra parameters, large nested arguments, or multiple calls can exhaust this budget
+and return `invalid_tool_output`; coercion tries at most 1024 alternatives per call.
+This is validation after generation, not token-level constrained decoding.
+`function.strict=true` is supported: a successful response contains only
+schema-valid calls; invalid generation fails the response. This supports Muse's
+strict summarizer tool. Required/named tool choice and structured response formats
+remain unsupported.
+
+The launcher waits for initial generation readiness before returning streaming
+headers. Set `--streaming-preflight-timeout 1` to bound generation-readiness
+waiting, including prefill, to one second. This does not bound earlier request
+preparation or waiting behind another request on the same session.
+Idle streams send SSE keepalive comments every 15 seconds. Admission errors
+detected before headers retain their HTTP status; later session-slot rejection
+before any raw model output can evict an idle session and retry, including after
+headers. Other late errors are delivered as SSE errors. Keepalives indicate a live connection, not
+measured prefill progress.
+
+### OpenRouter compatibility
+
+Start the server with `--api-dialect openrouter` for OpenRouter clients and
+`--tool-parser atem` for tool calling. `/v1/models` reports the configured
+`context_length`; clients must consume that value or configure their context
+budget explicitly. The server does not configure client-side compaction.
+
+The OpenRouter usage format includes usage once on the terminal finish chunk.
+The installed Muse provider stops reading at that chunk, so a later usage-only
+chunk would be lost. The default `openai` format keeps the separate usage-only
+chunk. Both formats honor `stream_options.include_usage`.
+The `openrouter` mode also supplies the error metadata and message counts Muse
+needs for reactive context-overflow recovery, including worker-detected overflow
+when using an updated native worker. Worker counts include image positions and
+numeric BOS. Image prompts bypass Python token-count preflight so only the
+worker publishes their image-expanded count; older unstructured worker errors
+cannot provide recovery counts.
+Counts describe the input prompt and
+its available budget after reserving completion space; metadata retains the full
+model window. A completion reservation consuming the entire window cannot be
+fixed by compacting input: diagnostic metadata remains, but the message does not
+match Muse's recoverable prompt-budget format. With no explicit `max_tokens`,
+the server reserves one output token; Muse applies its own compaction margin.
+
+The model adapter qualifies each declared flat tool name as `name.name` in the
+prompt and maps that exact alias back to the original name in responses. Dotted
+names stay unchanged; colliding aliases are rejected. This mapping is local to
+the Muse model adapter and only accepts declared tools. OpenRouter
+`reasoning: {"effort": "low"}` and `reasoning_effort` map to the template's
+`reasoning_strength`; supported values are `low`, `medium`, and `high`.
 
 Streaming intentionally differs from the legacy buffered fallback for incomplete
 `<|` headers, which are suppressed at EOF; bare `to=` suffixes remain literal text
@@ -143,6 +224,18 @@ apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
 
 ## Session Behavior
 
+- Named sessions persist by default. `--evict-idle-sessions` allows the server to
+  close the least recently used idle session when logical session slots are exhausted, clearing
+  its transcript cache as well. Active requests and queued users of a session are
+  protected. Resubmitting an evicted session with full history recreates it.
+  This opt-in policy also allows anonymous requests to evict named idle sessions;
+  the anonymous request releases its temporary slot when it finishes. If all
+  slots are active, capacity errors still apply. Request/queue overload does not
+  trigger eviction. Streaming and non-streaming requests both confirm a new
+  named session on the first raw output or successful terminal response.
+- Generated-token replay is bound to preceding history as well as the assistant
+  response. Compaction or edited earlier messages invalidate affected records,
+  preventing an identical visible answer from restoring another turn's reasoning.
 - Text and image prompts use the shared prefix-reuse path. Image rows count as
   decoder positions; matching uses token IDs and an image-content digest with
   content-relative row offsets, not patch token IDs alone.
@@ -205,8 +298,10 @@ python -m executorch.examples.models.muse_glimmer.export.export_solo \
 
 `--forward-sizes` (default `1,2,4,8,16,32,64`), `--max-step-tokens` (default
 4096) and `--max-cells` (default 65536) size the methods and the shared KV
-pool; `--logits` samples on the host instead. The artifact is text only, so
-`--mmproj` is rejected.
+pool; `--logits` samples on the host instead. Add `--mmproj` for images: the
+token forwards are unchanged, and the artifact gains `vision_encoder`,
+`embed_text` and a dynamic `forward_from_embeddings` over the same cache, which
+runs only the prefill steps that carry an image.
 
 Build with `make muse-glimmer-batching-cuda` on Linux, then serve:
 
@@ -221,8 +316,8 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
   --max-context 8192
 ```
 
-`--data-path` is required and `--pos-embed-path` is rejected; image requests
-fail preparation. Every resident session reserves `--max-context` cells of the
+`--data-path` is required. Image artifacts read `pos_embed.bin` beside
+`model.pte`, or `--pos-embed-path`. Every resident session reserves `--max-context` cells of the
 pool: requests, `--prefix-cache-entries` snapshots, and the resolved number of
 capture slots when snapshots are enabled. `--prefix-capture-slots 0` (the default)
 matches request concurrency, capped at two when checkpoints are enabled; a
@@ -240,3 +335,21 @@ and `--max-draft-owners`), then add `--dflash` to the serve command above. The
 draft ABI and `--dflash-n-draft` behave as on MLX. Drafts are greedy; the target
 accepts or resamples them on the device under each request's sampling. Decode
 drafts of up to four owners run in CUDA graphs.
+
+ATEM tool intent must start a line outside Markdown code or immediately follow a
+tool recipient header. User-directed examples and quoted markers remain content.
+An invocation truncated by length or a request stop suppresses the entire
+incomplete call set and ends with `finish_reason=length` or `stop`, respectively;
+malformed completed calls still return
+`invalid_tool_output`. Streaming may already have delivered reasoning before that
+error. Tool calls are emitted only after the whole call set passes validation.
+
+Empty reasoning options and `enabled=true` are no-ops. `effort` accepts low,
+medium, or high, and `exclude` controls response visibility. Disabling reasoning
+generation or unsupported reasoning keys returns an explicit parameter error.
+
+Native workers always report `matched_stop`: a removed string stop or null for
+EOS/length/cancellation. Request stops take precedence over template stops at the
+same position. Older workers that omit the field cannot distinguish EOS from a
+removed request stop; with request stops configured, incomplete blocks are
+conservatively treated as cutoffs. Completed malformed blocks still fail.

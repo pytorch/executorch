@@ -426,10 +426,10 @@ bool ComputeGraph::is_standard_channels_packed_texture_tensor(
 bool ComputeGraph::is_2d_matrix(const ValueRef idx) const {
   std::vector<int64_t> sizes = sizes_of(idx);
   const size_t ndim = sizes.size();
-  if (sizes.size() < 2) {
+  if (ndim == 0) {
     return false;
   }
-  if (sizes.size() == 2) {
+  if (ndim <= 2) {
     return true;
   }
 
@@ -880,6 +880,7 @@ void ComputeGraph::register_pipeline_to_create(
     const LocalWorkGroup& lwg,
     const vkapi::SpecVarList& spec_vars,
     const std::vector<PushConstantDataInfo>& push_constants) {
+  context()->check_device_capabilities(shader_info);
   VkDescriptorSetLayout shader_layout =
       context()->shader_layout_cache().retrieve(shader_info.kernel_layout);
 

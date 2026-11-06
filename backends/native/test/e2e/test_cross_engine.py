@@ -35,7 +35,14 @@ _FP32_KV_ONLY = ("vulkan_ptn_runner",)
 _MAX_SEQ = 16
 
 
-def _run(runner: str, package: Path, steps, outdir: Path, resize: bool = False):
+def _run(
+    runner: str,
+    package: Path,
+    steps,
+    outdir: Path,
+    resize: bool = False,
+    flags: tuple[str, ...] = (),
+):
     """Runs each step's inputs in order on one executable; returns each step's
     single float32 output."""
     input_steps, output_steps, shapes = [], [], []
@@ -55,6 +62,7 @@ def _run(runner: str, package: Path, steps, outdir: Path, resize: bool = False):
     ]
     if resize:
         command.append(f"--input_sizes={';'.join(shapes)}")
+    command.extend(flags)
     resources = files(__package__)
     with as_file(resources / runner) as binary, as_file(
         resources / "vulkan_driver"
@@ -390,11 +398,13 @@ class CrossEngineTest(unittest.TestCase):
         seq = Dim("seq", min=2, max=12)
         self._check_dynamic(_ViewRelu(), steps, ({1: seq},))
 
-    def _check_engines(self, package, steps, expected, outdir, atol_fraction, engines):
+    def _check_engines(
+        self, package, steps, expected, outdir, atol_fraction, engines, flags=()
+    ):
         tokens = {}
         for runner in engines:
             with self.subTest(engine=runner):
-                outputs = _run(runner, package, steps, outdir, resize=True)
+                outputs = _run(runner, package, steps, outdir, resize=True, flags=flags)
                 self.assertEqual(len(outputs), len(expected))
                 for step, (actual, reference) in enumerate(zip(outputs, expected)):
                     self.assertEqual(actual.shape, reference.shape)
@@ -433,6 +443,7 @@ class CrossEngineTest(unittest.TestCase):
         atol_fraction: float,
         engines=_ENGINES,
         max_seq: int = _MAX_SEQ,
+        flags: tuple[str, ...] = (),
     ):
         prompt = torch.randint(0, model.config.vocab_size, (1, 7))
         eager = LastTokenLM(copy.deepcopy(model), max_seq, kv_cache_dtype).eval()
@@ -457,7 +468,7 @@ class CrossEngineTest(unittest.TestCase):
             package = outdir / "tiny_llama.ptn"
             to_native(ep).save(str(package))
             tokens = self._check_engines(
-                package, steps, expected, outdir, atol_fraction, engines
+                package, steps, expected, outdir, atol_fraction, engines, flags
             )
         greedy = [e[0, -1].argmax().item() for e in expected]
         for runner, chosen in tokens.items():
@@ -472,16 +483,20 @@ class CrossEngineTest(unittest.TestCase):
         model = _tiny_llama()
         pairs = _gguf_weights(model)
         load_gguf(model, "tiny.gguf", "llama", lambda _: iter(pairs))
-        # ggml requantizes activations to Q8_K for its K-quant matmuls, while
-        # native-vk decodes the K-quant weights exactly to fp32. Re-seeding
-        # gives both engines the same prompt.
-        for runner, atol_fraction in (
-            ("ggml_ptn_runner", 5e-2),
-            ("vulkan_ptn_runner", 1e-3),
+        # ggml requantizes activations to Q8_K for its K-quant matmuls, once
+        # allowed to, while native-vk decodes the K-quant weights exactly to
+        # fp32. Re-seeding gives both engines the same prompt.
+        for runner, atol_fraction, flags in (
+            ("ggml_ptn_runner", 5e-2, ("--allow_activation_quant_for_weight_only",)),
+            ("vulkan_ptn_runner", 1e-3, ()),
         ):
             torch.manual_seed(0)
             self._check_llama(
-                copy.deepcopy(model), torch.float32, atol_fraction, engines=(runner,)
+                copy.deepcopy(model),
+                torch.float32,
+                atol_fraction,
+                engines=(runner,),
+                flags=flags,
             )
 
     def test_tiny_llama_fp16_kv(self):

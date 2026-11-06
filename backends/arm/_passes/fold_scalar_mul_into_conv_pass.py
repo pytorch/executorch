@@ -249,12 +249,15 @@ class FoldScalarMulIntoConvPass(ArmPass):
                 else InputKind.PARAMETER
             )
 
+            # Several convolutions can share one weight and fold different
+            # scales, so the names must include the multiplication.
+            folded_suffix = f"_{mul_node.name}_folded_mul"
             with graph.inserting_before(weight_node):
                 scaled_weight_node = create_constant_placeholder(
                     exp_program=self.exported_program,
                     graph=graph,
                     kind=weight_kind,
-                    name=f"{weight_node.name}_folded_mul",
+                    name=weight_node.name + folded_suffix,
                     data=scaled_weight,
                 )
                 scaled_bias_node = None
@@ -265,7 +268,7 @@ class FoldScalarMulIntoConvPass(ArmPass):
                             exp_program=self.exported_program,
                             graph=graph,
                             kind=bias_kind,
-                            name=f"{bias_node.name}_folded_mul",
+                            name=bias_node.name + folded_suffix,
                             data=scaled_bias,
                         )
 

@@ -18,6 +18,8 @@ import pytest
 # extras (examples/llm_server/python/requirements.txt) rather than core
 # ExecuTorch, so skip instead of failing collection when it is absent.
 pytest.importorskip("pydantic", reason="requires llm_server serving dependencies")
+pytest.importorskip("jsonschema", reason="requires llm_server serving dependencies")
+pytest.importorskip("regex", reason="requires llm_server serving dependencies")
 
 from executorch.examples.llm_server.python import chat_template  # noqa: E402
 from executorch.examples.llm_server.python.errors import APIError  # noqa: E402
@@ -439,7 +441,7 @@ def test_muse_glimmer_serving_injects_image_segment_into_runtime(stream):
     assert len(request.messages[0].content) == 3
 
 
-def test_muse_glimmer_prompt_count_ignores_image_segment():
+def test_muse_glimmer_prompt_count_defers_images_to_native_worker():
     serving = serve.MuseGlimmerServingChat(object(), _ImageTemplate(), "muse_glimmer")
     prompt = PromptInput(
         segments=[
@@ -449,7 +451,7 @@ def test_muse_glimmer_prompt_count_ignores_image_segment():
         ]
     )
 
-    assert serving._count_prompt_tokens(prompt) == 5
+    assert serving._count_prompt_tokens(prompt) is None
 
 
 def test_strip_muse_glimmer_header_returns_visible_answer():
@@ -565,6 +567,7 @@ class _FakeRuntime:
             stats.prompt_tokens = out.get("prompt_tokens", 0)
             stats.completion_tokens = out.get("completion_tokens", 0)
             stats.finish_reason = out.get("finish_reason", "stop")
+            stats.matched_stop = out.get("matched_stop")
             stats.generated_token_ids = (
                 list(out["gen_ids"]) if out.get("gen_ids") is not None else None
             )
@@ -881,6 +884,8 @@ async def _create_message(serving, request):
         for field in ("content", "reasoning_content"):
             if field in delta:
                 message[field] = message.get(field, "") + delta[field]
+        if delta.get("tool_calls"):
+            message.setdefault("tool_calls", []).extend(delta["tool_calls"])
     assert done
     return message
 
@@ -987,8 +992,8 @@ def test_replay_recovers_after_edit_without_restoring_stale_turns(
             assert _assemble(prompt) == _benc(template.render(messages))
             expected = generated[:i] if i < 3 else [generated[0]]
             if i == 4:
-                expected.append(generated[3])
                 if not restore_history:
+                    expected.append(generated[3])
                     resident = _assemble(runtime.prompts[3]) + generated[3]
                     assert _assemble(prompt)[: len(resident)] == resident
             assert [s["ids"] for s in prompt.segments or [] if "ids" in s] == expected
@@ -1020,7 +1025,13 @@ def test_self_reasoning_then_tool_call_content_clean_calls_unchanged():
         "<|start|>assistant to=get_weather<|message|>" + block + "<|eom|>"
     )
     tools = {"get_weather": {"properties": {"city": {"type": "string"}}}}
-    parsed = AtemToolCallDetector().detect_and_parse(text, tools)
+    from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (
+        ToolSchema,
+    )
+
+    parsed = AtemToolCallDetector().detect_and_parse(
+        text, {name: ToolSchema(schema) for name, schema in tools.items()}
+    )
     # tool_calls extraction is unchanged: the get_weather call is still parsed.
     assert [c.name for c in parsed.calls] == ["get_weather"]
     reasoning, visible = serve._extract_muse_glimmer_reasoning(parsed.normal_text)
@@ -1084,3 +1095,252 @@ def test_rejects_multiple_runners(monkeypatch):
     )
     with pytest.raises(SystemExit):
         serve.main()
+
+
+@pytest.mark.parametrize(
+    "control", [{"reasoning": {"effort": "low"}}, {"reasoning_effort": "low"}]
+)
+def test_openrouter_reasoning_effort_reaches_template(control):
+    class Template(_StubTemplate):
+        seen = None
+
+        def render(self, messages, tools=None, template_kwargs=None):
+            self.seen = template_kwargs
+            return super().render(
+                messages, tools=tools, template_kwargs=template_kwargs
+            )
+
+    template = Template()
+    serving, _ = _glimmer_serving(
+        [{"text": " to=user<|message|>OK"}], template=template
+    )
+    asyncio.run(
+        serving.create(
+            ChatCompletionRequest(
+                messages=[ChatMessage(role="user", content="hi")], **control
+            )
+        )
+    )
+    assert template.seen["reasoning_strength"] == "low"
+
+
+def test_bundled_template_preserves_developer_and_canonical_tool_history():
+    import os
+
+    hf = os.environ.get("MUSE_GLIMMER_HF_DIR")
+    if not hf:
+        pytest.skip("set MUSE_GLIMMER_HF_DIR to a local Muse tokenizer")
+    from executorch.examples.llm_server.python.protocol import FunctionCall, ToolCall
+    from executorch.examples.models.muse_glimmer.serving.chat_template import (
+        MuseGlimmerChatTemplate,
+    )
+
+    template = MuseGlimmerChatTemplate(
+        hf, assistant_header="<|start|>assistant", strip_rendered_bos=True
+    )
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                },
+            },
+        }
+    ]
+    messages = [
+        ChatMessage(role="system", content="SYSTEM_RULE"),
+        ChatMessage(role="developer", content="DEVELOPER_RULE"),
+        ChatMessage(role="user", content="Read it"),
+        ChatMessage(
+            role="assistant",
+            content="Opening the file",
+            tool_calls=[
+                ToolCall(
+                    id="call_1",
+                    function=FunctionCall(
+                        name="read_file", arguments='{"path":"policy.md"}'
+                    ),
+                )
+            ],
+        ),
+        ChatMessage(role="tool", tool_call_id="call_1", content="FILE_RESULT"),
+    ]
+    prompt = template.render(messages, tools=tools)
+    assert "DEVELOPER_RULE" in prompt and "SYSTEM_RULE" in prompt
+    assert "Opening the file" in prompt and "FILE_RESULT" in prompt
+    assert 'name="read_file.read_file"' in prompt
+    assert tools[0]["function"]["name"] == "read_file"
+    assert messages[3].tool_calls[0].function.name == "read_file"
+    assert prompt.count("// Function schemas") == 1
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_tool_reasoning_stream_preserves_boundary_whitespace(stream):
+    from executorch.examples.models.muse_glimmer.serving.stream_parser import (
+        MuseGlimmerToolReasoningParser,
+    )
+    from executorch.examples.models.muse_glimmer.serving.tool_parsers import (
+        AtemToolCallDetector,
+    )
+
+    raw = (
+        " to=self<|message|>First step. \n<|eom|>"
+        "<|start|>assistant to=self<|message|>Second step.\n<|eom|>"
+        "<|start|>assistant to=f.f<|message|><atem:function_calls>"
+        '<atem:invoke name="f.f"></atem:invoke></atem:function_calls>'
+    )
+    serving, _ = _glimmer_serving([{"text": raw}])
+    serving._tool_detector_cls = AtemToolCallDetector
+    serving._tool_reasoning_parser_factory = MuseGlimmerToolReasoningParser
+    message = asyncio.run(
+        _create_message(
+            serving,
+            ChatCompletionRequest(
+                messages=[ChatMessage(role="user", content="Use f")],
+                stream=stream,
+                tools=[
+                    {"type": "function", "function": {"name": "f", "parameters": {}}}
+                ],
+            ),
+        )
+    )
+    assert message["reasoning_content"] == "First step. \n\nSecond step.\n"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("dialect", ["openai", "openrouter"])
+@pytest.mark.parametrize("text_tokens,completion", [(10, 1), (6, 2)])
+def test_image_overflow_uses_worker_counts(stream, dialect, text_tokens, completion):
+    from executorch.examples.llm_server.python.server import build_app
+    from executorch.examples.llm_server.python.worker_client import WorkerError
+    from fastapi.testclient import TestClient
+
+    image_positions = 16
+    expected = text_tokens + 1 + image_positions
+
+    class Template(_ImageTemplate):
+        def render(self, messages, *, tools, template_kwargs):
+            return "text " * text_tokens + serve._IMAGE_PLACEHOLDER
+
+    class Runtime(_ImageRuntime):
+        async def generate_stream(self, session_id, prompt, options, stats):
+            self.prompt = prompt
+            raise WorkerError(
+                "image-expanded prompt exceeds context",
+                code="context_length_exceeded",
+                context_overflow={
+                    "prompt_tokens": expected,
+                    "context_length": 8,
+                    "completion_tokens": completion,
+                },
+            )
+            yield
+
+    runtime = Runtime()
+    serving = serve.MuseGlimmerServingChat(
+        runtime,
+        Template(),
+        "muse_glimmer",
+        max_context=8,
+        prompt_token_offset=1,
+        api_dialect=dialect,
+    )
+    body = _image_request("data:image/png;base64,eA==").model_dump(exclude_none=True)
+    body.update(stream=stream, max_tokens=completion)
+    response = TestClient(build_app(serving, "muse_glimmer")).post(
+        "/v1/chat/completions", json=body
+    )
+    assert runtime.prompt is not None
+    assert any("image" in segment for segment in runtime.prompt.segments)
+    if stream:
+        assert response.status_code == 200
+        errors = [
+            json.loads(line[6:])["error"]
+            for line in response.text.splitlines()
+            if line.startswith('data: {"error"')
+        ]
+        assert len(errors) == 1
+        error = errors[0]
+    else:
+        assert response.status_code == 400
+        error = response.json()["error"]
+    assert error["code"] == "context_length_exceeded"
+    assert str(expected) in error["message"]
+    if dialect == "openrouter":
+        assert error["metadata"]["prompt_tokens"] == expected
+        assert error["metadata"]["completion_tokens"] == completion
+    else:
+        assert "metadata" not in error
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("context_kind", ["image", "external_reasoning"])
+@pytest.mark.parametrize("changed", [False, True])
+def test_changed_model_context_cannot_restore_old_generated_tokens(
+    stream, context_kind, changed
+):
+    async def scenario():
+        def history(value):
+            if context_kind == "image":
+                return [
+                    ChatMessage(
+                        role="user",
+                        content=[
+                            {"type": "text", "text": "Describe this image"},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "data:image/png;base64,"
+                                    + base64.b64encode(value.encode()).decode()
+                                },
+                            },
+                        ],
+                    )
+                ]
+            return [
+                ChatMessage(role="user", content="Earlier question"),
+                ChatMessage(
+                    role="assistant", content="Earlier answer", reasoning_content=value
+                ),
+                ChatMessage(role="user", content="Continue"),
+            ]
+
+        serving, runtime = _glimmer_serving(
+            [
+                {
+                    "text": " to=self<|message|>Old context.<|eom|><|start|>assistant to=user<|message|>OK",
+                    "gen_ids": [777],
+                },
+                {"text": " to=user<|message|>Fresh answer"},
+            ],
+            template=_HarmonyTemplate(),
+        )
+        answer = await _create_message(
+            serving,
+            ChatCompletionRequest(
+                messages=history("before"),
+                session_id="s",
+                stream=stream,
+            ),
+        )
+        assert answer["content"] == "OK"
+        await _create_message(
+            serving,
+            ChatCompletionRequest(
+                messages=history("after" if changed else "before")
+                + [
+                    ChatMessage(role="assistant", content="OK"),
+                    ChatMessage(role="user", content="Next"),
+                ],
+                session_id="s",
+                stream=stream,
+            ),
+        )
+        assert any(
+            segment.get("ids") == [777] for segment in runtime.prompts[1].segments or []
+        ) == (not changed)
+
+    asyncio.run(scenario())
