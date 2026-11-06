@@ -238,11 +238,11 @@ def build_app_from_args(args):
                 max_image_bytes=args.max_image_bytes,
                 tool_detector_cls=legacy._tool_detector(args.tool_parser),
                 prompt_token_offset=1,
-                content_filter=legacy._strip_muse_glimmer_header,
                 content_filter_specials=legacy._MUSE_GLIMMER_HEADER_SPECIALS,
                 reasoning_extractor=legacy._extract_muse_glimmer_reasoning,
                 streaming_parser_factory=MuseGlimmerStreamParser,
                 tool_reasoning_parser_factory=MuseGlimmerToolReasoningParser,
+                reasoning_token_counter=template.count_reasoning_tokens,
             )
         finally:
             if runtime is None:
