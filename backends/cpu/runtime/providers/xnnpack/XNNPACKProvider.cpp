@@ -949,8 +949,7 @@ class XNNExecutable final : public Executable {
         : arg(node, 2).as_tensor().id;
     if (bias != XNN_INVALID_VALUE_ID &&
         dimensions(bias) != std::vector<size_t>{channels}) {
-      auto broadcast =
-          allocate_buffer(context_.allocator, channels * sizeof(float));
+      auto broadcast = state_.allocate_packing_source(channels * sizeof(float));
       if (!broadcast.ok()) {
         return broadcast.error();
       }
