@@ -40,12 +40,14 @@
 
 #ifdef BINARY_OP_VEC4
 #define binary_eq(X, Y) equal(X, Y)
+#define binary_ne(X, Y) notEqual(X, Y)
 #define binary_lt(X, Y) lessThan(X, Y)
 #define binary_le(X, Y) lessThanEqual(X, Y)
 #define binary_gt(X, Y) greaterThan(X, Y)
 #define binary_ge(X, Y) greaterThanEqual(X, Y)
 #else
 #define binary_eq(X, Y) ((X) == (Y))
+#define binary_ne(X, Y) ((X) != (Y))
 #define binary_lt(X, Y) ((X) < (Y))
 #define binary_le(X, Y) ((X) <= (Y))
 #define binary_gt(X, Y) ((X) > (Y))
@@ -61,6 +63,37 @@ vec4 swiglu(vec4 gate, vec4 up) {
   return (gate * (1.0 / (1.0 + exp(-gate)))) * up;
 }
 #endif
+
+#ifndef BINARY_OP_IS_FLOAT
+// Integer division truncates toward zero; floor division rounds the quotient
+// down when the remainder is nonzero and its sign differs from the divisor's.
+IN_T floor_div(const IN_T X, const IN_T Y) {
+  const IN_T q = X / Y;
+  const IN_T r = X - q * Y;
+  return q - IN_T(binary_ne(r, IN_T(0))) * IN_T(binary_lt(r ^ Y, IN_T(0)));
+}
+#endif
+
+// Whether the op maps two zeros to zero, so that zero padding lanes stay zero
+// without masking. add and sub compute 0 + alpha * 0, which is NaN for an
+// infinite or NaN alpha.
+bool binary_op_preserves_zero(const int op_type, const float alpha) {
+  switch (op_type) {
+    case BINARY_OP_ADD:
+    case BINARY_OP_SUB:
+      return !isinf(alpha) && !isnan(alpha);
+    case BINARY_OP_MUL:
+    case BINARY_OP_MINIMUM:
+    case BINARY_OP_SWIGLU:
+    case BINARY_OP_LT:
+    case BINARY_OP_GT:
+    case BINARY_OP_BITWISE_AND:
+    case BINARY_OP_BITWISE_OR:
+      return true;
+    default:
+      return false;
+  }
+}
 
 OUT_T apply_binary_op(
     const int op_type,
@@ -96,7 +129,11 @@ OUT_T apply_binary_op(
     case BINARY_OP_DIV:
       return OUT_T(X / Y);
     case BINARY_OP_FLOOR_DIVIDE:
+#ifdef BINARY_OP_IS_FLOAT
       return OUT_T(floor(X / Y));
+#else
+      return OUT_T(floor_div(X, Y));
+#endif
     case BINARY_OP_POW:
       return OUT_T(pow(X, Y));
     case BINARY_OP_MINIMUM:
