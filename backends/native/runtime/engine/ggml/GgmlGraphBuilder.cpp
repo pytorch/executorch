@@ -676,6 +676,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_unary(node, ggml_silu);
   } else if (key == "aten.sigmoid.default" || key == "aten.sigmoid_.default") {
     lower_unary(node, ggml_sigmoid);
+  } else if (key == "aten.tanh.default") {
+    lower_unary(node, ggml_tanh);
   } else if (key == "aten.gelu.default" || key == "aten.gelu_.default") {
     lower_gelu(node);
   } else if (key == "aten.native_layer_norm.default") {
