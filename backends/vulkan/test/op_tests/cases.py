@@ -893,6 +893,9 @@ def get_native_group_norm_inputs():
     test_suite.arg_storage_types = {
         "out": [None, "utils::kBuffer", "utils::kBuffer"],
     }
+    test_suite.arg_memory_layouts = {
+        "out": [None, "utils::kWidthPacked", "utils::kWidthPacked"],
+    }
 
     test_suite.prepacked_args = ["weight", "bias"]
     test_suite.requires_prepack = True
@@ -910,6 +913,7 @@ def get_native_group_norm_inputs():
     large_offset_suite.storage_types = test_suite.storage_types
     large_offset_suite.dtypes = ["at::kFloat"]
     large_offset_suite.arg_storage_types = test_suite.arg_storage_types
+    large_offset_suite.arg_memory_layouts = test_suite.arg_memory_layouts
     large_offset_suite.prepacked_args = test_suite.prepacked_args
     large_offset_suite.requires_prepack = True
     large_offset_suite.arg_data_range["input"] = (1000, 1001)
@@ -1082,6 +1086,10 @@ def get_permute_inputs():
 def get_view_inputs():
     test_suite = VkTestSuite(
         [
+            ((2, 3, 5), [2, 3, 5]),
+            ((2, 3, 5), [6, 5]),
+            ((2, 4), [8]),
+            ((2, 3), [6]),
             ((3, 4, 5), [1, 1, -1]),
             ((3, 4, 5), [1, -1, 1]),
             ((3, 4, 5), [-1, 1, 1]),
@@ -1127,7 +1135,7 @@ def get_view_inputs():
 
     for suite in [test_suite, highdim_test_suite, large_buffer_test_suite]:
         suite.layouts = [
-            # "utils::kWidthPacked",
+            "utils::kWidthPacked",
             "utils::kHeightPacked",
             "utils::kChannelsPacked",
         ]
