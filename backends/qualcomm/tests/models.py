@@ -402,6 +402,15 @@ class CastMultiUsers(torch.nn.Module):
         return res + index.to(torch.int32)
 
 
+class CastToFloat(torch.nn.Module):
+    def __init__(self, dtype=torch.float32):
+        super().__init__()
+        self.dtype = dtype
+
+    def forward(self, x):
+        return x.to(self.dtype) / 255
+
+
 class Cat2(torch.nn.Module):
     def __init__(self):
         super().__init__()

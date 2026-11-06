@@ -113,7 +113,16 @@ LocalWorkGroup default_pick_lwg(
   (void)shader;
   (void)args;
   (void)resize_args;
-  return graph->create_lwg(gwg);
+  if (gwg.required_lwg_size().is_valid()) {
+    return gwg.required_lwg_size();
+  }
+  // Shape weights set the target ratio of per-axis exponents, so 6:1 gives X
+  // all six exponents of a 64-invocation group before Y receives one.
+  LocalWorkGroup lwg(
+      LwgShape(6u, 1u, 0u),
+      graph->context()->adapter_ptr()->recommended_lwg_nthreads());
+  lwg.fit_to_global(gwg);
+  return lwg;
 }
 
 LocalWorkGroup pick_required_lwg(
@@ -177,6 +186,18 @@ LocalWorkGroup pick_120shape_lwg(
       graph->context()->adapter_ptr()->recommended_lwg_nthreads());
   lwg.fit_to_global(gwg);
   return lwg;
+}
+
+LocalWorkGroup pick_balanced_lwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const GlobalWorkGrid& gwg,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)args;
+  (void)resize_args;
+  return graph->create_lwg(gwg);
 }
 
 BlockConfig create_block_config_from_io_packed_dims(

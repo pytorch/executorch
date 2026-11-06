@@ -33,9 +33,12 @@ def define_common_targets():
         srcs = ["EthosUExecutionStats.cpp"],
         compatible_with = ["ovr_config//cpu:arm32-embedded", "ovr_config//cpu:arm32-embedded-fpu"],
         exported_headers = ["EthosUExecutionStats.h"],
-        exported_deps = [":ethosu_invocation_context"],
+        exported_deps = [
+            ":ethosu_invocation_context",
+            "//executorch/runtime/core:core",
+            "fbsource//third-party/ethos-u-core-driver:core_driver_headers_only",
+        ],
         visibility = ["PUBLIC"],
-        deps = ["fbsource//third-party/ethos-u-core-driver:core_driver_headers_only"],
     )
     runtime.cxx_library(
         name = "vela_bin_stream",
@@ -108,6 +111,7 @@ def define_common_targets():
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm_src",
         ],
         exported_headers = [
+            "VGFBoundaryIO.h",
             "VGFExecutionStats.h",
             "VGFMutableAlias.h",
             "VGFNeuralStatistics.h",

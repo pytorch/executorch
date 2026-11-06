@@ -221,6 +221,12 @@ template <
     typename CTYPE,
     typename std::enable_if<std::is_integral<CTYPE>::value, int>::type = 0>
 CTYPE remainder_override(CTYPE a, CTYPE b) {
+  if constexpr (std::is_signed<CTYPE>::value) {
+    // a % -1 overflows for the most negative value; the result is always 0.
+    if (b == -1) {
+      return 0;
+    }
+  }
   CTYPE rem = a % b;
   if constexpr (std::is_signed<CTYPE>::value) {
     if (((a < 0) ^ (b < 0)) && rem != 0) {
