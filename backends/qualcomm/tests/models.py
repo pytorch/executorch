@@ -444,6 +444,11 @@ class Cat5(torch.nn.Module):
         return torch.cat((x, y, self.const_tensor), axis=2)
 
 
+class CatBoolConstant(torch.nn.Module):
+    def forward(self, x, y):
+        return torch.cat((x > 0, torch.full((1, 1, 2, 2), True)), axis=3)
+
+
 class CausalMask(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -606,6 +611,13 @@ class CompositeDelegateModule(torch.nn.Module):
                 return x4
 
         return CompositeReferenceModule(self.modules)
+
+
+class ConstantGraphOutputs(torch.nn.Module):
+    def forward(self, x):
+        y = x * 2
+        c = torch.full_like(y, 0.5)
+        return y + c, c, torch.arange(3, dtype=torch.float32)
 
 
 class ContextBinaryExample(torch.nn.Module):
@@ -1370,6 +1382,11 @@ class Flip(torch.nn.Module):
         return torch.flip(x, self.dims)
 
 
+class Float64Math(torch.nn.Module):
+    def forward(self, x):
+        return x + (x.double() * 2 + 1).float()
+
+
 class Floor(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1429,6 +1446,18 @@ class FullLike(torch.nn.Module):
 
     def forward(self, x):
         return torch.min(x, torch.full_like(x, self.fill))
+
+
+class FullLikeShapeOnly(torch.nn.Module):
+    def __init__(self, scale_y=True, fill=0.5):
+        super().__init__()
+        self.scale_y = scale_y
+        self.fill = fill
+
+    def forward(self, x, y):
+        # full_like only needs the shape of frac(x), so nothing reads x.
+        full = torch.full_like(torch.frac(x), self.fill)
+        return (full, y * 2) if self.scale_y else full
 
 
 class Gather(torch.nn.Module):
@@ -1668,6 +1697,21 @@ class InstanceNorm2d(torch.nn.Module):
 
     def forward(self, x):
         return self.instance_norm(x)
+
+
+class Int64Counter(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("count", torch.zeros(2, dtype=torch.long))
+
+    def forward(self, x):
+        self.count.add_(x.argmax(-1))
+        return x * 2, self.count + 0
+
+
+class Int64Results(torch.nn.Module):
+    def forward(self, x, k, mask):
+        return (x > 0.5).sum(-1).masked_scatter(mask, k), x.topk(2).indices
 
 
 class IsInf(torch.nn.Module):
@@ -2488,6 +2532,26 @@ class RmsNorm(torch.nn.Module):
 
     def forward(self, x):
         return self.rms(x)
+
+
+class UpcastRmsNorm(torch.nn.Module):
+    def __init__(self, dtype):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(32, dtype=dtype))
+
+    def forward(self, x):
+        h = x.float()
+        h = h * torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + 1e-6)
+        return self.weight * h.to(x.dtype)
+
+
+class ScaledRmsNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("scale", torch.tensor(2.0))
+
+    def forward(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + 1e-6) * self.scale
 
 
 class Roll(torch.nn.Module):

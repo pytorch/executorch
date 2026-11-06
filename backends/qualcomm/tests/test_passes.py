@@ -10,11 +10,13 @@ import torch
 from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     ConvertBmmToMatmul,
+    ConvertFullLikeToFull,
     ConvertMhaToSha,
     DecomposeColIm,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FoldQDQ,
+    I64toI32,
     InsertIOQDQ,
     InsertReshapeForReduceOps,
     LayoutTransform,
@@ -48,6 +50,7 @@ from executorch.backends.qualcomm.partition.utils import (
 )
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.recipes.qnn_recipe_provider import QNNRecipeProvider
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendType,
@@ -57,14 +60,18 @@ from executorch.backends.qualcomm.tests.models import (
     BroadcastAndMutate,
     CastToFloat,
     ConvBackward,
+    FullLikeShapeOnly,
     HardSigmoid,
     Reciprocal,
+    ScaledRmsNorm,
     TopKandIndex,
     Unfold,
 )
+from executorch.backends.qualcomm.tests.tester import ToEdgeTransformAndLower
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
+    QCOM_INSERTED_CAST,
     QCOM_QUANT_ATTRS,
     QCOM_QUANT_MAX,
     QCOM_QUANT_MIN,
@@ -1005,32 +1012,517 @@ class TestPasses(unittest.TestCase):
                 )
                 self.assertTrue(torch.equal(ep.module()(x), model(x)))
 
-    def test_recompose_rms_norm_only_takes_last_dim_with_weight(self):
-        class ScaledNorm(torch.nn.Module):
-            def __init__(self, dim, scale, keepdim=True):
+    def test_recompose_rms_norm_keeps_the_norm_dtype(self):
+        class UpcastNorm(torch.nn.Module):  # transformers' Qwen2RMSNorm
+            def __init__(self, dtype, compute_dtype=torch.float32):
                 super().__init__()
-                self.dim = dim
-                self.keepdim = keepdim
+                self.weight = torch.nn.Parameter(torch.randn(32, dtype=dtype))
+                self.compute_dtype = compute_dtype
+
+            def upcast(self, x):
+                return x.to(self.compute_dtype)
+
+            def forward(self, x):
+                h = self.upcast(x)
+                h = h * torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + 1e-6)
+                return self.weight * h.to(x.dtype)
+
+        class TypeAsNorm(torch.nn.Module):  # type_as, to.device, a square of casts
+            def __init__(self, dtype):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(32, dtype=dtype))
+
+            def forward(self, x):
+                square = x.float() * x.float()
+                rms = torch.rsqrt(square.mean(-1, keepdim=True) + 1e-6)
+                h = x.to(x.device, torch.float32) * rms
+                return h.type_as(x) * self.weight
+
+        class T5Norm(UpcastNorm):  # transformers' T5LayerNorm, half weights
+            def forward(self, x):
+                variance = x.to(torch.float32).pow(2).mean(-1, keepdim=True)
+                x = x * torch.rsqrt(variance + 1e-6)
+                return self.weight * x.to(self.weight.dtype)
+
+        class ContiguousUpcastNorm(UpcastNorm):
+            def upcast(self, x):
+                return x.to(self.compute_dtype, memory_format=torch.contiguous_format)
+
+        class RoundTripNorm(UpcastNorm):
+            def forward(self, x):
+                return super().forward(x.half().float())
+
+        class ShiftedNorm(UpcastNorm):
+            def __init__(self, dtype):
+                super().__init__(dtype)
+                self.register_buffer("shift", torch.randn(32, dtype=dtype))
+
+            def forward(self, x):
+                h = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + 1e-6)
+                return self.weight * (h + self.shift)
+
+        # The norm is rebuilt on the nearest input in the output dtype, past
+        # casts that keep it or widen it to float32 at most. When the whole norm
+        # cannot be rebuilt, the HTP float16 specs that edge rows pass rebuild
+        # its float32 normalization alone. A norm about to be quantized is
+        # rebuilt whole or not at all. Edge graphs carry casts as
+        # _to_dim_order_copy, or as _to_copy without dim order, and captured
+        # graphs as to.dtype or, with a device, to.device.
+        f16, bf16, f32 = torch.float16, torch.bfloat16, torch.float32
+        c, cl = torch.contiguous_format, torch.channels_last
+        for model, x_dtype, layout, capture, dim_order, norm_inputs in (
+            (UpcastNorm(f16), f16, c, False, True, [(f16, True, True)]),
+            (UpcastNorm(f16), f16, cl, False, True, [(f16, True, True)]),
+            (ContiguousUpcastNorm(f16), f16, cl, False, True, [(f32, False, False)]),
+            (UpcastNorm(f16), f16, c, False, False, [(f16, True, True)]),
+            (TypeAsNorm(f16), f16, c, False, True, [(f16, True, True)]),
+            (T5Norm(f16), f16, c, False, True, [(f16, True, True)]),
+            (UpcastNorm(f32), f16, c, False, True, [(f32, False, False)]),
+            (UpcastNorm(f32, compute_dtype=f16), f32, c, False, True, []),
+            (UpcastNorm(f32, compute_dtype=torch.float64), f32, c, False, True, []),
+            (RoundTripNorm(f32), f32, c, False, True, [(f32, False, True)]),
+            (UpcastNorm(bf16), bf16, c, False, True, [(f32, False, False)]),
+            (UpcastNorm(bf16), f32, c, False, True, [(f32, True, False)]),
+            (ShiftedNorm(f32), f32, c, False, True, [(f32, True, False)]),
+            (UpcastNorm(bf16), bf16, c, True, True, [(bf16, True, True)]),
+            (UpcastNorm(f32), f32, c, True, True, [(f32, True, True)]),
+            (UpcastNorm(bf16), f32, c, True, True, [(f32, True, True)]),
+            (UpcastNorm(f32), bf16, c, True, True, []),
+            (UpcastNorm(f32, compute_dtype=torch.float64), f32, c, True, True, []),
+            (ShiftedNorm(f32), f32, c, True, True, []),
+            (ContiguousUpcastNorm(f16), f16, cl, True, True, []),
+            (TypeAsNorm(bf16), bf16, c, True, True, [(bf16, True, True)]),
+            (TypeAsNorm(f32), f32, c, True, True, [(f32, True, True)]),
+            (T5Norm(bf16), bf16, c, True, True, [(bf16, True, True)]),
+        ):
+            with self.subTest(
+                model=type(model).__name__,
+                weight=model.weight.dtype,
+                x=x_dtype,
+                layout=layout,
+                capture=capture,
+                dim_order=dim_order,
+            ):
+                x = torch.randn(2, 4, 8, 32, dtype=x_dtype)
+                self._check_recomposed_rms_norm(
+                    model, x.to(memory_format=layout), capture, dim_order, norm_inputs
+                )
+
+    @staticmethod
+    def _htp_compiler_specs(use_fp16):
+        return stubbed_compiler_specs(generate_htp_compiler_spec(use_fp16=use_fp16))
+
+    def _check_recomposed_rms_norm(self, model, x, capture, dim_order, norm_inputs):
+        """
+        Runs RecomposeRmsNorm on the captured or edge graph of `model`, checks
+        the dtype of each rebuilt norm's input, whether it is the graph input
+        and whether the norm keeps the weight, and compares the output with
+        eager.
+        """
+        ep = torch.export.export(model, (x,), strict=True)
+        if not capture:
+            # As in to_edge_transform_and_lower_to_qnn, which lifts the exponent of pow.
+            ep = get_qnn_pass_manager_cls()().transform_for_export_pipeline(ep)
+            config = EdgeCompileConfig(_skip_dim_order=not dim_order)
+            ep = to_edge(ep, compile_config=config).exported_program()
+        graph_module = ep.module() if capture else ep.graph_module
+        RecomposeRmsNorm(
+            quantization_capture=capture,
+            edge_program=None if capture else ep,
+            compiler_specs=None if capture else self._htp_compiler_specs(True),
+        )(graph_module)
+        rms_norms = (
+            exir_ops.edge.aten.rms_norm.default,
+            torch.ops.aten.rms_norm.default,
+        )
+        self.assertEqual(
+            [
+                (
+                    node.args[0].meta["val"].dtype,
+                    node.args[0].op == "placeholder",
+                    node.args[2] is not None,
+                )
+                for node in graph_module.graph.nodes
+                if node.target in rms_norms
+            ],
+            norm_inputs,
+        )
+        module = graph_module if capture else ep.module()
+        torch.testing.assert_close(module(x), model(x))
+
+    @staticmethod
+    def _rms_norm_kept_weights(graph_module):
+        return [
+            node.args[2] is not None
+            for node in graph_module.graph.nodes
+            if node.target
+            in (exir_ops.edge.aten.rms_norm.default, torch.ops.aten.rms_norm.default)
+        ]
+
+    def test_recompose_rms_norm_only_takes_what_qnn_supports(self):
+        class Norm(torch.nn.Module):  # a Llama-style norm
+            def __init__(self, dtype=torch.bfloat16):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(32, dtype=dtype))
+                self.eps = 1e-6
+
+            def forward(self, x):
+                h = x.float()
+                h = h * torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + self.eps)
+                return self.weight * h.to(x.dtype)
+
+        class BufferEpsNorm(Norm):
+            def __init__(self, dtype=torch.bfloat16):
+                super().__init__(dtype)
+                del self.eps
+                self.register_buffer("eps", torch.tensor(1e-6))
+
+        class ScaledNorm(torch.nn.Module):  # a norm times a scale or a gate
+            def __init__(self, scale, dim=-1, keepdim=True, gate=False):
+                super().__init__()
+                self.dim, self.keepdim, self.gate = dim, keepdim, gate
                 self.register_buffer("scale", scale)
 
             def forward(self, x):
                 ms = x.pow(2).mean(self.dim, keepdim=self.keepdim)
-                return x * torch.rsqrt(ms + 1e-6) * self.scale
+                h = x * torch.rsqrt(ms + 1e-6)
+                return h * (torch.sigmoid(x) if self.gate else self.scale)
 
-        x = torch.randn(32, 32)
-        # A 0-d scale is not a weight, and a mean over dim 0, over all dims, or
-        # without keepdim is not a last-dim RMSNorm.
-        for model in (
-            ScaledNorm(-1, torch.tensor(2.0)),
-            ScaledNorm(0, torch.randn(32)),
-            ScaledNorm(None, torch.randn(32)),
-            ScaledNorm(-1, torch.randn(32), keepdim=False),
+        class TableNorm(ScaledNorm):  # a norm of a buffer, added to the input
+            def __init__(self, scale):
+                super().__init__(scale)
+                self.register_buffer("table", torch.randn(4, 32))
+
+            def forward(self, x):
+                return x + super().forward(self.table)
+
+        class StateNorm(ScaledNorm):  # a norm of a buffer the model updates
+            def __init__(self):
+                super().__init__(torch.tensor(2.0))
+                self.register_buffer("state", torch.zeros(4, 32))
+
+            def forward(self, x):
+                self.state.fill_(1.0)
+                return x + super().forward(self.state)
+
+        # QNN's RmsNorm takes a mean over the last of 1 to 4 dims, kept as a
+        # dim, with static sizes and a constant eps. Anything else stays
+        # decomposed, since rms_norm has no CPU kernel. With the HTP float16
+        # specs passed here, a norm whose weight is not one value per channel
+        # has its normalization rebuilt alone. A norm that reads only constants
+        # stays decomposed, since HTP may drop a partition that reads nothing
+        # at runtime.
+        bf16 = torch.bfloat16
+        dynamic = {"x": {0: torch.export.Dim("n", min=2)}}
+        scale, weight = torch.tensor(2.0), torch.randn(32)
+        for i, (model, x, dynamic_shapes, kept_weights) in enumerate(
+            (
+                (Norm(), torch.randn(1, 2, 3, 4, 32, dtype=bf16), None, []),
+                (ScaledNorm(weight), torch.randn(1, 2, 3, 4, 32), None, []),
+                (BufferEpsNorm(), torch.randn(4, 32, dtype=bf16), None, []),
+                (BufferEpsNorm(torch.float32), torch.randn(4, 32), None, []),
+                (ScaledNorm(weight), torch.randn(4, 32), dynamic, []),
+                (ScaledNorm(scale, gate=True), torch.randn(4, 32), dynamic, []),
+                (ScaledNorm(scale), torch.randn(4, 32), None, [False]),
+                (ScaledNorm(weight, dim=0), torch.randn(32, 32), None, []),
+                (ScaledNorm(weight, dim=None), torch.randn(32, 32), None, []),
+                (ScaledNorm(weight, keepdim=False), torch.randn(32, 32), None, []),
+                (TableNorm(scale), torch.randn(4, 32), None, []),
+                (TableNorm(weight), torch.randn(4, 32), None, []),
+                (StateNorm(), torch.randn(4, 32), None, [False]),
+            )
         ):
-            with self.subTest(dim=model.dim, keepdim=model.keepdim):
-                ep = to_edge(torch.export.export(model, (x,), strict=True))
-                ep = ep.exported_program()
-                RecomposeRmsNorm()(ep.graph_module)
+            with self.subTest(row=i, model=type(model).__name__):
+                ep = torch.export.export(
+                    model, (x,), dynamic_shapes=dynamic_shapes, strict=True
+                )
+                ep = to_edge(ep).exported_program()
+                RecomposeRmsNorm(
+                    edge_program=ep, compiler_specs=self._htp_compiler_specs(True)
+                )(ep.graph_module)
+                self.assertEqual(
+                    self._rms_norm_kept_weights(ep.graph_module), kept_weights
+                )
                 torch.testing.assert_close(ep.module()(x), model(x))
+
+    def test_recompose_rms_norm_rebuilds_a_normalization_for_htp_fp16_only(self):
+        def manager_passes(compiler_specs):
+            # As in to_edge_transform_and_lower_to_qnn, which passes the specs.
+            return lambda ep: get_qnn_pass_manager_cls()().get_to_edge_transform_passes(
+                ep, compiler_specs=compiler_specs
+            )
+
+        def fp16_recipe_passes():
+            recipe = QNNRecipeProvider()._get_qnn_lowering_recipe(
+                use_fp16=True, soc_model=QcomChipset.SM8650
+            )
+            return lambda ep: recipe.edge_transform_passes[0](None, ep)
+
+        # The normalization alone is rebuilt to keep HTP's float16 precision
+        # from overflowing. Elsewhere it stays decomposed, as every op in it
+        # has a CPU kernel.
+        x = torch.randn(4, 32)
+        for name, get_passes, kept_weights in (
+            ("htp_fp16", manager_passes(self._htp_compiler_specs(True)), [False]),
+            ("htp_quantized", manager_passes(self._htp_compiler_specs(False)), []),
+            ("none", manager_passes(None), []),
+            ("fp16_recipe", fp16_recipe_passes(), [False]),
+        ):
+            with self.subTest(specs=name):
+                ep = torch.export.export(ScaledRmsNorm(), (x,), strict=True)
+                ep = to_edge(ep).exported_program()
+                passes = get_passes(ep)
+                next(p for p in passes if isinstance(p, RecomposeRmsNorm))(
+                    ep.graph_module
+                )
+                self.assertEqual(
+                    self._rms_norm_kept_weights(ep.graph_module), kept_weights
+                )
+
+    def test_to_edge_pipeline_rebuilds_a_normalization_for_htp_fp16(self):
+        # export_llama runs the edge passes through this method, on a program
+        # whose edge config allows ops outside the core ATen set.
+        x = torch.randn(4, 32)
+        ep = to_edge(
+            torch.export.export(ScaledRmsNorm(), (x,), strict=True),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        ).exported_program()
+        ep = get_qnn_pass_manager_cls()().transform_for_to_edge_pipeline(
+            ep, compiler_specs=self._htp_compiler_specs(True)
+        )
+        self.assertEqual(self._rms_norm_kept_weights(ep.graph_module), [False])
+
+    def test_recompose_rms_norm_leaves_a_norm_the_partitioner_skips(self):
+        class Norm(torch.nn.Module):
+            def __init__(self, weight):
+                super().__init__()
+                self.register_buffer("weight", weight)
+
+            def forward(self, x):
+                rms = torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + 1e-6)
+                return x * rms * self.weight
+
+        class UpcastNorm(Norm):  # a Qwen-style norm
+            def forward(self, x):
+                h = x.float()
+                h = h * torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + 1e-6)
+                return self.weight * h.to(x.dtype)
+
+        class SharedRsqrtNorm(Norm):  # a norm that also returns its rsqrt
+            def forward(self, x):
+                rms = torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + 1e-6)
+                return x * rms * self.weight, rms
+
+        class SharedCastNorms(UpcastNorm):  # norms of one float32 copy of x
+            def forward(self, x):
+                h = x.float()
+                a = h * torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + 1e-6)
+                b = h * torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + 1e-5)
+                return self.weight * a.to(x.dtype), self.weight * b.to(x.dtype)
+
+        # The norm stays decomposed when the partitioner would skip rms_norm,
+        # which has no CPU kernel, or a node the rebuild removes, by op or by
+        # name. A skipped node the rebuild keeps, like the weight multiply of
+        # a normalization rebuilt alone, an rsqrt used elsewhere too or a cast
+        # another norm reads, does not matter. The FP16 recipe passes its skip
+        # sets on.
+        weighted, scaled = Norm(torch.randn(32)), Norm(torch.tensor(2.0))
+        upcast = UpcastNorm(torch.randn(32, dtype=torch.float16))
+        shared_rsqrt = SharedRsqrtNorm(torch.randn(32))
+        shared_cast = SharedCastNorms(torch.randn(32, dtype=torch.float16))
+        x32, x16 = torch.randn(4, 32), torch.randn(4, 32, dtype=torch.float16)
+        rms_norm_op = {"aten.rms_norm.default"}
+        cast_op = {"dim_order_ops._to_dim_order_copy.default"}
+        cast = "dim_order_ops__to_dim_order_copy_default"
+        for skip, model, x, skip_ids, skip_ops, kept_weights in (
+            ("none", weighted, x32, None, None, [True]),
+            ("none", scaled, x32, None, None, [False]),
+            ("none", upcast, x16, None, None, [True]),
+            ("rms_norm op", weighted, x32, None, rms_norm_op, []),
+            ("rms_norm op", scaled, x32, None, rms_norm_op, []),
+            ("rsqrt op", weighted, x32, None, {"aten.rsqrt.default"}, []),
+            ("rsqrt id", scaled, x32, {"aten_rsqrt_default"}, None, []),
+            ("rsqrt id", shared_rsqrt, x32, {"aten_rsqrt_default"}, None, [True]),
+            ("cast op", upcast, x16, None, cast_op, [False]),
+            ("cast id", shared_cast, x16, {cast}, None, [False, True]),
+            ("weight mul id", weighted, x32, {"aten_mul_tensor_1"}, None, [False]),
+        ):
+            with self.subTest(skip=skip, model=type(model).__name__):
+                ep = torch.export.export(model, (x,), strict=True)
+                ep = to_edge(ep).exported_program()
+                self.assertLessEqual(
+                    skip_ids or set(), {node.name for node in ep.graph.nodes}
+                )
+                recipe = QNNRecipeProvider()._get_qnn_lowering_recipe(
+                    use_fp16=True,
+                    soc_model=QcomChipset.SM8650,
+                    skip_node_id_set=skip_ids,
+                    skip_node_op_set=skip_ops,
+                )
+                passes = recipe.edge_transform_passes[0](None, ep)
+                next(p for p in passes if isinstance(p, RecomposeRmsNorm))(
+                    ep.graph_module
+                )
+                self.assertEqual(
+                    self._rms_norm_kept_weights(ep.graph_module), kept_weights
+                )
+                torch.testing.assert_close(ep.module()(x), model(x))
+
+    def test_recompose_rms_norm_needs_a_runtime_input_on_htp_only(self):
+        class TableNorm(torch.nn.Module):  # a norm of a buffer, added to the input
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.randn(4, 32))
+                self.weight = torch.nn.Parameter(torch.randn(32))
+
+            def forward(self, x):
+                t = self.table
+                rms = torch.rsqrt(t.pow(2).mean(-1, keepdim=True) + 1e-6)
+                return x + self.weight * (t * rms)
+
+        # Only HTP drops a partition that reads nothing at runtime, so a norm of
+        # constants stays decomposed for HTP and for a pass that does not know
+        # the backend.
+        model, x = TableNorm(), torch.randn(4, 32)
+        for backend, backend_options, kept_weights in (
+            ("htp", generate_htp_compiler_spec(use_fp16=True), []),
+            ("gpu", generate_gpu_compiler_spec(), [True]),
+            ("unknown", None, []),
+        ):
+            with self.subTest(backend=backend):
+                ep = torch.export.export(model, (x,), strict=True)
+                ep = to_edge(ep).exported_program()
+                compiler_specs = None
+                if backend_options is not None:
+                    compiler_specs = generate_qnn_executorch_compiler_spec(
+                        soc_model=QcomChipset.SM8650, backend_options=backend_options
+                    )
+                RecomposeRmsNorm(edge_program=ep, compiler_specs=compiler_specs)(
+                    ep.graph_module
+                )
+                self.assertEqual(
+                    self._rms_norm_kept_weights(ep.graph_module), kept_weights
+                )
+                torch.testing.assert_close(ep.module()(x), model(x))
+
+    def test_tester_rebuilds_a_normalization_for_htp_fp16(self):
+        # The backend test suite lowers through this stage, with HTP float16
+        # specs by default.
+        stage = ToEdgeTransformAndLower()
+        sample_input = (torch.linspace(-1000, 1000, 128).reshape(4, 32),)
+        try:
+            stage.run(torch.export.export(ScaledRmsNorm(), sample_input, strict=True))
+        except RuntimeError as e:
+            if "Failed to initialize QNN backend" in str(e):
+                skip_without_qnn_sdk(self, e)
+            raise
+        graph_module = stage.edge_dialect_program.exported_program().graph_module
+        self.assertIn(
+            exir_ops.edge.aten.rms_norm.default,
+            [
+                node.target
+                for _, lowered in graph_module.named_children()
+                for node in lowered.original_module.graph.nodes
+            ],
+        )
+
+    def test_recompose_rms_norm_takes_no_runtime_weight(self):
+        class InputScaledNorm(torch.nn.Module):
+            def forward(self, x, scale):
+                rms = torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + 1e-6)
+                return x * rms * scale
+
+        # QNN's RmsNorm needs a constant weight, so a graph input is not taken
+        # as one. With HTP float16 specs, edge graphs rebuild the normalization
+        # alone instead. Edge graphs need the program to tell the two apart.
+        with self.assertRaises(AssertionError):
+            RecomposeRmsNorm()
+        inputs = (torch.randn(4, 32), torch.randn(32))
+        for capture, kept_weights in ((False, [False]), (True, [])):
+            with self.subTest(capture=capture):
+                ep = torch.export.export(InputScaledNorm(), inputs, strict=True)
+                if capture:
+                    graph_module = ep.module()
+                    RecomposeRmsNorm(quantization_capture=True)(graph_module)
+                else:
+                    ep = to_edge(ep).exported_program()
+                    graph_module = ep.graph_module
+                    RecomposeRmsNorm(
+                        edge_program=ep, compiler_specs=self._htp_compiler_specs(True)
+                    )(graph_module)
+                self.assertEqual(
+                    self._rms_norm_kept_weights(graph_module), kept_weights
+                )
+                module = graph_module if capture else ep.module()
+                torch.testing.assert_close(module(*inputs), InputScaledNorm()(*inputs))
+
+    def test_recompose_rms_norm_needs_the_norm_of_one_tensor(self):
+        class AlmostNorm(torch.nn.Module):
+            def __init__(self, scaled, squared):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(32))
+                self.register_buffer("other", torch.rand(32, 32) + 0.5)
+                self.scaled, self.squared = scaled, squared
+
+            def forward(self, x):
+                other = self.other
+                squared = {"pow3": x.pow(3), "mixed": x * other}.get(
+                    self.squared, x.pow(2)
+                )
+                scaled = other if self.scaled == "other" else x
+                rms = torch.rsqrt(squared.mean(-1, keepdim=True) + 1e-6)
+                return self.weight * (scaled * rms)
+
+        # Each model looks like a norm, but the tensor it scales is not the
+        # one it squares, or it does not square it, so it stays decomposed.
+        # The export pipeline lifts the exponent of pow into a constant.
+        for lift in (False, True):
+            for scaled, squared in (("other", "pow2"), ("x", "pow3"), ("x", "mixed")):
+                with self.subTest(scaled=scaled, squared=squared, lift=lift):
+                    model = AlmostNorm(scaled, squared)
+                    # Positive, so a cube or a product still has a real square root.
+                    x = torch.rand(32, 32) + 0.5
+                    ep = torch.export.export(model, (x,), strict=True)
+                    if lift:
+                        pm = get_qnn_pass_manager_cls()()
+                        ep = pm.transform_for_export_pipeline(ep)
+                    ep = to_edge(ep).exported_program()
+                    RecomposeRmsNorm(
+                        edge_program=ep, compiler_specs=self._htp_compiler_specs(True)
+                    )(ep.graph_module)
+                    self.assertNotIn(
+                        exir_ops.edge.aten.rms_norm.default,
+                        [node.target for node in ep.graph.nodes],
+                    )
+                    torch.testing.assert_close(ep.module()(x), model(x))
+
+    def test_remove_redundancy_keeps_a_to_copy_that_changes_the_dtype(self):
+        class Copy(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
+            def forward(self, x):
+                y = x.to(self.dtype, memory_format=torch.contiguous_format)
+                return y + y
+
+        # Without dim order, a layout change is a _to_copy with memory_format,
+        # which QNN drops. A _to_copy that also changes the dtype has to stay.
+        x = torch.randn(2, 4, 8, 8).to(memory_format=torch.channels_last)
+        for dtype, kept in ((torch.float32, False), (torch.float16, True)):
+            with self.subTest(dtype=dtype):
+                config = EdgeCompileConfig(_skip_dim_order=True)
+                ep = to_edge(
+                    torch.export.export(Copy(dtype), (x,), strict=True),
+                    compile_config=config,
+                ).exported_program()
+                RemoveRedundancy(quantization_capture=False)(ep.graph_module)
+                self.assertEqual(
+                    exir_ops.edge.aten._to_copy.default
+                    in [node.target for node in ep.graph.nodes],
+                    kept,
+                )
+                self.assertEqual(ep.module()(x).dtype, dtype)
 
     def test_i64_to_i32_casts_a_top_of_graph_constant_after_placeholders(self):
         # DecomposeRemainder puts the int64 constant 3 at the top of the graph.
@@ -1063,7 +1555,6 @@ class TestPasses(unittest.TestCase):
         }
         cases = [
             (torch.float32, QnnExecuTorchBackendType.kHtpBackend, None, 2),
-            (torch.float64, QnnExecuTorchBackendType.kHtpBackend, None, 2),
             (torch.float32, QnnExecuTorchBackendType.kGpuBackend, None, 1),
             (torch.float16, QnnExecuTorchBackendType.kHtpBackend, None, 1),
             (torch.float32, QnnExecuTorchBackendType.kHtpBackend, quant_attrs, 1),
@@ -1091,6 +1582,144 @@ class TestPasses(unittest.TestCase):
                     cast, defaultdict(dict)
                 )
                 self.assertEqual(expected, len(ops))
+
+    def test_convert_full_like_to_full(self):
+        sample_input = (torch.randn(2, 3), torch.randn(2, 3))
+        # An int fill on a float input must still give a float tensor.
+        for dynamic, fill in ((False, 0.5), (False, 1), (True, 0.5)):
+            with self.subTest(dynamic=dynamic, fill=fill):
+                module = FullLikeShapeOnly(fill=fill)
+                dynamic_shapes = (
+                    {"x": {0: torch.export.Dim("n", min=2, max=4)}, "y": None}
+                    if dynamic
+                    else None
+                )
+                ep = to_edge(
+                    torch.export.export(
+                        module,
+                        sample_input,
+                        dynamic_shapes=dynamic_shapes,
+                        strict=True,
+                    )
+                ).exported_program()
+                graph_module = ConvertFullLikeToFull()(ep.graph_module).graph_module
+                targets = {node.target for node in graph_module.graph.nodes}
+                x = next(n for n in graph_module.graph.nodes if n.name == "x")
+                # A dynamic shape has to be read at runtime. Otherwise the ops
+                # that only gave full_like its shape are removed, so nothing
+                # reads x.
+                self.assertEqual(
+                    exir_ops.edge.aten.full_like.default in targets, dynamic
+                )
+                self.assertEqual(
+                    exir_ops.edge.aten.full.default in targets, not dynamic
+                )
+                self.assertEqual(len(x.users) > 0, dynamic)
+                # The pass rewrites ep's graph in place.
+                for result, expected in zip(
+                    ep.module()(*sample_input), module(*sample_input)
+                ):
+                    torch.testing.assert_close(result, expected)
+
+    def test_i64_to_i32_casts_any_int64_result(self):
+        # A sum of bools and topk indices are int64, and masked_scatter needs
+        # them to match the int64 input the pass turns into int32.
+        class SumIntoInput(torch.nn.Module):
+            def forward(self, x, k, mask):
+                return (x > 0.5).sum(-1).masked_scatter(mask, k)
+
+        class TopkIndicesIntoInput(torch.nn.Module):
+            def forward(self, x, k, mask):
+                return x.topk(1).indices.masked_scatter(mask[:, None], k)
+
+        class LongIntoInput(torch.nn.Module):
+            def forward(self, x, k, mask):
+                return (x[:, 0] > 0.5).long().masked_scatter(mask, k)
+
+        sample_input = (
+            torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),
+            torch.tensor([3, 4]),
+            torch.tensor([True, False]),
+        )
+        # Without dim order, a user's int64 cast is a _to_copy, like the index
+        # casts the pass keeps int64.
+        cases = (
+            (SumIntoInput(), False),
+            (TopkIndicesIntoInput(), False),
+            (LongIntoInput(), True),
+        )
+        for module, skip_dim_order in cases:
+            with self.subTest(type(module).__name__):
+                ep = to_edge(
+                    torch.export.export(module, sample_input, strict=True),
+                    compile_config=EdgeCompileConfig(_skip_dim_order=skip_dim_order),
+                ).exported_program()
+                gm = I64toI32(ep)(ep.graph_module).graph_module
+                torch.testing.assert_close(gm(*sample_input)[0], module(*sample_input))
+
+    def test_i64_to_i32_casts_back_multi_output_results(self):
+        # topk of an int64 sum returns int64 values and indices.
+        class SumTopk(torch.nn.Module):
+            def forward(self, x):
+                return (x > 0.5).sum(-1).topk(2)
+
+        sample_input = (
+            torch.tensor([[0.9, 0.9, 0.1], [0.9, 0.1, 0.1], [0.9, 0.9, 0.9]]),
+        )
+        module = SumTopk()
+        ep = to_edge(
+            torch.export.export(module, sample_input, strict=True)
+        ).exported_program()
+        gm = I64toI32(ep)(ep.graph_module).graph_module
+        for result, expected in zip(gm(*sample_input), module(*sample_input)):
+            torch.testing.assert_close(result, expected)
+
+    def test_i64_to_i32_keeps_int64_indices(self):
+        # gather and the 8-bit embedding run on CPU kernels that need an int64
+        # index, even when the pass casts the op that computes it.
+        import executorch.exir.passes._quant_patterns_and_replacements  # noqa: F401
+
+        embedding_byte = exir_ops.edge.quantized_decomposed.embedding_byte.default
+        gather = exir_ops.edge.aten.gather.default
+
+        class Model(torch.nn.Module):
+            def __init__(self, use_gather, view_tokens):
+                super().__init__()
+                self.use_gather = use_gather
+                self.view_tokens = view_tokens
+                self.register_buffer("weight", torch.ones(10, 4, dtype=torch.int8))
+                self.register_buffer("scales", torch.ones(10))
+
+            def forward(self, x, tokens):
+                if self.use_gather:
+                    return x.gather(1, x.argmax(-1, keepdim=True))
+                if self.view_tokens:
+                    tokens = tokens.view(-1)
+                return torch.ops.quantized_decomposed.embedding_byte(
+                    self.weight, self.scales, None, -128, 127, tokens
+                )
+
+        sample_input = (torch.randn(2, 3), torch.tensor([1, 5, 7]))
+        for target, view_tokens in ((gather, False), (embedding_byte, True)):
+            with self.subTest(target=target.__name__):
+                module = Model(target == gather, view_tokens)
+                ep = to_edge(
+                    torch.export.export(module, sample_input, strict=True)
+                ).exported_program()
+                gm = I64toI32(ep, skip_node=frozenset({"tokens"}))(
+                    ep.graph_module
+                ).graph_module
+                node = next(n for n in gm.graph.nodes if n.target == target)
+                index = node.args[I64toI32.I64_IN_OPS[target][0]]
+                self.assertEqual(torch.int64, index.meta["val"].dtype)
+
+        # Token ids the pass skips stay int64 and need no cast.
+        ep = to_edge(
+            torch.export.export(Model(False, False), sample_input, strict=True)
+        ).exported_program()
+        gm = I64toI32(ep, skip_node=frozenset({"tokens"}))(ep.graph_module).graph_module
+        node = next(n for n in gm.graph.nodes if n.target == embedding_byte)
+        self.assertEqual("placeholder", node.args[5].op)
 
     def test_mha_to_sha(self):
         from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
@@ -1325,8 +1954,9 @@ class TestPasses(unittest.TestCase):
             "getitem": 1,
             "getitem_1": 1,
             "aten_view_copy_default": 2,
-            "aten_index_tensor": 3,
-            "aten_add_tensor": 4,
+            "aten__to_copy_default": 3,
+            "aten_index_tensor": 4,
+            "aten_add_tensor": 5,
         }
         module = TopKandIndex()  # noqa: F405
         sample_input = (torch.randn(3, 10),)
@@ -1790,6 +2420,220 @@ class TestPasses(unittest.TestCase):
         reads = input_spec_reads(2)
         self.assertGreater(reads, 0)
         self.assertEqual(reads, input_spec_reads(4))
+
+    def test_partitioner_keeps_int64_mutable_buffers_on_cpu(self):
+        class Counter(torch.nn.Module):
+            def __init__(self, step):
+                super().__init__()
+                self.step = step
+                self.register_buffer("count", torch.zeros(2, dtype=torch.long))
+                self.register_buffer("total", torch.zeros(2))
+
+            def forward(self, x):
+                self.count.add_(self.step(x))
+                self.total.add_(x.sum(-1))
+                return x * 2, self.count + 0, self.total + 0
+
+        sample_input = (torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        steps = {
+            "one": lambda x: 1,
+            "argmax": lambda x: x.argmax(-1),
+            "sum_of_bools": lambda x: (x > 0.5).sum(-1),
+        }
+        for name, step in steps.items():
+            with self.subTest(step=name):
+                try:
+                    edge = to_edge_transform_and_lower_to_qnn(
+                        Counter(step).eval(), sample_input, compiler_specs
+                    )
+                except RuntimeError as e:
+                    if "Failed to initialize QNN backend" in str(e):
+                        skip_without_qnn_sdk(self, e)
+                    raise
+                ep = edge.exported_program()
+                self.assertIn("count", ep.graph_signature.buffers_to_mutate.values())
+                mutated = [
+                    lowered.original_module.graph_signature.buffers_to_mutate
+                    for lowered in get_lowered_backend_modules(ep.graph_module)
+                ]
+                # Float buffers are still delegated.
+                self.assertEqual(
+                    ["total"], [buffer for m in mutated for buffer in m.values()]
+                )
+
+    def test_partitioner_drops_partitions_of_only_inserted_casts(self):
+        # Only the I64toI32 mark counts, not the op: other passes insert
+        # _to_copy too.
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        casts = [
+            graph.call_function(
+                exir_ops.edge.aten._to_copy.default, (x,), {"dtype": torch.int32}
+            )
+            for _ in range(3)
+        ]
+        add = graph.call_function(exir_ops.edge.aten.add.Tensor, (casts[2], 1))
+        casts[0].meta[QCOM_INSERTED_CAST] = True
+        casts[2].meta[QCOM_INSERTED_CAST] = True
+        partitions = [
+            Partition(id=0, nodes=[casts[0]]),
+            Partition(id=1, nodes=[casts[1]]),
+            Partition(id=2, nodes=[casts[2], add]),
+        ]
+        self.assertEqual(
+            [1, 2],
+            [
+                partition.id
+                for partition in QnnPartitioner._drop_partitions_of_inserted_casts(
+                    partitions
+                )
+            ],
+        )
+
+    def test_partitioner_keeps_partitions_of_inserted_casts_on_cpu(self):
+        class SumIntoInput(torch.nn.Module):
+            def forward(self, x, k, mask):
+                return (x > 0.5).sum(-1).masked_scatter(mask, k)
+
+        class UserCast(torch.nn.Module):
+            def forward(self, x, k, mask):
+                return x.to(torch.int32)
+
+        # sum and masked_scatter stay on CPU, so the int32 casts I64toI32 adds
+        # for k and for the sum would form a partition of their own. A cast
+        # the model makes is still delegated.
+        sample_input = (
+            torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),
+            torch.tensor([3, 4]),
+            torch.tensor([True, False]),
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        for module, delegated in (
+            (SumIntoInput(), [["aten.gt.Tensor"]]),
+            (UserCast(), [["dim_order_ops._to_dim_order_copy.default"]]),
+        ):
+            with self.subTest(type(module).__name__):
+                try:
+                    edge = to_edge_transform_and_lower_to_qnn(
+                        module, sample_input, compiler_specs
+                    )
+                except RuntimeError as e:
+                    if "Failed to initialize QNN backend" in str(e):
+                        skip_without_qnn_sdk(self, e)
+                    raise
+                ep = edge.exported_program()
+                self.assertEqual(
+                    delegated,
+                    [
+                        [
+                            node.target.__name__
+                            for node in lowered.original_module.graph.nodes
+                            if node.op == "call_function"
+                        ]
+                        for lowered in get_lowered_backend_modules(ep.graph_module)
+                    ],
+                )
+                torch.testing.assert_close(
+                    ep.module()(*sample_input), module(*sample_input)
+                )
+
+    def test_partitioner_keeps_constants_above_rank_5_on_cpu(self):
+        class Rank6Constant(torch.nn.Module):
+            def __init__(self, use):
+                super().__init__()
+                self.use = use
+
+            def forward(self, x):
+                return x * 2, self.use(torch.zeros(1, 2, 1, 1, 3, 4))
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        # Either way the constant would be an output of the multiply's partition.
+        uses = {"graph output": lambda c: c, "CPU op": lambda c: c.cumsum(5)}
+        for name, use in uses.items():
+            with self.subTest(use=name):
+                try:
+                    edge = to_edge_transform_and_lower_to_qnn(
+                        Rank6Constant(use).eval(), (torch.randn(2, 3),), compiler_specs
+                    )
+                except RuntimeError as e:
+                    if "Failed to initialize QNN backend" in str(e):
+                        skip_without_qnn_sdk(self, e)
+                    raise
+                self.assertIn(exir_ops.edge.aten.mul.Tensor, delegated_ops(edge))
+                self.assertNotIn(exir_ops.edge.aten.full.default, delegated_ops(edge))
+
+    def test_partitioner_keeps_bool_cat_of_static_tensor_on_cpu(self):
+        class CatConstant(torch.nn.Module):
+            def __init__(self, dtype, constant):
+                super().__init__()
+                self.dtype = dtype
+                self.constant = constant
+                self.register_buffer("ones", torch.ones(2, 2, dtype=dtype))
+
+            def forward(self, x):
+                return torch.cat([(x > 0).to(self.dtype), self.constant(self)], 1)
+
+        constants = {
+            "full": lambda m: torch.full((2, 2), 1, dtype=m.dtype),
+            "buffer": lambda m: m.ones,
+        }
+        # Quantized first: some QNN SDKs crash on a quantized lowering that
+        # follows an fp16 one in the same process. Quantized HTP graphs read
+        # the constant right, so the cat stays.
+        module = CatConstant(torch.bool, constants["full"]).eval()
+        sample_input = (torch.randn(2, 3),)
+        prepared = prepare_pt2e(
+            torch.export.export(module, sample_input, strict=True).module(),
+            QnnQuantizer(),
+        )
+        prepared(*sample_input)
+        try:
+            edge = to_edge_transform_and_lower_to_qnn(
+                convert_pt2e(prepared),
+                sample_input,
+                generate_qnn_executorch_compiler_spec(
+                    soc_model=QcomChipset.SM8650,
+                    backend_options=generate_htp_compiler_spec(use_fp16=False),
+                ),
+            )
+        except RuntimeError as e:
+            if "Failed to initialize QNN backend" in str(e):
+                skip_without_qnn_sdk(self, e)
+            raise
+        self.assertIn(exir_ops.edge.aten.cat.default, delegated_ops(edge))
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        for dtype in (torch.bool, torch.float32):
+            for name, constant in constants.items():
+                with self.subTest(dtype=dtype, constant=name):
+                    try:
+                        edge = to_edge_transform_and_lower_to_qnn(
+                            CatConstant(dtype, constant).eval(),
+                            (torch.randn(2, 3),),
+                            compiler_specs,
+                        )
+                    except RuntimeError as e:
+                        if "Failed to initialize QNN backend" in str(e):
+                            skip_without_qnn_sdk(self, e)
+                        raise
+                    self.assertIn(exir_ops.edge.aten.gt.Tensor, delegated_ops(edge))
+                    self.assertEqual(
+                        dtype != torch.bool,
+                        exir_ops.edge.aten.cat.default in delegated_ops(edge),
+                    )
 
     def test_partitioner_falls_back_on_bfloat16(self):
         class Bf16Region(torch.nn.Module):
@@ -2447,6 +3291,43 @@ class TestPasses(unittest.TestCase):
             visitor.get_tensor_type(node, native, 1),
             "indices has no consumer and must stay internal",
         )
+
+    def test_constant_graph_output_is_written_by_an_op(self):
+        """QNN only publishes a graph output that an op writes.
+
+        A constant op's static tensor has no writer, so as a graph output it was
+        left out and the delegate bound one output fewer than ExecuTorch passed.
+        """
+        import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
+
+        class ConstantOut(torch.nn.Module):
+            def __init__(self, make):
+                super().__init__()
+                self.make = make
+
+            def forward(self, x):
+                return x * 2, self.make(x)
+
+        cases = (
+            ("aten.full.default", lambda x: torch.full((2, 3), -1.0)),
+            ("aten.full_like.default", lambda x: torch.full_like(x, -1.0)),
+            ("aten.arange.start_step", lambda x: torch.arange(0, 3, 1.0)),
+            ("scalar_tensor.default", lambda x: torch.scalar_tensor(3.0)),
+        )
+        for target, make in cases:
+            with self.subTest(target):
+                edge_program = torch.export.export(
+                    ConstantOut(make), (torch.randn(2, 3),), strict=True
+                )
+                node = edge_program.graph.output_node().args[0][1]
+                visitor = get_node_visitors(edge_program)[target]
+                op = visitor.define_node(node, defaultdict(dict))
+                self.assertIsNotNone(op)
+                (output,) = op.GetOpWrapper().GetOutputTensors()
+                self.assertEqual(
+                    f"output_{node.name}@0",
+                    PyQnnManager.PyQnnTensorWrapper(output).GetName(),
+                )
 
 
 # Attributes PT2E compares in _union_input_edge_with when deciding whether an

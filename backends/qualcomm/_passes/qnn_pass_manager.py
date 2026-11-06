@@ -18,6 +18,7 @@ from executorch.backends.qualcomm._passes import (
     CanonicalizeConv,
     ConvertBmmToMatmul,
     ConvertComplexStft,
+    ConvertFullLikeToFull,
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
@@ -135,6 +136,7 @@ class QnnPassManager(PassManager):
             (AnnotateUnbind, True),
             (CanonicalizeConv, True),
             (ConvertBmmToMatmul, False),
+            (ConvertFullLikeToFull, True),
             (ConvertLinearToConv2d, False),
             (DecomposeAcos, True),
             (DecomposeAddmm, True),
@@ -484,11 +486,17 @@ class QnnPassManager(PassManager):
         passes_job: OrderedDict = None,
         dep_table: Dict = None,
         convert_linear_to_conv2d: bool = False,
+        compiler_specs=None,
+        skip_node_id_set: set = None,
+        skip_node_op_set: set = None,
     ):
         transform_passes = self.get_to_edge_transform_passes(
             exported_program,
             passes_job=passes_job,
             dep_table=dep_table,
+            compiler_specs=compiler_specs,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
             convert_linear_to_conv2d=convert_linear_to_conv2d,
         )
         for p in transform_passes:

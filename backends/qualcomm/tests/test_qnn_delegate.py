@@ -546,7 +546,7 @@ class TestQNNFloatingPointOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cat(self):
-        modules = [Cat2(), Cat3(), Cat4(), Cat5()]  # noqa: F405
+        modules = [Cat2(), Cat3(), Cat4(), Cat5(), CatBoolConstant()]  # noqa: F405
         sample_input = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -594,6 +594,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_constant_graph_outputs(self):
+        module = ConstantGraphOutputs()  # noqa: F405
+        sample_input = (torch.randn(2, 3),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv1d(self):
         modules = [Conv1dSequential(), Conv1dSequential(bias=False)]  # noqa: F405
@@ -1240,6 +1245,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = Flip()  # noqa: F405
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_float64(self):
+        module = Float64Math()  # noqa: F405
+        sample_input = (torch.linspace(0, 1, 8),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_floor(self):
         sample_input = (torch.randn(3, 4),)
         module = Floor()  # noqa: F405
@@ -1300,6 +1310,14 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = FullLike(0.5)  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full_like_shape_only(self):
+        sample_input = (torch.randn(2, 3), torch.randn(2, 3))
+        module = FullLikeShapeOnly()  # noqa: F405
+        self.lower_module_and_test_output(module, sample_input)
+        # A full alone reads nothing at runtime, so it stays on CPU.
+        module = FullLikeShapeOnly(scale_y=False)  # noqa: F405
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=0)
 
     def test_qnn_backend_gather(self):
         modules = [
@@ -1746,6 +1764,21 @@ class TestQNNFloatingPointOperator(TestQNN):
 
         for sample_input in sample_inputs:
             self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_int64_mutable_buffer(self):
+        module = Int64Counter()  # noqa: F405
+        sample_input = (torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_int64_results(self):
+        module = Int64Results()  # noqa: F405
+        sample_input = (
+            torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),
+            torch.tensor([3, 4]),
+            torch.tensor([True, False]),
+        )
+        # The sum of bools and masked_scatter stay on CPU, so the graph splits.
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=2)
 
     def test_qnn_backend_interpolate_bicubic(self):
         modules = [
@@ -2370,6 +2403,24 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_rms_norm_upcast(self):
+        # Qwen-style norms, which normalize in float32: a float16 one, and a
+        # float32 one with a bfloat16 weight and values whose squares pass the
+        # largest float16 value.
+        for dtype, x in (
+            (torch.float16, torch.randn(4, 32, dtype=torch.float16)),
+            (torch.bfloat16, torch.linspace(-1000, 1000, 128).reshape(4, 32)),
+        ):
+            with self.subTest(dtype=dtype):
+                module = UpcastRmsNorm(dtype)  # noqa: F405
+                self.lower_module_and_test_output(module, (x,))
+
+    def test_qnn_backend_rms_norm_large_values(self):
+        # A norm whose squares pass the largest float16 value.
+        module = ScaledRmsNorm()  # noqa: F405
+        sample_input = (torch.linspace(-1000, 1000, 128).reshape(4, 32),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_roll(self):
         modules = [
@@ -3747,7 +3798,7 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cat(self):
-        modules = [Cat2(), Cat3(), Cat4(), Cat5()]  # noqa: F405
+        modules = [Cat2(), Cat3(), Cat4(), Cat5(), CatBoolConstant()]  # noqa: F405
         sample_input = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -4450,6 +4501,14 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_float64(self):
+        # The default rtol of 1 would pass a float64 result of zeros.
+        self.rtol = 1e-1
+        module = Float64Math()  # noqa: F405
+        sample_input = (torch.linspace(0, 1, 8),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_floor(self):
         sample_input = (torch.randn(3, 4),)
         module = Floor()  # noqa: F405
@@ -4517,6 +4576,13 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full_like_shape_only(self):
+        sample_input = (torch.randn(2, 3), torch.randn(2, 3))
+        module = FullLikeShapeOnly(scale_y=False)  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        # A full alone reads nothing at runtime, so it stays on CPU.
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=0)
 
     def test_qnn_backend_gather(self):
         modules = [
@@ -5114,6 +5180,30 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_int64_mutable_buffer(self):
+        # The default rtol of 1 would pass a counter that never updates.
+        self.rtol = 1e-1
+        module = Int64Counter()  # noqa: F405
+        sample_input = (torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),)
+        module = self.get_qdq_module(module, sample_input)
+        # Calibration ran the counter once. The lowered program starts its
+        # buffer from zero, so the reference has to as well.
+        module.count.zero_()
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_int64_results(self):
+        # The default rtol of 1 would pass int64 results of zeros.
+        self.rtol = 1e-1
+        module = Int64Results()  # noqa: F405
+        sample_input = (
+            torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),
+            torch.tensor([3, 4]),
+            torch.tensor([True, False]),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        # The sum of bools and masked_scatter stay on CPU, so the graph splits.
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=2)
 
     def test_qnn_backend_interpolate_bicubic(self):
         modules = [
@@ -6017,6 +6107,15 @@ class TestQNNQuantizedOperator(TestQNN):
                     module, sample_input, quant_dtype=QuantDtype.use_16a4w
                 )
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_rms_norm_upcast(self):
+        # Quantization capture rebuilds a float32 norm with a bfloat16 weight.
+        # The default rtol of 1 would pass a norm output of zeros.
+        self.rtol = 1e-1
+        module = UpcastRmsNorm(torch.bfloat16)  # noqa: F405
+        sample_input = (torch.randn(4, 32),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_roll(self):
         modules = [
