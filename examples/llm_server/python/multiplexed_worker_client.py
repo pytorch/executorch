@@ -238,6 +238,8 @@ class MultiplexedWorkerClient:
         max_buffered_chars: int = 1024 * 1024,
         max_message_bytes: int = _MAX_MESSAGE_BYTES,
         max_request_bytes: int = _MAX_REQUEST_BYTES,
+        supports_ignore_eos: bool = False,
+        default_stop_strings: list[str] | None = None,
     ):
         _validate_limits(
             max_named_sessions=max_named_sessions,
@@ -250,6 +252,15 @@ class MultiplexedWorkerClient:
         if proc.stdin is None or proc.stdout is None:
             raise WorkerError("worker requires stdin and stdout pipes")
         self._loop = asyncio.get_running_loop()
+        if default_stop_strings is not None and (
+            not isinstance(default_stop_strings, list)
+            or any(not isinstance(s, str) or not s for s in default_stop_strings)
+        ):
+            raise WorkerError(
+                "default_stop_strings must be null or a list of nonempty strings"
+            )
+        self.default_stop_strings = default_stop_strings
+        self.supports_ignore_eos = supports_ignore_eos
         self.max_named_sessions = max_named_sessions
         self.max_inflight_requests = max_inflight_requests
         self._mailbox_capacity = mailbox_capacity
@@ -332,7 +343,9 @@ class MultiplexedWorkerClient:
         self._ensure_usable()
         if len(self._requests) >= self.max_inflight_requests:
             raise WorkerError(
-                "worker request capacity exhausted", code="capacity_exhausted"
+                "worker request capacity exhausted",
+                code="capacity_exhausted",
+                admitted=False,
             )
         state = _Request(self._allocate_id(), op, self._loop.create_future(), ack)
         self._requests[state.request_id] = state
@@ -400,7 +413,10 @@ class MultiplexedWorkerClient:
                 item for item in self._writes if item[0] != state.request_id
             )
             state.cancel_requested = True
-            self._complete(state, WorkerStats(finish_reason="stop", cancelled=True))
+            self._complete(
+                state,
+                WorkerStats(finish_reason="stop", matched_stop="", cancelled=True),
+            )
             return True
         if len(self._controls) >= self.max_inflight_requests:
             state.cancel_pending = True
@@ -561,6 +577,21 @@ class MultiplexedWorkerClient:
             raise WorkerError(f"invalid worker {kind} acknowledgement")
         if "code" in msg and not isinstance(msg["code"], str):
             raise WorkerError("invalid worker error code")
+        if "context_overflow" in msg:
+            counts = msg["context_overflow"]
+            if (
+                kind != "error"
+                or msg.get("code") != "context_length_exceeded"
+                or not isinstance(counts, dict)
+                or set(counts)
+                != {"prompt_tokens", "context_length", "completion_tokens"}
+                or any(type(value) is not int or value < 0 for value in counts.values())
+                or counts["context_length"] == 0
+            ):
+                raise WorkerError("invalid worker context overflow counts")
+        for flag, expected_kind in (("existed", "closed"), ("admitted", "error")):
+            if flag in msg and (kind != expected_kind or type(msg[flag]) is not bool):
+                raise WorkerError(f"invalid worker {flag} flag")
         if kind == "done":
             MultiplexedWorkerClient._validate_generation_terminal(msg)
         return kind
@@ -589,6 +620,16 @@ class MultiplexedWorkerClient:
                 or msg[key] < 0
             ):
                 raise WorkerError(f"invalid worker statistic: {key}")
+        if (
+            "matched_stop" in msg
+            and msg["matched_stop"] is not None
+            and (
+                not isinstance(msg["matched_stop"], str)
+                or not msg["matched_stop"]
+                or msg.get("finish_reason") != "stop"
+            )
+        ):
+            raise WorkerError("invalid worker matched_stop")
         if "finish_reason" in msg and msg["finish_reason"] not in ("stop", "length"):
             raise WorkerError("invalid worker finish_reason")
         if "cancelled" in msg and type(msg["cancelled"]) is not bool:
@@ -658,9 +699,14 @@ class MultiplexedWorkerClient:
             state.changed.set()
         elif kind in (state.ack, "error"):
             result = (
-                WorkerError(msg["error"], code=msg.get("code"))
+                WorkerError(
+                    msg["error"],
+                    code=msg.get("code"),
+                    context_overflow=msg.get("context_overflow"),
+                    admitted=msg.get("admitted"),
+                )
                 if kind == "error"
-                else WorkerStats.from_message(msg) if state.op == "generate" else None
+                else WorkerStats.from_message(msg) if state.op == "generate" else msg
             )
             self._complete(state, result)
         else:
@@ -717,6 +763,8 @@ class MultiplexedWorkerClient:
                 "seed": getattr(config, "seed", 0),
                 "stop": list(getattr(config, "stop", []) or []),
             }
+            if getattr(config, "ignore_eos", False):
+                request["ignore_eos"] = config.ignore_eos
             segments = getattr(config, "prompt_segments", None)
             request["prompt_segments" if segments is not None else "prompt"] = (
                 segments if segments is not None else prompt
@@ -736,6 +784,7 @@ class MultiplexedWorkerClient:
             result = await asyncio.shield(state.completion)
             if isinstance(result, WorkerError):
                 raise result
+            return result
         finally:
             self._abandon(state)
 
@@ -747,9 +796,10 @@ class MultiplexedWorkerClient:
         """Wait for the named session's replacement acknowledgement."""
         await self._op("reset", session_id, "reset")
 
-    async def close_session(self, session_id: str) -> None:
-        """Wait for the named session's logical close acknowledgement."""
-        await self._op("close", session_id, "closed")
+    async def close_session(self, session_id: str) -> Optional[bool]:
+        """Close idempotently; return whether it existed, or None for older workers."""
+        result = await self._op("close", session_id, "closed")
+        return result.get("existed")
 
     async def _cleanup(self):
         self._reader.cancel()
@@ -823,6 +873,8 @@ async def spawn_multiplexed_worker(
         return MultiplexedWorkerClient(
             proc,
             max_named_sessions=msg.get("max_named_sessions", 0),
+            supports_ignore_eos=msg.get("supports_ignore_eos") is True,
+            default_stop_strings=msg.get("default_stop_strings"),
             max_inflight_requests=msg.get("max_inflight_requests", 64),
             mailbox_capacity=mailbox_capacity,
             max_buffered_chars=max_buffered_chars,

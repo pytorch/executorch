@@ -351,8 +351,11 @@ def update_tensor_lifetime(
     else:
         start = node_idx if start is None or start > node_idx else start
 
-    if node.op == "placeholder" and _is_mutable_buffer(node, gs):
-        # mutable buffers are never freed
+    if node.op == "placeholder" and (
+        _is_mutable_buffer(node, gs) or _is_device_resident_constant(node)
+    ):
+        # Mutable buffers and device resident constants keep their data across
+        # calls, so they are never freed.
         end = max_node_idx
     else:
         end = node_idx if end is None or end < node_idx else end
@@ -384,6 +387,14 @@ def _is_mutable_buffer(
                 if fqn in graph_signature.buffers_to_mutate.values():
                     return True
     return False
+
+
+def _is_device_resident_constant(node: Node) -> bool:
+    """Whether node is a constant that PropagateDevicePass placed in device
+    memory. The runtime copies its data from the program or its data file
+    into its planned memory once, at load, so it is planned like a mutable
+    buffer instead of being used in place."""
+    return node.op == "placeholder" and node.meta.get("device_resident_constant", False)
 
 
 def _get_mutable_buffer_specs(
@@ -425,7 +436,11 @@ def get_graph_input_tensors(
 ) -> Set[TensorSpec]:
     graph_input_tensors = set()
     for node in nodes:
-        if node.op == "placeholder" and not _is_mutable_buffer(node, graph_signature):
+        if (
+            node.op == "placeholder"
+            and not _is_mutable_buffer(node, graph_signature)
+            and not _is_device_resident_constant(node)
+        ):
             for spec in get_node_tensor_specs(node):
                 graph_input_tensors.add(spec)
 
@@ -535,6 +550,7 @@ def collect_specs_from_nodes(  # noqa: C901
                 ignore_const
                 and spec.const
                 and not node.meta.get("weight_has_gradient", False)
+                and not _is_device_resident_constant(node)
             ):
                 continue
             if dedup:
@@ -1415,6 +1431,26 @@ def _build_non_const_buffer_device(
     ]
 
 
+def _reserve_memory_for_views(graph_module: torch.fx.GraphModule) -> None:
+    """
+    A memory.view shares its base's memory, but each of its dims is bounded on its
+    own, so the view can be planned larger than its base. The runtime refuses to
+    load a tensor whose planned size runs past the end of its buffer, so plan each
+    base large enough for its views.
+    """
+    for node in graph_module.graph.nodes:
+        if node.op != "call_function" or node.target != memory.view:
+            continue
+        spec = node.meta["spec"]
+        # A view's spec writes this field through to its base. A base backed by
+        # another tensor's storage must still fit in that storage.
+        needed = spec.nbytes()
+        while spec is not None:
+            spec.min_allocated_memory = max(spec.min_allocated_memory, needed)
+            needed += spec.storage_base_offset
+            spec = spec.storage_base
+
+
 def apply_algo(
     algo: Callable[..., list[int]],
     graph_module: torch.fx.GraphModule,
@@ -1451,6 +1487,7 @@ def apply_algo(
     """
     # Extract the nodes and their lifespans from the graph_module
     _ = update_all_tensors_lifetime(graph_module, graph_signature)
+    _reserve_memory_for_views(graph_module)
 
     # Collect specs into an ordered list so we can iterate multiple times and
     # partition by device.  Order matters: order-sensitive algorithms (e.g.

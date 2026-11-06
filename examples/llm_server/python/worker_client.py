@@ -53,6 +53,8 @@ class WorkerStats:
     # stop) or "length" (ran to max_new, possibly clamped to the context window).
     # None if the worker didn't report it (older worker / fake).
     finish_reason: Optional[str] = None
+    # None: old worker omitted metadata; empty string: explicit no string stop.
+    matched_stop: Optional[str] = None
     # Warm-resume accounting: how many prompt tokens were served from the
     # session's resident KV state vs actually prefilled this request, and why
     # ("new"|"exact_prefix"|"prefix_clone"|"dirty"|"mismatch"|"equal"). Not exposed as OpenAI
@@ -78,10 +80,17 @@ class WorkerStats:
 
     @classmethod
     def from_message(cls, msg: dict) -> "WorkerStats":
+        if msg.get("matched_stop") is not None and (
+            not isinstance(msg["matched_stop"], str)
+            or not msg["matched_stop"]
+            or msg.get("finish_reason") != "stop"
+        ):
+            raise WorkerError("invalid worker matched_stop")
         return cls(
             num_prompt_tokens=msg.get("prompt_tokens", 0),
             num_generated_tokens=msg.get("completion_tokens", 0),
             finish_reason=msg.get("finish_reason"),
+            matched_stop=(msg["matched_stop"] or "") if "matched_stop" in msg else None,
             reused_prompt_tokens=msg.get("reused_prompt_tokens", 0),
             prefilled_prompt_tokens=msg.get("prefilled_prompt_tokens", 0),
             session_reset_reason=msg.get("session_reset_reason"),
@@ -104,9 +113,18 @@ class WorkerError(RuntimeError):
     to the right status; None for unstructured failures.
     """
 
-    def __init__(self, message: str, code: Optional[str] = None):
+    def __init__(
+        self,
+        message: str,
+        code: Optional[str] = None,
+        *,
+        admitted: Optional[bool] = None,
+        context_overflow=None,
+    ):
         super().__init__(message)
         self.code = code
+        self.admitted = admitted
+        self.context_overflow = context_overflow
 
 
 def _decode_worker_json(line: str) -> dict:
@@ -186,6 +204,7 @@ class WorkerClient:
     """
 
     supports_multiplexing = False
+    supports_ignore_eos = False
 
     def __init__(
         self,
@@ -378,9 +397,10 @@ class WorkerClient:
         ("capacity_exhausted" / "unsupported_session") if the worker refuses."""
         self._op({"op": "open", "session_id": session_id}, ack_key="opened")
 
-    def close_session(self, session_id: str) -> None:
-        """Destroy a named session, freeing its state (idempotent)."""
-        self._op({"op": "close", "session_id": session_id}, ack_key="closed")
+    def close_session(self, session_id: str) -> Optional[bool]:
+        """Close idempotently; return whether it existed, or None for older workers."""
+        result = self._op({"op": "close", "session_id": session_id}, ack_key="closed")
+        return result.get("existed")
 
     def reset_session(self, session_id: str) -> None:
         """Clear a named session's context (KV/recurrent + resident tokens) but
@@ -417,15 +437,23 @@ class WorkerClient:
         except WorkerError as error:
             raise self._record_failure(error)
 
-    def _op(self, request: dict, ack_key: str) -> None:
+    def _op(self, request: dict, ack_key: str) -> dict:
         with self._lock:
             self._ensure_usable()
             self._write_request(request)
             msg = self._read_message()
             if msg.get(ack_key):
-                return
+                if "existed" in msg and type(msg["existed"]) is not bool:
+                    raise self._record_failure(
+                        WorkerError("invalid worker existed flag")
+                    )
+                return msg
             if "error" in msg:
-                raise WorkerError(str(msg["error"]), code=msg.get("code"))
+                raise WorkerError(
+                    str(msg["error"]),
+                    code=msg.get("code"),
+                    admitted=msg.get("admitted"),
+                )
             raise self._record_failure(
                 WorkerError(f"unexpected worker response: {msg}")
             )
@@ -461,7 +489,11 @@ class WorkerClient:
                 self._on_done(msg, stats_callback)
                 return
             elif "error" in msg:
-                raise WorkerError(str(msg["error"]), code=msg.get("code"))
+                raise WorkerError(
+                    str(msg["error"]),
+                    code=msg.get("code"),
+                    admitted=msg.get("admitted"),
+                )
             else:
                 raise self._record_failure(
                     WorkerError(f"unexpected worker response: {msg}")
@@ -475,6 +507,11 @@ class WorkerClient:
         stats_callback=None,
         request_id: Optional[int] = None,
     ):
+        if getattr(config, "ignore_eos", False):
+            raise WorkerError(
+                "ignore_eos requires a multiplexed batching worker",
+                code="unsupported_parameter",
+            )
         request = {
             "max_new_tokens": getattr(config, "max_new_tokens", -1),
             "temperature": getattr(config, "temperature", 0.0),

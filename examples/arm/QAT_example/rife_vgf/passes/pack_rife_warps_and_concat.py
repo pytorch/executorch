@@ -101,6 +101,7 @@ def _constant_tensor(program, node):
 
 
 PARAMETERS = (
+    "flow_normalization",
     "flow_scale",
     "flow_zero_point",
     "input_scale",
@@ -137,6 +138,16 @@ def _payload(custom):
         raise ValueError("Expected a valid sampler payload.") from None
     if not isinstance(payload, dict):
         raise ValueError("Expected a sampler payload object.")
+    normalization = payload.setdefault("flow_normalization", [1.0, 1.0])
+    if (
+        not isinstance(normalization, list)
+        or len(normalization) != 2
+        or any(
+            type(value) not in (int, float) or not math.isfinite(value) or value <= 0
+            for value in normalization
+        )
+    ):
+        raise ValueError("Expected two finite positive flow-normalization factors.")
     _validate_sampling_qparams(payload)
     if (
         payload.get("input_0_vkformat") != "VK_FORMAT_R8G8B8A8_SNORM"

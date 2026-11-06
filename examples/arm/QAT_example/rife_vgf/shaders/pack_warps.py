@@ -24,6 +24,9 @@ def build_packed_warp_payload(payloads, timestep, *, fuse_block0_tail=False):
 
     """
     source = Path(__file__).with_name("pack_warps.glsl").read_text()
+    normalization = payloads[0].get("flow_normalization", [1.0, 1.0])
+    for axis, value in zip(("X", "Y"), normalization):
+        source = source.replace(f"@FLOW_NORMALIZATION_{axis}@", format(value, ".9g"))
     for key in (
         "flow_scale",
         "flow_zero_point",

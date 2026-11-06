@@ -672,7 +672,7 @@ class TestVulkanBackend(unittest.TestCase):
         batch = Dim("batch", max=8)
         dynamic_shapes = {"x": {0: batch}}
         test_inputs = [
-            (torch.randn(3, 14, 15, 9),),
+            (torch.randn(3, 13, 15, 9),),
             (torch.randn(1, 1, 4, 6),),
             (torch.randn(5, 10, 50, 40),),
         ]
@@ -706,7 +706,7 @@ class TestVulkanBackend(unittest.TestCase):
         batch = Dim("batch", max=8)
         dynamic_shapes = {"x": {0: batch}}
         test_inputs = [
-            (torch.randn(3, 14, 15, 9),),
+            (torch.randn(3, 13, 15, 9),),
             (torch.randn(1, 1, 4, 6),),
             (torch.randn(5, 10, 50, 40),),
         ]
@@ -862,6 +862,31 @@ class TestVulkanBackend(unittest.TestCase):
         sample_inputs = (torch.ones(size=(31, 63), dtype=torch.float32),)
 
         self.lower_module_and_test_output(module, sample_inputs)
+
+    def test_vulkan_backend_addmm(self):
+        class AddmmModule(torch.nn.Module):
+            def __init__(self, bias_shape, beta, alpha):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(8, 16))
+                self.bias = torch.nn.Parameter(torch.randn(bias_shape))
+                self.beta = beta
+                self.alpha = alpha
+
+            def forward(self, x):
+                return torch.addmm(
+                    self.bias, x, self.weight.t(), beta=self.beta, alpha=self.alpha
+                )
+
+        for bias_shape, beta, alpha in (
+            ((8,), 1.0, 1.0),
+            ((8,), 2.0, 1.0),
+            ((8,), 1.0, 0.5),
+            ((4, 8), 1.0, 1.0),
+        ):
+            with self.subTest(bias_shape=bias_shape, beta=beta, alpha=alpha):
+                self.lower_module_and_test_output(
+                    AddmmModule(bias_shape, beta, alpha), (torch.randn(4, 16),)
+                )
 
     def test_vulkan_backend_bmm(self):
         class BMMModule(torch.nn.Module):
@@ -3048,6 +3073,19 @@ class TestVulkanBackend(unittest.TestCase):
         )
 
         self.lower_module_and_test_output(high_dim_module, sample_inputs)
+
+    def test_vulkan_backend_high_dimensional_constant(self):
+        class HighDimConstantModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("c", torch.rand(1, 2, 3, 4, 5))
+
+            def forward(self, x):
+                return x * self.c
+
+        sample_inputs = (torch.rand(size=(1, 2, 3, 4, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(HighDimConstantModule(), sample_inputs)
 
     def test_vulkan_backend_torchao_wo_quantized_linear(self):
         in_features = 1024
