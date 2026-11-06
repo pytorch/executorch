@@ -33,6 +33,17 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_test(
+        name = "test_addmm_mm_to_linear",
+        srcs = ["test/test_addmm_mm_to_linear.py"],
+        deps = [
+            ":addmm_mm_to_linear",
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
     runtime.python_library(
         name = "decompose_sdpa",
         srcs = ["decompose_sdpa.py"],
@@ -79,6 +90,18 @@ def define_common_targets():
             "//executorch/exir/dialects:lib",
             "//executorch/exir/dialects/edge:lib",
             "//executorch/exir/passes:constant_prop_pass",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_transforms_utils",
+        srcs = ["test/test_transforms_utils.py"],
+        deps = [
+            ":utils",
+            "//caffe2:torch",
+            "//executorch/backends/test:graph_builder",
+            "//executorch/backends/test:program_builder",
+            "//executorch/exir/dialects:lib",
         ],
     )
 
@@ -269,6 +292,7 @@ def define_common_targets():
         srcs = ["utils.py"],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             "//caffe2:torch",
@@ -619,6 +643,17 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_reserve_node_names",
+        srcs = [
+            "test/test_reserve_node_names.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":utils",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_convert_dtype_pass",
         srcs = [
             "test/test_convert_dtype_pass.py",
@@ -673,6 +708,7 @@ def define_common_targets():
         srcs = ["permute_pass_utils.py"],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             ":channels_last_layout",

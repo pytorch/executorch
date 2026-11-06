@@ -4,7 +4,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-// The ggml engine for ptn_runner_main.cpp.
+// The ggml engine host for PTN test drivers.
 
 #include <stdexcept>
 
@@ -30,7 +30,7 @@ DEFINE_bool(
 namespace ptn::testing {
 
 // cppcheck-suppress unusedFunction
-std::unique_ptr<EngineHost> make_engine_host() {
+std::unique_ptr<EngineHost> make_engine_host(const HostOptions& host_options) {
   GgmlEngineOptions options;
   if (FLAGS_device == "gpu") {
     options.device = GgmlDevice::Gpu;
@@ -44,6 +44,8 @@ std::unique_ptr<EngineHost> make_engine_host() {
   }
   options.max_cached_graphs = static_cast<size_t>(FLAGS_max_cached_graphs);
   options.print_graph_ops = FLAGS_print_graph_ops;
+  options.allow_activation_quant_for_weight_only =
+      host_options.allow_activation_quant_for_weight_only;
   return GgmlEngineHost::create(options);
 }
 

@@ -31,7 +31,7 @@
   },
   {
     "name": "texture addition",
-    "shader": "binary_add_texture3d_float",
+    "shader": "binary_op_texture3d_float",
     "gwg_size": "default_pick_gwg",
     "lwg_size": "default_pick_lwg",
     "target_ms": 10,

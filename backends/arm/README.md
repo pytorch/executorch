@@ -328,7 +328,7 @@ https://corstone1000.docs.arm.com/en/corstone1000-2025.12/
 Setup:
 
 ```
-./examples/arm/setup.sh --i-agree-to-the-contained-eula --target-toolchain linux-musl
+./examples/arm/setup.sh --i-agree-to-the-contained-eula --target-toolchain linux-musl --fvp corstone1000
 source ./examples/arm/arm-scratch/setup_path.sh
 ```
 
@@ -340,7 +340,8 @@ Build:
   --build_type=Debug
 ```
 
-Note: setup selects the linux-musl toolchain; build uses the aarch64-linux-musl GCC toolchain name.
+Note: setup selects the linux-musl toolchain and the Corstone-1000 FVP, which is
+not installed by default; build uses the aarch64-linux-musl GCC toolchain name.
 
 If your Yocto image enables the dropbear SSH server, you can copy the
 `executor_runner` binary into the running FVP via scp:

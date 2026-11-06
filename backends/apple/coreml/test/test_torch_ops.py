@@ -777,6 +777,43 @@ class TestTorchOps(unittest.TestCase):
             [types.int32] * 4,
         )
 
+    def test_fills_of_a_tensor_use_fill_like(self):
+        """
+        A fill the shape of a tensor becomes a constant as big as that tensor
+        in the model when the shape is known at conversion, unless it is a
+        fill_like, which needs iOS 16, the target this test uses.
+        """
+
+        class Fills(torch.nn.Module):
+            def forward(self, x):
+                ones = torch.ones_like(x) + torch.zeros_like(x)
+                return ones + torch.full_like(x, 2) + x.clone().fill_(3)
+
+        model = Fills().eval()
+        x = torch.rand(4, 64)
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            torch.export.export(model, (x,)),
+            partitioner=[
+                self._coreml_partitioner(minimum_deployment_target=ct.target.iOS16)
+            ],
+        )
+        self.assertEqual(
+            [
+                node.target.__name__
+                for node in delegated_program.exported_program().graph.nodes
+                if node.op == "call_function"
+            ],
+            ["executorch_call_delegate", "getitem"],
+        )
+        lowered = delegated_program.exported_program().graph_module.lowered_module_0
+        program = ct.convert(
+            lowered.original_module,
+            convert_to="milinternal",
+            minimum_deployment_target=ct.target.iOS16,
+        )
+        self.assertEqual(len(program.find_ops(op_type="fill_like")), 4)
+        self._compare_outputs(delegated_program.to_executorch(), model, (x,))
+
     @unittest.skipIf(is_fbcode(), "The coremltools in fbcode has no rms_norm.")
     def test_rms_norm_without_eps(self):
         """
