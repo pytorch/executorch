@@ -9,6 +9,11 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.cast_int_comparison_inputs_pass import (
+    CastIntComparisonInputsPass,
+)
+from executorch.backends.arm.tosa.specification import get_context_spec
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import is_buffer
 from torch.export import ExportedProgram
@@ -17,9 +22,23 @@ logger = logging.getLogger(__name__)
 
 
 class CastInt64BuffersToInt32Pass(ArmPass):
-    """Cast int64 buffers to int32 if the int64 data is in int32 range."""
+    """Cast int64 buffers to int32 if the int64 data is in int32 range.
+
+    With the int64 extension under PRO-INT, a buffer whose users all compute in
+    int64, compare it or return it keeps int64.
+
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+
+    _comparison_ops = CastIntComparisonInputsPass.target_ops | {
+        exir_ops.edge.aten.eq.Scalar,
+        exir_ops.edge.aten.ne.Scalar,
+        exir_ops.edge.aten.ge.Scalar,
+        exir_ops.edge.aten.gt.Scalar,
+        exir_ops.edge.aten.le.Scalar,
+        exir_ops.edge.aten.lt.Scalar,
+    }
 
     def __init__(self, exported_program: ExportedProgram, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -72,7 +91,36 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         node.meta["val"] = node.meta["val"].to(torch.int32)
         return True
 
+    @classmethod
+    def _users_compute_in_int64(cls, node: torch.fx.Node) -> bool:
+        def is_int64(value) -> bool:
+            return isinstance(value, torch.Tensor) and value.dtype == torch.int64
+
+        def compares_in_int64(user: torch.fx.Node) -> bool:
+            if user.target not in cls._comparison_ops:
+                return False
+            operands = [
+                arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg
+                for arg in user.args[:2]
+            ]
+            return torch.result_type(*operands) == torch.int64 and all(
+                arg.meta["val"].dtype in (torch.int64, torch.int32, torch.bool)
+                for arg in user.all_input_nodes
+                if isinstance(arg.meta.get("val"), torch.Tensor)
+            )
+
+        return all(
+            user.op == "output"
+            or compares_in_int64(user)
+            or is_int64(user.meta.get("val"))
+            for user in node.users
+        )
+
     def _to_int32(self, graph_module: torch.fx.GraphModule) -> int:
+        tosa_spec = get_context_spec()
+        keep_int64 = tosa_spec.support_integer() and tosa_spec.support_extension(
+            "int64"
+        )
         converted = 0
         for node in graph_module.graph.nodes:
             if len(node.users) == 0:
@@ -83,6 +131,8 @@ class CastInt64BuffersToInt32Pass(ArmPass):
             if not isinstance(fake_tensor, torch._subclasses.fake_tensor.FakeTensor):
                 continue
             if fake_tensor.dtype != torch.int64:
+                continue
+            if keep_int64 and self._users_compute_in_int64(node):
                 continue
             if is_buffer(self.exported_program, node):
                 converted += self._cast_buffer_to_int32(node)

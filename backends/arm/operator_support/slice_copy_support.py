@@ -81,7 +81,9 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
 
         values_dtype = node.args[0].meta["val"].dtype  # type: ignore[union-attr]
 
-        SUPPORTED_INT_DTYPES = (torch.int8, torch.int16, torch.int32)
+        SUPPORTED_INT_DTYPES = (torch.int8, torch.int16, torch.int32) + (
+            (torch.int64,) if tosa_spec.support_extension("int64") else ()
+        )
         SUPPORTED_FLOAT_DTYPES = (
             torch.float16,
             torch.float32,
