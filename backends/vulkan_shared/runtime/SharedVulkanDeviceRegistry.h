@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include <executorch/backends/vulkan_shared/runtime/SharedVulkanContext.h>
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanDevice.h>
 #include <executorch/backends/vulkan_shared/runtime/export.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -25,28 +25,28 @@ namespace vulkan_shared {
 // Process-local registry used by independently initialized GPU delegates. The
 // canonical target is a shared library so all delegate DSOs observe the same
 // registry instance.
-class EXECUTORCH_VULKAN_SHARED_API SharedVulkanContextRegistry final {
+class EXECUTORCH_VULKAN_SHARED_API SharedVulkanDeviceRegistry final {
  public:
-  using CreateFn = std::function<runtime::Result<SharedVulkanContextPtr>()>;
+  using CreateFn = std::function<runtime::Result<SharedVulkanDevicePtr>()>;
 
-  static SharedVulkanContextRegistry& Get();
+  static SharedVulkanDeviceRegistry& Get();
 
-  SharedVulkanContextRegistry(const SharedVulkanContextRegistry&) = delete;
-  SharedVulkanContextRegistry& operator=(const SharedVulkanContextRegistry&) =
+  SharedVulkanDeviceRegistry(const SharedVulkanDeviceRegistry&) = delete;
+  SharedVulkanDeviceRegistry& operator=(const SharedVulkanDeviceRegistry&) =
       delete;
 
-  SharedVulkanContextPtr lookup(const SharedVulkanContextKey& key);
+  SharedVulkanDevicePtr lookup(const SharedVulkanDeviceKey& key);
 
-  runtime::Result<SharedVulkanContextPtr> lookup_or_create(
-      const SharedVulkanContextKey& key,
+  runtime::Result<SharedVulkanDevicePtr> lookup_or_create(
+      const SharedVulkanDeviceKey& key,
       CreateFn create_fn);
 
-  runtime::Error register_context(SharedVulkanContextPtr context);
+  runtime::Error register_device(SharedVulkanDevicePtr context);
 
-  runtime::Result<SharedVulkanContextPtr> register_external_context(
-      SharedVulkanContextCreateInfo create_info);
+  runtime::Result<SharedVulkanDevicePtr> register_external_device(
+      SharedVulkanDeviceCreateInfo create_info);
 
-  runtime::Error unregister_context(const SharedVulkanContextKey& key);
+  runtime::Error unregister_device(const SharedVulkanDeviceKey& key);
 
   // Test-only. The caller must ensure that there are no concurrent
   // registry operations or in-flight lookup_or_create() calls.
@@ -54,21 +54,21 @@ class EXECUTORCH_VULKAN_SHARED_API SharedVulkanContextRegistry final {
 
  private:
   struct Entry final {
-    SharedVulkanContextPtr context;
+    SharedVulkanDevicePtr context;
     bool creating = false;
     std::condition_variable creation_complete;
   };
 
   struct KeyHash final {
-    size_t operator()(const SharedVulkanContextKey& key) const;
+    size_t operator()(const SharedVulkanDeviceKey& key) const;
   };
 
-  SharedVulkanContextRegistry() = default;
+  SharedVulkanDeviceRegistry() = default;
 
-  // Never release a SharedVulkanContext/lifetime_anchor while this mutex is
+  // Never release a SharedVulkanDevice/lifetime_anchor while this mutex is
   // held: backend teardown may re-enter the registry.
   std::mutex mutex_;
-  std::unordered_map<SharedVulkanContextKey, std::shared_ptr<Entry>, KeyHash>
+  std::unordered_map<SharedVulkanDeviceKey, std::shared_ptr<Entry>, KeyHash>
       registry_;
 };
 
