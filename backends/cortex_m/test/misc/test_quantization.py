@@ -4,14 +4,21 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import pytest
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
-from executorch.backends.arm.test.common import parametrize, xfail_type
+from executorch.backends.arm.test.common import parametrize
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    INT8_PER_CHANNEL_CONFIG,
+    INT8_PER_TENSOR_CONFIG,
+)
+from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
     ramp_tensor,
 )
+from executorch.backends.test.harness.stages import Quantize, StageType
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -358,12 +365,8 @@ test_cases = {
     ),
 }
 
-xfails: dict[str, xfail_type] = {
-    "surrounded_quantized_op_constant": "Numerical error since the add is forced to have non-correct qparams.",
-}
 
-
-@parametrize("test_case", test_cases, xfails=xfails)
+@parametrize("test_case", test_cases)
 def test_shared_qspec_quantizer(test_case):
     """
     Test that ops which does not change dynamic range are able to use int8 portable kernels.
@@ -409,3 +412,91 @@ def test_shared_qspec_quantizer_no_qspecs(test_case):
     tester.test_dialect(
         test_case.model.ops_before_transforms, test_case.model.ops_after_transforms
     )
+
+
+def _conv_inputs():
+    return (ramp_tensor(-2, 2, (1, 2, 6, 6)).to(memory_format=torch.channels_last),)
+
+
+def _has_activation(targets):
+    # An unfused quantized relu lowers to clamp.
+    return any("relu" in t or "clamp" in t for t in targets)
+
+
+@pytest.mark.parametrize(
+    "configs, per_channel_weights",
+    [
+        ([INT8_PER_TENSOR_CONFIG], 0),
+        ([INT8_PER_TENSOR_CONFIG, INT8_PER_CHANNEL_CONFIG], 1),
+    ],
+)
+def test_set_node_target_overrides_earlier_configs(configs, per_channel_weights):
+    # Convolutions default to per-channel weights; the last set_node_target
+    # call decides.
+    quantizer = CortexMQuantizer()
+    for config in configs:
+        quantizer.set_node_target(torch.ops.aten.conv2d.default, config)
+    model = torch.nn.Conv2d(2, 4, 3, bias=False).eval()
+    tester = CortexMTester(model, _conv_inputs())
+    tester.quantize(Quantize(quantizer)).export().to_edge()
+    tester.check_count(
+        {
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": per_channel_weights
+        }
+    )
+
+
+def test_set_node_target_keeps_fused_activation():
+    # The override must still match conv + relu as one pattern, so the relu
+    # folds into the convolution.
+    model = torch.nn.Sequential(torch.nn.Conv2d(2, 4, 3), torch.nn.ReLU()).eval()
+    quantizer = CortexMQuantizer().set_node_target(
+        torch.ops.aten.conv2d.default, INT8_PER_TENSOR_CONFIG
+    )
+    tester = CortexMTester(model, _conv_inputs())
+    tester.quantize(Quantize(quantizer)).export().to_edge().run_passes()
+    tester.run_method_and_compare_outputs(inputs=_conv_inputs(), qtol=1)
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    targets = [str(n.target) for n in program.graph.nodes if n.op == "call_function"]
+    assert any("quantized_conv2d" in t for t in targets)
+    assert not _has_activation(targets)
+
+
+@pytest.mark.parametrize(
+    "node_target, linear_quantized, relu_folded",
+    [
+        (torch.ops.aten.conv2d.default, True, True),
+        (torch.ops.aten.relu.default, True, False),
+        (torch.ops.aten.linear.default, False, False),
+    ],
+)
+def test_set_node_target_none_leaves_node_target_unquantized(
+    node_target, linear_quantized, relu_folded
+):
+    # Linear + relu fuses unless one of them is left unquantized; relu starts
+    # no pattern, but None still applies to it.
+    model = torch.nn.Sequential(torch.nn.Linear(4, 4), torch.nn.ReLU()).eval()
+    quantizer = CortexMQuantizer().set_node_target(node_target, None)
+    tester = CortexMTester(model, (ramp_tensor(-2, 2, (1, 4)),))
+    tester.quantize(Quantize(quantizer)).export().to_edge().run_passes()
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    targets = [str(n.target) for n in program.graph.nodes if n.op == "call_function"]
+    assert any("quantized_linear" in t for t in targets) == linear_quantized
+    assert _has_activation(targets) != relu_folded
+
+
+@pytest.mark.parametrize(
+    "node_target, config, error, match",
+    [
+        (
+            torch.ops.aten.conv2d.padding,
+            INT8_PER_TENSOR_CONFIG,
+            ValueError,
+            "is not supported by the cortex-m backend",
+        ),
+        (torch.ops.aten.linear, None, TypeError, "expected an OpOverload"),
+    ],
+)
+def test_set_node_target_rejects_invalid_target(node_target, config, error, match):
+    with pytest.raises(error, match=match):
+        CortexMQuantizer().set_node_target(node_target, config)

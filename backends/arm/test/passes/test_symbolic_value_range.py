@@ -9,7 +9,7 @@ from executorch.backends.arm._passes.symbolic_value_range import (
     evaluate_symbolic_expr_values,
 )
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
-from torch.utils._sympy.functions import PythonMod
+from torch.utils._sympy.functions import IntTrueDiv, PythonMod
 
 
 def _make_shape_env(
@@ -103,3 +103,55 @@ def test_evaluate_symbolic_expr_values_handles_python_floordiv() -> None:
     assert evaluate_symbolic_expr_values(
         PythonFloorDiv(symint.node.expr, 2), shape_env
     ) == {1, 2, 3}
+
+
+def test_evaluate_symbolic_expr_values_handles_int_truediv() -> None:
+    shape_env, symint = _make_shape_env(hint=4, compiler_min=4, compiler_max=4)
+
+    assert evaluate_symbolic_expr_values(
+        IntTrueDiv(symint.node.expr, 2), shape_env
+    ) == {2}
+
+
+def test_evaluate_symbolic_expr_values_handles_fractional_int_truediv() -> None:
+    shape_env, symint = _make_shape_env(hint=3, compiler_min=2, compiler_max=6)
+
+    assert (
+        evaluate_symbolic_expr_values(IntTrueDiv(symint.node.expr, 2), shape_env)
+        is None
+    )
+    assert evaluate_symbolic_expr_values(
+        sympy.floor(IntTrueDiv(symint.node.expr, 2)), shape_env
+    ) == {1, 2, 3}
+
+
+def test_evaluate_symbolic_expr_values_handles_exact_float_limit() -> None:
+    value = 2**54
+    shape_env, symint = _make_shape_env(
+        hint=value, compiler_min=value, compiler_max=value
+    )
+
+    assert evaluate_symbolic_expr_values(
+        IntTrueDiv(symint.node.expr, 2), shape_env
+    ) == {2**53}
+
+
+def test_evaluate_symbolic_expr_values_bails_out_on_inexact_float_quotient() -> None:
+    value = 2**54 + 2
+    shape_env, symint = _make_shape_env(
+        hint=value, compiler_min=value, compiler_max=value
+    )
+
+    assert (
+        evaluate_symbolic_expr_values(IntTrueDiv(symint.node.expr, 2), shape_env)
+        is None
+    )
+
+
+def test_evaluate_symbolic_expr_values_handles_zero_divisor() -> None:
+    shape_env, symint = _make_shape_env(hint=1, compiler_min=0, compiler_max=2)
+
+    assert (
+        evaluate_symbolic_expr_values(IntTrueDiv(4, symint.node.expr), shape_env)
+        is None
+    )

@@ -305,6 +305,7 @@ def _run_ggml(
     max_cached_graphs: int = 1,
     graph_ops: collections.Counter | None = None,
     method: str = "forward",
+    allow_activation_quant_for_weight_only: bool = False,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
@@ -334,18 +335,14 @@ def _run_ggml(
         command.append(f"--input_sizes={';'.join(map(_shape_text, steps))}")
     if graph_ops is not None:
         command.append("--print_graph_ops")
-    env = dict(os.environ)
+    if allow_activation_quant_for_weight_only:
+        command.append("--allow_activation_quant_for_weight_only")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
-        # Shared libraries the runner needs may ship beside it.
-        env["LD_LIBRARY_PATH"] = (
-            f"{Path(runner).parent}:{env.get('LD_LIBRARY_PATH', '')}"
-        )
         result = subprocess.run(
             [str(runner), *command],
             capture_output=True,
             text=True,
             timeout=300,
-            env=env,
         )
     if result.returncode != 0:
         raise AssertionError(f"ggml_ptn_runner failed:\n{result.stderr}")
@@ -393,15 +390,35 @@ class GgmlOpsTest(unittest.TestCase):
         # block scale on GPUs. Test the weight layout tightly with exact
         # activations, then separately bound the randomized requantization loss.
         gpu = os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
-        self._check(model, (representable,), atol=5e-4, rtol=2e-4 if gpu else 1e-5)
-        self._check(model, (torch.randn(2, 256) / 8,), atol=0.35, rtol=0.02)
+        self._check(
+            model,
+            (representable,),
+            atol=5e-4,
+            rtol=2e-4 if gpu else 1e-5,
+            allow_activation_quant_for_weight_only=True,
+        )
+        self._check(
+            model,
+            (torch.randn(2, 256) / 8,),
+            atol=0.35,
+            rtol=0.02,
+            allow_activation_quant_for_weight_only=True,
+        )
 
     def test_gguf_q6_k_embedding(self):
         model = torch.nn.Embedding(8, 256)
         model.weight = torch.nn.Parameter(self._q6_k_weights(8), requires_grad=False)
         self._check(model, (torch.tensor([[0, 3, 6], [7, 1, 4]]),))
 
-    def _check(self, model, inputs, atol=1e-5, rtol=1e-5, graph_ops=None):
+    def _check(
+        self,
+        model,
+        inputs,
+        atol=1e-5,
+        rtol=1e-5,
+        graph_ops=None,
+        allow_activation_quant_for_weight_only=False,
+    ):
         model = model.eval()
         # Eager writes buffers in place; the package must keep them as constructed.
         with torch.no_grad():
@@ -412,7 +429,14 @@ class GgmlOpsTest(unittest.TestCase):
             package = outdir / "model.ptn"
             to_native(torch.export.export(model, inputs)).save(str(package))
             (outputs,) = _run_ggml(
-                package, [inputs], outdir, len(expected), graph_ops=graph_ops
+                package,
+                [inputs],
+                outdir,
+                len(expected),
+                graph_ops=graph_ops,
+                allow_activation_quant_for_weight_only=(
+                    allow_activation_quant_for_weight_only
+                ),
             )
         self.assertEqual(len(outputs), len(expected))
         for (raw, shape), reference in zip(outputs, expected):
@@ -883,6 +907,56 @@ class GgmlOpsTest(unittest.TestCase):
                 return self.embedding(indices.squeeze(0))
 
         self._check(SqueezedEmbedding(), (torch.tensor([[1, 3, 9]]),))
+
+    def test_embedding_arange_indices(self):
+        class PositionEmbedding(Embedding):
+            def forward(self, x):
+                return self.embedding(torch.arange(1, 10, 2)) + x
+
+        self._check(PositionEmbedding(), (torch.randn(5, 8),))
+
+    def test_embedding_arange_indices_rejects_out_of_bounds(self):
+        class InvalidPositionEmbedding(Embedding):
+            def forward(self, x):
+                return self.embedding(torch.arange(-1, 4)) + x
+
+        with self.assertRaisesRegex(AssertionError, "arange row index"):
+            # Export does not execute the invalid gather; the runner must reject it.
+            with tempfile.TemporaryDirectory() as tmp:
+                outdir = Path(tmp)
+                x = torch.randn(5, 8)
+                package = outdir / "model.ptn"
+                ep = torch.export.export(InvalidPositionEmbedding().eval(), (x,))
+                to_native(ep).save(str(package))
+                _run_ggml(package, [(x,)], outdir, 1)
+
+    def test_repeated_row_gather_rechecks_indices(self):
+        class RepeatedRowGather(Embedding):
+            def forward(self, indices):
+                return self.embedding.weight[indices.unsqueeze(0).repeat(2, 1)]
+
+        model = RepeatedRowGather().eval()
+        inputs = (torch.tensor([1, 3, 9]),)
+        self._check(model, inputs)
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(model, inputs)).save(str(package))
+            for invalid in (-1, 10):
+                with self.subTest(invalid=invalid):
+                    with self.assertRaisesRegex(AssertionError, "row index is outside"):
+                        _run_ggml(
+                            package,
+                            [inputs, (torch.tensor([1, invalid, 3]),)],
+                            outdir,
+                            1,
+                        )
+
+    def test_repeat_tiles_non_singleton_dimensions(self):
+        self._check(
+            Lambda(lambda x: x.repeat(2, 3, 2)),
+            (torch.arange(6, dtype=torch.float32).reshape(2, 3),),
+        )
 
     def test_rms_norm(self):
         self._check(RMSNorm(), (torch.randn(2, 3, 16),))

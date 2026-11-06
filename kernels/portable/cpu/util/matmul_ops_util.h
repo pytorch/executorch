@@ -49,6 +49,8 @@ namespace internal {
 
 template <typename CTYPE>
 void bmm_out_impl(const Tensor& in, const Tensor& mat2, Tensor& out) {
+  using ACC = typename executorch::runtime::
+      promote_types<CTYPE, CTYPE, /*half_to_float=*/true>::type;
   const CTYPE* in_data = in.const_data_ptr<CTYPE>();
   const CTYPE* mat2_data = mat2.const_data_ptr<CTYPE>();
   CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
@@ -65,11 +67,12 @@ void bmm_out_impl(const Tensor& in, const Tensor& mat2, Tensor& out) {
 
     for (const auto i : c10::irange(m)) {
       for (const auto j : c10::irange(p)) {
-        CTYPE sum = static_cast<CTYPE>(0.0);
+        ACC sum = static_cast<ACC>(0.0);
         for (const auto k : c10::irange(n)) {
-          sum += in_data_offset[i * n + k] * mat2_data_offset[k * p + j];
+          sum += static_cast<ACC>(in_data_offset[i * n + k]) *
+              static_cast<ACC>(mat2_data_offset[k * p + j]);
         }
-        out_data_offset[i * p + j] = sum;
+        out_data_offset[i * p + j] = static_cast<CTYPE>(sum);
       }
     }
   }

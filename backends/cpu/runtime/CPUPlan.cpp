@@ -104,6 +104,9 @@ Error CPUPlan::prepare(MemoryAllocator& allocator) {
     if (error != Error::Ok) {
       return error;
     }
+    const auto released = provider->released_private_constant_bytes();
+    private_constant_bytes_ -= released;
+    released_private_constant_bytes_ += released;
   }
   for (auto& step : steps_) {
     error = step.executable->reshape();
@@ -603,6 +606,8 @@ std::string CPUPlan::describe(double preparation_ms) const {
       ",\"preparation_ms\":" + std::to_string(preparation_ms) +
       ",\"activation_arena_bytes\":" + std::to_string(arena_bytes_) +
       ",\"private_constant_bytes\":" + std::to_string(private_constant_bytes_) +
+      ",\"released_private_constant_bytes\":" +
+      std::to_string(released_private_constant_bytes_) +
       ",\"shared_scratch_bytes\":" + std::to_string(scratch_.readable_bytes) +
       ",\"xnn_workspace_bytes\":null,\"xnn_packed_cache_bytes\":null,"
       "\"xnn_workspace_shared\":true,\"xnn_packed_cache\":\"per_plan\","

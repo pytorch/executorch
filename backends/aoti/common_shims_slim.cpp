@@ -10,6 +10,9 @@
 #include <executorch/runtime/platform/abort.h>
 #include <executorch/runtime/platform/log.h>
 
+// Keep this file free of static and thread_local state: a Windows build
+// without EXECUTORCH_BUILD_SHARED links it twice (see backends/cuda).
+
 namespace executorch {
 namespace backends {
 namespace aoti {
@@ -143,6 +146,10 @@ AOTITorchError aoti_torch_get_device_index(
 
 int32_t aoti_torch_dtype_float32() {
   return 6; // ScalarType::Float
+}
+
+int32_t aoti_torch_dtype_float64() {
+  return 7; // ScalarType::Double
 }
 
 int32_t aoti_torch_dtype_bfloat16() {

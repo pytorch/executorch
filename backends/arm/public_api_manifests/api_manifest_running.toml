@@ -238,6 +238,10 @@ signature = "arm_runner_add_minimal_executable(*, TARGET, SOURCE, OPS_PREFIX, CO
 kind = "macro"
 signature = "arm_runner_add_standalone_executorch()"
 
+[cmake.arm_runner_check_lock_free_atomics]
+kind = "function"
+signature = "arm_runner_check_lock_free_atomics(OUT_VAR)"
+
 [cmake.arm_runner_configure_ethos_u_platform]
 kind = "function"
 signature = "arm_runner_configure_ethos_u_platform(*, SDK_PATH, SYSTEM_CONFIG, MEMORY_MODE)"

@@ -22,8 +22,8 @@ double add_flops(const Json& spec) {
 REGISTER_THROUGHPUT_FUNCTIONS {
   REGISTER_SHADER_MEMORY_TRAFFIC(buffer_to_buffer, throughput::tensor_traffic);
   REGISTER_SHADER_COMPUTE_FLOPS(buffer_to_buffer, copy_flops);
-  REGISTER_SHADER_MEMORY_TRAFFIC(binary_add, throughput::tensor_traffic);
-  REGISTER_SHADER_COMPUTE_FLOPS(binary_add, add_flops);
+  REGISTER_SHADER_MEMORY_TRAFFIC(binary_op, throughput::tensor_traffic);
+  REGISTER_SHADER_COMPUTE_FLOPS(binary_op, add_flops);
 }
 
 } // namespace vkcompute::shader_profiling

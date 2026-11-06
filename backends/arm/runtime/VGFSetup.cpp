@@ -820,6 +820,13 @@ bool VgfRepr::map_persistent_io_memory() {
   unmap_persistent_io_memory();
 
   for (auto& io : IOs) {
+    // Cache maintenance cannot infer coherency from missing metadata.
+    if (!io.memory_properties_known ||
+        (io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+      ET_LOG(Error, "VGF IO has unknown or non-host-visible memory properties");
+      unmap_persistent_io_memory();
+      return false;
+    }
     if (io.memory == VK_NULL_HANDLE) {
       ET_LOG(Error, "Cannot persistently map null Vulkan IO memory");
       unmap_persistent_io_memory();
@@ -831,7 +838,8 @@ bool VgfRepr::map_persistent_io_memory() {
     // IO resources may alias the same VkDeviceMemory. Vulkan memory must not be
     // mapped more than once at the same time, so map each unique memory once
     // and share the returned pointer across aliased IO entries.
-    // Make sure that memory is HOST_VISIBLE and HOST_COHERENT.
+    // IO memory is HOST_VISIBLE. Boundary tensors may intentionally use
+    // non-coherent memory; execute() performs explicit cache maintenance.
     bool found_existing_mapping = false;
     auto mapped_memory_it = std::find_if(
         persistent_mapped_memories.begin(),
@@ -883,6 +891,157 @@ void VgfRepr::unmap_persistent_io_memory() {
   }
 }
 
+executorch::runtime::Error VgfRepr::get_owned_mapped_boundary_buffer(
+    bool input,
+    size_t argument_index,
+    VgfMappedBoundaryBuffer* buffer) const {
+  if (buffer == nullptr) {
+    return executorch::runtime::Error::InvalidArgument;
+  }
+  *buffer = {};
+
+  const auto& mapping = input ? model_input_io_index : model_output_io_index;
+  const size_t argument_count = input ? model_input_count : model_output_count;
+  if (argument_index >= argument_count || argument_index >= mapping.size()) {
+    return executorch::runtime::Error::InvalidArgument;
+  }
+
+  const int mapped_io_index = mapping[argument_index];
+  if (mapped_io_index < 0) {
+    return executorch::runtime::Error::NotFound;
+  }
+  const size_t io_index = static_cast<size_t>(mapped_io_index);
+  if (io_index >= IOs.size()) {
+    return executorch::runtime::Error::Internal;
+  }
+
+  const IO& io = IOs[io_index];
+  if (!io.owned_mapped_boundary_eligible || io.persistent_memory == nullptr ||
+      io.memory == VK_NULL_HANDLE || !io.memory_properties_known) {
+    return executorch::runtime::Error::NotSupported;
+  }
+  if (io.memory_allocation_size > std::numeric_limits<size_t>::max()) {
+    return executorch::runtime::Error::NotSupported;
+  }
+
+  *buffer = VgfMappedBoundaryBuffer{
+      .data = io.persistent_memory,
+      .logical_nbytes = io.allocation_size,
+      .capacity_nbytes = static_cast<size_t>(io.memory_allocation_size),
+      .host_coherent = (io.memory_property_flags &
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0,
+      .generation = 0,
+  };
+  return executorch::runtime::Error::Ok;
+}
+
+bool VgfRepr::is_owned_mapped_io_pointer(
+    size_t io_index,
+    const void* pointer,
+    size_t logical_nbytes) const {
+  if (io_index >= IOs.size()) {
+    return false;
+  }
+  const IO& io = IOs[io_index];
+  if (!io.owned_mapped_boundary_eligible || io.persistent_memory == nullptr) {
+    return false;
+  }
+  const VgfMappedBoundaryBuffer buffer{
+      .data = io.persistent_memory,
+      .logical_nbytes = io.allocation_size,
+      .capacity_nbytes = io.allocation_size,
+      .host_coherent = (io.memory_property_flags &
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0,
+      .generation = 0,
+  };
+  return vgf_owned_mapped_buffer_matches(buffer, pointer, logical_nbytes);
+}
+
+bool VgfRepr::flush_io_host_writes(size_t io_index) {
+  if (io_index >= IOs.size()) {
+    ET_LOG(Error, "Invalid VGF IO index %zu for host flush", io_index);
+    return false;
+  }
+  const IO& io = IOs[io_index];
+  if (!io.memory_properties_known) {
+    ET_LOG(
+        Error,
+        "VGF IO %zu has unknown memory properties; cannot flush",
+        io_index);
+    return false;
+  }
+  if ((io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0) {
+    return true;
+  }
+  if (io.memory == VK_NULL_HANDLE ||
+      (io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+    ET_LOG(Error, "VGF IO %zu is not flushable host-visible memory", io_index);
+    return false;
+  }
+
+  // Each direct boundary allocation is isolated and mapped from offset zero.
+  // VK_WHOLE_SIZE avoids sub-range/nonCoherentAtomSize alignment hazards.
+  const VkMappedMemoryRange range{
+      .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+      .pNext = nullptr,
+      .memory = io.memory,
+      .offset = 0,
+      .size = VK_WHOLE_SIZE,
+  };
+  const VkResult result = vkFlushMappedMemoryRanges(vk_device, 1, &range);
+  if (result != VK_SUCCESS) {
+    ET_LOG(
+        Error,
+        "Failed to flush non-coherent VGF IO %zu, error %d",
+        io_index,
+        result);
+    return false;
+  }
+  return true;
+}
+
+bool VgfRepr::invalidate_io_host_reads(size_t io_index) {
+  if (io_index >= IOs.size()) {
+    ET_LOG(Error, "Invalid VGF IO index %zu for host invalidate", io_index);
+    return false;
+  }
+  const IO& io = IOs[io_index];
+  if (!io.memory_properties_known) {
+    ET_LOG(
+        Error,
+        "VGF IO %zu has unknown memory properties; cannot invalidate",
+        io_index);
+    return false;
+  }
+  if ((io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0) {
+    return true;
+  }
+  if (io.memory == VK_NULL_HANDLE ||
+      (io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+    ET_LOG(
+        Error, "VGF IO %zu is not invalidatable host-visible memory", io_index);
+    return false;
+  }
+
+  const VkMappedMemoryRange range{
+      .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+      .pNext = nullptr,
+      .memory = io.memory,
+      .offset = 0,
+      .size = VK_WHOLE_SIZE,
+  };
+  const VkResult result = vkInvalidateMappedMemoryRanges(vk_device, 1, &range);
+  if (result != VK_SUCCESS) {
+    ET_LOG(
+        Error,
+        "Failed to invalidate non-coherent VGF IO %zu, error %d",
+        io_index,
+        result);
+    return false;
+  }
+  return true;
+}
+
 VkResult allocate_memory(
     VkPhysicalDevice physical,
     VkDevice device,
@@ -911,6 +1070,74 @@ VkResult allocate_memory(
     *memory_type_index_out = memory_index;
   }
   return result;
+}
+
+static VkMemoryPropertyFlags memory_type_property_flags(
+    VkPhysicalDevice physical,
+    uint32_t memory_type_index) {
+  VkPhysicalDeviceMemoryProperties properties{};
+  vkGetPhysicalDeviceMemoryProperties(physical, &properties);
+  if (memory_type_index >= properties.memoryTypeCount) {
+    return 0;
+  }
+  return properties.memoryTypes[memory_type_index].propertyFlags;
+}
+
+// Boundary tensors are already VGF-owned, so they do not need an external-host
+// compatible memory type. Prefer the historical coherent/device-local choice,
+// but when zero-copy is built allow any tensor-compatible HOST_VISIBLE type and
+// perform explicit flush/invalidate for non-coherent memory.
+static VkResult allocate_boundary_host_visible_memory(
+    VkPhysicalDevice physical,
+    VkDevice device,
+    const VkMemoryRequirements2& memory_requirements,
+    VkDeviceMemory* memory,
+    uint32_t* memory_type_index_out,
+    VkMemoryPropertyFlags* memory_property_flags_out) {
+  constexpr VkMemoryPropertyFlags candidates[] = {
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+          VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+  };
+
+  for (const VkMemoryPropertyFlags aims : candidates) {
+    uint32_t memory_index = 0;
+    if (!find_memory_index(
+            physical, memory_requirements, aims, &memory_index)) {
+      continue;
+    }
+
+    const VkMemoryAllocateInfo allocate_info{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .allocationSize = memory_requirements.memoryRequirements.size,
+        .memoryTypeIndex = memory_index,
+    };
+    const VkResult result =
+        vkAllocateMemory(device, &allocate_info, nullptr, memory);
+    if (result != VK_SUCCESS) {
+      return result;
+    }
+
+    if (memory_type_index_out != nullptr) {
+      *memory_type_index_out = memory_index;
+    }
+    if (memory_property_flags_out != nullptr) {
+      *memory_property_flags_out =
+          memory_type_property_flags(physical, memory_index);
+    }
+    return VK_SUCCESS;
+  }
+
+  ET_LOG(
+      Error,
+      "Failed to find tensor-compatible DEVICE_LOCAL|HOST_VISIBLE memory for "
+      "VGF boundary");
+  return VK_ERROR_FEATURE_NOT_PRESENT;
 }
 
 VkResult create_tensor_unbound(
@@ -1210,7 +1437,8 @@ VkResult allocate_buffer(
     VkDeviceSize size,
     VkBufferUsageFlags usage,
     VkBuffer* buffer,
-    VkDeviceMemory* memory) {
+    VkDeviceMemory* memory,
+    uint32_t* memory_type_index_out = nullptr) {
   VkBufferCreateInfo buffer_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .pNext = nullptr,
@@ -1264,6 +1492,9 @@ VkResult allocate_buffer(
     return result;
   }
 
+  if (memory_type_index_out != nullptr) {
+    *memory_type_index_out = memory_index;
+  }
   return VK_SUCCESS;
 }
 
@@ -2284,6 +2515,11 @@ bool VgfRepr::process_vgf(
             }
             VkDeviceMemory tensor_memory = VK_NULL_HANDLE;
             bool owns_memory = true;
+            uint32_t tensor_memory_type_index = UINT32_MAX;
+            VkMemoryPropertyFlags tensor_memory_property_flags = 0;
+            bool tensor_memory_properties_known = false;
+            VkDeviceSize tensor_memory_allocation_size =
+                tensor_memory_requirements.memoryRequirements.size;
             auto* alias_backing = get_alias_backing();
             if (alias_backing != nullptr) {
               if (!prepare_alias_memory(
@@ -2294,17 +2530,44 @@ bool VgfRepr::process_vgf(
                 destroy_tensor(vk_device, VK_NULL_HANDLE, tensor);
                 return false;
               }
+              // The alias group owns the VkDeviceMemory and selected its type.
+              // The current IO must use that same type for cache maintenance.
+              tensor_memory_type_index = alias_backing->memory_type_index;
+              tensor_memory_allocation_size = alias_backing->allocation_size;
+              tensor_memory_property_flags = memory_type_property_flags(
+                  vk_physical, tensor_memory_type_index);
+              tensor_memory_properties_known =
+                  tensor_memory_type_index != UINT32_MAX &&
+                  (tensor_memory_property_flags &
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
             } else {
-              const VkMemoryPropertyFlags aims =
-                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-              result = allocate_memory(
-                  vk_physical,
-                  vk_device,
-                  tensor_memory_requirements,
-                  aims,
-                  &tensor_memory);
+              if (vgf_zero_copy_io_build_enabled()) {
+                result = allocate_boundary_host_visible_memory(
+                    vk_physical,
+                    vk_device,
+                    tensor_memory_requirements,
+                    &tensor_memory,
+                    &tensor_memory_type_index,
+                    &tensor_memory_property_flags);
+              } else {
+                // Preserve the historical allocation contract when the
+                // optimization is not compiled in.
+                const VkMemoryPropertyFlags aims =
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+                result = allocate_memory(
+                    vk_physical,
+                    vk_device,
+                    tensor_memory_requirements,
+                    aims,
+                    &tensor_memory,
+                    &tensor_memory_type_index);
+                if (result == VK_SUCCESS) {
+                  tensor_memory_property_flags = memory_type_property_flags(
+                      vk_physical, tensor_memory_type_index);
+                }
+              }
               if (result != VK_SUCCESS) {
                 destroy_tensor(vk_device, VK_NULL_HANDLE, tensor);
                 ET_LOG(
@@ -2313,6 +2576,20 @@ bool VgfRepr::process_vgf(
                     i);
                 return false;
               }
+              tensor_memory_properties_known =
+                  tensor_memory_type_index != UINT32_MAX &&
+                  (tensor_memory_property_flags &
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
+              ET_LOG(
+                  Debug,
+                  "VGF boundary tensor resource=%d memory_type=%u flags=0x%x "
+                  "coherent=%d",
+                  i,
+                  tensor_memory_type_index,
+                  static_cast<unsigned int>(tensor_memory_property_flags),
+                  static_cast<int>(
+                      (tensor_memory_property_flags &
+                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0));
             }
             result = bind_tensor_memory_and_create_view(
                 vk_device,
@@ -2348,6 +2625,21 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+
+            // Only isolated tensor allocations are exposed for direct
+            // Method-boundary binding. Alias/image-backed resources keep
+            // the existing import/copy behavior.
+            IO& boundary_io = IOs.back();
+            boundary_io.memory_allocation_size = tensor_memory_allocation_size;
+            boundary_io.memory_type_index = tensor_memory_type_index;
+            boundary_io.memory_property_flags = tensor_memory_property_flags;
+            boundary_io.memory_properties_known =
+                tensor_memory_properties_known;
+            boundary_io.owned_mapped_boundary_eligible = owns_memory &&
+                !uses_alias_group && !image_aliasing &&
+                tensor_memory_properties_known &&
+                (tensor_memory_property_flags &
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
 
             auto zero_copy_metadata = make_vgf_zero_copy_io_metadata(
                 /*is_model_boundary_resource=*/true,
@@ -2399,6 +2691,9 @@ bool VgfRepr::process_vgf(
             }
             VkDeviceMemory buffer_memory = VK_NULL_HANDLE;
             bool owns_memory = true;
+            uint32_t buffer_memory_type_index = UINT32_MAX;
+            VkDeviceSize buffer_memory_allocation_size =
+                buffer_memory_requirements.memoryRequirements.size;
             auto* alias_backing = get_alias_backing();
             if (alias_backing != nullptr) {
               if (!prepare_alias_memory(
@@ -2409,6 +2704,8 @@ bool VgfRepr::process_vgf(
                 destroy_buffer(vk_device, buffer);
                 return false;
               }
+              buffer_memory_type_index = alias_backing->memory_type_index;
+              buffer_memory_allocation_size = alias_backing->allocation_size;
             } else {
               const VkMemoryPropertyFlags aims =
                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
@@ -2419,7 +2716,8 @@ bool VgfRepr::process_vgf(
                   vk_device,
                   buffer_memory_requirements,
                   aims,
-                  &buffer_memory);
+                  &buffer_memory,
+                  &buffer_memory_type_index);
               if (result != VK_SUCCESS) {
                 destroy_buffer(vk_device, buffer);
                 ET_LOG(
@@ -2459,6 +2757,17 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+            IO& boundary_buffer_io = IOs.back();
+            boundary_buffer_io.memory_allocation_size =
+                buffer_memory_allocation_size;
+            boundary_buffer_io.memory_type_index = buffer_memory_type_index;
+            boundary_buffer_io.memory_property_flags =
+                memory_type_property_flags(
+                    vk_physical, buffer_memory_type_index);
+            boundary_buffer_io.memory_properties_known =
+                buffer_memory_type_index != UINT32_MAX &&
+                (boundary_buffer_io.memory_property_flags &
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
             zero_copy_io_metadata.push_back(make_vgf_zero_copy_io_metadata(
                 /*is_model_boundary_resource=*/true,
                 is_in,
@@ -2644,6 +2953,7 @@ bool VgfRepr::process_vgf(
             }
             VkBuffer staging_buffer = VK_NULL_HANDLE;
             VkDeviceMemory staging_memory = VK_NULL_HANDLE;
+            uint32_t staging_memory_type_index = UINT32_MAX;
             result = allocate_buffer(
                 vk_physical,
                 vk_device,
@@ -2651,7 +2961,8 @@ bool VgfRepr::process_vgf(
                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 &staging_buffer,
-                &staging_memory);
+                &staging_memory,
+                &staging_memory_type_index);
             if (result != VK_SUCCESS) {
               ET_LOG(
                   Error,
@@ -2685,6 +2996,14 @@ bool VgfRepr::process_vgf(
                    true,
                    owns_image_memory,
                    is_in});
+            IO& staging_io = IOs.back();
+            staging_io.memory_type_index = staging_memory_type_index;
+            staging_io.memory_property_flags = memory_type_property_flags(
+                vk_physical, staging_memory_type_index);
+            staging_io.memory_properties_known =
+                staging_memory_type_index != UINT32_MAX &&
+                (staging_io.memory_property_flags &
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
             zero_copy_io_metadata.push_back(make_vgf_zero_copy_io_metadata(
                 /*is_model_boundary_resource=*/true,
                 is_in,
