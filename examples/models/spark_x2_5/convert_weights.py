@@ -4,7 +4,6 @@ import os
 from typing import Dict
 
 import torch
-
 from executorch.examples.models.checkpoint import get_mapped_key
 from safetensors.torch import load_file
 
@@ -92,12 +91,37 @@ def load_checkpoint(input_dir: str) -> Dict[str, torch.Tensor]:
     raise FileNotFoundError(f"Could not find safetensors checkpoint in {input_dir}")
 
 
+def sanitize_tokenizer(input_dir: str) -> None:
+    """Make tokenizer.json loadable by the C++ HF tokenizer.
+
+    Spark-X2.5 ships a no-op normalizer ({"type": "Sequence", "normalizers":
+    []}) that the C++ tokenizer rejects; a null normalizer is equivalent and
+    accepted.
+    """
+    path = os.path.join(input_dir, "tokenizer.json")
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        tokenizer = json.load(f)
+    normalizer = tokenizer.get("normalizer")
+    if (
+        isinstance(normalizer, dict)
+        and normalizer.get("type") == "Sequence"
+        and not normalizer.get("normalizers")
+    ):
+        tokenizer["normalizer"] = None
+        with open(path, "w") as f:
+            json.dump(tokenizer, f)
+        print("Replaced no-op normalizer in tokenizer.json with null")
+
+
 def convert_weights(input_dir: str, output_file: str) -> None:
     """Convert Spark-X2.5 HF weights to Meta format.
 
     Reads model hyperparameters from config.json in input_dir so the function
     signature stays compatible with download_and_convert_hf_checkpoint.
     """
+    sanitize_tokenizer(input_dir)
     config_path = os.path.join(input_dir, "config.json")
     if os.path.exists(config_path):
         with open(config_path) as f:
