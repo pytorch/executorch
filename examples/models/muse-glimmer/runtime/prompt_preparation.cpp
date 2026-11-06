@@ -319,13 +319,9 @@ serving::PromptPreparationResult prepare_muse_glimmer_prompt(
   const auto cancelled = [&] {
     return context.cancelled && context.cancelled();
   };
-  const size_t limit = std::min(
-      context.max_prompt_positions,
-      static_cast<size_t>(spec->max_context_length - 1));
   if (cancelled())
     return invalid("prompt preparation cancelled");
   serving::PromptInput prompt;
-  size_t known_positions = 0;
   bool has_image = false;
   const char* failure = "invalid prompt segment";
   const auto append_text = [&](const std::string& text) {
@@ -333,8 +329,8 @@ serving::PromptPreparationResult prepare_muse_glimmer_prompt(
     return !cancelled();
   };
   const auto append_ids = [&](const nlohmann::json& ids) {
-    if (!ids.is_array() || ids.size() > limit - known_positions) {
-      failure = "prompt IDs must be a bounded array";
+    if (!ids.is_array()) {
+      failure = "prompt IDs must be an array";
       return false;
     }
     std::vector<batching::Token> tokens;
@@ -346,7 +342,6 @@ serving::PromptPreparationResult prepare_muse_glimmer_prompt(
       }
       tokens.push_back(id.get<uint64_t>());
     }
-    known_positions += tokens.size();
     prompt.segments.emplace_back(std::move(tokens));
     return !cancelled();
   };
@@ -387,9 +382,8 @@ serving::PromptPreparationResult prepare_muse_glimmer_prompt(
     }
     auto computed = muse_glimmer_image_grid(
         decoded->width, decoded->height, spec->max_soft_tokens);
-    if (!computed.ok() ||
-        static_cast<size_t>(computed->soft_tokens) > limit - known_positions) {
-      failure = "image grid exceeds vision patch or prompt limit";
+    if (!computed.ok()) {
+      failure = "image grid exceeds vision patch limit";
       return false;
     }
     // The shared Image contract is CHW; the decoder returns interleaved HWC.
@@ -400,7 +394,6 @@ serving::PromptPreparationResult prepare_muse_glimmer_prompt(
         chw[c * pixels + p] = decoded->rgb[p * 3 + c];
     prompt.segments.emplace_back(
         Image(std::move(chw), decoded->width, decoded->height, 3));
-    known_positions += static_cast<size_t>(computed->soft_tokens);
     has_image = true;
     return !cancelled();
   };
@@ -460,9 +453,12 @@ serving::ModelPreparationResult prepare_muse_glimmer_input(
   const auto cancelled = [&] {
     return context.cancelled && context.cancelled();
   };
-  const size_t limit = std::min(
+  const size_t context_length = std::min(
       context.max_prompt_positions,
-      static_cast<size_t>(spec->max_context_length - 1));
+      static_cast<size_t>(spec->max_context_length));
+  const size_t limit = context_length ? context_length - 1 : 0;
+  size_t positions = 0;
+  std::optional<batching::Token> first_token;
   std::vector<batching::Token> tokens;
   MuseGlimmerRGBImage image;
   MuseGlimmerImageGrid grid;
@@ -480,10 +476,14 @@ serving::ModelPreparationResult prepare_muse_glimmer_input(
       ids = &encoded;
     }
     if (ids) {
-      if (ids->size() > limit - tokens.size() || !valid_tokens(*ids, *spec) ||
+      if (!valid_tokens(*ids, *spec) ||
           std::find(ids->begin(), ids->end(), spec->patch_id) != ids->end())
-        return invalid("invalid, oversized, or unbound patch token segment");
-      tokens.insert(tokens.end(), ids->begin(), ids->end());
+        return invalid("invalid or unbound patch token segment");
+      if (!first_token && !ids->empty())
+        first_token = ids->front();
+      positions += ids->size();
+      if (positions <= limit)
+        tokens.insert(tokens.end(), ids->begin(), ids->end());
     } else if (const auto* source = segment.try_get_image()) {
       if (span.size || !spec->has_vision || !source->is_uint8() ||
           source->channels() != 3 ||
@@ -495,9 +495,8 @@ serving::ModelPreparationResult prepare_muse_glimmer_input(
         return invalid("only one bounded uint8 RGB image is supported");
       auto computed = muse_glimmer_image_grid(
           source->width(), source->height(), spec->max_soft_tokens);
-      if (!computed.ok() ||
-          static_cast<size_t>(computed->soft_tokens) > limit - tokens.size())
-        return invalid("image grid exceeds vision patch or prompt limit");
+      if (!computed.ok())
+        return invalid("image grid exceeds vision patch limit");
       image.width = source->width();
       image.height = source->height();
       const auto& chw = source->get_uint8_data();
@@ -507,20 +506,28 @@ serving::ModelPreparationResult prepare_muse_glimmer_input(
         for (size_t c = 0; c < 3; ++c)
           image.rgb[p * 3 + c] = chw[c * pixels + p];
       grid = *computed;
-      span = {tokens.size(), static_cast<size_t>(grid.soft_tokens)};
-      tokens.insert(tokens.end(), span.size, spec->patch_id);
+      span = {positions, static_cast<size_t>(grid.soft_tokens)};
+      if (!first_token)
+        first_token = spec->patch_id;
+      positions += span.size;
+      if (positions <= limit)
+        tokens.insert(tokens.end(), span.size, spec->patch_id);
     } else {
       return invalid("unsupported prompt modality");
     }
   }
-  if (tokens.empty() || tokens.front() != spec->bos_id) {
+  const bool add_bos = !first_token || *first_token != spec->bos_id;
+  positions += add_bos;
+  if (positions > limit) {
+    return serving::context_length_error(positions, context_length);
+  }
+  if (add_bos) {
     tokens.insert(tokens.begin(), spec->bos_id);
     if (span.size)
       ++span.offset;
   }
-  if (tokens.size() > limit || !valid_tokens(tokens, *spec) || cancelled()) {
-    return invalid(
-        "prompt exceeds context/vocabulary or preparation cancelled");
+  if (!valid_tokens(tokens, *spec) || cancelled()) {
+    return invalid("prompt exceeds vocabulary or preparation cancelled");
   }
   if (!span.size) {
     return batching::PreparedInputPtr(

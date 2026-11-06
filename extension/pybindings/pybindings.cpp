@@ -8,19 +8,29 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cinttypes>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <numeric>
 #include <stdexcept>
+#include <thread>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#ifndef _WIN32
+#include <poll.h>
+#include <pthread.h>
+#include <unistd.h>
+#endif
+#ifdef __APPLE__
+#include <sys/stat.h>
+#endif
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -70,7 +80,7 @@
 #endif
 
 /// Throws a runtime_error with the provided message if `error` is not `Ok`,
-/// followed by the errors the runtime logged during this call.
+/// followed by the errors the runtime logged during this call. Needs the GIL.
 #define THROW_IF_ERROR(error, message, ...)                       \
   ({                                                              \
     if ((error) != Error::Ok) {                                   \
@@ -139,9 +149,539 @@ namespace {
 constexpr size_t kRuntimeErrorsCapacity = 1024;
 thread_local char runtime_errors[kRuntimeErrorsCapacity];
 thread_local size_t runtime_errors_size = 0;
-// How many binding calls are running on this thread. Lines logged outside
-// any, such as on worker threads, are not kept, so they never linger.
-thread_local size_t runtime_error_scopes = 0;
+// The lines kept for the current binding call; emit_log_message says when a
+// line is kept. Past the capacity the oldest are counted rather than kept,
+// since the newest are the closest to a failure.
+struct PendingLogs final {
+  bool direct = false;
+  bool daemon = false;
+  std::string lines;
+  size_t dropped = 0;
+};
+constexpr size_t kPendingLogsCapacity = 1024 * 1024;
+// Null outside a binding call, so a line logged outside any is never kept here,
+// where no call would write it out. A plain pointer for the same reason as
+// above.
+thread_local PendingLogs* pending_logs = nullptr;
+
+// Lines that Python's stderr must show but that were logged where Python cannot
+// be called: outside any binding call, or on a daemon thread. Python's main
+// thread writes the lines it logged itself at its next chance. A thread of
+// their own writes the others, since the main thread may be in the middle of a
+// sys.stderr.write that holds a lock. Never freed, so that a line logged during
+// exit still finds it.
+struct DeferredLogs final {
+  std::mutex mutex;
+  std::condition_variable writer_changed;
+  PendingLogs logs;
+  PendingLogs main_thread_logs;
+  bool main_thread_write_scheduled = false;
+  // Numbers the writer's batches, so that a thread can tell whether the lines
+  // it handed over are written.
+  uint64_t batch = 1;
+  uint64_t batches_written = 0;
+  bool writer_running = false;
+  // Exit waits while the writer takes the GIL, since a Python that has
+  // finished exiting crashes on a new thread state and may have freed the
+  // writer's saved one.
+  bool writer_entering = false;
+  bool exiting = false;
+};
+
+DeferredLogs*& deferred_logs_state() {
+  static DeferredLogs* logs = new DeferredLogs();
+  return logs;
+}
+
+DeferredLogs& deferred_logs() {
+  return *deferred_logs_state();
+}
+
+// The only thread that runs Python's pending calls.
+unsigned long main_thread_id = 0;
+
+// The writer's batch that holds the newest line this thread handed over.
+thread_local uint64_t last_deferred_batch = 0;
+
+void defer_lines(const std::string& lines) noexcept;
+bool deferred_lines_wait();
+bool own_deferred_lines_wait();
+
+void write_to_stderr(const char* data, size_t size) {
+  std::fwrite(data, 1, size, stderr);
+  std::fflush(stderr);
+}
+
+// Writes to fd 2 without C stdio's lock on stderr, so that a write that waits
+// for room holds up no thread that flushes stderr, as Python does as it exits.
+void write_to_fd_2(const char* data, size_t size) {
+#ifdef _WIN32
+  write_to_stderr(data, size);
+#else
+  while (size > 0) {
+    const ssize_t written = ::write(2, data, size);
+    if (written < 0 && errno == EINTR) {
+      continue;
+    }
+    if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+      // fd 2 is non-blocking and full.
+      pollfd stderr_fd{2, POLLOUT, 0};
+      poll(&stderr_fd, 1, -1);
+      continue;
+    }
+    if (written <= 0) {
+      return;
+    }
+    data += written;
+    size -= static_cast<size_t>(written);
+  }
+#endif
+}
+
+// The last stream whose descriptor stderr_is_process_stderr() checked, kept
+// alive by this reference, and whether that descriptor is 2. A stream that
+// replaced sys.stderr is never kept here.
+PyObject* checked_stderr = nullptr;
+bool checked_stderr_is_fd_2 = false;
+
+// Whether sys.stderr is still the stream Python opened on file descriptor 2.
+// Runs at import and as a binding call starts, with the GIL held and no lock
+// held. Asking a stream for its descriptor costs more than a small binding
+// call, so the answer is kept for the last stream checked.
+bool stderr_is_process_stderr() noexcept {
+  PyObject* const current = PySys_GetObject("stderr");
+  if (current != nullptr && current == checked_stderr) {
+    return checked_stderr_is_fd_2;
+  }
+  if (current == nullptr || current != PySys_GetObject("__stderr__")) {
+    return false;
+  }
+  Py_INCREF(current);
+  const bool on_fd_2 = PyObject_AsFileDescriptor(current) == 2;
+  PyErr_Clear();
+  checked_stderr_is_fd_2 = on_fd_2;
+  Py_XSETREF(checked_stderr, current);
+  return on_fd_2;
+}
+
+// Whether sys.stderr is still the stream that stderr_is_process_stderr() found
+// on fd 2. Runs no Python code, so a thread that logs can ask it.
+bool sys_stderr_is_checked_fd_2() noexcept {
+  return PySys_GetObject("stderr") == checked_stderr && checked_stderr_is_fd_2;
+}
+
+// Whether this thread holds the GIL. PyGILState_Check says yes on every thread
+// once a subinterpreter exists, so this compares thread states instead.
+bool holds_gil() noexcept {
+  if (!Py_IsInitialized()) {
+    return false;
+  }
+  PyThreadState* const state = PyGILState_GetThisThreadState();
+  return state != nullptr && state == py::detail::get_thread_state_unchecked();
+}
+
+// Whether this is a daemon thread that a write through Python could crash at
+// exit. Before 3.13.8, Python ends a daemon thread with pthread_exit if it then
+// waits for the GIL, and on Linux the unwinding runs the C++ destructors on its
+// stack, which touch Python objects without the GIL. So such a thread never
+// writes its lines through Python. The flag cannot change once the thread runs.
+bool on_daemon_thread() {
+#ifdef __linux__
+  thread_local const bool daemon = Py_Version < 0x030D0800 &&
+      py::module_::import("threading")
+          .attr("current_thread")()
+          .attr("daemon")
+          .cast<bool>();
+  return daemon;
+#else
+  return false;
+#endif
+}
+
+// How long a line waits for room in a full stderr. A reader in another process
+// usually catches up within it, while a Python thread in this process never
+// does, since it needs the GIL.
+constexpr int kStderrRoomWaitMs = 100;
+
+// Whether a line of `size` bytes can go to the process's stderr, waiting up to
+// `wait_ms` for room, so that a thread that holds the GIL never waits on a full
+// pipe or socket that a Python thread in this process reads, as
+// wurlitzer.pipes() sets up. A terminal is not checked: its reader is another
+// process, and a line that waits for it must not be lost to a crash.
+bool stderr_has_room(ET_UNUSED size_t size, int wait_ms) {
+#ifdef _WIN32
+  return true;
+#else
+  if (isatty(2)) {
+    return true;
+  }
+#ifdef __APPLE__
+  // macOS reports room as if a pipe held 16 KiB, but a pipe made while pipe
+  // memory runs low holds as little as 512 bytes, and a write to it then waits.
+  // A pipe that grew past 16 KiB reports its real size. Until then, a line goes
+  // in only once it fits in 512 bytes beside what the pipe holds.
+  struct stat info;
+  if (fstat(2, &info) == 0 && S_ISFIFO(info.st_mode) &&
+      info.st_blksize <= 16 * 1024) {
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_ms);
+    while (static_cast<size_t>(info.st_size) + size > PIPE_BUF) {
+      if (std::chrono::steady_clock::now() >= deadline || usleep(1000) != 0 ||
+          fstat(2, &info) != 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+#endif
+  pollfd stderr_fd{2, POLLOUT, 0};
+  return poll(&stderr_fd, 1, wait_ms) > 0;
+#endif
+}
+
+// Drops the oldest half of the kept lines at once when they outgrow the
+// capacity, so keeping a line stays cheap.
+void keep_line(PendingLogs& logs, const std::string& line) {
+  logs.lines += line;
+  if (logs.lines.size() > kPendingLogsCapacity) {
+    const size_t cut =
+        logs.lines.find(
+            '\n', logs.lines.size() - kPendingLogsCapacity / 2 - 1) +
+        1;
+    logs.dropped += cut;
+    logs.lines.erase(0, cut);
+  }
+}
+
+void note_left_out_bytes(PendingLogs& logs) noexcept {
+  if (logs.dropped == 0) {
+    return;
+  }
+  try {
+    logs.lines.insert(
+        0,
+        "[" + std::to_string(logs.dropped) +
+            " earlier bytes of the runtime log were left out]\n");
+    logs.dropped = 0;
+  } catch (const std::bad_alloc&) {
+  }
+}
+
+// Writes lines to fd 2, oldest first, while it has room, and returns how many
+// bytes it wrote. Whole lines only, since a pipe that a Python thread drains
+// stays full while the GIL is held.
+size_t write_lines_while_room(const std::string& lines) noexcept {
+  size_t begin = 0;
+  while (begin < lines.size()) {
+    const size_t end = lines.find('\n', begin) + 1;
+    if (!stderr_has_room(end - begin, kStderrRoomWaitMs)) {
+      break;
+    }
+    write_to_stderr(lines.data() + begin, end - begin);
+    begin = end;
+  }
+  return begin;
+}
+
+// Writes the kept lines to fd 2 while it has room, and keeps the rest.
+void write_kept_lines_while_room(PendingLogs& logs) noexcept {
+  logs.lines.erase(0, write_lines_while_room(logs.lines));
+}
+
+// Runs as the outermost binding call returns, or at exit, with the GIL held and
+// no backend lock or object lock held. An exception may be unwinding, so it
+// never throws.
+void write_logs_to_python(PendingLogs& logs) noexcept {
+  note_left_out_bytes(logs);
+  if (logs.lines.empty()) {
+    return;
+  }
+  if (PyThread_get_thread_ident() == main_thread_id) {
+    // The lines that the main thread's pending call has yet to write come
+    // first, since a call that raised runs no pending call before the next.
+    DeferredLogs& deferred = deferred_logs();
+    std::lock_guard<std::mutex> lock(deferred.mutex);
+    note_left_out_bytes(deferred.main_thread_logs);
+    try {
+      logs.lines.insert(0, deferred.main_thread_logs.lines);
+      deferred.main_thread_logs = PendingLogs();
+      deferred.main_thread_write_scheduled = false;
+    } catch (const std::bad_alloc&) {
+    }
+  }
+  // A call's lines go after the lines this thread handed over.
+  if (logs.daemon || own_deferred_lines_wait()) {
+    defer_lines(logs.lines);
+    return;
+  }
+  try {
+    // A line that is not valid UTF-8, such as one that prints raw bytes from a
+    // model file, must not keep the rest from Python.
+    const auto text = py::reinterpret_steal<py::str>(PyUnicode_DecodeUTF8(
+        logs.lines.data(), logs.lines.size(), "backslashreplace"));
+    if (!text) {
+      throw py::error_already_set();
+    }
+    py::module_::import("sys").attr("stderr").attr("write")(text);
+    return;
+  } catch (py::error_already_set& error) {
+    // Python runs a Ctrl-C's handler in the first Python code after it, which
+    // can be this write. Raise it again once the call has returned.
+    if (error.matches(PyExc_KeyboardInterrupt)) {
+      PyErr_SetInterrupt();
+    }
+  } catch (...) {
+  }
+  // A write that was cut short may have shown some lines already, but
+  // repeating them is better than losing them. stderr can be a pipe that a
+  // Python thread drains, as in Jupyter, so the GIL is released.
+  py::gil_scoped_release release;
+  write_to_stderr(logs.lines.data(), logs.lines.size());
+}
+
+// Runs on Python's main thread between two bytecodes, with the GIL held.
+int write_main_thread_logs(void*) noexcept {
+  PendingLogs logs;
+  {
+    std::lock_guard<std::mutex> lock(deferred_logs().mutex);
+    deferred_logs().main_thread_write_scheduled = false;
+    std::swap(logs, deferred_logs().main_thread_logs);
+  }
+  write_logs_to_python(logs);
+  return 0;
+}
+
+// Writes the lines to fd 2 one at a time with the GIL released, so that a line
+// no longer than PIPE_BUF stays whole beside other threads' lines. Returns
+// false, without the GIL, if Python began to exit meanwhile: Python may then
+// free this thread's state, so the thread must not touch Python again.
+bool write_lines_to_fd_2_without_gil(const std::string& lines) {
+  PyThreadState* const state = PyEval_SaveThread();
+  size_t begin = 0;
+  while (begin < lines.size()) {
+    const size_t end = lines.find('\n', begin) + 1;
+    write_to_fd_2(lines.data() + begin, end - begin);
+    begin = end;
+  }
+  DeferredLogs& deferred = deferred_logs();
+  {
+    std::lock_guard<std::mutex> lock(deferred.mutex);
+    if (deferred.exiting) {
+      return false;
+    }
+    deferred.writer_entering = true;
+  }
+  PyEval_RestoreThread(state);
+  std::lock_guard<std::mutex> lock(deferred.mutex);
+  deferred.writer_entering = false;
+  deferred.writer_changed.notify_all();
+  return true;
+}
+
+// Writes through Python's C API only, and is not noexcept, since Python may end
+// this thread while it waits for the GIL during exit, and the unwinding must
+// neither touch a Python object nor stop at a noexcept frame. Returns false as
+// write_lines_to_fd_2_without_gil does.
+bool write_lines_through_python(const PendingLogs& logs) {
+  PyObject* const text = PyUnicode_DecodeUTF8(
+      logs.lines.data(), logs.lines.size(), "backslashreplace");
+  PyObject* const stream = PySys_GetObject("stderr");
+  PyObject* const result = text == nullptr || stream == nullptr
+      ? nullptr
+      : PyObject_CallMethod(stream, "write", "O", text);
+  const bool written = result != nullptr;
+  Py_XDECREF(result);
+  Py_XDECREF(text);
+  if (written) {
+    return true;
+  }
+  PyErr_Clear();
+  return write_lines_to_fd_2_without_gil(logs.lines);
+}
+
+// Runs on a thread of its own until no line waits.
+void write_deferred_logs() {
+  DeferredLogs& deferred = deferred_logs();
+  for (;;) {
+    PendingLogs logs;
+    uint64_t batch = 0;
+    {
+      std::lock_guard<std::mutex> lock(deferred.mutex);
+      if (deferred.exiting || deferred.logs.lines.empty()) {
+        deferred.writer_running = false;
+        deferred.writer_changed.notify_all();
+        return;
+      }
+      std::swap(logs, deferred.logs);
+      batch = deferred.batch++;
+      deferred.writer_entering = true;
+    }
+    const PyGILState_STATE gil = PyGILState_Ensure();
+    {
+      std::lock_guard<std::mutex> lock(deferred.mutex);
+      deferred.writer_entering = false;
+      deferred.writer_changed.notify_all();
+    }
+    note_left_out_bytes(logs);
+    // Lines for the process's stderr wait for room in fd 2 without the GIL or
+    // any lock of Python's, so that a full fd 2 never holds up Python's exit.
+    const bool python_still_running = stderr_is_process_stderr()
+        ? write_lines_to_fd_2_without_gil(logs.lines)
+        : write_lines_through_python(logs);
+    if (!python_still_running) {
+      std::lock_guard<std::mutex> lock(deferred.mutex);
+      deferred.writer_running = false;
+      deferred.writer_changed.notify_all();
+      return;
+    }
+    PyGILState_Release(gil);
+    std::lock_guard<std::mutex> lock(deferred.mutex);
+    deferred.batches_written = batch;
+  }
+}
+
+// Runs with the GIL held.
+void defer_lines(const std::string& lines) noexcept {
+  DeferredLogs& deferred = deferred_logs();
+  std::lock_guard<std::mutex> lock(deferred.mutex);
+  if (deferred.exiting) {
+    // Python's main thread may need the GIL to finish exiting, so the lines go
+    // out only while fd 2 has room, and not at all while a writer that is still
+    // writing can take that room first.
+    if (!deferred.writer_running) {
+      write_lines_while_room(lines);
+    }
+    return;
+  }
+  try {
+    // The main thread logged these lines from native code, which is inside a
+    // sys.stderr.write only if that write runs such code. So it can write them
+    // before its next bytecode, while a short redirect of sys.stderr still
+    // lasts. While the writer thread holds earlier lines of it, these follow
+    // them there instead, since keeping a thread's order beats the redirect.
+    if (PyThread_get_thread_ident() == main_thread_id &&
+        last_deferred_batch <= deferred.batches_written &&
+        (deferred.main_thread_write_scheduled ||
+         !sys_stderr_is_checked_fd_2())) {
+      keep_line(deferred.main_thread_logs, lines);
+      if (!deferred.main_thread_write_scheduled) {
+        deferred.main_thread_write_scheduled =
+            Py_AddPendingCall(&write_main_thread_logs, nullptr) == 0;
+      }
+      return;
+    }
+    keep_line(deferred.logs, lines);
+    last_deferred_batch = deferred.batch;
+    if (!deferred.writer_running) {
+      std::thread(write_deferred_logs).detach();
+      deferred.writer_running = true;
+    }
+  } catch (const std::exception&) {
+    // Lines that no thread could take wait for the exit hook.
+  }
+}
+
+// Whether lines wait for the writer thread or for Python's main thread. While
+// the writer writes to fd 2, the room that a check sees can be gone.
+bool deferred_lines_wait() {
+  DeferredLogs& deferred = deferred_logs();
+  std::lock_guard<std::mutex> lock(deferred.mutex);
+  return (deferred.writer_running || deferred.main_thread_write_scheduled) &&
+      !deferred.exiting;
+}
+
+// Whether lines this thread handed over still wait, which its later lines must
+// not pass.
+bool own_deferred_lines_wait() {
+  DeferredLogs& deferred = deferred_logs();
+  std::lock_guard<std::mutex> lock(deferred.mutex);
+  return last_deferred_batch > deferred.batches_written && !deferred.exiting;
+}
+
+// Python stops other threads once exit begins, and later its state is gone, so
+// the waiting lines go out now and later ones go to fd 2 while it has room. A
+// writer that is taking the GIL gets it first, and one that is writing gets a
+// moment to finish, so that its stream is free for Python's last flush.
+void write_deferred_logs_at_exit() noexcept {
+  DeferredLogs& deferred = deferred_logs();
+  PendingLogs main_thread_logs;
+  PendingLogs logs;
+  bool writer_running = false;
+  {
+    py::gil_scoped_release release;
+    std::unique_lock<std::mutex> lock(deferred.mutex);
+    deferred.exiting = true;
+    std::swap(main_thread_logs, deferred.main_thread_logs);
+    std::swap(logs, deferred.logs);
+    deferred.writer_changed.wait(
+        lock, [&deferred] { return !deferred.writer_entering; });
+    deferred.writer_changed.wait_for(
+        lock, std::chrono::milliseconds(kStderrRoomWaitMs), [&deferred] {
+          return !deferred.writer_running;
+        });
+    writer_running = deferred.writer_running;
+  }
+  for (PendingLogs* waiting : {&main_thread_logs, &logs}) {
+    if (stderr_is_process_stderr()) {
+      // No Python thread may be left to read a full fd 2. A writer still
+      // writing means fd 2 stayed full, and it could take any room seen here.
+      if (!writer_running) {
+        note_left_out_bytes(*waiting);
+        write_kept_lines_while_room(*waiting);
+      }
+    } else {
+      write_logs_to_python(*waiting);
+    }
+  }
+}
+
+// Sets up what the routing of runtime logs relies on, once, with the GIL held.
+// A setup that raised runs again on the next call.
+void set_up_log_routing() {
+  static bool set_up = false;
+  if (set_up) {
+    return;
+  }
+  // The Python code below can let another thread get here meanwhile.
+  set_up = true;
+  try {
+    // A line logged outside any call compares sys.stderr with the stream
+    // checked last, so the first check cannot wait for the first call.
+    stderr_is_process_stderr();
+    main_thread_id = py::module_::import("threading")
+                         .attr("main_thread")()
+                         .attr("ident")
+                         .cast<unsigned long>();
+    py::module_::import("atexit").attr("register")(
+        py::cpp_function([]() { write_deferred_logs_at_exit(); }));
+  } catch (...) {
+    set_up = false;
+    throw;
+  }
+#ifndef _WIN32
+  // A child of fork() has no writer thread, the waiting lines are the
+  // parent's, and the thread that forked is its main thread.
+  pthread_atfork(nullptr, nullptr, [] {
+    deferred_logs_state() = new DeferredLogs();
+    main_thread_id = PyThread_get_thread_ident();
+    last_deferred_batch = 0;
+  });
+#endif
+}
+
+// Runs as a pending call on Python's main thread, which raises the error that a
+// failed setup leaves, such as a KeyboardInterrupt.
+int set_up_log_routing_after_load(void*) noexcept {
+  try {
+    set_up_log_routing();
+    return 0;
+  } catch (py::error_already_set& error) {
+    error.restore();
+  } catch (const std::exception& error) {
+    PyErr_SetString(PyExc_RuntimeError, error.what());
+  }
+  return -1;
+}
 
 std::string with_runtime_errors(const char* message) {
   std::string result(message);
@@ -149,24 +689,43 @@ std::string with_runtime_errors(const char* message) {
     result.append(": ").append(runtime_errors, runtime_errors_size);
     runtime_errors_size = 0;
   }
-  return result;
+  // Python rejects an exception message that is not valid UTF-8. The message is
+  // cut at a fixed length, which can split a character of a path, and the
+  // runtime can log raw bytes, such as a file's identifier.
+  const auto text = py::reinterpret_steal<py::str>(
+      PyUnicode_DecodeUTF8(result.data(), result.size(), "backslashreplace"));
+  if (!text) {
+    throw py::error_already_set();
+  }
+  return text.cast<std::string>();
 }
 
 // Starts every binding call with no runtime errors recorded, and gives an
-// outer call its own back when a nested call returns.
+// outer call its own back when a nested call returns. The outermost call owns
+// the lines kept during it and writes them out as it returns. They live on the
+// heap, so a pointer to them stays valid if a callback switches greenlets.
 struct RuntimeErrorScope final {
   RuntimeErrorScope() : outer_(runtime_errors, runtime_errors_size) {
     runtime_errors_size = 0;
-    ++runtime_error_scopes;
+    if (pending_logs == nullptr) {
+      logs_ = std::make_unique<PendingLogs>();
+      logs_->daemon = on_daemon_thread();
+      logs_->direct = stderr_is_process_stderr();
+      pending_logs = logs_.get();
+    }
   }
   ~RuntimeErrorScope() {
-    --runtime_error_scopes;
     std::memcpy(runtime_errors, outer_.data(), outer_.size());
     runtime_errors_size = outer_.size();
+    if (logs_ != nullptr) {
+      pending_logs = nullptr;
+      write_logs_to_python(*logs_);
+    }
   }
 
  private:
   std::string outer_;
+  std::unique_ptr<PendingLogs> logs_;
 };
 
 #ifndef USE_ATEN_LIB
@@ -4891,11 +5450,14 @@ py::dict get_option(const std::string& backend_name, const py::dict& options) {
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
-  // Gives each call its own record of runtime errors for its exceptions.
-  // Runtime logs reach Python through emit_log_message below rather than
+  // Gives each call its own record of runtime errors for its exceptions, and
+  // decides where the call's runtime logs go. This replaces
   // scoped_ostream_redirect, which mutates process-wide stream buffers and is
   // not thread-safe when Python operations inside a binding release the GIL.
+  // It calls Python as it starts and may write to Python as it ends, so it
+  // needs the GIL and never follows a py::gil_scoped_release guard.
   auto call_guard = py::call_guard<RuntimeErrorScope>();
+  set_up_log_routing();
 
 #if defined(EXECUTORCH_PYBINDINGS_CUDA) && !defined(USE_ATEN_LIB)
   // Back executorch.runtime.cuda, which keeps the runtime free of PyTorch.
@@ -5320,8 +5882,28 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 
 namespace {
 
-// Forward runtime logs to Python without mutating std::cerr's process-wide
-// stream buffer.
+// Whether a line logged outside any binding call waits. Only a thread that
+// holds the GIL can see where sys.stderr goes. Such a thread hands the line
+// over when sys.stderr goes elsewhere, when fd 2 has no room, since the GIL it
+// holds may be what a thread draining it needs, or when earlier lines still
+// wait. Any other thread writes to fd 2.
+bool line_outside_a_call_waits(size_t size) {
+  return holds_gil() &&
+      (!sys_stderr_is_checked_fd_2() || deferred_lines_wait() ||
+       !stderr_has_room(size, 0));
+}
+
+// Records the runtime's errors for exceptions and routes each line without
+// calling Python: a backend can log while it holds its own lock, and a Python
+// write there can hand the GIL to a thread that then waits for that lock. A
+// line goes to the process's stderr through C stdio, since another module can
+// redirect std::cerr into Python. When Python has replaced sys.stderr, as a
+// notebook does, a line logged during a binding call waits for the call to
+// return, and a line logged outside any call by a thread that holds the GIL
+// waits for Python's main thread, if it logged the line, or for the writer
+// thread. Such lines also wait once fd 2 is a pipe or socket that stays full.
+// Even then a fatal line goes out at once while fd 2 has room, with the lines
+// its call kept, since an abort usually follows.
 void emit_log_message(
     ET_UNUSED et_timestamp_t timestamp,
     et_pal_log_level_t level,
@@ -5332,7 +5914,7 @@ void emit_log_message(
     size_t length) {
   const std::string formatted_message = "[" + std::string(filename) + ":" +
       std::to_string(line) + "] " + std::string(message, length) + "\n";
-  if (level == kError && runtime_error_scopes != 0) {
+  if (level == kError && pending_logs != nullptr) {
     // Keeps the first lines, which usually name the cause.
     const char separator[] = "; ";
     const size_t prefix = runtime_errors_size == 0 ? 0 : sizeof(separator) - 1;
@@ -5345,17 +5927,34 @@ void emit_log_message(
       runtime_errors_size += prefix + copied;
     }
   }
-  if (Py_IsInitialized() && PyGILState_Check()) {
-    try {
-      py::gil_scoped_acquire gil;
-      py::module_::import("sys").attr("stderr").attr("write")(
-          formatted_message);
-      return;
-    } catch (py::error_already_set& error) {
-      error.clear();
+  if (pending_logs == nullptr) {
+    const size_t size = formatted_message.size();
+    if (level == kFatal
+            ? holds_gil() && !stderr_has_room(size, kStderrRoomWaitMs)
+            : line_outside_a_call_waits(size)) {
+      defer_lines(formatted_message);
+    } else {
+      write_to_stderr(formatted_message.data(), size);
     }
+    return;
   }
-  std::cerr << formatted_message << std::flush;
+  // While the writer thread writes to fd 2, it can take the room seen here
+  // before this write.
+  if (pending_logs->direct && !deferred_lines_wait() &&
+      stderr_has_room(formatted_message.size(), kStderrRoomWaitMs)) {
+    write_to_stderr(formatted_message.data(), formatted_message.size());
+    return;
+  }
+  // The rest of the call's lines wait for it to return. Then they go through
+  // Python, which lets go of the GIL while it waits for room. A daemon thread
+  // leaves them to the writer thread.
+  pending_logs->direct = false;
+  keep_line(*pending_logs, formatted_message);
+  if (level == kFatal) {
+    // An abort usually follows, and the waiting lines tell what led to it.
+    note_left_out_bytes(*pending_logs);
+    write_kept_lines_while_room(*pending_logs);
+  }
 }
 
 runtime::PalImpl build_pal() {
@@ -5364,6 +5963,13 @@ runtime::PalImpl build_pal() {
 
 // Update PAL to redirect logs.
 ET_UNUSED bool registration_result = runtime::register_pal(build_pal());
+
+// The runtime logs through emit_log_message from the moment this library
+// loads, and another module, such as the LLM runner's, can load it without
+// importing this one. Python code must not run while a library loads, so
+// Python's main thread sets up the routing at its next chance.
+ET_UNUSED bool log_routing_scheduled = Py_IsInitialized() &&
+    Py_AddPendingCall(&set_up_log_routing_after_load, nullptr) == 0;
 
 } // namespace
 

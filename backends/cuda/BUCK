@@ -79,8 +79,10 @@ fbcode_target(
         "passes/__init__.py",
         "passes/move_cond_predicate_to_cpu.py",
         "passes/lower_offgraph_kv.py",
+        "passes/remove_assert_async.py",
         "passes/replace_fused_sdpa.py",
         "passes/replace_int64_floordiv.py",
+        "passes/replace_masked_copy_with_where.py",
     ],
     visibility = [
         "//executorch/backends/cuda/...",
@@ -128,6 +130,7 @@ fbcode_target(
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_details",
         "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/passes:replace_complex_with_real_pass",
         "//executorch/backends/aoti:aoti_backend",
     ],
 )

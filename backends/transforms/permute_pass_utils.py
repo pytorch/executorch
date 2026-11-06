@@ -14,7 +14,7 @@ both the Cadence and Arm backends.
 
 from abc import abstractmethod
 from collections import deque
-from typing import cast, List, Optional, Type, TypeVar, Union
+from typing import Callable, cast, List, Optional, Type, TypeVar, Union
 
 import torch
 import torch.fx
@@ -22,10 +22,25 @@ from executorch.backends.transforms.channels_last_layout import PERMUTE_COPY_TAR
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, PassResult
+from torch._ops import OpOverloadPacket
 from torch.fx import Node
 from torch.fx.node import Argument
 
 T = TypeVar("T")
+
+
+def get_overload_packet(
+    op: Union[Callable[..., str], str],
+) -> Union[OpOverloadPacket, EdgeOpOverloadPacket, None]:
+    return (
+        get_edge_overload_packet(op)
+        if isinstance(op, EdgeOpOverload)
+        else getattr(op, "overloadpacket", None)
+    )
+
+
+def get_placeholders(graph: torch.fx.Graph) -> List[torch.fx.Node]:
+    return list(filter(lambda x: x.op == "placeholder", graph.nodes))
 
 
 def get_edge_overload_packet(edge_op: EdgeOpOverload) -> EdgeOpOverloadPacket:

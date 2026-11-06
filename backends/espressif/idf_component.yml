@@ -1,0 +1,11 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+description: ExecuTorch Espressif operator library
+dependencies:
+  idf:
+    version: ">=5.1"
+  espressif/esp-nn: "1.4.1"
