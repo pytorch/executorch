@@ -24,6 +24,7 @@ pytest.importorskip("torchao")
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.backends.espressif.lowering import to_espnn_edge
 from executorch.backends.espressif.quantizer.espnn_quantizer import EspNNQuantizer
 
 from executorch.backends.espressif.reference import esp_nn_reference as reference
@@ -101,6 +102,69 @@ def max_int8_error(converted, graph, shapes, trials: int = 4) -> int:
             )
             worst = max(worst, int(np.max(np.abs(want_q - logical))))
     return worst
+
+
+@pytest.mark.parametrize("activation", [nn.ReLU, nn.ReLU6], ids=["relu", "relu6"])
+@pytest.mark.parametrize("inplace", [False, True], ids=["functional", "inplace"])
+def test_multiply_activation_fusion_remains_delegatable(activation, inplace):
+    class MultiplyActivation(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.activation = activation(inplace=inplace)
+
+        def forward(self, x, y):
+            return self.activation(x * y)
+
+    shapes = [(2, 8), (2, 8)]
+    converted, program = quantize(MultiplyActivation(), shapes)
+    graph = lower(program)
+    assert [op.opcode for op in graph.operations] == [XTS3OpCode.MUL]
+    assert max_int8_error(converted, graph, shapes) <= 2
+
+
+@pytest.mark.parametrize("activation", [nn.ReLU, nn.ReLU6], ids=["relu", "relu6"])
+@pytest.mark.parametrize(
+    "operator, constant, buffer, reverse",
+    [
+        (torch.mul, 2.0, False, False),
+        (torch.mul, -2.0, True, False),
+        (torch.mul, -2.0, True, True),
+        (torch.add, 2.0, False, False),
+        (torch.add, -2.0, True, True),
+    ],
+    ids=["mul_literal", "mul_buffer", "mul_reversed", "add_literal", "add_reversed"],
+)
+def test_scalar_activation_fuses_into_delegate_lut(
+    activation, operator, constant, buffer, reverse
+):
+    class ScalarActivation(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.activation = activation()
+            if buffer:
+                self.register_buffer("constant", torch.tensor(constant))
+            else:
+                self.constant = constant
+
+        def forward(self, x):
+            lhs, rhs = (self.constant, x) if reverse else (x, self.constant)
+            return self.activation(operator(lhs, rhs))
+
+    converted, program = quantize(ScalarActivation(), [(256,)], samples=4)
+    graph = lower(program)
+    assert [op.opcode for op in graph.operations] == [XTS3OpCode.LUT]
+    edge, report = to_espnn_edge(program, allow_cpu_fallback=False)
+    assert report["partitions"] == 1 and not report["cpu_ops"]
+    assert edge.to_executorch().buffer
+
+    source = graph.tensors[graph.inputs[0]]
+    inputs = (
+        (torch.arange(-128, 128, dtype=torch.float32) - source.quant_zero_point)
+        * source.quant_scale,
+    )
+    [(result, actual)] = run_reference(graph, inputs)
+    expected = reference.quantize(result, converted(*inputs).numpy())
+    np.testing.assert_array_equal(reference.to_logical_layout(result, actual), expected)
 
 
 class DetectionHead(nn.Module):

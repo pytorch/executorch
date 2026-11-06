@@ -69,6 +69,47 @@ class EspMulAdd(EspMul):
         return x * y + y
 
 
+class EspMulActivation(EspMul):
+    def __init__(self, activation):
+        super().__init__()
+        self.activation = activation
+        target = (
+            exir_ops.edge.aten.relu.default
+            if isinstance(activation, torch.nn.ReLU)
+            else exir_ops.edge.aten.hardtanh.default
+        )
+        self.ops_before_transforms = {_MUL: 1, target: 1}
+        self.ops_after_transforms = {_MUL: 0, _ESP_MUL: 1, target: 0}
+
+    def forward(self, x, y):
+        return self.activation(x * y)
+
+
+class EspMulActivationWithUsers(EspMulActivation):
+    def __init__(self):
+        super().__init__(torch.nn.ReLU6())
+        self.ops_after_transforms[exir_ops.edge.aten.hardtanh.default] = 1
+
+    def forward(self, x, y):
+        product = x * y
+        return product, self.activation(product)
+
+
+class EspMulActivationWithSharedQParams(EspMulActivation):
+    def forward(self, x, y):
+        return torch.cat((self.activation(x * y), x), dim=-1)
+
+
+class EspUnsupportedBroadcastRelu6(EspMulActivation):
+    def __init__(self):
+        super().__init__(torch.nn.ReLU6())
+        self.ops_after_transforms = {
+            _MUL: 1,
+            _ESP_MUL: 0,
+            exir_ops.edge.aten.hardtanh.default: 1,
+        }
+
+
 test_cases = {
     "scalar": EspTestCase(
         EspMul(),
@@ -154,6 +195,46 @@ test_cases = {
     "add": EspTestCase(
         EspMulAdd(),
         (ramp_tensor(-1, 1, (17,)), ramp_tensor(2, -2, (17,))),
+    ),
+    "relu": EspTestCase(
+        EspMulActivation(torch.nn.ReLU()),
+        (ramp_tensor(-4, 4, (17,)), ramp_tensor(2, 8, (17,))),
+    ),
+    "relu6": EspTestCase(
+        EspMulActivation(torch.nn.ReLU6()),
+        (ramp_tensor(-4, 4, (17,)), ramp_tensor(2, 8, (17,))),
+    ),
+    "relu_inplace": EspTestCase(
+        EspMulActivation(torch.nn.ReLU(inplace=True)),
+        (ramp_tensor(-4, 4, (2, 8)), ramp_tensor(2, 8, (2, 8))),
+    ),
+    "relu6_inplace": EspTestCase(
+        EspMulActivation(torch.nn.ReLU6(inplace=True)),
+        (ramp_tensor(-4, 4, (2, 8)), ramp_tensor(2, 8, (2, 8))),
+    ),
+    "broadcast_relu": EspTestCase(
+        EspMulActivation(torch.nn.ReLU()),
+        (ramp_tensor(-4, 4, (2, 16)), ramp_tensor(2, 8, (16,))),
+    ),
+    "broadcast_relu6": EspTestCase(
+        EspMulActivationWithSharedQParams(torch.nn.ReLU6()),
+        (ramp_tensor(-8, 10, (3, 17)), ramp_tensor(2, 8, (17,))),
+    ),
+    "relu6_with_users": EspTestCase(
+        EspMulActivationWithUsers(),
+        (ramp_tensor(-4, 4, (17,)), ramp_tensor(2, 8, (17,))),
+    ),
+    "relu_shared_qparams": EspTestCase(
+        EspMulActivationWithSharedQParams(torch.nn.ReLU()),
+        (ramp_tensor(-8, 10, (17,)), ramp_tensor(2, 8, (17,))),
+    ),
+    "relu6_shared_qparams": EspTestCase(
+        EspMulActivationWithSharedQParams(torch.nn.ReLU6()),
+        (ramp_tensor(-8, 10, (17,)), ramp_tensor(2, 8, (17,))),
+    ),
+    "broadcast_relu6_fallback": EspTestCase(
+        EspUnsupportedBroadcastRelu6(),
+        (ramp_tensor(-4, 4, (2, 3)), ramp_tensor(2, 8, (2, 1))),
     ),
     "saturation": EspTestCase(
         EspMul(),

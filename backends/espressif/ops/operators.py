@@ -11,24 +11,26 @@ from torch.library import impl, Library, register_fake
 lib = Library("esp_nn", "DEF")
 lib.define(
     "quantized_mul_int8(Tensor input1, Tensor input2, int input1_offset, "
-    "int input2_offset, int output_offset, int output_multiplier, int output_shift) -> Tensor"
+    "int input2_offset, int output_offset, int output_multiplier, int output_shift, "
+    "int activation_min, int activation_max) -> Tensor"
 )
 lib.define(
     "quantized_mul_int8.out(Tensor input1, Tensor input2, int input1_offset, "
     "int input2_offset, int output_offset, int output_multiplier, int output_shift, "
-    "*, Tensor(a!) out) -> Tensor(a!)"
+    "int activation_min, int activation_max, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_add_int8(Tensor input1, Tensor input2, int input1_offset, "
     "int input2_offset, int output_offset, int input1_multiplier, int input1_shift, "
     "int input2_multiplier, int input2_shift, int left_shift, "
-    "int output_multiplier, int output_shift) -> Tensor"
+    "int output_multiplier, int output_shift, int activation_min, int activation_max) -> Tensor"
 )
 lib.define(
     "quantized_add_int8.out(Tensor input1, Tensor input2, int input1_offset, "
     "int input2_offset, int output_offset, int input1_multiplier, int input1_shift, "
     "int input2_multiplier, int input2_shift, int left_shift, "
-    "int output_multiplier, int output_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "int output_multiplier, int output_shift, int activation_min, int activation_max, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
 
@@ -41,6 +43,8 @@ def quantized_mul_int8_meta(
     output_offset,
     output_multiplier,
     output_shift,
+    activation_min,
+    activation_max,
 ):
     return input1.new_empty(torch.broadcast_shapes(input1.shape, input2.shape))
 
@@ -54,12 +58,14 @@ def quantized_mul_int8(
     output_offset,
     output_multiplier,
     output_shift,
+    activation_min,
+    activation_max,
 ):
     product = (input1.to(torch.int32) + input1_offset) * (
         input2.to(torch.int32) + input2_offset
     )
     result = requantize(product, output_multiplier, output_shift) + output_offset
-    return result.clamp(-128, 127).to(torch.int8)
+    return result.clamp(activation_min, activation_max).to(torch.int8)
 
 
 @register_fake("esp_nn::quantized_add_int8")
@@ -76,6 +82,8 @@ def quantized_add_int8_meta(
     left_shift,
     output_multiplier,
     output_shift,
+    activation_min,
+    activation_max,
 ):
     return torch.empty_like(input1)
 
@@ -94,6 +102,8 @@ def quantized_add_int8(
     left_shift,
     output_multiplier,
     output_shift,
+    activation_min,
+    activation_max,
 ):
     lhs = (input1.to(torch.int32) + input1_offset) << left_shift
     rhs = (input2.to(torch.int32) + input2_offset) << left_shift
@@ -101,4 +111,4 @@ def quantized_add_int8(
         rhs, input2_multiplier, input2_shift
     )
     result = requantize(total, output_multiplier, output_shift) + output_offset
-    return result.clamp(-128, 127).to(torch.int8)
+    return result.clamp(activation_min, activation_max).to(torch.int8)
