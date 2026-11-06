@@ -46,6 +46,11 @@ including graph inputs and outputs, must be a contiguous tensor of rank at most
 Unsupported operators, including retained runtime assertions, fail provider
 selection.
 
+Static FP32 `matmul` with positive operands of rank at least two is lowered to
+`mm` or `bmm`, using managed copies for batch broadcasting and flattening.
+Contraction dimensions, broadcast dimensions and output metadata are checked
+before compilation. Vector and empty-matrix cases remain unsupported.
+
 Direct engine clients set every input before the first execution. Inputs are
 written once into dedicated buffers outside the activation arena, so their
 values remain available across repeated executions; setting an input

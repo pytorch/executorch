@@ -66,8 +66,154 @@ void validate_supported_method(const Method& method) {
   }
 }
 
+[[noreturn]] void fail_matmul(const char* reason) {
+  throw std::runtime_error(std::string("cpu: matmul ") + reason);
+}
+
+void lower_matmul(Graph& graph, NodeId id) {
+  const auto node = graph.node(id);
+  if (node.inputs.size() != 2 || node.outputs.size() != 1 ||
+      node.outputs[0].kind != OutputValueKind::Tensor ||
+      node.inputs[0].arg.kind() != ArgKind::Tensor ||
+      node.inputs[1].arg.kind() != ArgKind::Tensor) {
+    fail_matmul("requires two tensor inputs and one tensor output");
+  }
+  const auto left_id = node.inputs[0].arg.as_tensor().id;
+  const auto right_id = node.inputs[1].arg.as_tensor().id;
+  const auto& left_value = graph.value(left_id);
+  const auto& right_value = graph.value(right_id);
+  if (!left_value.is_tensor() || !right_value.is_tensor() ||
+      left_value.tensor_meta().dtype != ScalarType::Float ||
+      right_value.tensor_meta().dtype != ScalarType::Float) {
+    fail_matmul("requires FP32 operands");
+  }
+  const auto left = left_value.tensor_meta().sizes;
+  const auto right = right_value.tensor_meta().sizes;
+  if (left.size() < 2 || right.size() < 2 ||
+      std::ranges::any_of(left, [](int64_t size) { return size <= 0; }) ||
+      std::ranges::any_of(right, [](int64_t size) { return size <= 0; })) {
+    fail_matmul("requires positive matrix shapes of rank at least two");
+  }
+  const size_t rank = std::max(left.size(), right.size());
+  std::vector<int64_t> expanded_left(rank, 1), expanded_right(rank, 1);
+  std::copy(left.begin(), left.end(), expanded_left.end() - left.size());
+  std::copy(right.begin(), right.end(), expanded_right.end() - right.size());
+  if (expanded_left[rank - 1] != expanded_right[rank - 2]) {
+    fail_matmul("has incompatible contraction dimensions");
+  }
+  std::vector<int64_t> output_shape(rank);
+  int64_t batches = 1;
+  for (size_t dim = 0; dim + 2 < rank; ++dim) {
+    const auto a = expanded_left[dim];
+    const auto b = expanded_right[dim];
+    if (a != b && a != 1 && b != 1) {
+      fail_matmul("has incompatible broadcast dimensions");
+    }
+    const auto extent = std::max(a, b);
+    if (batches > std::numeric_limits<int64_t>::max() / extent) {
+      fail_matmul("has an overflowing batch extent");
+    }
+    batches *= extent;
+    output_shape[dim] = extent;
+    expanded_left[dim] = extent;
+    expanded_right[dim] = extent;
+  }
+  const auto rows = left[left.size() - 2];
+  const auto inner = left.back();
+  const auto columns = right.back();
+  output_shape[rank - 2] = rows;
+  output_shape[rank - 1] = columns;
+  const auto& output = graph.value(node.outputs[0].value_id);
+  if (!output.is_tensor() || output.tensor_meta().dtype != ScalarType::Float ||
+      output.tensor_meta().sizes != output_shape) {
+    fail_matmul("has incompatible output metadata");
+  }
+  if (rank == 2 ||
+      (rank == 3 && left.size() == 3 && right.size() == 3 &&
+       left[0] == right[0])) {
+    auto& replacement = graph.node(id);
+    replacement.target =
+        rank == 2 ? "torch.ops.aten.mm.default" : "torch.ops.aten.bmm.default";
+    replacement.inputs[1].name = "mat2";
+    return;
+  }
+  const auto tensor = [](ValueId value) -> NamedArgument {
+    return {.name = "self", .arg = TensorArg{value}};
+  };
+  const auto call = [&](const char* suffix,
+                        const char* target,
+                        std::vector<NamedArgument> arguments,
+                        std::vector<int64_t> shape) {
+    const std::string name = node.name + "__cpu_matmul_" + suffix;
+    const auto value =
+        graph.append_value(Value(name, ScalarType::Float, std::move(shape)));
+    graph.insert_node_before(
+        id,
+        Node{
+            .name = name,
+            .op_kind = OpKind::CallFunction,
+            .target = target,
+            .inputs = std::move(arguments),
+            .outputs =
+                {{.kind = OutputValueKind::Tensor,
+                  .value_id = value,
+                  .elem_ids = {}}},
+            .attrs = {},
+        });
+    return value;
+  };
+  const auto expand = [&](const char* suffix,
+                          ValueId source,
+                          const std::vector<int64_t>& original,
+                          const std::vector<int64_t>& shape) {
+    if (original == shape) {
+      return source;
+    }
+    return call(
+        suffix,
+        "torch.ops.aten.expand_copy.default",
+        {tensor(source),
+         {.name = "size", .arg = IntListArg{.values = shape, .ids = {}}},
+         {.name = "implicit", .arg = BoolArg{false}}},
+        shape);
+  };
+  const auto reshape = [&](const char* suffix,
+                           ValueId source,
+                           const std::vector<int64_t>& shape) {
+    return call(
+        suffix,
+        "torch.ops.aten.view_copy.default",
+        {tensor(source),
+         {.name = "size", .arg = IntListArg{.values = shape, .ids = {}}}},
+        shape);
+  };
+  const auto expanded_a = expand("left_expand", left_id, left, expanded_left);
+  const auto expanded_b =
+      expand("right_expand", right_id, right, expanded_right);
+  const auto a = reshape("left", expanded_a, {batches, rows, inner});
+  const auto b = reshape("right", expanded_b, {batches, inner, columns});
+  const auto result = call(
+      "result",
+      "torch.ops.aten.bmm.default",
+      {tensor(a), {.name = "mat2", .arg = TensorArg{b}}},
+      {batches, rows, columns});
+  auto& replacement = graph.node(id);
+  replacement.target = "torch.ops.aten.view_copy.default";
+  replacement.inputs = {
+      tensor(result),
+      {.name = "size", .arg = IntListArg{.values = output_shape, .ids = {}}}};
+  graph.rebuild_def_use();
+}
+
 void lower_native_method(Graph& graph) {
   functionalize_aliases(graph);
+  const auto schedule = graph.schedule;
+  for (const auto id : schedule) {
+    if (graph.node(id).is_call() &&
+        graph.node(id).target == "torch.ops.aten.matmul.default") {
+      lower_matmul(graph, id);
+    }
+  }
   for (ValueId id = 0; std::cmp_less(id, graph.values.size()); ++id) {
     auto& value = graph.value(id);
     if (value.is_tensor() && value.role == ValueRole::Intermediate &&
@@ -175,9 +321,10 @@ class CPUEngineExecutable final : public EngineExecutable {
       const Package& package,
       CPUConstantStore& constants,
       cpu::RuntimeConfiguration configuration)
-      : method_(method), buffers_(method.graph.values.size()) {
+      : method_(method) {
     validate_supported_method(method_);
     lower_native_method(method_.graph);
+    buffers_.resize(method_.graph.values.size());
     plan_ = std::make_unique<cpu::CPUPlan>(
         method_.graph,
         buffers_,
