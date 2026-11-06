@@ -644,6 +644,18 @@ class GgmlOpsTest(unittest.TestCase):
     def test_log(self):
         self._check(Lambda(torch.log), (torch.rand(2, 3, 4) + 0.1,))
 
+    def test_exp(self):
+        self._check(Lambda(torch.exp), (torch.randn(3, 1, 1).clamp(max=4.6),))
+
+    def test_exp_half_and_bfloat16(self):
+        for dtype, rtol in ((torch.float16, 1e-3), (torch.bfloat16, 8e-3)):
+            with self.subTest(dtype=dtype):
+                self._check(
+                    Lambda(torch.exp),
+                    (torch.randn(2, 3, 4, dtype=dtype),),
+                    rtol=rtol,
+                )
+
     def test_neg(self):
         self._check(Lambda(torch.neg), (torch.randn(2, 3, 4),))
 

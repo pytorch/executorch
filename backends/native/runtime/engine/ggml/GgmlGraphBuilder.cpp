@@ -686,6 +686,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_constant_pad(node);
   } else if (key == "aten.log.default") {
     lower_unary(node, ggml_log);
+  } else if (key == "aten.exp.default") {
+    lower_unary(node, ggml_exp);
   } else if (key == "aten.neg.default") {
     lower_unary(node, ggml_neg);
   } else if (key == "aten.relu.default" || key == "aten.relu_.default") {
