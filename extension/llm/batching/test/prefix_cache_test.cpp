@@ -898,6 +898,95 @@ TEST_F(PrefixCacheTest, EqualLengthMatchesPreferTheMostRecentlyUsedSnapshot) {
   EXPECT_EQ(executor.clones().back().source, first_id);
 }
 
+TEST_F(PrefixCacheTest, LookupThresholdSkipsClonesAndDoesNotRefreshLru) {
+  PrefixCache cache(2);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  ASSERT_TRUE(cache.insert({8, 9}, snapshot({8, 9})));
+  const auto request =
+      token_identity(std::make_shared<const Tokens>(Tokens{1, 2, 3, 4}));
+  const auto before = executor.clones().size();
+  EXPECT_FALSE(cache.lookup_identity(request, 3));
+  EXPECT_FALSE(
+      cache.lookup_identity(request, std::numeric_limits<size_t>::max()));
+  EXPECT_EQ(executor.clones().size(), before);
+  ASSERT_TRUE(cache.insert({6, 7}, snapshot({6, 7})));
+  EXPECT_FALSE(cache.lookup({1, 2, 3, 4}));
+  const auto other =
+      token_identity(std::make_shared<const Tokens>(Tokens{8, 9, 10}));
+  auto match = cache.lookup_identity(other, 1);
+  ASSERT_TRUE(match);
+  EXPECT_EQ(match->matched_tokens, 2u);
+  expect_cold_match(*match, {8, 9, 10});
+}
+
+TEST_F(PrefixCacheTest, FindRefreshesLruOnlyAfterTouch) {
+  for (bool adopt : {false, true}) {
+    PrefixCache cache(2);
+    ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+    ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4})));
+    auto match = cache.find_identity(
+        token_identity(std::make_shared<const Tokens>(Tokens{1, 2, 9})));
+    ASSERT_TRUE(match);
+    if (adopt) {
+      cache.touch(*match);
+    }
+    ASSERT_TRUE(cache.insert({5, 6}, snapshot({5, 6})));
+    EXPECT_EQ(cache.lookup({1, 2, 9}).has_value(), adopt);
+    EXPECT_EQ(cache.lookup({3, 4, 9}).has_value(), !adopt);
+    expect_cold_match(*match, {1, 2, 9});
+  }
+}
+
+TEST_F(PrefixCacheTest, TouchOfEvictedMatchDoesNotRefreshReinsertedEntry) {
+  PrefixCache cache(2);
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  auto old = cache.find_identity(
+      token_identity(std::make_shared<const Tokens>(Tokens{1, 2, 9})));
+  ASSERT_TRUE(old);
+  cache.clear();
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4})));
+  cache.touch(*old);
+  ASSERT_TRUE(cache.insert({5, 6}, snapshot({5, 6})));
+  EXPECT_FALSE(cache.lookup({1, 2, 9}));
+  EXPECT_TRUE(cache.lookup({3, 4, 9}));
+}
+
+TEST_F(PrefixCacheTest, CandidateSelectionSkipsBeforeCloningAndHonorsBounds) {
+  PrefixCache cache(3);
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  const auto shorter = executor.clones().back().created;
+  ASSERT_TRUE(cache.insert({1, 2, 3, 4}, snapshot({1, 2, 3, 4})));
+  const auto request =
+      token_identity(std::make_shared<const Tokens>(Tokens{1, 2, 3, 4, 9}));
+  const auto before = executor.clones().size();
+  std::vector<std::size_t> checked;
+  auto match = cache.find_identity(request, 2, 4, [&](std::size_t size) {
+    checked.push_back(size);
+    return size == 4 ? PrefixCache::MatchDecision::Skip
+                     : PrefixCache::MatchDecision::Use;
+  });
+  ASSERT_TRUE(match);
+  EXPECT_EQ(checked, (std::vector<std::size_t>{4, 3}));
+  EXPECT_EQ(executor.clones().size(), before + 1);
+  EXPECT_EQ(executor.clones().back().source, shorter);
+  checked.clear();
+  EXPECT_FALSE(cache.find_identity(request, 2, 3, [&](std::size_t size) {
+    checked.push_back(size);
+    return PrefixCache::MatchDecision::Skip;
+  }));
+  EXPECT_EQ(checked, (std::vector<std::size_t>{3}));
+  EXPECT_EQ(executor.clones().size(), before + 1);
+  checked.clear();
+  EXPECT_FALSE(cache.find_identity(request, 0, 4, [&](std::size_t size) {
+    checked.push_back(size);
+    return PrefixCache::MatchDecision::Stop;
+  }));
+  EXPECT_EQ(checked, (std::vector<std::size_t>{4}));
+  EXPECT_EQ(executor.clones().size(), before + 1);
+}
+
 TEST_F(PrefixCacheTest, DuplicateInsertRefreshesLruAndReleasesTheNewSnapshot) {
   PrefixCache cache(2);
   ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
