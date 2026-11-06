@@ -40,7 +40,7 @@ from starlette.requests import ClientDisconnect
 from .chat_template import ChatTemplate
 from .errors import APIError
 from .hud import install as install_hud
-from .hud.metrics import record_error
+from .hud.metrics import record_error, Turn
 from .protocol import ChatCompletionRequest, ModelCard, ModelList
 from .serving_chat import ServingChat
 from .session_runtime import SessionRuntime
@@ -98,7 +98,10 @@ async def _session_op(
 
 
 async def _create_with_disconnect(
-    request: Request, serving: ServingChat, req: ChatCompletionRequest, observer=None
+    request: Request,
+    serving: ServingChat,
+    req: ChatCompletionRequest,
+    observer: Optional[Turn] = None,
 ):
     async def wait_disconnect():
         while (await request.receive())["type"] != "http.disconnect":

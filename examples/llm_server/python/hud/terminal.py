@@ -8,6 +8,7 @@
 
 import asyncio
 import atexit
+import codecs
 import logging
 import os
 import re
@@ -270,36 +271,50 @@ class TerminalHUD(logging.Handler):
         self._active = False
 
     def emit(self, record):
+        message = None
         try:
             message = self.format(record)
+            message = "".join(c for c in message if c.isprintable() or c in "\n\t")
             self._messages.append((record.levelno, _text(message)))
             native = record.name == f"{__package__}.worker_logs"
-            if self._diagnostics is not None and (
+            if not self._active:
+                self.stream.write(message + "\n")
+                self.stream.flush()
+            elif self._diagnostics is not None and (
                 native or record.levelno >= logging.WARNING
             ):
-                self._diagnostics.write(
-                    "".join(c for c in message if c.isprintable() or c in "\n\t") + "\n"
-                )
+                remaining = memoryview((message + "\n").encode("utf-8"))
+                while remaining:
+                    written = self._diagnostics.write(remaining)
+                    if not written:
+                        raise OSError("diagnostics write made no progress")
+                    remaining = remaining[written:]
         except Exception:
             # Log storage must never stop the worker stderr pipe being drained.
-            diagnostics, self._diagnostics = self._diagnostics, None
-            if diagnostics is not None:
+            self._restore()
+            if message is not None:
                 with suppress(OSError, ValueError):
-                    diagnostics.close()
-            self.handleError(record)
+                    self.stream.write(message + "\n")
+                    self.stream.flush()
+            else:
+                self.handleError(record)
 
     def draw(self):
+        self.acquire()
+        try:
+            if self._active:
+                self._draw()
+        finally:
+            self.release()
+
+    def _draw(self):
         try:
             size = os.get_terminal_size(self.stream.fileno())
         except (AttributeError, OSError, ValueError):
             size = shutil.get_terminal_size(fallback=(100, 24))
         width = max(1, size.columns - 1)
         height = max(1, size.lines - 1)
-        self.acquire()
-        try:
-            recent = list(self._messages)
-        finally:
-            self.release()
+        recent = list(self._messages)
         frame = render(
             self.metrics,
             self.model,
@@ -333,7 +348,7 @@ class TerminalHUD(logging.Handler):
 
     async def _refresh(self):
         try:
-            while True:
+            while self._active:
                 self.draw()
                 await asyncio.sleep(0.5)
         except Exception:  # The dashboard must not fail the serving lifespan.
@@ -343,40 +358,49 @@ class TerminalHUD(logging.Handler):
             )
 
     async def __aenter__(self):
-        self._diagnostics = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
-        self.stream.write("\x1b[?1049h\x1b[?25l")
-        self._active = True
-        atexit.register(self._restore)
-        for logger in [
-            logging.getLogger(),
-            logging.getLogger("uvicorn"),
-            logging.getLogger("uvicorn.error"),
-            logging.getLogger("uvicorn.access"),
-        ]:
-            previous = logger.handlers[:]
-            self._handlers.append((logger, previous))
-            logger.handlers = [
-                handler
-                for handler in previous
-                if not (
-                    isinstance(handler, logging.StreamHandler)
-                    and terminal_available(handler.stream)
-                )
-            ]
-            if logger is logging.getLogger() or len(logger.handlers) != len(previous):
-                logger.addHandler(self)
-        self._task = asyncio.create_task(self._refresh())
+        try:
+            # Unbuffered storage stays readable after a failed write.
+            self._diagnostics = tempfile.TemporaryFile(mode="w+b", buffering=0)
+            self._active = True
+            self.stream.write("\x1b[?1049h\x1b[?25l")
+            atexit.register(self._restore)
+            for logger in [
+                logging.getLogger(),
+                logging.getLogger("uvicorn"),
+                logging.getLogger("uvicorn.error"),
+                logging.getLogger("uvicorn.access"),
+            ]:
+                previous = logger.handlers[:]
+                self._handlers.append((logger, previous))
+                logger.handlers = [
+                    handler
+                    for handler in previous
+                    if not (
+                        isinstance(handler, logging.StreamHandler)
+                        and terminal_available(handler.stream)
+                    )
+                ]
+                if logger is logging.getLogger() or len(logger.handlers) != len(
+                    previous
+                ):
+                    logger.addHandler(self)
+            self._task = asyncio.create_task(self._refresh())
+        except (OSError, ValueError):
+            self._restore()
+            logging.getLogger(__name__).exception(
+                "HUD unavailable; continuing with plain logs"
+            )
         return self
 
     def _restore(self):
-        if not self._active:
-            return
-        self._active = False
-        atexit.unregister(self._restore)
-        for logger, handlers in self._handlers:
-            logger.handlers = handlers
         self.acquire()
         try:
+            if not self._active:
+                return
+            self._active = False
+            atexit.unregister(self._restore)
+            for logger, handlers in self._handlers:
+                logger.handlers = handlers
             diagnostics, self._diagnostics = self._diagnostics, None
             try:
                 with suppress(OSError, ValueError):
@@ -386,7 +410,10 @@ class TerminalHUD(logging.Handler):
                     self.stream.flush()
                     if diagnostics is not None:
                         diagnostics.seek(0)
-                        shutil.copyfileobj(diagnostics, self.stream)
+                        reader = codecs.getreader("utf-8")(
+                            diagnostics, errors="replace"
+                        )
+                        shutil.copyfileobj(reader, self.stream)
                         self.stream.flush()
             finally:
                 if diagnostics is not None:
@@ -396,10 +423,11 @@ class TerminalHUD(logging.Handler):
             self.release()
 
     async def __aexit__(self, *args):
-        self._task.cancel()
         try:
-            with suppress(asyncio.CancelledError):
-                await self._task
+            if self._task is not None:
+                self._task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._task
         finally:
             self._restore()
             with suppress(OSError, ValueError):

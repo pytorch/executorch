@@ -25,11 +25,10 @@ import threading
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import aclosing, asynccontextmanager
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Optional, Protocol
 
-from .hud.metrics import record_error
 from .multiplexed_worker_client import MultiplexedWorkerClient
 from .worker_client import WorkerError
 
@@ -96,6 +95,22 @@ class GenStats:
     generated_token_ids: Optional[list[int]] = None
     cancelled: bool = False
     terminal_received: bool = False
+
+
+class GenerationObserver(Protocol):
+    """Callbacks run on the runtime's event loop, independently of consumption."""
+
+    def output(self, arrived: float) -> None:
+        """Receive the first nonempty text's monotonic arrival time, at most once."""
+        ...
+
+    def record_stats(self, stats: GenStats) -> None:
+        """Receive terminal worker statistics once, possibly after cancellation.
+
+        No callback is made if the worker finishes without reporting statistics.
+        Generation errors remain on the iterator and are not observer events.
+        """
+        ...
 
 
 # Forwarded to WorkerClient.generate() as the per-request config it reads fields
@@ -331,7 +346,15 @@ class _RuntimeOperation:
 class Generation:
     """Lazy request-scoped iterator; close it when abandoning consumption."""
 
-    def __init__(self, runtime, session_id, prompt, options, stats, observer=None):
+    def __init__(
+        self,
+        runtime,
+        session_id,
+        prompt,
+        options,
+        stats,
+        observer: Optional[GenerationObserver] = None,
+    ):
         self.stats = stats if stats is not None else GenStats()
         self.observer = observer
         self._runtime = runtime
@@ -348,8 +371,14 @@ class Generation:
 
     def _set_future(self, future):
         self._future = future
-        if self.observer is not None:
-            future.add_done_callback(lambda _: self.observer.record_stats(self.stats))
+        observer = self.observer
+        if observer is not None:
+
+            def report_stats(_):
+                if self.stats.terminal_received:
+                    observer.record_stats(self.stats)
+
+            future.add_done_callback(report_stats)
 
     @property
     def request_id(self):
@@ -777,44 +806,16 @@ class SessionRuntime:
         options: GenerationOptions,
         stats: Optional[GenStats] = None,
         *,
-        observer=None,
+        observer: Optional[GenerationObserver] = None,
     ) -> Generation:
         """Return a lazy, cancellable stream compatible with async iteration.
 
-        An optional request observer receives text and final worker statistics,
-        even while the consumer is suspended or cancellation cleanup is pending.
+        An optional GenerationObserver receives first-text timing and terminal
+        statistics, even while consumption or cancellation cleanup is pending.
         """
         return Generation(self, session_id, prompt, options, stats, observer)
 
-    def _generate_stream(self, session_id, prompt, options, generation):
-        stream = self._run_generation(session_id, prompt, options, generation)
-        turn = generation.observer
-        return (
-            stream
-            if turn is None
-            else self._observe_generation(stream, generation, turn)
-        )
-
-    async def _observe_generation(self, stream, generation, turn):
-        try:
-            async with aclosing(stream):
-                async for item in stream:
-                    yield item
-        except Exception as error:
-            # Store a category, never a prompt or raw worker error payload.
-            record_error(
-                turn,
-                (
-                    error.code
-                    if isinstance(error, WorkerError) and error.code
-                    else type(error).__name__
-                ),
-            )
-            raise
-        finally:
-            turn.record_stats(generation.stats)
-
-    async def _run_generation(self, session_id, prompt, options, generation):
+    async def _generate_stream(self, session_id, prompt, options, generation):
         out_stats = generation.stats
         request = _WorkerRequest(
             max_new_tokens=options.max_new_tokens,

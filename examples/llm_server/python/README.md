@@ -151,7 +151,8 @@ log lines instead of scrolling the terminal; redirect stderr for full logs.
 All captured native stderr, including crash messages without a severity prefix,
 is replayed after the HUD exits, along with Python warnings, errors, and tracebacks.
 A process-exit fallback restores the terminal if the serving lifespan is skipped.
-A rendering failure restores the terminal and falls back to plain logs.
+A rendering or diagnostics-storage failure restores the terminal and falls back
+to plain logs. HUD initialization failures also fall back without stopping serving.
 Prompt and response text are never displayed.
 
 Session totals include all observed turns, including ones no longer displayed:
@@ -182,6 +183,13 @@ hud=True, model_path=..., max_context=..., max_concurrent_requests=...)` and use
 `capture_worker_logs()` to pass an explicit `stderr` to the worker. Legacy
 launchers keep plain logs. The implementation lives in `hud/`. Noninteractive
 output installs no collector or refresh task and leaves logging unchanged.
+
+Runtime observers implement `GenerationObserver`: `output(arrived)` receives the
+first nonempty text's monotonic arrival time, and `record_stats(stats)` receives
+terminal worker statistics once. Both callbacks run on the runtime's event loop,
+including when consumption is suspended or cancellation cleanup is pending. No
+statistics callback occurs without a worker report; errors remain on the generation
+iterator. The HTTP adapter separately accepts a HUD `Turn` for request accounting.
 
 ## Sessions
 

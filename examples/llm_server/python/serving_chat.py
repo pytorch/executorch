@@ -26,7 +26,7 @@ from .errors import (
     ModelNotFound,
     SessionCapacity,
 )
-from .hud.metrics import record_error
+from .hud.metrics import record_error, Turn
 from .openai_transcript import OpenAITranscriptState
 from .protocol import (
     _new_id,
@@ -946,8 +946,10 @@ class ServingChat:
                 return True
         return False
 
-    async def create(self, req: ChatCompletionRequest, *, observer=None):
-        """Create a response; activate an optional request observer under the session lock."""
+    async def create(
+        self, req: ChatCompletionRequest, *, observer: Optional[Turn] = None
+    ):
+        """Create a response; activate an optional HUD turn under the session lock."""
         if req.model is not None and req.model != self._model_id:
             raise ModelNotFound(req.model, self._model_id)
         self._reject_invalid_values(req)
@@ -982,7 +984,11 @@ class ServingChat:
                 await lease.__aexit__(None, None, None)
 
     async def _create(
-        self, req: ChatCompletionRequest, lease, admission, observer=None
+        self,
+        req: ChatCompletionRequest,
+        lease,
+        admission,
+        observer: Optional[Turn] = None,
     ):
         self._reject_unsupported_params(req)
         if req.session_id is not None:
@@ -1079,7 +1085,7 @@ class ServingChat:
         lease,
         admission,
         tool_context=None,
-        observer=None,
+        observer: Optional[Turn] = None,
     ):
         tool_context = tool_context if tool_context is not None else ToolContext()
         while True:
@@ -1109,7 +1115,7 @@ class ServingChat:
         lease,
         admission,
         tool_context,
-        observer=None,
+        observer: Optional[Turn] = None,
     ):
         # Legacy workers need explicit admission. Multiplexed generation opens
         # implicitly from its full prompt, preserving new-session prefix reuse.
@@ -1436,7 +1442,7 @@ class ServingChat:
         generation: AsyncIterator[str],
         stats: GenStats,
         tool_context,
-        observer=None,
+        observer: Optional[Turn] = None,
     ) -> AsyncIterator[str]:
         cid = _new_id("chatcmpl")
 
@@ -1517,8 +1523,9 @@ class ServingChat:
             await generation.aclose()
 
         if error is not None:
-            record_error(observer, type(error).__name__)
-            err = self.error_body(self._generation_error(error))
+            api_error = self._generation_error(error)
+            record_error(observer, api_error.code or api_error.err_type)
+            err = self.error_body(api_error)
             yield f"data: {json.dumps(err)}\n\n"
             yield "data: [DONE]\n\n"
             return

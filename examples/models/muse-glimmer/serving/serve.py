@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 
 from executorch.examples.llm_server.python.errors import APIError, ContextLengthExceeded
+from executorch.examples.llm_server.python.hud.metrics import Turn
 from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat, ToolContext
@@ -336,7 +337,7 @@ class MuseGlimmerServingChat(ServingChat):
         )
 
     async def _create(
-        self, req: ChatCompletionRequest, lease, admission, observer=None
+        self, req: ChatCompletionRequest, lease, admission, observer: Turn | None = None
     ):
         # The inherited create() owns the transaction around preparation and
         # response cleanup; only image-aware prompt construction differs here.
