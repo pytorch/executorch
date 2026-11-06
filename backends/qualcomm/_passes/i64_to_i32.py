@@ -15,10 +15,11 @@ from executorch.backends.qualcomm.builders.utils import (
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_INDEX_CAST,
+    QCOM_INSERTED_CAST,
     QCOM_ORIG_DTYPE,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult
 from torch._subclasses.fake_tensor import FakeTensor
 
 
@@ -26,6 +27,7 @@ class I64toI32(ExportPass):
     """
     Insert a cast node to cast dtype from int64 to int32.
     This will be applied on operator and constant nodes such as weights.
+    Every cast it inserts is marked with QCOM_INSERTED_CAST.
     """
 
     # This dict is to ensure that the input of the OPs are int64 due to PyTorch and CPU kernel restrictions.
@@ -61,7 +63,10 @@ class I64toI32(ExportPass):
         # int64 result may reach them: argmax, a sum of bools or topk indices.
         if self._is_tensor_of_dtype(res.data, torch.int64):
             return super().call_operator(
-                self.copy_op, (res,), {"dtype": torch.int32}, meta
+                self.copy_op,
+                (res,),
+                {"dtype": torch.int32},
+                NodeMetadata({**meta.data, QCOM_INSERTED_CAST: True}),
             )
         return res
 
@@ -115,6 +120,7 @@ class I64toI32(ExportPass):
                             {"dtype": orig_dtype},
                         )
                         cast_node.meta["val"] = node_val.to(orig_dtype)
+                        cast_node.meta[QCOM_INSERTED_CAST] = True
                         cast_node.args = args
                         for user in output_users:
                             user.replace_input_with(n, cast_node)
@@ -167,6 +173,7 @@ class I64toI32(ExportPass):
                             {"dtype": torch.int32},
                         )
                         to_dst_node.meta["val"] = node_val.to(torch.int32)
+                        to_dst_node.meta[QCOM_INSERTED_CAST] = True
 
                         # Replace usage of the src dtype result with the dst dtype result.
                         n.replace_all_uses_with(to_dst_node)
@@ -191,6 +198,7 @@ class I64toI32(ExportPass):
                             {"dtype": torch.int64},
                         )
                         cast_i64_node.meta[QCOM_INDEX_CAST] = True
+                        cast_i64_node.meta[QCOM_INSERTED_CAST] = True
                         # This cast produces the *index* tensor, so its
                         # FakeTensor must be derived from the argument being
                         # cast, not from the op output: index.shape ==
