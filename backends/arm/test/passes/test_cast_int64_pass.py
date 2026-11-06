@@ -129,3 +129,37 @@ def test_cast_int64_buffers_narrows_other_users_tosa_FP_INT_int64(test_data: inp
         StageType.RUN_PASSES
     ).exported_program()
     assert exported_program.constants["position_ids"].dtype == torch.int32
+
+
+class Int64BufferFloatComparisonModel(torch.nn.Module):
+    limit: torch.Tensor
+    test_data = {
+        "rand": (torch.rand(4),),
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("limit", torch.tensor([-2, -1, 0, 1]))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + (self.limit > -1.5)
+
+
+@common.parametrize("test_data", Int64BufferFloatComparisonModel.test_data)
+def test_cast_int64_buffers_narrows_float_comparison_tosa_FP_INT_int64(
+    test_data: input_t,
+):
+    pipeline = PassPipeline[input_t](
+        Int64BufferFloatComparisonModel(),
+        test_data,
+        quantize=False,
+        passes_with_exported_program=[CastInt64BuffersToInt32Pass],
+        tosa_version="1.1",
+        tosa_extensions=["INT", "int64"],
+    )
+    pipeline.run()
+
+    exported_program = pipeline.tester.get_artifact(
+        StageType.RUN_PASSES
+    ).exported_program()
+    assert exported_program.state_dict["limit"].dtype == torch.int32

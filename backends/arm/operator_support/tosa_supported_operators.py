@@ -1209,13 +1209,26 @@ class CheckProperQuantization(OperatorSupportBase):
 
 
 def _int64_operands_agree(node: fx.Node) -> bool:
-    """Whether every operand beside an int64 operand casts to int64."""
+    """Whether a node with an int64 operand computes in int64."""
     dtypes = {
         arg.meta["val"].dtype
         for arg in node.all_input_nodes
         if isinstance(arg.meta.get("val"), torch.Tensor)
     }
-    return torch.int64 not in dtypes or dtypes <= {torch.int64, torch.int32, torch.bool}
+    if torch.int64 not in dtypes:
+        return True
+    if not dtypes <= {torch.int64, torch.int32, torch.bool}:
+        return False
+    if node.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
+        return True
+    output_dtype = node.meta["val"].dtype
+    if output_dtype == torch.bool:
+        operands = [
+            arg.meta["val"] if isinstance(arg, fx.Node) else arg
+            for arg in node.args[:2]
+        ]
+        return torch.result_type(*operands) == torch.int64
+    return output_dtype == torch.int64
 
 
 class CheckInt64InputsAndOutputs(OperatorSupportBase):
