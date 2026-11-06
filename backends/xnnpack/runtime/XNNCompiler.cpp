@@ -2037,6 +2037,60 @@ Error defineGenericBinaryNode(
         node->debug_handle());                                    \
   }
 
+// Generic helper function for reduce operations
+Error defineGenericReduceNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const fb_xnnpack::_XNNStaticReduce* graph_node,
+    xnn_reduce_operator op_type,
+    fb_xnnpack::XNodeUnion node_type,
+    uint32_t debug_handle) noexcept {
+  ET_CHECK_OR_RETURN_ERROR(
+      graph_node->reduction_axes() != nullptr,
+      InvalidProgram,
+      "%s: reduction_axes is null",
+      fb_xnnpack::EnumNameXNodeUnion(node_type));
+  std::vector<size_t> reduction_axes =
+      flatbufferDimsToVector(graph_node->reduction_axes());
+
+  REMAP_ID(remapped_ids, graph_node->input_id(), reduce_input);
+  REMAP_ID(remapped_ids, graph_node->output_id(), reduce_output);
+
+  xnn_status status = xnn_define_static_reduce(
+      subgraph_ptr,
+      op_type,
+      reduction_axes.size(),
+      reduction_axes.data(),
+      reduce_input,
+      reduce_output,
+      graph_node->flags());
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create %s node %i with code: %s",
+      fb_xnnpack::EnumNameXNodeUnion(node_type),
+      debug_handle,
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+#define _DEFINE_REDUCE_NODE(name, op_type)                        \
+  Error define##name##Node(                                       \
+      xnn_subgraph_t subgraph_ptr,                                \
+      const std::unordered_map<uint32_t, uint32_t>& remapped_ids, \
+      const NodePtr node,                                         \
+      const fb_xnnpack::XNNGraph* graph) noexcept {               \
+    MAYBE_UNUSED(graph);                                          \
+    return defineGenericReduceNode(                               \
+        subgraph_ptr,                                             \
+        remapped_ids,                                             \
+        node->xnode_union_as_XNN##name(),                         \
+        op_type,                                                  \
+        node->xnode_union_type(),                                 \
+        node->debug_handle());                                    \
+  }
+
 /*
 Returns the pointer to the defineNode function that handles the given
 XNode type
@@ -2079,6 +2133,9 @@ _DEFINE_BINARY_NODE_WITH_MINMAX(Div, xnn_binary_divide)
 // Binary Ops without params
 _DEFINE_BINARY_NODE_NO_PARAMS(Minimum, xnn_binary_minimum)
 _DEFINE_BINARY_NODE_NO_PARAMS(Maximum, xnn_binary_maximum)
+
+// Reduce Ops
+_DEFINE_REDUCE_NODE(StaticMean, xnn_reduce_mean)
 
 DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
   switch (nodeType) {
@@ -2125,6 +2182,7 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(MaxPooling2d)
     _DEFINE(Convert)
     _DEFINE(GlobalAvgPooling2d)
+    _DEFINE(StaticMean)
     _DEFINE(StaticReshape)
     _DEFINE(DepthToSpace2d)
     _DEFINE(ArgMaxPooling2d)

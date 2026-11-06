@@ -919,6 +919,40 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    class ConvMeanChannels(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 4, 3)
+
+        def forward(self, x):
+            return torch.mean(self.conv(x), 1, keepdim=True)
+
+    def test_fp32_channels_last_tagged_reshape_pass_conv_mean_channels(self):
+        # Copy #1 is for input to conv, nchw -> nhwc
+        # Copy #2 is for conv to mean, nhwc -> nchw
+        (
+            Tester(self.ConvMeanChannels().eval(), (torch.randn(1, 3, 8, 8),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_count({self.to_copy_name: 2})
+            .run_method_and_compare_outputs()
+        )
+
+    class MeanLastDim(torch.nn.Module):
+        def forward(self, x):
+            return torch.mean(x, -1, keepdim=True)
+
+    def test_fp32_channels_last_tagged_reshape_pass_mean_3d(self):
+        (
+            Tester(self.MeanLastDim().eval(), (torch.randn(2, 7, 16),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_not([self.to_copy_name])
+            .run_method_and_compare_outputs()
+        )
+
     class Conv2dDynamicQuant(torch.nn.Module):
         def __init__(self):
             super().__init__()
