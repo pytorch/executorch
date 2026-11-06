@@ -83,7 +83,7 @@ void main() {
     return;
   }
 
-  t_out[i] = apply_unary_op(IN_T(t_in[i]), PARAM_A, PARAM_B);
+  t_out[i] = apply_unary_op(op_type, IN_T(t_in[i]), PARAM_A, PARAM_B);
 }
 
 #else
@@ -96,7 +96,7 @@ void main() {
   }
 
   VEC4_T in_texel = texelFetch(t_in, pos, 0);
-  imageStore(t_out, pos, apply_unary_op(in_texel, PARAM_A, PARAM_B));
+  imageStore(t_out, pos, apply_unary_op(op_type, in_texel, PARAM_A, PARAM_B));
 }
 
 #endif
