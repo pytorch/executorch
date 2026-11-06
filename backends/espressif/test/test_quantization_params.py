@@ -19,11 +19,14 @@ from executorch.backends.espressif.utils.quantization import (
     quantize_multiplier,
     requantize,
 )
+from executorch.backends.test.suite.operators.test_add import Model as Add
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 
 _QUANTIZE = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 _MUL = exir_ops.edge.aten.mul.Tensor
+_ADD = exir_ops.edge.aten.add.Tensor
+_ESP_ADD = exir_ops.edge.esp_nn.quantized_add_int8.default
 _ESP_MUL = exir_ops.edge.esp_nn.quantized_mul_int8.default
 
 
@@ -33,27 +36,42 @@ class Multiply(torch.nn.Module):
 
 
 @pytest.fixture(scope="module")
-def exported_multiply():
+def exported_programs():
     inputs = (torch.linspace(-1, 1, 6).reshape(2, 3), torch.ones(2, 3))
-    return (
-        EspTester(Multiply(), inputs)
-        .quantize()
-        .export()
-        .to_edge()
-        .get_artifact()
-        .exported_program()
-    )
+    return {
+        target: (
+            EspTester(model, inputs)
+            .quantize()
+            .export()
+            .to_edge()
+            .get_artifact()
+            .exported_program()
+        )
+        for target, model in ((_MUL, Multiply()), (_ADD, Add()))
+    }
 
 
 @pytest.fixture
-def multiply_program(exported_multiply):
-    return copy.deepcopy(exported_multiply)
+def multiply_program(exported_programs):
+    return copy.deepcopy(exported_programs[_MUL])
+
+
+@pytest.fixture
+def add_program(exported_programs):
+    return copy.deepcopy(exported_programs[_ADD])
+
+
+@pytest.fixture(params=[_MUL, _ADD], ids=["mul", "add"])
+def binary_program(exported_programs, request):
+    return copy.deepcopy(exported_programs[request.param])
 
 
 def _pattern(graph_module):
-    mul = next(node for node in graph_module.graph.nodes if node.target == _MUL)
-    quantize = next(node for node in mul.users if node.target == _QUANTIZE)
-    return *mul.args, quantize
+    binary = next(
+        node for node in graph_module.graph.nodes if node.target in (_MUL, _ADD)
+    )
+    quantize = next(node for node in binary.users if node.target == _QUANTIZE)
+    return *binary.args, quantize
 
 
 @pytest.mark.parametrize(
@@ -213,12 +231,12 @@ def test_float32_overflow_preserves_portable_results(multiply_program):
     ],
 )
 def test_malformed_qparams_fail_with_node_name(
-    multiply_program, operand, qparams, message
+    binary_program, operand, qparams, message
 ):
-    node = _pattern(multiply_program.graph_module)[operand]
+    node = _pattern(binary_program.graph_module)[operand]
     node.args = (node.args[0], *qparams, torch.int8)
     with pytest.raises(ValueError, match=f"{node.name}:.*{message}"):
-        AtenToEspPass()(multiply_program.graph_module)
+        AtenToEspPass()(binary_program.graph_module)
 
 
 @pytest.mark.parametrize(
@@ -231,28 +249,29 @@ def test_malformed_qparams_fail_with_node_name(
     ],
     ids=["broadcast", "noncontiguous", "empty", "too_many_elements"],
 )
-def test_unsupported_storage_stays_portable(multiply_program, value):
-    input1, _, output = _pattern(multiply_program.graph_module)
+def test_unsupported_storage_stays_portable(binary_program, value):
+    input1, _, output = _pattern(binary_program.graph_module)
     input1.args[0].meta["val"] = value
-    assert not AtenToEspPass()(multiply_program.graph_module).modified
-    assert output in multiply_program.graph.nodes
+    assert not AtenToEspPass()(binary_program.graph_module).modified
+    assert output in binary_program.graph.nodes
 
 
 @pytest.mark.parametrize(
     "dtype, quant_min, quant_max", [(torch.uint8, 0, 255), (torch.int8, -127, 127)]
 )
 def test_unsupported_quantization_stays_portable(
-    multiply_program, dtype, quant_min, quant_max
+    binary_program, dtype, quant_min, quant_max
 ):
-    input1, _, output = _pattern(multiply_program.graph_module)
+    input1, _, output = _pattern(binary_program.graph_module)
     input1.args = (input1.args[0], 1.0, 0, quant_min, quant_max, dtype)
-    assert not AtenToEspPass()(multiply_program.graph_module).modified
-    assert output in multiply_program.graph.nodes
+    assert not AtenToEspPass()(binary_program.graph_module).modified
+    assert output in binary_program.graph.nodes
 
 
-def test_dynamic_shapes_stay_portable():
+@pytest.mark.parametrize("model", [Multiply, Add], ids=["mul", "add"])
+def test_dynamic_shapes_stay_portable(model):
     inputs = (torch.ones(2, 3), torch.ones(2, 3))
-    quantized = EspTester(Multiply(), inputs).quantize().get_artifact()
+    quantized = EspTester(model(), inputs).quantize().get_artifact()
     batch = torch.export.Dim("batch", min=1, max=8)
     program = torch.export.export(
         quantized, inputs, dynamic_shapes=({0: batch}, {0: batch})
@@ -263,13 +282,13 @@ def test_dynamic_shapes_stay_portable():
     assert output in graph.graph.nodes
 
 
-def test_multiple_output_quantizers_stay_portable(multiply_program):
-    graph = multiply_program.graph_module
+def test_multiple_output_quantizers_stay_portable(binary_program):
+    graph = binary_program.graph_module
     _, _, output = _pattern(graph)
-    mul = output.args[0]
+    binary = output.args[0]
     with graph.graph.inserting_after(output):
         other = graph.graph.call_function(
-            _QUANTIZE, (mul, 2.0, 13, -128, 127, torch.int8)
+            _QUANTIZE, (binary, 2.0, 13, -128, 127, torch.int8)
         )
         other.meta = output.meta.copy()
     graph_output = next(node for node in graph.graph.nodes if node.op == "output")
@@ -281,28 +300,31 @@ def test_multiple_output_quantizers_stay_portable(multiply_program):
     torch.testing.assert_close(graph(*inputs), expected, atol=0, rtol=0)
 
 
+@pytest.mark.parametrize(
+    "operator, target", [(torch.mul, _ESP_MUL), (torch.add, _ESP_ADD)]
+)
 @pytest.mark.parametrize("float_user_first", [False, True])
-def test_direct_float_branch_is_preserved(float_user_first):
-    class BranchedMultiply(torch.nn.Module):
+def test_direct_float_branch_is_preserved(float_user_first, operator, target):
+    class BranchedBinary(torch.nn.Module):
         def forward(self, x, y):
-            product = x * y
-            return product, torch.sin(product)
+            result = operator(x, y)
+            return result, torch.sin(result)
 
     inputs = (
         torch.linspace(-1, 1, 6).reshape(2, 3),
         torch.linspace(-2, 2, 6).reshape(2, 3),
     )
-    tester = EspTester(BranchedMultiply(), inputs).quantize().export().to_edge()
+    tester = EspTester(BranchedBinary(), inputs).quantize().export().to_edge()
     graph = tester.get_artifact().exported_program().graph_module
     input1, input2, quantize = _pattern(graph)
-    mul = quantize.args[0]
+    binary = quantize.args[0]
     float_user = next(
         node
         for node in graph.graph.nodes
         if node.target == exir_ops.edge.aten.sin.default
     )
     # PT2E normally puts sin after output DQ; exercise a direct float consumer.
-    float_user.args = (mul,)
+    float_user.args = (binary,)
     if float_user_first:
         with graph.graph.inserting_after(quantize):
             new_quantize = graph.graph.node_copy(quantize)
@@ -316,12 +338,12 @@ def test_direct_float_branch_is_preserved(float_user_first):
     tester.run_passes()
     program = tester.get_artifact().exported_program()
     lowered = program.graph_module
-    esp_mul = next(node for node in lowered.graph.nodes if node.target == _ESP_MUL)
+    esp_binary = next(node for node in lowered.graph.nodes if node.target == target)
     assert quantize not in lowered.graph.nodes
-    assert mul in lowered.graph.nodes
-    assert mul.args == (input1, input2)
-    assert float_user.args == (mul,)
-    output_dequantize = next(iter(esp_mul.users))
+    assert binary in lowered.graph.nodes
+    assert binary.args == (input1, input2)
+    assert float_user.args == (binary,)
+    output_dequantize = next(iter(esp_binary.users))
     assert output_dequantize.target == (
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
     )
@@ -334,8 +356,8 @@ def test_direct_float_branch_is_preserved(float_user_first):
     tester.to_executorch().serialize()
 
 
-def test_lowering_is_idempotent(multiply_program):
-    first = EspPassManager()(multiply_program)
+def test_lowering_is_idempotent(binary_program):
+    first = EspPassManager()(binary_program)
     assert first.modified
     assert not EspPassManager()(first.exported_program).modified
 
@@ -351,3 +373,91 @@ def test_requantization_matches_existing_integer_reference(scale):
     torch.testing.assert_close(
         requantize(products, multiplier, shift), expected, atol=0, rtol=0
     )
+
+
+def test_add_folding_and_replacement(add_program):
+    graph = add_program.graph_module
+    for node, scale, zero_point in zip(
+        _pattern(graph), (0.25, 0.125, 0.5), (-17, 23, -7)
+    ):
+        node.args = (node.args[0], scale, zero_point, -128, 127, torch.int8)
+    assert AtenToEspPass()(graph).modified
+    add = next(node for node in graph.graph.nodes if node.target == _ESP_ADD)
+    assert add.args[2:] == (17, -23, -7, 1 << 30, 0, 1 << 30, -1, 20, 1 << 30, -19)
+
+
+@pytest.mark.parametrize(
+    "scales, supported",
+    [
+        ((1, 1, 2**-19), False),
+        ((1, 1, 2**-18), True),
+        ((1, 1, 2**12), True),
+        ((1, 1, 2**13), False),
+        ((2**-30, 1, 1), True),
+        ((2**-31, 1, 1), False),
+        ((1, 2**-31, 1), False),
+        ((1e-200, 1e-200, 1), False),
+        ((1e200, 1e200, 1), False),
+        ((1e-40, 1e-40, 1e-40), False),
+        ((1e-200, 1e-200, 1e-200), False),
+    ],
+)
+def test_add_rescale_limits(add_program, scales, supported):
+    graph = add_program.graph_module
+    for node, scale in zip(_pattern(graph), scales):
+        node.args = (node.args[0], scale, 0, -128, 127, torch.int8)
+    assert AtenToEspPass()(graph).modified == supported
+
+
+@pytest.mark.parametrize(
+    "scales, zero_point, supported",
+    [
+        ((1e38, 1e38, 1e38), 0, False),
+        ((2e36, 2e36, 4e36), 0, False),
+        ((1e36, 1e36, 2e36), 0, True),
+        ((1e36, 1e36, 2e36), -128, False),
+    ],
+    ids=["dequantization", "sum", "finite", "offset"],
+)
+def test_add_float32_range_limits(add_program, scales, zero_point, supported):
+    graph = add_program.graph_module
+    for node, scale in zip(_pattern(graph), scales):
+        node.args = (node.args[0], scale, zero_point, -128, 127, torch.int8)
+    assert AtenToEspPass()(graph).modified == supported
+
+
+def test_add_float32_overflow_preserves_portable_results(add_program):
+    graph = add_program.graph_module
+    input1, input2, output = _pattern(graph)
+    for dequantize in (input1, input2):
+        for node in (dequantize.args[0], dequantize):
+            node.args = (node.args[0], 2e36, 0, -128, 127, torch.int8)
+    output.args = (output.args[0], 4e36, 0, -128, 127, torch.int8)
+    graph_output = next(node for node in graph.graph.nodes if node.op == "output")
+    graph_output.args = ((output,),)
+    graph.graph.eliminate_dead_code()
+    graph.recompile()
+    inputs = torch.tensor([[1.0, 10.0, 100.0], [1.0, 10.0, 100.0]]) * 2e36
+    expected = torch.tensor([[1, 10, 127], [1, 10, 127]], dtype=torch.int8)
+    torch.testing.assert_close(graph(inputs, inputs)[0], expected, atol=0, rtol=0)
+    assert not AtenToEspPass()(graph).modified
+    assert output in graph.graph.nodes
+    torch.testing.assert_close(graph(inputs, inputs)[0], expected, atol=0, rtol=0)
+
+
+@pytest.mark.parametrize("offsets", [(0, 0, 0), (128, -127, -128), (-127, 128, 127)])
+def test_add_matches_existing_integer_reference(offsets):
+    values = torch.arange(-128, 128, dtype=torch.int8)
+    input1, input2 = torch.meshgrid(values, values, indexing="ij")
+    input1_offset, input2_offset, output_offset = offsets
+    lhs = (input1.numpy().astype("int64") + input1_offset) << 20
+    rhs = (input2.numpy().astype("int64") + input2_offset) << 20
+    total = multiply_by_quantized_multiplier(lhs, 1 << 30, 0) + (
+        multiply_by_quantized_multiplier(rhs, 1 << 30, -2)
+    )
+    expected = multiply_by_quantized_multiplier(total, 1 << 30, -18) + output_offset
+    expected = torch.from_numpy(expected.clip(-128, 127)).to(torch.int8)
+    actual = torch.ops.esp_nn.quantized_add_int8(
+        input1, input2, *offsets, 1 << 30, 0, 1 << 30, -2, 20, 1 << 30, -18
+    )
+    torch.testing.assert_close(actual, expected, atol=0, rtol=0)

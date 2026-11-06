@@ -74,7 +74,39 @@ def _mul_multiplier(
     return multiplier, shift
 
 
-def _mul_args(node: Node, quantize: Node) -> tuple | None:
+def _add_multipliers(
+    input1: _QParams, input2: _QParams, output: _QParams
+) -> tuple[int, ...] | None:
+    # Portable float32 quantization multiplies by the reciprocal output scale.
+    if not math.isfinite(c_float(1.0 / output.scale).value):
+        return None
+    left_shift = 20
+    twice_max_scale = 2 * max(input1.scale, input2.scale)
+    rescales = (
+        input1.scale / twice_max_scale,
+        input2.scale / twice_max_scale,
+        twice_max_scale / ((1 << left_shift) * output.scale),
+    )
+    try:
+        multipliers = [quantize_multiplier(rescale) for rescale in rescales]
+    except ValueError:
+        return None
+    if any(not -30 <= shift <= 0 for _, shift in multipliers):
+        return None
+    max_float1 = c_float(
+        max(abs(-128 - input1.zp), abs(127 - input1.zp)) * c_float(input1.scale).value
+    ).value
+    max_float2 = c_float(
+        max(abs(-128 - input2.zp), abs(127 - input2.zp)) * c_float(input2.scale).value
+    ).value
+    if max_float1 + max_float2 > torch.finfo(torch.float32).max:
+        return None
+    return *multipliers[0], *multipliers[1], left_shift, *multipliers[2]
+
+
+def _binary_args(node: Node, quantize: Node, rescale_fn) -> tuple | None:
+    if node.kwargs.get("alpha", 1) != 1:
+        return None
     inputs = node.args[:2]
     if len(inputs) != 2 or not all(
         isinstance(arg, Node) and arg.target == _DEQUANTIZE for arg in inputs
@@ -101,7 +133,7 @@ def _mul_args(node: Node, quantize: Node) -> tuple | None:
         for arg in (*inputs, node)
     ):
         return None
-    rescale = _mul_multiplier(*params)
+    rescale = rescale_fn(*params)
     if rescale is None:
         return None
     input1, input2, output = params
@@ -115,20 +147,18 @@ def _mul_args(node: Node, quantize: Node) -> tuple | None:
     )
 
 
-def _lower_mul(node: Node) -> bool:
+def _lower_binary(node: Node, target, rescale_fn) -> bool:
     quantizers = [
         user for user in node.users if user.target == _QUANTIZE and user.args[0] is node
     ]
     if len(quantizers) != 1:
         return False
     quantize = quantizers[0]
-    args = _mul_args(node, quantize)
+    args = _binary_args(node, quantize, rescale_fn)
     if args is None:
         return False
     with node.graph.inserting_before(quantize):
-        replacement = node.graph.call_function(
-            exir_ops.edge.esp_nn.quantized_mul_int8.default, args
-        )
+        replacement = node.graph.call_function(target, args)
     replacement.meta = quantize.meta.copy()
     # Replace the quantized branch; direct float consumers still need the ATen op.
     quantize.replace_all_uses_with(replacement)
@@ -136,7 +166,16 @@ def _lower_mul(node: Node) -> bool:
     return True
 
 
-_LOWERINGS = {exir_ops.edge.aten.mul.Tensor: _lower_mul}
+_LOWERINGS = {
+    exir_ops.edge.aten.mul.Tensor: (
+        exir_ops.edge.esp_nn.quantized_mul_int8.default,
+        _mul_multiplier,
+    ),
+    exir_ops.edge.aten.add.Tensor: (
+        exir_ops.edge.esp_nn.quantized_add_int8.default,
+        _add_multipliers,
+    ),
+}
 
 
 class AtenToEspPass(PassBase):
@@ -149,7 +188,7 @@ class AtenToEspPass(PassBase):
                 continue
             lowering = _LOWERINGS.get(node.target)
             if lowering is not None:
-                modified |= lowering(node)
+                modified |= _lower_binary(node, *lowering)
         if modified:
             graph_module.graph.eliminate_dead_code()
             graph_module.graph.lint()

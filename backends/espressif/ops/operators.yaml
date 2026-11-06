@@ -9,3 +9,9 @@
   kernels:
     - arg_meta: null
       kernel_name: espressif::quantized_mul_int8_out
+
+- func: esp_nn::quantized_add_int8.out(Tensor input1, Tensor input2, int input1_offset, int input2_offset, int output_offset, int input1_multiplier, int input1_shift, int input2_multiplier, int input2_shift, int left_shift, int output_multiplier, int output_shift, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: espressif::quantized_add_int8_out
