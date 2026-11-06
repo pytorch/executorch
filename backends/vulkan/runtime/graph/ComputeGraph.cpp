@@ -921,7 +921,10 @@ void ComputeGraph::register_pipeline_to_create(
 
 GlobalWorkGrid ComputeGraph::create_gwg(const ValueRef idx) {
   if (is_buffer_storage(idx)) {
-    return create_linear_gwg(utils::safe_downcast<uint64_t>(numel_of(idx)));
+    const uint64_t numel = dtype_of(idx) == vkapi::kInt8x4
+        ? utils::safe_downcast<uint64_t>(numel_of(idx))
+        : utils::safe_downcast<uint64_t>(physical_numel_of(idx));
+    return create_linear_gwg(numel);
   }
 
   return GlobalWorkGrid(

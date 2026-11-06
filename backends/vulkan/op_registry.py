@@ -1223,9 +1223,10 @@ def register_apply_rotary_emb_hf():
 @update_features(exir_ops.edge.et_vk.apply_rotary_emb_interleaved.default)
 def register_apply_rotary_emb_interleaved():
     return OpFeatures(
-        # freqs_cis is pinned to buffer storage so the shader can compute a
-        # flat [N, C] linear address regardless of the tensor's declared rank
-        # (callers commonly pass 4D [1, N, C/2, 2] without a preceding view).
+        # freqs_cis is pinned to buffer storage so the shader can index its
+        # N * C logical elements through buffer metadata regardless of the
+        # tensor's declared rank (callers commonly pass 4D [1, N, C/2, 2]
+        # without a preceding view).
         inputs_storage=[
             utils.CONTIGUOUS_ANY,  # x
             utils.CONTIGUOUS_BUFFER,  # freqs_cis
