@@ -357,6 +357,7 @@ def test_int64_operand_check_widths(dtypes, agree) -> None:
     x = _placeholder(graph, "x", (4,), dtypes[0])
     y = _placeholder(graph, "y", (4,), dtypes[1])
     node = graph.call_function(exir_ops.edge.aten.bitwise_or.Tensor, (x, y))
+    node.meta["val"] = _fake_tensor((4,), torch.promote_types(*dtypes))
 
     assert _int64_operands_agree(node) == agree
 

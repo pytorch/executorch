@@ -161,7 +161,13 @@ class CastInt64BuffersToInt32Pass(ArmPass):
             return isinstance(value, torch.Tensor) and value.dtype == torch.int64
 
         def compares_in_int64(user: torch.fx.Node) -> bool:
-            return user.target in cls._comparison_ops and all(
+            if user.target not in cls._comparison_ops:
+                return False
+            operands = [
+                arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg
+                for arg in user.args[:2]
+            ]
+            return torch.result_type(*operands) == torch.int64 and all(
                 arg.meta["val"].dtype in (torch.int64, torch.int32, torch.bool)
                 for arg in user.all_input_nodes
                 if isinstance(arg.meta.get("val"), torch.Tensor)

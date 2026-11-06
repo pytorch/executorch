@@ -183,6 +183,16 @@ int64_extension_partition_suite = {
         (_WIDE, _WIDE_2),
         1,
     ),
+    "where_scalar_tensor": (torch.where, (_COND, _NARROW, torch.tensor(2**40)), 0),
+    "where_scalar_buffer": (
+        Int64Buffer(
+            lambda value, cond, x: torch.where(cond, x, value),
+            torch.tensor(2**40 + 7),
+        ),
+        (_COND, _NARROW),
+        0,
+    ),
+    "lt_float": (lambda x: x < 0.5, (torch.tensor([-1, 0, 1]),), 0),
     "strided_slice": (lambda x: x[::2], (torch.arange(5) * 2**33,), 1),
     "gt": (lambda x, y: x > y, (_WIDE, _WIDE_2), 1),
     "gt_scalar": (lambda x: x > 7, (_WIDE,), 1),
