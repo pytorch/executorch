@@ -477,6 +477,34 @@ TEST_F(XNNLayoutTest, DepthwiseRetainsSharedBiasAndConstantOutputs) {
   }
 }
 
+TEST_F(XNNLayoutTest, BmmReleasesOnlyAConstantRightHandSide) {
+  const std::vector<int64_t> shape{2, 3, 3};
+  for (const std::string use : {"rhs", "lhs", "both"}) {
+    SCOPED_TRACE(use);
+    graph = {};
+    buffers.clear();
+    const auto input = tensor(shape, ptn::ValueRole::UserInput);
+    const auto constant = tensor(shape, ptn::ValueRole::Parameter);
+    const auto lhs = use == "rhs" ? input : constant;
+    const auto rhs = use == "lhs" ? input : constant;
+    auto output = operation(
+        "torch.ops.aten.bmm.default",
+        {ptn::TensorArg{lhs}, ptn::TensorArg{rhs}},
+        shape);
+    if (use == "both") {
+      output = binary("torch.ops.aten.add.Tensor", output, input, shape);
+    }
+    preparation_only_constants.clear();
+    runtime_constants.clear();
+    if (use == "rhs") {
+      preparation_only_constants.push_back(constant);
+    } else {
+      runtime_constants.push_back(constant);
+    }
+    check({output});
+  }
+}
+
 TEST_F(CPUPlanTest, MaxPool2dPreservesReferenceFallbackAndSkipsUnusedIndices) {
   graph.values.emplace_back(
       "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 1, 4, 4});
