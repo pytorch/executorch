@@ -481,6 +481,20 @@ class TestVulkanBackend(unittest.TestCase):
             floor_div_module, sample_inputs, atol=1.0 + 1e-03
         )
 
+    def test_vulkan_backend_trunc_div_is_not_delegated(self):
+        class TruncDivModule(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.div(x, y, rounding_mode="trunc")
+
+        sample_inputs = (
+            torch.rand(size=(2, 3), dtype=torch.float32) * 10.0 - 5.0,
+            torch.rand(size=(2, 3), dtype=torch.float32) + 1.0,
+        )
+        # div.Tensor_mode is implemented for rounding_mode="floor" only.
+        self.lower_module_and_test_output(
+            TruncDivModule(), sample_inputs, expect_no_delegates=True
+        )
+
     def test_vulkan_backend_pow(self):
         class PowModule(torch.nn.Module):
             def __init__(self):
