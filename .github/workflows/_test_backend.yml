@@ -11,6 +11,16 @@ on:
         description: 'JSON array of flows to test'
         required: true
         type: string
+      reduced-flows:
+        description: 'Nonempty subset of flows for unrelated PRs and unsampled main pushes'
+        required: false
+        type: string
+        default: ''
+      backend-paths:
+        description: 'JSON array of backend paths that require all flows'
+        required: false
+        type: string
+        default: '[]'
       exclude:
         description: 'JSON array of {flow, suite} pairs to drop from the matrix'
         required: false
@@ -53,18 +63,64 @@ on:
         default: false
 
 jobs:
+  run-decision:
+    if: ${{ inputs.reduced-flows != '' }}
+    uses: ./.github/workflows/_ci-run-decision.yml
+
+  select-flows:
+    needs: run-decision
+    if: ${{ !cancelled() && (needs.run-decision.result == 'success' || needs.run-decision.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      flows: ${{ steps.full.outputs.flows || steps.select.outputs.flows }}
+    steps:
+      - name: Select required full matrix
+        id: full
+        if: ${{ inputs.reduced-flows == '' }}
+        env:
+          FULL_FLOWS: ${{ inputs.flows }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          flows = json.loads(os.environ['FULL_FLOWS'])
+          if not isinstance(flows, list) or not flows or not all(isinstance(f, str) and f for f in flows):
+              raise ValueError('Full flows must be a nonempty list of flow names')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('flows=' + json.dumps(flows, separators=(',', ':')) + '\n')
+          PY
+      - name: Checkout flow policy and change history
+        if: ${{ inputs.reduced-flows != '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          sparse-checkout: .github/scripts
+      - name: Select flows for this change
+        id: select
+        if: ${{ inputs.reduced-flows != '' }}
+        env:
+          FULL_FLOWS: ${{ inputs.flows }}
+          REDUCED_FLOWS: ${{ inputs.reduced-flows }}
+          BACKEND_PATHS: ${{ inputs.backend-paths }}
+          IS_FULL_RUN: ${{ needs.run-decision.outputs.is-full-run }}
+          SOURCE_SHA: ${{ inputs.ref }}
+        run: python3 .github/scripts/select_backend_flows.py
+
   docker-image:
     name: Resolve CI docker image
     if: ${{ inputs.run-linux }}
     uses: ./.github/workflows/_docker-image.yml
 
   test-backend-linux:
-    needs: docker-image
+    needs: [docker-image, select-flows]
     if: ${{ inputs.run-linux }}
     strategy:
       fail-fast: false
       matrix:
-        flow: ${{ fromJSON(inputs.flows) }}
+        flow: ${{ fromJSON(needs.select-flows.outputs.flows) }}
         suite: [models, operators]
         exclude: ${{ fromJSON(inputs.exclude) }}
 
@@ -149,11 +205,12 @@ jobs:
           path: golden_artifacts_*.zip
 
   test-backend-macos:
+    needs: select-flows
     if: ${{ inputs.run-macos }}
     strategy:
       fail-fast: false
       matrix:
-        flow: ${{ fromJSON(inputs.flows) }}
+        flow: ${{ fromJSON(needs.select-flows.outputs.flows) }}
         suite: [models, operators]
         exclude: ${{ fromJSON(inputs.exclude) }}
 
