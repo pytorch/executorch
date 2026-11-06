@@ -342,7 +342,8 @@ Error QnnManager::InitBackend() {
 }
 
 Error QnnManager::InitContext(
-    std::optional<std::vector<std::string>> graph_names) {
+    const std::optional<std::vector<std::string>>& graph_names,
+    Qnn_ContextHandle_t spill_fill_handle) {
   if (backend_params_ptr_->backend_init_state_ ==
       BackendInitializeState::UNINITIALIZED) {
     QNN_EXECUTORCH_LOG_INFO(
@@ -356,7 +357,8 @@ Error QnnManager::InitContext(
         backend_bundle_ptr_->qnn_device_ptr.get(),
         qnn_context_blob_,
         options_,
-        qnn_dlc_manager_.get());
+        qnn_dlc_manager_.get(),
+        spill_fill_handle);
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_ != nullptr,
         Internal,
