@@ -547,7 +547,7 @@ muse-glimmer-batching-mlx:
 		-DMUSE_GLIMMER_BUILD_BATCHING_TESTS=OFF
 	cmake --build "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching" \
 		--target muse_glimmer_batching_runner muse_glimmer_batching_worker \
-		--parallel "$$(sysctl -n hw.ncpu)"
+		--parallel "$${CMAKE_BUILD_PARALLEL_LEVEL:-$$(sysctl -n hw.ncpu)}"
 	@echo ""
 	@echo "Build complete!"
 	@echo "  Runner:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_runner"

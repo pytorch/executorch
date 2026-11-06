@@ -101,7 +101,11 @@ def test_pads_concat_and_preserves_convolution(adapted, zero_point):
         resize = branch.args[0]
         image = resize.args[0]
         assert image.target == TOSA.PAD.default
-        assert image.kwargs == {"value": code}
+        assert len(image.args) == 3 and not image.kwargs
+        assert image.args[2].target == TOSA.CONST.default
+        assert image.args[2].args == ([code], [1], torch.int8)
+        assert tuple(image.args[2].meta["val"].shape) == (1,)
+        assert image.args[2].meta["val"].dtype == torch.int8
         assert pad._shape_values(image.args[1]) == [0, 0, 0, 0, 0, 0, 0, 1]
         assert tuple(image.meta["val"].shape) == (1, 8, 12, 4)
         assert tuple(resize.meta["val"].shape) == (1, 4, 6, 4)
@@ -199,6 +203,10 @@ def test_requires_exported_program():
 
 
 @pytest.mark.parametrize(
+    "pad_before_resize,consumer_before_resize",
+    [(False, False), (True, False), (True, True)],
+)
+@pytest.mark.parametrize(
     "consumer",
     [
         "packed",
@@ -210,16 +218,23 @@ def test_requires_exported_program():
         "unknown",
     ],
 )
-def test_reuses_padding_only_when_alpha_is_unused(consumer):
+def test_reuses_padding_only_when_alpha_is_unused(
+    consumer, pad_before_resize, consumer_before_resize
+):
     import operator
 
     program, inputs, concat, conv = _program()
     graph = program.graph
-    with graph.inserting_before(graph.output_node()):
+    resize = concat.args[0][0].args[0]
+    with graph.inserting_before(resize if pad_before_resize else graph.output_node()):
+        pad_value = pad.create_const(graph, -11, torch.int8, inputs[0])
         image = graph.call_function(
-            TOSA.PAD.default, (inputs[0], [0, 0, 0, 0, 0, 0, 0, 1]), {"value": -11}
+            TOSA.PAD.default, (inputs[0], [0, 0, 0, 0, 0, 0, 0, 1], pad_value)
         )
         image.meta["val"] = inputs[0].meta["val"].new_empty((1, 8, 12, 4))
+    with graph.inserting_before(
+        resize if consumer_before_resize else graph.output_node()
+    ):
         name = (
             pad.OPERATOR_NAME
             if consumer == "packed"
@@ -245,31 +260,34 @@ def test_reuses_padding_only_when_alpha_is_unused(consumer):
             shape = [1, channels, 8, 12]
         crop = graph.call_function(TOSA.SLICE.default, (output, [0, 0, 0, 0], shape))
     graph.output_node().args = ((conv, crop),)
+    graph.lint()
     assert pad.PadRifeBlock0ConcatPass(program)(program.graph_module).modified
     padded_input = concat.args[0][0].args[0].args[0]
+    positions = {node: index for index, node in enumerate(graph.nodes)}
+    assert positions[image.args[2]] < positions[image] < positions[custom]
     if consumer in ("packed", "final_blend", "warp_rgb", "warp_rgb_nchw"):
         assert padded_input is image
-        assert image.kwargs["value"] == 40
-        assert list(graph.nodes).index(image) < list(graph.nodes).index(concat)
+        assert image.args[2].args == ([40], [1], torch.int8)
+        assert positions[image] < positions[resize]
     else:
         assert padded_input is not image
-        assert image.kwargs["value"] == -11
+        assert image.args[2] is pad_value
+        assert pad_value.args == ([-11], [1], torch.int8)
     graph.lint()
 
 
 @pytest.mark.parametrize("final_blend", [False, True])
-def test_preserves_order_when_pads_share_a_shape_constant(final_blend):
+def test_preserves_order_when_pads_share_shape_and_value_constants(final_blend):
     program, inputs, concat, conv = _program()
     graph = program.graph
     with graph.inserting_before(graph.output_node()):
         shape = graph.call_function(
             TOSA.CONST_SHAPE.default, ([0, 0, 0, 0, 0, 0, 0, 1],)
         )
+        pad_value = pad.create_const(graph, -11, torch.int8, inputs[0])
         images = []
         for source in inputs[:2]:
-            image = graph.call_function(
-                TOSA.PAD.default, (source, shape), {"value": -11}
-            )
+            image = graph.call_function(TOSA.PAD.default, (source, shape, pad_value))
             image.meta["val"] = source.meta["val"].new_empty((1, 8, 12, 4))
             images.append(image)
         custom = graph.call_function(
@@ -295,5 +313,8 @@ def test_preserves_order_when_pads_share_a_shape_constant(final_blend):
     graph.output_node().args = (tuple(outputs),)
     assert pad.PadRifeBlock0ConcatPass(program)(program.graph_module).modified
     assert [branch.args[0].args[0] for branch in concat.args[0][:2]] == images
+    assert images[0].args[2].args == ([40], [1], torch.int8)
+    assert images[1].args[2].args == ([0], [1], torch.int8)
+    assert images[0].args[2] is not images[1].args[2]
     assert sum(n.target == TOSA.PAD.default for n in graph.nodes) == 2
     graph.lint()

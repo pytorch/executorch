@@ -164,7 +164,7 @@ TEST_F(ProfilingApiTest, TimestampTogglePreservesExecutionAndArgumentMetadata) {
       ASSERT_EQ(ticks.size(), graph.execute_nodes().size());
       const auto target =
           std::find_if(ticks.begin(), ticks.end(), [](const auto& entry) {
-            return entry.kernel_name.find("binary_add_") == 0;
+            return entry.kernel_name.find("binary_op_") == 0;
           });
       ASSERT_NE(target, ticks.end());
       EXPECT_GE(target->end_ticks, target->start_ticks);

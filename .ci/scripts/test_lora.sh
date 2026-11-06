@@ -57,11 +57,17 @@ PY
 }
 
 # Hosting lora adapter in personal repo for now.
+# The Hugging Face downloads below are pinned to commits the read-only
+# CI cache holds. To bump a pin, seed the cache first from a pytorch/executorch
+# branch (forks cannot write the cache): run pull.yml on it with
+# workflow_dispatch, or push to it after its pull request has the
+# ci-refresh-hf-cache label.
 python -m pip install -q huggingface_hub
 HF_ADAPTER_REPO="lucylq/qwen3_06B_lora_math"
 HF_ADAPTER_PATH=$(
   bash "$(dirname "${BASH_SOURCE[0]}")/download_hf_hub.sh" \
     --model_id "${HF_ADAPTER_REPO}" \
+    --revision 0e6bc3a88a597c5abc4872734eec8db3a9fdd846 \
     --files "adapter_config.json" "adapter_model.safetensors"
 )
 
@@ -69,14 +75,25 @@ HF_ADAPTER_PATH=$(
 export LORA_ADAPTER_CHECKPOINT="${HF_ADAPTER_PATH}/adapter_model.safetensors"
 export LORA_ADAPTER_CONFIG="${HF_ADAPTER_PATH}/adapter_config.json"
 
+# Without a checkpoint, export downloads Qwen/Qwen3-0.6B from its main branch,
+# so convert the pinned commit the read-only CI cache holds instead.
+QWEN_SNAPSHOT=$($PYTHON_EXECUTABLE -m executorch.examples.models.llama.hf_download \
+  snapshot Qwen/Qwen3-0.6B --revision c1899de289a04d12100db370d81485cdf75e47ca)
+QWEN_CHECKPOINT_DIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/qwen3_0_6b_XXXXXX")
+trap 'rm -rf "${QWEN_CHECKPOINT_DIR}"' EXIT
+QWEN_CHECKPOINT="${QWEN_CHECKPOINT_DIR}/qwen3_0_6b.pth"
+$PYTHON_EXECUTABLE -m executorch.examples.models.qwen3.convert_weights \
+  "${QWEN_SNAPSHOT}" "${QWEN_CHECKPOINT}"
+
 ### SINGLE LORA PTE ###
 # Export LoRA PTE file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
+    +base.checkpoint="${QWEN_CHECKPOINT}" \
     +export.output_name="qwen_lora_math_full.pte"
 
 # Capture the path of the downloaded qwen artifacts
-HF_QWEN_PATH=$(python -c "from huggingface_hub import snapshot_download; print(snapshot_download('unsloth/Qwen3-0.6B'))")
+HF_QWEN_PATH=$(python -c "from huggingface_hub import snapshot_download; print(snapshot_download('unsloth/Qwen3-0.6B', revision='db4e90b8359f816f09bf5c944797ce116f26da3c'))")
 echo "Model downloaded to: $HF_QWEN_PATH"
 
 ### BUILD LLAMA RUNNER.
@@ -120,6 +137,7 @@ fi
 # Export LoRA PTE, LoRA PTD, foundation PTD file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
+    +base.checkpoint="${QWEN_CHECKPOINT}" \
     +export.output_name="qwen_lora_math.pte" \
     +export.foundation_weights_file="qwen_foundation.ptd" \
     +export.lora_weights_file="qwen_lora_math.ptd"
@@ -179,6 +197,7 @@ The answer is: 12<|im_end|>"
 # and loading lora weights.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
+    +base.checkpoint="${QWEN_CHECKPOINT}" \
     base.lora_config=null \
     +export.output_name="qwen_q.pte" \
     +export.foundation_weights_file="qwen_foundation_q.ptd" \
@@ -188,6 +207,7 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
 # Export Quantized LoRA PTE, LoRA PTD, foundation PTD file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
+    +base.checkpoint="${QWEN_CHECKPOINT}" \
     +export.output_name="qwen_lora_math_q.pte" \
     +export.foundation_weights_file="qwen_foundation_lora_q.ptd" \
     +export.lora_weights_file="qwen_lora_math_q.ptd" \

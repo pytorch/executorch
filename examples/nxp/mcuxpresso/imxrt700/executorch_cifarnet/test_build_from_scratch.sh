@@ -6,13 +6,20 @@
 
 set -ue
 ARM_TOOLCHAIN_URL="${ARM_TOOLCHAIN_URL:-https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz}"
+MCUXSDK_MANIFEST_REV="${MCUXSDK_MANIFEST_REV:-v26.12.00-pvw1}"
 
 # Get arm gcc
 echo Downloading ARM GCC toolchain
 if [ ! -d arm-toolchain ]; then
     mkdir -p arm-toolchain
     pushd arm-toolchain
-    wget $ARM_TOOLCHAIN_URL
+    # The Arm CI images cache this archive (see backends/arm/scripts/utils.sh)
+    cached_toolchain="${ARM_SETUP_DOWNLOAD_CACHE:-}/$(basename $ARM_TOOLCHAIN_URL)"
+    if [ -n "${ARM_SETUP_DOWNLOAD_CACHE:-}" ] && [ -f "$cached_toolchain" ]; then
+        cp "$cached_toolchain" .
+    else
+        wget $ARM_TOOLCHAIN_URL
+    fi
     tar -xvf *.tar.xz
     rm *.tar.xz
     popd
@@ -37,7 +44,9 @@ export NEUTRON_LIB_DIR=${NEUTRON_LIB_DIR}/target/imxrt700/rt700/cm33
 echo Downloading MCUXpresso SDK
 if [ ! -d mcuxpresso-sdk ]; then
     pip install west
-    west init -m https://github.com/nxp-mcuxpresso/mcuxsdk-manifests.git mcuxpresso-sdk
+    # Pin the manifest revision if needed
+    west init -m https://github.com/nxp-mcuxpresso/mcuxsdk-manifests.git \
+        --mr "${MCUXSDK_MANIFEST_REV}" mcuxpresso-sdk
     pushd mcuxpresso-sdk
     west update_board --set board mimxrt700evk
     popd
