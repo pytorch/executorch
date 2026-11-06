@@ -64,6 +64,7 @@ class SharedBuffer final {
   void* GetCustomMemBase(void* buf);
 
  private:
+  friend class SharedBufferTest;
   SharedBuffer() = default;
 
   // dlopen RPCMem library and dlysm required functions
@@ -88,6 +89,7 @@ class SharedBuffer final {
   // remain linked to this custom memory.
   std::unordered_map<void*, std::unordered_set<void*>>
       custom_mem_to_tensor_addr_;
+  std::mutex memory_mutex_;
   std::atomic_bool initialize_{false};
   static std::mutex init_mutex_;
 };
