@@ -40,7 +40,7 @@ To enable selective build when building the executorch kernel libraries as part 
 
  * `EXECUTORCH_SELECT_OPS_YAML`: A path to a YAML file specifying the operators to include.
  * `EXECUTORCH_SELECT_OPS_LIST`: A string containing the operators to include.
- * `EXECUTORCH_SELECT_OPS_MODEL`: A path to a PTE file. Only operators used in this model will be included.
+ * `EXECUTORCH_SELECT_OPS_MODEL`: A path to a PTE file, or a semicolon-separated list of PTE files. Only operators used in these models will be included.
  * `EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD`: If enabled, operators will be further specialized to only operator on the data types specified in the operator selection.
 
 Note that `EXECUTORCH_SELECT_OPS_YAML`, `EXECUTORCH_SELECT_OPS_LIST`, and `EXECUTORCH_SELECT_OPS_MODEL` are mutually exclusive. Only one operator specifier directive is allowed.
