@@ -10,6 +10,7 @@ import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower
+from executorch.export.utils import is_fbcode
 
 
 class TestToCopyDtype(unittest.TestCase):
@@ -121,14 +122,59 @@ class TestToCopyDtype(unittest.TestCase):
         def forward(self, x):
             return (x.to(torch.float32) * 2.0).to(torch.bfloat16)
 
+    class Bf16SoftmaxUpcast(torch.nn.Module):
+        """Softmax computed in fp32 on a bf16 input, cast back to bf16."""
+
+        def forward(self, x):
+            return torch.softmax(x, -1, dtype=torch.float32).to(torch.bfloat16)
+
+    class ToBf16(torch.nn.Module):
+        def forward(self, x):
+            return x.to(torch.bfloat16)
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_fp32_io_around_bf16_linear(self):
         self._run(self.Bf16Inner(), (torch.randn(4, 16),), enable_bf16=True)
 
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_bf16_upcast(self):
         self._run(
             self.Bf16Upcast(),
             (torch.randn(2, 5, dtype=torch.bfloat16),),
             enable_bf16=True,
+        )
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
+    def test_bf16_softmax_upcast(self):
+        self._run(
+            self.Bf16SoftmaxUpcast(),
+            (torch.randn(2, 16, 32, dtype=torch.bfloat16),),
+            enable_bf16=True,
+        )
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
+    def test_fp32_to_bf16_rounds_like_pytorch(self):
+        """
+        XNNPACK's convert must round fp32 to bf16 exactly as PyTorch does,
+        including values halfway between two bf16 numbers.
+        """
+        halfway = torch.tensor(
+            [1 + 2**-8, 1 + 3 * 2**-8, -(1 + 3 * 2**-8), 2**-100 * (1 + 3 * 2**-8)]
+        )
+        x = torch.cat([torch.randn(4096), halfway, torch.tensor([3.0e38, 0.0, -0.0])])
+        (
+            Tester(self.ToBf16().eval(), (x,))
+            .export()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    partitioners=[XnnpackPartitioner(enable_bf16=True)]
+                )
+            )
+            .check_not(self.cast_ops)
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(inputs=(x,), atol=0, rtol=0)
         )
 
     def test_bf16_cast_not_partitioned_without_enable_bf16(self):
