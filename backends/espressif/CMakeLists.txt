@@ -14,10 +14,34 @@ get_filename_component(
 idf_build_get_property(PYTHON_EXECUTABLE PYTHON)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
-set(_yaml_file "${CMAKE_CURRENT_SOURCE_DIR}/ops/operators.yaml")
-gen_selected_ops(LIB_NAME espressif_ops_lib OPS_SCHEMA_YAML "${_yaml_file}")
+if(NOT EXECUTORCH_SELECT_OPS_MODEL)
+  message(
+    FATAL_ERROR
+      "Set EXECUTORCH_SELECT_OPS_MODEL to the PTE files used to build the runtime"
+  )
+endif()
+
+set(_out_dir "${CMAKE_CURRENT_BINARY_DIR}/espressif_ops_lib")
+set(_esp_yaml "${CMAKE_CURRENT_SOURCE_DIR}/ops/operators.yaml")
+set(_quantized_yaml "${EXECUTORCH_ROOT}/kernels/quantized/quantized.yaml")
+gen_selected_ops(
+  LIB_NAME espressif_ops_lib OPS_FROM_MODEL "${EXECUTORCH_SELECT_OPS_MODEL}"
+)
+add_custom_command(
+  OUTPUT "${_out_dir}/merged.yaml"
+  COMMAND
+    "${PYTHON_EXECUTABLE}" -m codegen.tools.merge_yaml --functions-yaml-path
+    "${_esp_yaml}" --fallback-yaml-path "${_quantized_yaml}" --output_dir
+    "${_out_dir}"
+  DEPENDS "${_esp_yaml}" "${_quantized_yaml}"
+          "${EXECUTORCH_ROOT}/codegen/tools/merge_yaml.py"
+  WORKING_DIRECTORY "${EXECUTORCH_ROOT}"
+  VERBATIM
+)
 generate_bindings_for_kernels(
-  LIB_NAME espressif_ops_lib CUSTOM_OPS_YAML "${_yaml_file}"
+  LIB_NAME espressif_ops_lib FUNCTIONS_YAML
+  "${EXECUTORCH_ROOT}/kernels/portable/functions.yaml" CUSTOM_OPS_YAML
+  "${_out_dir}/merged.yaml"
 )
 
 target_sources(
@@ -32,4 +56,6 @@ target_include_directories(
 target_compile_definitions(
   ${COMPONENT_LIB} PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
 )
-target_link_libraries(${COMPONENT_LIB} PUBLIC executorch_core)
+target_link_libraries(
+  ${COMPONENT_LIB} PUBLIC executorch_core portable_kernels quantized_kernels
+)
