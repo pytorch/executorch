@@ -69,13 +69,14 @@ ARG TORCH_VERSION
 ARG SKIP_PYTORCH
 ARG PYTORCH_BUILD_MAX_JOBS
 COPY ./common/install_pytorch.sh install_pytorch.sh
+COPY ./common/install_pinned_pytorch.sh install_pinned_pytorch.sh
 COPY ./common/utils.sh utils.sh
 # A host docker build let sccache reach its S3 bucket with the EC2 instance
 # role; a BuildKit pod has no instance metadata, so docker-builds passes the
 # credentials in as this secret. World-readable because the sccache server runs
 # as ci-user; a secret mount never lands in a layer.
 RUN --mount=type=secret,id=aws-credentials,mode=0444 \
-    if [ -z "${SKIP_PYTORCH}" ]; then bash ./install_pytorch.sh; fi && rm install_pytorch.sh utils.sh
+    if [ -z "${SKIP_PYTORCH}" ]; then bash ./install_pytorch.sh; fi && rm install_pytorch.sh install_pinned_pytorch.sh utils.sh
 
 ARG LINTRUNNER
 # Install lintrunner if needed
