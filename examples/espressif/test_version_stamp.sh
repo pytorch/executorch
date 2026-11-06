@@ -69,7 +69,19 @@ expect_error "dev suffix" "--allow-dev-stamp makes" --version --version-suffix -
 expect_version "dev stamp from the commit date" 1.6.0-dev.20261104 --version --allow-dev-stamp
 GIT_COMMITTER_DATE=2026-11-04T23:30:00-05:00 git commit -q --allow-empty -m "late commit"
 expect_version "dev stamp from the commit's UTC date" 1.6.0-dev.20261105 --version --allow-dev-stamp
-expect_error "unknown suffix" "must be empty, -rc.N or ~N" --version --version-suffix -beta.1
+expect_error "unknown suffix" "must be empty, -rc.N, ~N or -dev" --version --version-suffix -beta.1
+expect_version "published dev stamp" 1.6.0-dev.20261105 --version --version-suffix -dev
+echo "# local edit" >> "${repo}/examples/espressif/build_idf_component.sh"
+expect_error "published dev stamp with uncommitted changes" "uncommitted" \
+    --version --version-suffix -dev
+expect_version "unpublished dev stamp with uncommitted changes" 1.6.0-dev.20261105 \
+    --version --allow-dev-stamp
+git checkout -q -- .
+mkdir -p "${repo}/kernels/portable/cpu"
+echo "// local kernel" > "${repo}/kernels/portable/cpu/op_local.cpp"
+expect_error "published dev stamp with an untracked kernel source" \
+    "kernels/portable/cpu/op_local.cpp" --version --version-suffix -dev
+rm -r "${repo}/kernels"
 expect_error "malformed rc suffix" "-rc.N" --version --version-suffix -rc.0
 expect_error "dev stamp with a suffix" "--allow-dev-stamp" --version --allow-dev-stamp --version-suffix "~1"
 expect_error "malformed respin suffix" "~N with N >= 1" --version --version-suffix "~0"

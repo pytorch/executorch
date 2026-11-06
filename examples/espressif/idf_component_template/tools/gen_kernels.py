@@ -102,7 +102,8 @@ def _check_version(component_dir):
         raise GenKernelsError(
             f"installed executorch {installed} ({installed_sha[:12]}) does not match "
             f"the component's {component_version} ({component_sha[:12]}); export and "
-            "generate with the executorch release the component was built from"
+            "generate with the executorch the component was built from (see the "
+            "component's README.md)"
         )
     return component_version, component_sha, installed, installed_sha
 
