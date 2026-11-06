@@ -14,7 +14,7 @@ import json
 import logging
 import math
 from contextlib import aclosing, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import AsyncIterator, Callable, Iterable, Optional, Protocol
 
 from .chat_template import ChatTemplate
@@ -199,6 +199,20 @@ class _AdmissionRetryStream:
         await self._generation.aclose()
 
 
+@dataclass
+class ToolContext:
+    schemas: dict = field(default_factory=dict)
+    incomplete: bool = False
+
+
+@dataclass
+class _ToolResponse:
+    tool_calls: Optional[list[ToolCall]] = None
+    reasoning: Optional[str] = None
+    content: Optional[str] = None
+    remaining_reasoning: Optional[str] = None
+
+
 class ServingChat:
     def __init__(
         self,
@@ -219,6 +233,9 @@ class ServingChat:
         evict_idle_sessions: bool = False,
         streaming_preflight_timeout: Optional[float] = None,
         api_dialect: str = "openai",
+        tool_reasoning_parser_factory: Optional[
+            Callable[[], StreamingResponseParser]
+        ] = None,
     ):
         self._runtime = runtime
         self._template = template
@@ -228,6 +245,7 @@ class ServingChat:
         self._content_filter = content_filter
         self._reasoning_extractor = reasoning_extractor
         self._streaming_parser_factory = streaming_parser_factory
+        self._tool_reasoning_parser_factory = tool_reasoning_parser_factory
         self._evict_idle_sessions = evict_idle_sessions
         self._idle_sessions: dict[str, None] = {}
         self._cleanup_sessions: dict[str, None] = {}
@@ -343,7 +361,7 @@ class ServingChat:
         stops = self._request_stops(req)
         if req.ignore_eos:
             return stops
-        return self._visible_stops(req) + stops
+        return stops + self._visible_stops(req)
 
     @staticmethod
     def _apply_stop(text: str, stops: list[str]) -> str:
@@ -409,18 +427,48 @@ class ServingChat:
                 break
         return text, stopped
 
-    def _extract_response(self, req: ChatCompletionRequest, text: str):
+    def _parse_tools(
+        self, req, text, finish_reason, raw_text, context, request_stopped
+    ):
+        return self._tool_detector_cls().detect_and_parse(text, self._tool_schemas(req))
+
+    def _extract_response(
+        self,
+        req: ChatCompletionRequest,
+        text: str,
+        *,
+        finish_reason=None,
+        context=None,
+        stopped=False,
+        matched_stop=None,
+    ):
         """Return tool calls, optional reasoning, and user-visible content."""
-        # Split the reasoning channel out BEFORE tool parsing so the detector only
-        # sees the visible (non-reasoning) text. Parsing the full raw output would let
-        # a tool-call marker the model emitted inside its private reasoning become a
-        # phantom tool call (and drop the real answer).
-        reasoning, text = self._split_reasoning(text)
+        # Generic detectors see visible text; recipient-aware adapters also need
+        # raw framing to distinguish tool messages from quoted examples.
+        context = context if context is not None else ToolContext()
+        request_cut = _earliest_stop(text, self._request_stops(req))
+        visible_cut = _earliest_stop(text, self._visible_stops(req))
+        request_stops = self._request_stops(req)
+        request_stopped = (
+            any(
+                matched_stop and matched_stop.startswith(stop) for stop in request_stops
+            )
+            or (
+                matched_stop is None and finish_reason == "stop" and bool(request_stops)
+            )
+            or (
+                request_cut is not None
+                and (visible_cut is None or request_cut <= visible_cut)
+            )
+        )
+        raw_text = self._truncate_raw(text, req, stopped)
+        reasoning, text = self._split_reasoning(raw_text)
         tool_calls = None
         if self._tools_active(req):
-            parsed = self._tool_detector_cls().detect_and_parse(
-                text, self._tool_schemas(req)
+            parsed = self._parse_tools(
+                req, text, finish_reason, raw_text, context, request_stopped
             )
+            context.incomplete = parsed.incomplete
             if parsed.calls:
                 tool_calls = [self._to_openai_tool_call(c) for c in parsed.calls]
             text = parsed.normal_text
@@ -927,12 +975,28 @@ class ServingChat:
         return evicted
 
     async def _create_response(
-        self, req, prompt_input, options, preamble, gen_stops, lease, admission
+        self,
+        req,
+        prompt_input,
+        options,
+        preamble,
+        gen_stops,
+        lease,
+        admission,
+        tool_context=None,
     ):
+        tool_context = tool_context if tool_context is not None else ToolContext()
         while True:
             try:
                 return await self._start_response(
-                    req, prompt_input, options, preamble, gen_stops, lease, admission
+                    req,
+                    prompt_input,
+                    options,
+                    preamble,
+                    gen_stops,
+                    lease,
+                    admission,
+                    tool_context,
                 )
             except (WorkerError, APIError) as error:
                 if not await self._retry_admission(error, admission):
@@ -947,6 +1011,7 @@ class ServingChat:
         gen_stops,
         lease,
         admission,
+        tool_context,
     ):
         # Legacy workers need explicit admission. Multiplexed generation opens
         # implicitly from its full prompt, preserving new-session prefix reuse.
@@ -976,11 +1041,13 @@ class ServingChat:
             )
         if req.stream:
             return _ChatStream(
-                self._stream(req, preamble, gen_stops, generation, stats),
+                self._stream(req, preamble, gen_stops, generation, stats, tool_context),
                 lease,
                 generation,
             )
-        return await self._complete(req, preamble, gen_stops, generation, stats)
+        return await self._complete(
+            req, preamble, gen_stops, generation, stats, tool_context
+        )
 
     async def _complete(
         self,
@@ -989,6 +1056,7 @@ class ServingChat:
         gen_stops: list[str],
         generation,
         stats: GenStats,
+        tool_context,
     ) -> ChatCompletionResponse:
         # Same stop set the worker was given (narrow for tools, broad for chat).
         stops = gen_stops
@@ -1004,7 +1072,17 @@ class ServingChat:
         # Bound the raw output at the first stop/special token BEFORE tool
         # parsing, so a call after the stop boundary is not parsed/emitted.
         tool_calls, reasoning, content = self._extract_response(
-            req, self._truncate_raw(text, req, stopped or stats.finish_reason == "stop")
+            req,
+            text,
+            context=tool_context,
+            matched_stop=stats.matched_stop,
+            stopped=stopped or stats.finish_reason == "stop",
+            finish_reason=self._finish_reason(
+                req,
+                stats.completion_tokens,
+                stopped=stopped,
+                worker_finish=stats.finish_reason,
+            ),
         )
         # Compare future echoes against the finalized client-visible response.
         self._transcript.record_assistant_turn(
@@ -1014,7 +1092,11 @@ class ServingChat:
             tool_calls=tool_calls,
             reasoning_content=reasoning,
             # Hidden post-EOS tokens must not be spliced into a later echo.
-            generated_token_ids=None if req.ignore_eos else stats.generated_token_ids,
+            generated_token_ids=(
+                None
+                if req.ignore_eos or tool_context.incomplete
+                else stats.generated_token_ids
+            ),
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
         )
@@ -1173,13 +1255,79 @@ class ServingChat:
         self._log_generation_stats(req.session_id, stats, finish)
         yield chunk(DeltaMessage(), finish=finish)
 
-    async def _stream(
+    async def _stream_tool_output(self, generation, stops, stop_hit, parts, parser):
+        if parser is None:
+            text, stopped = await self._collect_until_stop(generation, stops)
+            parts.append(text)
+            stop_hit[0] = stop_hit[0] or stopped
+            return
+
+        async def capture():
+            async for token in generation:
+                parts.append(token)
+                yield token
+
+        def stop():
+            stop_hit[0] = True
+            self._cancel_generation(generation)
+
+        async for part in self._clean(capture(), stops, stop):
+            for delta in parser.feed(part):
+                yield delta
+        for delta in parser.finish():
+            yield delta
+
+    async def _stream_tool_response(
+        self, req, generation, stops, stop_hit, stats, response, tool_context
+    ):
+        parts, reasoning_parts = [], []
+        parser = (
+            self._tool_reasoning_parser_factory()
+            if self._tool_reasoning_parser_factory and self._return_reasoning(req)
+            else None
+        )
+
+        async for delta in self._stream_tool_output(
+            generation, stops, stop_hit, parts, parser
+        ):
+            if delta.reasoning_content:
+                reasoning_parts.append(delta.reasoning_content)
+                yield DeltaMessage(reasoning_content=delta.reasoning_content)
+        response.tool_calls, response.reasoning, response.content = (
+            self._extract_response(
+                req,
+                "".join(parts),
+                context=tool_context,
+                matched_stop=stats.matched_stop,
+                stopped=stop_hit[0] or stats.finish_reason == "stop",
+                finish_reason=self._finish_reason(
+                    req,
+                    stats.completion_tokens,
+                    stopped=stop_hit[0],
+                    worker_finish=stats.finish_reason,
+                ),
+            )
+        )
+        response.remaining_reasoning = response.reasoning
+        if parser is not None:
+            emitted = "".join(reasoning_parts)
+            response.remaining_reasoning = None
+            if response.reasoning and response.reasoning.startswith(emitted):
+                response.remaining_reasoning = (
+                    response.reasoning[len(emitted) :] or None
+                )
+            if emitted and not (response.reasoning or "").startswith(emitted):
+                logger.warning("Streamed reasoning differs from buffered extraction")
+                response.reasoning = emitted
+
+    async def _stream(  # noqa: C901 - response paths share one cancellation boundary
         self,
         req: ChatCompletionRequest,
         preamble: str,
         stops: list[str],
         generation: AsyncIterator[str],
         stats: GenStats,
+        tool_context,
     ) -> AsyncIterator[str]:
         cid = _new_id("chatcmpl")
 
@@ -1205,6 +1353,7 @@ class ServingChat:
         tool_calls = None
         reasoning = None
         content = None
+        remaining_tool_reasoning = None
 
         stop_hit = [False]  # set when a stop boundary is reached (forces finish="stop")
         # Per-path stop set from create(): for plain chat this includes the broad
@@ -1212,19 +1361,16 @@ class ServingChat:
         # the worker, given the same set, halts + omits ids -> non-resumable turn).
         try:
             if use_tools:
-                # Buffer the (usually short) tool response, parse once.
-                # Halt early at a stop boundary, and bound the raw output
-                # BEFORE parsing so post-stop tool calls / text don't leak.
-                raw, stop_hit[0] = await self._collect_until_stop(
-                    generation,
-                    stops,
-                )
-                tool_calls, reasoning, content = self._extract_response(
-                    req,
-                    self._truncate_raw(
-                        raw, req, stop_hit[0] or stats.finish_reason == "stop"
-                    ),
-                )
+                # Stream safe reasoning, then validate complete tool calls.
+                response = _ToolResponse()
+                async for delta in self._stream_tool_response(
+                    req, generation, stops, stop_hit, stats, response, tool_context
+                ):
+                    yield chunk(delta)
+                tool_calls = response.tool_calls
+                reasoning = response.reasoning
+                content = response.content
+                remaining_tool_reasoning = response.remaining_reasoning
             elif (
                 self._reasoning_extractor is not None
                 and self._streaming_parser_factory is None
@@ -1235,9 +1381,10 @@ class ServingChat:
                 )
                 tool_calls, reasoning, content = self._extract_response(
                     req,
-                    self._truncate_raw(
-                        raw, req, stop_hit[0] or stats.finish_reason == "stop"
-                    ),
+                    raw,
+                    context=tool_context,
+                    matched_stop=stats.matched_stop,
+                    stopped=stop_hit[0] or stats.finish_reason == "stop",
                 )
                 if reasoning:
                     yield chunk(DeltaMessage(reasoning_content=reasoning))
@@ -1272,7 +1419,11 @@ class ServingChat:
             tool_calls=tool_calls,
             reasoning_content=reasoning or None,
             # Hidden post-EOS tokens must not be spliced into a later echo.
-            generated_token_ids=None if req.ignore_eos else stats.generated_token_ids,
+            generated_token_ids=(
+                None
+                if req.ignore_eos or tool_context.incomplete
+                else stats.generated_token_ids
+            ),
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
         )
@@ -1282,7 +1433,7 @@ class ServingChat:
             stats,
             use_tools,
             tool_calls,
-            reasoning,
+            remaining_tool_reasoning if use_tools else reasoning,
             content,
             stop_hit[0],
             chunk,

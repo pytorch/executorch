@@ -577,6 +577,8 @@ struct ServingRuntime::Impl {
       }
     }
     auto& stats = terminal.stats;
+    stats.matched_stop =
+        text.output ? text.output->matched_stop() : std::nullopt;
     stats.completion_tokens =
         text.output ? text.output->completion_tokens() : 0;
     stats.prefill_ms = completion.metrics.prefill_span_us() / 1000.0;

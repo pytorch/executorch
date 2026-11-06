@@ -82,7 +82,7 @@ earlier behavior, which accepted non-boolean values as an opt-out.
 **Rejected** with `400 invalid_request_error` (`code: "unsupported_parameter"`)
 rather than silently ignored — a client relying on them would otherwise get
 wrong behavior: `n` (> 1), `reasoning_effort` and OpenRouter `reasoning`
-(except `{}` and `{"exclude": false}`),
+(except `{}` and `{"exclude": false}`, or options supported by a model-specific adapter),
 `frequency_penalty`/`presence_penalty` (nonzero), `logit_bias`, `tool_choice` =
 `"required"` or a specific-function choice
 (forcing/restricting a call needs constrained decoding, not implemented),
@@ -108,8 +108,9 @@ first chunk carries `delta.role = "assistant"`, subsequent chunks carry
 `stream_options.include_usage`), terminated by `data: [DONE]`.
 For models with an incremental parser, reasoning is emitted as
 `delta.reasoning_content` while generation runs. Other reasoning extractors buffer
-their output. With tools enabled, content, reasoning, and complete tool calls are
-buffered. Idle HTTP streams include SSE
+their output. With tools enabled, content and reasoning are buffered unless a
+model adapter supplies a tool-safe incremental reasoning parser. Complete tool
+calls remain buffered. Idle HTTP streams include SSE
 keepalive comments every 15 seconds. Model launchers may bound initial readiness
 waiting to return headers during prefill; errors detected after headers arrive
 as SSE error events.
@@ -407,3 +408,15 @@ even when it arrives during generation cleanup.
 
 Client-only `cache_control` markers do not change the replay history fingerprint.
 A string and its equivalent single text-part content are also interchangeable.
+Worker completion metadata includes `matched_stop`, the exact string removed
+from generated text, or `null` when no string stop matched (including token EOS).
+An omitted key identifies a legacy worker whose string-stop cause is unknown.
+Tool adapters use this distinction to separate request-stop truncation from
+malformed completed model output. Request stops must precede model stops in the
+worker's stop list: matching uses the earliest text position, then the earliest
+list entry to break ties, so request stops win at the same position.
+
+Tool-definition changes are rendered into the next full prompt and checked by the
+native prefix comparison. They do not invalidate an unchanged historical assistant
+echo: stored token IDs still describe that past output, while changed prompt
+prefixes require fresh prefill.

@@ -9,6 +9,8 @@
 import pytest
 
 pytest.importorskip("pydantic", reason="requires llm_server serving dependencies")
+pytest.importorskip("jsonschema", reason="requires llm_server serving dependencies")
+pytest.importorskip("regex", reason="requires llm_server serving dependencies")
 
 from executorch.examples.llm_server.python.protocol import DeltaMessage  # noqa: E402
 from executorch.examples.models.muse_glimmer.serving.serve import (  # noqa: E402
@@ -116,3 +118,23 @@ def test_immediate_emission_and_truncated_framing():
         deltas = [delta for char in text for delta in parser.feed(char)]
         deltas.extend(parser.finish())
         assert "".join(delta.content or "" for delta in deltas) == text.strip()
+
+
+def test_tool_reasoning_stream_never_interprets_parameter_headers():
+    from executorch.examples.models.muse_glimmer.serving.stream_parser import (
+        MuseGlimmerToolReasoningParser,
+    )
+
+    raw = (
+        " to=self<|message|>Thinking.<|eom|><|start|>assistant to=f<|message|>"
+        '<atem:function_calls><atem:invoke name="f"><atem:parameter name="value">'
+        " to=self<|message|>MUST_NOT_STREAM</atem:parameter>"
+        "</atem:invoke></atem:function_calls>"
+    )
+    for width in [1, 3, 7, len(raw)]:
+        parser = MuseGlimmerToolReasoningParser()
+        output = []
+        for i in range(0, len(raw), width):
+            output.extend(parser.feed(raw[i : i + width]))
+        output.extend(parser.finish())
+        assert "".join(d.reasoning_content or "" for d in output) == "Thinking."

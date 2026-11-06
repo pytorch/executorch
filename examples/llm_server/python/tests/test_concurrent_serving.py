@@ -1265,6 +1265,7 @@ def test_native_prefetch_preserves_tokens_and_final_metadata(
             ]
             assert await generation.result() is stats
             assert stats == GenStats(
+                matched_stop=None,
                 prompt_tokens=3,
                 completion_tokens=3,
                 finish_reason="length",

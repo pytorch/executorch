@@ -712,3 +712,26 @@ def test_spawn_worker_non_posix_keeps_normal_jsonl_behavior(monkeypatch):
     assert client.supports_cancel is False
     assert client.stop() is False
     client.close()
+
+
+@pytest.mark.parametrize("matched_stop", [None, "\n\n"])
+def test_generate_preserves_matched_stop_metadata(matched_stop):
+    done = {
+        "done": True,
+        "finish_reason": "stop",
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+    }
+    if matched_stop is not None:
+        done["matched_stop"] = matched_stop
+    proc = _FakeProc(_lines({"token": "prefix"}, done))
+    seen = []
+    WorkerClient(proc).generate("hi", _Cfg(stop=["\n\n"]), stats_callback=seen.append)
+    assert seen[0].matched_stop == matched_stop
+
+
+def test_explicit_null_stop_metadata_is_distinct_from_old_worker():
+    from executorch.examples.llm_server.python.worker_client import WorkerStats
+
+    assert WorkerStats.from_message({"matched_stop": None}).matched_stop == ""
+    assert WorkerStats.from_message({}).matched_stop is None

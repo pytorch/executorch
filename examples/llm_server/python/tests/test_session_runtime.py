@@ -652,6 +652,7 @@ def test_native_direct_stream_preserves_prefetch_and_final_stats(monkeypatch):
             assert [t async for t in generation] == ["", "buffered"]
             assert generation.stats is stats
             assert stats == GenStats(
+                matched_stop=None,
                 prompt_tokens=2,
                 completion_tokens=2,
                 generated_token_ids=[7, 8],

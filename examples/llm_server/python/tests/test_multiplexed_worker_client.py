@@ -1734,3 +1734,11 @@ def test_wire_admission_error_preserves_known_admission(admitted):
             await client.close()
 
     _run(scenario())
+
+
+@pytest.mark.parametrize("value", [False, 1, [], {}, ""])
+def test_invalid_matched_stop_metadata(value):
+    with pytest.raises(WorkerError, match="matched_stop"):
+        MultiplexedWorkerClient._validate_generation_terminal(
+            {"matched_stop": value, "finish_reason": "stop"}
+        )

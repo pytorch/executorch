@@ -53,6 +53,8 @@ class WorkerStats:
     # stop) or "length" (ran to max_new, possibly clamped to the context window).
     # None if the worker didn't report it (older worker / fake).
     finish_reason: Optional[str] = None
+    # None: old worker omitted metadata; empty string: explicit no string stop.
+    matched_stop: Optional[str] = None
     # Warm-resume accounting: how many prompt tokens were served from the
     # session's resident KV state vs actually prefilled this request, and why
     # ("new"|"exact_prefix"|"prefix_clone"|"dirty"|"mismatch"|"equal"). Not exposed as OpenAI
@@ -78,10 +80,17 @@ class WorkerStats:
 
     @classmethod
     def from_message(cls, msg: dict) -> "WorkerStats":
+        if msg.get("matched_stop") is not None and (
+            not isinstance(msg["matched_stop"], str)
+            or not msg["matched_stop"]
+            or msg.get("finish_reason") != "stop"
+        ):
+            raise WorkerError("invalid worker matched_stop")
         return cls(
             num_prompt_tokens=msg.get("prompt_tokens", 0),
             num_generated_tokens=msg.get("completion_tokens", 0),
             finish_reason=msg.get("finish_reason"),
+            matched_stop=(msg["matched_stop"] or "") if "matched_stop" in msg else None,
             reused_prompt_tokens=msg.get("reused_prompt_tokens", 0),
             prefilled_prompt_tokens=msg.get("prefilled_prompt_tokens", 0),
             session_reset_reason=msg.get("session_reset_reason"),

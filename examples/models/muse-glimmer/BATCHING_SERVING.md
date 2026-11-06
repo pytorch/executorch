@@ -97,13 +97,53 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
 
 Omit `--data-path` when weights are embedded in the program. For text-only
 artifacts, omit `--pos-embed-path`. The launcher uses one multiplexed worker
-process and the matching Hugging Face chat template. It does not fall back to a
+process and the bundled Muse chat template with the Hugging Face tokenizer. The
+template preserves developer messages and assistant commentary with tool calls.
+It does not fall back to a
 legacy worker or DFlash.
 
 Send `"stream": true` for streaming responses. The MG parser removes model
 framing and emits `reasoning_content` and `content` incrementally. Optional ATEM
-tool parsing is enabled with `--tool-parser atem`; tool-enabled responses
-currently remain buffered.
+tool parsing is enabled with `--tool-parser atem`. Reasoning preceding tool calls
+streams incrementally; complete calls are buffered and validated before delivery.
+Malformed parameter bodies, duplicate parameters, undefined calls, and arguments
+that violate their JSON Schema produce `invalid_tool_output` errors, with no tool
+calls emitted. Parameters support union schemas and local JSON pointer references;
+string values preserve whitespace and literal Harmony headers. Schema validation
+accepts Draft 7, 2019-09, and 2020-12 (the default), including root `$id` and local
+fragment references. External references, nested schema identifiers/dialect changes,
+dynamic references, more than 1023 coercion alternatives, and more than 4096 expanded
+schema nodes are rejected before generation with HTTP 400 `invalid_tool_schema`.
+All active tool schemas must pass validation, including tools with `strict=false`
+and tools the model does not call. Malformed schemas (for example, a property with
+`"required": true`), Draft 4 or 6, and unknown `$schema` dialects are rejected.
+Disabled tools (`tool_choice="none"`) are not validated.
+Validators are compiled once per request and never fetch schemas. Install the
+serving requirements, including `jsonschema` and `regex`.
+Schemas without `$schema` use Draft 2020-12; legacy tuple `items` need an explicit
+Draft 7 declaration, and Draft 4 boolean `exclusiveMinimum` is unsupported.
+Undefined tools, invalid arguments, and exhausted output budgets return HTTP 502
+`invalid_tool_output` (or an SSE error after streaming starts). SDKs may retry
+these responses; clients wanting a single attempt should disable automatic retries.
+Coercion preserves correlations between object alternatives and conditional schemas,
+then validates the complete argument object. Declared numeric parameters also accept
+spellings such as `+5`, `007`, `.5`, and `5.`; declared strings stay literal.
+Before generation, the server walks every coercion alternative and declared parameter,
+including map-property projections. All active tools share a 65,536-visit preflight
+budget. Requests exceeding that budget return HTTP 400 `invalid_tool_schema`. The output budget also
+counts actual keyword checks, nested values, and deep comparison work, and is shared across all invocations
+in a response. Client `pattern` and `patternProperties` searches share a separate
+100 ms regex execution budget, including annotation and property-projection searches.
+Patterns are compiled and evaluated with the same timeout-capable `regex` engine,
+including Unicode properties and named groups. `uniqueItems` uses bounded structural
+keys rather than pairwise comparisons of objects; `enum` and `const` share this budget.
+Extra parameters, large nested arguments, or multiple calls can exhaust this budget
+and return `invalid_tool_output`; coercion tries at most 1024 alternatives per call.
+This is validation after generation, not token-level constrained decoding.
+`function.strict=true` is supported: a successful response contains only
+schema-valid calls; invalid generation fails the response. This supports Muse's
+strict summarizer tool. Required/named tool choice and structured response formats
+remain unsupported.
 
 The launcher waits for initial generation readiness before returning streaming
 headers. Set `--streaming-preflight-timeout 1` to bound generation-readiness
@@ -138,6 +178,13 @@ model window. A completion reservation consuming the entire window cannot be
 fixed by compacting input: diagnostic metadata remains, but the message does not
 match Muse's recoverable prompt-budget format. With no explicit `max_tokens`,
 the server reserves one output token; Muse applies its own compaction margin.
+
+The model adapter qualifies each declared flat tool name as `name.name` in the
+prompt and maps that exact alias back to the original name in responses. Dotted
+names stay unchanged; colliding aliases are rejected. This mapping is local to
+the Muse model adapter and only accepts declared tools. OpenRouter
+`reasoning: {"effort": "low"}` and `reasoning_effort` map to the template's
+`reasoning_strength`; supported values are `low`, `medium`, and `high`.
 
 Streaming intentionally differs from the legacy buffered fallback for incomplete
 `<|` headers, which are suppressed at EOF; bare `to=` suffixes remain literal text
@@ -288,3 +335,21 @@ and `--max-draft-owners`), then add `--dflash` to the serve command above. The
 draft ABI and `--dflash-n-draft` behave as on MLX. Drafts are greedy; the target
 accepts or resamples them on the device under each request's sampling. Decode
 drafts of up to four owners run in CUDA graphs.
+
+ATEM tool intent must start a line outside Markdown code or immediately follow a
+tool recipient header. User-directed examples and quoted markers remain content.
+An invocation truncated by length or a request stop suppresses the entire
+incomplete call set and ends with `finish_reason=length` or `stop`, respectively;
+malformed completed calls still return
+`invalid_tool_output`. Streaming may already have delivered reasoning before that
+error. Tool calls are emitted only after the whole call set passes validation.
+
+Empty reasoning options and `enabled=true` are no-ops. `effort` accepts low,
+medium, or high, and `exclude` controls response visibility. Disabling reasoning
+generation or unsupported reasoning keys returns an explicit parameter error.
+
+Native workers always report `matched_stop`: a removed string stop or null for
+EOS/length/cancellation. Request stops take precedence over template stops at the
+same position. Older workers that omit the field cannot distinguish EOS from a
+removed request stop; with request stops configured, incomplete blocks are
+conservatively treated as cutoffs. Completed malformed blocks still fail.

@@ -239,6 +239,8 @@ Json terminal_json(const serving::TerminalEvent& event) {
       {"decode_tok_s",
        s.decode_ms > 0 ? s.completion_tokens * 1000.0 / s.decode_ms : 0},
       {"session_reset_reason", s.session_reset_reason}};
+  out["matched_stop"] = s.matched_stop ? nlohmann::json(*s.matched_stop)
+                                       : nlohmann::json(nullptr);
   if (s.generated_token_ids)
     out["generated_token_ids"] = *s.generated_token_ids;
   return out;

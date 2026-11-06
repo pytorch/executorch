@@ -104,6 +104,7 @@ class ChatTemplate:
         strip_rendered_bos: bool = False,
         append_generation_prompt_after_tool_response: bool = False,
         tool_response_generation_prompt_markers: Optional[tuple[str, ...]] = None,
+        chat_template: Optional[str] = None,
     ):
         if strip_rendered_prefix and strip_rendered_bos:
             raise ValueError("use either strip_rendered_prefix or strip_rendered_bos")
@@ -128,6 +129,8 @@ class ChatTemplate:
             from transformers import AutoTokenizer
 
             self._hf = AutoTokenizer.from_pretrained(hf_tokenizer_path)
+            if chat_template is not None:
+                self._hf.chat_template = chat_template
             if self._hf.chat_template is None:
                 self._hf = None
                 if not allow_fallback:

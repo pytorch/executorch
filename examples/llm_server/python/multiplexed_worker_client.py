@@ -413,7 +413,10 @@ class MultiplexedWorkerClient:
                 item for item in self._writes if item[0] != state.request_id
             )
             state.cancel_requested = True
-            self._complete(state, WorkerStats(finish_reason="stop", cancelled=True))
+            self._complete(
+                state,
+                WorkerStats(finish_reason="stop", matched_stop="", cancelled=True),
+            )
             return True
         if len(self._controls) >= self.max_inflight_requests:
             state.cancel_pending = True
@@ -617,6 +620,16 @@ class MultiplexedWorkerClient:
                 or msg[key] < 0
             ):
                 raise WorkerError(f"invalid worker statistic: {key}")
+        if (
+            "matched_stop" in msg
+            and msg["matched_stop"] is not None
+            and (
+                not isinstance(msg["matched_stop"], str)
+                or not msg["matched_stop"]
+                or msg.get("finish_reason") != "stop"
+            )
+        ):
+            raise WorkerError("invalid worker matched_stop")
         if "finish_reason" in msg and msg["finish_reason"] not in ("stop", "length"):
             raise WorkerError("invalid worker finish_reason")
         if "cancelled" in msg and type(msg["cancelled"]) is not bool:
