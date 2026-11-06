@@ -141,7 +141,11 @@ class TestRemoveCloneOpsTransform(TestCase):
         torch.testing.assert_close(transformed_gm(inputs), expected, rtol=0, atol=0)
 
     def test_clone_non_identity_survives(self):
-        """Verify clone ops that modify memory_format are preserved by RemoveCloneOpsTransform."""
+        """Verify clone ops that modify memory_format are preserved by RemoveCloneOpsTransform.
+
+        A _clone_dim_order keeps its dim order. An aten.clone stays as a copy
+        whose memory_format becomes contiguous_format.
+        """
 
         for skip_dim_order, clone_op_str in self.CLONE_OP_CASES:
             model = SimpleCloneChannelsLastModule()
@@ -162,7 +166,32 @@ class TestRemoveCloneOpsTransform(TestCase):
             expected = before_epm.exported_program().module()(x)
             actual = updated_epm.exported_program().module()(x)
             assert torch.allclose(actual, expected)
-            assert is_channel_last_dim_order(actual)
+            if skip_dim_order:
+                (clone,) = [
+                    n
+                    for n in updated_epm.exported_program().graph_module.graph.nodes
+                    if n.target == exir_ops.edge.aten.clone.default
+                ]
+                self.assertEqual(
+                    clone.kwargs["memory_format"], torch.contiguous_format
+                )
+                self.assertTrue(clone.meta["val"].is_contiguous())
+                self.assertTrue(actual.is_contiguous())
+            else:
+                assert is_channel_last_dim_order(actual)
+
+    def test_clone_memory_format_emits_without_dim_order(self):
+        """Verify a channels_last aten.clone serializes once the transform has run."""
+
+        model = SimpleCloneChannelsLastModule()
+        x = torch.randn(3, 4, 5, 6)
+
+        exported = export(model.eval(), (x,), strict=True)
+        edge = to_edge(
+            exported, compile_config=EdgeCompileConfig(_skip_dim_order=True)
+        ).transform([RemoveCloneOpsTransform()])
+
+        self.assertGreater(len(edge.to_executorch().buffer), 0)
 
     def test_clone_identity_removed(self):
         """Verify identity clone ops are removed by RemoveCloneOpsTransform."""

@@ -13,11 +13,17 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 from executorch.exir.passes.remove_noop_pass import _DEQUANT_OPS, eliminate_dq_q
+from torch._subclasses.fake_tensor import FakeTensor
 
 
 class RemoveCloneOpsTransform(ExportPass):
     """
     Trim the 'identity' operators to reduce the unnecessary copy overhead.
+
+    A clone that changes the memory layout stays. A _clone_dim_order keeps its
+    dim order. An aten.clone only carries a memory format when the program
+    skips dim order, and ExecuTorch serializes only contiguous_format and
+    preserve_format for it, so its memory_format becomes contiguous_format.
     """
 
     clone_ops: Set[torch._ops.OpOverload] = {
@@ -43,6 +49,7 @@ class RemoveCloneOpsTransform(ExportPass):
                 continue
 
             if self._is_non_identity_clone(n):
+                modified |= self._make_contiguous_clone(n)
                 continue
 
             # If preserve_input_output_copies is set, don't remove clones that directly
@@ -94,6 +101,22 @@ class RemoveCloneOpsTransform(ExportPass):
             )
 
         return False
+
+    def _make_contiguous_clone(self, node: torch.fx.Node) -> bool:
+        """Set an aten.clone's memory_format to contiguous_format. Return True if changed."""
+
+        if node.target != exir_ops.edge.aten.clone.default:
+            return False
+        if node.kwargs.get("memory_format") == torch.contiguous_format:
+            return False
+        node.kwargs = {**node.kwargs, "memory_format": torch.contiguous_format}
+        val = node.meta.get("val")
+        if isinstance(val, FakeTensor):
+            with val.fake_mode:
+                node.meta["val"] = torch.empty_like(
+                    val, memory_format=torch.contiguous_format
+                )
+        return True
 
     def _is_input_output_copy(self, node: torch.fx.Node) -> bool:
         """Return True if the node input is a graph input and output goes into an output node."""
