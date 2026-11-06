@@ -43,6 +43,12 @@ from typing import Callable, Optional, Tuple, Union
 import executorch.backends.mlx.custom_ops as _mlx_custom_ops  # noqa: F401
 import torch
 from executorch.backends.mlx.llm.exportable import _LogitsToKeepMixin, LogitsToKeepMode
+from executorch.extension.llm.cache.hf_attention import (  # noqa: F401
+    _cache_id,
+    offgraph_attention_forward as mlx_offgraph_attention_forward,
+    register_offgraph_attention,
+    sdpa_mask_passthrough,
+)
 
 
 def mlx_sdpa_with_start_pos_forward(
@@ -111,94 +117,6 @@ def mlx_sdpa_with_start_pos_forward(
     return output.transpose(1, 2).contiguous(), None
 
 
-def _cache_id(module: torch.nn.Module) -> int:
-    """Which cache a layer addresses -- a cache id, not a model layer index.
-
-    A KV-sharing layer (gemma 4's YOCO) computes no k/v of its own; HuggingFace
-    hands it the k/v of the last non-sharing layer of the same attention type.
-    Pointing it at that donor's cache makes its write repeat what the donor
-    already stored and its read the shared history, so only donors own a cache
-    (15 rather than 35 for gemma-4-E2B).
-    """
-    if not getattr(module, "is_kv_shared_layer", False):
-        return module.layer_idx
-    cfg = module.config
-    first_shared = cfg.num_hidden_layers - getattr(cfg, "num_kv_shared_layers", 0)
-    donors = list(cfg.layer_types[:first_shared])
-    # Last index in `donors` of this layer's attention type. Kept identical to
-    # how Gemma4TextAttention derives `store_full_length_kv`, since that is the
-    # layer whose k/v we are handed; the two must agree.
-    return len(donors) - 1 - donors[::-1].index(cfg.layer_types[module.layer_idx])
-
-
-def mlx_offgraph_attention_forward(
-    module: torch.nn.Module,
-    query: torch.Tensor,  # [B, num_heads, q_len, head_dim] - BHSD
-    key: torch.Tensor,  # [B, num_kv_heads, q_len, head_dim] - BHSD (this step)
-    value: torch.Tensor,  # [B, num_kv_heads, q_len, head_dim] - BHSD (this step)
-    attention_mask: Union[torch.Tensor, "BlockMask"],  # noqa: F821
-    position_ids: Optional[torch.Tensor] = None,
-    scaling: Optional[float] = None,
-    softcap: Optional[float] = None,
-    head_mask: Optional[torch.Tensor] = None,
-    **kwargs,
-) -> Tuple[torch.Tensor, None]:
-    """
-    Attention over the off-graph KV cache (kvcache::update_and_attend).
-
-    Unlike the mlx::custom_sdpa path, no cache is in the graph: the model must be
-    run with use_cache=False so key/value are this step's projections, not full
-    history. The op owns the cache, placing/reading by `position` and masking
-    itself, so this is causal-only and never materializes a mask tensor.
-
-    Returns (output, None) where output is [B, q_len, num_heads, head_dim] (BSHD).
-    """
-    # As above: reject only what changes the result, ignore the rest.
-    if kwargs.get("dropout"):
-        raise ValueError("mlx_offgraph attention does not support dropout")
-    if softcap is not None:
-        raise ValueError("mlx_offgraph attention does not support softcap")
-    if head_mask is not None:
-        raise ValueError("mlx_offgraph attention does not support head_mask")
-    assert (
-        position_ids is not None
-    ), "position_ids must be provided to place tokens in the off-graph cache"
-    # Per-token absolute positions [q_len, 1]; the op places + masks from these.
-    position = position_ids[0].reshape(-1, 1)
-    assert scaling is not None, "scaling must be provided by the attention module"
-
-    output = torch.ops.kvcache.update_and_attend(
-        query,
-        key,
-        value,
-        position,
-        layer_id=_cache_id(module),
-        scale=scaling,
-        out_dtype=query.dtype,
-    )
-
-    # Transpose BHSD → BSHD for HF
-    return output.transpose(1, 2).contiguous(), None
-
-
-def sdpa_mask_passthrough(
-    batch_size: int,
-    cache_position: Optional[torch.Tensor] = None,
-    q_length: Optional[int] = None,
-    kv_length: Optional[int] = None,
-    q_offset: Optional[Union[int, torch.Tensor]] = None,
-    kv_offset: int = 0,
-    mask_function: Optional[Callable] = None,
-    attention_mask: Optional[torch.Tensor] = None,
-    local_size: Optional[int] = None,
-    allow_is_causal_skip: bool = True,
-    allow_torch_fix: bool = True,
-    **kwargs,
-) -> Optional[torch.Tensor]:
-    """Returns None — custom SDPA handles causal masking, avoiding bounded mask tensors."""
-    return None
-
-
 def register_mlx_attention(name: str = "mlx") -> None:
     """
     Register MLX attention with HuggingFace's attention interfaces.
@@ -263,21 +181,9 @@ def register_mlx_offgraph_attention(name: str = "mlx_offgraph") -> None:
 
     Models using attn_implementation="mlx_offgraph" must be exported with
     use_cache=False (no StaticCache): the cache lives outside the graph, bound at
-    runtime via cache_key. Importing the op module registers the custom op.
+    runtime via cache_key.
     """
-    from executorch.extension.llm.cache import update_and_attend  # noqa: F401
-
-    try:
-        from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
-        from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
-
-        ALL_ATTENTION_FUNCTIONS.register(name, mlx_offgraph_attention_forward)
-        ALL_MASK_ATTENTION_FUNCTIONS.register(name, sdpa_mask_passthrough)
-
-    except ImportError:
-        raise ImportError(
-            "transformers is not installed. Please install it: pip install transformers"
-        )
+    register_offgraph_attention(name)
 
 
 def get_mlx_sliding_window_sdpa(exportable_module) -> Callable:
