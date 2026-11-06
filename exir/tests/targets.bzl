@@ -115,6 +115,17 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest(
+        name = "graph_module",
+        srcs = [
+            "test_graph_module.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:graph_module",
+        ],
+    )
+
+    python_unittest(
         name = "tensor",
         srcs = [
             "test_tensor.py",

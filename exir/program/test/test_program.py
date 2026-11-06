@@ -9,9 +9,11 @@
 import copy
 import unittest
 from typing import Any, Dict
+from unittest.mock import patch
 
 import torch
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.backend.test.op_partitioner_demo import (
     AddMulPartitionerDemo,
     NonDecompTestPartitioner,
@@ -22,6 +24,7 @@ from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import (
+    _has_decomposable_ops,
     _transform,
     EdgeProgramManager,
     ExecutorchProgramManager,
@@ -1092,3 +1095,114 @@ class TestProgramManagers(unittest.TestCase):
         )
         self.assertTrue(issubclass(transformed.verifiers[0], MyVerifier))
         self.assertFalse(issubclass(program.verifiers[0], MyVerifier))
+
+
+def _all_call_function_targets(gm: torch.fx.GraphModule) -> list[Any]:
+    return [
+        node.target
+        for module in gm.modules()
+        if isinstance(module, torch.fx.GraphModule)
+        for node in module.graph.nodes
+        if node.op == "call_function"
+    ]
+
+
+def _all_graph_module_code(gm: torch.fx.GraphModule) -> dict[str, str]:
+    return {
+        name: module.code
+        for name, module in gm.named_modules()
+        if isinstance(module, torch.fx.GraphModule)
+    }
+
+
+class _NoOpPartitioner(Partitioner):
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        return PartitionResult(exported_program, {})
+
+
+class DecompositionSkipTest(unittest.TestCase):
+    class WhileLinear(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.linear = torch.nn.Linear(2, 2)
+
+        def forward(
+            self, iterations: torch.Tensor, x: torch.Tensor
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            def cond_fn(it: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
+                return it > 0
+
+            def body_fn(
+                it: torch.Tensor, value: torch.Tensor
+            ) -> tuple[torch.Tensor, torch.Tensor]:
+                return it - 1, self.linear(value)
+
+            return torch._higher_order_ops.while_loop(cond_fn, body_fn, (iterations, x))
+
+    def test_skips_passes_with_nothing_to_decompose(self) -> None:
+        # The partitioner preserves and delegates linear, the only op, so after
+        # functionalization neither decomposition pass has anything to apply.
+        ep = _export(TestLinear(), TestLinear._get_random_inputs(), pre_dispatch=True)
+        with patch.object(
+            ExportedProgram,
+            "run_decompositions",
+            autospec=True,
+            side_effect=ExportedProgram.run_decompositions,
+        ) as run_decompositions:
+            edge = to_edge_transform_and_lower(
+                ep, partitioner=[NonDecompTestPartitioner()]
+            )
+
+        # Only the call that functionalizes the graph.
+        self.assertEqual(run_decompositions.call_count, 1)
+        self.assertEqual(
+            len(get_lowered_submodules(edge.exported_program().graph_module)), 1
+        )
+
+    def test_decomposes_op_in_while_loop_body(self) -> None:
+        ep = export(
+            self.WhileLinear(), (torch.tensor(3), torch.randn(2, 2)), strict=True
+        )
+
+        edge = to_edge_transform_and_lower(ep, partitioner=[_NoOpPartitioner()])
+
+        self.assertNotIn(
+            exir_ops.edge.aten.linear.default,
+            _all_call_function_targets(edge.exported_program().graph_module),
+        )
+
+    def test_nested_region_decompositions_count(self) -> None:
+        class NestedRegionConfig:
+            decompositions: dict[Any, Any] = {}
+
+        ep = export(TestLinear(), TestLinear._get_random_inputs(), strict=True)
+        sin = {torch.ops.aten.sin.default}
+        self.assertFalse(_has_decomposable_ops(ep, sin))
+
+        ep.graph_module.meta["nested_region_config"] = NestedRegionConfig()
+
+        self.assertTrue(_has_decomposable_ops(ep, sin))
+
+    def test_skipped_pass_would_not_change_program(self) -> None:
+        for model in (TestLinear(), TestLSTM(), TestLinearSDPACombined()):
+            with self.subTest(model=type(model).__name__):
+                inputs = model._get_random_inputs()
+                program = _export(model, inputs, pre_dispatch=True).run_decompositions(
+                    {}
+                )
+                table = _default_decomposition_table()
+                for target in _all_call_function_targets(program.graph_module):
+                    if target in table:
+                        table.pop(target)
+                self.assertFalse(_has_decomposable_ops(program, table))
+
+                decomposed = copy.deepcopy(program).run_decompositions(table)
+
+                self.assertEqual(
+                    _all_graph_module_code(program.graph_module),
+                    _all_graph_module_code(decomposed.graph_module),
+                )
+                self.assertEqual(program.graph_signature, decomposed.graph_signature)
+                torch.testing.assert_close(
+                    program.module()(*inputs), decomposed.module()(*inputs)
+                )
