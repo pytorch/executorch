@@ -16,7 +16,13 @@ conv2d_tiled:
     TILE_X: 2
     TILE_Y: 2
     CLAMP_TAPS: false
+    RESIDUAL: false
   generate_variant_forall:
+    RESIDUAL:
+    - VALUE: false
+      SUFFIX: ""
+    - VALUE: true
+      SUFFIX: residual
     DTYPE:
     - VALUE: half
   shader_variants:
@@ -24,6 +30,11 @@ conv2d_tiled:
     OUT_N4: 2
     ZERO_BORDER: true
     generate_variant_forall:
+      RESIDUAL:
+      - VALUE: false
+        SUFFIX: ""
+      - VALUE: true
+        SUFFIX: residual
       DTYPE:
       - VALUE: half
       - VALUE: float
@@ -40,6 +51,11 @@ conv2d_tiled:
     TILE_Y: 2
     ZERO_BORDER: false
     generate_variant_forall:
+      RESIDUAL:
+      - VALUE: false
+        SUFFIX: ""
+      - VALUE: true
+        SUFFIX: residual
       DTYPE:
       - VALUE: half
       - VALUE: float
@@ -48,6 +64,11 @@ conv2d_tiled:
     TILE_Y: 2
     ZERO_BORDER: true
     generate_variant_forall:
+      RESIDUAL:
+      - VALUE: false
+        SUFFIX: ""
+      - VALUE: true
+        SUFFIX: residual
       DTYPE:
       - VALUE: half
       - VALUE: float
@@ -56,6 +77,11 @@ conv2d_tiled:
     TILE_Y: 1
     ZERO_BORDER: false
     generate_variant_forall:
+      RESIDUAL:
+      - VALUE: false
+        SUFFIX: ""
+      - VALUE: true
+        SUFFIX: residual
       DTYPE:
       - VALUE: half
       - VALUE: float
@@ -65,6 +91,11 @@ conv2d_tiled:
     TILE_Y: 1
     ZERO_BORDER: false
     generate_variant_forall:
+      RESIDUAL:
+      - VALUE: false
+        SUFFIX: ""
+      - VALUE: true
+        SUFFIX: residual
       DTYPE:
       - VALUE: half
       - VALUE: float
@@ -73,6 +104,11 @@ conv2d_tiled:
     TILE_Y: 1
     ZERO_BORDER: true
     generate_variant_forall:
+      RESIDUAL:
+      - VALUE: false
+        SUFFIX: ""
+      - VALUE: true
+        SUFFIX: residual
       DTYPE:
       - VALUE: half
       - VALUE: float
@@ -89,6 +125,11 @@ conv2d_tiled:
   - NAME: conv2d_2x2x4_grouped_gather
     GATHER_GROUPS: true
     generate_variant_forall:
+      RESIDUAL:
+      - VALUE: false
+        SUFFIX: ""
+      - VALUE: true
+        SUFFIX: residual
       DTYPE:
       - VALUE: half
       - VALUE: float

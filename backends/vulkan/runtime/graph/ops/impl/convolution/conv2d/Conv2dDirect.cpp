@@ -343,6 +343,9 @@ vkapi::ShaderInfo pick_conv2d_tiled_shader(
   if (variant.transposed && graph->get_bool(resize_args.at(7))) {
     name += "_clamp";
   }
+  if (!variant.transposed && graph->get_bool(resize_args.at(10))) {
+    name += "_residual";
+  }
   add_dtype_suffix(name, graph->dtype_of(args.at(0).refs.at(0)));
   return VK_KERNEL_FROM_STR(name);
 }
@@ -481,7 +484,9 @@ void add_conv2d_direct_node(
     const bool has_bias,
     const bool force_masked,
     const bool fast_tiled,
-    const bool clamp_out) {
+    const bool clamp_out,
+    const ValueRef residual,
+    const bool use_residual) {
   vkapi::ParamsBindList param_buffers = {
       graph.logical_limits_ubo(out),
       graph.sizes_ubo(in),
@@ -500,10 +505,18 @@ void add_conv2d_direct_node(
     spec_vars.append(vkapi::SpecVar(graph.size_at<int32_t>(1, weight_data)));
     spec_vars.append(vkapi::SpecVar(utils::safe_downcast<int32_t>(
         graph.size_at<int64_t>(0, weight_data) / groups_val)));
+    if (residual != kDummyValueRef) {
+      spec_vars.append(vkapi::SpecVar(use_residual));
+    }
   }
 
+  const bool has_residual = residual != kDummyValueRef;
+  std::vector<ValueRef> reads = {in, arg_weight, arg_bias};
+  if (has_residual) {
+    reads.push_back(residual);
+  }
   const std::vector<ArgGroup> args = {
-      {out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}};
+      {out, vkapi::kWrite}, {reads, vkapi::kRead}};
   const std::vector<ValueRef> resize_args = {
       weight_data,
       stride,
@@ -514,7 +527,8 @@ void add_conv2d_direct_node(
       graph.add_scalar<bool>(force_masked),
       graph.add_scalar<bool>(clamp_out),
       groups,
-      graph.add_scalar<bool>(fast_tiled)};
+      graph.add_scalar<bool>(fast_tiled),
+      graph.add_scalar<bool>(has_residual)};
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_conv2d_tiled_shader,
@@ -543,7 +557,10 @@ void conv2d_direct_impl(
     const bool clamp_out,
     const float out_min_val,
     const float out_max_val,
-    const bool force_masked) {
+    const bool force_masked,
+    const ValueRef residual,
+    const float neg_slope,
+    const bool lrelu) {
   const bool transposed_val = graph.get_bool(transposed);
   const int64_t groups_val = graph.get_int(groups);
   const Conv2dMethod method =
@@ -585,7 +602,21 @@ void conv2d_direct_impl(
   Conv2dParams extra_params =
       create_conv2d_params(graph, weight_data, kernel_params, transposed_val);
 
-  OutputParams out_params = {out_min_val, out_max_val};
+  // The LeakyReLU epilogue reads its slope from the `out_min` slot. Without a
+  // residual the input is bound as a placeholder the shader never reads.
+  const bool epilogue = lrelu || residual != kDummyValueRef;
+  const ValueRef residual_bind =
+      residual != kDummyValueRef ? residual : (epilogue ? in : kDummyValueRef);
+  OutputParams out_params = epilogue ? OutputParams{neg_slope, 0.0f}
+                                     : OutputParams{out_min_val, out_max_val};
+  if (epilogue) {
+    VK_CHECK_COND(!transposed_val && !clamp_out);
+  }
+  if (residual != kDummyValueRef) {
+    VK_CHECK_COND(graph.sizes_of(residual) == graph.sizes_of(out));
+    VK_CHECK_COND(graph.storage_type_of(residual) == utils::kTexture3D);
+    VK_CHECK_COND(graph.packed_dim_of(residual) == WHCN::kChannelsDim);
+  }
 
   check_conv2d_params(kernel_params, transposed_val);
   if (!transposed_val) {
@@ -617,7 +648,9 @@ void conv2d_direct_impl(
       !graph.val_is_none(bias),
       force_masked,
       fast_tiled,
-      clamp_out);
+      clamp_out,
+      residual_bind,
+      residual != kDummyValueRef);
 }
 
 } // namespace vkcompute

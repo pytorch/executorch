@@ -8,6 +8,10 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
 
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+#include <dlfcn.h>
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+
 namespace vkcompute {
 namespace vkapi {
 
@@ -22,7 +26,8 @@ VulkanBuffer::VulkanBuffer()
       owns_memory_(false),
       memory_bundled_(false),
       is_copy_(false),
-      handle_(VK_NULL_HANDLE) {}
+      handle_(VK_NULL_HANDLE),
+      external_memory_(VK_NULL_HANDLE) {}
 
 VulkanBuffer::VulkanBuffer(
     VmaAllocator vma_allocator,
@@ -36,7 +41,8 @@ VulkanBuffer::VulkanBuffer(
       owns_memory_(allocate_memory),
       memory_bundled_(allocate_memory),
       is_copy_(false),
-      handle_(VK_NULL_HANDLE) {
+      handle_(VK_NULL_HANDLE),
+      external_memory_(VK_NULL_HANDLE) {
   // If the buffer size is 0, allocate a buffer with a size of 1 byte. This is
   // to ensure that there will be some resource that can be bound to a shader.
   if (size == 0) {
@@ -81,7 +87,8 @@ VulkanBuffer::VulkanBuffer(
       owns_memory_(false),
       memory_bundled_(false),
       is_copy_(true),
-      handle_(other.handle_) {
+      handle_(other.handle_),
+      external_memory_(VK_NULL_HANDLE) {
   // TODO: set the offset and range appropriately
   buffer_properties_.mem_offset = other.buffer_properties_.mem_offset + offset;
   if (range != VK_WHOLE_SIZE) {
@@ -96,24 +103,31 @@ VulkanBuffer::VulkanBuffer(VulkanBuffer&& other) noexcept
       owns_memory_(other.owns_memory_),
       memory_bundled_(other.memory_bundled_),
       is_copy_(other.is_copy_),
-      handle_(other.handle_) {
+      handle_(other.handle_),
+      external_memory_(other.external_memory_) {
   other.handle_ = VK_NULL_HANDLE;
+  other.external_memory_ = VK_NULL_HANDLE;
 }
 
 VulkanBuffer& VulkanBuffer::operator=(VulkanBuffer&& other) noexcept {
   VkBuffer tmp_buffer = handle_;
   bool tmp_owns_memory = owns_memory_;
   bool tmp_memory_bundled = memory_bundled_;
+  VkDeviceMemory tmp_external_memory = external_memory_;
 
   buffer_properties_ = other.buffer_properties_;
   allocator_ = other.allocator_;
+  // Allocation's move assignment swaps, so `other` takes this buffer's previous
+  // allocation along with the handle and flags swapped below, and frees them.
   memory_ = std::move(other.memory_);
   owns_memory_ = other.owns_memory_;
   memory_bundled_ = other.memory_bundled_;
   is_copy_ = other.is_copy_;
   handle_ = other.handle_;
+  external_memory_ = other.external_memory_;
 
   other.handle_ = tmp_buffer;
+  other.external_memory_ = tmp_external_memory;
   other.owns_memory_ = tmp_owns_memory;
   other.memory_bundled_ = tmp_memory_bundled;
 
@@ -121,6 +135,11 @@ VulkanBuffer& VulkanBuffer::operator=(VulkanBuffer&& other) noexcept {
 }
 
 VulkanBuffer::~VulkanBuffer() {
+  if (external_memory_ != VK_NULL_HANDLE) {
+    vkDestroyBuffer(this->device(), handle_, nullptr);
+    vkFreeMemory(this->device(), external_memory_, nullptr);
+    return;
+  }
   // Do not destroy the VkBuffer if this class instance is a copy of another
   // class instance, since this means that this class instance does not have
   // ownership of the underlying resource.
@@ -144,6 +163,114 @@ VulkanBuffer::~VulkanBuffer() {
     }
   }
 }
+
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+namespace {
+
+// Importing anything but a BLOB buffer with GPU_DATA_BUFFER usage into a
+// VkBuffer is invalid usage, which a driver may answer with a crash rather
+// than an error. AHardwareBuffer_describe is looked up at runtime because it
+// needs API 26 at compile time; every device with AHardwareBuffer has it.
+void check_importable_as_buffer(const AHardwareBuffer* ahb) {
+  using DescribeFn = void (*)(const AHardwareBuffer*, AHardwareBuffer_Desc*);
+  static const auto describe = reinterpret_cast<DescribeFn>(
+      dlsym(RTLD_DEFAULT, "AHardwareBuffer_describe"));
+  VK_CHECK_COND(describe != nullptr, "AHardwareBuffer_describe is unavailable");
+  AHardwareBuffer_Desc desc{};
+  describe(ahb, &desc);
+  VK_CHECK_COND(
+      desc.format == AHARDWAREBUFFER_FORMAT_BLOB &&
+          (desc.usage & AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER) != 0,
+      "AHardwareBuffer must be a BLOB buffer with GPU_DATA_BUFFER usage");
+}
+
+} // namespace
+
+VulkanBuffer VulkanBuffer::import_android_hardware_buffer(
+    const VmaAllocator vma_allocator,
+    AHardwareBuffer* ahb,
+    const VkBufferUsageFlags usage) {
+  VulkanBuffer buffer;
+  buffer.allocator_ = vma_allocator;
+  const VkDevice device = buffer.device();
+
+  VK_CHECK_COND(ahb != nullptr, "null AHardwareBuffer");
+  check_importable_as_buffer(ahb);
+  // volk leaves this null when the device was created without the extension.
+  VK_CHECK_COND(
+      vkGetAndroidHardwareBufferPropertiesANDROID != nullptr,
+      "VK_ANDROID_external_memory_android_hardware_buffer is not enabled on "
+      "this device");
+  // Sized from Vulkan's view of the AHardwareBuffer: for a BLOB buffer the
+  // allocation covers at least the requested width.
+  VkAndroidHardwareBufferPropertiesANDROID props{
+      VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID};
+  VK_CHECK(vkGetAndroidHardwareBufferPropertiesANDROID(device, ahb, &props));
+  buffer.buffer_properties_ = {props.allocationSize, 0u, props.allocationSize};
+
+  const VkExternalMemoryBufferCreateInfo external_info{
+      VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO,
+      nullptr,
+      VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID,
+  };
+  const VkBufferCreateInfo buffer_create_info{
+      VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      &external_info,
+      0u,
+      props.allocationSize,
+      usage,
+      VK_SHARING_MODE_EXCLUSIVE,
+      0u,
+      nullptr,
+  };
+  VK_CHECK(vkCreateBuffer(device, &buffer_create_info, nullptr, &buffer.handle_));
+
+  // Until the memory is bound the destructor does not know this buffer is
+  // external, so a failure below cleans up here.
+  try {
+    bind_android_hardware_buffer(buffer, ahb, props);
+  } catch (...) {
+    if (buffer.external_memory_ != VK_NULL_HANDLE) {
+      vkFreeMemory(device, buffer.external_memory_, nullptr);
+      buffer.external_memory_ = VK_NULL_HANDLE;
+    }
+    vkDestroyBuffer(device, buffer.handle_, nullptr);
+    buffer.handle_ = VK_NULL_HANDLE;
+    throw;
+  }
+  return buffer;
+}
+
+void VulkanBuffer::bind_android_hardware_buffer(
+    VulkanBuffer& buffer,
+    AHardwareBuffer* ahb,
+    const VkAndroidHardwareBufferPropertiesANDROID& props) {
+  const VkDevice device = buffer.device();
+  VkMemoryRequirements requirements{};
+  vkGetBufferMemoryRequirements(device, buffer.handle_, &requirements);
+  const uint32_t type_bits = props.memoryTypeBits & requirements.memoryTypeBits;
+  VK_CHECK_COND(type_bits != 0, "no memory type fits the AHardwareBuffer");
+  uint32_t memory_type = 0;
+  while (!(type_bits & (1u << memory_type))) {
+    ++memory_type;
+  }
+
+  const VkImportAndroidHardwareBufferInfoANDROID import_info{
+      VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID,
+      nullptr,
+      ahb,
+  };
+  const VkMemoryAllocateInfo allocate_info{
+      VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      &import_info,
+      props.allocationSize,
+      memory_type,
+  };
+  VK_CHECK(vkAllocateMemory(
+      device, &allocate_info, nullptr, &buffer.external_memory_));
+  VK_CHECK(vkBindBufferMemory(device, buffer.handle_, buffer.external_memory_, 0));
+}
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
 
 VmaAllocationInfo VulkanBuffer::allocation_info() const {
   VmaAllocationInfo info;

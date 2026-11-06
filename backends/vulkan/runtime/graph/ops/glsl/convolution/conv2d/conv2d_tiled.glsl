@@ -33,11 +33,19 @@ $if WEIGHT_BUFFER:
 $else:
   ${layout_declare_tensor(2, "r", "t_kernel", DTYPE, "texture2d", precision="mediump" if DTYPE == "half" else "PRECISION")}
 ${layout_declare_tensor(3, "r", "t_bias", DTYPE, "texture2d")}
-${layout_declare_ubo(4, "ivec3", "out_limits")}
-${layout_declare_ubo(5, "ivec4", "in_sizes")}
-${layout_declare_ubo(6, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
-${layout_declare_ubo(7, "ivec2", "overlay_region", "int", "in_group_size")}
-${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
+$if RESIDUAL:
+  ${layout_declare_tensor(4, "r", "t_residual", DTYPE, "texture3d")}
+  ${layout_declare_ubo(5, "ivec3", "out_limits")}
+  ${layout_declare_ubo(6, "ivec4", "in_sizes")}
+  ${layout_declare_ubo(7, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
+  ${layout_declare_ubo(8, "ivec2", "overlay_region", "int", "in_group_size")}
+  ${layout_declare_ubo(9, "float", "out_min", "float", "out_max")}
+$else:
+  ${layout_declare_ubo(4, "ivec3", "out_limits")}
+  ${layout_declare_ubo(5, "ivec4", "in_sizes")}
+  ${layout_declare_ubo(6, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
+  ${layout_declare_ubo(7, "ivec2", "overlay_region", "int", "in_group_size")}
+  ${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -66,7 +74,23 @@ $if GATHER_GROUPS:
   #define GATHER_GROUPS
 ${layout_declare_spec_const(6, "bool", "clamp_out", "false")}
 ${layout_declare_spec_const(7, "bool", "has_bias", "false")}
-#define OUTPUT_VALUE(v) (clamp_out ? clamp(vec4(v), out_min, out_max) : vec4(v))
+$if RESIDUAL:
+  // conv (+ residual), then LeakyReLU with slope `out_min`, e.g. the ResConv
+  // tail `leaky_relu(conv(x) + x)`, in the conv's own epilogue.
+  #define RESIDUAL
+  // `use_residual` false: LeakyReLU only (t_residual is then a placeholder).
+  ${layout_declare_spec_const(10, "bool", "use_residual", "true")}
+  vec4 output_value(VEC4_T v, ivec3 p) {
+    vec4 r = vec4(v);
+    if (use_residual) {
+      r += texelFetch(t_residual, p, 0);
+    }
+    return mix(r * out_min, r, greaterThan(r, vec4(0)));
+  }
+  #define OUTPUT_VALUE(v, p) output_value(v, p)
+$else:
+  #define OUTPUT_VALUE(v, p) \
+    (clamp_out ? clamp(vec4(v), out_min, out_max) : vec4(v))
 
 #ifdef GATHER_GROUPS
 SCALAR_T group_input(ivec2 p, int ci, int co) {
@@ -214,10 +238,12 @@ void store_tile(ivec3 pos) {
   [[unroll]] for (int i = 0; i < TILE_PIXELS; ++i) {
     const ivec2 offset = ivec2(i % TILE_X, i / TILE_X);
     if (pos.x + offset.x < out_limits.x && pos.y + offset.y < out_limits.y) {
-      imageStore(t_out, pos + ivec3(offset, 0), OUTPUT_VALUE(sums[i][0]));
+      const ivec3 p0 = pos + ivec3(offset, 0);
+      imageStore(t_out, p0, OUTPUT_VALUE(sums[i][0], p0));
 #if OUT_N4 == 2
       if (second_slice) {
-        imageStore(t_out, pos + ivec3(offset, 1), OUTPUT_VALUE(sums[i][1]));
+        const ivec3 p1 = pos + ivec3(offset, 1);
+        imageStore(t_out, p1, OUTPUT_VALUE(sums[i][1], p1));
       }
 #endif
     }

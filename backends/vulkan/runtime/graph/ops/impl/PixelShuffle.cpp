@@ -89,6 +89,11 @@ void pixel_shuffle(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.pixel_shuffle.default, pixel_shuffle);
+  // Same fused kernel, exposed under the et_vk namespace so a model can emit a
+  // custom op that survives ExecuTorch's pixel_shuffle decomposition (which
+  // otherwise expands into view/permute/clone/view). Arg order matches:
+  // (input, upscale_factor, out).
+  VK_REGISTER_OP(et_vk.pixel_shuffle.default, pixel_shuffle);
 }
 
 } // namespace vkcompute

@@ -38,6 +38,15 @@ class StagingBuffer final {
       const size_t numel,
       const vkapi::CopyDirection direction);
 
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+  // Staging memory shared with another API through a BLOB AHardwareBuffer.
+  // It has no host pointer: the other API reads or writes it on the GPU.
+  StagingBuffer(
+      Context* context_p,
+      const vkapi::ScalarType dtype,
+      AHardwareBuffer* ahb);
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+
   StagingBuffer(const StagingBuffer&) = delete;
   StagingBuffer& operator=(const StagingBuffer&) = delete;
 
@@ -56,7 +65,14 @@ class StagingBuffer final {
     return vulkan_buffer_;
   }
 
+  inline bool is_external() const {
+    return vulkan_buffer_.is_external();
+  }
+
   inline void* data() {
+    VK_CHECK_COND(
+        !vulkan_buffer_.is_external(),
+        "an external (AHardwareBuffer) staging buffer has no host mapping");
     if (!mapped_data_) {
       mapped_data_ = vulkan_buffer_.allocation_info().pMappedData;
     }
