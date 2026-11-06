@@ -667,7 +667,8 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Only support dim order conversion partitioning, not DType conversions
+        Partitions dim order conversions, and fp32 <-> fp16 and fp32 <-> bf16
+        dtype casts that keep the dim order.
         """
         if not self.check_common_constraints(node, ep):
             return False
@@ -678,19 +679,26 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
         output_dtype = node.meta["val"].dtype
 
         if input_dtype != output_dtype:
-            # A dtype cast is lowered to an XNNPACK convert node, as long as
-            # the op does not change the dim order at the same time.
-            supported_cast = {input_dtype, output_dtype} <= {
-                torch.float32,
-                torch.float16,
-            }
-            same_dim_order = list(input_node.meta["val"].dim_order()) == list(
-                node.meta["val"].dim_order()
+            # A dtype cast is lowered to an XNNPACK convert node. XNNPACK has
+            # no fp16 <-> bf16 convert, and bf16 also needs enable_bf16, which
+            # check_common_constraints enforces.
+            supported_cast = {input_dtype, output_dtype} in (
+                {torch.float32, torch.float16},
+                {torch.float32, torch.bfloat16},
             )
-            if not (supported_cast and same_dim_order):
+            if not supported_cast:
                 why(
                     node,
                     reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
+                )
+                return False
+            same_dim_order = list(input_node.meta["val"].dim_order()) == list(
+                node.meta["val"].dim_order()
+            )
+            if not same_dim_order:
+                why(
+                    node,
+                    reason=f"dtype conversion from {input_dtype} to {output_dtype} cannot also change the dim order",
                 )
                 return False
 
