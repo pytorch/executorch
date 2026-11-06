@@ -18,6 +18,7 @@ fbcode_target(
         "constants.py",
     ],
     deps = [
+        "//caffe2:torch",
         "//executorch/exir/dialects:lib",
     ],
 )
