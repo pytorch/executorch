@@ -172,7 +172,8 @@ class ComputePipeline final {
   explicit ComputePipeline(
       VkDevice device,
       const Descriptor& descriptor,
-      VkPipelineCache pipeline_cache);
+      VkPipelineCache pipeline_cache,
+      const bool full_subgroups = false);
 
   ComputePipeline(const ComputePipeline&) = delete;
   ComputePipeline& operator=(const ComputePipeline&) = delete;
@@ -244,7 +245,8 @@ class ComputePipelineCache final {
  public:
   explicit ComputePipelineCache(
       VkDevice device,
-      const std::string& cache_data_path);
+      const std::string& cache_data_path,
+      const bool full_subgroups = false);
 
   ComputePipelineCache(const ComputePipelineCache&) = delete;
   ComputePipelineCache& operator=(const ComputePipelineCache&) = delete;
@@ -306,6 +308,9 @@ class ComputePipelineCache final {
   std::mutex cache_mutex_;
 
   VkDevice device_;
+  // computeFullSubgroups of the device: pipelines with a required subgroup
+  // size are created with REQUIRE_FULL_SUBGROUPS.
+  bool full_subgroups_;
   VkPipelineCache pipeline_cache_;
   std::unordered_map<Key, Value, Hasher> cache_;
   const std::string cache_data_path_;

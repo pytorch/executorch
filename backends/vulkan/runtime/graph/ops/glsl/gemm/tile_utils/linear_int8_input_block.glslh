@@ -69,6 +69,12 @@ void quantize_and_pack(
   }
 }
 
+// The 4h4w block writer assumes t_packed_int8_input is an ivec4-typed
+// (block-packed) resource and would not compile against a scalar int array.
+// A shader that reuses the quantize helpers above but writes another layout
+// (quantize_and_pack_4w_with_group_sums.glsl) defines SKIP_BLOCK_WRITE_HELPERS
+// before including this file.
+#ifndef SKIP_BLOCK_WRITE_HELPERS
 void write_block(
     const Int8InputBlock block,
     const int block_x,
@@ -80,5 +86,6 @@ void write_block(
   imageStore(t_packed_int8_input, ivec3(block_x, block_y, 0), block.data);
 #endif // OUTPUT_BUFFER
 }
+#endif // SKIP_BLOCK_WRITE_HELPERS
 
 #endif // LINEAR_INT8_INPUT_BLOCK_GLSLH
