@@ -34,17 +34,40 @@
 #     pytorch/executorch, builds the smoke consumer for ESP32-S3 with it, fails
 #     if the registry serves files other than <dir>'s archive, and runs the
 #     build on the emulator.
+#   test_espressif_idf_nightly.sh wheel <dir> <dev version> <commit>
+#     Checks that the ExecuTorch nightly wheels of the version's date exist for
+#     every platform and CPython and were built from <commit>, so a project can
+#     install the executorch its kernel bundles need. Refuses today's nightly,
+#     which a later one could replace. Logs go under <dir>.
+#   test_espressif_idf_nightly.sh rehearse <dir>
+#     Checks that wheel refuses a version that is not a dev version and today's
+#     nightly, and that the platforms and CPythons it expects are those of the
+#     index's last 60 days, its window. Then runs it on the finished nightlies
+#     of origin/nightly's last 60 days that have every wheel, newest first,
+#     until one passes. Nightly wheels can fail to build for days, so finding
+#     none only warns, unless the index has every wheel of a day no nightly
+#     commit is dated, which means the dev version's date no longer matches
+#     the wheels'.
+#   test_espressif_idf_nightly.sh torch <dir>
+#     Needs only <dir> from prepare: checks that the torch the packed
+#     component's VERSION names resolves from its index for every platform and
+#     CPython.
 
 set -euo pipefail
 
 et_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-usage="usage: $0 prepare <dir> [stamp options] | build <dir> <shard> <shards> | fetch <dir> <URL> <sha256> | registry <dir> <URL>"
+usage="usage: $0 prepare <dir> [stamp options] | build <dir> <shard> <shards> | fetch <dir> <URL> <sha256> | registry <dir> <URL> | wheel <dir> <dev version> <commit> | rehearse <dir> | torch <dir>"
 mode=${1:?${usage}}
 dir=${2:?${usage}}
 mkdir -p "${dir}"
 dir=$(cd "${dir}" && pwd)
 cd "${et_root}"
 targets=(esp32 esp32s3 esp32c3 esp32c5 esp32c6 esp32p4)
+# The platforms and CPython versions ExecuTorch's wheels are built for, as
+# .github/workflows/build-wheels-{linux,aarch64-linux,macos,windows}.yml set them.
+wheel_platforms=(manylinux_2_28_x86_64 manylinux_2_28_aarch64 macosx_14_0_arm64 win_amd64)
+wheel_pythons=(3.11 3.12 3.13 3.14 3.15)
+nightly_index=https://download.pytorch.org/whl/nightly/cpu
 
 # Runs a command with its output in a log, and shows the log's tail if it fails.
 logged() {
@@ -414,6 +437,181 @@ settings_applied() {
     [[ "${applied}" == true ]]
 }
 
+# Prints each wheel a dev version lacks: version, the nightly index's listing.
+missing_wheels() {
+    local listed platform python
+    listed=$(grep -F "executorch-${1/-dev./.dev}" <<< "$2" || true)
+    for platform in "${wheel_platforms[@]}"; do
+        for python in "${wheel_pythons[@]}"; do
+            grep -qF -- "-cp${python/./}-cp${python/./}-${platform}.whl" <<< "${listed}" \
+                || echo "cp${python/./}-${platform}"
+        done
+    done
+}
+
+# Checks a dev version's nightly wheels: version, commit.
+check_wheels() {
+    local version=$1 commit=$2 listing missing wheels platform python
+    if [[ "${version}" != *-dev.* ]]; then
+        echo "FAIL: ${version} is not a dev version" >&2
+        exit 1
+    fi
+    # A second nightly the same day would replace the wheels of this one.
+    if [[ "${version##*-dev.}" == "$(date -u +%Y%m%d)" ]]; then
+        echo "FAIL: ${version} is today's nightly, which a later nightly today could replace;" \
+            "publish it after 00:00 UTC, before the next nightly." >&2
+        exit 1
+    fi
+    # The version's date is its nightly commit's UTC date, and the wheels' is
+    # the day they were built; when the two differ, no wheels are found.
+    listing=$(curl -sSf --retry 3 "${nightly_index}/executorch/")
+    missing=$(missing_wheels "${version}" "${listing}")
+    if [[ -n "${missing}" ]]; then
+        echo "FAIL: the nightly index has no ${version} wheel for ${missing//$'\n'/ }" >&2
+        exit 1
+    fi
+    wheels=$(mktemp -d)
+    # shellcheck disable=SC2064 # wheels is local, so expand it now.
+    trap "rm -rf '${wheels}'" EXIT
+    mkdir -p "${dir}/logs"
+    for platform in "${wheel_platforms[@]}"; do
+        for python in "${wheel_pythons[@]}"; do
+            logged "${dir}/logs/nightly-wheel-cp${python/./}-${platform}.log" python -m pip download \
+                --no-deps --only-binary=:all: --platform "${platform}" \
+                --python-version "${python}" --implementation cp --index-url "${nightly_index}" \
+                --dest "${wheels}" "executorch==${version/-dev./.dev}"
+        done
+    done
+    python - "${commit}" "${wheels}"/executorch-*.whl <<'PY'
+import re
+import sys
+import zipfile
+
+commit, wheels = sys.argv[1], sys.argv[2:]
+wrong = []
+for wheel in wheels:
+    version_py = zipfile.ZipFile(wheel).read("executorch/version.py").decode()
+    built = re.search(r"^git_version: .* = '(\w+)'", version_py, re.MULTILINE)
+    if not built or built.group(1) != commit:
+        wrong.append(f"{wheel} ({built.group(1) if built else 'no commit'})")
+if wrong:
+    sys.exit(f"FAIL: not built from the component's {commit}: {', '.join(wrong)}")
+print(f"OK: all {len(wheels)} wheels were built from {commit}")
+PY
+}
+
+wheel() {
+    check_wheels "${3:?${usage}}" "${4:?${usage}}"
+}
+
+rehearse() {
+    local today output listing commit day version
+    today=$(date -u +%Y%m%d)
+    output=$( (check_wheels 1.6.0 0) 2>&1 || true)
+    if [[ "${output}" != *"is not a dev version"* ]]; then
+        echo "FAIL: the wheel check did not refuse 1.6.0: ${output}" >&2
+        exit 1
+    fi
+    output=$( (check_wheels "1.6.0-dev.${today}" 0) 2>&1 || true)
+    if [[ "${output}" != *"is today's nightly"* ]]; then
+        echo "FAIL: the wheel check did not refuse today's nightly: ${output}" >&2
+        exit 1
+    fi
+    echo "OK: the wheel check refuses a version that is not a dev version and today's nightly"
+    listing=$(curl -sSf --retry 3 "${nightly_index}/executorch/")
+    # A day inside the commits' window, whose edge can differ by a day.
+    local since expected=() platform python
+    since=$(date -u -d '59 days ago' +%Y%m%d)
+    # A change to the wheel workflows' platforms or CPythons fails here, not at
+    # the next dev publish.
+    for platform in "${wheel_platforms[@]}"; do
+        for python in "${wheel_pythons[@]}"; do
+            expected+=("cp${python/./}-${platform}")
+        done
+    done
+    printf '%s' "${listing}" > "${dir}/listing.html"
+    python - "${dir}/listing.html" "${since}" "${today}" "${expected[@]}" <<'PY'
+import re
+import sys
+
+listing = open(sys.argv[1]).read().replace("%2B", "+")
+since, today, expected = sys.argv[2], sys.argv[3], set(sys.argv[4:])
+days = {}
+pattern = r"executorch-\d+\.\d+\.\d+\.dev(\d{8})(?:\+\w+)?-(cp\d+)-cp\d+-(\w+)\.whl"
+for day, python, platform in re.findall(pattern, listing):
+    if since < day != today:
+        days.setdefault(day, set()).add(f"{python}-{platform}")
+if days:
+    problems = []
+    missing = sorted(expected - set().union(*days.values()))
+    if missing:
+        problems.append(f"no wheel for {', '.join(missing)} in the last 60 days")
+    newest = max(days)
+    unknown = sorted(days[newest] - expected)
+    if unknown:
+        problems.append(f"{newest}'s wheels include {', '.join(unknown)}")
+    if problems:
+        sys.exit(
+            "FAIL: the nightly index no longer matches wheel_platforms and "
+            "wheel_pythons: " + "; ".join(problems)
+        )
+print("OK: the nightly index builds the platforms and CPythons the wheel check expects")
+PY
+    local failures=()
+    for commit in $(git rev-list --first-parent --since=60.days origin/nightly); do
+        day=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d "${commit}")
+        version="$(git show "${commit}:version.txt")-dev.${day}"
+        if [[ "${day}" != "${today}" && -z "$(missing_wheels "${version}" "${listing}")" ]]; then
+            # A second nightly the same day replaces the wheels it builds, so
+            # a day's wheels can come from two commits; an older day can pass.
+            if output=$( (check_wheels "${version}" "${commit}") 2>&1); then
+                echo "${output}"
+                return
+            fi
+            failures+=("${version}: ${output##*$'\n'}")
+        fi
+    done
+    if (( ${#failures[@]} )); then
+        printf 'FAIL: %s\n' "${failures[@]}" >&2
+        exit 1
+    fi
+    local listed
+    for listed in $(grep -oE 'executorch-[0-9]+\.[0-9]+\.[0-9]+\.dev[0-9]{8}' <<< "${listing}" \
+        | sort -u); do
+        day=${listed##*.dev}
+        version="${listed#executorch-}"
+        version="${version%.dev*}-dev.${day}"
+        if [[ "${day}" > "${since}" && "${day}" != "${today}" ]] \
+            && [[ -z "$(missing_wheels "${version}" "${listing}")" ]]; then
+            echo "FAIL: the nightly index has every wheel of ${version}, but no nightly commit" \
+                "of that version is dated ${day}; the dev version's date no longer matches the" \
+                "wheels'." >&2
+            exit 1
+        fi
+    done
+    echo "::warning::no nightly of the last 60 days has every wheel; the dev wheel check went unrehearsed."
+}
+
+torch() {
+    local stamp requirement index target platform python
+    stamp=$(tar -xzOf "${dir}/dist/executorch_$(cat "${dir}/version").tgz" ./VERSION)
+    requirement=$(sed -n 's/^torch_requirement: *//p' <<< "${stamp}")
+    index=$(sed -n 's/^torch_index: *//p' <<< "${stamp}")
+    target=$(mktemp -d)
+    # shellcheck disable=SC2064 # target is local, so expand it now.
+    trap "rm -rf '${target}'" EXIT
+    mkdir -p "${dir}/logs"
+    for platform in "${wheel_platforms[@]}"; do
+        for python in "${wheel_pythons[@]}"; do
+            logged "${dir}/logs/torch-cp${python/./}-${platform}.log" python -m pip install --dry-run \
+                --no-deps --only-binary=:all: --platform "${platform}" \
+                --python-version "${python}" --implementation cp --target "${target}" \
+                --index-url "${index}" "${requirement}"
+        done
+    done
+    echo "OK: ${requirement} resolves from ${index} for CPython ${wheel_pythons[*]} on ${wheel_platforms[*]}"
+}
+
 # Runs a build on its emulator: build dir, target, log, then idf.py arguments.
 run_firmware() {
     local build=$1 target=$2 log=$3
@@ -448,5 +646,8 @@ case "${mode}" in
     build) build "$@" ;;
     fetch) fetch "$@" ;;
     registry) registry "$@" ;;
+    wheel) wheel "$@" ;;
+    rehearse) rehearse ;;
+    torch) torch ;;
     *) echo "unknown mode ${mode}; ${usage}" >&2; exit 1 ;;
 esac

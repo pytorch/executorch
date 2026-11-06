@@ -43,8 +43,9 @@ both with `executorch_add_model` and `executorch_add_kernels` (see the
 component's `README.md`). Application pipelines built on the runtime
 (for example wake word front ends and detectors) stay with the
 application.
-Consumers need ESP-IDF, plus the `executorch` Python package of the
-same release to make kernel bundles — no host CMake build, no flatc.
+Consumers need ESP-IDF, plus the `executorch` Python package the
+component was built from to make kernel bundles (see the component's
+`README.md`) — no host CMake build, no flatc.
 `idf_component_smoke/` is a minimal consumer that CI generates, builds
 and runs on the emulator (`.ci/scripts/test_espressif_idf_component.sh`).
 `idf_component_consumer/` builds the same app from the packed component
@@ -91,10 +92,21 @@ serves the tested files, and runs it on the emulator.
   `vX.Y.Z`, merge that commit into `release/X.Y`, and tag the fix's
   commit. A release whose publishing failed in CI is published as a
   respin once the CI is fixed.
+- A dev version, `X.Y.Z-dev.YYYYMMDD`, lets projects use the component
+  before a release. Run the workflow on the `nightly` branch with
+  `registry` `production` and `dry_run` cleared, between 00:00 UTC and the
+  next nightly cut, so that it publishes the last nightly of a finished
+  day. Projects resolve from production, where a version range picks up a
+  pre-release only if it opts in. The run publishes only if that day's
+  ExecuTorch nightly wheels, for every platform and CPython, were built
+  from the same commit, because projects install them to make their kernel
+  bundles. Before the first dev upload, run it once with `dry_run` left
+  set, so its packing has run.
 - A manual run, on the release, RC or respin tag, publishes the tag's
-  version, and only validates unless `dry_run` is cleared. With `registry`
-  `production`, it uploads to staging first. A run that packs but uploads
-  nothing rehearses the staging upload with `--dry-run`.
+  version, and on the `nightly` branch, its dev version; it only validates
+  unless `dry_run` is cleared. With `registry` `production`, it uploads to
+  staging first. A run that packs but uploads nothing rehearses the staging
+  upload with `--dry-run`.
 - A tag runs the workflow as of its commit, so a `release/X.Y` branch cut
   before the workflow landed publishes nothing until the workflow is
   cherry-picked to it.
@@ -117,23 +129,35 @@ names this repository, this workflow and that environment, so no other job
 can upload with the repository's GitHub identity. Before approving an upload,
 check that the run's ref and commit are the release's announced tag and
 commit, or for a respin, that its tag's commit is on `release/X.Y` and
-its changes since `vX.Y.Z` were reviewed. Before approving the staging upload,
+its changes since `vX.Y.Z` were reviewed. A dev version's run comes from
+the `nightly` branch, whose copy of this workflow is main's and enforces
+its own limits, so before approving one, also review what changed since
+the last approved dev run, or for the first one their whole content, in
+every file the environment's jobs run: `publish-espressif-idf.yml`,
+`.ci/scripts/upload_espressif_idf_component.sh` and the
+`.ci/scripts/espressif_idf_upload_requirements.txt` it installs, and
+`.ci/scripts/test_espressif_idf_nightly.sh`, whose fetch mode those jobs
+run first. Before approving the staging upload of a release or RC,
 dispatch the nightly matrix (`nightly-espressif-idf.yml`) on the tag and
 wait for its macOS and Windows configure jobs to pass; a failure on
-ESP-IDF master, which breaks on its own schedule, is advisory. Approve the
-production upload once `executorch` X.Y.Z is on PyPI, since a project
-needs it to make kernel bundles, and the release owner has built a
-project against the version on staging.
+ESP-IDF master, which breaks on its own schedule, is advisory. A dev
+version has only its own run's checks. Approve the production upload of a
+release once `executorch` X.Y.Z is on PyPI, since a project needs it to
+make kernel bundles, and the release owner has built a project against the
+version on staging; a dev version's run has already checked its nightly
+wheels.
 
 The one-time setup goes in this order, because GitHub creates a missing
 environment, unprotected, as soon as a workflow names it:
 
 1. Add rulesets that let only release managers create, update or delete
    `v*` tags, since the environment trusts them, and `release/*` branches,
-   which respin tags must be on.
+   which respin tags must be on, and only the account that pushes the
+   nightly branch update or delete `nightly`, which the environment trusts
+   for dev versions.
 2. Create the `esp-component-registry` environment with required
    reviewers, self-review prevented, no admin bypass, and deployments
-   limited to `v*` tags.
+   limited to `v*` tags, plus `nightly` before the first dev version.
 3. Create the `pytorch` namespace on the staging registry, which takes
    namespace requests of its own, apart from the production registry's.
 4. On each registry, add a trusted uploader to `pytorch/executorch` (in

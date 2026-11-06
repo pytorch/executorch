@@ -1,9 +1,9 @@
 name: Publish ESP-IDF component
 
 # Publishes pytorch/executorch to the ESP Component Registry: RC tags to the
-# staging registry, and release and respin tags to staging and then
-# production; manual runs on those tags validate without uploading unless
-# dry_run is cleared.
+# staging registry, release and respin tags to staging and then production,
+# and a manual run on the nightly branch a dev version of its commit for early
+# adopters; manual runs validate without uploading unless dry_run is cleared.
 # The archive is built and tested on the ESP-IDF releases the component
 # supports before any upload, and each upload is followed by a consumer build
 # that resolves the version from that registry. See the release runbook in
@@ -23,7 +23,7 @@ on:
           - production
         default: staging
       dry_run:
-        description: 'Only validate: pack, test and dry-run the uploads, uploading nothing. Run on the release, RC or respin tag'
+        description: 'Only validate: pack, test and dry-run the uploads, uploading nothing. Run on the release, RC or respin tag, or on the nightly branch for its dev version'
         type: boolean
         default: true
   pull_request:
@@ -68,13 +68,20 @@ jobs:
           package=true rehearsal=false suffix='' version='' staging=false production=false
           case "${EVENT}" in
             push | workflow_dispatch)
-              # The tag names the version, which the generator stamps only at
-              # that tag. A respin X.Y.Z~N has the tag vX.Y.Z-esp-idf.N, since
-              # git refs cannot hold ~.
-              if [[ "${REF}" != refs/tags/* \
+              # A dev version's users install the nightly wheels of its commit,
+              # so only the nightly branch publishes dev versions, and it
+              # publishes nothing else. This runs from the dispatched ref's copy
+              # of the workflow, so the environment's reviewers check what that
+              # copy does.
+              if [[ "${EVENT}" == workflow_dispatch && "${REF}" == refs/heads/nightly ]]; then
+                suffix=-dev staging=true production=true
+              # A tag names the version, which the generator stamps only at that
+              # tag. A respin X.Y.Z~N has the tag vX.Y.Z-esp-idf.N, since git
+              # refs cannot hold ~.
+              elif [[ "${REF}" != refs/tags/* \
                 || ! "${REF_NAME}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-rc([1-9][0-9]*)|-esp-idf\.([1-9][0-9]*))?$ ]]; then
                 if [[ "${EVENT}" == workflow_dispatch ]]; then
-                  echo "::error::run this workflow on a release, RC or respin tag, not ${REF}."
+                  echo "::error::run this workflow on a release, RC or respin tag, or on the nightly branch for its dev version, not ${REF}."
                   exit 1
                 fi
                 echo "::notice::${REF_NAME} is not a release, RC or respin tag; nothing to publish."
@@ -143,22 +150,33 @@ jobs:
         unset SCCACHE_BUCKET SCCACHE_S3_KEY_PREFIX
         CONDA_ENV=$(conda env list --json | jq -r '.envs | .[-1]')
         conda activate "${CONDA_ENV}"
+        suffix="${{ needs.plan.outputs.suffix }}"
+        # A tag names its version, and a rehearsal stamps version.txt's. A dev
+        # version takes the generator's, which adds the commit's date, so for
+        # it the comparison below checks only that prepare stamped the same.
+        expected="${{ needs.plan.outputs.version }}"
+        expected="${expected:-$(cat version.txt)}"
+        # Before the build: a dev version's users install the nightly wheels of
+        # its commit.
+        if [[ "${suffix}" == -dev ]]; then
+          expected=$(bash examples/espressif/build_idf_component.sh --version --version-suffix -dev)
+          bash .ci/scripts/test_espressif_idf_nightly.sh wheel "${RUNNER_ARTIFACT_DIR}" \
+            "${expected}" "$(git rev-parse HEAD)"
+        fi
         source .ci/scripts/utils.sh
         install_executorch --use-pt-pinned-commit --minimal
         if [[ "${{ needs.plan.outputs.rehearsal }}" == true ]]; then
           # A pull request rehearses the release stamp at a throwaway local tag.
           git tag -f "v$(cat version.txt)"
         fi
-        # A tag names its version; a rehearsal stamps version.txt's.
-        expected="${{ needs.plan.outputs.version }}"
-        expected="${expected:-$(cat version.txt)}"
         bash .ci/scripts/test_espressif_idf_nightly.sh prepare "${RUNNER_ARTIFACT_DIR}" \
-          --version-suffix "${{ needs.plan.outputs.suffix }}"
+          --version-suffix "${suffix}"
         version=$(cat "${RUNNER_ARTIFACT_DIR}/version")
         if [[ "${version}" != "${expected}" ]]; then
           echo "FAIL: generated version ${version}, expected ${expected}" >&2
           exit 1
         fi
+        bash .ci/scripts/test_espressif_idf_nightly.sh torch "${RUNNER_ARTIFACT_DIR}"
         echo "Packed pytorch/executorch ${version}"
         # Every later job reads the tested files from one tar, which
         # keep-archive keeps longer than this artifact.
