@@ -79,10 +79,13 @@ def executorch_pybindings(
             "//executorch/extension/threadpool:threadpool",
             "//executorch/extension/pybindings:data_loader_types",
             "//executorch/extension/pybindings:data_loader",
-        ] + cppdeps + (["//executorch/extension/cuda:caller_stream"] if use_cuda else []),
+        ] + cppdeps + ([
+            "//executorch/extension/cuda:caller_stream",
+            "//executorch/extension/cuda:cuda_allocator",
+        ] if use_cuda else []),
         external_deps = [
             "pybind11",
-        ] + (["libtorch_python"] if use_aten else []),
+        ] + ([("cuda", None, "cuda-lazy")] if use_cuda else []) + (["libtorch_python"] if use_aten else []),
         use_static_deps = True,
         _is_external_target = bool(visibility != ["//executorch/..."]),
         visibility = visibility,
