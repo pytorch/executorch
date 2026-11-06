@@ -90,7 +90,9 @@ from torch.export.graph_signature import ExportGraphSignature
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.library import Library
 from torchao.quantization import IntxWeightOnlyConfig, PerAxis, quantize_
+from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.utils import compute_error
 
 
 class ConstantBranches(torch.nn.Module):
@@ -2447,6 +2449,35 @@ class TestPasses(unittest.TestCase):
             visitor.get_tensor_type(node, native, 1),
             "indices has no consumer and must stay internal",
         )
+
+    def test_quantizer_observes_buffer_after_in_place_write(self):
+        # The quantizer also annotates select, so observers used to split the
+        # view chain and copy_ wrote into a dequantized copy of the buffer.
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 3, 3)
+
+            def forward(self, x):
+                buf = x.new_zeros(1, 3, 8, 8)
+                buf.select(0, 0).copy_(x)
+                return self.conv(buf)
+
+        torch.manual_seed(0)
+        eager = M().eval()
+        x = torch.randn(3, 8, 8)
+        m = torch.export.export(eager, (x,), strict=True).module()
+        quantizer = QnnQuantizer()
+        # MinMax so that a few calibration runs cover the range the buffer is
+        # filled with; the default moving average starts from its zeros.
+        quantizer.set_default_quant_config(
+            quant_dtype=QuantDtype.use_8a8w, act_observer=MinMaxObserver
+        )
+        m = prepare_pt2e(m, quantizer)
+        for _ in range(4):
+            m(torch.randn(3, 8, 8))
+        m = convert_pt2e(m)
+        self.assertGreater(compute_error(eager(x), m(x)).item(), 20)
 
 
 # Attributes PT2E compares in _union_input_edge_with when deciding whether an
