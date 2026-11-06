@@ -146,6 +146,39 @@ def test_passes_preserve_methods_and_constants(entry_point):
     assert all(not plan.delegates for plan in serialized.execution_plan)
 
 
+@pytest.mark.parametrize("entry_point", ["separate", "combined"])
+def test_linear_constants_and_methods(entry_point):
+    inputs = (torch.linspace(-1, 2, 34).reshape(2, 17),)
+    model = torch.nn.Linear(17, 5).eval()
+    program = EspTester(model, inputs).quantize().export().get_artifact()
+    original_graph = str(program.graph)
+    original_state = program.state_dict.copy()
+    programs = {"forward": program, "other": program}
+    if entry_point == "combined":
+        edge, report = to_espnn_edge(programs, False, use_operator_library=True)
+        assert report == {"esp_nn_ops": 2, "cpu_ops": []}
+    else:
+        edge = to_edge(programs).transform(EspPassManager())
+    assert str(program.graph) == original_graph
+    assert program.state_dict.keys() == original_state.keys()
+    assert all(
+        program.state_dict[key] is value for key, value in original_state.items()
+    )
+    for name in edge.methods:
+        result = edge.exported_program(name)
+        result.validate()
+        torch.testing.assert_close(
+            result.module()(*inputs),
+            program.module()(*inputs),
+            atol=_output_scale(program),
+            rtol=0,
+        )
+        assert not EspPassManager()(result).modified
+    serialized = deserialize_pte_binary(edge.to_executorch().buffer).program
+    assert {plan.name for plan in serialized.execution_plan} == {"forward", "other"}
+    assert all(not plan.delegates for plan in serialized.execution_plan)
+
+
 def test_operator_library_reports_all_methods():
     inputs = (torch.linspace(-1, 1, 6), torch.linspace(-2, 2, 6))
     programs = {
