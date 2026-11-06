@@ -163,16 +163,16 @@ AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_clone(SlimTensor* self, SlimTensor** ret_new_tensor);
 
 /**
- * Creates a reinterpreted view of a tensor with new sizes, strides, and offset.
+ * Creates a reinterpreted view with new sizes, strides, and a relative offset.
  *
- * This is equivalent to torch.as_strided() - it creates a new tensor that
- * shares the same underlying storage but with different view parameters.
+ * The view shares storage with self. Its storage offset is self's storage
+ * offset plus offset_increment, measured in elements.
  *
  * @param self Original tensor to reinterpret (must not be null)
  * @param ndim Number of dimensions for the new view
  * @param sizes_ptr Pointer to array of dimension sizes
  * @param strides_ptr Pointer to array of strides for each dimension
- * @param storage_offset Storage offset in number of elements
+ * @param offset_increment Increment to self's storage offset in elements
  * @param ret_new_tensor Output parameter for the reinterpreted tensor view
  * @return AOTITorchError error code (Error::Ok on success)
  */
@@ -181,7 +181,7 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
     int64_t ndim,
     const int64_t* sizes_ptr,
     const int64_t* strides_ptr,
-    int64_t storage_offset,
+    int64_t offset_increment,
     SlimTensor** ret_new_tensor);
 
 /**
