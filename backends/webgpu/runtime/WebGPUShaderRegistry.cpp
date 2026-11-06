@@ -136,6 +136,7 @@
 #include <executorch/backends/webgpu/runtime/ops/unary/clamp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/cos_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/hardsigmoid_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/hardswish_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/neg_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/pow_scalar_wgsl.h>
@@ -157,7 +158,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 139> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 140> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -577,6 +578,13 @@ constexpr std::array<WebGPUShaderInfo, 139> kShaderRegistry = {{
         kGroupNormReduceWorkgroupSizeX,
         kGroupNormReduceWorkgroupSizeY,
         kGroupNormReduceWorkgroupSizeZ,
+    },
+    {
+        "hardsigmoid",
+        kHardsigmoidWGSL,
+        kHardsigmoidWorkgroupSizeX,
+        kHardsigmoidWorkgroupSizeY,
+        kHardsigmoidWorkgroupSizeZ,
     },
     {
         "hardswish",

@@ -51,6 +51,7 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
 
 from torch.export.exported_program import ExportedProgram
 
@@ -60,6 +61,11 @@ from torch.utils._pytree import tree_leaves
 
 # pyre-ignore
 ops_not_to_decompose = [
+    # Activation ops with native Vulkan shaders that PyTorch's default
+    # decomposition table would otherwise decompose into primitive ops.
+    # The decomposed paths produce NaN/Inf on some GPUs (e.g. PowerVR)
+    # due to constant tensor loading issues in the decomposed graph.
+    torch.ops.aten.hardsigmoid.default,
     torch.ops.aten.hardswish.default,
     torch.ops.aten.upsample_nearest2d.vec,
     torch.ops.aten.pixel_shuffle.default,
@@ -504,21 +510,36 @@ class VulkanPartitioner(Partitioner):
     def ops_to_not_decompose(
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        # Keep an op whole only where this partitioner will take it. A node it
+        # declines (operator or module filters, limits, dtypes) is decomposed
+        # instead, so its pieces can run elsewhere; kept whole, it would reach
+        # no backend and fail the export.
+        preserved = set(ops_not_to_decompose)
+        supported = self._supported_operators(ep, fusable_subgraphs=[])
+
         def filter_fn(node: torch.fx.Node) -> bool:
-            return True
+            # Before decomposition the node holds the ATen op; the checks key on
+            # the edge op. Edge nodes (the check after lowering) pass through.
+            if (
+                node.op != "call_function"
+                or node.target not in preserved
+                or not isinstance(node.target, torch._ops.OpOverload)
+            ):
+                return True
+            aten_target = node.target
+            node.target = aten_to_edge(aten_target)
+            try:
+                return supported.is_node_supported({}, node)
+            finally:
+                node.target = aten_target
 
         return (ops_not_to_decompose, filter_fn)
 
-    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
-        # Run the CapabilityBasedPartitioner to return the largest possible
-        # subgraphs containing the nodes with the tags
-        partition_tags = {}
-
-        # Get all fusable subgraphs from fuse_patterns
-        fusable_subgraphs = vk_patterns.get_all_fusable_subgraphs(
-            exported_program.graph_module
-        )
-
+    def _supported_operators(
+        self,
+        exported_program: ExportedProgram,
+        fusable_subgraphs: List[PatternMatch],
+    ) -> VulkanSupportedOperators:
         # small_texture_limits opts into the conservative 3D texture limit that is
         # compatible with most desktop/laptop GPUs (the Vulkan spec only guarantees
         # 2048). An explicit texture_limits always takes precedence.
@@ -529,7 +550,7 @@ class VulkanPartitioner(Partitioner):
         else:
             texture_limits = utils.DEFAULT_TEXTURE_LIMITS
         buffer_limit: int = self.options.get("buffer_limit", utils.DEFAULT_BUFFER_LIMIT)
-        operator_support = VulkanSupportedOperators(
+        return VulkanSupportedOperators(
             texture_limits,
             buffer_limit,
             require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
@@ -542,6 +563,20 @@ class VulkanPartitioner(Partitioner):
             downcast_64_bit=self.options.get("downcast_64_bit", True),
             op_features_overrides=self.op_features_overrides,
             constant_nodes=utils.get_constant_nodes(exported_program),
+        )
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        # Run the CapabilityBasedPartitioner to return the largest possible
+        # subgraphs containing the nodes with the tags
+        partition_tags = {}
+
+        # Get all fusable subgraphs from fuse_patterns
+        fusable_subgraphs = vk_patterns.get_all_fusable_subgraphs(
+            exported_program.graph_module
+        )
+
+        operator_support = self._supported_operators(
+            exported_program, fusable_subgraphs
         )
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,

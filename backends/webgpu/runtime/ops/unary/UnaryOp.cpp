@@ -45,9 +45,11 @@ void add_unary_op(
   const auto& out_tensor = graph.get_tensor(out_id);
   // 4-byte (fp32) alignment guard on both operands (null + size checks too).
   utils::check_elementwise_fp32_io(in_tensor, out_tensor, op_name);
-  // fp32-only backend: reject int operands (would be read as f32).
-  if (in_tensor.is_int || out_tensor.is_int) {
-    throw std::runtime_error(std::string(op_name) + ": int dtype unsupported");
+  // The shaders read and write array<f32>: any other dtype (int, or fp16,
+  // whose element pairs would be read as one f32) is refused, not misread.
+  if (!utils::is_fp32_tensor(in_tensor) || !utils::is_fp32_tensor(out_tensor)) {
+    throw std::runtime_error(
+        std::string(op_name) + ": only float32 operands are supported");
   }
 
   uint32_t num_elements =
