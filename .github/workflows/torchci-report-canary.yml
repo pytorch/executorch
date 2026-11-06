@@ -8,12 +8,12 @@ on:
 jobs:
   reports:
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@985283436b71295931c3b0d18e271d5fb7cc750c
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@c94b20ef8ba2c2343abdd631f6f15b16ff32c113
     permissions:
       contents: read
       id-token: write
     with:
-      test-infra-ref: 985283436b71295931c3b0d18e271d5fb7cc750c
+      test-infra-ref: c94b20ef8ba2c2343abdd631f6f15b16ff32c113
       ref: ${{ github.event.pull_request.head.sha }}
       job-name: torchci-report-canary
       runner: mt-l-x86iavx512-8-64
@@ -68,4 +68,5 @@ jobs:
             print(json.dumps({'file': path.name, 'report_uuid': header['report_uuid'], 'job_id': header['github_workflow_job_id'], 'run_ids': [row['id'] for row in rows]}))
         if count != 17:
             raise RuntimeError(f'Expected 17 canary test rows, received {count}')
-        print(f'Canary produced {count} test rows; upload and ingestion still need verification')        PY
+        print(f'Canary produced {count} test rows; upload and ingestion still need verification')
+        PY
