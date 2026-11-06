@@ -104,6 +104,9 @@ Error CPUPlan::prepare(MemoryAllocator& allocator) {
     if (error != Error::Ok) {
       return error;
     }
+    const auto released = provider->released_private_constant_bytes();
+    private_constant_bytes_ -= released;
+    released_private_constant_bytes_ += released;
   }
   for (auto& step : steps_) {
     error = step.executable->reshape();
@@ -115,16 +118,44 @@ Error CPUPlan::prepare(MemoryAllocator& allocator) {
   return Error::Ok;
 }
 
+bool CPUPlan::can_release_constant(ptn::ValueId id) const {
+  if (!prepared_ || id >= graph_.values.size() ||
+      std::find(graph_.output_ids.begin(), graph_.output_ids.end(), id) !=
+          graph_.output_ids.end()) {
+    return false;
+  }
+  const auto role = graph_.value(id).role;
+  if (role != ptn::ValueRole::Parameter &&
+      role != ptn::ValueRole::ConstantTensor &&
+      role != ptn::ValueRole::Buffer) {
+    return false;
+  }
+  bool consumed = false;
+  for (const auto& step : steps_) {
+    for (const auto& value : step.storage.values) {
+      if (value.id == id) {
+        if (!value.preparation_only) {
+          return false;
+        }
+        consumed = true;
+      }
+    }
+  }
+  return consumed;
+}
+
 Error CPUPlan::execute(const ExecutionContext& context) {
   ET_CHECK_OR_RETURN_ERROR(prepared_, InvalidState, "CPU plan is not prepared");
   ET_CHECK_OR_RETURN_ERROR(
       context.threads == execution_.threads &&
-          context.avx2_fma == execution_.avx2_fma &&
           context.threadpool == execution_.threadpool,
       NotSupported,
       "CPU execution properties changed; reload the static method");
   for (auto& step : steps_) {
     for (const auto& value : step.storage.values) {
+      if (value.preparation_only) {
+        continue;
+      }
       ET_CHECK_OR_RETURN_ERROR(
           buffers_.at(value.id).accepts(requirements_.at(value.id)),
           InvalidArgument,
@@ -393,6 +424,15 @@ Error CPUPlan::select() {
           InvalidArgument,
           "Invalid CPU storage requirement");
       requirements_[value.id].merge(value.buffer);
+      const auto role = graph.value(value.id).role;
+      ET_CHECK_OR_RETURN_ERROR(
+          !value.preparation_only ||
+              (value.buffer.writable_bytes == 0 &&
+               (role == ptn::ValueRole::Parameter ||
+                role == ptn::ValueRole::ConstantTensor ||
+                role == ptn::ValueRole::Buffer)),
+          InvalidArgument,
+          "Only immutable constants can have preparation-only storage");
     }
     for (auto id : step.region.outputs) {
       auto bytes = tensor_bytes(graph.value(id));
@@ -566,14 +606,15 @@ std::string CPUPlan::describe(double preparation_ms) const {
       ",\"preparation_ms\":" + std::to_string(preparation_ms) +
       ",\"activation_arena_bytes\":" + std::to_string(arena_bytes_) +
       ",\"private_constant_bytes\":" + std::to_string(private_constant_bytes_) +
+      ",\"released_private_constant_bytes\":" +
+      std::to_string(released_private_constant_bytes_) +
       ",\"shared_scratch_bytes\":" + std::to_string(scratch_.readable_bytes) +
       ",\"xnn_workspace_bytes\":null,\"xnn_packed_cache_bytes\":null,"
       "\"xnn_workspace_shared\":true,\"xnn_packed_cache\":\"per_plan\","
       "\"delegate_io\":\"copy_for_unknown_external_tail_capacity\","
       "\"selection_context\":{\"threads\":" +
-      std::to_string(execution_.threads) +
-      ",\"avx2_fma\":" + (execution_.avx2_fma ? "true" : "false") +
-      "},\"candidates\":[" + decisions_ + "]}";
+      std::to_string(execution_.threads) + "},\"candidates\":[" + decisions_ +
+      "]}";
   return report;
 }
 } // namespace executorch::backends::cpu

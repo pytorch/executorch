@@ -13,7 +13,8 @@ import asyncio
 import json
 import logging
 import math
-from contextlib import aclosing
+from contextlib import aclosing, asynccontextmanager
+from dataclasses import dataclass, field
 from typing import AsyncIterator, Callable, Iterable, Optional, Protocol
 
 from .chat_template import ChatTemplate
@@ -33,6 +34,7 @@ from .protocol import (
     ChatCompletionResponse,
     Choice,
     ChunkChoice,
+    CompletionTokensDetails,
     DeltaMessage,
     FunctionCall,
     PromptTokensDetails,
@@ -130,6 +132,88 @@ class StreamingResponseParser(Protocol):
     def finish(self) -> Iterable[DeltaMessage]: ...
 
 
+def _session_capacity_exhausted(error):
+    return (
+        isinstance(error, WorkerError)
+        and error.code == "session_capacity_exhausted"
+        or isinstance(error, SessionCapacity)
+        and error.session_slots_exhausted
+    )
+
+
+@dataclass
+class _AdmissionState:
+    pending: bool = False
+    admitted: bool = False
+    retried: bool = False
+
+
+class _AdmissionRetryStream:
+    """Retry one session-slot rejection before any raw model output."""
+
+    def __init__(self, serving, session_id, generation, factory, admission):
+        self._serving = serving
+        self._session_id = session_id
+        self._generation = generation
+        self._factory = factory
+        self._admission = admission
+        self._started = False
+        self._closed = False
+        self._cancel_requested = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        while not self._closed:
+            try:
+                token = await anext(self._generation)
+                self._started = True
+                if self._session_id is not None:
+                    self._admission.admitted = True
+                return token
+            except StopAsyncIteration:
+                if self._session_id is not None:
+                    self._admission.admitted = True
+                raise
+            except (WorkerError, APIError) as error:
+                if not await self._serving._retry_admission(
+                    error,
+                    self._admission,
+                    generation=self._generation,
+                    started=self._started,
+                ):
+                    raise
+                if self._closed or self._cancel_requested:
+                    raise StopAsyncIteration
+                if self._session_id is not None:
+                    self._admission.pending = True
+                self._generation = self._factory()
+        raise StopAsyncIteration
+
+    def cancel(self):
+        self._cancel_requested = True
+        return self._generation.cancel()
+
+    async def aclose(self):
+        self._closed = True
+        await self._generation.aclose()
+
+
+@dataclass
+class ToolContext:
+    schemas: dict = field(default_factory=dict)
+    incomplete: bool = False
+
+
+@dataclass
+class _ToolResponse:
+    tool_calls: Optional[list[ToolCall]] = None
+    reasoning: Optional[str] = None
+    content: Optional[str] = None
+    remaining_reasoning: Optional[str] = None
+
+
 class ServingChat:
     def __init__(
         self,
@@ -147,6 +231,13 @@ class ServingChat:
         streaming_parser_factory: Optional[
             Callable[[], StreamingResponseParser]
         ] = None,
+        evict_idle_sessions: bool = False,
+        streaming_preflight_timeout: Optional[float] = None,
+        api_dialect: str = "openai",
+        tool_reasoning_parser_factory: Optional[
+            Callable[[], StreamingResponseParser]
+        ] = None,
+        reasoning_token_counter: Optional[Callable[[list[int]], Optional[int]]] = None,
     ):
         self._runtime = runtime
         self._template = template
@@ -155,7 +246,17 @@ class ServingChat:
         self._prompt_token_offset = prompt_token_offset
         self._content_filter = content_filter
         self._reasoning_extractor = reasoning_extractor
+        self._reasoning_token_counter = reasoning_token_counter
         self._streaming_parser_factory = streaming_parser_factory
+        self._tool_reasoning_parser_factory = tool_reasoning_parser_factory
+        self._evict_idle_sessions = evict_idle_sessions
+        self._idle_sessions: dict[str, None] = {}
+        self._cleanup_sessions: dict[str, None] = {}
+        self._eviction_lock = asyncio.Lock()
+        self._streaming_preflight_timeout = streaming_preflight_timeout
+        if api_dialect not in ("openai", "openrouter"):
+            raise ValueError("api_dialect must be openai or openrouter")
+        self.api_dialect = api_dialect
         # Detector CLASS; a fresh instance is created per request so streaming
         # state is never shared across concurrent requests.
         self._tool_detector_cls = tool_detector_cls
@@ -170,6 +271,7 @@ class ServingChat:
         #    never reaches the client, AND it backs _strip_specials for final
         #    cleanup of already-parsed visible content.
         self._stops = template.turn_stop_sequences()
+        self._native_stops = getattr(runtime, "default_stop_strings", None)
         handled = content_filter_specials or set()
         self._content_specials = [
             t for t in template.special_tokens() if t not in handled
@@ -184,9 +286,16 @@ class ServingChat:
         )
 
     @property
+    def max_context(self) -> Optional[int]:
+        return self._max_context
+
+    @property
     def healthy(self) -> bool:
         """Whether the underlying model worker can accept new requests."""
         return self._runtime.healthy
+
+    def error_body(self, error: APIError) -> dict:
+        return error.body(openrouter=self.api_dialect == "openrouter")
 
     @staticmethod
     def _tool_schemas(req: ChatCompletionRequest) -> dict[str, dict]:
@@ -244,17 +353,53 @@ class ServingChat:
             return []
         return [s] if isinstance(s, str) else [x for x in s if x]
 
+    def _visible_stops(self, req: ChatCompletionRequest) -> list[str]:
+        return (
+            self._stops
+            + ((self._native_stops or []) if req.ignore_eos else [])
+            + ([] if self._tools_active(req) else self._content_specials)
+        )
+
+    def _generation_stops(self, req: ChatCompletionRequest) -> list[str]:
+        stops = self._request_stops(req)
+        if req.ignore_eos:
+            return stops
+        return stops + self._visible_stops(req)
+
     @staticmethod
     def _apply_stop(text: str, stops: list[str]) -> str:
         """Truncate at the earliest stop string (the stop itself is excluded)."""
         cut = _earliest_stop(text, stops)
         return text[:cut] if cut is not None else text
 
-    def _truncate_raw(self, text: str, req: ChatCompletionRequest) -> str:
+    def _trim_stop_fragment(self, text: str, req: ChatCompletionRequest) -> str:
+        # A native string stop inside a special token can remove its remainder.
+        # Hide only suffixes that would be completed by a requested stop.
+        cut = len(text)
+        for marker in self._visible_stops(req):
+            for stop in self._request_stops(req):
+                at = marker.find(stop)
+                if at > 0 and text.endswith(marker[:at]):
+                    cut = min(cut, len(text) - at)
+        return text[:cut]
+
+    def _truncate_raw(
+        self, text: str, req: ChatCompletionRequest, stopped: bool = False
+    ) -> str:
         """Cut raw model output at the earliest special token or request stop
         sequence BEFORE tool parsing, so a tool call (or any text) past the stop
         boundary is neither parsed nor emitted."""
-        return self._apply_stop(text, self._stops + self._request_stops(req))
+        visible_cut = _earliest_stop(text, self._visible_stops(req))
+        request_cut = _earliest_stop(text, self._request_stops(req))
+        cuts = [cut for cut in (visible_cut, request_cut) if cut is not None]
+        text = text[: min(cuts)] if cuts else text
+        return (
+            self._trim_stop_fragment(text, req)
+            if req.ignore_eos
+            and stopped
+            and (visible_cut is None or request_cut == min(cuts))
+            else text
+        )
 
     def _cancel_generation(self, generation: AsyncIterator[str]) -> None:
         cancel = getattr(generation, "cancel", None)
@@ -285,24 +430,80 @@ class ServingChat:
                 break
         return text, stopped
 
-    def _extract_response(self, req: ChatCompletionRequest, text: str):
+    def _parse_tools(
+        self, req, text, finish_reason, raw_text, context, request_stopped
+    ):
+        return self._tool_detector_cls().detect_and_parse(text, self._tool_schemas(req))
+
+    def _extract_response(
+        self,
+        req: ChatCompletionRequest,
+        text: str,
+        *,
+        finish_reason=None,
+        context=None,
+        stopped=False,
+        matched_stop=None,
+    ):
         """Return tool calls, optional reasoning, and user-visible content."""
-        # Split the reasoning channel out BEFORE tool parsing so the detector only
-        # sees the visible (non-reasoning) text. Parsing the full raw output would let
-        # a tool-call marker the model emitted inside its private reasoning become a
-        # phantom tool call (and drop the real answer).
-        reasoning, text = self._split_reasoning(text)
+        # Generic detectors see visible text; recipient-aware adapters also need
+        # raw framing to distinguish tool messages from quoted examples.
+        context = context if context is not None else ToolContext()
+        request_cut = _earliest_stop(text, self._request_stops(req))
+        visible_cut = _earliest_stop(text, self._visible_stops(req))
+        request_stops = self._request_stops(req)
+        request_stopped = (
+            any(
+                matched_stop and matched_stop.startswith(stop) for stop in request_stops
+            )
+            or (
+                matched_stop is None and finish_reason == "stop" and bool(request_stops)
+            )
+            or (
+                request_cut is not None
+                and (visible_cut is None or request_cut <= visible_cut)
+            )
+        )
+        raw_text = self._truncate_raw(text, req, stopped)
+        reasoning, text = self._split_reasoning(raw_text)
         tool_calls = None
         if self._tools_active(req):
-            parsed = self._tool_detector_cls().detect_and_parse(
-                text, self._tool_schemas(req)
+            parsed = self._parse_tools(
+                req, text, finish_reason, raw_text, context, request_stopped
             )
+            context.incomplete = parsed.incomplete
             if parsed.calls:
                 tool_calls = [self._to_openai_tool_call(c) for c in parsed.calls]
             text = parsed.normal_text
         if not self._return_reasoning(req):
             reasoning = None
-        return tool_calls, reasoning, self._visible_content(text) or None
+        return (
+            tool_calls,
+            reasoning,
+            self._visible_content(text) or None,
+        )
+
+    def _usage(self, stats: GenStats, *, ignore_eos=False) -> Usage:
+        reasoning_tokens = None
+        if (
+            not ignore_eos
+            and self._reasoning_token_counter
+            and stats.generated_token_ids is not None
+        ):
+            reasoning_tokens = self._reasoning_token_counter(stats.generated_token_ids)
+        return Usage(
+            prompt_tokens=stats.prompt_tokens,
+            completion_tokens=stats.completion_tokens,
+            total_tokens=stats.prompt_tokens + stats.completion_tokens,
+            prompt_tokens_details=PromptTokensDetails(
+                cached_tokens=stats.reused_prompt_tokens
+            ),
+            completion_tokens_details=(
+                CompletionTokensDetails(reasoning_tokens=reasoning_tokens)
+                if reasoning_tokens is not None
+                else None
+            ),
+        )
 
     @staticmethod
     def _log_generation_stats(
@@ -376,6 +577,7 @@ class ServingChat:
             # Worker stop set, chosen per path in create() (see __init__ for the
             # two sets); the server re-applies it in _clean/_collect_until_stop.
             stop=stops,
+            ignore_eos=req.ignore_eos,
         )
 
     @staticmethod
@@ -388,8 +590,24 @@ class ServingChat:
 
     @staticmethod
     def _generation_error(error: Exception) -> APIError:
+        if isinstance(error, APIError):
+            return error
         if isinstance(error, WorkerError):
-            if error.code in ("capacity_exhausted", "unsupported_session"):
+            if (
+                error.code == "context_length_exceeded"
+                and error.context_overflow is not None
+            ):
+                counts = error.context_overflow
+                return ContextLengthExceeded(
+                    counts["prompt_tokens"],
+                    counts["context_length"],
+                    counts["completion_tokens"],
+                )
+            if error.code in (
+                "capacity_exhausted",
+                "session_capacity_exhausted",
+                "unsupported_session",
+            ):
                 return SessionCapacity(error.code)
             if error.code is not None:
                 status = {
@@ -397,6 +615,8 @@ class ServingChat:
                     "session_busy": 409,
                     "not_ready": 503,
                     "invalid_argument": 400,
+                    "context_length_exceeded": 400,
+                    "unsupported_parameter": 400,
                 }.get(error.code, 500)
                 return APIError(
                     status,
@@ -406,27 +626,39 @@ class ServingChat:
                 )
         return GenerationError(str(error))
 
-    async def _preflight_session(self, session_id: str) -> None:
+    async def _preflight_session(self, session_id: str, admission) -> None:
         """Reserve the session before any response bytes are emitted so a
         capacity refusal becomes an HTTP status, not an SSE error event."""
         try:
             await self._runtime.open(session_id)
         except WorkerError as e:
+            if not self._multiplexed and e.code == "capacity_exhausted":
+                raise SessionCapacity("session_capacity_exhausted") from e
             raise self._generation_error(e)
+        if self._evict_idle_sessions:
+            admission.admitted = True
 
     async def close_session(self, session_id: str) -> None:
         self._validate_session_id(session_id)
         try:
             async with self._transactions.hold(session_id):
-                try:
-                    await self._runtime.close(session_id)
-                except BaseException:
-                    if self._multiplexed:
-                        self._transcript.close(session_id)
-                    raise
-                self._transcript.close(session_id)
+                await self._close_session(session_id)
         except WorkerError as e:
             raise self._generation_error(e)
+
+    async def _close_session(self, session_id):
+        try:
+            existed = await self._runtime.close(session_id)
+        except WorkerError as error:
+            if error.code == "session_not_found":
+                self._transcript.close(session_id)
+                self._idle_sessions.pop(session_id, None)
+                self._cleanup_sessions.pop(session_id, None)
+            raise
+        self._transcript.close(session_id)
+        self._idle_sessions.pop(session_id, None)
+        self._cleanup_sessions.pop(session_id, None)
+        return existed
 
     async def reset_session(self, session_id: str) -> None:
         self._validate_session_id(session_id)
@@ -474,9 +706,8 @@ class ServingChat:
         return "length" if mt and mt > 0 and completion_tokens >= mt else "stop"
 
     @staticmethod
-    def _reject_invalid_values(req: ChatCompletionRequest) -> None:
-        """Reject invalid types/ranges (invalid_value); these take precedence over
-        the unsupported-parameter error."""
+    def _reject_invalid_visibility(req: ChatCompletionRequest) -> None:
+        """Require boolean, mutually consistent reasoning visibility controls."""
         template_kwargs = req.chat_template_kwargs or {}
         if not isinstance(template_kwargs.get("return_reasoning", True), bool):
             raise APIError(
@@ -485,6 +716,33 @@ class ServingChat:
                 "invalid_request_error",
                 "invalid_value",
             )
+        visibility = []
+        if "return_reasoning" in template_kwargs:
+            visibility.append(template_kwargs["return_reasoning"])
+        if req.include_reasoning is not None:
+            visibility.append(req.include_reasoning)
+        if req.reasoning is not None and req.reasoning.get("exclude") is not None:
+            if type(req.reasoning["exclude"]) is not bool:
+                raise APIError(
+                    400,
+                    "reasoning.exclude must be a boolean",
+                    "invalid_request_error",
+                    "invalid_value",
+                )
+            visibility.append(not req.reasoning["exclude"])
+        if len(set(visibility)) > 1:
+            raise APIError(
+                400,
+                "Conflicting reasoning visibility controls",
+                "invalid_request_error",
+                "invalid_value",
+            )
+
+    @staticmethod
+    def _reject_invalid_values(req: ChatCompletionRequest) -> None:
+        """Reject invalid types/ranges (invalid_value); these take precedence over
+        the unsupported-parameter error."""
+        ServingChat._reject_invalid_visibility(req)
         if req.temperature is not None and (
             not math.isfinite(req.temperature)
             or req.temperature < 0.0
@@ -531,8 +789,7 @@ class ServingChat:
                     "invalid_value",
                 )
 
-    @staticmethod
-    def _reject_unsupported_params(req: ChatCompletionRequest) -> None:
+    def _reject_unsupported_params(self, req: ChatCompletionRequest) -> None:
         """Reject params we don't honor rather than silently ignoring them (a
         client relying on e.g. penalties/logprobs would otherwise get wrong
         behavior). Only the no-op/default value of each passes: penalties 0;
@@ -541,8 +798,49 @@ class ServingChat:
         constraining); logprobs are not returned at all."""
         rf = req.response_format
         flags = [
+            (req.thinking_token_budget is not None, "thinking_token_budget"),
+            (req.grammar is not None, "grammar"),
+            (req.guided_json is not None, "guided_json"),
+            (req.guided_regex is not None, "guided_regex"),
+            (req.guided_choice is not None, "guided_choice"),
+            (req.guided_grammar is not None, "guided_grammar"),
+            (req.structured_outputs is not None, "structured_outputs"),
+            (req.regex is not None, "regex"),
+            (req.ebnf is not None, "ebnf"),
+            (req.stop_regex is not None, "stop_regex"),
+            (
+                req.add_generation_prompt is not None
+                and req.add_generation_prompt is not True,
+                "add_generation_prompt",
+            ),
+            (
+                req.continue_final_message is not None
+                and req.continue_final_message is not False,
+                "continue_final_message",
+            ),
+            (req.cache_salt is not None, "cache_salt"),
+            (
+                req.ignore_eos
+                and getattr(self._runtime, "supports_ignore_eos", False) is not True,
+                "ignore_eos (requires an updated multiplexed worker)",
+            ),
+            (
+                req.ignore_eos and self._native_stops is None,
+                "ignore_eos (requires decoded native EOS markers from the worker)",
+            ),
             (req.n != 1, "n>1"),
             (req.reasoning_effort is not None, "reasoning_effort"),
+            (
+                req.reasoning
+                not in (
+                    None,
+                    {},
+                    {"exclude": None},
+                    {"exclude": False},
+                    {"exclude": True},
+                ),
+                "reasoning",
+            ),
             (bool(req.frequency_penalty), "frequency_penalty"),
             (bool(req.presence_penalty), "presence_penalty"),
             (bool(req.logit_bias), "logit_bias"),
@@ -588,15 +886,88 @@ class ServingChat:
                 total += c
         return total
 
+    @asynccontextmanager
+    async def _transaction(self, session_id):
+        admission = _AdmissionState()
+        async with self._transactions.hold(session_id):
+            known = session_id in self._idle_sessions
+            self._idle_sessions.pop(session_id, None)
+            try:
+                yield admission
+            finally:
+                if self._evict_idle_sessions and session_id is not None:
+                    if known or admission.admitted:
+                        self._cleanup_sessions.pop(session_id, None)
+                        self._idle_sessions[session_id] = None
+                    elif admission.pending:
+                        self._cleanup_sessions[session_id] = None
+                        if not self._runtime.session_in_use(session_id):
+                            cleanup = asyncio.create_task(
+                                self._close_session(session_id)
+                            )
+                            try:
+                                await SessionRuntime._finish_cleanup(cleanup)
+                            except WorkerError as error:
+                                if error.code != "session_not_found":
+                                    logger.warning(
+                                        "Could not close unconfirmed session %s",
+                                        session_id,
+                                    )
+
+    async def _evict_idle_session(self) -> bool:
+        if not self._evict_idle_sessions:
+            return False
+        async with self._eviction_lock:
+            for session_id in [*self._cleanup_sessions, *self._idle_sessions]:
+                if self._transactions.in_use(
+                    session_id
+                ) or self._runtime.session_in_use(session_id):
+                    continue  # Includes queued callers, not just the owner.
+                # The admitting chat already owns a request slot.
+                async with self._transactions.hold(session_id, count_request=False):
+                    try:
+                        existed = await self._close_session(session_id)
+                        if existed is False:
+                            continue
+                    except WorkerError as error:
+                        if error.code == "session_not_found":
+                            continue
+                        if error.admitted is False:
+                            return False  # The close never reached the worker.
+                        candidates = (
+                            self._cleanup_sessions
+                            if session_id in self._cleanup_sessions
+                            else self._idle_sessions
+                        )
+                        candidates.pop(session_id, None)
+                        candidates[session_id] = None
+                        return False
+                return True
+        return False
+
     async def create(self, req: ChatCompletionRequest):
+        if req.model is not None and req.model != self._model_id:
+            raise ModelNotFound(req.model, self._model_id)
+        self._reject_invalid_values(req)
+        visible = req.include_reasoning
+        if (
+            visible is None
+            and req.reasoning is not None
+            and req.reasoning.get("exclude") is not None
+        ):
+            visible = not req.reasoning["exclude"]
+        if visible is not None:
+            kwargs = dict(req.chat_template_kwargs or {})
+            kwargs["return_reasoning"] = visible
+            req = req.model_copy(update={"chat_template_kwargs": kwargs})
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
-        lease = self._transactions.hold(req.session_id)
+        lease = self._transaction(req.session_id)
         entered = False
         try:
-            await lease.__aenter__()
+            admission = await lease.__aenter__()
             entered = True
-            result = await self._create(req, lease)
+            result = await self._create(req, lease, admission)
             if req.stream:
                 entered = False  # The returned iterator owns the transaction.
             return result
@@ -606,10 +977,7 @@ class ServingChat:
             if entered:
                 await lease.__aexit__(None, None, None)
 
-    async def _create(self, req: ChatCompletionRequest, lease):
-        if req.model is not None and req.model != self._model_id:
-            raise ModelNotFound(req.model, self._model_id)
-        self._reject_invalid_values(req)
+    async def _create(self, req: ChatCompletionRequest, lease, admission):
         self._reject_unsupported_params(req)
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
@@ -640,20 +1008,17 @@ class ServingChat:
         if self._max_context:
             count = self._count_prompt_tokens(prompt_input)
             if count is not None:
+                requested = req.resolved_max_tokens()
                 if count >= self._max_context:
-                    raise ContextLengthExceeded(count, self._max_context)
+                    raise ContextLengthExceeded(count, self._max_context, requested)
                 # An explicit max_tokens that wouldn't fit alongside the prompt
                 # must be rejected here, not run until the worker hits the context
                 # limit mid-decode (a 500 / streaming error after partial output).
-                requested = req.resolved_max_tokens()
                 if requested > 0 and count + requested > self._max_context:
                     raise ContextLengthExceeded(count, self._max_context, requested)
         # Per-path worker stop set (see __init__ for the two sets and why): tool
         # turns use the narrow set; plain chat adds the broad content specials.
-        if self._tools_active(req):
-            gen_stops = self._stops + self._request_stops(req)
-        else:
-            gen_stops = self._stops + self._content_specials + self._request_stops(req)
+        gen_stops = self._generation_stops(req)
         options = self._options(req, gen_stops)
         # The generation scaffold the worker will prefill ahead of this turn's
         # tokens (e.g. Qwen3 <think> block), resolved with the same per-request
@@ -664,68 +1029,156 @@ class ServingChat:
             template_kwargs, tools=template_tools
         )
         return await self._create_response(
-            req, prompt_input, options, preamble, gen_stops, lease
+            req, prompt_input, options, preamble, gen_stops, lease, admission
         )
 
+    async def _retry_admission(
+        self, error, admission, *, generation=None, started=False
+    ):
+        slots_exhausted = _session_capacity_exhausted(error)
+        if not started and (
+            slots_exhausted
+            or isinstance(error, WorkerError)
+            and error.admitted is False
+        ):
+            admission.pending = False
+        if asyncio.current_task().cancelling():
+            raise asyncio.CancelledError
+        if started or admission.retried or not slots_exhausted:
+            return False
+        admission.retried = True
+        if generation is not None:
+            await generation.aclose()
+        if asyncio.current_task().cancelling():
+            raise asyncio.CancelledError
+        evicted = await self._evict_idle_session()
+        if asyncio.current_task().cancelling():
+            raise asyncio.CancelledError
+        return evicted
+
     async def _create_response(
-        self, req, prompt_input, options, preamble, gen_stops, lease
+        self,
+        req,
+        prompt_input,
+        options,
+        preamble,
+        gen_stops,
+        lease,
+        admission,
+        tool_context=None,
+    ):
+        tool_context = tool_context if tool_context is not None else ToolContext()
+        while True:
+            try:
+                return await self._start_response(
+                    req,
+                    prompt_input,
+                    options,
+                    preamble,
+                    gen_stops,
+                    lease,
+                    admission,
+                    tool_context,
+                )
+            except (WorkerError, APIError) as error:
+                if not await self._retry_admission(error, admission):
+                    raise
+
+    async def _start_response(
+        self,
+        req,
+        prompt_input,
+        options,
+        preamble,
+        gen_stops,
+        lease,
+        admission,
+        tool_context,
     ):
         # Legacy workers need explicit admission. Multiplexed generation opens
         # implicitly from its full prompt, preserving new-session prefix reuse.
         if req.session_id is not None and not self._multiplexed:
-            await self._preflight_session(req.session_id)
-        if req.stream:
-            stats = GenStats()
-            generation = self._runtime.generate_stream(
-                req.session_id, prompt_input, options, stats
+            await self._preflight_session(req.session_id, admission)
+        if (
+            self._evict_idle_sessions
+            and self._multiplexed
+            and req.session_id is not None
+        ):
+            admission.pending = True
+        stats = GenStats()
+        generation = self._runtime.generate_stream(
+            req.session_id, prompt_input, options, stats
+        )
+        if req.stream and self._multiplexed:
+            await generation.wait_ready(timeout=self._streaming_preflight_timeout)
+        if self._multiplexed and self._evict_idle_sessions:
+            generation = _AdmissionRetryStream(
+                self,
+                req.session_id,
+                generation,
+                lambda: self._runtime.generate_stream(
+                    req.session_id, prompt_input, options, stats
+                ),
+                admission,
             )
-            if self._multiplexed:
-                await generation.wait_ready()
+        if req.stream:
             return _ChatStream(
-                self._stream(req, preamble, gen_stops, generation, stats),
+                self._stream(req, preamble, gen_stops, generation, stats, tool_context),
                 lease,
                 generation,
             )
-        return await self._complete(req, prompt_input, options, preamble, gen_stops)
+        return await self._complete(
+            req, preamble, gen_stops, generation, stats, tool_context
+        )
 
     async def _complete(
         self,
         req: ChatCompletionRequest,
-        prompt: PromptInput,
-        options: GenerationOptions,
-        preamble: str = "",
-        gen_stops: Optional[list[str]] = None,
+        preamble: str,
+        gen_stops: list[str],
+        generation,
+        stats: GenStats,
+        tool_context,
     ) -> ChatCompletionResponse:
-        # Same stop set the worker was given (per-path: narrow for tools, broad
-        # content specials added for plain chat); falls back to narrow if a caller
-        # didn't supply it.
-        stops = (
-            gen_stops
-            if gen_stops is not None
-            else self._stops + self._request_stops(req)
-        )
-        stats = GenStats()
+        # Same stop set the worker was given (narrow for tools, broad for chat).
+        stops = gen_stops
         try:
             # Collect raw text (markers intact for tool parsing), halting early
             # at a stop boundary (special token or request stop).
-            async with aclosing(
-                self._runtime.generate_stream(req.session_id, prompt, options, stats)
-            ) as generation:
+            async with aclosing(generation):
                 text, stopped = await self._collect_until_stop(generation, stops)
+        except (WorkerError, APIError):
+            raise
         except Exception as e:  # noqa: BLE001 - surface as a structured API error
             raise self._generation_error(e)
         # Bound the raw output at the first stop/special token BEFORE tool
         # parsing, so a call after the stop boundary is not parsed/emitted.
         tool_calls, reasoning, content = self._extract_response(
-            req, self._truncate_raw(text, req)
+            req,
+            text,
+            context=tool_context,
+            matched_stop=stats.matched_stop,
+            stopped=stopped or stats.finish_reason == "stop",
+            finish_reason=self._finish_reason(
+                req,
+                stats.completion_tokens,
+                stopped=stopped,
+                worker_finish=stats.finish_reason,
+            ),
         )
         # Compare future echoes against the finalized client-visible response.
         self._transcript.record_assistant_turn(
             session_id=req.session_id,
+            request_messages=req.messages,
             content=content,
             tool_calls=tool_calls,
             reasoning_content=reasoning,
-            generated_token_ids=stats.generated_token_ids,
+            # Hidden post-EOS tokens must not be spliced into a later echo.
+            generated_token_ids=(
+                None
+                if req.ignore_eos or tool_context.incomplete
+                else stats.generated_token_ids
+            ),
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
         )
@@ -745,14 +1198,7 @@ class ServingChat:
                     finish_reason=finish,
                 )
             ],
-            usage=Usage(
-                prompt_tokens=stats.prompt_tokens,
-                completion_tokens=stats.completion_tokens,
-                total_tokens=stats.prompt_tokens + stats.completion_tokens,
-                prompt_tokens_details=PromptTokensDetails(
-                    cached_tokens=stats.reused_prompt_tokens
-                ),
-            ),
+            usage=self._usage(stats, ignore_eos=req.ignore_eos),
         )
 
     async def _stream_plain_content(
@@ -762,7 +1208,8 @@ class ServingChat:
         stop_hit: list[bool],
     ) -> AsyncIterator[str]:
         if self._content_filter is not None:
-            raw, stop_hit[0] = await self._collect_until_stop(generation, stops)
+            raw, stopped = await self._collect_until_stop(generation, stops)
+            stop_hit[0] = stop_hit[0] or stopped
             content = self._visible_content(self._apply_stop(raw, stops))
             if content:
                 yield content
@@ -779,13 +1226,54 @@ class ServingChat:
         ):
             yield token
 
+    async def _clean_ignored_eos(
+        self,
+        req: ChatCompletionRequest,
+        generation: AsyncIterator[str],
+        stop_hit: list[bool],
+        stats: GenStats,
+    ) -> AsyncIterator[str]:
+        request_stops = self._request_stops(req)
+        visible_stops = self._visible_stops(req) + request_stops
+        hold = max((len(s) for s in visible_stops), default=1) - 1
+        buf = ""
+        visible = True
+        async for token in generation:
+            buf += token
+            request_cut = _earliest_stop(buf, request_stops)
+            if not stop_hit[0] and request_cut is not None:
+                stop_hit[0] = True
+                self._cancel_generation(generation)
+            if visible:
+                cut = _earliest_stop(buf, visible_stops)
+                if cut is not None:
+                    text = buf[:cut]
+                    if cut == request_cut:
+                        text = self._trim_stop_fragment(text, req)
+                    if text:
+                        yield text
+                    visible = False
+                elif len(buf) > hold:
+                    yield buf[: len(buf) - hold] if hold else buf
+            # Continue watching request stops after the visible turn ends.
+            buf = buf[-hold:] if hold else ""
+        if visible and buf:
+            if stats.finish_reason == "stop":
+                buf = self._trim_stop_fragment(buf, req)
+            if buf:
+                yield buf
+
     async def _stream_content_deltas(
         self,
         req: ChatCompletionRequest,
         generation: AsyncIterator[str],
         stops: list[str],
         stop_hit: list[bool],
+        stats: GenStats,
     ) -> AsyncIterator[DeltaMessage]:
+        if req.ignore_eos:
+            generation = self._clean_ignored_eos(req, generation, stop_hit, stats)
+            stops = []
         if self._streaming_parser_factory is None:
             async for text in self._stream_plain_content(generation, stops, stop_hit):
                 yield DeltaMessage(content=text)
@@ -849,13 +1337,79 @@ class ServingChat:
         self._log_generation_stats(req.session_id, stats, finish)
         yield chunk(DeltaMessage(), finish=finish)
 
-    async def _stream(
+    async def _stream_tool_output(self, generation, stops, stop_hit, parts, parser):
+        if parser is None:
+            text, stopped = await self._collect_until_stop(generation, stops)
+            parts.append(text)
+            stop_hit[0] = stop_hit[0] or stopped
+            return
+
+        async def capture():
+            async for token in generation:
+                parts.append(token)
+                yield token
+
+        def stop():
+            stop_hit[0] = True
+            self._cancel_generation(generation)
+
+        async for part in self._clean(capture(), stops, stop):
+            for delta in parser.feed(part):
+                yield delta
+        for delta in parser.finish():
+            yield delta
+
+    async def _stream_tool_response(
+        self, req, generation, stops, stop_hit, stats, response, tool_context
+    ):
+        parts, reasoning_parts = [], []
+        parser = (
+            self._tool_reasoning_parser_factory()
+            if self._tool_reasoning_parser_factory and self._return_reasoning(req)
+            else None
+        )
+
+        async for delta in self._stream_tool_output(
+            generation, stops, stop_hit, parts, parser
+        ):
+            if delta.reasoning_content:
+                reasoning_parts.append(delta.reasoning_content)
+                yield DeltaMessage(reasoning_content=delta.reasoning_content)
+        response.tool_calls, response.reasoning, response.content = (
+            self._extract_response(
+                req,
+                "".join(parts),
+                context=tool_context,
+                matched_stop=stats.matched_stop,
+                stopped=stop_hit[0] or stats.finish_reason == "stop",
+                finish_reason=self._finish_reason(
+                    req,
+                    stats.completion_tokens,
+                    stopped=stop_hit[0],
+                    worker_finish=stats.finish_reason,
+                ),
+            )
+        )
+        response.remaining_reasoning = response.reasoning
+        if parser is not None:
+            emitted = "".join(reasoning_parts)
+            response.remaining_reasoning = None
+            if response.reasoning and response.reasoning.startswith(emitted):
+                response.remaining_reasoning = (
+                    response.reasoning[len(emitted) :] or None
+                )
+            if emitted and not (response.reasoning or "").startswith(emitted):
+                logger.warning("Streamed reasoning differs from buffered extraction")
+                response.reasoning = emitted
+
+    async def _stream(  # noqa: C901 - response paths share one cancellation boundary
         self,
         req: ChatCompletionRequest,
         preamble: str,
         stops: list[str],
         generation: AsyncIterator[str],
         stats: GenStats,
+        tool_context,
     ) -> AsyncIterator[str]:
         cid = _new_id("chatcmpl")
 
@@ -864,6 +1418,14 @@ class ServingChat:
                 id=cid,
                 model=self._model_id,
                 choices=[ChunkChoice(delta=delta, finish_reason=finish)],
+                usage=(
+                    self._usage(stats, ignore_eos=req.ignore_eos)
+                    if finish is not None
+                    and self.api_dialect == "openrouter"
+                    and req.stream_options
+                    and req.stream_options.include_usage
+                    else None
+                ),
             )
             return f"data: {c.model_dump_json(exclude_none=True)}\n\n"
 
@@ -873,6 +1435,7 @@ class ServingChat:
         tool_calls = None
         reasoning = None
         content = None
+        remaining_tool_reasoning = None
 
         stop_hit = [False]  # set when a stop boundary is reached (forces finish="stop")
         # Per-path stop set from create(): for plain chat this includes the broad
@@ -880,16 +1443,16 @@ class ServingChat:
         # the worker, given the same set, halts + omits ids -> non-resumable turn).
         try:
             if use_tools:
-                # Buffer the (usually short) tool response, parse once.
-                # Halt early at a stop boundary, and bound the raw output
-                # BEFORE parsing so post-stop tool calls / text don't leak.
-                raw, stop_hit[0] = await self._collect_until_stop(
-                    generation,
-                    stops,
-                )
-                tool_calls, reasoning, content = self._extract_response(
-                    req, self._truncate_raw(raw, req)
-                )
+                # Stream safe reasoning, then validate complete tool calls.
+                response = _ToolResponse()
+                async for delta in self._stream_tool_response(
+                    req, generation, stops, stop_hit, stats, response, tool_context
+                ):
+                    yield chunk(delta)
+                tool_calls = response.tool_calls
+                reasoning = response.reasoning
+                content = response.content
+                remaining_tool_reasoning = response.remaining_reasoning
             elif (
                 self._reasoning_extractor is not None
                 and self._streaming_parser_factory is None
@@ -899,7 +1462,11 @@ class ServingChat:
                     stops,
                 )
                 tool_calls, reasoning, content = self._extract_response(
-                    req, self._apply_stop(raw, stops)
+                    req,
+                    raw,
+                    context=tool_context,
+                    matched_stop=stats.matched_stop,
+                    stopped=stop_hit[0] or stats.finish_reason == "stop",
                 )
                 if reasoning:
                     yield chunk(DeltaMessage(reasoning_content=reasoning))
@@ -908,7 +1475,7 @@ class ServingChat:
             else:
                 content_parts, reasoning_parts = [], []
                 async for delta in self._stream_content_deltas(
-                    req, generation, stops, stop_hit
+                    req, generation, stops, stop_hit, stats
                 ):
                     content_parts.append(delta.content or "")
                     reasoning_parts.append(delta.reasoning_content or "")
@@ -923,16 +1490,22 @@ class ServingChat:
             await generation.aclose()
 
         if error is not None:
-            err = self._generation_error(error).body()
+            err = self.error_body(self._generation_error(error))
             yield f"data: {json.dumps(err)}\n\n"
             yield "data: [DONE]\n\n"
             return
         self._transcript.record_assistant_turn(
             session_id=req.session_id,
+            request_messages=req.messages,
             content=content,
             tool_calls=tool_calls,
             reasoning_content=reasoning or None,
-            generated_token_ids=stats.generated_token_ids,
+            # Hidden post-EOS tokens must not be spliced into a later echo.
+            generated_token_ids=(
+                None
+                if req.ignore_eos or tool_context.incomplete
+                else stats.generated_token_ids
+            ),
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
         )
@@ -942,25 +1515,22 @@ class ServingChat:
             stats,
             use_tools,
             tool_calls,
-            reasoning,
+            remaining_tool_reasoning if use_tools else reasoning,
             content,
             stop_hit[0],
             chunk,
         ):
             yield final_chunk
-        if req.stream_options and req.stream_options.include_usage:
+        if (
+            req.stream_options
+            and req.stream_options.include_usage
+            and self.api_dialect != "openrouter"
+        ):
             usage_chunk = ChatCompletionChunk(
                 id=cid,
                 model=self._model_id,
                 choices=[],
-                usage=Usage(
-                    prompt_tokens=stats.prompt_tokens,
-                    completion_tokens=stats.completion_tokens,
-                    total_tokens=stats.prompt_tokens + stats.completion_tokens,
-                    prompt_tokens_details=PromptTokensDetails(
-                        cached_tokens=stats.reused_prompt_tokens
-                    ),
-                ),
+                usage=self._usage(stats, ignore_eos=req.ignore_eos),
             )
             yield f"data: {usage_chunk.model_dump_json(exclude_none=True)}\n\n"
         yield "data: [DONE]\n\n"

@@ -9,6 +9,7 @@
 import argparse
 import asyncio
 import logging
+import math
 import os
 import shutil
 from contextlib import asynccontextmanager
@@ -24,7 +25,21 @@ from .tool_parsers import HermesDetector
 _MAX_INT32 = (1 << 31) - 1
 
 
-def _validate_limits(parser, args) -> None:
+def _parse_preflight_timeout(value):
+    if value == "none":
+        return None
+    try:
+        timeout = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "expected a nonnegative number or none"
+        ) from error
+    if not math.isfinite(timeout) or timeout < 0:
+        raise argparse.ArgumentTypeError("expected a finite nonnegative number or none")
+    return timeout
+
+
+def _validate_limits(parser, args, *, prefix_capture_slots=0) -> int:
     for flag, value in (
         ("--max-context", args.max_context),
         ("--max-sessions", args.max_sessions),
@@ -39,15 +54,23 @@ def _validate_limits(parser, args) -> None:
         parser.error(f"--prefix-checkpoint-interval must be between 0 and {_MAX_INT32}")
     if args.prefix_checkpoint_interval and not args.prefix_cache_entries:
         parser.error("--prefix-checkpoint-interval requires --prefix-cache-entries > 0")
+    if not 0 <= prefix_capture_slots <= _MAX_INT32:
+        parser.error(f"--prefix-capture-slots must be between 0 and {_MAX_INT32}")
+    # Mirrors ServingRuntimeConfig::resolved_prefix_captures for row validation.
+    if prefix_capture_slots == 0:
+        prefix_capture_slots = min(args.max_sessions, args.max_inflight_requests)
+        if args.prefix_checkpoint_interval:
+            prefix_capture_slots = min(prefix_capture_slots, 2)
+    if not args.prefix_cache_entries:
+        prefix_capture_slots = 0
     physical_sessions = (
-        args.max_sessions
-        + args.prefix_cache_entries
-        + (1 if args.prefix_cache_entries else 0)
+        args.max_sessions + args.prefix_cache_entries + prefix_capture_slots
     )
     if physical_sessions > _MAX_INT32:
         parser.error("session and prefix-cache capacity exceeds the row limit")
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535")
+    return prefix_capture_slots
 
 
 def _parse_args(argv=None):
@@ -82,16 +105,31 @@ def _parse_args(argv=None):
     parser.add_argument("--max-inflight-requests", type=int, default=64)
     parser.add_argument("--prefix-cache-entries", type=int, default=0)
     parser.add_argument(
+        "--prefix-capture-slots",
+        type=int,
+        default=0,
+        help="Transient capture rows; 0 (default): size from session/request limits",
+    )
+    parser.add_argument(
         "--prefix-checkpoint-interval",
         type=int,
         default=0,
         help="Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.",
     )
+    parser.add_argument(
+        "--api-dialect", choices=("openai", "openrouter"), default="openai"
+    )
+    parser.add_argument(
+        "--streaming-preflight-timeout",
+        type=_parse_preflight_timeout,
+        default=None,
+        help="Seconds to wait for first output (including prefill) before SSE headers; none waits indefinitely.",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
 
-    _validate_limits(parser, args)
+    _validate_limits(parser, args, prefix_capture_slots=args.prefix_capture_slots)
 
     args.worker_bin = os.path.expanduser(args.worker_bin)
     if shutil.which(args.worker_bin) is None:
@@ -154,6 +192,11 @@ def main(argv=None) -> None:
                 str(args.prefix_cache_entries),
             ]
             + (
+                ["--prefix_capture_slots", str(args.prefix_capture_slots)]
+                if args.prefix_cache_entries
+                else []
+            )
+            + (
                 ["--prefix_checkpoint_interval", str(args.prefix_checkpoint_interval)]
                 if args.prefix_checkpoint_interval
                 else []
@@ -168,6 +211,8 @@ def main(argv=None) -> None:
                 args.model_id,
                 max_context=args.max_context,
                 tool_detector_cls=HermesDetector,
+                api_dialect=args.api_dialect,
+                streaming_preflight_timeout=args.streaming_preflight_timeout,
             )
         finally:
             if runtime is None:

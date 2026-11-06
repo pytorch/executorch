@@ -84,6 +84,7 @@ fbcode_target(
         "ethosu/__init__.py",
         "ethosu/backend.py",
         "ethosu/compile_spec.py",
+        "ethosu/parse_delegate_metadata.py",
         "ethosu/partitioner.py",
     ],
     deps = [
@@ -103,6 +104,7 @@ fbcode_target(
         "vgf/__init__.py",
         "vgf/_passes/__init__.py",
         "vgf/_passes/fuse_grid_sampler_flow_offset.py",
+        "vgf/_passes/group_independent_custom_shaders.py",
         "vgf/_passes/insert_grid_sampler_grid_dequant_pass.py",
         "vgf/_passes/rewrite_grid_sampler_to_tosa_custom.py",
         "vgf/backend.py",

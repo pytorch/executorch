@@ -87,7 +87,6 @@ set(EXECUTORCH_SKIP_ARM_EXECUTOR_RUNNER
     ON
     CACHE BOOL "" FORCE
 )
-
 # examples/arm/executor_runner/CMakeLists.txt generates runner-specific
 # registration libraries based on the PTE or an explicit select-ops list. Avoid
 # feeding those cache entries into the top-level ExecuTorch configure, otherwise
