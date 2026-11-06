@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -102,16 +103,27 @@ class TestCu134Dependencies(unittest.TestCase):
                             "https://download.pytorch.org/whl/nightly/cpu", command
                         )
 
-    def test_other_cuda_trains_keep_existing_pins(self):
-        for cuda in ((12, 6), (13, 0), (13, 2)):
+    def test_other_cuda_trains_keep_available_pins(self):
+        for cuda, torchao_version in (
+            ((12, 6), self.installer.TORCHAO_STABLE_VERSION),
+            ((13, 0), self.installer.TORCHAO_NIGHTLY_VERSION),
+            ((13, 2), self.installer.TORCHAO_NIGHTLY_VERSION),
+        ):
             for machine in ("x86_64", "aarch64"):
                 with self.subTest(cuda=cuda, machine=machine):
                     core, local, domains, examples = self.install_commands(
                         cuda, machine
                     )
                     self.assertIn("torch==2.14.0", core)
+                    self.assertIn(f"torchao=={torchao_version}", core)
+                    torchao_channel = (
+                        "cpu" if machine == "aarch64" else f"cu{cuda[0]}{cuda[1]}"
+                    )
+                    torchao_channel_kind = "whl" if cuda == (12, 6) else "whl/nightly"
                     self.assertIn(
-                        f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}", core
+                        f"https://download.pytorch.org/{torchao_channel_kind}/"
+                        f"{torchao_channel}",
+                        core,
                     )
                     self.assertIn("torchvision==0.29.0", domains)
                     self.assertIn("torchaudio==2.11.0", domains)
@@ -181,13 +193,25 @@ class TestCu134Dependencies(unittest.TestCase):
                     None,
                     env={"EXECUTORCH_USE_RELEASE_CPU_DEPS": "1", flag: "1"},
                 )
-                self.assertIn(
-                    f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}", core
-                )
+                self.assertFalse(any(arg.startswith("torchao==") for arg in core))
                 self.assertIn("https://download.pytorch.org/whl/nightly/cpu", core)
                 for command in (core, domains):
                     self.assertIn("https://download.pytorch.org/whl/test/cpu", command)
                 self.assertIn("third-party/ao", local)
+
+    def test_cuda_source_build_does_not_require_torchao_wheels(self):
+        for cuda in ((12, 6), (13, 0), (13, 2), (13, 4)):
+            for flag in (
+                "EXECUTORCH_BUILD_KERNELS_TORCHAO",
+                "TORCHAO_BUILD_EXPERIMENTAL_MPS",
+            ):
+                with self.subTest(cuda=cuda, flag=flag):
+                    commands = self.install_commands(cuda, env={flag: "1"})
+                    self.assertIn("third-party/ao", commands[1])
+                    for command in commands:
+                        self.assertFalse(
+                            any(arg.startswith("torchao==") for arg in command)
+                        )
 
     def test_windows_does_not_select_cu134(self):
         core, _, domains, _ = self.install_commands((13, 4), system="Windows")

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 import base64
 import json
@@ -114,7 +118,15 @@ def update_pytorch_pin(commit_hash):
 
 def get_supported_torchao_channels():
     cuda_versions = runpy.run_path("install_utils.py")["SUPPORTED_CUDA_VERSIONS"]
-    return ["cpu", *(f"cu{major}{minor}" for major, minor in cuda_versions)]
+    # CUDA 12.6 uses the stable TorchAO release instead of a nightly.
+    return [
+        "cpu",
+        *(
+            f"cu{major}{minor}"
+            for major, minor in cuda_versions
+            if (major, minor) != (12, 6)
+        ),
+    ]
 
 
 def get_torchao_versions(channel):
@@ -167,13 +179,13 @@ def get_torchao_commit_hash(nightly_version):
     formatted_date = parse_nightly_version(f"dev{date}")
     url = (
         "https://api.github.com/repos/pytorch/ao/actions/workflows/"  # @lint-ignore
-        "build_wheels_linux_x86.yml/runs?event=schedule&status=success&"
+        "build_wheels_linux_x86.yml/runs?event=schedule&"
         f"created={formatted_date}&per_page=100"
     )
     runs = get_json(url).get("workflow_runs", [])
     if not runs:
         raise ValueError(
-            f"Could not find the successful TorchAO wheel build for {nightly_version}"
+            f"Could not find the TorchAO wheel build for {nightly_version}"
         )
     return runs[0]["head_sha"]
 

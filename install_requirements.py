@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,7 +16,8 @@ from install_utils import determine_torch_url, is_intel_mac_os, python_is_compat
 # The pip repository that hosts nightly torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
 TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
-TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"
+TORCHAO_RELEASE_URL_BASE = "https://download.pytorch.org/whl"
+TORCHAO_NIGHTLY_URL_BASE = "https://download.pytorch.org/whl/nightly"
 TORCHAO_STABLE_VERSION = "0.18.0"
 TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261103"
 CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261103"
@@ -41,19 +42,21 @@ def torchao_from_source():
 
 
 def get_torchao_version(torch_url):
-    if (
+    use_release = (
         os.environ.get("EXECUTORCH_USE_RELEASE_CPU_DEPS") == "1"
         and torch_url.endswith("/cpu")
-        and not torchao_from_source()
-    ):
+    ) or torch_url.endswith("/cu126")
+    if use_release and not torchao_from_source():
         return TORCHAO_STABLE_VERSION
     return TORCHAO_NIGHTLY_VERSION
 
 
 def get_torch_url():
     torch_url = determine_torch_url(TORCH_URL_BASE)
-    if get_torchao_version(torch_url) == TORCHAO_STABLE_VERSION:
-        return "https://download.pytorch.org/whl/cpu"
+    if get_torchao_version(torch_url) == TORCHAO_STABLE_VERSION and torch_url.endswith(
+        "/cpu"
+    ):
+        return f"{TORCHAO_RELEASE_URL_BASE}/cpu"
     return torch_url
 
 
@@ -100,21 +103,26 @@ def install_requirements(use_pytorch_nightly):
     torch_url = get_torch_url()
     cu134_packages = cu134_requirements(torch_url)
     if cu134_packages:
-        torch_url = determine_torch_url(TORCHAO_URL_BASE)
+        torch_url = determine_torch_url(TORCHAO_NIGHTLY_URL_BASE)
         if not use_pytorch_nightly:
             cu134_packages[0] = "torch"
     torchao_version = get_torchao_version(torch_url)
     if torchao_version == TORCHAO_STABLE_VERSION:
-        torchao_url = "https://download.pytorch.org/whl/cpu"
+        torchao_channel = (
+            "cpu"
+            if platform.machine().lower() in ("aarch64", "arm64")
+            else torch_url.rsplit("/", 1)[-1]
+        )
+        torchao_url = f"{TORCHAO_RELEASE_URL_BASE}/{torchao_channel}"
     # CUDA TorchAO wheels cover x86_64 only; use CPU wheels on aarch64.
     elif platform.machine().lower() in ("aarch64", "arm64"):
         # The cpu channel specifically, not the index root. The root carries every variant, and a
         # pin without a local segment admits all of them while ordering a local segment highest,
         # so the xpu channel's pure python wheel would win on version before pip compares wheel
         # tags, silently replacing the compiled aarch64 build.
-        torchao_url = f"{TORCHAO_URL_BASE}/cpu"
+        torchao_url = f"{TORCHAO_NIGHTLY_URL_BASE}/cpu"
     else:
-        torchao_url = determine_torch_url(TORCHAO_URL_BASE)
+        torchao_url = determine_torch_url(TORCHAO_NIGHTLY_URL_BASE)
 
     # pip packages needed by exir.
     TORCH_PACKAGE = cu134_packages or [
@@ -122,8 +130,9 @@ def install_requirements(use_pytorch_nightly):
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
         ("torch==2.14.0" if use_pytorch_nightly else "torch"),
-        f"torchao=={torchao_version}",
     ]
+    if not cu134_packages and not torchao_from_source():
+        TORCH_PACKAGE.append(f"torchao=={torchao_version}")
 
     # Install the requirements for core ExecuTorch package.
     # `--extra-index-url` tells pip to look for package
@@ -214,9 +223,9 @@ def install_optional_example_requirements(use_pytorch_nightly):
         else []
     )
     if cu134_packages:
-        torch_url = determine_torch_url(TORCHAO_URL_BASE)
+        torch_url = determine_torch_url(TORCHAO_NIGHTLY_URL_BASE)
     torchao_index = (
-        ["--extra-index-url", f"{TORCHAO_URL_BASE}/cpu"]
+        ["--extra-index-url", f"{TORCHAO_NIGHTLY_URL_BASE}/cpu"]
         if cu134_packages and platform.machine().lower() in ("aarch64", "arm64")
         else []
     )
