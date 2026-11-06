@@ -94,7 +94,9 @@ def download_hf_snapshot(
 
 
 def download_and_convert_hf_checkpoint(
-    repo_id: str, convert_weights: Callable[[str, str], None]
+    repo_id: str,
+    convert_weights: Callable[[str, str], None],
+    cache_suffix: str = "",
 ) -> str:
     """
     Downloads and converts to Meta format a HuggingFace checkpoint.
@@ -103,6 +105,8 @@ def download_and_convert_hf_checkpoint(
         repo_id: Id of the HuggingFace repo, e.g. "Qwen/Qwen2.5-1.5B".
         convert_weights: Weight conversion function taking in path to the downloaded HuggingFace
             files and the desired output path.
+        cache_suffix: Appended to the cached file name, for converters whose output
+            format differs from another converter's for the same repo.
 
     Returns:
         The output path of the Meta checkpoint converted from HuggingFace.
@@ -116,7 +120,7 @@ def download_and_convert_hf_checkpoint(
 
     # Use repo name to name the converted file.
     model_name = repo_id.replace("/", "_")
-    converted_path = cache_dir / f"{model_name}.pth"
+    converted_path = cache_dir / f"{model_name}{cache_suffix}.pth"
 
     if converted_path.exists():
         print(f"✔ Using cached converted model: {str(converted_path)}")

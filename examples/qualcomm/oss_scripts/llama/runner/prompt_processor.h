@@ -9,6 +9,7 @@
 #pragma once
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/attention_sink_rope_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/conv_state_manager.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
@@ -60,6 +61,10 @@ class PromptProcessor {
    */
   virtual const std::vector<std::byte>& get_all_logits();
 
+  void set_conv_state_manager(ConvStateManager* conv_state_manager) {
+    conv_state_manager_ = conv_state_manager;
+  }
+
   /**
    * Prefill an LLM Module with the given text input.
    * @param prompt_tokens The text prompt tokens to the LLM Module. Encoded by
@@ -102,6 +107,9 @@ class PromptProcessor {
       int64_t start_pos);
   DecoderRunner* decoder_runner_;
   KVManager* kv_manager_;
+  // Optional, for models with short-convolution layers.
+  ConvStateManager* conv_state_manager_ = nullptr;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> conv_tensors_;
   std::string method_name_;
 
   // metadata

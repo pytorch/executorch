@@ -58,6 +58,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
     DECODE_QDQ_FILENAME,
     DECODER_GRAPH_NAMES,
+    LFM3_DECODER_MODELS,
     TEXT_DECODER,
     TEXT_ENCODER,
     TOK_EMBEDDING,
@@ -209,6 +210,21 @@ class TextDecoder(Component):
             self.gemma4_config.max_seq_len = control_args.max_seq_len
             self.gemma4_config.max_context_len = control_args.max_context_len
             self.model_args = None
+        elif control_args.decoder_model in LFM3_DECODER_MODELS:
+            from executorch.examples.qualcomm.oss_scripts.lfm3.model_wrapper import (
+                Lfm3Config,
+            )
+
+            assert config.num_sharding == 1, "conv-state models do not support sharding"
+            self.lfm3_config = Lfm3Config.from_json(
+                control_args.params or config.params_path
+            )
+            self.lfm3_config.max_batch_size = (
+                control_args.batch_size if mode == Mode.CALIBRATE else 1
+            )
+            self.lfm3_config.max_seq_len = control_args.max_seq_len
+            self.lfm3_config.max_context_len = control_args.max_context_len
+            self.model_args = None
         else:
             params_path = (
                 config.params_path
@@ -302,6 +318,7 @@ class TextDecoder(Component):
                 checkpoint = download_and_convert_hf_checkpoint(
                     self.config.repo_id,
                     self.config.convert_weights.__func__,
+                    getattr(self.config, "converted_checkpoint_suffix", ""),
                 )
                 state_dict = torch.load(
                     checkpoint, weights_only=True, map_location="cpu", mmap=True
@@ -320,6 +337,8 @@ class TextDecoder(Component):
                             v.shape, dtype=torch.float32
                         )
                 for k, v in state_dict.items():
+                    if self.model_args is None:
+                        break
                     if "tok_embeddings.weight" == k:
                         state_dict[k] = (
                             v.float() * self.model_args.embedding_scale_factor
@@ -464,6 +483,28 @@ class TextDecoder(Component):
                 enable_masked_softmax=False,
                 **extra_kwargs,
             )
+        elif self.control_args.decoder_model in LFM3_DECODER_MODELS:
+            from executorch.examples.qualcomm.oss_scripts.lfm3.model_wrapper import (
+                Lfm3Model,
+            )
+
+            ar_len = (
+                self.control_args.prefill_ar_len
+                if self.mode == Mode.PREFILL
+                else (
+                    self.control_args.max_context_len
+                    if self.mode == Mode.CALIBRATE
+                    else 1
+                )
+            )
+            decoder = Lfm3Model(
+                self.lfm3_config,
+                ar_len=ar_len,
+                use_i64_token=use_i64_token,
+                kv_io_bit_width=(
+                    self.quant_recipe.get_kv_io_bit_width() if self.quant_recipe else 32
+                ),
+            )
         else:
             decoder: LlamaModel = LLM_VARIANT_ARCHS.get(
                 self.control_args.decoder_model, LlamaModel
@@ -594,6 +635,19 @@ class TextDecoder(Component):
                 quant_io_type = fixed_point_type["io_type"]
             elif node.meta["val"].size() in atten_mask_shape:
                 quant_io_type = fixed_point_type["io_type"]
+
+        if self.control_args.decoder_model in LFM3_DECODER_MODELS:
+            # Conv states in, new conv inputs out. The runner copies output bytes
+            # into the state buffer, so both stay quantized with the same encoding.
+            dim, bsz = self.meta["get_dim"], self.meta["get_max_batch_size"]
+            state_shape = (bsz, self.meta["get_conv_state_len"], dim)
+            new_rows_shape = (bsz, self.meta["get_ar_len"], dim)
+            if (
+                node.op == "placeholder"
+                and node.name != "tokens"
+                and node.meta["val"].size() == state_shape
+            ) or (is_graph_output(node) and node.meta["val"].size() == new_rows_shape):
+                return fixed_point_type["io_type"]
 
         if is_graph_output(node):
             if node.meta["val"].size()[-2:] in self.kv_cache_shape:
@@ -1017,8 +1071,12 @@ class HybridTextDecoder(Component):
                     n_cache_layers = (
                         self.decode.meta["get_n_self_layers"]
                         if self.control_args.decoder_model == "gemma4-e2b"
+                        or self.control_args.decoder_model in LFM3_DECODER_MODELS
                         else self.decode.meta["get_n_layers"]
                     )
+                    if args_idx >= 2 * n_cache_layers:
+                        # Extra recurrent state (e.g. conv state), not a KV cache.
+                        continue
                     if args_idx >= n_cache_layers:
                         v_input_cache_nodes.append(node)
                     else:

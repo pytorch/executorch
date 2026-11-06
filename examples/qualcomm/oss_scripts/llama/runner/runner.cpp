@@ -128,6 +128,12 @@ Runner::Runner(
   } else if (decoder_model_version == "gemma4") {
     decoder_model_version_ = DecoderModelVersion::kGemma4;
     cache_mode_ = CacheMode::HybridCache;
+  } else if (decoder_model_version == "lfm3") {
+    decoder_model_version_ = DecoderModelVersion::kLfm3;
+    cache_mode_ = CacheMode::HybridCache;
+  } else if (decoder_model_version == "lfm3_base") {
+    decoder_model_version_ = DecoderModelVersion::kLfm3Base;
+    cache_mode_ = CacheMode::HybridCache;
   } else if (decoder_model_version == "granite") {
     decoder_model_version_ = DecoderModelVersion::kGranite;
   } else if (decoder_model_version == "phi_4_mini") {
@@ -202,6 +208,7 @@ Error Runner::load() {
     eos_ids->insert(tokenizer_->encode("<|end|>", 0, 0).get()[0]);
   } else if (
       decoder_model_version_ == DecoderModelVersion::kQwen3 ||
+      decoder_model_version_ == DecoderModelVersion::kLfm3 ||
       decoder_model_version_ == DecoderModelVersion::kSmollm2_135m ||
       decoder_model_version_ == DecoderModelVersion::kSmollm3) {
     eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
@@ -291,6 +298,18 @@ Error Runner::load() {
       std::make_unique<MethodMeta>(
           std::move(module_->method_meta(token_generator_method_name).get())));
 
+  // Models with short-convolution layers (LFM3) carry a rolling conv state.
+  auto conv_state_manager =
+      ConvStateManager::from_module(*module_, method_meta.get(), max_ar_len);
+  ET_CHECK_OK_OR_RETURN_ERROR(conv_state_manager.error());
+  conv_state_manager_ = std::move(*conv_state_manager);
+  if (conv_state_manager_ != nullptr) {
+    ET_CHECK_MSG(
+        eval_mode_ != EvalMode::kLookaheadDecoding &&
+            attention_sink_rope_module_ == nullptr,
+        "Conv-state models support kv and hybrid modes only");
+  }
+
   if (attention_sink_rope_module_ != nullptr) {
     attention_sink_rope_runner_ = std::make_unique<AttentionSinkRopeRunner>(
         attention_sink_rope_module_.get());
@@ -359,13 +378,20 @@ Error Runner::load() {
   buffer_manager_ = std::make_unique<ClientMem>();
   if (shared_buffer_) {
     buffer_manager_ = std::make_unique<RpcMem>(
-        kv_manager_->total_cache_size_in_bytes(),
+        kv_manager_->total_cache_size_in_bytes() +
+            (conv_state_manager_ ? conv_state_manager_->total_size_in_bytes()
+                                 : 0),
         prompt_processor_->total_prompt_processor_io_size_in_bytes(),
         token_generator_->total_token_generator_io_size_in_bytes());
   }
   ET_LOG(Info, "creating io_memory");
   // prepare io
   kv_manager_->init_cache(buffer_manager_.get(), prompt_processor_ar_len);
+  if (conv_state_manager_ != nullptr) {
+    conv_state_manager_->init(buffer_manager_.get());
+    prompt_processor_->set_conv_state_manager(conv_state_manager_.get());
+    token_generator_->set_conv_state_manager(conv_state_manager_.get());
+  }
   prompt_processor_->init_io(
       buffer_manager_.get(),
       module_->method_meta(prompt_processor_method_name));
