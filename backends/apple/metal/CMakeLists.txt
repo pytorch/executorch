@@ -147,4 +147,8 @@ if(BUILD_TESTING)
     test_metal_memory SOURCES runtime/test/test_memory.cpp EXTRA_LIBS
     metal_backend
   )
+  et_cxx_test(
+    test_metal_strided_view SOURCES runtime/test/test_strided_view.mm
+    EXTRA_LIBS metal_backend
+  )
 endif()

@@ -548,7 +548,7 @@ AOTITorchError aoti_torch_mps_gather_qmv(
         kernel_func->setArg(1, *w_tensor);
         kernel_func->setArg(2, *s_tensor);
         kernel_func->setArg(3, *z_tensor);
-        kernel_func->setArg(4, *out_tensor);
+        kernel_func->setArg(4, *out_tensor, ETMetalKernelFunction::ArgAccess::kWrite);
         kernel_func->setArg(5, sizes.data(), sizeof(uint32_t) * sizes.size());
         kernel_func->setArg(6, *idx_tensor);
         kernel_func->setArg(7, expert_strides.data(), sizeof(uint32_t) * expert_strides.size());
