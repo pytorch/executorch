@@ -140,6 +140,20 @@ uint size_at(const BufferMetadata meta, const uint dim) {
   return safe_idx(meta.sizes[0], meta.sizes[1], int(dim));
 }
 
+// Number of leading non-padding lanes in a vec4 buffer texel; may fall outside
+// [0, 4]. Assumes the packed dim has stride 1, so the lanes lie along it.
+int num_valid_lanes(
+    const uint texel_idx,
+    const BufferMetadata meta,
+    const int packed_dim) {
+  const uint packed_dim_size = size_at(meta, packed_dim);
+  if (mod_4(packed_dim_size) == 0) {
+    return 4;
+  }
+  return int(packed_dim_size) -
+      int(mul_4(texel_idx) % align_up_4(packed_dim_size));
+}
+
 bool are_equal(const BufferMetadata meta1, const BufferMetadata meta2) {
   // sizes and strides must be the same to be considered equal
   if (meta1.sizes[0] != meta2.sizes[0]) {
@@ -175,6 +189,51 @@ struct TextureMetadata {
 
 bool out_of_bounds(const ivec3 pos, const TextureMetadata meta) {
   return any(greaterThanEqual(pos, meta.limits));
+}
+
+// Assumes in-bounds texels, standard axis mapping, and packed_dim in [0, 2].
+bool texel_has_padding_simple(
+    const ivec3 pos,
+    const TextureMetadata meta,
+    const int packed_dim) {
+  const int packed_dim_size = safe_idx(meta.sizes, packed_dim);
+  if (mod_4(packed_dim_size) == 0) {
+    return false;
+  }
+  const int packed_dim_idx = safe_idx(pos, packed_dim) * 4;
+  const int packed_idx = packed_dim == 2 && meta.sizes.w > 1
+      ? packed_dim_idx % (div_up_4(packed_dim_size) * 4)
+      : packed_dim_idx;
+  return packed_idx + 3 >= packed_dim_size;
+}
+
+// Same assumptions as texel_has_padding_simple.
+int num_valid_lanes(
+    const ivec3 pos,
+    const TextureMetadata meta,
+    const int packed_dim) {
+  if (!texel_has_padding_simple(pos, meta, packed_dim)) {
+    return 4;
+  }
+  return mod_4(safe_idx(meta.sizes, packed_dim));
+}
+
+vec4 mask_padding_lanes(const vec4 texel, const int valid_lane_count) {
+  const bvec4 valid_lanes = lessThan(
+      ivec4(0, 1, 2, 3), ivec4(valid_lane_count));
+  return mix(vec4(0), texel, valid_lanes);
+}
+
+ivec4 mask_padding_lanes(const ivec4 texel, const int valid_lane_count) {
+  const bvec4 valid_lanes = lessThan(
+      ivec4(0, 1, 2, 3), ivec4(valid_lane_count));
+  return mix(ivec4(0), texel, valid_lanes);
+}
+
+uvec4 mask_padding_lanes(const uvec4 texel, const int valid_lane_count) {
+  const bvec4 valid_lanes = lessThan(
+      ivec4(0, 1, 2, 3), ivec4(valid_lane_count));
+  return mix(uvec4(0), texel, valid_lanes);
 }
 
 //
@@ -455,6 +514,65 @@ uint tensor_idx_to_linear_idx(
 
   return lin_idx;
 }
+
+// tidx indexes the first element of a vec4 buffer texel. Same assumptions as
+// the texel index overload.
+int num_valid_lanes(
+    const TensorIndex tidx,
+    const BufferMetadata meta,
+    const int packed_dim) {
+  const uint packed_dim_size = size_at(meta, packed_dim);
+  if (mod_4(packed_dim_size) == 0) {
+    return 4;
+  }
+  return int(packed_dim_size) - int(idx_at(tidx, packed_dim));
+}
+
+// Zeroes the padding lanes of a vec4 texel, located from the texel's index.
+// Tensors whose packed dim needs no padding return the texel after one uniform
+// check.
+#define define_mask_padding_lanes_fns(vec4_type)                          \
+                                                                          \
+  vec4_type mask_padding_lanes(                                           \
+      const vec4_type texel,                                              \
+      const uint texel_idx,                                               \
+      const BufferMetadata meta,                                          \
+      const int packed_dim) {                                             \
+    const int valid_lane_count =                                          \
+        num_valid_lanes(texel_idx, meta, packed_dim);                     \
+    if (valid_lane_count >= 4) {                                          \
+      return texel;                                                       \
+    }                                                                     \
+    return mask_padding_lanes(texel, valid_lane_count);                   \
+  }                                                                       \
+                                                                          \
+  vec4_type mask_padding_lanes(                                           \
+      const vec4_type texel,                                              \
+      const TensorIndex tidx,                                             \
+      const BufferMetadata meta,                                          \
+      const int packed_dim) {                                             \
+    const int valid_lane_count = num_valid_lanes(tidx, meta, packed_dim); \
+    if (valid_lane_count >= 4) {                                          \
+      return texel;                                                       \
+    }                                                                     \
+    return mask_padding_lanes(texel, valid_lane_count);                   \
+  }                                                                       \
+                                                                          \
+  vec4_type mask_padding_lanes(                                           \
+      const vec4_type texel,                                              \
+      const ivec3 pos,                                                    \
+      const TextureMetadata meta,                                         \
+      const int packed_dim) {                                             \
+    const int valid_lane_count = num_valid_lanes(pos, meta, packed_dim);  \
+    if (valid_lane_count >= 4) {                                          \
+      return texel;                                                       \
+    }                                                                     \
+    return mask_padding_lanes(texel, valid_lane_count);                   \
+  }
+
+define_mask_padding_lanes_fns(vec4)
+define_mask_padding_lanes_fns(ivec4)
+define_mask_padding_lanes_fns(uvec4)
 
 void clamp_tensor_idx(const BufferMetadata meta, inout TensorIndex tidx) {
   tidx.data[0] = min(tidx.data[0], meta.sizes[0] - 1);

@@ -10,6 +10,7 @@
 
 AT_INT_ARRAY_REF = "at::IntArrayRef"
 AT_SCALAR = "at::Scalar"
+OPT_AT_SCALAR = "::std::optional<at::Scalar>"
 AT_TENSOR = "at::Tensor"
 AT_TENSOR_LIST = "at::TensorList"
 OPT_TENSOR_LIST = "c10::List<::std::optional<at::Tensor>>"

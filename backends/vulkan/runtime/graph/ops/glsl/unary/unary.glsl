@@ -13,20 +13,14 @@ ${define_required_extensions(STORAGE, DTYPE)}
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
-#define T ${buffer_scalar_type(DTYPE)}
 
-// Buffer ops compute in the parameter type. Runtime bounds of int32 clamps stay
-// int so that large values remain exact.
+// Runtime bounds of int32 clamps stay int so that large values remain exact.
 $if DYNAMIC_PARAMS:
   #define PARAM_T ${texel_load_component_type(DTYPE, "texture3d")}
 $else:
   #define PARAM_T float
-$if STORAGE == "buffer":
-  #define IN_T PARAM_T
-  #define OUT_T T
-$else:
-  #define IN_T VEC4_T
-  #define OUT_T VEC4_T
+#define IN_T ${texel_type(DTYPE)}
+#define OUT_T IN_T
 $if DTYPE in ["half", "float"]:
   #define UNARY_OP_IS_FLOAT
 $elif DTYPE == "uint8":
@@ -38,8 +32,8 @@ ${define_active_storage_type(STORAGE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE, is_scalar_array=False)}
 
 $if STORAGE == "buffer":
   ${layout_declare_ubo(B, "BufferMetadata", "outp")}
@@ -60,6 +54,8 @@ $else:
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "op_type", "0")}
+${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
+const int out_packed_dim = get_packed_dim(out_layout);
 
 #include "dispatch.glslh"
 #include "unary_op.glslh"
@@ -75,28 +71,33 @@ $else:
   #define PARAM_A minimum
   #define PARAM_B maximum
 
+void main() {
 #ifdef USING_BUFFER
-
-void main() {
-  const int i = int(linear_idx_from_gid());
-  if (uint(i) >= numel(outp)) {
+  const uint idx = linear_idx_from_gid();
+  if (idx >= div_4(numel(outp))) {
     return;
   }
-
-  t_out[i] = apply_unary_op(op_type, IN_T(t_in[i]), PARAM_A, PARAM_B);
-}
-
+  const IN_T in_texel = IN_T(t_in[idx]);
 #else
-
-void main() {
-  const ivec3 pos = ivec3(gl_GlobalInvocationID);
-
-  if (out_of_bounds(pos, outp)) {
+  const ivec3 idx = ivec3(gl_GlobalInvocationID);
+  if (out_of_bounds(idx, outp)) {
     return;
   }
-
-  VEC4_T in_texel = texelFetch(t_in, pos, 0);
-  imageStore(t_out, pos, apply_unary_op(op_type, in_texel, PARAM_A, PARAM_B));
-}
-
+  const IN_T in_texel = IN_T(texelFetch(t_in, idx, 0));
 #endif
+
+  OUT_T out_texel = apply_unary_op(op_type, in_texel, PARAM_A, PARAM_B);
+  // Input padding lanes are assumed zero, so only ops that map zero to a
+  // nonzero value need to mask them.
+  if (!unary_op_preserves_zero(op_type) &&
+      any(notEqual(
+          apply_unary_op(op_type, IN_T(0), PARAM_A, PARAM_B), OUT_T(0)))) {
+    out_texel = mask_padding_lanes(out_texel, idx, outp, out_packed_dim);
+  }
+
+#ifdef USING_BUFFER
+  t_out[idx] = VEC4_T(out_texel);
+#else
+  imageStore(t_out, idx, VEC4_T(out_texel));
+#endif
+}
