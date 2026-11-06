@@ -134,9 +134,11 @@ def define_common_targets():
         ],
         preprocessor_flags = _vgf_zero_copy_flags(),
         visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+        ],
         deps = [
             "//executorch/runtime/backend:interface",
-            "//executorch/runtime/core:core",
             "fbsource//third-party/pypi/ai-ml-sdk-vgf-library/0.11.0:vgf",
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
