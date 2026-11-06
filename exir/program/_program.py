@@ -1904,11 +1904,17 @@ class ExecutorchProgramManager:
         backend_config = backend_config or ExecutorchBackendConfig()
 
         # Emit methods
+        reserved_external_names = set()
+        if named_data is not None:
+            reserved_external_names.update(named_data.pte_data)
+            for entries in named_data.external_data.values():
+                reserved_external_names.update(entries)
         self._emitter_output: EmitterOutput = emit_program(
             self._execution_programs,
             backend_config.emit_stacktrace,
             self._config_methods,
             backend_config.emit_mutable_buffer_names,
+            reserved_external_names=reserved_external_names,
         )
 
         # Serialize emitter output, ready to be written to a file.

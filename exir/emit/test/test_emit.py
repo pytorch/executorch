@@ -6,10 +6,12 @@
 
 # pyre-unsafe
 
+import tempfile
 import typing
 import unittest
 from contextlib import contextmanager
 from copy import deepcopy
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import executorch.exir as exir
@@ -23,6 +25,8 @@ from executorch.exir import (
     ExecutorchProgramManager,
     to_edge,
 )
+from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
@@ -31,7 +35,7 @@ from executorch.exir.backend.test.demos.rpc.executor_backend_partitioner import 
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
-from executorch.exir.error import InternalError
+from executorch.exir.error import ExportError, InternalError
 from executorch.exir.passes import convert_constant_dim_order_pass, MemoryPlanningPass
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
@@ -57,12 +61,14 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.models import Mul
+from executorch.extension.flat_tensor.serialize.serialize import FlatTensorSerializer
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
 from executorch.runtime import Runtime
 from torch import nn
 from torch._higher_order_ops import cond as torch_cond, map as torch_map
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export import Dim, export
 from torch.export.experimental import _export_forward_backward
 
@@ -2092,6 +2098,429 @@ class TestEmit(unittest.TestCase):
         external_map = emitter_output.external_constant_map["linear_weight"]
         self.assertEqual(len(external_map), 1)
         self.assertEqual(external_map["linear.weight"], 0)
+
+    def _check_external_attribute_keys(self, values, expected_keys) -> None:
+        class TensorAttributes(nn.Module):
+            def __init__(self, value):
+                super().__init__()
+                self.a = torch.full((2,), value)
+                self.b = torch.tensor([1.0, 2.0])
+
+            def forward(self, x):
+                return x * self.a + self.b
+
+        inputs = (torch.tensor([2.0, 3.0]),)
+        models = {name: TensorAttributes(value) for name, value in values.items()}
+        program = to_edge(
+            {name: export(model, inputs, strict=True) for name, model in models.items()}
+        ).to_executorch(ExecutorchBackendConfig(external_constants=True))
+        self.assertEqual(
+            set(
+                program._emitter_output.external_constant_map[
+                    "_default_external_constant"
+                ]
+            ),
+            expected_keys,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            program.write_tensor_data_to_file(directory)
+            runtime = Runtime.get().load_program(
+                program.buffer,
+                data_path=Path(directory) / "_default_external_constant.ptd",
+            )
+            for name, model in models.items():
+                torch.testing.assert_close(
+                    runtime.load_method(name).execute(inputs)[0],
+                    model(*inputs),
+                    rtol=0,
+                    atol=0,
+                )
+
+    def test_external_attribute_keys_single_method(self) -> None:
+        self._check_external_attribute_keys({"forward": 3.0}, {"a", "b"})
+
+    def test_external_attribute_keys_shared_methods(self) -> None:
+        self._check_external_attribute_keys({"decode": 3.0, "prefill": 3.0}, {"a", "b"})
+
+    def test_external_attribute_keys_only_conflicts_are_qualified(self) -> None:
+        self._check_external_attribute_keys(
+            {"decode": 3.0, "prefill": 4.0}, {"decode/a", "prefill/a", "b"}
+        )
+
+    def _check_external_constants_across_methods(self, prefill_value: float) -> None:
+        class FoldedWeights(nn.Module):
+            def __init__(self, value):
+                super().__init__()
+                self.register_buffer("weight", torch.full((2,), value))
+                self.register_buffer("shared", torch.tensor([3.0, 5.0]))
+
+            def forward(self, x):
+                return x * self.shared + self.weight * 2
+
+        inputs = (torch.tensor([2.0, 3.0]),)
+        models = {"decode": FoldedWeights(1.0), "prefill": FoldedWeights(prefill_value)}
+        methods = {
+            name: constant_prop_pass(export(model, inputs, strict=True))
+            for name, model in models.items()
+        }
+        program = to_edge(methods).to_executorch(
+            ExecutorchBackendConfig(external_constants=True)
+        )
+        emitter_output = program._emitter_output
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        constant_names = (
+            {"_prop_tensor_constant0"}
+            if prefill_value == 1.0
+            else {"decode/_prop_tensor_constant0", "prefill/_prop_tensor_constant0"}
+        )
+        self.assertEqual(set(external_map), {"shared"} | constant_names)
+        self.assertEqual(
+            len(emitter_output.external_constant_buffer),
+            2 if prefill_value == 1.0 else 3,
+        )
+        self.assertEqual(
+            len({external_map[name] for name in constant_names}), len(constant_names)
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            program.write_tensor_data_to_file(directory)
+            runtime = Runtime.get().load_program(
+                program.buffer,
+                data_path=Path(directory) / "_default_external_constant.ptd",
+            )
+            for name, model in models.items():
+                method = runtime.load_method(name)
+                self.assertIsNotNone(method)
+                torch.testing.assert_close(
+                    method.execute(inputs)[0], model(*inputs), rtol=0, atol=0
+                )
+
+    def test_external_constants_across_methods(self) -> None:
+        self._check_external_constants_across_methods(2.0)
+
+    def test_external_constants_shared_data_across_methods(self) -> None:
+        self._check_external_constants_across_methods(1.0)
+
+    def _export_external_buffer_methods(
+        self, first: torch.Tensor, second: torch.Tensor, external_constants=True
+    ) -> ExecutorchProgramManager:
+        class Weights(nn.Module):
+            def __init__(self, weight):
+                super().__init__()
+                self.register_buffer("weight", weight)
+
+            def forward(self, x):
+                return x + self.weight
+
+        methods = {
+            name: export(Weights(weight), (torch.zeros_like(weight),), strict=True)
+            for name, weight in (("decode", first), ("prefill", second))
+        }
+        return to_edge(methods).to_executorch(
+            ExecutorchBackendConfig(external_constants=external_constants)
+        )
+
+    def test_external_constants_reject_conflicting_data(self) -> None:
+        with self.assertRaisesRegex(
+            ExportError, "'weight' differs between methods 'decode' and 'prefill'"
+        ):
+            self._export_external_buffer_methods(torch.zeros(2), torch.ones(2))
+
+    def test_external_constants_reject_conflicting_data_across_tags(self) -> None:
+        with self.assertRaisesRegex(
+            ExportError, "'weight' differs between methods 'decode' and 'prefill'"
+        ):
+            self._export_external_buffer_methods(
+                torch.zeros(2),
+                torch.ones(3),
+                external_constants=lambda node: f"weights_{node.meta['spec'].nbytes()}",
+            )
+
+    def test_external_constants_reject_conflicting_layouts(self) -> None:
+        cases = (
+            (torch.zeros(2), torch.zeros(2, dtype=torch.int32)),
+            (torch.zeros(2), torch.zeros(1, 2)),
+            (
+                torch.zeros(1, 2, 2, 2),
+                torch.zeros(1, 2, 2, 2).contiguous(memory_format=torch.channels_last),
+            ),
+        )
+        for first, second in cases:
+            with self.subTest(dtype=second.dtype, shape=second.shape):
+                self.assertEqual(
+                    bytes(first.untyped_storage()), bytes(second.untyped_storage())
+                )
+                with self.assertRaisesRegex(
+                    ExportError,
+                    "'weight' differs between methods 'decode' and 'prefill'",
+                ):
+                    self._export_external_buffer_methods(first, second)
+
+    def test_external_constant_names_do_not_alias_model_buffers(self) -> None:
+        class FoldedWeights(nn.Module):
+            def __init__(self, value, weight):
+                super().__init__()
+                self.register_buffer("weight", torch.full((2,), weight))
+                self.register_buffer(
+                    "decode/_prop_tensor_constant0", torch.full((2,), value)
+                )
+
+            def forward(self, x):
+                return (
+                    x * self._buffers["decode/_prop_tensor_constant0"] + self.weight * 2
+                )
+
+        inputs = (torch.tensor([2.0, 3.0]),)
+        for value in (2.0, 7.0):
+            with self.subTest(value=value):
+                models = {
+                    "decode": FoldedWeights(value, 1.0),
+                    "prefill": FoldedWeights(value, 2.0),
+                }
+                program = to_edge(
+                    {
+                        name: constant_prop_pass(export(model, inputs, strict=True))
+                        for name, model in models.items()
+                    }
+                ).to_executorch(ExecutorchBackendConfig(external_constants=True))
+                external_map = program._emitter_output.external_constant_map[
+                    "_default_external_constant"
+                ]
+                self.assertEqual(
+                    set(external_map),
+                    {
+                        "decode/_prop_tensor_constant0",
+                        "decode/_prop_tensor_constant0.1",
+                        "prefill/_prop_tensor_constant0",
+                    },
+                )
+                with tempfile.TemporaryDirectory() as directory:
+                    program.write_tensor_data_to_file(directory)
+                    runtime = Runtime.get().load_program(
+                        program.buffer,
+                        data_path=Path(directory) / "_default_external_constant.ptd",
+                    )
+                    for name, model in models.items():
+                        torch.testing.assert_close(
+                            runtime.load_method(name).execute(inputs)[0],
+                            model(*inputs),
+                            rtol=0,
+                            atol=0,
+                        )
+
+    def test_external_constant_names_survive_reemission(self) -> None:
+        class FoldedWeights(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.ones(2))
+
+            def forward(self, x):
+                return x + self.weight * 2
+
+        program = to_edge(
+            constant_prop_pass(export(FoldedWeights(), (torch.zeros(2),), strict=True))
+        ).to_executorch(ExecutorchBackendConfig(external_constants=True))
+        method = program.exported_program()
+        output = emit_program(
+            {"decode": method, "prefill": method},
+            reserved_external_names={
+                "_prop_tensor_constant0",
+                "decode/_prop_tensor_constant0",
+            },
+        )
+
+        def external_names(emitter_output):
+            return {
+                plan.name: [
+                    value.val.extra_tensor_info.fully_qualified_name
+                    for value in plan.values
+                    if isinstance(value.val, Tensor)
+                    and value.val.extra_tensor_info is not None
+                    and (
+                        value.val.extra_tensor_info.location
+                        == schema.TensorDataLocation.EXTERNAL
+                    )
+                ]
+                for plan in emitter_output.program.execution_plan
+            }
+
+        expected = {
+            "decode": ["decode/_prop_tensor_constant0.1"],
+            "prefill": ["prefill/_prop_tensor_constant0"],
+        }
+        self.assertEqual(external_names(output), expected)
+        self.assertEqual(
+            set(output.external_constant_map["_default_external_constant"]),
+            {name for names in expected.values() for name in names},
+        )
+        emit_program(method)
+        self.assertEqual(external_names(output), expected)
+        self.assertEqual(
+            external_names(program._emitter_output),
+            {"forward": ["_prop_tensor_constant0"]},
+        )
+
+    def test_external_constants_reserve_delegate_keys_end_to_end(self) -> None:
+        class NamedConstantsBackend(BackendDetails):
+            @staticmethod
+            def preprocess(edge_program, compile_specs):
+                store = NamedDataStore()
+                for key, value in (
+                    ("_prop_tensor_constant0", 7.0),
+                    ("forward/_prop_tensor_constant0", 9.0),
+                ):
+                    store.add_named_data(
+                        key,
+                        torch.full((2,), value),
+                        external_tag="_default_external_constant",
+                    )
+                return PreprocessResult(
+                    processed_bytes=b"test",
+                    data_store_output=store.get_named_data_store_output(),
+                )
+
+        class Sin(nn.Module):
+            def forward(self, x):
+                return torch.sin(x)
+
+        inputs = (torch.zeros(2),)
+        lowered = to_backend(
+            NamedConstantsBackend.__name__,
+            to_edge(export(Sin(), inputs, strict=True)).exported_program(),
+            [],
+        )
+
+        class Composite(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.delegate = lowered
+                self.register_buffer("weight", torch.ones(2))
+
+            def forward(self, x):
+                return self.delegate(x) + self.weight * 2
+
+        program = to_edge(
+            constant_prop_pass(export(Composite(), inputs, strict=True))
+        ).to_executorch(ExecutorchBackendConfig(external_constants=True))
+        expected = {
+            "_prop_tensor_constant0": torch.full((2,), 7.0),
+            "forward/_prop_tensor_constant0": torch.full((2,), 9.0),
+            "forward/_prop_tensor_constant0.1": torch.full((2,), 2.0),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            program.write_tensor_data_to_file(directory)
+            payload = FlatTensorSerializer().deserialize(
+                Cord((Path(directory) / "_default_external_constant.ptd").read_bytes())
+            )
+        self.assertEqual(set(payload.named_data), set(expected))
+        for key, tensor in expected.items():
+            entry = payload.named_data[key]
+            self.assertEqual(
+                payload.buffers[entry.buffer_index], bytes(tensor.untyped_storage())
+            )
+
+    def _export_external_tensor_methods(self, first, second):
+        class TensorAttribute(nn.Module):
+            def __init__(self, tensor):
+                super().__init__()
+                self.weight = tensor
+
+            def forward(self, x):
+                return x + self.weight
+
+        methods = {
+            name: export(
+                TensorAttribute(tensor), (torch.zeros_like(tensor),), strict=True
+            )
+            for name, tensor in (("decode", first), ("prefill", second))
+        }
+        return to_edge(methods).to_executorch(
+            ExecutorchBackendConfig(external_constants=True)
+        )
+
+    def test_external_tensor_constants_equal_bytes_different_layouts(self) -> None:
+        cases = (
+            (torch.zeros(2), torch.zeros(2, dtype=torch.int32)),
+            (torch.zeros(2), torch.zeros(1, 2)),
+            (
+                torch.zeros(1, 2, 2, 2),
+                torch.zeros(1, 2, 2, 2).contiguous(memory_format=torch.channels_last),
+            ),
+        )
+        for first, second in cases:
+            with self.subTest(dtype=second.dtype, shape=second.shape):
+                program = self._export_external_tensor_methods(first, second)
+                output = program._emitter_output
+                self.assertEqual(
+                    set(output.external_constant_map["_default_external_constant"]),
+                    {"decode/weight", "prefill/weight"},
+                )
+                self.assertEqual(len(output.external_constant_buffer), 1)
+                with tempfile.TemporaryDirectory() as directory:
+                    program.write_tensor_data_to_file(directory)
+                    runtime = Runtime.get().load_program(
+                        program.buffer,
+                        data_path=Path(directory) / "_default_external_constant.ptd",
+                    )
+                    for name, tensor in (("decode", first), ("prefill", second)):
+                        torch.testing.assert_close(
+                            runtime.load_method(name).execute(
+                                (torch.zeros_like(tensor),)
+                            )[0],
+                            tensor,
+                            rtol=0,
+                            atol=0,
+                        )
+                    # Windows cannot remove the PTD while the runtime holds it open.
+                    del runtime
+
+    def test_external_tensor_constants_compare_raw_bits(self) -> None:
+        nan = torch.tensor([float("nan")])
+        shared = self._export_external_tensor_methods(nan, nan.clone())._emitter_output
+        self.assertEqual(
+            set(shared.external_constant_map["_default_external_constant"]), {"weight"}
+        )
+        signed_zero = self._export_external_tensor_methods(
+            torch.tensor([0.0]), torch.tensor([-0.0])
+        )._emitter_output
+        self.assertEqual(
+            set(signed_zero.external_constant_map["_default_external_constant"]),
+            {"decode/weight", "prefill/weight"},
+        )
+        self.assertEqual(len(signed_zero.external_constant_buffer), 2)
+
+    def test_external_tensor_constants_meta_storage_is_rejected(self) -> None:
+        program = self._export_external_tensor_methods(torch.ones(2), torch.ones(2))
+        mode = FakeTensorMode()
+        for name in ("decode", "prefill"):
+            fake = mode.from_tensor(torch.ones(2))
+            self.assertEqual(fake.device.type, "cpu")
+            self.assertEqual(fake.untyped_storage().device.type, "meta")
+            program.exported_program(name).constants["weight"] = fake
+        with self.assertRaisesRegex(InternalError, "storage is on device 'meta'"):
+            emit_program(
+                {name: program.exported_program(name) for name in ("decode", "prefill")}
+            )
+
+    def test_external_constants_inline_configuration(self) -> None:
+        for external_constants in (False, lambda node: None):
+            with self.subTest(external_constants=external_constants):
+                program = self._export_external_buffer_methods(
+                    torch.zeros(2), torch.ones(2), external_constants
+                )
+                self.assertEqual(program._emitter_output.external_constant_map, {})
+                runtime = Runtime.get().load_program(program.buffer)
+                for name, expected in (
+                    ("decode", torch.zeros(2)),
+                    ("prefill", torch.ones(2)),
+                ):
+                    torch.testing.assert_close(
+                        runtime.load_method(name).execute((torch.zeros(2),))[0],
+                        expected,
+                        rtol=0,
+                        atol=0,
+                    )
 
     def test_constant_tagged_tensor_dedup(self) -> None:
         class ConstantModule(nn.Module):
