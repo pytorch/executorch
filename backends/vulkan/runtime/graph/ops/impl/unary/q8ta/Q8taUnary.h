@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/unary/UnaryOp.h>
 
 namespace vkcompute {
 
@@ -24,6 +25,6 @@ void add_q8ta_unary_node(
     const ValueRef output_scale,
     const ValueRef output_zp,
     const ValueRef packed_int8_output,
-    const std::string& op_name);
+    const UnaryOpType op_type);
 
 } // namespace vkcompute

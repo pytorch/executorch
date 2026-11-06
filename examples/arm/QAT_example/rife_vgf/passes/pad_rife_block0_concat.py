@@ -8,6 +8,7 @@ import operator
 
 import torch
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.tosa_lowering_utils import create_const
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.vgf.shaders.grid_sampler import (
     CUSTOM_SHADER_DOMAIN_NAME,
@@ -72,12 +73,21 @@ def _ignores_alpha(custom, image):
 def _reusable_padding(image):
     for candidate in image.users:
         if (
-            _is_op(candidate, TOSA.PAD.default, 2)
+            _is_op(candidate, TOSA.PAD.default, 3)
             and _shape_values(candidate.args[1]) == [0, 0, 0, 0, 0, 0, 0, 1]
             and all(_ignores_alpha(user, candidate) for user in candidate.users)
         ):
             return candidate
     return None
+
+
+def _move_padding_before_resize(image, resize, positions):
+    if positions[image] < positions[resize]:
+        return
+    padding = image.args[1]
+    if isinstance(padding, torch.fx.Node) and positions[padding] > positions[resize]:
+        resize.prepend(padding)
+    resize.prepend(image)
 
 
 class PadRifeBlock0ConcatPass(ArmPass):
@@ -176,6 +186,14 @@ class PadRifeBlock0ConcatPass(ArmPass):
             for rescale, code in zip(concat.args[0][:2], (timestep, 0)):
                 resize = rescale.args[0]
                 image = _reusable_padding(resize.args[0])
+                positions = {node: i for i, node in enumerate(graph.nodes)}
+                anchor = (
+                    image
+                    if image is not None and positions[image] < positions[resize]
+                    else resize
+                )
+                with graph.inserting_before(anchor):
+                    pad_value = create_const(graph, code, torch.int8, resize.args[0])
                 if image is None:
                     with graph.inserting_before(resize):
                         padding = graph.call_function(
@@ -186,18 +204,13 @@ class PadRifeBlock0ConcatPass(ArmPass):
                             TosaSpecialDtype.meta_key(): TosaSpecialDtype.SHAPE,
                         }
                         image = graph.call_function(
-                            TOSA.PAD.default, (resize.args[0], padding), {"value": code}
+                            TOSA.PAD.default, (resize.args[0], padding, pad_value)
                         )
                         image.meta = dict(resize.args[0].meta)
                 else:
                     # The recognized shaders only use RGB; their alpha padding is unused.
-                    image.kwargs = {"value": code}
-                    padding = image.args[1]
-                    if isinstance(padding, torch.fx.Node) and list(graph.nodes).index(
-                        padding
-                    ) > list(graph.nodes).index(resize):
-                        resize.prepend(padding)
-                    resize.prepend(image)
+                    image.args = (*image.args[:2], pad_value)
+                    _move_padding_before_resize(image, resize, positions)
                 resize.args = (image, *resize.args[1:])
                 # Constant bilinear input becomes 4 * code, then RESCALE divides by 4.
                 for node in (image, resize, rescale):
