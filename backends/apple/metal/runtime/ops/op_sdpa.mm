@@ -336,6 +336,12 @@ static AOTITorchError sdpa_mps_impl(
     return Error::Internal;
   }
 
+  // Freed on an error until a handle owns them; then the handle is deleted
+  // instead, which frees the memory.
+  void* out_contents_ptr = nullptr;
+  void* attn_contents_ptr = nullptr;
+  AOTITensorHandle out_tensor_handle = nullptr;
+
   try {
     @autoreleasepool {
       // Convert AOTITensorHandle to ExecuTorch tensors
@@ -454,10 +460,8 @@ static AOTITorchError sdpa_mps_impl(
       size_t out_size_bytes = batchSize * num_heads * qSize * headSize * element_size;
       size_t attn_size_bytes = batchSize * num_heads * qSize * kvSeqLength * element_size;
 
-      void* out_contents_ptr = nullptr;
       allocate_mtl_buffer(&out_contents_ptr, out_size_bytes);
 
-      void* attn_contents_ptr = nullptr;
       allocate_mtl_buffer(&attn_contents_ptr, attn_size_bytes);
 
       // Use MLX-style Metal kernels instead of MPSGraph
@@ -499,7 +503,6 @@ static AOTITorchError sdpa_mps_impl(
       }
 
       // Create output tensor handle first so we can use it in the kernel
-      AOTITensorHandle out_tensor_handle = nullptr;
       AOTITorchError create_out_result = aoti_torch_create_tensor_from_blob_v2(
           out_contents_ptr,
           4,  // ndim
@@ -517,14 +520,13 @@ static AOTITorchError sdpa_mps_impl(
 
       if (create_out_result != Error::Ok || !out_tensor_handle) {
         ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Failed to create output tensor");
-        aoti_torch_mps_free(out_contents_ptr);
-        aoti_torch_mps_free(attn_contents_ptr);
         throw std::runtime_error("Failed to create output tensor");
       }
 
       // Mark that we own the memory
       extern std::unordered_map<void*, int32_t> memory_to_n_tensor;
       memory_to_n_tensor[out_contents_ptr] = 1;
+      out_contents_ptr = nullptr;
 
       auto* out_tensor = reinterpret_cast<Tensor*>(out_tensor_handle);
 
@@ -680,11 +682,11 @@ static AOTITorchError sdpa_mps_impl(
 
       if (create_attn_result != Error::Ok || !attn_tensor_handle) {
         ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Failed to create attention weights tensor");
-        aoti_torch_mps_free(attn_contents_ptr);
         throw std::runtime_error("Failed to create attention weights tensor");
       }
 
       memory_to_n_tensor[attn_contents_ptr] = 1;
+      attn_contents_ptr = nullptr;
 
       // Set output tensor handles
       *ret0 = out_tensor_handle;
@@ -699,9 +701,15 @@ static AOTITorchError sdpa_mps_impl(
 
   } catch (const std::exception& e) {
     ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps exception: %s", e.what());
+    if (out_tensor_handle) aoti_torch_delete_tensor_object(out_tensor_handle);
+    if (out_contents_ptr) aoti_torch_mps_free(out_contents_ptr);
+    if (attn_contents_ptr) aoti_torch_mps_free(attn_contents_ptr);
     return Error::Internal;
   } catch (...) {
     ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: unknown exception");
+    if (out_tensor_handle) aoti_torch_delete_tensor_object(out_tensor_handle);
+    if (out_contents_ptr) aoti_torch_mps_free(out_contents_ptr);
+    if (attn_contents_ptr) aoti_torch_mps_free(attn_contents_ptr);
     return Error::Internal;
   }
 }
