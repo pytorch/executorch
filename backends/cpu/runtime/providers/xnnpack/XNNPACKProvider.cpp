@@ -949,8 +949,7 @@ class XNNExecutable final : public Executable {
         : arg(node, 2).as_tensor().id;
     if (bias != XNN_INVALID_VALUE_ID &&
         dimensions(bias) != std::vector<size_t>{channels}) {
-      auto broadcast =
-          allocate_buffer(context_.allocator, channels * sizeof(float));
+      auto broadcast = state_.allocate_packing_source(channels * sizeof(float));
       if (!broadcast.ok()) {
         return broadcast.error();
       }
@@ -1170,6 +1169,24 @@ const XNNOp* find_op(std::string_view target) {
   return found == kOps.end() ? nullptr : &*found;
 }
 
+// XNNPACK packs constants in these positions while creating the runtime and
+// reads every other operand on each run.
+bool packed_operand(const Kernel& node, ptn::ValueId id) {
+  if (node.target == "torch.ops.aten.linear.default") {
+    return arg(node, 0).as_tensor().id != id &&
+        (arg(node, 1).as_tensor().id == id ||
+         (arg(node, 2).kind() == ptn::ArgKind::Tensor &&
+          arg(node, 2).as_tensor().id == id));
+  }
+  if (node.target == "torch.ops.aten.bmm.default") {
+    return arg(node, 0).as_tensor().id != id &&
+        arg(node, 1).as_tensor().id == id;
+  }
+  const auto convolution = parse_convolution(node);
+  return convolution && convolution->input != id &&
+      (convolution->weight == id || convolution->bias == id);
+}
+
 class XNNImplementation final : public KernelImplementation {
  public:
   explicit XNNImplementation(XNNState& state) : state_(state) {}
@@ -1241,16 +1258,7 @@ class XNNImplementation final : public KernelImplementation {
           continue;
         }
         // A constant can also feed an unpacked operation in this region.
-        bool packed_use = node.target == "torch.ops.aten.linear.default" &&
-            arg(node, 0).as_tensor().id != value.id &&
-            (arg(node, 1).as_tensor().id == value.id ||
-             (arg(node, 2).kind() == ptn::ArgKind::Tensor &&
-              arg(node, 2).as_tensor().id == value.id));
-        if (const auto convolution = parse_convolution(node)) {
-          packed_use = convolution->input != value.id &&
-              (convolution->weight == value.id ||
-               convolution->bias == value.id);
-        }
+        const bool packed_use = packed_operand(node, value.id);
         packed |= packed_use;
         retained |= !packed_use;
       }
