@@ -619,6 +619,9 @@ class GgmlOpsTest(unittest.TestCase):
     def test_sigmoid(self):
         self._check(Lambda(torch.sigmoid), (torch.randn(2, 3, 4),))
 
+    def test_tanh(self):
+        self._check(Lambda(torch.tanh), (torch.randn(1, 512) * 3.0,))
+
     def test_gelu(self):
         ops = collections.Counter()
         self._check(Lambda(F.gelu), (torch.randn(2, 3, 4) * 3.0,), graph_ops=ops)
