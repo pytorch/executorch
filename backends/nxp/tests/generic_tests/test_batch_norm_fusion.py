@@ -207,7 +207,7 @@ def test_batch_norm_linear_incompatible__full_pipeline(
 
 
 def test_biasless_convbn_fusion_qat():
-    input_shape = (1, 3, 3, 3)
+    input_shape = (1, 3, 5, 5)
     model = ConvBatchNormModule(
         bias=False,
         input_rank=len(input_shape),
