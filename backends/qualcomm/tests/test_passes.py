@@ -70,6 +70,7 @@ from executorch.backends.qualcomm.tests.tester import ToEdgeTransformAndLower
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
+    QCOM_INSERTED_CAST,
     QCOM_QUANT_ATTRS,
     QCOM_QUANT_MAX,
     QCOM_QUANT_MIN,
@@ -2486,6 +2487,85 @@ class TestPasses(unittest.TestCase):
                     self.assertEqual(
                         ["total"], [buffer for m in mutated for buffer in m.values()]
                     )
+
+    def test_partitioner_drops_partitions_of_only_inserted_casts(self):
+        # Only the I64toI32 mark counts, not the op: other passes insert
+        # _to_copy too.
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        casts = [
+            graph.call_function(
+                exir_ops.edge.aten._to_copy.default, (x,), {"dtype": torch.int32}
+            )
+            for _ in range(3)
+        ]
+        add = graph.call_function(exir_ops.edge.aten.add.Tensor, (casts[2], 1))
+        casts[0].meta[QCOM_INSERTED_CAST] = True
+        casts[2].meta[QCOM_INSERTED_CAST] = True
+        partitions = [
+            Partition(id=0, nodes=[casts[0]]),
+            Partition(id=1, nodes=[casts[1]]),
+            Partition(id=2, nodes=[casts[2], add]),
+        ]
+        self.assertEqual(
+            [1, 2],
+            [
+                partition.id
+                for partition in QnnPartitioner._drop_partitions_of_inserted_casts(
+                    partitions
+                )
+            ],
+        )
+
+    def test_partitioner_keeps_partitions_of_inserted_casts_on_cpu(self):
+        class SumIntoInput(torch.nn.Module):
+            def forward(self, x, k, mask):
+                return (x > 0.5).sum(-1).masked_scatter(mask, k)
+
+        class UserCast(torch.nn.Module):
+            def forward(self, x, k, mask):
+                return x.to(torch.int32)
+
+        # sum and masked_scatter stay on CPU, so the int32 casts I64toI32 adds
+        # for k and for the sum would form a partition of their own. A cast
+        # the model makes is still delegated.
+        sample_input = (
+            torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),
+            torch.tensor([3, 4]),
+            torch.tensor([True, False]),
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        for module, delegated in (
+            (SumIntoInput(), [["aten.gt.Tensor"]]),
+            (UserCast(), [["dim_order_ops._to_dim_order_copy.default"]]),
+        ):
+            with self.subTest(type(module).__name__):
+                try:
+                    edge = to_edge_transform_and_lower_to_qnn(
+                        module, sample_input, compiler_specs
+                    )
+                except RuntimeError as e:
+                    if "Failed to initialize QNN backend" in str(e):
+                        skip_without_qnn_sdk(self, e)
+                    raise
+                ep = edge.exported_program()
+                self.assertEqual(
+                    delegated,
+                    [
+                        [
+                            node.target.__name__
+                            for node in lowered.original_module.graph.nodes
+                            if node.op == "call_function"
+                        ]
+                        for lowered in get_lowered_backend_modules(ep.graph_module)
+                    ],
+                )
+                torch.testing.assert_close(
+                    ep.module()(*sample_input), module(*sample_input)
+                )
 
     def test_partitioner_falls_back_on_bfloat16(self):
         class Bf16Region(torch.nn.Module):
