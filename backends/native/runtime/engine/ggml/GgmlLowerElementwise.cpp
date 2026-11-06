@@ -215,13 +215,15 @@ void GraphBuilder::lower_hardtanh(const Node& node) {
           input.sizes});
 }
 
-// Reduces a run of trailing dimensions, which ggml_mean sees as one row.
-void GraphBuilder::lower_mean(const Node& node) {
+// Reduces a run of trailing dimensions, which ggml sees as one row.
+std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::trailing_rows(
+    const Node& node,
+    const std::string& op) {
   const TensorRef input = tensor_arg(node, "self", 0);
   require_f32(node, input.tensor);
   const NamedArgument* dtype = find_arg(node, "dtype", 3);
   if (dtype != nullptr && dtype->arg.kind() != ArgKind::None) {
-    throw std::runtime_error("ggml: mean does not support dtype");
+    throw std::runtime_error("ggml: " + op + " does not support dtype");
   }
   const size_t rank = input.sizes.size();
   const NamedArgument* dim_arg = find_arg(node, "dim", 1);
@@ -240,7 +242,8 @@ void GraphBuilder::lower_mean(const Node& node) {
   const size_t first = rank - dims.size();
   for (size_t i = 0; i < dims.size(); ++i) {
     if (dims[i] != static_cast<int64_t>(first + i)) {
-      throw std::runtime_error("ggml: mean supports trailing dimensions only");
+      throw std::runtime_error(
+          "ggml: " + op + " supports trailing dimensions only");
     }
   }
   const bool keepdim = bool_arg(node, "keepdim", 2, false);
@@ -257,15 +260,27 @@ void GraphBuilder::lower_mean(const Node& node) {
     }
   }
   if (row == 0) {
-    throw std::runtime_error("ggml: mean over an empty dimension");
+    throw std::runtime_error("ggml: " + op + " over an empty dimension");
   }
-  ggml_context* ctx = instance_.context.get();
   ggml_tensor* rows = ggml_reshape_2d(
-      ctx,
+      instance_.context.get(),
       contiguous(input.tensor),
       row,
       static_cast<int64_t>(checked_numel(input.sizes)) / row);
+  return {rows, std::move(sizes)};
+}
+
+void GraphBuilder::lower_mean(const Node& node) {
+  auto [rows, sizes] = trailing_rows(node, "mean");
+  ggml_context* ctx = instance_.context.get();
   ggml_tensor* result = reshape(ctx, ggml_mean(ctx, rows), sizes);
+  set_single_output(node, TensorRef{result, std::move(sizes)});
+}
+
+void GraphBuilder::lower_sum(const Node& node) {
+  auto [rows, sizes] = trailing_rows(node, "sum");
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* result = reshape(ctx, ggml_sum_rows(ctx, rows), sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 
