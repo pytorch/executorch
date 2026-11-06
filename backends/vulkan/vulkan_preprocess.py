@@ -22,6 +22,7 @@ from executorch.backends.vulkan._passes import (
     FuseQuantizedOpsTransform,
     insert_prepack_nodes,
     InsertDtypePromotionPass,
+    FoldForceFp16CastsPass,
     RemoveRedundantOpsTransform,
     SqueezeUnsqueezeInputs,
     TagMemoryMetaPass,
@@ -225,7 +226,8 @@ class VulkanBackend(BackendDetails):
             [
                 RemoveAssertsTransform(),
                 insert_prepack_nodes,
-            ],
+            ]
+            + ([FoldForceFp16CastsPass()] if force_fp16 else []),
         )
 
         # Optionally apply the memory metadata tagging pass, which will insert storage

@@ -95,6 +95,9 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.convolution.default, conv);
   VK_REGISTER_OP(conv_with_clamp.default, conv);
   VK_REGISTER_OP(et_vk.conv_with_clamp.default, conv);
+  VK_REGISTER_OP(
+      et_vk.conv2d_residual_lrelu.default, conv2d_residual_lrelu_impl);
+  VK_REGISTER_OP(et_vk.conv2d_lrelu.default, conv2d_lrelu_impl);
 }
 
 } // namespace vkcompute

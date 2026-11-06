@@ -52,4 +52,10 @@ void resize_conv2d_node(
 
 void conv2d_impl(ComputeGraph& graph, const std::vector<ValueRef>& args);
 
+void conv2d_residual_lrelu_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args);
+
+void conv2d_lrelu_impl(ComputeGraph& graph, const std::vector<ValueRef>& args);
+
 } // namespace vkcompute

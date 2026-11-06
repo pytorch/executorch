@@ -903,9 +903,54 @@ def register_max_pool2d_with_indices():
     )
 
 
+
+
 # =============================================================================
 # convolution/Convolution.cpp
 # =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.conv2d_lrelu.default)
+def register_conv2d_lrelu():
+    # Args: input, weight, bias, stride, padding, dilation, groups,
+    # negative_slope.
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # stride
+            utils.NO_STORAGE,  # padding
+            utils.NO_STORAGE,  # dilation
+            utils.NO_STORAGE,  # groups
+            utils.NO_STORAGE,  # negative_slope
+        ],
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_prepacking=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.conv2d_residual_lrelu.default)
+def register_conv2d_residual_lrelu():
+    # Args: input, weight, bias, residual, stride, padding, dilation, groups,
+    # negative_slope. The residual has the output's shape and layout.
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.CHANNELS_PACKED_TEXTURE,  # residual
+            utils.NO_STORAGE,  # stride
+            utils.NO_STORAGE,  # padding
+            utils.NO_STORAGE,  # dilation
+            utils.NO_STORAGE,  # groups
+            utils.NO_STORAGE,  # negative_slope
+        ],
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_prepacking=True,
+    )
 
 
 @update_features(

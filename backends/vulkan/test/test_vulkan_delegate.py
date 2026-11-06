@@ -2512,6 +2512,64 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(module, sample_inputs)
 
+    def _test_conv2d_lrelu(self, c_in, c_out, hw, stride, residual):
+        conv = torch.nn.Conv2d(c_in, c_out, 3, stride, 1)
+
+        class ConvLReLUModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = conv
+
+            def forward(self, x):
+                w, b = self.conv.weight, self.conv.bias
+                if residual:
+                    return torch.ops.et_vk.conv2d_residual_lrelu(
+                        x, w, b, x, [stride, stride], [1, 1], [1, 1], 1, 0.2
+                    )
+                return torch.ops.et_vk.conv2d_lrelu(
+                    x, w, b, [stride, stride], [1, 1], [1, 1], 1, 0.2
+                )
+
+        self.lower_module_and_test_output(
+            ConvLReLUModule(), (torch.randn(size=[1, c_in, *hw]),)
+        )
+
+    def test_vulkan_backend_conv2d_residual_lrelu_direct(self):
+        # Few output channels on a large plane: the direct conv shader with the
+        # residual + LeakyReLU epilogue.
+        self._test_conv2d_lrelu(16, 16, (40, 48), 1, residual=True)
+
+    def test_vulkan_backend_conv2d_residual_lrelu_fallback(self):
+        # Many output channels on a small plane: im2col, so conv + add + LeakyReLU
+        # run as separate ops.
+        self._test_conv2d_lrelu(128, 128, (8, 12), 1, residual=True)
+
+    def test_vulkan_backend_conv2d_lrelu_direct(self):
+        # Strided, as RIFE's Head: the LeakyReLU-only epilogue.
+        self._test_conv2d_lrelu(3, 16, (80, 96), 2, residual=False)
+
+    def test_vulkan_backend_conv2d_lrelu_fallback(self):
+        self._test_conv2d_lrelu(128, 128, (8, 12), 1, residual=False)
+
+    def test_vulkan_backend_force_fp16_folds_boundary_casts(self):
+        # fp16 at the method boundary around an fp32 graph: under force_fp16 the
+        # casts copy identical data and are removed; the output must still be
+        # fp16 and match.
+        class HalfIOModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(8, 8, 3, 1, 1)
+
+            def forward(self, x):
+                return torch.nn.functional.relu(self.conv(x.float())).half()
+
+        self.lower_module_and_test_output(
+            HalfIOModule(),
+            (torch.randn(size=[1, 8, 16, 24]).half(),),
+            atol=2e-2,
+            compile_options={"force_fp16": True},
+        )
+
     def test_vulkan_backend_grid_priors(self):
         class GridPriorsModule(torch.nn.Module):
             def __init__(self):
