@@ -1,0 +1,71 @@
+name: ExecuTorch torchci report canary
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/torchci-report-canary.yml
+
+jobs:
+  reports:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@985283436b71295931c3b0d18e271d5fb7cc750c
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      test-infra-ref: 985283436b71295931c3b0d18e271d5fb7cc750c
+      ref: ${{ github.event.pull_request.head.sha }}
+      job-name: torchci-report-canary
+      runner: mt-l-x86iavx512-8-64
+      timeout: 30
+      hf-cache: false
+      upload-test-run-reports: true
+      script: |
+        set -euo pipefail
+        conda create --yes --quiet -n torchci-canary python=3.11
+        conda activate torchci-canary
+        PIP_EXTRA_INDEX_URL= python -m pip install \
+          --index-url https://pypi.org/simple \
+          --extra-index-url https://download.pytorch.org/whl/nightly/cpu \
+          torch==2.16.0.dev20261102+cpu pytest==7.3.0 \
+          pytest-rerunfailures==14.0 numpy expecttest PyYAML
+        python - <<'PY'
+        import os
+        import torch
+        from torch.testing._internal.torchci import environment, plugin, report
+
+        if torch.version.git_version != '45a70b7c0d318efced057e4c1adb33b936c52523':
+            raise RuntimeError('Unexpected torch reporter source')
+        if report.SCHEMA_VERSION != '1.0':
+            raise RuntimeError('Canary requires schema 1.0')
+        if os.environ['GITHUB_REPOSITORY'] != 'pytorch/executorch':
+            raise RuntimeError('Incorrect repository attribution')
+        if not os.environ['JOB_ID'].isdigit() or int(os.environ['JOB_ID']) <= 0:
+            raise RuntimeError('Missing real workflow job identity')
+        environment.capture()
+        PY
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest \
+          -c /dev/null --rootdir=. --confcutdir=.ci/scripts/tests \
+          -p no:cacheprovider -p torch.testing._internal.torchci.plugin \
+          --torchci-report-prefix="${RUNNER_TEST_RUN_REPORTS_DIR}/pytest" \
+          -q .ci/scripts/tests/test_cu134_dependencies.py
+        python - <<'PY'
+        import json
+        import os
+        from pathlib import Path
+
+        files = list(Path(os.environ['RUNNER_TEST_RUN_REPORTS_DIR']).glob('*.report.jsonl'))
+        count = 0
+        for path in files:
+            records = [json.loads(line) for line in path.read_text().splitlines()]
+            header = records[0]
+            if header['schema_version'] != '1.0' or header['repo'] != os.environ['GITHUB_REPOSITORY']:
+                raise RuntimeError('Invalid report schema or repository')
+            if header['github_workflow_job_id'] != int(os.environ['JOB_ID']):
+                raise RuntimeError('Report job identity mismatch')
+            rows = [row for row in records if row.get('type') == 'run']
+            count += len(rows)
+            print(json.dumps({'file': path.name, 'report_uuid': header['report_uuid'], 'job_id': header['github_workflow_job_id'], 'run_ids': [row['id'] for row in rows]}))
+        if count != 17:
+            raise RuntimeError(f'Expected 17 canary test rows, received {count}')
+        print(f'Canary produced {count} test rows; upload and ingestion still need verification')        PY
