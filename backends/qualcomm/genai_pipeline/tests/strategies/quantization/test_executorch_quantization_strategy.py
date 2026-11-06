@@ -644,7 +644,7 @@ class TestExecuTorchQuantizationStrategy(unittest.TestCase):
             self.assertNotIn("quant_dtype", kwargs)
 
     def test_invoke_populates_graph_bundle_fields(self):
-        """GraphBundle carries the converted module, inputs, metadata and IO dtype."""
+        """GraphBundle carries the export signature, metadata and IO dtype."""
         adapter = _make_mock_adapter()
         strategy = _make_strategy(adapter)
         input_config = _make_valid_input_config()
@@ -652,9 +652,15 @@ class TestExecuTorchQuantizationStrategy(unittest.TestCase):
         result = strategy.invoke(make_test_context(), input_config)
 
         bundle = result.graphs[ARTIFACT_TEXT_DECODER][DECODE_GRAPH_NAME]
-        self.assertIs(
+        self.assertEqual(
             bundle.inputs,
-            input_config.example_inputs[ARTIFACT_TEXT_DECODER][DECODE_GRAPH_NAME],
+            (
+                "text_decode",
+                "text_decode_mask",
+                "text_decode_pos_ids",
+                "text_decode_k_cache",
+                "text_decode_v_cache",
+            ),
         )
         self.assertIs(
             bundle.meta, input_config.meta[ARTIFACT_TEXT_DECODER][DECODE_GRAPH_NAME]
@@ -743,6 +749,40 @@ class TestExecuTorchQuantizationStrategy(unittest.TestCase):
             result.graphs[ARTIFACT_TOK_EMBEDDING][EMBED_DECODE_GRAPH_NAME].meta,
             {},
         )
+
+    def test_invoke_leaves_a_skipped_encoder_unquantized(self):
+        """A skipped encoder runs in float and is bundled without dtypes."""
+        adapter = _make_mock_adapter()
+        strategy = _make_strategy(adapter)
+        input_config = _make_valid_input_config()
+        input_config.extra_options["quantize_options"]["skip_quantize"] = [
+            ARTIFACT_VISION_ENCODER
+        ]
+
+        result = strategy.invoke(make_test_context(), input_config)
+
+        bundle = result.graphs[ARTIFACT_VISION_ENCODER][GRAPH_FORWARD]
+        self.assertFalse(bundle.quantized)
+        self.assertIsNone(bundle.quant_io_dtypes)
+        prepared = [
+            args[0][0]._mock_name for args in adapter.prepare_pt2e.call_args_list
+        ]
+        self.assertFalse(any("vision_encoder" in name for name in prepared))
+        decoder = result.graphs[ARTIFACT_TEXT_DECODER][DECODE_GRAPH_NAME]
+        self.assertTrue(decoder.quantized)
+
+    def test_invoke_rejects_skipping_a_component_with_deploy_graphs(self):
+        """The decoder is skipped by skipping the stage, not per component."""
+        strategy = _make_strategy()
+        input_config = _make_valid_input_config()
+        input_config.extra_options["quantize_options"]["skip_quantize"] = [
+            ARTIFACT_TEXT_DECODER
+        ]
+
+        with self.assertRaises(StageError) as cm:
+            strategy.invoke(make_test_context(), input_config)
+
+        self.assertIn("cannot skip quantization", str(cm.exception))
 
     def test_invoke_missing_example_inputs_raises_stage_error(self):
         """StageError raised when example_inputs is None."""

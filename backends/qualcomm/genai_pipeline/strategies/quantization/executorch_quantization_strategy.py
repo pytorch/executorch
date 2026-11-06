@@ -8,16 +8,12 @@ from __future__ import annotations
 
 import gc
 import logging
-from enum import auto, Enum
 from typing import Any, Optional, TYPE_CHECKING
 
 import torch
 from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
-    ARTIFACT_AUDIO_ENCODER,
     ARTIFACT_TEXT_DECODER,
-    ARTIFACT_TEXT_ENCODER,
     ARTIFACT_TOK_EMBEDDING,
-    ARTIFACT_VISION_ENCODER,
 )
 
 from executorch.backends.qualcomm.genai_pipeline.configs.quantization_input_config import (
@@ -27,13 +23,18 @@ from executorch.backends.qualcomm.genai_pipeline.configs.quantization_output_con
     QuantizationOutputConfig,
 )
 from executorch.backends.qualcomm.genai_pipeline.exceptions import StageError
+from executorch.backends.qualcomm.genai_pipeline.export_inputs import to_export_inputs
 from executorch.backends.qualcomm.genai_pipeline.graph_bundle import GraphBundle
 from executorch.backends.qualcomm.genai_pipeline.graph_names import (
-    DECODER_GRAPH_NAMES,
     GRAPH_FORWARD,
     GRAPH_KV_FORWARD,
     GRAPH_PREFILL_FORWARD,
     TOK_EMBEDDING_GRAPH_NAMES,
+)
+from executorch.backends.qualcomm.genai_pipeline.graph_roles import (
+    get_graph_role,
+    GRAPH_ROLES,
+    GraphRole,
 )
 from executorch.backends.qualcomm.genai_pipeline.pipeline_context import PipelineContext
 from executorch.backends.qualcomm.genai_pipeline.strategies.quantization.quantization_strategy import (
@@ -58,34 +59,8 @@ logger = logging.getLogger(__name__)
 
 _STAGE_NAME = "quantization"
 
-
-class _GraphRole(Enum):
-    # Uses real calibration data but is never lowered for deployment.
-    QUANTIZE = auto()
-    # Initializes encodings, receives overrides from a quantize graph, then lowers.
-    DEPLOY = auto()
-    # Uses calibration data and lowers as the same graph; no encoding initialization.
-    SHARED = auto()
-
-
-_GRAPH_ROLES = {
-    # The quantize graph supplies encodings for the decoder's deployed variants.
-    ARTIFACT_TEXT_DECODER: {
-        GRAPH_FORWARD: _GraphRole.QUANTIZE,
-        **dict.fromkeys(DECODER_GRAPH_NAMES, _GraphRole.DEPLOY),
-    },
-    # The quantize graph supplies encodings for deployed token-embedding variants.
-    ARTIFACT_TOK_EMBEDDING: {
-        GRAPH_FORWARD: _GraphRole.QUANTIZE,
-        **dict.fromkeys(TOK_EMBEDDING_GRAPH_NAMES, _GraphRole.DEPLOY),
-    },
-    # Audio-encoder graph is quantized and lowered for deployment.
-    ARTIFACT_AUDIO_ENCODER: {GRAPH_FORWARD: _GraphRole.SHARED},
-    # Text-encoder graph is quantized and lowered for deployment.
-    ARTIFACT_TEXT_ENCODER: {GRAPH_FORWARD: _GraphRole.SHARED},
-    # Vision-encoder graph is quantized and lowered for deployment.
-    ARTIFACT_VISION_ENCODER: {GRAPH_FORWARD: _GraphRole.SHARED},
-}
+# ``quantize_options`` key naming the components left unquantized.
+_KEY_SKIP_QUANTIZE = "skip_quantize"
 
 
 class ExecuTorchQuantizationStrategy(QuantizationStrategy):
@@ -203,6 +178,7 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
         try:
             extra = input_config.extra_options or {}
             quant_options = dict(extra.get("quantize_options") or {})
+            skip_quantize = self._skip_quantize(quant_options)
 
             # Step 1: Create QNN quantizers and per-graph recipe instances.
             quantizers, quant_recipes = self._make_quantizer(
@@ -211,7 +187,9 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
             )
 
             # Step 2: Export graph variants and prepare them with observers.
-            prepared_modules = self._export_and_prepare(input_config, quantizers)
+            prepared_modules = self._export_and_prepare(
+                input_config, quantizers, skip_quantize
+            )
 
             # Step 3: Initialize deploy-graph observers for QDQ conversion.
             self._initialize_encodings(prepared_modules, input_config)
@@ -229,7 +207,7 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
             self._calibrate(prepared_modules, input_config, calibration_data)
 
             # Step 6: Convert prepared graphs to QDQ modules.
-            converted_modules = self._convert_pt2e(prepared_modules)
+            converted_modules = self._convert_pt2e(prepared_modules, skip_quantize)
 
             # Step 7: Override quantize-graph encodings to deploy variants.
             self._override_encodings(converted_modules, input_config, context)
@@ -242,11 +220,23 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
                 graphs[component] = {
                     graph_name: GraphBundle(
                         module=module,
-                        inputs=input_config.example_inputs[component][graph_name],
-                        meta=input_config.meta.get(component, {}).get(graph_name, {}),
-                        quant_io_dtypes=self._get_quant_io_dtypes(
-                            quant_recipes[component][graph_name]
+                        # The signature the graph was exported with, since
+                        # lowering re-exports the converted module.
+                        inputs=to_export_inputs(
+                            component,
+                            graph_name,
+                            input_config.example_inputs[component][graph_name],
+                            input_config.meta,
                         ),
+                        meta=input_config.meta.get(component, {}).get(graph_name, {}),
+                        quant_io_dtypes=(
+                            None
+                            if component in skip_quantize
+                            else self._get_quant_io_dtypes(
+                                quant_recipes[component][graph_name]
+                            )
+                        ),
+                        quantized=component not in skip_quantize,
                     )
                     for graph_name, module in converted_graphs.items()
                 }
@@ -260,6 +250,39 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
                 message="Quantization failed",
                 original_exception=e,
             ) from e
+
+    @staticmethod
+    def _skip_quantize(quant_options: dict) -> frozenset:
+        """The components to leave unquantized, as legacy ``skip_quantize``.
+
+        Only components whose graphs are all ``SHARED`` can be skipped: a
+        skipped graph still runs in float during calibration, and no deploy
+        graph waits for its encodings. A decoder is skipped by skipping the
+        whole stage instead.
+
+        Args:
+            quant_options: Component-keyed dtype and recipe configuration.
+
+        Returns:
+            The skipped component keys.
+
+        Raises:
+            StageError: If a skipped component has a non-``SHARED`` graph.
+        """
+        skip = frozenset(quant_options.get(_KEY_SKIP_QUANTIZE) or ())
+        for component in sorted(skip):
+            roles = GRAPH_ROLES.get(component, {})
+            if not roles or any(r is not GraphRole.SHARED for r in roles.values()):
+                raise StageError(
+                    stage_name=_STAGE_NAME,
+                    message=(
+                        f"cannot skip quantization of '{component}'; only "
+                        "components with shared graphs (encoders) can be skipped"
+                    ),
+                )
+        if skip:
+            logger.info("Skipping quantization of %s", sorted(skip))
+        return skip
 
     def _make_quantizer(
         self,
@@ -331,6 +354,7 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
         self,
         input_config: QuantizationInputConfig,
         quantizers: dict,
+        skip_quantize: frozenset = frozenset(),
     ) -> dict:
         """Export every graph and prepare it for PT2E quantization.
 
@@ -340,74 +364,33 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
         Args:
             input_config: Model modules, graph inputs, and graph metadata.
             quantizers: Component- and graph-keyed QNN quantizers.
+            skip_quantize: Components exported without observers.
 
         Returns:
-            Component- and graph-keyed prepared PT2E modules.
+            Component- and graph-keyed prepared PT2E modules. A skipped
+            component's graphs are only exported.
         """
         prepared_modules = {}
         for component, component_example_inputs in input_config.example_inputs.items():
             prepared_modules[component] = {}
             for graph_name, graph_example_inputs in component_example_inputs.items():
-                export_inputs = self._post_process_example_inputs(
+                export_inputs = to_export_inputs(
                     component,
                     graph_name,
                     graph_example_inputs,
                     input_config.meta,
                 )
-                prepared_modules[component][graph_name] = self._adapter.prepare_pt2e(
-                    self._adapter.export_model(
-                        input_config.model_module[component], export_inputs
-                    ),
-                    quantizers[component][graph_name],
+                exported = self._adapter.export_model(
+                    input_config.model_module[component], export_inputs
+                )
+                prepared_modules[component][graph_name] = (
+                    exported
+                    if component in skip_quantize
+                    else self._adapter.prepare_pt2e(
+                        exported, quantizers[component][graph_name]
+                    )
                 )
         return prepared_modules
-
-    @staticmethod
-    def _post_process_example_inputs(
-        component: str,
-        graph_name: str,
-        example_inputs: Any,
-        meta: dict,
-    ) -> Any:
-        """Flatten text-decoder inputs into their positional export signature.
-
-        Args:
-            component: Artifact component key for the graph.
-            graph_name: Graph key used to retrieve metadata.
-            example_inputs: Model-preparation inputs in structured decoder form.
-            meta: Component- and graph-keyed model metadata.
-
-        Returns:
-            Unchanged inputs for non-decoder components. For text decoder graphs,
-            positional inputs with attention masks expanded and position IDs/KV
-            caches included only when ``get_use_kv_cache`` is enabled.
-
-        Raises:
-            StageError: If a text decoder graph lacks ``get_use_kv_cache``
-                metadata.
-        """
-        if component != ARTIFACT_TEXT_DECODER:
-            return example_inputs
-
-        if "get_use_kv_cache" not in (
-            graph_meta := meta.get(component, {}).get(graph_name, {})
-        ):
-            raise StageError(
-                stage_name=_STAGE_NAME,
-                message=(
-                    f"Component '{component}' graph '{graph_name}' is missing "
-                    "get_use_kv_cache metadata"
-                ),
-            )
-
-        use_kv_cache = graph_meta["get_use_kv_cache"]
-        return (
-            example_inputs[0],
-            *example_inputs[1],
-            *((example_inputs[2],) if use_kv_cache else []),
-            *(example_inputs[3] if use_kv_cache else []),
-            *(example_inputs[4] if use_kv_cache else []),
-        )
 
     def _initialize_encodings(
         self,
@@ -430,7 +413,7 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
                 if self._is_deploy_graph(component, graph_name):
                     self._adapter.init_encodings(
                         graph_module,
-                        self._post_process_example_inputs(
+                        to_export_inputs(
                             component,
                             graph_name,
                             input_config.example_inputs[component][graph_name],
@@ -470,18 +453,27 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
             inference=input_config.inference,
         )
 
-    def _convert_pt2e(self, prepared_modules: dict) -> dict:
+    def _convert_pt2e(
+        self,
+        prepared_modules: dict,
+        skip_quantize: frozenset = frozenset(),
+    ) -> dict:
         """Convert prepared PT2E modules to QDQ modules and release the prepared map.
 
         Args:
             prepared_modules: Component- and graph-keyed prepared PT2E modules.
+            skip_quantize: Components kept as exported, unconverted.
 
         Returns:
             Component- and graph-keyed converted QDQ modules.
         """
         converted_modules = {
             component: {
-                graph_name: self._adapter.convert_pt2e(graph_module)
+                graph_name: (
+                    graph_module
+                    if component in skip_quantize
+                    else self._adapter.convert_pt2e(graph_module)
+                )
                 for graph_name, graph_module in prepared_graphs.items()
             }
             for component, prepared_graphs in prepared_modules.items()
@@ -534,7 +526,7 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
                 # Saving Decoder QDQ Model EP
                 save_quantized_module(
                     quantized_module=quantized_decoder,
-                    example_inputs=self._post_process_example_inputs(
+                    example_inputs=to_export_inputs(
                         ARTIFACT_TEXT_DECODER,
                         GRAPH_FORWARD,
                         input_config.example_inputs[ARTIFACT_TEXT_DECODER][
@@ -685,7 +677,7 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
         """Whether a graph is a separate deployment variant.
 
         Shared graphs participate in quantization and deployment, so only
-        ``_GraphRole.DEPLOY`` variants need observer initialization and encoding
+        ``GraphRole.DEPLOY`` variants need observer initialization and encoding
         override from a separate quantization graph.
 
         Args:
@@ -698,17 +690,13 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
         Raises:
             StageError: If the component or graph lacks a role definition.
         """
-        if (component_roles := _GRAPH_ROLES.get(component)) is None:
+        try:
+            role = get_graph_role(component, graph_name)
+        except ValueError as e:
             raise StageError(
-                stage_name=_STAGE_NAME,
-                message=f"Component '{component}' has no graph-role definition",
-            )
-        if (role := component_roles.get(graph_name)) is None:
-            raise StageError(
-                stage_name=_STAGE_NAME,
-                message=f"Component '{component}' has no role for graph '{graph_name}'",
-            )
-        return role is _GraphRole.DEPLOY
+                stage_name=_STAGE_NAME, message=str(e), original_exception=e
+            ) from e
+        return role is GraphRole.DEPLOY
 
     def _get_quant_io_dtypes(self, quant_recipe: Any) -> Optional[dict]:
         """The ``{"kv_type", "io_type"}`` dtypes a graph's IO is tagged with.

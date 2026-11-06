@@ -6,7 +6,7 @@
 
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
     ARTIFACT_TEXT_DECODER,
@@ -129,6 +129,7 @@ class TestExecuTorchCompilationStrategy(unittest.TestCase):
             file_name=context.model_name,
             soc_model=soc,
             backend_type=backend,
+            executorch_config=ANY,
             extra_options=None,
         )
 

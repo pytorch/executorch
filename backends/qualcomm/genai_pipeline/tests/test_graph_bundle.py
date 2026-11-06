@@ -36,7 +36,6 @@ class TestGraphBundleFields(unittest.TestCase):
         self.assertEqual(bundle.meta, {})
         self.assertIsNone(bundle.quant_io_dtypes)
         self.assertIsNone(bundle.modality_inputs)
-        self.assertIsNone(bundle.executorch_config)
 
     def test_meta_is_not_shared_between_bundles(self):
         """Each bundle gets its own meta, since quantization mutates it in place."""
@@ -78,6 +77,11 @@ class TestQuantIoDtypes(unittest.TestCase):
             with self.subTest(quant_io_dtypes=partial):
                 with self.assertRaises(ValueError):
                     _make_bundle(quant_io_dtypes=partial)
+
+    def test_unquantized_bundle_with_dtypes_is_rejected(self):
+        """An unquantized graph has no quantized boundary to tag."""
+        with self.assertRaises(ValueError):
+            _make_bundle(quantized=False, quant_io_dtypes={"io_type": torch.uint16})
 
     def test_unknown_key_is_rejected(self):
         """An unrecognised key means the producer and the tagger disagree."""
