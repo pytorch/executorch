@@ -69,7 +69,7 @@ To run the model on-device, use the standard ExecuTorch runtime APIs.
 
 The XNNPACK delegate is included by default in the published Android, iOS, and pip packages. When building from source, pass `-DEXECUTORCH_BUILD_XNNPACK=ON` when configuring the CMake build to compile the XNNPACK backend. See [Running on Device](/getting-started.md#running-on-device) for more information.
 
-To link against the backend, add the `executorch_backends` CMake target as a build dependency, or link directly against `libxnnpack_backend`. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing `"$<LINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend>"` to `target_link_libraries`.
+To link against the backend, add the `executorch_backends` CMake target as a build dependency, or link directly against `libxnnpack_backend` and `libxnnpack_profiler`. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing `"$<LINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend>"` to `target_link_libraries`.
 
 ```
 # CMakeLists.txt
