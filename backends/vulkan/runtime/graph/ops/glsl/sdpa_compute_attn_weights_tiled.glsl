@@ -31,6 +31,7 @@ $if MODE == "llm":
   #define K_LAYOUT DHSB
 $else:
   #define SDPA_PAD_D
+  #define HAS_GQA
   #define Q_LAYOUT DSHB
   #define K_LAYOUT DSHB
 

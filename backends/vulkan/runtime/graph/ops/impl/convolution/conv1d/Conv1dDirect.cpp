@@ -68,7 +68,7 @@ GlobalWorkGrid conv1d_gwg(
        // out channels
        static_cast<uint32_t>(graph->size_at<int64_t>(-2, out)),
        // out batches
-       utils::div_up_4(graph->size_at<uint32_t>(-3, out))},
+       graph->dim_of(out) >= 3 ? graph->size_at<uint32_t>(-3, out) : 1u},
       kTiledWorkGrid);
 }
 

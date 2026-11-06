@@ -95,6 +95,20 @@ def export_model(backbone, head, limits, metadata):
 
             partitioner = MLXPartitioner()
             passes = get_default_passes()
+        elif backbone.backend == "vulkan":
+            from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+                VulkanPartitioner,
+            )
+
+            partitioner = VulkanPartitioner(
+                {
+                    "require_dynamic_shapes": True,
+                    "small_texture_limits": True,
+                }
+            )
+            from executorch.exir.passes.spec_prop_pass import SpecPropPass
+
+            passes = [SpecPropPass()]
         else:
             from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
                 XnnpackPartitioner,
@@ -124,7 +138,9 @@ def main():
         description="Export Kev prefill and pointer scoring"
     )
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--backend", choices=("xnnpack", "mlx"), required=True)
+    parser.add_argument(
+        "--backend", choices=("xnnpack", "mlx", "vulkan"), required=True
+    )
     parser.add_argument("--dtype", choices=("fp32", "bf16"), default="bf16")
     parser.add_argument(
         "--max-prefix",
@@ -158,6 +174,9 @@ def main():
     ):
         parser.error("Checkpoint temperature must be finite and positive")
     dtype = {"fp32": torch.float32, "bf16": torch.bfloat16}[args.dtype]
+    if args.backend == "vulkan" and dtype == torch.bfloat16:
+        print("Vulkan backend does not support bfloat16, casting to float16.")
+        dtype = torch.float16
     tokenizer, model = checkpoint.load("cpu", LoadOptions(dtype=dtype, attn="sdpa"))
     backbone = Backbone(model.lm, args.backend).eval()
     limits = (args.max_prefix, args.max_context, 8, 255)

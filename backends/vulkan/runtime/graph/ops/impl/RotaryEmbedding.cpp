@@ -152,7 +152,15 @@ void add_rotary_embedding_hf_node(
     const ValueRef xq_out,
     const ValueRef xk_out) {
   VK_CHECK_COND(graph.size_at<int>(-1, xq) == graph.size_at<int>(-1, xk));
-  VK_CHECK_COND(graph.size_at<int>(-3, xq) == graph.size_at<int>(-3, xk));
+
+  int tensor_layout_format = 0;
+  if (graph.size_at<int>(-2, xq) == 1 && graph.size_at<int>(-3, xq) >= 1) {
+    tensor_layout_format = 1;
+    VK_CHECK_COND(graph.size_at<int>(-2, xq) == graph.size_at<int>(-2, xk));
+  } else {
+    VK_CHECK_COND(graph.size_at<int>(-3, xq) == graph.size_at<int>(-3, xk));
+  }
+
   // HF convention: freqs rotary_dim <= head_dim (supports
   // partial_rotary_factor)
   VK_CHECK_COND(
@@ -161,8 +169,13 @@ void add_rotary_embedding_hf_node(
   VK_CHECK_COND(graph.size_at<int>(-1, freqs_cos) % 8 == 0);
   VK_CHECK_COND(graph.sizes_of(freqs_cos) == graph.sizes_of(freqs_sin));
   // freqs dim 0 is max_seq_len which must be >= current seq_len
-  VK_CHECK_COND(
-      graph.size_at<int>(-2, freqs_cos) >= graph.size_at<int>(-3, xq));
+  if (tensor_layout_format == 1) {
+    VK_CHECK_COND(
+        graph.size_at<int>(-2, freqs_cos) >= graph.size_at<int>(-2, xq));
+  } else {
+    VK_CHECK_COND(
+        graph.size_at<int>(-2, freqs_cos) >= graph.size_at<int>(-3, xq));
+  }
 
   VK_CHECK_COND(graph.packed_dim_of(xq) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(xk) == WHCN::kWidthDim);
@@ -201,7 +214,8 @@ void add_rotary_embedding_hf_node(
       // Specialization Constants
       {graph.hashed_layout_of(xq_out),
        graph.hashed_layout_of(freqs_cos),
-       partial_rotary},
+       partial_rotary,
+       tensor_layout_format},
       // Resize Args
       {},
       // Resizing Logic

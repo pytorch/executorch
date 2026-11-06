@@ -6,8 +6,17 @@
 
 import torch
 import torch.nn.functional as F
+import transformers.models.qwen3_5.modeling_qwen3_5 as qwen_modeling
 from torch import nn
 from transformers.models.qwen3_5.modeling_qwen3_5 import apply_rotary_pos_emb, l2norm
+
+
+def rotate_half_split(x):
+    x1, x2 = torch.split(x, x.shape[-1] // 2, dim=-1)
+    return torch.cat((-x2, x1), dim=-1)
+
+
+qwen_modeling.rotate_half = rotate_half_split
 
 
 class Backbone(nn.Module):
@@ -29,6 +38,8 @@ class Backbone(nn.Module):
         elif backend == "mlx":
             import executorch.backends.mlx.custom_kernel_ops.gated_delta_rule  # noqa: F401
             import executorch.backends.mlx.custom_ops  # noqa: F401
+        elif backend == "vulkan":
+            from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
         else:
             raise ValueError(f"Unsupported backend: {backend}")
 
