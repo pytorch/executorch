@@ -122,8 +122,9 @@ def install_requirements(use_pytorch_nightly):
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
         ("torch==2.14.0" if use_pytorch_nightly else "torch"),
-        f"torchao=={torchao_version}",
     ]
+    if not cu134_packages and not torchao_from_source():
+        TORCH_PACKAGE.append(f"torchao=={torchao_version}")
 
     # Install the requirements for core ExecuTorch package.
     # `--extra-index-url` tells pip to look for package
