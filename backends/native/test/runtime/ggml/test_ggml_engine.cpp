@@ -637,6 +637,77 @@ TEST(GgmlEngineTest, RejectsWeightOnlyQuantizedLinearsByDefault) {
   expect_compile_error(*context, "allow_activation_quant_for_weight_only");
 }
 
+TEST(GgmlEngineTest, SqrtPreservesNonFiniteValuesAndSignedZeroOnReplay) {
+  const float inf = std::numeric_limits<float>::infinity();
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  for (const size_t cached : {size_t{0}, size_t{1}}) {
+    for (const bool transposed : {false, true}) {
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, {2, 4});
+      std::string input = "x";
+      if (transposed) {
+        program.call(
+            "xt",
+            "torch.ops.aten.permute_copy.default",
+            {{"self", input}, {"dims", std::vector<int64_t>{1, 0}}},
+            fbs::ScalarType::FLOAT,
+            {4, 2});
+        input = "xt";
+      }
+      program.call(
+          "y",
+          "torch.ops.aten.sqrt.default",
+          {{"self", input}},
+          fbs::ScalarType::FLOAT,
+          transposed ? std::vector<int64_t>{4, 2} : std::vector<int64_t>{2, 4});
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.cpu_threads = 4, .max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, 4.0f}) {
+        const std::vector<float> x{
+            0.0f,
+            -0.0f,
+            scale * 4.0f,
+            scale * 2.0f,
+            inf,
+            -scale,
+            nan,
+            scale * 9.0f};
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(x.size());
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t i = 0; i < y.size(); ++i) {
+          const size_t source = transposed ? (i % 2) * 4 + i / 2 : i;
+          const float expected =
+              static_cast<float>(std::sqrt(static_cast<double>(x[source])));
+          if (std::isnan(expected)) {
+            EXPECT_TRUE(std::isnan(y[i]));
+          } else {
+            EXPECT_EQ(y[i], expected);
+            EXPECT_EQ(std::signbit(y[i]), std::signbit(expected));
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, SqrtRejectsUnsupportedTypes) {
+  for (const auto dtype : {fbs::ScalarType::HALF, fbs::ScalarType::LONG}) {
+    TestProgram program;
+    program.input("x", dtype, {2, 4});
+    program.call(
+        "y",
+        "torch.ops.aten.sqrt.default",
+        {{"self", std::string("x")}},
+        fbs::ScalarType::FLOAT,
+        {2, 4});
+    expect_compile_error(program.finish("y"), "F32");
+  }
+}
+
 // tanh of x [4, 3], or of its transpose.
 std::vector<uint8_t> make_tanh_program(
     bool transposed,
