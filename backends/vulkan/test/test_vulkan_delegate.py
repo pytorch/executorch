@@ -2512,6 +2512,25 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(module, sample_inputs)
 
+    def test_vulkan_backend_force_fp16_folds_boundary_casts(self):
+        # fp16 at the method boundary around an fp32 graph: under force_fp16 the
+        # casts copy identical data and are removed; the output must still be
+        # fp16 and match.
+        class HalfIOModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(8, 8, 3, 1, 1)
+
+            def forward(self, x):
+                return torch.nn.functional.relu(self.conv(x.float())).half()
+
+        self.lower_module_and_test_output(
+            HalfIOModule(),
+            (torch.randn(size=[1, 8, 16, 24]).half(),),
+            atol=2e-2,
+            compile_options={"force_fp16": True},
+        )
+
     def test_vulkan_backend_grid_priors(self):
         class GridPriorsModule(torch.nn.Module):
             def __init__(self):
