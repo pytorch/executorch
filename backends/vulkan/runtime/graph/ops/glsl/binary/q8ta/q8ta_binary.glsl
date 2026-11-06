@@ -12,7 +12,11 @@
 
 ${define_active_storage_type("buffer")}
 
-#define op(X, Y) ${OPERATOR}
+#define IN_T vec4
+#define OUT_T vec4
+#define ALPHA_T float
+#define BINARY_OP_VEC4
+#define BINARY_OP_IS_FLOAT
 
 layout(std430) buffer;
 
@@ -40,6 +44,7 @@ layout(push_constant) uniform restrict Block {
   int input_b_zp;
   float output_inv_scale;
   int output_zp;
+  float alpha;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -50,6 +55,9 @@ ${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "in_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "other_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "block_config", "0")}
+${layout_declare_spec_const(C, "int", "op_type", "0")}
+
+#include "binary_op.glslh"
 
 // Generate loading functions for input buffers
 define_load_int8x4_buffer_fns(t_in_a)
@@ -129,7 +137,7 @@ void main() {
     vec4 in_texel_b = unpack_and_dequantize(
         in_block_b[row], input_b_scale, input_b_zp);
 
-    vec4 out_texel = op(in_texel_a, in_texel_b);
+    vec4 out_texel = apply_binary_op(in_texel_a, in_texel_b, alpha);
     out_block[row] = quantize_and_pack(out_texel, output_inv_scale, output_zp);
   }
 

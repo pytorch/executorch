@@ -42,7 +42,8 @@ The full user-facing API is documented below.
 
 For static mutable buffers such as KV caches, set `alias_buffer_mutations=True`.
 Eligible buffers must be zero-initialized `int8` tensors whose reads and mutation
-are contained in one delegated partition. The backend aliases each buffer's
+are contained in one delegated partition, and whose new value is not returned or
+read outside that partition. The backend aliases each buffer's
 input and mutation output to persistent VGF storage across invocations.
 
 ```python

@@ -68,6 +68,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
     memory_sensitive_ops_nhwc = {
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
+        exir_ops.edge.aten.upsample_nearest2d.vec,
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.max_pool2d.default,
         exir_ops.edge.aten.amax.default,
@@ -137,7 +138,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             if len(quantize_node.all_input_nodes) > 0:
                 actual_node = quantize_node.args[0]
                 if actual_node.op == "placeholder":
-                    return ChannelsLastTaggedReshapePass._is_nhwc_tensor(
+                    return ChannelsLastTaggedReshapePass.is_nhwc_tensor(
                         actual_node.meta["val"][0]
                     )
                 else:
@@ -154,7 +155,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             if len(quantize_node.all_input_nodes) > 0:
                 actual_node = quantize_node.args[0]
                 if actual_node.op == "placeholder":
-                    return not ChannelsLastTaggedReshapePass._is_nhwc_tensor(
+                    return not ChannelsLastTaggedReshapePass.is_nhwc_tensor(
                         actual_node.meta["val"][0]
                     )
                 else:
@@ -165,7 +166,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         return not ChannelsLastTaggedReshapePass.is_nhwc_node(node)
 
     @staticmethod
-    def _is_nhwc_tensor(tensor: torch.Tensor) -> bool:
+    def is_nhwc_tensor(tensor: torch.Tensor) -> bool:
         nhwc = tensor.is_contiguous(memory_format=torch.channels_last)
         nchw = tensor.is_contiguous()
         # if both are true false
@@ -182,7 +183,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             return nhwc
 
     def _is_nhwc(self, tensor: torch.Tensor) -> bool:
-        return ChannelsLastTaggedReshapePass._is_nhwc_tensor(tensor)
+        return ChannelsLastTaggedReshapePass.is_nhwc_tensor(tensor)
 
     @staticmethod
     def static_tensor_val(node: torch.fx.Node) -> Optional[torch.Tensor]:

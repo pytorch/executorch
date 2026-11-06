@@ -9,13 +9,14 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include <executorch/backends/native/runtime/engine/Engine.h>
 
 namespace ptn {
 
 struct ConstantBytes {
-  size_t unique = 0;
+  std::optional<size_t> unique;
   size_t materialized = 0;
 };
 

@@ -257,8 +257,6 @@ CONV_TRANSPOSE_TARGETS = {
     torch.ops.aten.conv_transpose1d.default,
     torch.ops.aten.conv_transpose2d,
     torch.ops.aten.conv_transpose2d.input,
-    torch.ops.aten.conv_transpose3d,
-    torch.ops.aten.conv_transpose3d.input,
 }
 
 LINEAR_TARGETS = {
@@ -272,6 +270,8 @@ ADD_TARGETS = {torch.ops.aten.add.Tensor}
 MUL_TARGETS = {torch.ops.aten.mul.Tensor}
 
 CAT_TARGETS = {torch.ops.aten.cat.default}
+
+UPSAMPLE_NEAREST2D_TARGETS = {torch.ops.aten.upsample_nearest2d.vec}
 
 
 class XNNPACKQuantizer(Quantizer):
@@ -293,6 +293,7 @@ class XNNPACKQuantizer(Quantizer):
         QuantPattern("mul_relu", False, False, MUL_TARGETS),
         QuantPattern("mul", False, False, MUL_TARGETS),
         QuantPattern("cat", False, False, CAT_TARGETS),
+        QuantPattern("upsample_nearest2d", False, False, UPSAMPLE_NEAREST2D_TARGETS),
     ]
 
     def __init__(self) -> None:
