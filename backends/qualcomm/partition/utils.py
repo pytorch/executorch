@@ -14,6 +14,11 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_TENSOR_TYPE_MAP,
 )
 
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendOptions,
+    QnnExecuTorchBackendType,
+    QnnExecuTorchHtpPrecision,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_BYPASS_NODE,
     QCOM_QNN_COMPILE_SPEC,
@@ -44,6 +49,17 @@ def generate_qnn_executorch_option(
         )
 
     return qnn_compile_spec_buffer
+
+
+def is_htp_fp16(backend_options: QnnExecuTorchBackendOptions) -> bool:
+    """
+    Whether the backend options target HTP in float16 precision.
+    """
+    return (
+        backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend
+        and backend_options.htp_options is not None
+        and backend_options.htp_options.precision == QnnExecuTorchHtpPrecision.kHtpFp16
+    )
 
 
 def estimate_conv_vtcm_working_set(

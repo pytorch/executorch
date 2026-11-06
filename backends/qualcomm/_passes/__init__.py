@@ -13,6 +13,7 @@ from .build_quant_io import BuildQuantIo
 from .canonicalize_conv import CanonicalizeConv
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_complex_stft import ConvertComplexStft
+from .convert_full_like_to_full import ConvertFullLikeToFull
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
@@ -75,6 +76,7 @@ from .remove_redundancy import RemoveRedundancy
 from .replace_arange_args import ReplaceArangeArgs
 from .resolve_debug_handle import ResolveDebugHandle
 from .seq_mse import SeqMSE
+from .tag_positional_sin_cos import TagPositionalSinCos
 from .tag_quant_io import TagQuantIO
 
 __all__ = [
@@ -87,6 +89,7 @@ __all__ = [
     CanonicalizeConv,
     ConvertBmmToMatmul,
     ConvertComplexStft,
+    ConvertFullLikeToFull,
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
@@ -149,5 +152,6 @@ __all__ = [
     ReplaceArangeArgs,
     ResolveDebugHandle,
     SeqMSE,
+    TagPositionalSinCos,
     TagQuantIO,
 ]

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import List
+
 from executorch.backends.qualcomm._passes import (
     ConvertMhaToSha,
     DecomposeHardsigmoid,
@@ -56,13 +58,16 @@ class QnnLpaiPassManager(QnnPassManager):
         )
         return deps
 
-    def _validate_edge_passes(self) -> None:
-        assert isinstance(
-            self.passes[-2], ResolveDebugHandle
-        ), "Please ensure ResolveDebugHandle is the last edge pass before LpaiPartitionFallbackSupport."
-        assert isinstance(
-            self.passes[-1], LpaiPartitionFallbackSupport
-        ), "Please ensure LpaiPartitionFallbackSupport is the last pass."
+    def _validate_edge_passes(self, passes: List[type]) -> None:
+        if (
+            len(passes) < 2
+            or not issubclass(passes[-2], ResolveDebugHandle)
+            or not issubclass(passes[-1], LpaiPartitionFallbackSupport)
+        ):
+            raise self._invalid_passes_job(
+                "ResolveDebugHandle followed by LpaiPartitionFallbackSupport "
+                "must be the last active edge passes."
+            )
 
     @classmethod
     def get_annotation_passes(cls, convert_linear_to_conv2d: bool = False):

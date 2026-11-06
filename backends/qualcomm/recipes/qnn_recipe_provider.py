@@ -7,6 +7,7 @@
 # pyre-strict
 
 import logging
+from collections import OrderedDict
 from typing import Any, Optional, Sequence
 
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
@@ -89,6 +90,7 @@ class QNNRecipeProvider(BackendRecipeProvider):
             "skip_node_id_set",
             "skip_node_op_set",
             "skip_mutable_buffer",
+            "passes_job",
         }
         return common_keys
 
@@ -134,6 +136,17 @@ class QNNRecipeProvider(BackendRecipeProvider):
                     f"Parameter 'skip_mutable_buffer' must be a boolean, got {type(skip_mutable_buffer)}"
                 )
 
+        if "passes_job" in kwargs:
+            passes_job = kwargs["passes_job"]
+            if passes_job is not None and not isinstance(passes_job, dict):
+                raise ValueError(
+                    f"Parameter 'passes_job' must be a dict or None, got {type(passes_job)}"
+                )
+            if passes_job and any(isinstance(key, str) for key in passes_job):
+                raise ValueError(
+                    "Parameter 'passes_job' takes one job for every method, keyed by pass, not by method name"
+                )
+
     def _build_fp16_recipe(
         self,
         recipe_type: RecipeType,
@@ -143,6 +156,7 @@ class QNNRecipeProvider(BackendRecipeProvider):
         skip_node_id_set = kwargs.get("skip_node_id_set", None)
         skip_node_op_set = kwargs.get("skip_node_op_set", None)
         skip_mutable_buffer = kwargs.get("skip_mutable_buffer", False)
+        passes_job = kwargs.get("passes_job", None)
 
         lowering_recipe = self._get_qnn_lowering_recipe(
             use_fp16=True,
@@ -150,6 +164,7 @@ class QNNRecipeProvider(BackendRecipeProvider):
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
             skip_mutable_buffer=skip_mutable_buffer,
+            passes_job=passes_job,
         )
 
         return ExportRecipe(
@@ -169,6 +184,7 @@ class QNNRecipeProvider(BackendRecipeProvider):
         skip_node_id_set: Optional[set] = None,
         skip_node_op_set: Optional[set] = None,
         skip_mutable_buffer: bool = False,
+        passes_job: Optional[OrderedDict] = None,
     ) -> LoweringRecipe:
         """Get QNN lowering recipe with optional precision and SoC target"""
         backend_options = generate_htp_compiler_spec(use_fp16=use_fp16)
@@ -192,7 +208,13 @@ class QNNRecipeProvider(BackendRecipeProvider):
             edge_transform_passes=[
                 lambda method_, ep: get_qnn_pass_manager_cls(
                     QnnExecuTorchBackendType.kHtpBackend
-                )().get_to_edge_transform_passes(ep)
+                )().get_to_edge_transform_passes(
+                    ep,
+                    passes_job=passes_job,
+                    compiler_specs=compile_specs,
+                    skip_node_id_set=skip_node_id_set,
+                    skip_node_op_set=skip_node_op_set,
+                )
             ],
             edge_compile_config=edge_compile_config,
         )
