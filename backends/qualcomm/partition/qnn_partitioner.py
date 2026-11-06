@@ -32,6 +32,7 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_BYPASS_NODE,
     QCOM_FALLBACK_NODE,
+    QCOM_INSERTED_CAST,
 )
 
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
@@ -302,7 +303,7 @@ class QnnPartitioner(Partitioner):
             partitions = self._drop_partitions_without_runtime_inputs(
                 partitions, edge_program
             )
-        return partitions
+        return self._drop_partitions_of_inserted_casts(partitions)
 
     @staticmethod
     def _drop_orphaned_parameter_dequants(
@@ -334,6 +335,21 @@ class QnnPartitioner(Partitioner):
                     and arg.meta.get(QCOM_BYPASS_NODE, False)
                 )
         return [partition for partition in partitions if partition.nodes]
+
+    @staticmethod
+    def _drop_partitions_of_inserted_casts(
+        partitions: List[Partition],
+    ) -> List[Partition]:
+        """
+        I64toI32 casts int64 inputs and results to int32, and int64 outputs
+        back. When the ops around such a cast stay on CPU, the casts alone
+        would make a delegate that only converts dtypes, so they stay on CPU.
+        """
+        return [
+            partition
+            for partition in partitions
+            if not all(node.meta.get(QCOM_INSERTED_CAST) for node in partition.nodes)
+        ]
 
     @staticmethod
     def _constant_inputs(edge_program: torch.export.ExportedProgram) -> Set[str]:

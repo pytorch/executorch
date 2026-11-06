@@ -1765,7 +1765,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             torch.tensor([True, False]),
         )
         # The sum of bools and masked_scatter stay on CPU, so the graph splits.
-        self.lower_module_and_test_output(module, sample_input, expected_partitions=3)
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=2)
 
     def test_qnn_backend_interpolate_bicubic(self):
         modules = [
@@ -5183,7 +5183,7 @@ class TestQNNQuantizedOperator(TestQNN):
         )
         module = self.get_qdq_module(module, sample_input)
         # The sum of bools and masked_scatter stay on CPU, so the graph splits.
-        self.lower_module_and_test_output(module, sample_input, expected_partitions=3)
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=2)
 
     def test_qnn_backend_interpolate_bicubic(self):
         modules = [
