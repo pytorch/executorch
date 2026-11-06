@@ -443,7 +443,7 @@ class GgmlOpsTest(unittest.TestCase):
             self.assertEqual(shape, tuple(reference.shape))
             actual = torch.frombuffer(bytearray(raw), dtype=reference.dtype)
             torch.testing.assert_close(
-                actual.reshape(shape), reference, atol=atol, rtol=rtol
+                actual.reshape(shape), reference, atol=atol, rtol=rtol, equal_nan=True
             )
 
     def _run_exported(self, model, example, inputs):
@@ -619,6 +619,9 @@ class GgmlOpsTest(unittest.TestCase):
     def test_sigmoid(self):
         self._check(Lambda(torch.sigmoid), (torch.randn(2, 3, 4),))
 
+    def test_tanh(self):
+        self._check(Lambda(torch.tanh), (torch.randn(1, 512) * 3.0,))
+
     def test_gelu(self):
         ops = collections.Counter()
         self._check(Lambda(F.gelu), (torch.randn(2, 3, 4) * 3.0,), graph_ops=ops)
@@ -641,6 +644,18 @@ class GgmlOpsTest(unittest.TestCase):
     def test_log(self):
         self._check(Lambda(torch.log), (torch.rand(2, 3, 4) + 0.1,))
 
+    def test_exp(self):
+        self._check(Lambda(torch.exp), (torch.randn(3, 1, 1).clamp(max=4.6),))
+
+    def test_exp_half_and_bfloat16(self):
+        for dtype, rtol in ((torch.float16, 1e-3), (torch.bfloat16, 8e-3)):
+            with self.subTest(dtype=dtype):
+                self._check(
+                    Lambda(torch.exp),
+                    (torch.randn(2, 3, 4, dtype=dtype),),
+                    rtol=rtol,
+                )
+
     def test_neg(self):
         self._check(Lambda(torch.neg), (torch.randn(2, 3, 4),))
 
@@ -652,6 +667,17 @@ class GgmlOpsTest(unittest.TestCase):
         self._check(Lambda(F.relu6), (torch.randn(2, 3, 4) * 8.0,))
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
+
+    def test_sqrt(self):
+        x = torch.tensor(
+            [[0.0, -0.0, 4.0, 2.0], [float("inf"), -1.0, float("nan"), 9.0]]
+        )
+        self._check(Lambda(torch.sqrt), (x,))
+        self._check(Lambda(lambda x: x.transpose(0, 1).sqrt()), (x,))
+
+    def test_sqrt_rejects_half(self):
+        with self.assertRaisesRegex(AssertionError, "F32"):
+            self._check(Lambda(torch.sqrt), (torch.ones(2, 3, dtype=torch.float16),))
 
     def test_conv2d(self):
         self._check(

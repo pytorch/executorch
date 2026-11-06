@@ -222,6 +222,7 @@ class GraphBuilder {
   using Unary = ggml_tensor* (*)(ggml_context*, ggml_tensor*);
 
   void lower_unary(const Node& node, Unary fn);
+  void lower_sqrt(const Node& node);
   void lower_hardtanh(const Node& node);
   std::array<int, 2> pair_arg(
       const Node& node,

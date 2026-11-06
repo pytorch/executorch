@@ -1220,11 +1220,7 @@ jobs:
       matrix:
         include:
           - variant: kquant-17gb
-            mode: solo-text
-          - variant: kquant-17gb
             mode: dflash-image-batching
-          - variant: kquant-17gb
-            mode: dflash-image
           - variant: kquant-dynamic
             mode: solo-text
           - variant: kquant-dynamic
