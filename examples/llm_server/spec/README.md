@@ -74,6 +74,12 @@ to `false` to omit reasoning from the response; the model still computes reasoni
 Unlike disabling reasoning separation in SGLang or llama.cpp, this suppresses
 extracted reasoning instead of leaving it in `content`.
 
+`include_reasoning` is an optional JSON boolean alias for this visibility
+control, honored in both API dialects and both streaming modes. Omitted/null
+uses the existing default. Conflicting explicit visibility settings return
+`400 invalid_value`, including conflicts with a model adapter's
+`reasoning.exclude`; non-boolean `include_reasoning` fails schema validation.
+
 The flag must be a JSON boolean for every model, including models without a
 reasoning extractor. Non-boolean values return `400 invalid_request_error`
 (`code: "invalid_value"`) before session admission or generation. This tightens
@@ -92,6 +98,15 @@ wrong behavior: `n` (> 1), `reasoning_effort` and OpenRouter `reasoning`
 don't affect the output (e.g. `user`, `store`, `metadata`) are accepted and
 ignored.
 
+Non-null `thinking_token_budget`, `grammar`, `stop_regex`, `cache_salt`,
+`guided_json`, `guided_regex`, `guided_choice`, `guided_grammar`, `structured_outputs`,
+`regex`, and `ebnf` return `400 unsupported_parameter` before generation, including
+empty values. Explicit defaults `add_generation_prompt=true` and
+`continue_final_message=false` are accepted; other non-null values are rejected.
+In particular, `cache_salt` does not partition the cache. A caller requesting
+salted isolation must not receive a successful unsalted response. Omitted/null
+values are treated as unset. Harmless metadata remains accepted as above.
+
 Non-streaming response: `chat.completion` with one `choice`
 (`message.role = "assistant"`, string `content` or `tool_calls`, `finish_reason`
 ∈ `stop` | `length` | `tool_calls`) and a `usage` block.
@@ -100,6 +115,15 @@ reasoning text separately from visible `content` and `tool_calls`.
 `usage.prompt_tokens_details.cached_tokens` reports prompt tokens served from
 the session's resident state instead of prefetched this request (0 when the
 turn fully prefilled); the streaming usage chunk carries the same field.
+
+Adapters with a generated-token counter also return
+`usage.completion_tokens_details.reasoning_tokens`. It counts actual generated
+reasoning-body token IDs, including reasoning hidden by visibility controls,
+and excludes headers and delimiters. It is a breakdown of `completion_tokens`,
+not an addition to the total. The same breakdown appears in streaming usage.
+If exact generated IDs or the required tokenizer framing are unavailable, the
+details field is omitted rather than estimated. Workers can omit replayable IDs
+on stop-trimmed or cancelled turns; those turns can therefore lack the breakdown.
 
 Streaming response: `text/event-stream` of `chat.completion.chunk` objects —
 first chunk carries `delta.role = "assistant"`, subsequent chunks carry
@@ -420,3 +444,5 @@ Tool-definition changes are rendered into the next full prompt and checked by th
 native prefix comparison. They do not invalidate an unchanged historical assistant
 echo: stored token IDs still describe that past output, while changed prompt
 prefixes require fresh prefill.
+
+`reasoning.exclude` and `include_reasoning` control reasoning visibility in both API dialects. With `ignore_eos`, completion usage still counts every generated token, but reasoning-token details are omitted when the visible span cannot be aligned safely.

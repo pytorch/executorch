@@ -34,6 +34,7 @@ from .protocol import (
     ChatCompletionResponse,
     Choice,
     ChunkChoice,
+    CompletionTokensDetails,
     DeltaMessage,
     FunctionCall,
     PromptTokensDetails,
@@ -236,6 +237,7 @@ class ServingChat:
         tool_reasoning_parser_factory: Optional[
             Callable[[], StreamingResponseParser]
         ] = None,
+        reasoning_token_counter: Optional[Callable[[list[int]], Optional[int]]] = None,
     ):
         self._runtime = runtime
         self._template = template
@@ -244,6 +246,7 @@ class ServingChat:
         self._prompt_token_offset = prompt_token_offset
         self._content_filter = content_filter
         self._reasoning_extractor = reasoning_extractor
+        self._reasoning_token_counter = reasoning_token_counter
         self._streaming_parser_factory = streaming_parser_factory
         self._tool_reasoning_parser_factory = tool_reasoning_parser_factory
         self._evict_idle_sessions = evict_idle_sessions
@@ -480,14 +483,25 @@ class ServingChat:
             self._visible_content(text) or None,
         )
 
-    @staticmethod
-    def _usage(stats: GenStats) -> Usage:
+    def _usage(self, stats: GenStats, *, ignore_eos=False) -> Usage:
+        reasoning_tokens = None
+        if (
+            not ignore_eos
+            and self._reasoning_token_counter
+            and stats.generated_token_ids is not None
+        ):
+            reasoning_tokens = self._reasoning_token_counter(stats.generated_token_ids)
         return Usage(
             prompt_tokens=stats.prompt_tokens,
             completion_tokens=stats.completion_tokens,
             total_tokens=stats.prompt_tokens + stats.completion_tokens,
             prompt_tokens_details=PromptTokensDetails(
                 cached_tokens=stats.reused_prompt_tokens
+            ),
+            completion_tokens_details=(
+                CompletionTokensDetails(reasoning_tokens=reasoning_tokens)
+                if reasoning_tokens is not None
+                else None
             ),
         )
 
@@ -692,9 +706,8 @@ class ServingChat:
         return "length" if mt and mt > 0 and completion_tokens >= mt else "stop"
 
     @staticmethod
-    def _reject_invalid_values(req: ChatCompletionRequest) -> None:
-        """Reject invalid types/ranges (invalid_value); these take precedence over
-        the unsupported-parameter error."""
+    def _reject_invalid_visibility(req: ChatCompletionRequest) -> None:
+        """Require boolean, mutually consistent reasoning visibility controls."""
         template_kwargs = req.chat_template_kwargs or {}
         if not isinstance(template_kwargs.get("return_reasoning", True), bool):
             raise APIError(
@@ -703,6 +716,33 @@ class ServingChat:
                 "invalid_request_error",
                 "invalid_value",
             )
+        visibility = []
+        if "return_reasoning" in template_kwargs:
+            visibility.append(template_kwargs["return_reasoning"])
+        if req.include_reasoning is not None:
+            visibility.append(req.include_reasoning)
+        if req.reasoning is not None and req.reasoning.get("exclude") is not None:
+            if type(req.reasoning["exclude"]) is not bool:
+                raise APIError(
+                    400,
+                    "reasoning.exclude must be a boolean",
+                    "invalid_request_error",
+                    "invalid_value",
+                )
+            visibility.append(not req.reasoning["exclude"])
+        if len(set(visibility)) > 1:
+            raise APIError(
+                400,
+                "Conflicting reasoning visibility controls",
+                "invalid_request_error",
+                "invalid_value",
+            )
+
+    @staticmethod
+    def _reject_invalid_values(req: ChatCompletionRequest) -> None:
+        """Reject invalid types/ranges (invalid_value); these take precedence over
+        the unsupported-parameter error."""
+        ServingChat._reject_invalid_visibility(req)
         if req.temperature is not None and (
             not math.isfinite(req.temperature)
             or req.temperature < 0.0
@@ -758,6 +798,27 @@ class ServingChat:
         constraining); logprobs are not returned at all."""
         rf = req.response_format
         flags = [
+            (req.thinking_token_budget is not None, "thinking_token_budget"),
+            (req.grammar is not None, "grammar"),
+            (req.guided_json is not None, "guided_json"),
+            (req.guided_regex is not None, "guided_regex"),
+            (req.guided_choice is not None, "guided_choice"),
+            (req.guided_grammar is not None, "guided_grammar"),
+            (req.structured_outputs is not None, "structured_outputs"),
+            (req.regex is not None, "regex"),
+            (req.ebnf is not None, "ebnf"),
+            (req.stop_regex is not None, "stop_regex"),
+            (
+                req.add_generation_prompt is not None
+                and req.add_generation_prompt is not True,
+                "add_generation_prompt",
+            ),
+            (
+                req.continue_final_message is not None
+                and req.continue_final_message is not False,
+                "continue_final_message",
+            ),
+            (req.cache_salt is not None, "cache_salt"),
             (
                 req.ignore_eos
                 and getattr(self._runtime, "supports_ignore_eos", False) is not True,
@@ -769,7 +830,17 @@ class ServingChat:
             ),
             (req.n != 1, "n>1"),
             (req.reasoning_effort is not None, "reasoning_effort"),
-            (req.reasoning not in (None, {}, {"exclude": False}), "reasoning"),
+            (
+                req.reasoning
+                not in (
+                    None,
+                    {},
+                    {"exclude": None},
+                    {"exclude": False},
+                    {"exclude": True},
+                ),
+                "reasoning",
+            ),
             (bool(req.frequency_penalty), "frequency_penalty"),
             (bool(req.presence_penalty), "presence_penalty"),
             (bool(req.logit_bias), "logit_bias"),
@@ -875,6 +946,20 @@ class ServingChat:
         return False
 
     async def create(self, req: ChatCompletionRequest):
+        if req.model is not None and req.model != self._model_id:
+            raise ModelNotFound(req.model, self._model_id)
+        self._reject_invalid_values(req)
+        visible = req.include_reasoning
+        if (
+            visible is None
+            and req.reasoning is not None
+            and req.reasoning.get("exclude") is not None
+        ):
+            visible = not req.reasoning["exclude"]
+        if visible is not None:
+            kwargs = dict(req.chat_template_kwargs or {})
+            kwargs["return_reasoning"] = visible
+            req = req.model_copy(update={"chat_template_kwargs": kwargs})
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
         lease = self._transaction(req.session_id)
@@ -893,9 +978,6 @@ class ServingChat:
                 await lease.__aexit__(None, None, None)
 
     async def _create(self, req: ChatCompletionRequest, lease, admission):
-        if req.model is not None and req.model != self._model_id:
-            raise ModelNotFound(req.model, self._model_id)
-        self._reject_invalid_values(req)
         self._reject_unsupported_params(req)
         if req.session_id is not None:
             self._validate_session_id(req.session_id)
@@ -1116,7 +1198,7 @@ class ServingChat:
                     finish_reason=finish,
                 )
             ],
-            usage=self._usage(stats),
+            usage=self._usage(stats, ignore_eos=req.ignore_eos),
         )
 
     async def _stream_plain_content(
@@ -1337,7 +1419,7 @@ class ServingChat:
                 model=self._model_id,
                 choices=[ChunkChoice(delta=delta, finish_reason=finish)],
                 usage=(
-                    self._usage(stats)
+                    self._usage(stats, ignore_eos=req.ignore_eos)
                     if finish is not None
                     and self.api_dialect == "openrouter"
                     and req.stream_options
@@ -1448,7 +1530,7 @@ class ServingChat:
                 id=cid,
                 model=self._model_id,
                 choices=[],
-                usage=self._usage(stats),
+                usage=self._usage(stats, ignore_eos=req.ignore_eos),
             )
             yield f"data: {usage_chunk.model_dump_json(exclude_none=True)}\n\n"
         yield "data: [DONE]\n\n"
