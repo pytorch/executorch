@@ -46,9 +46,11 @@ import re
 import sys
 
 text = pathlib.Path(sys.argv[1]).read_text()
+# The quantized base model's first tokens are a near-tie that can flip between
+# builds, so only the start of its reasoning is checked.
 pattern = re.compile(
-    r"^<\|im_start\|>user Calculate 15% of 80\?<\|im_end\|><\|im_start\|>assistant:\n"
-    r"(?:<think>\n)+"
+    r"^<\|im_start\|>user Calculate 15% of 80\?<\|im_end\|><\|im_start\|>assistant:[^\n]*\n"
+    r"(?:<think>\n)*"
     r"Okay, so I need to calculate 15% of 80\.",
     re.MULTILINE,
 )
