@@ -344,7 +344,7 @@ def define_common_targets(is_fbcode = False):
                 "test/shared_device/SharedDevicePolicyTest.cpp",
                 "test/shared_device/SharedDeviceAdapterTest.cpp",
             ],
-            headers = ["runtime/SharedDevice.h"],
+            headers = ["runtime/ResolveSharedDevice.h"],
             compiler_flags = get_vulkan_compiler_flags(),
             labels = get_labels(no_volk),
             platforms = get_platforms(),
