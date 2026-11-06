@@ -29,7 +29,7 @@ quantize\_: 8-bit dynamic activations
 log,"fp16, fp32",,
 max_pool2d,"fp16, fp32",,"stride ≤ kernel_size, ceil_mode only for static shapes"
 maximum,"fp16, fp32",,
-mean,"fp16, fp32",,"4D tensors only; dims=[-2,-1] or [-1,-2]"
+mean,"fp16, fp32",PT2E: static int8,"no dtype; a static mean with more than one output and fewer than 8192 input elements stays on the portable kernel, unless it is an fp16 or fp32 4D mean over dims [-2, -1] with keepdim; with enable_bf16, a bf16 mean is computed in fp32"
 minimum,"fp16, fp32",,
 mul,"fp16, fp32",PT2E: static int8,
 neg,"fp16, fp32",,

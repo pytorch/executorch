@@ -75,16 +75,34 @@ def normalize_mean_dims(mean_dims: Sequence[int] | int | None, rank: int) -> Lis
     """Return mean dims as non-negative indices for the given rank."""
     if rank <= 0:
         raise ValueError(f"Expected rank > 0, got {rank}")
-    if mean_dims is None:
-        return list(range(rank))
     if isinstance(mean_dims, int):
         mean_dims = [mean_dims]
+    # None and an empty list both average over every dim.
+    if not mean_dims:
+        return list(range(rank))
     normalized_dims = []
     for dim in mean_dims:
         if dim < -rank or dim >= rank:
             raise ValueError(f"Dimension out of range: {dim} for rank {rank}")
         normalized_dims.append(dim % rank)
     return normalized_dims
+
+
+def is_global_avg_pool_mean(node: torch.fx.Node) -> bool:
+    """
+    Whether a mean.dim node averages a 4D tensor across dims [2, 3] with
+    keepdim=True, which lowers to Global Average Pooling on an NHWC input.
+    XNNPACK has no bf16 Global Average Pooling, so this is False for a bf16
+    input, which also subjects it to MeanDimConfig's size threshold.
+    """
+    input_val = get_input_node(node, 0).meta["val"]
+    keepdim = len(node.args) >= 3 and bool(node.args[2])
+    return (
+        input_val.dim() == 4
+        and keepdim
+        and input_val.dtype != torch.bfloat16
+        and sorted(normalize_mean_dims(node.args[1], input_val.dim())) == [2, 3]
+    )
 
 
 def normalize_pool2d_args(

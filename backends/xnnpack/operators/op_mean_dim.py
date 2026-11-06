@@ -15,21 +15,34 @@ from executorch.backends.xnnpack.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
+    XNNConvert,
+    XNNDatatype,
     XNNGlobalAvgPooling2d,
     XNNGraph,
+    XNNStaticMean,
+    XNNTensorValue,
     XNode,
+    XValue,
 )
-from executorch.backends.xnnpack.utils.utils import normalize_mean_dims
-from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_FLAG_KEEP_DIMS
+from executorch.backends.xnnpack.utils.utils import (
+    get_input_node,
+    is_global_avg_pool_mean,
+    normalize_mean_dims,
+)
+from executorch.backends.xnnpack.utils.xnnpack_constants import (
+    XNN_FLAG_KEEP_DIMS,
+    XNN_INVALID_VALUE_ID,
+)
 
 
 @register_node_visitor
 class MeanDim(NodeVisitor):
     """
-    XNNPACK only supports the special case of mean.dim that can be lowered
-    to Global Average Pooling. The input tensor must be 4D, keepdim must be
-    True, and the reduced dimensions must normalize to [2, 3] (for example
-    [2, 3], [3, 2], [-1, -2], or [-2, -1]).
+    An fp16 or fp32 mean.dim over the innermost dimensions of a 4D tensor
+    with keepdim=True (dims normalizing to [2, 3]) is lowered to Global
+    Average Pooling on an NHWC input. Any other mean.dim is lowered to a
+    static mean reduction on the NCHW input, computed in fp32 for a bf16
+    input.
     """
 
     target = "aten.mean.dim"
@@ -44,44 +57,66 @@ class MeanDim(NodeVisitor):
         vals_to_ids: Dict[torch.fx.Node, int],
         debug_handle: int,
     ) -> None:
-        self.define_nodes_tensor_inputs_outputs(
-            node, xnn_graph, vals_to_ids, convert_to_nhwc=True
-        )
-        # input
-        input_id = vals_to_ids[cast(torch.fx.Node, node.args[0])]
-
-        # output
-        output_id = vals_to_ids[node]
-
-        input_shape = get_tensor_value(xnn_graph.xvalues[input_id]).dims
-        check_or_raise(
-            len(input_shape) == 4, "Require input to mean.dim be 4 dimensional"
-        )
-
-        # This visitor serializes mean.dim as Global Average Pooling, which has
-        # no field for an explicit dtype override.
         check_or_raise(
             node.kwargs.get("dtype") is None,
             "XNNPACK does not support mean.dim with dtype",
         )
 
-        # mean dims
-        mean_dims = normalize_mean_dims(node.args[1], len(input_shape))
-        check_or_raise(
-            sorted(mean_dims) == [2, 3],
-            "XNNPACK only supports mean.dim across the innermost dimensions",
+        global_avg_pool = is_global_avg_pool_mean(node)
+        self.define_nodes_tensor_inputs_outputs(
+            node, xnn_graph, vals_to_ids, convert_to_nhwc=global_avg_pool
         )
+        input_id = vals_to_ids[cast(torch.fx.Node, node.args[0])]
+        output_id = vals_to_ids[node]
 
-        # keep dims
-        check_or_raise(
-            len(node.args) == 3 and bool(node.args[2]),
-            "XNNPACK only supports mean.dim that keeps dims",
-        )
+        if global_avg_pool:
+            xnode_unions = [
+                XNNGlobalAvgPooling2d(
+                    input_id=input_id, output_id=output_id, flags=XNN_FLAG_KEEP_DIMS
+                )
+            ]
+        else:
+            input_val = get_input_node(node, 0).meta["val"]
+            keepdim = len(node.args) >= 3 and bool(node.args[2])
+            mean = XNNStaticMean(
+                reduction_axes=sorted(
+                    normalize_mean_dims(node.args[1], input_val.dim())
+                ),
+                input_id=input_id,
+                output_id=output_id,
+                flags=XNN_FLAG_KEEP_DIMS if keepdim else 0,
+            )
+            xnode_unions = [mean]
+            if input_val.dtype == torch.bfloat16:
+                mean.input_id = self.define_fp32_like(xnn_graph, input_id)
+                mean.output_id = self.define_fp32_like(xnn_graph, output_id)
+                xnode_unions = [
+                    XNNConvert(input_id=input_id, output_id=mean.input_id, flags=0),
+                    mean,
+                    XNNConvert(input_id=mean.output_id, output_id=output_id, flags=0),
+                ]
 
-        ser_node = XNode(
-            xnode_union=XNNGlobalAvgPooling2d(
-                input_id=input_id, output_id=output_id, flags=XNN_FLAG_KEEP_DIMS
-            ),
-            debug_handle=debug_handle,
+        for xnode_union in xnode_unions:
+            xnn_graph.xnodes.append(
+                XNode(xnode_union=xnode_union, debug_handle=debug_handle)
+            )
+
+    @staticmethod
+    def define_fp32_like(xnn_graph: XNNGraph, tensor_id: int) -> int:
+        """Defines an fp32 intermediate with the dims of the given tensor."""
+        dims = list(get_tensor_value(xnn_graph.xvalues[tensor_id]).dims)
+        fp32_id = len(xnn_graph.xvalues)
+        xnn_graph.xvalues.append(
+            XValue(
+                xvalue_union=XNNTensorValue(
+                    datatype=XNNDatatype.xnn_datatype_fp32,
+                    num_dims=len(dims),
+                    dims=dims,
+                    external_id=XNN_INVALID_VALUE_ID,
+                    constant_buffer_idx=0,
+                    flags=0,
+                    id_out=fp32_id,
+                )
+            )
         )
-        xnn_graph.xnodes.append(ser_node)
+        return fp32_id

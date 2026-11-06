@@ -21,6 +21,7 @@ from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
     get_param_tensor,
     is_foldable_broadcast_operand,
+    is_global_avg_pool_mean,
     is_param_node,
     normalize_mean_dims,
     normalize_pool2d_args,
@@ -702,46 +703,45 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
-    supports_bf16 = False
+    min_multi_row_input_numel = 8192
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Mean Dim currently only supports averaging 4D tensors across the innermost
-        dimensions
+        Mean Dim lowers to Global Average Pooling when it averages an fp16 or
+        fp32 4D tensor across the innermost dimensions with keepdim=True, and
+        to a static mean reduction otherwise, computed in fp32 for bf16. Any
+        mean other than Global Average Pooling with a static shape, more than
+        one output and fewer than min_multi_row_input_numel input elements
+        stays on the portable kernel.
         """
         if not self.check_common_constraints(node, ep):
             return False
 
-        input_rank = get_input_node(node, 0).meta["val"].dim()
-        if input_rank != 4:
-            why(
-                node,
-                reason=f"mean.dim only supports averaging 4D tensors, got tensor of rank {input_rank}",
-            )
-            return False
-
-        # This path lowers mean.dim to XNNPACK Global Average Pooling, which
-        # cannot encode an explicit dtype override.
+        # Neither lowering can encode an explicit dtype override.
         if node.kwargs.get("dtype") is not None:
             why(node, reason="mean.dim does not support dtype")
             return False
 
-        keepdim = len(node.args) >= 3 and bool(node.args[2])
+        input_node = get_input_node(node, 0)
         try:
-            dims = normalize_mean_dims(node.args[1], input_rank)
+            normalize_mean_dims(node.args[1], input_node.meta["val"].dim())
         except ValueError as error:
             why(node, reason=f"mean.dim has invalid dims: {error}")
             return False
 
-        if sorted(dims) != [2, 3]:
+        if is_global_avg_pool_mean(node) or is_shape_dynamic(input_node):
+            return True
+
+        # XNNPACK splits a reduction with more than one output into threadpool
+        # tasks, and waking a multi-threaded pool can cost more than a small
+        # mean takes on the portable kernel.
+        input_numel = input_node.meta["val"].numel()
+        output_numel = node.meta["val"].numel()
+        if output_numel > 1 and input_numel < self.min_multi_row_input_numel:
             why(
                 node,
-                reason="mean.dim only supports averaging 4D tensors across the innermost dimensions",
+                reason=f"mean.dim with {output_numel} outputs needs at least {self.min_multi_row_input_numel} input elements, got {input_numel}",
             )
-            return False
-
-        if not keepdim:
-            why(node, reason="mean.dim only supports keepdim=True")
             return False
 
         return True
