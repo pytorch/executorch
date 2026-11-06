@@ -443,7 +443,7 @@ class GgmlOpsTest(unittest.TestCase):
             self.assertEqual(shape, tuple(reference.shape))
             actual = torch.frombuffer(bytearray(raw), dtype=reference.dtype)
             torch.testing.assert_close(
-                actual.reshape(shape), reference, atol=atol, rtol=rtol
+                actual.reshape(shape), reference, atol=atol, rtol=rtol, equal_nan=True
             )
 
     def _run_exported(self, model, example, inputs):
@@ -667,6 +667,17 @@ class GgmlOpsTest(unittest.TestCase):
         self._check(Lambda(F.relu6), (torch.randn(2, 3, 4) * 8.0,))
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
+
+    def test_sqrt(self):
+        x = torch.tensor(
+            [[0.0, -0.0, 4.0, 2.0], [float("inf"), -1.0, float("nan"), 9.0]]
+        )
+        self._check(Lambda(torch.sqrt), (x,))
+        self._check(Lambda(lambda x: x.transpose(0, 1).sqrt()), (x,))
+
+    def test_sqrt_rejects_half(self):
+        with self.assertRaisesRegex(AssertionError, "F32"):
+            self._check(Lambda(torch.sqrt), (torch.ones(2, 3, dtype=torch.float16),))
 
     def test_conv2d(self):
         self._check(

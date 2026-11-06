@@ -695,6 +695,8 @@ void GraphBuilder::lower(const Node& node) {
   } else if (
       key == "aten.hardtanh.default" || key == "aten.hardtanh_.default") {
     lower_hardtanh(node);
+  } else if (key == "aten.sqrt.default") {
+    lower_sqrt(node);
   } else if (key == "aten.convolution.default") {
     lower_convolution(node);
   } else if (key == "aten._native_batch_norm_legit_no_training.default") {
