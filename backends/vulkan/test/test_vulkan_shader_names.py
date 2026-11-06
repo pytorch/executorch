@@ -7,8 +7,8 @@
 """Checks that generated shader names match the names the dispatcher asks for.
 
 A kernel name is built at runtime rather than looked up: `add_binary_op_node`
-concatenates "binary_", the op, a storage suffix and a dtype suffix, then hands
-the result to `VK_KERNEL_FROM_STR`. The yaml, meanwhile, is free to name a
+concatenates "binary_op" (or "binary_cmp" for comparisons), a storage suffix and
+a dtype suffix, then hands the result to `VK_KERNEL_FROM_STR`. The yaml, meanwhile, is free to name a
 variant anything at all. Nothing connects the two, so a variant whose name does
 not follow that shape compiles a shader nothing references and leaves the name
 the dispatcher wants missing.
@@ -119,8 +119,8 @@ class TestShaderNames(unittest.TestCase):
         build. Kokoro's synthesizer aborted on it.
         """
         for template, expected in (
-            (_BINARY_BUFFER_TEMPLATE, "binary_eq_buffer_int32"),
-            (_BINARY_TEXTURE_TEMPLATE, "binary_eq_texture3d_int32"),
+            (_BINARY_BUFFER_TEMPLATE, "binary_cmp_buffer_int32"),
+            (_BINARY_TEXTURE_TEMPLATE, "binary_cmp_texture3d_int32"),
         ):
             with self.subTest(template=template):
                 self.assertIn(expected, self.names[template])
