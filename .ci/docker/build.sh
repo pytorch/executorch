@@ -130,9 +130,9 @@ fi
 # Copy requirements-lintrunner.txt from root to here
 cp ../../requirements-lintrunner.txt ./
 
-# Copy the Arm setup scripts that pin the FVP and toolchain downloads
+# Copy the Arm setup scripts that pin the toolchain downloads
 mkdir -p arm-setup
-cp ../../backends/arm/scripts/{utils,fvp_utils,toolchain_utils}.sh arm-setup/
+cp ../../backends/arm/scripts/{utils,toolchain_utils}.sh arm-setup/
 
 # OSDC runners have no docker daemon, so the build runs on the in-cluster
 # BuildKit pool via a remote buildx builder. That builder has nowhere to load
