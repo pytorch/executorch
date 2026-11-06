@@ -42,6 +42,7 @@ def define_common_targets():
             third_party_dep("XNNPACK"),
             "//executorch/backends/xnnpack:xnnpack_backend",
             "//executorch/runtime/executor:pte_data_map",
+            "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/testing_util:temp_file",
             "//executorch/schema:program",
@@ -82,6 +83,7 @@ def define_common_targets():
         name = "test_weight_cache",
         srcs = ["runtime/test_weight_cache.cpp"],
         deps = [
+                "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/module:module",
                 "//executorch/extension/tensor:tensor",
                 "//executorch/backends/xnnpack:xnnpack_backend",
@@ -89,6 +91,11 @@ def define_common_targets():
             ],
             env = {
                 "ET_XNNPACK_GENERATED_ADD_LARGE_PTE_PATH": "$(location fbcode//executorch/test/models:exported_xnnp_delegated_programs[ModuleAddLarge.pte])",
+                "ET_XNNPACK_GENERATED_QUANT_SHARED_LINEAR_PTE_PATH": "$(location fbcode//executorch/test/models:exported_xnnp_weight_cache_programs[ModuleQuantSharedLinear.pte])",
+                "ET_XNNPACK_GENERATED_QUANT_PER_TENSOR_LINEAR_PTE_PATH": "$(location fbcode//executorch/test/models:exported_xnnp_weight_cache_programs[ModuleQuantPerTensorLinear.pte])",
+                "ET_XNNPACK_GENERATED_QUANT_DOUBLED_CONV_PTE_PATH": "$(location fbcode//executorch/test/models:exported_xnnp_weight_cache_programs[ModuleQuantDoubledConv.pte])",
+                "ET_XNNPACK_GENERATED_DYN_QUANT_SHARED_LINEAR_PTE_PATH": "$(location fbcode//executorch/test/models:exported_xnnp_weight_cache_programs[ModuleDynQuantSharedLinear.pte])",
+                "ET_XNNPACK_GENERATED_GROUPWISE_QUANT_LINEAR_PTE_PATH": "$(location fbcode//executorch/test/models:exported_xnnp_weight_cache_programs[ModuleGroupwiseQuantLinear.pte])",
             },
     )
 
