@@ -637,6 +637,89 @@ TEST(GgmlEngineTest, RejectsWeightOnlyQuantizedLinearsByDefault) {
   expect_compile_error(*context, "allow_activation_quant_for_weight_only");
 }
 
+// tanh of x [4, 3], or of its transpose.
+std::vector<uint8_t> make_tanh_program(
+    bool transposed,
+    fbs::ScalarType dtype = fbs::ScalarType::FLOAT) {
+  TestProgram program;
+  program.input("x", dtype, {4, 3});
+  std::string self = "x";
+  if (transposed) {
+    program.call(
+        "xt",
+        "torch.ops.aten.permute_copy.default",
+        {{"self", std::string("x")}, {"dims", std::vector<int64_t>{1, 0}}},
+        dtype,
+        {3, 4});
+    self = "xt";
+  }
+  program.call(
+      "y",
+      "torch.ops.aten.tanh.default",
+      {{"self", self}},
+      dtype,
+      transposed ? std::vector<int64_t>{3, 4} : std::vector<int64_t>{4, 3});
+  return program.finish("y");
+}
+
+// Within 1e-6 relative of tanh in double; NaN, +-1 and signed zero exactly.
+TEST(GgmlEngineTest, TanhMatchesLibmIncludingNonFiniteValues) {
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  const std::vector<float> x = {
+      -0.0f,
+      0.0f,
+      1.5f,
+      -2.25f,
+      30.0f,
+      -30.0f,
+      kInf,
+      -kInf,
+      std::nanf(""),
+      1e-20f,
+      3e38f,
+      0.75f};
+  for (const bool transposed : {false, true}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(transposed) + std::to_string(cached));
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, make_tanh_program(transposed));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -0.5f}) {
+        std::vector<float> input = x;
+        for (float& value : input) {
+          value *= scale;
+        }
+        executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(input.size());
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t i = 0; i < y.size(); ++i) {
+          // y[r][c] reads x[c][r] when transposed.
+          const size_t source = transposed ? (i % 4) * 3 + i / 4 : i;
+          const auto expected =
+              static_cast<float>(std::tanh(static_cast<double>(input[source])));
+          SCOPED_TRACE(input[source]);
+          if (std::isnan(expected)) {
+            EXPECT_TRUE(std::isnan(y[i])) << y[i];
+          } else if (std::abs(expected) == 1.0f || expected == 0.0f) {
+            EXPECT_EQ(y[i], expected);
+            EXPECT_EQ(std::signbit(y[i]), std::signbit(expected));
+          } else {
+            EXPECT_NEAR(y[i], expected, 1e-6 * std::abs(expected));
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsIntegerTanh) {
+  expect_compile_error(
+      make_tanh_program(false, fbs::ScalarType::INT),
+      "supports floating-point tensors only");
+}
+
 TEST(GgmlEngineTest, RejectsIntegerGelu) {
   TestProgram program;
   program.input("x", fbs::ScalarType::LONG, {2, 3});
