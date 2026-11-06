@@ -113,7 +113,7 @@ void main() {
     other_texel = texelFetch(t_other, out_pos, 0);
   }
 
-  VEC4_OUT_T outtex = apply_binary_op(in_texel, other_texel, alpha);
+  VEC4_OUT_T outtex = apply_binary_op(op_type, in_texel, other_texel, alpha);
 
   // Division turns the zero padding lanes of the last texel into NaN.
   if (op_type == BINARY_OP_DIV || op_type == BINARY_OP_FLOOR_DIVIDE) {

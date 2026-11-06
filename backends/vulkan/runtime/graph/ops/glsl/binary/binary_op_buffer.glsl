@@ -94,5 +94,6 @@ void main() {
     other_bufi = tensor_idx_to_linear_idx(otherp, other_tidx);
   }
 
-  t_out[out_bufi] = apply_binary_op(t_in[inp_bufi], t_other[other_bufi], IN_T(alpha));
+  t_out[out_bufi] = apply_binary_op(
+      op_type, t_in[inp_bufi], t_other[other_bufi], IN_T(alpha));
 }
