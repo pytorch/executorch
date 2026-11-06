@@ -969,6 +969,15 @@ class TOSAPartitioner(Partitioner):
             """
             if _is_custom_partition_op(self._custom_partition_ops, node.target):
                 return True
+            # BF16 pad must decompose when the selected TOSA spec lacks +bf16.
+            # Otherwise it is left on the CPU as aten.pad, which has no
+            # portable out variant. Decomposition produces constant_pad_nd.
+            if (
+                node.target == torch.ops.aten.pad.default
+                and get_first_fake_tensor(node).dtype == torch.bfloat16
+                and not self.tosa_spec.support_extension("bf16")
+            ):
+                return False
             if (
                 node.target in ops_to_not_decompose
                 and get_first_fake_tensor(node).dtype == torch.float64
