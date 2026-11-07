@@ -18,14 +18,23 @@ from executorch.backends.transforms.fused_quant.graph_utils import (
     split_fused_arg_names,
 )
 from executorch.backends.transforms.permute_pass_utils import get_arg
-from executorch.backends.transforms.utils import compute_meta_val
+from executorch.backends.transforms.utils import (
+    add_constant,
+    compute_meta_val,
+    delete_constant_placeholder,
+    get_constant,
+    get_fqn,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.dialects.fused_quant.ops import QuantParamsStruct
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
 from torch import fx
+from torch._C import Argument
 from torch._ops import OpOverload
+from torch._subclasses.fake_tensor import UnsupportedOperatorException
 from torch.export import ExportedProgram
+from torch.export.graph_signature import InputKind
 
 _OpOverload = EdgeOpOverload | OpOverload
 
@@ -33,6 +42,30 @@ _OpOverload = EdgeOpOverload | OpOverload
 def _copy_meta_and_compute(node: fx.Node, source: fx.Node) -> None:
     node.meta = source.meta.copy()
     node.meta["val"] = compute_meta_val(node)
+
+
+def _aten_meta_from_fused(
+    aten_node: fx.Node,
+    fused_node: fx.Node,
+    out_qparams: QuantParamsStruct[fx.Node] | None,
+    float_dtype: torch.dtype,
+) -> None:
+    """Set the meta of the ATen node standing in for a fused op.
+
+    Some ATen ops (e.g. ``_masked_softmax``) have no fake kernel, so their meta
+    cannot be computed. The fused op's own fake kernel already has the shape;
+    only the dtype differs when the output was quantized.
+    """
+    aten_node.meta = fused_node.meta.copy()
+    try:
+        aten_node.meta["val"] = compute_meta_val(aten_node)
+    except UnsupportedOperatorException:
+        fused_val = fused_node.meta["val"]
+        if isinstance(fused_val, (tuple, list)):
+            raise
+        aten_node.meta["val"] = (
+            fused_val.to(float_dtype) if out_qparams is not None else fused_val
+        )
 
 
 def _qparam_granularity(
@@ -43,13 +76,7 @@ def _qparam_granularity(
     scale_value = qparams.scale.meta["val"]
     if qparams.is_per_tensor():
         return "per_tensor"
-    axis = qparams.channel_axis()
-    if (
-        qparams.is_per_channel()
-        and scale_value.ndim == tensor_value.ndim
-        and axis is not None
-        and scale_value.shape[axis] == tensor_value.shape[axis]
-    ):
+    if qparams.is_per_channel(tensor_value.shape):
         return "per_channel"
     raise ValueError(
         "Cannot decompose grouped or blockwise fused quantization with scale shape "
@@ -59,13 +86,34 @@ def _qparam_granularity(
 
 
 def _per_channel_qparam_args(
+    exported_program: ExportedProgram,
     graph: fx.Graph,
     qparams: QuantParamsStruct[fx.Node],
 ) -> tuple[fx.Node, fx.Node, int]:
+    """The 1-D scale/zero_point a per-channel q/dq op takes, plus its axis.
+
+    Constant qparams become new 1-D constants rather than a view of the
+    full-rank one, so partitioners that require per-channel qparams to be
+    placeholders can consume the decomposed graph without a constant fold.
+    """
     axis = qparams.channel_axis()
     assert axis is not None
     flattened: list[fx.Node] = []
     for qparam in (qparams.scale, qparams.zero_point):
+        value = get_constant(exported_program, qparam)
+        if value is not None:
+            fqn = get_fqn(exported_program, qparam)
+            assert fqn is not None
+            flattened.append(
+                add_constant(
+                    exported_program,
+                    f"{fqn.replace('.', '_')}_flat",
+                    value.reshape(-1),
+                    qparam,
+                    InputKind.CONSTANT_TENSOR,
+                )
+            )
+            continue
         view = graph.call_function(
             exir_ops.edge.aten.view_copy.default,
             args=(qparam, [-1]),
@@ -95,7 +143,9 @@ def _dequantize(
             tensor.meta["val"].dtype,
         )
     else:
-        scale, zero_point, axis = _per_channel_qparam_args(graph, qparams)
+        scale, zero_point, axis = _per_channel_qparam_args(
+            exported_program, graph, qparams
+        )
         target = exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
         args = (
             tensor,
@@ -136,7 +186,9 @@ def _quantize(
             qparams.dtype,
         )
     else:
-        scale, zero_point, axis = _per_channel_qparam_args(graph, qparams)
+        scale, zero_point, axis = _per_channel_qparam_args(
+            exported_program, graph, qparams
+        )
         target = exir_ops.edge.quantized_decomposed.quantize_per_channel.default
         args = (
             tensor,
@@ -230,8 +282,6 @@ def _decompose_requantize(
     inp_qparams = get_qparams_from_node(node, "inp")
     out_qparams = get_qparams_from_node(node, "out")
     assert inp_qparams is not None and out_qparams is not None
-    _qparam_granularity(inp_qparams, inp.meta["val"])
-    _qparam_granularity(out_qparams, node.meta["val"])
 
     with graph.inserting_before(node):
         dequantized = _dequantize(exported_program, graph, inp, inp_qparams)
@@ -239,6 +289,35 @@ def _decompose_requantize(
         quantized = _quantize(exported_program, graph, dequantized, out_qparams, node)
     node.replace_all_uses_with(quantized)
     graph.erase_node(node)
+
+
+def _is_schema_default(argument: Argument, value: fx.node.Argument) -> bool:
+    if not argument.has_default_value():
+        return False
+    try:
+        return bool(value == argument.default_value)
+    except (RuntimeError, ValueError):
+        # Comparison on tensor-valued arguments is not a scalar bool.
+        return False
+
+
+def _qparam_blocks(
+    node: fx.Node,
+) -> list[tuple[QuantParamsStruct[fx.Node], torch.Tensor]]:
+    """Every qparams block of a fused node, with the tensor value it applies to."""
+    input_names, _ = split_fused_arg_names(cast(_OpOverload, node.target))
+    blocks: list[tuple[QuantParamsStruct[fx.Node], torch.Tensor]] = []
+    for name in input_names:
+        qparams = get_qparams_from_node(node, name)
+        if qparams is not None:
+            blocks.append((qparams, get_arg(node, name, fx.Node).meta["val"]))
+    out_qparams = get_qparams_from_node(node, "out")
+    if out_qparams is not None:
+        output_value = node.meta["val"]
+        if isinstance(output_value, (tuple, list)):
+            output_value = output_value[0]
+        blocks.append((out_qparams, output_value))
+    return blocks
 
 
 def _decompose_fused_op(exported_program: ExportedProgram, node: fx.Node) -> None:
@@ -252,15 +331,6 @@ def _decompose_fused_op(exported_program: ExportedProgram, node: fx.Node) -> Non
     input_tensors = [get_arg(node, name, fx.Node | None) for name in input_names]
     input_qparams = [get_qparams_from_node(node, name) for name in input_names]
     out_qparams = get_qparams_from_node(node, "out")
-    for tensor, qparams in zip(input_tensors, input_qparams):
-        if qparams is not None:
-            assert tensor is not None
-            _qparam_granularity(qparams, tensor.meta["val"])
-    if out_qparams is not None:
-        output_value = node.meta["val"]
-        if isinstance(output_value, (tuple, list)):
-            output_value = output_value[0]
-        _qparam_granularity(out_qparams, output_value)
     graph = node.graph
 
     with graph.inserting_before(node):
@@ -279,12 +349,26 @@ def _decompose_fused_op(exported_program: ExportedProgram, node: fx.Node) -> Non
             extra_values,
             strict=True,
         ):
-            if argument.kwarg_only:
-                kwargs[argument.name] = value
-            else:
+            if not argument.kwarg_only:
                 args.append(value)
+            elif not _is_schema_default(argument, value):
+                # A kwarg pinned to its default is one that torch.export would
+                # have left off the node entirely. Emitting it anyway makes the
+                # rebuilt node wider than the ATen op it is standing in for, and
+                # backends that forward kwargs verbatim choke on the extra
+                # argument -- e.g. alpha=1.0 reaching the two-operand tosa.SUB.
+                kwargs[argument.name] = value
         aten_node = graph.call_function(aten_target, args=tuple(args), kwargs=kwargs)
-        _copy_meta_and_compute(aten_node, node)
+        float_dtype = next(
+            (
+                cast(torch.Tensor, arg.meta["val"]).dtype
+                for arg in inputs
+                if isinstance(arg, fx.Node)
+                and cast(torch.Tensor, arg.meta["val"]).is_floating_point()
+            ),
+            torch.float32,
+        )
+        _aten_meta_from_fused(aten_node, node, out_qparams, float_dtype)
 
         if isinstance(node.meta.get("val"), (tuple, list)):
             _replace_multi_output(exported_program, node, aten_node, out_qparams)
@@ -302,24 +386,76 @@ class DecomposeFusedQuant(ExportedProgramPassBase):
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         graph_module = exported_program.graph_module
         graph = graph_module.graph
-        modified = False
+        nodes = [
+            node
+            for node in graph.nodes
+            if is_fused_quant_node(node) and "delegation_tag" not in node.meta
+        ]
+        if not nodes:
+            return ExportedProgramPassResult(exported_program, False)
 
-        for node in list(graph.nodes):
-            if (
-                node.op != "call_function"
-                or not isinstance(node.target, (EdgeOpOverload, OpOverload))
-                or node.target.namespace != "fused_quant"
-                or "delegation_tag" in node.meta
-            ):
-                continue
+        # Validate everything first so an unsupported node fails the pass before
+        # any of the graph has been rewritten.
+        qparam_placeholders: set[fx.Node] = set()
+        for node in nodes:
+            for qparams, value in _qparam_blocks(node):
+                per_tensor = _qparam_granularity(qparams, value) == "per_tensor"
+                for qparam in (qparams.scale, qparams.zero_point):
+                    # Per-tensor q/dq take Python scalars, read from the constant.
+                    if per_tensor and get_constant(exported_program, qparam) is None:
+                        raise ValueError(
+                            f"Cannot decompose {node.name}: per-tensor qparam "
+                            f"{qparam.name} must be a lifted constant, got "
+                            f"op={qparam.op}"
+                        )
+                    if qparam.op == "placeholder":
+                        qparam_placeholders.add(qparam)
+
+        for node in nodes:
             _decompose_fused_op(exported_program, node)
-            modified = True
 
-        if modified:
-            graph.eliminate_dead_code()
-            graph.lint()
-            graph_module.recompile()
-        return ExportedProgramPassResult(exported_program, modified)
+        graph.eliminate_dead_code()
+        for placeholder in qparam_placeholders:
+            if (
+                not placeholder.users
+                and get_constant(exported_program, placeholder) is not None
+            ):
+                delete_constant_placeholder(exported_program, placeholder)
+        graph.lint()
+        graph_module.recompile()
+        return ExportedProgramPassResult(exported_program, True)
 
     def ensures(self, exported_program: ExportedProgram) -> None:
         exported_program.validate()
+
+
+def is_fused_quant_node(node: fx.Node) -> bool:
+    return (
+        node.op == "call_function"
+        and isinstance(node.target, (EdgeOpOverload, OpOverload))
+        and node.target.namespace == "fused_quant"
+    )
+
+
+class AssertNoFusedQuantOps(ExportedProgramPassBase):
+    """Fail if any fused_quant op is left in the graph.
+
+    fused_quant ops are an ahead-of-time IR with no runtime kernels. Run this
+    after lowering, once every backend has taken what it claimed and
+    :class:`DecomposeFusedQuant` has decomposed the rest, so a leak surfaces here
+    rather than as a missing out-variant at ``to_executorch``.
+    """
+
+    def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
+        leaked = [
+            node.name
+            for node in exported_program.graph_module.graph.nodes
+            if is_fused_quant_node(node)
+        ]
+        if leaked:
+            raise RuntimeError(
+                f"fused_quant ops remain after lowering: {leaked}. Colored nodes a "
+                "backend did not lower must be decomposed with DecomposeFusedQuant "
+                "after to_backend."
+            )
+        return ExportedProgramPassResult(exported_program, False)
