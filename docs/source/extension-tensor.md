@@ -120,7 +120,12 @@ auto tensor = make_tensor_ptr(
     ScalarType::Int);       // int scalar type
 ```
 
-The `data` vector must be large enough to accommodate all the elements according to the provided sizes and scalar type.
+The `data` vector must hold exactly as many bytes as the provided sizes and scalar type describe. Its bytes are raw memory, not `Byte` elements: like a `void*` passed to `from_blob`, the scalar type defaults to `ScalarType::Float` when you omit it. To make a `Byte` tensor from a `std::vector<uint8_t>`, pass `ScalarType::Byte`:
+
+```cpp
+std::vector<uint8_t> pixels(224 * 224 * 3);
+auto image = make_tensor_ptr({224, 224, 3}, std::move(pixels), ScalarType::Byte);
+```
 
 #### Non-Owning Data from Raw Pointer
 

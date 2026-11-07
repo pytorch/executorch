@@ -105,7 +105,9 @@ inline TensorPtr make_tensor_ptr(
  * Overload for a typed data pointer. The scalar type is deduced from the
  * pointer's element type, the same way the vector overload deduces it from the
  * vector's element type, so a buffer of one type does not become a Tensor of
- * another. Pass `type` explicitly to reinterpret the buffer as a different
+ * another. The exception is `uint8_t`: a `uint8_t*` gives a Byte tensor, but
+ * `make_tensor_ptr(sizes, std::vector<uint8_t>)` takes raw bytes and defaults
+ * to Float. Pass `type` explicitly to reinterpret the buffer as a different
  * type.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the pointer.
@@ -412,6 +414,10 @@ inline TensorPtr make_tensor_ptr(T value) {
  * and a scalar type to interpret the data. The vector is managed, and the
  * memory's lifetime is tied to the TensorImpl. The result is always a CPU
  * tensor.
+ *
+ * The bytes are not Byte elements: like a `void*` passed to `from_blob`, they
+ * are read as `type`, which defaults to Float. To get a Byte tensor of the
+ * same values, pass `ScalarType::Byte`.
  *
  * @param sizes A vector specifying the size of each dimension.
  * @param data A vector containing the raw memory for the tensor's data.
