@@ -230,7 +230,7 @@ TEST_F(CUDAStreamGuardTest, MoveConstructorRestoresOnlyOnce) {
 }
 
 TEST_F(CUDAStreamGuardTest, InvalidDeviceIndex) {
-  auto guard_result = CUDAStreamGuard::create(test_stream1_, 999);
+  auto guard_result = CUDAStreamGuard::create(test_stream1_, 127);
   EXPECT_FALSE(guard_result.ok());
 }
 
