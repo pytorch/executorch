@@ -737,12 +737,11 @@ constexpr char kTensorOutputEnvironmentVariable[] =
     "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT";
 
 constexpr char kTensorOutputWarning[] =
-    "ExecuTorch returns torch.Tensor outputs for a call without torch.Tensor "
-    "inputs. A future release will return ExecuTorchResult outputs for such a "
-    "call, unless it has no tensor inputs and torch is already imported. To "
-    "keep torch.Tensor outputs, pass torch.Tensor inputs, or import torch "
-    "before a call without tensor inputs. To choose the type for every call, "
-    "set EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT to torch or executorch before "
+    "ExecuTorch returns torch.Tensor outputs for a call whose tensor inputs "
+    "are not torch.Tensor. A future release will return ExecuTorchResult "
+    "outputs for such a call. To keep torch.Tensor outputs, pass torch.Tensor "
+    "inputs. To choose the type for every call, set "
+    "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT to torch or executorch before "
     "importing ExecuTorch. With executorch, PyTorch is not loaded.";
 
 // Set from EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT when the extension loads.
@@ -785,10 +784,8 @@ int caller_stacklevel() {
   return level;
 }
 
-// Until a later release makes outputs follow inputs, a call that would then
-// return ExecuTorchResult outputs keeps returning torch.Tensor outputs
-// whenever torch can be imported, as before, and warns.
-bool keep_torch_outputs() {
+// Whether torch is imported, importing it if it can be.
+bool torch_available() {
   // Read and written with the GIL held. An import inside a function-local
   // static's initializer could deadlock, since the import lets other threads
   // run and one of them could then wait for that static while holding the GIL.
@@ -820,6 +817,16 @@ bool keep_torch_outputs() {
       return false;
     }
   }
+  return true;
+}
+
+// Until a later release makes outputs follow inputs, a call that would then
+// return ExecuTorchResult outputs keeps returning torch.Tensor outputs
+// whenever torch can be imported, as before, and warns.
+bool keep_torch_outputs() {
+  if (!torch_available()) {
+    return false;
+  }
   // Every such call warns, so Python's warning filters decide what shows. A
   // warning hidden by a filter at one call still shows at a later one.
   if (PyErr_WarnEx(
@@ -834,10 +841,11 @@ bool keep_torch_outputs() {
 
 // Picks the type of a call's tensor outputs. A later release will follow the
 // call's tensor inputs, including inputs kept from earlier calls: torch.Tensor
-// if any of them is one, ExecuTorchResult if all are other tensors, and with
-// no tensor inputs, torch.Tensor only if torch is imported. Until then,
-// keep_torch_outputs() keeps torch.Tensor where that rule would change it. A
-// call that returns no tensor never imports torch.
+// if any of them is one, and ExecuTorchResult if all are other tensors. Until
+// then, keep_torch_outputs() keeps torch.Tensor where that rule would change
+// it. A call with no tensor inputs returns torch.Tensor whenever torch can be
+// imported, now and later, so its type never depends on what imported torch
+// first. A call that returns no tensor never imports torch.
 PortableTensorOutput portable_tensor_output(
     bool returns_tensor,
     bool torch_input,
@@ -849,9 +857,13 @@ PortableTensorOutput portable_tensor_output(
       (!other_tensor_input && loaded_torch_module() != nullptr)) {
     return PortableTensorOutput::Torch;
   }
-  return returns_tensor && keep_torch_outputs()
-      ? PortableTensorOutput::Torch
-      : PortableTensorOutput::ExecuTorch;
+  if (!returns_tensor) {
+    return PortableTensorOutput::ExecuTorch;
+  }
+  const bool torch_output =
+      other_tensor_input ? keep_torch_outputs() : torch_available();
+  return torch_output ? PortableTensorOutput::Torch
+                      : PortableTensorOutput::ExecuTorch;
 }
 
 // From the declared outputs, so the type is picked before the method runs.
