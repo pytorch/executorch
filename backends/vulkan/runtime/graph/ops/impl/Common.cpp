@@ -141,6 +141,41 @@ LocalWorkGroup pick_required_lwg(
   return gwg.required_lwg_size();
 }
 
+// Adreno drivers miscompute the tiled GEMM family of shaders for near-square
+// local work groups. With an 8x8x1 group (and with 4x16x1) entire work groups
+// intermittently write garbage while every other block is bit-exact. These
+// shaders have no shared memory and no barriers and their invocations are
+// independent, so the result cannot legitimately depend on the group shape.
+// A 2:1 x:y ratio, which yields 16x4x1 at the default 64 threads, is correct
+// across every run measured and is the cheapest correct shape. 2x32x1 is also
+// correct but 1.4x slower on narrow grids. Only measured on Adreno 840. See
+// #22327.
+const LwgShape kWideXLwg{2u, 1u, 0u};
+
+namespace {
+
+bool is_adreno_bad_lwg(const LocalWorkGroup& lwg) {
+  return lwg.z() == 1u &&
+      ((lwg.x() == 8u && lwg.y() == 8u) || (lwg.x() == 4u && lwg.y() == 16u));
+}
+
+} // namespace
+
+LocalWorkGroup pick_adreno_xy_lwg(
+    const GlobalWorkGrid& gwg,
+    const uint32_t nthreads) {
+  LocalWorkGroup lwg(kWideXLwg, nthreads);
+  lwg.fit_to_global(gwg);
+  if (!is_adreno_bad_lwg(lwg)) {
+    return lwg;
+  }
+  // Fitting caps X when the grid is narrower than the group and hands the
+  // spare threads to Y, which turns 16x4x1 back into 8x8x1 (X < 14) or 4x16x1
+  // (X < 6). Keep the unfitted 2:1 group: its idle X lanes cost less than
+  // 2x32x1 does.
+  return LocalWorkGroup(kWideXLwg, nthreads);
+}
+
 LocalWorkGroup pick_xy_square_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -150,8 +185,12 @@ LocalWorkGroup pick_xy_square_lwg(
   (void)shader;
   (void)args;
   (void)resize_args;
-  LocalWorkGroup lwg(
-      kSquareLwg, graph->context()->adapter_ptr()->recommended_lwg_nthreads());
+  const uint32_t nthreads =
+      graph->context()->adapter_ptr()->recommended_lwg_nthreads();
+  if (graph->device_is_adreno()) {
+    return pick_adreno_xy_lwg(gwg, nthreads);
+  }
+  LocalWorkGroup lwg(kSquareLwg, nthreads);
   lwg.fit_to_global(gwg);
   return lwg;
 }
