@@ -737,7 +737,7 @@ constexpr char kTensorOutputEnvironmentVariable[] =
     "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT";
 
 constexpr char kTensorOutputWarning[] =
-    "ExecuTorch returned torch.Tensor outputs for a call without torch.Tensor "
+    "ExecuTorch returns torch.Tensor outputs for a call without torch.Tensor "
     "inputs. A future release will return ExecuTorchResult outputs for such a "
     "call, unless it has no tensor inputs and torch is already imported. To "
     "keep torch.Tensor outputs, pass torch.Tensor inputs, or import torch "
@@ -787,13 +787,12 @@ int caller_stacklevel() {
 
 // Until a later release makes outputs follow inputs, a call that would then
 // return ExecuTorchResult outputs keeps returning torch.Tensor outputs
-// whenever torch can be imported, as before, and the first one warns.
+// whenever torch can be imported, as before, and warns.
 bool keep_torch_outputs() {
   // Read and written with the GIL held. An import inside a function-local
   // static's initializer could deadlock, since the import lets other threads
   // run and one of them could then wait for that static while holding the GIL.
   static bool torch_missing = false;
-  static bool warned = false;
   if (loaded_torch_module() == nullptr) {
     // Checked only while torch is not loaded: a torch imported later, for
     // example once sys.modules no longer holds None for it, is used.
@@ -821,18 +820,14 @@ bool keep_torch_outputs() {
       return false;
     }
   }
-  if (!warned) {
-    warned = true;
-    if (PyErr_WarnEx(
-            PyExc_FutureWarning, kTensorOutputWarning, caller_stacklevel()) !=
-        0) {
-      // An error filter made the warning an exception, so the next call
-      // that gets here warns again, as plain Python warnings do. Calls pick
-      // the type before they run the method, so a call that raises here has
-      // not run it.
-      warned = false;
-      throw py::error_already_set();
-    }
+  // Every such call warns, so Python's warning filters decide what shows. A
+  // warning hidden by a filter at one call still shows at a later one.
+  if (PyErr_WarnEx(
+          PyExc_FutureWarning, kTensorOutputWarning, caller_stacklevel()) !=
+      0) {
+    // An error filter made the warning an exception. Calls pick the type
+    // before they run the method, so a call that raises here has not run it.
+    throw py::error_already_set();
   }
   return true;
 }
