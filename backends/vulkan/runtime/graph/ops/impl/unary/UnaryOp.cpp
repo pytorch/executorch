@@ -46,6 +46,7 @@ void add_unary_op_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
   const utils::vec2 min_max = {min, max};
+  vkapi::ParamsBindList param_ubos = {graph.meta_ubo(out)};
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
@@ -54,11 +55,9 @@ void add_unary_op_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
-      {},
+      param_ubos,
       // Push Constants
       {
-          graph.is_buffer_storage(out) ? graph.numel_pc_of(out)
-                                       : graph.logical_limits_pc_of(out),
           PushConstantDataInfo(&min_max, sizeof(min_max)),
       },
       // Specialization Constants
@@ -95,16 +94,18 @@ void add_dynamic_clamp_node(
       : graph.create_params_buffer(graph.extract_scalar_or<float>(
             max, std::numeric_limits<float>::infinity()));
 
+  vkapi::ParamsBindList param_ubos = {graph.meta_ubo(out)};
+  param_ubos.append(min_param);
+  param_ubos.append(max_param);
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       default_pick_gwg,
       default_pick_lwg,
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
-      {min_param, max_param},
-      {graph.is_buffer_storage(out) ? graph.numel_pc_of(out)
-                                    : graph.logical_limits_pc_of(out),
-       PushConstantDataInfo(&bounds_are_int, sizeof(bounds_are_int))},
+      param_ubos,
+      {PushConstantDataInfo(&bounds_are_int, sizeof(bounds_are_int))},
       {static_cast<int32_t>(UnaryOpType::kClamp)},
       {},
       resize_unary_op_node));
