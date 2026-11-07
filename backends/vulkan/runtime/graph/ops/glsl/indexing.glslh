@@ -158,6 +158,7 @@ bool are_equal(const BufferMetadata meta1, const BufferMetadata meta2) {
 }
 
 bool out_of_bounds(const uint bufi, const BufferMetadata meta) {
+  // Buffer offsets are bounded by physical padded numel.
   return bufi >= meta.ndim_numel[1];
 }
 
@@ -202,6 +203,7 @@ uint x(const TensorIndex tidx) {
 }
 
 bool out_of_bounds(const TensorIndex tidx, const BufferMetadata meta) {
+  // Tensor coordinates use logical sizes; in-range buffer offsets can be padding.
   return any(greaterThanEqual(tidx.data[0], meta.sizes[0])) ||
          any(greaterThanEqual(tidx.data[1], meta.sizes[1]));
 }
@@ -289,6 +291,10 @@ TensorIndex linear_idx_to_tensor_idx(
   TensorIndex tidx;
   initialize(tidx);
   int dim = int_ndim(meta);
+  // An implicit packed dim leads the dim order, ahead of the logical dims.
+  if (dim_order_at(meta, 0) >= uint(dim)) {
+    dim++;
+  }
   int i = 0;
   for (int d = max(dim - 1, 0); d >= 0; d--) {
     uint dim_idx = dim_order_at(meta, d);
@@ -298,6 +304,37 @@ TensorIndex linear_idx_to_tensor_idx(
     linear_idx = linear_idx % dim_stride;
   }
   return tidx;
+}
+
+bool has_same_physical_element_order(
+    const BufferMetadata outp,
+    const BufferMetadata inp,
+    const int outp_layout,
+    const int inp_layout) {
+  if (numel(outp) != numel(inp)) {
+    return false;
+  }
+  if (are_equal(outp, inp)) {
+    return true;
+  }
+  // Layout hashes encode only the first four dimension-order entries.
+  if (!is_contiguous(outp_layout) || !is_contiguous(inp_layout) ||
+      outp.dim_order[1] != uvec4(4, 5, 6, 7) ||
+      inp.dim_order[1] != uvec4(4, 5, 6, 7)) {
+    return false;
+  }
+  if (get_packed_dim(outp_layout) == 0 && get_packed_dim(inp_layout) == 0 &&
+      width(outp) == width(inp)) {
+    return true;
+  }
+  uint outp_logical_numel = 1;
+  uint inp_logical_numel = 1;
+  [[unroll]] for (int d = 0; d < DIMLIMIT; ++d) {
+    outp_logical_numel *= size_at(outp, d);
+    inp_logical_numel *= size_at(inp, d);
+  }
+  return outp_logical_numel == numel(outp) &&
+         inp_logical_numel == numel(inp);
 }
 
 TensorIndex linear_idx_to_tensor_idx_contig_case(
