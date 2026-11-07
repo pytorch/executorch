@@ -544,7 +544,7 @@ import threading
 import numpy as np
 
 program_path, case = sys.argv[1:]
-if case == "none":
+if case in ("none", "restored"):
     sys.modules["torch"] = None
 else:
     # A torch that another thread is still importing.
@@ -562,19 +562,33 @@ with open(program_path, "rb") as source:
     module = portable_lib._load_for_executorch_from_buffer(source.read())
 output = module(np.ones((2, 2), dtype=np.float32))[0]
 assert isinstance(output, portable_lib.ExecuTorchResult), type(output)
-if case != "none":
+if case == "importing":
     release.set()
     importer.join()
+if case == "restored":
+    # A torch that was not there at one call is used once it is imported.
+    del sys.modules["torch"]
+    import torch
+
+    output = module(np.ones((2, 2), dtype=np.float32))[0]
+    assert isinstance(output, torch.Tensor), type(output)
 """
         with tempfile.TemporaryDirectory() as directory:
             program_path = os.path.join(directory, "add.pte")
             with open(program_path, "wb") as handle:
                 handle.write(program.buffer)
-            environment = dict(
-                os.environ, EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT="executorch"
-            )
-            for case in ("none", "importing"):
+            # Without the setting, the call that finds torch missing is the
+            # one that would import it.
+            for case, setting in (
+                ("none", "executorch"),
+                ("importing", "executorch"),
+                ("restored", None),
+            ):
                 with self.subTest(case=case):
+                    environment = os.environ.copy()
+                    environment.pop("EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT", None)
+                    if setting is not None:
+                        environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = setting
                     completed = subprocess.run(
                         [sys.executable, "-c", script, program_path, case],
                         env=environment,
