@@ -114,6 +114,28 @@ vec4 leaky_relu(vec4 tex, float negative_slope) {
 }
 #endif
 
+// Whether the op maps zero to zero for any parameters, so that zero padding
+// lanes stay zero without masking.
+bool unary_op_preserves_zero(const int op_type) {
+  switch (op_type) {
+    case UNARY_OP_ABS:
+    case UNARY_OP_GELU:
+    case UNARY_OP_GELU_ERF:
+    case UNARY_OP_NEG:
+    case UNARY_OP_SIN:
+    case UNARY_OP_SQRT:
+    case UNARY_OP_TANH:
+    case UNARY_OP_HARDSHRINK:
+    case UNARY_OP_HARDSWISH:
+    case UNARY_OP_ROUND:
+    case UNARY_OP_TAN:
+    case UNARY_OP_RELU:
+      return true;
+    default:
+      return false;
+  }
+}
+
 OUT_T apply_unary_op(
     const int op_type,
     const IN_T X,

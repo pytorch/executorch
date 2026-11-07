@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import ast
 import re
 from typing import Any, List
 
@@ -17,6 +18,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     INT,
     OPT_AT_DOUBLE_ARRAY_REF,
     OPT_AT_INT_ARRAY_REF,
+    OPT_AT_SCALAR,
     OPT_AT_TENSOR,
     OPT_BOOL,
     OPT_DEVICE,
@@ -31,7 +33,7 @@ from executorch.backends.vulkan.test.op_tests.utils.test_suite import TestSuite
 
 from torchgen.api import cpp
 from torchgen.api.types import CppSignatureGroup
-from torchgen.model import Argument, NativeFunction
+from torchgen.model import Argument, BaseTy, BaseType, NativeFunction
 
 ##########################
 ## Test Suite Generation ##
@@ -57,7 +59,7 @@ catch (const vkcompute::vkapi::ShaderNotSupportedError& e) {{
 
 
 def init_list_str(pylist: Any) -> str:
-    if pylist == "[]":
+    if pylist == "[]" or pylist == [] or pylist == ():
         return "{" + "}"
 
     if not isinstance(pylist, (list, tuple)):
@@ -78,6 +80,8 @@ def get_or_return_default(arg: Argument, inputs: List[Any], i: int):
         return inputs[i]
     else:
         assert arg.default is not None
+        if arg.type == BaseType(BaseTy.str):
+            return ast.literal_eval(arg.default)
         return arg.default
 
 
@@ -199,6 +203,10 @@ class CorrectnessTestGen:
                 ret_str += self.call_data_gen_fn(arg, data)
         elif cpp_type == AT_SCALAR:
             ret_str += f"{data};"
+        elif cpp_type == OPT_AT_SCALAR:
+            ret_str += (
+                "std::nullopt;" if str(data) == "None" else f"at::Scalar({data});"
+            )
         elif cpp_type == AT_INT_ARRAY_REF:
             ret_str += f"{init_list_str(data)};"
         elif cpp_type == OPT_AT_DOUBLE_ARRAY_REF or cpp_type == OPT_AT_INT_ARRAY_REF:
