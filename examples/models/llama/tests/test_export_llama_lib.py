@@ -293,6 +293,47 @@ class ExportLlamaLibTest(unittest.TestCase):
         for op, _op_info in delegation_info.delegation_by_operator.items():
             self.assertTrue(op not in UNWANTED_OPS)
 
+    def test_kv_cache_dynamic_shape_forward_accepts_get_max_seq_len_tokens(self):
+        """
+        The text runner prefills in chunks of get_max_seq_len tokens, so a KV-cache,
+        dynamic-shape export must accept that many tokens in one forward call.
+        """
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+        from executorch.runtime import Runtime
+
+        max_seq_len, max_context_len = 8, 16
+        llm_config = LlmConfig()
+        llm_config.model.use_kv_cache = True
+        llm_config.model.use_sdpa_with_kv_cache = True
+        llm_config.model.enable_dynamic_shape = True
+        llm_config.export.max_seq_length = max_seq_len
+        llm_config.export.max_context_length = max_context_len
+        with tempfile.TemporaryDirectory() as directory:
+            llm_config.export.output_dir = directory
+            builder = _export_llama(llm_config)
+        program = Runtime.get().load_program(builder.export_program.buffer)
+
+        self.assertEqual(
+            program.load_method("get_max_seq_len").execute([])[0], max_seq_len
+        )
+        self.assertEqual(
+            program.metadata("forward").input_tensor_meta(0).sizes()[1], max_seq_len
+        )
+        forward = program.load_method("forward")
+        forward.execute(
+            [
+                torch.ones(1, max_seq_len, dtype=torch.long),
+                torch.tensor([0], dtype=torch.long),
+            ]
+        )
+        with self.assertRaises(RuntimeError):
+            forward.execute(
+                [
+                    torch.ones(1, max_seq_len + 1, dtype=torch.long),
+                    torch.tensor([0], dtype=torch.long),
+                ]
+            )
+
     def test_xnnpack_extended_ops_defaults_on(self):
         args = build_args_parser().parse_args([])
         self.assertTrue(args.xnnpack_extended_ops)
