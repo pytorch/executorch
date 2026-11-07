@@ -1,0 +1,19 @@
+name: Arm
+
+on:
+  push:
+    tags:
+      - ciflow/trunk-arm/*
+  workflow_dispatch:
+
+concurrency:
+  group: arm-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  arm:
+    name: Arm suite
+    uses: ./.github/workflows/_arm-trunk.yml
+    permissions:
+      contents: read
+      id-token: write
