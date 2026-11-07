@@ -16,9 +16,9 @@ lintrunner==0.12.7
 lintrunner-adapters==0.14.1
 ruff==0.15.4
 
-pytest<9.0
+pytest>=7.3.0,<9.0
 pytest-xdist
-pytest-rerunfailures==15.1
+pytest-rerunfailures==14.0
 pytest-json-report
 gguf  # For extension/llm/export/test/test_gguf.py (GGUF Q4_K/Q6_K dequant tests).
 # Needed only by tests and development tools, so the executorch package does not depend on them.

@@ -170,6 +170,29 @@ def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
     )
 
 
+def is_foldable_broadcast_operand(
+    exp_prog: ExportedProgram, node: torch.fx.Node
+) -> bool:
+    """
+    A rank < 4 constant operand of a broadcasting op that ChannelsLastTaggedReshapePass
+    can reshape to 4D and lay out as NHWC ahead of time. A mutated buffer is
+    not constant, and a symbolic shape cannot be expressed in XNNStaticReshape.
+    """
+    if node.op != "placeholder" or not is_param_node(exp_prog, node):
+        return False
+    signature = exp_prog.graph_signature
+    buffer = signature.inputs_to_buffers.get(node.name)
+    if buffer in signature.buffers_to_mutate.values():
+        return False
+    val = node.meta.get("val", None)
+    return (
+        isinstance(val, torch.Tensor)
+        and not has_free_symbols(val.shape)
+        and 0 < val.dim() < 4
+        and val.numel() > 1
+    )
+
+
 def get_param_tensor(
     exp_prog: ExportedProgram, node: torch.fx.Node
 ) -> Optional[torch.Tensor]:

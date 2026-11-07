@@ -20,11 +20,9 @@ from executorch.examples.llm_server.python.tool_parsers.types import (
     ToolCallItem,
 )
 
-from ..chat_template import wire_tool_name
+from ..framing import _masked_text, FenceTracker, recipient_headers, wire_tool_name
 from .schema import ToolOutputBudget, ToolOutputError, ToolSchema
 
-_START = "<|start|>"
-_MESSAGE = "<|message|>"
 _FUNCTION_CALLS_OPEN = "<atem:function_calls>"
 _INVOKE_OPEN = "<atem:invoke"
 
@@ -35,14 +33,6 @@ _PARAMETER_END_RE = re.compile(
     r"</atem:parameter>\s*(?=<atem:parameter|</atem:invoke>|\Z)"
 )
 _TERMINATOR_RE = re.compile(r"\s*<\|eo[mt]\|>")
-_IDENT = r"[a-zA-Z0-9_-]+"
-_RECIPIENT = rf"{_IDENT}(?:\.{_IDENT})*"
-_HEADER_RE = re.compile(
-    rf"(?:{re.escape(_START)}assistant)?"
-    rf" to=({_RECIPIENT})"
-    rf"(?: constrain={_IDENT})?"
-    rf"{re.escape(_MESSAGE)}"
-)
 
 
 @dataclass
@@ -137,39 +127,44 @@ class _Syntax:
 
 def _tool_blocks(text, syntax=None):
     syntax = syntax if syntax is not None else _Syntax(text)
-    headers = iter(_HEADER_RE.finditer(text))
+    visible = _masked_text(text, syntax.parameters)
+    headers = iter(recipient_headers(visible))
     following = next(headers, None)
     header = None
     offset = scanned = 0
     excluded_until = 0
-    fences = 0
+    fences = FenceTracker()
     line_text = header_text = False
     for start in syntax.markers:
         if start < max(offset, excluded_until):
             continue
-        prefix = text[scanned:start]
-        fences += prefix.count("```")
+        prefix = visible[scanned:start]
         line_text = (line_text if "\n" not in prefix else False) or bool(
             prefix.rsplit("\n", 1)[-1].strip()
         )
-        header_prefix = prefix
-        updated = False
+        prefix_start = scanned
         while following is not None and following.end() <= start:
             header = following
             header_text = False
-            updated = True
+            prefix_start = header.end()
             following = next(headers, None)
-        if updated:
-            header_prefix = text[header.end() : start]
+            fences = FenceTracker()
+        header_text |= bool(visible[prefix_start:start].strip())
+        for terminator in re.finditer(r"<\|eo[mt]\|>", visible[prefix_start:start]):
+            cut = prefix_start + terminator.start()
+            fences.scan(visible, max(scanned, prefix_start), cut)
+            if not fences.in_fence:
+                header = None
+            scanned = prefix_start + terminator.end()
+        fences.scan(visible, max(scanned, prefix_start), start)
         scanned = start
-        header_text |= bool(header_prefix.strip())
-        if header is not None and (
-            header.start() < offset or re.search(r"<\|eo[mt]\|>", header_prefix)
-        ):
+        if header is not None and header.start() < offset:
             header = None
         adjacent = header is not None and not header_text
-        if (header is not None and header.group(1) in ("self", "user")) or (
-            not adjacent and (line_text or fences % 2)
+        if (
+            fences.in_fence
+            or (header is not None and header.group(1) in ("self", "user"))
+            or (not adjacent and line_text)
         ):
             # An ineligible wrapper owns its children, including bare invokes.
             if text.startswith(_FUNCTION_CALLS_OPEN, start):
@@ -180,7 +175,7 @@ def _tool_blocks(text, syntax=None):
         if end is None:
             return
         offset = scanned = end
-        fences = 0
+        fences = FenceTracker()
         line_text = header_text = False
         header = None
 

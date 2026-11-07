@@ -64,7 +64,16 @@ vec4 swiglu(vec4 gate, vec4 up) {
 }
 #endif
 
-#ifndef BINARY_OP_IS_FLOAT
+#ifdef BINARY_OP_IS_FLOAT
+// Float division may be off by a few ulp, so floor(X / Y) can land one below
+// or above an exact quotient. The remainder's sign and magnitude correct it.
+IN_T floor_div(const IN_T X, const IN_T Y) {
+  const IN_T q = floor(X / Y);
+  const IN_T r = X - q * Y;
+  return q - IN_T(binary_lt(r * Y, IN_T(0))) +
+      IN_T(binary_ge(abs(r), abs(Y)));
+}
+#else
 // Integer division truncates toward zero; floor division rounds the quotient
 // down when the remainder is nonzero and its sign differs from the divisor's.
 IN_T floor_div(const IN_T X, const IN_T Y) {
@@ -129,11 +138,7 @@ OUT_T apply_binary_op(
     case BINARY_OP_DIV:
       return OUT_T(X / Y);
     case BINARY_OP_FLOOR_DIVIDE:
-#ifdef BINARY_OP_IS_FLOAT
-      return OUT_T(floor(X / Y));
-#else
       return OUT_T(floor_div(X, Y));
-#endif
     case BINARY_OP_POW:
       return OUT_T(pow(X, Y));
     case BINARY_OP_MINIMUM:
