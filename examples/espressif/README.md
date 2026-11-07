@@ -35,8 +35,11 @@ application.
 Consumers need ESP-IDF, plus the `executorch` Python package of the
 same release to make kernel bundles — no host CMake build, no flatc.
 `idf_component_smoke/` is a minimal consumer that CI generates, builds
-and runs on the ESP32-S3 emulator
-(`.ci/scripts/test_espressif_idf_component.sh`).
+and runs on the emulator (`.ci/scripts/test_espressif_idf_component.sh`).
+`idf_component_consumer/` builds the same app from the packed component
+through the component manager, with ESP-IDF's own Python, for every
+target an emulator runs on ESP-IDF 6.1, and for ESP32-S3 and ESP32-C6
+on ESP-IDF 6.0.1 (`.ci/scripts/test_espressif_idf_consumer.sh`).
 
 The executor runner below remains the reference for the prebuilt-library
 flow and for benchmarking.
@@ -262,6 +265,10 @@ prints the corresponding activation command. It also accepts `IDF_PATH` and
 `IDF_TOOLS_PATH` for an existing ESP-IDF installation. The setup script checks
 the SDK version before installing dependencies into the active environment.
 Use `--skip-idf` or `--skip-emulator` to install only the tools you need.
+`--targets=<chip>,...` installs the compilers for other targets (and, for
+`esp32` without `--skip-emulator`, ESP-IDF's QEMU), and
+`--idf-version=v6.0.1` installs that ESP-IDF
+release instead of 6.1; use a separate `ESPRESSIF_TOOLS_DIR` for it.
 
 ### 2. Export the test model
 
