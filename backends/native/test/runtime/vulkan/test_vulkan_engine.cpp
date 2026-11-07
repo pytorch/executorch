@@ -1770,6 +1770,166 @@ std::vector<uint8_t> make_stored_operand_program(bool clamp) {
       builder, graph, {fbs::CreateOutputSpecDirect(builder, "sum")}, constants);
 }
 
+// result = _softmax(index(input, batch), -1) over a [2, 3, 8] input. aten.index
+// keeps its operands in buffer storage, so softmax reads a buffer into a
+// texture output.
+std::vector<uint8_t> make_buffered_softmax_program() {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto float_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 3, 8});
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", float_meta),
+      fbs::CreateTensorValueDirect(
+          builder,
+          "batch",
+          create_tensor_meta(builder, fbs::ScalarType::LONG, {2})),
+      fbs::CreateTensorValueDirect(builder, "gathered", float_meta),
+      fbs::CreateTensorValueDirect(builder, "result", float_meta),
+  };
+  std::vector<flatbuffers::Offset<fbs::Node>> nodes;
+  for (const char* name : {"input", "batch"}) {
+    const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+        fbs::CreateOutputDirect(builder, name)};
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder, name, fbs::OpKind::PLACEHOLDER, "", nullptr, &outputs));
+  }
+  const auto add_call =
+      [&](const char* name,
+          const char* target,
+          const std::vector<flatbuffers::Offset<fbs::NamedArgument>>& inputs) {
+        const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+            fbs::CreateOutputDirect(builder, name)};
+        nodes.push_back(fbs::CreateNodeDirect(
+            builder,
+            name,
+            fbs::OpKind::CALL_FUNCTION,
+            target,
+            &inputs,
+            &outputs));
+      };
+  const auto indices = fbs::CreateOptionalTensorListArg(
+      builder,
+      create_strings(builder, {"batch"}),
+      builder.CreateVector(std::vector<uint8_t>{1}));
+  add_call(
+      "gathered",
+      "torch.ops.aten.index.Tensor",
+      {
+          fbs::CreateNamedArgumentDirect(
+              builder, "self", create_tensor_arg(builder, "input")),
+          fbs::CreateNamedArgumentDirect(
+              builder,
+              "indices",
+              fbs::CreateArgument(
+                  builder,
+                  fbs::ArgumentValue::OptionalTensorListArg,
+                  indices.Union())),
+      });
+  add_call(
+      "result",
+      "torch.ops.aten._softmax.default",
+      {
+          fbs::CreateNamedArgumentDirect(
+              builder, "self", create_tensor_arg(builder, "gathered")),
+          fbs::CreateNamedArgumentDirect(
+              builder, "dim", create_int_arg(builder, -1)),
+          fbs::CreateNamedArgumentDirect(
+              builder, "half_to_float", create_bool_arg(builder, false)),
+      });
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "result"))};
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs));
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input", "batch"}),
+      create_strings(builder, {"result"}),
+      builder.CreateVector(tensor_values));
+  return finish_program(
+      builder, graph, {fbs::CreateOutputSpecDirect(builder, "result")});
+}
+
+// result = _softmax(linear(input, weight), -1) over a [2, 3, 8] input and a
+// stored [8, 8] weight. The linear output is a width-packed texture, while the
+// softmax output is planned channels-packed.
+std::vector<uint8_t> make_linear_softmax_program() {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto float_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 3, 8});
+  const auto weight_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {8, 8});
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", float_meta),
+      fbs::CreateTensorValueDirect(builder, "product", float_meta),
+      fbs::CreateTensorValueDirect(builder, "result", float_meta),
+  };
+  std::vector<flatbuffers::Offset<fbs::Node>> nodes;
+  for (const char* name : {"input", "weight"}) {
+    const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+        fbs::CreateOutputDirect(builder, name)};
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder, name, fbs::OpKind::PLACEHOLDER, "", nullptr, &outputs));
+  }
+  const auto add_call =
+      [&](const char* name,
+          const char* target,
+          const std::vector<flatbuffers::Offset<fbs::NamedArgument>>& inputs) {
+        const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+            fbs::CreateOutputDirect(builder, name)};
+        nodes.push_back(fbs::CreateNodeDirect(
+            builder,
+            name,
+            fbs::OpKind::CALL_FUNCTION,
+            target,
+            &inputs,
+            &outputs));
+      };
+  add_call(
+      "product",
+      "torch.ops.aten.linear.default",
+      {
+          fbs::CreateNamedArgumentDirect(
+              builder, "input", create_tensor_arg(builder, "input")),
+          fbs::CreateNamedArgumentDirect(
+              builder, "weight", create_tensor_arg(builder, "weight")),
+          fbs::CreateNamedArgumentDirect(
+              builder, "bias", create_none_arg(builder)),
+      });
+  add_call(
+      "result",
+      "torch.ops.aten._softmax.default",
+      {
+          fbs::CreateNamedArgumentDirect(
+              builder, "self", create_tensor_arg(builder, "product")),
+          fbs::CreateNamedArgumentDirect(
+              builder, "dim", create_int_arg(builder, -1)),
+          fbs::CreateNamedArgumentDirect(
+              builder, "half_to_float", create_bool_arg(builder, false)),
+      });
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "result"))};
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs));
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input"}),
+      create_strings(builder, {"result"}),
+      builder.CreateVector(tensor_values));
+  const std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants = {
+      fbs::CreateNamedTensorRefDirect(
+          builder, "weight", "weight", weight_meta, fbs::InputKind::PARAMETER),
+  };
+  return finish_program(
+      builder,
+      graph,
+      {fbs::CreateOutputSpecDirect(builder, "result")},
+      constants);
+}
+
 constexpr int64_t kHfTokens = 4;
 constexpr int64_t kHfHeads = 4;
 constexpr int64_t kHfKvHeads = 2;
@@ -2629,6 +2789,73 @@ TEST(VulkanEngineTest, ClonesAndClampsStoredConstant) {
           input[i] + (clamp ? std::clamp(bias[i], -1.0f, 50.0f) : bias[i]);
     }
     EXPECT_EQ(output, expected);
+  }
+}
+
+TEST(VulkanEngineTest, ExecutesSoftmaxOnBufferPlannedInput) {
+  std::vector<float> input(48);
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = static_cast<float>((i * 5) % 7) * 0.5f - 1.0f;
+  }
+  const std::vector<int64_t> batch = {1, 0};
+  CompiledProgram compiled = compile_program(make_buffered_softmax_program());
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      1, batch.data(), batch.size(), ScalarType::Long);
+  compiled.executable->execute();
+  std::vector<float> output(48);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  for (size_t row = 0; row < 6; ++row) {
+    const size_t source_row = (row + 3) % 6;
+    double sum = 0.0;
+    for (size_t i = 0; i < 8; ++i) {
+      sum += std::exp(input[source_row * 8 + i]);
+    }
+    for (size_t i = 0; i < 8; ++i) {
+      EXPECT_NEAR(
+          output[row * 8 + i], std::exp(input[source_row * 8 + i]) / sum, 1e-6)
+          << row << "," << i;
+    }
+  }
+}
+
+TEST(VulkanEngineTest, ExecutesSoftmaxOnWidthPackedTextureInput) {
+  std::vector<float> weight(64, 0.0f);
+  for (size_t o = 0; o < 8; ++o) {
+    weight[o * 8 + o] = 0.5f;
+    weight[o * 8 + (o + 3) % 8] = 0.25f;
+  }
+  const std::string header =
+      R"({"weight":{"dtype":"F32","shape":[8,8],"data_offsets":[0,256]}})";
+  std::vector<uint8_t> tensors = testing::make_safetensors(header, 256);
+  std::memcpy(
+      tensors.data() + sizeof(uint64_t) + header.size(), weight.data(), 256);
+  CompiledProgram compiled =
+      compile_program(make_linear_softmax_program(), std::move(tensors));
+  std::vector<float> input(48);
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = static_cast<float>((i * 5) % 7) * 0.5f - 1.0f;
+  }
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+  std::vector<float> output(48);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  for (size_t row = 0; row < 6; ++row) {
+    std::vector<double> product(8);
+    double sum = 0.0;
+    for (size_t o = 0; o < 8; ++o) {
+      product[o] =
+          0.5 * input[row * 8 + o] + 0.25 * input[row * 8 + (o + 3) % 8];
+      sum += std::exp(product[o]);
+    }
+    for (size_t o = 0; o < 8; ++o) {
+      EXPECT_NEAR(output[row * 8 + o], std::exp(product[o]) / sum, 1e-6)
+          << row << "," << o;
+    }
   }
 }
 

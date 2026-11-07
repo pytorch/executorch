@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan_shared/runtime/SharedVulkanContextRegistry.h>
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanDeviceRegistry.h>
 
 #include <gtest/gtest.h>
 // Cppcheck's lint environment may not expand the gtest macros.
@@ -26,11 +26,11 @@
 #include <utility>
 #include <vector>
 
-using executorch::backends::vulkan_shared::SharedVulkanContext;
-using executorch::backends::vulkan_shared::SharedVulkanContextCreateInfo;
-using executorch::backends::vulkan_shared::SharedVulkanContextKey;
-using executorch::backends::vulkan_shared::SharedVulkanContextPtr;
-using executorch::backends::vulkan_shared::SharedVulkanContextRegistry;
+using executorch::backends::vulkan_shared::SharedVulkanDevice;
+using executorch::backends::vulkan_shared::SharedVulkanDeviceCreateInfo;
+using executorch::backends::vulkan_shared::SharedVulkanDeviceKey;
+using executorch::backends::vulkan_shared::SharedVulkanDevicePtr;
+using executorch::backends::vulkan_shared::SharedVulkanDeviceRegistry;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
 
@@ -41,10 +41,10 @@ Handle fake_handle(uintptr_t value) {
   return reinterpret_cast<Handle>(value);
 }
 
-SharedVulkanContextCreateInfo make_create_info(
-    SharedVulkanContextKey key,
+SharedVulkanDeviceCreateInfo make_create_info(
+    SharedVulkanDeviceKey key,
     uintptr_t handle_base = 1) {
-  SharedVulkanContextCreateInfo info;
+  SharedVulkanDeviceCreateInfo info;
   info.key = std::move(key);
   info.instance = fake_handle<VkInstance>(handle_base);
   info.physical_device = fake_handle<VkPhysicalDevice>(handle_base + 1);
@@ -66,7 +66,7 @@ struct RegistryLookupProbeState final {
 class RegistryLookupLifetimeAnchor final {
  public:
   RegistryLookupLifetimeAnchor(
-      SharedVulkanContextKey lookup_key,
+      SharedVulkanDeviceKey lookup_key,
       std::shared_ptr<RegistryLookupProbeState> state,
       std::atomic<bool>* lookup_completed_during_destruction)
       : lookup_key_(std::move(lookup_key)),
@@ -77,10 +77,10 @@ class RegistryLookupLifetimeAnchor final {
   ~RegistryLookupLifetimeAnchor() {
     // Probe the registry from another thread. If this destructor runs while the
     // registry mutex is held, lookup() cannot complete until destruction
-    // returns and unregister_context() releases the mutex. The timeout prevents
+    // returns and unregister_device() releases the mutex. The timeout prevents
     // the regression test itself from deadlocking on the buggy implementation.
     std::thread([lookup_key = lookup_key_, state = state_]() {
-      (void)SharedVulkanContextRegistry::Get().lookup(lookup_key);
+      (void)SharedVulkanDeviceRegistry::Get().lookup(lookup_key);
       {
         std::lock_guard<std::mutex> lock(state->mutex);
         state->complete = true;
@@ -97,25 +97,25 @@ class RegistryLookupLifetimeAnchor final {
   }
 
  private:
-  SharedVulkanContextKey lookup_key_;
+  SharedVulkanDeviceKey lookup_key_;
   std::shared_ptr<RegistryLookupProbeState> state_;
   std::atomic<bool>* lookup_completed_during_destruction_;
 };
 
-class SharedVulkanContextRegistryTest : public ::testing::Test {
+class SharedVulkanDeviceRegistryTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    SharedVulkanContextRegistry::Get().clear_for_testing();
+    SharedVulkanDeviceRegistry::Get().clear_for_testing();
   }
 
   void TearDown() override {
-    SharedVulkanContextRegistry::Get().clear_for_testing();
+    SharedVulkanDeviceRegistry::Get().clear_for_testing();
   }
 };
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedVulkanContextRegistryTest, RegistryOwnsPersistentContext) {
-  const SharedVulkanContextKey key{"scene0", 3};
+TEST_F(SharedVulkanDeviceRegistryTest, RegistryOwnsPersistentContext) {
+  const SharedVulkanDeviceKey key{"scene0", 3};
   std::weak_ptr<int> owner_weak;
 
   {
@@ -125,24 +125,24 @@ TEST_F(SharedVulkanContextRegistryTest, RegistryOwnsPersistentContext) {
     info.lifetime_anchor = owner;
 
     auto registered =
-        SharedVulkanContextRegistry::Get().register_external_context(
+        SharedVulkanDeviceRegistry::Get().register_external_device(
             std::move(info));
     ASSERT_TRUE(registered.ok());
   }
 
   EXPECT_FALSE(owner_weak.expired());
-  EXPECT_NE(SharedVulkanContextRegistry::Get().lookup(key), nullptr);
+  EXPECT_NE(SharedVulkanDeviceRegistry::Get().lookup(key), nullptr);
   EXPECT_EQ(
-      SharedVulkanContextRegistry::Get().unregister_context(key), Error::Ok);
+      SharedVulkanDeviceRegistry::Get().unregister_device(key), Error::Ok);
   EXPECT_TRUE(owner_weak.expired());
 }
 
 // cppcheck-suppress unusedFunction
 TEST_F(
-    SharedVulkanContextRegistryTest,
+    SharedVulkanDeviceRegistryTest,
     UnregisterDestroysLifetimeAnchorOutsideRegistryLock) {
-  const SharedVulkanContextKey key{"scene0", 9};
-  const SharedVulkanContextKey probe_key{"probe", 9};
+  const SharedVulkanDeviceKey key{"scene0", 9};
+  const SharedVulkanDeviceKey probe_key{"probe", 9};
   std::atomic<bool> lookup_completed_during_destruction{false};
   auto probe_state = std::make_shared<RegistryLookupProbeState>();
 
@@ -152,16 +152,16 @@ TEST_F(
         probe_key, probe_state, &lookup_completed_during_destruction);
 
     auto registered =
-        SharedVulkanContextRegistry::Get().register_external_context(
+        SharedVulkanDeviceRegistry::Get().register_external_device(
             std::move(info));
     ASSERT_TRUE(registered.ok());
   }
 
-  // The registry is now the only owner of the SharedVulkanContext.
+  // The registry is now the only owner of the SharedVulkanDevice.
   // Unregistering therefore destroys its lifetime anchor. The probe must be
   // able to acquire the registry mutex before that destruction returns.
   EXPECT_EQ(
-      SharedVulkanContextRegistry::Get().unregister_context(key), Error::Ok);
+      SharedVulkanDeviceRegistry::Get().unregister_device(key), Error::Ok);
   EXPECT_TRUE(lookup_completed_during_destruction.load());
 
   // On a broken implementation the probe only completes after unregister has
@@ -175,15 +175,15 @@ TEST_F(
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedVulkanContextRegistryTest, LookupOrCreateRunsCreatorOnce) {
-  const SharedVulkanContextKey key{"scene0", 4};
+TEST_F(SharedVulkanDeviceRegistryTest, LookupOrCreateRunsCreatorOnce) {
+  const SharedVulkanDeviceKey key{"scene0", 4};
   std::atomic<int> create_count{0};
   std::mutex creator_mutex;
   std::condition_variable creator_cv;
   bool creator_entered = false;
   bool allow_creator_to_finish = false;
 
-  auto create_fn = [&]() -> Result<SharedVulkanContextPtr> {
+  auto create_fn = [&]() -> Result<SharedVulkanDevicePtr> {
     ++create_count;
     {
       std::unique_lock<std::mutex> lock(creator_mutex);
@@ -191,18 +191,18 @@ TEST_F(SharedVulkanContextRegistryTest, LookupOrCreateRunsCreatorOnce) {
       creator_cv.notify_all();
       creator_cv.wait(lock, [&]() { return allow_creator_to_finish; });
     }
-    return std::make_shared<SharedVulkanContext>(make_create_info(key));
+    return std::make_shared<SharedVulkanDevice>(make_create_info(key));
   };
 
   constexpr size_t kThreadCount = 8;
-  std::vector<SharedVulkanContextPtr> results(kThreadCount);
+  std::vector<SharedVulkanDevicePtr> results(kThreadCount);
   std::vector<Error> errors(kThreadCount, Error::Internal);
   std::vector<std::thread> threads;
   threads.reserve(kThreadCount);
   for (size_t i = 0; i < kThreadCount; ++i) {
     threads.emplace_back([&, i]() {
       auto result =
-          SharedVulkanContextRegistry::Get().lookup_or_create(key, create_fn);
+          SharedVulkanDeviceRegistry::Get().lookup_or_create(key, create_fn);
       errors[i] = result.error();
       if (result.ok()) {
         results[i] = result.get();
@@ -229,42 +229,41 @@ TEST_F(SharedVulkanContextRegistryTest, LookupOrCreateRunsCreatorOnce) {
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedVulkanContextRegistryTest, RejectsDifferentDuplicateContext) {
-  const SharedVulkanContextKey key{"scene0", 5};
-  auto first = std::make_shared<SharedVulkanContext>(make_create_info(key, 10));
-  auto second =
-      std::make_shared<SharedVulkanContext>(make_create_info(key, 20));
+TEST_F(SharedVulkanDeviceRegistryTest, RejectsDifferentDuplicateContext) {
+  const SharedVulkanDeviceKey key{"scene0", 5};
+  auto first = std::make_shared<SharedVulkanDevice>(make_create_info(key, 10));
+  auto second = std::make_shared<SharedVulkanDevice>(make_create_info(key, 20));
 
   EXPECT_EQ(
-      SharedVulkanContextRegistry::Get().register_context(first), Error::Ok);
+      SharedVulkanDeviceRegistry::Get().register_device(first), Error::Ok);
   EXPECT_EQ(
-      SharedVulkanContextRegistry::Get().register_context(second),
+      SharedVulkanDeviceRegistry::Get().register_device(second),
       Error::AlreadyLoaded);
-  EXPECT_EQ(SharedVulkanContextRegistry::Get().lookup(key), first);
+  EXPECT_EQ(SharedVulkanDeviceRegistry::Get().lookup(key), first);
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedVulkanContextRegistryTest, ValidatesContextIdentity) {
-  const SharedVulkanContextKey requested_key{"scene0", 6};
-  const SharedVulkanContextKey returned_key{"other", 6};
+TEST_F(SharedVulkanDeviceRegistryTest, ValidatesContextIdentity) {
+  const SharedVulkanDeviceKey requested_key{"scene0", 6};
+  const SharedVulkanDeviceKey returned_key{"other", 6};
 
-  auto result = SharedVulkanContextRegistry::Get().lookup_or_create(
-      requested_key, [&]() -> Result<SharedVulkanContextPtr> {
-        return std::make_shared<SharedVulkanContext>(
+  auto result = SharedVulkanDeviceRegistry::Get().lookup_or_create(
+      requested_key, [&]() -> Result<SharedVulkanDevicePtr> {
+        return std::make_shared<SharedVulkanDevice>(
             make_create_info(returned_key));
       });
 
   ASSERT_FALSE(result.ok());
   EXPECT_EQ(result.error(), Error::InvalidArgument);
-  EXPECT_EQ(SharedVulkanContextRegistry::Get().lookup(requested_key), nullptr);
+  EXPECT_EQ(SharedVulkanDeviceRegistry::Get().lookup(requested_key), nullptr);
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedVulkanContextRegistryTest, ReportsDeclaredDeviceExtensions) {
-  const SharedVulkanContextKey key{"scene0", 7};
+TEST_F(SharedVulkanDeviceRegistryTest, ReportsDeclaredDeviceExtensions) {
+  const SharedVulkanDeviceKey key{"scene0", 7};
   auto info = make_create_info(key);
   info.enabled_device_extensions = {"VK_ARM_tensors", "VK_ARM_data_graph"};
-  SharedVulkanContext context(std::move(info));
+  SharedVulkanDevice context(std::move(info));
 
   EXPECT_TRUE(context.has_device_extension("VK_ARM_tensors"));
   EXPECT_TRUE(context.has_device_extension("VK_ARM_data_graph"));
@@ -272,12 +271,12 @@ TEST_F(SharedVulkanContextRegistryTest, ReportsDeclaredDeviceExtensions) {
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedVulkanContextRegistryTest, RejectsContextWithoutLifetimeAnchor) {
-  const SharedVulkanContextKey key{"scene0", 10};
+TEST_F(SharedVulkanDeviceRegistryTest, RejectsContextWithoutLifetimeAnchor) {
+  const SharedVulkanDeviceKey key{"scene0", 10};
   auto info = make_create_info(key);
   info.lifetime_anchor.reset();
 
-  auto result = SharedVulkanContextRegistry::Get().register_external_context(
+  auto result = SharedVulkanDeviceRegistry::Get().register_external_device(
       std::move(info));
 
   ASSERT_FALSE(result.ok());
@@ -286,11 +285,11 @@ TEST_F(SharedVulkanContextRegistryTest, RejectsContextWithoutLifetimeAnchor) {
 
 // cppcheck-suppress unusedFunction
 TEST_F(
-    SharedVulkanContextRegistryTest,
+    SharedVulkanDeviceRegistryTest,
     UnregisterKeepsLifetimeAnchorAliveWhileContextIsReferenced) {
-  const SharedVulkanContextKey key{"scene0", 11};
+  const SharedVulkanDeviceKey key{"scene0", 11};
   std::weak_ptr<int> owner_weak;
-  SharedVulkanContextPtr held_context;
+  SharedVulkanDevicePtr held_context;
 
   {
     auto owner = std::make_shared<int>(17);
@@ -300,20 +299,20 @@ TEST_F(
     info.lifetime_anchor = owner;
 
     auto registered =
-        SharedVulkanContextRegistry::Get().register_external_context(
+        SharedVulkanDeviceRegistry::Get().register_external_device(
             std::move(info));
     ASSERT_TRUE(registered.ok());
 
-    held_context = SharedVulkanContextRegistry::Get().lookup(key);
+    held_context = SharedVulkanDeviceRegistry::Get().lookup(key);
     ASSERT_NE(held_context, nullptr);
   }
 
   EXPECT_FALSE(owner_weak.expired());
   EXPECT_EQ(
-      SharedVulkanContextRegistry::Get().unregister_context(key), Error::Ok);
-  EXPECT_EQ(SharedVulkanContextRegistry::Get().lookup(key), nullptr);
+      SharedVulkanDeviceRegistry::Get().unregister_device(key), Error::Ok);
+  EXPECT_EQ(SharedVulkanDeviceRegistry::Get().lookup(key), nullptr);
 
-  // unregister_context() removes registry ownership only. An existing delegate
+  // unregister_device() removes registry ownership only. An existing delegate
   // reference must continue to keep the underlying Vulkan objects alive.
   EXPECT_FALSE(owner_weak.expired());
 
@@ -322,9 +321,9 @@ TEST_F(
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedVulkanContextRegistryTest, SerializesSharedQueueAccess) {
-  const SharedVulkanContextKey key{"scene0", 12};
-  auto context = std::make_shared<SharedVulkanContext>(make_create_info(key));
+TEST_F(SharedVulkanDeviceRegistryTest, SerializesSharedQueueAccess) {
+  const SharedVulkanDeviceKey key{"scene0", 12};
+  auto context = std::make_shared<SharedVulkanDevice>(make_create_info(key));
 
   std::mutex state_mutex;
   std::condition_variable state_cv;
@@ -408,11 +407,11 @@ TEST_F(SharedVulkanContextRegistryTest, SerializesSharedQueueAccess) {
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedVulkanContextRegistryTest, RejectsIncompleteExternalContext) {
-  SharedVulkanContextCreateInfo info;
+TEST_F(SharedVulkanDeviceRegistryTest, RejectsIncompleteExternalContext) {
+  SharedVulkanDeviceCreateInfo info;
   info.key = {"scene0", 8};
 
-  auto result = SharedVulkanContextRegistry::Get().register_external_context(
+  auto result = SharedVulkanDeviceRegistry::Get().register_external_device(
       std::move(info));
 
   ASSERT_FALSE(result.ok());

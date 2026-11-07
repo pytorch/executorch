@@ -20,14 +20,18 @@ case "${component}" in
     test_regex='^native_runtime_test$'
     ;;
   cpu)
+    # The CPU plan test covers ETDump tracing, including operator shapes.
     cmake_args+=(
       -DEXECUTORCH_BUILD_NATIVE_CPU=ON
       -DEXECUTORCH_BUILD_XNNPACK=ON
       -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON
       -DEXECUTORCH_BUILD_NATIVE_VISION_RUNNER=ON
+      -DEXECUTORCH_BUILD_DEVTOOLS=ON
+      -DEXECUTORCH_ENABLE_EVENT_TRACER=ON
+      -DEXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES=ON
     )
-    targets+=(native_cpu_engine_test run_classification_cpu)
-    test_regex='^native_cpu_engine_test$'
+    targets+=(native_cpu_engine_test cpu_plan_test run_classification_cpu)
+    test_regex='^(native_cpu_engine|cpu_plan)_test$'
     ;;
   ggml)
     cmake_args+=(
@@ -68,7 +72,7 @@ cmake -S . -B "${build_dir}" -G Ninja \
 cmake --build "${build_dir}" \
   --parallel "${build_jobs}" \
   --target "${targets[@]}"
-ctest --test-dir "${build_dir}/backends/native/test" \
+ctest --test-dir "${build_dir}" \
   -R "${test_regex}" --output-on-failure --no-tests=error --timeout 120
 
 if [[ "${component}" == "ggml" ]]; then
