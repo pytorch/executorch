@@ -937,12 +937,6 @@ def _to_edge_cortex_m(
         f"layout={'explicit' if args.cortex_m_explicit_layout else 'dim-order'}"
     )
 
-    if args.cortex_m_explicit_layout and not args.quantize:
-        raise RuntimeError(
-            "--cortex-m-explicit-layout requires --quantize; explicit layout "
-            "does not fall back to portable float spatial operators."
-        )
-
     def _to_channels_last(x):
         if isinstance(x, torch.Tensor):
             if x.dim() == 4:
