@@ -17,7 +17,7 @@ If an operator is not included in the build, you'll get a runtime error. Use sel
 ```cmake
 gen_selected_ops(
   LIB_NAME "my_ops"
-  ROOT_OPS "aten::add.out;aten::mul.out"
+  SELECT_OPS_LIST "aten::add.out;aten::mul.out"
   INCLUDE_ALL_OPS "OFF"
 )
 ```
