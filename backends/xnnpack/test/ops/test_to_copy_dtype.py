@@ -10,6 +10,7 @@ import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower
+from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.export.utils import is_fbcode
 
 
@@ -38,14 +39,31 @@ class TestToCopyDtype(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten__to_copy_default",
     ]
 
-    def _run(self, module, inputs, enable_bf16=False):
-        (
-            Tester(module.eval(), inputs)
+    def _lower(
+        self,
+        module,
+        inputs,
+        enable_bf16=False,
+        skip_dim_order=False,
+        dynamic_shapes=None,
+    ):
+        return (
+            Tester(module.eval(), inputs, dynamic_shapes=dynamic_shapes)
             .export()
             .to_edge_transform_and_lower(
                 ToEdgeTransformAndLower(
-                    partitioners=[XnnpackPartitioner(enable_bf16=enable_bf16)]
+                    partitioners=[XnnpackPartitioner(enable_bf16=enable_bf16)],
+                    edge_compile_config=get_xnnpack_edge_compile_config(
+                        skip_dim_order=skip_dim_order
+                    ),
                 )
+            )
+        )
+
+    def _run(self, module, inputs, enable_bf16=False, skip_dim_order=False):
+        (
+            self._lower(
+                module, inputs, enable_bf16=enable_bf16, skip_dim_order=skip_dim_order
             )
             .check_not(self.cast_ops)
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
@@ -54,35 +72,75 @@ class TestToCopyDtype(unittest.TestCase):
             .run_method_and_compare_outputs(atol=2e-2, rtol=2e-2)
         )
 
+    def _run_both(self, module, inputs, enable_bf16=False):
+        """
+        With skip_dim_order, as LLMEdgeManager exports, casts stay aten._to_copy
+        instead of becoming _to_dim_order_copy.
+        """
+        for skip_dim_order in (False, True):
+            with self.subTest(skip_dim_order=skip_dim_order):
+                self._run(module, inputs, enable_bf16, skip_dim_order)
+
+    def _check_not_partitioned(self, module, inputs, enable_bf16=False, casts=1):
+        for skip_dim_order in (False, True):
+            with self.subTest(skip_dim_order=skip_dim_order):
+                self._lower(
+                    module,
+                    inputs,
+                    enable_bf16=enable_bf16,
+                    skip_dim_order=skip_dim_order,
+                ).check_count({self.cast_ops[skip_dim_order]: casts})
+
     def test_fp32_io_around_fp16_conv(self):
-        self._run(self.Fp16Inner(), (torch.randn(1, 3, 8, 8),))
+        self._run_both(self.Fp16Inner(), (torch.randn(1, 3, 8, 8),))
 
     def test_cast_only(self):
-        self._run(self.CastOnly(), (torch.randn(2, 5),))
+        self._run_both(self.CastOnly(), (torch.randn(2, 5),))
 
-    def test_int_cast_not_partitioned(self):
+    def test_cast_only_dynamic(self):
+        batch = torch.export.Dim("batch", min=1, max=8)
+        for skip_dim_order in (False, True):
+            with self.subTest(skip_dim_order=skip_dim_order):
+                (
+                    self._lower(
+                        self.CastOnly(),
+                        (torch.randn(2, 5),),
+                        skip_dim_order=skip_dim_order,
+                        dynamic_shapes=({0: batch},),
+                    )
+                    .check_not(self.cast_ops)
+                    .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                    .to_executorch()
+                    .serialize()
+                    .run_method_and_compare_outputs(num_runs=5, atol=2e-2, rtol=2e-2)
+                )
+
+    def test_not_partitioned(self):
+        """
+        Only fp32 <-> fp16 and fp32 <-> bf16 casts that keep the dim order are
+        partitioned, and with skip_dim_order no layout-only copy is.
+        """
+
         class ToInt(torch.nn.Module):
             def forward(self, x):
                 return x.to(torch.int32)
 
-        (
-            Tester(ToInt().eval(), (torch.randn(2, 5),))
-            .export()
-            .to_edge_transform_and_lower()
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-        )
-
-    def test_dtype_cast_with_dim_order_change_not_partitioned(self):
         class ToHalfChannelsLast(torch.nn.Module):
             def forward(self, x):
                 return x.to(torch.float16, memory_format=torch.channels_last)
 
-        (
-            Tester(ToHalfChannelsLast().eval(), (torch.randn(1, 3, 4, 4),))
-            .export()
-            .to_edge_transform_and_lower()
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-            .check_count({self.cast_ops[0]: 1})
+        for module in (ToInt(), ToHalfChannelsLast()):
+            with self.subTest(type(module).__name__):
+                self._check_not_partitioned(module, (torch.randn(1, 3, 4, 4),))
+
+        class ToChannelsLast(torch.nn.Module):
+            def forward(self, x):
+                return x.to(memory_format=torch.channels_last)
+
+        self._lower(
+            ToChannelsLast(), (torch.randn(1, 3, 4, 4),), skip_dim_order=True
+        ).check_not(["torch.ops.higher_order.executorch_call_delegate"]).check_count(
+            {self.cast_ops[1]: 1}
         )
 
     def test_dtype_cast_to_contiguous_from_channels_last_not_partitioned(self):
@@ -107,6 +165,38 @@ class TestToCopyDtype(unittest.TestCase):
                 return x.to(memory_format=torch.channels_last).to(torch.float16)
 
         self._run(ChannelsLastToHalf(), (torch.randn(1, 3, 4, 4),))
+
+    def test_requantize_around_cast(self):
+        """
+        The q/dq around a cast stay explicit, so the requantize from a scale of
+        0.04 to 0.1 is kept.
+        """
+
+        class RequantizeAroundCast(torch.nn.Module):
+            def forward(self, x):
+                qd = torch.ops.quantized_decomposed
+                x = qd.quantize_per_tensor.default(x, 0.04, 0, -128, 127, torch.int8)
+                x = qd.dequantize_per_tensor.default(x, 0.04, 0, -128, 127, torch.int8)
+                x = qd.quantize_per_tensor.default(
+                    x.to(torch.float16), 0.1, 0, -128, 127, torch.int8
+                )
+                return qd.dequantize_per_tensor.default(
+                    x, 0.1, 0, -128, 127, torch.int8
+                )
+
+        for skip_dim_order in (False, True):
+            with self.subTest(skip_dim_order=skip_dim_order):
+                (
+                    self._lower(
+                        RequantizeAroundCast(),
+                        (torch.randn(2, 8),),
+                        skip_dim_order=skip_dim_order,
+                    )
+                    .check_not(self.cast_ops)
+                    .to_executorch()
+                    .serialize()
+                    .run_method_and_compare_outputs(atol=1e-3, rtol=0)
+                )
 
     class Bf16Inner(torch.nn.Module):
         def __init__(self):
@@ -134,11 +224,11 @@ class TestToCopyDtype(unittest.TestCase):
 
     @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_fp32_io_around_bf16_linear(self):
-        self._run(self.Bf16Inner(), (torch.randn(4, 16),), enable_bf16=True)
+        self._run_both(self.Bf16Inner(), (torch.randn(4, 16),), enable_bf16=True)
 
     @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_bf16_upcast(self):
-        self._run(
+        self._run_both(
             self.Bf16Upcast(),
             (torch.randn(2, 5, dtype=torch.bfloat16),),
             enable_bf16=True,
@@ -146,7 +236,7 @@ class TestToCopyDtype(unittest.TestCase):
 
     @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_bf16_softmax_upcast(self):
-        self._run(
+        self._run_both(
             self.Bf16SoftmaxUpcast(),
             (torch.randn(2, 16, 32, dtype=torch.bfloat16),),
             enable_bf16=True,
@@ -178,11 +268,8 @@ class TestToCopyDtype(unittest.TestCase):
         )
 
     def test_bf16_cast_not_partitioned_without_enable_bf16(self):
-        (
-            Tester(self.Bf16Upcast().eval(), (torch.randn(2, 5, dtype=torch.bfloat16),))
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count({self.cast_ops[0]: 2})
+        self._check_not_partitioned(
+            self.Bf16Upcast(), (torch.randn(2, 5, dtype=torch.bfloat16),), casts=2
         )
 
     def test_fp16_bf16_cast_not_partitioned(self):
@@ -190,13 +277,6 @@ class TestToCopyDtype(unittest.TestCase):
             def forward(self, x):
                 return x.to(torch.bfloat16)
 
-        (
-            Tester(HalfToBf16().eval(), (torch.randn(2, 5, dtype=torch.float16),))
-            .export()
-            .to_edge_transform_and_lower(
-                ToEdgeTransformAndLower(
-                    partitioners=[XnnpackPartitioner(enable_bf16=True)]
-                )
-            )
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+        self._check_not_partitioned(
+            HalfToBf16(), (torch.randn(2, 5, dtype=torch.float16),), enable_bf16=True
         )

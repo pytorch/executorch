@@ -1,5 +1,6 @@
 Operator,Compute DType,Quantization,Constraints
-_to_dim_order_copy,"fp16, fp32",,no dtype conversion
+_to_copy,"bf16, fp16, fp32",,"dtype conversion only: fp32 <-> fp16, or fp32 <-> bf16 with enable_bf16; no dim order change"
+_to_dim_order_copy,"bf16, fp16, fp32",,"fp32 <-> fp16, or fp32 <-> bf16 with enable_bf16; dtype conversion cannot also change the dim order"
 abs,"fp16, fp32",,
 add,"fp16, fp32",PT2E: static int8,alpha=1
 avg_pool2d,"fp16, fp32",PT2E: static int8,"ceil_mode=False, count_include_pad=False, divisor_override=pooling_region"
