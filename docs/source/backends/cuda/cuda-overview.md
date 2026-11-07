@@ -202,9 +202,8 @@ Setting it to `False` while asking for any skip raises a `ValueError`, because c
 happens during device-aware memory planning.
 
 **Inputs must be unplanned**, via `MemoryPlanningPass(alloc_graph_input=False)`. Without it the
-program reserves its own input buffer on the device, and the runtime refuses to copy the caller's
-tensor into it. The call fails with error `0x10` (`NotSupported`), and the log says
-`Planned-buffer copy needs host memory on both sides`.
+program would reserve its own input buffer on the device, and the runtime cannot copy the caller's
+tensor into it, so `to_executorch` raises a `ValueError` that names the input.
 
 **Leave outputs unplanned too**, via `alloc_graph_output=False`. Then each result lands in memory
 you own, with no extra copy. A C++ caller must give each unplanned output a buffer once with

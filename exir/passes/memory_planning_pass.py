@@ -22,12 +22,14 @@ from executorch.exir.memory_planning import (
     apply_algo,
     collect_specs_from_nodes,
     filter_nodes,
+    get_graph_input_tensors,
     get_node_tensor_specs,
     MemoryPlanningAlgorithmSuite,
     Verifier,
 )
 from executorch.exir.operator.convert import get_out_args_from_opoverload
 from executorch.exir.pass_base import PassBase, PassResult
+from executorch.exir.schema import DeviceType
 from executorch.exir.tensor import ALIGNMENT, TensorSpec
 from torch import fx
 from torch.export.exported_program import ExportGraphSignature
@@ -135,6 +137,33 @@ def _check_default_mem_ids(gm: torch.fx.GraphModule):
             if mem_id is not None and mem_id != 1:
                 raise ValueError(
                     "Cannot share mutable buffers if all other tensors are not on the default mem_id of 1"
+                )
+
+
+def _check_device_inputs_not_planned(
+    gm: torch.fx.GraphModule, graph_signature: Optional[ExportGraphSignature]
+) -> None:
+    """The runtime fills a planned input by copying the caller's tensor into
+    it on the host, which it refuses for device memory. So an input that
+    PropagateDevicePass left on a device has to use the caller's memory."""
+    graph_inputs = get_graph_input_tensors(gm.graph.nodes, graph_signature)
+    for node in gm.graph.nodes:
+        if node.op != "placeholder":
+            continue
+        for spec in get_node_tensor_specs(node):
+            if (
+                spec in graph_inputs
+                and spec.device != DeviceType.CPU
+                and spec.mem_offset is not None
+            ):
+                raise ValueError(
+                    f"Input '{node.name}' stays on "
+                    f"{spec.device.name.lower()}:{spec.device_index}, as "
+                    "skip_h2d_for_method_inputs asks, but memory planning "
+                    "reserves a buffer for it, so the runtime would refuse "
+                    "the caller's tensor on every call. Pass "
+                    "MemoryPlanningPass(alloc_graph_input=False) so the method "
+                    "uses the caller's memory."
                 )
 
 
@@ -306,6 +335,8 @@ class MemoryPlanningPass(PassBase):
             self.alloc_mutable_buffers and not self.share_mutable_buffers,
             self.enable_non_cpu_memory_planning,
         )
+        if self.enable_non_cpu_memory_planning:
+            _check_device_inputs_not_planned(graph_module, graph_signature)
 
         if self.share_mutable_buffers and graph_signature is not None:
             self.state.graph_modules.append(graph_module)

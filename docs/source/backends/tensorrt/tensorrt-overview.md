@@ -206,9 +206,8 @@ torch_tensorrt.save(
 
 - The two skip flags work only with `enable_non_cpu_memory_planning`, which is on by default.
   With either flag set, turning it off makes the export raise a `ValueError`.
-- `alloc_graph_input=False` is required. Without it the program keeps its own input buffer, and
-  every call fails with error `0x10` (`NotSupported`). The log then says
-  `Planned-buffer copy needs host memory on both sides`.
+- `alloc_graph_input=False` is required. Without it the program would keep its own input buffer,
+  which the runtime cannot copy the caller's tensor into, so the export raises a `ValueError`.
 - `alloc_graph_output=False` keeps the outputs out of the program's memory. From Python, the
   runtime allocates GPU memory for each output, and the next call does not overwrite an output you
   still hold, unless you pass `clone_outputs=False`. From C++, you must give the method your own

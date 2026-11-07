@@ -42,8 +42,8 @@ class PropagateDeviceConfig:
             ),
         )
 
-    Without ``alloc_graph_input=False`` the runtime reserves device memory for an input the caller
-    already owns and refuses to copy into it, so every call fails with ``NotSupported``. Planned
+    Without ``alloc_graph_input=False`` the program would reserve device memory for an input the
+    caller already owns, which the runtime cannot copy into, so ``to_executorch`` raises. Planned
     outputs work, but they live in the method's memory, which the next run overwrites, and the
     Python ``execute()`` copies them unless it gets ``clone_outputs=False``.
 
@@ -66,8 +66,9 @@ class PropagateDeviceConfig:
     # memory until the last delegate there has read it. Set
     # skip_h2d_for_constants to keep constants on the device instead.
     #
-    # Pair with MemoryPlanningPass(alloc_graph_input=False), or the runtime reserves its own buffer
-    # for the input and refuses the caller's tensor.
+    # Pair with MemoryPlanningPass(alloc_graph_input=False), or to_executorch raises: the program
+    # would reserve its own buffer for the input, and the runtime cannot copy the caller's tensor
+    # into it.
     # For per-method values, pass a dict of PropagateDeviceConfig, keyed by method name, as the
     # propagate_device_config of ExecutorchBackendConfig.
     skip_h2d_for_method_inputs: Union[bool, Dict[str, bool]] = False
