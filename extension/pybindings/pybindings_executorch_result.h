@@ -10,6 +10,7 @@
 
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -76,15 +77,26 @@ inline const PyTensorDType& python_dtype(
   return kDTypes[index];
 }
 
-inline executorch::aten::ScalarType scalar_type_from_torch_dtype(
-    const std::string& torch_dtype) {
+inline std::optional<executorch::aten::ScalarType> scalar_type_from_name(
+    const std::string& name) {
   using executorch::aten::ScalarType;
-  for (int8_t value = 0; value < static_cast<int8_t>(ScalarType::NumOptions);
+  for (int8_t value = 0; value < static_cast<int8_t>(ScalarType::Undefined);
        ++value) {
     const auto scalar_type = static_cast<ScalarType>(value);
-    const auto& dtype = python_dtype(scalar_type);
-    if (torch_dtype == std::string("torch.") + dtype.torch_name) {
+    if (name == python_dtype(scalar_type).torch_name) {
       return scalar_type;
+    }
+  }
+  return std::nullopt;
+}
+
+inline executorch::aten::ScalarType scalar_type_from_torch_dtype(
+    const std::string& torch_dtype) {
+  const std::string prefix = "torch.";
+  if (torch_dtype.compare(0, prefix.size(), prefix) == 0) {
+    if (const auto scalar_type =
+            scalar_type_from_name(torch_dtype.substr(prefix.size()))) {
+      return *scalar_type;
     }
   }
   throw py::value_error("Unsupported torch dtype: " + torch_dtype);
@@ -97,10 +109,17 @@ inline PyObject* loaded_torch_module() {
   static PyObject* torch_module = nullptr;
   if (torch_module == nullptr) {
     PyObject* loaded = PyDict_GetItemString(PyImport_GetModuleDict(), "torch");
-    if (loaded != nullptr) {
-      Py_INCREF(loaded);
-      torch_module = loaded;
+    if (loaded == nullptr || loaded == Py_None) {
+      return nullptr;
     }
+    // A torch that another thread is still importing is not usable yet.
+    const auto spec = py::getattr(py::handle(loaded), "__spec__", py::none());
+    if (!spec.is_none() &&
+        py::getattr(spec, "_initializing", py::bool_(false)).cast<bool>()) {
+      return nullptr;
+    }
+    Py_INCREF(loaded);
+    torch_module = loaded;
   }
   return torch_module;
 }
@@ -112,16 +131,19 @@ inline void synchronize_torch_cuda_device(int index) {
 }
 
 // Waits for every queued operation on a device. Bindings built without CUDA
-// support have no CUDA runtime of their own, so they wait through torch's,
-// which is loaded whenever such bindings see CUDA memory.
+// support have no CUDA runtime of their own, so they wait through torch's
+// once torch is imported.
 inline void synchronize_device(int index) {
 #ifndef EXECUTORCH_PYBINDINGS_CUDA
-  if (loaded_torch_module() != nullptr) {
-    synchronize_torch_cuda_device(index);
-    return;
+  if (loaded_torch_module() == nullptr) {
+    throw std::runtime_error(
+        "CUDA tensor interchange requires bindings built with CUDA support, "
+        "or torch imported to wait for CUDA work");
   }
-#endif
+  synchronize_torch_cuda_device(index);
+#else
   synchronize_cuda_device(index);
+#endif
 }
 
 /** Tensor result returned by portable Python bindings. */

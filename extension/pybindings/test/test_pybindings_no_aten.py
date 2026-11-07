@@ -134,7 +134,7 @@ else:
     import os
 
     assert Path(runtime.__file__).resolve() == Path(sys.argv[1]).resolve()
-    assert runtime._tensor_output == "executorch"
+    assert runtime._tensor_output is None
     with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as source:
         data = source.read()
     module = runtime._load_for_executorch_from_buffer(data)
@@ -211,6 +211,21 @@ else:
         self.assertFalse(np.shares_memory(np.asarray(copy), np.asarray(output)))
         np.testing.assert_array_equal(np.asarray(copy), np.array([3.0]))
 
+    def test_executorch_result_is_not_a_bool_or_number(self) -> None:
+        if runtime._tensor_output != "executorch":
+            self.skipTest("ExecuTorchResult output was not selected")
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        output = module(
+            (np.array([1.0], dtype=np.float32), np.array([2.0], dtype=np.float32))
+        )[0]
+
+        for convert in (bool, int, float):
+            with self.subTest(convert=convert.__name__):
+                with self.assertRaisesRegex(TypeError, r"numpy\.asarray\(result\)"):
+                    convert(output)
+
     def test_executorch_result_from_host_requires_cuda(self) -> None:
         # A build with CUDA support uploads instead; the CUDA suite covers it.
         if "CudaBackend" in runtime._get_registered_backend_names():
@@ -219,6 +234,28 @@ else:
             with self.subTest(shape=shape):
                 with self.assertRaisesRegex(RuntimeError, "CUDA support"):
                     runtime.ExecuTorchResult.from_host(np.ones(shape, dtype=np.float32))
+
+    def test_executorch_result_from_host_checks_dtype(self) -> None:
+        # The checks come before the upload, so they need no CUDA.
+        words = np.zeros((2, 3), dtype=np.uint16)
+        for source, dtype, message in (
+            (words, "bfloat", "Unsupported dtype 'bfloat'"),
+            (words.view(np.float16), "bfloat16", "cannot read a buffer of float16"),
+            (words.view(np.uint8), "bfloat16", "cannot read a buffer of uint8"),
+            (words, "int16", "cannot read a buffer of uint16"),
+        ):
+            with self.subTest(source=source.dtype, dtype=dtype):
+                with self.assertRaisesRegex(ValueError, message):
+                    runtime.ExecuTorchResult.from_host(source, dtype=dtype)
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        output = module(
+            (np.array([1.0], dtype=np.float32), np.array([2.0], dtype=np.float32))
+        )[0]
+        if isinstance(output, runtime.ExecuTorchResult):
+            with self.assertRaisesRegex(ValueError, "does not match the result's"):
+                runtime.ExecuTorchResult.from_host(output, dtype="bfloat16")
 
     def test_borrowed_result_does_not_create_method_cycle(self) -> None:
         if runtime._tensor_output != "executorch":
@@ -475,9 +512,9 @@ else:
         output = module((torch.tensor([1.0]), torch.tensor([2.0])))[0]
 
         expected_type = (
-            torch.Tensor
-            if runtime._tensor_output == "torch"
-            else runtime.ExecuTorchResult
+            runtime.ExecuTorchResult
+            if runtime._tensor_output == "executorch"
+            else torch.Tensor
         )
         self.assertIsInstance(output, expected_type)
         np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
