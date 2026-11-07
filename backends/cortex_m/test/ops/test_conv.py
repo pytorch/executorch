@@ -327,7 +327,6 @@ test_cases = {
 
 
 xfails_dialect: dict[str, xfail_type] = {
-    "conv2d_dilation": "NotImplementedError: 'slow_conv_dilated<>' not implemented for 'Int'",
     "conv1d": "Currently not supported.",
     "conv2d_nchw": "Currently not supported.",
 }
@@ -340,7 +339,17 @@ def test_dialect_conv2d(test_case, cortex_m_target):
     )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
-        test_case.model.ops_after_transforms,
+        {
+            (
+                name.replace(
+                    "quantized_conv2d_default", "quantized_conv2d_packed_default"
+                )
+                if cortex_m_target.backend == cmsis_nn.Backend.MVE
+                and cmsis_nn.is_aot_enabled()
+                else name
+            ): count
+            for name, count in test_case.model.ops_after_transforms.items()
+        },
         qtol=1,
     )
 
@@ -381,6 +390,7 @@ def test_grouped_conv2d_bias_is_populated(test_case, cortex_m_target):
     module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
     grouped_convs = (
         exir_ops.edge.cortex_m.quantized_conv2d.default,
+        exir_ops.edge.cortex_m.quantized_conv2d_packed.default,
         exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default,
     )
     [conv_node] = [
@@ -405,7 +415,7 @@ def test_dialect_single_channel_dispatch(backend, out_channels):
     graph = tester.get_artifact(StageType.RUN_PASSES).exported_program().graph
     regular = backend == cmsis_nn.Backend.MVE and out_channels > 8
     expected = (
-        exir_ops.edge.cortex_m.quantized_conv2d.default
+        exir_ops.edge.cortex_m.quantized_conv2d_packed.default
         if regular
         else exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default
     )

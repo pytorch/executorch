@@ -188,9 +188,9 @@ def test_pipeline_uses_configured_stages(monkeypatch, test_method, use_explicit_
         _count(
             tester.get_artifact(StageType.RUN_PASSES).exported_program(),
             (
-                exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default
+                exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default
                 if use_explicit_layout
-                else exir_ops.edge.cortex_m.quantized_conv2d.default
+                else exir_ops.edge.cortex_m.quantized_conv2d_packed.default
             ),
         )
         == 1
@@ -216,21 +216,25 @@ def test_layout_pipelines_select_distinct_spatial_operators():
             node.users for node in program.graph.nodes if node.op == "placeholder"
         )
 
-    assert _count(legacy_program, exir_ops.edge.cortex_m.quantized_conv2d.default) == 1
+    assert (
+        _count(legacy_program, exir_ops.edge.cortex_m.quantized_conv2d_packed.default)
+        == 1
+    )
     assert (
         _count(
             legacy_program,
-            exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default,
         )
         == 0
     )
     assert (
-        _count(explicit_program, exir_ops.edge.cortex_m.quantized_conv2d.default) == 0
+        _count(explicit_program, exir_ops.edge.cortex_m.quantized_conv2d_packed.default)
+        == 0
     )
     assert (
         _count(
             explicit_program,
-            exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default,
         )
         == 1
     )
@@ -355,7 +359,10 @@ def test_conv1d_is_quantized_before_layout_conversion():
     _run_explicit_layout_pass_manager(tester)
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
     assert _count(program, exir_ops.edge.aten.convolution.default) == 0
 
 
@@ -377,7 +384,10 @@ def _lower_nhwc_padded_conv(channels, shared_pad):
         )
     )
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
     assert _count(program, exir_ops.edge.cortex_m.pad.default) == int(shared_pad)
     if not shared_pad:
         assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 0
@@ -456,7 +466,10 @@ def test_conv_behind_lut_activation_lowers_to_cmsis_nn(fn, shape):
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
     assert _count(program, exir_ops.edge.cortex_m.quantized_activation.default) == 1
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
     assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 2
     assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
     for node in program.graph.nodes:
@@ -486,7 +499,10 @@ def test_conv_behind_each_lut_activation_lowers_to_cmsis_nn(fn):
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
     assert _count(program, exir_ops.edge.cortex_m.quantized_activation.default) == 1
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
 
@@ -556,7 +572,10 @@ def test_convs_around_a_reshape_behind_lut_activation_lower_to_cmsis_nn():
     )
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 2
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 2
+    )
     assert _count(program, exir_ops.edge.aten.convolution.default) == 0
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
@@ -569,7 +588,10 @@ def test_explicit_layout_lowers_conv_on_a_quantized_constant():
 
     assert _count(program, exir_ops.edge.aten.full_like.default) == 0
     assert _count(program, exir_ops.edge.aten.full.default) == 1
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
 
@@ -692,7 +714,10 @@ def test_conv1d_chain_keeps_only_the_boundary_layout_copies():
     tester = _run_explicit_layout_passes(CortexMTester(Conv1dChain().eval(), inputs))
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 3
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 3
+    )
     assert [
         node.args[1]
         for node in program.graph.find_nodes(
@@ -712,7 +737,8 @@ def test_conv1d_output_is_squeezed_before_its_layout_copy():
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
     (conv,) = program.graph.find_nodes(
-        op="call_function", target=exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default
+        op="call_function",
+        target=exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default,
     )
     (squeeze,) = conv.users
     (layout_copy,) = squeeze.users

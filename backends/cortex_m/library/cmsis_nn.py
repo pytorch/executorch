@@ -3,12 +3,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+"""Typed CMSIS-NN bindings for Cortex-M export."""
 
 from __future__ import annotations
 
 import importlib
 from types import ModuleType
 from typing import Any, cast, ClassVar, Sequence, TYPE_CHECKING
+
+import torch
 
 _cmsis_nn: ModuleType | None = None
 _cmsis_nn_module_candidates = (
@@ -130,8 +133,10 @@ def convolve_wrapper_buffer_size(
     output_offset: int = 0,
     activation_min: int = -128,
     activation_max: int = 127,
+    weights_packed: bool = False,
 ) -> int:
-    return _require_cmsis_nn().convolve_wrapper_buffer_size(
+    bindings = _require_cmsis_nn()
+    return bindings.convolve_wrapper_buffer_size(
         backend,
         data_type,
         input_nhwc=input_nhwc,
@@ -144,6 +149,11 @@ def convolve_wrapper_buffer_size(
         output_offset=output_offset,
         activation_min=activation_min,
         activation_max=activation_max,
+        filter_format=(
+            bindings.FilterFormat.PACKED_4X16
+            if weights_packed
+            else bindings.FilterFormat.ROW_MAJOR
+        ),
     )
 
 
@@ -191,6 +201,45 @@ def fully_connected_buffer_size(
         data_type,
         filter_nhwc=filter_nhwc,
     )
+
+
+def vector_sum_s8(
+    weights: torch.Tensor,
+    lhs_offset: int,
+    bias: torch.Tensor | None = None,
+    rhs_offset: int = 0,
+) -> torch.Tensor:
+    result = _require_cmsis_nn().vector_sum_s8(
+        weights.detach().cpu().contiguous().numpy(),
+        lhs_offset,
+        None if bias is None else bias.detach().cpu().contiguous().numpy(),
+        rhs_offset,
+    )
+    return torch.from_numpy(result)
+
+
+def is_aot_enabled() -> bool:
+    return _require_cmsis_nn().aot_enabled
+
+
+def convolve_s8_prepare_weights(
+    weights: torch.Tensor,
+    input_offset: int,
+    bias: torch.Tensor | None = None,
+    groups: int = 1,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pack int8 OHWI weights and precompute effective bias at export.
+
+    Return a flat PACKED_4X16 weight buffer and an int32 effective-bias tensor.
+    MVE convolution consumes these together at runtime without unpacking.
+    """
+    packed, effective_bias = _require_cmsis_nn().convolve_s8_prepare_weights(
+        weights.detach().cpu().contiguous().numpy(),
+        input_offset,
+        None if bias is None else bias.detach().cpu().contiguous().numpy(),
+        groups=groups,
+    )
+    return torch.from_numpy(packed).clone(), torch.from_numpy(effective_bias).clone()
 
 
 def transpose_conv_buffer_size(

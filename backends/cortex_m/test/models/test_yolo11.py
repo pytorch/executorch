@@ -60,7 +60,7 @@ ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_activation_default": 78,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 18,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_batch_matmul_default": 2,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_nhwc_default": 81,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_packed_nhwc_default": 81,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_nhwc_default": 7,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_max_pool2d_nhwc_default": 3,
     "executorch_exir_dialects_edge__ops_cortex_m_softmax_default": 1,
