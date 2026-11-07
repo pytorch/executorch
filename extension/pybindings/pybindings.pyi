@@ -70,9 +70,15 @@ class ExecuTorchResult:
         ...
 
     @staticmethod
-    def from_host(source: Any, device_index: int = 0) -> ExecuTorchResult:
+    def from_host(
+        source: Any, device_index: int = 0, *, dtype: Optional[str] = None
+    ) -> ExecuTorchResult:
         """Copy a dense CPU buffer, or a CPU ExecuTorchResult, to a CUDA device,
         for use as a method input.
+
+        ``dtype``, such as ``"bfloat16"``, reads a buffer of unsigned integers of
+        the same width as that dtype, for dtypes the buffer protocol cannot
+        describe.
 
         Requires bindings built with CUDA support.
         """

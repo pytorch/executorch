@@ -1333,6 +1333,35 @@ class BufferTensor final {
   executorch::aten::ScalarType scalar_type_;
 };
 
+// The dtype of host data that ExecuTorchResult.from_host() is told to read as
+// `dtype`. PEP 3118 cannot describe dtypes such as bfloat16, so their data
+// comes as unsigned integers of the same width, the way results export it. Any
+// other mismatch is refused, so data is never reinterpreted by mistake.
+executorch::aten::ScalarType host_data_dtype(
+    executorch::aten::ScalarType buffer_type,
+    const std::string& dtype) {
+  using executorch::aten::ScalarType;
+  const auto named = scalar_type_from_name(dtype);
+  if (!named) {
+    throw py::value_error("Unsupported dtype '" + dtype + "'");
+  }
+  if (buffer_type == *named) {
+    return *named;
+  }
+  const bool same_width_unsigned =
+      runtime::elementSize(buffer_type) == runtime::elementSize(*named) &&
+      (buffer_type == ScalarType::Byte || buffer_type == ScalarType::UInt16 ||
+       buffer_type == ScalarType::UInt32 || buffer_type == ScalarType::UInt64);
+  if (python_dtype(*named).buffer_format != nullptr || !same_width_unsigned) {
+    throw py::value_error(
+        "dtype " + dtype + " cannot read a buffer of " +
+        python_dtype(buffer_type).torch_name +
+        ". Pass data of that dtype or, for a dtype the buffer protocol cannot "
+        "describe, unsigned integers of the same width.");
+  }
+  return *named;
+}
+
 bool is_torch_tensor(const py::handle& value) {
   static PyObject* tensor_type = nullptr;
   if (tensor_type == nullptr) {
@@ -5739,10 +5768,18 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           "Return a copy of this result in CPU memory.")
       .def_static(
           "from_host",
-          [](const py::object& source, int device_index) {
+          [](const py::object& source,
+             int device_index,
+             const std::optional<std::string>& dtype) {
             if (py::isinstance<PyExecuTorchResult>(source)) {
-              return source.cast<std::shared_ptr<PyExecuTorchResult>>()
-                  ->to_device(device_index);
+              const auto result =
+                  source.cast<std::shared_ptr<PyExecuTorchResult>>();
+              if (dtype && *dtype != result->dtype()) {
+                throw py::value_error(
+                    "dtype " + *dtype + " does not match the result's dtype " +
+                    result->dtype());
+              }
+              return result->to_device(device_index);
             }
             const BufferTensor host(source);
             return PyExecuTorchResult::from_host(
@@ -5751,14 +5788,19 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
                     host.sizes().begin(), host.sizes().end()),
                 std::vector<executorch::aten::StridesType>(
                     host.strides().begin(), host.strides().end()),
-                host.scalar_type(),
+                dtype ? host_data_dtype(host.scalar_type(), *dtype)
+                      : host.scalar_type(),
                 device_index);
           },
           py::arg("source"),
           py::arg("device_index") = 0,
+          py::kw_only(),
+          py::arg("dtype") = py::none(),
           "Copy a dense CPU buffer, or a CPU ExecuTorchResult, to a CUDA "
-          "device, for use as a method input. Requires bindings built with "
-          "CUDA support.")
+          "device, for use as a method input. dtype, such as \"bfloat16\", "
+          "reads a buffer of unsigned integers of the same width as that "
+          "dtype, for dtypes the buffer protocol cannot describe. Requires "
+          "bindings built with CUDA support.")
       // Python would otherwise treat a result as always true, and int() and
       // float() would parse its bytes as text.
       .def("__bool__", refuse_scalar_conversion("has no truth value"))
