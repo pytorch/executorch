@@ -486,4 +486,6 @@ runtime = struct(
     python_binary = _python_binary,
     python_library = _python_library,
     python_test = _python_test,
+    sqlite_deps = env.sqlite_deps,
+    sqlite_libraries = env.sqlite_libraries,
 )
