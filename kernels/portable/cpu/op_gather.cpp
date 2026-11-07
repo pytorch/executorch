@@ -38,20 +38,29 @@ void gather_helper(
     return;
   }
 
+  // The input and the index can be in any dim order, like the result of
+  // nonzero, so both are read through their strides. A contiguous index, the
+  // usual case, is read in order.
+  const auto in_strides = in.strides();
+  const auto index_strides = index.strides();
+  const bool index_contiguous = is_contiguous_dim_order(
+      index.dim_order().data(), index.dim_order().size());
   for (const auto ix : c10::irange(index.numel())) {
     size_t ix_coord[kTensorDimensionLimit];
     indexToCoordinate(index, ix, ix_coord);
 
-    size_t in_coord[kTensorDimensionLimit];
-    for (const auto i : c10::irange(out.dim())) {
-      if (i == dim) {
-        in_coord[i] = index_data[ix];
-      } else {
-        in_coord[i] = ix_coord[i];
+    size_t index_ix = ix;
+    if (!index_contiguous) {
+      index_ix = 0;
+      for (const auto i : c10::irange(index.dim())) {
+        index_ix += ix_coord[i] * index_strides[i];
       }
     }
-
-    size_t in_ix = coordinateToIndex(in, in_coord);
+    size_t in_ix = 0;
+    for (const auto i : c10::irange(in.dim())) {
+      const size_t in_coord = i == dim ? index_data[index_ix] : ix_coord[i];
+      in_ix += in_coord * in_strides[i];
+    }
     size_t out_ix = coordinateToIndex(out, ix_coord);
 
     out_data[out_ix] = in_data[in_ix];

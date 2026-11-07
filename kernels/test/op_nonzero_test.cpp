@@ -93,4 +93,36 @@ TEST_F(OpNonzeroTest, DynamicShapeInsufficientBuffer) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_nonzero_out(a, out));
 }
+
+TEST_F(OpNonzeroTest, ColumnMajorOut) {
+  TensorFactory<ScalarType::Float> tf_input;
+  TensorFactory<ScalarType::Long> tf_long;
+  // clang-format off
+  Tensor a = tf_input.make(/*sizes=*/{2, 3}, /*data=*/{0, 1, 2,
+                                                       3, 0, 0});
+  // clang-format on
+  Tensor out = tf_long.make_with_dimorder(
+      {4, 2},
+      std::vector<int64_t>(8, 0),
+      /*dim_order=*/{1, 0},
+      torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+
+  op_nonzero_out(a, out);
+  // The indices are (0, 1), (0, 2) and (1, 0), stored column by column.
+  EXPECT_TENSOR_EQ(
+      out,
+      tf_long.make_with_dimorder(
+          {3, 2}, {0, 0, 1, 1, 2, 0}, /*dim_order=*/{1, 0}));
+}
 #endif
+
+TEST_F(OpNonzeroTest, ColumnMajorInput) {
+  TensorFactory<ScalarType::Long> tf;
+  // self is [[0, 1], [0, 2], [1, 0]], stored column by column like the result
+  // of nonzero.
+  Tensor self =
+      tf.make_with_dimorder({3, 2}, {0, 0, 1, 1, 2, 0}, /*dim_order=*/{1, 0});
+  Tensor out = tf.zeros({3, 2});
+  op_nonzero_out(self, out);
+  EXPECT_TENSOR_EQ(out, tf.make({3, 2}, {0, 1, 1, 1, 2, 0}));
+}

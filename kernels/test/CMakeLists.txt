@@ -255,6 +255,7 @@ set(all_test_sources
     "op_mm_test.cpp"
     "op_mul_test.cpp"
     "op_pow_test.cpp"
+    "op_narrow_copy_test.cpp"
     "op_native_batch_norm_test.cpp"
     "op_native_dropout_test.cpp"
     "op_native_group_norm_test.cpp"

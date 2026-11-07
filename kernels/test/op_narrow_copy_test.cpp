@@ -207,3 +207,26 @@ TEST_F(OpNarrowCopyOutTest, MismatchedDtypesDies) {
       context_,
       op_narrow_copy_out(input, /*dim=*/0, /*start=*/0, /*length=*/1, out));
 }
+
+TEST_F(OpNarrowCopyOutTest, ColumnMajorInput) {
+  TensorFactory<ScalarType::Long> tf;
+  // input is [[0, 1], [0, 2], [1, 0]], stored column by column like the result
+  // of nonzero.
+  Tensor input =
+      tf.make_with_dimorder({3, 2}, {0, 0, 1, 1, 2, 0}, /*dim_order=*/{1, 0});
+  Tensor out = tf.zeros({3, 1});
+  op_narrow_copy_out(input, /*dim=*/1, /*start=*/1, /*length=*/1, out);
+  EXPECT_TENSOR_EQ(out, tf.make({3, 1}, {1, 2, 0}));
+}
+
+#ifndef USE_ATEN_LIB
+// ATen's narrow_copy.out writes out as if it were contiguous.
+TEST_F(OpNarrowCopyOutTest, ChannelsLastOutput) {
+  TensorFactory<ScalarType::Float> tf;
+  // input[n, c, 0, w] is 4 * n + 2 * c + w.
+  Tensor input = tf.make({2, 2, 1, 2}, {0, 1, 2, 3, 4, 5, 6, 7});
+  Tensor out = tf.zeros_channels_last({1, 2, 1, 2});
+  op_narrow_copy_out(input, /*dim=*/0, /*start=*/1, /*length=*/1, out);
+  EXPECT_TENSOR_EQ(out, tf.make_channels_last({1, 2, 1, 2}, {4, 6, 5, 7}));
+}
+#endif
