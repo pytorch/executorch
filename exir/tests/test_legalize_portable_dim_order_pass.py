@@ -106,6 +106,12 @@ class AvgPoolCopyModule(torch.nn.Module):
         return torch.empty_like(x, memory_format=torch.channels_last).copy_(x)
 
 
+class NonzeroModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor):
+        indices = torch.nonzero(x)
+        return indices, indices[:, 0], indices + 1
+
+
 class TestLegalizePortableDimOrderPass(unittest.TestCase):
     @staticmethod
     def _build_edge(module: torch.nn.Module, sample_input, dynamic_shapes=None):
@@ -474,6 +480,27 @@ class TestLegalizePortableDimOrderPass(unittest.TestCase):
                     "forward", (torch.zeros_like(x),)
                 )
                 torch.testing.assert_close(previous[0], x.expand(shape))
+
+    def test_nonzero_result_gets_default_dim_order(self) -> None:
+        # With one column, the layout of ATen is the same memory as the default
+        # dim order, but not the same dim order.
+        for x in (
+            torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]]),
+            torch.tensor([0.0, 1.0, 2.0]),
+        ):
+            with self.subTest(shape=x.shape):
+                _, executorch_prog = self._build_executorch_program(
+                    NonzeroModule(), (x,)
+                )
+                executorch_module = _load_for_executorch_from_buffer(
+                    executorch_prog.buffer
+                )
+                for sample in (x, torch.zeros_like(x), torch.ones_like(x)):
+                    for actual, expected in zip(
+                        executorch_module.run_method("forward", (sample,)),
+                        NonzeroModule()(sample),
+                    ):
+                        torch.testing.assert_close(actual, expected)
 
     def test_reinplaced_program_matches_eager(self) -> None:
         channels_last = torch.randn(2, 3, 4, 6).to(memory_format=torch.channels_last)
