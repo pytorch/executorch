@@ -144,6 +144,16 @@ output = method([device_input])[0]
 result = np.asarray(output.to_host())
 ```
 
+The buffer protocol cannot describe dtypes such as bfloat16, so pass their data
+as unsigned integers of the same width and name the dtype. For example, with an
+`ml_dtypes.bfloat16` array:
+
+```python
+device_input = ExecuTorchResult.from_host(
+    bfloat16_input.view(np.uint16), device_index=0, dtype="bfloat16"
+)
+```
+
 Copying CUDA memory requires CUDA-enabled bindings: `from_host()`, `to_host()`
 of a CUDA result, and a CUDA `ExecuTorchResult` with `clone_outputs=True`.
 Bindings built without CUDA support synchronize through Python Torch instead,

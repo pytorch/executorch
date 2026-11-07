@@ -76,15 +76,28 @@ inline const PyTensorDType& python_dtype(
   return kDTypes[index];
 }
 
-inline executorch::aten::ScalarType scalar_type_from_torch_dtype(
-    const std::string& torch_dtype) {
+// The dtype that ExecuTorchResult.dtype calls `name`, such as "bfloat16".
+inline std::optional<executorch::aten::ScalarType> scalar_type_from_name(
+    const std::string& name) {
   using executorch::aten::ScalarType;
-  for (int8_t value = 0; value < static_cast<int8_t>(ScalarType::NumOptions);
+  // The dtype table ends at UInt64, while ATen's ScalarType goes on past it.
+  for (int8_t value = 0; value <= static_cast<int8_t>(ScalarType::UInt64);
        ++value) {
     const auto scalar_type = static_cast<ScalarType>(value);
-    const auto& dtype = python_dtype(scalar_type);
-    if (torch_dtype == std::string("torch.") + dtype.torch_name) {
+    if (name == python_dtype(scalar_type).torch_name) {
       return scalar_type;
+    }
+  }
+  return std::nullopt;
+}
+
+inline executorch::aten::ScalarType scalar_type_from_torch_dtype(
+    const std::string& torch_dtype) {
+  const std::string prefix = "torch.";
+  if (torch_dtype.compare(0, prefix.size(), prefix) == 0) {
+    if (const auto scalar_type =
+            scalar_type_from_name(torch_dtype.substr(prefix.size()))) {
+      return *scalar_type;
     }
   }
   throw py::value_error("Unsupported torch dtype: " + torch_dtype);

@@ -597,6 +597,14 @@ if case == "importing":
                         completed.returncode, 0, completed.stdout + completed.stderr
                     )
 
+    def test_executorch_result_from_host_refuses_unknown_dtype(self):
+        # Checked before any upload, so it needs no CUDA. Unlike the no-ATen
+        # suite, this also runs against ATen bindings.
+        with self.assertRaisesRegex(ValueError, "Unsupported dtype 'bfloat'"):
+            self.runtime.ExecuTorchResult.from_host(
+                np.zeros(2, dtype=np.uint16), dtype="bfloat"
+            )
+
     def test_empty_numpy_buffer_input(self):
         exported_program, inputs = create_program(ModuleAddEmpty())
         array = np.zeros((3, 0), dtype=np.float32)
