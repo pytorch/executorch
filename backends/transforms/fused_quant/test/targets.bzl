@@ -38,6 +38,7 @@ def define_common_targets():
             "//caffe2:torch",
             "//executorch/backends/test:program_builder",
             "//executorch/backends/transforms:permute_pass_utils",
+            "//executorch/backends/transforms:utils",
             "//executorch/exir/dialects:lib",
         ],
     )
@@ -297,6 +298,23 @@ def define_common_targets():
             "//executorch/backends/transforms/fused_quant:prequantize_embedding",
             "//caffe2:torch",
             "//executorch/backends/test:program_builder",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_op_numerics",
+        srcs = ["test_op_numerics.py"],
+        deps = [
+            "fbsource//third-party/pypi/parameterized:parameterized",
+            "//executorch/backends/transforms/fused_quant:decompose_fused_quant",
+            "//executorch/backends/transforms/fused_quant:graph_utils",
+            "//executorch/exir/dialects/fused_quant:ops",
+            "//executorch/backends/transforms/fused_quant:to_channels_first",
+            ":test_helpers",
+            "//caffe2:torch",
+            "//executorch/backends/test:program_builder",
+            "//executorch/exir:pass_manager",
             "//executorch/exir/dialects:lib",
         ],
     )
