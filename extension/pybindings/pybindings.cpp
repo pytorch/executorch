@@ -802,10 +802,10 @@ bool keep_torch_outputs() {
     try {
       py::module_::import("torch");
     } catch (py::error_already_set& error) {
-      // Only a torch that is not there counts as missing. A torch that is
-      // there but fails to import, even with an ImportError, is reported.
-      if (!error.matches(PyExc_ModuleNotFoundError) ||
-          py::str(error.value().attr("name")).cast<std::string>() != "torch") {
+      // As when torch was imported with ExecuTorch, a torch that fails with
+      // an ImportError, such as for a missing library, counts as missing.
+      // Any other error is reported.
+      if (!error.matches(PyExc_ImportError)) {
         try {
           error.value().attr("add_note")(
               "ExecuTorch imports torch here to return torch.Tensor outputs. "

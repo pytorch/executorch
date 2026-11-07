@@ -406,17 +406,12 @@ def check(call, expected, warnings_expected=0):
                 from executorch.extension.pybindings import portable_lib
 
                 module = portable_lib._load_for_executorch(program_path)
-                # A torch that is there but broken, even with an ImportError or
-                # a missing module of its own.
-                for error_type, missing in (
-                    (RuntimeError, "torch"),
-                    (ImportError, "torch"),
-                    (ModuleNotFoundError, "torch._C"),
-                ):
-                    blocker.error, blocker.missing = error_type, missing
+                # A torch that fails with an error other than ImportError is
+                # reported at every call.
+                for _ in range(2):
                     try:
                         module.forward([x, x])
-                    except error_type as error:
+                    except RuntimeError as error:
                         assert "torch is unavailable" in str(error), error
                         # add_note is new in Python 3.11.
                         notes = "".join(getattr(error, "__notes__", []))
@@ -425,11 +420,13 @@ def check(call, expected, warnings_expected=0):
                         ), notes
                     else:
                         raise AssertionError("a broken torch must not be hidden")
-                blocker.missing = "torch"
+                # An ImportError, even for a part of torch, counts as missing,
+                # as when torch was imported with ExecuTorch.
+                blocker.error, blocker.missing = ImportError, "torch._C"
                 check(lambda: module.forward([x, x]), ["ExecuTorchResult"])
                 check(lambda: module.run_method("tensor_constant"), ["ExecuTorchResult"])
                 # A missing torch is not looked for again on every call.
-                assert blocker.attempts == 4, blocker.attempts
+                assert blocker.attempts == 3, blocker.attempts
                 assert "torch" not in sys.modules
                 """,
             ),
