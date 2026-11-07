@@ -157,9 +157,9 @@ device_input = ExecuTorchResult.from_host(
 Copying CUDA memory requires CUDA-enabled bindings: `from_host()`, `to_host()`
 of a CUDA result, and a CUDA `ExecuTorchResult` with `clone_outputs=True`.
 Bindings built without CUDA support synchronize through Python Torch instead,
-so once torch is imported, by you or by a call that returns torch tensors, they
-still read CUDA inputs, torch tensors or DLPack, and return borrowed CUDA
-results.
+and import torch to do so unless `EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT` is
+`executorch`. So with torch installed, or imported by you, they still read
+CUDA inputs, torch tensors or DLPack, and return borrowed CUDA results.
 
 Execution is synchronous at the Python boundary: a call returns after its device
 work has finished, so its outputs are ready on any stream. How long a call with

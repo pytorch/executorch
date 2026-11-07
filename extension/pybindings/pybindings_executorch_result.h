@@ -135,12 +135,15 @@ inline void synchronize_torch_cuda_device(int index) {
 // once torch is imported.
 inline void synchronize_device(int index) {
 #ifndef EXECUTORCH_PYBINDINGS_CUDA
-  if (loaded_torch_module() != nullptr) {
-    synchronize_torch_cuda_device(index);
-    return;
+  if (loaded_torch_module() == nullptr) {
+    throw std::runtime_error(
+        "CUDA tensor interchange requires bindings built with CUDA support, "
+        "or torch imported to wait for CUDA work");
   }
-#endif
+  synchronize_torch_cuda_device(index);
+#else
   synchronize_cuda_device(index);
+#endif
 }
 
 /** Tensor result returned by portable Python bindings. */
