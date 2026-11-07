@@ -22,9 +22,6 @@ from executorch.backends.transforms.convert_conv1d_to_conv2d_pass import (
     ConvertConv1dToConv2dPass,
 )
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
-from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
-    RemovePermutesAroundElementwiseOps,
-)
 from executorch.backends.transforms.remove_unused_constants_pass import (
     RemoveUnusedConstantsPass,
 )
@@ -55,6 +52,7 @@ from .decompose_mean_pass import DecomposeMeanPass
 from .decompose_sdpa_pass import DecomposeSDPAPass
 from .explicit_layout_pass import (
     CortexMCanonicalizeViewCopyPermutePass,
+    CortexMRemovePermutesAroundElementwiseOps,
     CortexMReplaceOpsWithChannelsLastVariants,
     ValidateCortexMExplicitLayoutPass,
 )
@@ -176,7 +174,7 @@ class CortexMPassManager(ExportedProgramPassManager):
         CortexMReplaceOpsWithChannelsLastVariants,
         ReplaceSqueezeAndUnsqueezeWithViewPass,
         # Move layout copies across pads before singleton permutations become views.
-        RemovePermutesAroundElementwiseOps,
+        CortexMRemovePermutesAroundElementwiseOps,
         CortexMCanonicalizeViewCopyPermutePass,
         ValidateCortexMExplicitLayoutPass,
         ReplaceQuantNodesPass,

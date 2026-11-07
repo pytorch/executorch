@@ -409,20 +409,26 @@ def to_physical_order(logical_pad: list[int], tensor: torch.Tensor) -> list[int]
     return [logical_pad[_NHWC_DIM_ORDER[i]] for i in range(4)]
 
 
-def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
-    """
-    Check if tensor1 is broadcasted to tensor2 along channel dimension.
-    Assumes tensor2 has shape [N, C, ...] and tensor1 has shape [N, 1, ...] or [1, C, ...].
-    """
-    if tensor1.dim() != tensor2.dim():
-        return False
-    if not is_channels_last(tensor1):
-        return False
-    if not is_channels_last(tensor2):
+def is_channel_broadcast_shape(
+    tensor1: torch.Tensor, tensor2: torch.Tensor, channel_dim: int = 1
+) -> bool:
+    if tensor1.dim() != 4 or tensor2.dim() != 4:
         return False
 
-    channel_match = tensor1.size(1) == tensor2.size(1)
-    tensor1_channels_only = tensor1.numel() == tensor1.size(1)
-    tensor2_channels_only = tensor2.numel() == tensor2.size(1)
+    channel_match = tensor1.size(channel_dim) == tensor2.size(channel_dim)
+    tensor1_channels_only = tensor1.numel() == tensor1.size(channel_dim)
+    tensor2_channels_only = tensor2.numel() == tensor2.size(channel_dim)
 
     return channel_match and (tensor1_channels_only or tensor2_channels_only)
+
+
+def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
+    return (
+        is_channel_broadcast_shape(tensor1, tensor2)
+        and is_channels_last(tensor1)
+        and is_channels_last(tensor2)
+    ) or (
+        is_channel_broadcast_shape(tensor1, tensor2, channel_dim=3)
+        and tensor1.is_contiguous()
+        and tensor2.is_contiguous()
+    )

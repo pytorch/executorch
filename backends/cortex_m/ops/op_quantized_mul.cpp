@@ -37,7 +37,7 @@ Tensor& quantized_mul_out(
       input2_int8,
       out,
       ScalarType::Char,
-      /*require_channels_last=*/channel_broadcast,
+      /*require_channels_last=*/false,
       /*require_same_sizes=*/!channel_broadcast);
 
   const int32_t kIdentityMultiplier(/*value=*/1);
@@ -70,7 +70,7 @@ Tensor& quantized_mul_out(
       std::swap<int8_t*>(input1_ptr, input2_ptr);
     }
 
-    muls_per_loop = input1_int8.size(1);
+    muls_per_loop = std::min(input1_int8.numel(), input2_int8.numel());
   } else {
     muls_per_loop = out.numel();
   }

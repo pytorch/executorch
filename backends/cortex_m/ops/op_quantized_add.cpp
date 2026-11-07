@@ -37,7 +37,7 @@ Tensor& quantized_add_out(
       input2_int8,
       out,
       ScalarType::Char,
-      /*require_channels_last=*/channel_broadcast,
+      /*require_channels_last=*/false,
       /*require_same_sizes=*/!channel_broadcast);
 
   // Validate quantization parameters
@@ -101,7 +101,7 @@ Tensor& quantized_add_out(
       std::swap<int>(input1_shift_val, input2_shift_val);
       std::swap<int8_t*>(input1_ptr, input2_ptr);
     }
-    adds_per_loop = input1_int8.size(1);
+    adds_per_loop = std::min(input1_int8.numel(), input2_int8.numel());
   } else {
     adds_per_loop = out.numel();
   }
