@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Binary comparison ops write a bool/uint8 output dtype, which differs from
-// the input dtype. IS_COMPARISON_OP is set explicitly per shader variant in the
-// .yaml.
+// The op is selected by the op_type specialization constant. Comparison ops
+// write a bool/uint8 output dtype, which differs from the input dtype, so they
+// get their own variants with IS_COMPARISON_OP set.
 
 #version 450 core
 
@@ -33,9 +33,9 @@ $if IS_COMPARISON_OP:
 #define OUT_VEC4_T ${texel_load_type(OUT_DTYPE, STORAGE)}
 #define OUT_COMPUTE_VEC4_T ${texel_type(OUT_DTYPE)}
 
-#define op(X, Y) ${OPERATOR}
-
-$if not IS_COMPARISON_OP and DTYPE in ("float", "half"):
+$if IS_COMPARISON_OP:
+  #define BINARY_SCALAR_IS_COMPARISON
+$elif DTYPE in ("float", "half"):
   #define ROUND_HALF_OUTPUT
 
 ${define_active_storage_type(STORAGE)}
@@ -63,11 +63,49 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 layout(constant_id = 3) const bool input_is_half = false;
 layout(constant_id = 4) const int out_layout = CONTIG_LAYOUT_INT;
 const int out_packed_dim = get_packed_dim(out_layout);
+layout(constant_id = 5) const int op_type = 0;
 
 #include "dispatch.glslh"
 
 $if not IS_COMPARISON_OP:
   #include "binary_op_defs.glslh"
+
+// Values of op_type. Must match BinaryOpType in BinaryOp.h.
+#define BINARY_OP_MUL 2
+#define BINARY_OP_POW 5
+#define BINARY_OP_EQ 8
+#define BINARY_OP_LT 9
+#define BINARY_OP_LE 10
+#define BINARY_OP_GT 11
+#define BINARY_OP_GE 12
+#define BINARY_OP_NE 15
+
+OUT_COMPUTE_VEC4_T apply_binary_scalar_op(
+    const int op_type,
+    const COMPUTE_VEC4_T X,
+    const COMPUTE_VEC4_T Y) {
+  switch (op_type) {
+#ifdef BINARY_SCALAR_IS_COMPARISON
+    case BINARY_OP_NE:
+      return OUT_COMPUTE_VEC4_T(notEqual(X, Y));
+    case BINARY_OP_LT:
+      return OUT_COMPUTE_VEC4_T(lessThan(X, Y));
+    case BINARY_OP_LE:
+      return OUT_COMPUTE_VEC4_T(lessThanEqual(X, Y));
+    case BINARY_OP_GT:
+      return OUT_COMPUTE_VEC4_T(greaterThan(X, Y));
+    case BINARY_OP_GE:
+      return OUT_COMPUTE_VEC4_T(greaterThanEqual(X, Y));
+    default: // BINARY_OP_EQ
+      return OUT_COMPUTE_VEC4_T(equal(X, Y));
+#else
+    case BINARY_OP_POW:
+      return OUT_COMPUTE_VEC4_T(power_of(X, Y));
+    default: // BINARY_OP_MUL
+      return OUT_COMPUTE_VEC4_T(X * Y);
+#endif
+  }
+}
 
 void main() {
 #ifdef USING_BUFFER
@@ -84,8 +122,8 @@ void main() {
   const VEC4_T in_texel = texelFetch(t_in, out_idx, 0);
 #endif
 
-  OUT_COMPUTE_VEC4_T out_texel = OUT_COMPUTE_VEC4_T(
-      op(COMPUTE_VEC4_T(in_texel), COMPUTE_VEC4_T(scalar_value)));
+  OUT_COMPUTE_VEC4_T out_texel = apply_binary_scalar_op(
+      op_type, COMPUTE_VEC4_T(in_texel), COMPUTE_VEC4_T(scalar_value));
 
 #ifdef ROUND_HALF_OUTPUT
   if (input_is_half) {
