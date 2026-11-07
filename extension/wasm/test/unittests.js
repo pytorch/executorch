@@ -95,6 +95,10 @@ describe("Tensor", () => {
     test("incorrect strides", () => {
         expect(() => et.Tensor.fromArray([2, 2], [1, 2, 3, 4], et.ScalarType.Float, [1, 1], [2, 1])).toThrow();
     });
+
+    test("strides that overflow", () => {
+        expect(() => et.Tensor.fromArray([0, 65536, 65536], [])).toThrow("Invalid tensor layout.");
+    });
 });
 
 describe("Module", () => {

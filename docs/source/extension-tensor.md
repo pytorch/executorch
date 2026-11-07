@@ -160,6 +160,25 @@ auto tensor = make_tensor_ptr(
 
 The `TensorPtr` will call the custom deleter when it is destroyed, i.e., when the smart pointer is reset and no more references to the underlying `Tensor` exist.
 
+#### Checking a Layout Without Aborting
+
+`make_tensor_ptr` aborts the process if the dim order or strides are invalid for the sizes, or if the data does not match the sizes. When they come from outside the program, for example from a file or over the network, check them first:
+
+```cpp
+if (validate_tensor_layout(sizes, dim_order, strides) != Error::Ok) {
+  return Error::InvalidArgument;  // reject the input instead of aborting
+}
+// After the check above, this product cannot overflow.
+const auto numel = std::accumulate(
+    sizes.begin(), sizes.end(), size_t(1), std::multiplies<size_t>());
+if (data.size() != numel) {
+  return Error::InvalidArgument;
+}
+auto tensor = make_tensor_ptr(sizes, std::move(data), dim_order, strides);
+```
+
+`validate_tensor_layout` does not look at the data, so check its size yourself, as above. For a `std::vector<uint8_t>` of raw bytes, the expected size is `numel * elementSize(type)` bytes. Compute it with an overflow check, because this product can overflow `size_t` even when `numel` fits.
+
 #### Sharing Existing Tensor
 
 Since `TensorPtr` is a `std::shared_ptr<Tensor>`, you can easily create a `TensorPtr` that shares an existing `Tensor`. Any changes made to the shared data are reflected across all instances sharing the same data.

@@ -11,8 +11,6 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
-#include <numeric>
 
 #ifdef EXECUTORCH_ENABLE_EVENT_TRACER
 #include <executorch/devtools/etdump/etdump_flatcc.h>
@@ -136,49 +134,15 @@ std::vector<T> convertJSGeneratorToNumberVector(val generator) {
   return data;
 }
 
-// make_tensor_ptr() assertions will abort the program if they fail.
-// These checks will throw a JS error instead.
-void assert_dim_order_and_strides_valid(
+// make_tensor_ptr() aborts the program on an invalid layout. This throws a JS
+// error instead.
+void assert_layout_valid(
     const std::vector<executorch::aten::SizesType>& sizes,
-    std::vector<executorch::aten::DimOrderType>& dim_order,
-    std::vector<executorch::aten::StridesType>& strides) {
-  THROW_IF_FALSE(
-      dim_order.size() == 0 || dim_order.size() == sizes.size(),
-      "dim_order size must match sizes or be empty.");
-  THROW_IF_FALSE(
-      strides.size() == 0 || strides.size() == sizes.size(),
-      "strides size must match sizes or be empty.");
-
-  if (dim_order.empty()) {
-    dim_order.resize(sizes.size());
-    std::iota(dim_order.begin(), dim_order.end(), 0);
-    if (!strides.empty()) {
-      std::sort(dim_order.begin(), dim_order.end(), [&](size_t a, size_t b) {
-        return strides[a] > strides[b];
-      });
-    }
-  }
-  std::vector<executorch::aten::StridesType> computed_strides(sizes.size());
-
-  auto error = runtime::dim_order_to_stride(
-      sizes.data(), dim_order.data(), sizes.size(), computed_strides.data());
-  THROW_IF_ERROR(error, "Failed to compute strides.");
-
-  if (!strides.empty()) {
-    for (size_t i = 0; i < sizes.size(); i++) {
-      THROW_IF_FALSE(
-          strides[i] == computed_strides[i] || sizes[i] == 1,
-          "invalid strides for dim %zu: %" ET_PRI_SIZES_AND_STRIDES
-          "!= %" ET_PRI_SIZES_AND_STRIDES
-          " while its size is %" ET_PRI_SIZES_AND_STRIDES " != 1",
-          i,
-          strides[i],
-          computed_strides[i],
-          sizes[i]);
-    }
-  }
-
-  strides = std::move(computed_strides);
+    const std::vector<executorch::aten::DimOrderType>& dim_order,
+    const std::vector<executorch::aten::StridesType>& strides) {
+  THROW_IF_ERROR(
+      validate_tensor_layout(sizes, dim_order, strides),
+      "Invalid tensor layout.");
 }
 
 /**
@@ -311,7 +275,7 @@ class ET_EXPERIMENTAL JsTensor {
     auto strides_vec =
         convertJSArrayToNumberVector<executorch::aten::StridesType>(strides);
 
-    assert_dim_order_and_strides_valid(sizes_vec, dim_order_vec, strides_vec);
+    assert_layout_valid(sizes_vec, dim_order_vec, strides_vec);
     switch (type) {
 #define JS_CASE_FROM_ARRAY_VECTOR_TYPE(T, NAME)            \
   case ScalarType::NAME: {                                 \
@@ -363,7 +327,7 @@ class ET_EXPERIMENTAL JsTensor {
     auto strides_vec =
         convertJSArrayToNumberVector<executorch::aten::StridesType>(strides);
 
-    assert_dim_order_and_strides_valid(sizes_vec, dim_order_vec, strides_vec);
+    assert_layout_valid(sizes_vec, dim_order_vec, strides_vec);
 
     switch (type) {
 #define JS_CASE_FROM_ITER_VECTOR_TYPE(T, NAME)                 \
