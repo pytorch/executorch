@@ -34,22 +34,22 @@ $elif DTYPE == "uint8":
 
 ${define_active_storage_type(STORAGE)}
 
-#include "indexing_utils.h"
+#include "indexing.glslh"
 
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 
+$if STORAGE == "buffer":
+  ${layout_declare_ubo(B, "BufferMetadata", "outp")}
+$else:
+  ${layout_declare_ubo(B, "TextureMetadata", "outp")}
 $if DYNAMIC_PARAMS:
   ${layout_declare_ubo(B, "uint", "minimum")}
   ${layout_declare_ubo(B, "uint", "maximum")}
 
 layout(push_constant) uniform restrict Block {
-$if STORAGE == "buffer":
-  int numel;
-$else:
-  ivec4 out_limits;
 $if DYNAMIC_PARAMS:
   ivec2 bounds_are_int;
 $else:
@@ -79,7 +79,7 @@ $else:
 
 void main() {
   const int i = int(linear_idx_from_gid());
-  if (i >= numel) {
+  if (uint(i) >= numel(outp)) {
     return;
   }
 
@@ -91,7 +91,7 @@ void main() {
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
-  if (any(greaterThanEqual(pos, out_limits.xyz))) {
+  if (out_of_bounds(pos, outp)) {
     return;
   }
 

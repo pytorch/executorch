@@ -354,7 +354,12 @@ class CrossEngineTest(unittest.TestCase):
         # Shrinking from 5 to 3 leaves the input texture longer than the input.
         steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
         seq = Dim("seq", min=2, max=12)
-        self._check_dynamic(_ConvBetweenLinears(), steps, ({1: seq},))
+        for dynamic_shapes in (({1: seq},), None):
+            self._check_dynamic(
+                _ConvBetweenLinears(),
+                steps if dynamic_shapes else steps[:1],
+                dynamic_shapes,
+            )
 
     def test_transposed_conv1d_is_refused(self):
         # ET-VK runs every rank-3 convolution as a forward conv1d.
