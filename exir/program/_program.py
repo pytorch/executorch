@@ -11,7 +11,18 @@ import io
 import logging
 import os
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Type, Union
+from typing import (
+    Any,
+    Collection,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    TextIO,
+    Type,
+    Union,
+)
 
 import torch
 import torch._export
@@ -1152,6 +1163,34 @@ def _apply_pre_decomposition_transforms(
     return program
 
 
+def _has_decomposable_ops(program: ExportedProgram, ops: Collection[Any]) -> bool:
+    """Return whether decomposing the ops in ``ops`` could change ``program``.
+
+    ``program`` must already be functional, as after ``run_decompositions({})``,
+    so a decomposition table changes it only through the ops it calls. A nested
+    region with its own decomposition table always counts, because those
+    decompositions do not come from ``ops``.
+    """
+    for module in program.graph_module.modules():
+        if (
+            isinstance(module, torch.fx.GraphModule)
+            and getattr(module.meta.get("nested_region_config"), "decompositions", None)
+            is not None
+        ):
+            return True
+    return contains_any_call_fn_target_op(program.graph_module, ops)
+
+
+def _run_decompositions_if_needed(
+    program: ExportedProgram, table: Dict[torch._ops.OpOverload, Callable[..., Any]]
+) -> ExportedProgram:
+    """Apply ``table`` to the functional ``program``, skipping the retrace if no op
+    in ``program`` has a decomposition in it."""
+    if _has_decomposable_ops(program, table):
+        return program.run_decompositions(table)
+    return program
+
+
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
@@ -1189,7 +1228,7 @@ def _gen_edge_manager_for_partitioners(
                 table = _default_decomposition_table()
                 for op in config.preserve_ops:
                     table.pop(op, None)
-                program = program.run_decompositions(table)
+                program = _run_decompositions_if_needed(program, table)
 
             # Process each partitioner individually using their specific requirements
             for curr_partitioner in partitioners_for_program:
@@ -1220,9 +1259,7 @@ def _gen_edge_manager_for_partitioners(
                         if torch.ops.aten.empty_like.default in config.preserve_ops
                         else {torch.ops.aten.empty_like.default}
                     )
-                    if contains_any_call_fn_target_op(
-                        program.graph_module, table.keys() - not_counted
-                    ):
+                    if _has_decomposable_ops(program, table.keys() - not_counted):
                         program = program.run_decompositions(table)
                     final_ops_to_preserve.update(ops_needing_preservation)
                 else:
@@ -1237,7 +1274,7 @@ def _gen_edge_manager_for_partitioners(
                         table.pop(op, None)
 
                     # First pass of decompositions with this partitioner's preserved ops
-                    program = program.run_decompositions(table)
+                    program = _run_decompositions_if_needed(program, table)
 
                     # Filter ops using EDGE_DO_NOT_DECOMP
                     temp_partitioner_dict = {name: [curr_partitioner]}
@@ -1250,7 +1287,9 @@ def _gen_edge_manager_for_partitioners(
                     final_ops_to_preserve.update(preserved_ops)
 
                     # Second pass of decompositions with this partitioner's preserved ops after filtering
-                    program = program.run_decompositions(_default_decomposition_table())
+                    program = _run_decompositions_if_needed(
+                        program, _default_decomposition_table()
+                    )
 
                     # Restore ops from edge_no_decomp_namespace to aten ops
                     _restore_transformed_ops_to_aten_ops(program)

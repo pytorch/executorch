@@ -157,25 +157,33 @@ def contains_any_call_fn_target_op(
     graph_module: torch.fx.GraphModule,
     ops: Collection[Any],
 ) -> bool:
-    """Return whether ``graph_module`` or a control-flow subgraph uses ``ops``."""
+    """Return whether ``graph_module`` or any nested graph calls one of ``ops``.
+
+    Nested graphs are all ``GraphModule`` descendants, so the bodies of every
+    higher-order op (``cond``, ``map``, ``scan``, ``while_loop``,
+    ``invoke_subgraph``) count. An ``OpOverloadPacket`` target matches when any
+    of its overloads is in ``ops``.
+    """
     if not ops:
         return False
 
-    queue = [graph_module]
-    while queue:
-        current_graph_module = queue.pop(0)
-        for node in current_graph_module.graph.nodes:
+    for module in graph_module.modules():
+        if not isinstance(module, torch.fx.GraphModule):
+            continue
+        for node in module.graph.nodes:
             if node.op != "call_function":
                 continue
-            # EdgeOpOverload wraps the original ATen overload in ``_op``.
-            # Decomposition tables are keyed by the latter.
+            # EdgeOpOverload and EdgeOpOverloadPacket wrap the ATen op in
+            # ``_op``. Decomposition tables are keyed by the latter.
             target = node.target
-            if not isinstance(target, torch._ops.OpOverload):
+            if not isinstance(
+                target, (torch._ops.OpOverload, torch._ops.OpOverloadPacket)
+            ):
                 target = getattr(target, "_op", target)
             if target in ops:
                 return True
-        queue.extend(
-            submodule
-            for _, submodule, _ in get_control_flow_submodules(current_graph_module)
-        )
+            if isinstance(target, torch._ops.OpOverloadPacket) and any(
+                getattr(target, overload) in ops for overload in target.overloads()
+            ):
+                return True
     return False
