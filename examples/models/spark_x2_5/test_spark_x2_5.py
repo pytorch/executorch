@@ -1,14 +1,14 @@
-import ast
 import json
 from pathlib import Path
+
+from executorch.examples.models.llama.export_llama_lib import EXECUTORCH_DEFINED_MODELS
+from executorch.extension.llm.export.config.model_identity import MODEL_SPECS, ModelType
 
 from omegaconf import OmegaConf
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONFIG_DIR = REPO_ROOT / "examples" / "models" / "spark_x2_5" / "config"
-EXPORT_LLAMA_LIB = REPO_ROOT / "examples" / "models" / "llama" / "export_llama_lib.py"
-LLM_CONFIG = REPO_ROOT / "extension" / "llm" / "export" / "config" / "llm_config.py"
 
 
 def _load_json_config(name: str) -> dict:
@@ -16,54 +16,19 @@ def _load_json_config(name: str) -> dict:
         return json.load(f)
 
 
-def _module_ast(path: Path) -> ast.Module:
-    return ast.parse(path.read_text())
-
-
-def _literal_assignment(module: ast.Module, name: str):
-    for node in module.body:
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == name:
-                    return ast.literal_eval(node.value)
-    raise AssertionError(f"{name} not found")
-
-
-def _class_string_assignments(module: ast.Module, class_name: str) -> dict[str, str]:
-    for node in module.body:
-        if isinstance(node, ast.ClassDef) and node.name == class_name:
-            values = {}
-            for stmt in node.body:
-                if (
-                    isinstance(stmt, ast.Assign)
-                    and len(stmt.targets) == 1
-                    and isinstance(stmt.targets[0], ast.Name)
-                ):
-                    values[stmt.targets[0].id] = ast.literal_eval(stmt.value)
-            return values
-    raise AssertionError(f"{class_name} not found")
-
-
 def test_spark_x2_5_models_are_registered() -> None:
-    export_module = _module_ast(EXPORT_LLAMA_LIB)
-    model_types = _class_string_assignments(_module_ast(LLM_CONFIG), "ModelType")
-    executor_defined_models = _literal_assignment(
-        export_module, "EXECUTORCH_DEFINED_MODELS"
-    )
-    hf_repo_ids = _literal_assignment(export_module, "HUGGING_FACE_REPO_IDS")
-
-    assert "spark_x2_5_1_7b" in executor_defined_models
-    assert "spark_x2_5_4b" in executor_defined_models
-    assert "spark_x2_6_1_7b" in executor_defined_models
-    assert "spark_x2_6_4b" in executor_defined_models
-    assert model_types["spark_x2_5_1_7b"] == "spark_x2_5_1_7b"
-    assert model_types["spark_x2_5_4b"] == "spark_x2_5_4b"
-    assert model_types["spark_x2_6_1_7b"] == "spark_x2_6_1_7b"
-    assert model_types["spark_x2_6_4b"] == "spark_x2_6_4b"
-    assert hf_repo_ids["spark_x2_5_1_7b"] == "XHToken/Spark-X2.5-1.7B"
-    assert hf_repo_ids["spark_x2_5_4b"] == "XHToken/Spark-X2.5-4B"
-    assert hf_repo_ids["spark_x2_6_1_7b"] == "XHToken/Spark-X2.6-1.7B"
-    assert hf_repo_ids["spark_x2_6_4b"] == "XHToken/Spark-X2.6-4B"
+    assert "spark_x2_5_1_7b" in EXECUTORCH_DEFINED_MODELS
+    assert "spark_x2_5_4b" in EXECUTORCH_DEFINED_MODELS
+    assert "spark_x2_6_1_7b" in EXECUTORCH_DEFINED_MODELS
+    assert "spark_x2_6_4b" in EXECUTORCH_DEFINED_MODELS
+    assert ModelType.spark_x2_5_1_7b.value == "spark_x2_5_1_7b"
+    assert ModelType.spark_x2_5_4b.value == "spark_x2_5_4b"
+    assert ModelType.spark_x2_6_1_7b.value == "spark_x2_6_1_7b"
+    assert ModelType.spark_x2_6_4b.value == "spark_x2_6_4b"
+    assert MODEL_SPECS["spark_x2_5_1_7b"].hf_repo_id == "XHToken/Spark-X2.5-1.7B"
+    assert MODEL_SPECS["spark_x2_5_4b"].hf_repo_id == "XHToken/Spark-X2.5-4B"
+    assert MODEL_SPECS["spark_x2_6_1_7b"].hf_repo_id == "XHToken/Spark-X2.6-1.7B"
+    assert MODEL_SPECS["spark_x2_6_4b"].hf_repo_id == "XHToken/Spark-X2.6-4B"
 
 
 def test_spark_x2_5_architecture_configs_match_expected_shapes() -> None:
