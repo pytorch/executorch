@@ -23,12 +23,135 @@ using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::testing::TensorFactory;
+using torch::executor::apply_binary_elementwise_fn;
 using torch::executor::broadcast_tensor;
 using torch::executor::delinearize_index;
 using torch::executor::get_broadcast_target_size;
 using torch::executor::linearize_access_indexes;
 using torch::executor::tensor_is_broadcastable_to;
 using torch::executor::tensors_are_broadcastable_between;
+
+TEST(BroadcastUtilTest, BinaryElementwiseDefaultPhysicalOrder) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.make({2, 2}, {1, 2, 3, 4});
+  Tensor b = tf.make({2, 2}, {11, 13, 17, 19});
+  Tensor out = tf.zeros({2, 2});
+  std::vector<int32_t> visited;
+  apply_binary_elementwise_fn<int32_t, int32_t, int32_t>(
+      [&visited](int32_t x, int32_t y) {
+        visited.push_back(x);
+        return x - y;
+      },
+      a,
+      b,
+      out);
+  EXPECT_EQ(visited, (std::vector<int32_t>{1, 2, 3, 4}));
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {-10, -11, -14, -15}));
+}
+
+TEST(BroadcastUtilTest, BinaryElementwiseChannelsLastPhysicalOrder) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.channels_last_like(tf.make({1, 2, 1, 2}, {1, 2, 3, 4}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 1, 2}, {11, 13, 17, 19}));
+  Tensor out = tf.channels_last_like(tf.zeros({1, 2, 1, 2}));
+  std::vector<int32_t> visited;
+  apply_binary_elementwise_fn<int32_t, int32_t, int32_t>(
+      [&visited](int32_t x, int32_t y) {
+        visited.push_back(x);
+        return x - y;
+      },
+      a,
+      b,
+      out);
+  EXPECT_EQ(visited, (std::vector<int32_t>{1, 3, 2, 4}));
+  EXPECT_TENSOR_EQ(
+      out, tf.channels_last_like(tf.make({1, 2, 1, 2}, {-10, -11, -14, -15})));
+}
+
+TEST(BroadcastUtilTest, BinaryElementwiseDifferentStrides) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.make({1, 2, 1, 2}, {1, 2, 3, 4});
+  Tensor b = tf.make({1, 2, 1, 2}, {11, 13, 17, 19});
+  Tensor out = tf.zeros({1, 2, 1, 2});
+  Tensor a_channels_last = tf.channels_last_like(a);
+  Tensor b_channels_last = tf.channels_last_like(b);
+  Tensor out_channels_last = tf.channels_last_like(out);
+  Tensor expected = tf.make({1, 2, 1, 2}, {-10, -11, -14, -15});
+  Tensor expected_channels_last = tf.channels_last_like(expected);
+  const auto subtract = [](int32_t x, int32_t y) { return x - y; };
+
+  apply_binary_elementwise_fn<int32_t, int32_t, int32_t>(
+      subtract, a, b_channels_last, out_channels_last);
+  EXPECT_TENSOR_EQ(out_channels_last, expected_channels_last);
+  apply_binary_elementwise_fn<int32_t, int32_t, int32_t>(
+      subtract, a_channels_last, b, out_channels_last);
+  EXPECT_TENSOR_EQ(out_channels_last, expected_channels_last);
+  apply_binary_elementwise_fn<int32_t, int32_t, int32_t>(
+      subtract, a_channels_last, b_channels_last, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(BroadcastUtilTest, BinaryElementwiseChannelsLastBroadcast) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.channels_last_like(tf.make({1, 2, 1, 2}, {1, 2, 3, 4}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 1, 1}, {10, 20}));
+  Tensor out = tf.channels_last_like(tf.zeros({1, 2, 1, 2}));
+  const auto subtract = [](int32_t x, int32_t y) { return x - y; };
+
+  apply_binary_elementwise_fn<int32_t, int32_t, int32_t>(subtract, a, b, out);
+  EXPECT_TENSOR_EQ(
+      out, tf.channels_last_like(tf.make({1, 2, 1, 2}, {-9, -8, -17, -16})));
+  apply_binary_elementwise_fn<int32_t, int32_t, int32_t>(subtract, b, a, out);
+  EXPECT_TENSOR_EQ(
+      out, tf.channels_last_like(tf.make({1, 2, 1, 2}, {9, 8, 17, 16})));
+}
+
+TEST(BroadcastUtilTest, BinaryElementwiseMixedRank) {
+  TensorFactory<ScalarType::Int> tf;
+  for (bool channels_last : {false, true}) {
+    Tensor a = tf.make({2, 3, 1, 1}, {1, 2, 3, 4, 5, 6});
+    Tensor b = tf.make({1, 2, 3, 1, 1}, {10, 20, 30, 40, 50, 60});
+    Tensor out = tf.zeros({1, 2, 3, 1, 1});
+    Tensor expected = tf.make({1, 2, 3, 1, 1}, {-9, -18, -27, -36, -45, -54});
+    if (channels_last) {
+      a = tf.channels_last_like(a);
+      b = tf.channels_last_like(b);
+      out = tf.channels_last_like(out);
+      expected = tf.channels_last_like(expected);
+    }
+    apply_binary_elementwise_fn<int32_t, int32_t, int32_t>(
+        [](int32_t x, int32_t y) { return x - y; }, a, b, out);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
+}
+
+TEST(BroadcastUtilTest, BinaryElementwiseBroadcastBothInputs) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.make({2, 1}, {1, 4});
+  Tensor b = tf.make({1, 2}, {10, 20});
+  Tensor out = tf.zeros({2, 2});
+  apply_binary_elementwise_fn<int32_t, int32_t, int32_t>(
+      [](int32_t x, int32_t y) { return x - y; }, a, b, out);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {-9, -19, -6, -16}));
+}
+
+TEST(BroadcastUtilTest, BinaryElementwiseEmpty) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.zeros({0, 2});
+  Tensor b = tf.ones({1, 2});
+  Tensor out = tf.zeros({0, 2});
+  bool called = false;
+  apply_binary_elementwise_fn<int32_t, int32_t, int32_t>(
+      [&called](int32_t x, int32_t y) {
+        called = true;
+        return x - y;
+      },
+      a,
+      b,
+      out);
+  EXPECT_FALSE(called);
+  EXPECT_TENSOR_EQ(out, a);
+}
 
 TEST(BroadcastUtilTest, BroadcastTensor) {
   TensorFactory<ScalarType::Int> tf;
