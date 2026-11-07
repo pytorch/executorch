@@ -1677,6 +1677,79 @@ class TestPasses(unittest.TestCase):
                 gm = I64toI32(ep)(ep.graph_module).graph_module
                 torch.testing.assert_close(gm(*sample_input)[0], module(*sample_input))
 
+    def test_i64_to_i32_keeps_int64_for_cpu_ops(self):
+        # QNN has no builder for prod or for per-token quantization, so they
+        # run on CPU: an int32 cast would wrap the product, and the CPU
+        # quantize_per_token needs an int64 zero point. A QNN op, like the
+        # index here, still reads the product as int32, and so does a CPU op
+        # that mixes it with an int32 cast. The CPU max pool backward needs
+        # int64 indices too.
+        qd = torch.ops.quantized_decomposed
+        index = exir_ops.edge.aten.index.Tensor
+        quantize = exir_ops.edge.quantized_decomposed.quantize_per_token.default
+        backward = exir_ops.edge.aten.max_pool2d_with_indices_backward.default
+
+        class Prod(torch.nn.Module):
+            def forward(self, x):
+                return x.prod(-1)
+
+        class ProdIndex(torch.nn.Module):
+            def forward(self, x):
+                return x[:, (x > 0).prod(-1)]
+
+        class PerTokenQuant(torch.nn.Module):
+            def forward(self, x):
+                scale, zero_point = qd.choose_qparams_per_token_asymmetric(
+                    x, torch.int8
+                )
+                return qd.quantize_per_token(
+                    x, scale, zero_point, -128, 127, torch.int8
+                )
+
+        class ProdIntoInput(torch.nn.Module):
+            def forward(self, x, mask, k):
+                return (x > 0).prod(-1).masked_scatter(mask, k)
+
+        class MaxPoolBackward(torch.nn.Module):
+            def forward(self, x, grad):
+                _, indices = torch.ops.aten.max_pool2d_with_indices(x, [2, 2])
+                return torch.ops.aten.max_pool2d_with_indices_backward(
+                    grad, x, [2, 2], [2, 2], [0, 0], [1, 1], False, indices
+                )
+
+        prod_input = (torch.tensor([[65536, 65536]], dtype=torch.int32),)
+        pool_input = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 2, 2))
+        mix_input = (
+            torch.randn(2, 3),
+            torch.tensor([True, False]),
+            torch.tensor([3, 4]),
+        )
+        cases = (
+            (Prod(), prod_input, None),
+            (ProdIndex(), (torch.randn(2, 3),), (index, torch.int32)),
+            (PerTokenQuant(), (torch.randn(2, 3),), (quantize, torch.int64)),
+            (ProdIntoInput(), mix_input, None),
+            (MaxPoolBackward(), pool_input, (backward, torch.int64)),
+        )
+        for module, sample_input, read in cases:
+            with self.subTest(type(module).__name__):
+                ep = to_edge(
+                    torch.export.export(module, sample_input, strict=True)
+                ).exported_program()
+                gm = I64toI32(ep)(ep.graph_module).graph_module
+                torch.testing.assert_close(gm(*sample_input)[0], module(*sample_input))
+                if read is not None:
+                    target, dtype = read
+                    node = next(n for n in gm.graph.nodes if n.target == target)
+                    reads = []
+                    torch.fx.node.map_arg(node.args, reads.append)
+                    integer_reads = [
+                        arg.meta["val"].dtype
+                        for arg in reads
+                        if not arg.meta["val"].is_floating_point()
+                    ]
+                    self.assertEqual(integer_reads, [dtype])
+
     def test_i64_to_i32_casts_back_multi_output_results(self):
         # topk of an int64 sum returns int64 values and indices.
         class SumTopk(torch.nn.Module):
