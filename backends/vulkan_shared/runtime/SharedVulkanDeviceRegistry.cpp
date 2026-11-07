@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan_shared/runtime/SharedVulkanContextRegistry.h>
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanDeviceRegistry.h>
 
 #include <utility>
 
@@ -13,30 +13,30 @@ namespace executorch {
 namespace backends {
 namespace vulkan_shared {
 
-SharedVulkanContextRegistry& SharedVulkanContextRegistry::Get() {
+SharedVulkanDeviceRegistry& SharedVulkanDeviceRegistry::Get() {
   // The default context is process-persistent. Intentionally do not register a
   // static destructor: delegate DSOs may be unloaded before their lifetime
-  // anchors, so teardown must be explicit through unregister_context().
-  static auto* registry = new SharedVulkanContextRegistry();
+  // anchors, so teardown must be explicit through unregister_device().
+  static auto* registry = new SharedVulkanDeviceRegistry();
   return *registry;
 }
 
-size_t SharedVulkanContextRegistry::KeyHash::operator()(
-    const SharedVulkanContextKey& key) const {
-  const size_t token_hash = std::hash<std::string>{}(key.context_name);
+size_t SharedVulkanDeviceRegistry::KeyHash::operator()(
+    const SharedVulkanDeviceKey& key) const {
+  const size_t token_hash = std::hash<std::string>{}(key.device_name);
   const size_t group_hash = std::hash<int>{}(key.group_id);
   return token_hash ^
       (group_hash + static_cast<size_t>(0x9e3779b9) + (token_hash << 6) +
        (token_hash >> 2));
 }
 
-SharedVulkanContextPtr SharedVulkanContextRegistry::lookup(
-    const SharedVulkanContextKey& key) {
+SharedVulkanDevicePtr SharedVulkanDeviceRegistry::lookup(
+    const SharedVulkanDeviceKey& key) {
   if (!key.valid()) {
     return nullptr;
   }
 
-  SharedVulkanContextPtr stale_context;
+  SharedVulkanDevicePtr stale_context;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = registry_.find(key);
@@ -62,16 +62,16 @@ SharedVulkanContextPtr SharedVulkanContextRegistry::lookup(
   return nullptr;
 }
 
-runtime::Result<SharedVulkanContextPtr>
-SharedVulkanContextRegistry::lookup_or_create(
-    const SharedVulkanContextKey& key,
+runtime::Result<SharedVulkanDevicePtr>
+SharedVulkanDeviceRegistry::lookup_or_create(
+    const SharedVulkanDeviceKey& key,
     CreateFn create_fn) {
   if (!key.valid() || !create_fn) {
     return runtime::Error::InvalidArgument;
   }
 
   std::shared_ptr<Entry> entry;
-  SharedVulkanContextPtr stale_context;
+  SharedVulkanDevicePtr stale_context;
 
   {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -96,7 +96,7 @@ SharedVulkanContextRegistry::lookup_or_create(
 
   auto maybe_created = create_fn();
   runtime::Error create_error = runtime::Error::Ok;
-  SharedVulkanContextPtr created;
+  SharedVulkanDevicePtr created;
   if (!maybe_created.ok()) {
     create_error = maybe_created.error();
   } else {
@@ -107,11 +107,11 @@ SharedVulkanContextRegistry::lookup_or_create(
     }
   }
 
-  SharedVulkanContextPtr selected;
+  SharedVulkanDevicePtr selected;
   {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // register_context() is allowed to win a race with a creator. In that
+    // register_device() is allowed to win a race with a creator. In that
     // case, discard the newly created context and return the registered one.
     if (entry->context && entry->context->is_valid()) {
       selected = entry->context;
@@ -131,8 +131,8 @@ SharedVulkanContextRegistry::lookup_or_create(
                                             : create_error;
 }
 
-runtime::Error SharedVulkanContextRegistry::register_context(
-    SharedVulkanContextPtr context) {
+runtime::Error SharedVulkanDeviceRegistry::register_device(
+    SharedVulkanDevicePtr context) {
   if (!context || !context->is_valid()) {
     return runtime::Error::InvalidArgument;
   }
@@ -154,19 +154,19 @@ runtime::Error SharedVulkanContextRegistry::register_context(
   return runtime::Error::Ok;
 }
 
-runtime::Result<SharedVulkanContextPtr>
-SharedVulkanContextRegistry::register_external_context(
-    SharedVulkanContextCreateInfo create_info) {
-  auto context = std::make_shared<SharedVulkanContext>(std::move(create_info));
-  const runtime::Error error = register_context(context);
+runtime::Result<SharedVulkanDevicePtr>
+SharedVulkanDeviceRegistry::register_external_device(
+    SharedVulkanDeviceCreateInfo create_info) {
+  auto context = std::make_shared<SharedVulkanDevice>(std::move(create_info));
+  const runtime::Error error = register_device(context);
   if (error != runtime::Error::Ok) {
     return error;
   }
   return context;
 }
 
-runtime::Error SharedVulkanContextRegistry::unregister_context(
-    const SharedVulkanContextKey& key) {
+runtime::Error SharedVulkanDeviceRegistry::unregister_device(
+    const SharedVulkanDeviceKey& key) {
   if (!key.valid()) {
     return runtime::Error::InvalidArgument;
   }
@@ -183,7 +183,7 @@ runtime::Error SharedVulkanContextRegistry::unregister_context(
     }
 
     // Unlink the entry under the registry lock, but retain ownership locally so
-    // SharedVulkanContext/lifetime_anchor destruction cannot run while mutex_
+    // SharedVulkanDevice/lifetime_anchor destruction cannot run while mutex_
     // is held. Backend teardown is allowed to re-enter this registry.
     removed_entry = std::move(it->second);
     registry_.erase(it);
@@ -193,7 +193,7 @@ runtime::Error SharedVulkanContextRegistry::unregister_context(
   return runtime::Error::Ok;
 }
 
-void SharedVulkanContextRegistry::clear_for_testing() {
+void SharedVulkanDeviceRegistry::clear_for_testing() {
   decltype(registry_) removed_entries;
   {
     std::lock_guard<std::mutex> lock(mutex_);
