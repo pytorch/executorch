@@ -989,6 +989,19 @@ class VulkanEngineExecutable final : public EngineExecutable {
          meta.lower_bounds.at(axis) != meta.sizes.at(axis));
   }
 
+  bool view_needs_copy(ValueId id, ValueId source_id) {
+    if (layout_at(id) != layout_at(source_id)) {
+      return true;
+    }
+    if (storage_at(id) == utils::kBuffer) {
+      return buffer_padding_possible(source_id) || buffer_padding_possible(id);
+    }
+    // Texture views ignore dim order, so they cannot permute their source.
+    const TensorMeta& meta = meta_of(id);
+    return !meta.is_contiguous() ||
+        (!meta.lower_bounds.empty() && layout_at(id) == utils::kWidthPacked);
+  }
+
   void materialize_packed_views() {
     std::vector<ValueId> value_ids;
     for (const NodeId node_id : nodes_) {
@@ -1003,13 +1016,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
       for_each_output_value(node, [&](ValueId output_id) {
         const ValueId source_id = g().value(output_id).alias_id;
-        if (valid(source_id) &&
-            (layout_at(output_id) != layout_at(source_id) ||
-             (storage_at(output_id) == utils::kBuffer
-                  ? buffer_padding_possible(source_id) ||
-                      buffer_padding_possible(output_id)
-                  : !g().value(output_id).tensor_meta().lower_bounds.empty() &&
-                      layout_at(output_id) == utils::kWidthPacked))) {
+        if (valid(source_id) && view_needs_copy(output_id, source_id)) {
           value_ids.push_back(output_id);
         }
       });
@@ -1810,6 +1817,23 @@ class VulkanEngineExecutable final : public EngineExecutable {
             g().value(value_id),
             storage_at(value_id),
             utils::kChannelsPacked);
+      }
+      // ET-VK's softmax reads its input in the output's storage type and, for
+      // textures, its layout.
+      if ((key == "aten._softmax.default" ||
+           key == "aten._log_softmax.default") &&
+          na.name == "self" && na.arg.kind() == ArgKind::Tensor &&
+          valid(na.arg.as_tensor().id) && !graph_->val_is_tref(a)) {
+        const ValueId out_id = n.outputs.at(0).value_id;
+        const VkRef out = vref_at(out_id);
+        if (graph_->storage_type_of(a) != graph_->storage_type_of(out) ||
+            graph_->hashed_layout_of(a) != graph_->hashed_layout_of(out)) {
+          a = repack(
+              a,
+              g().value(na.arg.as_tensor().id),
+              storage_at(out_id),
+              layout_at(out_id));
+        }
       }
       // ET-VK's pad picks its shader by the output's layout and storage
       // alone, which later layout steps can leave unlike its input's.

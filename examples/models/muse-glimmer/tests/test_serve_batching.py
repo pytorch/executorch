@@ -236,7 +236,7 @@ def test_chat_factory_closes_worker(
     monkeypatch.setattr(
         serve_batching,
         "build_app",
-        lambda _, model_id, *, serving_factory: serving_factory,
+        lambda _, model_id, *, serving_factory, **kwargs: serving_factory,
     )
     args = serve_batching._parse_args(arguments)
     factory = serve_batching.build_app_from_args(args)
@@ -247,6 +247,10 @@ def test_chat_factory_closes_worker(
             assert isinstance(chat, serve.MuseGlimmerServingChat)
             assert chat.api_dialect == ("openrouter" if bounded else "openai")
             assert chat._streaming_preflight_timeout == (0.25 if bounded else None)
+            assert (
+                chat._reasoning_token_counter.__func__
+                is _StubTemplate.count_reasoning_tokens
+            )
             assert chat._prompt_token_offset == 1
             assert chat._max_image_bytes == args.max_image_bytes
             assert not worker.closed
