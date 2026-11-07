@@ -187,6 +187,10 @@ struct TextureMetadata {
   int packed_dim;
 };
 
+int size_at(const TextureMetadata meta, const int dim) {
+  return safe_idx(meta.sizes, dim);
+}
+
 bool out_of_bounds(const ivec3 pos, const TextureMetadata meta) {
   return any(greaterThanEqual(pos, meta.limits));
 }
