@@ -156,6 +156,22 @@ class TestConv1d(unittest.TestCase):
         def forward(self, x):
             return self.conv1d(x)
 
+    class DepthwiseCausalConv1d(torch.nn.Module):
+        """The short causal convolution of Gated DeltaNet (e.g. Qwen3.5)."""
+
+        def __init__(self, channels: int, kernel_size: int, dtype: torch.dtype):
+            super().__init__()
+            self.conv1d = torch.nn.Conv1d(
+                in_channels=channels,
+                out_channels=channels,
+                kernel_size=kernel_size,
+                groups=channels,
+                bias=False,
+            ).to(dtype)
+
+        def forward(self, x):
+            return self.conv1d(x)
+
     def _get_calibration_samples(self, inputs):
         return [tuple(torch.randn_like(inputs[i]) for i in range(len(inputs)))]
 
@@ -169,6 +185,8 @@ class TestConv1d(unittest.TestCase):
         passes=None,
         stage=None,
         skip_to_executorch=False,
+        atol=1e-03,
+        rtol=1e-03,
     ):
         calibration_samples = (
             self._get_calibration_samples(inputs) if quantized else None
@@ -194,8 +212,8 @@ class TestConv1d(unittest.TestCase):
         if not skip_to_executorch:
             tester.to_executorch().serialize().run_method_and_compare_outputs(
                 num_runs=10,
-                atol=0.04 if quantized else 1e-03,
-                rtol=0.02 if quantized else 1e-03,
+                atol=0.04 if quantized else atol,
+                rtol=0.02 if quantized else rtol,
             )
 
     def test_fp16_conv1d(self):
@@ -206,6 +224,28 @@ class TestConv1d(unittest.TestCase):
             inputs,
             conv_count=1,
             dynamic_shape=dynamic_shapes,
+        )
+
+    def test_bf16_conv1d(self):
+        inputs = (torch.randn(2, 2, 4).to(torch.bfloat16),)
+        self._test_conv1d(
+            self.Conv1d(dtype=torch.bfloat16),
+            inputs,
+            conv_count=1,
+            stage=ToEdgeTransformAndLower([XnnpackPartitioner(enable_bf16=True)]),
+            atol=2e-2,
+            rtol=2e-2,
+        )
+
+    def test_bf16_depthwise_causal_conv1d(self):
+        inputs = (torch.randn(1, 96, 7).to(torch.bfloat16),)
+        self._test_conv1d(
+            self.DepthwiseCausalConv1d(96, kernel_size=4, dtype=torch.bfloat16),
+            inputs,
+            conv_count=1,
+            stage=ToEdgeTransformAndLower([XnnpackPartitioner(enable_bf16=True)]),
+            atol=2e-2,
+            rtol=2e-2,
         )
 
     def test_fp32_conv1d(self):
