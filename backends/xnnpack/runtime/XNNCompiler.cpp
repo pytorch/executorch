@@ -2386,13 +2386,15 @@ ET_NODISCARD Error XNNCompiler::compileModel(
         : nullptr;
   }
 
+  executor->threadpool_ =
+      ::executorch::extension::threadpool::get_shared_pthreadpool();
   // NOLINTBEGIN(facebook-hte-NullableDereference) - weights cache is allowed to
   // be null
   status = xnn_create_runtime_v4(
       subgraph.get(),
       weights_cache_ptr,
       workspace,
-      ::executorch::extension::threadpool::get_pthreadpool(),
+      executor->threadpool_.get(),
       runtime_flags,
       &runtime_ptr);
   // NOLINTEND(facebook-hte-NullableDereference)
