@@ -21,9 +21,14 @@ kernel libraries the component ships.
 
 ## Using it
 
-The component carries the runtime and every kernel of its kernel
-libraries (portable, quantized and the Cadence backend's generic
-kernels), but registers only the kernels your models use. Those come
+The component carries the runtime, every kernel of its kernel
+libraries (portable, quantized, the Cadence backend's generic kernels
+and the `esp_nn::` op library) and the ESP-NN delegate
+(`EspNNBackend`), but registers only the kernels your models use and
+links the delegate only when one of them uses it. It depends on
+`espressif/esp-nn`, which the component manager fetches; a project
+that builds without the component manager provides it as
+`components/esp-nn`. The kernels come
 from a kernel bundle that `tools/gen_kernels.py` makes from your
 `.pte` files. Run it with the Python environment you exported the
 models with, after every export, ExecuTorch upgrade or update of this
@@ -58,10 +63,14 @@ made for another version of this component, and prints the
 `gen_kernels.py` command that fixes it. For models that are not
 available at build time (for example, delivered over the air), pass
 `--ops <namespace::op.overload>` or `--oplist <selected_operators.yaml>`
-to `gen_kernels.py` instead of, or as well as, `--pte`. A project that
-declares neither models nor a bundle links nothing from this
-component, unless it calls `et_model`: that fails to link with an
-undefined `et_requires_executorch_add_kernels`.
+to `gen_kernels.py` instead of, or as well as, `--pte`, and call
+`executorch_add_backend(EspNNBackend)` if those models use the ESP-NN
+delegate. A project that declares only `executorch_add_backend` links
+just that delegate and no CPU kernels or prim ops, so its models must run
+entirely in the delegate; a model that also needs a prim op such as a
+view needs a bundle made with `--ops`. A project that declares nothing
+links nothing from this component, unless it calls `et_model`: that
+fails to link with an undefined `et_requires_executorch_add_kernels`.
 
 - `#include <et_model.h>` for the small C inference API (flash XIP
   model bytes; method, planned and optional scratch arenas either
@@ -85,7 +94,9 @@ which `et_model_config_t.verify` requires. `CONFIG_ET_DEBUG_ASSERTS`
 keeps ExecuTorch's debug assertions (otherwise the runtime builds with
 `NDEBUG`). `CONFIG_ET_MAX_KERNEL_NUM` sizes the kernel registry for an
 application that registers kernels of its own; the default, 0, sizes it
-from the bundle, and a size below the bundle's is a configure error.
+from the bundle, and a size below the bundle's is a configure error. The
+ESP-NN delegate's options are under ExecuTorch -> ExecuTorch ESP-NN
+backend.
 
 ## Logging
 
