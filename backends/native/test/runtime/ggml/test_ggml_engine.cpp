@@ -269,9 +269,19 @@ std::unique_ptr<GgmlEngineContext> make_context(
   return host.create_ggml_context(std::move(program), std::move(package));
 }
 
-// A tensor (by name), an int, a float, an int list, or None.
-using TestArg = std::
-    variant<std::string, int64_t, double, std::vector<int64_t>, std::monostate>;
+// A bool argument, wrapped so that string literals never convert to it.
+struct BoolValue {
+  bool value = false;
+};
+
+// A tensor (by name), an int, a float, an int list, None, or a bool.
+using TestArg = std::variant<
+    std::string,
+    int64_t,
+    double,
+    std::vector<int64_t>,
+    std::monostate,
+    BoolValue>;
 
 // A one-method program assembled value by value; every node's output value
 // carries the node's name.
@@ -431,6 +441,12 @@ class TestProgram {
     }
     if (std::holds_alternative<std::monostate>(arg)) {
       return create_none_arg(builder_);
+    }
+    if (const auto* flag = std::get_if<BoolValue>(&arg)) {
+      return fbs::CreateArgument(
+          builder_,
+          fbs::ArgumentValue::BoolArg,
+          fbs::CreateBoolArgDirect(builder_, flag->value).Union());
     }
     if (const auto* list = std::get_if<std::vector<int64_t>>(&arg)) {
       return fbs::CreateArgument(
@@ -1949,6 +1965,71 @@ TEST(GgmlEngineTest, CastsInt64ToHalfAndBFloat16) {
     executable->get_output(0, y.data(), y.size(), ScalarType::Float);
     EXPECT_EQ(y, (std::vector<float>{0, 1, 2, 3, 4, 5}));
   }
+}
+
+TEST(GgmlEngineTest, SumOverTrailingDims) {
+  const std::vector<int64_t> shape = {2, 3, 4, 5};
+  struct Case {
+    std::vector<int64_t> dims;
+    bool keepdim;
+    size_t width;
+    std::vector<int64_t> out_shape;
+  };
+  for (const Case& c :
+       {Case{{3}, true, 5, {2, 3, 4, 1}},
+        Case{{-1}, false, 5, {2, 3, 4}},
+        Case{{2, 3}, true, 20, {2, 3, 1, 1}},
+        Case{{3, -2}, false, 20, {2, 3}}}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(c.width) + std::to_string(cached));
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, shape);
+      program.call(
+          "y",
+          "torch.ops.aten.sum.dim_IntList",
+          {{"self", std::string("x")},
+           {"dim", c.dims},
+           {"keepdim", BoolValue{c.keepdim}}},
+          fbs::ScalarType::FLOAT,
+          c.out_shape);
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -3.0f}) {
+        std::vector<float> x(120);
+        for (size_t i = 0; i < x.size(); ++i) {
+          x[i] = scale * std::cos(static_cast<float>(i) * 1.3f);
+        }
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(120 / c.width);
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t row = 0; row < y.size(); ++row) {
+          double expected = 0.0;
+          for (size_t i = 0; i < c.width; ++i) {
+            expected += x[row * c.width + i];
+          }
+          EXPECT_NEAR(y[row], expected, 1e-5) << row;
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsSumOverANonTrailingDim) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
+  program.call(
+      "y",
+      "torch.ops.aten.sum.dim_IntList",
+      {{"self", std::string("x")},
+       {"dim", std::vector<int64_t>{1}},
+       {"keepdim", BoolValue{false}}},
+      fbs::ScalarType::FLOAT,
+      {2, 4});
+  expect_compile_error(
+      program.finish("y"), "sum supports trailing dimensions only");
 }
 
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
