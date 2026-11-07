@@ -13,11 +13,17 @@ import com.facebook.jni.annotations.DoNotStrip
 import com.facebook.soloader.nativeloader.NativeLoader
 import com.facebook.soloader.nativeloader.SystemDelegate
 import java.io.Closeable
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import org.pytorch.executorch.annotations.Experimental
 
 /**
  * Java wrapper for ExecuTorch Module.
+ *
+ * Tensors returned by [forward] and [execute] view the module's memory without a copy. Each stays
+ * valid until the same method runs again or the module is destroyed; reading it after that throws
+ * [IllegalStateException]. Copy the data out, e.g. with [Tensor.dataAsFloatArray], to keep it.
  *
  * Warning: These APIs are experimental and subject to change without notice
  */
@@ -35,6 +41,9 @@ private constructor(
 
   /** Lock protecting the non-thread safe methods in mHybridData. */
   private val mLock = ReentrantLock()
+
+  /** Per-method run counter; Tensor outputs of an earlier run of a method are no longer valid. */
+  private val mOutputGenerations = ConcurrentHashMap<String, AtomicLong>()
 
   init {
     ExecuTorchRuntime.getRuntime()
@@ -85,7 +94,20 @@ private constructor(
     mLock.lock()
     try {
       check(mHybridData.isValid) { "Module has been destroyed" }
-      return executeNative(methodName, *inputs)
+      val generation = mOutputGenerations.getOrPut(methodName) { AtomicLong() }
+      // Advance after the run, so an earlier output can still be passed back in as an input.
+      val outputs =
+          try {
+            executeNative(methodName, *inputs)
+          } finally {
+            generation.incrementAndGet()
+          }
+      for (output in outputs) {
+        if (output.isTensor) {
+          output.toTensor().viewModuleOutput(this, methodName, generation.get())
+        }
+      }
+      return outputs
     } finally {
       mLock.unlock()
     }
@@ -93,6 +115,26 @@ private constructor(
 
   @DoNotStrip
   private external fun executeNative(methodName: String, vararg inputs: EValue): Array<EValue>
+
+  internal fun lockOutput(methodName: String, generation: Long) {
+    mLock.lock()
+    try {
+      checkOutputValid(methodName, generation)
+    } catch (e: IllegalStateException) {
+      mLock.unlock()
+      throw e
+    }
+  }
+
+  internal fun unlockOutput() {
+    mLock.unlock()
+  }
+
+  internal fun checkOutputValid(methodName: String, generation: Long) {
+    check(mHybridData.isValid && mOutputGenerations[methodName]?.get() == generation) {
+      "Output of method '$methodName' is no longer valid: the method ran again or the module was destroyed"
+    }
+  }
 
   /**
    * Load a method on this module. This might help with the first time inference performance,
@@ -229,7 +271,9 @@ private constructor(
         mLock.unlock()
       }
     } else {
-      throw IllegalStateException("Cannot destroy module while method is executing")
+      throw IllegalStateException(
+          "Cannot destroy module while a method is executing or an output is being read"
+      )
     }
   }
 
