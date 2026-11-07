@@ -7,38 +7,52 @@
 """
 Graph Transformation Pass for Complex Numbers.
 
-Inductor generates no code for complex numbers. It calls an ATen kernel for
-every op that reads or writes a complex tensor, and this backend ships none of
-those kernels. So this pass keeps each complex tensor as a real tensor with a
-last dim of size 2 that holds the real and imaginary parts, the layout of
-``torch.view_as_real``, and rewrites the ops on it as ops on real numbers:
+Programs often use complex numbers for rotary embeddings, which ExecuTorch
+cannot lower as they are: the Edge dialect has no complex dtypes for ops such
+as mul, the portable kernels lack ops such as view_as_complex and polar, and
+Inductor generates no code for complex numbers. So this pass keeps each
+complex tensor as a real tensor with a last dim of size 2 that holds the real
+and imaginary parts, the layout of ``torch.view_as_real``, and rewrites the
+ops on it as ops on real numbers:
 
     view_as_complex(x)  ->  x
     view_as_real(z)     ->  z
-    polar(r, theta)     ->  stack([r * cos(theta), r * sin(theta)], -1)
-    z * w               ->  stack([zr * wr - zi * wi, zr * wi + zi * wr], -1)
+    polar(r, theta)     ->  pair(r * cos(theta), r * sin(theta))
+    z * w               ->  pair(zr * wr - zi * wi, zr * wi + zi * wr)
+    z * x               ->  z * x[..., None]  (x real)
 
-Views, copies, indexing, repeats, splits, concatenation and stacking act on
-both parts alike, so they keep their op, with the dims they name counted in
-the complex tensor. A cast of a real tensor to complex gets zero imaginary
-parts. A complex constant, parameter or buffer is stored in the real layout
-too. A decomposition table cannot do this, since a decomposition returns the
-dtype of the op it replaces.
+where ``pair(a, b)`` is ``cat([a[..., None], b[..., None]], -1)``. Views,
+copies, indexing, repeats, splits, concatenation and stacking act on both
+parts alike, so they keep their op, with the dims they name counted in the
+complex tensor. A cast of a real tensor to complex gets zero imaginary parts.
+A complex constant, parameter or buffer is stored in the real layout too. A
+decomposition table cannot do this, since a decomposition returns the dtype of
+the op it replaces.
+
+``to_edge_transform_and_lower`` runs the pass on every ATen program before it
+becomes an Edge program, so every backend that lowers through it gets real
+numbers. ``to_edge`` does not run it. The CUDA backend runs it again on the
+Edge program it lowers, which can still rewrite its part when the whole
+program cannot be rewritten.
 
 The pass rewrites a program only when it can rewrite every op that reads or
 writes a complex tensor in it. Otherwise it leaves the program as it is and
-logs why, and the backend reports the ops it has no kernels for. It never
-rewrites control flow branches, such as those of torch.cond, or complex32
-values.
+logs why. It never rewrites control flow branches, such as those of
+torch.cond, or complex32 values.
 """
 
 import logging
 import operator
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
+import executorch.exir.passes.dim_order_ops_registry  # noqa: F401
 import torch
 import torch.utils._pytree as pytree
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from torch._export.passes.replace_view_ops_with_view_copy_ops_pass import (
+    get_view_copy_of_view_op,
+)
 from torch.export import ExportedProgram
 from torch.fx import Graph, Node
 
@@ -151,6 +165,7 @@ class _Rewriter:
     def __init__(self, graph: Graph, complex_nodes: Set[Node]) -> None:
         self.graph = graph
         self.complex_nodes = complex_nodes
+        self.edge = any(isinstance(node.target, EdgeOpOverload) for node in graph.nodes)
         self.ndims = {
             node: node.meta["val"].dim()
             for node in complex_nodes
@@ -167,6 +182,11 @@ class _Rewriter:
         )
 
     def call(self, target: Any, *args: Any, **kwargs: Any) -> Node:
+        """A new node in the program's dialect that calls the Edge op
+        ``target``."""
+        view = _VIEWS.get(target)
+        if not self.edge and isinstance(target, EdgeOpOverload):
+            target = target._op
         node = self.graph.call_function(target, args, kwargs)
         # Errors and profiles then point at the op that this one replaces.
         node.meta.update(
@@ -175,8 +195,8 @@ class _Rewriter:
         fake_args, fake_kwargs = torch.fx.map_arg(
             (args, kwargs), lambda n: n.meta["val"]
         )
-        value = _VIEWS.get(target, target)(*fake_args, **fake_kwargs)
-        if target in _VIEWS:
+        value = (view or target)(*fake_args, **fake_kwargs)
+        if view is not None:
             value = pytree.tree_map_only(
                 torch.Tensor,
                 lambda t: t.clone(memory_format=torch.contiguous_format),
@@ -185,9 +205,15 @@ class _Rewriter:
         node.meta["val"] = value
         return node
 
-    def parts(self, value: Node) -> List[Node]:
-        pair = self.get(value)
-        return [self.call(_aten.select.int, pair, -1, i) for i in (0, 1)]
+    def parts(self, pair: Node) -> List[Node]:
+        # Slices keep the pair's dim, unlike select, which XNNPACK does not
+        # take.
+        return [self.call(_aten.slice.Tensor, pair, -1, i, i + 1) for i in (0, 1)]
+
+    def pair(self, real: Node, imag: Node) -> Node:
+        # stack is not in the Core ATen opset that Edge programs are made of.
+        parts = [self.call(_aten.unsqueeze.default, x, -1) for x in (real, imag)]
+        return self.call(_aten.cat.default, parts, -1)
 
 
 def _view_as_complex(rw: _Rewriter, node: Node) -> Node:
@@ -204,15 +230,32 @@ def _polar(rw: _Rewriter, node: Node) -> Node:
         rw.call(_aten.mul.Tensor, magnitude, rw.call(trig, angle))
         for trig in (_aten.cos.default, _aten.sin.default)
     ]
-    return rw.call(_aten.stack.default, parts, -1)
+    return rw.pair(*parts)
 
 
 def _mul(rw: _Rewriter, node: Node) -> Node:
-    (ar, ai), (br, bi) = (rw.parts(arg) for arg in node.args)
     mul = _aten.mul.Tensor
-    real = rw.call(_aten.sub.Tensor, rw.call(mul, ar, br), rw.call(mul, ai, bi))
-    imag = rw.call(_aten.add.Tensor, rw.call(mul, ar, bi), rw.call(mul, ai, br))
-    return rw.call(_aten.stack.default, [real, imag], -1)
+    # Both sides get the precision of the product. Type promotion would not
+    # give it when a side has no dims, since that side's pair or unsqueezed
+    # factor has dims.
+    dtype = node.meta["val"].dtype.to_real()
+
+    def cast(value: Node) -> Node:
+        if value.meta["val"].dtype == dtype:
+            return value
+        return rw.call(_aten._to_copy.default, value, dtype=dtype)
+
+    if all(arg in rw.complex_nodes for arg in node.args):
+        (ar, ai), (br, bi) = (rw.parts(cast(rw.get(arg))) for arg in node.args)
+        real = rw.call(_aten.sub.Tensor, rw.call(mul, ar, br), rw.call(mul, ai, bi))
+        imag = rw.call(_aten.add.Tensor, rw.call(mul, ar, bi), rw.call(mul, ai, br))
+        return rw.call(_aten.cat.default, [real, imag], -1)
+    # ATen programs, unlike Edge programs, multiply by a real factor without
+    # casting it to complex first.
+    z, x = node.args if node.args[0] in rw.complex_nodes else node.args[::-1]
+    if isinstance(x, Node):
+        x = rw.call(_aten.unsqueeze.default, cast(x), -1)
+    return rw.call(mul, cast(rw.get(z)), x)
 
 
 def _copy(rw: _Rewriter, node: Node) -> Node:
@@ -220,27 +263,31 @@ def _copy(rw: _Rewriter, node: Node) -> Node:
     if kwargs.get("dtype") is not None:
         kwargs["dtype"] = kwargs["dtype"].to_real()
     if source not in rw.complex_nodes:
-        # Edge programs cast a real operand to complex before complex math
-        # with it. The cast gives zero imaginary parts.
-        real = rw.call(node.target, source, **kwargs)
-        imag = rw.call(_aten.zeros_like.default, real)
-        return rw.call(_aten.stack.default, [real, imag], -1)
+        # A cast of a real tensor to complex gives zero imaginary parts.
+        real = rw.call(_edge_op(node.target), source, **kwargs)
+        return rw.pair(real, rw.call(_aten.full_like.default, real, 0))
     if kwargs.get("dim_order") is not None:
         kwargs["dim_order"] = [*kwargs["dim_order"], len(kwargs["dim_order"])]
-    return rw.call(node.target, rw.get(source), **kwargs)
+    return rw.call(_edge_op(node.target), rw.get(source), **kwargs)
 
 
 def _same_on_both_parts(rw: _Rewriter, node: Node) -> Node:
-    args = list(node.args)
-    tensor = args[0][0] if node.target in _LIST_INPUTS else args[0]
-    for index, pair_value in _SAME_ON_BOTH_PARTS[node.target]:
+    args, target = list(node.args), _edge_op(node.target)
+    tensor = args[0][0] if target in _LIST_INPUTS else args[0]
+    for index, pair_value in _SAME_ON_BOTH_PARTS[target]:
         if index < len(args):
             args[index] = pair_value(args[index], rw.ndims[tensor])
-    return rw.call(node.target, *rw.get(args), **rw.get(dict(node.kwargs)))
+    return rw.call(target, *rw.get(args), **rw.get(dict(node.kwargs)))
 
 
 def _getitem(rw: _Rewriter, node: Node) -> Node:
     return rw.call(operator.getitem, rw.get(node.args[0]), node.args[1])
+
+
+def _drop(rw: _Rewriter, node: Node) -> None:
+    # Export asserts the dtype of a tensor that .to() reads, and the pass
+    # changes that dtype on purpose.
+    return None
 
 
 _REWRITES: Dict[Any, Callable[[_Rewriter, Node], Node]] = {
@@ -248,10 +295,23 @@ _REWRITES: Dict[Any, Callable[[_Rewriter, Node], Node]] = {
     _aten.view_as_real_copy.default: _view_as_real,
     _aten.polar.default: _polar,
     _aten.mul.Tensor: _mul,
+    _aten._assert_tensor_metadata.default: _drop,
     operator.getitem: _getitem,
     **{op: _copy for op in _COPIES},
     **{op: _same_on_both_parts for op in _SAME_ON_BOTH_PARTS},
 }
+
+_ATEN_TO_EDGE = {op._op: op for op in _REWRITES if isinstance(op, EdgeOpOverload)}
+
+
+def _edge_op(target: Any) -> Any:
+    """The Edge op that names ``target`` in the tables above. An ATen view
+    names its copy, which the pass emits instead, since a view of a pair can
+    fail where the view of its complex tensor did not."""
+    if not isinstance(target, torch._ops.OpOverload):
+        return target
+    target = get_view_copy_of_view_op(target._schema) or target
+    return _ATEN_TO_EDGE.get(target, target)
 
 
 def _keeps_dims_in_order(node: Node) -> bool:
@@ -265,8 +325,11 @@ def _keeps_dims_in_order(node: Node) -> bool:
 
 
 def _can_rewrite(node: Node, complex_nodes: Set[Node]) -> bool:
-    if node.op != "call_function" or node.target not in _REWRITES:
+    target = _edge_op(node.target)
+    if node.op != "call_function" or target not in _REWRITES:
         return False
+    if target is _aten._assert_tensor_metadata.default:
+        return True
     # The rewrites read by position the arguments that exported programs
     # pass by position.
     schema = getattr(node.target, "_schema", None)
@@ -274,15 +337,28 @@ def _can_rewrite(node: Node, complex_nodes: Set[Node]) -> bool:
         not arg.kwarg_only for arg in schema.arguments if arg.name in node.kwargs
     ):
         return False
-    if node.target in _COPIES:
+    if target in _COPIES:
         # A cast from complex to real has no rewrite here.
         return node in complex_nodes and _keeps_dims_in_order(node)
-    if node.target is _aten.clone.default:
+    if target is _aten.clone.default:
         return _keeps_dims_in_order(node)
-    if node.target is _aten.mul.Tensor:
-        # Edge programs cast a real factor to complex first.
-        return all(arg in complex_nodes for arg in node.args)
-    if node.target in _LIST_INPUTS:
+    if target is _aten.mul.Tensor:
+        # A factor can be a real number, or a real tensor in an ATen program.
+        if not all(
+            (
+                isinstance(arg.meta.get("val"), torch.Tensor)
+                if isinstance(arg, Node)
+                else isinstance(arg, (int, float))
+            )
+            for arg in node.args
+        ):
+            return False
+        # A tensor with no dims can stay on the CPU next to tensors on another
+        # device, but its pair or unsqueezed factor has dims and cannot. The
+        # CUDA backend rewrites such a product after it moves the program.
+        devices = {arg.meta["val"].device for arg in node.args if isinstance(arg, Node)}
+        return len(devices) == 1
+    if target in _LIST_INPUTS:
         return all(tensor in complex_nodes for tensor in node.args[0])
     return True
 
@@ -351,8 +427,12 @@ class ReplaceComplexWithRealPass:
     """
     Replace complex tensors with real tensors that hold their real and
     imaginary parts in a last dim of size 2, and the ops on them with ops on
-    real numbers, so that Inductor can generate code for them. See the module
-    docstring for the ops it handles.
+    real numbers, in an ATen program. See the module docstring for the ops it
+    handles.
+
+    It also takes the Edge programs that the CUDA backend lowers, after the
+    AOTI ReplaceViewCopyWithViewPass. In an Edge program it adds views, such
+    as slice and unsqueeze, and the portable kernels have only their copies.
     """
 
     requires_exported_program = True
@@ -366,9 +446,11 @@ class ReplaceComplexWithRealPass:
         }
         reason = _reason_to_keep(exported_program, complex_nodes, affected)
         if reason is not None:
-            logger.warning(
-                "The CUDA backend cannot lower the complex numbers in this "
-                "program, since %s",
+            # Programs with complex ops that some kernels support, such as an
+            # FFT, can still lower.
+            logger.info(
+                "Cannot replace the complex numbers in this program with real "
+                "numbers, since %s",
                 reason,
             )
             return
@@ -384,11 +466,13 @@ class ReplaceComplexWithRealPass:
                 continue
             rw.source = node
             with graph.inserting_before(node):
-                rw.replacements[node] = _REWRITES[node.target](rw, node)
+                rw.replacements[node] = _REWRITES[_edge_op(node.target)](rw, node)
         signature = exported_program.graph_signature
         for node in reversed(order):
             replacement = rw.replacements[node]
-            if replacement is not node:
+            if replacement is None:
+                graph.erase_node(node)
+            elif replacement is not node:
                 node.replace_all_uses_with(replacement)
                 # The signature names the program's outputs by node, and a
                 # view_as_real can be one of them.
