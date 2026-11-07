@@ -417,8 +417,21 @@ def test_implementation_transpose_conv2d_strided_pointwise(hardtanh):
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
 
-def test_explicit_layout_rejects_unsupported_spatial_operator():
-    tester = CortexMTester(UnsupportedAvgPool(), (torch.randn(1, 3, 8, 8),))
+def test_explicit_layout_preserves_unquantized_spatial_operator():
+    inputs = (torch.randn(1, 3, 8, 8),)
+    tester = _run_explicit_layout_passes(CortexMTester(UnsupportedAvgPool(), inputs))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.aten.avg_pool2d.default) == 1
+    tester.run_method_and_compare_outputs(inputs=inputs)
+    tester.to_executorch()
+
+
+def test_explicit_layout_rejects_quantized_spatial_operator_in_implicit_layout():
+    tester = CortexMTester(
+        Conv2d().eval().to(memory_format=torch.channels_last),
+        (torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last),),
+    )
 
     with pytest.raises(Exception) as caught:
         _run_explicit_layout_passes(tester)

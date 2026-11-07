@@ -171,10 +171,13 @@ def test_dialect_max_pool2d(test_case, cortex_m_target):
     )
 
 
+@parametrize("use_explicit_layout", {"legacy": False, "explicit": True})
 @parametrize("test_case", fallback_test_cases)
-def test_dialect_max_pool2d_fallback(test_case, cortex_m_target):
+def test_dialect_max_pool2d_fallback(test_case, cortex_m_target, use_explicit_layout):
     tester = CortexMTester(
-        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+        test_case.model,
+        test_case.get_example_inputs(use_explicit_layout=use_explicit_layout),
+        target_config=cortex_m_target,
     )
     tester.test_dialect(
         {
@@ -188,10 +191,14 @@ def test_dialect_max_pool2d_fallback(test_case, cortex_m_target):
             "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
         },
         qtol=1,
+        use_explicit_layout=use_explicit_layout,
     )
 
 
-def test_activation_after_a_declining_pool_survives(cortex_m_target):
+@parametrize("use_explicit_layout", {"legacy": False, "explicit": True})
+def test_activation_after_a_declining_pool_survives(
+    cortex_m_target, use_explicit_layout
+):
     """Erasing it would be silent: the graph still runs, just unclamped."""
     model = CortexMMaxPool2dRelu(kernel_size=2, stride=1, dilation=2)
     tester = CortexMTester(
@@ -199,7 +206,12 @@ def test_activation_after_a_declining_pool_survives(cortex_m_target):
         ((torch.randn(1, 4, 8, 8) * 20),),
         target_config=cortex_m_target,
     )
-    tester.test_dialect(model.ops_before_transforms, model.ops_after_transforms, qtol=1)
+    tester.test_dialect(
+        model.ops_before_transforms,
+        model.ops_after_transforms,
+        qtol=1,
+        use_explicit_layout=use_explicit_layout,
+    )
 
 
 @parametrize("test_case", fallback_test_cases)
@@ -210,12 +222,17 @@ def test_executorch_max_pool2d_fallback(test_case, cortex_m_target):
     tester.quantize().export().to_edge().run_passes().to_executorch()
 
 
+@parametrize("use_explicit_layout", {"legacy": False, "explicit": True})
 @parametrize("test_case", fallback_test_cases)
-def test_implementation_max_pool2d_fallback(test_case, cortex_m_target):
+def test_implementation_max_pool2d_fallback(
+    test_case, cortex_m_target, use_explicit_layout
+):
     tester = CortexMTester(
-        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+        test_case.model,
+        test_case.get_example_inputs(use_explicit_layout=use_explicit_layout),
+        target_config=cortex_m_target,
     )
-    tester.test_implementation(qtol=1)
+    tester.test_implementation(qtol=1, use_explicit_layout=use_explicit_layout)
 
 
 @parametrize("test_case", test_cases, xfails=xfails_max_pool2d)

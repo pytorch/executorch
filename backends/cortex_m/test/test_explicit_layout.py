@@ -92,14 +92,18 @@ def test_aot_layout_mode_selects_operator_family(explicit_layout, expected, unex
     assert _count(program, unexpected) == 0
 
 
-def test_aot_explicit_layout_requires_quantization():
-    with pytest.raises(RuntimeError, match="requires --quantize"):
-        _compile(
-            Conv2d().eval(),
-            (torch.randn(1, 3, 8, 8),),
-            explicit_layout=True,
-            quantize=False,
-        )
+def test_aot_explicit_layout_without_quantization():
+    module = Conv2d().eval()
+    inputs = (torch.randn(1, 3, 8, 8),)
+    model_quant, edge, runtime_inputs = _compile(
+        module, inputs, explicit_layout=True, quantize=False
+    )
+    program = edge.exported_program()
+
+    assert model_quant is None
+    assert _count(program, exir_ops.edge.aten.convolution.default) == 1
+    torch.testing.assert_close(program.module()(*runtime_inputs), module(*inputs))
+    edge.to_executorch()
 
 
 def _assert_explicit_copy_ceiling(module, inputs, ceiling):
