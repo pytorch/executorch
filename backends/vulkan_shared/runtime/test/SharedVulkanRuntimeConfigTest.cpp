@@ -15,11 +15,11 @@
 #define TEST(test_suite_name, test_name) void test_suite_name##_##test_name()
 #endif
 
-using executorch::backends::vulkan_shared::kSharedContextModeOption;
-using executorch::backends::vulkan_shared::kSharedContextNameOption;
+using executorch::backends::vulkan_shared::kSharedDeviceModeOption;
+using executorch::backends::vulkan_shared::kSharedDeviceNameOption;
 using executorch::backends::vulkan_shared::kSharedGroupIdOption;
 using executorch::backends::vulkan_shared::parse_shared_vulkan_runtime_config;
-using executorch::backends::vulkan_shared::SharedContextMode;
+using executorch::backends::vulkan_shared::SharedDeviceMode;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendOption;
 using executorch::runtime::BackendOptions;
@@ -42,24 +42,24 @@ TEST(SharedVulkanRuntimeConfigTest, UsesPersistentSharedDefaults) {
   auto result = parse_shared_vulkan_runtime_config(context);
 
   ASSERT_TRUE(result.ok());
-  EXPECT_EQ(result->context_name, "default");
+  EXPECT_EQ(result->device_name, "default");
   EXPECT_EQ(result->group_id, 0);
-  EXPECT_EQ(result->context_mode, SharedContextMode::kLookupOrCreate);
+  EXPECT_EQ(result->device_mode, SharedDeviceMode::kLookupOrCreate);
 }
 
 // cppcheck-suppress unusedFunction
 TEST(SharedVulkanRuntimeConfigTest, ParsesRuntimeOptions) {
   BackendOptions<3> options;
-  ASSERT_EQ(options.set_option(kSharedContextNameOption, "scene0"), Error::Ok);
+  ASSERT_EQ(options.set_option(kSharedDeviceNameOption, "scene0"), Error::Ok);
   ASSERT_EQ(
-      options.set_option(kSharedContextModeOption, "lookup_only"), Error::Ok);
+      options.set_option(kSharedDeviceModeOption, "lookup_only"), Error::Ok);
   ASSERT_EQ(options.set_option(kSharedGroupIdOption, 7), Error::Ok);
   auto context = make_context(options);
 
   auto result = parse_shared_vulkan_runtime_config(context);
 
   ASSERT_TRUE(result.ok());
-  EXPECT_EQ(result->context_name, "scene0");
+  EXPECT_EQ(result->device_name, "scene0");
   EXPECT_EQ(result->group_id, 7);
   EXPECT_TRUE(result->lookup_only());
 }
@@ -67,8 +67,7 @@ TEST(SharedVulkanRuntimeConfigTest, ParsesRuntimeOptions) {
 // cppcheck-suppress unusedFunction
 TEST(SharedVulkanRuntimeConfigTest, ParsesDisabledMode) {
   BackendOptions<1> options;
-  ASSERT_EQ(
-      options.set_option(kSharedContextModeOption, "disabled"), Error::Ok);
+  ASSERT_EQ(options.set_option(kSharedDeviceModeOption, "disabled"), Error::Ok);
   auto context = make_context(options);
 
   auto result = parse_shared_vulkan_runtime_config(context);
@@ -81,7 +80,7 @@ TEST(SharedVulkanRuntimeConfigTest, ParsesDisabledMode) {
 TEST(SharedVulkanRuntimeConfigTest, RejectsUnknownMode) {
   BackendOptions<1> options;
   ASSERT_EQ(
-      options.set_option(kSharedContextModeOption, "automatic"), Error::Ok);
+      options.set_option(kSharedDeviceModeOption, "automatic"), Error::Ok);
   auto context = make_context(options);
 
   auto result = parse_shared_vulkan_runtime_config(context);
@@ -105,7 +104,7 @@ TEST(SharedVulkanRuntimeConfigTest, RejectsWrongRuntimeOptionType) {
 // cppcheck-suppress unusedFunction
 TEST(SharedVulkanRuntimeConfigTest, RejectsEmptyTokenWhenEnabled) {
   BackendOptions<1> options;
-  ASSERT_EQ(options.set_option(kSharedContextNameOption, ""), Error::Ok);
+  ASSERT_EQ(options.set_option(kSharedDeviceNameOption, ""), Error::Ok);
   auto context = make_context(options);
 
   auto result = parse_shared_vulkan_runtime_config(context);

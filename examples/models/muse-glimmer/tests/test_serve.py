@@ -218,6 +218,9 @@ def test_build_app_uses_muse_glimmer_options(monkeypatch):
         def __init__(self, *args, **kwargs):
             captured["template_kwargs"] = kwargs
 
+        def count_reasoning_tokens(self, ids):
+            return None
+
     class _FakeRuntime:
         def close_worker(self):
             pass
@@ -256,8 +259,10 @@ def test_build_app_uses_muse_glimmer_options(monkeypatch):
     assert captured["serving_kwargs"]["max_image_bytes"] == 1234
     assert captured["serving_kwargs"]["prompt_token_offset"] == 1
     assert (
-        captured["serving_kwargs"]["content_filter"] is serve._strip_muse_glimmer_header
+        captured["serving_kwargs"]["reasoning_token_counter"].__func__
+        is _FakeTemplate.count_reasoning_tokens
     )
+    assert "content_filter" not in captured["serving_kwargs"]
     assert (
         captured["serving_kwargs"]["reasoning_extractor"]
         is serve._extract_muse_glimmer_reasoning
@@ -400,7 +405,9 @@ class _ImageRuntime:
     def __init__(self):
         self.prompt = None
 
-    async def generate_stream(self, session_id, prompt, options, stats):
+    async def generate_stream(
+        self, session_id, prompt, options, stats, *, observer=None
+    ):
         self.prompt = prompt
         stats.prompt_tokens = 2
         stats.completion_tokens = 1
@@ -454,34 +461,6 @@ def test_muse_glimmer_prompt_count_defers_images_to_native_worker():
     assert serving._count_prompt_tokens(prompt) is None
 
 
-def test_strip_muse_glimmer_header_returns_visible_answer():
-    # The model self-emits " to=user<|message|>ANSWER" ahead of the visible text
-    # because the generation prompt ends at "<|start|>assistant".
-    assert serve._strip_muse_glimmer_header(" to=user<|message|>Paris.") == "Paris."
-
-
-def test_strip_muse_glimmer_header_strips_tool_recipient():
-    text = ' to=functions.get_weather<|message|>{"city": "Paris"}'
-    assert serve._strip_muse_glimmer_header(text) == '{"city": "Paris"}'
-
-
-def test_strip_muse_glimmer_header_passthrough_plain_text():
-    assert (
-        serve._strip_muse_glimmer_header("The capital of France is Paris.")
-        == "The capital of France is Paris."
-    )
-
-
-def test_strip_muse_glimmer_header_removes_message_terminators():
-    assert serve._strip_muse_glimmer_header("Test complete.<|eom|>") == "Test complete."
-    assert serve._strip_muse_glimmer_header("Final answer.<|eot|>") == "Final answer."
-
-
-def test_strip_muse_glimmer_header_strips_constrain_field():
-    text = ' to=functions.get_weather constrain=json<|message|>{"city": "Paris"}'
-    assert serve._strip_muse_glimmer_header(text) == '{"city": "Paris"}'
-
-
 def test_extract_muse_glimmer_reasoning_preserves_final_answer():
     text = (
         " to=self<|message|>We should calculate first.<|eom|>"
@@ -501,6 +480,9 @@ class _StubTemplate:
 
     def turn_stop_sequences(self):
         return []
+
+    def count_reasoning_tokens(self, ids):
+        return None
 
     def special_tokens(self):
         return []
@@ -560,7 +542,9 @@ class _FakeRuntime:
     def stop(self):
         pass
 
-    async def generate_stream(self, session_id, prompt, options, stats=None):
+    async def generate_stream(
+        self, session_id, prompt, options, stats=None, *, observer=None
+    ):
         self.prompts.append(prompt)
         out = self._outputs.pop(0)
         if stats is not None:
@@ -603,7 +587,6 @@ def _glimmer_serving(raw_texts, template=None):
         template or _StubTemplate(),
         "test-model",
         reasoning_extractor=serve._extract_muse_glimmer_reasoning,
-        content_filter=serve._strip_muse_glimmer_header,
         content_filter_specials=serve._MUSE_GLIMMER_HEADER_SPECIALS,
     )
     return serving, runtime
@@ -623,7 +606,9 @@ def test_ignore_eos_consumes_budget_and_preserves_visible_turn(serving_cls, stre
         supports_ignore_eos = True
         default_stop_strings = ["<|eot|>", "<|end_of_text|>"]
 
-        async def generate_stream(self, session_id, prompt, options, stats=None):
+        async def generate_stream(
+            self, session_id, prompt, options, stats=None, *, observer=None
+        ):
             assert options.ignore_eos is True
             assert options.stop == ["USER_STOP"]
             assert options.max_new_tokens == 3
@@ -674,7 +659,9 @@ def test_bare_generator_stop_is_scoped_and_finalizes(serving_cls, stream):
         def stop(self):
             self.stops += 1
 
-        async def generate_stream(self, session_id, prompt, options, stats=None):
+        async def generate_stream(
+            self, session_id, prompt, options, stats=None, *, observer=None
+        ):
             try:
                 async for token in super().generate_stream(
                     session_id, prompt, options, stats
@@ -719,7 +706,9 @@ def test_bare_generator_cancellation_keeps_transaction_until_cleanup(
             self.closed = asyncio.Event()
             self.reset_called = asyncio.Event()
 
-        async def generate_stream(self, session_id, prompt, options, stats=None):
+        async def generate_stream(
+            self, session_id, prompt, options, stats=None, *, observer=None
+        ):
             try:
                 yield "first"
                 self.started.set()
@@ -1050,14 +1039,6 @@ def test_extract_muse_glimmer_reasoning_preserves_visible_prefix():
     assert visible == "Visible prefix.\n\nVisible final."
 
 
-def test_strip_muse_glimmer_header_preserves_prose_lookalikes():
-    # Negative cases: real prose tokens that merely CONTAIN "to=" as a substring
-    # (goto=, auto=, photo=) must NOT be stripped -- only a genuine harmony header
-    # (start-of-string / whitespace / ">"-introduced "to=<recipient><|message|>").
-    text = "Use goto=label; set auto=true; field photo=front."
-    assert serve._strip_muse_glimmer_header(text) == text
-
-
 def test_tool_parser_atem_returns_detector():
     from executorch.examples.models.muse_glimmer.serving.tool_parsers import (
         AtemToolCallDetector,
@@ -1226,7 +1207,9 @@ def test_image_overflow_uses_worker_counts(stream, dialect, text_tokens, complet
             return "text " * text_tokens + serve._IMAGE_PLACEHOLDER
 
     class Runtime(_ImageRuntime):
-        async def generate_stream(self, session_id, prompt, options, stats):
+        async def generate_stream(
+            self, session_id, prompt, options, stats, *, observer=None
+        ):
             self.prompt = prompt
             raise WorkerError(
                 "image-expanded prompt exceeds context",

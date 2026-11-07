@@ -95,6 +95,14 @@ install(
   EXPORT ExecuTorchNativeTargets
   LIBRARY DESTINATION lib COMPONENT executorch_native
 )
+
+# The native Vulkan engine links against this process-wide shared registry.
+# Include it in the same scikit-build install component as
+# libexecutorch_native.so so auditwheel can resolve the DT_NEEDED dependency
+# through $ORIGIN.
+install(TARGETS executorch_vulkan_shared_runtime
+        LIBRARY DESTINATION lib COMPONENT executorch_native
+)
 install(
   EXPORT ExecuTorchNativeTargets
   NAMESPACE executorch_native::
