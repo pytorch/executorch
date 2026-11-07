@@ -16,8 +16,12 @@ set -euo pipefail
 # Configuration
 SCRIPT_VERSION="1.0"
 TOOLCHAIN_VERSION="14.3.rel1"
-WORKSPACE_DIR="$(pwd)"
+WORKSPACE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$WORKSPACE_DIR"
 TOOLCHAIN_DIR="${WORKSPACE_DIR}/examples/raspberry_pi/gen/arm-toolchain"
+SYSROOT_BASE_DIR="${WORKSPACE_DIR}/examples/raspberry_pi/gen"
+TARGET_OS="${TARGET_OS:-}"
+SYSROOT_PATH=""
 CMAKE_OUT_DIR="${WORKSPACE_DIR}/cmake-out"
 
 FORCE_REBUILD="${FORCE_REBUILD:-false}"
@@ -77,6 +81,14 @@ parse_args() {
                 SKIP_ENV_SETUP=true
                 shift
                 ;;
+            --os)
+                TARGET_OS="${2:-}"
+                shift 2
+                ;;
+            --os=*)
+                TARGET_OS="${1#--os=}"
+                shift
+                ;;
             --clean)
                 CLEAN=true
                 shift
@@ -98,6 +110,19 @@ parse_args() {
         show_help
         exit 1
     fi
+
+    case "$TARGET_OS" in
+        ""|bookworm|trixie) ;;
+        bullseye)
+            log_error "Bullseye (glibc 2.31) is not supported: the libraries bundled with the Arm toolchain"
+            log_error "(e.g. libgcc's unwinder) require glibc >= 2.35. Bullseye is EOL; upgrade the Pi to Bookworm."
+            exit 1
+            ;;
+        *)
+            log_error "Unsupported --os: $TARGET_OS (expected bookworm or trixie)"
+            exit 1
+            ;;
+    esac
 }
 
 show_help() {
@@ -110,15 +135,20 @@ Arguments:
   pi4|pi5               Target Raspberry Pi model
 
 Options:
+  --os <codename>       Raspberry Pi OS release on the target: bookworm or trixie.
+                        Builds against that Debian release's glibc (via mmdebstrap) so the
+                        binaries run on it. Omit to use the toolchain's bundled glibc.
+                        Check with: ssh pi@<rpi-ip> grep VERSION_CODENAME /etc/os-release
   --force-rebuild       Force complete rebuild of all components
-  --force-download      Force re-download of the ARM toolchain (default: disabled)
+  --force-download      Force re-download of the ARM toolchain and Debian sysroot
   --skip-env-setup      Skip Python environment setup (just rebuild code)
   --clean               Remove build artifacts and exit
   -h, --help            Show this help message
 
 Examples:
   $0 pi5                              # Setup for Pi5
-  $0 pi4                              # Setup for Pi4
+  $0 pi5 --os bookworm                # Pi5 running Raspberry Pi OS Bookworm
+  $0 pi4 --os trixie                  # Pi4 running Raspberry Pi OS Trixie
   $0 pi5 --force-rebuild              # Force complete rebuild
   $0 pi5 --skip-env-setup --force-rebuild  # Just rebuild code, skip env setup
   $0 pi5 --force-download             # Force re-download toolchain
@@ -130,7 +160,7 @@ EOF
 # Clean up build artifacts
 clean_up() {
     log_step "Cleaning up build artifacts"
-    rm -rf "$TOOLCHAIN_DIR" "$CMAKE_OUT_DIR" arm-toolchain-*.cmake
+    rm -rf "$TOOLCHAIN_DIR" "$SYSROOT_BASE_DIR"/sysroot-* "$CMAKE_OUT_DIR" arm-toolchain-*.cmake
     log_success "Cleanup complete. Exiting."
     exit 0
 }
@@ -371,6 +401,77 @@ download_toolchain() {
     log_success "ARM toolchain ready: $TOOLCHAIN_PATH"
 }
 
+# Create Debian sysroot for the target OS
+create_debian_sysroot() {
+    if [[ -z "$TARGET_OS" ]]; then
+        return 0
+    fi
+
+    log_step "Creating Debian $TARGET_OS Sysroot"
+
+    SYSROOT_PATH="$SYSROOT_BASE_DIR/sysroot-$TARGET_OS"
+    SYSROOT_COMPAT_OBJ="$SYSROOT_PATH/glibc_compat.o"
+
+    if [[ -f "$SYSROOT_PATH/usr/include/features.h" ]] && [[ "$FORCE_DOWNLOAD" != "true" ]]; then
+        log_success "Sysroot already exists: $SYSROOT_PATH"
+        log_info "glibc: $(sysroot_glibc_version "$SYSROOT_PATH")"
+    else
+        if ! command -v mmdebstrap &> /dev/null; then
+            log_error "mmdebstrap is required for --os"
+            log_info "Install with: sudo apt-get install mmdebstrap debian-archive-keyring"
+            exit 1
+        fi
+
+        rm -rf "$SYSROOT_PATH"
+        mkdir -p "$SYSROOT_BASE_DIR"
+
+        log_info "Downloading arm64 glibc packages for Debian $TARGET_OS..."
+        mmdebstrap \
+            --mode=chrootless \
+            --arch=arm64 \
+            --variant=extract \
+            --include=libc6,libc6-dev,linux-libc-dev \
+            "$TARGET_OS" "$SYSROOT_PATH"
+
+        if [[ ! -f "$SYSROOT_PATH/usr/include/features.h" ]]; then
+            log_error "Sysroot creation failed: features.h missing in $SYSROOT_PATH"
+            exit 1
+        fi
+
+        log_success "Sysroot ready: $SYSROOT_PATH (glibc $(sysroot_glibc_version "$SYSROOT_PATH"))"
+    fi
+
+    # merged-/usr releases create /lib -> usr/lib in base-files postinst, which extract mode skips.
+    if [[ ! -e "$SYSROOT_PATH/lib" ]]; then
+        ln -s usr/lib "$SYSROOT_PATH/lib"
+    fi
+
+    # Debian ships absolute symlinks (libm.so -> /lib/...), which ld follows outside the sysroot.
+    find "$SYSROOT_PATH" -lname '/*' | while read -r link; do
+        local target
+        target="$SYSROOT_PATH$(readlink "$link")"
+        ln -sfn "$(realpath -m --relative-to="$(dirname "$link")" "$target")" "$link"
+    done
+
+    # The fixincludes copy of glibc 2.38 pthread.h shadows the sysroot's and breaks <mutex>.
+    rm -f "$TOOLCHAIN_PATH"/lib/gcc/aarch64-none-linux-gnu/*/include-fixed/pthread.h
+
+    log_info "Compiling glibc compatibility shims..."
+    "$TOOLCHAIN_PATH/bin/aarch64-none-linux-gnu-gcc" \
+        --sysroot="$SYSROOT_PATH" \
+        -isystem "$SYSROOT_PATH/usr/include/aarch64-linux-gnu" \
+        -O2 -fPIC -c "$WORKSPACE_DIR/examples/raspberry_pi/glibc_compat.c" \
+        -o "$SYSROOT_COMPAT_OBJ"
+}
+
+sysroot_glibc_version() {
+    local features="$1/usr/include/features.h"
+    local major minor
+    major=$(grep -E '^#define[[:space:]]+__GLIBC__[[:space:]]' "$features" | awk '{print $3}')
+    minor=$(grep -E '^#define[[:space:]]+__GLIBC_MINOR__[[:space:]]' "$features" | awk '{print $3}')
+    echo "${major}.${minor}"
+}
+
 # Create CMake toolchain file
 create_toolchain_cmake() {
     log_step "Creating CMake Toolchain File"
@@ -392,6 +493,37 @@ create_toolchain_cmake() {
     log_info "Target: Raspberry Pi $RPI_MODEL"
     log_info "Architecture flags: $arch_flags"
 
+    local sysroot_block
+    if [[ -n "$SYSROOT_PATH" ]]; then
+        sysroot_block=$(cat << EOF
+# Sysroot: Debian $TARGET_OS arm64 (glibc $(sysroot_glibc_version "$SYSROOT_PATH"))
+set(CMAKE_SYSROOT "$SYSROOT_PATH")
+set(CMAKE_FIND_ROOT_PATH "\${CMAKE_SYSROOT}")
+
+set(DEBIAN_MULTIARCH_INCLUDE "-isystem \${CMAKE_SYSROOT}/usr/include/aarch64-linux-gnu")
+set(DEBIAN_MULTIARCH_LIB "-B\${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu -L\${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu")
+set(STATIC_RUNTIME_FLAGS "-static-libstdc++ -static-libgcc $SYSROOT_COMPAT_OBJ")
+
+# CMake reads this file once per enabled language, so guard against appending twice
+# (a duplicated glibc_compat.o would be a multiple-definition link error).
+if(NOT CMAKE_EXE_LINKER_FLAGS MATCHES "glibc_compat")
+  set(CMAKE_C_FLAGS "\${CMAKE_C_FLAGS} \${DEBIAN_MULTIARCH_INCLUDE}" CACHE STRING "" FORCE)
+  set(CMAKE_CXX_FLAGS "\${CMAKE_CXX_FLAGS} \${DEBIAN_MULTIARCH_INCLUDE}" CACHE STRING "" FORCE)
+  set(CMAKE_EXE_LINKER_FLAGS "\${CMAKE_EXE_LINKER_FLAGS} \${DEBIAN_MULTIARCH_LIB} \${STATIC_RUNTIME_FLAGS}" CACHE STRING "" FORCE)
+  set(CMAKE_SHARED_LINKER_FLAGS "\${CMAKE_SHARED_LINKER_FLAGS} \${DEBIAN_MULTIARCH_LIB} \${STATIC_RUNTIME_FLAGS}" CACHE STRING "" FORCE)
+  set(CMAKE_MODULE_LINKER_FLAGS "\${CMAKE_MODULE_LINKER_FLAGS} \${DEBIAN_MULTIARCH_LIB} \${STATIC_RUNTIME_FLAGS}" CACHE STRING "" FORCE)
+endif()
+EOF
+)
+    else
+        sysroot_block=$(cat << EOF
+# Sysroot: bundled with the ARM toolchain
+set(CMAKE_SYSROOT "\${TOOLCHAIN_PATH}/aarch64-none-linux-gnu/libc")
+set(CMAKE_FIND_ROOT_PATH "\${CMAKE_SYSROOT}")
+EOF
+)
+    fi
+
     cat > "$cmake_file" << EOF
 # ARM Toolchain for Raspberry Pi $RPI_MODEL
 # Generated by setup.sh v${SCRIPT_VERSION}
@@ -407,9 +539,7 @@ set(TOOLCHAIN_PATH "$TOOLCHAIN_PATH")
 set(CMAKE_C_COMPILER "\${TOOLCHAIN_PATH}/bin/aarch64-none-linux-gnu-gcc")
 set(CMAKE_CXX_COMPILER "\${TOOLCHAIN_PATH}/bin/aarch64-none-linux-gnu-g++")
 
-# Sysroot configuration
-set(CMAKE_SYSROOT "\${TOOLCHAIN_PATH}/aarch64-none-linux-gnu/libc")
-set(CMAKE_FIND_ROOT_PATH "\${CMAKE_SYSROOT}")
+$sysroot_block
 
 # Architecture flags for Raspberry Pi $RPI_MODEL
 set(ARCH_FLAGS "$arch_flags")
@@ -537,6 +667,34 @@ verify_build() {
         log_error "Some binaries are missing. Build may have failed."
         exit 1
     fi
+
+    check_glibc_requirement "${required_files[@]}"
+}
+
+check_glibc_requirement() {
+    local objdump="$TOOLCHAIN_PATH/bin/aarch64-none-linux-gnu-objdump"
+    if [[ ! -x "$objdump" ]]; then
+        return 0
+    fi
+
+    local required
+    required=$("$objdump" -T "$@" 2>/dev/null | grep -o 'GLIBC_2\.[0-9]*' | sort -t. -k2 -n -u | tail -1)
+    required="${required#GLIBC_}"
+    log_info "Binaries require glibc >= $required"
+
+    if [[ -z "$SYSROOT_PATH" ]]; then
+        log_warning "Built against the toolchain's bundled glibc. If the Pi reports 'GLIBC_$required not found', rerun with --os <codename>"
+        return 0
+    fi
+
+    local available
+    available=$(sysroot_glibc_version "$SYSROOT_PATH")
+    if [[ "$(printf '%s\n%s\n' "$required" "$available" | sort -t. -k2 -n | tail -1)" == "$available" ]]; then
+        log_success "Compatible with Debian $TARGET_OS (glibc $available)"
+    else
+        log_error "Binaries require glibc $required but Debian $TARGET_OS ships $available"
+        exit 1
+    fi
 }
 
 # Display next steps
@@ -552,27 +710,27 @@ display_next_steps() {
 
     echo -e "\n📋 Next steps:"
 
-    echo "1. Create deployment directory and copy binaries to your Raspberry Pi $RPI_MODEL:"
+    echo "1. [host PC] Create deployment directory and copy binaries to your Raspberry Pi $RPI_MODEL:"
     echo "   ssh pi@<rpi-ip> 'mkdir -p ~/executorch-deployment'"
     echo "   scp $CMAKE_OUT_DIR/examples/models/llama/llama_main pi@<rpi-ip>:~/executorch-deployment/"
     echo "   scp $CMAKE_OUT_DIR/examples/models/llama/runner/libllama_runner.so pi@<rpi-ip>:~/executorch-deployment/"
 
-    echo -e "\n2. Set up library environment on Raspberry Pi:"
+    echo -e "\n2. [Host PC → Raspberry Pi] Set up library environment:"
     echo "   ssh pi@<rpi-ip>"
     echo "   cd ~/executorch-deployment"
     echo "   echo 'export LD_LIBRARY_PATH=\$(pwd):\$LD_LIBRARY_PATH' > setup_env.sh"
     echo "   chmod +x setup_env.sh"
 
-    echo -e "\n3. Test the deployment:"
+    echo -e "\n3. [Raspberry Pi] Test the deployment:"
     echo "   source setup_env.sh"
     echo "   ./llama_main --help"
     echo "   # Ensure there are no errors before proceeding. If there are errors, check the RaspberryPi Tutorials -> Troubleshooting section: hhttps://docs.pytorch.org/executorch/1.0/embedded-section.html#tutorials"
 
-    echo -e "\n4. Download your model and tokenizer:"
+    echo -e "\n4. [Raspberry Pi] Download your model and tokenizer (they must end up in ~/executorch-deployment on the Raspberry Pi):"
     echo "   # Make sure you have downloaded the model and tokenizer files from Hugging Face or your source"
     echo "   # Refer to the official documentation for exact details"
 
-    echo -e "\n5. Run ExecuTorch with your model:"
+    echo -e "\n5. [Raspberry Pi] Run ExecuTorch with your model:"
     echo "   ./llama_main --model_path ./model.pte --tokenizer_path ./tokenizer.model --seq_len 128 --prompt \"What is the meaning of life?\""
 
     echo -e "\n${GREEN}🎯 Deployment Summary:${NC}"
@@ -608,6 +766,7 @@ EOF
     check_prerequisites
     setup_environment
     download_toolchain
+    create_debian_sysroot
     create_toolchain_cmake
     build_executorch_core
     build_llama_runner
