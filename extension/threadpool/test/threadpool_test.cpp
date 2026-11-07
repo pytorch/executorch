@@ -10,6 +10,8 @@
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <numeric>
 #include <random>
@@ -266,6 +268,61 @@ TEST(TestNoThreadPoolGuard, TestRunWithGuard) {
     ASSERT_EQ(threadpool_ptr, nullptr);
   }
   ASSERT_EQ(inner, 6);
+}
+
+TEST(ThreadPoolTest, ResetKeepsHandedOutPthreadpoolUsable) {
+  executorch::runtime::runtime_init();
+
+  auto* threadpool = ::executorch::extension::threadpool::get_threadpool();
+  const auto thread_count = threadpool->get_thread_count();
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(2));
+  // Delegates such as XNNPACK hold this pointer while a loaded method lives.
+  const auto held = ::executorch::extension::threadpool::get_pthreadpool();
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(3));
+  EXPECT_EQ(threadpool->get_thread_count(), 3);
+  // Going back to 2 threads reuses the held threadpool, which must then be
+  // kept again by the next reset.
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(2));
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(3));
+  EXPECT_EQ(pthreadpool_get_threads_count(held), 2);
+
+  // Each item waits for the other, so both finish their waits only if the
+  // held threadpool still has its worker thread.
+  struct Rendezvous {
+    std::mutex mutex;
+    std::condition_variable arrived;
+    size_t count = 0;
+    bool met = true;
+  } rendezvous;
+  pthreadpool_parallelize_1d(
+      held,
+      [](void* context, size_t) {
+        auto& rendezvous = *static_cast<Rendezvous*>(context);
+        std::unique_lock<std::mutex> lock(rendezvous.mutex);
+        ++rendezvous.count;
+        rendezvous.arrived.notify_all();
+        if (!rendezvous.arrived.wait_for(
+                lock, std::chrono::seconds(10), [&rendezvous] {
+                  return rendezvous.count == 2;
+                })) {
+          rendezvous.met = false;
+        }
+      },
+      &rendezvous,
+      2,
+      0);
+  EXPECT_TRUE(rendezvous.met);
+
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(2));
+  EXPECT_EQ(::executorch::extension::threadpool::get_pthreadpool(), held);
+
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  threadpool->_unsafe_reset_threadpool(thread_count);
 }
 
 #if defined(__linux__) && !defined(__ANDROID__)

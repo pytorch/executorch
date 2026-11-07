@@ -462,7 +462,12 @@ def _reset_profile_results() -> None:
 
 @experimental("This API is experimental and subject to change without notice.")
 def _unsafe_reset_threadpool(num_threads: int) -> None:
-    """
+    """Sets the number of threads in the CPU thread pool.
+
+    Delegates such as XNNPACK keep using the thread pool that a method was
+    loaded with, so load the method after this call for the new count to apply
+    to it.
+
     .. warning::
 
         This API is experimental and subject to change without notice.

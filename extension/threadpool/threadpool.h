@@ -11,6 +11,8 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <utility>
+#include <vector>
 
 #include <pthreadpool.h>
 
@@ -66,10 +68,13 @@ class ThreadPool final {
   size_t get_thread_count() const;
 
   /**
-   * INTERNAL: Resets the threadpool by creating a new threadpool with requested
-   * # of threads. This is not a thread safe call. When calling this method,
-   * threads of the threadpool might be doing some work. Some other code may
-   * also be holding on to the threadpool pointer, that is no longer valid. This
+   * INTERNAL: Resets the threadpool to the requested # of threads. This is not
+   * a thread safe call. A threadpool that get_pthreadpool() returned is not
+   * destroyed but kept with its size, because delegates such as XNNPACK keep
+   * using it for the methods they loaded. So the new size applies to such
+   * methods only when they are loaded after this call. A later reset to a kept
+   * size reuses that threadpool. Kept threadpools live until
+   * _unsafe_destroy_threadpool() or the end of the process. This
    * is a private API, which will later be replaced by something that allows
    * creating of threadpool with requested size and use such a threadpool with
    * backend delegates, custom ops or optimized lib.
@@ -104,14 +109,18 @@ class ThreadPool final {
   friend pthreadpool_t get_pthreadpool();
 
  private:
-  // This mutex is used inside get_thread_count API but it is not really needed
-  // since data members of ThreadPool objects are not really mutable.
-  // TODO(kimishpatel): Figure out if we will allow set_num_threads API, in
-  // which case this mutex will be useful. Otherwise remove it.
+  using PthreadpoolPtr =
+      std::unique_ptr<pthreadpool, decltype(&pthreadpool_destroy)>;
+
+  // Guards the data members below.
   mutable std::mutex mutex_;
-  std::unique_ptr<pthreadpool, decltype(&pthreadpool_destroy)> threadpool_;
+  PthreadpoolPtr threadpool_;
   // The number of threads in the threadpool.
   size_t thread_count_;
+  // Whether get_pthreadpool() has returned threadpool_.
+  bool threadpool_shared_ = false;
+  // Shared threadpools that a reset replaced, with their thread counts.
+  std::vector<std::pair<size_t, PthreadpoolPtr>> retired_threadpools_;
 };
 
 /**
@@ -123,7 +132,8 @@ ThreadPool* get_threadpool();
  * Returns the underlying pthreadpool instance used by the implementation of
  * ThreadPool returned by `get_threadpool()`. Only for use in external libraries
  * so as to unify threading across internal (i.e. ATen, etc.) and external (e.g.
- * NNPACK, QNNPACK, XNNPACK) use cases.
+ * NNPACK, QNNPACK, XNNPACK) use cases. The returned instance stays valid after
+ * ThreadPool::_unsafe_reset_threadpool().
  */
 pthreadpool_t get_pthreadpool();
 

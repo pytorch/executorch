@@ -72,9 +72,28 @@ bool ThreadPool::_unsafe_reset_threadpool(uint32_t new_thread_count) {
 
   std::lock_guard<std::mutex> lock{mutex_};
 
-  threadpool_.reset(pthreadpool_create(new_thread_count));
-  thread_count_ =
-      threadpool_ ? pthreadpool_get_threads_count(threadpool_.get()) : 0;
+  // Holders of a shared threadpool, such as XNNPACK, size their buffers by its
+  // thread count and are not told about a new one, so it is kept as is.
+  if (threadpool_shared_ && threadpool_) {
+    retired_threadpools_.emplace_back(thread_count_, std::move(threadpool_));
+  }
+  // Reusing a kept threadpool of the requested size bounds how many are kept.
+  const auto retired = std::find_if(
+      retired_threadpools_.begin(),
+      retired_threadpools_.end(),
+      [new_thread_count](const auto& entry) {
+        return entry.first == new_thread_count;
+      });
+  threadpool_shared_ = retired != retired_threadpools_.end();
+  if (threadpool_shared_) {
+    threadpool_ = std::move(retired->second);
+    thread_count_ = retired->first;
+    retired_threadpools_.erase(retired);
+  } else {
+    threadpool_.reset(pthreadpool_create(new_thread_count));
+    thread_count_ =
+        threadpool_ ? pthreadpool_get_threads_count(threadpool_.get()) : 0;
+  }
   return true;
 }
 
@@ -83,6 +102,7 @@ void ThreadPool::_unsafe_destroy_threadpool() {
   ET_LOG(Info, "Destroying threadpool.");
   threadpool_.reset();
   thread_count_ = 0;
+  retired_threadpools_.clear();
 }
 
 void ThreadPool::run(
@@ -199,6 +219,8 @@ pthreadpool_t get_pthreadpool() {
   }
   ThreadPool* const threadpool = get_threadpool();
   ET_CHECK_MSG(threadpool, "Failed to acquire an instance of ThreadPool!");
+  std::lock_guard<std::mutex> lock{threadpool->mutex_};
+  threadpool->threadpool_shared_ = true;
   return threadpool->threadpool_.get();
 }
 
