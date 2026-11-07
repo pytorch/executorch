@@ -18,6 +18,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     INT,
     OPT_AT_DOUBLE_ARRAY_REF,
     OPT_AT_INT_ARRAY_REF,
+    OPT_AT_SCALAR,
     OPT_AT_TENSOR,
     OPT_BOOL,
     OPT_DEVICE,
@@ -31,7 +32,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     THREE_TENSOR_TUPLE,
     TWO_TENSOR_TUPLE,
 )
-from executorch.backends.vulkan.test.op_tests.utils.test_suite import TestSuite
+from executorch.backends.vulkan.test.op_tests.utils.test_suite import VkTestSuite
 
 from torchgen.api import cpp
 from torchgen.api.types import CppSignatureGroup
@@ -96,7 +97,7 @@ class ComputeGraphGen:
         self,
         op_reg_name: str,
         f: NativeFunction,
-        suite_def: TestSuite,
+        suite_def: VkTestSuite,
         include_io: bool = True,
     ):
         self.op_reg_name = op_reg_name
@@ -478,6 +479,12 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
         elif ref.src_cpp_type == AT_SCALAR:
             ret_str = f"{cpp_type} {ref.name} = "
             ret_str += f"add_scalar_to_graph(*{self.graph}, {ref.src_cpp_name}); \n"
+        elif ref.src_cpp_type == OPT_AT_SCALAR:
+            ret_str = f"{cpp_type} {ref.name} = !{ref.src_cpp_name}.has_value() ? "
+            ret_str += f"{self.graph}{self.dot}add_none() : "
+            ret_str += (
+                f"add_scalar_to_graph(*{self.graph}, {ref.src_cpp_name}.value());\n"
+            )
         elif ref.src_cpp_type == AT_INT_ARRAY_REF:
             ret_str += f"add_scalar_list({ref.src_cpp_name}.vec()); \n"
         elif ref.src_cpp_type == BOOL:
@@ -712,7 +719,22 @@ for (int i=0; i<out.size(); i++) {{
         ret_str += self.gen_output_staging_valueref_decl(self.refs["out"])
         return ret_str
 
-    def gen_graph_build_code(self, include_declarations: bool = True) -> str:
+    def output_tensor_refs(self) -> List[ValueRef]:
+        out = self.refs["out"]
+        refs = out[:-1] if isinstance(out, list) else [out]
+        assert all(ref.src_cpp_type == AT_TENSOR for ref in refs)
+        return refs
+
+    def gen_padding_init(self) -> str:
+        code = ""
+        for ref in self.output_tensor_refs():
+            code += f"OutputPaddingCheck {ref.name}_padding("
+            code += f"{self.graph}, {ref.name}, {ref.src_cpp_name}.scalar_type());\n"
+        return code
+
+    def gen_graph_build_code(
+        self, include_declarations: bool = True, check_padding: bool = False
+    ) -> str:
         graph_build = self.create_out_src(include_declarations)
         for aten_arg in self.args:
             graph_build += self.create_value_for(
@@ -720,7 +742,12 @@ for (int i=0; i<out.size(); i++) {{
             )
 
         graph_build += self.create_value_for(self.refs["out"], include_declarations)
+        if check_padding:
+            graph_build += self.gen_padding_init()
         graph_build += self.create_op_call()
+        if check_padding:
+            for ref in self.output_tensor_refs():
+                graph_build += f"{ref.name}_padding.add_readback({self.graph});\n"
 
         if self.include_io:
             graph_build += self.set_output(self.refs["out"], include_declarations)
@@ -731,7 +758,7 @@ for (int i=0; i<out.size(); i++) {{
         graph_build += "\n"
         return graph_build
 
-    def gen_graph_exec_code(self, check_output=True) -> str:
+    def gen_graph_exec_code(self, check_output=True, check_padding=False) -> str:
         graph_exec = ""
         if self.include_io:
             for aten_arg in self.args:
@@ -742,6 +769,10 @@ for (int i=0; i<out.size(); i++) {{
 
             graph_exec += f"{self.graph}{self.dot}propagate_resize();\n"
 
+        if check_padding:
+            for ref in self.output_tensor_refs():
+                graph_exec += f"ASSERT_EQ({self.graph}{self.dot}sizes_of({ref.name}), {ref.src_cpp_name}.sizes().vec());\n"
+                graph_exec += f"{ref.name}_padding.poison({self.graph});\n"
         graph_exec += f"{self.graph}{self.dot}execute();\n"
 
         graph_exec += self.declare_vk_out_for(self.refs["out"])
@@ -750,6 +781,9 @@ for (int i=0; i<out.size(); i++) {{
 
         if self.include_io and check_output:
             graph_exec += self.check_graph_out(self.refs["out"])
+        if check_padding:
+            for ref in self.output_tensor_refs():
+                graph_exec += f"{ref.name}_padding.check({self.graph});\n"
 
         graph_exec = re.sub(r"^", "  ", graph_exec, flags=re.M)
         graph_exec = "{\n" + graph_exec + "\n}"
@@ -790,8 +824,12 @@ for (int i=0; i<out.size(); i++) {{
             op_check_fn = self.gen_decl(f"prepacked_check_{op_name}") + " {\n"
 
         op_check_fn_body = ""
-        op_check_fn_body += self.gen_graph_build_code()
-        op_check_fn_body += self.gen_graph_exec_code()
+        op_check_fn_body += self.gen_graph_build_code(
+            check_padding=self.suite_def.check_zero_padding
+        )
+        op_check_fn_body += self.gen_graph_exec_code(
+            check_padding=self.suite_def.check_zero_padding
+        )
 
         op_check_fn_body = re.sub(r"^", "    ", op_check_fn_body, flags=re.M)
 
