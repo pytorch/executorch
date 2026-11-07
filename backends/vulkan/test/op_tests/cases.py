@@ -45,7 +45,13 @@ def register_test_suite(aten_op, skip=False):
 
 
 @register_test_suite(
-    ["aten.add.Tensor", "aten.sub.Tensor", "aten.div.Tensor", "aten.mul.Tensor"]
+    [
+        "aten.add.Tensor",
+        "aten.sub.Tensor",
+        "aten.div.Tensor",
+        "aten.mul.Tensor",
+        "aten.pow.Tensor_Tensor",
+    ]
 )
 def get_binary_elementwise_inputs():
     test_suite = VkTestSuite(
@@ -91,7 +97,63 @@ def get_binary_elementwise_inputs():
             "utils::kChannelsPacked",
         ]
 
+    for suite in [test_suite, highdim_test_suite, large_buffer_test_suite]:
+        suite.check_zero_padding = True
+
     return [test_suite, highdim_test_suite, large_buffer_test_suite]
+
+
+@register_test_suite(["aten.add.Tensor", "aten.sub.Tensor"])
+def get_add_sub_inputs():
+    # Values from 2^24 up are not all exactly representable in fp32.
+    int_suite = VkTestSuite(
+        [
+            ((M1, M2), (M1, M2)),
+            ((M1, M2), (M1, 1)),
+            ((S, S1, S2), (S, 1, S2)),
+        ]
+    )
+    int_suite.dtypes = ["at::kInt"]
+    int_suite.data_gen = "make_nonzero_randint_tensor"
+    int_suite.data_range = (1 << 24, 1 << 25)
+    # The default relative tolerance would accept fp32 rounding of large sums.
+    int_suite.atol = "0"
+    int_suite.rtol = "0"
+    int_suite.test_name_suffix = "int_large"
+
+    # 0 + inf * 0 is NaN, so zero padding lanes need masking.
+    inf_alpha_suite = VkTestSuite(
+        [
+            ((M1, M2), (M1, M2), "INFINITY"),
+            ((S, S1, S2), (S, 1, S2), "-INFINITY"),
+        ]
+    )
+    inf_alpha_suite.data_range = (1, 2)
+    inf_alpha_suite.test_name_suffix = "inf_alpha"
+
+    for suite in [int_suite, inf_alpha_suite]:
+        suite.layouts = [
+            "utils::kWidthPacked",
+            "utils::kChannelsPacked",
+        ]
+        suite.storage_types = [
+            "utils::kBuffer",
+            "utils::kTexture3D",
+        ]
+        suite.check_zero_padding = True
+    return [int_suite, inf_alpha_suite]
+
+
+@register_test_suite("aten.div.Tensor_mode")
+def get_floor_divide_inputs():
+    suites = get_binary_elementwise_inputs()
+    for suite in suites:
+        suite.input_cases = [(case[0], case[1], "floor") for case in suite.input_cases]
+        # Negative operands tell floor division apart from truncation.
+        suite.data_gen = "make_nonzero_randint_tensor"
+        suite.data_range = (-16, 17)
+        suite.dtypes = ["at::kFloat", "at::kHalf", "at::kInt"]
+    return suites
 
 
 # Eq requires a different test generator so it was split from the other test case.
@@ -103,10 +165,6 @@ def get_binary_elementwise_inputs():
         "aten.ge.Tensor",
         "aten.le.Tensor",
     ],
-    # TODO(ssjia): These tests are currently failing correctness checks. They
-    # were previously unnoticed because there was a bug in the input data
-    # generation function that was causing the input data to be all zeros.
-    skip=True,
 )
 def get_binary_elementwise_compare_inputs():
     test_suite = VkTestSuite(
@@ -130,6 +188,9 @@ def get_binary_elementwise_compare_inputs():
         "utils::kTexture3D",
     ]
     test_suite.data_gen = "make_casted_randint_tensor"
+    test_suite.data_range = (0, 17)
+    test_suite.dtypes = ["at::kFloat", "at::kHalf", "at::kInt"]
+    test_suite.check_zero_padding = True
     return test_suite
 
 
@@ -1083,6 +1144,7 @@ def get_permute_inputs():
     test_suite.dtypes = [
         "at::kFloat",
     ]
+    test_suite.check_zero_padding = True
     return test_suite
 
 
@@ -2311,6 +2373,9 @@ def get_minimum_inputs():
             ((S1, S2), (L, M1, S1, S2)),
         ]
     )
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.data_range = (-1, 1)
+    test_suite.check_zero_padding = True
     return test_suite
 
 
@@ -2446,7 +2511,12 @@ def get_where_inputs():
 
 
 @register_test_suite(
-    ["aten.bitwise_and.Tensor", "aten.bitwise_or.Tensor", "aten.logical_or.default"]
+    [
+        "aten.bitwise_and.Tensor",
+        "aten.bitwise_or.Tensor",
+        "aten.logical_and.default",
+        "aten.logical_or.default",
+    ]
 )
 def get_bitwise_binary_inputs():
     test_suite = VkTestSuite(
@@ -2468,6 +2538,7 @@ def get_bitwise_binary_inputs():
         "utils::kTexture3D",
     ]
     test_suite.dtypes = ["at::kBool"]
+    test_suite.check_zero_padding = True
     return test_suite
 
 
@@ -2509,6 +2580,7 @@ def get_binary_scalar_inputs():
             ((S, S1, S2), -1.0),
             ((M1, M2), 4.0),
             ((S1, S2), 1.5),
+            ((S1, S2), 0.0),
         ]
     )
     test_suite.storage_types = [
@@ -2520,6 +2592,31 @@ def get_binary_scalar_inputs():
         "utils::kChannelsPacked",
     ]
     test_suite.dtypes = ["at::kFloat"]
+    test_suite.check_zero_padding = True
+    return test_suite
+
+
+@register_test_suite("aten.mul.Scalar")
+def get_mul_inf_scalar_inputs():
+    # 0 * inf is NaN, so zero padding lanes need masking.
+    test_suite = VkTestSuite(
+        [
+            ((M1, M2), "INFINITY"),
+            ((S1, S2, S2, M2), "-INFINITY"),
+        ]
+    )
+    test_suite.data_range = (1, 2)
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.check_zero_padding = True
+    test_suite.test_name_suffix = "inf"
     return test_suite
 
 
@@ -2541,6 +2638,7 @@ def get_eq_scalar_inputs():
             # mixed int32/float shader variant: comparing in the promoted float
             # type yields all-false (no integer equals 3.5).
             ((M1,), 3.5),
+            ((S1, S2), 0),
         ]
     )
     test_suite.storage_types = [
@@ -2553,6 +2651,7 @@ def get_eq_scalar_inputs():
     ]
     test_suite.dtypes = ["at::kInt", "at::kFloat"]
     test_suite.data_gen = "make_seq_tensor"
+    test_suite.check_zero_padding = True
     return test_suite
 
 
@@ -2561,12 +2660,15 @@ def _get_compare_scalar_inputs():
         [
             ((M2, M1), 2.5),
             ((S1, M1, M2), 1000),
+            ((S1, S2), 0.0),
+            ((S1, S2), -2.5),
         ]
     )
     test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
     test_suite.dtypes = ["at::kFloat"]
     test_suite.data_gen = "make_seq_tensor"
+    test_suite.check_zero_padding = True
     return test_suite
 
 
