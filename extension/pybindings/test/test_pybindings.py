@@ -406,28 +406,63 @@ def check(call, expected, warnings_expected=0):
                 from executorch.extension.pybindings import portable_lib
 
                 module = portable_lib._load_for_executorch(program_path)
-                # A torch that is there but broken, even with an ImportError or
-                # a missing module of its own.
-                for error_type, missing in (
-                    (RuntimeError, "torch"),
-                    (ImportError, "torch"),
-                    (ModuleNotFoundError, "torch._C"),
-                ):
-                    blocker.error, blocker.missing = error_type, missing
+                # A torch that fails with an error other than ImportError is
+                # reported at every call.
+                for _ in range(2):
                     try:
                         module.forward([x, x])
-                    except error_type as error:
+                    except RuntimeError as error:
                         assert "torch is unavailable" in str(error), error
                         notes = "".join(getattr(error, "__notes__", []))
                         assert "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT" in notes, notes
                     else:
                         raise AssertionError("a broken torch must not be hidden")
-                blocker.missing = "torch"
+                # An ImportError, even for a part of torch, counts as missing,
+                # as when torch was imported with ExecuTorch.
+                blocker.error, blocker.missing = ImportError, "torch._C"
                 check(lambda: module.forward([x, x]), ["ExecuTorchResult"])
                 check(lambda: module.run_method("tensor_constant"), ["ExecuTorchResult"])
                 # A missing torch is not looked for again on every call.
-                assert blocker.attempts == 4, blocker.attempts
+                assert blocker.attempts == 3, blocker.attempts
                 assert "torch" not in sys.modules
+                """,
+            ),
+            "a torch that fails with an ImportError, in two threads": (
+                None,
+                """
+                import os
+                import tempfile
+                import time
+
+                package = os.path.join(tempfile.mkdtemp(), "torch")
+                os.makedirs(package)
+                with open(os.path.join(package, "__init__.py"), "w") as source:
+                    source.write(
+                        "import __main__\\n"
+                        "__main__.started.set()\\n"
+                        "__main__.release.wait()\\n"
+                        "raise ImportError('libtorch_cpu.so is missing')\\n"
+                    )
+                sys.path.insert(0, os.path.dirname(package))
+                started, release = threading.Event(), threading.Event()
+                from executorch.extension.pybindings import portable_lib
+
+                modules = [portable_lib._load_for_executorch(program_path) for _ in range(2)]
+                outputs = [None, None]
+
+                def run(index):
+                    outputs[index] = modules[index].forward([x, x])[0]
+
+                threads = [threading.Thread(target=run, args=(i,)) for i in (0, 1)]
+                threads[0].start()
+                started.wait()
+                # The second call waits for the import that the first one runs.
+                threads[1].start()
+                time.sleep(0.5)
+                release.set()
+                for thread in threads:
+                    thread.join()
+                assert kinds(outputs) == ["ExecuTorchResult"] * 2, kinds(outputs)
                 """,
             ),
             "the setting asks for ExecuTorchResult": (

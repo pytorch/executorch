@@ -44,11 +44,11 @@ the same for its outputs.
 Unless `EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT` is `torch`, importing
 `portable_lib` does not import PyTorch. When PyTorch is installed, portable
 bindings return `torch.Tensor` outputs, and the first call that returns one
-imports `torch`. When PyTorch is not installed, outputs are `ExecuTorchResult`
-values. When it is installed but fails to import, every call that returns a
-tensor raises the import error; set the variable to `executorch` to run
-without PyTorch. Output conversion uses Python APIs and DLPack; the extension
-does not link against PyTorch.
+imports `torch`. When PyTorch is not installed, or importing it raises an
+`ImportError`, outputs are `ExecuTorchResult` values. Any other error from
+importing it is raised by every call that returns a tensor; set the variable
+to `executorch` to run without PyTorch. Output conversion uses Python APIs and
+DLPack; the extension does not link against PyTorch.
 `clone_outputs=True` returns storage that later executions do not overwrite,
 on the output's original device. With `clone_outputs=False`, results share
 runtime or input storage and later execution may overwrite that storage.

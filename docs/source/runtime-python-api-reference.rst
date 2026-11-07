@@ -46,7 +46,7 @@ For data on a GPU, use DLPack, the standard way to share tensors between Python 
 Output types
 ~~~~~~~~~~~~
 
-Importing ``executorch.runtime`` does not import PyTorch, unless the setting below asks for ``torch``. When PyTorch is installed, ``Method.execute`` returns ``torch.Tensor`` outputs, and the first call that returns one imports ``torch``. Without PyTorch, it returns ``ExecuTorchResult`` outputs. If PyTorch is installed but fails to import, every call that returns a tensor raises the import error; set the setting below to ``executorch`` to run without PyTorch.
+Importing ``executorch.runtime`` does not import PyTorch, unless the setting below asks for ``torch``. When PyTorch is installed, ``Method.execute`` returns ``torch.Tensor`` outputs, and the first call that returns one imports ``torch``. Without PyTorch, or when importing it raises an ``ImportError``, it returns ``ExecuTorchResult`` outputs. Any other error from importing PyTorch is raised by every call that returns a tensor; set the setting below to ``executorch`` to run without PyTorch.
 
 A future release will make the outputs follow the tensor inputs of each call. A call with any ``torch.Tensor`` input will return ``torch.Tensor`` outputs. A call whose tensor inputs are all NumPy arrays, other buffers, DLPack objects, or ``ExecuTorchResult`` values will return ``ExecuTorchResult`` outputs, even when PyTorch is installed. A call with no tensor inputs will return ``torch.Tensor`` outputs only if ``torch`` is already imported. Each call whose outputs will change warns with a ``FutureWarning``.
 
