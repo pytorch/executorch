@@ -318,13 +318,15 @@ class vTensor final {
         std::vector<int64_t>& sizes,
         std::vector<int64_t>& dim_order,
         std::vector<int64_t>& strides,
-        size_t numel);
+        size_t numel,
+        const PackedDimInfo& packed_dim_info);
 
     void update(
         std::vector<int64_t>& sizes,
         std::vector<int64_t>& dim_order,
         std::vector<int64_t>& strides,
-        size_t numel);
+        size_t numel,
+        const PackedDimInfo& packed_dim_info);
   };
 
   struct TextureMetadata {
@@ -638,7 +640,8 @@ class vTensor final {
 
   /*
    * Return true if a buffer backed tensor's dim order matches that of a
-   * contiguous tensor, i.e. the dim order will be {0, 1, 2, ... }.
+   * contiguous tensor, i.e. the dim order will be {0, 1, 2, ... }, and no
+   * padding lies between consecutive elements of the innermost dim.
    * Returns false for texture backed tensors.
    */
   bool is_contiguous() const;
