@@ -4,9 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# The op is selected at dispatch through the op_type specialization constant.
 binary_scalar:
   parameter_names_with_default_values:
-    OPERATOR: power_of(X, Y)
     IS_COMPARISON_OP: false
     DTYPE: float
     SCALAR_VALUE_TYPE: float
@@ -23,24 +23,6 @@ binary_scalar:
        - parameter_values: [int32, int32]
        - parameter_values: [int32, float]
   shader_variants:
-    - NAME: pow_scalar
-    - NAME: mul_scalar
-      OPERATOR: X * Y
-    - NAME: eq_scalar
-      OPERATOR: equal(X, Y)
-      IS_COMPARISON_OP: true
-    - NAME: ne_scalar
-      OPERATOR: notEqual(X, Y)
-      IS_COMPARISON_OP: true
-    - NAME: lt_scalar
-      OPERATOR: lessThan(X, Y)
-      IS_COMPARISON_OP: true
-    - NAME: le_scalar
-      OPERATOR: lessThanEqual(X, Y)
-      IS_COMPARISON_OP: true
-    - NAME: gt_scalar
-      OPERATOR: greaterThan(X, Y)
-      IS_COMPARISON_OP: true
-    - NAME: ge_scalar
-      OPERATOR: greaterThanEqual(X, Y)
+    - NAME: binary_scalar_op
+    - NAME: binary_scalar_cmp
       IS_COMPARISON_OP: true
