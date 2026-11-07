@@ -12,6 +12,7 @@ from executorch.backends.cortex_m.quantizer.pattern_checkers import (
     CortexMConv2DCheck,
     CortexMConvTranspose2DCheck,
     CortexMDivCheck,
+    CortexMExplicitAddMulCheck,
     CortexMExplicitConv1DCheck,
     CortexMExplicitConv2DCheck,
     CortexMExplicitConvTranspose2DCheck,
@@ -252,6 +253,11 @@ CORTEX_M_QUANTIZER_SUPPORT_DICT = (
 CORTEX_M_EXPLICIT_LAYOUT_QUANTIZER_SUPPORT_DICT = (
     CORTEX_M_QUANTIZER_SUPPORT_DICT
     | CONV1D_OP_PATTERNS
+    | {
+        pattern: CortexMExplicitAddMulCheck
+        for pattern, checker in BINARY_OP_PATTERNS.items()
+        if checker is CortexMAddMulCheck
+    }
     | {pattern: CortexMExplicitConv2DCheck for pattern in CONV_OP_PATTERNS}
     | {
         pattern: CortexMExplicitConvTranspose2DCheck
