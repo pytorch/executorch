@@ -1,0 +1,47 @@
+{
+  global:
+    JNI_OnLoad;
+    Java_*;
+    # A backend built as its own .so (EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED /
+    # EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED) links the runtime dynamically and
+    # imports it from here, so the runtime ABI it uses has to stay visible.
+    #
+    # Scoped to the namespaces the backends actually import rather than all of
+    # executorch::. Measured with llvm-nm over the two linked backend libraries,
+    # the union of what they import is 22 symbols, and every one of them falls
+    # in these two namespaces:
+    #
+    #   11  executorch::runtime::             (register_backend, register_kernels,
+    #                                          get_dim_order, runtime_abort, the
+    #                                          dim order predicates, ...)
+    #    4  executorch::runtime::internal::   (vlogf, get_log_timestamp,
+    #                                          resize_tensor_impl, set_tensor_data)
+    #    3  executorch::runtime::etensor::    (TensorImpl ctor, nbytes, element_size)
+    #    4  executorch::extension::threadpool::
+    #
+    # Narrowing to exactly those 22 was rejected: it turns any new runtime call a
+    # backend makes into an unresolved symbol at dlopen time rather than a link
+    # error, and split builds are opt-in so CI would not catch it. Scoping by
+    # namespace keeps that failure at link time while still dropping the export
+    # count from 385 executorch:: symbols to 244 (438 to 297 overall), and leaves
+    # extension::module, extension::llm, extension::merged_data_map, cpublas and
+    # the JNI helpers hidden.
+    #
+    # register_backend is the reason the split works at all: registered_backends
+    # in runtime/backend/interface.cpp is the table the runtime reads, and
+    # importing it is what lets the backend's static initializer write into that
+    # table rather than into a copy of its own.
+    extern "C++" {
+      executorch::runtime::*;
+      executorch::extension::threadpool::*;
+    };
+    # Not dead weight: the split XNNPACK backend imports 43 of these. Exporting
+    # them lets the linker satisfy XNNPACK's references from this library rather
+    # than pulling a second static copy into the backend .so, so the pool that
+    # the JNI numThreads setting configures is the one XNNPACK runs on.
+    # get_pthreadpool above shares the pool instance; this shares the
+    # implementation that operates on it.
+    pthreadpool_*;
+  local:
+    *;
+};
