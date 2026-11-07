@@ -16,11 +16,8 @@ import os
 import re
 from pathlib import Path
 
-from executorch.examples.llm_server.python.errors import (
-    APIError,
-    ContextLengthExceeded,
-    ModelNotFound,
-)
+from executorch.examples.llm_server.python.errors import APIError, ContextLengthExceeded
+from executorch.examples.llm_server.python.hud.metrics import Turn
 from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat, ToolContext
@@ -32,6 +29,13 @@ from executorch.examples.llm_server.python.worker_client import spawn_worker
 from executorch.examples.models.muse_glimmer.serving.chat_template import (
     MuseGlimmerChatTemplate as ChatTemplate,
     resolve_tool_result_names,
+)
+from executorch.examples.models.muse_glimmer.serving.framing import (
+    ASSISTANT_HEADER as _ASSISTANT_HEADER,
+    body_spans,
+    clean_body,
+    CONTROLS,
+    recipient_bodies,
 )
 from executorch.examples.models.muse_glimmer.serving.tool_parsers import (
     AtemToolCallDetector,
@@ -48,7 +52,6 @@ logger = logging.getLogger(__name__)
 
 # The template ends at this prefix; the model emits the recipient and message
 # delimiter.
-_ASSISTANT_HEADER = "<|start|>assistant"
 _DEFAULT_MAX_IMAGE_BYTES = 20 * 1024 * 1024
 _IMAGE_ERROR_CODE = "invalid_image"
 _IMAGE_PLACEHOLDER = "\x00muse_glimmer_image_placeholder\x00"
@@ -56,69 +59,36 @@ _IMAGE_DATA_URL_RE = re.compile(
     r"\Adata:(image/(?:jpeg|png));base64,([A-Za-z0-9+/]*={0,2})\Z"
 )
 
-# Harmony recipient headers may recur within one assistant turn. Treat their
-# delimiters as content, then strip every header before returning visible text.
-# The optional leading space handles text already trimmed by the tool parser;
-# the lookbehind avoids matching prose such as "goto=".
-_MUSE_GLIMMER_HEADER_SPECIALS = {"<|start|>", "<|message|>", "<|eom|>"}
-_MUSE_GLIMMER_IDENT = r"[a-zA-Z0-9_-]+"
-_MUSE_GLIMMER_RECIPIENT = rf"{_MUSE_GLIMMER_IDENT}(?:\.{_MUSE_GLIMMER_IDENT})*"
-_MUSE_GLIMMER_HEADER_RE = re.compile(
-    rf"(?<![A-Za-z0-9_])"
-    rf"(?:<\|start\|>assistant)?"
-    rf"\s?to={_MUSE_GLIMMER_RECIPIENT}"
-    rf"(?: constrain={_MUSE_GLIMMER_IDENT})?"
-    rf"<\|message\|>"
-)
-_MUSE_GLIMMER_ADDRESSED_HEADER_RE = re.compile(
-    rf"(?<![A-Za-z0-9_])"
-    rf"(?:<\|start\|>assistant)?"
-    rf"\s?to=({_MUSE_GLIMMER_RECIPIENT})"
-    rf"(?: constrain={_MUSE_GLIMMER_IDENT})?"
-    rf"<\|message\|>"
-)
-# Remove control tokens left without a complete recipient header.
-_MUSE_GLIMMER_STRAY_SPECIAL_RE = re.compile(
-    r"<\|(?:start|message|channel|constrain|end|eom|eot)\|>"
-)
-
-
-def _strip_muse_glimmer_header(text: str) -> str:
-    text = _MUSE_GLIMMER_HEADER_RE.sub("", text)
-    text = _MUSE_GLIMMER_STRAY_SPECIAL_RE.sub("", text)
-    return text.strip()
+# Harmony messages may recur within one assistant turn. The framing parser
+# handles their delimiters without interpreting quoted headers inside a body.
+_MUSE_GLIMMER_HEADER_SPECIALS = set(CONTROLS)
 
 
 def _extract_muse_glimmer_reasoning(text: str) -> tuple[str | None, str]:
     """Split a Harmony turn into private `to=self` bodies and visible messages.
 
     Nonempty thinking bodies retain their whitespace and are joined with a
-    newline without adding channel framing. Interior text is not otherwise
-    sanitized. Warm resume compares any supplied reasoning string against the returned
-    text before splicing stored generated token ids, preserving the original
+    newline without adding channel framing. Stray controls are removed while
+    quoted headers remain literal text. Warm resume compares supplied reasoning
+    against the returned text before splicing stored generated token ids, preserving the original
     channel framing for unchanged echoes or omitted/null reasoning.
     """
-    values = iter(parameter_value_spans(text))
-    span = next(values, None)
-    matches = []
-    for match in _MUSE_GLIMMER_ADDRESSED_HEADER_RE.finditer(text):
-        while span is not None and span[1] <= match.start():
-            span = next(values, None)
-        if span is None or match.start() < span[0]:
-            matches.append(match)
+    protected = parameter_value_spans(text)
+    bodies = list(recipient_bodies(text, protected))
+    matches = [header for header, _, _ in bodies]
     if not matches:
-        return None, text
+        return None, "".join(
+            text[a:b] for a, b in body_spans(text, protected_spans=protected)
+        )
 
     reasoning: list[str] = []
     visible: list[str] = []
-    prefix = text[: matches[0].start()].strip()
+    prefix = clean_body(text[: matches[0].start()]).strip()
     if prefix:
         visible.append(prefix)
 
-    for index, match in enumerate(matches):
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        body = text[match.end() : end]
-        body = re.sub(r"(?:<\|eom\|>|<\|eot\|>)\s*$", "", body)
+    for match, start, end in bodies:
+        body = "".join(text[a:b] for a, b in body_spans(text, start, end, protected))
         if not body.strip():
             continue
         if match.group(1) == "self":
@@ -234,6 +204,19 @@ class MuseGlimmerServingChat(ServingChat):
         super().__init__(*args, **kwargs)
         self._max_image_bytes = max_image_bytes
 
+    def _visible_content(self, text: str) -> str:
+        # The recipient-aware extractor already removed framing. Parsing the
+        # resulting bodies again would reinterpret a quoted header at offset 0.
+        cut = min(
+            (
+                text.find(token)
+                for token in self._content_specials
+                if token not in CONTROLS and token in text
+            ),
+            default=len(text),
+        )
+        return text[:cut].strip()
+
     @staticmethod
     def _with_image(prompt: PromptInput, image_segment: dict | None) -> PromptInput:
         if image_segment is None:
@@ -302,7 +285,7 @@ class MuseGlimmerServingChat(ServingChat):
                 "unsupported_parameter",
             )
         for key in ("enabled", "exclude"):
-            if key in reasoning and not isinstance(reasoning[key], bool):
+            if reasoning.get(key) is not None and not isinstance(reasoning[key], bool):
                 raise APIError(
                     400,
                     f"reasoning.{key} must be a boolean",
@@ -345,16 +328,6 @@ class MuseGlimmerServingChat(ServingChat):
                     "invalid_value",
                 )
             kwargs["reasoning_strength"] = effort
-        if "exclude" in reasoning:
-            visible = not reasoning["exclude"]
-            if kwargs.get("return_reasoning", visible) != visible:
-                raise APIError(
-                    400,
-                    "Conflicting reasoning visibility controls",
-                    "invalid_request_error",
-                    "invalid_value",
-                )
-            kwargs["return_reasoning"] = visible
         return req.model_copy(
             update={
                 "reasoning": None,
@@ -363,13 +336,12 @@ class MuseGlimmerServingChat(ServingChat):
             }
         )
 
-    async def _create(self, req: ChatCompletionRequest, lease, admission):
+    async def _create(
+        self, req: ChatCompletionRequest, lease, admission, observer: Turn | None = None
+    ):
         # The inherited create() owns the transaction around preparation and
         # response cleanup; only image-aware prompt construction differs here.
-        if req.model is not None and req.model != self._model_id:
-            raise ModelNotFound(req.model, self._model_id)
         req = self._normalize_reasoning(req)
-        self._reject_invalid_values(req)
         self._reject_unsupported_params(req)
         tool_context = ToolContext()
         if self._tools_active(req):
@@ -424,6 +396,7 @@ class MuseGlimmerServingChat(ServingChat):
             lease,
             admission,
             tool_context=tool_context,
+            observer=observer,
         )
 
 
@@ -495,10 +468,10 @@ def build_app_from_args(args):
         max_image_bytes=args.max_image_bytes,
         tool_detector_cls=_tool_detector(args.tool_parser),
         tool_reasoning_parser_factory=MuseGlimmerToolReasoningParser,
+        reasoning_token_counter=template.count_reasoning_tokens,
         # The worker prepends the numeric BOS the HF template renders as text and
         # serve.py strips (strip_rendered_bos), so token counts include it.
         prompt_token_offset=1,
-        content_filter=_strip_muse_glimmer_header,
         content_filter_specials=_MUSE_GLIMMER_HEADER_SPECIALS,
         reasoning_extractor=_extract_muse_glimmer_reasoning,
     )

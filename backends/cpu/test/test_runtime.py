@@ -309,3 +309,34 @@ class CPURuntimeTest(unittest.TestCase):
         self.assertEqual(report["released_private_constant_bytes"], 432 + 64)
         self.assertEqual(report["private_constant_bytes"], 0)
         torch.testing.assert_close(actual, model(*inputs), rtol=1e-5, atol=1e-5)
+
+    def test_plan_report_releases_only_constant_bmm_rhs(self):
+        class BmmConstant(torch.nn.Module):
+            def __init__(self, rhs):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(2, 3, 3))
+                self.rhs = rhs
+
+            def forward(self, x):
+                return (
+                    torch.bmm(x, self.weight) if self.rhs else torch.bmm(self.weight, x)
+                )
+
+        inputs = (torch.randn(2, 3, 3),)
+        for rhs in (False, True):
+            with self.subTest(rhs=rhs):
+                model = BmmConstant(rhs).eval()
+
+                def run(model=model):
+                    with self._lower(model, inputs) as runtime:
+                        return runtime.forward(inputs)[0]
+
+                actual, log = _run_capturing_stderr(run)
+                report = _plan_report(log)
+                released = (
+                    model.weight.numel() * model.weight.element_size() + 64
+                    if rhs
+                    else 0
+                )
+                self.assertEqual(report["released_constant_bytes"], released)
+                torch.testing.assert_close(actual, model(*inputs), rtol=1e-5, atol=1e-5)
