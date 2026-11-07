@@ -708,6 +708,7 @@ def define_common_targets():
         srcs = ["permute_pass_utils.py"],
         visibility = [
             "//executorch/backends/...",
+            "//executorch/frontends/...",
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [

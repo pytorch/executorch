@@ -101,7 +101,7 @@ def native_launch(launch):
     launch.loops = []
     launch.max_inflight_requests = 4
 
-    async def spawn(command):
+    async def spawn(command, *, stderr=None):
         launch.loops.append(("spawn", asyncio.get_running_loop()))
         launch.proc = _AsyncProc()
         worker = MultiplexedWorkerClient(
@@ -228,7 +228,8 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
             "64",
             "--prefix_cache_entries",
             "0",
-        ]
+        ],
+        stderr=None,
     )
     launch.stages["template"].assert_called_once_with(
         hf_tokenizer_path=args.tokenizer_path,
@@ -247,7 +248,14 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
     launch.stages["uvicorn"].assert_called_once_with(app, host="127.0.0.1", port=8000)
     factory = launch.stages["app"].call_args.kwargs["serving_factory"]
     launch.stages["app"].assert_called_once_with(
-        None, "executorch", serving_factory=factory
+        None,
+        "executorch",
+        serving_factory=factory,
+        model_path=args.model_path,
+        max_context=1024,
+        max_concurrent_requests=64,
+        hud=True,
+        listen_address="http://127.0.0.1:8000",
     )
     launch.runtime.aclose_worker.assert_awaited_once_with()
     launch.worker.close.assert_not_called()

@@ -436,7 +436,18 @@ LocalWorkGroup pick_sdpa_av_lwg(
   }
   const SDPAMode mode = mode_of(resize_args);
   if (mode == SDPAMode::LLM) {
-    return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
+    const LocalWorkGroup lwg =
+        pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
+    // On Adreno 830, the tiled buffer shader reads zeros from the V cache in
+    // many workgroups shrunk below the recommended size to fit a small grid.
+    const uint32_t nthreads =
+        graph->context()->adapter_ptr()->recommended_lwg_nthreads();
+    if (graph->device_is_adreno() &&
+        graph->is_buffer_storage(args.at(0).refs.at(0)) &&
+        lwg.nthreads() < nthreads) {
+      return LocalWorkGroup(kSquareLwg, nthreads);
+    }
+    return lwg;
   }
   return default_pick_lwg(graph, shader, gwg, args, resize_args);
 }
