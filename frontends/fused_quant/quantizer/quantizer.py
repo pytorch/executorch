@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import dataclasses
 import re
 from abc import ABC, abstractmethod
 from typing import Callable, cast, Iterable, Optional
@@ -17,7 +18,9 @@ from executorch.backends.transforms.fused_quant.fuse_aten import (
 from executorch.backends.transforms.fused_quant.graph_utils import is_dequantize_node
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from torch import fx
+from torch._export.utils import _detect_fake_mode_from_gm
 from torch._ops import OpOverload
+from torch.fx.passes.fake_tensor_prop import FakeTensorProp
 from torch.fx.passes.tools_common import stable_topological_sort
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
@@ -33,6 +36,11 @@ from torchao.quantization.pt2e.quantizer.utils import (
     annotate_input_qspec_map,
     annotate_output_qspec,
 )
+
+
+# Node meta flag set when a fused_quant quantizer claimed a node, so fuse() can
+# tell its own claims from another PT2E quantizer's (which also set _annotated).
+_OWNER_KEY = "fused_quant_owned"
 
 
 class QuantizerBase(Quantizer, ABC):
@@ -139,11 +147,27 @@ class OpQuantizer(QuantizerBase):
         return True
 
     def annotate(self, model: fx.GraphModule) -> fx.GraphModule:
-        """Annotate every matching node in the graph. Skips already annotated nodes."""
+        """Annotate every matching node in the graph. Skips already annotated nodes.
+
+        Annotations are marked ``_annotated`` -- the flag other PT2E quantizers
+        check before claiming a node -- so composing with them is first-claim-wins
+        in either order.
+        """
         for node in model.graph.find_nodes(op="call_function", target=self.op):
             if Q_ANNOTATION_KEY not in node.meta and self.matches(node):
                 self.annotate_node(node)
+                self._mark_owned(node)
         return model
+
+    def _mark_owned(self, node: fx.Node) -> None:
+        node.meta[_OWNER_KEY] = True
+        outputs = [output_node(node, index) for index in self.output_indices]
+        for annotated in (node, *outputs):
+            if annotated is None:
+                continue
+            annotation = annotated.meta.get(Q_ANNOTATION_KEY)
+            if annotation is not None:
+                annotation._annotated = True
 
     def annotate_node(self, node: fx.Node) -> None:
         """Annotate node. Subclasses may override this for custom annotation."""
@@ -163,18 +187,20 @@ class OpQuantizer(QuantizerBase):
                     annotate_output_qspec(out, self.config.output_activation)
 
     def fuse(self, gm: fx.GraphModule) -> bool:
-        """Fold each owned, annotated op node into fused_op.
+        """Fold each annotated op node this quantizer matches into fused_op.
 
-        A node is fused only when it matches, carries an annotation, and that annotation
-        has a live qspec, so a node claimed by a no-op annotation or one merely
-        sandwiched between its neighbors' dq/q is left alone.
+        A node is fused only when it matches and carries an annotation with a live
+        qspec, so a node claimed by a no-op annotation or one merely sandwiched
+        between its neighbors' dq/q is left alone. A node another PT2E quantizer
+        claimed (``_annotated`` set, but not by a fused_quant quantizer) is never
+        fused.
         """
         modified = False
         for node in list(gm.graph.find_nodes(op="call_function", target=self.op)):
             if not self.matches(node):
                 continue
             ann = node.meta.get(Q_ANNOTATION_KEY)
-            if ann is None:
+            if ann is None or (ann._annotated and not node.meta.get(_OWNER_KEY)):
                 continue
             if (
                 not any(v is not None for v in ann.input_qspec_map.values())
@@ -272,7 +298,12 @@ class FusedQuantQuantizer(ComposableQuantizer, QuantizerBase):
         return cast(list[QuantizerBase], self.quantizers)
 
     def fuse(self, gm: fx.GraphModule) -> bool:
-        """Fuse via every child quantizer; return whether anything fused."""
+        """Fuse via every child quantizer; return whether anything fused.
+
+        ``gm`` is the output of ``convert_pt2e``, which is first cleaned up so
+        the children can match on it; see :func:`_repair_convert_output`.
+        """
+        _repair_convert_output(gm)
         modified = False
         for q in self.child_quantizers:
             modified |= q.fuse(gm)
@@ -285,6 +316,189 @@ class FusedQuantQuantizer(ComposableQuantizer, QuantizerBase):
     def preserved_ops(self) -> list[OpOverload]:
         """The union of every child quantizer's preserved ops."""
         return [op for q in self.child_quantizers for op in q.preserved_ops()]
+
+
+def _repair_convert_output(gm: fx.GraphModule) -> None:
+    """Work around two ``convert_pt2e`` (torchao) gaps that fusion trips on.
+
+    ``AffineQuantizedObserverBase.convert`` inserts ``quantize_affine`` /
+    ``dequantize_affine`` as the ``OpOverloadPacket`` rather than ``.default``,
+    which fusion does not match. And ``convert_pt2e`` rewrites the graph without
+    refreshing ``meta["val"]``, which fusion reads for shapes and dtypes.
+    """
+    replacements = {
+        torch.ops.torchao.quantize_affine: torch.ops.torchao.quantize_affine.default,
+        torch.ops.torchao.dequantize_affine: torch.ops.torchao.dequantize_affine.default,
+    }
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target in replacements:
+            node.target = replacements[node.target]
+    gm.recompile()
+
+    # A hand-built graph may carry no fake values at all; there is nothing to refresh.
+    placeholders = gm.graph.find_nodes(op="placeholder")
+    fake_mode = _detect_fake_mode_from_gm(gm)
+    if fake_mode is None or any("val" not in node.meta for node in placeholders):
+        return
+    FakeTensorProp(gm, mode=fake_mode).propagate_dont_convert_inputs(
+        *(node.meta["val"] for node in placeholders)
+    )
+
+
+# Why add/mul/sub are each registered twice -- once for tensor operands and once
+# for a scalar operand:
+#
+# PyTorch does NOT give scalar arithmetic its own op overload. `tensor + 1e-5`
+# (e.g. RMSNorm's `variance + eps`) traces to `aten.add.Tensor(tensor, 1e-5)` --
+# the `.Tensor` overload carrying a Python scalar literal in arg 1, NOT a
+# separate `aten.add.Scalar`. So the op type (`aten.add.Tensor`) alone does not
+# tell us whether arg 1 is a tensor or a scalar; both land on the same op.
+#
+# Annotating a scalar arg as a quant edge breaks PT2E prepare, so the two operand
+# shapes are handled separately:
+#   - activation_names=("input", "other") quantizes both tensor operands; the
+#     float-tensor guard makes it skip a scalar arg 1.
+#   - activation_names=("input",) + node_filter=arg1_is_scalar quantizes only the
+#     tensor input and leaves the scalar unquantized.
+# Between them every add/mul/sub is covered. The scalar variant folds into
+# `fused_quant.{add,mul,sub}.Scalar`, which pass the scalar through as a trailing
+# arg.
+def _get_binary_quantizers(config: QuantizationConfig) -> list[QuantizerBase]:
+    quantizers: list[QuantizerBase] = []
+    for aten_op, tensor_op, scalar_op in (
+        (
+            torch.ops.aten.add.Tensor,
+            torch.ops.fused_quant.add.default,
+            torch.ops.fused_quant.add.Scalar,
+        ),
+        (
+            torch.ops.aten.mul.Tensor,
+            torch.ops.fused_quant.mul.default,
+            torch.ops.fused_quant.mul.Scalar,
+        ),
+        (
+            torch.ops.aten.sub.Tensor,
+            torch.ops.fused_quant.sub.default,
+            torch.ops.fused_quant.sub.Scalar,
+        ),
+    ):
+        quantizers.append(
+            OpQuantizer(aten_op, tensor_op, config, activation_names=("input", "other"))
+        )
+        quantizers.append(
+            OpQuantizer(
+                aten_op,
+                scalar_op,
+                config,
+                activation_names=("input",),
+                node_filter=arg1_is_scalar,
+            )
+        )
+    return quantizers
+
+
+def _transposed_convolution_quantizers(
+    config: QuantizationConfig,
+    weighted_config: QuantizationConfig,
+) -> list[QuantizerBase]:
+    """Quantizers for ``aten.convolution`` with ``transposed=True``.
+
+    A transposed convolution's weight is ``[C_in, C_out // groups, ...]``, so
+    per-output-channel weight scales sit on axis 1, not axis 0. With groups > 1
+    axis 1 holds only ``C_out // groups`` channels, so those fall back to the
+    per-tensor weights of ``config``. Listed before the general
+    convolution quantizer so they claim transposed nodes first.
+    """
+    weight = weighted_config.weight
+    if weight is None or weight.qscheme not in (
+        torch.per_channel_affine,
+        torch.per_channel_symmetric,
+    ):
+        return []
+    axis_1 = dataclasses.replace(
+        weighted_config, weight=dataclasses.replace(weight, ch_axis=1)
+    )
+
+    def transposed(single_group: bool):
+        def node_filter(node: fx.Node) -> bool:
+            return (
+                bool(get_arg(node, "transposed"))
+                and (get_arg(node, "groups") == 1) == single_group
+            )
+
+        return node_filter
+
+    return [
+        OpQuantizer(
+            torch.ops.aten.convolution.default,
+            torch.ops.fused_quant.convolution.default,
+            conv_config,
+            activation_names=("input",),
+            weight_names=("weight",),
+            other_names=("bias",),
+            node_filter=transposed(single_group),
+        )
+        for conv_config, single_group in ((axis_1, True), (config, False))
+    ]
+
+
+def get_core_aten_quantizers(
+    config: QuantizationConfig,
+    weighted_config: QuantizationConfig,
+) -> list[QuantizerBase]:
+    """Op quantizers that every backend can share.
+
+    Every op quantized here is core ATen, so each quantizer sees its op after
+    export's default decompositions without the op being preserved, and
+    whatever is left unclaimed decomposes to the portable kernels. This is not
+    every core ATen op. Backends add quantizers for the non-core ops they keep
+    whole.
+
+    Convolution uses ``weighted_config``; everything else uses ``config``. Both
+    are ordinary ``QuantizationConfig`` values -- the split is by which ops they
+    apply to, not by granularity, and nothing here requires either one to be
+    per-tensor or per-channel.
+    """
+    unary_ops = (
+        (torch.ops.aten.sigmoid.default, torch.ops.fused_quant.sigmoid.default),
+        (torch.ops.aten.tanh.default, torch.ops.fused_quant.tanh.default),
+        (torch.ops.aten.hardtanh.default, torch.ops.fused_quant.hard_tanh.default),
+        (torch.ops.aten.gelu.default, torch.ops.fused_quant.gelu.default),
+        (
+            torch.ops.aten.native_layer_norm.default,
+            torch.ops.fused_quant.native_layer_norm.default,
+        ),
+    )
+    return [
+        *_get_binary_quantizers(config),
+        OpQuantizer(
+            torch.ops.aten.bmm.default,
+            torch.ops.fused_quant.bmm.default,
+            config,
+            activation_names=("input", "mat2"),
+        ),
+        OpQuantizer(
+            torch.ops.aten.relu.default,
+            torch.ops.fused_quant.relu.default,
+            config,
+        ),
+        MaxPoolQuantizer(config),
+        OpQuantizer(
+            torch.ops.aten.avg_pool2d.default,
+            torch.ops.fused_quant.avg_pool2d.default,
+            config,
+        ),
+        *_transposed_convolution_quantizers(config, weighted_config),
+        OpQuantizer(
+            torch.ops.aten.convolution.default,
+            torch.ops.fused_quant.convolution.default,
+            weighted_config,
+            activation_names=("input",),
+            weight_names=("weight",),
+            other_names=("bias",),
+        ),
+        *(OpQuantizer(aten_op, fused_op, config) for aten_op, fused_op in unary_ops),
+    ]
 
 
 # =============================================================================
@@ -304,3 +518,9 @@ def module_fqn_filter(pattern: str) -> Callable[[fx.Node], bool]:
         )
 
     return _filter
+
+
+def arg1_is_scalar(node: fx.Node) -> bool:
+    """A node_filter for the .Scalar binary variants: True when the second
+    operand is a Python scalar (e.g. x + eps) rather than a tensor."""
+    return not isinstance(node.args[1], fx.Node)
