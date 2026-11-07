@@ -93,6 +93,26 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual(init_list_str([]), "{}")
         self.assertEqual(init_list_str([()]), "{{}}")
 
+    def test_optional_string_arguments(self):
+        function = native_function(
+            "div.Tensor_mode(Tensor self, Tensor other, *, str? rounding_mode='floor') -> Tensor"
+        )
+        for inputs, expected in [
+            (((3, 7), (3, 7)), 'std::string_view("floor")'),
+            (((3, 7), (3, 7), None), "std::nullopt"),
+        ]:
+            with self.subTest(inputs=inputs):
+                suite = VkTestSuite([inputs])
+                try:
+                    code = VkCorrectnessTestGen(
+                        "aten.div.Tensor_mode", function, suite
+                    ).generate_suite_cpp()
+                except RuntimeError as error:
+                    self.fail(f"Optional string generation failed: {error}")
+                self.assertIn(expected, code)
+                self.assertIn(".has_value()", code)
+                self.assertIn("add_string(std::string(", code)
+
     def setUp(self):
         self.previous_backend = ComputeGraphGen.backend_key
         ComputeGraphGen.backend_key = BackendIndex(

@@ -42,13 +42,8 @@ _spec = importlib.util.spec_from_file_location(
 gen_vulkan_spv = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gen_vulkan_spv)
 
-# The yaml templates whose variants `add_binary_op_node` dispatches into.
-_BINARY_BUFFER_TEMPLATE = os.path.join("binary", "binary_op_buffer")
-_BINARY_TEXTURE_TEMPLATE = os.path.join("binary", "binary_op_texture")
-_BINARY_TEMPLATES = (
-    _BINARY_BUFFER_TEMPLATE,
-    _BINARY_TEXTURE_TEMPLATE,
-)
+# The yaml template whose variants `add_binary_op_node` dispatches into.
+_BINARY_TEMPLATE = os.path.join("binary", "binary")
 
 
 def _function_body(text: str, name: str) -> str:
@@ -118,12 +113,9 @@ class TestShaderNames(unittest.TestCase):
         the dtype in the middle and so generated a name no dispatch could ever
         build. Kokoro's synthesizer aborted on it.
         """
-        for template, expected in (
-            (_BINARY_BUFFER_TEMPLATE, "binary_cmp_buffer_int32"),
-            (_BINARY_TEXTURE_TEMPLATE, "binary_cmp_texture3d_int32"),
-        ):
-            with self.subTest(template=template):
-                self.assertIn(expected, self.names[template])
+        for expected in ("binary_cmp_buffer_int32", "binary_cmp_texture3d_int32"):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, self.names[_BINARY_TEMPLATE])
 
     def test_binary_variants_end_in_a_storage_and_dtype_suffix(self) -> None:
         """The general form of the same bug, for every binary op at once.
@@ -137,10 +129,7 @@ class TestShaderNames(unittest.TestCase):
             storage + dtype for storage in STORAGE_SUFFIXES for dtype in DTYPE_SUFFIXES
         )
         unreachable = [
-            name
-            for template in _BINARY_TEMPLATES
-            for name in self.names[template]
-            if not name.endswith(legal)
+            name for name in self.names[_BINARY_TEMPLATE] if not name.endswith(legal)
         ]
         self.assertEqual(
             unreachable,

@@ -26,6 +26,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     OPT_LAYOUT,
     OPT_MEMORY_FORMAT,
     OPT_SCALAR_TYPE,
+    OPT_STRING,
     OPT_TENSOR_LIST,
     STRING,
     TENSOR_VECTOR,
@@ -503,6 +504,10 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             ret_str += "add_none(); \n"
         elif ref.src_cpp_type == STRING:
             ret_str += f"add_string(std::string({ref.src_cpp_name})); \n"
+        elif ref.src_cpp_type == OPT_STRING:
+            ret_str = f"{cpp_type} {ref.name} = !{ref.src_cpp_name}.has_value() ? "
+            ret_str += f"{self.graph}{self.dot}add_none() : "
+            ret_str += f"{self.graph}{self.dot}add_string(std::string({ref.src_cpp_name}.value()));\n"
         elif ref.src_cpp_type == TWO_TENSOR_TUPLE:
             ret_str += f"add_value_list({{{ref.name}_first, {ref.name}_second}}); \n"
         elif ref.src_cpp_type == THREE_TENSOR_TUPLE:

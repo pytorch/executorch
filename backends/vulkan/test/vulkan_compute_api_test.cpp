@@ -3862,6 +3862,68 @@ TEST(VulkanComputeGraphTest, unary_preserves_shape_after_resize) {
   }
 }
 
+TEST(VulkanComputeGraphTest, binary_packed_dim_broadcast_after_resize) {
+  const std::vector<int64_t> a_sizes = {2, 3, 5};
+  for (const auto storage : {utils::kBuffer, utils::kTexture3D}) {
+    for (const auto layout :
+         {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
+      SCOPED_TRACE(
+          ::testing::Message()
+          << "storage=" << storage << " layout=" << layout);
+      ComputeGraph graph(GraphConfig{});
+      const auto a =
+          graph.add_input_tensor(a_sizes, vkapi::kFloat, storage, layout);
+      const auto b =
+          graph.add_input_tensor(a_sizes, vkapi::kFloat, storage, layout);
+      const auto out =
+          graph.add_tensor(a_sizes, vkapi::kFloat, storage, layout);
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {a.value, b.value, kDummyValueRef, out});
+      const auto staging = graph.set_output_tensor(out);
+      graph.prepare();
+      graph.prepack();
+
+      // Toggle whether b broadcasts along the packed dim after the graph is
+      // built.
+      const int64_t packed_dim = 2 - graph.packed_dim_of(out);
+      std::vector<int64_t> b_broadcast_sizes = a_sizes;
+      b_broadcast_sizes[packed_dim] = 1;
+      for (const std::vector<int64_t>& b_sizes :
+           {b_broadcast_sizes, a_sizes, b_broadcast_sizes}) {
+        graph.resize_input(1, b_sizes);
+        graph.propagate_resize();
+        ASSERT_EQ(graph.sizes_of(out), a_sizes);
+
+        std::vector<float> a_data(utils::multiply_integers(a_sizes));
+        std::iota(a_data.begin(), a_data.end(), 1.0f);
+        std::vector<float> b_data(utils::multiply_integers(b_sizes));
+        std::iota(b_data.begin(), b_data.end(), 100.0f);
+        graph.maybe_cast_and_copy_into_staging(
+            a.staging, a_data.data(), a_data.size(), vkapi::kFloat);
+        graph.maybe_cast_and_copy_into_staging(
+            b.staging, b_data.data(), b_data.size(), vkapi::kFloat);
+        graph.execute();
+
+        std::vector<float> output(a_data.size());
+        graph.maybe_cast_and_copy_from_staging(
+            staging, output.data(), output.size(), vkapi::kFloat);
+        for (int64_t c = 0; c < a_sizes[0]; ++c) {
+          for (int64_t h = 0; h < a_sizes[1]; ++h) {
+            for (int64_t w = 0; w < a_sizes[2]; ++w) {
+              const int64_t b_idx = (std::min(c, b_sizes[0] - 1) * b_sizes[1] +
+                                     std::min(h, b_sizes[1] - 1)) *
+                      b_sizes[2] +
+                  std::min(w, b_sizes[2] - 1);
+              const int64_t out_idx = (c * a_sizes[1] + h) * a_sizes[2] + w;
+              EXPECT_EQ(output[out_idx], a_data[out_idx] + b_data[b_idx]);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 class VulkanToFromGPUShaderTest : public ::testing::Test {
  public:
   void SetUp() override {

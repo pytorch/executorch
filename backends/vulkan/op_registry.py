@@ -267,7 +267,6 @@ def register_clamp():
         exir_ops.edge.aten.minimum.default,
         exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.div.Tensor,
-        exir_ops.edge.aten.div.Tensor_mode,
         exir_ops.edge.aten.pow.Tensor_Tensor,
     ]
 )
@@ -277,6 +276,25 @@ def register_binaryop_cpp_ops():
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
         supports_highdim=True,
+    )
+
+
+def _check_div_rounding_mode_is_floor(node: torch.fx.Node) -> bool:
+    """div.Tensor_mode is implemented for rounding_mode="floor" only."""
+    rounding_mode = node.kwargs.get(
+        "rounding_mode", node.args[2] if len(node.args) > 2 else None
+    )
+    return rounding_mode == "floor"
+
+
+@update_features(exir_ops.edge.aten.div.Tensor_mode)
+def register_div_tensor_mode():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
+        supports_highdim=True,
+        are_node_inputs_supported_fn=_check_div_rounding_mode_is_floor,
     )
 
 

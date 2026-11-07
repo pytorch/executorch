@@ -77,6 +77,11 @@ void add_binary_scalar_op_node(
     const ValueRef out,
     const std::string& op_name) {
   ValueRef arg = prepack_standard_like(graph, in, out, true);
+  VK_CHECK_COND(check_same_packed_dim(graph, arg, out));
+  if (!graph.is_buffer_storage(out)) {
+    VK_CHECK_COND(graph.has_standard_axis_map(arg));
+    VK_CHECK_COND(graph.has_standard_axis_map(out));
+  }
 
   const vkapi::ScalarType tensor_dtype = graph.dtype_of(in);
   const vkapi::ScalarType scalar_dtype =
@@ -103,7 +108,7 @@ void add_binary_scalar_op_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_gwg,
+      default_pick_vec4_gwg,
       default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {arg, vkapi::kRead}},
@@ -112,7 +117,8 @@ void add_binary_scalar_op_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {int32_t(graph.original_dtype_of(out) == vkapi::kHalf)},
+      {int32_t(graph.original_dtype_of(out) == vkapi::kHalf),
+       graph.hashed_layout_of(out)},
       // Resize Args
       {},
       // Resizing Logic
