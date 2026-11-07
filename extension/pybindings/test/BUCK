@@ -40,6 +40,7 @@ fbcode_target(
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",
+        "//executorch/export:export_utils",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
@@ -54,6 +55,7 @@ fbcode_target(
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",
+        "//executorch/export:export_utils",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
         "//executorch/extension/pybindings:aten_lib",
@@ -77,6 +79,7 @@ fbcode_target(
     srcs = ["test_pybindings.py"],
     deps = [
         ":make_test",
+        "//executorch/export:export_utils",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
