@@ -7,9 +7,9 @@
  */
 
 /*
- * Element-wise binary ops, selected by the op_type specialization constant.
+ * Element-wise binary ops, selected by an op type argument.
  *
- * The including shader declares op_type and defines:
+ * The including shader defines:
  * - IN_T and OUT_T: operand and result types; vectors if BINARY_OP_VEC4 is
  *   defined, otherwise scalars
  * - ALPHA_T: type of the alpha that add and sub scale Y by
@@ -21,7 +21,7 @@
 #ifndef BINARY_OP_GLSLH
 #define BINARY_OP_GLSLH
 
-// Values of op_type. Must match BinaryOpType in BinaryOp.cpp.
+// Values of op_type. Must match BinaryOpType in BinaryOp.h.
 #define BINARY_OP_ADD 0
 #define BINARY_OP_SUB 1
 #define BINARY_OP_MUL 2
@@ -62,7 +62,11 @@ vec4 swiglu(vec4 gate, vec4 up) {
 }
 #endif
 
-OUT_T apply_binary_op(const IN_T X, const IN_T Y, const ALPHA_T A) {
+OUT_T apply_binary_op(
+    const int op_type,
+    const IN_T X,
+    const IN_T Y,
+    const ALPHA_T A) {
   switch (op_type) {
 #if defined(BINARY_OP_IS_COMPARISON)
     case BINARY_OP_LT:
