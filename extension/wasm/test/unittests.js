@@ -48,6 +48,7 @@ describe("Tensor", () => {
 
     test("fromArray wrong size", () => {
         expect(() => et.Tensor.fromArray([3, 2], [1, 2, 3, 4])).toThrow();
+        expect(() => et.Tensor.fromArray([2], [1, 2, 3])).toThrow("Required 2 elements, given 3");
     });
 
     test("full", () => {

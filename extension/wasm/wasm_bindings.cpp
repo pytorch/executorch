@@ -107,7 +107,7 @@ inline void assert_valid_numel(
   THROW_IF_ERROR(
       computed_numel.error(), "Invalid tensor sizes: numel computation failed");
   THROW_IF_FALSE(
-      data.size() >= static_cast<size_t>(computed_numel.get()),
+      data.size() == static_cast<size_t>(computed_numel.get()),
       "Required %ld elements, given %ld",
       computed_numel.get(),
       data.size());
