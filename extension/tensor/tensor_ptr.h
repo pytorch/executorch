@@ -38,6 +38,10 @@ using TensorPtr = std::shared_ptr<executorch::aten::Tensor>;
  * the runtime environment and pass it in. To copy CPU data to a device, use
  * `clone_tensor_ptr_to` instead.
  *
+ * Aborts if `sizes`, `dim_order` and `strides` do not describe a valid layout.
+ * To reject a layout that comes from outside the program instead, check it
+ * with `validate_tensor_layout` first.
+ *
  * @param sizes A vector specifying the size of each dimension.
  * @param data A pointer to the data buffer (CPU or device, see device).
  * @param dim_order A vector specifying the order of dimensions.
@@ -620,6 +624,31 @@ ET_NODISCARD
 runtime::Error resize_tensor_ptr(
     TensorPtr& tensor,
     const std::vector<executorch::aten::SizesType>& sizes);
+
+/**
+ * Checks whether `make_tensor_ptr` accepts the given layout, without creating
+ * a tensor.
+ *
+ * The sizes must be non-negative, and the element count and strides they
+ * imply must not overflow. The dim order and strides must each be empty or
+ * have one entry per dimension. A non-empty dim order must be a permutation of
+ * the dimensions, and non-empty strides must be the dense strides for that dim
+ * order, except in dimensions of size 1.
+ *
+ * The data is not checked: the caller still has to make sure the buffer holds
+ * as many elements as the sizes describe.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param dim_order A vector specifying the order of dimensions, or empty.
+ * @param strides A vector specifying the strides of each dimension, or empty.
+ * @return Error::Ok if the layout is valid, or Error::InvalidArgument
+ * otherwise.
+ */
+ET_NODISCARD
+runtime::Error validate_tensor_layout(
+    const std::vector<executorch::aten::SizesType>& sizes,
+    const std::vector<executorch::aten::DimOrderType>& dim_order,
+    const std::vector<executorch::aten::StridesType>& strides);
 
 /**
  * Clones a TensorPtr's data onto the given target device, allocating and

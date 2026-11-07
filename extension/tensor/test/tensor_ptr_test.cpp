@@ -1094,6 +1094,29 @@ TEST_F(TensorPtrTest, TensorInvalidDimOrder) {
       "");
 }
 
+TEST_F(TensorPtrTest, ValidateTensorLayoutRejectsInvalidLayouts) {
+  EXPECT_EQ(validate_tensor_layout({2, 2}, {}, {8, 2}), Error::InvalidArgument);
+  EXPECT_EQ(
+      validate_tensor_layout({3, 4}, {1, 0}, {1, 4}), Error::InvalidArgument);
+  EXPECT_EQ(validate_tensor_layout({4, 5}, {2, 1}, {}), Error::InvalidArgument);
+  EXPECT_EQ(validate_tensor_layout({3, 4}, {}, {1}), Error::InvalidArgument);
+  EXPECT_EQ(validate_tensor_layout({3, 4}, {0}, {}), Error::InvalidArgument);
+  EXPECT_EQ(validate_tensor_layout({-1, 4}, {}, {}), Error::InvalidArgument);
+  // No elements, but the strides of the inner dims overflow.
+  const executorch::aten::SizesType large = 1 << 30;
+  EXPECT_EQ(
+      validate_tensor_layout({0, large, large, large}, {}, {}),
+      Error::InvalidArgument);
+}
+
+TEST_F(TensorPtrTest, ValidateTensorLayoutAcceptsValidLayouts) {
+  EXPECT_EQ(validate_tensor_layout({}, {}, {}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({2, 3}, {}, {}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({3, 4}, {1, 0}, {1, 3}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({3, 4}, {}, {1, 3}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({1, 4}, {}, {100, 1}), Error::Ok);
+}
+
 TEST_F(TensorPtrTest, TensorCustomDeleter) {
   float data[20] = {4};
   auto tensor = make_tensor_ptr({4, 5}, data);
