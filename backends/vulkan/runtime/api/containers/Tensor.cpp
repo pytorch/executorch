@@ -1092,8 +1092,14 @@ vTensor::vTensor(
       buffer_meta_(),
       // Copy Tensor storage
       storage_(other.storage_) {
-  uniform_data_ = std::make_shared<UniformData>(UniformData{
-      numel_, sizes_, dim_order_, strides_, other.logical_limits()});
+  if (sizes_.size() <= 4) {
+    uniform_data_ = std::make_shared<UniformData>(UniformData{
+        numel_,
+        sizes_,
+        dim_order_,
+        strides_,
+        calculate_logical_limits(storage_->image_extents_, axis_map_)});
+  }
 
   VK_CHECK_COND(
       dim_order_is_valid(dim_order_), "new dim order provided is invalid");

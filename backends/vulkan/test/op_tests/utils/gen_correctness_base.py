@@ -26,6 +26,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     OPT_LAYOUT,
     OPT_MEMORY_FORMAT,
     OPT_SCALAR_TYPE,
+    OPT_STRING,
     OPT_TENSOR_LIST,
     STRING,
 )
@@ -33,7 +34,7 @@ from executorch.backends.vulkan.test.op_tests.utils.test_suite import TestSuite
 
 from torchgen.api import cpp
 from torchgen.api.types import CppSignatureGroup
-from torchgen.model import Argument, BaseTy, BaseType, NativeFunction
+from torchgen.model import Argument, BaseTy, BaseType, NativeFunction, OptionalType
 
 ##########################
 ## Test Suite Generation ##
@@ -80,7 +81,7 @@ def get_or_return_default(arg: Argument, inputs: List[Any], i: int):
         return inputs[i]
     else:
         assert arg.default is not None
-        if arg.type == BaseType(BaseTy.str):
+        if arg.type in (BaseType(BaseTy.str), OptionalType(BaseType(BaseTy.str))):
             return ast.literal_eval(arg.default)
         return arg.default
 
@@ -227,6 +228,10 @@ class CorrectnessTestGen:
                 ret_str += f"{str(data)};"
         elif cpp_type == STRING:
             ret_str += f'std::string_view("{data}");'
+        elif cpp_type == OPT_STRING:
+            ret_str += (
+                "std::nullopt;" if data is None else f'std::string_view("{data}");'
+            )
         elif (
             cpp_type == OPT_SCALAR_TYPE
             or cpp_type == OPT_LAYOUT
@@ -308,6 +313,17 @@ at::Tensor make_casted_randint_tensor(
   // For some reason range needs to be passed in as explicit variables
   // otherwise 0s will be generated.
   return at::randint(1, 20, sizes, at::device(at::kCPU).dtype(dtype));
+}}
+
+at::Tensor make_nonzero_randint_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    int64_t low = 1,
+    int64_t high = 20) {{
+  // Draws from [low, high), replacing zeros so the values can be divisors.
+  const at::Tensor values =
+      at::randint(low, high, sizes, at::device(at::kCPU).dtype(dtype));
+  return values.masked_fill(values == 0, 1);
 }}
 
 at::Tensor make_rand_tensor(
