@@ -17,6 +17,7 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <algorithm>
 #include <cinttypes>
 #include <limits>
 #include <optional>
@@ -150,22 +151,23 @@ inline bool is_channels_last_tensor(const Tensor& tensor) {
 }
 
 inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
-  if (tensor1.dim() != tensor2.dim()) {
+  if (tensor1.dim() != 4 || tensor2.dim() != 4) {
     return false;
   }
 
-  if (tensor1.dim() != 4) {
-    return false;
-  }
+  const auto broadcasts_channel = [&](int64_t channel_dim) {
+    return tensor1.size(channel_dim) == tensor2.size(channel_dim) &&
+        (tensor1.numel() == tensor1.size(channel_dim) ||
+         tensor2.numel() == tensor2.size(channel_dim));
+  };
 
-  if (tensor1.size(1) != tensor2.size(1)) {
-    return false;
-  }
-
-  const bool tensor1_channels_only = tensor1.numel() == tensor1.size(1);
-  const bool tensor2_channels_only = tensor2.numel() == tensor2.size(1);
-
-  return tensor1_channels_only || tensor2_channels_only;
+  return (broadcasts_channel(1) && is_channels_last_tensor(tensor1) &&
+          is_channels_last_tensor(tensor2)) ||
+      (broadcasts_channel(3) &&
+       executorch::runtime::is_contiguous_dim_order(
+           tensor1.dim_order().data(), tensor1.dim()) &&
+       executorch::runtime::is_contiguous_dim_order(
+           tensor2.dim_order().data(), tensor2.dim()));
 }
 
 inline bool check_int32_within_range(

@@ -49,9 +49,9 @@ ops_before_explicit_layout: dict[str, int] = {
 }
 
 ops_after_explicit_layout: dict[str, int] = {
-    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 19,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 10,
-    "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 9,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 0,
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_minimum_default": 19,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 6,
@@ -59,8 +59,8 @@ ops_after_explicit_layout: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_nhwc_default": 41,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_nhwc_default": 11,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 2,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantized_mul_default": 19,
-    "executorch_exir_dialects_edge__ops_cortex_m_transpose_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_mul_default": 28,
+    "executorch_exir_dialects_edge__ops_cortex_m_transpose_default": 4,
 }
 
 

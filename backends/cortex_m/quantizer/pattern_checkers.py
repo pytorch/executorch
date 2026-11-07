@@ -13,7 +13,7 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
 )
 from executorch.backends.cortex_m.utils import (
     coerce_int_pair,
-    is_channel_broadcast,
+    is_channel_broadcast_shape,
     is_channels_last,
     is_foldable_alpha,
 )
@@ -26,6 +26,7 @@ from torchao.quantization.pt2e.quantizer import (
 
 
 class CortexMAddMulCheck(PatternCheck):
+    requires_channels_last = True
 
     @classmethod
     def check_pattern(cls, pattern):
@@ -40,7 +41,11 @@ class CortexMAddMulCheck(PatternCheck):
                 t1 = get_first_fake_tensor(node.all_input_nodes[0])
                 t2 = get_first_fake_tensor(node.all_input_nodes[1])
                 if t1.shape != t2.shape and not (
-                    is_channel_broadcast(t1, t2) and is_channels_last(t1)
+                    is_channel_broadcast_shape(t1, t2)
+                    and (
+                        not cls.requires_channels_last
+                        or (is_channels_last(t1) and is_channels_last(t2))
+                    )
                 ):
                     return False
 
@@ -58,6 +63,10 @@ class CortexMAddMulCheck(PatternCheck):
         ) and PatternCheck.is_per_tensor(quantization_config.get_output_act_qspec())
         is_int8 = cls.is_int8_activations(quantization_config)
         return is_per_tensor and is_int8
+
+
+class CortexMExplicitAddMulCheck(CortexMAddMulCheck):
+    requires_channels_last = False
 
 
 class CortexMDivCheck(PatternCheck):
