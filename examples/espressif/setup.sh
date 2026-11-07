@@ -21,7 +21,7 @@ for arg in "$@"; do
         --skip-emulator) install_emulator=false ;;
         --help|-h)
             cat <<EOF
-Usage: $0 [--minimal] [--targets=<chip>[,<chip>...]] [--idf-version=<tag>]
+Usage: $0 [--minimal] [--targets=<chip>[,<chip>...]] [--idf-version=<tag or branch>]
           [--skip-idf] [--skip-emulator]
 
 Install ESP-IDF and esp-emulator for ESP32 development.
@@ -30,8 +30,8 @@ By default, install ESP-IDF's standard development tools for --targets
 --minimal installs only the targets' compilers, SDK Python packages, and emulator.
 With esp32 in --targets and without --skip-emulator, also install ESP-IDF's
 QEMU, which runs ESP32 firmware and needs the system's libSDL2 and libslirp.
---idf-version selects the ESP-IDF release (default: v6.1); each release needs
-its own ESPRESSIF_TOOLS_DIR.
+--idf-version selects the ESP-IDF release tag or branch (default: v6.1); each
+release needs its own ESPRESSIF_TOOLS_DIR.
 ESP-IDF Python dependencies are installed in the active venv or conda environment.
 ESPRESSIF_TOOLS_DIR selects the install directory (default: ~/.cache/executorch-espressif).
 IDF_PATH and IDF_TOOLS_PATH can select an existing checkout of the pinned SDK and tool directory.
@@ -68,7 +68,8 @@ PY
             --shallow-submodules https://github.com/espressif/esp-idf.git "${IDF_PATH}"
     fi
     IDF_PATH=$(cd "${IDF_PATH}" && pwd)
-    if [[ "$(git -C "${IDF_PATH}" describe --tags --exact-match 2>/dev/null)" != "${idf_version}" ]]; then
+    if [[ "$(git -C "${IDF_PATH}" describe --tags --exact-match 2>/dev/null)" != "${idf_version}" \
+        && "$(git -C "${IDF_PATH}" rev-parse --abbrev-ref HEAD 2>/dev/null)" != "${idf_version}" ]]; then
         echo "setup.sh requires ESP-IDF ${idf_version}; select a matching IDF_PATH or a fresh ESPRESSIF_TOOLS_DIR." >&2
         exit 1
     fi

@@ -1,0 +1,14 @@
+# Build and test rules for idf-build-apps, used by
+# .ci/scripts/test_espressif_idf_nightly.sh.
+
+examples/espressif/idf_component_consumer:
+  enable:
+    - if: IDF_TARGET in ["esp32", "esp32s3", "esp32c3", "esp32c5", "esp32c6", "esp32p4"]
+  disable:
+    - if: CONFIG_NAME == "p4_rev_less_v3" and IDF_TARGET != "esp32p4"
+      reason: the option exists only for ESP32-P4
+    - if: CONFIG_NAME == "all_ops" and IDF_TARGET not in ["esp32s3", "esp32c6"]
+      reason: one Xtensa and one RISC-V image compile and link every kernel
+  disable_test:
+    - if: CONFIG_NAME == "p4_rev_less_v3"
+      reason: esp-emu runs only ESP32-P4 rev3 silicon

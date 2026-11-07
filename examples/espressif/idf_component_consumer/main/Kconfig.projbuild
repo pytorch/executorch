@@ -1,0 +1,10 @@
+menu "ExecuTorch component consumer"
+
+    config ET_CONSUMER_MODEL
+        string "Model to run from ET_CONSUMER_MODELS_DIR"
+        default "smoke"
+        help
+            With ET_CONSUMER_MODELS_DIR, the app runs <name>.pte from it
+            with the kernel bundle <name>_kernels next to it.
+
+endmenu
