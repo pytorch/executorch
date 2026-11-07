@@ -44,6 +44,14 @@ executorch_add_model(PTE "${CMAKE_CURRENT_SOURCE_DIR}/model.pte")
 executorch_add_kernels(DIR "${CMAKE_CURRENT_SOURCE_DIR}/et_kernels")
 ```
 
+If the Python ESP-IDF builds with can import `executorch` (or you
+point `EXECUTORCH_PYTHON` at one that can, with `-D` or in the
+environment, for example
+`idf.py -DEXECUTORCH_PYTHON=$HOME/venvs/et/bin/python build`), you can
+leave out `executorch_add_kernels`: the build then makes the bundle in
+its build directory from the declared models, with the same result as
+running `gen_kernels.py` yourself.
+
 The build fails at configure time if the bundle doesn't match the
 declared models (a model was re-exported, added or removed) or was
 made for another version of this component, and prints the
