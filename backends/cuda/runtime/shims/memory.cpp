@@ -385,7 +385,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     int64_t ndim,
     const int64_t* sizes_ptr,
     const int64_t* strides_ptr,
-    int64_t storage_offset,
+    int64_t offset_increment,
     SlimTensor** ret_new_tensor) {
   ET_CHECK_OR_RETURN_ERROR(
       self != nullptr,
@@ -415,8 +415,8 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   // shares the same underlying storage but with different sizes, strides,
   // and storage offset. SlimTensor::as_strided() handles this via copy
   // constructor which shares the SharedPtr<Storage>.
-  *ret_new_tensor =
-      new SlimTensor(self->as_strided(sizes, strides, storage_offset));
+  *ret_new_tensor = new SlimTensor(self->as_strided(
+      sizes, strides, self->storage_offset() + offset_increment));
 
   return Error::Ok;
 }
@@ -433,7 +433,7 @@ AOTITorchError aoti_torch_as_strided(
       static_cast<int64_t>(self->dim()),
       sizes_ptr,
       strides_ptr,
-      self->storage_offset(),
+      0,
       ret_new_tensor);
 }
 

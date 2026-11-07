@@ -221,6 +221,89 @@ TEST_F(AOTITorchReinterpretTensorSlimTest, WithStorageOffset_CPU) {
   EXPECT_EQ(aoti_torch_delete_tensor_object(view_tensor), Error::Ok);
 }
 
+TEST_F(AOTITorchReinterpretTensorSlimTest, RelativeStorageOffset_CPU) {
+  Tensor* orig_tensor = createTestTensor({4, 4});
+  ASSERT_NE(orig_tensor, nullptr);
+
+  std::vector<int64_t> sizes = {3, 4};
+  std::vector<int64_t> strides = {4, 1};
+  Tensor* offset_view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          orig_tensor, 2, sizes.data(), strides.data(), 4, &offset_view),
+      Error::Ok);
+  ASSERT_NE(offset_view, nullptr);
+
+  std::vector<int64_t> new_sizes = {2, 2};
+  std::vector<int64_t> new_strides = {3, 1};
+  for (int64_t increment : {0, 2, -2}) {
+    SCOPED_TRACE(increment);
+    Tensor* view_tensor = nullptr;
+    ASSERT_EQ(
+        aoti_torch__reinterpret_tensor(
+            offset_view,
+            2,
+            new_sizes.data(),
+            new_strides.data(),
+            increment,
+            &view_tensor),
+        Error::Ok);
+    ASSERT_NE(view_tensor, nullptr);
+
+    ASSERT_EQ(view_tensor->storage_offset(), 4 + increment);
+    EXPECT_EQ(
+        view_tensor->data_ptr(),
+        static_cast<float*>(orig_tensor->data_ptr()) + 4 + increment);
+    EXPECT_EQ(view_tensor->size(0), 2);
+    EXPECT_EQ(view_tensor->size(1), 2);
+    EXPECT_EQ(view_tensor->stride(0), 3);
+    EXPECT_EQ(view_tensor->stride(1), 1);
+    EXPECT_EQ(aoti_torch_delete_tensor_object(view_tensor), Error::Ok);
+  }
+  EXPECT_EQ(offset_view->storage_offset(), 4);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(offset_view), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(orig_tensor), Error::Ok);
+}
+
+TEST_F(AOTITorchReinterpretTensorSlimTest, ChainedStorageOffsets_CPU) {
+  Tensor* orig_tensor = createTestTensor({4, 4});
+  ASSERT_NE(orig_tensor, nullptr);
+
+  std::vector<int64_t> sizes = {2, 2};
+  std::vector<int64_t> strides = {3, 1};
+  Tensor* view1 = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          orig_tensor, 2, sizes.data(), strides.data(), 4, &view1),
+      Error::Ok);
+  ASSERT_NE(view1, nullptr);
+
+  Tensor* view2 = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          view1, 2, sizes.data(), strides.data(), 2, &view2),
+      Error::Ok);
+  ASSERT_NE(view2, nullptr);
+  EXPECT_EQ(view2->storage_offset(), 6);
+  EXPECT_EQ(
+      view2->data_ptr(), static_cast<float*>(orig_tensor->data_ptr()) + 6);
+
+  Tensor* strided_view = nullptr;
+  ASSERT_EQ(
+      aoti_torch_as_strided(view2, sizes.data(), strides.data(), &strided_view),
+      Error::Ok);
+  ASSERT_NE(strided_view, nullptr);
+  EXPECT_EQ(strided_view->storage_offset(), 6);
+  EXPECT_EQ(strided_view->data_ptr(), view2->data_ptr());
+  EXPECT_EQ(view1->storage_offset(), 4);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(strided_view), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(view2), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(view1), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(orig_tensor), Error::Ok);
+}
+
 // ============================================================================
 // Memory Sharing Tests
 // ============================================================================
@@ -662,31 +745,35 @@ TEST_F(AOTITorchReinterpretTensorSlimTest, ChainedViews_CUDA) {
 
   void* orig_ptr = orig_tensor->data_ptr();
 
-  std::vector<int64_t> sizes1 = {4, 6};
+  std::vector<int64_t> sizes1 = {3, 6};
   std::vector<int64_t> strides1 = {6, 1};
 
   Tensor* view1 = nullptr;
-  EXPECT_EQ(
+  ASSERT_EQ(
       aoti_torch__reinterpret_tensor(
           orig_tensor,
           sizes1.size(),
           sizes1.data(),
           strides1.data(),
-          0,
+          4,
           &view1),
       Error::Ok);
+  ASSERT_NE(view1, nullptr);
 
-  std::vector<int64_t> sizes2 = {2, 2, 6};
-  std::vector<int64_t> strides2 = {12, 6, 1};
+  std::vector<int64_t> sizes2 = {2, 2, 3};
+  std::vector<int64_t> strides2 = {6, 3, 1};
 
   Tensor* view2 = nullptr;
-  EXPECT_EQ(
+  ASSERT_EQ(
       aoti_torch__reinterpret_tensor(
-          view1, sizes2.size(), sizes2.data(), strides2.data(), 0, &view2),
+          view1, sizes2.size(), sizes2.data(), strides2.data(), 2, &view2),
       Error::Ok);
+  ASSERT_NE(view2, nullptr);
 
-  EXPECT_EQ(view1->data_ptr(), orig_ptr);
-  EXPECT_EQ(view2->data_ptr(), orig_ptr);
+  EXPECT_EQ(view1->storage_offset(), 4);
+  EXPECT_EQ(view2->storage_offset(), 6);
+  EXPECT_EQ(view1->data_ptr(), static_cast<float*>(orig_ptr) + 4);
+  EXPECT_EQ(view2->data_ptr(), static_cast<float*>(orig_ptr) + 6);
 
   EXPECT_EQ(aoti_torch_delete_tensor_object(orig_tensor), Error::Ok);
   EXPECT_EQ(aoti_torch_delete_tensor_object(view1), Error::Ok);
