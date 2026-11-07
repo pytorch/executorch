@@ -35,6 +35,17 @@ etensor::Device tensor_device(const executorch_flatbuffer::Tensor* tensor) {
       static_cast<etensor::DeviceIndex>(
           tensor->extra_tensor_info()->device_index())};
 }
+
+// Constants count as memory planned too: their data belongs to the program or
+// to an external data file, so a caller must not replace it.
+bool is_memory_planned(const executorch_flatbuffer::Tensor* tensor) {
+  return tensor->allocation_info() != nullptr ||
+      tensor->data_buffer_idx() != 0 ||
+      (tensor->extra_tensor_info() != nullptr &&
+       tensor->extra_tensor_info()->location() ==
+           executorch_flatbuffer::TensorDataLocation::EXTERNAL);
+}
+
 bool has_required_metadata(const executorch_flatbuffer::ExecutionPlan& plan) {
   const auto* values = plan.values();
   const auto* inputs = plan.inputs();
@@ -308,10 +319,8 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
       static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
-      tensor_value->allocation_info() != nullptr ||
-          tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
-      std::string_view{nullptr, 0}, // Count constant returns as
-                                    // memory planned.
+      is_memory_planned(tensor_value),
+      std::string_view{nullptr, 0},
       tensor_device(tensor_value));
 }
 
@@ -366,10 +375,8 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
       static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
-      tensor_value->allocation_info() != nullptr ||
-          tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
-      std::string_view{nullptr, 0}, // Count constant returns as
-                                    // memory planned.
+      is_memory_planned(tensor_value),
+      std::string_view{nullptr, 0},
       tensor_device(tensor_value));
 }
 
@@ -415,7 +422,6 @@ Result<TensorInfo> MethodMeta::attribute_tensor_meta(size_t index) const {
               index);
           auto t_name =
               tensor_value->extra_tensor_info()->fully_qualified_name();
-          // Count constant returns as memory planned
           return TensorInfo::create(
               Span<const int32_t>(
                   tensor_value->sizes()->data(), tensor_value->sizes()->size()),
@@ -424,8 +430,7 @@ Result<TensorInfo> MethodMeta::attribute_tensor_meta(size_t index) const {
                   tensor_value->dim_order()->size()),
               static_cast<executorch::aten::ScalarType>(
                   tensor_value->scalar_type()),
-              tensor_value->allocation_info() != nullptr ||
-                  tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
+              is_memory_planned(tensor_value),
               std::string_view{t_name->c_str(), t_name->size()},
               tensor_device(tensor_value));
         }
