@@ -534,6 +534,7 @@ def check(call, expected, warnings_expected=0):
             self.skipTest("only portable bindings look torch up in sys.modules")
         program, _ = create_program(ModuleAddSingleInput())
         script = """
+import importlib.abc
 import os
 import sys
 import threading
@@ -541,8 +542,16 @@ import threading
 import numpy as np
 
 program_path, case = sys.argv[1:]
-if case == "none":
+if case in ("none", "restored"):
     sys.modules["torch"] = None
+elif case == "missing":
+    class BlockTorch(importlib.abc.MetaPathFinder):
+        def find_spec(self, name, path=None, target=None):
+            if name == "torch":
+                raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+
+    blocker = BlockTorch()
+    sys.meta_path.insert(0, blocker)
 elif case == "importing":
     # A torch that another thread is still importing.
     package = os.path.join(os.path.dirname(program_path), "partial", "torch")
@@ -576,16 +585,35 @@ else:
 if case == "importing":
     release.set()
     importer.join()
+if case == "restored":
+    # A torch that sys.modules blocked at one call is imported by a later one.
+    del sys.modules["torch"]
+elif case == "missing":
+    # A torch that was missing at one call is used once it is imported.
+    sys.meta_path.remove(blocker)
+    import torch
+if case in ("restored", "missing"):
+    output = module(np.ones((2, 2), dtype=np.float32))[0]
+    assert isinstance(output, sys.modules["torch"].Tensor), type(output)
 """
         with tempfile.TemporaryDirectory() as directory:
             program_path = os.path.join(directory, "add.pte")
             with open(program_path, "wb") as handle:
                 handle.write(program.buffer)
-            environment = dict(
-                os.environ, EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT="executorch"
-            )
-            for case in ("none", "importing", "vanishing"):
+            # Without the setting, the call that finds torch missing is the
+            # one that would import it.
+            for case, setting in (
+                ("none", "executorch"),
+                ("importing", "executorch"),
+                ("vanishing", "executorch"),
+                ("restored", None),
+                ("missing", None),
+            ):
                 with self.subTest(case=case):
+                    environment = os.environ.copy()
+                    environment.pop("EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT", None)
+                    if setting is not None:
+                        environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = setting
                     completed = subprocess.run(
                         [sys.executable, "-c", script, program_path, case],
                         env=environment,

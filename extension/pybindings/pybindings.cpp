@@ -794,10 +794,16 @@ bool keep_torch_outputs() {
   // run and one of them could then wait for that static while holding the GIL.
   static bool torch_missing = false;
   static bool warned = false;
-  if (torch_missing) {
-    return false;
-  }
   if (loaded_torch_module() == nullptr) {
+    // Checked only while torch is not loaded, so a torch imported after a call
+    // found it missing is used.
+    if (torch_missing) {
+      return false;
+    }
+    // A None in sys.modules blocks torch only until it is removed.
+    if (PyDict_GetItemString(PyImport_GetModuleDict(), "torch") == Py_None) {
+      return false;
+    }
     try {
       py::module_::import("torch");
     } catch (py::error_already_set& error) {
