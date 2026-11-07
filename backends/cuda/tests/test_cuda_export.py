@@ -1092,6 +1092,35 @@ class TestCudaExport(unittest.TestCase):
         torch.version.hip is not None,
         "loads through the Python runtime, which the ROCm build does not include",
     )
+    def test_buffer_returned_outside_the_delegate(self):
+        """A module on the GPU returns a buffer that no delegate reads. The
+        program stores the buffer's bytes and returns it from host memory."""
+        from executorch.runtime import Runtime
+
+        class ReturnsBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.arange(6.0).reshape(2, 3))
+
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+                return x * 2, self.table
+
+        model = ReturnsBuffer().cuda()
+        x = torch.randn(2, 3)
+        edge = self._export_to_cuda_with_lower(model, (x.cuda(),))
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                edge.to_executorch().write_to_file(f)
+            method = Runtime.get().load_program(path).load_method("forward")
+            outputs = method.execute([x])
+        for output, expected in zip(outputs, model(x.cuda()), strict=True):
+            torch.testing.assert_close(output, expected.cpu())
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
     def test_complex_rotary_embedding(self):
         """Inductor generates no code for complex numbers, so the backend
         computes a rotary embedding written with them on real numbers."""
