@@ -22,4 +22,8 @@ tags:
   - inference
 dependencies:
   idf: ">=6.0"
-  espressif/esp-nn: "^1.4"
+  ## Named, because the staging registry records a dependency without a
+  ## registry_url as one of its own.
+  espressif/esp-nn:
+    version: "^1.4"
+    registry_url: https://components.espressif.com

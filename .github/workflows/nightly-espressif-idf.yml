@@ -13,6 +13,8 @@ on:
       - .ci/scripts/test_espressif_idf_nightly.sh
       - .ci/scripts/test_espressif_idf_configure.py
       - .ci/scripts/esp_idf_mirror.py
+      - .ci/scripts/upload_espressif_idf_component.sh
+      - .ci/scripts/espressif_idf_upload_requirements.txt
       - examples/espressif/build_idf_component.sh
       - examples/espressif/setup.sh
       - examples/espressif/export_smoke_model.py
@@ -55,6 +57,10 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch --use-pt-pinned-commit --minimal
         bash .ci/scripts/test_espressif_idf_nightly.sh prepare "${RUNNER_ARTIFACT_DIR}"
+        # The release stamp's checks, which publishing otherwise first runs at a
+        # real tag, at a throwaway local one.
+        git tag -f "v$(cat version.txt)"
+        bash examples/espressif/build_idf_component.sh --version --version-suffix ""
 
   registry-dry-run:
     name: Registry validation (upload --dry-run)
@@ -73,10 +79,8 @@ jobs:
         set -euo pipefail
         CONDA_ENV=$(conda env list --json | jq -r '.envs | .[-1]')
         conda activate "${CONDA_ENV}"
-        pip install --progress-bar off "idf-component-manager~=3.1"
-        version=$(cat "${RUNNER_ARTIFACT_DIR}/version")
-        compote component upload --namespace pytorch --name executorch \
-          --archive "${RUNNER_ARTIFACT_DIR}/dist/executorch_${version}.tgz" --dry-run --allow-existing
+        bash .ci/scripts/upload_espressif_idf_component.sh "${RUNNER_ARTIFACT_DIR}" \
+          https://components.espressif.com --dry-run
 
   build:
     name: ESP-IDF ${{ matrix.idf-version }} (${{ matrix.shard }}/4)

@@ -5,13 +5,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# The ExecuTorch ESP-IDF component's nightly matrix.
+# The ExecuTorch ESP-IDF component's nightly matrix and release checks.
 #
-#   test_espressif_idf_nightly.sh prepare <dir>
+#   test_espressif_idf_nightly.sh prepare <dir> [stamp options]
 #     In the ExecuTorch environment: exports the test models (smoke, the
 #     esp_nn:: mul, an ESP-NN delegate program and the Cadence-quantized wake
-#     word), generates and packs the component into a file:// component mirror,
-#     and makes each model's kernel bundle, all under <dir>. all_ops is the
+#     word), generates the component with build_idf_component.sh's stamp
+#     options (default --allow-dev-stamp), packs it into <dir>/dist and a
+#     file:// component mirror, and makes each model's kernel bundle, all under
+#     <dir>. all_ops is the
 #     smoke model with a bundle that registers every op of every kernel
 #     library.
 #   test_espressif_idf_nightly.sh build <dir> <shard> <shards>
@@ -22,12 +24,19 @@
 #     own Python environment, checks that each configuration's settings took
 #     effect, and runs each build on its emulator unless the rules disable its
 #     test. Reports every failure, then fails.
+#   test_espressif_idf_nightly.sh registry <dir> <registry URL>
+#     Needs only <dir> from prepare: installs ESP-IDF 6.1, waits up to 15
+#     minutes for the given component registry to list <dir>'s version of
+#     pytorch/executorch, builds the smoke consumer for ESP32-S3 with it, fails
+#     if the registry serves files other than <dir>'s archive, and runs the
+#     build on the emulator.
 
 set -euo pipefail
 
 et_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-mode=${1:?usage: $0 prepare <dir> | build <dir> <shard> <shards>}
-dir=${2:?usage: $0 prepare <dir> | build <dir> <shard> <shards>}
+usage="usage: $0 prepare <dir> [stamp options] | build <dir> <shard> <shards> | registry <dir> <URL>"
+mode=${1:?${usage}}
+dir=${2:?${usage}}
 mkdir -p "${dir}"
 dir=$(cd "${dir}" && pwd)
 cd "${et_root}"
@@ -45,6 +54,12 @@ logged() {
 }
 
 prepare() {
+    local stamp=("${@:3}")
+    if (( ${#stamp[@]} == 0 )); then
+        stamp=(--allow-dev-stamp)
+    fi
+    # Checks the stamp against git before the model exports.
+    bash examples/espressif/build_idf_component.sh --version "${stamp[@]}" > /dev/null
     export ESPRESSIF_TOOLS_DIR="${ESPRESSIF_TOOLS_DIR:-${RUNNER_TEMP:-/tmp}/executorch-espressif}"
     local logs="${dir}/logs" models="${dir}/models"
     mkdir -p "${logs}" "${models}"
@@ -74,11 +89,13 @@ print(entry["atol"], entry["rtol"])
     rm -r "${models}"/*.bpte "${dir}/espnn"
 
     local component_dir="${dir}/component/executorch"
-    logged "${logs}/generate.log" bash examples/espressif/build_idf_component.sh \
-        --allow-dev-stamp --out "${component_dir}"
+    logged "${logs}/generate.log" bash examples/espressif/build_idf_component.sh "${stamp[@]}" \
+        --out "${component_dir}"
     local version
     version=$(sed -n 's/^version: "\(.*\)"$/\1/p' "${component_dir}/idf_component.yml")
-    (cd "${component_dir}" && compote component pack --name executorch --dest-dir "${dir}/dist")
+    # The registry links each version to its commit and to the generator.
+    (cd "${component_dir}" && compote component pack --name executorch --dest-dir "${dir}/dist" \
+        --commit-sha "$(git -C "${et_root}" rev-parse HEAD)" --repository-path examples/espressif)
     python .ci/scripts/esp_idf_mirror.py "${dir}/dist/executorch_${version}.tgz" "${dir}/mirror" \
         --namespace pytorch --name executorch
     local model
@@ -111,38 +128,16 @@ build() {
     mkdir -p "${work}"
     work=$(cd "${work}" && pwd)
 
-    # ESP-IDF's QEMU needs these libraries, and setup.sh fails its install check
-    # without them.
-    if ! python -c '
-import ctypes
-ctypes.CDLL("libSDL2-2.0.so.0")
-ctypes.CDLL("libslirp.so.0")' 2> /dev/null; then
-        sudo apt-get update
-        sudo apt-get install -y --no-install-recommends libsdl2-2.0-0 libslirp0
-    fi
-    logged "${work}/setup.log" bash examples/espressif/setup.sh --minimal \
-        --idf-version="${idf_version}" --targets="$(IFS=,; echo "${targets[*]}")"
-    # shellcheck source=/dev/null
-    source "${ESPRESSIF_TOOLS_DIR}/setup_path.sh"
-
-    # A fresh ESP-IDF Python environment, which cannot import executorch, and
+    install_idf "${idf_version}" "$(IFS=,; echo "${targets[*]}")" "${work}"
     # idf-build-apps in a venv of its own, so it changes nothing ESP-IDF runs.
-    export IDF_PYTHON_ENV_PATH="${work}/idf_python_env"
-    mkdir -p "${IDF_PYTHON_ENV_PATH}"
-    logged "${work}/idf_python_env.log" python "${IDF_PATH}/tools/idf_tools.py" install-python-env
     "${IDF_PYTHON_ENV_PATH}/bin/python" -m venv "${work}/idf_build_apps"
     "${work}/idf_build_apps/bin/python" -m pip install --quiet "idf-build-apps>=3.1,<4"
     export IDF_COMPONENT_STORAGE_URL="file://${dir}/mirror;default"
     local version
     version=$(cat "${dir}/version")
 
-    # Built from a copy, so the component manager's state and the consumer's
-    # generated manifest stay out of the source tree.
     local sources="${work}/sources"
-    rm -rf "${sources}"
-    mkdir -p "${sources}/examples/espressif/idf_component_smoke"
-    cp -r examples/espressif/idf_component_consumer "${sources}/examples/espressif/"
-    cp -r examples/espressif/idf_component_smoke/main "${sources}/examples/espressif/idf_component_smoke/"
+    copy_consumer "${sources}"
     local app=examples/espressif/idf_component_consumer
     (cd "${sources}" && "${work}/idf_build_apps/bin/idf-build-apps" find -p "${app}" --target all \
         --default-build-targets "${targets[@]}" --config-rules 'sdkconfig.ci.*=' \
@@ -199,12 +194,145 @@ PY
             failures+=("${name} (run)")
         fi
     done 3< "${work}/shard.txt"
+    # Exercises the check that registry mode runs after an upload.
+    if [[ -d "${project}/managed_components/pytorch__executorch" ]] \
+        && ! served_matches "${dir}/dist/executorch_${version}.tgz" \
+            "${project}/managed_components/pytorch__executorch" "the mirror"; then
+        failures+=("served files")
+    fi
 
     if (( ${#failures[@]} )); then
         printf 'FAIL: %s\n' "${failures[@]}" >&2
         exit 1
     fi
     echo "PASS: shard ${shard}/${shards} of the ESP-IDF ${idf_version} matrix built and ran."
+}
+
+# Installs ESP-IDF for the targets and makes a fresh ESP-IDF Python
+# environment, which cannot import executorch: ESP-IDF version, comma-separated
+# targets, work dir.
+install_idf() {
+    local idf_version=$1 targets_csv=$2 work=$3
+    # ESP-IDF's QEMU needs these libraries, and setup.sh fails its install check
+    # without them.
+    if [[ ",${targets_csv}," == *,esp32,* ]] && ! python -c '
+import ctypes
+ctypes.CDLL("libSDL2-2.0.so.0")
+ctypes.CDLL("libslirp.so.0")' 2> /dev/null; then
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libsdl2-2.0-0 libslirp0
+    fi
+    logged "${work}/setup.log" bash examples/espressif/setup.sh --minimal \
+        --idf-version="${idf_version}" --targets="${targets_csv}"
+    # shellcheck source=/dev/null
+    source "${ESPRESSIF_TOOLS_DIR}/setup_path.sh"
+    export IDF_PYTHON_ENV_PATH="${work}/idf_python_env"
+    mkdir -p "${IDF_PYTHON_ENV_PATH}"
+    logged "${work}/idf_python_env.log" python "${IDF_PATH}/tools/idf_tools.py" install-python-env
+}
+
+# Copies the consumer project to a directory, so the component manager's state
+# and the consumer's generated manifest stay out of the source tree.
+copy_consumer() {
+    local sources=$1
+    rm -rf "${sources}"
+    mkdir -p "${sources}/examples/espressif/idf_component_smoke"
+    cp -r examples/espressif/idf_component_consumer "${sources}/examples/espressif/"
+    cp -r examples/espressif/idf_component_smoke/main "${sources}/examples/espressif/idf_component_smoke/"
+}
+
+registry() {
+    local registry_url=${3:?${usage}}
+    local work="${ESPRESSIF_BUILD_DIR:-${et_root}/cmake-out-esp-idf-registry}"
+    export ESPRESSIF_TOOLS_DIR="${ESPRESSIF_TOOLS_DIR:-${RUNNER_TEMP:-/tmp}/executorch-espressif}"
+    mkdir -p "${work}"
+    work=$(cd "${work}" && pwd)
+    install_idf v6.1 esp32s3 "${work}"
+    local version
+    version=$(cat "${dir}/version")
+    local storage
+    if ! storage=$(curl -sSf --retry 3 "${registry_url%/}/api/" | python -c '
+import json, sys
+print(json.load(sys.stdin)["components_base_url"].rstrip("/"))'); then
+        echo "FAIL: ${registry_url}/api/ did not name the registry's storage" >&2
+        exit 1
+    fi
+    # The registry's storage is behind a CDN that caches for five minutes.
+    local tries=0
+    until curl -sSf "${storage}/components/pytorch/executorch.json" 2> /dev/null | python -c '
+import json, sys
+try:
+    versions = [v["version"] for v in json.load(sys.stdin)["versions"]]
+except ValueError:
+    versions = []
+sys.exit(sys.argv[1] not in versions)' "${version}"; do
+        if (( ++tries == 30 )); then
+            echo "FAIL: ${registry_url} did not list pytorch/executorch ${version}" >&2
+            exit 1
+        fi
+        echo "Waiting for ${registry_url} to list pytorch/executorch ${version}..."
+        sleep 30
+    done
+    copy_consumer "${work}/sources"
+    local project="${work}/sources/examples/espressif/idf_component_consumer"
+    local build="${work}/builds/esp32s3-default" log="${work}/emulator.log"
+    local idf_args=(-C "${project}" -B "${build}" -DSDKCONFIG="${build}/sdkconfig"
+        "-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.ci.default"
+        -DET_COMPONENT_VERSION="${version}" -DET_CONSUMER_MODELS_DIR="${dir}/models"
+        -DET_COMPONENT_REGISTRY_URL="${registry_url}")
+    IDF_TARGET=esp32s3 logged "${work}/build.log" "${IDF_PYTHON_ENV_PATH}/bin/python" \
+        "${IDF_PATH}/tools/idf.py" "${idf_args[@]}" build
+    # --allow-existing uploads would not replace an archive already there.
+    served_matches "${dir}/dist/executorch_${version}.tgz" \
+        "${project}/managed_components/pytorch__executorch" "${registry_url}"
+    local model
+    model=$(sed -n 's/^CONFIG_ET_CONSUMER_MODEL="\(.*\)"$/\1/p' "${build}/sdkconfig")
+    run_firmware "${build}" esp32s3 "${log}" "${idf_args[@]}"
+    if ! grep -qF "${model}: PASS" "${log}" || ! grep -qF "ET_COMPONENT_SMOKE: PASS" "${log}"; then
+        tail -n 30 "${log}" >&2
+        echo "FAIL: the consumer from ${registry_url} did not pass on the emulator" >&2
+        exit 1
+    fi
+    echo "PASS: pytorch/executorch ${version} from ${registry_url} built and ran."
+}
+
+# Checks that a project got the files of the tested archive from a registry or
+# mirror: archive, the project's managed_components/pytorch__executorch, source.
+# The registry rewrites the examples' manifests, dropping override_path, so
+# those are the only files that may differ.
+served_matches() {
+    python - "$@" <<'PY'
+import hashlib
+import sys
+import tarfile
+from pathlib import Path
+
+
+def compared(path):
+    return path not in (".component_hash", "CHECKSUMS.json") and not (
+        path.startswith("examples/") and path.endswith("/idf_component.yml")
+    )
+
+
+with tarfile.open(sys.argv[1]) as archive:
+    tested = {
+        Path(m.name).as_posix(): hashlib.sha256(archive.extractfile(m).read()).hexdigest()
+        for m in archive
+        if m.isfile()
+    }
+served_dir = Path(sys.argv[2])
+served = {
+    p.relative_to(served_dir).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+    for p in served_dir.rglob("*")
+    if p.is_file()
+}
+differ = sorted(
+    p for p in tested.keys() | served.keys() if compared(p) and tested.get(p) != served.get(p)
+)
+if differ:
+    sys.exit(f"FAIL: {sys.argv[3]} served files unlike the tested archive's: {differ[:10]}")
+print(f"OK: {sys.argv[3]} served the tested archive's files")
+PY
 }
 
 # Checks that every setting of a sdkconfig.ci.* file reached the build's
@@ -255,7 +383,8 @@ run_firmware() {
 }
 
 case "${mode}" in
-    prepare) prepare ;;
+    prepare) prepare "$@" ;;
     build) build "$@" ;;
-    *) echo "unknown mode ${mode}; use prepare or build" >&2; exit 1 ;;
+    registry) registry "$@" ;;
+    *) echo "unknown mode ${mode}; ${usage}" >&2; exit 1 ;;
 esac
