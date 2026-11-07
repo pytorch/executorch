@@ -1861,6 +1861,84 @@ def register_grid_sampler_2d():
 
 
 # =============================================================================
+# Warp.cpp
+# =============================================================================
+
+
+def _node_vals(node: torch.fx.Node, n_args: int) -> Optional[List[torch.Tensor]]:
+    if len(node.args) < n_args:
+        return None
+    vals = []
+    for arg in list(node.args[:n_args]) + [node]:
+        if not isinstance(arg, torch.fx.Node) or arg.meta.get("val") is None:
+            return None
+        vals.append(arg.meta["val"])
+    return vals
+
+
+def _check_warp_shapes(node: torch.fx.Node) -> bool:
+    """Reject shapes the Vulkan warp shader can't handle, such as a flow that
+    broadcasts over batch or space. These ops have no CPU kernel, so a rejected
+    node fails at load time."""
+    vals = _node_vals(node, 2)
+    if vals is None:
+        return False
+    inp, flow, out = vals
+    return (
+        inp.dtype == flow.dtype == out.dtype
+        and inp.shape == out.shape
+        and flow.dim() == 4
+        and flow.shape[:2] == (out.shape[0], 2)
+        and flow.shape[-2:] == out.shape[-2:]
+    )
+
+
+def _check_warp_blend_shapes(node: torch.fx.Node) -> bool:
+    """Reject shapes the Vulkan warp_blend shader can't handle, such as a mask
+    with more than one channel or a flow or mask that broadcasts over batch.
+    These ops have no CPU kernel, so a rejected node fails at load time."""
+    vals = _node_vals(node, 4)
+    if vals is None:
+        return False
+    img0, img1, flow, mask, out = vals
+    return (
+        img0.dtype == img1.dtype == flow.dtype == mask.dtype == out.dtype
+        and img0.shape == out.shape
+        and img1.shape == out.shape
+        and flow.dim() == 4
+        and mask.dim() == 4
+        and flow.shape[:2] == (out.shape[0], 4)
+        and mask.shape[:2] == (out.shape[0], 1)
+        and flow.shape[-2:] == mask.shape[-2:]
+    )
+
+
+@update_features(exir_ops.edge.et_vk.warp.default)
+def register_warp():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=_check_warp_shapes,
+    )
+
+
+# =============================================================================
+# WarpBlend.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.warp_blend.default)
+def register_warp_blend():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=_check_warp_blend_shapes,
+    )
+
+
+# =============================================================================
 # Repeat.cpp
 # =============================================================================
 
