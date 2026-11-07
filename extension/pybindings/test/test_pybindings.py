@@ -4232,6 +4232,128 @@ print("ran after its program was dropped")
                 method.execute(cuda_inputs)[0].cpu(), torch.full((4, 4), 4.0)
             )
 
+    def test_cuda_input_imports_torch_to_wait_without_cuda_support(self):
+        if self.kernel_mode != "portable" or not sys.platform.startswith("linux"):
+            self.skipTest("needs the portable bindings and the Linux CUDA driver")
+        if not torch.cuda.is_available():
+            self.skipTest("needs a visible CUDA device")
+        from executorch.extension.pybindings import portable_lib
+
+        if "CudaBackend" in portable_lib._get_registered_backend_names():
+            self.skipTest("bindings built with CUDA support wait without torch")
+
+        from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+        from executorch.exir.schema import ExtraTensorInfo, Tensor
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        program = to_edge(export(Identity(), (torch.ones(4),))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                )
+            )
+        )
+        schema = program.executorch_program
+        for entry in schema.execution_plan[0].values:
+            if isinstance(entry.val, Tensor):
+                entry.val.extra_tensor_info = ExtraTensorInfo(
+                    device_type=DeviceType.CUDA, device_index=0
+                )
+        programs = {"identity": bytes(serialize_pte_binary(PTEFile(schema)))}
+        # The same method without outputs, which export cannot make.
+        schema.execution_plan[0].outputs = []
+        programs["no outputs"] = bytes(serialize_pte_binary(PTEFile(schema)))
+        # Device memory from the CUDA driver, so nothing imports torch before
+        # the bindings wait for the device.
+        script = """
+import ctypes
+import sys
+
+from executorch.extension.pybindings import portable_lib
+
+class Device(ctypes.Structure):
+    _fields_ = [("device_type", ctypes.c_int32), ("device_id", ctypes.c_int32)]
+
+class DataType(ctypes.Structure):
+    _fields_ = [("code", ctypes.c_uint8), ("bits", ctypes.c_uint8), ("lanes", ctypes.c_uint16)]
+
+class DLTensor(ctypes.Structure):
+    _fields_ = [
+        ("data", ctypes.c_void_p),
+        ("device", Device),
+        ("ndim", ctypes.c_int32),
+        ("dtype", DataType),
+        ("shape", ctypes.POINTER(ctypes.c_int64)),
+        ("strides", ctypes.POINTER(ctypes.c_int64)),
+        ("byte_offset", ctypes.c_uint64),
+    ]
+
+class ManagedTensor(ctypes.Structure):
+    _fields_ = [("dl_tensor", DLTensor), ("manager_ctx", ctypes.c_void_p), ("deleter", ctypes.c_void_p)]
+
+driver = ctypes.CDLL("libcuda.so.1")
+context, pointer = ctypes.c_void_p(), ctypes.c_uint64()
+assert driver.cuInit(0) == 0
+assert driver.cuDevicePrimaryCtxRetain(ctypes.byref(context), 0) == 0
+assert driver.cuCtxSetCurrent(context) == 0
+assert driver.cuMemAlloc_v2(ctypes.byref(pointer), 16) == 0
+shape = (ctypes.c_int64 * 1)(4)
+managed = ManagedTensor(
+    DLTensor(pointer.value, Device(2, 0), 1, DataType(2, 32, 1), shape, None, 0)
+)
+make_capsule = ctypes.pythonapi.PyCapsule_New
+make_capsule.restype = ctypes.py_object
+make_capsule.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p]
+
+case, path = sys.argv[1:]
+with open(path, "rb") as source:
+    method = portable_lib._load_program_from_buffer(source.read()).load_method("forward")
+assert "torch" not in sys.modules
+inputs = [make_capsule(ctypes.addressof(managed), b"dltensor", None)]
+if case == "call":
+    # It returns nothing, so picking the type of its outputs imports nothing.
+    assert method(inputs) == []
+else:
+    method.set_inputs(inputs)
+    try:
+        method.execute()
+    except RuntimeError as error:
+        # The setting keeps torch out, so nothing can wait for the device.
+        assert case == "kept out" and "or torch imported" in str(error), error
+    else:
+        assert case != "kept out", "the wait must fail when torch is kept out"
+assert ("torch" in sys.modules) == (case != "kept out")
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            for case, name, setting in (
+                ("execute", "identity", None),
+                ("call", "no outputs", None),
+                ("kept out", "identity", "executorch"),
+            ):
+                with self.subTest(case=case):
+                    path = os.path.join(directory, "program.pte")
+                    with open(path, "wb") as handle:
+                        handle.write(programs[name])
+                    environment = os.environ.copy()
+                    environment.pop("EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT", None)
+                    if setting is not None:
+                        environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = setting
+                    completed = subprocess.run(
+                        [sys.executable, "-c", script, case, path],
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+                    )
+
     def test_cuda_torch_tensor_interchange_without_aten(self):
         if self.kernel_mode != "portable":
             self.skipTest("only portable bindings use the Python Torch adapter")

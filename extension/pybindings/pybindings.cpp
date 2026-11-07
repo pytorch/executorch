@@ -811,8 +811,9 @@ bool torch_available() {
       if (!error.matches(PyExc_ImportError)) {
         try {
           error.value().attr("add_note")(
-              "ExecuTorch imports torch here to return torch.Tensor outputs. "
-              "Set EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch before "
+              "ExecuTorch imports torch here to return torch.Tensor outputs "
+              "or to wait for CUDA work. Set "
+              "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch before "
               "importing ExecuTorch to skip it.");
         } catch (...) {
           // add_note is best effort; never hide the original error.
@@ -832,8 +833,8 @@ bool torch_available() {
 // then, a call whose type that rule would change keeps torch.Tensor outputs
 // whenever torch can be imported, as before, and warns. A call with no tensor
 // inputs returns torch.Tensor whenever torch can be imported, now and later,
-// so its type never depends on what imported torch first. A call that returns
-// no tensor never imports torch.
+// so its type never depends on what imported torch first. Picking the type for
+// a call that returns no tensor never imports torch.
 PortableTensorOutput portable_tensor_output(
     bool returns_tensor,
     bool torch_input,
@@ -2367,6 +2368,18 @@ std::shared_ptr<DeviceMemoryBuffer> allocate_device_output(
   return std::make_shared<DeviceMemoryBuffer>(std::move(buffer.get()));
 }
 
+// Bindings built without CUDA support wait for CUDA work through torch, which
+// used to be imported with ExecuTorch. So a wait imports it, unless the
+// setting keeps torch out.
+void synchronize_device_for_call(int index) {
+#ifndef EXECUTORCH_PYBINDINGS_CUDA
+  if (tensor_output_override() != PortableTensorOutput::ExecuTorch) {
+    torch_available();
+  }
+#endif
+  synchronize_device(index);
+}
+
 // The Python boundary is synchronous, and each wait is for the whole device,
 // so one wait per device covers every tensor of a run. Before the run, another
 // library may still be writing a CUDA input on its own streams: a torch tensor,
@@ -2395,7 +2408,7 @@ void synchronize_tensor_devices(const Method& method) {
     add(method.get_output(i));
   }
   for (const auto index : devices) {
-    synchronize_device(index);
+    synchronize_device_for_call(index);
   }
 }
 
@@ -4877,7 +4890,7 @@ struct PyMethod final {
 #else
     // No execute() in this call has waited for the work that last wrote it.
     if (!attr->device().is_cpu() && attr->nbytes() != 0) {
-      synchronize_device(attr->device().index());
+      synchronize_device_for_call(attr->device().index());
     }
     // Mutable state lives in the method's planned memory. Anything else is a
     // constant, which can sit in read-only pages, so it is never returned as
