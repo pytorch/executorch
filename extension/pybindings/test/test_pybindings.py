@@ -17,6 +17,7 @@ import tempfile
 import textwrap
 import time
 import unittest
+import warnings
 import weakref
 from io import StringIO
 
@@ -232,7 +233,7 @@ def kinds(outputs):
     ]
 
 # Importing torch can show warnings of its own, so only this one counts.
-OURS = "ExecuTorch returned torch.Tensor outputs"
+OURS = "ExecuTorch returns torch.Tensor outputs"
 
 def ours(caught):
     return [w for w in caught if str(w.message).startswith(OURS)]
@@ -247,8 +248,7 @@ def check(call, expected, warnings_expected=0):
     assert all(w.category is FutureWarning for w in future)
     return future
 """
-        # Each runs in a fresh process, since torch imports and the
-        # warning, shown once per process, are process-wide.
+        # Each runs in a fresh process, since torch imports are process-wide.
         scenarios = {
             "NumPy inputs before torch is imported": (
                 None,
@@ -264,7 +264,7 @@ def check(call, expected, warnings_expected=0):
                 # The warning points at the caller, not at ExecuTorch's wrapper.
                 assert (warning.filename, warning.lineno) == ("<string>", line), warning
                 assert "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT" in str(warning.message)
-                check(lambda: forward.execute([x, x]), ["torch"])
+                check(lambda: forward.execute([x, x]), ["torch"], 1)
                 """,
             ),
             "NumPy inputs kept by set_inputs after torch is imported": (
@@ -361,6 +361,19 @@ def check(call, expected, warnings_expected=0):
                     assert call([x, x])[0].tolist() == [[3.0, 3.0]] * 2
                 """,
             ),
+            "the first warning filtered out": (
+                None,
+                """
+                from executorch.extension.pybindings import portable_lib
+
+                module = portable_lib._load_for_executorch(program_path)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    module.forward([x, x])
+                # A warning nobody saw does not use up the later ones.
+                check(lambda: module.forward([x, x]), ["torch"], 1)
+                """,
+            ),
             "two threads before torch is imported": (
                 None,
                 """
@@ -382,7 +395,7 @@ def check(call, expected, warnings_expected=0):
                     for thread in threads:
                         thread.join()
                 assert kinds(outputs) == ["torch", "torch"], kinds(outputs)
-                assert len(ours(caught)) == 1, [str(w.message) for w in caught]
+                assert len(ours(caught)) == 2, [str(w.message) for w in caught]
                 """,
             ),
             "torch fails to import or is not installed": (
@@ -1679,7 +1692,10 @@ print("lines through Python:", stream.text().count(expected))
         saved_stderr = sys.stderr
         sys.stderr = captured
         try:
-            module(LogsDuringTheCall())
+            # Only the runtime log goes to stderr, not the output type warning.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", FutureWarning)
+                module(LogsDuringTheCall())
         finally:
             sys.stderr = saved_stderr
 

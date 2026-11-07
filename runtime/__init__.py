@@ -182,7 +182,7 @@ class Method:
             torch.Tensor objects if any input is one, ExecuTorchResult objects
             if all are other tensors, even when PyTorch is installed, and with
             no tensor inputs, torch.Tensor objects only if torch is already
-            imported. The first call whose outputs will change shows a
+            imported. Each call whose outputs will change warns with a
             FutureWarning. Set ``EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT`` to
             ``torch`` or ``executorch`` before importing ExecuTorch to choose
             the type now.

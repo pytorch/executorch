@@ -100,8 +100,8 @@ call, including inputs kept from an earlier call. A call with any torch tensor
 input will return torch tensors. A call whose tensor inputs are all NumPy
 arrays, other buffers, DLPack objects, or `ExecuTorchResult` values will return
 `ExecuTorchResult` values, even when PyTorch is installed. A call with no tensor
-inputs will return torch tensors only if `torch` is already imported. The first
-call whose outputs will change shows a `FutureWarning`. To choose the output
+inputs will return torch tensors only if `torch` is already imported. Each call
+whose outputs will change warns with a `FutureWarning`. To choose the output
 type now, set `EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT` to `executorch` or `torch`
 before importing the bindings. The setting is fixed when the extension loads.
 `executorch` never imports PyTorch, and `torch` requires it to import
