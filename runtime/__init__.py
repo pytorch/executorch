@@ -179,11 +179,11 @@ class Method:
         .. warning::
 
             A future release will make tensor outputs follow the tensor inputs:
-            torch.Tensor objects if any input is one, ExecuTorchResult objects
-            if all are other tensors, even when PyTorch is installed, and with
-            no tensor inputs, torch.Tensor objects only if torch is already
-            imported. Each call whose outputs will change warns with a
-            FutureWarning. Set ``EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT`` to
+            torch.Tensor objects if any input is one, and ExecuTorchResult
+            objects if all are other tensors, even when PyTorch is installed.
+            With no tensor inputs, outputs stay torch.Tensor objects whenever
+            torch can be imported. Each call whose outputs will change warns
+            with a FutureWarning. Set ``EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT`` to
             ``torch`` or ``executorch`` before importing ExecuTorch to choose
             the type now.
         """

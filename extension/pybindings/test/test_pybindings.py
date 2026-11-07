@@ -520,17 +520,21 @@ def check(call, expected, warnings_expected=0):
                 """,
             ),
         }
-        # Each of these calls returns torch.Tensor outputs now and will return
-        # ExecuTorchResult outputs later, so it warns: calls without tensor
-        # inputs before torch is imported, and calls with tensor inputs of
-        # other kinds after it is.
-        for call, torch_imported in (
-            ("module.run_method('tensor_constant')", False),
-            ("[method.get_attribute('state')]", False),
-            ("bundled.verify_result_with_bundled_expected_output('forward', 0)", False),
-            ("module.forward([x, x])", True),
-            ("module.forward(capsules)", True),
-            ("method(capsules)", True),
+        # Calls with tensor inputs of other kinds return torch.Tensor outputs
+        # now and will return ExecuTorchResult outputs later, so they warn,
+        # even after torch is imported. Calls without tensor inputs keep
+        # torch.Tensor outputs, so they do not, even before it is.
+        for call, torch_imported, warnings_expected in (
+            ("module.run_method('tensor_constant')", False, 0),
+            ("[method.get_attribute('state')]", False, 0),
+            (
+                "bundled.verify_result_with_bundled_expected_output('forward', 0)",
+                False,
+                0,
+            ),
+            ("module.forward([x, x])", True, 1),
+            ("module.forward(capsules)", True, 1),
+            ("method(capsules)", True, 1),
         ):
             scenarios[f"{call}, torch imported: {torch_imported}"] = (
                 None,
@@ -543,8 +547,8 @@ def check(call, expected, warnings_expected=0):
                 with open(bundled_path, "rb") as source:
                     bundled = portable_lib._load_bundled_program_from_buffer(source.read())
                 capsules = [x.__dlpack__(), x.__dlpack__()]
-                (warning,), line = check(lambda: {call}, ["torch"], 1), sys._getframe().f_lineno
-                assert warning.lineno == line, (warning.lineno, line)
+                caught, line = check(lambda: {call}, ["torch"], {warnings_expected}), sys._getframe().f_lineno
+                assert all(warning.lineno == line for warning in caught), caught
                 """,
             )
         with tempfile.TemporaryDirectory() as directory:
