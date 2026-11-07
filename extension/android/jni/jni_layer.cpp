@@ -8,6 +8,7 @@
 
 #include <executorch/extension/android/jni/jni_helper.h>
 #include <executorch/extension/android/jni/jni_layer_constants.h>
+#include <executorch/extension/android/jni/jni_layer_types.h>
 
 #include <executorch/extension/android/jni/log.h>
 #include <executorch/extension/module/module.h>
@@ -51,252 +52,226 @@ using namespace executorch::extension;
 using namespace torch::executor;
 
 namespace executorch::extension {
-class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
- public:
-  constexpr static const char* kJavaDescriptor =
-      "Lorg/pytorch/executorch/Tensor;";
 
-  explicit TensorHybrid(executorch::aten::Tensor tensor) {}
+facebook::jni::local_ref<JTensor::javaobject> JTensor::newJTensorFromTensor(
+    const executorch::aten::Tensor& tensor) {
+  const auto scalarType = tensor.scalar_type();
+  if (scalar_type_to_java_dtype.count(scalarType) == 0) {
+    std::stringstream ss;
+    ss << "executorch::aten::Tensor scalar type "
+       << static_cast<int>(scalarType) << " is not supported on java side";
+    jni_helper::throwExecutorchException(
+        static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    return nullptr;
+  }
+  int jdtype = scalar_type_to_java_dtype.at(scalarType);
 
-  static facebook::jni::local_ref<TensorHybrid::javaobject>
-  newJTensorFromTensor(const executorch::aten::Tensor& tensor) {
-    const auto scalarType = tensor.scalar_type();
-    if (scalar_type_to_java_dtype.count(scalarType) == 0) {
-      std::stringstream ss;
-      ss << "executorch::aten::Tensor scalar type "
-         << static_cast<int>(scalarType) << " is not supported on java side";
-      jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
-      return nullptr;
+  const auto& tensor_shape = tensor.sizes();
+  std::vector<jlong> tensor_shape_vec;
+  for (const auto& s : tensor_shape) {
+    tensor_shape_vec.push_back(s);
+  }
+  facebook::jni::local_ref<jlongArray> jTensorShape =
+      facebook::jni::make_long_array(tensor_shape_vec.size());
+  jTensorShape->setRegion(0, tensor_shape_vec.size(), tensor_shape_vec.data());
+
+  std::vector<jint> dim_order_vec;
+  dim_order_vec.reserve(tensor_shape_vec.size());
+  const auto tensor_dim_order = tensor.dim_order();
+  if (tensor_dim_order.size() == tensor_shape_vec.size()) {
+    for (const auto& d : tensor_dim_order) {
+      dim_order_vec.push_back(static_cast<jint>(d));
     }
-    int jdtype = scalar_type_to_java_dtype.at(scalarType);
-
-    const auto& tensor_shape = tensor.sizes();
-    std::vector<jlong> tensor_shape_vec;
-    for (const auto& s : tensor_shape) {
-      tensor_shape_vec.push_back(s);
+  } else {
+    for (size_t i = 0; i < tensor_shape_vec.size(); ++i) {
+      dim_order_vec.push_back(static_cast<jint>(i));
     }
-    facebook::jni::local_ref<jlongArray> jTensorShape =
-        facebook::jni::make_long_array(tensor_shape_vec.size());
-    jTensorShape->setRegion(
-        0, tensor_shape_vec.size(), tensor_shape_vec.data());
+  }
+  facebook::jni::local_ref<facebook::jni::JArrayInt> jDimOrder =
+      facebook::jni::make_int_array(dim_order_vec.size());
+  jDimOrder->setRegion(0, dim_order_vec.size(), dim_order_vec.data());
 
-    std::vector<jint> dim_order_vec;
-    dim_order_vec.reserve(tensor_shape_vec.size());
-    const auto tensor_dim_order = tensor.dim_order();
-    if (tensor_dim_order.size() == tensor_shape_vec.size()) {
-      for (const auto& d : tensor_dim_order) {
-        dim_order_vec.push_back(static_cast<jint>(d));
-      }
-    } else {
-      for (size_t i = 0; i < tensor_shape_vec.size(); ++i) {
-        dim_order_vec.push_back(static_cast<jint>(i));
-      }
-    }
-    facebook::jni::local_ref<facebook::jni::JArrayInt> jDimOrder =
-        facebook::jni::make_int_array(dim_order_vec.size());
-    jDimOrder->setRegion(0, dim_order_vec.size(), dim_order_vec.data());
+  static auto cls = JTensor::javaClassStatic();
+  // Note: this is safe as long as the data stored in tensor is valid; the
+  // data won't go out of scope as long as the Method for the inference is
+  // valid and there is no other inference call. Java layer picks up this
+  // value immediately so the data is valid.
+  facebook::jni::local_ref<facebook::jni::JByteBuffer> jTensorBuffer =
+      facebook::jni::JByteBuffer::wrapBytes(
+          (uint8_t*)tensor.data_ptr(), tensor.nbytes());
+  jTensorBuffer->order(facebook::jni::JByteOrder::nativeOrder());
 
-    static auto cls = TensorHybrid::javaClassStatic();
-    // Note: this is safe as long as the data stored in tensor is valid; the
-    // data won't go out of scope as long as the Method for the inference is
-    // valid and there is no other inference call. Java layer picks up this
-    // value immediately so the data is valid.
-    facebook::jni::local_ref<facebook::jni::JByteBuffer> jTensorBuffer =
-        facebook::jni::JByteBuffer::wrapBytes(
-            (uint8_t*)tensor.data_ptr(), tensor.nbytes());
-    jTensorBuffer->order(facebook::jni::JByteOrder::nativeOrder());
+  static const auto jMethodNewTensor =
+      cls->getStaticMethod<facebook::jni::local_ref<JTensor::javaobject>(
+          facebook::jni::alias_ref<facebook::jni::JByteBuffer>,
+          facebook::jni::alias_ref<jlongArray>,
+          facebook::jni::alias_ref<facebook::jni::JArrayInt>,
+          jint,
+          facebook::jni::alias_ref<jhybriddata>)>("nativeNewTensor");
+  return jMethodNewTensor(
+      cls,
+      jTensorBuffer,
+      jTensorShape,
+      jDimOrder,
+      jdtype,
+      makeCxxInstance(tensor));
+}
 
-    static const auto jMethodNewTensor =
-        cls->getStaticMethod<facebook::jni::local_ref<TensorHybrid::javaobject>(
-            facebook::jni::alias_ref<facebook::jni::JByteBuffer>,
-            facebook::jni::alias_ref<jlongArray>,
-            facebook::jni::alias_ref<facebook::jni::JArrayInt>,
-            jint,
-            facebook::jni::alias_ref<jhybriddata>)>("nativeNewTensor");
-    return jMethodNewTensor(
-        cls,
-        jTensorBuffer,
-        jTensorShape,
-        jDimOrder,
-        jdtype,
-        makeCxxInstance(tensor));
+TensorPtr JTensor::newTensorFromJTensor(
+    facebook::jni::alias_ref<JTensor::javaobject> jtensor) {
+  static auto cls = JTensor::javaClassStatic();
+  static const auto dtypeMethod = cls->getMethod<jint()>("dtypeJniCode");
+  jint jdtype = dtypeMethod(jtensor);
+
+  static const auto shapeField = cls->getField<jlongArray>("shape");
+  auto jshape = jtensor->getFieldValue(shapeField);
+
+  static const auto dimOrderField =
+      cls->getField<facebook::jni::JArrayInt>("dimOrder");
+  auto jdim_order = jtensor->getFieldValue(dimOrderField);
+
+  static auto dataBufferMethod = cls->getMethod<
+      facebook::jni::local_ref<facebook::jni::JBuffer::javaobject>()>(
+      "getRawDataBuffer");
+  facebook::jni::local_ref<facebook::jni::JBuffer> jbuffer =
+      dataBufferMethod(jtensor);
+
+  const auto rank = jshape->size();
+
+  const auto shapeArr = jshape->getRegion(0, rank);
+  std::vector<executorch::aten::SizesType> shape_vec;
+  shape_vec.reserve(rank);
+
+  int64_t numel = 1;
+  for (int i = 0; i < rank; i++) {
+    shape_vec.push_back(shapeArr[i]);
+  }
+  for (int i = rank - 1; i >= 0; --i) {
+    numel *= shapeArr[i];
   }
 
-  static TensorPtr newTensorFromJTensor(
-      facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor) {
-    static auto cls = TensorHybrid::javaClassStatic();
-    static const auto dtypeMethod = cls->getMethod<jint()>("dtypeJniCode");
-    jint jdtype = dtypeMethod(jtensor);
-
-    static const auto shapeField = cls->getField<jlongArray>("shape");
-    auto jshape = jtensor->getFieldValue(shapeField);
-
-    static const auto dimOrderField =
-        cls->getField<facebook::jni::JArrayInt>("dimOrder");
-    auto jdim_order = jtensor->getFieldValue(dimOrderField);
-
-    static auto dataBufferMethod = cls->getMethod<
-        facebook::jni::local_ref<facebook::jni::JBuffer::javaobject>()>(
-        "getRawDataBuffer");
-    facebook::jni::local_ref<facebook::jni::JBuffer> jbuffer =
-        dataBufferMethod(jtensor);
-
-    const auto rank = jshape->size();
-
-    const auto shapeArr = jshape->getRegion(0, rank);
-    std::vector<executorch::aten::SizesType> shape_vec;
-    shape_vec.reserve(rank);
-
-    int64_t numel = 1;
-    for (int i = 0; i < rank; i++) {
-      shape_vec.push_back(shapeArr[i]);
-    }
-    for (int i = rank - 1; i >= 0; --i) {
-      numel *= shapeArr[i];
-    }
-
-    std::vector<executorch::aten::DimOrderType> dim_order_vec;
-    dim_order_vec.reserve(rank);
-    if (!jdim_order || jdim_order->size() != rank) {
+  std::vector<executorch::aten::DimOrderType> dim_order_vec;
+  dim_order_vec.reserve(rank);
+  if (!jdim_order || jdim_order->size() != rank) {
+    jni_helper::throwExecutorchException(
+        static_cast<uint32_t>(Error::InvalidArgument),
+        "Tensor dim_order size must match shape size");
+    return nullptr;
+  }
+  const auto dimOrderArr = jdim_order->getRegion(0, rank);
+  std::vector<char> seen_dim(rank, 0);
+  for (int i = 0; i < rank; i++) {
+    const jint d = dimOrderArr[i];
+    if (d < 0 || d >= static_cast<jint>(rank) || seen_dim[d] != 0) {
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument),
-          "Tensor dim_order size must match shape size");
+          "Tensor dim_order must be a permutation of shape dimensions");
       return nullptr;
     }
-    const auto dimOrderArr = jdim_order->getRegion(0, rank);
-    std::vector<char> seen_dim(rank, 0);
-    for (int i = 0; i < rank; i++) {
-      const jint d = dimOrderArr[i];
-      if (d < 0 || d >= static_cast<jint>(rank) || seen_dim[d] != 0) {
-        jni_helper::throwExecutorchException(
-            static_cast<uint32_t>(Error::InvalidArgument),
-            "Tensor dim_order must be a permutation of shape dimensions");
-        return nullptr;
-      }
-      seen_dim[d] = 1;
-      dim_order_vec.push_back(static_cast<executorch::aten::DimOrderType>(d));
-    }
-
-    JNIEnv* jni = facebook::jni::Environment::current();
-    if (java_dtype_to_scalar_type.count(jdtype) == 0) {
-      std::stringstream ss;
-      ss << "Unknown Tensor jdtype: [" << jdtype << "]";
-      jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
-      return nullptr;
-    }
-    ScalarType scalar_type = java_dtype_to_scalar_type.at(jdtype);
-    const jlong dataCapacity = jni->GetDirectBufferCapacity(jbuffer.get());
-    if (dataCapacity < 0) {
-      std::stringstream ss;
-      ss << "Tensor buffer is not direct or has invalid capacity";
-      jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
-      return nullptr;
-    }
-    const size_t elementSize = executorch::runtime::elementSize(scalar_type);
-    const jlong expectedElements = static_cast<jlong>(numel);
-    const jlong expectedBytes =
-        expectedElements * static_cast<jlong>(elementSize);
-    const bool matchesElements = dataCapacity == expectedElements;
-    const bool matchesBytes = dataCapacity == expectedBytes;
-    if (!matchesElements && !matchesBytes) {
-      std::stringstream ss;
-      ss << "Tensor dimensions(elements number: " << numel
-         << ") inconsistent with buffer capacity " << dataCapacity
-         << " (element size bytes: " << elementSize << ")";
-      jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
-      return nullptr;
-    }
-    return for_blob(
-               jni->GetDirectBufferAddress(jbuffer.get()),
-               shape_vec,
-               scalar_type)
-        .dim_order(std::move(dim_order_vec))
-        .make_tensor_ptr();
+    seen_dim[d] = 1;
+    dim_order_vec.push_back(static_cast<executorch::aten::DimOrderType>(d));
   }
 
- private:
-  friend HybridBase;
-};
-
-class JEValue : public facebook::jni::JavaClass<JEValue> {
- public:
-  constexpr static const char* kJavaDescriptor =
-      "Lorg/pytorch/executorch/EValue;";
-
-  constexpr static int kTypeCodeTensor = 1;
-  constexpr static int kTypeCodeString = 2;
-  constexpr static int kTypeCodeDouble = 3;
-  constexpr static int kTypeCodeInt = 4;
-  constexpr static int kTypeCodeBool = 5;
-
-  static facebook::jni::local_ref<JEValue> newJEValueFromEValue(EValue evalue) {
-    if (evalue.isTensor()) {
-      static auto jMethodTensor =
-          JEValue::javaClassStatic()
-              ->getStaticMethod<facebook::jni::local_ref<JEValue>(
-                  facebook::jni::local_ref<TensorHybrid::javaobject>)>("from");
-      return jMethodTensor(
-          JEValue::javaClassStatic(),
-          TensorHybrid::newJTensorFromTensor(evalue.toTensor()));
-    } else if (evalue.isInt()) {
-      static auto jMethodTensor =
-          JEValue::javaClassStatic()
-              ->getStaticMethod<facebook::jni::local_ref<JEValue>(jlong)>(
-                  "from");
-      return jMethodTensor(JEValue::javaClassStatic(), evalue.toInt());
-    } else if (evalue.isDouble()) {
-      static auto jMethodTensor =
-          JEValue::javaClassStatic()
-              ->getStaticMethod<facebook::jni::local_ref<JEValue>(jdouble)>(
-                  "from");
-      return jMethodTensor(JEValue::javaClassStatic(), evalue.toDouble());
-    } else if (evalue.isBool()) {
-      static auto jMethodTensor =
-          JEValue::javaClassStatic()
-              ->getStaticMethod<facebook::jni::local_ref<JEValue>(jboolean)>(
-                  "from");
-      return jMethodTensor(JEValue::javaClassStatic(), evalue.toBool());
-    } else if (evalue.isString()) {
-      static auto jMethodTensor =
-          JEValue::javaClassStatic()
-              ->getStaticMethod<facebook::jni::local_ref<JEValue>(
-                  facebook::jni::local_ref<jstring>)>("from");
-      std::string str =
-          std::string(evalue.toString().begin(), evalue.toString().end());
-      return jMethodTensor(
-          JEValue::javaClassStatic(), facebook::jni::make_jstring(str));
-    }
+  JNIEnv* jni = facebook::jni::Environment::current();
+  if (java_dtype_to_scalar_type.count(jdtype) == 0) {
     std::stringstream ss;
-    ss << "Unknown EValue type: [" << static_cast<int>(evalue.tag) << "]";
+    ss << "Unknown Tensor jdtype: [" << jdtype << "]";
     jni_helper::throwExecutorchException(
         static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
-    return {};
+    return nullptr;
   }
-
-  static TensorPtr JEValueToTensorImpl(
-      facebook::jni::alias_ref<JEValue> JEValue) {
-    static const auto typeCodeField =
-        JEValue::javaClassStatic()->getField<jint>("mTypeCode");
-    const auto typeCode = JEValue->getFieldValue(typeCodeField);
-    if (JEValue::kTypeCodeTensor == typeCode) {
-      static const auto jMethodGetTensor =
-          JEValue::javaClassStatic()
-              ->getMethod<facebook::jni::alias_ref<TensorHybrid::javaobject>()>(
-                  "toTensor");
-      auto jtensor = jMethodGetTensor(JEValue);
-      return TensorHybrid::newTensorFromJTensor(jtensor);
-    }
+  ScalarType scalar_type = java_dtype_to_scalar_type.at(jdtype);
+  const jlong dataCapacity = jni->GetDirectBufferCapacity(jbuffer.get());
+  if (dataCapacity < 0) {
     std::stringstream ss;
-    ss << "Unknown EValue typeCode: " << typeCode;
+    ss << "Tensor buffer is not direct or has invalid capacity";
     jni_helper::throwExecutorchException(
         static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
-    return {};
+    return nullptr;
   }
-};
+  const size_t elementSize = executorch::runtime::elementSize(scalar_type);
+  const jlong expectedElements = static_cast<jlong>(numel);
+  const jlong expectedBytes =
+      expectedElements * static_cast<jlong>(elementSize);
+  const bool matchesElements = dataCapacity == expectedElements;
+  const bool matchesBytes = dataCapacity == expectedBytes;
+  if (!matchesElements && !matchesBytes) {
+    std::stringstream ss;
+    ss << "Tensor dimensions(elements number: " << numel
+       << ") inconsistent with buffer capacity " << dataCapacity
+       << " (element size bytes: " << elementSize << ")";
+    jni_helper::throwExecutorchException(
+        static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    return nullptr;
+  }
+  return for_blob(
+             jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type)
+      .dim_order(std::move(dim_order_vec))
+      .make_tensor_ptr();
+}
+
+facebook::jni::local_ref<JEValue> JEValue::newJEValueFromEValue(EValue evalue) {
+  if (evalue.isTensor()) {
+    static auto jMethodTensor =
+        JEValue::javaClassStatic()
+            ->getStaticMethod<facebook::jni::local_ref<JEValue>(
+                facebook::jni::local_ref<JTensor::javaobject>)>("from");
+    return jMethodTensor(
+        JEValue::javaClassStatic(),
+        JTensor::newJTensorFromTensor(evalue.toTensor()));
+  } else if (evalue.isInt()) {
+    static auto jMethodTensor =
+        JEValue::javaClassStatic()
+            ->getStaticMethod<facebook::jni::local_ref<JEValue>(jlong)>("from");
+    return jMethodTensor(JEValue::javaClassStatic(), evalue.toInt());
+  } else if (evalue.isDouble()) {
+    static auto jMethodTensor =
+        JEValue::javaClassStatic()
+            ->getStaticMethod<facebook::jni::local_ref<JEValue>(jdouble)>(
+                "from");
+    return jMethodTensor(JEValue::javaClassStatic(), evalue.toDouble());
+  } else if (evalue.isBool()) {
+    static auto jMethodTensor =
+        JEValue::javaClassStatic()
+            ->getStaticMethod<facebook::jni::local_ref<JEValue>(jboolean)>(
+                "from");
+    return jMethodTensor(JEValue::javaClassStatic(), evalue.toBool());
+  } else if (evalue.isString()) {
+    static auto jMethodTensor =
+        JEValue::javaClassStatic()
+            ->getStaticMethod<facebook::jni::local_ref<JEValue>(
+                facebook::jni::local_ref<jstring>)>("from");
+    std::string str =
+        std::string(evalue.toString().begin(), evalue.toString().end());
+    return jMethodTensor(
+        JEValue::javaClassStatic(), facebook::jni::make_jstring(str));
+  }
+  std::stringstream ss;
+  ss << "Unknown EValue type: [" << static_cast<int>(evalue.tag) << "]";
+  jni_helper::throwExecutorchException(
+      static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+  return {};
+}
+
+TensorPtr JEValue::JEValueToTensorImpl(
+    facebook::jni::alias_ref<JEValue> jevalue) {
+  static const auto typeCodeField =
+      JEValue::javaClassStatic()->getField<jint>("mTypeCode");
+  const auto typeCode = jevalue->getFieldValue(typeCodeField);
+  if (JEValue::kTypeCodeTensor == typeCode) {
+    static const auto jMethodGetTensor =
+        JEValue::javaClassStatic()
+            ->getMethod<facebook::jni::alias_ref<JTensor::javaobject>()>(
+                "toTensor");
+    auto jtensor = jMethodGetTensor(jevalue);
+    return JTensor::newTensorFromJTensor(jtensor);
+  }
+  std::stringstream ss;
+  ss << "Unknown EValue typeCode: " << typeCode;
+  jni_helper::throwExecutorchException(
+      static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+  return {};
+}
 
 class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
  private:
