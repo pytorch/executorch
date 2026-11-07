@@ -130,10 +130,9 @@ def _count(exported_program, target) -> int:
 
 
 def _run_explicit_layout_pass_manager(tester: CortexMTester) -> CortexMTester:
-    target_config = CortexMTargetConfig(cpu=CortexM.M55)
     tester.run_passes(
         CortexMRunPasses(
-            target_config=target_config,
+            target_config=tester.target_config,
             use_explicit_layout=True,
         )
     )
@@ -417,8 +416,77 @@ def test_implementation_transpose_conv2d_strided_pointwise(hardtanh):
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
 
-def test_explicit_layout_rejects_unsupported_spatial_operator():
-    tester = CortexMTester(UnsupportedAvgPool(), (torch.randn(1, 3, 8, 8),))
+def test_explicit_layout_preserves_unquantized_spatial_operator():
+    inputs = (torch.randn(1, 3, 8, 8),)
+    tester = _run_explicit_layout_passes(CortexMTester(UnsupportedAvgPool(), inputs))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.aten.avg_pool2d.default) == 1
+    tester.run_method_and_compare_outputs(inputs=inputs)
+    tester.to_executorch().serialize()
+
+
+def test_implementation_explicit_layout_unquantized_spatial_operator(cortex_m_target):
+    inputs = (torch.randn(1, 3, 8, 8),)
+    tester = _run_explicit_layout_passes(
+        CortexMTester(UnsupportedAvgPool(), inputs, target_config=cortex_m_target)
+    )
+    tester.to_executorch().serialize()
+    tester.run_method_and_compare_outputs(inputs=inputs)
+
+
+def _lower_mixed_spatial_fallback(pool_kind, target_config):
+    torch.manual_seed(0)
+    pool = (
+        torch.nn.MaxPool2d(3, 2, ceil_mode=True)
+        if pool_kind == "max"
+        else torch.nn.AvgPool2d(2, 2, divisor_override=3)
+    )
+    model = torch.nn.Sequential(
+        torch.nn.Conv2d(3, 4, 3, padding=1),
+        pool,
+        torch.nn.Conv2d(4, 5, 3, padding=1),
+    ).eval()
+    inputs = (torch.randn(1, 3, 8, 8),)
+    tester = _run_explicit_layout_passes(
+        CortexMTester(model, inputs, target_config=target_config)
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    pool_op = (
+        exir_ops.edge.aten.max_pool2d_with_indices.default
+        if pool_kind == "max"
+        else exir_ops.edge.aten.avg_pool2d.default
+    )
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 2
+    assert _count(program, pool_op) == 1
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 4
+    return tester
+
+
+@pytest.mark.parametrize("pool_kind", ["max", "avg"])
+def test_explicit_layout_mixed_spatial_fallback(pool_kind, cortex_m_target):
+    tester = _lower_mixed_spatial_fallback(pool_kind, cortex_m_target)
+    tester.run_method_and_compare_outputs(inputs=tester.example_inputs, qtol=1)
+    tester.to_executorch().serialize()
+
+
+@pytest.mark.parametrize("pool_kind", ["max", "avg"])
+def test_implementation_explicit_layout_mixed_spatial_fallback(
+    pool_kind, cortex_m_target
+):
+    tester = _lower_mixed_spatial_fallback(pool_kind, cortex_m_target)
+    tester.to_executorch().serialize()
+    tester.run_method_and_compare_outputs(inputs=tester.example_inputs, qtol=1)
+
+
+@pytest.mark.parametrize(
+    "model", [Conv2d(), torch.nn.MaxPool2d(2, 2)], ids=["conv", "max_pool"]
+)
+def test_explicit_layout_rejects_quantized_spatial_operator_in_implicit_layout(model):
+    tester = CortexMTester(
+        model.eval().to(memory_format=torch.channels_last),
+        (torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last),),
+    )
 
     with pytest.raises(Exception) as caught:
         _run_explicit_layout_passes(tester)

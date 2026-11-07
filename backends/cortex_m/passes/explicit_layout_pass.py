@@ -157,7 +157,14 @@ class CortexMCanonicalizeViewCopyPermutePass(CanonicalizeViewCopyPermutePass):
 class ValidateCortexMExplicitLayoutPass(ExportPass):
     def call(self, graph_module: GraphModule) -> PassResult:
         for node in graph_module.graph.nodes:
-            if node.target in _EXPLICIT_LAYOUT_OP_MAP:
+            if node.target in _EXPLICIT_LAYOUT_OP_MAP and (
+                node.meta.get("input_qparams") or node.meta.get("output_qparams")
+            ):
+                if (
+                    node.target == exir_ops.edge.aten.max_pool2d.default
+                    and skips_quantized_max_pool2d(node)
+                ):
+                    continue
                 raise RuntimeError(
                     "Cortex-M explicit layout requires every quantized spatial "
                     f"operator to be NHWC-eligible, but {node.target} was not. "
