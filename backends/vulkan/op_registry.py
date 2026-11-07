@@ -13,6 +13,7 @@ from typing import AbstractSet, Any, Callable, Dict, List, Optional, Tuple, Unio
 import executorch.backends.vulkan.custom_ops_lib  # noqa
 import executorch.backends.vulkan.utils as utils
 import torch
+from executorch.backends.vulkan.patterns.sdpa import check_llm_sdpa_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
@@ -1164,6 +1165,7 @@ def register_sdpa_with_kv_cache():
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_prepacking=True,
+        are_node_inputs_supported_fn=check_llm_sdpa_node,
     )
 
 
@@ -1178,6 +1180,7 @@ def register_sdpa_cpp_ops():
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
+        are_node_inputs_supported_fn=check_llm_sdpa_node,
     )
 
 
