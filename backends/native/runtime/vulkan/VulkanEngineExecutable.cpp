@@ -1786,6 +1786,23 @@ class VulkanEngineExecutable final : public EngineExecutable {
             storage_at(value_id),
             utils::kChannelsPacked);
       }
+      // ET-VK's softmax reads its input in the output's storage type and, for
+      // textures, its layout.
+      if ((key == "aten._softmax.default" ||
+           key == "aten._log_softmax.default") &&
+          na.name == "self" && na.arg.kind() == ArgKind::Tensor &&
+          valid(na.arg.as_tensor().id) && !graph_->val_is_tref(a)) {
+        const ValueId out_id = n.outputs.at(0).value_id;
+        const VkRef out = vref_at(out_id);
+        if (graph_->storage_type_of(a) != graph_->storage_type_of(out) ||
+            graph_->hashed_layout_of(a) != graph_->hashed_layout_of(out)) {
+          a = repack(
+              a,
+              g().value(na.arg.as_tensor().id),
+              storage_at(out_id),
+              layout_at(out_id));
+        }
+      }
       // ET-VK's pad picks its shader by the output's layout and storage
       // alone, which later layout steps can leave unlike its input's.
       if (key == "aten.constant_pad_nd.default" && na.name == "self" &&

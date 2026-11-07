@@ -22,11 +22,12 @@ Named-session operations remain ordered. Multi-worker scheduling is out of scope
 import asyncio
 import logging
 import threading
+import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Optional, Protocol
 
 from .multiplexed_worker_client import MultiplexedWorkerClient
 from .worker_client import WorkerError
@@ -93,6 +94,23 @@ class GenStats:
     # worker explicitly reported a known-empty, resumable token sequence.
     generated_token_ids: Optional[list[int]] = None
     cancelled: bool = False
+    terminal_received: bool = False
+
+
+class GenerationObserver(Protocol):
+    """Callbacks run on the runtime's event loop, independently of consumption."""
+
+    def output(self, arrived: float) -> None:
+        """Receive the first nonempty text's monotonic arrival time, at most once."""
+        ...
+
+    def record_stats(self, stats: GenStats) -> None:
+        """Receive terminal worker statistics once, possibly after cancellation.
+
+        No callback is made if the worker finishes without reporting statistics.
+        Generation errors remain on the iterator and are not observer events.
+        """
+        ...
 
 
 # Forwarded to WorkerClient.generate() as the per-request config it reads fields
@@ -127,6 +145,7 @@ def _copy_stats(stats: GenStats, s) -> None:
     stats.vision_encoder_ms = getattr(s, "vision_encoder_ms", None)
     stats.cancelled = getattr(s, "cancelled", False)
     stats.generated_token_ids = getattr(s, "generated_token_ids", None)
+    stats.terminal_received = True
 
 
 class _GenerationBridge:
@@ -139,6 +158,7 @@ class _GenerationBridge:
         request_id: Optional[int],
         mailbox_capacity: int = 256,
         max_buffered_chars: int = 1024 * 1024,
+        on_first_text=None,
     ):
         self._worker = worker
         self._prompt_text = prompt_text
@@ -148,6 +168,7 @@ class _GenerationBridge:
         self._loop = asyncio.get_running_loop()
         self._mailbox_capacity = mailbox_capacity
         self._max_buffered_chars = max_buffered_chars
+        self._on_first_text = on_first_text
         self._tokens = deque()
         self._buffered_chars = 0
         self._terminal = None
@@ -188,6 +209,14 @@ class _GenerationBridge:
         with self._mailbox_lock:
             if self.drop_tokens.is_set() or self._terminal is not None:
                 return
+            if token and self._on_first_text is not None:
+                try:
+                    self._loop.call_soon_threadsafe(
+                        self._on_first_text, time.monotonic()
+                    )
+                except RuntimeError:
+                    pass  # The event loop may have closed during shutdown.
+                self._on_first_text = None
             if (
                 len(self._tokens) >= self._mailbox_capacity
                 or self._buffered_chars + len(token) > self._max_buffered_chars
@@ -317,8 +346,17 @@ class _RuntimeOperation:
 class Generation:
     """Lazy request-scoped iterator; close it when abandoning consumption."""
 
-    def __init__(self, runtime, session_id, prompt, options, stats):
+    def __init__(
+        self,
+        runtime,
+        session_id,
+        prompt,
+        options,
+        stats,
+        observer: Optional[GenerationObserver] = None,
+    ):
         self.stats = stats if stats is not None else GenStats()
+        self.observer = observer
         self._runtime = runtime
         self._stream = None
         self._bridge = None
@@ -330,6 +368,17 @@ class Generation:
         self._cancel_requested = False
         self._closed = False
         self._iterator = runtime._generate_stream(session_id, prompt, options, self)
+
+    def _set_future(self, future):
+        self._future = future
+        observer = self.observer
+        if observer is not None:
+
+            def report_stats(_):
+                if self.stats.terminal_received:
+                    observer.record_stats(self.stats)
+
+            future.add_done_callback(report_stats)
 
     @property
     def request_id(self):
@@ -716,7 +765,14 @@ class SessionRuntime:
             if generation._cancel_requested:
                 self._worker.cancel(request_id)
             stream = self._worker.generate(
-                prompt.text or "", request, request_id=request_id
+                prompt.text or "",
+                request,
+                request_id=request_id,
+                on_first_text=(
+                    generation.observer.output
+                    if generation.observer is not None
+                    else None
+                ),
             )
         except BaseException:
             try:
@@ -728,7 +784,8 @@ class SessionRuntime:
         future = self._own_task(
             asyncio.create_task(self._native_terminal(stream, generation.stats))
         )
-        operation.future = generation._future = future
+        operation.future = future
+        generation._set_future(future)
         try:
             yield stream
             await asyncio.shield(future)
@@ -748,9 +805,15 @@ class SessionRuntime:
         prompt: PromptInput,
         options: GenerationOptions,
         stats: Optional[GenStats] = None,
+        *,
+        observer: Optional[GenerationObserver] = None,
     ) -> Generation:
-        """Return a lazy, cancellable stream compatible with async iteration."""
-        return Generation(self, session_id, prompt, options, stats)
+        """Return a lazy, cancellable stream compatible with async iteration.
+
+        An optional GenerationObserver receives first-text timing and terminal
+        statistics, even while consumption or cancellation cleanup is pending.
+        """
+        return Generation(self, session_id, prompt, options, stats, observer)
 
     async def _generate_stream(self, session_id, prompt, options, generation):
         out_stats = generation.stats
@@ -788,6 +851,11 @@ class SessionRuntime:
                 request_id,
                 self._mailbox_capacity,
                 self._max_buffered_chars,
+                on_first_text=(
+                    generation.observer.output
+                    if generation.observer is not None
+                    else None
+                ),
             )
             generation._bridge = bridge
             if generation._cancel_requested:
@@ -796,7 +864,7 @@ class SessionRuntime:
             try:
                 future = loop.run_in_executor(self._executor, bridge.run)
                 operation.future = future
-                generation._future = future
+                generation._set_future(future)
                 self._bridges.add(bridge)
                 future.add_done_callback(lambda _: self._bridges.discard(bridge))
             except BaseException:
