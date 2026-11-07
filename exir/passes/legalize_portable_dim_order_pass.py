@@ -16,6 +16,7 @@ from executorch.exir.dim_order_utils import (
     is_contiguous_dim_order,
 )
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
+from executorch.exir.tensor import dim_order_from_stride
 from torch._prims_common import is_contiguous_for_memory_format_or_false
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 
@@ -82,6 +83,10 @@ class LegalizePortableDimOrderPass(ExportPass):
     have the same dim order. When a copy would go wrong, the source is first
     copied into the dim order of the destination, and into its shape when the
     destination is channels last.
+
+    ATen returns the result of ``nonzero`` column by column, a dim order that
+    other portable kernels cannot read, so the pass copies it into the
+    default dim order.
     """
 
     _copy_op = exir_ops.edge.dim_order_ops._to_dim_order_copy.default
@@ -96,6 +101,8 @@ class LegalizePortableDimOrderPass(ExportPass):
     def call_operator(self, op, args, kwargs, meta):
         if op == exir_ops.edge.aten.copy.default or op in _IN_PLACE_COPY_OPS:
             return self._legalize_copy(op, args, kwargs, meta)
+        if op == exir_ops.edge.aten.nonzero.default:
+            return self._legalize_nonzero(op, args, kwargs, meta)
         if op not in self._target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
@@ -131,6 +138,20 @@ class LegalizePortableDimOrderPass(ExportPass):
             (legalized_input, *args[1:]),
             kwargs,
             meta,
+        )
+
+    def _legalize_nonzero(self, op, args, kwargs, meta):
+        result = super().call_operator(op, args, kwargs, meta)
+        tensor = result.to_tensor()
+        # The dim order the program gets, which for a single column differs
+        # from torch.Tensor.dim_order().
+        if dim_order_from_stride(tensor.stride(), tuple(tensor.shape)) == (0, 1):
+            return result
+        return super().call_operator(
+            self._copy_op,
+            (result,),
+            {"dim_order": get_dim_order(torch.contiguous_format, 2)},
+            _meta_with_own_memory(result),
         )
 
     def _legalize_copy(self, op, args, kwargs, meta):

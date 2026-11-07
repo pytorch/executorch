@@ -3072,6 +3072,24 @@ print("ran after its program was dropped")
         )
         self.assertIn("ran after its program was dropped", completed.stdout)
 
+    def test_program_data_separation_returns_constant(self) -> None:
+        class ReturnsBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("c", torch.tensor([1.0, 2.0, 3.0]))
+
+            def forward(self, x):
+                return self.c
+
+        eager_module = ReturnsBuffer()
+        inputs = (torch.zeros(3),)
+        program = to_edge(export(eager_module, inputs, strict=True)).to_executorch(
+            ExecutorchBackendConfig(external_constants=True)
+        )
+        data_buffer = bytes(program._tensor_data["_default_external_constant"])
+        executorch_module = self.load_fn(program.buffer, data_buffer)
+        torch.testing.assert_close(executorch_module.forward(inputs)[0], eager_module.c)
+
     def test_program_data_separation(self) -> None:
         eager_module = ModuleLinear()
         inputs = eager_module.get_inputs()

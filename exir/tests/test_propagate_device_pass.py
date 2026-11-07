@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import itertools
 import operator
 import unittest
 from copy import deepcopy
@@ -243,7 +242,7 @@ def _host_writer_config(write_view: bool, **kwargs) -> ExecutorchBackendConfig:
 
 
 def _skip_h2d_for_constants_config(
-    alloc_graph_input: bool, skip_constants: bool = True
+    skip_constants: bool = True,
 ) -> ExecutorchBackendConfig:
     return ExecutorchBackendConfig(
         emit_stacktrace=False,
@@ -251,7 +250,7 @@ def _skip_h2d_for_constants_config(
             skip_h2d_for_method_inputs=True, skip_h2d_for_constants=skip_constants
         ),
         enable_non_cpu_memory_planning=True,
-        memory_planning_pass=MemoryPlanningPass(alloc_graph_input=alloc_graph_input),
+        memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
     )
 
 
@@ -769,6 +768,9 @@ class TestPropagateDevicePass(unittest.TestCase):
                     emit_stacktrace=False,
                     propagate_device_config=device_config,
                     enable_non_cpu_memory_planning=True,
+                    memory_planning_pass=MemoryPlanningPass(
+                        alloc_graph_input=not skip_h2d
+                    ),
                 )
             )
             program = et._emitter_output.program
@@ -1651,9 +1653,10 @@ class TestPropagateDevicePass(unittest.TestCase):
                 skip_h2d_for_method_inputs=True
             ),
             enable_non_cpu_memory_planning=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
         )
 
-        for pipeline, program, gm in self._get_executorch_program(
+        for pipeline, _program, gm in self._get_executorch_program(
             model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
         ):
             with self.subTest(pipeline=pipeline):
@@ -1681,16 +1684,6 @@ class TestPropagateDevicePass(unittest.TestCase):
                     pipeline,
                     "Placeholder",
                     expected_index=0,
-                )
-
-                # Verify buffer device mapping: CUDA placeholders should
-                # have their memory planned on a CUDA buffer.
-                self._assert_nodes_buffer_device(
-                    cuda_ph,
-                    program,
-                    DeviceType.CUDA,
-                    pipeline,
-                    "Placeholder",
                 )
 
     def test_skip_d2h_for_method_outputs(self):
@@ -1766,6 +1759,7 @@ class TestPropagateDevicePass(unittest.TestCase):
                 skip_d2h_for_method_outputs=True,
             ),
             enable_non_cpu_memory_planning=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
         )
 
         for pipeline, program, gm in self._get_executorch_program(
@@ -1808,15 +1802,8 @@ class TestPropagateDevicePass(unittest.TestCase):
                     "Delegate getitem",
                 )
 
-                # Verify buffer device mapping: both input and output
-                # buffers should be on CUDA.
-                self._assert_nodes_buffer_device(
-                    cuda_ph,
-                    program,
-                    DeviceType.CUDA,
-                    pipeline,
-                    "Placeholder",
-                )
+                # Verify buffer device mapping: the output buffer should be
+                # on CUDA.
                 self._assert_nodes_buffer_device(
                     getitems,
                     program,
@@ -1843,9 +1830,10 @@ class TestPropagateDevicePass(unittest.TestCase):
                 skip_h2d_for_method_inputs=True
             ),
             enable_non_cpu_memory_planning=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
         )
 
-        for pipeline, program, gm in self._get_executorch_program(
+        for pipeline, _program, gm in self._get_executorch_program(
             model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
         ):
             with self.subTest(pipeline=pipeline):
@@ -1868,30 +1856,12 @@ class TestPropagateDevicePass(unittest.TestCase):
                 # Exactly 1 placeholder should be on CUDA (b, which feeds
                 # directly into the delegate and skips H2D). The other
                 # placeholder (a) feeds through sin() so it stays CPU.
-                cuda_ph, cpu_ph = self._collect_placeholders_by_device(gm)
+                cuda_ph, _ = self._collect_placeholders_by_device(gm)
                 self.assertEqual(
                     len(cuda_ph),
                     1,
                     f"[{pipeline}] Expected exactly 1 placeholder with CUDA "
                     f"device spec, got {len(cuda_ph)}",
-                )
-
-                # Verify buffer device mapping: the CUDA placeholder's
-                # buffer should be on CUDA, the CPU placeholder's buffer
-                # should be on CPU.
-                self._assert_nodes_buffer_device(
-                    cuda_ph,
-                    program,
-                    DeviceType.CUDA,
-                    pipeline,
-                    "CUDA placeholder",
-                )
-                self._assert_nodes_buffer_device(
-                    cpu_ph,
-                    program,
-                    DeviceType.CPU,
-                    pipeline,
-                    "CPU placeholder",
                 )
 
     def test_constant_feeding_device_delegate_is_copied(self):
@@ -1917,6 +1887,7 @@ class TestPropagateDevicePass(unittest.TestCase):
                     skip_h2d_for_method_inputs=skip
                 ),
                 enable_non_cpu_memory_planning=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=not skip),
             )
             with self.assertLogs(propagate_device_pass.logger, "WARNING") as logs:
                 results = self._get_executorch_program(
@@ -1941,8 +1912,7 @@ class TestPropagateDevicePass(unittest.TestCase):
         """With skip_h2d_for_constants=True, a buffer or parameter that only
         delegates on one device read, one or several, is planned in that
         device's memory for the whole method, with its data as the initial
-        state, so it needs no copy and no warning. Graph inputs being
-        unplanned does not change that."""
+        state, so it needs no copy and no warning."""
 
         class Buffer(torch.nn.Module):
             def __init__(self):
@@ -1964,22 +1934,16 @@ class TestPropagateDevicePass(unittest.TestCase):
             def forward(self, a):
                 return torch.add(torch.add(a, self.offset), self.offset)
 
-        for alloc_graph_input, model in itertools.product(
-            (True, False), (Buffer(), Parameter(), TwoDelegates())
-        ):
+        for model in (Buffer(), Parameter(), TwoDelegates()):
             with self.assertNoLogs(propagate_device_pass.logger, "WARNING"):
                 results = self._get_executorch_program(
                     model,
                     (torch.randn(2, 2),),
                     PerAddDeviceDelegatePartitioner(["cuda:0"]),
-                    _skip_h2d_for_constants_config(alloc_graph_input),
+                    _skip_h2d_for_constants_config(),
                 )
             for pipeline, program, gm in results:
-                with self.subTest(
-                    pipeline=pipeline,
-                    alloc_input=alloc_graph_input,
-                    model=type(model).__name__,
-                ):
+                with self.subTest(pipeline=pipeline, model=type(model).__name__):
                     self.assertEqual(_collect_device_copy_nodes(gm).h2d_nodes, [])
                     (offset,) = [
                         n
@@ -2072,7 +2036,7 @@ class TestPropagateDevicePass(unittest.TestCase):
                     model,
                     (torch.randn(2, 2),),
                     PerAddDeviceDelegatePartitioner(devices),
-                    _skip_h2d_for_constants_config(False, skip_constants),
+                    _skip_h2d_for_constants_config(skip_constants),
                 )
             warnings = [w for w in logs.output if "Constant 'b_offset'" in w]
             self.assertTrue(warnings)
@@ -2214,6 +2178,7 @@ class TestPropagateDevicePass(unittest.TestCase):
                     skip_h2d_for_method_inputs=True
                 ),
                 enable_non_cpu_memory_planning=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             )
             for pipeline, _program, gm in self._get_executorch_program(
                 Model(weight),
@@ -2385,8 +2350,9 @@ class TestPropagateDevicePass(unittest.TestCase):
                 skip_h2d_for_method_inputs=True
             ),
             enable_non_cpu_memory_planning=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
         )
-        for pipeline, program, gm in self._get_executorch_program(
+        for pipeline, _program, gm in self._get_executorch_program(
             model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
         ):
             with self.subTest(pipeline=pipeline):
@@ -2396,9 +2362,6 @@ class TestPropagateDevicePass(unittest.TestCase):
                 self.assertEqual(len(nodes.h2d_nodes), 1)
                 cuda_ph, _ = self._collect_placeholders_by_device(gm)
                 self.assertEqual(sorted(n.name for n in cuda_ph), ["a", "b"])
-                self._assert_nodes_buffer_device(
-                    cuda_ph, program, DeviceType.CUDA, pipeline, "Placeholder"
-                )
 
     def test_skip_h2d_copies_input_for_readers_off_device(self):
         """With skip_h2d_for_method_inputs=True, a method input that a device
@@ -2434,6 +2397,7 @@ class TestPropagateDevicePass(unittest.TestCase):
                 skip_h2d_for_method_inputs=True
             ),
             enable_non_cpu_memory_planning=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
         )
         cases = {
             "host op": (HostOp(), 2, DeviceAwarePartitioner("cuda:0")),
@@ -2502,6 +2466,7 @@ class TestPropagateDevicePass(unittest.TestCase):
                 skip_h2d_for_method_inputs=True
             ),
             enable_non_cpu_memory_planning=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
         )
         batch = torch.export.Dim("batch", min=2, max=8)
         ep = export(
@@ -2537,6 +2502,7 @@ class TestPropagateDevicePass(unittest.TestCase):
                 skip_h2d_for_method_inputs=True, skip_d2h_for_method_outputs=True
             ),
             enable_non_cpu_memory_planning=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
         )
         with self.assertNoLogs(propagate_device_pass.logger, "WARNING"):
             results = self._get_executorch_program(
@@ -2638,13 +2604,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         """Skipping a boundary copy is only complete when the runtime also stops reserving its own
         buffer for that tensor.
 
-        Memory planning allocates graph inputs and outputs by default. A planned input carries
-        allocation info, and the runtime fills a planned input by copying the caller's memory into the
-        buffer it reserved, so the copy the export asked to skip comes back at run time. For device
-        memory that copy is also a host memcpy into a device pointer, which crashes.
-
-        This pins the pairing the configuration needs, because the two settings live in different
-        places and nothing else connects them.
+        Memory planning allocates graph inputs and outputs by default. The runtime fills a planned
+        input by copying the caller's memory into the buffer it reserved, and it refuses to do that
+        for device memory, so a program with a planned input left on the device fails on every call.
+        The export refuses such a program, and the pairing below is what exports.
         """
 
         class Model(torch.nn.Module):
@@ -2671,18 +2634,15 @@ class TestPropagateDevicePass(unittest.TestCase):
             ]
             return planned(plan.inputs), planned(plan.outputs)
 
-        # Default planning reserves buffers, so the runtime copies into them despite the skip flags.
-        planned_inputs, planned_outputs = planned_io(
-            ExecutorchBackendConfig(
-                propagate_device_config=skip_copies,
-                enable_non_cpu_memory_planning=True,
+        with self.assertRaisesRegex(
+            ValueError, r"Input 'a' stays on cuda:0.*alloc_graph_input=False"
+        ):
+            planned_io(
+                ExecutorchBackendConfig(
+                    propagate_device_config=skip_copies,
+                    enable_non_cpu_memory_planning=True,
+                )
             )
-        )
-        self.assertTrue(
-            all(planned_inputs),
-            "graph inputs are expected to be planned by default, which is why the pairing below "
-            f"is needed, but got {planned_inputs}",
-        )
 
         # Asking planning to leave them alone is what actually removes the copy.
         planned_inputs, planned_outputs = planned_io(

@@ -204,6 +204,21 @@ TEST_F(MethodMetaTest, MethodMetaAttribute) {
   ASSERT_EQ(bad_access.error(), Error::InvalidArgument);
 }
 
+TEST_F(MethodMetaTest, ExternalConstantAttributesAreMemoryPlanned) {
+  load_program(
+      std::getenv("ET_MODULE_ADD_MUL_PROGRAM_PATH"), "add_mul_program");
+  Result<MethodMeta> method_meta =
+      programs_["add_mul_program"]->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+
+  ASSERT_EQ(method_meta->num_attributes(), 2);
+  for (size_t i = 0; i < method_meta->num_attributes(); ++i) {
+    auto attribute = method_meta->attribute_tensor_meta(i);
+    ASSERT_TRUE(attribute.ok());
+    EXPECT_TRUE(attribute->is_memory_planned()) << attribute->name();
+  }
+}
+
 TEST_F(MethodMetaTest, MemoryPlannedBufferDeviceDefaultsCpu) {
   Result<MethodMeta> method_meta = programs_["add"]->method_meta("forward");
   ASSERT_EQ(method_meta.error(), Error::Ok);

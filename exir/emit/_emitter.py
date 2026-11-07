@@ -467,29 +467,17 @@ class _Emitter(torch.fx.Interpreter):
         if spec.const:
             # Tensor with a blob we need to serialize. May not actually be constant at runtime
             # if it's a weight with an associated gradient.
-            spec_array_type = (
-                ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
-            )
+            storage = typing.cast(torch.UntypedStorage, spec.storage)
+            spec_array_type = ctypes.c_char * storage.nbytes()
 
-            # data_ptr() is dereferenced from the host below; for non-CPU storage
-            # (e.g. CUDA) that read can segfault instead of raising (#21545).
-            storage_device = typing.cast(torch.UntypedStorage, spec.storage).device
-            if spec.allocated_memory != 0 and storage_device.type != "cpu":
-                raise InternalError(
-                    self._emit_node_specific_error(
-                        self.node,
-                        f"Constant tensor storage is on device '{storage_device}', "
-                        "but constants serialized into the program must be in CPU "
-                        "memory. Move them to CPU before export (e.g. model.cpu()), "
-                        "or delegate the ops that use them to a backend that "
-                        "accepts device tensors.",
-                    )
-                )
+            # The read below is on the host, so copy a device constant there first.
+            if spec.allocated_memory != 0 and storage.device.type != "cpu":
+                storage = storage.cpu()
 
             buffer_data = (
                 bytes(
                     ctypes.cast(
-                        typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
+                        storage.data_ptr(),
                         ctypes.POINTER(spec_array_type),
                     ).contents
                 )

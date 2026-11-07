@@ -58,7 +58,9 @@ class TensorInfo final {
   executorch::aten::ScalarType scalar_type() const;
 
   /**
-   * Returns whether the tensor's memory was planned during export.
+   * Returns whether the tensor's memory was planned during export. Also true
+   * for constants, whose data belongs to the program or to an external data
+   * file.
    */
   bool is_memory_planned() const;
 

@@ -661,10 +661,11 @@ class TestEmit(unittest.TestCase):
             .executorch_program
         )
         self.assertTrue(
-            isinstance(program.execution_plan[0].values[3].val, OptionalTensorList)
+            isinstance(program.execution_plan[0].values[8].val, OptionalTensorList)
         )
         self._assertCallLength(program, 0, 3)
-        self._assertCallLength(program, 1, 4)
+        # The nonzero result is copied into the default dim order before index.
+        self._assertCallLength(program, 2, 4)
 
     def test_optional_float_list(self) -> None:
         class M(torch.nn.Module):
@@ -1853,13 +1854,12 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(program.constant_buffer[1].storage), 4)
         self.assertEqual(len(program.constant_buffer[2].storage), 4)
 
-    def test_emit_non_cpu_constant_raises(self) -> None:
-        # Like CUDA storage, "meta" storage is not host-readable, but needs no
-        # accelerator. Unguarded, it already fails with a wrapped "NULL pointer
-        # access" InternalError, so match on the device name.
+    def test_emit_meta_constant_raises(self) -> None:
+        # A constant on another device is serialized from a host copy, but
+        # "meta" storage holds no data to copy.
         model = torch.nn.Linear(4, 3).to("meta")
         edge = to_edge(export(model, (torch.ones(2, 4, device="meta"),), strict=True))
-        with self.assertRaisesRegex(InternalError, "on device 'meta'"):
+        with self.assertRaisesRegex(InternalError, "meta tensor"):
             edge.to_executorch()
 
     def test_non_persistent_buffer(self) -> None:
