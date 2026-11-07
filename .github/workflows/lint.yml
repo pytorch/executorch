@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 name: Lint
 
 on:
@@ -104,6 +109,11 @@ jobs:
           pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
           pip install -r requirements-lintrunner.txt
           lintrunner init
+
+      - name: Test dependency installation and pin updates
+        run: |
+          python -m unittest discover -s .ci/scripts/tests -p test_cu134_dependencies.py
+          python -m unittest discover -s .ci/scripts/tests -p test_update_pytorch_pin.py
 
       - name: Run linters
         env:
