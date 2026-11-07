@@ -11,9 +11,11 @@
 # build runs all three with a kernel bundle the build makes itself; an ESP32-C6
 # build runs the first two, with the Cadence kernels too, and must not link the
 # delegate; two more ESP32-S3 builds run the delegate alone, from a bundle with
-# no kernel libraries and from executorch_add_backend with no bundle. Also
-# checks that stale or mismatched bundles fail at configure time, and that an
-# app declaring nothing links to the same size as one without the component.
+# no kernel libraries and from executorch_add_backend with no bundle, and the
+# component's own example runs too. Also checks the version stamping, the
+# manifest and SBOM, that stale or mismatched bundles fail at configure time,
+# and that an app declaring nothing links to the same size as one without the
+# component.
 
 set -euo pipefail
 
@@ -36,6 +38,9 @@ collect_artifacts() {
     fi
 }
 trap collect_artifacts EXIT
+
+# Needs only git, so a stamp regression fails before the toolchain installs.
+bash examples/espressif/test_version_stamp.sh
 
 bash examples/espressif/setup.sh --minimal --targets=esp32s3,esp32c6 2>&1 \
     | tee "${build_dir}/setup.log"
@@ -66,8 +71,10 @@ models="${cpu_models};${build_dir}/delegate.pte"
 
 component_dir="${build_dir}/components/executorch"
 kernels_dir="${build_dir}/smoke_kernels"
-bash examples/espressif/build_idf_component.sh --out "${component_dir}" \
+bash examples/espressif/build_idf_component.sh --allow-dev-stamp --out "${component_dir}" \
     2>&1 | tee "${build_dir}/generate.log"
+compote manifest lint "${component_dir}"
+(cd "${component_dir}" && esp-idf-sbom manifest validate idf_component.yml sbom.yml sbom_*.yml)
 gen_kernels() {
     local out=$1
     shift
@@ -261,9 +268,9 @@ run_firmware() {
     local firmware_dir="${build_dir}/firmware-${name}"
     IDF_TARGET="${chip}" idf.py -C "${project}" -B "${firmware_dir}" merge-bin \
         > "${build_dir}/merge-${name}.log" 2>&1
+    local elf=("${firmware_dir}"/*.elf)
     timeout 130s esp-emu --chip "${chip}" \
-        --firmware "${firmware_dir}/merged-binary.bin" \
-        --elf "${firmware_dir}/et_component_smoke.elf" \
+        --firmware "${firmware_dir}/merged-binary.bin" --elf "${elf[0]}" \
         --net user --timeout 120s --exit-on 'Program complete.' \
         2>&1 | tee "${build_dir}/emulator-${name}.log"
     for marker in "$@" "ET_COMPONENT_SMOKE: PASS" "Program complete."; do
@@ -348,5 +355,10 @@ if (( 16#${registry} > 64 )); then
     echo "FAIL: backend-esp32s3 reserves $((16#${registry})) B for kernels it never registers" >&2
     exit 1
 fi
+
+# The example the component ships, built through its override_path.
+example="${component_dir}/examples/hello_executorch"
+project="${example}" consumer example esp32s3 build
+project="${example}" run_firmware example esp32s3 "smoke: PASS"
 
 echo "PASS: generated ESP-IDF component ran every build on the emulator."

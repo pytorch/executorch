@@ -8,8 +8,9 @@
 
 /*
  * Runs each embedded model (see main/CMakeLists.txt) through et_model on the
- * forward test cases that split_bundled_program.py extracted, and compares the
- * outputs with the expected ones.
+ * forward test cases in its .io file, which ExecuTorch's
+ * examples/espressif/idf_component_smoke/split_bundled_program.py extracts from
+ * a bundled program, and compares the outputs with the expected ones.
  */
 
 #include <math.h>
