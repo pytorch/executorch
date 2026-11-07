@@ -69,6 +69,11 @@ using executorch::runtime::EventTracerEntry;
 #include <executorch/backends/arm/runtime/VGFBoundaryIO.h>
 #include <executorch/backends/arm/runtime/VGFExecutionStats.h>
 #include <executorch/backends/arm/runtime/VGFSetup.h>
+#include <executorch/backends/arm/runtime/VGFSharedDevice.h>
+#if defined(EXECUTORCH_VGF_SHARED_DEVICE) && EXECUTORCH_VGF_SHARED_DEVICE
+#include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
+#include <exception>
+#endif
 
 namespace executorch {
 namespace backends {
@@ -93,22 +98,6 @@ VkResult vkml_load_extensions(VkDevice const* device) {
   ET_LOG(Error, "Failed to load VKML extensions");
   return VK_ERROR_UNKNOWN;
 }
-
-/*
- * Fetch vulkan basic objects - intended to be replaced with a shared
- * device setup with the Vulkan backend.
- */
-VkResult vkml_allocate_basics(
-    VkInstance* instance,
-    VkPhysicalDevice* physical_device,
-    VkDevice* device,
-    VkQueue* queue,
-    VkCommandPool* command_pool,
-    uint32_t* queue_family_index,
-    bool request_neural_statistics,
-    bool* neural_statistics_device_enabled,
-    bool request_host_memory_import,
-    VgfHostMemoryImportCapabilities* host_memory_import_capabilities);
 
 // Runtime configuration and helper functions for VGF execution.
 constexpr const char* kVgfZeroCopyIoEnv = "ET_VGF_ZERO_COPY";
@@ -529,7 +518,9 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         neural_statistics_config_.requested,
         &neural_statistics_device_enabled_,
         request_host_memory_import,
-        &host_memory_import_capabilities_);
+        &host_memory_import_capabilities_,
+        &instance_lifetime_,
+        nullptr);
     if (result != VK_SUCCESS) {
       ET_LOG(
           Error, "Failed to initialize the Vulkan device error 0x%08X", result);
@@ -585,6 +576,13 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   ~VGFBackend() override = default;
 
   bool is_available() const override {
+#if defined(EXECUTORCH_VGF_SHARED_DEVICE) && EXECUTORCH_VGF_SHARED_DEVICE
+    // No RuntimeSpec is available during a backend availability probe. In a
+    // combined build, defer device capability checks to init(), which resolves
+    // the actual key/device. Probing an unrelated default GPU here can reject
+    // a valid externally registered device or create a redundant VkDevice.
+    return true;
+#else
     auto* self = const_cast<VGFBackend*>(this);
     const std::lock_guard<std::mutex> lock(mutex_);
     ET_LOG(Debug, "Checking VGFBackend is available");
@@ -595,6 +593,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     // Existing delegates, if any, keep their shared device alive.
     self->release_basics_if_unused();
     return available;
+#endif
   }
 
   Result<DelegateHandle*> init(
@@ -604,6 +603,12 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     auto* self = const_cast<VGFBackend*>(this);
     const std::lock_guard<std::mutex> lock(mutex_);
     ET_LOG(Debug, "Entered VGF init");
+
+    auto resolved = resolve_vgf_shared_device_state(context);
+    if (!resolved.ok()) {
+      return resolved.error();
+    }
+    const auto shared_state = resolved.get();
 
 #ifdef ET_EVENT_TRACER_ENABLED
     EventTracer* event_tracer = context.event_tracer();
@@ -620,13 +625,15 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
             /*delegate_debug_id=*/-1);
 #endif
 
-    self->ensure_initialized();
+    if (!shared_state) {
+      self->ensure_initialized();
+    }
 
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, ensure_initialized_event);
 #endif
 
-    if (!is_initialized_) {
+    if (!shared_state && !is_initialized_) {
 #ifdef ET_EVENT_TRACER_ENABLED
       event_tracer_end_profiling_delegate(event_tracer, init_total_event);
 #endif
@@ -656,17 +663,25 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       self->release_basics_if_unused();
       return Error::MemoryAllocationFailed;
     }
+    const auto statistics_config = shared_state
+        ? get_vgf_neural_statistics_runtime_config()
+        : neural_statistics_config_;
     new (repr) VgfRepr(
-        vk_instance,
-        vk_physical_device,
-        vk_device,
-        vk_queue,
-        vk_command_pool,
-        vk_queue_family_index,
-        neural_statistics_config_.requested,
-        neural_statistics_device_enabled_,
-        neural_statistics_config_.mode_index,
-        host_memory_import_capabilities_);
+        shared_state ? shared_state->device->instance() : vk_instance,
+        shared_state ? shared_state->device->physical_device()
+                     : vk_physical_device,
+        shared_state ? shared_state->device->device() : vk_device,
+        shared_state ? VK_NULL_HANDLE : vk_queue,
+        shared_state ? shared_state->command_pool : vk_command_pool,
+        shared_state ? shared_state->device->queue_family_index()
+                     : vk_queue_family_index,
+        statistics_config.requested,
+        shared_state ? shared_state->neural_statistics_device_enabled
+                     : neural_statistics_device_enabled_,
+        statistics_config.mode_index,
+        shared_state ? shared_state->host_memory_import_capabilities
+                     : host_memory_import_capabilities_,
+        shared_state);
 
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, allocate_repr_event);
@@ -677,13 +692,14 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         /*delegate_debug_id=*/-1);
 #endif
 
+    const bool valid_vgf = repr->with_shared_queue([&]() {
 #ifdef ET_EVENT_TRACER_ENABLED
-    auto valid_vgf = repr->process_vgf(
-        vgf_data, processed->size(), compile_specs, event_tracer);
+      return repr->process_vgf(
+          vgf_data, processed->size(), compile_specs, event_tracer);
 #else
-    auto valid_vgf =
-        repr->process_vgf(vgf_data, processed->size(), compile_specs);
+      return repr->process_vgf(vgf_data, processed->size(), compile_specs);
 #endif
+    });
 
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, process_vgf_event);
@@ -695,7 +711,6 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 #endif
       ET_LOG(Error, "Failed to process VGF blob.");
       // The runtime never receives this handle, so it cannot destroy it.
-      self->wait_for_device_idle();
       repr->~VgfRepr();
       self->release_basics_if_unused();
       return Error::Internal;
@@ -712,6 +727,9 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         repr,
         self->next_mapped_boundary_generation_++});
     ++self->live_delegates_;
+    if (!shared_state) {
+      ++self->live_legacy_delegates_;
+    }
     return repr;
   }
 
@@ -719,9 +737,21 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (handle == nullptr) {
+      return Error::InvalidArgument;
+    }
+    auto* repr = static_cast<VgfRepr*>(handle);
+    return repr->with_shared_queue(
+        [&]() { return execute_locked(context.event_tracer(), handle, args); });
+  }
+
+  Error execute_locked(
+      executorch::runtime::EventTracer* event_tracer,
+      DelegateHandle* handle,
+      Span<EValue*> args) const {
     // The queue and command pool are shared by all VGF delegates.
     // Serialize their host access with initialization and teardown.
-    const std::lock_guard<std::mutex> lock(mutex_);
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
     if (!repr->is_execution_valid()) {
       ET_LOG(
@@ -765,7 +795,6 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     VGF_STATS_EXECUTION(handle);
 
 #ifdef ET_EVENT_TRACER_ENABLED
-    EventTracer* event_tracer = context.event_tracer();
 
     EventTracerEntry vgf_execute_event = event_tracer_start_profiling_delegate(
         event_tracer,
@@ -777,7 +806,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         "VGF_COPY_INPUTS",
         /*delegate_debug_id=*/-1);
 #else
-    (void)context;
+    (void)event_tracer;
 #endif
 
     const bool zero_copy_requested = vgf_zero_copy_io_build_enabled() &&
@@ -1080,7 +1109,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       // while the caller's EValue storage is still alive. On device loss,
       // synchronously destroy this representation's Vulkan children,
       // including imported VkDeviceMemory, before returning.
-      const VkResult idle_result = wait_for_device_idle();
+      const VkResult idle_result = repr->wait_for_device_idle_locked();
       if (idle_result == VK_ERROR_DEVICE_LOST) {
         ET_LOG(
             Error,
@@ -1188,6 +1217,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     const std::lock_guard<std::mutex> lock(mutex_);
     ET_CHECK_MSG(live_delegates_ > 0, "Unbalanced VGF delegate destruction");
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
+    const bool legacy_device = !repr->uses_shared_device();
     // destroy() already holds mutex_; unregister before freeing the IO.
     self->mapped_boundary_reprs_.erase(
         std::remove_if(
@@ -1199,35 +1229,25 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         self->mapped_boundary_reprs_.end());
     // A failed execution may have submitted work without completing its
     // fence wait. Drain it before freeing any per-delegate resources.
-    self->wait_for_device_idle();
     repr->~VgfRepr();
     --self->live_delegates_;
+    if (legacy_device) {
+      ET_CHECK_MSG(
+          live_legacy_delegates_ > 0, "Unbalanced legacy VGF destruction");
+      --self->live_legacy_delegates_;
+    }
     self->release_basics_if_unused();
   }
 
  private:
   // Call only with mutex_ held. Return the idle result so execute() can
   // synchronously tear down its VgfRepr on terminal device loss.
-  VkResult wait_for_device_idle() const {
-    if (vk_device == VK_NULL_HANDLE) {
-      return VK_SUCCESS;
-    }
-
-    const VkResult result = vkDeviceWaitIdle(vk_device);
-    if (result != VK_SUCCESS) {
-      ET_LOG(Error, "VGF teardown: vkDeviceWaitIdle failed: %d", result);
-    }
-    ET_CHECK_MSG(
-        result == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST,
-        "Cannot free VGF resources while device completion is unknown");
-    return result;
-  }
 
   // Call only with mutex_ held, after destroying the last VgfRepr (or
   // when a probe/initialization failed without publishing a handle).
   // Any submitted work must have been drained before freeing the repr.
   void release_basics_if_unused() {
-    if (live_delegates_ != 0) {
+    if (live_legacy_delegates_ != 0) {
       return;
     }
     if (vk_command_pool != VK_NULL_HANDLE) {
@@ -1239,9 +1259,12 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       vk_device = VK_NULL_HANDLE;
     }
     if (vk_instance != VK_NULL_HANDLE) {
-      vkDestroyInstance(vk_instance, nullptr);
+      if (!instance_lifetime_) {
+        vkDestroyInstance(vk_instance, nullptr);
+      }
       vk_instance = VK_NULL_HANDLE;
     }
+    instance_lifetime_.reset();
     vk_physical_device = VK_NULL_HANDLE;
     vk_queue = VK_NULL_HANDLE;
     vk_queue_family_index = UINT32_MAX;
@@ -1263,6 +1286,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   std::vector<MappedBoundaryEntry> mapped_boundary_reprs_;
   uint64_t next_mapped_boundary_generation_ = 1;
   size_t live_delegates_ = 0;
+  size_t live_legacy_delegates_ = 0;
   VkInstance vk_instance = VK_NULL_HANDLE;
   VkPhysicalDevice vk_physical_device = VK_NULL_HANDLE;
   VkDevice vk_device = VK_NULL_HANDLE;
@@ -1272,6 +1296,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   VgfNeuralStatisticsRuntimeConfig neural_statistics_config_{};
   bool neural_statistics_device_enabled_ = false;
   VgfHostMemoryImportCapabilities host_memory_import_capabilities_{};
+  std::shared_ptr<void> instance_lifetime_;
   bool is_initialized_ = false;
 };
 
@@ -1310,7 +1335,9 @@ VkResult vkml_allocate_basics(
     bool request_neural_statistics,
     bool* neural_statistics_device_enabled,
     bool request_host_memory_import,
-    VgfHostMemoryImportCapabilities* host_memory_import_capabilities) {
+    VgfHostMemoryImportCapabilities* host_memory_import_capabilities,
+    std::shared_ptr<void>* instance_lifetime,
+    vulkan_shared::SharedVulkanDeviceCreateInfo* shared_info) {
   VkResult result;
 
   if (neural_statistics_device_enabled != nullptr) {
@@ -1320,6 +1347,25 @@ VkResult vkml_allocate_basics(
     *host_memory_import_capabilities = {};
   }
 
+#if defined(EXECUTORCH_VGF_SHARED_DEVICE) && EXECUTORCH_VGF_SHARED_DEVICE
+  // One instance-loaded Volk dispatch domain, including availability probes and
+  // non-shared VGF execution in a combined build. Never switch global dispatch
+  // to a private instance or a single logical device.
+  if (instance_lifetime == nullptr) {
+    return VK_ERROR_INITIALIZATION_FAILED;
+  }
+  try {
+    auto owner = vkcompute::vkapi::runtime_owner();
+    *instance = owner->instance();
+    *instance_lifetime = std::move(owner);
+  } catch (const std::exception& error) {
+    ET_LOG(Error, "VGF canonical instance creation failed: %s", error.what());
+    return VK_ERROR_INITIALIZATION_FAILED;
+  }
+  if (!vkCreateTensorARM) {
+    return VK_ERROR_FEATURE_NOT_PRESENT;
+  }
+#else
   if (VK_SUCCESS != volkInitialize()) {
     ET_LOG(Error, "Volk failed to initialize");
     return VK_ERROR_INITIALIZATION_FAILED;
@@ -1407,6 +1453,8 @@ VkResult vkml_allocate_basics(
     return VK_ERROR_FEATURE_NOT_PRESENT;
   }
 
+#endif
+
   // Pick first GPU
   uint32_t gpu_count = 0;
   vkEnumeratePhysicalDevices(*instance, &gpu_count, nullptr);
@@ -1422,6 +1470,13 @@ VkResult vkml_allocate_basics(
     return result;
   }
 
+  VkPhysicalDeviceProperties device_properties{};
+  vkGetPhysicalDeviceProperties(*physical_device, &device_properties);
+  if (device_properties.apiVersion < VK_API_VERSION_1_3) {
+    ET_LOG(Error, "VGF requires Vulkan 1.3");
+    return VK_ERROR_INCOMPATIBLE_DRIVER;
+  }
+
   // Find suitable queue family
   uint32_t qf_count;
   vkGetPhysicalDeviceQueueFamilyProperties(
@@ -1431,8 +1486,9 @@ VkResult vkml_allocate_basics(
       *physical_device, &qf_count, qps.data());
   uint32_t qf = UINT32_MAX;
   for (uint32_t i = 0; i < qf_count; ++i) {
-    if (qps[i].queueFlags &
-        (VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM)) {
+    constexpr VkQueueFlags required =
+        VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM;
+    if (qps[i].queueCount > 0 && (qps[i].queueFlags & required) == required) {
       qf = i;
       break;
     }
@@ -1457,9 +1513,19 @@ VkResult vkml_allocate_basics(
   };
 
   // Query features
+  VkPhysicalDeviceTensorFeaturesARM available_tensor{};
+  available_tensor.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM;
+  VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT available_replicated{};
+  available_replicated.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_REPLICATED_COMPOSITES_FEATURES_EXT;
+  available_replicated.pNext = &available_tensor;
+  VkPhysicalDeviceVulkan13Features available_13{};
+  available_13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+  available_13.pNext = &available_replicated;
   VkPhysicalDeviceShaderBfloat16FeaturesKHR available_bfloat16{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
-      .pNext = nullptr,
+      .pNext = &available_13,
   };
   VkPhysicalDeviceVulkan12Features available_12 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
@@ -1500,6 +1566,16 @@ VkResult vkml_allocate_basics(
     return VK_ERROR_FEATURE_NOT_PRESENT;
   }
 
+  if (!available_tensor.tensors || !available_tensor.shaderTensorAccess ||
+      !available_13.synchronization2 || !available_13.maintenance4 ||
+      !available_13.pipelineCreationCacheControl ||
+      !available_12.hostQueryReset || !available_12.storageBuffer8BitAccess ||
+      !available_12.shaderInt8 || !available_12.vulkanMemoryModel ||
+      !available_2.features.shaderInt16 || !available_2.features.shaderInt64) {
+    ET_LOG(Error, "Required VGF device features are unavailable");
+    return VK_ERROR_FEATURE_NOT_PRESENT;
+  }
+
   // Select features
   VkPhysicalDeviceShaderBfloat16FeaturesKHR features_bfloat16{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
@@ -1509,13 +1585,13 @@ VkResult vkml_allocate_basics(
   VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT features_c{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_REPLICATED_COMPOSITES_FEATURES_EXT,
       nullptr};
-  features_c.shaderReplicatedComposites = true;
+  features_c.shaderReplicatedComposites = VK_FALSE;
   VkPhysicalDeviceVulkan13Features features_13{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, nullptr};
   features_13.synchronization2 = true;
   features_13.maintenance4 = true;
   features_13.pipelineCreationCacheControl = true;
-  features_13.pNext = &features_c;
+  features_13.pNext = nullptr;
   VkPhysicalDeviceVulkan12Features features_12{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, nullptr};
   features_12.hostQueryReset = true;
@@ -1638,7 +1714,7 @@ VkResult vkml_allocate_basics(
   if (bfloat16_extension_available && bfloat16_feature_available) {
     requested_exts.push_back(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
     features_bfloat16.shaderBFloat16Type = VK_TRUE;
-    features_c.pNext = &features_bfloat16;
+    features_13.pNext = &features_bfloat16;
     ET_LOG(
         Info,
         "Enabled %s with shaderBFloat16Type",
@@ -1701,6 +1777,28 @@ VkResult vkml_allocate_basics(
   }
 #endif
 
+  // This extension enables the optional SPIR-V ReplicatedCompositesEXT
+  // capability. Models that actually use it still need device support.
+  const bool replicated_composites_extension_available = std::any_of(
+      available.begin(), available.end(), [](const auto& extension) {
+        return std::strcmp(
+                   extension.extensionName,
+                   VK_EXT_SHADER_REPLICATED_COMPOSITES_EXTENSION_NAME) == 0;
+      });
+  if (replicated_composites_extension_available &&
+      available_replicated.shaderReplicatedComposites == VK_TRUE) {
+    features_c.shaderReplicatedComposites = VK_TRUE;
+    // Chain on top of BF16, if BF16 was independently selected above.
+    features_c.pNext = features_13.pNext;
+    features_13.pNext = &features_c;
+  } else {
+    ET_LOG(
+        Info,
+        "Optional VK_EXT_shader_replicated_composites is unsupported; "
+        "VGF shaders using ReplicatedCompositesEXT will require a "
+        "different driver or shader recompilation");
+  }
+
   for (auto& ext : dev_exts) {
     bool found = false;
     for (auto const& ext_avail : available) {
@@ -1710,7 +1808,14 @@ VkResult vkml_allocate_basics(
       }
     }
     if (found == false) {
-      ET_LOG(Info, "Failed to find extension %s", ext);
+      // maintenance4 is enabled through core Vulkan 1.3 above.
+      if (std::strcmp(ext, "VK_KHR_maintenance4") == 0 ||
+          std::strcmp(
+              ext, VK_EXT_SHADER_REPLICATED_COMPOSITES_EXTENSION_NAME) == 0) {
+        continue;
+      }
+      ET_LOG(Error, "Required VGF extension is missing: %s", ext);
+      return VK_ERROR_EXTENSION_NOT_PRESENT;
     }
   }
 
@@ -1730,8 +1835,7 @@ VkResult vkml_allocate_basics(
     *device = VK_NULL_HANDLE;
     return result;
   }
-  // Load the device with volk and populate function pointers
-  volkLoadDevice(*device);
+  // Keep instance-loaded loader dispatch; multiple VkDevices coexist.
 
   if (host_memory_import_capabilities != nullptr) {
     // Only a successful vkCreateDevice makes extension enablement
@@ -1755,6 +1859,60 @@ VkResult vkml_allocate_basics(
   }
 
   vkGetDeviceQueue(*device, qf, 0, queue);
+
+  if (shared_info != nullptr) {
+    shared_info->instance = *instance;
+    shared_info->physical_device = *physical_device;
+    shared_info->device = *device;
+    shared_info->queue = *queue;
+    shared_info->queue_family_index = qf;
+    shared_info->enabled_device_extensions.clear();
+    for (const char* extension : requested_exts) {
+      shared_info->enabled_device_extensions.emplace_back(extension);
+    }
+    auto& f = shared_info->enabled_device_features;
+    f = {};
+    f.shader_int16 = device_features.shaderInt16 == VK_TRUE;
+    f.shader_int64 = device_features.shaderInt64 == VK_TRUE;
+    f.shader_float64 = device_features.shaderFloat64 == VK_TRUE;
+    f.storage_buffer_16bit_access =
+        features_11.storageBuffer16BitAccess == VK_TRUE;
+    f.uniform_and_storage_buffer_16bit_access =
+        features_11.uniformAndStorageBuffer16BitAccess == VK_TRUE;
+    f.storage_push_constant_16 = features_11.storagePushConstant16 == VK_TRUE;
+    f.storage_input_output_16 = features_11.storageInputOutput16 == VK_TRUE;
+    f.storage_buffer_8bit_access =
+        features_12.storageBuffer8BitAccess == VK_TRUE;
+    f.uniform_and_storage_buffer_8bit_access =
+        features_12.uniformAndStorageBuffer8BitAccess == VK_TRUE;
+    f.storage_push_constant_8 = features_12.storagePushConstant8 == VK_TRUE;
+    f.shader_float16 = features_12.shaderFloat16 == VK_TRUE;
+    f.shader_int8 = features_12.shaderInt8 == VK_TRUE;
+    f.arm_tensors = features_tensor.tensors == VK_TRUE;
+    f.arm_shader_tensor_access = features_tensor.shaderTensorAccess == VK_TRUE;
+    f.arm_data_graph = features_graph.dataGraph == VK_TRUE;
+    f.arm_data_graph_shader_module =
+        features_graph.dataGraphShaderModule == VK_TRUE;
+    f.synchronization2 = features_13.synchronization2 == VK_TRUE;
+    f.maintenance4 = features_13.maintenance4 == VK_TRUE;
+    f.pipeline_creation_cache_control =
+        features_13.pipelineCreationCacheControl == VK_TRUE;
+    f.host_query_reset = features_12.hostQueryReset == VK_TRUE;
+    f.vulkan_memory_model = features_12.vulkanMemoryModel == VK_TRUE;
+    f.vulkan_memory_model_device_scope =
+        features_12.vulkanMemoryModelDeviceScope == VK_TRUE;
+    f.shader_replicated_composites =
+        features_c.shaderReplicatedComposites == VK_TRUE;
+    f.shader_bfloat16 = features_bfloat16.shaderBFloat16Type == VK_TRUE;
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
+    f.arm_data_graph_neural_statistics =
+        features_neural_statistics.dataGraphNeuralAcceleratorStatistics ==
+        VK_TRUE;
+#endif
+  }
+  if (command_pool == nullptr) {
+    return VK_SUCCESS;
+  }
 
   VkCommandPoolCreateInfo poolInfo{
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,

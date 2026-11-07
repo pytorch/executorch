@@ -88,7 +88,11 @@ VkInstance create_instance(const RuntimeConfig& config) {
       0, // applicationVersion
       nullptr, // pEngineName
       0, // engineVersion
-      VK_API_VERSION_1_1, // apiVersion
+#if defined(EXECUTORCH_VGF_SHARED_DEVICE) && EXECUTORCH_VGF_SHARED_DEVICE
+      VK_API_VERSION_1_3, // VGF uses core 1.3 features and commands.
+#else
+      VK_API_VERSION_1_1, // Preserve Vulkan-only behavior.
+#endif
   };
 
   std::vector<const char*> enabled_layers;

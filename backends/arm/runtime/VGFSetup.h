@@ -23,8 +23,10 @@ using executorch::runtime::CompileSpec;
 
 #include <executorch/backends/arm/runtime/VGFBoundaryIO.h>
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
+#include <executorch/backends/arm/runtime/VGFSharedDevice.h>
 #include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
 #include <executorch/backends/arm/runtime/VGFZeroCopy.h>
+#include <utility>
 
 namespace executorch {
 namespace backends {
@@ -122,8 +124,10 @@ class VgfRepr {
       bool neural_statistics_requested = false,
       bool neural_statistics_device_enabled = false,
       int neural_statistics_mode_index = 1,
-      VgfHostMemoryImportCapabilities host_memory_import_capabilities = {})
-      : vk_instance(inst),
+      VgfHostMemoryImportCapabilities host_memory_import_capabilities = {},
+      std::shared_ptr<VgfSharedDeviceState> shared_device_state = {})
+      : shared_device_state_(std::move(shared_device_state)),
+        vk_instance(inst),
         vk_physical(phys),
         vk_device(dev),
         vk_queue(queue),
@@ -269,19 +273,66 @@ class VgfRepr {
   // tensor view; imported Vulkan objects are destroyed only after no queued
   // work can still use them. The next execute_vgf() re-records the command
   // buffer through the existing dirty-binding path.
-  ~VgfRepr() {
-    free_vgf();
-    if (vk_pipeline_cache != VK_NULL_HANDLE) {
-      // The cache is private to this VgfRepr, so no other delegate instance can
-      // be accessing it while this object is being destroyed.
-      vkDestroyPipelineCache(vk_device, vk_pipeline_cache, nullptr);
-      vk_pipeline_cache = VK_NULL_HANDLE;
+
+  bool uses_shared_device() const {
+    return static_cast<bool>(shared_device_state_);
+  }
+
+  // The callback covers all queue use, including constant uploads and cleanup.
+  // VkQueue is installed only while the registry's queue mutex is held.
+  template <typename Fn>
+  decltype(auto) with_shared_queue(Fn&& fn) {
+    if (!shared_device_state_) {
+      return std::forward<Fn>(fn)();
     }
+    return shared_device_state_->device->with_locked_queue(
+        [&](VkQueue queue) -> decltype(auto) {
+          ET_CHECK_MSG(
+              vk_queue == VK_NULL_HANDLE, "Nested VGF shared queue lease");
+          struct ResetQueue final {
+            VkQueue& slot;
+            ~ResetQueue() {
+              slot = VK_NULL_HANDLE;
+            }
+          };
+          vk_queue = queue;
+          ResetQueue reset{vk_queue};
+          return std::forward<Fn>(fn)();
+        });
+  }
+
+  // Called only inside with_shared_queue(), or under the legacy backend mutex.
+  VkResult wait_for_device_idle_locked() const {
+    if (vk_device == VK_NULL_HANDLE) {
+      return VK_SUCCESS;
+    }
+    // Do NOT wait an entire externally owned device: unrelated application
+    // queues are outside the shared queue's host-synchronization domain.
+    const VkResult result = shared_device_state_ ? vkQueueWaitIdle(vk_queue)
+                                                 : vkDeviceWaitIdle(vk_device);
+    ET_CHECK_MSG(
+        result == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST,
+        "Cannot free VGF resources while completion is unknown");
+    return result;
+  }
+
+  ~VgfRepr() {
+    with_shared_queue([&]() {
+      wait_for_device_idle_locked();
+      free_vgf();
+      if (vk_pipeline_cache != VK_NULL_HANDLE) {
+        // The cache is private to this VgfRepr, so no other delegate instance
+        // can be accessing it while this object is being destroyed.
+        vkDestroyPipelineCache(vk_device, vk_pipeline_cache, nullptr);
+        vk_pipeline_cache = VK_NULL_HANDLE;
+      }
+    });
   }
 
  private:
   // false after terminal cleanup; the DelegateHandle remains valid only
   // for destroy().
+  std::shared_ptr<VgfSharedDeviceState> shared_device_state_;
   bool execution_valid_ = true;
   // Basic Vulkan objects passed to us and re-used
   VkInstance vk_instance;

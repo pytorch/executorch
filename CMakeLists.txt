@@ -819,6 +819,17 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
+set(EXECUTORCH_VULKAN_SHARED_RUNTIME_REQUIRED
+    OFF
+    CACHE INTERNAL "Vulkan or VGF requires the shared registry DSO" FORCE
+)
+if(EXECUTORCH_BUILD_VULKAN OR EXECUTORCH_BUILD_VGF)
+  set(EXECUTORCH_VULKAN_SHARED_RUNTIME_REQUIRED
+      ON
+      CACHE INTERNAL "Vulkan or VGF requires the shared registry DSO" FORCE
+  )
+endif()
+
 if(EXECUTORCH_BUILD_VULKAN
    OR EXECUTORCH_BUILD_VGF
    OR EXECUTORCH_BUILD_NATIVE_VULKAN
