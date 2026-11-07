@@ -742,7 +742,7 @@ abstract class Tensor internal constructor(shape: LongArray, dimOrder: IntArray?
       return result
     }
 
-    // Called from native
+    // Called from native when built without EXECUTORCH_USE_GENERIC_JNI.
     @DoNotStrip
     @JvmStatic
     private fun nativeNewTensor(
@@ -752,19 +752,30 @@ abstract class Tensor internal constructor(shape: LongArray, dimOrder: IntArray?
         dtype: Int,
         hybridData: HybridData,
     ): Tensor {
-      val tensor =
-          when {
-            DType.FLOAT.jniCode == dtype -> Tensor_float32(data.asFloatBuffer(), shape, dimOrder)
-            DType.HALF.jniCode == dtype -> Tensor_float16(data.asShortBuffer(), shape, dimOrder)
-            DType.INT32.jniCode == dtype -> Tensor_int32(data.asIntBuffer(), shape, dimOrder)
-            DType.INT64.jniCode == dtype -> Tensor_int64(data.asLongBuffer(), shape, dimOrder)
-            DType.DOUBLE.jniCode == dtype -> Tensor_float64(data.asDoubleBuffer(), shape, dimOrder)
-            DType.UINT8.jniCode == dtype -> Tensor_uint8(data, shape, dimOrder)
-            DType.INT8.jniCode == dtype -> Tensor_int8(data, shape, dimOrder)
-            else -> Tensor_unsupported(data, shape, DType.fromJniCode(dtype), dimOrder)
-          }
+      val tensor = nativeNewTensor(data, shape, dimOrder, dtype)
       tensor.mHybridData = hybridData
       return tensor
+    }
+
+    // Called from native when built with EXECUTORCH_USE_GENERIC_JNI.
+    @DoNotStrip
+    @JvmStatic
+    private fun nativeNewTensor(
+        data: ByteBuffer,
+        shape: LongArray,
+        dimOrder: IntArray,
+        dtype: Int,
+    ): Tensor {
+      return when {
+        DType.FLOAT.jniCode == dtype -> Tensor_float32(data.asFloatBuffer(), shape, dimOrder)
+        DType.HALF.jniCode == dtype -> Tensor_float16(data.asShortBuffer(), shape, dimOrder)
+        DType.INT32.jniCode == dtype -> Tensor_int32(data.asIntBuffer(), shape, dimOrder)
+        DType.INT64.jniCode == dtype -> Tensor_int64(data.asLongBuffer(), shape, dimOrder)
+        DType.DOUBLE.jniCode == dtype -> Tensor_float64(data.asDoubleBuffer(), shape, dimOrder)
+        DType.UINT8.jniCode == dtype -> Tensor_uint8(data, shape, dimOrder)
+        DType.INT8.jniCode == dtype -> Tensor_int8(data, shape, dimOrder)
+        else -> Tensor_unsupported(data, shape, DType.fromJniCode(dtype), dimOrder)
+      }
     }
 
     /**

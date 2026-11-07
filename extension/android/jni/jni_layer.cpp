@@ -101,6 +101,15 @@ facebook::jni::local_ref<JTensor::javaobject> JTensor::newJTensorFromTensor(
           (uint8_t*)tensor.data_ptr(), tensor.nbytes());
   jTensorBuffer->order(facebook::jni::JByteOrder::nativeOrder());
 
+#ifdef EXECUTORCH_USE_GENERIC_JNI
+  static const auto jMethodNewTensor =
+      cls->getStaticMethod<facebook::jni::local_ref<JTensor::javaobject>(
+          facebook::jni::alias_ref<facebook::jni::JByteBuffer>,
+          facebook::jni::alias_ref<jlongArray>,
+          facebook::jni::alias_ref<facebook::jni::JArrayInt>,
+          jint)>("nativeNewTensor");
+  return jMethodNewTensor(cls, jTensorBuffer, jTensorShape, jDimOrder, jdtype);
+#else
   static const auto jMethodNewTensor =
       cls->getStaticMethod<facebook::jni::local_ref<JTensor::javaobject>(
           facebook::jni::alias_ref<facebook::jni::JByteBuffer>,
@@ -115,6 +124,7 @@ facebook::jni::local_ref<JTensor::javaobject> JTensor::newJTensorFromTensor(
       jDimOrder,
       jdtype,
       makeCxxInstance(tensor));
+#endif
 }
 
 TensorPtr JTensor::newTensorFromJTensor(
