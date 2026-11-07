@@ -3655,6 +3655,69 @@ TEST(VulkanComputeGraphTest, buffer_implicit_packed_dim_is_innermost) {
 
 // The input arrives with NaN in the padding of its last K vec4, as when the op
 // that produces it leaves padding unwritten. Only the logical K may be read.
+TEST(VulkanComputeGraphTest, dynamic_clamp_zeroes_output_padding) {
+  // Width-packed [3, 5] pads its width to 8.
+  constexpr int64_t H = 3;
+  constexpr int64_t W = 5;
+  constexpr int64_t padded_W = 8;
+  std::vector<float> input(H * W);
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = float(i) * 0.5f - 4.0f;
+  }
+  const std::vector<float> poison(H * padded_W, 7.0f);
+  for (const utils::StorageType storage : {utils::kBuffer, utils::kTexture3D}) {
+    SCOPED_TRACE(storage == utils::kBuffer ? "buffer" : "texture3d");
+    ComputeGraph graph(GraphConfig{});
+    const ValueRef in =
+        graph.add_tensor({H, W}, vkapi::kFloat, storage, utils::kWidthPacked);
+    const ValueRef staging_in = graph.set_input_tensor(in);
+    const ValueRef out =
+        graph.add_tensor({H, W}, vkapi::kFloat, storage, utils::kWidthPacked);
+    // A view of the output's physical texels writes poison into its padding
+    // before the clamp runs, and reads the padding back after.
+    const ValueRef padded = graph.add_tensor_view(out, {H, padded_W}, {0, 1});
+    const ValueRef staging_poison = graph.set_input_tensor(padded);
+    const ValueRef low = graph.add_symint(0);
+    const ValueRef high = graph.add_symint(0);
+    VK_GET_OP_FN("aten.clamp.default")(graph, {in, low, high, out});
+    const ValueRef staging_out = graph.set_output_tensor(out);
+    const ValueRef staging_padded = graph.set_output_tensor(padded);
+    graph.prepare();
+    graph.prepack();
+
+    // Neither bound range contains zero, so the padding must be masked.
+    for (const auto& [low_val, high_val] :
+         {std::pair<int32_t, int32_t>{1, 2}, {-3, -1}}) {
+      SCOPED_TRACE(low_val);
+      graph.set_symint(low, low_val);
+      graph.set_symint(high, high_val);
+      graph.maybe_cast_and_copy_into_staging(
+          staging_in, input.data(), input.size(), vkapi::kFloat);
+      graph.maybe_cast_and_copy_into_staging(
+          staging_poison, poison.data(), poison.size(), vkapi::kFloat);
+      graph.execute();
+
+      std::vector<float> output(H * W);
+      graph.maybe_cast_and_copy_from_staging(
+          staging_out, output.data(), output.size(), vkapi::kFloat);
+      std::vector<float> physical(H * padded_W);
+      graph.maybe_cast_and_copy_from_staging(
+          staging_padded, physical.data(), physical.size(), vkapi::kFloat);
+      for (size_t i = 0; i < output.size(); ++i) {
+        EXPECT_EQ(
+            output[i], std::clamp(input[i], float(low_val), float(high_val)))
+            << "i=" << i;
+      }
+      for (int64_t h = 0; h < H; ++h) {
+        for (int64_t w = W; w < padded_W; ++w) {
+          EXPECT_EQ(physical[h * padded_W + w], 0.0f)
+              << "h=" << h << " w=" << w;
+        }
+      }
+    }
+  }
+}
+
 TEST(VulkanComputeGraphTest, gemm_ignores_buffer_k_padding) {
   constexpr int64_t B = 2;
   constexpr int64_t M = 3;
