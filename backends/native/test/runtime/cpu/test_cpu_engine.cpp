@@ -242,6 +242,21 @@ class TestGraph {
         &out));
   }
 
+  void matmul(const char* name, Offset<fbs::TensorMeta> metadata) {
+    tensor(name, metadata);
+    const std::vector<Offset<fbs::NamedArgument>> args{
+        tensor_arg("self", "x"), tensor_arg("other", "y")};
+    const std::vector<Offset<fbs::Output>> out{
+        fbs::CreateOutputDirect(builder, name)};
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder,
+        name,
+        fbs::OpKind::CALL_FUNCTION,
+        "torch.ops.aten.matmul.default",
+        &args,
+        &out));
+  }
+
   void to_copy(
       const char* name,
       const char* input,
@@ -840,6 +855,157 @@ TEST(CPUEngineTest, MaterializesNativePermuteAliases) {
   for (int repeat = 0; repeat < 2; ++repeat) {
     compiled.executable->execute();
     EXPECT_EQ(output(*compiled.executable), (std::vector<float>{2, 6, 4, 8}));
+  }
+}
+
+TEST(CPUEngineTest, LowersMatrixAndBatchedMatrixMultiply) {
+  struct Case {
+    size_t batches;
+    std::vector<int64_t> left;
+    std::vector<int64_t> right;
+    std::vector<int64_t> output;
+  };
+  for (const auto& [batches, left, right, out] :
+       {Case{1, {2, 3}, {3, 2}, {2, 2}},
+        Case{2, {2, 2, 3}, {2, 3, 2}, {2, 2, 2}},
+        Case{4, {2, 2, 2, 3}, {2, 2, 3, 2}, {2, 2, 2, 2}}}) {
+    SCOPED_TRACE(::testing::PrintToString(out));
+    TestGraph graph;
+    graph.input("x", graph.meta(fbs::ScalarType::FLOAT, left));
+    graph.input("y", graph.meta(fbs::ScalarType::FLOAT, right));
+    graph.matmul("product", graph.meta(fbs::ScalarType::FLOAT, out));
+    graph.output("product");
+    auto compiled = compile(graph.program());
+    std::vector<float> x(batches * 6), y(batches * 6), expected(batches * 4);
+    for (size_t i = 0; i < x.size(); ++i) {
+      x[i] = (static_cast<int>(i % 7) - 3) * 0.25f;
+      y[i] = (static_cast<int>(i % 5) - 2) * 0.5f;
+    }
+    for (size_t batch = 0; batch < batches; ++batch) {
+      for (size_t row = 0; row < 2; ++row) {
+        for (size_t column = 0; column < 2; ++column) {
+          float sum = 0;
+          for (size_t inner = 0; inner < 3; ++inner) {
+            sum += x[batch * 6 + row * 3 + inner] *
+                y[batch * 6 + inner * 2 + column];
+          }
+          expected[batch * 4 + row * 2 + column] = sum;
+        }
+      }
+    }
+    compiled.executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+    compiled.executable->set_input(1, y.data(), y.size(), ScalarType::Float);
+    for (int repeat = 0; repeat < 2; ++repeat) {
+      compiled.executable->execute();
+      std::vector<float> actual(expected.size());
+      compiled.executable->get_output(
+          0, actual.data(), actual.size(), ScalarType::Float);
+      EXPECT_EQ(actual, expected);
+    }
+  }
+}
+
+TEST(CPUEngineTest, LowersMatmulWithBroadcastedBatchAndHeadDimensions) {
+  TestGraph graph;
+  graph.input("x", graph.meta(fbs::ScalarType::FLOAT, {2, 1, 3, 4}));
+  graph.input("y", graph.meta(fbs::ScalarType::FLOAT, {1, 5, 4, 2}));
+  graph.matmul("product", graph.meta(fbs::ScalarType::FLOAT, {2, 5, 3, 2}));
+  graph.output("product");
+  auto compiled = compile(graph.program());
+  std::vector<float> x(24), y(40), expected(60);
+  for (size_t i = 0; i < x.size(); ++i) {
+    x[i] = (static_cast<int>(i % 7) - 3) * 0.125f;
+  }
+  for (size_t i = 0; i < y.size(); ++i) {
+    y[i] = (static_cast<int>(i % 5) - 2) * 0.25f;
+  }
+  for (size_t batch = 0; batch < 2; ++batch) {
+    for (size_t head = 0; head < 5; ++head) {
+      for (size_t row = 0; row < 3; ++row) {
+        for (size_t column = 0; column < 2; ++column) {
+          float sum = 0;
+          for (size_t inner = 0; inner < 4; ++inner) {
+            sum += x[batch * 12 + row * 4 + inner] *
+                y[head * 8 + inner * 2 + column];
+          }
+          expected[(batch * 5 + head) * 6 + row * 2 + column] = sum;
+        }
+      }
+    }
+  }
+  compiled.executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  compiled.executable->set_input(1, y.data(), y.size(), ScalarType::Float);
+  for (int repeat = 0; repeat < 2; ++repeat) {
+    compiled.executable->execute();
+    std::vector<float> actual(expected.size());
+    compiled.executable->get_output(
+        0, actual.data(), actual.size(), ScalarType::Float);
+    EXPECT_EQ(actual, expected);
+  }
+}
+
+TEST(CPUEngineTest, LowersMatmulWithPrependedBatchDimensions) {
+  TestGraph graph;
+  graph.input("x", graph.meta(fbs::ScalarType::FLOAT, {3, 4}));
+  graph.input("y", graph.meta(fbs::ScalarType::FLOAT, {2, 4, 2}));
+  graph.matmul("product", graph.meta(fbs::ScalarType::FLOAT, {2, 3, 2}));
+  graph.output("product");
+  auto compiled = compile(graph.program());
+  std::vector<float> x(12), y(16), expected(12);
+  for (size_t i = 0; i < x.size(); ++i) {
+    x[i] = static_cast<float>(static_cast<int>(i % 7) - 3);
+  }
+  for (size_t i = 0; i < y.size(); ++i) {
+    y[i] = (static_cast<int>(i % 5) - 2) * 0.5f;
+  }
+  for (size_t batch = 0; batch < 2; ++batch) {
+    for (size_t row = 0; row < 3; ++row) {
+      for (size_t column = 0; column < 2; ++column) {
+        float sum = 0;
+        for (size_t inner = 0; inner < 4; ++inner) {
+          sum += x[row * 4 + inner] * y[batch * 8 + inner * 2 + column];
+        }
+        expected[batch * 6 + row * 2 + column] = sum;
+      }
+    }
+  }
+  compiled.executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  compiled.executable->set_input(1, y.data(), y.size(), ScalarType::Float);
+  for (int repeat = 0; repeat < 2; ++repeat) {
+    compiled.executable->execute();
+    std::vector<float> actual(expected.size());
+    compiled.executable->get_output(
+        0, actual.data(), actual.size(), ScalarType::Float);
+    EXPECT_EQ(actual, expected);
+  }
+}
+
+TEST(CPUEngineTest, RejectsUnsupportedMatmulMetadata) {
+  for (const std::string scenario :
+       {"dtype", "rank", "inner", "batch", "output", "zero"}) {
+    SCOPED_TRACE(scenario);
+    std::vector<int64_t> left{1, 2, 3}, right{1, 3, 2}, out{1, 2, 2};
+    if (scenario == "rank") {
+      left = {3};
+    } else if (scenario == "inner") {
+      right[1] = 4;
+    } else if (scenario == "batch") {
+      left[0] = 2;
+      right[0] = 3;
+    } else if (scenario == "output") {
+      out[1] = 3;
+    } else if (scenario == "zero") {
+      left[2] = 0;
+      right[1] = 0;
+    }
+    TestGraph graph;
+    const auto dtype =
+        scenario == "dtype" ? fbs::ScalarType::LONG : fbs::ScalarType::FLOAT;
+    graph.input("x", graph.meta(dtype, left));
+    graph.input("y", graph.meta(dtype, right));
+    graph.matmul("product", graph.meta(dtype, out));
+    graph.output("product");
+    expect_error([&] { compile(graph.program()); }, "cpu: matmul");
   }
 }
 
