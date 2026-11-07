@@ -863,12 +863,14 @@ class TestQuantizeStage(unittest.TestCase):
         mock_move_to_eval: Mock,
         mock_allow_train_eval: Mock,
     ) -> None:
-        """QAT: model.train() must be called before torch.export.export so that
-        batch_norm and dropout decompose with training-mode semantics."""
+        """QAT default (qat_export_in_eval_mode=False): model.train() is called before
+        torch.export.export so that batch_norm and dropout decompose with
+        training-mode semantics at capture time."""
         mock_quantizer = self.create_dummy_quantizer()
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = True
+        mock_recipe.qat_export_in_eval_mode = False
         mock_recipe.dynamic_batch_size = False
         mock_recipe.train_fn = Mock()
         mock_recipe.pre_prepare_passes = None
@@ -898,6 +900,61 @@ class TestQuantizeStage(unittest.TestCase):
 
         # The model must have been in training mode when export was called.
         self.assertEqual(training_at_export_time, [True])
+
+    @patch("executorch.export.stages.allow_exported_model_train_eval")
+    @patch("executorch.export.stages.move_exported_model_to_eval")
+    @patch("executorch.export.stages.move_exported_model_to_train")
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_qat_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_run_qat_model_put_in_eval_mode_before_export(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_qat_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+        mock_move_to_train: Mock,
+        mock_move_to_eval: Mock,
+        mock_allow_train_eval: Mock,
+    ) -> None:
+        """QAT with qat_export_in_eval_mode=True: model.eval() is called before
+        torch.export.export, following the torchao-recommended QAT workflow.
+        model.train() is called only inside train_fn, after prepare_qat_pt2e."""
+        mock_quantizer = self.create_dummy_quantizer()
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.quantizers = [mock_quantizer]
+        mock_recipe.is_qat = True
+        mock_recipe.qat_export_in_eval_mode = True
+        mock_recipe.dynamic_batch_size = False
+        mock_recipe.train_fn = Mock()
+        mock_recipe.pre_prepare_passes = None
+        mock_recipe.post_prepare_passes = None
+        mock_recipe.pre_convert_passes = None
+        mock_recipe.post_convert_passes = None
+
+        # Start model in train mode; the stage must switch it to eval.
+        self.model.train()
+        self.assertTrue(self.model.training)
+
+        training_at_export_time = []
+
+        mock_exported_program = Mock(spec=ExportedProgram)
+        mock_exported_program.module.return_value = Mock()
+
+        def capture_training_flag(model, *args, **kwargs):
+            training_at_export_time.append(model.training)
+            return mock_exported_program
+
+        mock_torch_export.side_effect = capture_training_flag
+        mock_prepare_qat_pt2e.return_value = Mock()
+        mock_convert_pt2e.return_value = Mock()
+
+        stage = QuantizeStage(mock_recipe)
+        stage.run(PipelineArtifact(data=self.models_dict, context=self.context))
+
+        # The model must have been in eval mode when export was called.
+        self.assertEqual(training_at_export_time, [False])
 
     @patch("executorch.export.stages.move_exported_model_to_eval")
     @patch("executorch.export.stages.convert_pt2e")
