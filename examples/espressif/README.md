@@ -39,8 +39,9 @@ both with `executorch_add_model` and `executorch_add_kernels` (see the
 component's `README.md`). Application pipelines built on the runtime
 (for example wake word front ends and detectors) stay with the
 application.
-Consumers need ESP-IDF, plus the `executorch` Python package of the
-same release to make kernel bundles — no host CMake build, no flatc.
+Consumers need ESP-IDF, plus the `executorch` Python package the
+component was built from to make kernel bundles (see the component's
+`README.md`) — no host CMake build, no flatc.
 `idf_component_smoke/` is a minimal consumer that CI generates, builds
 and runs on the emulator (`.ci/scripts/test_espressif_idf_component.sh`).
 `idf_component_consumer/` builds the same app from the packed component
@@ -75,6 +76,15 @@ serves the tested files, and runs it on the emulator.
   `examples/espressif/`, `.ci/`, `.github/` and `docs/`, and run the
   workflow on `release/X.Y` with `version_suffix` `~N`. A release whose
   publishing failed in CI is published as a respin once the CI is fixed.
+- A dev version, `X.Y.Z-dev.YYYYMMDD`, lets projects use the component
+  before a release. Run the workflow on the `nightly` branch with
+  `version_suffix` `-dev`, `registry` `production` and `dry_run` cleared,
+  between 00:00 UTC and the next nightly (around 11:30 UTC), so that it
+  publishes the last nightly of a finished day. Projects resolve from
+  production, where a version range picks up a pre-release only if it opts
+  in. The run publishes only if that day's ExecuTorch nightly wheels, on
+  every platform, were built from the same commit, because projects install
+  them to make their kernel bundles.
 - A manual run only validates unless `dry_run` is cleared. With `registry`
   `production`, it uploads to staging first. Uploads skip versions the
   registry already has, so **Re-run failed jobs** retries with the same
@@ -84,18 +94,20 @@ serves the tested files, and runs it on the emulator.
 Each upload waits for a reviewer of the `esp-component-registry`
 environment, the only place the registries accept uploads from: on each
 registry, `pytorch/executorch`'s trusted uploader names this repository and
-that environment. Before approving the staging upload, dispatch the nightly
-matrix (`nightly-espressif-idf.yml`) on the tag and wait for it to pass; it
-also covers ESP-IDF master, the all-ops build and the macOS and Windows
-configure jobs. Approve the production upload once the release owner has
-built a project against the version on staging.
+that environment. Before approving the staging upload of a release or RC,
+dispatch the nightly matrix (`nightly-espressif-idf.yml`) on the tag and
+wait for it to pass; it also covers ESP-IDF master, the all-ops build and
+the macOS and Windows configure jobs. A dev version has only its own run's
+builds. Approve the production upload once the release owner has built a
+project against the version on staging.
 
 The one-time setup goes in this order, because GitHub creates a missing
 environment, unprotected, as soon as a workflow names it:
 
 1. Create the `esp-component-registry` environment with required
    reviewers, self-review prevented, no admin bypass, and deployments
-   limited to `v*` tags and `release/*` branches.
+   limited to `v*` tags and `release/*` branches, plus `nightly` before the
+   first dev version.
 2. Create the `pytorch` namespace on the staging registry.
 3. On each registry, make this repository and that environment
    `pytorch/executorch`'s trusted uploader.

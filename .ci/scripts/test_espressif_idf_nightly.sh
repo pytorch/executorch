@@ -30,17 +30,27 @@
 #     pytorch/executorch, builds the smoke consumer for ESP32-S3 with it, fails
 #     if the registry serves files other than <dir>'s archive, and runs the
 #     build on the emulator.
+#   test_espressif_idf_nightly.sh wheel <dir> <dev version> <commit>
+#     Checks that the ExecuTorch nightly wheels of the version's date were all
+#     built from <commit>, so a project can install the executorch its kernel
+#     bundles need, and refuses today's nightly, which a later one could
+#     replace. Logs go under <dir>.
+#   test_espressif_idf_nightly.sh torch <dir>
+#     Needs only <dir> from prepare: checks that the torch the component's
+#     VERSION names resolves from its index on every platform.
 
 set -euo pipefail
 
 et_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-usage="usage: $0 prepare <dir> [stamp options] | build <dir> <shard> <shards> | registry <dir> <URL>"
+usage="usage: $0 prepare <dir> [stamp options] | build <dir> <shard> <shards> | registry <dir> <URL> | wheel <dir> <version> <commit> | torch <dir>"
 mode=${1:?${usage}}
 dir=${2:?${usage}}
 mkdir -p "${dir}"
 dir=$(cd "${dir}" && pwd)
 cd "${et_root}"
 targets=(esp32 esp32s3 esp32c3 esp32c5 esp32c6 esp32p4)
+# The platforms ExecuTorch's wheels are built for.
+wheel_platforms=(manylinux_2_28_x86_64 manylinux_2_28_aarch64 macosx_14_0_arm64 win_amd64)
 
 # Runs a command with its output in a log, and shows the log's tail if it fails.
 logged() {
@@ -353,6 +363,56 @@ settings_applied() {
     [[ "${applied}" == true ]]
 }
 
+wheel() {
+    local version=${3:?${usage}} commit=${4:?${usage}} wheels platform
+    if [[ "${version}" != *-dev.* ]]; then
+        echo "FAIL: ${version} is not a dev version" >&2
+        exit 1
+    fi
+    # A second nightly the same day would replace the wheels of this one.
+    if [[ "${version##*-dev.}" == "$(date -u +%Y%m%d)" ]]; then
+        echo "FAIL: ${version} is today's nightly, which a later nightly today could replace;" \
+            "publish it after 00:00 UTC, before the next nightly." >&2
+        exit 1
+    fi
+    wheels=$(mktemp -d)
+    # shellcheck disable=SC2064 # wheels is local, so expand it now.
+    trap "rm -rf '${wheels}'" EXIT
+    mkdir -p "${dir}/logs"
+    for platform in "${wheel_platforms[@]}"; do
+        logged "${dir}/logs/nightly-wheel-${platform}.log" python -m pip download --no-deps \
+            --only-binary=:all: --platform "${platform}" --python-version 3.11 \
+            --implementation cp --index-url https://download.pytorch.org/whl/nightly/cpu \
+            --dest "${wheels}/${platform}" "executorch==${version/-dev./.dev}"
+        python - "${wheels}/${platform}"/executorch-*.whl "${commit}" <<'PY'
+import re
+import sys
+import zipfile
+
+wheel, commit = sys.argv[1:]
+version_py = zipfile.ZipFile(wheel).read("executorch/version.py").decode()
+built = re.search(r"^git_version: .* = '(\w+)'", version_py, re.MULTILINE)
+built = built.group(1) if built else None
+if built != commit:
+    sys.exit(f"FAIL: {wheel} was built from {built}, not the component's {commit}")
+print(f"OK: {wheel} was built from {commit}")
+PY
+    done
+}
+
+torch() {
+    local version_file="${dir}/component/executorch/VERSION" requirement index platform
+    requirement=$(sed -n 's/^torch_requirement: *//p' "${version_file}")
+    index=$(sed -n 's/^torch_index: *//p' "${version_file}")
+    mkdir -p "${dir}/logs"
+    for platform in "${wheel_platforms[@]}"; do
+        logged "${dir}/logs/torch-${platform}.log" python -m pip install --dry-run --no-deps \
+            --only-binary=:all: --platform "${platform}" --python-version 3.11 \
+            --implementation cp --target "$(mktemp -d)" --index-url "${index}" "${requirement}"
+    done
+    echo "OK: ${requirement} resolves from ${index} on ${wheel_platforms[*]}"
+}
+
 # Runs a build on its emulator: build dir, target, log, then idf.py arguments.
 run_firmware() {
     local build=$1 target=$2 log=$3
@@ -386,5 +446,7 @@ case "${mode}" in
     prepare) prepare "$@" ;;
     build) build "$@" ;;
     registry) registry "$@" ;;
+    wheel) wheel "$@" ;;
+    torch) torch ;;
     *) echo "unknown mode ${mode}; ${usage}" >&2; exit 1 ;;
 esac
