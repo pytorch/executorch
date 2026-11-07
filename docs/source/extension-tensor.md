@@ -120,7 +120,7 @@ auto tensor = make_tensor_ptr(
     ScalarType::Int);       // int scalar type
 ```
 
-The `data` vector must be large enough to accommodate all the elements according to the provided sizes and scalar type.
+The `data` vector must be large enough to accommodate all the elements according to the provided sizes and scalar type. Without a scalar type, a `std::vector<uint8_t>` becomes a `Byte` tensor, like a vector of any other element type.
 
 #### Non-Owning Data from Raw Pointer
 

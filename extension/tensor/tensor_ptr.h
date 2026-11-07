@@ -413,6 +413,9 @@ inline TensorPtr make_tensor_ptr(T value) {
  * memory's lifetime is tied to the TensorImpl. The result is always a CPU
  * tensor.
  *
+ * Without a scalar type, a std::vector<uint8_t> goes to the generic vector
+ * overload instead and becomes a Byte tensor, like other element types do.
+ *
  * @param sizes A vector specifying the size of each dimension.
  * @param data A vector containing the raw memory for the tensor's data.
  * @param dim_order A vector specifying the order of dimensions.
@@ -426,7 +429,7 @@ TensorPtr make_tensor_ptr(
     std::vector<uint8_t> data,
     std::vector<executorch::aten::DimOrderType> dim_order,
     std::vector<executorch::aten::StridesType> strides,
-    executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
+    executorch::aten::ScalarType type,
     executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
 
@@ -445,7 +448,7 @@ TensorPtr make_tensor_ptr(
 inline TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::SizesType> sizes,
     std::vector<uint8_t> data,
-    executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
+    executorch::aten::ScalarType type,
     executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return make_tensor_ptr(

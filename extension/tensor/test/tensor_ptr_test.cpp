@@ -708,7 +708,8 @@ TEST_F(TensorPtrTest, CloneTensorPtrCastFloatToBFloat16) {
 TEST_F(TensorPtrTest, CloneTensorPtrCastKeepsMetadata) {
   std::vector<uint8_t> data(
       6 * executorch::aten::elementSize(executorch::aten::ScalarType::Float));
-  auto tensor = make_tensor_ptr({2, 3}, std::move(data));
+  auto tensor = make_tensor_ptr(
+      {2, 3}, std::move(data), executorch::aten::ScalarType::Float);
   auto cloned_tensor =
       clone_tensor_ptr(*tensor, executorch::aten::ScalarType::Float);
 
@@ -1191,7 +1192,8 @@ TEST_F(TensorPtrTest, TensorUint8dataWithFloatScalarType) {
   float_data[2] = 3.0f;
   float_data[3] = 4.0f;
 
-  auto tensor = make_tensor_ptr({2, 2}, std::move(data));
+  auto tensor = make_tensor_ptr(
+      {2, 2}, std::move(data), executorch::aten::ScalarType::Float);
 
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 2);
@@ -1209,13 +1211,34 @@ TEST_F(TensorPtrTest, TensorUint8dataTooSmallExpectDeath) {
   std::vector<uint8_t> data(
       2 * executorch::aten::elementSize(executorch::aten::ScalarType::Float));
   ET_EXPECT_DEATH(
-      { auto tensor = make_tensor_ptr({2, 2}, std::move(data)); }, "");
+      {
+        auto tensor = make_tensor_ptr(
+            {2, 2}, std::move(data), executorch::aten::ScalarType::Float);
+      },
+      "");
 }
 
 TEST_F(TensorPtrTest, TensorUint8dataTooLargeExpectDeath) {
   std::vector<uint8_t> data(
       5 * executorch::aten::elementSize(executorch::aten::ScalarType::Float));
-  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 2}, std::move(data)); }, "");
+  ET_EXPECT_DEATH(
+      {
+        auto _ = make_tensor_ptr(
+            {2, 2}, std::move(data), executorch::aten::ScalarType::Float);
+      },
+      "");
+}
+
+TEST_F(TensorPtrTest, TensorUint8VectorWithoutTypeIsByte) {
+  auto tensor = make_tensor_ptr({2, 64}, std::vector<uint8_t>(128, 7));
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Byte);
+  EXPECT_EQ(tensor->numel(), 128);
+  EXPECT_EQ(tensor->nbytes(), 128);
+  EXPECT_EQ(tensor->const_data_ptr<uint8_t>()[127], 7);
+
+  auto strided = make_tensor_ptr({2, 2}, std::vector<uint8_t>(4), {}, {2, 1});
+  EXPECT_EQ(strided->scalar_type(), executorch::aten::ScalarType::Byte);
+  EXPECT_EQ(strided->numel(), 4);
 }
 
 TEST_F(TensorPtrTest, MakeViewFromTensorPtrKeepsSourceAlive) {
@@ -1399,14 +1422,24 @@ TEST_F(TensorPtrTest, TensorUint8dataSizeMismatchUInt32ExpectDeath) {
   std::vector<uint8_t> data(
       3 * executorch::aten::elementSize(executorch::aten::ScalarType::UInt32) -
       1);
-  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({3}, std::move(data)); }, "");
+  ET_EXPECT_DEATH(
+      {
+        auto _ = make_tensor_ptr(
+            {3}, std::move(data), executorch::aten::ScalarType::UInt32);
+      },
+      "");
 }
 
 TEST_F(TensorPtrTest, TensorUint8dataSizeMismatchUInt64ExpectDeath) {
   std::vector<uint8_t> data(
       2 * executorch::aten::elementSize(executorch::aten::ScalarType::UInt64) +
       1);
-  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2}, std::move(data)); }, "");
+  ET_EXPECT_DEATH(
+      {
+        auto _ = make_tensor_ptr(
+            {2}, std::move(data), executorch::aten::ScalarType::UInt64);
+      },
+      "");
 }
 
 TEST_F(TensorPtrTest, TensorDataCastingFromInt32ToUInt16) {
