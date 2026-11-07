@@ -40,11 +40,20 @@ def _test_cv_model(
     # Test a CV model that follows the standard conventions.
     inputs = (torch.randn(1, 3, 224, 224, dtype=dtype),)
 
+    # The declared minimum is 2, not 1. Until #23326 the exported program's
+    # range constraints were recomputed from the ShapeEnv after every pass, and
+    # the ShapeEnv raises a backed symbol's declared minimum of 0 or 1 to 2, so
+    # a declared min=1 never reached a backend: these models have always been
+    # lowered over height/width in [32, 256]. #23326 made ExecuTorch keep the
+    # declared range instead, which handed backends a lower bound of 16 for the
+    # first time and let a 16x16 input - degenerate for a network with a total
+    # stride of 32 - into backend shape reasoning. Declaring 2 states the bound
+    # that was always in force.
     dynamic_shapes = (
         (
             {
-                2: Dim("height", min=1, max=16) * 16,
-                3: Dim("width", min=1, max=16) * 16,
+                2: Dim("height", min=2, max=16) * 16,
+                3: Dim("width", min=2, max=16) * 16,
             },
         )
         if use_dynamic_shapes
