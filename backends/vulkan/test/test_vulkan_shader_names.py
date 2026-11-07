@@ -44,6 +44,8 @@ _spec.loader.exec_module(gen_vulkan_spv)
 
 # The yaml template whose variants `add_binary_op_node` dispatches into.
 _BINARY_TEMPLATE = os.path.join("binary", "binary")
+# The yaml template whose variants `add_binary_scalar_op_node` dispatches into.
+_BINARY_SCALAR_TEMPLATE = os.path.join("binary", "binary_scalar")
 
 
 def _function_body(text: str, name: str) -> str:
@@ -137,6 +139,21 @@ class TestShaderNames(unittest.TestCase):
             "these shaders are generated but no dispatch can name them; "
             "see add_binary_op_node in BinaryOp.cpp",
         )
+
+    def test_binary_scalar_shaders_cover_every_dispatch(self) -> None:
+        """Every name `add_binary_scalar_op_node` can build must be generated.
+
+        It appends a storage suffix, the tensor's dtype suffix and the scalar's
+        dtype suffix. The scalar is read as float for float and half tensors,
+        and as int32 or float for int32 tensors.
+        """
+        dtype_pairs = ("_half_float", "_float_float", "_int32_int32", "_int32_float")
+        for prefix in ("binary_scalar_op", "binary_scalar_cmp"):
+            for storage in ("_buffer", "_texture3d"):
+                for dtypes in dtype_pairs:
+                    expected = prefix + storage + dtypes
+                    with self.subTest(expected=expected):
+                        self.assertIn(expected, self.names[_BINARY_SCALAR_TEMPLATE])
 
 
 if __name__ == "__main__":
