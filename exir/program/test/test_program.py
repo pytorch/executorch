@@ -436,6 +436,27 @@ class TestProgramManagers(unittest.TestCase):
                     for actual, expected in zip(program.forward((t,)), Resize()(t)):
                         torch.testing.assert_close(actual, expected, atol=tol, rtol=tol)
 
+    def test_masked_select(self):
+        class MaskedSelect(torch.nn.Module):
+            def forward(self, x):
+                return torch.masked_select(x, x > 0)
+
+        x = torch.tensor([[1.0, -1.0, 2.0], [-3.0, 4.0, -5.0]])
+        edge = to_edge(export(MaskedSelect(), (x,)))
+        # The op stays whole and runs on its portable kernel.
+        self.assertEqual(
+            self._count_nodes(
+                edge.exported_program().graph_module,
+                [exir_ops.edge.aten.masked_select.default],
+            ),
+            1,
+        )
+        program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        # The result size depends on the data, down to selecting nothing.
+        for t in (x, x.abs(), -x.abs()):
+            with self.subTest(t=t):
+                torch.testing.assert_close(program.forward((t,))[0], MaskedSelect()(t))
+
     def test_float_sym_max_min_rejected(self):
         # The runtime's sym_max and sym_min kernels only take ints.
         def model(sym_op):
