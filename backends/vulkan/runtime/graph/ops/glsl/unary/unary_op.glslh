@@ -7,9 +7,9 @@
  */
 
 /*
- * Element-wise unary ops, selected by the op_type specialization constant.
+ * Element-wise unary ops, selected by an op type argument.
  *
- * The including shader declares op_type and defines:
+ * The including shader defines:
  * - IN_T and OUT_T: operand and result types
  * - PARAM_T: type of the op parameters A and B (clamp bounds, hardshrink
  *   thresholds, leaky_relu slope)
@@ -21,7 +21,7 @@
 #ifndef UNARY_OP_GLSLH
 #define UNARY_OP_GLSLH
 
-// Values of op_type. Must match UnaryOpType in UnaryOp.cpp.
+// Values of op_type. Must match UnaryOpType in UnaryOp.h.
 #define UNARY_OP_CLAMP 0
 #define UNARY_OP_ABS 1
 #define UNARY_OP_COS 2
@@ -114,7 +114,11 @@ vec4 leaky_relu(vec4 tex, float negative_slope) {
 }
 #endif
 
-OUT_T apply_unary_op(const IN_T X, const PARAM_T A, const PARAM_T B) {
+OUT_T apply_unary_op(
+    const int op_type,
+    const IN_T X,
+    const PARAM_T A,
+    const PARAM_T B) {
   switch (op_type) {
 #if defined(UNARY_OP_IS_BITWISE)
     default: // UNARY_OP_BITWISE_NOT
