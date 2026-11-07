@@ -61,6 +61,17 @@ portability details.
    conda activate executorch
    ```
 
+Alternatively, on macOS or Linux, create and activate a virtual environment with uv:
+
+```bash
+uv venv --python 3.12 .venv
+source .venv/bin/activate
+```
+
+The installation scripts use pip when it is available in the current Python
+environment, or fall back to `uv pip` when uv is on `PATH`. There is no need to
+seed pip before running the installer.
+
 > **_NOTE:_** Additional Windows Setup
 >
 > ExecuTorch requires symlinks to be enabled to build the Python components. To enable symlinks, run the following command before cloning the repository. Missing symlinks will manifest as an error related to `version.py` when running `pip install .`. See [src/README.md](https://github.com/pytorch/executorch/blob/main/src/README.md) for more information.
