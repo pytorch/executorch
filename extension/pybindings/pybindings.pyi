@@ -469,6 +469,7 @@ def _unsafe_reset_threadpool(num_threads: int) -> None:
     kernels use the new count and its ``CpuBackend`` parts fail to run. A
     ``Program`` from ``executorch.runtime`` and an ``ExecuTorchModule`` keep the
     methods they loaded, so load the method from a new one to use the new count.
+    Calling it while a ``CpuBackend`` part is loading or running is not safe.
     A count of 0, or the current count, changes nothing.
 
     .. warning::

@@ -80,7 +80,8 @@ class ThreadPool final {
    * get_shared_pthreadpool() keeps the old threadpool alive until it is
    * released. So the XNNPACK parts of a method loaded before this call keep
    * the old thread count until the method is destroyed, and its CpuBackend
-   * parts fail to run. This method is a private API, which will later be
+   * parts fail to run. Resetting while a CpuBackend part is loading or
+   * running is not safe. This method is a private API, which will later be
    * replaced by something that allows creating of threadpool with requested
    * size and use such a threadpool with backend delegates, custom ops or
    * optimized lib.
