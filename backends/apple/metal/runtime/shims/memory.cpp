@@ -9,6 +9,7 @@
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 #include <executorch/backends/apple/metal/runtime/shims/memory.h>
+#include <executorch/backends/apple/metal/runtime/shims/shim_mps.h>
 #include <executorch/backends/apple/metal/runtime/shims/tensor_attribute.h>
 #include <executorch/backends/apple/metal/runtime/shims/utils.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
@@ -34,8 +35,8 @@ namespace metal {
 using namespace executorch::backends::aoti;
 
 // Global storage for tensors and their metadata.
-// Maps raw Tensor* → shared_ptr<Tensor> for O(1) lookup/deletion.
-std::unordered_map<Tensor*, std::shared_ptr<Tensor>> tensors;
+// Maps raw Tensor* → its TrackedTensor for O(1) lookup/deletion.
+std::unordered_map<Tensor*, TrackedTensor> tensors;
 
 // Reference counting for memory addresses
 // Maps memory address to number of tensors using it
@@ -68,6 +69,24 @@ std::unordered_set<Tensor*> retired_handles;
 // parent's start). Views of it are offset from here, so they are checked
 // against the memory they really reach.
 std::unordered_map<Tensor*, void*> empty_view_address;
+
+// Shim state is shared by every delegate in the process. Each delegate gets
+// back what it created (metal_release_delegate) instead of everyone's.
+namespace {
+// Delegates alive in the process.
+std::unordered_set<const void*> delegates;
+// Buffers aoti_torch_mps_malloc made while a delegate loaded, e.g. its
+// constants, which nothing else frees, and the delegate each belongs to.
+std::unordered_map<void*, const void*> delegate_buffers;
+thread_local const void* current_delegate = nullptr;
+thread_local bool current_delegate_loading = false;
+
+// Keeps `tensor` alive until it is deleted, recorded against the current
+// delegate.
+void track_handle(const std::shared_ptr<Tensor>& tensor) {
+  tensors[tensor.get()] = TrackedTensor{tensor, current_delegate};
+}
+} // namespace
 
 // Size of each CPU allocation the runtime owns, so that views of it can be
 // bound into one Metal buffer over all of it (metal_register_cpu_view).
@@ -380,7 +399,7 @@ AOTITorchError make_memoryless_tensor(
       dtype_to_scalar_type(dtype));
   ET_CHECK_OR_RETURN_ERROR(
       tensor != nullptr, InvalidArgument, "Failed to create empty tensor");
-  tensors[tensor.get()] = tensor;
+  track_handle(tensor);
   *ret_new_tensor = tensor.get();
   return Error::Ok;
 }
@@ -598,7 +617,7 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   hold_allocation(tensor.get(), adjusted_data, owner);
 
   // Store the tensor so it doesn't get destroyed
-  tensors[tensor.get()] = tensor;
+  track_handle(tensor);
   *ret_new_tensor = tensor.get();
   if (registered) {
     view_handles.insert(tensor.get());
@@ -710,7 +729,7 @@ AOTITorchError aoti_torch_empty_strided(
   auto tensor = make_strided_tensor(ptr, sizes, strides, scalar_type);
 
   // Store the tensor so it doesn't get destroyed
-  tensors[tensor.get()] = tensor;
+  track_handle(tensor);
   *ret_new_tensor = tensor.get();
 
   // This tensor owns the memory it allocated, set reference count to 1
@@ -773,7 +792,7 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
     return Error::Ok;
   }
 
-  const auto& tensor_ptr = it->second;
+  const auto& tensor_ptr = it->second.tensor;
   void* data_ptr = tensor_ptr->mutable_data_ptr();
   if (data_ptr == nullptr) {
     // A tensor with no memory (make_memoryless_tensor).
@@ -1332,7 +1351,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
   // Only now that nothing can fail: a handle whose registration failed must
   // not be left behind for cleanup to unregister.
-  tensors[tensor.get()] = tensor;
+  track_handle(tensor);
   *ret_new_tensor = tensor.get();
   if (empty_view && empty_address != adjusted_data) {
     empty_view_address[tensor.get()] = empty_address;
@@ -1429,7 +1448,7 @@ AOTITorchError aoti_torch_new_tensor_handle(
       tensor != nullptr, InvalidArgument, "Failed to create new tensor handle");
 
   // Store the tensor so it doesn't get destroyed
-  tensors[tensor.get()] = tensor;
+  track_handle(tensor);
 
   *new_handle = tensor.get();
 
@@ -1465,7 +1484,7 @@ void retire_handles_within(void* ptr, size_t nbytes) {
     return begin <= p && p < begin + nbytes;
   };
   for (const auto& entry : tensors) {
-    const void* data = entry.second->const_data_ptr();
+    const void* data = entry.second.tensor->const_data_ptr();
     if (data != nullptr && within(data)) {
       view_handles.erase(entry.first);
       // Its count went to the allocation it lies in, which is this memory:
@@ -1487,6 +1506,78 @@ void retire_handles_within(void* ptr, size_t nbytes) {
         ? memory_to_n_tensor.erase(memory)
         : std::next(memory);
   }
+}
+
+void metal_begin_delegate(const void* delegate) {
+  delegates.insert(delegate);
+}
+
+MetalDelegateScope::MetalDelegateScope(const void* delegate, bool loading)
+    : previous_(current_delegate), previous_loading_(current_delegate_loading) {
+  current_delegate = delegate;
+  current_delegate_loading = loading;
+}
+
+MetalDelegateScope::~MetalDelegateScope() {
+  current_delegate = previous_;
+  current_delegate_loading = previous_loading_;
+}
+
+void metal_note_delegate_buffer(void* ptr) {
+  if (current_delegate == nullptr || !current_delegate_loading) {
+    return;
+  }
+  if (delegates.count(current_delegate) != 0) {
+    delegate_buffers[ptr] = current_delegate;
+  }
+}
+
+void metal_forget_delegate_buffer(void* ptr) {
+  delegate_buffers.erase(ptr);
+}
+
+bool metal_release_delegate(const void* delegate) {
+  // Work may still be queued on this delegate's memory, e.g. after a failed
+  // run, and that memory is about to go.
+  auto* stream = getCurrentMetalStream();
+  if (stream != nullptr) {
+    stream->synchronize(SyncType::COMMIT_AND_WAIT);
+  }
+  std::vector<Tensor*> handles;
+  for (const auto& entry : tensors) {
+    if (entry.second.delegate == delegate) {
+      handles.push_back(entry.first);
+    }
+  }
+  // Handles first: a constants buffer is freed only once nothing is in it.
+  for (Tensor* handle : handles) {
+    if (aoti_torch_delete_tensor_object(handle) != Error::Ok) {
+      ET_LOG(
+          Error, "metal_release_delegate: could not delete handle %p", handle);
+      // Left for cleanup_memory, but no longer this delegate's: a delegate
+      // created later at the same address must not release it.
+      auto left = tensors.find(handle);
+      if (left != tensors.end()) {
+        left->second.delegate = nullptr;
+      }
+    }
+  }
+  std::vector<void*> buffers;
+  for (auto it = delegate_buffers.begin(); it != delegate_buffers.end();) {
+    if (it->second == delegate) {
+      buffers.push_back(it->first);
+      it = delegate_buffers.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  delegates.erase(delegate);
+  for (void* buffer : buffers) {
+    if (aoti_torch_mps_free(buffer) != Error::Ok) {
+      ET_LOG(Error, "metal_release_delegate: could not free buffer %p", buffer);
+    }
+  }
+  return delegates.empty();
 }
 
 void cleanup_memory() {
@@ -1521,6 +1612,8 @@ void cleanup_memory() {
   view_handles.clear();
   retired_handles.clear();
   empty_view_address.clear();
+  delegates.clear();
+  delegate_buffers.clear();
   cpu_allocation_bytes.clear();
 
   // Clean up Metal resources

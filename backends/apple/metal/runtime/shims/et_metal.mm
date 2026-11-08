@@ -14,6 +14,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
+#include <executorch/backends/apple/metal/runtime/shims/memory.h>
 #include <algorithm>
 #include <climits>
 #include <cstdlib>
@@ -450,6 +451,8 @@ void metal_deallocate_buffer(void* ptr) {
         id<MTLBuffer> buffer = it->second;
         ET_LOG(Debug, "Recycling %zu byte Metal buffer to pool (ptr %p)", (size_t)[buffer length], ptr);
         ptr_to_mtl_buffer.erase(it);
+        // No longer a delegate's to free: the pool may hand it to anyone.
+        metal_forget_delegate_buffer(ptr);
         get_metal_buffer_pool().recycle(buffer);
     } else {
         ET_LOG(Error, "Failed to find Metal buffer for pointer %p", ptr);

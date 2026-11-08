@@ -1997,6 +1997,163 @@ TEST_F(MetalGraphViewTest, ViewsOfAnEmptyViewKeepItsOffset) {
   EXPECT_EQ(back_half->const_data_ptr(), memory + 4);
 }
 
+// Destroying one delegate frees its constants and handles and leaves another
+// delegate's intact: bound, readable, and with its views registered.
+TEST_F(MetalGraphViewTest, ReleasingADelegateKeepsTheOthersMemory) {
+  int delegate_a = 0;
+  int delegate_b = 0;
+  metal_begin_delegate(&delegate_a);
+  metal_begin_delegate(&delegate_b);
+  std::vector<float> data = {1, 2, 3, 4};
+  // As AOTInductor loads constants: one buffer for all of them, each copied
+  // in at its offset (which gives it a buffer of its own), and a blob over it.
+  auto load_constants = [&](const void* delegate,
+                            void** constants,
+                            AOTITensorHandle* constant) {
+    MetalDelegateScope scope(delegate, /*loading=*/true);
+    ASSERT_EQ(aoti_torch_mps_malloc(constants, 8 * sizeof(float)), Error::Ok);
+    ASSERT_EQ(
+        aoti_torch_mps_memcpy(
+            *constants,
+            /*constant_offset=*/4 * sizeof(float),
+            /*bytes_read=*/0,
+            /*data_size=*/4 * sizeof(float),
+            reinterpret_cast<uint8_t*>(data.data())),
+        Error::Ok);
+    ASSERT_EQ(
+        createFromBlob(static_cast<float*>(*constants) + 4, constant),
+        Error::Ok);
+  };
+  void* a_constants = nullptr;
+  void* b_constants = nullptr;
+  AOTITensorHandle a_constant = nullptr;
+  AOTITensorHandle b_constant = nullptr;
+  load_constants(&delegate_a, &a_constants, &a_constant);
+  ASSERT_FALSE(HasFatalFailure());
+  load_constants(&delegate_b, &b_constants, &b_constant);
+  ASSERT_FALSE(HasFatalFailure());
+  auto* a_memory = static_cast<float*>(a_constants);
+  auto* b_memory = static_cast<float*>(b_constants);
+  ASSERT_TRUE(metal_is_device_pointer(a_memory + 4));
+  // A view B makes while running that outlives the run, like a folded constant.
+  const int64_t two = 2;
+  AOTITensorHandle b_view = nullptr;
+  {
+    MetalDelegateScope scope(&delegate_b, /*loading=*/false);
+    ASSERT_EQ(
+        aoti_torch__reinterpret_tensor(
+            b_constant, 1, &two, &kStride, /*storage_offset=*/1, &b_view),
+        Error::Ok);
+  }
+  ASSERT_TRUE(metal_is_view(b_memory + 5));
+
+  EXPECT_FALSE(metal_release_delegate(&delegate_a));
+  EXPECT_EQ(tensors.count(a_constant), 0u);
+  EXPECT_FALSE(metal_is_device_pointer(a_constants));
+  EXPECT_FALSE(metal_is_device_pointer(a_memory + 4));
+  EXPECT_EQ(tensors.count(b_constant), 1u);
+  EXPECT_TRUE(metal_is_device_pointer(b_constants));
+  EXPECT_TRUE(metal_is_device_pointer(b_memory + 4));
+  EXPECT_TRUE(metal_is_view(b_memory + 5));
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  queueCopy(*b_constant, *out, 4);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  const auto* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), data);
+
+  EXPECT_TRUE(metal_release_delegate(&delegate_b));
+  EXPECT_EQ(tensors.count(b_constant), 0u);
+  EXPECT_EQ(tensors.count(b_view), 0u);
+  EXPECT_FALSE(metal_is_device_pointer(b_constants));
+  EXPECT_FALSE(metal_is_device_pointer(b_memory + 4));
+  EXPECT_EQ(tensors.count(out), 1u);
+}
+
+// Work still queued on a delegate's memory, as after a failed run, finishes
+// before that memory is freed, even while other delegates stay loaded.
+TEST_F(MetalGraphViewTest, ReleasingADelegateWaitsForItsQueuedWork) {
+  int delegate = 0;
+  int other = 0;
+  metal_begin_delegate(&delegate);
+  metal_begin_delegate(&other);
+  void* constants = nullptr;
+  AOTITensorHandle constant = nullptr;
+  {
+    MetalDelegateScope scope(&delegate, /*loading=*/true);
+    ASSERT_EQ(aoti_torch_mps_malloc(&constants, 4 * sizeof(float)), Error::Ok);
+    ASSERT_EQ(createFromBlob(constants, &constant), Error::Ok);
+  }
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  queueCopy(*constant, *out, 4);
+  ASSERT_FALSE(getCurrentMetalStream()->isEmpty());
+  EXPECT_FALSE(metal_release_delegate(&delegate));
+  EXPECT_TRUE(getCurrentMetalStream()->isEmpty());
+  EXPECT_TRUE(metal_release_delegate(&other));
+}
+
+// Only what a delegate made is released with it: not a handle made outside
+// any delegate, nor a buffer allocated while it ran rather than loaded, which
+// belongs to the handle made over it.
+TEST_F(MetalGraphViewTest, ReleasingADelegateFreesOnlyWhatItMade) {
+  int delegate = 0;
+  metal_begin_delegate(&delegate);
+  AOTITensorHandle outside = nullptr;
+  createMatrix(kDeviceMps, &outside);
+  void* run_buffer = nullptr;
+  {
+    MetalDelegateScope scope(&delegate, /*loading=*/false);
+    ASSERT_EQ(aoti_torch_mps_malloc(&run_buffer, 4 * sizeof(float)), Error::Ok);
+  }
+  EXPECT_TRUE(metal_release_delegate(&delegate));
+  EXPECT_EQ(tensors.count(outside), 1u);
+  EXPECT_TRUE(metal_is_device_pointer(run_buffer));
+  EXPECT_EQ(aoti_torch_mps_free(run_buffer), Error::Ok);
+}
+
+// A buffer freed while its delegate loads is forgotten, so releasing that
+// delegate does not free a buffer another delegate's run got at the same
+// address.
+TEST_F(MetalGraphViewTest, FreedBufferIsForgottenByItsDelegate) {
+  int delegate_a = 0;
+  int delegate_b = 0;
+  metal_begin_delegate(&delegate_a);
+  metal_begin_delegate(&delegate_b);
+  void* freed = nullptr;
+  {
+    MetalDelegateScope scope(&delegate_a, /*loading=*/true);
+    ASSERT_EQ(aoti_torch_mps_malloc(&freed, 4 * sizeof(float)), Error::Ok);
+    ASSERT_EQ(aoti_torch_mps_free(freed), Error::Ok);
+  }
+  std::vector<void*> b_buffers(16, nullptr);
+  {
+    MetalDelegateScope scope(&delegate_b, /*loading=*/false);
+    for (auto& buffer : b_buffers) {
+      ASSERT_EQ(aoti_torch_mps_malloc(&buffer, 4 * sizeof(float)), Error::Ok);
+    }
+  }
+  auto free_b_buffers = [&]() {
+    for (void* buffer : b_buffers) {
+      if (metal_is_device_pointer(buffer)) {
+        EXPECT_EQ(aoti_torch_mps_free(buffer), Error::Ok);
+      }
+    }
+  };
+  if (std::find(b_buffers.begin(), b_buffers.end(), freed) == b_buffers.end()) {
+    metal_release_delegate(&delegate_a);
+    metal_release_delegate(&delegate_b);
+    free_b_buffers();
+    GTEST_SKIP() << "Metal did not reuse the freed address";
+  }
+  EXPECT_FALSE(metal_release_delegate(&delegate_a));
+  for (void* buffer : b_buffers) {
+    EXPECT_TRUE(metal_is_device_pointer(buffer));
+  }
+  EXPECT_TRUE(metal_release_delegate(&delegate_b));
+  free_b_buffers();
+}
+
 // Memory a tensor owns goes with the tensor, not with aoti_torch_mps_free.
 TEST_F(MetalGraphViewTest, FreeingATensorsMemoryIsRefused) {
   const int64_t size = 4;

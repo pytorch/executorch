@@ -360,6 +360,9 @@ AOTITorchError aoti_torch_mps_malloc(void** buffer, size_t num_bytes) {
 
             ET_LOG(Debug, "aoti_torch_mps_malloc: Allocated Metal buffer %p with contents %p of size %zu",
                    metal_buffer, contents_ptr, num_bytes);
+            // Recorded only while a delegate loads (its constants), to be freed
+            // when that delegate is destroyed.
+            metal_note_delegate_buffer(contents_ptr);
             return Error::Ok;
 
         } catch (const std::exception& e) {
@@ -420,6 +423,7 @@ AOTITorchError aoti_torch_mps_free(void* ptr) {
                 it = ptr_to_mtl_buffer.find(ptr);
                 [metal_buffer release];
                 ptr_to_mtl_buffer.erase(it);
+                metal_forget_delegate_buffer(ptr);
                 ET_LOG(Debug, "aoti_torch_mps_free: Freed Metal buffer for contents %p", ptr);
             } else {
                 ET_LOG(Error, "aoti_torch_mps_free: Buffer not found for contents pointer %p", ptr);
