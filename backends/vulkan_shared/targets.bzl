@@ -9,13 +9,13 @@ def define_common_targets():
     runtime.cxx_library(
         name = "runtime",
         srcs = [
-            "runtime/SharedVulkanContext.cpp",
-            "runtime/SharedVulkanContextRegistry.cpp",
+            "runtime/SharedVulkanDevice.cpp",
+            "runtime/SharedVulkanDeviceRegistry.cpp",
             "runtime/SharedVulkanRuntimeConfig.cpp",
         ],
         exported_headers = [
-            "runtime/SharedVulkanContext.h",
-            "runtime/SharedVulkanContextRegistry.h",
+            "runtime/SharedVulkanDevice.h",
+            "runtime/SharedVulkanDeviceRegistry.h",
             "runtime/SharedVulkanRuntimeConfig.h",
             "runtime/export.h",
         ],
@@ -42,8 +42,8 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "shared_gpu_context_registry_test",
-        srcs = ["runtime/test/SharedVulkanContextRegistryTest.cpp"],
+        name = "shared_gpu_device_registry_test",
+        srcs = ["runtime/test/SharedVulkanDeviceRegistryTest.cpp"],
         deps = [
             ":runtime",
             "//executorch/runtime/core:core",

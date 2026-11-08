@@ -203,8 +203,8 @@ else:
 
         copy = output.to_host()
 
-        self.assertEqual(output.dtype_name, "float32")
-        self.assertEqual(output.dtype, np.dtype(np.float32))
+        self.assertIsInstance(output.dtype, str)
+        self.assertEqual(output.dtype, "float32")
         self.assertEqual(
             repr(copy), "ExecuTorchResult(shape=(1,), dtype=float32, device=cpu)"
         )
@@ -354,18 +354,18 @@ else:
         for executor in (module, method):
             with self.subTest(executor=type(executor)):
                 output = executor((one, one))[0]
+                # NumPy has no bfloat16, so the buffer shows unsigned integers
+                # of the same width in the real shape.
                 raw = memoryview(output)
-                self.assertEqual(raw.format, "B")
-                self.assertEqual(raw.shape, (8,))
+                self.assertEqual(raw.format, "H")
+                self.assertEqual(raw.shape, (2, 2))
                 self.assertEqual(raw.tobytes(), bytes((0x00, 0x40)) * 4)
                 self.assertEqual(output.shape, (2, 2))
                 self.assertEqual(output.__dlpack_device__(), (1, 0))
                 if isinstance(output, runtime.ExecuTorchResult):
-                    # NumPy has no bfloat16, so only the name says how to read
-                    # these bytes.
-                    self.assertEqual(output.dtype_name, "bfloat16")
-                    with self.assertRaisesRegex(RuntimeError, "dtype_name"):
-                        output.dtype
+                    self.assertEqual(output.dtype, "bfloat16")
+                    # NumPy reads the buffer first, so call __array__ directly.
+                    self.assertEqual(output.__array__().dtype, np.uint16)
                 for noncontiguous in (
                     np.arange(16, dtype=np.uint8)[::2],
                     np.arange(8, dtype=np.uint8)[::-1],
@@ -383,9 +383,8 @@ else:
 
     def test_bfloat16_result_in_another_layout_feeds_back_correctly(self) -> None:
         # The method takes contiguous inputs and returns a channels-last result.
-        # A bfloat16 result exports flat bytes through the buffer protocol, so
-        # read that way it would take the method's dim order and come out
-        # permuted, with no error.
+        # Fed back, it must be read in its own layout, or its values come back
+        # permuted.
         if runtime._tensor_output != "executorch":
             self.skipTest("ExecuTorchResult output was not selected")
         with open(
@@ -398,12 +397,13 @@ else:
             np.uint16
         )
         zeros = bytes(values.nbytes)
-        channels_last = values.reshape(1, 2, 2, 2).transpose(0, 2, 3, 1).tobytes()
 
         result = method((values.tobytes(), zeros))[0]
         self.assertEqual(result.strides, (16, 2, 8, 4))
+        expected = values.reshape(1, 2, 2, 2)
+        np.testing.assert_array_equal(np.asarray(memoryview(result)), expected)
         fed_back = method((result, zeros))[0]
-        self.assertEqual(memoryview(fed_back).tobytes(), channels_last)
+        np.testing.assert_array_equal(np.asarray(memoryview(fed_back)), expected)
 
     def test_input_errors_name_the_input(self) -> None:
         class FailingProducer:

@@ -236,7 +236,7 @@ TEST(VecAddmmTest, Smoke) {
 
   int64_t out[kZNumVals] = {};
 
-  torch::executor::vec_addmm(out, self, X, Y, 3, 2, 4, 2.0, 3.0);
+  torch::executor::vec_addmm(out, self, X, Y, 3, 2, 4, 2, 3, 4, 1);
 
   // clang-format off
   std::vector<int64_t> expected({

@@ -86,9 +86,10 @@ ethos_u = [
   "tosa-tools==2026.5.0",
 ]
 openvino = [
-  # The OpenVINO versions in this range publish no build for Python 3.15, or for Linux
-  # aarch64 on Python 3.14, so without these bounds pip fails to install the extra there.
-  "openvino>=2025.1.0,<2026.0.0; (platform_system == 'Linux' or (platform_system == 'Windows' and platform_machine == 'AMD64')) and python_version < '3.15' and (platform_machine != 'aarch64' or python_version < '3.14')",
+  # OpenVINO publishes no build for Python 3.15. Its Linux aarch64 builds need glibc 2.35 or
+  # newer while the wheel needs only 2.28, so on an older aarch64 system pip installs an older
+  # ExecuTorch for this extra instead; the docs say what to do there.
+  "openvino>=2025.4.0,<2027.0.0; (platform_system == 'Linux' or (platform_system == 'Windows' and platform_machine == 'AMD64')) and python_version < '3.15'",
 ]
 
 [project.urls]
@@ -136,6 +137,8 @@ license-files = ["LICENSE"]
 "executorch.extension.pybindings" = [
   "py.typed",
 ]
+
+"executorch.examples.models.muse_glimmer.serving" = ["*.jinja"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc"]
