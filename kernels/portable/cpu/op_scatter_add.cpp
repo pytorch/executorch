@@ -29,6 +29,11 @@ void scatter_add_helper(
     const Tensor& index,
     Tensor& out,
     int64_t dim) {
+  if (index.dim() == 0) {
+    out_data[index_data[0]] += src_data[0];
+    return;
+  }
+
   for (const auto ix : c10::irange(index.numel())) {
     size_t ix_coord[kTensorDimensionLimit];
     indexToCoordinate(index, ix, ix_coord);

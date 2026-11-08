@@ -53,6 +53,11 @@ void scatter_src_helper(
     dim += nonzero_dim(in);
   }
 
+  if (index.dim() == 0) {
+    out_data[index_data[0]] = src_data[0];
+    return;
+  }
+
   // The index and src can be in any dim order, like the result of nonzero, so
   // both are read through their strides. A contiguous index, the usual case,
   // is read in order.
