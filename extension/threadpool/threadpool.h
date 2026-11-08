@@ -12,9 +12,16 @@
 #include <memory>
 #include <mutex>
 
-#include <pthreadpool.h>
-
 #include <executorch/runtime/core/function_ref.h>
+
+// The pip package does not ship pthreadpool.h, so the pool type is declared
+// here. Where the header is available, it is still included, because existing
+// code calls pthreadpool functions through this header.
+struct pthreadpool;
+typedef struct pthreadpool* pthreadpool_t;
+#if __has_include(<pthreadpool.h>)
+#include <pthreadpool.h>
+#endif
 
 /*
  * Threadpool Options:
