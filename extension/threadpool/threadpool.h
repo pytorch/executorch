@@ -117,10 +117,8 @@ class ThreadPool final {
   friend std::shared_ptr<pthreadpool> get_shared_pthreadpool();
 
  private:
-  // This mutex is used inside get_thread_count API but it is not really needed
-  // since data members of ThreadPool objects are not really mutable.
-  // TODO(kimishpatel): Figure out if we will allow set_num_threads API, in
-  // which case this mutex will be useful. Otherwise remove it.
+  // Guards threadpool_ and thread_count_. run() holds it for the whole
+  // parallel call, so that a reset or destroy cannot free the pool mid-run.
   mutable std::mutex mutex_;
   // Held with mutex_ to change threadpool_, and alone to read it in the
   // getters, so that they do not wait for run().
