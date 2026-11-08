@@ -6,12 +6,13 @@
 
 # pyre-strict
 
+import copy
 from typing import Any, Callable, Dict, final, List, Optional, Tuple
 
 import executorch.backends.vulkan.utils as vk_utils
 
 import torch
-from executorch.backends.vulkan.op_registry import OpFeatures, OpKey
+from executorch.backends.vulkan.op_registry import get_op_features, OpFeatures, OpKey
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -24,9 +25,40 @@ def _arange_bounds_are_static(node: torch.fx.Node) -> bool:
     return not any(isinstance(arg, torch.fx.Node) for arg in node.args[:3])
 
 
+def _fp32_only(op: OpKey) -> OpFeatures:
+    # The registry's features for the op, limited to fp32 inputs and outputs.
+    features = copy.copy(get_op_features(op))
+    features.inputs_dtypes = vk_utils.DtypeSetList({torch.float32})
+    features.outputs_dtypes = vk_utils.DtypeSetList({torch.float32})
+    return features
+
+
+# Elementwise ops whose WebGPU kernels read and write array<f32>. The Vulkan
+# registry also advertises fp16 for them, which these kernels would misread.
+_FP32_ONLY_OPS: List[OpKey] = [
+    exir_ops.edge.aten.abs.default,
+    exir_ops.edge.aten.clamp.default,
+    exir_ops.edge.aten.cos.default,
+    exir_ops.edge.aten.exp.default,
+    exir_ops.edge.aten.gelu.default,
+    exir_ops.edge.aten.hardswish.default,
+    exir_ops.edge.aten.hardtanh.default,
+    exir_ops.edge.aten.leaky_relu.default,
+    exir_ops.edge.aten.neg.default,
+    exir_ops.edge.aten.pow.Tensor_Scalar,
+    exir_ops.edge.aten.relu.default,
+    exir_ops.edge.aten.round.default,
+    exir_ops.edge.aten.rsqrt.default,
+    exir_ops.edge.aten.sigmoid.default,
+    exir_ops.edge.aten.sin.default,
+    exir_ops.edge.aten.sqrt.default,
+    exir_ops.edge.aten.tanh.default,
+]
+
 # Ops whose WebGPU kernels cover less than the Vulkan registry advertises, so the
 # unsupported forms stay on CPU instead of failing at delegate init.
 _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
+    **{op: _fp32_only(op) for op in _FP32_ONLY_OPS},
     # fp32 and int32 kernels only; int64 is downcast to int32 on device.
     exir_ops.edge.aten.arange.start_step: OpFeatures(
         inputs_storage=vk_utils.ANY_STORAGE,
