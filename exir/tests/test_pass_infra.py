@@ -502,6 +502,28 @@ class TestPassBaseSymbolicInputs(unittest.TestCase):
 
         self.assertEqual(self._symbolic_input_shape(new_input), original_snapshot)
 
+    def test_export_pass_keeps_static_shapes_for_tensor_constants(self) -> None:
+        class AddConstant(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.constant = torch.randn(9, 2)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.constant
+
+        graph_module = export(AddConstant(), (torch.randn(9, 2),), strict=True).module(
+            check_guards=False
+        )
+        (constant,) = [n for n in graph_module.graph.nodes if n.op == "get_attr"]
+        # A constant made by an earlier pass, e.g. constant folding, is a
+        # tensor the fake mode has not seen before.
+        setattr(graph_module, str(constant.target), torch.randn(9, 2))
+
+        new_graph_module = ExportPass()(graph_module).graph_module
+        (constant,) = [n for n in new_graph_module.graph.nodes if n.op == "get_attr"]
+
+        self.assertEqual([type(dim) for dim in constant.meta["val"].shape], [int, int])
+
     def test_export_pass_tracks_replayed_unbacked_symbols(self) -> None:
         def data_dependent_slice(
             tensor: torch.Tensor, length: torch.Tensor

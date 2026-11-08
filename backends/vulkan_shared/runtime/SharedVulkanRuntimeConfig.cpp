@@ -14,21 +14,35 @@ namespace backends {
 namespace vulkan_shared {
 namespace {
 
-runtime::Result<SharedContextMode> parse_context_mode(const char* value) {
+// Accept the Phase 2 option strings while making the new device terminology
+// canonical. New names take precedence if both variants are supplied.
+template <typename T>
+runtime::Result<T> get_device_runtime_option(
+    const runtime::BackendInitContext& context,
+    const char* canonical,
+    const char* legacy) {
+  auto value = context.get_runtime_spec<T>(canonical);
+  if (!value.ok() && value.error() == runtime::Error::NotFound) {
+    return context.get_runtime_spec<T>(legacy);
+  }
+  return value;
+}
+
+runtime::Result<SharedDeviceMode> parse_device_mode(const char* value) {
   if (value == nullptr) {
     return runtime::Error::InvalidArgument;
   }
   if (std::strcmp(value, "disabled") == 0) {
-    return SharedContextMode::kDisabled;
+    return SharedDeviceMode::kDisabled;
   }
   if (std::strcmp(value, "lookup_only") == 0) {
-    return SharedContextMode::kLookupOnly;
+    return SharedDeviceMode::kLookupOnly;
   }
   if (std::strcmp(value, "lookup_or_create") == 0) {
-    return SharedContextMode::kLookupOrCreate;
+    return SharedDeviceMode::kLookupOrCreate;
   }
   if (std::strcmp(value, "create_only") == 0) {
-    return SharedContextMode::kCreateOnly;
+    return SharedDeviceMode::kCreateOnly;
   }
   return runtime::Error::InvalidArgument;
 }
@@ -42,21 +56,22 @@ runtime::Result<SharedVulkanRuntimeConfig> parse_shared_vulkan_runtime_config(
     const runtime::BackendInitContext& context) {
   SharedVulkanRuntimeConfig config;
 
-  auto context_name =
-      context.get_runtime_spec<const char*>(kSharedContextNameOption);
-  if (context_name.ok()) {
-    config.context_name = context_name.get();
-  } else if (context_name.error() != runtime::Error::NotFound) {
-    return context_name.error();
+  auto device_name = get_device_runtime_option<const char*>(
+      context, kSharedDeviceNameOption, kLegacySharedContextNameOption);
+  if (device_name.ok()) {
+    config.device_name = device_name.get();
+  } else if (device_name.error() != runtime::Error::NotFound) {
+    return device_name.error();
   }
 
-  auto mode = context.get_runtime_spec<const char*>(kSharedContextModeOption);
+  auto mode = get_device_runtime_option<const char*>(
+      context, kSharedDeviceModeOption, kLegacySharedContextModeOption);
   if (mode.ok()) {
-    auto parsed_mode = parse_context_mode(mode.get());
+    auto parsed_mode = parse_device_mode(mode.get());
     if (!parsed_mode.ok()) {
       return parsed_mode.error();
     }
-    config.context_mode = parsed_mode.get();
+    config.device_mode = parsed_mode.get();
   } else if (mode.error() != runtime::Error::NotFound) {
     return mode.error();
   }
@@ -68,7 +83,7 @@ runtime::Result<SharedVulkanRuntimeConfig> parse_shared_vulkan_runtime_config(
     return group_id.error();
   }
 
-  if (config.enabled() && config.context_name.empty()) {
+  if (config.enabled() && config.device_name.empty()) {
     return runtime::Error::InvalidArgument;
   }
 

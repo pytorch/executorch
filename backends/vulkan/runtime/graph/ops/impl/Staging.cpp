@@ -97,7 +97,10 @@ GlobalWorkGrid tensor_to_staging_gwg(
   const ValueRef in_tensor = args.at(1).refs.at(0);
   const ValueRef out_staging = args.at(0).refs.at(0);
 
-  GlobalWorkGrid gwg = graph->create_gwg(in_tensor);
+  GlobalWorkGrid gwg = graph->is_buffer_storage(in_tensor)
+      ? graph->create_linear_gwg(
+            utils::safe_downcast<uint64_t>(graph->numel_of(in_tensor)))
+      : graph->create_gwg(in_tensor);
 
   // The bitw8 shader writes out a complete 32 bit integer (containing 4 packed
   // 8-bit integers) per thread, so its global work group size is the number of
@@ -190,12 +193,7 @@ void add_prepack_standard_node(
   }
 
   std::vector<PushConstantDataInfo> pcs;
-  if (graph.is_buffer_storage(tensor)) {
-    pcs = {
-        graph.sizes_pc_of(tensor),
-        graph.strides_pc_of(tensor),
-        graph.numel_pc_of(tensor)};
-  } else if (is_nchw_to_bitw8_shader(shader)) {
+  if (is_nchw_to_bitw8_shader(shader)) {
     pcs = {graph.sizes_pc_of(tensor)};
   }
 
@@ -278,6 +276,9 @@ void add_prepack_direct_copy_buffer_node(
     ComputeGraph& graph,
     const ValueRef tensor_data,
     const ValueRef tensor) {
+  if (graph.physical_numel_of(tensor) != graph.numel_of(tensor)) {
+    return add_prepack_standard_node(graph, tensor_data, tensor);
+  }
   std::string kernel_name = "buffer_to_buffer";
   add_dtype_suffix(kernel_name, graph.dtype_of(tensor_data));
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);

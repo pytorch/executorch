@@ -93,6 +93,7 @@ from .decompose_matmul import DecomposeMatmulPass  # noqa
 from .decompose_max_pool1d_pass import DecomposeMaxPool1dPass  # noqa
 from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
+from .decompose_mv_dot_pass import DecomposeMvDotPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_permute_for_u55_pass import DecomposePermuteForU55Pass  # noqa
 from .decompose_pow_tensor_tensor_pass import DecomposePowTensorTensorPass  # noqa
@@ -168,6 +169,9 @@ from .insert_rescales_pass import (  # noqa
     InsertControlFlowRescalesPass,
     InsertRescaleInt32Pass,
     InsertRescalePass,
+)
+from .insert_sym_size_int_for_input_dims_pass import (  # noqa
+    InsertSymSizeIntForInputDimsPass,
 )
 from .insert_table_ops import InsertTableOpsPass  # noqa
 from .lower_dynamic_w8a8_linear_pass import LowerDynamicW8A8LinearPass  # noqa

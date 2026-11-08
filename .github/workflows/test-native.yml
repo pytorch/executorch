@@ -14,7 +14,11 @@ on:
       - install_requirements.sh
       - requirements-dev.txt
       - requirements-examples.txt
+      - backends/cpu/CMakeLists.txt
+      - backends/cpu/runtime/**
       - backends/native/**
+      - backends/cadence/utils/FACTO
+      - backends/test/suite/operators/test_linear.py
       - backends/vulkan/CMakeLists.txt
       - backends/vulkan/cmake/**
       - backends/vulkan/runtime/api/**
@@ -27,13 +31,22 @@ on:
       - backends/vulkan/third-party/volk
       - backends/vulkan_shared/CMakeLists.txt
       - backends/vulkan_shared/runtime/**
+      - backends/xnnpack/CMakeLists.txt
+      - backends/xnnpack/cmake/**
+      - backends/xnnpack/runtime/profiling/**
       - backends/xnnpack/third-party/FXdiv
+      - backends/xnnpack/third-party/XNNPACK
       - backends/xnnpack/third-party/cpuinfo
       - backends/xnnpack/third-party/pthreadpool
       - examples/models/llama/tokenizer/**
       - extension/llm/tokenizers
       - extension/llm/export/**
+      - devtools/etdump/**
       - exir/**
+      - configurations/**
+      - extension/memory_allocator/**
+      - extension/threadpool/**
+      - kernels/**
       - runtime/**
       - third-party/**
       - tools/cmake/**
@@ -67,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [runtime, ggml, vulkan]
+        component: [runtime, cpu, ggml, vulkan]
     defaults:
       run:
         shell: bash
@@ -104,9 +117,10 @@ jobs:
 
           if [[ "${NATIVE_COMPONENT}" == "ggml" ]]; then
             ./install_requirements.sh --use-pt-pinned-commit
-            # The LLM runner test imports executorch from src/ without installing the
-            # wheel, so install its export-time dependencies directly.
-            pip install flatbuffers ruamel.yaml tabulate \
+            # The LLM runner test and the op sample generator import executorch from
+            # src/ without installing the wheel, so install their export-time
+            # dependencies directly.
+            pip install flatbuffers gguf ruamel.yaml tabulate \
               "$(grep -E '^transformers\b' requirements-examples.txt)"
           fi
 

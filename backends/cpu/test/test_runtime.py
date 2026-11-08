@@ -132,6 +132,25 @@ class CPURuntimeTest(unittest.TestCase):
             actual = runtime.forward((x,))[0]
             torch.testing.assert_close(actual, model(x))
 
+    def test_1d_linear_reference_fallback(self):
+        class Linear(torch.nn.Module):
+            def forward(self, *args):
+                return torch.nn.functional.linear(*args)
+
+        model = Linear()
+        for inputs in (
+            (torch.randn(4), torch.randn(3, 4), torch.randn(3)),
+            (torch.randn(4), torch.randn(4)),
+            (torch.randn(2, 4), torch.randn(4)),
+            (torch.randn(4), torch.randn(4), torch.randn(())),
+            (torch.randn(2, 3, 4), torch.randn(4), torch.randn(())),
+        ):
+            with self.subTest(shapes=[x.shape for x in inputs]):
+                with self._lower(model, inputs) as runtime:
+                    torch.testing.assert_close(
+                        runtime.forward(inputs)[0], model(*inputs)
+                    )
+
     def test_maxpool2d_reference_fallback(self):
         model = torch.nn.MaxPool2d(2)
         for x in (
@@ -251,15 +270,62 @@ class CPURuntimeTest(unittest.TestCase):
             def forward(self, x):
                 return x + self.p
 
-        linear = torch.nn.Linear(16, 8)
-        # Named constants carry a 64-byte readable tail.
-        packed_bytes = sum(
-            t.numel() * t.element_size() + 64 for t in (linear.weight, linear.bias)
+        cases = (
+            (torch.nn.Linear(16, 8), (torch.randn(2, 16),), True),
+            (torch.nn.Conv2d(3, 4, 3), (torch.randn(1, 3, 8, 8),), True),
+            (torch.nn.Conv2d(3, 3, 3, groups=3), (torch.randn(1, 3, 8, 8),), True),
+            (AddParameter(), (torch.randn(2, 16),), False),
         )
-        inputs = (torch.randn(2, 16),)
-        for model, released in ((linear, packed_bytes), (AddParameter(), 0)):
-            with self.subTest(model=type(model).__name__):
+        for model, inputs, packed in cases:
+            with self.subTest(model=type(model).__name__, packed=packed):
                 model.eval()
+                # Named constants carry a 64-byte readable tail.
+                released = (
+                    sum(t.numel() * t.element_size() + 64 for t in model.parameters())
+                    if packed
+                    else 0
+                )
+
+                def run(model=model, inputs=inputs):
+                    with self._lower(model, inputs) as runtime:
+                        return runtime.forward(inputs)[0]
+
+                actual, log = _run_capturing_stderr(run)
+                report = _plan_report(log)
+                self.assertEqual(report["released_constant_bytes"], released)
+                torch.testing.assert_close(actual, model(*inputs), rtol=1e-5, atol=1e-5)
+
+    def test_plan_report_counts_released_weight_conversions(self):
+        model = torch.nn.Conv2d(3, 4, 3).eval()
+        inputs = (torch.randn(1, 3, 8, 8),)
+
+        def run():
+            with self._lower(model, inputs) as runtime:
+                return runtime.forward(inputs)[0]
+
+        actual, log = _run_capturing_stderr(run)
+        report = _plan_report(log)
+        # The 4x3x3x3 weight and its readable tail, converted to XNNPACK's layout.
+        self.assertEqual(report["released_private_constant_bytes"], 432 + 64)
+        self.assertEqual(report["private_constant_bytes"], 0)
+        torch.testing.assert_close(actual, model(*inputs), rtol=1e-5, atol=1e-5)
+
+    def test_plan_report_releases_only_constant_bmm_rhs(self):
+        class BmmConstant(torch.nn.Module):
+            def __init__(self, rhs):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(2, 3, 3))
+                self.rhs = rhs
+
+            def forward(self, x):
+                return (
+                    torch.bmm(x, self.weight) if self.rhs else torch.bmm(self.weight, x)
+                )
+
+        inputs = (torch.randn(2, 3, 3),)
+        for rhs in (False, True):
+            with self.subTest(rhs=rhs):
+                model = BmmConstant(rhs).eval()
 
                 def run(model=model):
                     with self._lower(model, inputs) as runtime:
@@ -267,5 +333,10 @@ class CPURuntimeTest(unittest.TestCase):
 
                 actual, log = _run_capturing_stderr(run)
                 report = _plan_report(log)
+                released = (
+                    model.weight.numel() * model.weight.element_size() + 64
+                    if rhs
+                    else 0
+                )
                 self.assertEqual(report["released_constant_bytes"], released)
                 torch.testing.assert_close(actual, model(*inputs), rtol=1e-5, atol=1e-5)
