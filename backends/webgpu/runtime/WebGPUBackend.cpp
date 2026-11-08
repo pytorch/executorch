@@ -175,6 +175,8 @@ Error WebGPUBackend::execute(
   // Copy inputs from EValue tensors to GPU buffers
   std::vector<InputData> inputs;
   inputs.reserve(num_inputs);
+  std::vector<std::vector<uint8_t>> reordered_inputs;
+  reordered_inputs.reserve(num_inputs);
   // Fail loud as a runtime Error so a throw never crosses the backend boundary.
   try {
     // Build the input list and, for dynamic shapes, shrink each input to its
@@ -186,11 +188,15 @@ Error WebGPUBackend::execute(
           tensor.scalar_type() == executorch::aten::ScalarType::Long;
       const bool host_is_fp32 =
           tensor.scalar_type() == executorch::aten::ScalarType::Float;
-      inputs.push_back(
-          {tensor.const_data_ptr(),
-           tensor.nbytes(),
-           host_is_int64,
-           host_is_fp32});
+      const void* data = tensor.const_data_ptr();
+      // The graph reads every input in the default dim order.
+      if (!executorch::runtime::tensor_data_is_in_default_dim_order(tensor)) {
+        reordered_inputs.emplace_back(tensor.nbytes());
+        executorch::runtime::copy_to_default_dim_order(
+            tensor, reordered_inputs.back().data());
+        data = reordered_inputs.back().data();
+      }
+      inputs.push_back({data, tensor.nbytes(), host_is_int64, host_is_fp32});
       const auto sizes = tensor.sizes();
       std::vector<int64_t> new_dims(sizes.begin(), sizes.end());
       graph->resize_input(graph->input_ids()[i], new_dims);
@@ -233,15 +239,27 @@ Error WebGPUBackend::execute(
     // Copy outputs from GPU staging buffers to EValue tensor data pointers
     std::vector<OutputData> outputs;
     outputs.reserve(num_outputs);
+    std::vector<std::vector<uint8_t>> reordered_outputs(num_outputs);
     for (size_t i = 0; i < num_outputs; i++) {
       const size_t arg_idx = num_inputs + i;
       auto& tensor = args[arg_idx]->toTensor();
       const bool host_is_fp32 =
           tensor.scalar_type() == executorch::aten::ScalarType::Float;
-      outputs.push_back(
-          {tensor.mutable_data_ptr(), tensor.nbytes(), host_is_fp32});
+      void* data = tensor.mutable_data_ptr();
+      if (plan.copy_outputs[i] &&
+          !executorch::runtime::tensor_data_is_in_default_dim_order(tensor)) {
+        reordered_outputs[i].resize(tensor.nbytes());
+        data = reordered_outputs[i].data();
+      }
+      outputs.push_back({data, tensor.nbytes(), host_is_fp32});
     }
     graph->copy_outputs(outputs, plan);
+    for (size_t i = 0; i < num_outputs; i++) {
+      if (!reordered_outputs[i].empty()) {
+        executorch::runtime::copy_from_default_dim_order(
+            reordered_outputs[i].data(), args[num_inputs + i]->toTensor());
+      }
+    }
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU execute / output copy failed: %s", e.what());
     return Error::Internal;
