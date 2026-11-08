@@ -1537,8 +1537,11 @@ void metal_forget_delegate_buffer(void* ptr) {
 }
 
 bool metal_release_delegate(const void* delegate) {
-  // Work may still be queued on this delegate's memory, e.g. after a failed
-  // run, and that memory is about to go.
+  // As cleanup_memory does: nothing of this delegate is left queued once it is
+  // destroyed, e.g. after a failed run. The frees below do not rely on it:
+  // each waits itself where queued work could still reach the memory it frees
+  // (metal_release_cpu_region, aoti_torch_mps_free), and command buffers keep
+  // the device buffers they use alive.
   auto* stream = getCurrentMetalStream();
   if (stream != nullptr) {
     stream->synchronize(SyncType::COMMIT_AND_WAIT);

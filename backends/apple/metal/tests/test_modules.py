@@ -57,6 +57,10 @@ TESTS_DIR = Path(__file__).parent
 EXECUTORCH_ROOT = TESTS_DIR.parent.parent.parent.parent
 BUILD_DIR = EXECUTORCH_ROOT / "cmake-out"
 EXECUTOR_RUNNER = BUILD_DIR / "executor_runner"
+# Runs two programs in one process (runtime/test/multi_delegate_runner.cpp).
+MULTI_DELEGATE_RUNNER = (
+    BUILD_DIR / "backends" / "apple" / "metal" / "metal_multi_delegate_runner"
+)
 RUN_METAL_TEST_SCRIPT = TESTS_DIR / "run_metal_test.sh"
 
 # Test output directory - use current working directory in CI for reliable write access
@@ -1721,6 +1725,64 @@ class TestMetalBackendModules(unittest.TestCase):
         model, example_inputs = get_model_and_inputs("add", dtype=torch.float32)
         program = export_model_to_metal(model, example_inputs)
         self.assertGreater(len(program.buffer), 0)
+
+    @unittest.skipIf(SKIP_RUNTIME_TESTS, SKIP_RUNTIME_REASON)
+    @unittest.skipIf(
+        not MULTI_DELEGATE_RUNNER.exists(),
+        "metal_multi_delegate_runner not built - run "
+        "'backends/apple/metal/tests/run_metal_test.sh --build'",
+    )
+    def test_destroying_one_program_keeps_the_others_memory(self):
+        """Two programs share the process: destroying the first must leave the
+        second's constants and handles alone, so its next run is still right."""
+        dtype = torch.float32
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_dir = Path(tmpdir)
+            pte_paths = []
+            for model_name in ("conv2d_bias", "linear_bias"):
+                model, example_inputs = get_model_and_inputs(model_name, dtype=dtype)
+                model_dir = test_dir / model_name
+                model_dir.mkdir()
+                pte_path, expected_output = export_model_to_pte(
+                    model,
+                    example_inputs,
+                    model_dir,
+                    model_name,
+                    model_config=MODULE_REGISTRY[model_name],
+                )
+                pte_paths.append(pte_path)
+
+            output_base_path = test_dir / "output"
+            result = subprocess.run(
+                [
+                    str(MULTI_DELEGATE_RUNNER),
+                    *map(str, pte_paths),
+                    str(output_base_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(EXECUTORCH_ROOT),
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                f"metal_multi_delegate_runner failed\n{result.stdout}\n{result.stderr}",
+            )
+
+            atol, rtol = get_tolerances_for_model("linear_bias", dtype)
+            is_close, max_atol, max_rtol = compare_outputs(
+                expected_output,
+                test_dir / "output-0.bin",
+                dtype,
+                atol=atol,
+                rtol=rtol,
+            )
+            self.assertTrue(
+                is_close,
+                f"linear_bias after destroying conv2d_bias: output mismatch - "
+                f"max_atol={max_atol}, max_rtol={max_rtol}",
+            )
 
 
 # =============================================================================
