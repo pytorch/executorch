@@ -45,6 +45,10 @@ class QuantizationConfig:
     per_channel_embedding: bool = False
 
 
+# float32 represents this exactly; 2**31 - 1 rounds to 2**31 and overflows int32.
+_INT32_BIAS_MAX = 2**31 - 2**8
+
+
 def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
     def _derive_bias_qparams_fn(
         obs_or_fqs: List,
@@ -103,8 +107,8 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
         derived_from=[(input_act, node), (weight, node)],
         derive_qparams_fn=_derive_bias_qparams_fn,
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         ch_axis=0,
         qscheme=torch.per_channel_symmetric,
     )
@@ -128,8 +132,8 @@ def get_fp16a8w_qnn_ptq_config(
 
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
@@ -194,15 +198,15 @@ def get_fp16a8w_qnn_qat_config(
 
     bias_fake_quant_ctr = FakeQuantize.with_args(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=bias_fake_quant_ctr,
     )
@@ -283,8 +287,8 @@ def get_8a8w_qnn_ptq_config(
 
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
@@ -341,8 +345,8 @@ def get_8a4w_qnn_ptq_config(
 
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
@@ -386,8 +390,8 @@ def get_16a2w_qnn_ptq_config(
 
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
@@ -431,8 +435,8 @@ def get_16a4w_qnn_ptq_config(
 
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
@@ -473,8 +477,8 @@ def get_16a8w_qnn_ptq_config(
 
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
@@ -518,8 +522,8 @@ def get_16a16w_qnn_ptq_config(
     # torch does not support uint16 quantization, use int32 to bypass
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
@@ -579,15 +583,15 @@ def get_16a8w_qnn_qat_config(
 
     bias_fake_quant_ctr = FakeQuantize.with_args(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=bias_fake_quant_ctr,
     )
@@ -876,15 +880,15 @@ def get_8a8w_qnn_qat_config(
 
     bias_fake_quant_ctr = FakeQuantize.with_args(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=bias_fake_quant_ctr,
     )
@@ -944,15 +948,15 @@ def get_16a4w_qnn_qat_config(
 
     bias_fake_quant_ctr = FakeQuantize.with_args(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
+        quant_min=-_INT32_BIAS_MAX,
+        quant_max=_INT32_BIAS_MAX,
         qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=bias_fake_quant_ctr,
     )
