@@ -1,0 +1,58 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Element-wise ops applied to a convolution output texel before it is stored:
+ *
+ *   out = activation(residual_op(conv, residual * scale, alpha))
+ *
+ * The including shader binds t_residual, a texture3d with the output's sizes,
+ * and declares the specialization constants has_residual, has_scale,
+ * residual_op, has_activation and activation_op, and the uniforms
+ * residual_alpha, activation_a and activation_b. Operands that are absent are
+ * bound to other tensors of the dispatch and never read.
+ */
+
+#ifndef CONV2D_EPILOGUE_GLSLH
+#define CONV2D_EPILOGUE_GLSLH
+
+#define IN_T vec4
+#define OUT_T vec4
+#define ALPHA_T float
+#define PARAM_T float
+#define BINARY_OP_VEC4
+#define BINARY_OP_IS_FLOAT
+#define UNARY_OP_IS_FLOAT
+
+#include "binary/binary_op.glslh"
+#include "unary/unary_op.glslh"
+
+#undef IN_T
+#undef OUT_T
+#undef ALPHA_T
+#undef PARAM_T
+#undef BINARY_OP_VEC4
+#undef BINARY_OP_IS_FLOAT
+#undef UNARY_OP_IS_FLOAT
+
+// `scale` is the residual scale of the output channels in `pos.z`.
+vec4 apply_epilogue(vec4 v, const ivec3 pos, const vec4 scale) {
+  if (has_residual) {
+    vec4 residual = texelFetch(t_residual, pos, 0);
+    if (has_scale) {
+      residual *= scale;
+    }
+    v = apply_binary_op(residual_op, v, residual, residual_alpha);
+  }
+  if (has_activation) {
+    v = apply_unary_op(activation_op, v, activation_a, activation_b);
+  }
+  return v;
+}
+
+#endif // CONV2D_EPILOGUE_GLSLH
