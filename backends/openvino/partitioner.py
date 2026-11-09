@@ -104,16 +104,13 @@ def _remove_copies_of_inputs(
     OpenVINO would return the input itself, and when the runtime binds the
     output buffers after the inputs, its CPU plugin does not write such an
     output and can overwrite the input with the output buffer's old contents.
-    Copies used only inside the partition stay, because OpenVINO reads every
-    input in the default dim order, which a copy left out could have changed.
+    Copies used only inside the partition stay, where OpenVINO can fold them.
     A copy of a constant that only this partition reads stays too, since the
     constant is not a partition input. Such a copy still leaves when it is not
-    in the default dim order, since OpenVINO writes every output in the default
-    one, when its type is not in dtypes, the types OpenVINO can return, or when
-    another output also returns that constant, since OpenVINO's PyTorch
-    frontend cannot convert two outputs of one constant. Like any input, a copy
-    left out that is not in the default dim order is still read wrong by the
-    ops that use it inside.
+    in the default dim order, when its type is not in dtypes, the types
+    OpenVINO can return, or when another output also returns that constant,
+    since OpenVINO's PyTorch frontend cannot convert two outputs of one
+    constant.
     """
 
     def copied(node: torch.fx.Node) -> Optional[torch.fx.Node]:

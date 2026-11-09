@@ -51,8 +51,7 @@ class TestCopyOperator(BaseOpenvinoOpTest):
             def forward(self, x):
                 return x.clone(memory_format=torch.channels_last).mean(dim=(2, 3))
 
-        # Run outside, the clone would hand OpenVINO a channels-last input,
-        # which it reads as if it were contiguous.
+        # The clone stays in the partition, since only the mean reads it.
         self.execute_layer_test(ChannelsLastMean(), (torch.randn(2, 3, 4, 5),))
 
     def test_copy_of_constant_as_output(self):

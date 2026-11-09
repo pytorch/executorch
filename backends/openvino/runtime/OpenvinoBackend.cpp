@@ -639,9 +639,24 @@ exr::Error OpenvinoBackend::copy_output(
         Error, "OpenVINO: failed to get an output shape (status=%d)", status);
     return exr::Error::Internal;
   }
+  if (shape.rank != static_cast<int64_t>(output.dim())) {
+    ET_LOG(
+        Error,
+        "OpenVINO: output has rank %" PRId64 ", expected %zd",
+        shape.rank,
+        output.dim());
+    ov_.shape_free(&shape);
+    return exr::Error::Internal;
+  }
+  // OpenVINO gives the sizes in memory order.
+  auto dim_order = output.dim_order();
+  std::unique_ptr<int64_t[]> sizes(new int64_t[shape.rank]);
+  for (int64_t d = 0; d < shape.rank; d++) {
+    sizes[dim_order[d]] = shape.dims[d];
+  }
   exr::Error error = exr::resize_tensor(
       output,
-      exa::ArrayRef<int64_t>(shape.dims, static_cast<size_t>(shape.rank)));
+      exa::ArrayRef<int64_t>(sizes.get(), static_cast<size_t>(shape.rank)));
   ov_.shape_free(&shape);
   if (error != exr::Error::Ok) {
     return error;
@@ -746,8 +761,11 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
     dims_heap.reset(new int64_t[rank]);
     dims = dims_heap.get();
   }
+  // The lowering added a transpose to any input or output in another dim
+  // order, so OpenVINO takes the sizes in memory order.
+  auto dim_order = tensor.dim_order();
   for (int64_t d = 0; d < rank; d++) {
-    dims[d] = sizes[d];
+    dims[d] = sizes[dim_order[d]];
   }
   // shape_create refuses rank 0, so a 0-d tensor keeps the zero-initialized
   // shape, which describes a scalar.
