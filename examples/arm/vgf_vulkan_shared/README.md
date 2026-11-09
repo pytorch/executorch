@@ -405,4 +405,30 @@ Also check that the registered device has the required Vulkan extensions, enable
 
 The native GPU must support the Arm tensor and data-graph extensions required by VGF.
 
-On a development machine without native
+On a development machine without native support, use a compatible Vulkan ML emulation environment.
+
+### Runner cannot load a shared library
+
+Check that `libexecutorch_vulkan_shared_runtime.so` is deployed and accessible through `LD_LIBRARY_PATH`.
+
+Ensure that all backends use the same registry library and are built from compatible runtime sources.
+
+### Numerical output differs
+
+Confirm that the deployed `.pte`, input tensor, and reference output were produced by the same export.
+
+Also verify that the selected GPU driver and Model Converter configuration support the operations used by the model.
+
+## Summary
+
+This example demonstrates mixed VGF and Vulkan execution using a single shared Vulkan device.
+
+It provides a small, reproducible model with a known execution sequence:
+
+```text
+VGF -> Vulkan -> VGF
+```
+
+The example verifies device sharing, queue synchronization, backend interoperability, and numerical correctness.
+
+It is intended as a starting point for applications that use VGF and Vulkan together in one ExecuTorch program while avoiding separate Vulkan device creation for each backend.
