@@ -21,6 +21,7 @@
 #include <numeric>
 #include <sstream>
 #include <string>
+#include <vector>
 
 using namespace std;
 
@@ -65,6 +66,7 @@ using executorch::runtime::EventTracerEntry;
 #include <vgf/decoder.hpp>
 #include <vgf/vulkan_helpers.generated.hpp>
 
+#include <executorch/backends/arm/runtime/VGFBoundaryIO.h>
 #include <executorch/backends/arm/runtime/VGFExecutionStats.h>
 #include <executorch/backends/arm/runtime/VGFSetup.h>
 
@@ -457,6 +459,50 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
  public:
   VGFBackend() = default;
 
+  Error get_mapped_boundary_buffer(
+      const executorch::runtime::MemoryAllocator* method_allocator,
+      bool input,
+      size_t argument_index,
+      VgfMappedBoundaryBuffer* buffer) const noexcept {
+    if (method_allocator == nullptr || buffer == nullptr) {
+      return Error::InvalidArgument;
+    }
+    *buffer = {};
+    if (!vgf_zero_copy_io_build_enabled() ||
+        !vgf_zero_copy_io_runtime_enabled(std::getenv(kVgfZeroCopyIoEnv))) {
+      return Error::NotSupported;
+    }
+
+    // The same mutex covers registration, execute() (including terminal
+    // VgfRepr invalidation), and destroy(). Never dereference an unregistered
+    // representation or an unsynchronized IO allocation.
+    const std::lock_guard<std::mutex> lock(mutex_);
+    const MappedBoundaryEntry* match = nullptr;
+    for (const auto& entry : mapped_boundary_reprs_) {
+      if (entry.method_allocator != method_allocator) {
+        continue;
+      }
+      if (match != nullptr) {
+        // Two delegates sharing an allocator cannot be differentiated by this
+        // key; in particular a Method containing two VGF partitions is unsafe.
+        return Error::NotSupported;
+      }
+      match = &entry;
+    }
+    if (match == nullptr) {
+      return Error::NotFound;
+    }
+    if (!match->repr->is_execution_valid()) {
+      return Error::InvalidState;
+    }
+    const Error status = match->repr->get_owned_mapped_boundary_buffer(
+        input, argument_index, buffer);
+    if (status == Error::Ok) {
+      buffer->generation = match->generation;
+    }
+    return status;
+  }
+
   // Lazy Vulkan init. All callers hold mutex_; no Vulkan work is done
   // from the process-global backend's constructor or destructor.
   void ensure_initialized() {
@@ -659,6 +705,12 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     event_tracer_end_profiling_delegate(event_tracer, init_total_event);
 #endif
 
+    // init() already holds mutex_; identify the owning Method by its
+    // allocator (the client must not share it across live Methods).
+    self->mapped_boundary_reprs_.push_back(MappedBoundaryEntry{
+        context.get_runtime_allocator(),
+        repr,
+        self->next_mapped_boundary_generation_++});
     ++self->live_delegates_;
     return repr;
   }
@@ -728,23 +780,58 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     (void)context;
 #endif
 
-    const bool zero_copy_enabled = vgf_zero_copy_io_should_attempt(
-        vgf_zero_copy_io_build_enabled(),
-        std::getenv(kVgfZeroCopyIoEnv),
-        repr->host_memory_import_enabled());
+    const bool zero_copy_requested = vgf_zero_copy_io_build_enabled() &&
+        vgf_zero_copy_io_runtime_enabled(std::getenv(kVgfZeroCopyIoEnv));
+    const bool host_import_enabled =
+        zero_copy_requested && repr->host_memory_import_enabled();
+
+    enum class BoundaryIoMode : uint8_t {
+      kCopy,
+      kImportedHost,
+      kOwnedMapped,
+    };
 
     VgfZeroCopyExecutionCleanup zero_copy_cleanup(repr);
-    std::vector<bool> zero_copy_outputs(output_count, false);
+    std::vector<BoundaryIoMode> output_modes(
+        output_count, BoundaryIoMode::kCopy);
 
     // Prepare one model-boundary tensor. Normal eligibility/import rejection
     // returns imported=false and leaves/selects the unconditional owned path.
     // Only an internal inability to restore a previously active owned binding
     // is treated as a runtime error.
-    auto prepare_zero_copy =
-        [&](size_t io_idx, Tensor* tensor, bool input, bool* imported) -> bool {
-      *imported = false;
+    auto prepare_zero_copy = [&](size_t io_idx,
+                                 Tensor* tensor,
+                                 bool input,
+                                 BoundaryIoMode* mode) -> bool {
+      *mode = BoundaryIoMode::kCopy;
+      const size_t logical_nbytes = tensor->nbytes();
 
-      if (!zero_copy_enabled) {
+      // Preferred path: the Method tensor is already backed by the VGF-owned
+      // persistent mapping. No external-memory import, descriptor replacement,
+      // command-buffer rerecord, or boundary memcpy is needed.
+      if (repr->is_owned_mapped_io_pointer(
+              io_idx, tensor->mutable_data_ptr(), logical_nbytes)) {
+        if (repr->is_import_active(io_idx) &&
+            !repr->activate_owned_binding(io_idx)) {
+          ET_LOG(
+              Error,
+              "Failed to restore owned VGF boundary binding for IO %zu",
+              io_idx);
+          return false;
+        }
+        if (input && !repr->flush_io_host_writes(io_idx)) {
+          return false;
+        }
+        *mode = BoundaryIoMode::kOwnedMapped;
+        if (input) {
+          VGF_STATS_ZERO_COPY_IN(logical_nbytes);
+        } else {
+          VGF_STATS_ZERO_COPY_OUT(logical_nbytes);
+        }
+        return true;
+      }
+
+      if (!host_import_enabled) {
         if (repr->is_import_active(io_idx) &&
             !repr->activate_owned_binding(io_idx)) {
           ET_LOG(
@@ -756,12 +843,11 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         return true;
       }
 
-      const size_t logical_nbytes = tensor->nbytes();
       const auto import_result = repr->try_import_zero_copy_candidate(
           io_idx, tensor->mutable_data_ptr(), logical_nbytes);
 
       if (import_result.accepted && repr->is_import_active(io_idx)) {
-        *imported = true;
+        *mode = BoundaryIoMode::kImportedHost;
         if (input) {
           VGF_STATS_ZERO_COPY_IN(logical_nbytes);
         } else {
@@ -790,8 +876,6 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
             vgf_zero_copy_import_rejection_reason_string(import_result.reason),
             static_cast<int>(import_result.vk_result));
       } else {
-        // Accepted-but-not-selected should be impossible, but copy fallback is
-        // still safer than dispatching with an unexpected descriptor state.
         ET_LOG(
             Debug,
             "VGF zero-copy import for IO %zu was accepted but no imported "
@@ -849,19 +933,20 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         return Error::InvalidArgument;
       }
 
-      bool imported = false;
+      BoundaryIoMode mode = BoundaryIoMode::kCopy;
       if (!prepare_zero_copy(
-              static_cast<size_t>(io_idx), tensor, /*input=*/true, &imported)) {
+              static_cast<size_t>(io_idx), tensor, /*input=*/true, &mode)) {
 #ifdef ET_EVENT_TRACER_ENABLED
         event_tracer_end_profiling_delegate(event_tracer, copy_inputs_event);
         event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
 #endif
         return Error::Internal;
       }
-      if (imported) {
+      if (mode != BoundaryIoMode::kCopy) {
         ET_LOG(
             Debug,
-            "Zero-copy input IO[%d] <- args[%zu]",
+            "%s input IO[%d] <- args[%zu]",
+            mode == BoundaryIoMode::kOwnedMapped ? "Owned-mapped" : "Imported",
             io_idx,
             input_arg_idx);
         continue;
@@ -878,6 +963,10 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         return Error::Internal;
       }
       VGF_STATS_MEMCPY_IN(data, tensor->mutable_data_ptr(), io_size);
+      if (!repr->flush_io_host_writes(static_cast<size_t>(io_idx))) {
+        ET_LOG(Error, "Failed to flush VGF input IO %d", io_idx);
+        return Error::Internal;
+      }
       repr->unmap_io(io);
     }
 
@@ -935,12 +1024,12 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         return Error::InvalidArgument;
       }
 
-      bool imported = false;
+      BoundaryIoMode mode = BoundaryIoMode::kCopy;
       if (!prepare_zero_copy(
               static_cast<size_t>(io_idx),
               tensor,
               /*input=*/false,
-              &imported)) {
+              &mode)) {
 #ifdef ET_EVENT_TRACER_ENABLED
         event_tracer_end_profiling_delegate(
             event_tracer, prepare_outputs_event);
@@ -949,11 +1038,15 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         return Error::Internal;
       }
 
-      zero_copy_outputs[output_rel_idx] = imported;
+      output_modes[output_rel_idx] = mode;
+      const char* mode_name = mode == BoundaryIoMode::kOwnedMapped
+          ? "Owned-mapped"
+          : (mode == BoundaryIoMode::kImportedHost ? "Imported"
+                                                   : "Copy fallback");
       ET_LOG(
           Debug,
           "%s output IO[%d] -> args[%zu]",
-          imported ? "Zero-copy" : "Owned fallback",
+          mode_name,
           io_idx,
           output_arg_idx);
     }
@@ -1034,7 +1127,15 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
          ++output_rel_idx) {
       const size_t output_arg_idx = input_count + output_rel_idx;
       const int io_idx = repr->model_output_io_index[output_rel_idx];
-      if (zero_copy_outputs[output_rel_idx]) {
+      const BoundaryIoMode mode = output_modes[output_rel_idx];
+      if (mode == BoundaryIoMode::kImportedHost) {
+        continue;
+      }
+      if (!repr->invalidate_io_host_reads(static_cast<size_t>(io_idx))) {
+        ET_LOG(Error, "Failed to invalidate VGF output IO %d", io_idx);
+        return Error::Internal;
+      }
+      if (mode == BoundaryIoMode::kOwnedMapped) {
         continue;
       }
 
@@ -1086,10 +1187,19 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     auto* self = const_cast<VGFBackend*>(this);
     const std::lock_guard<std::mutex> lock(mutex_);
     ET_CHECK_MSG(live_delegates_ > 0, "Unbalanced VGF delegate destruction");
+    VgfRepr* repr = static_cast<VgfRepr*>(handle);
+    // destroy() already holds mutex_; unregister before freeing the IO.
+    self->mapped_boundary_reprs_.erase(
+        std::remove_if(
+            self->mapped_boundary_reprs_.begin(),
+            self->mapped_boundary_reprs_.end(),
+            [repr](const MappedBoundaryEntry& entry) {
+              return entry.repr == repr;
+            }),
+        self->mapped_boundary_reprs_.end());
     // A failed execution may have submitted work without completing its
     // fence wait. Drain it before freeing any per-delegate resources.
     self->wait_for_device_idle();
-    VgfRepr* repr = static_cast<VgfRepr*>(handle);
     repr->~VgfRepr();
     --self->live_delegates_;
     self->release_basics_if_unused();
@@ -1142,7 +1252,16 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     // Do not call volkFinalize(): the Vulkan backend shares the loader.
   }
 
+  struct MappedBoundaryEntry {
+    const executorch::runtime::MemoryAllocator* method_allocator = nullptr;
+    VgfRepr* repr = nullptr;
+    uint64_t generation = 0;
+  };
+
   mutable std::mutex mutex_;
+  // The registry and sequence counter are protected by mutex_.
+  std::vector<MappedBoundaryEntry> mapped_boundary_reprs_;
+  uint64_t next_mapped_boundary_generation_ = 1;
   size_t live_delegates_ = 0;
   VkInstance vk_instance = VK_NULL_HANDLE;
   VkPhysicalDevice vk_physical_device = VK_NULL_HANDLE;
@@ -1155,6 +1274,25 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   VgfHostMemoryImportCapabilities host_memory_import_capabilities_{};
   bool is_initialized_ = false;
 };
+
+// cppcheck-suppress unusedFunction
+executorch::runtime::Error get_vgf_mapped_boundary_buffer(
+    const executorch::runtime::MemoryAllocator* method_allocator,
+    bool input,
+    size_t argument_index,
+    VgfMappedBoundaryBuffer* buffer) noexcept {
+  if (method_allocator == nullptr || buffer == nullptr) {
+    return Error::InvalidArgument;
+  }
+  *buffer = {};
+  const auto* backend = static_cast<const VGFBackend*>(
+      executorch::runtime::get_backend_class("VgfBackend"));
+  if (backend == nullptr) {
+    return Error::NotFound;
+  }
+  return backend->get_mapped_boundary_buffer(
+      method_allocator, input, argument_index, buffer);
+}
 
 namespace {
 auto cls = VGFBackend();
