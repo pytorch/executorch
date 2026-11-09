@@ -11,9 +11,10 @@ import logging
 import operator
 import types
 from contextlib import nullcontext
-from typing import Any, List, Optional, Tuple, Type, TYPE_CHECKING
+from typing import Any, List, Optional, Tuple, Type
 
 import torch
+from executorch.exir.capture._config import EdgeCompileConfig
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from executorch.exir.lowered_backend_module import LoweredBackendModule
@@ -36,11 +37,6 @@ from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
-
-# Importing executorch.exir.capture at module scope creates an import cycle
-# (capture -> program -> verifier).
-if TYPE_CHECKING:
-    from executorch.exir.capture._config import EdgeCompileConfig
 
 
 ALLOWED_META_KEYS = {"spec", "stack_trace"}
@@ -109,7 +105,7 @@ class EXIRATenDialectVerifierBase(Verifier):
 
 
 def EXIRATenDialectVerifier(  # noqa: C901
-    edge_compile_config: Optional["EdgeCompileConfig"] = None,
+    edge_compile_config: Optional[EdgeCompileConfig] = None,
     class_only: bool = False,
     core_aten_ops_exception_list: Optional[List[torch._ops.OpOverload]] = None,
     preserve_ops: Optional[List[torch._ops.OpOverload]] = None,
@@ -204,7 +200,7 @@ There are a few things to try:
     return ret
 
 
-def get_aten_verifier(config: "EdgeCompileConfig"):
+def get_aten_verifier(config: EdgeCompileConfig):
     return (
         EXIRATenDialectVerifier(
             class_only=True,
@@ -268,7 +264,7 @@ def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
 
 
 def EXIREdgeDialectVerifier(  # noqa: C901
-    edge_compile_config: Optional["EdgeCompileConfig"] = None,
+    edge_compile_config: Optional[EdgeCompileConfig] = None,
     class_only: bool = False,
     core_aten_ops_exception_list: Optional[List[torch._ops.OpOverload]] = None,
     preserve_ops: Optional[List[torch._ops.OpOverload]] = None,
@@ -288,8 +284,6 @@ def EXIREdgeDialectVerifier(  # noqa: C901
         dialect = "EDGE"
 
         def __init__(self) -> None:
-            from executorch.exir.capture._config import EdgeCompileConfig
-
             _edge_compile_config = edge_compile_config or EdgeCompileConfig()
 
             self.enable = _edge_compile_config._check_ir_validity
