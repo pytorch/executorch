@@ -485,11 +485,6 @@ class ET_EXPERIMENTAL CudaBackend final
       return so_path_res.error();
     }
     const filesystem::path& so_path = so_path_res.get();
-    ET_LOG(
-        Info,
-        "Wrote %zu bytes to %s",
-        aoti_dso_buffer->size(),
-        so_path.c_str());
 
     // A failed init returns no handle, so destroy() never runs for it. Remove
     // the file here unless init succeeds.

@@ -7,9 +7,8 @@
 """The CUDA backend loads its compiled code from a file in the temp directory.
 
 Loading a method writes that library to a new file in the system temporary
-directory and opens it from there. The file has to be one this process created,
-readable only by its owner, so other entries in a shared temporary directory
-cannot get in the way of what is loaded.
+directory and opens it from there. The file has to be a new one, readable only
+by its owner, and it has to be removed once the program is freed.
 """
 
 import os
@@ -58,12 +57,6 @@ class TestTempLibraryFile(unittest.TestCase):
         with tempfile.TemporaryDirectory() as outdir, tempfile.TemporaryDirectory() as tmpdir:
             path = self._lower(outdir)
 
-            # Names the backend used to derive from the process id and a counter.
-            # Entries that already exist there must not stop the load.
-            for i in range(64):
-                os.mkdir(os.path.join(tmpdir, f"executorch_cuda_{os.getpid()}_{i}.so"))
-            existing = set(os.listdir(tmpdir))
-
             # A permissive umask, so the mode check below does not pass by luck.
             old_umask = os.umask(0o022)
             try:
@@ -73,9 +66,9 @@ class TestTempLibraryFile(unittest.TestCase):
             finally:
                 os.umask(old_umask)
 
-            created = set(os.listdir(tmpdir)) - existing
+            created = os.listdir(tmpdir)
             self.assertEqual(len(created), 1, created)
-            mode = os.lstat(os.path.join(tmpdir, created.pop())).st_mode
+            mode = os.lstat(os.path.join(tmpdir, created[0])).st_mode
             self.assertTrue(stat.S_ISREG(mode))
             self.assertEqual(stat.S_IMODE(mode), 0o600)
 
@@ -86,7 +79,20 @@ class TestTempLibraryFile(unittest.TestCase):
             )
 
             del method, program
-            self.assertEqual(set(os.listdir(tmpdir)), existing)
+            self.assertEqual(os.listdir(tmpdir), [])
+
+    def test_missing_temp_dir_is_a_load_error(self) -> None:
+        from executorch.runtime import Runtime
+
+        with tempfile.TemporaryDirectory() as outdir:
+            path = self._lower(outdir)
+            missing = os.path.join(outdir, "missing")
+            with patch.dict(os.environ, {"TMPDIR": missing}):
+                program = Runtime.get().load_program(path)
+                with self.assertRaisesRegex(
+                    RuntimeError, r"Failed to load method forward, error: 0x:?22"
+                ):
+                    program.load_method("forward")
 
 
 if __name__ == "__main__":

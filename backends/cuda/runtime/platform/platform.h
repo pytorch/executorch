@@ -26,11 +26,13 @@ executorch::runtime::Error close_library(void* lib_handle);
 /**
  * Writes a shared library to a new file in the system temporary directory.
  *
- * The file gets a random name and is created exclusively, so an existing file
- * is never opened or overwritten. Outside Windows, only the current user can
- * read or write it. The directory is std::filesystem::temp_directory_path(),
- * which honors TMPDIR on POSIX. The caller removes the file when it is no
- * longer needed.
+ * The file gets a name that is random and never repeats within the process,
+ * and it is created exclusively, so an existing file is never opened or
+ * overwritten. Outside Windows, only the current user can read or write it.
+ * The directory is std::filesystem::temp_directory_path(), which honors TMPDIR
+ * on POSIX. A caller that loads the file by path relies on that directory
+ * being private to the user or sticky, as /tmp is. The caller removes the
+ * file when it is no longer needed.
  *
  * @param[in] data The library contents.
  * @param[in] size The size of the library contents, in bytes.
@@ -44,8 +46,6 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
 executorch::runtime::Result<void*> get_function(
     void* lib_handle,
     const std::string& fn_name);
-
-int32_t get_process_id();
 
 void* aligned_alloc(size_t alignment, size_t size);
 
