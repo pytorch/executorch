@@ -53,47 +53,51 @@ def test_prefix_capture_override_reaches_worker(arguments, captures):
     assert f"--prefix_capture_slots={captures}" in serve_batching._worker_command(args)
 
 
-def test_prompt_end_capture_is_opt_in_and_reaches_worker(arguments, capsys):
-    default = serve_batching._parse_args(arguments + ["--prefix-cache-entries", "4"])
-    assert not default.prefix_checkpoint_prompt_end
-    assert not any(
-        "prefix_checkpoint_prompt_end" in flag
-        for flag in serve_batching._worker_command(default)
-    )
-    enabled = serve_batching._parse_args(arguments + ["--prefix-checkpoint-prompt-end"])
+@pytest.mark.parametrize(
+    "options",
+    [[], ["--prefix-checkpoint-prompt-end"], ["--prefix-checkpoint-prompt-end=true"]],
+)
+def test_prompt_end_capture_defaults_on_and_reaches_worker(arguments, options):
+    enabled = serve_batching._parse_args(arguments + options)
+    assert enabled.prefix_checkpoint_prompt_end
     assert enabled.prefix_cache_entries == 8
     assert "--prefix_checkpoint_prompt_end=true" in serve_batching._worker_command(
         enabled
     )
     assert "--prefix_cache_entries=8" in serve_batching._worker_command(enabled)
+
+
+@pytest.mark.parametrize("capacity", [None, 0, 3])
+def test_prompt_end_capture_opt_out_reaches_worker(arguments, capacity):
+    options = ["--prefix-checkpoint-prompt-end=false"]
+    if capacity is not None:
+        options += ["--prefix-cache-entries", str(capacity)]
+    disabled = serve_batching._parse_args(arguments + options)
+    assert not disabled.prefix_checkpoint_prompt_end
+    assert disabled.prefix_cache_entries == (capacity or 0)
+    command = serve_batching._worker_command(disabled)
+    assert "--prefix_checkpoint_prompt_end=false" in command
+    assert f"--prefix_cache_entries={capacity or 0}" in command
+    assert ("--prefix_capture_slots=0" in command) == bool(capacity)
+
+
+def test_prompt_end_capture_rejects_invalid_combinations(arguments, capsys):
     with pytest.raises(SystemExit):
-        serve_batching._parse_args(
-            arguments
-            + ["--prefix-checkpoint-prompt-end", "--prefix-cache-entries", "0"]
-        )
+        serve_batching._parse_args(arguments + ["--prefix-cache-entries", "0"])
+    assert "requires --prefix-cache-entries > 0" in capsys.readouterr().err
     with pytest.raises(SystemExit):
-        serve_batching._parse_args(
-            arguments
-            + [
-                "--prefix-checkpoint-prompt-end",
-                "--prefix-checkpoint-interval",
-                "64",
-            ]
-        )
+        serve_batching._parse_args(arguments + ["--prefix-checkpoint-interval", "64"])
     assert "cannot be combined" in capsys.readouterr().err
 
 
 def test_session_checkpoint_capacity_override_and_row_overflow(arguments):
-    args = serve_batching._parse_args(
-        arguments + ["--prefix-checkpoint-prompt-end", "--prefix-cache-entries", "2"]
-    )
+    args = serve_batching._parse_args(arguments + ["--prefix-cache-entries", "2"])
     assert "--prefix_cache_entries=2" in serve_batching._worker_command(args)
     for capacity in (0, -1, (1 << 31) - 1):
         with pytest.raises(SystemExit):
             serve_batching._parse_args(
                 arguments
                 + [
-                    "--prefix-checkpoint-prompt-end",
                     "--prefix-cache-entries",
                     str(capacity),
                 ]
@@ -110,6 +114,7 @@ def test_worker_forwards_mg_options(arguments):
             "2048",
             "--prefix-cache-entries",
             "3",
+            "--prefix-checkpoint-prompt-end=false",
             "--prefix-checkpoint-interval",
             "512",
         ]
@@ -127,6 +132,7 @@ def test_worker_forwards_mg_options(arguments):
     assert flags["--bos_id"] == "200000"
     assert flags["--eos_id"] == "200001"
     assert flags["--prefix_checkpoint_interval"] == "512"
+    assert flags["--prefix_checkpoint_prompt_end"] == "false"
 
 
 @pytest.mark.parametrize("options,enabled", [([], "false"), (["--dflash"], "true")])
@@ -160,6 +166,7 @@ def test_draft_count_forwarded(arguments, n_draft):
         ("--max-vision-patches", str(1 << 31)),
         ("--prefix-checkpoint-interval", "8"),
         ("--prefix-checkpoint-interval", "-1"),
+        ("--prefix-checkpoint-prompt-end", "invalid"),
         ("--prefix-capture-slots", "-1"),
         ("--prefix-capture-slots", str(1 << 31)),
     ],

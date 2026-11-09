@@ -76,7 +76,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--prefix-cache-entries",
         type=int,
-        help="Retained snapshots: shared by default (0), per named session with prompt-end checkpoints (8)",
+        help="Retained snapshots per named session (default: 8); shared with prompt-end checkpoints disabled (default: 0)",
     )
     parser.add_argument(
         "--prefix-capture-slots",
@@ -87,8 +87,11 @@ def _parse_args(argv=None):
     parser.add_argument("--max-vision-patches", type=int, default=4096)
     parser.add_argument(
         "--prefix-checkpoint-prompt-end",
-        action="store_true",
-        help="Retain prompt-end checkpoints separately for each named session",
+        nargs="?",
+        choices=("true", "false"),
+        const="true",
+        default="true",
+        help="Retain prompt-end checkpoints separately for each named session (default: true; false disables)",
     )
     parser.add_argument(
         "--prefix-checkpoint-interval",
@@ -124,6 +127,7 @@ def _parse_args(argv=None):
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
+    args.prefix_checkpoint_prompt_end = args.prefix_checkpoint_prompt_end == "true"
     if args.prefix_cache_entries is None:
         args.prefix_cache_entries = 8 if args.prefix_checkpoint_prompt_end else 0
     _validate_limits(
@@ -207,7 +211,7 @@ def _worker_command(args):
         ("prefix_checkpoint_interval", args.prefix_checkpoint_interval or None),
         (
             "prefix_checkpoint_prompt_end",
-            "true" if args.prefix_checkpoint_prompt_end else None,
+            str(args.prefix_checkpoint_prompt_end).lower(),
         ),
         ("max_vision_patches", args.max_vision_patches),
         ("max_image_bytes", args.max_image_bytes),

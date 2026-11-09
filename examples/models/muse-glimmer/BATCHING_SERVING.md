@@ -219,34 +219,41 @@ submitted history; server-side image references are not supported.
 
 The base64/framing check does not guarantee that an arbitrarily long text history
 fits. Whole-frame, decoded-pixel, vision-patch, and model context limits still
-apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
-(default 0).
+apply. Text/image prompt-end checkpoints are enabled by default, with
+`--prefix-cache-entries` defaulting to eight snapshots per named session.
 
 ## Session Behavior
 
-Without prompt-end mode, nonzero `--prefix-cache-entries` enables shared prefix
-caching; without other capture options it retains initial prompts. `--prefix-checkpoint-prompt-end` instead
-retains prompt boundaries separately for each named session, including tool-result
+The Muse-Glimmer batching launcher and native workers enable
+`--prefix-checkpoint-prompt-end` by default. General LLM serving keeps it opt-in.
+This mode retains prompt boundaries separately for each named session, including tool-result
 continuations and replacements. `--prefix-cache-entries` defaults to eight
 checkpoints per session. Repeated or branched requests using the same session ID can
 reuse its snapshots; other sessions and anonymous requests cannot. New tool-result
 text still needs prefill. Exact prompt ends already retained in that session are
 not cloned again. Close/reset, including idle-session eviction, clears its snapshots.
 
+Use `--prefix-checkpoint-prompt-end=false` to disable this mode in the Python launcher,
+or `--prefix_checkpoint_prompt_end=false` in a native worker. With it disabled,
+`--prefix-cache-entries` defaults to zero; a positive value enables shared prefix
+caching, which retains initial prompts unless periodic capture is configured.
+
 Prompt-end-only capture preserves per-request capture concurrency and the default
 transient-row budget. LRU eviction stays within each session, so one session cannot
 evict another's checkpoints. Capture slots are released after clone collection,
 without waiting for decoding to finish. Capture is best effort: concurrent captures
 or session replacements can occupy the available rows. Measure capture overhead
-and reuse for your workload before enabling it.
+and reuse to choose the entry limit for your workload.
 
 `--prefix-checkpoint-prompt-end` cannot be combined with a nonzero
 `--prefix-checkpoint-interval`; both the launcher and native worker reject that combination.
+To use periodic capture, disable prompt-end capture and set a positive
+`--prefix-cache-entries` limit.
 With prompt-end mode, `--prefix-cache-entries` is the per-session budget (default eight);
 without it, the same option is the shared-cache budget (default zero). This mode reserves
 `max_sessions * prefix_cache_entries` snapshot rows plus working sessions
 and capture slots: eight sessions, eight checkpoints each, and eight automatic
-capture slots require 80 physical rows. The feature remains disabled by default.
+capture slots require 80 physical rows.
 Periodic checkpoints use one serialized lane and may skip a boundary while an
 earlier clone is pending. Automatic transient-row sizing is capped at two in
 periodic mode; prompt-end capture retains the ordinary concurrency budget.

@@ -68,6 +68,7 @@ limit; choose a value supported by the export. Capacity defaults are
 bounded by `min(max_sessions, max_inflight_requests)`. A positive value overrides
 this allowance. Alternatively, `--prefix-checkpoint-prompt-end` retains initial,
 continuation, and replacement prompt boundaries separately for each named session.
+This mode is opt-in.
 `--prefix-cache-entries` defaults to eight snapshots per session; duplicates
 are skipped and LRU eviction stays within the owning session. Close/reset clears
 that session's snapshots. Anonymous requests neither use nor retain them.
@@ -99,8 +100,7 @@ event loop. Post-spawn startup failures also await worker cleanup. CLI validatio
 and chat-template preflight still happen before any worker is started.
 
 The batching guide covers the native build, supported export contract, and
-integration checks. The existing generic launcher below and Muse-specific
-launcher are unchanged.
+integration checks. The legacy launcher below is unchanged.
 
 ## Run a legacy worker
 
@@ -257,8 +257,8 @@ worker JSONL protocol is covered separately by `tests/test_worker_client.py`,
 and `tests/test_stream_disconnect.py` uses real loopback Uvicorn/TCP plus a
 model-free subprocess to verify disconnect cancellation end to end.
 The BPE splice tests use an in-memory tokenizer with no model downloads. Optional
-integration tests use local tokenizer directories set with `QWEN_HF_DIR`,
-`GEMMA_HF_DIR`, or `MUSE_GLIMMER_HF_DIR` and require `transformers`.
+integration tests require `transformers` and local tokenizer directories; see the
+environment variables in `tests/test_warm_resume_scaffold.py`.
 
 ## Architecture
 
@@ -313,8 +313,8 @@ the generic control plane never imports an example. Backend specifics
 
 The dedicated batching launcher supports concurrent text requests on one shared
 runner, ordered persistent-session continuation, targeted in-band cancellation,
-and optional prefix reuse for new sessions and clean prompt replacements. It
-does not yet migrate Muse image or DFlash execution. The serialized-worker
+and optional prefix reuse for new sessions and clean prompt replacements. Image
+and speculative execution require a model-specific worker. The serialized-worker
 limitations below describe the legacy path, not the new batching worker.
 
 Deliberately narrow (reliability-first): Hermes/Qwen tool calling only;

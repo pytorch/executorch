@@ -42,7 +42,8 @@ of N and at the initial prompt end. It requires `--prefix-cache-entries > 0`.
 Zero (the default) disables periodic capture. With prefix caching enabled and no
 other capture options, only initial prompts are retained.
 `--prefix-checkpoint-prompt-end` instead retains prompt ends within each named
-session, including continuations and replacements. `--prefix-cache-entries`
+session, including continuations and replacements. This mode is opt-in.
+`--prefix-cache-entries`
 defaults to eight per session. Checkpoints cannot be reused or evicted by another
 session, and close/reset clears them. Anonymous requests do not use this cache.
 This mode cannot be combined with a nonzero interval or custom checkpoint policy.

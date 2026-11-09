@@ -139,7 +139,7 @@ keepalive comments every 15 seconds. Model launchers may bound initial readiness
 waiting to return headers during prefill; errors detected after headers arrive
 as SSE error events.
 
-The generic and Muse batching launchers accept `--api-dialect openai|openrouter`.
+The batching launcher accepts `--api-dialect openai|openrouter`.
 The `openrouter` dialect attaches requested usage to the finish chunk, once, for
 clients that stop consuming on `finish_reason`, and supplies overflow metadata
 for context recovery. The default `openai` dialect retains the separate
@@ -388,8 +388,8 @@ loads only the program before ModuleExecutor construction, reads activation dtyp
 and context length, resolves model/tokenizer EOS, binds the backend's default
 batched cache via `cache::kind::kBatched`, derives scheduler width from
 `preferred_batch_tokens()`, and constructs
-one `ServingRuntime`. It does not preload `forward`, run token-step loops, or use
-Glimmer's legacy session implementation. Prefix caching is disabled by default.
+one `ServingRuntime`. It does not preload `forward` or run token-step loops.
+Prefix caching is disabled by default.
 `--prefix_cache_entries=N` enables retained-prefix reuse for both greedy and
 sampled requests. With `--prefix_capture_slots=C`, it adds `N + C` physical rows
 for retained snapshots and transient captures; logical `--max_sessions` remains
@@ -429,7 +429,7 @@ contains multiple session slices. Overlapping HTTP requests or sequential
 single-session forwards are not proof. Real-model smoke testing is explicitly
 deferred: no compatible local PTE/tokenizer has been confirmed, and this stack
 must not download/export weights or claim that a real combined forward was
-verified. A Glimmer `embed_text`/`forward_from_embeddings` last-logits artifact is
+verified. An `embed_text`/`forward_from_embeddings` last-logits artifact is
 not assumed compatible with this packed construction path.
 
 Idle-session recovery retries at most once and only for native

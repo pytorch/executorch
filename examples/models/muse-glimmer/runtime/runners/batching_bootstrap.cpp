@@ -35,7 +35,7 @@ DEFINE_int32(max_inflight_requests, 4, "Maximum admitted requests");
 DEFINE_int32(
     prefix_cache_entries,
     0,
-    "Retained snapshots: shared by default (0), per session with prompt-end checkpoints (8)");
+    "Retained snapshots per session (default: 8); shared with prompt-end checkpoints disabled (default: 0)");
 DEFINE_int32(
     prefix_checkpoint_interval,
     0,
@@ -46,8 +46,8 @@ DEFINE_int32(
     "Transient capture rows; 0: size automatically from session/request limits");
 DEFINE_bool(
     prefix_checkpoint_prompt_end,
-    false,
-    "Retain prompt-end checkpoints separately for each named session");
+    true,
+    "Retain prompt-end checkpoints separately for each named session (enabled by default)");
 DEFINE_uint64(max_image_bytes, 20 * 1024 * 1024, "Maximum encoded image bytes");
 DEFINE_uint64(
     max_input_frame_bytes,
