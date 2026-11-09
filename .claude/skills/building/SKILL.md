@@ -202,7 +202,7 @@ Most commonly needed flags (full list: `CMakeLists.txt`):
 | Artifact | Location |
 |----------|----------|
 | Core runtime | `cmake-out/lib/libexecutorch.a` |
-| XNNPACK backend | `cmake-out/lib/libxnnpack_backend.a` |
+| XNNPACK backend | `cmake-out/lib/libxnnpack_backend.a` and `cmake-out/lib/libxnnpack_profiler.a` |
 | executor_runner | `cmake-out/executor_runner` (Ninja/Make) or `cmake-out/Release/executor_runner` (Xcode) |
 | Model runners | `cmake-out/examples/models/<model>/<runner>` |
 
