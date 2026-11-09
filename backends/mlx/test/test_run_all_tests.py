@@ -69,8 +69,12 @@ class RunAllTestsTest(unittest.TestCase):
 
     def test_isolated_run_kills_grandchildren_of_a_crashed_child(self):
         # An ignored SIGHUP, as under nohup, must still be ignored afterwards.
-        self.addCleanup(signal.signal, signal.SIGHUP, signal.getsignal(signal.SIGHUP))
-        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        # The others start at the default, whatever this test run inherited.
+        for sig, handler in zip(
+            _HANDLED_SIGNALS, (signal.SIG_DFL, signal.SIG_IGN, signal.SIG_DFL)
+        ):
+            self.addCleanup(signal.signal, sig, signal.getsignal(sig))
+            signal.signal(sig, handler)
         handlers = [signal.getsignal(s) for s in _HANDLED_SIGNALS]
         during = []
 
@@ -195,6 +199,8 @@ class RunAllTestsTest(unittest.TestCase):
             ],
             stdout=subprocess.PIPE,
             text=True,
+            # Buffered, so a printed line only reaches the pipe if the harness flushes it.
+            env={k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"},
         )
         self.addCleanup(harness.stdout.close)
         self.addCleanup(harness.kill)

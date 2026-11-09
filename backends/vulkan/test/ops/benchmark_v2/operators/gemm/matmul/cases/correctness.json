@@ -572,6 +572,63 @@
     ]
   },
   {
+    "name": "mm correctness [0,57,131,43] aten.mm.default buffer float16",
+    "operator": "aten.mm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.25,
+      "rtol": 0.05
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [57, 131],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [131, 43],
+            "dtype": "float16",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [57, 43],
+            "dtype": "float16",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
     "name": "mm correctness [0,33,67,91] aten.mm.default texture3d float32",
     "operator": "aten.mm.default",
     "target_ms": 100,
@@ -1244,6 +1301,63 @@
           "tensor": {
             "name": "output",
             "sizes": [1, 19, 37],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "fill": 0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "name": "mm correctness [3,19,53,37] aten.bmm.default buffer float32",
+    "operator": "aten.bmm.default",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {
+      "function": "is_close",
+      "atol": 0.001,
+      "rtol": 0.001
+    },
+    "route": "auto",
+    "sweep_variables": {
+      "v_WEIGHT_STORAGE": ["buffer", "constant"]
+    },
+    "args_sweep": [
+      [
+        {
+          "tensor": {
+            "name": "input",
+            "sizes": [3, 19, 53],
+            "dtype": "float32",
+            "storage": "buffer",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [3, 53, 37],
+            "dtype": "float32",
+            "storage": "v_WEIGHT_STORAGE",
+            "layout": "width",
+            "data": {
+              "rand_uniform_float": [-1, 1]
+            }
+          }
+        },
+        {
+          "tensor": {
+            "name": "output",
+            "sizes": [3, 19, 37],
             "dtype": "float32",
             "storage": "buffer",
             "layout": "width",

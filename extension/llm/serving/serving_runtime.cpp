@@ -235,15 +235,18 @@ struct ServingRuntime::Impl {
     bool dirty = false;
   };
 
+  using Completion = std::function<void(LifecycleResult, bool)>;
+
   struct Command {
     Operation operation;
     std::string key;
     // Queue transfers must not destroy user captures under mutex_.
-    std::unique_ptr<LifecycleCallback> completion;
+    std::unique_ptr<Completion> completion;
     Request request;
     RequestId fence_through = 0;
     bool processed = false;
     LifecycleResult result = std::nullopt;
+    bool existed = false;
   };
 
   Impl(
@@ -294,15 +297,16 @@ struct ServingRuntime::Impl {
   }
 
   static void complete(
-      std::unique_ptr<LifecycleCallback> completion,
-      LifecycleResult result) {
+      std::unique_ptr<Completion> completion,
+      LifecycleResult result,
+      bool existed = false) {
     if (!completion || !*completion) {
       return;
     }
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      (*completion)(std::move(result));
+      (*completion)(std::move(result), existed);
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
       ET_LOG(Error, "Lifecycle completion callback threw");
@@ -324,10 +328,20 @@ struct ServingRuntime::Impl {
 
   void
   submit(Operation operation, std::string key, LifecycleCallback on_complete) {
+    submit(
+        operation,
+        std::move(key),
+        [callback = std::move(on_complete)](LifecycleResult result, bool) {
+          if (callback)
+            callback(std::move(result));
+        });
+  }
+
+  void submit(Operation operation, std::string key, Completion on_complete) {
     Command command{
         operation,
         std::move(key),
-        std::make_unique<LifecycleCallback>(std::move(on_complete)),
+        std::make_unique<Completion>(std::move(on_complete)),
         {}};
     LifecycleResult error;
     {
@@ -369,6 +383,7 @@ struct ServingRuntime::Impl {
     }
     auto it = sessions_.find(command.key);
     if (command.operation == Operation::Close) {
+      command.existed = it != sessions_.end();
       if (it != sessions_.end()) {
         if (it->second.active_request) {
           cancelled = requests_.at(it->second.active_request);
@@ -396,7 +411,7 @@ struct ServingRuntime::Impl {
     if (opening) {
       if (sessions_.size() == config_.max_sessions) {
         return ServingError{
-            ErrorCode::CapacityExceeded, "session limit reached"};
+            ErrorCode::SessionCapacityExceeded, "session limit reached"};
       }
       it = sessions_.try_emplace(command.key).first;
       it->second.incarnation = next_incarnation_++;
@@ -562,6 +577,8 @@ struct ServingRuntime::Impl {
       }
     }
     auto& stats = terminal.stats;
+    stats.matched_stop =
+        text.output ? text.output->matched_stop() : std::nullopt;
     stats.completion_tokens =
         text.output ? text.output->completion_tokens() : 0;
     stats.prefill_ms = completion.metrics.prefill_span_us() / 1000.0;
@@ -868,6 +885,10 @@ struct ServingRuntime::Impl {
       return std::nullopt;
     }
     if (auto* error = std::get_if<ServingError>(&prepared)) {
+      if (error->context_overflow) {
+        error->context_overflow->completion_tokens =
+            options.max_new_tokens.value_or(1);
+      }
       return std::move(*error);
     }
     text.prepared = std::get<batching::PreparedInputPtr>(std::move(prepared));
@@ -882,7 +903,13 @@ struct ServingRuntime::Impl {
             ? static_cast<std::int32_t>(
                   std::min(available, static_cast<std::size_t>(INT32_MAX)))
             : config_.default_max_new_tokens);
-    if (wanted <= 0 || available == 0) {
+    if (available == 0) {
+      return context_length_error(
+          text.terminal.stats.prompt_tokens,
+          context_limit,
+          options.max_new_tokens.value_or(1));
+    }
+    if (wanted <= 0) {
       return ServingError{
           ErrorCode::InvalidArgument, "no generation budget available"};
     }
@@ -1054,8 +1081,8 @@ struct ServingRuntime::Impl {
     if (opening) {
       if (sessions_.size() == config_.max_sessions) {
         lock.unlock();
-        request->reject(
-            ServingError{ErrorCode::CapacityExceeded, "session limit reached"});
+        request->reject(ServingError{
+            ErrorCode::SessionCapacityExceeded, "session limit reached"});
         return;
       }
       it = sessions_.try_emplace(key).first;
@@ -1607,7 +1634,10 @@ struct ServingRuntime::Impl {
               ServingError{ErrorCode::NotReady, "runtime is stopping"};
         }
       }
-      complete(std::move(command.completion), std::move(command.result));
+      complete(
+          std::move(command.completion),
+          std::move(command.result),
+          command.existed);
     }
     decltype(sessions_) retired;
     {
@@ -1834,6 +1864,18 @@ void ServingRuntime::close_session_async(
     std::string key,
     LifecycleCallback on_complete) {
   impl_->submit(Impl::Operation::Close, std::move(key), std::move(on_complete));
+}
+
+void ServingRuntime::close_session_with_result_async(
+    std::string key,
+    CloseCallback on_complete) {
+  impl_->submit(
+      Impl::Operation::Close,
+      std::move(key),
+      [callback = std::move(on_complete)](LifecycleResult error, bool existed) {
+        if (callback)
+          callback(CloseResult{std::move(error), existed});
+      });
 }
 
 std::future<LifecycleResult> ServingRuntime::close_session_async(

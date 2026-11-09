@@ -1431,6 +1431,26 @@ def _build_non_const_buffer_device(
     ]
 
 
+def _reserve_memory_for_views(graph_module: torch.fx.GraphModule) -> None:
+    """
+    A memory.view shares its base's memory, but each of its dims is bounded on its
+    own, so the view can be planned larger than its base. The runtime refuses to
+    load a tensor whose planned size runs past the end of its buffer, so plan each
+    base large enough for its views.
+    """
+    for node in graph_module.graph.nodes:
+        if node.op != "call_function" or node.target != memory.view:
+            continue
+        spec = node.meta["spec"]
+        # A view's spec writes this field through to its base. A base backed by
+        # another tensor's storage must still fit in that storage.
+        needed = spec.nbytes()
+        while spec is not None:
+            spec.min_allocated_memory = max(spec.min_allocated_memory, needed)
+            needed += spec.storage_base_offset
+            spec = spec.storage_base
+
+
 def apply_algo(
     algo: Callable[..., list[int]],
     graph_module: torch.fx.GraphModule,
@@ -1467,6 +1487,7 @@ def apply_algo(
     """
     # Extract the nodes and their lifespans from the graph_module
     _ = update_all_tensors_lifetime(graph_module, graph_signature)
+    _reserve_memory_for_views(graph_module)
 
     # Collect specs into an ordered list so we can iterate multiple times and
     # partition by device.  Order matters: order-sensitive algorithms (e.g.
