@@ -39,6 +39,7 @@ from executorch.backends.qualcomm.export_utils import (
 from executorch.backends.qualcomm.qnn_preprocess import DEFAULT_GRAPH_NAME, QnnBackend
 from executorch.backends.qualcomm.quantizer.rules import Q_ANNOTATION_KEY
 from executorch.backends.qualcomm.serialization.qc_schema import (
+    HtpArch,
     QcomChipset,
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
@@ -528,10 +529,17 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cast(self):
-        modules = [Cast(), CastMultiUsers()]  # noqa: F405
+        modules = [
+            Cast(),  # noqa: F405
+            CastMultiUsers(),  # noqa: F405
+            CastToFloat(),  # noqa: F405
+            CastToFloat(torch.float16),  # noqa: F405
+        ]
         sample_inputs = [
             (10 * torch.rand((9, 4, 5, 3)),),
             (torch.randint(0, 3, size=(3, 3)), torch.randn(3, 3)),
+            (torch.arange(256, dtype=torch.uint8).reshape(16, 16),),
+            (torch.arange(256, dtype=torch.uint8).reshape(16, 16),),
         ]
         for i, (module, sample_input) in enumerate(zip(modules, sample_inputs)):
             with self.subTest(i=i):
@@ -616,6 +624,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv_backward(self):
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kHtpBackend:
+            self.skipTest("convolution_backward is only supported on HTP")
+        option = flatbuffer_to_option(self.compiler_specs[0].value)
+        if option.soc_info.htp_info.htp_arch < HtpArch.V69:
+            self.skipTest("convolution_backward requires HTP V69 or later")
+        module = ConvBackward()  # noqa: F405
+        sample_input = (torch.randn(1, 4, 4, 4), torch.randn(1, 3, 8, 8))
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_channel_last(self):
         modules = [
@@ -3786,10 +3804,18 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_cast(self):
-        module = CastMultiUsers()  # noqa: F405
-        sample_input = (torch.randint(0, 3, size=(3, 3)), torch.randn(3, 3))
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        # With rtol 1, any output between 0 and twice the reference passes, so
+        # a uint8 cast that gives only 0 or 1 would pass too.
+        self.rtol = 1e-1
+        modules = [CastMultiUsers(), CastToFloat()]  # noqa: F405
+        sample_inputs = [
+            (torch.randint(0, 3, size=(3, 3)), torch.randn(3, 3)),
+            (torch.arange(256, dtype=torch.uint8).reshape(16, 16),),
+        ]
+        for i, (module, sample_input) in enumerate(zip(modules, sample_inputs)):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cat(self):
         modules = [Cat2(), Cat3(), Cat4(), Cat5()]  # noqa: F405
@@ -7617,10 +7643,15 @@ class TestQNNFloatingPointUtils(TestQNN):
         )
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+
+        def output_callback(log_msg):
+            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg.stdout)
+
         self.lower_module_and_test_output(
             module,
             sample_input,
             expected_partitions=1,
+            output_callback=output_callback,
         )
 
     def test_qnn_backend_online_prepare(self):
@@ -7823,7 +7854,9 @@ class TestQNNFloatingPointUtils(TestQNN):
         )
         nodes_to_wrappers = defaultdict(dict)
         node_visitors = get_node_visitors(
-            delegated_program.exported_program, enable_tensor_dump=False
+            delegated_program.exported_program,
+            enable_tensor_dump=False,
+            backend_type=QnnExecuTorchBackendType.kHtpBackend,
         )
 
         py_op_wrapper_list = []
@@ -8747,10 +8780,15 @@ class TestQNNQuantizedUtils(TestQNN):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
+
+        def output_callback(log_msg):
+            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg.stdout)
+
         self.lower_module_and_test_output(
             module,
             sample_input,
             expected_partitions=1,
+            output_callback=output_callback,
         )
 
     def test_qnn_backend_online_prepare(self):
@@ -8985,7 +9023,9 @@ class TestQNNQuantizedUtils(TestQNN):
         )
         nodes_to_wrappers = defaultdict(dict)
         node_visitors = get_node_visitors(
-            delegated_program.exported_program, enable_tensor_dump=False
+            delegated_program.exported_program,
+            enable_tensor_dump=False,
+            backend_type=QnnExecuTorchBackendType.kHtpBackend,
         )
 
         py_op_wrapper_list = []

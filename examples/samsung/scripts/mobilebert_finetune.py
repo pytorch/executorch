@@ -165,6 +165,7 @@ class MobileBertFinetune:
             "google/mobilebert-uncased" if need_finetune else artifacts_dir,
             num_labels=len(labels_set),
             return_dict=False,
+            use_safetensors=True,
         )
 
         if not need_finetune:

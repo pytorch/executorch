@@ -7,6 +7,7 @@ import torch
 from executorch.backends.vulkan._passes.conv1d_as_conv2d import Conv1dAsConv2dPass
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.remove_redundant_ops import (
+    FoldForceFp16CastsPass,
     RemoveRedundantOpsTransform,
 )
 from executorch.backends.vulkan._passes.replace_instance_norm import (
@@ -18,6 +19,7 @@ from executorch.backends.vulkan.op_registry import (
 )
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.patterns.swiglu import find_swiglu_pattern
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkDataType
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     extract_vk_flatbuffer,
     flatbuffer_to_vk_graph,
@@ -35,6 +37,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes import SpecPropPass
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import Quantizer
@@ -109,6 +112,12 @@ def op_node_count(graph_module: torch.fx.GraphModule, canonical_op_name: str) ->
         if canonical_name is not None and canonical_name == canonical_op_name:
             count += 1
     return count
+
+
+def cast_count(graph_module: torch.fx.GraphModule) -> int:
+    return op_node_count(graph_module, "_to_copy.default") + op_node_count(
+        graph_module, "_to_dim_order_copy.default"
+    )
 
 
 class TestSwiGLUFusion(unittest.TestCase):
@@ -301,6 +310,224 @@ def conv_input_ranks(graph_module: torch.fx.GraphModule) -> List[int]:
         if get_target_canonical_name(node) == "convolution.default":
             ranks.append(len(node.args[0].meta["val"].shape))
     return ranks
+
+
+class TestFoldForceFp16Casts(unittest.TestCase):
+    def _graph_and_cast(self, model, inputs):
+        gm = SpecPropPass()(export_to_edge(model, inputs).graph_module).graph_module
+        casts = [
+            node
+            for node in gm.graph.nodes
+            if node.target
+            in {
+                exir_ops.edge.aten._to_copy.default,
+                exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+            }
+        ]
+        self.assertEqual(len(casts), 1)
+        return gm, casts[0]
+
+    def test_fp32_producer_returned_as_output_is_preserved(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                y = torch.relu(x)
+                return y.half(), y
+
+        gm, cast = self._graph_and_cast(Model(), (torch.randn(3),))
+        producer = cast.args[0]
+        result = FoldForceFp16CastsPass().call(gm)
+        self.assertFalse(result.modified)
+        self.assertIn(cast, gm.graph.nodes)
+        self.assertEqual(producer.meta["spec"].scalar_type, torch.float32)
+
+    def test_internal_fp32_to_fp16_cast_is_folded(self):
+        # The producer runs as fp16 under force_fp16 either way, so retyping it
+        # is safe even when it has other internal users.
+        class Model(torch.nn.Module):
+            def __init__(self, shared):
+                super().__init__()
+                self.shared = shared
+
+            def forward(self, x):
+                y = torch.relu(x)
+                h = y.half()
+                return (h + y.half(),) if self.shared else (h + h,)
+
+        for shared in (False, True):
+            with self.subTest(shared=shared):
+                model = Model(shared)
+                gm = SpecPropPass()(
+                    export_to_edge(model, (torch.randn(3),)).graph_module
+                ).graph_module
+                result = FoldForceFp16CastsPass().call(gm)
+                self.assertTrue(result.modified)
+                self.assertEqual(cast_count(gm), 0)
+                gm.graph.lint()
+
+    def test_chained_casts_are_folded(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                y = torch.relu(x).half().float()
+                return (y + y,)
+
+        gm = SpecPropPass()(
+            export_to_edge(Model(), (torch.randn(3),)).graph_module
+        ).graph_module
+        self.assertEqual(cast_count(gm), 2)
+        FoldForceFp16CastsPass().call(gm)
+        self.assertEqual(cast_count(gm), 0)
+        gm.graph.lint()
+
+    def test_exclusive_fp16_output_cast_is_folded(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return (torch.relu(x).half(),)
+
+        gm, cast = self._graph_and_cast(Model(), (torch.randn(3),))
+        producer = cast.args[0]
+        result = FoldForceFp16CastsPass().call(gm)
+        self.assertTrue(result.modified)
+        self.assertNotIn(cast, gm.graph.nodes)
+        self.assertEqual(producer.meta["spec"].scalar_type, torch.float16)
+        output = next(node for node in gm.graph.nodes if node.op == "output")
+        self.assertIs(output.args[0][0], producer)
+        gm.graph.lint()
+
+    def test_fp16_to_fp32_cast_is_folded(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return (torch.relu(x.float()),)
+
+        gm, cast = self._graph_and_cast(Model(), (torch.randn(3).half(),))
+        producer = cast.args[0]
+        result = FoldForceFp16CastsPass().call(gm)
+        self.assertTrue(result.modified)
+        self.assertNotIn(cast, gm.graph.nodes)
+        self.assertEqual(producer.meta["spec"].scalar_type, torch.float16)
+        gm.graph.lint()
+
+    def test_graph_io_casts_are_preserved(self):
+        class Model(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
+            def forward(self, x):
+                return (x.to(self.dtype),)
+
+        for in_dtype, out_dtype in (
+            (torch.float16, torch.float32),
+            (torch.float32, torch.float16),
+        ):
+            with self.subTest(in_dtype=in_dtype, out_dtype=out_dtype):
+                gm, cast = self._graph_and_cast(
+                    Model(out_dtype), (torch.randn(3).to(in_dtype),)
+                )
+                result = FoldForceFp16CastsPass().call(gm)
+                self.assertFalse(result.modified)
+                self.assertIn(cast, gm.graph.nodes)
+                self.assertEqual(cast.args[0].meta["spec"].scalar_type, in_dtype)
+
+    def test_fp16_to_fp32_output_cast_keeps_only_output_use(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                a = x.float()
+                return a * 2.0, a
+
+        gm, cast = self._graph_and_cast(Model(), (torch.randn(3).half(),))
+        result = FoldForceFp16CastsPass().call(gm)
+        self.assertTrue(result.modified)
+        self.assertEqual([user.op for user in cast.users], ["output"])
+        (mul,) = [
+            node
+            for node in gm.graph.nodes
+            if node.target == exir_ops.edge.aten.mul.Tensor
+        ]
+        self.assertIs(mul.args[0], cast.args[0])
+        gm.graph.lint()
+
+    def test_force_fp16_lowering_keeps_io_staging_dtypes(self):
+        # Staging dtypes are recorded at lowering time, so this does not depend
+        # on the GPU's fp16 support.
+        class HalfOfInput(torch.nn.Module):
+            def forward(self, x):
+                h = x.half()
+                return (h + h,)
+
+        class FloatOfInput(torch.nn.Module):
+            def forward(self, x):
+                a = x.float()
+                return a * 2.0, a
+
+        class ConvAndHalf(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(8, 8, 3, 1, 1)
+
+            def forward(self, x):
+                y = self.conv(x.float())
+                return y, y.half()
+
+        vk_dtype = {
+            torch.float16: VkDataType.FLOAT16,
+            torch.float32: VkDataType.FLOAT32,
+        }
+        for model, x in (
+            (HalfOfInput(), torch.randn(1, 8, 6, 6)),
+            (FloatOfInput(), torch.randn(1, 8, 6, 6).half()),
+            (ConvAndHalf(), torch.randn(1, 8, 6, 6).half()),
+        ):
+            with self.subTest(type(model).__name__):
+                model.eval()
+                (graph,) = vulkan_delegate_graphs(
+                    lower_to_vulkan(model, (x,), compile_options={"force_fp16": True})
+                )
+                self.assertEqual(
+                    [
+                        graph.values[i].value.staging_datatype
+                        for i in graph.input_ids + graph.output_ids
+                    ],
+                    [vk_dtype[t.dtype] for t in (x, *model(x))],
+                )
+
+    def test_force_fp16_lowering_drops_casts(self):
+        class HalfIO(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(8, 8, 3, 1, 1)
+
+            def forward(self, x):
+                return torch.relu(self.conv(x.float())).half()
+
+        class HalfOfConstant(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("scale", torch.rand(1, 8, 1, 1))
+
+            def forward(self, x):
+                return x * self.scale.half()
+
+        class Chained(torch.nn.Module):
+            def forward(self, x):
+                y = torch.relu(x).half().float()
+                return y + y
+
+        for model, x in (
+            (HalfIO(), torch.randn(1, 8, 6, 6).half()),
+            (HalfOfConstant(), torch.randn(1, 8, 6, 6).half()),
+            (Chained(), torch.randn(1, 8, 6, 6)),
+        ):
+            with self.subTest(type(model).__name__):
+                (graph,) = vulkan_delegate_graphs(
+                    lower_to_vulkan(
+                        model.eval(), (x,), compile_options={"force_fp16": True}
+                    )
+                )
+                op_names = [op.name for op in graph.chain]
+                self.assertFalse(
+                    any("_to_copy" in n or "_to_dim_order_copy" in n for n in op_names),
+                    op_names,
+                )
 
 
 class TestVulkanPasses(unittest.TestCase):
@@ -711,6 +938,56 @@ class TestVulkanPasses(unittest.TestCase):
         fused_out = ep.module()(*sample_inputs)
         self.assertEqual(tuple(fused_out.shape), (2, 3, 32))
         self.assertTrue(torch.allclose(fused_out, eager_ref, atol=1e-2, rtol=1e-2))
+
+    def test_fuse_q4gsw_linear_keeps_preceding_reshape(self):
+        """A reshape before a weight-only quantized linear that changes the last
+        dim (merging attention heads) must stay in the graph: the fused
+        et_vk.linear_q4gsw contracts its input's last dim, so skipping the view
+        hands it [S, H, D] instead of [S, H * D].
+        """
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: registers et_vk ops
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.utils import unwrap_tensor_subclass
+
+        class MergeHeadsLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(64, 32, bias=False)
+
+            def forward(self, x):
+                # [4, 6, 16] -> [6, 4, 16] -> [6, 64] -> [6, 32]
+                return self.linear(x.transpose(0, 1).contiguous().view(-1, 64))
+
+        model = MergeHeadsLinear().eval()
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+        )
+        unwrap_tensor_subclass(model)
+
+        sample_inputs = (torch.randn(4, 6, 16),)
+        eager_ref = model(*sample_inputs)
+
+        program = torch.export.export(model, sample_inputs, strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+        gm = ep.graph_module
+        self.assertEqual(op_node_count(gm, "linear_q4gsw.default"), 1)
+        # The head-merging reshape to [6, 64] is still there, before the linear.
+        self.assertEqual(op_node_count(gm, "view_copy.default"), 1)
+
+        fused_out = ep.module()(*sample_inputs)
+        self.assertEqual(tuple(fused_out.shape), (6, 32))
+        self.assertTrue(torch.allclose(fused_out, eager_ref, atol=1e-3, rtol=1e-3))
 
     def test_torchao_quantized_embedding_rejects_bad_embed_dim(self):
         """A torchao 4-bit quantized embedding whose embed_dim is not a multiple

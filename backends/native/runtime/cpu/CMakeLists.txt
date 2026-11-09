@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-if(NOT TARGET cpu_runtime)
+if(NOT EXECUTORCH_BUILD_CPU AND NOT TARGET cpu_runtime)
   add_subdirectory(
     ${EXECUTORCH_ROOT}/backends/cpu ${CMAKE_CURRENT_BINARY_DIR}/cpu_runtime
   )

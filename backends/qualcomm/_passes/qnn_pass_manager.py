@@ -86,6 +86,7 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
+from executorch.backends.transforms.utils import reserve_node_names
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.program._program import (
@@ -99,6 +100,7 @@ from torch.fx.passes.infra.pass_manager import this_before_that_pass_constraint
 class QnnPassManager(PassManager):
 
     def _transform(self, graph_module: GraphModule):
+        reserve_node_names(graph_module)
         return self(graph_module).graph_module
 
     def _reset(self):
@@ -341,6 +343,17 @@ class QnnPassManager(PassManager):
         }
 
     @classmethod
+    def _get_terminal_passes(cls):
+        return [ResolveDebugHandle]
+
+    @classmethod
+    def _move_terminal_passes_to_end(cls, passes):
+        for p in cls._get_terminal_passes():
+            passes.remove(p)
+            passes.append(p)
+        return passes
+
+    @classmethod
     def get_capture_program_passes(cls):
         """Build an ordered mapping of passes with activation flags and init defaults.
 
@@ -403,7 +416,7 @@ class QnnPassManager(PassManager):
             self.add_pass(p)
         self.solve_constraints()
 
-        sorted_passes = self.passes
+        sorted_passes = self._move_terminal_passes_to_end(self.passes)
         self._reset()
         for p in sorted_passes:
             if not passes_job[p][QCOM_PASS_ACTIVATE_KEY]:

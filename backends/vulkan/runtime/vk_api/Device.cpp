@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -46,6 +48,7 @@ PhysicalDevice::PhysicalDevice(
     : instance(instance_handle),
       handle(physical_device_handle),
       properties{},
+      shader_features{},
       memory_properties{},
 #ifdef VK_KHR_16bit_storage
       shader_16bit_storage{
@@ -168,6 +171,7 @@ PhysicalDevice::PhysicalDevice(
 void PhysicalDevice::query_extensions_vk_1_0() {
   VkPhysicalDeviceFeatures features{};
   vkGetPhysicalDeviceFeatures(handle, &features);
+  shader_features = features;
 
   if (features.shaderInt16 == VK_TRUE) {
     supports_int16_shader_types = true;
@@ -236,6 +240,7 @@ void PhysicalDevice::query_extensions_vk_1_0() {
   features2.pNext = extension_list_top;
 
   vkGetPhysicalDeviceFeatures2KHR(handle, &features2);
+  shader_features = features2.features;
 
   // Query properties separately from features
   auto vkGetPhysicalDeviceProperties2KHR =
@@ -300,6 +305,7 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   features2.pNext = extension_list_top;
 
   vkGetPhysicalDeviceFeatures2(handle, &features2);
+  shader_features = features2.features;
 
   if (features2.features.shaderInt16 == VK_TRUE) {
     supports_int16_shader_types = true;
@@ -417,10 +423,11 @@ void PhysicalDevice::override_device_name(const std::string& new_name) {
 // DeviceHandle
 //
 
-DeviceHandle::DeviceHandle(VkDevice device) : handle(device) {}
+DeviceHandle::DeviceHandle(VkDevice device, bool owns_handle)
+    : handle(device), owns_handle_(owns_handle) {}
 
 DeviceHandle::~DeviceHandle() {
-  if (handle == VK_NULL_HANDLE) {
+  if (!owns_handle_ || handle == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyDevice(handle, nullptr);
