@@ -63,14 +63,17 @@ void copy_pmu_events(
 }
 } // namespace
 
+// cppcheck-suppress unusedFunction
 EthosUStatsBuffer* set_ethosu_stats_buffer(EthosUStatsBuffer* buffer) noexcept {
   return capture_buffer.exchange(buffer, std::memory_order_acq_rel);
 }
 
+// cppcheck-suppress unusedFunction
 bool ethosu_execution_metrics_enabled() noexcept {
   return true;
 }
 
+// cppcheck-suppress unusedFunction
 executorch::runtime::Error set_ethosu55_65_pmu_events(
     executorch::runtime::ArrayRef<ethosu_pmu_event_type> events) noexcept {
   using executorch::runtime::Error;
@@ -81,6 +84,7 @@ executorch::runtime::Error set_ethosu55_65_pmu_events(
   return Error::Ok;
 }
 
+// cppcheck-suppress unusedFunction
 executorch::runtime::Error set_ethosu85_pmu_events(
     executorch::runtime::ArrayRef<ethosu_pmu_event_type> events) noexcept {
   using executorch::runtime::Error;
@@ -173,6 +177,7 @@ void ethosu_inference_end(struct ethosu_driver* drv, void* user_arg) {
     record.success = drv->job.result == ETHOSU_JOB_RESULT_OK;
     record.stats.device_identifier = reinterpret_cast<uintptr_t>(drv->dev.reg);
     record.stats.product = drv->dev.caps.product;
+    record.stats.macs_per_cycle = 1u << drv->dev.caps.log2_macs;
     record.stats.cycle_count = ETHOSU_PMU_Get_CCNTR(drv);
     record.stats.cycle_count_valid = true;
     const uint32_t overflow_status = ETHOSU_PMU_Get_CNTR_OVS(drv);
@@ -195,7 +200,7 @@ void ethosu_inference_end(struct ethosu_driver* drv, void* user_arg) {
       uint8_t metadata[executorch::backends::arm::kEthosUCycleMetadataMaxSize]{
           'E', 'U', 'C', '1'};
       write_le32(metadata + 4, record.stats.product);
-      write_le32(metadata + 8, 1u << drv->dev.caps.log2_macs);
+      write_le32(metadata + 8, record.stats.macs_per_cycle);
       write_le32(metadata + 12, static_cast<uint32_t>(record.stats.platform));
       const uint32_t flags =
           (record.stats.cycle_overflow ? 1u : 0u) | (record.success ? 2u : 0u);

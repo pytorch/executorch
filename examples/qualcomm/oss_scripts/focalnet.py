@@ -52,7 +52,9 @@ def main(args):
         )
 
     module = (
-        AutoModelForImageClassification.from_pretrained("microsoft/focalnet-tiny")
+        AutoModelForImageClassification.from_pretrained(
+            "microsoft/focalnet-tiny", use_safetensors=True
+        )
         .eval()
         .to("cpu")
     )
